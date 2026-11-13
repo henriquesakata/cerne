@@ -91,12 +91,16 @@ func runGauntletArtifact(cmd *cobra.Command, dir, id, base, notesPath, outPath s
 	mode := ""
 	if byCommits {
 		var found []gauntlet.Commit
-		diff, found, _, usedBase, err = gauntlet.FeatureCommits(ctx.projDir, base, ctx.cfg.PinBranch, id, excludes)
+		var skipped []gauntlet.Commit
+		diff, found, skipped, usedBase, err = gauntlet.FeatureCommits(ctx.projDir, base, ctx.cfg.PinBranch, id, excludes)
 		if err != nil {
 			return err
 		}
 		for _, c := range found {
 			fmt.Fprintf(cmd.ErrOrStderr(), "%s %s\n", c.Sha, c.Subject)
+		}
+		for _, c := range skipped {
+			fmt.Fprintf(cmd.ErrOrStderr(), "skipped %s %s (subject cites %s)\n", c.Sha, c.Subject, c.Other)
 		}
 		mode = fmt.Sprintf("%d commits citing %s on %s", len(found), id, usedBase)
 	} else {

@@ -410,3 +410,28 @@ func TestGauntletArtifactEvidenceDuplicateName(t *testing.T) {
 		t.Error("--out written despite the duplicate")
 	}
 }
+
+func TestGauntletArtifactCommitsSkippedOnStderr(t *testing.T) {
+	projDir, _ := gauntletFixture(t)
+	gitIn(t, projDir, "checkout", "-q", "main")
+	for _, c := range [][2]string{{"a.go", "feat: a (F-0001)"}, {"b.go", "fix: b (F-0002)"}} {
+		os.WriteFile(filepath.Join(projDir, c[0]), []byte("package m\n"), 0o644)
+		gitIn(t, projDir, "add", c[0])
+		gitIn(t, projDir, "commit", "-q", "-m", c[1], "-m", "also F-0001")
+	}
+	gitIn(t, projDir, "checkout", "-q", "feature/x")
+	dest := filepath.Join(t.TempDir(), "a.txt")
+	_, stderr, err := execCerneSplit(t, "gauntlet", "artifact", "F-0001", "--commits", "--out", dest, "--dir", projDir)
+	if err != nil {
+		t.Fatalf("artifact: %v\n%s", err, stderr)
+	}
+	lines := strings.Split(strings.TrimSpace(stderr), "\n")
+	if len(lines) != 3 || !strings.HasSuffix(lines[0], " feat: a (F-0001)") ||
+		!strings.HasPrefix(lines[1], "skipped ") || !strings.HasSuffix(lines[1], " fix: b (F-0002) (subject cites F-0002)") ||
+		!strings.Contains(lines[2], "1 commits citing F-0001 on main") {
+		t.Fatalf("stderr = %q", stderr)
+	}
+	if data, _ := os.ReadFile(dest); strings.Contains(string(data), "b.go") {
+		t.Errorf("skipped commit in the bundle")
+	}
+}
