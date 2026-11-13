@@ -14,6 +14,8 @@ import (
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
+const genericNoteLine = `complements or replaces an existing note? find it with 'cerne note list --path <file>' or 'cerne search "<terms>"', then 'cerne note errata N-x ...' or record the new note and 'cerne note substituir N-x --by <new id> --reason "..."'`
+
 const learnBody = "## Aprendizados e desvios\n\n- the gate in internal/cli/hookgatecmd.go reads the clone\n- second learning\n"
 
 func seedLearnNote(t *testing.T, repoDir, id, body string, comps []string, informs []string, st domain.NoteState, created time.Time) {
@@ -47,14 +49,15 @@ func TestCompletePromptsForLearnings(t *testing.T) {
 	for _, want := range []string{
 		"the gate in internal/cli/hookgatecmd.go reads the clone",
 		"second learning",
-		"N-0001",
 		`durable for the next agent? record it: cerne note new "<title>" --informs F-0001 --component <topic> (add golden-path for a procedure); nothing durable: cerne feature learnings --skip F-0001`,
-		"complements N-0001? cerne note errata N-0001 ...",
-		`replaces or contradicts N-0001? record the new note, then cerne note substituir N-0001 --by <new id> --reason "..."`,
+		genericNoteLine,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("complete output lacks %q:\n%s", want, out)
 		}
+	}
+	if strings.Contains(out, "N-0001") || strings.Contains(out, "related") || strings.Count(out, genericNoteLine) != 1 {
+		t.Errorf("no related note is shown and the generic line appears once:\n%s", out)
 	}
 	if strings.Index(out, "cerne cost F-0001 --stamp") > strings.Index(out, "durable for the next agent?") {
 		t.Errorf("the prompt must come after the cost line:\n%s", out)
@@ -63,20 +66,6 @@ func TestCompletePromptsForLearnings(t *testing.T) {
 	out, err = execCerne(t, "feature", "complete", "F-0002", "--dir", projDir)
 	if err != nil || strings.Contains(out, "durable for the next agent?") {
 		t.Fatalf("a result with no items prints no prompt: %v\n%s", err, out)
-	}
-}
-
-func TestCompletePromptOmitsPathsWithoutRelatedNote(t *testing.T) {
-	projDir, _, repoDir := setupProject(t)
-	seedResultFeatures(t, repoDir, domain.StateInDevelopment)
-	writeDoc(t, repoDir, "F-0001", "result.md", realDoc("F-0001", learnBody))
-	commitBackend(t, repoDir)
-	out, err := execCerne(t, "feature", "complete", "F-0001", "--dir", projDir)
-	if err != nil || !strings.Contains(out, "durable for the next agent?") {
-		t.Fatalf("complete: %v\n%s", err, out)
-	}
-	if strings.Contains(out, "complements N-") || strings.Contains(out, "replaces or contradicts") {
-		t.Errorf("errata/substituir paths shown with no related note:\n%s", out)
 	}
 }
 
@@ -111,10 +100,13 @@ func TestFeatureLearningsListAndJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("learnings: %v\n%s", err, out)
 	}
-	for _, want := range []string{"F-0001", "Feature F-0001", "second learning", "N-0001", "1 feature(s), 2 item(s) pending triage"} {
+	for _, want := range []string{"F-0001", "Feature F-0001", "second learning", genericNoteLine, "1 feature(s), 2 item(s) pending triage"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("list lacks %q:\n%s", want, out)
 		}
+	}
+	if strings.Contains(out, "N-0001") || strings.Contains(out, "related") {
+		t.Errorf("list shows a related note:\n%s", out)
 	}
 	if strings.Contains(out, "F-0002") {
 		t.Errorf("a feature with no items is listed:\n%s", out)
@@ -128,11 +120,11 @@ func TestFeatureLearningsListAndJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &rep); err != nil {
 		t.Fatalf("json: %v\n%s", err, out)
 	}
-	if rep.TotalFeatures != 1 || rep.TotalItems != 2 || rep.Features[0].Items[0].RelatedNotes[0].ID != "N-0001" {
+	if rep.TotalFeatures != 1 || rep.TotalItems != 2 {
 		t.Errorf("report = %+v", rep)
 	}
-	if !strings.Contains(out, `"related_notes"`) {
-		t.Errorf("json lacks related_notes:\n%s", out)
+	if strings.Contains(out, "related_notes") || strings.Contains(out, `"via"`) {
+		t.Errorf("json carries related notes:\n%s", out)
 	}
 }
 
