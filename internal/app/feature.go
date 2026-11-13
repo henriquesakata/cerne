@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/henriquesakata/cerne/internal/materialize"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -701,7 +702,7 @@ func SaveFeatureDocBy(repoDir, projDir, id, doc, content string, by DocAuthor) e
 		// queryable by lint or stats. state is the state at write time. Whether an
 		// approval went stale is decided by content since F-0318, not by this
 		// event (lint.SpecChangedAfterApproval). F-0375: and who wrote it.
-		if err := store.AppendEvent(repoDir, by.docEdited(id, doc, f.State, nil)); err != nil {
+		if err := store.AppendEvent(repoDir, by.docEdited(id, doc, f.State, planSpecDigest(repoDir, id, doc, []byte(content), nil))); err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("cerne: update %s/%s", id, filename), nil
@@ -915,7 +916,9 @@ func AmendFeatureDoc(repoDir, projDir, id, doc, body, reason string) (f store.Fe
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 			return "", err
 		}
-		if err := store.AppendEvent(repoDir, by.docEdited(id, doc, f.State, map[string]string{"reason": reason, "rev": strconv.Itoa(rev)})); err != nil {
+		extra := map[string]string{"reason": reason, "rev": strconv.Itoa(rev)}
+		maps.Copy(extra, planSpecDigest(repoDir, id, doc, []byte(content), nil))
+		if err := store.AppendEvent(repoDir, by.docEdited(id, doc, f.State, extra)); err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("cerne: amend %s/%s", id, filename), nil

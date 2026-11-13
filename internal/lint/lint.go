@@ -95,6 +95,12 @@ const (
 	// out of the live cycle (F-0341), stale-work's sibling. Advisory; ranked
 	// last so no other rule is renumbered.
 	RuleWorkOutlivedFeature = "work-outlived-feature"
+
+	// RulePlanOlderThanSpec flags the plan of an approved or in-development
+	// feature last written against an older spec (F-0377, PlanBehindSpec).
+	// Advisory, like the start's warning. Ranked before
+	// hook-cites-missing-rule, which stays last.
+	RulePlanOlderThanSpec = "plan-older-than-spec"
 )
 
 // StalePendingAfter is how long a pending may stay open before stale-pending
@@ -104,7 +110,7 @@ const StalePendingAfter = 30 * 24 * time.Hour
 
 // advisoryRules are the warning-severity rules: printed like any other, but
 // they never fail 'cerne lint' on their own.
-var advisoryRules = map[string]bool{RuleStalePending: true, RulePreconditionMalformed: true, RuleErrataPending: true, RuleRunStalled: true, RuleAppendedAmendment: true, RuleStatusInBody: true, RuleWorkOutlivedFeature: true, RuleSpecCLILiteralPT: true}
+var advisoryRules = map[string]bool{RuleStalePending: true, RulePreconditionMalformed: true, RuleErrataPending: true, RuleRunStalled: true, RuleAppendedAmendment: true, RuleStatusInBody: true, RuleWorkOutlivedFeature: true, RuleSpecCLILiteralPT: true, RulePlanOlderThanSpec: true}
 
 // Advisory reports whether rule is a warning that does not fail the lint.
 func Advisory(rule string) bool { return advisoryRules[rule] }
@@ -151,7 +157,7 @@ func DropGauntletRules(findings []Finding, gauntletOn bool) []Finding {
 func Blocking(f Finding) bool { return !Advisory(f.Rule) && !f.Downgraded }
 
 // RuleOrder is the deterministic report order of the lint rules.
-var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleEpicUnplanned, RuleStaleCandidate, RuleStaleReady, RuleStaleWork, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect, RuleOpenClarification, RuleClarifyUnescapedPipe, RuleCapabilityOrphan, RuleSpecChangedAfterApproval, RuleResultMissingEvidence, RuleResultMissingGauntlet, RuleDuplicateLive, RuleStalePending, RuleSpecMissingBar, RulePreconditionMalformed, RuleErrataPending, RuleRunStalled, RuleAppendedAmendment, RuleStatusInBody, RuleWorkOutlivedFeature, RuleSpecCLILiteralPT, RuleHookCitesMissingRule}
+var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleEpicUnplanned, RuleStaleCandidate, RuleStaleReady, RuleStaleWork, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect, RuleOpenClarification, RuleClarifyUnescapedPipe, RuleCapabilityOrphan, RuleSpecChangedAfterApproval, RuleResultMissingEvidence, RuleResultMissingGauntlet, RuleDuplicateLive, RuleStalePending, RuleSpecMissingBar, RulePreconditionMalformed, RuleErrataPending, RuleRunStalled, RuleAppendedAmendment, RuleStatusInBody, RuleWorkOutlivedFeature, RuleSpecCLILiteralPT, RulePlanOlderThanSpec, RuleHookCitesMissingRule}
 
 var ruleRank = map[string]int{
 	RuleRefToSuperseded:    0,
@@ -190,7 +196,8 @@ var ruleRank = map[string]int{
 	RuleStatusInBody:             31,
 	RuleWorkOutlivedFeature:      32,
 	RuleSpecCLILiteralPT:         33,
-	RuleHookCitesMissingRule:     34,
+	RulePlanOlderThanSpec:        34,
+	RuleHookCitesMissingRule:     35,
 }
 
 // Finding is one lint problem detected in the backend.
@@ -422,6 +429,7 @@ func RunConfig(repoDir string, staleReadyDays, staleWorkHours int, ignore ...str
 		return nil, err
 	}
 	findings = append(findings, specChangedFindings(repoDir, features)...)
+	findings = append(findings, planOlderThanSpecFindings(repoDir, features, events)...)
 	findings = append(findings, resultEvidenceFindings(repoDir, features, events)...)
 	findings = append(findings, resultGauntletFindings(repoDir, features, events)...)
 	findings = append(findings, errataPendingFindings(repoDir, runbooks)...)

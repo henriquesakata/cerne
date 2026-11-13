@@ -78,7 +78,8 @@ func docRef(projDir, id, name string) string {
 // NextStep decides the next step of feature id by CALLING the checks the
 // transitions run (ApproveReadiness, CheckStartNotStale, checkActionDocs,
 // guardParallelStart, CheckCompleteResult, PrecheckStamp) — it copies none, so
-// it never sends the agent to a command a gate refuses. Read-only.
+// it never sends the agent to a command a gate refuses; the start's plan
+// warning (F-0377) rides on its step. Read-only.
 func NextStep(repoDir, projDir, id string) (Step, error) {
 	given := id
 	id = domain.CanonicalID(id)
@@ -147,6 +148,9 @@ func NextStep(repoDir, projDir, id string) (Step, error) {
 			return s, nil
 		}
 		s.Step, s.Command = "start the implementation", "cerne feature start "+id
+		if w := planBehindWarning(repoDir, f); w != "" {
+			s.Step += " — " + w
+		}
 	case domain.StateInDevelopment:
 		docs, err := FeatureDocSet(repoDir, id)
 		if err != nil {

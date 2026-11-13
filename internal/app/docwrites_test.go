@@ -106,6 +106,10 @@ func TestWritePointsRecordAuthor(t *testing.T) {
 			for k, v := range tc.extra {
 				want[k] = v
 			}
+			if tc.doc == "plan" { // F-0377: a real plan names the spec it was written against
+				spec, _ := os.ReadFile(FeatureDocPath(repoDir, tc.id, "spec.md"))
+				want["spec_digest"] = lint.SpecDigest(spec)
+			}
 			if len(ev.Payload) != len(want) {
 				t.Fatalf("payload = %v, want %v", ev.Payload, want)
 			}
