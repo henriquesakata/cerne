@@ -27,6 +27,14 @@ var (
 	continuedRe  = regexp.MustCompile(`^(?:[ \t]+\S|[-*+][ \t]|\d+[.)][ \t]|\()`)
 )
 
+// VerdictLine reads the last non-empty line of text as the judge's verdict
+// line: the winner "A" or "B", or "TIE" (doclang.JudgeVerdict). The one
+// recognizer `gauntlet record` and the cost classifier share.
+func VerdictLine(text string) (string, bool) {
+	text = strings.TrimRight(text, " \t\r\n")
+	return doclang.JudgeVerdict(strings.TrimSpace(text[strings.LastIndex(text, "\n")+1:]))
+}
+
 // AddRound records the next round in result's Gauntlet section from the
 // judge's reply: the winner on its last non-empty line against ours (A or B).
 // quote overrides the citation; without it the last fully quoted line before
@@ -38,7 +46,7 @@ func AddRound(result string, l doclang.Lang, verdictFile, ours, quote string) (o
 		return "", 0, "", ErrBadOurs
 	}
 	lines := strings.Split(strings.TrimRight(verdictFile, " \t\r\n"), "\n")
-	winner, ok := doclang.JudgeVerdict(strings.TrimSpace(lines[len(lines)-1]))
+	winner, ok := VerdictLine(verdictFile)
 	if !ok {
 		return "", 0, "", ErrNoVerdict
 	}

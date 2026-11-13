@@ -60,6 +60,7 @@ func newCostCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output")
 	cmd.Flags().BoolVar(&stamp, "stamp", false, "write the cost into the implemented feature's result (## Custo)")
 	cmd.AddCommand(newCostAttributeCmd())
+	cmd.AddCommand(newCostBackfillCmd())
 	return cmd
 }
 
@@ -290,4 +291,171 @@ func renderRollup(out io.Writer, r cost.Report) {
 	fmt.Fprintf(out, "  stamped: %s\n", list(r.Children.Stamped))
 	fmt.Fprintf(out, "  without anchor: %s\n", list(r.Children.Missing))
 	fmt.Fprintf(out, "Total (own + children): %s\n", fmtCounters(*r.Total))
+}
+
+func newCostBackfillCmd() *cobra.Command {
+	var dir, since string
+	var apply, asJSON bool
+	cmd := &cobra.Command{
+		Use:   "backfill-roles",
+		Short: "Recover the critic and judge cost of past Gauntlets from the transcripts (F-0396)",
+		Long: "Classifies every subagent of the project's ledger sessions by its transcript (a judge ends in the " +
+			"verdict line or was asked for it; a critic is a code-reviewer or read the diff fence) and counts it on " +
+			"the feature its parent session was bound to — never by what its prompt says. Without --apply it only " +
+			"reports: one line per feature with the agents and weighted tokens per role, then what was left out " +
+			"(unattributed, ambiguous, already with roles, no anchor, inconsistent). --apply records a retro bind " +
+			"with the role per subagent and completes the anchor: an implemented feature's '## Custo' in its " +
+			"result, a done feature's as an erratum carrying the same block. The anchor's totals never go down; " +
+			"critic plus judge above them skips the feature as inconsistent. A second run writes nothing, a run after a " +
+			"failure finishes what is missing, and --apply --json prints the applied list and the errors. Review the " +
+			"agent ids the report lists before applying; an id wrongly classified is undone with " +
+			"'cerne cost attribute <agent-id> <id> --role other' (a later bind wins). The code-reviewer rule also " +
+			"counts a non-Gauntlet review (a spec critic) as a critic. " +
+			"--since limits it to subagents that started on or after the date (YYYY-MM-DD).",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			var from time.Time
+			if since != "" {
+				var err error
+				if from, err = time.Parse("2006-01-02", since); err != nil {
+					return fmt.Errorf("--since takes a date as YYYY-MM-DD, got %q", since)
+				}
+			}
+			return runCostBackfill(cmd, dir, from, apply, asJSON)
+		},
+	}
+	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
+	_ = cmd.Flags().MarkHidden("dir")
+	cmd.Flags().StringVar(&since, "since", "", "only subagents that started on or after this date (YYYY-MM-DD)")
+	cmd.Flags().BoolVar(&apply, "apply", false, "record the roles (retro binds) and complete the anchors; without it, only report")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output")
+	return cmd
+}
+
+// appendBind is the ledger write of the backfill; a test swaps it to make a bind fail.
+var appendBind = cost.AppendBind
+
+// backfillOutcome is what `backfill-roles --apply --json` prints.
+type backfillOutcome struct {
+	Applied []backfillApplied `json:"applied"`
+	Errors  []string          `json:"errors"`
+}
+
+type backfillApplied struct {
+	ID    string `json:"id"`
+	Bound int    `json:"bound"`
+	Wrote string `json:"wrote,omitempty"` // "result" or "erratum"; empty when only binds were missing
+}
+
+func runCostBackfill(cmd *cobra.Command, dir string, since time.Time, apply, asJSON bool) error {
+	ctx, err := resolveProject(dir)
+	if err != nil {
+		return err
+	}
+	cacheDir := filepath.Dir(ctx.repoDir)
+	r, err := cost.BackfillRoles(cost.Inputs{CacheDir: cacheDir, RepoDir: ctx.repoDir, Roots: claudeRoots()}, since)
+	if err != nil {
+		return err
+	}
+	out := cmd.OutOrStdout()
+	if asJSON && !apply {
+		enc := json.NewEncoder(out)
+		enc.SetIndent("", "  ")
+		return enc.Encode(r)
+	}
+	text := out
+	if asJSON {
+		text = io.Discard
+	}
+	for _, f := range r.Features {
+		var critics, judges int
+		for _, a := range f.Agents {
+			if a.Role == "critic" {
+				critics++
+			} else {
+				judges++
+			}
+		}
+		fmt.Fprintf(text, "%s  %s  critic %s, %.0f tokens · judge %s, %.0f tokens\n", f.ID, f.State,
+			plural(critics, "agent"), cost.Weighted(f.Critic), plural(judges, "agent"), cost.Weighted(f.Judge))
+		for _, a := range f.Agents {
+			note := ""
+			if a.Bound {
+				note = " (already bound)"
+			}
+			fmt.Fprintf(text, "  %s/%s %s%s\n", a.Session, a.Agent, a.Role, note)
+		}
+	}
+	for _, a := range r.Ambiguous {
+		fmt.Fprintf(text, "ambiguous: %s/%s (%s) falls on %s\n", a.Session, a.Agent, a.Role, strings.Join(a.Entities, ", "))
+	}
+	for _, a := range r.Partial {
+		fmt.Fprintf(text, "partial: %s/%s (%s) counts only the messages a binding governs\n", a.Session, a.Agent, a.Role)
+	}
+	fmt.Fprintf(text, "Left out: unattributed %d · ambiguous %d · already with roles %d · no anchor %d · inconsistent %d · partial %d (counted)\n",
+		r.Unattributed, len(r.Ambiguous), len(r.HasRoles), len(r.NoAnchor), len(r.Inconsistent), len(r.Partial))
+	if len(r.Features) == 0 && !asJSON {
+		fmt.Fprintln(out, "nothing to backfill")
+		return nil
+	}
+	if !apply {
+		fmt.Fprintln(out, "Nothing written. Check the agent ids above, then run with --apply to record these roles and complete the anchors. A wrong role is undone by 'cerne cost attribute <agent-id> <id> --role other'.")
+		return nil
+	}
+	// Binds first (the ledger write is the cheap, repeatable one), then the
+	// document; a failure is collected and the next feature still runs. A
+	// re-run finds what is missing: unbound agents, or an anchor without roles.
+	outcome := backfillOutcome{Applied: []backfillApplied{}, Errors: []string{}}
+	for _, f := range r.Features {
+		ap := backfillApplied{ID: f.ID}
+		now := time.Now().UTC()
+		var failed error
+		for _, a := range f.Agents {
+			if a.Bound {
+				continue
+			}
+			if failed = appendBind(cacheDir, cost.Bind{Session: a.Session, Agent: a.Agent, Entity: f.ID, Harness: cost.HarnessClaudeCode, Role: a.Role, Retro: true, TS: now}); failed != nil {
+				break
+			}
+			ap.Bound++
+		}
+		if failed == nil && f.NeedsAnchor {
+			var body string
+			var asResult bool
+			if body, asResult, failed = cost.RolesEdit(ctx.repoDir, f.ID, f.State == domain.StateDone, f.Critic, f.Judge); failed == nil {
+				if asResult {
+					ap.Wrote = "result"
+					_, _, failed = app.AmendFeatureResult(ctx.repoDir, ctx.projDir, f.ID, body, "cost roles backfill (F-0396)")
+				} else {
+					ap.Wrote = "erratum"
+					_, failed = app.AddErrata(ctx.repoDir, ctx.projDir, f.ID, body, app.EventActor())
+				}
+			}
+		}
+		if failed != nil {
+			outcome.Errors = append(outcome.Errors, fmt.Sprintf("%s: %v", f.ID, failed))
+			fmt.Fprintf(text, "✗ %s: %v\n", f.ID, failed)
+			continue
+		}
+		outcome.Applied = append(outcome.Applied, ap)
+		fmt.Fprintf(text, "✓ %s: %s bound%s\n", f.ID, plural(ap.Bound, "agent"), map[bool]string{true: ", anchor completed in the " + ap.Wrote, false: ""}[ap.Wrote != ""])
+	}
+	if asJSON {
+		enc := json.NewEncoder(out)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(outcome); err != nil {
+			return err
+		}
+	}
+	if len(outcome.Errors) > 0 {
+		return fmt.Errorf("%d of %d feature(s) failed; re-run --apply to finish them", len(outcome.Errors), len(r.Features))
+	}
+	return nil
+}
+
+func plural(n int, noun string) string {
+	if n == 1 {
+		return fmt.Sprintf("1 %s", noun)
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
 }

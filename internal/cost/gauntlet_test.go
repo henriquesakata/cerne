@@ -4,8 +4,10 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // stampedFeature saves id in state with a spec at level (none when "") and a
@@ -90,5 +92,47 @@ func TestGauntletCostStatsNotEnough(t *testing.T) {
 	empty, err := GauntletCostStats(t.TempDir())
 	if err != nil || empty.Enough || empty.Features != 0 {
 		t.Errorf("empty backend = %+v, %v; want zero, not enough", empty, err)
+	}
+}
+
+// erratumCusto appends an erratum to id carrying a "## Custo" block of total
+// with roles.
+func erratumCusto(t *testing.T, repo, id string, total Counters, roles map[string]Counters, day int) {
+	t.Helper()
+	r := stampReport(id, total, 10)
+	r.ByRole = roles
+	blk, err := block(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AppendErrata(repo, id, "Custo por papel.\n\n"+blk, "tl", time.Date(2026, 11, day, 0, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestGauntletCostStatsReadsTheNewestAnchor (F-0396 crit. 7): a feature whose
+// result has no roles but whose errata carries a "## Custo" anchor with them
+// counts, and between several anchors the last one wins — so three features
+// backfilled by errata give the advice its number.
+func TestGauntletCostStatsReadsTheNewestAnchor(t *testing.T) {
+	repo := t.TempDir()
+	in := func(n int64) Counters { return cc(n, 0, 0, 0) }
+	for i, id := range []string{"F-0001", "F-0002", "F-0003"} {
+		stampedFeature(t, repo, id, domain.StateDone, "leve", in(1000), nil)
+		erratumCusto(t, repo, id, in(1000), map[string]Counters{"critic": in(int64(100 * (i + 1)))}, 12)
+	}
+	// F-0003: a later erratum corrects the number.
+	erratumCusto(t, repo, "F-0003", in(1000), map[string]Counters{"critic": in(500)}, 13)
+
+	got, err := GauntletCostStats(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := GauntletSample{Features: 3, Enough: true, MedianTokens: 200, MedianShare: 0.2}
+	if got.GauntletSample != want {
+		t.Errorf("overall = %+v, want %+v", got.GauntletSample, want)
+	}
+	if got.ByLevel["leve"] != want {
+		t.Errorf("leve = %+v, want %+v", got.ByLevel["leve"], want)
 	}
 }

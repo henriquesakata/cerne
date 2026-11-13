@@ -1,6 +1,7 @@
 package cost
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -38,6 +39,10 @@ func (c Counters) add(o Counters) Counters {
 
 func (c Counters) sub(o Counters) Counters {
 	return Counters{c.Input - o.Input, c.CacheCreation - o.CacheCreation, c.CacheRead - o.CacheRead, c.Output - o.Output}
+}
+
+func (c Counters) min(o Counters) Counters {
+	return Counters{min(c.Input, o.Input), min(c.CacheCreation, o.CacheCreation), min(c.CacheRead, o.CacheRead), min(c.Output, o.Output)}
 }
 
 func (c Counters) max(o Counters) Counters {
@@ -369,13 +374,39 @@ func (r *Report) unknownRole() {
 	}
 }
 
-// readAnchor reads the anchor of id's result in the backend clone.
+// readAnchor reads the newest anchor of id (newestCusto).
 func readAnchor(repoDir, id string) (share, bool) {
+	_, a, _, ok := newestCusto(repoDir, id)
+	return a, ok
+}
+
+// newestCusto is the newest "## Custo" section of id with a parseable anchor:
+// the last erratum entry carrying one, else the result's own (F-0396 — the
+// result of a done feature is immutable, so a backfill lands in its errata).
+// section is the block as written; inResult tells where it lives.
+func newestCusto(repoDir, id string) (section string, a share, inResult, ok bool) {
+	read := func(doc string) (string, share, bool) {
+		start, end, raw, found := custoSection(doc)
+		var a share
+		if !found || raw == "" || json.Unmarshal([]byte(raw), &a) != nil {
+			return "", share{}, false
+		}
+		return doc[start:end], a, true
+	}
+	if errata, err := store.LoadErrata(repoDir, id); err == nil {
+		items := store.ParseErrataItems(errata)
+		for i := len(items) - 1; i >= 0; i-- {
+			if section, a, ok := read(items[i].Text); ok {
+				return section, a, false, true
+			}
+		}
+	}
 	raw, err := os.ReadFile(filepath.Join(repoDir, "content", "features", id, "result.md"))
 	if err != nil {
-		return share{}, false
+		return "", share{}, false, false
 	}
-	return anchor(string(raw))
+	section, a, ok = read(string(raw))
+	return section, a, true, ok
 }
 
 // fuseSnapshots folds the harvested snapshots into the live shares, per
@@ -565,8 +596,9 @@ func (a attributor) entity(binds []Bind, spawn map[string]time.Time, m msg) (id,
 }
 
 // roleOf is m's role under its governing bind b (F-0384): the bind's role;
-// else, on a subagent, its agentType (dev → builder, code-reviewer → critic,
-// any other or none → other); else main.
+// else, on a subagent, its agentType (dev → builder), then what its transcript
+// says it was (classifyRole, F-0396: judge or critic), then code-reviewer →
+// critic, any other or none → other; else main.
 func roleOf(b Bind, m msg) string {
 	switch {
 	case b.Role != "":
@@ -575,6 +607,8 @@ func roleOf(b Bind, m msg) string {
 		return "main"
 	case m.kind == "dev":
 		return "builder"
+	case m.class != "":
+		return m.class
 	case m.kind == "code-reviewer":
 		return "critic"
 	}

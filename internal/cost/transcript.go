@@ -136,6 +136,7 @@ type msg struct {
 	sidechain bool
 	kind      string // the subagent's agentType (its .meta.json); "" when none
 	role      string // set by attribution (roleOf)
+	class     string // judge, critic or "": what the subagent's transcript says it was (classifyRole, F-0396)
 	c         Counters
 }
 
@@ -173,7 +174,13 @@ func readSession(sess string, files []tfile) ([]msg, error) {
 	byKey := map[string]int{}
 	for _, f := range files {
 		kind := agentType(f.abs)
+		var scan roleScan
+		subagent := strings.Contains(f.rel, "/subagents/")
+		first := len(msgs)
 		err := eachLine(f.abs, func(line []byte) {
+			if subagent {
+				scan.feed(line)
+			}
 			if !bytes.Contains(line, usageKey) {
 				return
 			}
@@ -209,6 +216,14 @@ func readSession(sess string, files []tfile) ([]msg, error) {
 		}
 		if err != nil {
 			return nil, fmt.Errorf("%w: %v", ErrTranscriptsUnreadable, err)
+		}
+		if subagent {
+			class := scan.classifyRole(kind)
+			for i := first; i < len(msgs); i++ {
+				if msgs[i].file == f.rel {
+					msgs[i].class = class
+				}
+			}
 		}
 	}
 	return msgs, nil
