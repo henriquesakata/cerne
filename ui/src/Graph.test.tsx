@@ -14,7 +14,12 @@ vi.mock('@xyflow/react', () => ({
     onInit,
     onNodeClick,
   }: {
-    nodes: Array<{ id: string; position: { x: number; y: number }; data: { label: ReactNode } }>
+    nodes: Array<{
+      id: string
+      position: { x: number; y: number }
+      data: { label: ReactNode }
+      style?: { opacity?: number }
+    }>
     onInit?: (inst: unknown) => void
     onNodeClick?: (e: unknown, n: unknown) => void
   }) => {
@@ -27,6 +32,7 @@ vi.mock('@xyflow/react', () => ({
             data-node-id={n.id}
             data-x={n.position.x}
             data-y={n.position.y}
+            data-opacity={n.style?.opacity}
             onClick={(e) => onNodeClick?.(e, n)}
           >
             {n.data.label}
@@ -283,5 +289,25 @@ describe('Graph — falha de carga (F-0300)', () => {
       </I18nProvider>,
     )
     expect(await screen.findByText('Failed to load the graph: offline')).toBeInTheDocument()
+  })
+})
+
+// F-0385: uma decisão retirada é histórico — o nó fica no grafo, esmaecido
+// como o de uma substituída, nunca some.
+describe('Graph — decisão retirada (F-0385)', () => {
+  it('mantém o nó da decisão retirada, esmaecido como o histórico', async () => {
+    vi.mocked(fetchGraph).mockResolvedValueOnce({
+      nodes: [
+        { id: 'D-0001', kind: 'decision', title: 'Decisão retirada', state: 'retired' },
+        { id: 'D-0002', kind: 'decision', title: 'Decisão substituída', state: 'superseded' },
+        { id: 'D-0003', kind: 'decision', title: 'Decisão ativa', state: 'active' },
+      ],
+      edges: [],
+    })
+    render(<Graph />)
+    expect(await screen.findByText('Decisão retirada')).toBeInTheDocument()
+    const opacity = (id: string) => document.querySelector(`[data-node-id="${id}"]`)!.getAttribute('data-opacity')
+    expect(opacity('D-0001')).toBe(opacity('D-0002'))
+    expect(opacity('D-0001')).not.toBe(opacity('D-0003'))
   })
 })

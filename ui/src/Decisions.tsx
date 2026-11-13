@@ -17,7 +17,7 @@ import {
 import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
 import { useT } from './i18n'
 
-const ORDER = ['active', 'superseded']
+const ORDER = ['active', 'superseded', 'retired']
 
 // toggleIn returns a handler that adds/removes a value from a Set state,
 // always producing a fresh Set so React sees the change.
@@ -126,7 +126,8 @@ export default function Decisions() {
       {decisions.length > 0 && shown.length === 0 && (
         <p className="muted">{t.decisions.noneMatch}</p>
       )}
-      {ORDER.map((state) => {
+      {/* States outside ORDER render after it: a decision never disappears. */}
+      {[...ORDER, ...[...byState.keys()].filter((s) => !ORDER.includes(s))].map((state) => {
         const list = byState.get(state) ?? []
         if (list.length === 0) return null
         return (
