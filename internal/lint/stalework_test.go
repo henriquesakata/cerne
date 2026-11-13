@@ -55,7 +55,7 @@ func TestRunConfigFlagsStaleWork(t *testing.T) {
 		t.Fatalf("SaveWork: %v", err)
 	}
 
-	got, err := RunConfig(dir, 14, 8)
+	got, err := RunConfig(dir, 14, 8, 0)
 	if err != nil {
 		t.Fatalf("RunConfig: %v", err)
 	}

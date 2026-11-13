@@ -132,7 +132,7 @@ func runNext(cmd *cobra.Command, dir string, asJSON bool) error {
 	if err != nil {
 		return err
 	}
-	findings, err := app.ProjectLint(ctx.repoDir, ctx.cfg)
+	findings, err := app.ProjectLint(ctx.repoDir, ctx.projDir, ctx.cfg)
 	if err != nil {
 		return err
 	}

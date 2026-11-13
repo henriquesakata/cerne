@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -385,5 +386,73 @@ func TestDecisionDraftUnknownDecision(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "D-9999") {
 		t.Fatalf("error %q does not name the missing decision", err)
+	}
+}
+
+// TestDecisionKeep pins F-0385 criterion 4 through the CLI: keep stamps the
+// review on an active decision and says lint counts from it.
+func TestDecisionKeep(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	id := newDecision(t, projDir, "Usar Postgres", 1)
+
+	out, err := execCerne(t, "decision", "keep", id, "--dir", projDir)
+	if err != nil {
+		t.Fatalf("decision keep: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, id+" reviewed") || !strings.Contains(out, "stale-decision") {
+		t.Fatalf("decision keep output = %q, want the review and the rule it resets", out)
+	}
+	if d, err := store.LoadDecision(repoDir, id); err != nil || d.ReviewedAt == nil || d.State != domain.DecisionActive {
+		t.Fatalf("decision = %+v (%v), want active with ReviewedAt", d, err)
+	}
+}
+
+// TestDecisionRetire pins F-0385 criteria 5 and 6 through the CLI: no
+// --reason is refused with the sentinel and origin does not move; with one the
+// decision goes to retired, out of the default list and out of .docs/ on the
+// next pull.
+func TestDecisionRetire(t *testing.T) {
+	projDir, origin, repoDir := setupProject(t)
+	id := newDecision(t, projDir, "Usar fila", 1)
+	if _, err := execCerne(t, "pull", "--dir", projDir); err != nil {
+		t.Fatalf("pull: %v", err)
+	}
+	docs, _ := filepath.Glob(filepath.Join(projDir, ".docs", "current", "decisions", id+"-*.md"))
+	if len(docs) != 1 {
+		t.Fatalf("active decision not materialized: %v", docs)
+	}
+	before, err := gitback.HeadSHA(origin)
+	if err != nil {
+		t.Fatalf("HeadSHA: %v", err)
+	}
+
+	if _, err := execCerne(t, "decision", "retire", id, "--dir", projDir); !errors.Is(err, domain.ErrRetireReasonRequired) {
+		t.Fatalf("retire without --reason err = %v, want ErrRetireReasonRequired", err)
+	}
+	if after, _ := gitback.HeadSHA(origin); after != before {
+		t.Fatalf("origin HEAD moved %s → %s on a refused retire", before, after)
+	}
+
+	out, err := execCerne(t, "decision", "retire", id, "--reason", "the queue is gone", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("decision retire: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, id+" retired: active → retired") {
+		t.Fatalf("decision retire output = %q", out)
+	}
+	if d, _ := store.LoadDecision(repoDir, id); d.State != domain.DecisionRetired || d.Reason != "the queue is gone" || d.SupersededBy != "" {
+		t.Fatalf("decision = %+v, want retired with the reason and no successor", d)
+	}
+	if list, _ := execCerne(t, "decision", "list", "--dir", projDir); strings.Contains(list, id) {
+		t.Fatalf("default decision list still shows the retired %s:\n%s", id, list)
+	}
+	if list, _ := execCerne(t, "decision", "list", "--all", "--dir", projDir); !strings.Contains(list, id+"  [retired]") {
+		t.Fatalf("decision list --all lacks the retired %s:\n%s", id, list)
+	}
+	if _, err := execCerne(t, "pull", "--dir", projDir); err != nil {
+		t.Fatalf("pull after retire: %v", err)
+	}
+	if docs, _ := filepath.Glob(filepath.Join(projDir, ".docs", "current", "decisions", id+"-*.md")); len(docs) != 0 {
+		t.Fatalf("retired decision still in .docs/: %v", docs)
 	}
 }

@@ -54,6 +54,8 @@ func editTOML(raw []byte, table, key string, value any) ([]byte, error) {
 		lit = strconv.FormatBool(v)
 	case string:
 		lit = strconv.Quote(v)
+	case int64:
+		lit = strconv.FormatInt(v, 10)
 	default:
 		return nil, fmt.Errorf("editTOML: unsupported value type %T", value)
 	}

@@ -702,8 +702,8 @@ const ptBR = {
     none: 'Nenhuma decisão registrada.',
     noneMatch: 'Nenhuma decisão corresponde ao filtro.',
     back: '← Decisões',
-    groupLabels: { active: 'Ativas', superseded: 'Substituídas' },
-    stateLabels: { active: 'Ativa', superseded: 'Substituída' },
+    groupLabels: { active: 'Ativas', superseded: 'Substituídas', retired: 'Retiradas' },
+    stateLabels: { active: 'Ativa', superseded: 'Substituída', retired: 'Retirada' },
     supersededBy: (id: string) => `Substituída por ${id}`,
   },
   references: {
@@ -966,6 +966,7 @@ const ptBR = {
       'epic-open-children': 'Épico concluído com filhos abertos',
       'stale-candidate': 'Candidata parada (sem spec)',
       'stale-note': 'Nota obsoleta (trabalho informado encerrado)',
+      'stale-decision': 'Decisão parada (sinal de abandono)',
     },
     error: (e: string) => `Erro ao rodar o lint: ${e}`,
     title: 'Lint',
@@ -1099,6 +1100,9 @@ const ptBR = {
       'CLI output language': 'Idioma da saída da CLI',
       "Set to en when the project's CLI prints English: lint then warns when a spec criterion quotes a CLI message that reads Portuguese. Empty turns the check off.":
         "Defina como en quando a CLI do projeto imprime inglês: o lint passa a avisar quando um critério da spec cita uma mensagem da CLI que está em português. Vazio desliga a verificação.",
+      'Stale decision window': 'Prazo de decisão parada',
+      'Days an active decision may go unreviewed, cited only by rejected or superseded features and by nothing live, before lint flags it as stale-decision. In .cernerc, [lint] stale_decision_days wins over a top-level stale_decision_days.':
+        'Dias que uma decisão ativa pode ficar sem revisão, citada só por features rejeitadas ou substituídas e por nada vivo, antes de o lint acusá-la como stale-decision. No .cernerc, [lint] stale_decision_days vence um stale_decision_days de topo.',
       'Mindmap': 'Mapa mental',
       'Shows the Mindmap tab in the UI. Off hides it.': 'Mostra a aba Mapa mental na UI. Desligado a esconde.',
       'Wiki': 'Wiki',
@@ -1781,8 +1785,8 @@ const en: Messages = {
     none: 'No decision recorded.',
     noneMatch: 'No decision matches the filter.',
     back: '← Decisions',
-    groupLabels: { active: 'Active', superseded: 'Superseded' },
-    stateLabels: { active: 'Active', superseded: 'Superseded' },
+    groupLabels: { active: 'Active', superseded: 'Superseded', retired: 'Retired' },
+    stateLabels: { active: 'Active', superseded: 'Superseded', retired: 'Retired' },
     supersededBy: (id: string) => `Superseded by ${id}`,
   },
   references: {
@@ -2044,6 +2048,7 @@ const en: Messages = {
       'epic-open-children': 'Epic completed with open children',
       'stale-candidate': 'Stalled candidate (no spec)',
       'stale-note': 'Stale note (informed work closed)',
+      'stale-decision': 'Stale decision (sign of abandonment)',
     },
     error: (e: string) => `Failed to run lint: ${e}`,
     title: 'Lint',

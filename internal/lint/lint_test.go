@@ -670,7 +670,7 @@ func TestRunConfigFlagsStaleReady(t *testing.T) {
 		t.Fatalf("SaveFeature: %v", err)
 	}
 
-	got, err := RunConfig(dir, 14, 0)
+	got, err := RunConfig(dir, 14, 0, 0)
 	if err != nil {
 		t.Fatalf("RunConfig: %v", err)
 	}

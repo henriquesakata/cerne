@@ -25,7 +25,7 @@ func countingLintRunner(t *testing.T, gate chan struct{}) *atomic.Int32 {
 	t.Helper()
 	var calls atomic.Int32
 	prev := lintRunner
-	lintRunner = func(repoDir string, staleReadyDays, staleWorkHours int, ignore ...string) ([]lint.Finding, error) {
+	lintRunner = func(repoDir string, staleReadyDays, staleWorkHours, staleDecisionDays int, ignore ...string) ([]lint.Finding, error) {
 		calls.Add(1)
 		if gate != nil {
 			<-gate
@@ -164,7 +164,7 @@ func TestLintRevalidatorFailureRetriggers(t *testing.T) {
 	resetLintCache()
 	var calls atomic.Int32
 	prev := lintRunner
-	lintRunner = func(repoDir string, a, b int, ignore ...string) ([]lint.Finding, error) {
+	lintRunner = func(repoDir string, a, b, c int, ignore ...string) ([]lint.Finding, error) {
 		n := calls.Add(1)
 		if n == 2 { // the first background run fails
 			return nil, errTest
@@ -249,7 +249,7 @@ func TestUIMultiWiresLintBroadcast(t *testing.T) {
 // back on, the same cached wiki debt blocks again.
 func TestLintEndpointMarksAdvisory(t *testing.T) {
 	prev := lintRunner
-	lintRunner = func(string, int, int, ...string) ([]lint.Finding, error) {
+	lintRunner = func(string, int, int, int, ...string) ([]lint.Finding, error) {
 		return []lint.Finding{
 			{Rule: lint.RuleBrokenLink, Entity: "F-0001", Detail: "link"},
 			{Rule: lint.RuleWikiSourceUnknown, File: "content/wiki/project.md", Detail: "unknown source: F-0999"},
@@ -292,5 +292,23 @@ func TestLintEndpointMarksAdvisory(t *testing.T) {
 	want[lint.RuleWikiSourceUnknown] = false
 	if got := advisory(); !maps.Equal(got, want) {
 		t.Fatalf("wiki back on (cached findings): advisory = %v, want %v", got, want)
+	}
+}
+
+// TestLintPassesStaleDecisionDays (F-0385): GET /api/lint runs the pass
+// with the project's stale_decision_days.
+func TestLintPassesStaleDecisionDays(t *testing.T) {
+	h, _, _ := settingsBackend(t, "stale_decision_days = 10\n[lint]\nstale_decision_days = 30\n")
+	var got atomic.Int32
+	prev := lintRunner
+	lintRunner = func(repoDir string, staleReadyDays, staleWorkHours, staleDecisionDays int, ignore ...string) ([]lint.Finding, error) {
+		got.Store(int32(staleDecisionDays))
+		return nil, nil
+	}
+	t.Cleanup(func() { lintRunner = prev; resetLintCache() })
+	resetLintCache()
+	getLint(t, h)
+	if got.Load() != 30 {
+		t.Fatalf("lint ran with staleDecisionDays = %d, want 30", got.Load())
 	}
 }

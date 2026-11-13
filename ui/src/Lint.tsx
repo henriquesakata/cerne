@@ -14,6 +14,7 @@ const RULE_ORDER = [
   'epic-open-children',
   'stale-candidate',
   'stale-note',
+  'stale-decision',
 ]
 
 export default function Lint() {

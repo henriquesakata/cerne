@@ -134,7 +134,7 @@ func collectBrief(repoDir string, all bool) (briefData, error) {
 // in it is not part of the current map. Mirrors the ask retrieval filter.
 func isHistoryState(s string) bool {
 	switch s {
-	case "superseded", "rejected", "obsolete":
+	case "superseded", "rejected", "obsolete", "retired":
 		return true
 	}
 	return false

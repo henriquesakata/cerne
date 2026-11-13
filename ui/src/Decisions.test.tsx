@@ -98,3 +98,24 @@ describe('DecisionDetail — falha de carga (F-0300)', () => {
     expect(await screen.findByText('Corpo da decisão.')).toBeInTheDocument()
   })
 })
+
+// F-0385: a decisão retirada aparece no seu próprio grupo, ao lado das
+// substituídas; um estado que a tela não conhece também aparece, nunca some.
+describe('Decisions — decisões retiradas (F-0385)', () => {
+  it('lista a retirada no grupo Retiradas e não esconde estado desconhecido', async () => {
+    vi.mocked(fetchState).mockResolvedValueOnce({
+      ...state,
+      decisions: [
+        decision,
+        { ...decision, id: 'D-0002', title: 'Decisão substituída', state: 'superseded', superseded_by: 'D-0001' },
+        { ...decision, id: 'D-0003', title: 'Decisão retirada', state: 'retired', reason: 'deixou de valer' },
+        { ...decision, id: 'D-0004', title: 'Decisão em estado novo', state: 'paused' },
+      ],
+    })
+    render(<Decisions />)
+    expect(await screen.findByText('Decisão retirada')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /^Retiradas/ })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /^Substituídas/ })).toBeInTheDocument()
+    expect(screen.getByText('Decisão em estado novo')).toBeInTheDocument()
+  })
+})

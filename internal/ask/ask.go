@@ -28,7 +28,7 @@ type Snippet struct {
 	Historical bool `json:"historical,omitempty"`
 }
 
-var terminalStates = map[string]bool{"superseded": true, "rejected": true, "obsolete": true}
+var terminalStates = map[string]bool{"superseded": true, "rejected": true, "obsolete": true, "retired": true}
 
 // historical reports whether a (kind, state) pair is a historical record: every
 // terminal state, plus implemented-feature prose — a spec/plan/result is a

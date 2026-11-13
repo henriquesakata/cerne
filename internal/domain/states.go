@@ -13,7 +13,7 @@ func ValidStates(kind string) ([]string, bool) {
 			string(StateImplemented), string(StateDone), string(StateRejected), string(StateSuperseded),
 		}, true
 	case "decision":
-		return []string{string(DecisionActive), string(DecisionSuperseded)}, true
+		return []string{string(DecisionActive), string(DecisionSuperseded), string(DecisionRetired)}, true
 	case "reference":
 		return []string{string(ReferenceCurrent), string(ReferenceObsolete)}, true
 	case "runbook":

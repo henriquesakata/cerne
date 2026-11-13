@@ -110,7 +110,7 @@ const StalePendingAfter = 30 * 24 * time.Hour
 
 // advisoryRules are the warning-severity rules: printed like any other, but
 // they never fail 'cerne lint' on their own.
-var advisoryRules = map[string]bool{RuleStalePending: true, RulePreconditionMalformed: true, RuleErrataPending: true, RuleRunStalled: true, RuleAppendedAmendment: true, RuleStatusInBody: true, RuleWorkOutlivedFeature: true, RuleSpecCLILiteralPT: true, RulePlanOlderThanSpec: true}
+var advisoryRules = map[string]bool{RuleStalePending: true, RulePreconditionMalformed: true, RuleErrataPending: true, RuleRunStalled: true, RuleAppendedAmendment: true, RuleStatusInBody: true, RuleWorkOutlivedFeature: true, RuleSpecCLILiteralPT: true, RulePlanOlderThanSpec: true, RuleStaleDecision: true}
 
 // Advisory reports whether rule is a warning that does not fail the lint.
 func Advisory(rule string) bool { return advisoryRules[rule] }
@@ -157,47 +157,46 @@ func DropGauntletRules(findings []Finding, gauntletOn bool) []Finding {
 func Blocking(f Finding) bool { return !Advisory(f.Rule) && !f.Downgraded }
 
 // RuleOrder is the deterministic report order of the lint rules.
-var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleEpicUnplanned, RuleStaleCandidate, RuleStaleReady, RuleStaleWork, RuleStaleNote, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect, RuleOpenClarification, RuleClarifyUnescapedPipe, RuleCapabilityOrphan, RuleSpecChangedAfterApproval, RuleResultMissingEvidence, RuleResultMissingGauntlet, RuleDuplicateLive, RuleStalePending, RuleSpecMissingBar, RulePreconditionMalformed, RuleErrataPending, RuleRunStalled, RuleAppendedAmendment, RuleStatusInBody, RuleWorkOutlivedFeature, RuleSpecCLILiteralPT, RulePlanOlderThanSpec, RuleHookCitesMissingRule}
+var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleEpicUnplanned, RuleStaleCandidate, RuleStaleReady, RuleStaleWork, RuleStaleNote, RuleStaleDecision, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect, RuleOpenClarification, RuleClarifyUnescapedPipe, RuleCapabilityOrphan, RuleSpecChangedAfterApproval, RuleResultMissingEvidence, RuleResultMissingGauntlet, RuleDuplicateLive, RuleStalePending, RuleSpecMissingBar, RulePreconditionMalformed, RuleErrataPending, RuleRunStalled, RuleAppendedAmendment, RuleStatusInBody, RuleWorkOutlivedFeature, RuleSpecCLILiteralPT, RulePlanOlderThanSpec, RuleHookCitesMissingRule}
 
 var ruleRank = map[string]int{
-	RuleRefToSuperseded:    0,
-	RuleBrokenLink:         1,
-	RuleOrphanContent:      2,
-	RuleMissingGateDoc:     3,
-	RuleWikiSourceUnknown:  4,
-	RuleParentNotFound:     5,
-	RuleParentTerminal:     6,
-	RuleEpicOpenChildren:   7,
-	RuleEpicBehindChildren: 8,
-	RuleEpicUnplanned:      9,
-	RuleStaleCandidate:     10,
-	RuleStaleReady:         11,
-	RuleStaleWork:          12,
-	RuleStaleNote:          13,
-	RuleIncompleteDoc:      14,
-	RuleUntaggedLive:       15,
-	RuleUnregisteredSource: 16,
-	RuleDriftSuspect:       17,
-	RuleOpenClarification:  18,
-
-	RuleClarifyUnescapedPipe: 19,
-	RuleCapabilityOrphan:     20,
-
-	RuleSpecChangedAfterApproval: 21,
-	RuleResultMissingEvidence:    22,
-	RuleResultMissingGauntlet:    23,
-	RuleDuplicateLive:            24,
-	RuleStalePending:             25,
-	RuleSpecMissingBar:           26,
-	RulePreconditionMalformed:    27,
-	RuleErrataPending:            28,
-	RuleRunStalled:               29,
-	RuleAppendedAmendment:        30,
-	RuleStatusInBody:             31,
-	RuleWorkOutlivedFeature:      32,
-	RuleSpecCLILiteralPT:         33,
-	RulePlanOlderThanSpec:        34,
-	RuleHookCitesMissingRule:     35,
+	RuleRefToSuperseded:          0,
+	RuleBrokenLink:               1,
+	RuleOrphanContent:            2,
+	RuleMissingGateDoc:           3,
+	RuleWikiSourceUnknown:        4,
+	RuleParentNotFound:           5,
+	RuleParentTerminal:           6,
+	RuleEpicOpenChildren:         7,
+	RuleEpicBehindChildren:       8,
+	RuleEpicUnplanned:            9,
+	RuleStaleCandidate:           10,
+	RuleStaleReady:               11,
+	RuleStaleWork:                12,
+	RuleStaleNote:                13,
+	RuleStaleDecision:            14,
+	RuleIncompleteDoc:            15,
+	RuleUntaggedLive:             16,
+	RuleUnregisteredSource:       17,
+	RuleDriftSuspect:             18,
+	RuleOpenClarification:        19,
+	RuleClarifyUnescapedPipe:     20,
+	RuleCapabilityOrphan:         21,
+	RuleSpecChangedAfterApproval: 22,
+	RuleResultMissingEvidence:    23,
+	RuleResultMissingGauntlet:    24,
+	RuleDuplicateLive:            25,
+	RuleStalePending:             26,
+	RuleSpecMissingBar:           27,
+	RulePreconditionMalformed:    28,
+	RuleErrataPending:            29,
+	RuleRunStalled:               30,
+	RuleAppendedAmendment:        31,
+	RuleStatusInBody:             32,
+	RuleWorkOutlivedFeature:      33,
+	RuleSpecCLILiteralPT:         34,
+	RulePlanOlderThanSpec:        35,
+	RuleHookCitesMissingRule:     36,
 }
 
 // Finding is one lint problem detected in the backend.
@@ -266,15 +265,16 @@ type scannedDoc struct {
 // applies) — pass staleReadyDays via RunConfig for callers that need a
 // non-default window, or use Run for the common case with the default.
 func Run(repoDir string, ignore ...string) ([]Finding, error) {
-	return RunConfig(repoDir, 0, 0, ignore...)
+	return RunConfig(repoDir, 0, 0, 0, ignore...)
 }
 
-// RunConfig is Run with explicit staleReadyDays (0 = default 14 days) and
-// staleWorkHours (0 = default 8 hours, F-0130) windows. Kept separate from Run
+// RunConfig is Run with explicit staleReadyDays (0 = default 14 days),
+// staleWorkHours (0 = default 8 hours, F-0130) and staleDecisionDays (0 =
+// default 180 days, F-0385) windows. Kept separate from Run
 // so every existing call site (CLI, server) keeps compiling unchanged;
 // callers that read stale_ready_days/stale_work_hours from .cernerc pass them
 // here instead.
-func RunConfig(repoDir string, staleReadyDays, staleWorkHours int, ignore ...string) ([]Finding, error) {
+func RunConfig(repoDir string, staleReadyDays, staleWorkHours, staleDecisionDays int, ignore ...string) ([]Finding, error) {
 	features, err := store.LoadAllFeatures(repoDir)
 	if err != nil {
 		return nil, err
@@ -391,6 +391,12 @@ func RunConfig(repoDir string, staleReadyDays, staleWorkHours int, ignore ...str
 	findings = append(findings, stale...)
 
 	findings = append(findings, staleNoteFindings(features, decisions, notes)...)
+
+	staleDecisions, err := staleDecisionFindings(repoDir, features, decisions, notes, runbooks, staleDecisionDays, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	findings = append(findings, staleDecisions...)
 
 	findings = append(findings, staleReadyFindings(features, staleReadyDays, time.Now())...)
 
@@ -758,7 +764,7 @@ func buildNeedles(repoDir string, features []store.Feature, decisions []store.De
 		needles = append(needles, n)
 	}
 	for _, d := range decisions {
-		if d.State != domain.DecisionSuperseded {
+		if d.State != domain.DecisionSuperseded && d.State != domain.DecisionRetired {
 			continue
 		}
 		n := needle{id: d.ID, title: d.Title, state: string(d.State), use: d.SupersededBy, rxID: wordRx(d.ID)}

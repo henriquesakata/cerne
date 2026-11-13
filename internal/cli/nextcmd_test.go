@@ -13,6 +13,7 @@ import (
 	"github.com/henriquesakata/cerne/internal/cost"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gitback"
+	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -378,5 +379,100 @@ func TestNextLedgerUnreadable(t *testing.T) {
 	out, err := execCerne(t, "next", "F-0010", "--dir", projDir)
 	if err != nil || !strings.Contains(out, "cost check failed") || strings.Contains(out, "waiting on a human") {
 		t.Errorf("next F-0010 = %q, %v", out, err)
+	}
+}
+
+// TestNextListsStaleDecision pins F-0385 criterion 11: a stale-decision
+// finding is a debt in 'cerne next', like the other advisory rules.
+func TestNextListsStaleDecision(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	old := time.Now().UTC().Add(-200 * 24 * time.Hour)
+	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0001", Title: "Rejeitada", State: domain.StateRejected, CreatedAt: old, UpdatedAt: old}); err != nil {
+		t.Fatalf("SaveFeature: %v", err)
+	}
+	if err := store.SaveDecision(repoDir, store.Decision{ID: "D-0001", Title: "Antiga", State: domain.DecisionActive, Facets: []string{"code"}, CreatedAt: old, UpdatedAt: old}); err != nil {
+		t.Fatalf("SaveDecision: %v", err)
+	}
+	spec := filepath.Join(repoDir, "content", "features", "F-0001", "spec.md")
+	if err := os.MkdirAll(filepath.Dir(spec), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(spec, []byte("---\ncerne_id: F-0001\n---\n\n# Entregue\n\nSegue a D-0001.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "seed stale decision"); err != nil {
+		t.Fatalf("CommitAndPush: %v", err)
+	}
+
+	out, err := execCerne(t, "next", "--json", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("next --json: %v\n%s", err, out)
+	}
+	var q struct {
+		Debts []struct {
+			Rule, Entity, Detail string
+		} `json:"debts"`
+	}
+	if err := json.Unmarshal([]byte(out), &q); err != nil {
+		t.Fatalf("decode: %v\n%s", err, out)
+	}
+	for _, d := range q.Debts {
+		if d.Rule == "stale-decision" && d.Entity == "D-0001" && strings.Contains(d.Detail, "cerne decision keep D-0001") {
+			return
+		}
+	}
+	t.Fatalf("next debts lack stale-decision for D-0001: %+v", q.Debts)
+}
+
+// TestNextHonorsStaleDecisionDays (F-0385): a .cernerc that sets
+// stale_decision_days = 30 flags a decision abandoned 31 days ago, which the
+// 180-day default leaves alone.
+func TestNextHonorsStaleDecisionDays(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	at := time.Now().UTC().Add(-31 * 24 * time.Hour)
+	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0001", Title: "Rejeitada", State: domain.StateRejected, CreatedAt: at, UpdatedAt: at}); err != nil {
+		t.Fatalf("SaveFeature: %v", err)
+	}
+	if err := store.SaveDecision(repoDir, store.Decision{ID: "D-0001", Title: "Recente", State: domain.DecisionActive, Facets: []string{"code"}, CreatedAt: at, UpdatedAt: at}); err != nil {
+		t.Fatalf("SaveDecision: %v", err)
+	}
+	spec := filepath.Join(repoDir, "content", "features", "F-0001", "spec.md")
+	if err := os.MkdirAll(filepath.Dir(spec), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(spec, []byte("---\ncerne_id: F-0001\n---\n\n# Rejeitada\n\nSegue a D-0001.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "seed abandoned decision"); err != nil {
+		t.Fatalf("CommitAndPush: %v", err)
+	}
+	flagged := func() bool {
+		t.Helper()
+		out, err := execCerne(t, "next", "--json", "--dir", projDir)
+		if err != nil {
+			t.Fatalf("next --json: %v\n%s", err, out)
+		}
+		return strings.Contains(out, `"rule": "stale-decision"`)
+	}
+	if flagged() {
+		t.Fatal("the 180-day default flagged a 31-day-old decision")
+	}
+	rc := filepath.Join(projDir, ".cernerc")
+	data, err := os.ReadFile(rc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rc, append([]byte("stale_decision_days = 30\n"), data...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !flagged() {
+		t.Fatal("stale_decision_days = 30 did not flag a 31-day-old decision")
+	}
+	// The registry form wins over the top-level key (criterion 8).
+	if err := project.SetSetting(projDir, "lint.stale_decision_days", project.ScopeProject, "400"); err != nil {
+		t.Fatalf("SetSetting: %v", err)
+	}
+	if flagged() {
+		t.Fatal("[lint] stale_decision_days = 400 did not win over the top-level 30")
 	}
 }

@@ -53,6 +53,9 @@ type Setting struct {
 	Description string   `json:"description"`
 	// Enum limits a string key to these values (F-0353); empty = any string.
 	Enum []string `json:"enum,omitempty"`
+	// TopLevel is a top-level .cernerc key read as this setting when the
+	// project file has no [table] key (F-0385).
+	TopLevel string `json:"-"`
 }
 
 // ResolvedSetting is a Setting with its effective value and the scope it came
@@ -107,6 +110,11 @@ var settingsRegistry = []Setting{
 		ID: "lint.cli_output_language", Title: "CLI output language", Type: "string", Default: "", Enum: []string{"en"},
 		Scopes:      []string{ScopeProject},
 		Description: "Set to en when the project's CLI prints English: lint then warns when a spec criterion quotes a CLI message that reads Portuguese. Empty turns the check off.",
+	},
+	{
+		ID: "lint.stale_decision_days", Title: "Stale decision window", Type: "int", Default: int64(180),
+		Scopes: []string{ScopeProject}, TopLevel: "stale_decision_days",
+		Description: "Days an active decision may go unreviewed, cited only by rejected or superseded features and by nothing live, before lint flags it as stale-decision. In .cernerc, [lint] stale_decision_days wins over a top-level stale_decision_days.",
 	},
 	{
 		ID: "mindmap.enabled", Title: "Mindmap", Type: "bool", Default: true,
@@ -192,6 +200,10 @@ func ResolveSettings(projDir string) SettingsView {
 		for _, scope := range scopes {
 			tbl, _ := layers[scope][table].(map[string]any)
 			v, ok := tbl[key]
+			if !ok && scope == ScopeProject && s.TopLevel != "" {
+				// The [table] key wins; the top-level one is read only without it.
+				v, ok = layers[scope][s.TopLevel]
+			}
 			if !ok {
 				continue
 			}
@@ -229,6 +241,8 @@ func hasSettingType(s Setting, v any) bool {
 		return s.Type == "bool"
 	case string:
 		return s.Type == "string" && (len(s.Enum) == 0 || slices.Contains(s.Enum, v.(string)))
+	case int64:
+		return s.Type == "int" && v.(int64) > 0
 	}
 	return false
 }
@@ -237,6 +251,9 @@ func hasSettingType(s Setting, v any) bool {
 func settingWant(s Setting) string {
 	if len(s.Enum) > 0 {
 		return "one of: " + strings.Join(s.Enum, ", ")
+	}
+	if s.Type == "int" {
+		return "a positive integer"
 	}
 	return s.Type
 }
@@ -254,6 +271,21 @@ func CLIOutputLanguage(projDir string) string {
 	return ""
 }
 
+// StaleDecisionDays is lint.stale_decision_days for the project at (or above)
+// projDir (F-0385): [lint] stale_decision_days, else the top-level
+// stale_decision_days of .cernerc, else 180 — one resolution for lint, next,
+// push and the ui.
+func StaleDecisionDays(projDir string) int {
+	for _, s := range ResolveSettings(projDir).Settings {
+		if s.ID == "lint.stale_decision_days" {
+			if n, ok := s.Value.(int64); ok {
+				return int(n)
+			}
+		}
+	}
+	return 180
+}
+
 // maxSettingString bounds a string setting (a display name, F-0325).
 const maxSettingString = 64
 
@@ -264,11 +296,18 @@ func SetSetting(projDir, id, scope, raw string) error {
 		return err
 	}
 	var v any = raw
-	if declared(id).Type == "bool" {
+	switch declared(id).Type {
+	case "bool":
 		if raw != "true" && raw != "false" {
 			return fmt.Errorf("%s: %w %q: want true or false", id, ErrInvalidSettingValue, raw)
 		}
 		v = raw == "true"
+	case "int":
+		n, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			return fmt.Errorf("%s: %w %q: want a positive integer", id, ErrInvalidSettingValue, raw)
+		}
+		v = n
 	}
 	return SetSettingValue(projDir, id, scope, v)
 }
@@ -282,6 +321,10 @@ func SetSettingValue(projDir, id, scope string, v any) error {
 		return err
 	}
 	s := declared(id)
+	// A JSON number decodes as float64: a whole one is an int key's value.
+	if f, ok := v.(float64); ok && s.Type == "int" && f == float64(int64(f)) {
+		v = int64(f)
+	}
 	if !hasSettingType(s, v) {
 		return fmt.Errorf("%s: %w %v: want %s", id, ErrInvalidSettingValue, v, settingWant(s))
 	}

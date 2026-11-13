@@ -70,3 +70,18 @@ describe('Lint — achados consultivos (F-0316)', () => {
     expect(screen.getByText('link quebrado para F-9999').closest('li')).not.toHaveTextContent('aviso')
   })
 })
+
+// F-0385: a regra stale-decision tem rótulo próprio no painel de débitos.
+describe('Lint — decisão parada (F-0385)', () => {
+  it('rotula o achado stale-decision e o mostra como aviso', async () => {
+    vi.mocked(fetchLintStatus).mockResolvedValueOnce({
+      findings: [
+        { rule: 'stale-decision', entity: 'D-0006', detail: 'every component (cli, ui) is also on the newer active D-0007', advisory: true },
+      ],
+      stale: false,
+    })
+    render(<Lint />)
+    expect(await screen.findByText(/Decisão parada/)).toBeInTheDocument()
+    expect(screen.getByText(/every component \(cli, ui\)/)).toBeInTheDocument()
+  })
+})

@@ -47,7 +47,7 @@ const EDGE_DASH: Record<GraphEdgeType, string | undefined> = {
   informs: '6 3',
   links: '2 4',
 }
-const TERMINAL = new Set(['superseded', 'rejected', 'obsolete'])
+const TERMINAL = new Set(['superseded', 'rejected', 'obsolete', 'retired'])
 const ROW_H = NODE_H + 28
 
 type Pos = { x: number; y: number }

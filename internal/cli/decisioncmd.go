@@ -34,6 +34,8 @@ func newDecisionCmd() *cobra.Command {
 	cmd.AddCommand(verbs.MarkLocal(newDecisionDraftCmd(&dir)))
 	cmd.AddCommand(verbs.MarkChat(newDecisionRetagCmd(&dir)))
 	cmd.AddCommand(newDecisionSubstituirCmd(&dir))
+	cmd.AddCommand(verbs.MarkChat(newDecisionKeepCmd(&dir)))
+	cmd.AddCommand(newDecisionRetireCmd(&dir))
 	cmd.AddCommand(verbs.MarkChat(newErrataCmd(&dir)))
 	return cmd
 }
@@ -45,14 +47,14 @@ func newDecisionListCmd(dir *string) *cobra.Command {
 		Use:   "list",
 		Short: "List decisions (ADRs) — active by default; --all includes history",
 		Long: "Lists decisions read straight from the backend (store), not from the '.docs/' projection. By default shows only " +
-			"the active ones; --all includes the superseded (history). Each line carries id, state, title and markers " +
+			"the active ones; --all includes the superseded and retired (history). Each line carries id, state, title and markers " +
 			"(facet/component, successor). Filter by --facet and/or --component (logical AND). --json for structured output.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDecisionList(cmd, *dir, all, asJSON, facet, component)
 		},
 	}
-	cmd.Flags().BoolVar(&all, "all", false, "include superseded decisions (history)")
+	cmd.Flags().BoolVar(&all, "all", false, "include superseded and retired decisions (history)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output")
 	cmd.Flags().StringVar(&facet, "facet", "", "filter by facet (e.g. auth)")
 	cmd.Flags().StringVar(&component, "component", "", "filter by component (e.g. keycloak)")
@@ -241,6 +243,61 @@ func runDecisionSubstituir(cmd *cobra.Command, dir, id, by, reason string) error
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s: %s → %s\n", out.ID, out.From, out.To)
 	return nil
+}
+
+func newDecisionKeepCmd(dir *string) *cobra.Command {
+	return &cobra.Command{
+		Use:   "keep <id>",
+		Short: "Record that an active decision was reviewed and still holds",
+		Long: "Stamps the review date (and the actor, on the decision.kept event) of an active decision: the human " +
+			"verdict that it still holds. 'cerne lint' (stale-decision) counts from the review, so the decision is " +
+			"flagged again only on a new signal — N more days with no live citation, or a newer active decision " +
+			"carrying all its components. To take it out of the current state, use 'cerne decision retire' or 'substituir'.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, err := resolveProject(*dir)
+			if err != nil {
+				return err
+			}
+			d, err := app.KeepDecision(ctx.repoDir, ctx.projDir, args[0])
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%s reviewed — 'cerne lint' (stale-decision) counts from now until a new signal.\n", d.ID)
+			return nil
+		},
+	}
+}
+
+func newDecisionRetireCmd(dir *string) *cobra.Command {
+	var reason string
+	cmd := &cobra.Command{
+		Use:   "retire <id>",
+		Short: "Retire a decision that no longer applies (no successor; --reason required)",
+		Long: "Moves an active decision to retired WITHOUT a successor — for a decision that stopped applying and " +
+			"has nothing to point --by at. It leaves the current state (.docs/) on the next 'cerne pull' and stays " +
+			"searchable history; the reason goes on the decision.retired event. To replace it with a newer decision, " +
+			"use 'cerne decision substituir --by'.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Refuse before resolveProject: a bad invocation never touches origin.
+			if strings.TrimSpace(reason) == "" {
+				return fmt.Errorf("--reason is required: %w", domain.ErrRetireReasonRequired)
+			}
+			ctx, err := resolveProject(*dir)
+			if err != nil {
+				return err
+			}
+			out, err := app.RetireDecision(ctx.repoDir, ctx.projDir, args[0], reason)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%s retired: %s → %s\n", out.ID, out.From, out.To)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&reason, "reason", "", "why the decision no longer applies (required)")
+	return verbs.MarkLifecycle(cmd)
 }
 
 func newDecisionDraftCmd(dir *string) *cobra.Command {
