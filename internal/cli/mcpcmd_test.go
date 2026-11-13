@@ -139,6 +139,7 @@ var allCalls = []struct {
 	{"show", map[string]any{"id": "F-0001"}, []string{"show", "F-0001", "--json"}},
 	{"show", map[string]any{"id": "N-0001"}, []string{"show", "N-0001", "--json"}},
 	{"ask", map[string]any{"question": "qual banco usar?"}, []string{"ask", "qual banco usar?", "--json"}},
+	{"guide", map[string]any{"query": "settings"}, []string{"guide", "settings", "--json"}},
 }
 
 // TestMCP_ToolMatchesJSONCommand: criterion 2 — every tool answers exactly the
@@ -277,8 +278,8 @@ func TestMCP_NoWriteTools(t *testing.T) {
 		}
 	}
 	sort.Strings(names)
-	if strings.Join(names, ",") != "ask,brief,next,search,show,status" {
-		t.Fatalf("tools = %v, want exactly the six reading tools", names)
+	if strings.Join(names, ",") != "ask,brief,guide,next,search,show,status" {
+		t.Fatalf("tools = %v, want exactly the seven reading tools", names)
 	}
 	for _, c := range allCalls {
 		callTool(t, cs, c.tool, c.args)

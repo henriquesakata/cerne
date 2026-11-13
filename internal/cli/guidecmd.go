@@ -66,6 +66,11 @@ func newGuideCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output")
 	cmd.Flags().IntVar(&limit, "limit", 3, "maximum number of sections")
+	// cerne mcp appends --dir <project> to every command it runs; the guide
+	// reads only the binary, so the flag is accepted and ignored.
+	var dir string
+	cmd.Flags().StringVar(&dir, "dir", "", "project directory (ignored: the guide reads only the binary)")
+	_ = cmd.Flags().MarkHidden("dir")
 	return cmd
 }
 
