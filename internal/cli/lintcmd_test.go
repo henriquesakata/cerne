@@ -212,7 +212,7 @@ func TestLintStagedPartialDocsNoFalsePositive(t *testing.T) {
 		t.Fatalf("pull: %v\n%s", err, out)
 	}
 
-	out, err := execCerne(t, "lint", "--staged", "--dir", projDir)
+	out, err := execCerne(t, "lint", "--staged", "--all", "--dir", projDir)
 	if err != nil {
 		t.Fatalf("lint --staged on partial .docs/ should pass, got:\n%s", out)
 	}

@@ -19,7 +19,7 @@ import (
 func newLintCmd() *cobra.Command {
 	var dir string
 	var fixTasks bool
-	var staged bool
+	var staged, all bool
 	var feature, parent string
 	var asJSON bool
 	cmd := &cobra.Command{
@@ -33,14 +33,18 @@ func newLintCmd() *cobra.Command {
 					return fmt.Errorf("--%s needs a feature id", name)
 				}
 			}
+			if all && !staged {
+				return fmt.Errorf("--all needs --staged")
+			}
 			scoped := cmd.Flags().Changed("feature") || cmd.Flags().Changed("parent")
-			return runLint(cmd, dir, fixTasks, staged, scoped, feature, parent)
+			return runLint(cmd, dir, fixTasks, staged, all, scoped, feature, parent)
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
 	cmd.Flags().BoolVar(&fixTasks, "fix-tasks", false, "print a maintenance task list after the findings")
 	cmd.Flags().BoolVar(&staged, "staged", false, "validate local .docs/ edits before push, without touching the backend")
+	cmd.Flags().BoolVar(&all, "all", false, "with --staged: list and fail on every finding, not only those from your edits")
 	cmd.Flags().StringVar(&feature, "feature", "", "only the findings about this feature")
 	cmd.Flags().StringVar(&parent, "parent", "", "only the findings about this epic and its descendants")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print the findings as a JSON array")
@@ -48,8 +52,8 @@ func newLintCmd() *cobra.Command {
 	return cmd
 }
 
-func runLint(cmd *cobra.Command, dir string, fixTasks, staged, scoped bool, feature, parent string) error {
-	repoDir, cfg, cleanup, driftCtx, err := lintRoot(dir, staged)
+func runLint(cmd *cobra.Command, dir string, fixTasks, staged, all, scoped bool, feature, parent string) error {
+	repoDir, cfg, cleanup, driftCtx, edits, err := lintRoot(dir, staged)
 	if err != nil {
 		return err
 	}
@@ -104,6 +108,21 @@ func runLint(cmd *cobra.Command, dir string, fixTasks, staged, scoped bool, feat
 		label = l
 		findings, outside = lint.Scope(findings, ids)
 	}
+	// Staged without --all (and without an explicit scope): only the edit's
+	// findings fail; the rest is a count (F-0382).
+	editOnly := staged && !all && !scoped
+	var otherCount int
+	if editOnly {
+		if len(edits.files) == 0 {
+			if asJSON, _ := cmd.Flags().GetBool("json"); !asJSON {
+				fmt.Fprintln(out, "cerne: no local edits to lint")
+				return nil
+			}
+		}
+		var rest []lint.Finding
+		findings, rest = classifyStaged(findings, edits)
+		otherCount = len(rest)
+	}
 	if asJSON, _ := cmd.Flags().GetBool("json"); asJSON {
 		rows := make([]nextFinding, 0, len(findings))
 		for _, f := range findings {
@@ -111,10 +130,24 @@ func runLint(cmd *cobra.Command, dir string, fixTasks, staged, scoped bool, feat
 		}
 		enc := json.NewEncoder(out)
 		enc.SetIndent("", "  ")
-		if err := enc.Encode(rows); err != nil {
+		var payload any = rows
+		if editOnly {
+			payload = struct {
+				Findings   []nextFinding `json:"findings"`
+				OtherCount int           `json:"other_count"`
+			}{rows, otherCount}
+		}
+		if err := enc.Encode(payload); err != nil {
 			return err
 		}
 		return lintFailure(findings)
+	}
+	if editOnly {
+		defer func() {
+			if otherCount > 0 {
+				fmt.Fprintf(out, "cerne: %d other findings outside your edits (run cerne lint for the list)\n", otherCount)
+			}
+		}()
 	}
 	if len(findings) == 0 {
 		if !scoped {
@@ -200,20 +233,20 @@ func lintScope(repoDir, feature, parent string) (ids map[string]bool, label stri
 // The returned driftCtx is non-nil only in the default mode: it carries the
 // resolved project so runLint can compute drift-suspect findings (F-0113). In
 // staged mode it is nil — staged validates local .docs/ edits, not a code diff.
-func lintRoot(dir string, staged bool) (repoDir string, cfg project.Config, cleanup func(), driftCtx *projCtx, err error) {
+func lintRoot(dir string, staged bool) (repoDir string, cfg project.Config, cleanup func(), driftCtx *projCtx, edits stagedEdits, err error) {
 	if staged {
 		ctx, err := resolvePaths(dir)
 		if err != nil {
-			return "", project.Config{}, nil, nil, err
+			return "", project.Config{}, nil, nil, stagedEdits{}, err
 		}
-		root, cleanup, err := stagedLintRoot(ctx.repoDir, ctx.projDir)
-		return root, ctx.cfg, cleanup, nil, err
+		root, edits, cleanup, err := stagedLintRoot(ctx.repoDir, ctx.projDir)
+		return root, ctx.cfg, cleanup, nil, edits, err
 	}
 	ctx, err := resolveProject(dir)
 	if err != nil {
-		return "", project.Config{}, nil, nil, err
+		return "", project.Config{}, nil, nil, stagedEdits{}, err
 	}
-	return ctx.repoDir, ctx.cfg, nil, &ctx, nil
+	return ctx.repoDir, ctx.cfg, nil, &ctx, stagedEdits{}, nil
 }
 
 // printFindings renders the findings grouped by rule, in lint.RuleOrder.
