@@ -1,5 +1,3 @@
-# Agent activity registry and handoffs
-
 ## Agent activity registry (work-in-progress across agents/machines)
 
 Not every task is a feature. Investigating an error, reviewing an MR, doing an ops chore — these are transient activity, not a lifecycle to gate, yet another agent (this machine, another, or a teammate) has no way to see they're already in progress without it. `cerne work` closes that gap with a lightweight registry in the same shared backend:

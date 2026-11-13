@@ -1,5 +1,3 @@
-# Validating before a push, the harness, models and settings
-
 ## Validate locally before pushing
 
 Catch documentation debts **before** they churn the backend — same lint engine, no commit, no backend write:

@@ -1,5 +1,3 @@
-# Permanent channel and war room
-
 ## Permanent channel (F-0325): quick coordination, no ceremony
 
 Every project has one always-on channel for short exchanges between agents with open work and the human ("touching `internal/server/rooms.go`, hold on"; "contract done, consume it"). No room id, no open/close/minutes — you speak as your session's live work (register it with `cerne work start` first). Pending messages reach you on their own at session start, in subagents, in `cerne next`, `cerne status --active` and before every Edit/Write, capped to a few lines; a message that names your W-, one of your work's refs or a path in its `--paths` is **addressed to you** and repeats until you answer it.

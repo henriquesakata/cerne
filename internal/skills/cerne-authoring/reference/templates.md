@@ -1,5 +1,3 @@
-# Document templates cerne scaffolds
-
 ## Spec structure (the template cerne scaffolds)
 
 cerne scaffolds a new feature's `spec.md` from a canonical template (the same one `cerne spec draft` asks the model to fill). Fill each section; the lifecycle gates treat the empty scaffold as a stub until you do. When the design benefits from a sequence diagram, `cerne spec diagram F-NNNN [--name <name>]` AI-drafts a Mermaid diagram artifact for it (delegation prompt, or generated directly in byo-key/claude-cli `[llm]` mode). Sections, **in order**:

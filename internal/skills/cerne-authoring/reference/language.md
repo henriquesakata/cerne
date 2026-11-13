@@ -1,5 +1,3 @@
-# Documentation language
-
 ## Documentation language (F-0359)
 
 A project documents in **one** language, recorded in its backend (`project.json` `docs_language`): `en` or `pt-BR`. `cerne init` writes `en` for a new backend; `cerne init --docs-language pt-BR` picks Portuguese; a backend without the field is `pt-BR`. A second `init` that joins an existing backend inherits its language. The scaffolds cerne writes (spec, plan, result, decision, runbook) and the `draft` prompts follow it. **Write every document in the project's language**: check the headings of the stub you are filling.

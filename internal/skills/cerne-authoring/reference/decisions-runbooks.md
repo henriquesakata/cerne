@@ -1,5 +1,3 @@
-# Decisions and runbooks
-
 ## Decisions (ADRs)
 
 Same model as a feature, with the **same two authoring flows as notes**:

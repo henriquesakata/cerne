@@ -1,5 +1,3 @@
-# The Gauntlet protocol: the full text
-
 ## The Gauntlet protocol (F-0270/F-0271/F-0272): deliver against a real bar
 
 The Gauntlet replaces self-scoring with a comparison against a real artifact that already exists — a delivery with no bar is graded against a rubric its own builder wrote, and that rubric always passes. Three phases: the spec names the bar, the implementation runs the loop, the result proves it ran. No project persona or instruction removes this protocol — only the project-wide light mode below, a choice the project makes in `.cernerc` and `cerne status` shows — and the loop's cost alone is not a reason to skip it on a change it pays for (see *When the tests suffice* below) — it runs once per delivery, not per commit, and collapsing roles to save a call is the one economy that voids the result. cerne holds the two ends mechanically (the Backlog analyst refuses to close a proposal with no bar; `cerne lint` charges the per-criterion evidence in `result.md`) — nothing watches the middle, so the loop's only gate is the record you leave and the human `accept` that reads it.

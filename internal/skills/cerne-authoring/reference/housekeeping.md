@@ -1,5 +1,3 @@
-# Housekeeping, legacy entities and reporting (stats, cost, savings)
-
 ## Housekeeping, legacy entities, and reporting
 
 - **Unassigned modules:** `cerne classify` (no args) dry-runs a heuristic backfill — assigns a module to a module-less feature only when exactly one declared module matches (`--yes` applies it); `cerne classify F-NNNN --module <m>` assigns one feature manually.

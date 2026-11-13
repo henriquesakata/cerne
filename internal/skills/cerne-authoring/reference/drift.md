@@ -1,5 +1,3 @@
-# Drift
-
 ## Drift: code moved, docs stood still
 
 An `implemented` feature's docs are frozen history — but the code under them keeps changing. **Drift detection** (F-0113/F-0116) maps the project repo's git diff since the last docs sync to the implemented features whose scope it touches, deterministically (no LLM). It is **opt-in**: the project's `.cernerc` must map scopes to path globs — `[module_paths]` (module → globs, for moduled projects) and/or `[component_paths]` (component tag → globs, the axis that works in a moduleless project). No config, no baseline → the rule is silent, never noisy.

@@ -1,5 +1,3 @@
-# Pendings and ideas
-
 ## Pendings (delivery debts, F-0322)
 
 A pending (`P-NNNN`) is a **known debt of a concrete delivery** — "case Y of F-0231 was left out" — with an address, a lifecycle and a place where it reappears. It is not an idea: the origin is mandatory, which is what keeps it apart from speculative backlog.

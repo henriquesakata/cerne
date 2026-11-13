@@ -1,5 +1,3 @@
-# Notes and conventions
-
 ## Notes (durable team knowledge)
 
 A **note** is durable, team-relevant project knowledge an agent acquired across sessions — a gotcha, an invariant, a "why X and not Y", a tacit convention, a trap. It is **not** a feature (no work to gate), a decision (no formal choice), or a reference (no external URL): it is internal knowledge that today leaks into a per-user, per-machine scratchpad instead of reaching the guardian.

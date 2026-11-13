@@ -1,5 +1,3 @@
-# Feature loop and syncing: the full text
-
 ## Feature loop
 
 cerne mints the canonical `F-NNNN` id and gates each transition on a real document.

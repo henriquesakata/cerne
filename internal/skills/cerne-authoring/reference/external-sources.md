@@ -1,5 +1,3 @@
-# External sources: the full text
-
 ## External sources (provenance)
 
 The moment an external source (article, RFC, vendor/API doc, spec) **shapes** a feature, decision, or fix, register it — as you use it, **without waiting to be asked** — instead of leaving a bare URL in prose. Register **only the sources that actually informed the outcome**: a dead-end you opened and discarded is not a reference. If a URL is worth citing in the doc it is worth a `cerne reference`; if it is not, don't leave it as bare prose either.

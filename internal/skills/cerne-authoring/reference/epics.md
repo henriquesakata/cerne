@@ -1,5 +1,3 @@
-# Epics
-
 ## Epics (large work, decomposed)
 
 An **epic is just a feature that has children** — the role is inferred from the parent link, there is no separate entity, so the epic gets the full feature lifecycle/spec/plan/result for free. Use one when a body of work is too large for a single spec and naturally splits into sub-features.

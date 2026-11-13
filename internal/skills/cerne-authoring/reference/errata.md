@@ -1,5 +1,3 @@
-# Errata: the full text
-
 ## Errata (correcting a concluded, immutable entity)
 
 A concluded entity — a `done`/`rejected`/`superseded` feature, a `superseded`/`obsolete` decision, runbook or note — is **history: its body is immutable**. When such a record carries a stale reference or needs a clarification, do **not** rewrite it and do **not** reopen it. Append an **errata** instead.
