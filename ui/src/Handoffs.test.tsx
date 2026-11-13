@@ -153,6 +153,20 @@ describe('Passagens — linha (F-0386 crit. 2)', () => {
     expect(row).toHaveTextContent('2026-11-12 22:15 UTC')
     expect(within(row).getByText('W-0012')).toBeInTheDocument()
   })
+
+  // Crítica do F-0386: a lista das fechadas é ordenada pelo fechamento, então
+  // a idade que a linha mostra é a do fechamento, não a da criação.
+  it('uma fechada mostra a idade do fechamento (taken_at, senão updated_at)', async () => {
+    render(<Handoffs hash="#/handoffs?f=closed" />)
+    await screen.findByText('Refatorar Y')
+    const [taken, superseded, cancelled] = screen.getAllByRole('listitem')
+    expect(taken).toHaveTextContent('2026-11-12 22:15 UTC')
+    expect(taken).not.toHaveTextContent('2026-11-12 18:00 UTC')
+    expect(superseded).toHaveTextContent('há 3 horas (2026-11-12 20:30 UTC)')
+    expect(superseded).not.toHaveTextContent('2026-11-12 10:00 UTC')
+    expect(cancelled).toHaveTextContent('há 14 horas (2026-11-12 09:00 UTC)')
+    expect(cancelled).not.toHaveTextContent('2026-11-11 10:00 UTC')
+  })
 })
 
 describe('Passagens — vazia e somente leitura (F-0386 crit. 7, 8)', () => {

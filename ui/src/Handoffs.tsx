@@ -105,6 +105,8 @@ export default function Handoffs({ hash }: { hash: string }) {
 
 function HandoffRow({ h }: { h: Handoff }) {
   const { t } = useT()
+  // A closed row ages from its closing — the moment the list is ordered by.
+  const closedAt = h.state === 'pending' ? undefined : (h.taken_at ?? h.updated_at)
   return (
     <li>
       <div className="entity-row work-row">
@@ -119,15 +121,21 @@ function HandoffRow({ h }: { h: Handoff }) {
           {h.from_work_title}
         </span>
         <span className="work-actor">
-          {t.handoffs.passedBy(h.actor)} · <When iso={h.created_at} />
+          {t.handoffs.passedBy(h.actor)}
+          {!closedAt && (
+            <>
+              {' · '}
+              <When iso={h.created_at} />
+            </>
+          )}
         </span>
-        {h.state === 'taken' && (
+        {h.state === 'taken' ? (
           <span className="work-actor">
             {t.handoffs.takenBy(h.taken_by ?? '')}
-            {h.taken_at && (
+            {closedAt && (
               <>
                 {' · '}
-                <When iso={h.taken_at} />
+                <When iso={closedAt} />
               </>
             )}
             {' → '}
@@ -135,6 +143,12 @@ function HandoffRow({ h }: { h: Handoff }) {
               {h.taken_work}
             </a>
           </span>
+        ) : (
+          closedAt && (
+            <span className="work-actor">
+              <When iso={closedAt} />
+            </span>
+          )
         )}
       </div>
     </li>
