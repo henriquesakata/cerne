@@ -81,3 +81,15 @@ func TestCerneAuthoringDocumentsGauntletFieldRules(t *testing.T) {
 	contains("crit2", "a new judge every round")
 	contains("crit2", "defeat produces corrections")
 }
+
+// TestCerneAuthoringDocumentsPlanOlderThanSpec pins F-0377: the skill tells
+// the author that a rewritten spec wants the plan pushed again, and names the
+// lint rule that charges it.
+func TestCerneAuthoringDocumentsPlanOlderThanSpec(t *testing.T) {
+	c := All()[0].Content
+	for _, sub := range []string{"plan-older-than-spec", "push the plan again"} {
+		if !strings.Contains(c, sub) {
+			t.Errorf("skill missing %q", sub)
+		}
+	}
+}
