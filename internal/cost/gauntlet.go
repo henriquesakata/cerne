@@ -57,11 +57,11 @@ func GauntletCostStats(repoDir string) (GauntletStats, error) {
 		a, ok := readAnchor(repoDir, f.ID)
 		critic, hasCritic := a.ByRole["critic"]
 		judge, hasJudge := a.ByRole["judge"]
-		total := weighted(a.Counters)
+		total := Weighted(a.Counters)
 		if !ok || (!hasCritic && !hasJudge) || total == 0 {
 			continue
 		}
-		p := point{weighted(critic.add(judge)), 0}
+		p := point{Weighted(critic.add(judge)), 0}
 		p.share = p.tokens / total
 		all = append(all, p)
 		spec, err := os.ReadFile(filepath.Join(repoDir, "content", "features", f.ID, "spec.md"))
@@ -90,6 +90,7 @@ func GauntletCostStats(repoDir string) (GauntletStats, error) {
 	return out, nil
 }
 
-func weighted(c Counters) float64 {
+// Weighted is c in input-token units, by the hub weights (stats.Weighted).
+func Weighted(c Counters) float64 {
 	return stats.Weighted([4]int64{c.Input, c.CacheCreation, c.CacheRead, c.Output})
 }

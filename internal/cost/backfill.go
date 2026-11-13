@@ -1,9 +1,16 @@
 package cost
 
 import (
+	"encoding/json"
+	"errors"
+	"fmt"
 	"maps"
+	"os"
+	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/henriquesakata/cerne/internal/domain"
@@ -212,3 +219,59 @@ func mergeRoles(a share, critic, judge Counters) (map[string]Counters, bool) {
 	}
 	return roles, true
 }
+
+var (
+	// ErrBackfillNoAnchor: the feature has no "## Custo" anchor to complete.
+	ErrBackfillNoAnchor = errors.New("the feature has no cost anchor to complete")
+	// ErrBackfillInconsistent: critic plus judge would sum above the anchor's total.
+	ErrBackfillInconsistent = errors.New("critic and judge tokens exceed the anchor's total")
+)
+
+// RolesEdit adds the critic and judge counters to id's newest cost anchor
+// (F-0396), keeping its counters. For an implemented feature whose anchor is
+// in the result it returns the whole new result (asResult); otherwise the text
+// of an erratum carrying the same "## Custo" block with the roles — the
+// result of a done feature stays as it is.
+func RolesEdit(repoDir, id string, done bool, critic, judge Counters) (text string, asResult bool, err error) {
+	section, a, inResult, ok := newestCusto(repoDir, id)
+	if !ok {
+		return "", false, fmt.Errorf("%w: %s", ErrBackfillNoAnchor, id)
+	}
+	roles, ok := mergeRoles(a, critic, judge)
+	if !ok {
+		return "", false, fmt.Errorf("%w: %s", ErrBackfillInconsistent, id)
+	}
+	a.ByRole = roles
+	anchorJSON, err := json.Marshal(a)
+	if err != nil {
+		return "", false, err
+	}
+	if m := anchorRe.FindAllStringIndex(section, -1); len(m) > 0 {
+		last := m[len(m)-1]
+		section = section[:last[0]] + "<!-- cerne:cost v1 " + string(anchorJSON) + " -->" + section[last[1]:]
+	}
+	var parts []string
+	for _, role := range slices.Sorted(maps.Keys(roles)) {
+		parts = append(parts, role+" ("+countersLine(roles[role])+")")
+	}
+	line := "Por papel: " + strings.Join(parts, "; ") + ".\n"
+	if rolesLineRe.MatchString(section) {
+		section = rolesLineRe.ReplaceAllLiteralString(section, line)
+	} else if i := modelLineRe.FindStringIndex(section); i != nil {
+		section = section[:i[1]] + line + section[i[1]:]
+	}
+	if inResult && !done {
+		raw, err := os.ReadFile(filepath.Join(repoDir, "content", "features", id, "result.md"))
+		if err != nil {
+			return "", false, err
+		}
+		start, end, _, _ := custoSection(string(raw))
+		return string(raw[:start]) + section + string(raw[end:]), true, nil
+	}
+	return "Custo por papel recuperado das transcrições (`cerne cost backfill-roles`, F-0396): o anchor vigente, com o by_role.\n\n" + section, false, nil
+}
+
+var (
+	rolesLineRe = regexp.MustCompile(`(?m)^Por papel: .*\n`)
+	modelLineRe = regexp.MustCompile(`(?m)^Por modelo: .*\n`)
+)

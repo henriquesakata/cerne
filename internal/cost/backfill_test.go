@@ -1,10 +1,12 @@
 package cost
 
 import (
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -132,4 +134,51 @@ func snapshotTree(t *testing.T, in Inputs) map[string]string {
 		})
 	}
 	return out
+}
+
+// TestRolesEdit (F-0396 crit. 4, 5): the edit keeps the anchor's counters and
+// adds the roles — in the result's block for an implemented feature, as an
+// erratum text with the same block for a done one; tokens an older anchor
+// counted as "other" move to the new roles; roles above the total refuse.
+func TestRolesEdit(t *testing.T) {
+	in := fixture(t)
+	repo := in.RepoDir
+	total := cc(1000, 0, 0, 1000)
+	anchored(t, in, "F-0001", domain.StateImplemented, total, nil)
+	anchored(t, in, "F-0002", domain.StateDone, total, map[string]Counters{"main": cc(100, 0, 0, 100), "other": cc(60, 0, 0, 60)})
+	critic, judge := cc(10, 0, 0, 10), cc(20, 0, 0, 20)
+
+	text, asResult, err := RolesEdit(repo, "F-0001", false, critic, judge)
+	if err != nil || !asResult {
+		t.Fatalf("implemented: %v, asResult %v", err, asResult)
+	}
+	a, ok := anchor(text)
+	if !ok || a.Counters != total || a.ByRole["critic"] != critic || a.ByRole["judge"] != judge || len(a.ByRole) != 2 {
+		t.Errorf("anchor = %+v (ok %v), want total kept and critic+judge", a, ok)
+	}
+	if !strings.Contains(text, "Por papel: critic (input 10 · cache_creation 0 · cache_read 0 · output 10); judge (input 20 · cache_creation 0 · cache_read 0 · output 20).\n") ||
+		!strings.Contains(text, "## Gauntlet") || strings.Count(text, "## Custo") != 1 {
+		t.Errorf("result lost its shape:\n%s", text)
+	}
+	if again, _, err := RolesEdit(repo, "F-0001", false, critic, judge); err != nil || again != text {
+		t.Errorf("same edit twice differs (err %v)", err)
+	}
+
+	text, asResult, err = RolesEdit(repo, "F-0002", true, critic, judge)
+	if err != nil || asResult {
+		t.Fatalf("done: %v, asResult %v", err, asResult)
+	}
+	a, ok = anchor(text)
+	want := map[string]Counters{"main": cc(100, 0, 0, 100), "other": cc(30, 0, 0, 30), "critic": critic, "judge": judge}
+	if !ok || a.Counters != total || !reflect.DeepEqual(a.ByRole, want) {
+		t.Errorf("erratum anchor = %+v (ok %v), want other reduced by the moved tokens: %+v", a.ByRole, ok, want)
+	}
+
+	if _, _, err := RolesEdit(repo, "F-0001", false, cc(900, 0, 0, 0), cc(200, 0, 0, 0)); !errors.Is(err, ErrBackfillInconsistent) {
+		t.Errorf("above the total: %v, want ErrBackfillInconsistent", err)
+	}
+	saveFeature(t, repo, "F-0009", domain.StateImplemented)
+	if _, _, err := RolesEdit(repo, "F-0009", false, critic, judge); !errors.Is(err, ErrBackfillNoAnchor) {
+		t.Errorf("no anchor: %v, want ErrBackfillNoAnchor", err)
+	}
 }
