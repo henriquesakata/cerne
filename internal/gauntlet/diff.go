@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"strings"
 )
 
@@ -91,7 +92,7 @@ func (e noFeatureCommitsError) Error() string {
 func (e noFeatureCommitsError) Is(target error) bool { return target == ErrNoFeatureCommits }
 
 // Commit is a feature commit as listed on stderr: short sha and subject.
-type Commit struct{ Sha, Subject string }
+type Commit struct{ Sha, Subject, Other string }
 
 // citesID reports whether msg holds id as a whole word: before it the start or
 // a char that is no letter, digit or hyphen; after it the end or a non-digit.
@@ -116,36 +117,58 @@ func isIDChar(c byte) bool {
 	return c == '-' || c == '/' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
 }
 
+var featureIDRe = regexp.MustCompile(`F-\d+`)
+
+// otherFeatureID returns the first feature id in subject, as a whole word,
+// that is not id; "" when there is none.
+func otherFeatureID(subject, id string) string {
+	for _, loc := range featureIDRe.FindAllStringIndex(subject, -1) {
+		if loc[0] > 0 && isIDChar(subject[loc[0]-1]) {
+			continue
+		}
+		if o := subject[loc[0]:loc[1]]; o != id {
+			return o
+		}
+	}
+	return ""
+}
+
 // FeatureCommits returns, oldest first, the diff of every non-merge commit
 // reachable from the base whose message cites id as a whole word, each opened
 // by `commit <short sha> <subject>`, minus the default and extra excludes; the
-// commits themselves; and the base used. None → ErrNoFeatureCommits.
-func FeatureCommits(dir, base, pinBranch, id string, excludes []string) (diff string, commits []Commit, usedBase string, err error) {
+// commits themselves; the commits left out because their subject cites another
+// feature while only the body cites id (Other holds that id); and the base used. None → ErrNoFeatureCommits.
+func FeatureCommits(dir, base, pinBranch, id string, excludes []string) (diff string, commits, skipped []Commit, usedBase string, err error) {
 	base, err = resolveBase(dir, base, pinBranch)
 	if err != nil {
-		return "", nil, "", err
+		return "", nil, nil, "", err
 	}
-	log, err := runGit(dir, "log", "--no-merges", "--reverse", "--format=%H%x00%s%x00%B%x1e", base)
+	log, err := runGit(dir, "log", "--no-merges", "--reverse", "--format=%H%x00%h%x00%s%x00%B%x1e", base)
 	if err != nil {
-		return "", nil, "", err
+		return "", nil, nil, "", err
 	}
 	var b strings.Builder
 	for _, rec := range strings.Split(log, "\x1e") {
-		f := strings.SplitN(strings.TrimLeft(rec, "\n"), "\x00", 3)
-		if len(f) < 3 || !citesID(f[2], id) {
+		f := strings.SplitN(strings.TrimLeft(rec, "\n"), "\x00", 4)
+		if len(f) < 4 || !citesID(f[3], id) {
 			continue
+		}
+		if !citesID(f[2], id) {
+			if other := otherFeatureID(f[2], id); other != "" {
+				skipped = append(skipped, Commit{Sha: f[1], Subject: f[2], Other: other})
+				continue
+			}
 		}
 		args := append([]string{"show", "--no-color", "--no-ext-diff", "--no-textconv", "--format=commit %h %s", f[0], "--", "."}, excludeArgs(excludes)...)
 		out, err := runGit(dir, args...)
 		if err != nil {
-			return "", nil, "", err
+			return "", nil, nil, "", err
 		}
 		b.WriteString(out)
-		short := strings.Fields(out)[1]
-		commits = append(commits, Commit{Sha: short, Subject: f[1]})
+		commits = append(commits, Commit{Sha: f[1], Subject: f[2]})
 	}
 	if len(commits) == 0 {
-		return "", nil, "", noFeatureCommitsError{base, id}
+		return "", nil, nil, "", noFeatureCommitsError{base, id}
 	}
-	return b.String(), commits, base, nil
+	return b.String(), commits, skipped, base, nil
 }

@@ -156,7 +156,7 @@ func TestFeatureCommits(t *testing.T) {
 	git(t, dir, "checkout", "-q", "main")
 	git(t, dir, "merge", "-q", "--no-ff", "-m", "Merge F-0001 side", "side")
 
-	diff, commits, base, err := FeatureCommits(dir, "", "", "F-0001", nil)
+	diff, commits, _, base, err := FeatureCommits(dir, "", "", "F-0001", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +191,7 @@ func TestFeatureCommits(t *testing.T) {
 
 func TestFeatureCommitsNone(t *testing.T) {
 	dir := fixture(t, "main", false)
-	_, _, _, err := FeatureCommits(dir, "", "", "F-0001", nil)
+	_, _, _, _, err := FeatureCommits(dir, "", "", "F-0001", nil)
 	if !errors.Is(err, ErrNoFeatureCommits) || err.Error() != "no commit on main cites F-0001 in its message" {
 		t.Fatalf("err = %v", err)
 	}
@@ -227,7 +227,7 @@ func TestFeatureCommitsKeepsReverts(t *testing.T) {
 	git(t, dir, "checkout", "-q", "main")
 	commitFile(t, dir, "r.go", "feat: add r (F-0001)")
 	git(t, dir, "revert", "--no-edit", "HEAD")
-	_, commits, _, err := FeatureCommits(dir, "", "", "F-0001", nil)
+	_, commits, _, _, err := FeatureCommits(dir, "", "", "F-0001", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,11 +243,48 @@ func TestFeatureCommitsNoTextconv(t *testing.T) {
 	git(t, dir, "config", "diff.up.textconv", "tr a-z A-Z <")
 	write(t, dir, ".gitattributes", "*.dat diff=up\n")
 	commitFile(t, dir, "x.dat", "feat: dat (F-0001)")
-	diff, _, _, err := FeatureCommits(dir, "", "", "F-0001", nil)
+	diff, _, _, _, err := FeatureCommits(dir, "", "", "F-0001", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(diff, "+feat: dat (F-0001)") {
 		t.Errorf("textconv applied:\n%s", diff)
+	}
+}
+
+func TestFeatureCommitsSubjectOwnership(t *testing.T) {
+	dir := fixture(t, "main", false)
+	git(t, dir, "checkout", "-q", "main")
+	msg := func(file, subject, body string) {
+		write(t, dir, file, file+"\n")
+		git(t, dir, "add", ".")
+		git(t, dir, "commit", "-q", "-m", subject, "-m", body)
+	}
+	msg("own.go", "feat: own (F-0001)", "body")
+	msg("other.go", "fix(x): other (F-0002)", "touches F-0001 too")
+	msg("none.go", "chore: no id", "see F-0001")
+	msg("both.go", "feat: F-0001 and F-0002", "body")
+	diff, commits, skipped, _, err := FeatureCommits(dir, "", "", "F-0001", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, c := range commits {
+		got = append(got, c.Subject)
+	}
+	want := []string{"feat: own (F-0001)", "chore: no id", "feat: F-0001 and F-0002"}
+	if !slices.Equal(got, want) {
+		t.Errorf("commits = %v, want %v", got, want)
+	}
+	if len(skipped) != 1 || skipped[0].Subject != "fix(x): other (F-0002)" || skipped[0].Other != "F-0002" || len(skipped[0].Sha) < 7 {
+		t.Errorf("skipped = %+v", skipped)
+	}
+	if strings.Contains(diff, "other.go") {
+		t.Errorf("skipped commit in the diff:\n%s", diff)
+	}
+	// the same history, asked for F-0002: both F-0002 commits, the F-0001-only ones skipped.
+	_, commits2, skipped2, _, err := FeatureCommits(dir, "", "", "F-0002", nil)
+	if err != nil || len(commits2) != 2 || len(skipped2) != 0 {
+		t.Errorf("F-0002: commits=%v skipped=%v err=%v", commits2, skipped2, err)
 	}
 }

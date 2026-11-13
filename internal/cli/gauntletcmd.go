@@ -91,7 +91,7 @@ func runGauntletArtifact(cmd *cobra.Command, dir, id, base, notesPath, outPath s
 	mode := ""
 	if byCommits {
 		var found []gauntlet.Commit
-		diff, found, usedBase, err = gauntlet.FeatureCommits(ctx.projDir, base, ctx.cfg.PinBranch, id, excludes)
+		diff, found, _, usedBase, err = gauntlet.FeatureCommits(ctx.projDir, base, ctx.cfg.PinBranch, id, excludes)
 		if err != nil {
 			return err
 		}
