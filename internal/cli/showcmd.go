@@ -740,7 +740,8 @@ func (r showResult) renderText(w io.Writer) {
 }
 
 // writeDocWriters prints, per feature document with a recorded write, who
-// wrote it first and, when written again, the last edit (F-0375).
+// wrote it first and, when the last write is another writer's, the last edit
+// (F-0375 crit. 8: "quando mais de um modelo escreveu"). Dates are UTC.
 func writeDocWriters(w io.Writer, writes []app.DocWrite) {
 	for _, doc := range featureDocNames {
 		var first, last *app.DocWrite
@@ -756,7 +757,7 @@ func writeDocWriters(w io.Writer, writes []app.DocWrite) {
 			continue
 		}
 		line := fmt.Sprintf("%s: written by %s on %s", doc, first.Who(), first.At.Format(time.DateOnly))
-		if last != first {
+		if last.Who() != first.Who() {
 			line += fmt.Sprintf("; last edit %s on %s", last.Who(), last.At.Format(time.DateOnly))
 		}
 		fmt.Fprintln(w, line)

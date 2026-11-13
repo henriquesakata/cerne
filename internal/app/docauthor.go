@@ -176,8 +176,9 @@ func (w DocWrite) Who() string {
 }
 
 // DocWrites lists the recorded writes of feature id's documents, oldest
-// first: its feature.doc_edited events that carry a source. One from before
-// F-0375 carries none and is left out — no writer is invented for it.
+// first, at in UTC (every surface prints the same date): its
+// feature.doc_edited events that carry a source. One from before F-0375
+// carries none and is left out — no writer is invented for it.
 func DocWrites(repoDir, id string) ([]DocWrite, error) {
 	evs, err := store.ReadEvents(repoDir)
 	if err != nil {
@@ -186,7 +187,7 @@ func DocWrites(repoDir, id string) ([]DocWrite, error) {
 	var out []DocWrite
 	for _, ev := range evs {
 		if p := ev.Payload; ev.EntityID == id && ev.Type == "feature.doc_edited" && p["source"] != "" {
-			out = append(out, DocWrite{p["doc"], p["provider"], p["model"], p["source"], ev.At})
+			out = append(out, DocWrite{p["doc"], p["provider"], p["model"], p["source"], ev.At.UTC()})
 		}
 	}
 	slices.SortStableFunc(out, func(a, b DocWrite) int { return a.At.Compare(b.At) })

@@ -120,11 +120,15 @@ func TestShowDocWrites(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
 	seedDocFeature(t, repoDir, "F-0001", domain.StateInDevelopment, realDoc("F-0001", "Spec."), realDoc("F-0001", "Plano."))
 	day := func(d int) time.Time { return time.Date(2026, 11, d, 12, 0, 0, 0, time.UTC) }
+	// 23:00 at UTC-3 on the 1st is the 2nd in UTC: dates print in UTC.
+	brt := time.Date(2026, 11, 1, 23, 0, 0, 0, time.FixedZone("BRT", -3*3600))
 	for _, ev := range []domain.Event{
 		{ID: "w0", At: day(1), EntityID: "F-0001", Type: "feature.doc_edited", Payload: map[string]string{"doc": "result", "state": "candidate"}},
-		{ID: "w1", At: day(2), EntityID: "F-0001", Type: "feature.doc_edited", Payload: map[string]string{"doc": "spec", "state": "candidate", "provider": "anthropic", "model": "claude-opus-5-5", "source": "transcript"}},
+		{ID: "w1", At: brt, EntityID: "F-0001", Type: "feature.doc_edited", Payload: map[string]string{"doc": "spec", "state": "candidate", "provider": "anthropic", "model": "claude-opus-5-5", "source": "transcript"}},
 		{ID: "w2", At: day(3), EntityID: "F-0001", Type: "feature.doc_edited", Payload: map[string]string{"doc": "plan", "state": "approved", "provider": "", "model": "", "source": "human"}},
 		{ID: "w3", At: day(4), EntityID: "F-0001", Type: "feature.doc_edited", Payload: map[string]string{"doc": "spec", "state": "approved", "provider": "openai", "model": "gpt-x", "source": "declared"}},
+		// the same writer again: no "last edit" (crit. 8: more than one model)
+		{ID: "w4", At: day(6), EntityID: "F-0001", Type: "feature.doc_edited", Payload: map[string]string{"doc": "plan", "state": "in_development", "provider": "", "model": "", "source": "human"}},
 		{ID: "x1", At: day(5), EntityID: "F-0002", Type: "feature.doc_edited", Payload: map[string]string{"doc": "spec", "source": "unknown"}},
 	} {
 		if err := store.AppendEvent(repoDir, ev); err != nil {
@@ -164,9 +168,10 @@ func TestShowDocWrites(t *testing.T) {
 	}
 	var rows []string
 	for _, w := range got.Writes {
-		rows = append(rows, w.Doc+" "+w.Provider+"/"+w.Model+" "+w.Source+" "+w.At.Format(time.DateOnly))
+		rows = append(rows, w.Doc+" "+w.Provider+"/"+w.Model+" "+w.Source+" "+w.At.Format(time.RFC3339))
 	}
-	want := []string{"spec anthropic/claude-opus-5-5 transcript 2026-11-02", "plan / human 2026-11-03", "spec openai/gpt-x declared 2026-11-04"}
+	want := []string{"spec anthropic/claude-opus-5-5 transcript 2026-11-02T02:00:00Z", "plan / human 2026-11-03T12:00:00Z",
+		"spec openai/gpt-x declared 2026-11-04T12:00:00Z", "plan / human 2026-11-06T12:00:00Z"}
 	if !slices.Equal(rows, want) {
 		t.Fatalf("writes = %q, want %q", rows, want)
 	}
