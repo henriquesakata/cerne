@@ -14,8 +14,8 @@ var (
 )
 
 // LearningItems reads the items of a result's learnings section (F-0401): each
-// first-level list item with its sub-items, or, when the section has no list,
-// its prose as one item. The template comment and a nothing-marker (N/A, None,
+// first-level list item with its sub-items, a paragraph before the list as an
+// item of its own, or, when the section has no list, its prose as one item. The template comment and a nothing-marker (N/A, None,
 // Nenhum, ...) are not items.
 func LearningItems(result string) []string {
 	var lines []string
@@ -29,7 +29,7 @@ func LearningItems(result string) []string {
 			lines = append(lines, strings.TrimRight(l, " \t\r"))
 		}
 	}
-	var items []string
+	var items, pre []string
 	var cur []string
 	started, fenced := false, false
 	flush := func() {
@@ -44,17 +44,22 @@ func LearningItems(result string) []string {
 		}
 		if m := bulletRe.FindStringSubmatch(l); m != nil && !fenced {
 			flush()
+			if !started {
+				items = append(items, strings.TrimSpace(strings.Join(pre, "\n"))) // the paragraph before the list
+			}
 			started = true
 			cur = []string{m[1]}
 			continue
 		}
 		if started {
 			cur = append(cur, l)
+		} else {
+			pre = append(pre, l)
 		}
 	}
 	flush()
 	if !started {
-		items = []string{strings.TrimSpace(strings.Join(lines, "\n"))}
+		items = []string{strings.TrimSpace(strings.Join(pre, "\n"))}
 	}
 	var out []string
 	for _, it := range items {

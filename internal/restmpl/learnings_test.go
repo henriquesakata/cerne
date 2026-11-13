@@ -24,7 +24,7 @@ func TestLearningItems(t *testing.T) {
 		{"section absent", "## Resultado\nok\n", nil},
 		{"last section, no trailing heading", "## Aprendizados e desvios\n- tail", []string{"tail"}},
 		{"bullet marker skipped, real kept", "## Aprendizados e desvios\n- N/A\n- real\n", []string{"real"}},
-		{"preamble ignored when a list exists", "## Aprendizados e desvios\nIntro line.\n- item\n", []string{"item"}},
+		{"a paragraph before a list is its own item", "## Aprendizados e desvios\nIntro line.\n\n- item\n", []string{"Intro line.", "item"}},
 		{"list in a code fence is text", "## Aprendizados e desvios\n```\n- x\n```\n", []string{"```\n- x\n```"}},
 	}
 	for _, tt := range tests {
