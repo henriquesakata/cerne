@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -129,5 +130,69 @@ func TestDiffBadBase(t *testing.T) {
 	dir := fixture(t, "main", false)
 	if _, _, err := Diff(dir, "nope", "", nil); !errors.Is(err, ErrBadBase) {
 		t.Fatalf("err = %v, want ErrBadBase", err)
+	}
+}
+
+func commitFile(t *testing.T, dir, rel, msg string) {
+	t.Helper()
+	write(t, dir, rel, msg+"\n")
+	git(t, dir, "add", ".")
+	git(t, dir, "commit", "-q", "-m", msg)
+}
+
+func TestFeatureCommits(t *testing.T) {
+	dir := fixture(t, "main", false)
+	git(t, dir, "checkout", "-q", "main")
+	commitFile(t, dir, "one.go", "feat: first (F-0001)")
+	commitFile(t, dir, "other.go", "feat: other F-00010 thing")
+	commitFile(t, dir, "lower.go", "feat: lower f-0001 thing")
+	commitFile(t, dir, "pre.go", "feat: prefix XF-0001 thing")
+	write(t, dir, "two.go", "two\n")
+	write(t, dir, "ui/dist/b.js", "noise\n")
+	git(t, dir, "add", ".")
+	git(t, dir, "commit", "-q", "-m", "fix: second", "-m", "body cites F-0001.")
+	git(t, dir, "checkout", "-q", "-b", "side")
+	commitFile(t, dir, "side.go", "feat: side F-0001")
+	git(t, dir, "checkout", "-q", "main")
+	git(t, dir, "merge", "-q", "--no-ff", "-m", "Merge F-0001 side", "side")
+
+	diff, commits, base, err := FeatureCommits(dir, "", "", "F-0001", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if base != "main" || len(commits) != 3 {
+		t.Fatalf("base=%q commits=%v", base, commits)
+	}
+	// the side-branch commit may interleave with "second" (equal timestamps).
+	var subjects []string
+	for _, c := range commits {
+		subjects = append(subjects, c.Subject)
+	}
+	if subjects[0] != "feat: first (F-0001)" || !slices.Contains(subjects, "fix: second") || !slices.Contains(subjects, "feat: side F-0001") {
+		t.Errorf("wrong commits/order: %v", commits)
+	}
+	pos := 0
+	for _, s := range []string{"commit " + commits[0].Sha + " feat: first", "one.go"} {
+		i := strings.Index(diff[pos:], s)
+		if i < 0 {
+			t.Fatalf("%q out of order/missing:\n%s", s, diff)
+		}
+		pos += i + len(s)
+	}
+	if !strings.Contains(diff, "two.go") || !strings.Contains(diff, "side.go") {
+		t.Errorf("missing second/side diffs:\n%s", diff)
+	}
+	for _, s := range []string{"other.go", "lower.go", "pre.go", "ui/dist", "Merge F-0001"} {
+		if strings.Contains(diff, s) {
+			t.Errorf("unexpected %q:\n%s", s, diff)
+		}
+	}
+}
+
+func TestFeatureCommitsNone(t *testing.T) {
+	dir := fixture(t, "main", false)
+	_, _, _, err := FeatureCommits(dir, "", "", "F-0001", nil)
+	if !errors.Is(err, ErrNoFeatureCommits) || err.Error() != "no commit on main cites F-0001 in its message" {
+		t.Fatalf("err = %v", err)
 	}
 }
