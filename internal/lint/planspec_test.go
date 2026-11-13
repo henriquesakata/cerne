@@ -39,6 +39,7 @@ func TestPlanBehindSpec(t *testing.T) {
 		{"same spec", fm + "A\n", []domain.Event{specEdit("F-0001", "approved", 5), planWrite("F-0001", 10, "A\n")}, false, at(10), at(5)},
 		{"spec changed after the plan (crit. 2)", fm + "B\n", []domain.Event{planWrite("F-0001", 10, "A\n"), specEdit("F-0001", "approved", 20)}, true, at(10), at(20)},
 		{"plan pushed again after the spec (crit. 4)", fm + "B\n", []domain.Event{planWrite("F-0001", 10, "A\n"), specEdit("F-0001", "approved", 20), planWrite("F-0001", 30, "B\n")}, false, at(30), at(20)},
+		{"a later stub plan write clears it", fm + "B\n", []domain.Event{planWrite("F-0001", 10, "A\n"), specEdit("F-0001", "approved", 20), planWrite("F-0001", 30, "")}, false, at(30), at(20)},
 		{"plan from before F-0377 (crit. 5)", fm + "B\n", []domain.Event{planWrite("F-0001", 10, ""), specEdit("F-0001", "approved", 20)}, false, at(10), at(20)},
 		{"wrapping only", "\ufeff" + fm + "A  \r\n\r\n", []domain.Event{planWrite("F-0001", 10, "A\n"), specEdit("F-0001", "approved", 20)}, false, at(10), at(20)},
 		{"no spec write recorded", fm + "B\n", []domain.Event{planWrite("F-0001", 10, "A\n")}, true, at(10), time.Time{}},
