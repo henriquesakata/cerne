@@ -31,7 +31,7 @@ func TestStartWorkFromLiveWorkOfAnotherSession(t *testing.T) {
 			repoDir, projDir, _ := newFeatureBackend(t)
 			a := startW(t, repoDir, projDir, "Operação longa", nil)
 			if tc.handoff {
-				if err := HandoffWork(repoDir, projDir, a.ID, "brief", "n", nil); err != nil {
+				if _, err := HandoffWork(repoDir, projDir, a.ID, "brief", "n", nil); err != nil {
 					t.Fatal(err)
 				}
 			}

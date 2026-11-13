@@ -7,7 +7,7 @@ import (
 )
 
 // EntityExists reports whether the backend holds an entity with this id
-// (F-/T-/E-/D-/R-/RB-/N-/H-/W-/C-/P-/I-), by its entity file. Read-only; an
+// (F-/T-/E-/D-/R-/RB-/N-/H-/W-/C-/P-/I-/HO-), by its entity file. Read-only; an
 // unknown prefix or a malformed id is simply "no".
 func EntityExists(backendDir, id string) bool {
 	prefix, _, ok := strings.Cut(id, "-")

@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"text/template"
@@ -67,8 +68,13 @@ const contextTemplate = `# {{.ProjectName}} — current state
 {{if or .ActiveWorks .IdleWorks}}
 ## In progress
 
-{{range .ActiveWorks}}- {{.ID}} — {{.Title}} ({{.Actor}}, since {{.Since}}){{if .HandoffAt}} — handoff {{.HandoffAt}}: cerne show {{.ID}}{{end}}
+{{range .ActiveWorks}}- {{.ID}} — {{.Title}} ({{.Actor}}, since {{.Since}}){{if .PendingHO}} — handoff {{.PendingHO}} pending{{else if .HandoffAt}} — handoff {{.HandoffAt}}: cerne show {{.ID}}{{end}}
 {{end}}{{if .IdleWorks}}- {{.IdleWorks}} more active work(s) idle for over {{.IdleDays}} days (oldest: {{.IdleOldestID}}, idle since {{.IdleOldestSince}}) — triage: 'cerne work list', then 'cerne work done|abandon <id>'
+{{end}}{{end}}{{if .PendingHandoffs}}
+## Pending handoffs
+
+{{range .PendingHandoffs}}- {{.}}
+{{end}}{{if .MoreHandoffs}}- {{.MoreHandoffs}} more: cerne handoff list
 {{end}}{{end}}
 ## Features
 
@@ -106,6 +112,9 @@ const contextTemplate = `# {{.ProjectName}} — current state
 {{end}}{{else}}_None._
 {{end}}`
 
+// maxPendingHandoffs caps the CONTEXT.md handoff block (F-0368 crit. 10).
+const maxPendingHandoffs = 10
+
 // contextData feeds contextTemplate; Decisions and References carry the
 // already-rendered bullet text (markdown link or plain title).
 type contextData struct {
@@ -116,6 +125,10 @@ type contextData struct {
 	IdleDays        int
 	IdleOldestID    string
 	IdleOldestSince string
+	// PendingHandoffs are the oldest pending handoffs' list lines (F-0368 crit. 10);
+	// MoreHandoffs counts the pending ones past the cap.
+	PendingHandoffs []string
+	MoreHandoffs    int
 	Features        []featureRow
 	Epics           []epicSection
 	Decisions       []string
@@ -128,6 +141,7 @@ type contextData struct {
 // "Em andamento" section. Since is CreatedAt formatted YYYY-MM-DD.
 type workRow struct {
 	ID, Title, Actor, Since, HandoffAt string // HandoffAt: date of the last session handoff, "" when none (F-0339)
+	PendingHO                          string // the work's pending HO- (F-0368), "" when none
 }
 
 type featureRow struct {
@@ -216,6 +230,10 @@ func MaterializeAt(repoDir, docsDir, scope string, okf bool, recentDays int, now
 	if err != nil {
 		return nil, err
 	}
+	handoffs, err := store.LoadAllHandoffs(repoDir)
+	if err != nil {
+		return nil, err
+	}
 	// Read once, before the wipe: a malformed log must not leave .docs/ deleted.
 	events, err := store.ReadEvents(repoDir)
 	if err != nil {
@@ -240,6 +258,28 @@ func MaterializeAt(repoDir, docsDir, scope string, okf bool, recentDays int, now
 		if ev.At.After(lastEvent[ev.EntityID]) {
 			lastEvent[ev.EntityID] = ev.At
 		}
+	}
+	pendingHO := map[string]string{} // work -> its pending HO-
+	hasHO := map[string]bool{}       // works that passed any HO-: no F-0339 fallback for them
+	titles := map[string]string{}
+	for _, w := range works {
+		titles[w.ID] = w.Title
+	}
+	var pending []store.Handoff
+	for _, h := range handoffs {
+		hasHO[h.FromWork] = true
+		if h.State == domain.HandoffPending {
+			pending = append(pending, h)
+			pendingHO[h.FromWork] = h.ID
+		}
+	}
+	slices.SortStableFunc(pending, func(a, b store.Handoff) int { return a.CreatedAt.Compare(b.CreatedAt) })
+	for i, h := range pending {
+		if i == maxPendingHandoffs {
+			data.MoreHandoffs = len(pending) - i
+			break
+		}
+		data.PendingHandoffs = append(data.PendingHandoffs, h.Line(titles[h.FromWork], now))
 	}
 	cutoff := now.UTC().AddDate(0, 0, -recentDays)
 	var oldestAt time.Time
@@ -268,9 +308,10 @@ func MaterializeAt(repoDir, docsDir, scope string, okf bool, recentDays int, now
 			Actor: w.Actor,
 			Since: w.CreatedAt.Format("2006-01-02"),
 		}
-		if w.HandoffAt != nil {
+		if w.HandoffAt != nil && !hasHO[w.ID] {
 			row.HandoffAt = w.HandoffAt.UTC().Format("2006-01-02")
 		}
+		row.PendingHO = pendingHO[w.ID]
 		data.ActiveWorks = append(data.ActiveWorks, row)
 	}
 

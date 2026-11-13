@@ -31,6 +31,7 @@ type StartedWork struct {
 	Held       []string
 	From       string        // the canonical id of the --from origin ("" without it)
 	Handoffs   []WorkHandoff // what to read before starting (F-0339): the --from origin's, then the crossing refs'
+	Taken      store.Handoff // the handoff this start took (F-0368); zero ID when none
 }
 
 // StartWork mints a new active work (agent activity, F-0130) in the backend
@@ -52,118 +53,164 @@ func StartWork(repoDir, projDir, title string, refs []string, agent string, forc
 	if actor == "" {
 		actor = defaultWorkActor()
 	}
-	paths = cleanWorkPaths(paths)
 	var out StartedWork
 	var fromTitle string
-	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
-		cleaned, err := validateWorkRefs(repoDir, refs)
-		if err != nil {
-			return "", err
-		}
-		// Duplicate-registration guard (F-0147): someone may already be on
-		// this. The auto-registered works (F-0146) never pass through here —
-		// they are idempotent by construction.
-		var origin store.Work
-		if from != "" {
-			if origin, err = store.LoadWork(repoDir, strings.ToUpper(strings.TrimSpace(from))); errors.Is(err, store.ErrNotFound) {
-				return "", fmt.Errorf("--from: activity %s not found in the backend", from)
-			} else if err != nil {
-				return "", err
-			}
-			// Every comparison below uses the stored id: on a case-insensitive
-			// filesystem the raw one may have loaded a differently-cased file.
-			from = origin.ID
-			if origin.State != domain.WorkActive {
-				return "", fmt.Errorf("--from: activity %s is %s, not active", from, origin.State)
-			}
-			// Owner's principle (F-0341): live work of another session is not
-			// closed on a guess. A handoff is the proof the owner let go; a
-			// typo like W-0043 has none, and another session holds the binding.
-			if origin.HandoffAt == nil && !force && boundElsewhere(sessionBindingsIn(filepath.Dir(repoDir)), from, os.Getenv("CERNE_SESSION")) {
-				return "", fmt.Errorf("--from: %s has no handoff and is bound to another session — it may be live work; confirm with that session, or use --force to take it over anyway", from)
-			}
-			if len(cleaned) == 0 {
-				cleaned = origin.Refs
-			}
-		}
-		forced, err := guardRegistration(repoDir, title, force, from)
-		if err != nil {
-			return "", err
-		}
-		prior, err := store.LoadAllWorks(repoDir)
-		if err != nil {
-			return "", err
-		}
-		// The origin is closed by --from (crit. 8), never also by F-0341.
-		prior = slices.DeleteFunc(prior, func(w store.Work) bool { return from != "" && w.ID == from })
-		var handoffs []WorkHandoff
-		if e, ok, err := lastHandoff(repoDir, origin); err != nil {
-			return "", err
-		} else if ok {
-			handoffs = append(handoffs, WorkHandoff{ID: from, Entry: e})
-		}
-		crossing, err := HandoffsFor(repoDir, cleaned, from)
-		if err != nil {
-			return "", err
-		}
-		handoffs = append(handoffs, crossing...)
-		id, err := store.NextID(repoDir, "W")
-		if err != nil {
-			return "", err
-		}
-		now := time.Now().UTC()
-		w := store.Work{
-			ID:        id,
-			Title:     title,
-			State:     domain.WorkActive,
-			Actor:     actor,
-			Refs:      cleaned,
-			Paths:     paths,
-			CreatedAt: now,
-			UpdatedAt: now,
-		}
-		if err := store.SaveWork(repoDir, w); err != nil {
-			return "", err
-		}
-		payload := map[string]string{"title": title, "actor": actor}
-		if forced {
-			payload["guard"] = "forced"
-		}
-		ev := domain.NewEvent(id, "work.started", payload, EventActor())
-		if err := store.AppendEvent(repoDir, ev); err != nil {
-			return "", err
-		}
-		out = StartedWork{Work: w, From: from, Handoffs: handoffs}
-		fromTitle = origin.Title
-		if from != "" {
-			// An explicit handoff, closed like `work done`: ends the run, no via=auto.
-			note := "handed off to " + id
-			if _, err := closeWorkEntity(repoDir, origin, domain.ActionComplete, note, map[string]string{"note": note}); err != nil {
-				return "", err
-			}
-		}
-		if activityAutoEnabled(projDir) {
-			if out.Superseded, out.Kept, out.Held, err = supersedePlanning(repoDir, prior, cleaned, id); err != nil {
-				return "", err
-			}
-		}
-		// A work F-0341 closed in this very call cannot be taken over with
-		// --from (it would be refused): its handoff comes without the hint.
-		for i := range out.Handoffs {
-			if slices.Contains(out.Superseded, out.Handoffs[i].ID) {
-				out.Handoffs[i].Hint = false
-			}
-		}
-		return fmt.Sprintf("cerne: start %s (%s)", id, title), nil
+	err := MutateAndSnapshot(repoDir, projDir, func() (msg string, err error) {
+		out, fromTitle, msg, err = startWorkTx(repoDir, projDir, startParams{
+			title: title, refs: refs, actor: actor, force: force, paths: cleanWorkPaths(paths),
+			from: from, sess: os.Getenv("CERNE_SESSION"),
+		})
+		return msg, err
 	})
 	if err != nil {
 		return StartedWork{}, err
 	}
-	if out.From != "" { // the origin closed like `work done` would have (F-0339)
+	dispatchStarted(projDir, out, fromTitle)
+	return out, nil
+}
+
+// startParams is what startWorkTx mints a work from. from is an active origin
+// to close; ho is the pending handoff the start takes (F-0368) — StartWork
+// finds the origin's own, TakeHandoff passes it even when the origin is no
+// longer active (from is then ""). sess and note are recorded on the taken HO.
+type startParams struct {
+	title, actor string
+	refs, paths  []string
+	force        bool
+	finalRefs    bool // refs are final: never inherit the origin's (TakeHandoff dropped the dangling ones)
+	from         string
+	ho           *store.Handoff
+	sess, note   string
+}
+
+// startWorkTx is StartWork's mutation, run inside a MutateAndSnapshot. It
+// returns the started work, the origin's title (for its webhook) and the
+// commit message.
+func startWorkTx(repoDir, projDir string, p startParams) (StartedWork, string, string, error) {
+	title, actor, from, force, paths := p.title, p.actor, p.from, p.force, p.paths
+	cleaned, err := validateWorkRefs(repoDir, p.refs)
+	if err != nil {
+		return StartedWork{}, "", "", err
+	}
+	// Duplicate-registration guard (F-0147): someone may already be on
+	// this. The auto-registered works (F-0146) never pass through here —
+	// they are idempotent by construction.
+	var origin store.Work
+	if from != "" {
+		if origin, err = store.LoadWork(repoDir, strings.ToUpper(strings.TrimSpace(from))); errors.Is(err, store.ErrNotFound) {
+			return StartedWork{}, "", "", fmt.Errorf("--from: activity %s not found in the backend", from)
+		} else if err != nil {
+			return StartedWork{}, "", "", err
+		}
+		// Every comparison below uses the stored id: on a case-insensitive
+		// filesystem the raw one may have loaded a differently-cased file.
+		from = origin.ID
+		if origin.State != domain.WorkActive {
+			return StartedWork{}, "", "", fmt.Errorf("--from: activity %s is %s, not active", from, origin.State)
+		}
+		// Owner's principle (F-0341): live work of another session is not
+		// closed on a guess. A handoff is the proof the owner let go; a
+		// typo like W-0043 has none, and another session holds the binding.
+		if origin.HandoffAt == nil && !force && boundElsewhere(sessionBindingsIn(filepath.Dir(repoDir)), from, os.Getenv("CERNE_SESSION")) {
+			return StartedWork{}, "", "", fmt.Errorf("--from: %s has no handoff and is bound to another session — it may be live work; confirm with that session, or use --force to take it over anyway", from)
+		}
+		if len(cleaned) == 0 && !p.finalRefs {
+			cleaned = origin.Refs
+		}
+		// F-0368 crit. 6: taking a work over takes its pending handoff.
+		if p.ho == nil {
+			if h, ok, err := pendingHandoffOf(repoDir, from); err != nil {
+				return StartedWork{}, "", "", err
+			} else if ok {
+				p.ho = &h
+			}
+		}
+	}
+	forced, err := guardRegistration(repoDir, title, force, from)
+	if err != nil {
+		return StartedWork{}, "", "", err
+	}
+	prior, err := store.LoadAllWorks(repoDir)
+	if err != nil {
+		return StartedWork{}, "", "", err
+	}
+	// The origin is closed by --from (crit. 8), never also by F-0341.
+	prior = slices.DeleteFunc(prior, func(w store.Work) bool { return from != "" && w.ID == from })
+	var handoffs []WorkHandoff
+	if e, ho, ok, err := lastHandoff(repoDir, origin); err != nil {
+		return StartedWork{}, "", "", err
+	} else if ok {
+		handoffs = append(handoffs, WorkHandoff{ID: from, Entry: e, HO: ho})
+	}
+	crossing, err := HandoffsFor(repoDir, cleaned, from)
+	if err != nil {
+		return StartedWork{}, "", "", err
+	}
+	handoffs = append(handoffs, crossing...)
+	id, err := store.NextID(repoDir, "W")
+	if err != nil {
+		return StartedWork{}, "", "", err
+	}
+	now := time.Now().UTC()
+	w := store.Work{
+		ID:        id,
+		Title:     title,
+		State:     domain.WorkActive,
+		Actor:     actor,
+		Refs:      cleaned,
+		Paths:     paths,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := store.SaveWork(repoDir, w); err != nil {
+		return StartedWork{}, "", "", err
+	}
+	payload := map[string]string{"title": title, "actor": actor}
+	if forced {
+		payload["guard"] = "forced"
+	}
+	ev := domain.NewEvent(id, "work.started", payload, EventActor())
+	if err := store.AppendEvent(repoDir, ev); err != nil {
+		return StartedWork{}, "", "", err
+	}
+	out := StartedWork{Work: w, From: from, Handoffs: handoffs}
+	if from != "" {
+		// An explicit handoff, closed like `work done`: ends the run, no via=auto.
+		note := "handed off to " + id
+		if p.ho != nil {
+			note += " via " + p.ho.ID
+		}
+		if _, err := closeWorkEntity(repoDir, origin, domain.ActionComplete, note, map[string]string{"note": note}); err != nil {
+			return StartedWork{}, "", "", err
+		}
+	}
+	if p.ho != nil {
+		if out.Taken, err = markTaken(repoDir, *p.ho, resolveActor(actor), id, p.sess, p.note, now); err != nil {
+			return StartedWork{}, "", "", err
+		}
+	}
+	if activityAutoEnabled(projDir) {
+		if out.Superseded, out.Kept, out.Held, err = supersedePlanning(repoDir, prior, cleaned, id); err != nil {
+			return StartedWork{}, "", "", err
+		}
+	}
+	// A work F-0341 closed in this very call cannot be taken over with
+	// --from (it would be refused): its handoff comes without the hint.
+	for i := range out.Handoffs {
+		if slices.Contains(out.Superseded, out.Handoffs[i].ID) {
+			out.Handoffs[i].Hint = false
+		}
+	}
+	return out, origin.Title, fmt.Sprintf("cerne: start %s (%s)", id, title), nil
+}
+
+// dispatchStarted fires the webhooks of a committed start: the origin closed
+// like `work done` would have (F-0339), then the new work.
+func dispatchStarted(projDir string, out StartedWork, fromTitle string) {
+	if out.From != "" {
 		dispatchWebhook(projDir, out.From, "work", string(domain.ActionComplete), string(domain.WorkActive), string(domain.WorkDone), fromTitle)
 	}
 	dispatchWebhook(projDir, out.ID, "work", "start", "", string(out.State), out.Title)
-	return out, nil
 }
 
 // supersedePlanning (F-0341 crit. 4/5, owner's decision of 2026-11-11)

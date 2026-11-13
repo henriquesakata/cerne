@@ -160,6 +160,7 @@ const (
 	pendingsSubdir     = "entities/pendings"
 	capabilitiesSubdir = "entities/capabilities"
 	ideasSubdir        = "entities/ideas"
+	handoffsSubdir     = "entities/handoffs"
 )
 
 // SaveFeature writes the feature to entities/features/<ID>.json.

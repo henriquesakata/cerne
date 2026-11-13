@@ -26,7 +26,7 @@ func TestStartWorkFrom(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	seedFeatureInState(t, repoDir, "F-0001", domain.StateInDevelopment, "spec.md", "plan.md")
 	a := startW(t, repoDir, projDir, "Operação longa", []string{"F-0001"})
-	if err := HandoffWork(repoDir, projDir, a.ID, "brief um", "rodar a suíte", nil); err != nil {
+	if _, err := HandoffWork(repoDir, projDir, a.ID, "brief um", "rodar a suíte", nil); err != nil {
 		t.Fatal(err)
 	}
 	// Without --from the same title is refused by the guard (crit. 7: with the handoff).
@@ -50,7 +50,7 @@ func TestStartWorkFrom(t *testing.T) {
 	if len(b.Handoffs) != 1 || b.Handoffs[0].ID != a.ID || b.Handoffs[0].Hint || !strings.Contains(b.Handoffs[0].Entry.Text, "brief um") {
 		t.Fatalf("handoffs = %+v, want A's entry without hint", b.Handoffs)
 	}
-	assertClosedByFrom(t, repoDir, a.ID, "handed off to "+b.ID)
+	assertClosedByFrom(t, repoDir, a.ID, "handed off to "+b.ID+" via HO-0001") // F-0368 crit. 6
 	assertOneCommit(t, repoDir, before, "entities/works/"+a.ID+".json", "entities/works/"+b.ID+".json")
 	if len(b.Superseded) != 0 {
 		t.Fatalf("superseded = %v, want none", b.Superseded)
@@ -81,7 +81,7 @@ func TestStartWorkPrintsCrossingHandoff(t *testing.T) {
 	seedFeatureInState(t, repoDir, "F-0001", domain.StateInDevelopment, "spec.md", "plan.md")
 	seedFeatureInState(t, repoDir, "F-0002", domain.StateInDevelopment, "spec.md", "plan.md")
 	a := startW(t, repoDir, projDir, "Operação longa", []string{"F-0001"})
-	if err := HandoffWork(repoDir, projDir, a.ID, "brief", "n1", nil); err != nil {
+	if _, err := HandoffWork(repoDir, projDir, a.ID, "brief", "n1", nil); err != nil {
 		t.Fatal(err)
 	}
 	startW(t, repoDir, projDir, "Sem passagem alguma aqui", []string{"F-0001"})
@@ -110,7 +110,7 @@ func TestStartWorkHandoffSeamsWithPlanning(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		if err := HandoffWork(repoDir, projDir, "W-0001", "brief", "n1", nil); err != nil {
+		if _, err := HandoffWork(repoDir, projDir, "W-0001", "brief", "n1", nil); err != nil {
 			t.Fatal(err)
 		}
 		return repoDir, projDir
@@ -125,7 +125,7 @@ func TestStartWorkHandoffSeamsWithPlanning(t *testing.T) {
 		if len(w.Superseded) != 0 || len(w.Kept) != 0 {
 			t.Fatalf("superseded %v kept %v, want none: --from owns W-0001", w.Superseded, w.Kept)
 		}
-		assertClosedByFrom(t, repoDir, "W-0001", "handed off to W-0002")
+		assertClosedByFrom(t, repoDir, "W-0001", "handed off to W-0002 via HO-0001") // F-0368 crit. 6
 		if n := countEvents(t, repoDir, "W-0001", "work.done"); n != 1 {
 			t.Fatalf("work.done events on W-0001 = %d, want 1", n)
 		}

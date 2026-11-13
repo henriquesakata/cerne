@@ -203,12 +203,12 @@ func guardRegistration(repoDir, title string, force bool, ignore string) (hadLiv
 		if err != nil {
 			return false, err
 		}
-		e, ok, err := lastHandoff(repoDir, w)
+		e, ho, ok, err := lastHandoff(repoDir, w)
 		if err != nil {
 			return false, err
 		}
 		if ok {
-			handoffs = append(handoffs, WorkHandoff{ID: sm.ID, Entry: e, Hint: true})
+			handoffs = append(handoffs, WorkHandoff{ID: sm.ID, Entry: e, Hint: true, HO: ho})
 			lines = append(lines, fmt.Sprintf("last handoff of %s (%s, %s):\n%s", sm.ID, e.Date, e.Author, e.Text))
 		}
 	}

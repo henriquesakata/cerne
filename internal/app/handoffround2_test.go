@@ -16,11 +16,12 @@ func TestHandoffWorkEmptyActor(t *testing.T) {
 	if err := store.SaveWork(repoDir, w); err != nil {
 		t.Fatal(err)
 	}
-	if err := HandoffWork(repoDir, projDir, w.ID, "brief", "n", nil); err != nil {
+	id, err := HandoffWork(repoDir, projDir, w.ID, "brief", "n", nil)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if hs, _ := store.LoadHandoffs(repoDir, w.ID); len(hs) != 1 || hs[0].Author == "" {
-		t.Fatalf("handoffs = %+v, want one with a non-empty author", hs)
+	if h, _ := store.LoadHandoff(repoDir, id); h.Actor == "" {
+		t.Fatalf("handoff = %+v, want a non-empty actor", h)
 	}
 }
 
@@ -34,11 +35,12 @@ func TestWorkIDsAreCanonical(t *testing.T) {
 	if err := BindSession(filepath.Dir(repoDir), "sess-me", "W-0001"); err != nil {
 		t.Fatal(err)
 	}
-	if err := HandoffWork(repoDir, projDir, "w-0001", "brief", "n1", nil); err != nil {
+	id, err := HandoffWork(repoDir, projDir, "w-0001", "brief", "n1", nil)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if hs, _ := store.LoadHandoffs(repoDir, "W-0001"); len(hs) != 1 {
-		t.Fatalf("handoff must be stored under W-0001, got %+v", hs)
+	if h, _ := store.LoadHandoff(repoDir, id); h.FromWork != "W-0001" {
+		t.Fatalf("handoff must point at W-0001, got %+v", h)
 	}
 	if n := countEvents(t, repoDir, "W-0001", "work.handoff"); n != 1 {
 		t.Fatalf("work.handoff events under W-0001 = %d, want 1", n)
