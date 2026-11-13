@@ -194,7 +194,11 @@ func runHookBindWork(cmd *cobra.Command, format string) {
 	if format != "claude" {
 		harness = "other"
 	}
-	_ = app.BindSessionAgent(cacheDir, in.SessionID, in.AgentID, harness, id)
+	// Still exit 0 (fail-open), but a bind that cannot be recorded — e.g. a
+	// dotted session id (F-0376) — must not vanish without a word.
+	if err := app.BindSessionAgent(cacheDir, in.SessionID, in.AgentID, harness, id); err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: session binding not recorded: %v\n", err)
+	}
 }
 
 func newHookWorkGateCmd() *cobra.Command {
@@ -275,6 +279,9 @@ func runHookWorkGate(cmd *cobra.Command, format string) {
 	}
 	allow, reason := app.WorkGateCheck(cacheDir, repoDir, projDir, in.SessionID, in.AgentID, ti.FilePath, cfg.Gates.WorkGateAllow)
 	if allow {
+		if reason != "" { // allowed by fail-open: say why on stderr (F-0376)
+			fmt.Fprintln(cmd.ErrOrStderr(), "warning: "+reason)
+		}
 		injectGateChannel(cmd, format, cacheDir, repoDir, projDir, in.SessionID, ti.FilePath)
 		return
 	}

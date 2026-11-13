@@ -1,6 +1,8 @@
 package app
 
 import (
+	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 )
@@ -11,7 +13,9 @@ import (
 // the project's extra globs, or when the session holds a live registration
 // binding. Everything else is denied with an actionable reason. The check is
 // fail-open: any internal error reads as allow — a broken cache must never
-// lock the user out of their own files.
+// lock the user out of their own files. An allow carries a reason only when
+// the session cannot be bound at all (an unsafe id, F-0376): the gate is then
+// off for it, and the caller says so.
 func WorkGateCheck(cacheDir, repoDir, projDir, sess, agent, filePath string, extraAllow []string) (allow bool, reason string) {
 	rel, err := filepath.Rel(projDir, filePath)
 	if err != nil {
@@ -30,7 +34,11 @@ func WorkGateCheck(cacheDir, repoDir, projDir, sess, agent, filePath string, ext
 		}
 	}
 	if sess != "" {
-		if _, ok, err := CurrentBinding(cacheDir, repoDir, sess, agent); err != nil || ok {
+		_, ok, err := CurrentBinding(cacheDir, repoDir, sess, agent)
+		if errors.Is(err, ErrUnsafeSessionID) {
+			return true, fmt.Sprintf("work gate (F-0151) not enforced: %v — this session can never be bound, so its edits pass ungated", err)
+		}
+		if err != nil || ok {
 			return true, "" // bound, or fail-open on a cache error
 		}
 	}

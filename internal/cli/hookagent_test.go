@@ -153,3 +153,24 @@ func TestHookCompactionReadsMainOnly(t *testing.T) {
 		t.Fatalf("session-context compact = %v\n%s, want no compaction block", err, out)
 	}
 }
+
+// TestHookUnsafeSessionIDIsVisible (F-0376 critic round 1, item 2): a session
+// id with a dot cannot be a binding key. The bind hook says so on stderr
+// (exit 0); the work gate stays fail-open (N-0021: such a session could never
+// bind, a deny would lock it out for good) and names the cause on stderr.
+func TestHookUnsafeSessionIDIsVisible(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	enableWorkGate(t, projDir)
+	bind := hookJSON(t, "sess.1", projDir, "Bash",
+		map[string]any{"command": "cerne feature start F-0002"},
+		map[string]any{"stdout": "F-0002: approved → in_development"})
+	out, err := execCerneStdin(t, bind, "hook", "bind-work")
+	if err != nil || !strings.Contains(out, "warning: session binding not recorded:") || !strings.Contains(out, "unsafe session id") {
+		t.Fatalf("bind-work = %v\n%q, want the stderr warning", err, out)
+	}
+	edit := hookJSON(t, "sess.1", projDir, "Edit", map[string]any{"file_path": filepath.Join(projDir, "internal", "a.go")}, nil)
+	out, err = execCerneStdin(t, edit, "hook", "work-gate")
+	if err != nil || strings.Contains(out, `"deny"`) || !strings.Contains(out, "warning:") || !strings.Contains(out, "unsafe session id") {
+		t.Fatalf("work-gate = %v\n%q, want fail-open with the cause on stderr", err, out)
+	}
+}
