@@ -3084,3 +3084,5 @@ button.clarify-chip { cursor: pointer; font: inherit; }
 .settings-empty,
 .settings-note { color: var(--muted); }
 .code-copy-failed { margin: 0.3rem 0 0; font-size: 0.8rem; }
+.column.drop-blocked { outline: 2px dashed var(--faint); cursor: not-allowed; }
+.drag-notice { margin: 0 0 0.75rem; }

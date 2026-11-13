@@ -314,6 +314,10 @@ const ptBR = {
     backlogColumnOpen: 'Abrir no Backlog',
     backlogColumnEmpty: 'Nenhuma candidata — criar no Backlog',
     backlogColumnNoMatch: 'Nenhuma candidata no filtro.',
+    drag: {
+      cardHint: 'Arrastável: solte em Aprovadas ou Concluída. Aprovar ou aceitar também se faz pela página da feature.',
+      pending: (n: number) => `Responda os ${n} esclarecimentos antes de aprovar`,
+    },
   },
   pendings: {
     title: 'Pendências',
@@ -1396,6 +1400,10 @@ const en: Messages = {
     backlogColumnOpen: 'Open in Backlog',
     backlogColumnEmpty: 'No candidates yet — create one in the Backlog',
     backlogColumnNoMatch: 'No candidate matches the filter.',
+    drag: {
+      cardHint: 'Draggable: drop on Approved or Done. Approving or accepting can also be done from the feature page.',
+      pending: (n: number) => `Answer the ${n} clarifications before approving`,
+    },
   },
   pendings: {
     title: 'Pendings',

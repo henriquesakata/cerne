@@ -15,6 +15,7 @@ import {
   fetchState,
   generateDiagram,
   postTransition,
+  transitionBody,
   renameFeature,
   roastPlan,
   roastSpec,
@@ -1075,7 +1076,7 @@ function ActionsPanel({
   const submit = (action: TransitionAction, by?: string, reason?: string) => {
     setBusy(true)
     setFormError(null)
-    void postTransition(id, { action, by, reason }).then((res) => {
+    void postTransition(id, transitionBody(action, by, reason)).then((res) => {
       setBusy(false)
       if (res.ok) {
         setOpenForm(null)
