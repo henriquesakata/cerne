@@ -5,9 +5,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // enableCommitTrailer flips [gates] commit_trailer on for the project.
@@ -148,4 +151,31 @@ func TestHookCommitTrailerNoOps(t *testing.T) {
 			t.Fatalf("missing file must be fail-open: %v", err)
 		}
 	})
+}
+
+// TestHookCommitTrailerMainOverSubagent (F-0376 critic round 1, item 1): the
+// TL bound to W-0001 plus a live subagent binding to an in_development F-
+// stamps W-0001 — the subagent's feature does not make it ambiguous.
+func TestHookCommitTrailerMainOverSubagent(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	enableCommitTrailer(t, projDir)
+	cacheDir := filepath.Dir(repoDir)
+	mustCerne(t, "work", "start", "Coordenar o lote", "--dir", projDir)
+	now := time.Now().UTC()
+	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0375", Title: "dev", State: domain.StateInDevelopment, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.BindSession(cacheDir, "sess-tl", "W-0001"); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.BindSessionAgent(cacheDir, "sess-tl", "a0dev", "", "F-0375"); err != nil {
+		t.Fatal(err)
+	}
+	p := writeMsgFile(t, projDir, msgWithComments)
+	if out, err := execCerneStdin(t, "", "hook", "commit-trailer", p); err != nil {
+		t.Fatalf("hook commit-trailer: %v\n%s", err, out)
+	}
+	if got, _ := os.ReadFile(p); !strings.Contains(string(got), "Cerne: W-0001\n") {
+		t.Fatalf("want the TL's W-0001 stamped:\n%s", got)
+	}
 }

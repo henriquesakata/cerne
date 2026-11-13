@@ -157,3 +157,36 @@ func TestTouchBindingAgentKey(t *testing.T) {
 		t.Fatalf("signals = %+v, want s/ W-0001", byKey)
 	}
 }
+
+// TestLiveBindingsMainFirst (F-0376 critic round 1, item 1): a live main
+// thread binding wins over live subagent bindings, so a subagent's lingering
+// in_development feature does not silence the TL's commit trailer; subagent
+// bindings count only when no main binding is live.
+func TestLiveBindingsMainFirst(t *testing.T) {
+	cacheDir, repoDir := t.TempDir(), t.TempDir()
+	bindTestWork(t, repoDir, "W-0001", domain.WorkActive)
+	bindTestWork(t, repoDir, "W-0002", domain.WorkActive)
+	if err := BindSessionAgent(cacheDir, "tl", "dev", "", "W-0002"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := LiveBindings(cacheDir, repoDir); err != nil || len(got) != 1 || got[0] != "W-0002" {
+		t.Fatalf("subagent only: %v %v, want [W-0002]", got, err)
+	}
+	if err := BindSession(cacheDir, "tl", "W-0001"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := LiveBindings(cacheDir, repoDir); err != nil || len(got) != 1 || got[0] != "W-0001" {
+		t.Fatalf("main + subagent: %v %v, want [W-0001]", got, err)
+	}
+	// An id first met in a subagent file (sorted before) still counts for a
+	// main thread that holds it too: two main ids stay ambiguous.
+	if err := BindSessionAgent(cacheDir, "aa", "dev", "", "W-0002"); err != nil {
+		t.Fatal(err)
+	}
+	if err := BindSession(cacheDir, "zz", "W-0002"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := LiveBindings(cacheDir, repoDir); err != nil || len(got) != 2 {
+		t.Fatalf("two main ids: %v %v, want both", got, err)
+	}
+}

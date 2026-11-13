@@ -200,8 +200,11 @@ func bindingLive(repoDir, id string) bool {
 // LiveBindings enumerates the ids with a live registration binding on this
 // machine for the project (F-0173): every session file is resolved with the
 // same liveness check as CurrentBinding — dead bindings self-heal off disk —
-// and the surviving ids are deduplicated. The commit trailer stamps only when
-// exactly one id comes back: ambiguity never becomes a guess.
+// and the surviving ids are deduplicated. Main-thread bindings come first: a
+// subagent's ids are returned only when no main binding is live, so a
+// subagent's lingering feature never makes the TL's commit ambiguous
+// (F-0376). The commit trailer stamps only when exactly one id comes back:
+// ambiguity never becomes a guess.
 func LiveBindings(cacheDir, repoDir string) ([]string, error) {
 	dir := filepath.Join(cacheDir, sessionsSubdir)
 	entries, err := os.ReadDir(dir)
@@ -211,8 +214,8 @@ func LiveBindings(cacheDir, repoDir string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	seen := map[string]bool{}
-	var ids []string
+	seen := map[string]bool{} // keyed "<id>" for main bindings, "<id>." for subagents
+	var ids, agentIDs []string
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
@@ -227,10 +230,23 @@ func LiveBindings(cacheDir, repoDir string) ([]string, error) {
 			_ = os.Remove(path) // self-heal: stale binding
 			continue
 		}
-		if !seen[id] {
-			seen[id] = true
+		_, agent := splitBindingName(e.Name())
+		key := id
+		if agent != "" {
+			key += "."
+		}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		if agent != "" {
+			agentIDs = append(agentIDs, id)
+		} else {
 			ids = append(ids, id)
 		}
+	}
+	if len(ids) == 0 {
+		return agentIDs, nil
 	}
 	return ids, nil
 }
