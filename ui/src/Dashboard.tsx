@@ -460,7 +460,12 @@ function fmtWhen(iso: string, lang: string): string {
 // processReasonText builds the verdict's sentence from the code and the
 // numeric fields — the verdict order lives in the server, never here. Every
 // guard that decided is named with its interval (C17).
-function processReasonText(m: ProcessMarker, report: ProcessReport, t: Messages, lang: string): string {
+export function processReasonText(
+  m: ProcessMarker,
+  report: Pick<ProcessReport, 'min_sample' | 'guard_level'>,
+  t: Messages,
+  lang: string,
+): string {
   const d = t.dashboard
   const R = d.processReason
   const num = (v: number) => v.toLocaleString(lang, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -510,7 +515,7 @@ function processReasonText(m: ProcessMarker, report: ProcessReport, t: Messages,
 
 // unguardedText qualifies a melhorou whose guards were not both evaluated
 // (C9): it must not read like a guarded one.
-function unguardedText(m: ProcessMarker, t: Messages): string {
+export function unguardedText(m: ProcessMarker, t: Messages): string {
   if (m.verdict !== 'melhorou' || m.guarded) return ''
   const lack = [
     m.returned === 'inconclusivo' && t.dashboard.processLackReturned,
@@ -522,7 +527,7 @@ function unguardedText(m: ProcessMarker, t: Messages): string {
 // ProcessSideCell: the side's headline in the summary and crit. 8's numbers
 // behind it (C4) — window, raw-counter medians, coverage (C5), returned and
 // escaped shares (the latter pending while young, C10), exclusions (C13).
-function ProcessSideCell({ side }: { side: ProcessSide }) {
+export function ProcessSideCell({ side }: { side: ProcessSide }) {
   const { t, lang } = useT()
   const d = t.dashboard
   const count = (v: number) => v.toLocaleString(lang, { maximumFractionDigits: 0 })
