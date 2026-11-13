@@ -30,6 +30,7 @@ func Assets() []Asset {
 		{Script: gateScript, Command: gateCommand, Event: "PreToolUse", Matcher: gateMatcher},
 		{Script: lifecycleScript, Command: lifecycleCommand, Event: "PostToolUse", Matcher: "Bash"},
 		{Script: stopScript, Command: stopCommand, Event: "Stop"},
+		{Script: precompactScript, Command: precompactCommand, Event: "PreCompact", Matcher: precompactMatcher},
 	}
 }
 

@@ -694,7 +694,7 @@ func (r showResult) renderText(w io.Writer) {
 			fmt.Fprintf(w, "taken by: %s%s (%s)\n", e.TakenBy, at, e.TakenWork)
 		}
 		if e.TakenNote != "" {
-			fmt.Fprintf(w, "receiver's note: %s\n", e.TakenNote)
+			fmt.Fprintf(w, "read-back: %s\n", e.TakenNote)
 		}
 		if e.SupersededBy != "" {
 			fmt.Fprintf(w, "superseded by: %s\n", e.SupersededBy)

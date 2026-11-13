@@ -22,7 +22,7 @@ func passBaton(t *testing.T) (repoDir, projDir string) {
 	repoDir, projDir, _ = newFeatureBackend(t)
 	seedFeatureInState(t, repoDir, "F-0001", domain.StateInDevelopment, "spec.md", "plan.md")
 	w := startW(t, repoDir, projDir, "Operação longa", []string{"F-0001"})
-	if id, err := HandoffWork(repoDir, projDir, w.ID, "brief um", "rodar a suíte", nil); err != nil || id != "HO-0001" {
+	if id, err := HandoffWork(repoDir, projDir, w.ID, "brief um", "rodar a suíte", nil, nil); err != nil || id != "HO-0001" {
 		t.Fatalf("HandoffWork = %q, %v", id, err)
 	}
 	return repoDir, projDir
@@ -86,14 +86,14 @@ func TestTakeHandoffRefusals(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := startW(t, repoDir, projDir, "Outra frente bem distinta", nil)
-	if _, err := HandoffWork(repoDir, projDir, w.ID, "b", "n", nil); err != nil { // HO-0002
+	if _, err := HandoffWork(repoDir, projDir, w.ID, "b", "n", nil, nil); err != nil { // HO-0002
 		t.Fatal(err)
 	}
-	if _, err := HandoffWork(repoDir, projDir, w.ID, "b2", "n2", nil); err != nil { // HO-0003 supersedes HO-0002
+	if _, err := HandoffWork(repoDir, projDir, w.ID, "b2", "n2", nil, nil); err != nil { // HO-0003 supersedes HO-0002
 		t.Fatal(err)
 	}
 	c := startW(t, repoDir, projDir, "Terceira coisa sem relação", nil)
-	if _, err := HandoffWork(repoDir, projDir, c.ID, "b", "n", nil); err != nil { // HO-0004
+	if _, err := HandoffWork(repoDir, projDir, c.ID, "b", "n", nil, nil); err != nil { // HO-0004
 		t.Fatal(err)
 	}
 	if err := CancelHandoff(repoDir, projDir, "HO-0004", "plano mudou"); err != nil {
@@ -253,7 +253,7 @@ func TestTakeHandoffMissingOriginAndRefs(t *testing.T) {
 func TestTakeSupersededFollowsChain(t *testing.T) {
 	repoDir, projDir := passBaton(t) // HO-0001 on W-0001
 	for _, n := range []string{"b2", "b3"} {
-		if _, err := HandoffWork(repoDir, projDir, "W-0001", n, "n", nil); err != nil { // HO-0002, HO-0003
+		if _, err := HandoffWork(repoDir, projDir, "W-0001", n, "n", nil, nil); err != nil { // HO-0002, HO-0003
 			t.Fatal(err)
 		}
 	}

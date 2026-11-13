@@ -64,11 +64,11 @@ func TestHandoffLines(t *testing.T) {
 	now := time.Date(2026, 11, 12, 12, 0, 0, 0, time.UTC)
 	taken := now.Add(-26 * time.Hour)
 	p := Handoff{ID: "HO-0007", State: domain.HandoffPending, FromWork: "W-1234", Actor: "agent:a@b", CreatedAt: now.Add(-3 * time.Hour)}
-	if got, want := p.Line("Migração", now), "HO-0007 pending 3h — W-1234 Migração — from agent:a@b"; got != want {
+	if got, want := p.Line("Migração", now), "HO-0007 pending 3h (since 2026-11-12 09:00 UTC) — W-1234 Migração — from agent:a@b"; got != want {
 		t.Fatalf("pending line = %q, want %q", got, want)
 	}
 	tk := Handoff{ID: "HO-0006", State: domain.HandoffTaken, FromWork: "W-1230", TakenBy: "u@h", TakenWork: "W-1240", TakenAt: &taken}
-	if got, want := tk.Line("", now), "HO-0006 taken 1d ago by u@h (W-1240) — from W-1230"; got != want {
+	if got, want := tk.Line("", now), "HO-0006 taken 1d ago (2026-11-11 10:00 UTC) by u@h (W-1240) — from W-1230"; got != want {
 		t.Fatalf("taken line = %q, want %q", got, want)
 	}
 	s := Handoff{ID: "HO-0005", State: domain.HandoffSuperseded, FromWork: "W-1230", SupersededBy: "HO-0006"}
@@ -86,7 +86,7 @@ func TestHandoffLines(t *testing.T) {
 func TestShortAgeClampsSkew(t *testing.T) {
 	now := time.Date(2026, 11, 12, 12, 0, 0, 0, time.UTC)
 	h := Handoff{ID: "HO-0001", State: domain.HandoffPending, FromWork: "W-0001", Actor: "a", CreatedAt: now.Add(2 * time.Hour)}
-	if got, want := h.Line("t", now), "HO-0001 pending 0m — W-0001 t — from a"; got != want {
+	if got, want := h.Line("t", now), "HO-0001 pending 0m (since 2026-11-12 14:00 UTC) — W-0001 t — from a"; got != want {
 		t.Fatalf("line = %q, want %q", got, want)
 	}
 }

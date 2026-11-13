@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/store"
 )
@@ -118,7 +119,7 @@ func tempEvidence(evidence []string) string {
 // previous pending handoff is superseded by the new one in the same commit.
 // The work stays active. Inputs are validated before the backend is touched.
 // Returns the new HO- id.
-func HandoffWork(repoDir, projDir, id, brief, next string, evidence []string) (string, error) {
+func HandoffWork(repoDir, projDir, id, brief, next string, evidence, contingencies []string) (string, error) {
 	brief, next = strings.TrimSpace(brief), strings.TrimSpace(next)
 	if next == "" {
 		return "", fmt.Errorf("--next is required: the next step is what the new session needs first")
@@ -135,11 +136,21 @@ func HandoffWork(repoDir, projDir, id, brief, next string, evidence []string) (s
 	if bad := tempEvidence(ev); bad != "" {
 		return "", fmt.Errorf("--evidence %s is in a temporary folder that gets wiped: put the content in the brief or use a durable path", bad)
 	}
+	var ifs []string
+	for _, c := range contingencies {
+		if c = strings.TrimSpace(c); c != "" {
+			ifs = append(ifs, c)
+		}
+	}
+	lang := store.DocsLanguage(repoDir)
 	text := brief
 	if len(ev) > 0 {
-		text += "\n\nEvidência:\n- " + strings.Join(ev, "\n- ")
+		text += "\n\n" + doclang.Display(doclang.EvidenceLabel, lang) + ":\n- " + strings.Join(ev, "\n- ")
 	}
-	text += "\n\nPróximo passo: " + next
+	if len(ifs) > 0 {
+		text += "\n\n" + doclang.Display(doclang.IfLabel, lang) + ":\n- " + strings.Join(ifs, "\n- ")
+	}
+	text += "\n\n" + doclang.Display(doclang.NextStepLabel, lang) + ": " + next
 	var hoID string
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		w, err := store.LoadWork(repoDir, strings.ToUpper(strings.TrimSpace(id)))
@@ -173,15 +184,16 @@ func HandoffWork(repoDir, projDir, id, brief, next string, evidence []string) (s
 			}
 		}
 		h := store.Handoff{
-			ID:          hoID,
-			State:       domain.HandoffPending,
-			FromWork:    w.ID,
-			Refs:        w.Refs,
-			Actor:       resolveActor(defaultWorkActor()),
-			FromSession: os.Getenv("CERNE_SESSION"),
-			Next:        next,
-			CreatedAt:   now,
-			UpdatedAt:   now,
+			ID:            hoID,
+			State:         domain.HandoffPending,
+			FromWork:      w.ID,
+			Refs:          w.Refs,
+			Actor:         resolveActor(defaultWorkActor()),
+			FromSession:   os.Getenv("CERNE_SESSION"),
+			Next:          next,
+			Contingencies: ifs,
+			CreatedAt:     now,
+			UpdatedAt:     now,
 		}
 		if err := store.SaveHandoff(repoDir, h); err != nil {
 			return "", err

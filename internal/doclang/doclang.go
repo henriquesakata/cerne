@@ -243,6 +243,11 @@ const (
 	ListOr
 	// Unmet marks an acceptance criterion the delivery did not meet.
 	Unmet
+	// EvidenceLabel, IfLabel and NextStepLabel open the sections of a
+	// handoff document (F-0368): "Evidência:", "Se:", "Próximo passo:".
+	EvidenceLabel
+	IfLabel
+	NextStepLabel
 	numTerms
 )
 
@@ -275,6 +280,9 @@ var terms = map[Term]map[Lang]form{
 	ListAnd:        {PT: {re: `e`}, EN: {re: `and`}},
 	ListOr:         {PT: {re: `ou`}, EN: {re: `or`}},
 	Unmet:          {PT: {re: `PENDENTE`}, EN: {re: `UNMET`}},
+	EvidenceLabel:  {PT: {`Evid(?:ê|e\x{0302}|e)ncia`, "Evidência"}, EN: {`Evidence`, "Evidence"}},
+	IfLabel:        {PT: {`Se`, "Se"}, EN: {`If`, "If"}},
+	NextStepLabel:  {PT: {`Pr(?:ó|o\x{0301}|o)ximo passo`, "Próximo passo"}, EN: {`Next step`, "Next step"}},
 }
 
 // in is term t as a regular-expression fragment in language l.

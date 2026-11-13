@@ -26,7 +26,7 @@ func TestStartWorkFrom(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	seedFeatureInState(t, repoDir, "F-0001", domain.StateInDevelopment, "spec.md", "plan.md")
 	a := startW(t, repoDir, projDir, "Operação longa", []string{"F-0001"})
-	if _, err := HandoffWork(repoDir, projDir, a.ID, "brief um", "rodar a suíte", nil); err != nil {
+	if _, err := HandoffWork(repoDir, projDir, a.ID, "brief um", "rodar a suíte", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	// Without --from the same title is refused by the guard (crit. 7: with the handoff).
@@ -81,7 +81,7 @@ func TestStartWorkPrintsCrossingHandoff(t *testing.T) {
 	seedFeatureInState(t, repoDir, "F-0001", domain.StateInDevelopment, "spec.md", "plan.md")
 	seedFeatureInState(t, repoDir, "F-0002", domain.StateInDevelopment, "spec.md", "plan.md")
 	a := startW(t, repoDir, projDir, "Operação longa", []string{"F-0001"})
-	if _, err := HandoffWork(repoDir, projDir, a.ID, "brief", "n1", nil); err != nil {
+	if _, err := HandoffWork(repoDir, projDir, a.ID, "brief", "n1", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	startW(t, repoDir, projDir, "Sem passagem alguma aqui", []string{"F-0001"})
@@ -110,7 +110,7 @@ func TestStartWorkHandoffSeamsWithPlanning(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		if _, err := HandoffWork(repoDir, projDir, "W-0001", "brief", "n1", nil); err != nil {
+		if _, err := HandoffWork(repoDir, projDir, "W-0001", "brief", "n1", nil, nil); err != nil {
 			t.Fatal(err)
 		}
 		return repoDir, projDir

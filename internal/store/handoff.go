@@ -68,22 +68,25 @@ func LoadHandoffs(repoDir, id string) ([]HandoffEntry, error) {
 // passes on, with its own code and the state that says whether it was received.
 // The brief lives in content/handoffs/<id>.md.
 type Handoff struct {
-	ID           string              `json:"id"`
-	State        domain.HandoffState `json:"state"`
-	FromWork     string              `json:"from_work"`
-	Refs         []string            `json:"refs,omitempty"`
-	Actor        string              `json:"actor"`
-	FromSession  string              `json:"from_session,omitempty"`
-	Next         string              `json:"next"`
-	SupersededBy string              `json:"superseded_by,omitempty"`
-	TakenBy      string              `json:"taken_by,omitempty"`
-	TakenWork    string              `json:"taken_work,omitempty"`
-	TakenSession string              `json:"taken_session,omitempty"`
-	TakenNote    string              `json:"taken_note,omitempty"`
-	TakenAt      *time.Time          `json:"taken_at,omitempty"`
-	CancelReason string              `json:"cancel_reason,omitempty"`
-	CreatedAt    time.Time           `json:"created_at"`
-	UpdatedAt    time.Time           `json:"updated_at"`
+	ID          string              `json:"id"`
+	State       domain.HandoffState `json:"state"`
+	FromWork    string              `json:"from_work"`
+	Refs        []string            `json:"refs,omitempty"`
+	Actor       string              `json:"actor"`
+	FromSession string              `json:"from_session,omitempty"`
+	Next        string              `json:"next"`
+	// Contingencies are the giver's "<condition> → <action>" lines, verbatim
+	// (F-0368 crit. 15).
+	Contingencies []string   `json:"contingencies,omitempty"`
+	SupersededBy  string     `json:"superseded_by,omitempty"`
+	TakenBy       string     `json:"taken_by,omitempty"`
+	TakenWork     string     `json:"taken_work,omitempty"`
+	TakenSession  string     `json:"taken_session,omitempty"`
+	TakenNote     string     `json:"taken_note,omitempty"`
+	TakenAt       *time.Time `json:"taken_at,omitempty"`
+	CancelReason  string     `json:"cancel_reason,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
 // SaveHandoff writes the handoff to entities/handoffs/<ID>.json.
@@ -126,11 +129,11 @@ func LoadHandoffContent(backendDir, id string) (string, error) {
 func (h Handoff) Line(workTitle string, now time.Time) string {
 	switch h.State {
 	case domain.HandoffPending:
-		return fmt.Sprintf("%s pending %s — %s — from %s", h.ID, ShortAge(now.Sub(h.CreatedAt)), strings.TrimSpace(h.FromWork+" "+workTitle), h.Actor)
+		return fmt.Sprintf("%s pending %s (since %s) — %s — from %s", h.ID, ShortAge(now.Sub(h.CreatedAt)), UTCMinute(h.CreatedAt), strings.TrimSpace(h.FromWork+" "+workTitle), h.Actor)
 	case domain.HandoffTaken:
 		var age string
 		if h.TakenAt != nil {
-			age = ShortAge(now.Sub(*h.TakenAt)) + " ago "
+			age = ShortAge(now.Sub(*h.TakenAt)) + " ago (" + UTCMinute(*h.TakenAt) + ") "
 		}
 		return fmt.Sprintf("%s taken %sby %s (%s) — from %s", h.ID, age, h.TakenBy, h.TakenWork, h.FromWork)
 	case domain.HandoffSuperseded:
@@ -139,6 +142,9 @@ func (h Handoff) Line(workTitle string, now time.Time) string {
 		return fmt.Sprintf("%s %s %s ago — from %s: %s", h.ID, h.State, ShortAge(now.Sub(h.UpdatedAt)), h.FromWork, h.CancelReason)
 	}
 }
+
+// UTCMinute is t as an absolute UTC time to the minute: "2026-11-12 20:30 UTC".
+func UTCMinute(t time.Time) string { return t.UTC().Format("2006-01-02 15:04") + " UTC" }
 
 // ShortAge renders a duration compactly: "45m", "3h", "2d". A negative one
 // (clock skew between machines) reads as 0m.

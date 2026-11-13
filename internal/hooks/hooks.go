@@ -19,7 +19,7 @@ import (
 	"strings"
 )
 
-//go:embed assets/register-reference-reminder.sh assets/cerne-register-reminder.sh assets/cerne-subagent-context.sh assets/cerne-work-bind.sh assets/cerne-work-gate.sh assets/cerne-lifecycle-reminder.sh assets/cerne-stop-closeout.sh
+//go:embed assets/register-reference-reminder.sh assets/cerne-register-reminder.sh assets/cerne-subagent-context.sh assets/cerne-work-bind.sh assets/cerne-work-gate.sh assets/cerne-lifecycle-reminder.sh assets/cerne-stop-closeout.sh assets/cerne-precompact.sh
 var files embed.FS
 
 const (
@@ -63,6 +63,13 @@ const (
 	stopScript = "cerne-stop-closeout.sh"
 	// stopCommand is the settings.json command that runs stopScript.
 	stopCommand = `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-stop-closeout.sh"`
+	// precompactScript is the PreCompact handoff pointer (F-0368): the
+	// compaction summary keeps the bound W- and its latest HO- code.
+	precompactScript = "cerne-precompact.sh"
+	// precompactCommand is the settings.json command that runs precompactScript.
+	precompactCommand = `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-precompact.sh"`
+	// precompactMatcher covers both compaction triggers.
+	precompactMatcher = "manual|auto"
 )
 
 // Status is the outcome of installing one asset.
@@ -185,7 +192,7 @@ func installClaude(projDir string) ([]Result, error) {
 	}
 	results = append(results, Result{Asset: subagentScript, Status: st})
 
-	for _, script := range []string{bindScript, gateScript, lifecycleScript, stopScript} {
+	for _, script := range []string{bindScript, gateScript, lifecycleScript, stopScript, precompactScript} {
 		dst := filepath.Join(projDir, ".claude", "hooks", script)
 		st, err = writeIfChanged(dst, []byte(mustRead("assets/"+script)))
 		if err != nil {
@@ -507,6 +514,20 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	}
 	needStop := !scriptWired(stopArr, stopScript)
 
+	var pcArr []any
+	hasPC := false
+	if hooksMap != nil {
+		if sv, ok := hooksMap["PreCompact"]; ok {
+			arr, ok := sv.([]any)
+			if !ok {
+				return nil, false, errors.New(`hooks: settings.json has "PreCompact" with an unexpected type`)
+			}
+			pcArr = arr
+			hasPC = true
+		}
+	}
+	needPC := !scriptWired(pcArr, precompactScript)
+
 	envVal, hasEnv := root["env"]
 	var envMap map[string]any
 	if hasEnv {
@@ -518,7 +539,7 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	}
 	needActor := !actorPresent(envMap)
 
-	if !needHook && !needBind && !needLifecycle && !needGate && !needRegister && !needSubagent && !needStop && !needActor {
+	if !needHook && !needBind && !needLifecycle && !needGate && !needRegister && !needSubagent && !needStop && !needPC && !needActor {
 		return nil, false, nil
 	}
 
@@ -547,6 +568,9 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 		}
 		if needStop {
 			fresh = withEventEntry(fresh, "Stop", stopCommand)
+		}
+		if needPC {
+			fresh = withMatcherEntry(fresh, "PreCompact", precompactMatcher, precompactCommand)
 		}
 		if needActor {
 			fresh = withActorEntry(fresh)
@@ -586,6 +610,9 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	}
 	if needStop {
 		expected = withEventEntry(expected, "Stop", stopCommand)
+	}
+	if needPC {
+		expected = withMatcherEntry(expected, "PreCompact", precompactMatcher, precompactCommand)
 	}
 	if needActor {
 		expected = withActorEntry(expected)
@@ -651,6 +678,15 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	if ok && needStop {
 		curHasHooks, curHasStop := reDetectEvent(cur, "Stop", hasHooks, hasStop)
 		spliced, spliceOK := spliceEventEntry(cur, "Stop", newEventEntry(stopCommand), curHasHooks, curHasStop, detectNewline(cur), unit)
+		if !spliceOK {
+			ok = false
+		} else {
+			cur = spliced
+		}
+	}
+	if ok && needPC {
+		curHasHooks, curHasPC := reDetectEvent(cur, "PreCompact", hasHooks, hasPC)
+		spliced, spliceOK := spliceMatcherEntry(cur, "PreCompact", newMatcherEntry(precompactMatcher, precompactCommand), curHasHooks, curHasPC, detectNewline(cur), unit)
 		if !spliceOK {
 			ok = false
 		} else {

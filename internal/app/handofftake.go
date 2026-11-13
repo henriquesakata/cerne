@@ -82,7 +82,7 @@ func TakeHandoff(repoDir, projDir, cacheDir, sess, id, title, note string) (Take
 		if err != nil {
 			return "", err
 		}
-		p := startParams{title: strings.TrimSpace(title), refs: refs, finalRefs: true, actor: defaultWorkActor(), ho: &h, sess: sess, note: strings.TrimSpace(note)}
+		p := startParams{title: strings.TrimSpace(title), refs: refs, finalRefs: true, actor: resolveActor(defaultWorkActor()), ho: &h, sess: sess, note: strings.TrimSpace(note)}
 		if p.title == "" {
 			p.title = origin.Title
 		}

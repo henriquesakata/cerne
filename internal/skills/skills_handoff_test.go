@@ -30,3 +30,17 @@ func TestCerneAuthoringDocumentsHandoffCode(t *testing.T) {
 		}
 	}
 }
+
+// TestCerneAuthoringDocumentsReadBack pins F-0368 crit. 18: the giver writes
+// the contingencies in --if, the receiver records its read-back in --note.
+func TestCerneAuthoringDocumentsReadBack(t *testing.T) {
+	c := All()[0].Content
+	for _, sub := range []string{
+		`--if "<condition> → <action>"`,
+		`cerne handoff take HO-… --note "<what you understood + first action>"`,
+	} {
+		if !strings.Contains(c, sub) {
+			t.Errorf("skill missing %q", sub)
+		}
+	}
+}

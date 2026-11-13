@@ -41,6 +41,8 @@ type hookInput struct {
 	// StopHookActive is set on a Stop payload when the stop is itself the
 	// continuation of a Stop hook (F-0294).
 	StopHookActive bool `json:"stop_hook_active"`
+	// Source is the SessionStart origin; "compact" after a compaction (F-0368).
+	Source string `json:"source"`
 }
 
 func decodeHookInput(r io.Reader) (hookInput, error) {
