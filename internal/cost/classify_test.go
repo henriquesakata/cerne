@@ -32,7 +32,7 @@ func reply(sess, agent string, ts time.Time, text string) string {
 	return jline(sess, agent, "assistant", ts, []map[string]any{{"type": "text", "text": text}})
 }
 
-const diffFence = "=== DIFF (início) ===\ndiff --git a/x b/x\n=== DIFF (fim) ==="
+const diffFence = "=== CRITÉRIOS (início) ===\n1. x\n=== CRITÉRIOS (fim) ===\n\n=== DIFF (início) ===\ndiff --git a/x b/x\n=== DIFF (fim) ==="
 
 // classOf writes one subagent transcript (kind is its agentType) and returns
 // the class readSession gives its messages.
@@ -68,10 +68,12 @@ func TestClassifyRole(t *testing.T) {
 		{"critic, diff fence inline", "general-purpose",
 			[]string{ask("s", "x", at(1), "Ataque o diff:\n"+diffFence), reply("s", "x", at(2), "Achei um bug.")}, "critic"},
 		{"critic, reads the package from a file (cat -n prefix)", "general-purpose",
-			[]string{ask("s", "x", at(1), "Leia /tmp/pacote.md"), toolResult("s", "x", at(2), "     1→# Pacote\n     7→=== DIFF (start) ===\n     8→+x"), reply("s", "x", at(3), "Achado 1.")}, "critic"},
+			[]string{ask("s", "x", at(1), "Leia /tmp/pacote.md"), toolResult("s", "x", at(2), "     1→# Pacote\n     3→=== CRITERIA (start) ===\n     5→=== CRITERIA (end) ===\n     7→=== DIFF (start) ===\n     8→+x"), reply("s", "x", at(3), "Achado 1.")}, "critic"},
 		{"critic, code-reviewer", "code-reviewer", []string{ask("s", "x", at(1), "Revise."), reply("s", "x", at(2), "ok")}, "critic"},
 		{"both signals: judge", "general-purpose",
 			[]string{ask("s", "x", at(1), "Leia o pacote."), toolResult("s", "x", at(2), diffFence), reply("s", "x", at(3), "VERDICT: TIE")}, "judge"},
+		{"a diff fence without the criteria fence is no Gauntlet package", "general-purpose",
+			[]string{ask("s", "x", at(1), "Veja:\n=== DIFF (início) ===\n+x\n=== DIFF (fim) ==="), reply("s", "x", at(2), "ok")}, ""},
 		{"no signal", "general-purpose", []string{ask("s", "x", at(1), "Faça X."), reply("s", "x", at(2), "Feito.")}, ""},
 		{"source code that mentions the fence is no diff", "general-purpose",
 			[]string{ask("s", "x", at(1), "Leia artifact.go"), toolResult("s", "x", at(2), "     36\t\"=== DIFF (início) ===\", \"=== DIFF (fim) ===\","), reply("s", "x", at(3), "ok")}, ""},

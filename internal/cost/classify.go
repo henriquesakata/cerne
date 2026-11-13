@@ -18,6 +18,10 @@ var (
 	// fence sits inside quotes and is no diff. TestFenceMatchesTheArtifact pins
 	// it to gauntlet.Assemble.
 	fenceRe = regexp.MustCompile(`(?m)^[ \t]*(?:\d+[→\t])?=== DIFF \((?:início|start)\) ===[ \t]*$`)
+	// critRe is the criteria fence of the same package: the diff fence alone
+	// also shows in a pasted diff or a quoted example, and would make a
+	// builder a critic for good (F-0396).
+	critRe = regexp.MustCompile(`(?m)^[ \t]*(?:\d+[→\t])?=== (?:CRITÉRIOS \(início\)|CRITERIA \(start\)) ===[ \t]*$`)
 	// askedA and askedB: the first message asks for the verdict line when it
 	// spells out both letters ("VEREDITO: A|B|EMPATE" in a brief is no ask).
 	askedA = regexp.MustCompile("(?:VEREDITO|VERDICT):[ \\t]*[*_`]*A(?:[^|\\w]|$)")
@@ -50,7 +54,7 @@ func (s *roleScan) feed(line []byte) {
 			return
 		}
 		for _, b := range blockTexts(l.Message.Content, !first) {
-			s.fenced = s.fenced || fenceRe.MatchString(b)
+			s.fenced = s.fenced || fenceRe.MatchString(b) && critRe.MatchString(b)
 			s.asked = s.asked || first && askedA.MatchString(b) && askedB.MatchString(b)
 		}
 	case bytes.Contains(line, assistantKey) && bytes.Contains(line, textKey):
