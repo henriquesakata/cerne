@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -23,6 +24,12 @@ func TestCheckHumanSetting(t *testing.T) {
 			err := CheckHumanSetting(tc.id)
 			if tc.refused != errors.Is(err, ErrHumanGate) || (!tc.refused && err != nil) {
 				t.Errorf("CheckHumanSetting(%s) as %q = %v, refused want %v", tc.id, tc.actor, err, tc.refused)
+			}
+			if tc.refused {
+				msg := err.Error()
+				if !strings.Contains(msg, tc.id) || !strings.Contains(msg, "project owner's decision") || !strings.Contains(msg, "Settings screen of cerne ui") || strings.Contains(msg, "Gauntlet") {
+					t.Errorf("message %q must name the key and the owner, and hardcode no Gauntlet phrase", msg)
+				}
 			}
 		})
 	}
