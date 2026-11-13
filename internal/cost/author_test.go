@@ -108,6 +108,17 @@ func TestAuthorModel(t *testing.T) {
 		}, push, "claude-opus-5-5", true},
 		{"no transcript for the session", nil, push, "", false},
 	}
+	// A request blob repeats the running call with no model and another type:
+	// neither a pending call nor the last message.
+	blob := `{"type":"api-request-blob","sessionId":"s-author","message":{"role":"assistant","content":[{"type":"tool_use","id":"b1","name":"Bash","input":{"command":"cerne push"}}]}}`
+	t.Run("a request blob is not a message", func(t *testing.T) {
+		root := t.TempDir()
+		writeLines(t, root, "-tmp-p/"+sess+".jsonl",
+			tline{ts: at(0), model: "claude-opus-5-5", id: "m1"}.json(sess), blob)
+		if model, found := AuthorModel([]string{root}, sess, push); model != "claude-opus-5-5" || !found {
+			t.Fatalf("AuthorModel = (%q, %v), want the last real message's model", model, found)
+		}
+	})
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
