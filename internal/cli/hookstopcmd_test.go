@@ -312,3 +312,79 @@ func TestHookStopCheckHarvestsCost(t *testing.T) {
 		}
 	}
 }
+
+// writeCompactions records the given instants as the session's compactions.
+func writeCompactions(t *testing.T, cacheDir, sess string, at ...time.Time) {
+	t.Helper()
+	var b strings.Builder
+	for _, ts := range at {
+		b.WriteString(ts.UTC().Format(time.RFC3339Nano) + "\n")
+	}
+	dir := filepath.Join(cacheDir, "compactions")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, sess), []byte(b.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+const stopHandoffLine = "cerne work handoff W-0001 --next"
+
+// TestHookStopCompactionRemindsHandoff (F-0368 crit. 13): after a compaction
+// with no HO since, the Stop reminder carries the `cerne work handoff` line,
+// once per (session, binding, compaction count), with no git/ssh.
+func TestHookStopCompactionRemindsHandoff(t *testing.T) {
+	projDir, cacheDir, _ := boundWork(t, "sess-sc")
+	called := failingNetTools(t)
+	stop := func() string {
+		t.Helper()
+		out, err := execCerneStdin(t, stopPayload(t, "sess-sc", projDir), "hook", "stop-check")
+		if err != nil {
+			t.Fatalf("stop-check: %v\n%s", err, out)
+		}
+		return out
+	}
+
+	// No compaction: today's reminder, without the handoff line.
+	if out := stop(); !strings.Contains(out, "work done") || strings.Contains(out, stopHandoffLine) {
+		t.Fatalf("no compaction: want plain closeout:\n%s", out)
+	}
+	c1 := time.Now().UTC().Add(-time.Minute)
+	writeCompactions(t, cacheDir, "sess-sc", c1)
+	if out := stop(); !strings.Contains(out, "W-0001") || !strings.Contains(out, stopHandoffLine) {
+		t.Fatalf("after compaction: want the handoff line:\n%s", out)
+	}
+	if out := stop(); strings.TrimSpace(out) != "" {
+		t.Fatalf("same compaction count: want silence, got:\n%s", out)
+	}
+	writeCompactions(t, cacheDir, "sess-sc", c1, c1.Add(30*time.Second))
+	if out := stop(); !strings.Contains(out, stopHandoffLine) {
+		t.Fatalf("second compaction: want the handoff line again:\n%s", out)
+	}
+	if called() {
+		t.Fatal("stop-check invoked git/ssh")
+	}
+}
+
+// TestHookStopCompactionHandoffSinceIsQuiet (crit. 13): an HO of the bound W-
+// created after the last compaction drops the handoff line; one created
+// before it does not count.
+func TestHookStopCompactionHandoffSinceIsQuiet(t *testing.T) {
+	projDir, cacheDir, repoDir := boundWork(t, "sess-sh")
+	c := time.Now().UTC().Add(-time.Hour)
+	writeCompactions(t, cacheDir, "sess-sh", c)
+	saveHO(t, repoDir, "HO-0001", "W-0001", "antes", c.Add(-time.Minute))
+	out, err := execCerneStdin(t, stopPayload(t, "sess-sh", projDir), "hook", "stop-check")
+	if err != nil || !strings.Contains(out, stopHandoffLine) {
+		t.Fatalf("HO before the compaction must not count (err=%v):\n%s", err, out)
+	}
+
+	projDir, cacheDir, repoDir = boundWork(t, "sess-sh2")
+	writeCompactions(t, cacheDir, "sess-sh2", c)
+	saveHO(t, repoDir, "HO-0001", "W-0001", "depois", c.Add(time.Minute))
+	out, err = execCerneStdin(t, stopPayload(t, "sess-sh2", projDir), "hook", "stop-check")
+	if err != nil || !strings.Contains(out, "work done") || strings.Contains(out, stopHandoffLine) {
+		t.Fatalf("HO after the compaction: want plain closeout (err=%v):\n%s", err, out)
+	}
+}

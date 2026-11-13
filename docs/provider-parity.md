@@ -17,6 +17,7 @@ step, in the install output. Research provenance: R-0035 (Codex), R-0036
 | Session→work binding | PostToolUse/Bash (cerne-work-bind.sh) | degraded: depends on the gate route above | PostToolUse, matcher Bash | AfterTool, matcher run_shell_command (--format gemini) |
 | Lifecycle + provenance reminders | PostToolUse/Bash (lifecycle-reminder, provenance) | degraded: via third-party toggle | PostToolUse, matcher Bash | degraded: AfterTool context envelope pending live validation |
 | Stop closeout | Stop hook (cerne-stop-closeout.sh) | degraded: stop followup_message auto-submits — deferred | Stop hook | degraded: AfterAgent forces a retry — deferred |
+| Handoff code through compaction | PreCompact hook (cerne-precompact.sh) + SessionStart source=compact | degraded: PreCompact not wired yet | degraded: PreCompact not wired yet | degraded: no compaction hook |
 | CERNE_ACTOR=agent (human gates) | settings.json env block | degraded: no per-project session env surface | shell_environment_policy.set in .codex/config.toml | .gemini/.env |
 | Subagents with live board | SubagentStart hook (cerne-subagent-context.sh) | degraded: subagentStart has no additional_context | degraded: SubagentStart envelope pending live validation | degraded: subagents are a preview feature |
 | Trust prerequisite | none | trusted workspaces | projects.<path>.trust_level + per-hook trust review | trusted folders |
