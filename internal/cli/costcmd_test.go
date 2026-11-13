@@ -566,13 +566,15 @@ func TestCostStampBreaksDownByRole(t *testing.T) {
 
 // judgeSubagent adds a judge-shaped subagent y to sess-1: it is asked to read
 // a file and ends with the verdict line, and spends 1/1/1/1 tokens.
-func judgeSubagent(t *testing.T) {
+func judgeSubagent(t *testing.T) { judgeSubagentOf(t, "sess-1", "m3") }
+
+func judgeSubagentOf(t *testing.T, sess, id string) {
 	t.Helper()
 	root := os.Getenv("CLAUDE_CONFIG_DIR")
-	writeTranscript(t, root, "sess-1/subagents/agent-y.jsonl",
-		`{"type":"user","timestamp":"2026-11-01T10:03:30Z","sessionId":"sess-1","isSidechain":true,"agentId":"y","message":{"role":"user","content":"Leia /tmp/a.md"}}`,
-		costLine("2026-11-01T10:04:00Z", "m3", "claude-opus-5-5", "y", 1, 1, 1, 1),
-		`{"type":"assistant","timestamp":"2026-11-01T10:04:01Z","sessionId":"sess-1","isSidechain":true,"agentId":"y","message":{"id":"m3","role":"assistant","content":[{"type":"text","text":"Porque sim.\n\nVEREDITO: A"}]}}`)
+	writeTranscript(t, root, sess+"/subagents/agent-y.jsonl",
+		`{"type":"user","timestamp":"2026-11-01T10:03:30Z","sessionId":"`+sess+`","isSidechain":true,"agentId":"y","message":{"role":"user","content":"Leia /tmp/a.md"}}`,
+		costLine("2026-11-01T10:04:00Z", id, "claude-opus-5-5", "y", 1, 1, 1, 1),
+		`{"type":"assistant","timestamp":"2026-11-01T10:04:01Z","sessionId":"`+sess+`","isSidechain":true,"agentId":"y","message":{"id":"`+id+`","role":"assistant","content":[{"type":"text","text":"Porque sim.\n\nVEREDITO: A"}]}}`)
 }
 
 // backfillProject is F-0001 stamped before the judge subagent existed, then
@@ -614,7 +616,8 @@ func TestCostBackfillRolesReportsWithoutWriting(t *testing.T) {
 	}
 	for _, want := range []string{
 		"F-0001  implemented  critic 0 agents, 0 tokens · judge 1 agent, 7 tokens",
-		"Left out: unattributed 0 · ambiguous 0 · already with roles 0 · no anchor 0 · inconsistent 0",
+		"Left out: unattributed 0 · ambiguous 0 · already with roles 0 · no anchor 0 · inconsistent 0 · partial 0 (counted)",
+		"  sess-1/y judge\n",
 		"--apply",
 	} {
 		if !strings.Contains(out, want) {
@@ -683,5 +686,102 @@ func TestCostBackfillRolesApplyDone(t *testing.T) {
 	}
 	if again, _ := store.LoadErrata(repoDir, "F-0001"); again != errata {
 		t.Error("the second apply wrote an erratum")
+	}
+}
+
+// twoFeatureBackfill is F-0001 (sess-1) and F-0002 (sess-3), both stamped
+// before their judge subagent existed.
+func twoFeatureBackfill(t *testing.T) (projDir, repoDir string) {
+	t.Helper()
+	projDir, _, repoDir = setupProject(t)
+	seedResultFeatures(t, repoDir, domain.StateImplemented, domain.StateImplemented)
+	costSessions(t, repoDir)
+	root := os.Getenv("CLAUDE_CONFIG_DIR")
+	writeTranscript(t, root, "sess-3.jsonl", costLine("2026-11-01T10:02:00Z", "n1", "claude-opus-5-5", "", 1, 10, 100, 1000))
+	writeTranscript(t, root, "sess-3/subagents/agent-x.jsonl", costLine("2026-11-01T10:03:00Z", "n2", "claude-sonnet-5", "x", 2, 20, 200, 2000))
+	costBind(t, filepath.Dir(repoDir), "sess-3", "F-0002", "2026-11-01T10:01:00Z")
+	for _, id := range []string{"F-0001", "F-0002"} {
+		if out, err := execCerne(t, "cost", id, "--stamp", "--dir", projDir); err != nil {
+			t.Fatalf("stamp %s: %v\n%s", id, err, out)
+		}
+	}
+	judgeSubagentOf(t, "sess-1", "m3")
+	judgeSubagentOf(t, "sess-3", "n3")
+	return projDir, repoDir
+}
+
+// TestCostBackfillRolesApplyCollectsFailures (F-0396): a bind failing on the
+// second feature does not stop the run nor leave it unrecoverable — the first
+// is applied, the second reports its error with a non-zero exit and writes no
+// document, and a re-run finishes it; a third has nothing to do.
+func TestCostBackfillRolesApplyCollectsFailures(t *testing.T) {
+	projDir, repoDir := twoFeatureBackfill(t)
+	second := readResult(t, repoDir, "F-0002")
+	real := appendBind
+	appendBind = func(dir string, b cost.Bind) error {
+		if b.Entity == "F-0002" {
+			return errors.New("disk full")
+		}
+		return real(dir, b)
+	}
+	out, err := execCerne(t, "cost", "backfill-roles", "--apply", "--dir", projDir)
+	appendBind = real
+	if err == nil || !strings.Contains(out, "✓ F-0001") || !strings.Contains(out, "✗ F-0002: disk full") {
+		t.Fatalf("apply with a failing bind: err %v\n%s", err, out)
+	}
+	if !strings.Contains(readResult(t, repoDir, "F-0001"), `"judge":{`) || readResult(t, repoDir, "F-0002") != second {
+		t.Error("F-0001 must be completed and F-0002 left untouched")
+	}
+	if out, err := execCerne(t, "cost", "backfill-roles", "--apply", "--dir", projDir); err != nil || !strings.Contains(out, "✓ F-0002") {
+		t.Fatalf("re-run: %v\n%s", err, out)
+	}
+	if !strings.Contains(readResult(t, repoDir, "F-0002"), `"judge":{`) {
+		t.Error("the re-run did not complete F-0002")
+	}
+	if out, err := execCerne(t, "cost", "backfill-roles", "--apply", "--dir", projDir); err != nil || !strings.Contains(out, "nothing to backfill") {
+		t.Fatalf("third run: %v\n%s", err, out)
+	}
+}
+
+// TestCostBackfillRolesBindsWhenTheAnchorAlreadyHasRoles (F-0396): the anchor
+// completed but the binds missing (a run cut short): --apply writes the binds
+// and not a second document.
+func TestCostBackfillRolesBindsWhenTheAnchorAlreadyHasRoles(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	seedResultFeatures(t, repoDir, domain.StateImplemented)
+	costSessions(t, repoDir)
+	judgeSubagent(t) // the stamp now classifies the judge itself: roles in the anchor, no bind
+	if out, err := execCerne(t, "cost", "F-0001", "--stamp", "--dir", projDir); err != nil {
+		t.Fatalf("stamp: %v\n%s", err, out)
+	}
+	result := readResult(t, repoDir, "F-0001")
+	if !strings.Contains(result, `"judge":{`) {
+		t.Fatalf("stamp lacks the judge:\n%s", result)
+	}
+	out, err := execCerne(t, "cost", "backfill-roles", "--apply", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "✓ F-0001: 1 agent bound") || strings.Contains(out, "anchor completed") {
+		t.Fatalf("apply: %v\n%s", err, out)
+	}
+	if readResult(t, repoDir, "F-0001") != result || !strings.Contains(ledgerBytes(t, repoDir), `"role":"judge","retro":true`) {
+		t.Error("only the bind was expected")
+	}
+}
+
+// TestCostBackfillRolesApplyJSON (F-0396): --apply --json prints the applied
+// list and the errors, no prose.
+func TestCostBackfillRolesApplyJSON(t *testing.T) {
+	projDir, _ := backfillProject(t, domain.StateImplemented)
+	out, err := execCerne(t, "cost", "backfill-roles", "--apply", "--json", "--dir", projDir)
+	var got struct {
+		Applied []struct {
+			ID    string
+			Bound int
+			Wrote string
+		}
+		Errors []string
+	}
+	if err != nil || json.NewDecoder(strings.NewReader(out)).Decode(&got) != nil || len(got.Applied) != 1 || got.Applied[0].ID != "F-0001" ||
+		got.Applied[0].Bound != 1 || got.Applied[0].Wrote != "result" || len(got.Errors) != 0 {
+		t.Fatalf("--apply --json: %v\n%s", err, out)
 	}
 }
