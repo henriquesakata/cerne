@@ -50,6 +50,10 @@ func TestGauntletCostStats(t *testing.T) {
 	stampedFeature(t, repo, "F-0005", domain.StateImplemented, "leve", in(1000), map[string]Counters{"builder": in(1000)})
 	stampedFeature(t, repo, "F-0006", domain.StateInDevelopment, "leve", in(1000), map[string]Counters{"critic": in(900)})
 	saveFeature(t, repo, "F-0007", domain.StateImplemented)
+	// Out: an anchor that does not parse; an anchor stamped before F-0384, with no by_role.
+	saveFeature(t, repo, "F-0009", domain.StateImplemented)
+	writeResult(t, repo, "F-0009", resultDoc("F-0009")+"\n## Custo\n\n<!-- cerne:cost v1 {not json} -->\n")
+	stampedFeature(t, repo, "F-0010", domain.StateDone, "leve", in(1000), nil)
 
 	got, err := GauntletCostStats(repo)
 	if err != nil {

@@ -39,6 +39,9 @@ type GauntletStats struct {
 // weights of the process panel) and that spend's share of the feature's own.
 // It reads the anchors only — never the transcripts — so the approve check
 // stays cheap.
+// ponytail: every implemented/done result is read per call (~400 results per
+// --check on cerne's own backend); cache the stats by backend HEAD if the
+// check gets slow.
 func GauntletCostStats(repoDir string) (GauntletStats, error) {
 	features, err := store.LoadAllFeatures(repoDir)
 	if err != nil {
