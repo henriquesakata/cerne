@@ -416,7 +416,7 @@ export type CostFeature = {
   title: string
   level: string // leve | padrão | avançado; '' sem linha de nível
   state: FeatureState
-  completed_at: string
+  completed_at?: string // omitted with no feature.completed
   weighted: number
   tokens: CostCounters
   by_role: Record<string, CostCounters> | null

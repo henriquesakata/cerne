@@ -394,6 +394,14 @@ describe('Custos — detalhe da feature (crit. 5)', () => {
     expect(within(models).getByRole('row', { name: /^desconhecido/ })).toHaveTextContent(/desconhecido.*50.*0.*0.*10.*100.*100%/)
   })
 
+  it('sem data de conclusão, mostra — em vez de uma data', async () => {
+    const { completed_at, ...undated } = detail
+    void completed_at
+    api.fetchCostDetail.mockResolvedValue(undated)
+    render(<CostDetailPage id="F-0001" />)
+    expect(await screen.findByText(/^concluída em — · 1 sessão/)).toBeInTheDocument()
+  })
+
   it('id desconhecido ou sem custo: mostra o erro do servidor', async () => {
     api.fetchCostDetail.mockRejectedValue(new Error("no cost stamped for F-0004: run 'cerne cost F-0004 --stamp' once it is implemented"))
     render(<CostDetailPage id="F-0004" />)
