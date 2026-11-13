@@ -39,6 +39,10 @@ cerne is a single binary that keeps the lifecycle of your features and decisions
 
 ## You use the dashboard, your agent uses the CLI
 
+cerne is built for a person working with an agent, not for an agent left alone. The agent does the volume: the specs, the plans, the code, the evidence. You keep the two decisions that matter, what gets built and whether it is good enough, and cerne makes sure they stay yours: by default the agent cannot approve its own spec or accept its own work.
+
+That is the point of the structure. An agent on its own drifts, and nobody notices until the code is written. With a page to approve before the build and evidence to read after it, your judgment lands where it is cheapest and counts most.
+
 cerne has two faces, and you only need to learn one of them.
 
 | | You, in the browser (`cerne ui`) | Your agent, in the terminal |
