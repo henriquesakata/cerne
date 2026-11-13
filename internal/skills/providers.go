@@ -44,7 +44,7 @@ func installProvider(projDir string, p hooks.Provider) []Result {
 		res.Status, res.Note = StatusSkipped, link+" is a symlink — not written through; copy .claude/skills/"+guideName+"/SKILL.md to "+rel+"/SKILL.md by hand"
 		return []Result{res}
 	}
-	if st, err := writeSkill(dst, authoringContent()); err != nil {
+	if st, err := writeSkillFiles(dst, authoringSkill()); err != nil {
 		res.Status, res.Note = StatusSkipped, "could not write "+rel+"/SKILL.md ("+err.Error()+") — copy .claude/skills/"+guideName+"/SKILL.md there by hand"
 		return []Result{res}
 	} else {
@@ -59,10 +59,10 @@ func installProvider(projDir string, p hooks.Provider) []Result {
 	return out
 }
 
-func authoringContent() string {
+func authoringSkill() Skill {
 	for _, s := range All() {
 		if s.Name == guideName {
-			return s.Content
+			return s
 		}
 	}
 	panic("skills: " + guideName + " not embedded")
