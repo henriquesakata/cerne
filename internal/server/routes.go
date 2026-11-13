@@ -49,6 +49,13 @@ func dataRoutes() []dataRoute {
 		{"GET", "/process-perf", false, func(w http.ResponseWriter, _ *http.Request, repoDir, _, _ string) {
 			handleProcessPerf(w, repoDir)
 		}},
+		// Costs (F-0391): read-only and local, like the process panel it extends.
+		{"GET", "/costs", false, func(w http.ResponseWriter, r *http.Request, repoDir, _, _ string) {
+			handleCosts(w, r, repoDir)
+		}},
+		{"GET", "/costs/{id}", false, func(w http.ResponseWriter, r *http.Request, repoDir, _, _ string) {
+			handleCostDetail(w, repoDir, r.PathValue("id"))
+		}},
 		{"GET", "/work", true, func(w http.ResponseWriter, _ *http.Request, repoDir, _, _ string) {
 			handleWork(w, repoDir)
 		}},

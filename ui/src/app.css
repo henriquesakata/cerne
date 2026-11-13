@@ -1930,6 +1930,28 @@ h2 {
 .dash-process-side dt { color: var(--muted); }
 .dash-process-side dd { margin: 0; }
 
+/* .costs (F-0391): a área Custos reaproveita o visual do .dash-process. */
+.costs section { margin-top: 1.5rem; }
+.costs-top { display: flex; flex-wrap: wrap; gap: 0.75rem 2rem; margin: 1rem 0; }
+.costs-top dt { color: var(--muted); font-size: 0.85em; }
+.costs-top dd { margin: 0; font-size: 1.6em; font-weight: 600; }
+.costs-filters { display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem; align-items: flex-start; border: 1px solid var(--border-soft); border-radius: 6px; padding: 0.5rem 0.75rem; margin: 1rem 0; }
+.costs-filters > div { display: flex; flex-direction: column; gap: 0.2rem; max-width: 16rem; }
+.costs-filters small { font-size: 0.8em; }
+.costs .costs-bar { width: 100%; min-width: 0; height: 20px; border-radius: 3px; }
+.costs-legend { list-style: none; display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; padding: 0; margin: 0.5rem 0; }
+.costs-legend li { display: inline-flex; align-items: center; gap: 0.35rem; }
+.costs-swatch { display: inline-block; width: 0.8rem; height: 0.8rem; border-radius: 2px; }
+.costs-sort { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: inherit; cursor: pointer; }
+.costs-sort:hover { text-decoration: underline; }
+.costs-marker { cursor: pointer; }
+.costs-markers { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.costs-marker-panel { border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem 0.75rem; }
+.costs-raw { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; }
+.costs-raw > div { display: contents; }
+.costs-raw dt { color: var(--muted); }
+.costs-raw dd { margin: 0; }
+
 .dash-stats {
   display: flex;
   flex-wrap: wrap;

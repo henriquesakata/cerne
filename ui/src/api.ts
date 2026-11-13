@@ -407,6 +407,87 @@ export async function fetchProcessPerf(): Promise<ProcessReport> {
   return (await r.json()) as ProcessReport
 }
 
+// Área Custos (F-0391) — espelho de app.CostsReport / app.CostDetail. Os
+// números vêm das âncoras `## Custo`; a tela só filtra pelo servidor e desenha.
+export type CostCounters = { input: number; cache_creation: number; cache_read: number; output: number }
+
+export type CostFeature = {
+  id: string
+  title: string
+  level: string // leve | padrão | avançado; '' sem linha de nível
+  state: FeatureState
+  completed_at?: string // omitted with no feature.completed
+  weighted: number
+  tokens: CostCounters
+  by_role: Record<string, CostCounters> | null
+  by_model: Record<string, CostCounters> | null
+  weighted_by_role: Record<string, number>
+  weighted_by_model: Record<string, number>
+  gauntlet_share: number | null // null sem divisão por papel
+  has_gauntlet: boolean
+  rounds: number
+  defeats: number
+  effort: string
+  effort_source: 'declared' | 'unknown'
+  vendors: string[]
+}
+
+export type CostOption = { value: string; n: number }
+
+export type CostsReport = {
+  since: string
+  until: string
+  weights: CostCounters
+  mean: number
+  median: number
+  features: CostFeature[]
+  weeks: { week: string; start: string; median: number; mean: number; n: number }[]
+  roles: Record<string, number>
+  markers: ProcessMarker[]
+  min_sample: number
+  guard_level: number
+  coverage: {
+    delivered: number
+    stamped: number
+    epics: number
+    level: number
+    model: number
+    effort: number
+    vendor: number
+    roles: number
+    matched: number
+  }
+  options: { levels: CostOption[]; models: CostOption[]; vendors: CostOption[]; efforts: CostOption[] }
+}
+
+export type CostDetail = CostFeature & {
+  report: {
+    source?: string
+    counters: CostCounters
+    sidechain: CostCounters
+    messages: number
+    sessions: number
+    first?: string
+    last?: string
+    unattributed: CostCounters
+  }
+  round_list: { n: number; outcome: '' | 'win' | 'loss' | 'tie' }[] | null
+  write_providers: string[] // who drafted the documents (F-0375), never a vendor of the cost
+}
+
+// fetchCosts recebe a query já montada (since, until e os filtros).
+export async function fetchCosts(query: string): Promise<CostsReport> {
+  const r = await fetch(`${base()}/costs${query ? `?${query}` : ''}`)
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return (await r.json()) as CostsReport
+}
+
+export async function fetchCostDetail(id: string): Promise<CostDetail> {
+  const r = await fetch(`${base()}/costs/${encodeURIComponent(id)}`)
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return (await r.json()) as CostDetail
+}
+
 // Atividade de agentes (F-0130): work-in-progress compartilhado no backend.
 export type WorkState = 'active' | 'done' | 'abandoned'
 

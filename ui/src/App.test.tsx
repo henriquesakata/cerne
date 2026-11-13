@@ -3,7 +3,17 @@ import type { ReactNode } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import App from './App'
-import { fetchHandoff, fetchHandoffs, fetchIdeas, fetchPendings, fetchState, promoteIdea, search } from './api'
+import {
+  fetchCostDetail,
+  fetchCosts,
+  fetchHandoff,
+  fetchHandoffs,
+  fetchIdeas,
+  fetchPendings,
+  fetchState,
+  promoteIdea,
+  search,
+} from './api'
 import type { ProjectInfo, StateResponse } from './api'
 
 const state: StateResponse = {
@@ -25,6 +35,8 @@ vi.mock('./api', async (importOriginal) => ({
   fetchIdeas: vi.fn(async () => []),
   fetchHandoffs: vi.fn(async () => []),
   fetchHandoff: vi.fn(async () => { throw new Error('handoff not found') }),
+  fetchCosts: vi.fn(async () => { throw new Error('costs down') }),
+  fetchCostDetail: vi.fn(async () => { throw new Error('feature not found: F-0001') }),
   promoteIdea: vi.fn(),
 }))
 
@@ -232,6 +244,30 @@ describe('App — passagens (F-0386)', () => {
 
   it('#/handoffsfoo não monta a área', async () => {
     window.location.hash = '#/handoffsfoo'
+    render(<App />)
+    expect(await screen.findByRole('heading', { level: 1, name: 'Dashboard' })).toBeInTheDocument()
+  })
+})
+
+// F-0391 crit. 1: a área Custos, com os filtros na hash, e o detalhe por id;
+// o resto do prefixo cai no Dashboard, como na nav.
+describe('App — custos (F-0391)', () => {
+  it.each(['#/costs', '#/costs?vendor=anthropic'])('%s monta a área de custos', async (hash) => {
+    window.location.hash = hash
+    render(<App />)
+    expect(await screen.findByRole('heading', { level: 1, name: 'Custos' })).toBeInTheDocument()
+    await waitFor(() => expect(fetchCosts).toHaveBeenCalledWith(hash.split('?')[1] ?? ''))
+  })
+
+  it('#/costs/F-0001 monta o detalhe daquela feature', async () => {
+    window.location.hash = '#/costs/F-0001'
+    render(<App />)
+    expect(await screen.findByText('Erro ao carregar o custo: feature not found: F-0001')).toBeInTheDocument()
+    expect(fetchCostDetail).toHaveBeenCalledWith('F-0001')
+  })
+
+  it('#/costsfoo não monta a área', async () => {
+    window.location.hash = '#/costsfoo'
     render(<App />)
     expect(await screen.findByRole('heading', { level: 1, name: 'Dashboard' })).toBeInTheDocument()
   })

@@ -29,19 +29,7 @@ func ProcessPerf(repoDir string, now time.Time) (stats.ProcessReport, error) {
 	if err != nil {
 		return stats.ProcessReport{}, err
 	}
-	completed := map[string]time.Time{}
-	var ids []string
-	for _, ev := range events {
-		if ev.Type != "feature.completed" {
-			continue
-		}
-		if t, ok := completed[ev.EntityID]; !ok {
-			ids = append(ids, ev.EntityID)
-			completed[ev.EntityID] = ev.At
-		} else if ev.At.Before(t) {
-			completed[ev.EntityID] = ev.At
-		}
-	}
+	ids, completed := completions(events)
 	feats, err := store.LoadAllFeatures(repoDir)
 	if err != nil {
 		return stats.ProcessReport{}, err

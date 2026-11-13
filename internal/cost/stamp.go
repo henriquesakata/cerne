@@ -244,3 +244,18 @@ func Stamped(repoDir, id string) bool {
 	_, ok := readAnchor(repoDir, id)
 	return ok
 }
+
+// StampedReport reads result's v1 cost anchor as the Report `cerne cost <id>
+// --json` shows when it reads from the stamp (Source "stamp"), the share no
+// role covers named "unknown" — the costs screen's reader (F-0391): the
+// durable record, never the transcripts. false with no real anchor.
+func StampedReport(result string) (Report, bool) {
+	a, ok := anchor(result)
+	if !ok {
+		return Report{}, false
+	}
+	r := Report{ID: a.ID, Source: "stamp", ByModel: map[string]Counters{}, Sessions: a.Sessions, Unattributed: a.Unattributed}
+	r.addShare(&a)
+	r.unknownRole()
+	return r, true
+}
