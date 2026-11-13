@@ -13,6 +13,8 @@ func TestCerneAuthoringDocumentsStaleDecision(t *testing.T) {
 		"stale-decision",
 		"cerne decision keep D-NNNN",
 		`cerne decision retire D-NNNN --reason "…"`,
+		"rejected or superseded",
+		"lint.stale_decision_days",
 	} {
 		if !strings.Contains(c, sub) {
 			t.Errorf("skill missing %q", sub)
