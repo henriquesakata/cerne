@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 )
 
 // TestCurrentHarness (F-0309 crit. 13): a bind is marked claude-code only
@@ -59,5 +60,28 @@ func TestClaudeRootsMergesEnvAndDefaults(t *testing.T) {
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	if got, want := ClaudeRoots(), []string{config, claude}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("ClaudeRoots() = %v, want %v", got, want)
+	}
+}
+
+// TestBindWithoutRoleKeepsTheOldLine (F-0384 crit. 7): a bind with no role and
+// no retro writes the same line as before the fields existed, and an old line
+// reads with both empty.
+func TestBindWithoutRoleKeepsTheOldLine(t *testing.T) {
+	cache := t.TempDir()
+	ts := time.Date(2026, 11, 1, 10, 0, 0, 0, time.UTC)
+	if err := AppendBind(cache, Bind{Session: "s1", Agent: "a1", Entity: "F-0002", Harness: HarnessClaudeCode, TS: ts}); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(cache, "costbind.ndjson"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const old = `{"session_id":"s1","agent_id":"a1","entity_id":"F-0002","harness":"claude-code","ts":"2026-11-01T10:00:00Z"}` + "\n"
+	if string(raw) != old {
+		t.Fatalf("ledger line = %s, want the pre-F-0384 line %s", raw, old)
+	}
+	binds, _, err := readLedger(cache)
+	if err != nil || len(binds) != 1 || binds[0].Role != "" || binds[0].Retro {
+		t.Fatalf("binds = %+v, %v", binds, err)
 	}
 }

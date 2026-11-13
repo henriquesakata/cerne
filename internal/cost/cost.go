@@ -3,6 +3,7 @@ package cost
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -35,6 +36,10 @@ func (c Counters) add(o Counters) Counters {
 	return Counters{c.Input + o.Input, c.CacheCreation + o.CacheCreation, c.CacheRead + o.CacheRead, c.Output + o.Output}
 }
 
+func (c Counters) sub(o Counters) Counters {
+	return Counters{c.Input - o.Input, c.CacheCreation - o.CacheCreation, c.CacheRead - o.CacheRead, c.Output - o.Output}
+}
+
 func (c Counters) max(o Counters) Counters {
 	return Counters{max(c.Input, o.Input), max(c.CacheCreation, o.CacheCreation), max(c.CacheRead, o.CacheRead), max(c.Output, o.Output)}
 }
@@ -50,6 +55,7 @@ type Report struct {
 	Counters                  Counters            `json:"counters"`
 	Sidechain                 Counters            `json:"sidechain"`
 	ByModel                   map[string]Counters `json:"by_model"`
+	ByRole                    map[string]Counters `json:"by_role,omitempty"` // main, builder, critic, judge, other (F-0384)
 	Messages                  int                 `json:"messages"`
 	Sessions                  int                 `json:"sessions"`
 	SessionsWithoutTranscript int                 `json:"sessions_without_transcript"`
@@ -71,11 +77,12 @@ type Inputs struct {
 	Roots    []string // Claude Code config dirs (ClaudeRoots)
 }
 
-// bucket is the per (model, sidechain) aggregate of one transcript file's
+// bucket is the per (model, sidechain, role) aggregate of one transcript file's
 // messages for one entity.
 type bucket struct {
 	Model     string    `json:"model"`
 	Sidechain bool      `json:"sidechain"`
+	Role      string    `json:"role,omitempty"` // "" in a snapshot from before F-0384
 	Messages  int       `json:"messages"`
 	First     time.Time `json:"first"`
 	Last      time.Time `json:"last"`
@@ -92,7 +99,7 @@ func (f *fileAgg) add(m msg) {
 	f.Messages++
 	for i := range f.Buckets {
 		b := &f.Buckets[i]
-		if b.Model == m.model && b.Sidechain == m.sidechain {
+		if b.Model == m.model && b.Sidechain == m.sidechain && b.Role == m.role {
 			b.Messages++
 			b.Counters = b.Counters.add(m.c)
 			if m.ts.Before(b.First) {
@@ -104,7 +111,7 @@ func (f *fileAgg) add(m msg) {
 			return
 		}
 	}
-	f.Buckets = append(f.Buckets, bucket{Model: m.model, Sidechain: m.sidechain, Messages: 1, First: m.ts, Last: m.ts, Counters: m.c})
+	f.Buckets = append(f.Buckets, bucket{Model: m.model, Sidechain: m.sidechain, Role: m.role, Messages: 1, First: m.ts, Last: m.ts, Counters: m.c})
 }
 
 // aggKey addresses one (entity, session, transcript file) share.
@@ -265,7 +272,9 @@ func own(in Inputs, id string) (Report, error) {
 		}
 		spawn := spawnTimes(msgs)
 		for _, m := range msgs {
-			o := owned{m, att.entity(bySess[sess], spawn, m)}
+			var e string
+			e, m.role = att.entity(bySess[sess], spawn, m)
+			o := owned{m, e}
 			if m.key != "" {
 				if i, ok := kept[m.key]; ok {
 					if all[i].entity == "" && o.entity != "" {
@@ -325,6 +334,7 @@ func own(in Inputs, id string) (Report, error) {
 				r.Source, r.Sessions, r.Unattributed = "stamp", s.Sessions, s.Unattributed
 			}
 		}
+		r.unknownRole()
 		return r, nil
 	}
 	for e, s := range byEntity {
@@ -338,7 +348,25 @@ func own(in Inputs, id string) (Report, error) {
 		}
 	}
 	sort.Strings(r.FromStamp)
+	r.unknownRole()
 	return r, nil
+}
+
+// unknownRole names the share of the counters no role covers — buckets
+// harvested, or anchors stamped, before F-0384 — as the "unknown" role, so a
+// breakdown never reads as complete when it is not. A cost with no role at
+// all has no breakdown to complete.
+func (r *Report) unknownRole() {
+	if len(r.ByRole) == 0 {
+		return
+	}
+	var sum Counters
+	for _, c := range r.ByRole {
+		sum = sum.add(c)
+	}
+	if gap := r.Counters.sub(sum); gap != (Counters{}) {
+		r.ByRole["unknown"] = gap
+	}
 }
 
 // readAnchor reads the anchor of id's result in the backend clone.
@@ -395,6 +423,12 @@ func shares(agg map[aggKey]*fileAgg) map[string]*share {
 				s.Sidechain = s.Sidechain.add(b.Counters)
 			}
 			s.ByModel[b.Model] = s.ByModel[b.Model].add(b.Counters)
+			if b.Role != "" {
+				if s.ByRole == nil {
+					s.ByRole = map[string]Counters{}
+				}
+				s.ByRole[b.Role] = s.ByRole[b.Role].add(b.Counters)
+			}
 			s.Messages += b.Messages
 			s.widen(b.First.UTC().Format(time.RFC3339), b.Last.UTC().Format(time.RFC3339))
 		}
@@ -420,13 +454,20 @@ func (r *Report) addShare(s *share) {
 	for m, c := range s.ByModel {
 		r.ByModel[m] = r.ByModel[m].add(c)
 	}
+	for role, c := range s.ByRole {
+		if r.ByRole == nil {
+			r.ByRole = map[string]Counters{}
+		}
+		r.ByRole[role] = r.ByRole[role].add(c)
+	}
 	r.Messages += s.Messages
 	w := share{First: r.First, Last: r.Last}
 	w.widen(s.First, s.Last)
 	r.First, r.Last = w.First, w.Last
 }
 
-// governing is the binding in force for m: the last binding of m's own
+// governing is the binding in force for m: the last retro binding of m's
+// subagent, whatever its instant (F-0384); else the last binding of m's own
 // subagent at or before m.ts; else, for a subagent, the main thread's binding
 // in force at its first message (spawned is that instant — a background
 // subagent keeps the entity it was launched for when the main thread rebinds
@@ -441,16 +482,22 @@ func governing(binds []Bind, m msg, spawned time.Time) (Bind, bool) {
 	if m.agent != "" && !spawned.IsZero() && spawned.Before(at) {
 		at = spawned
 	}
-	var main, own *Bind
+	var main, own, retro *Bind
 	for i, b := range binds {
-		if b.TS.After(m.ts) {
-			break
-		}
-		if b.Agent == "" && !b.TS.After(at) {
+		switch {
+		case b.Retro:
+			if b.Agent != "" && b.Agent == m.agent {
+				retro = &binds[i]
+			}
+		case b.TS.After(m.ts):
+		case b.Agent == "" && !b.TS.After(at):
 			main = &binds[i]
-		} else if b.Agent != "" && b.Agent == m.agent {
+		case b.Agent != "" && b.Agent == m.agent:
 			own = &binds[i]
 		}
+	}
+	if retro != nil {
+		return *retro, true
 	}
 	if own != nil {
 		return *own, true
@@ -506,15 +553,32 @@ func newAttributor(repoDir string) (attributor, error) {
 	return attributor{res: resolver{repo: repoDir, memo: map[string]string{}}, closes: closes}, nil
 }
 
-// entity is m's entity under its session's binds (sorted by TS) and subagent
-// spawn times; "" when no binding governs m or the bound entity had closed by
-// m's timestamp.
-func (a attributor) entity(binds []Bind, spawn map[string]time.Time, m msg) string {
+// entity is m's entity and role under its session's binds (sorted by TS) and
+// subagent spawn times; "" when no binding governs m or the bound entity had
+// closed by m's timestamp.
+func (a attributor) entity(binds []Bind, spawn map[string]time.Time, m msg) (id, role string) {
 	b, ok := governing(binds, m, spawn[m.agent])
 	if !ok || a.closed(b, m.ts) {
-		return ""
+		return "", ""
 	}
-	return a.res.resolve(b.Entity)
+	return a.res.resolve(b.Entity), roleOf(b, m)
+}
+
+// roleOf is m's role under its governing bind b (F-0384): the bind's role;
+// else, on a subagent, its agentType (dev → builder, code-reviewer → critic,
+// any other or none → other); else main.
+func roleOf(b Bind, m msg) string {
+	switch {
+	case b.Role != "":
+		return b.Role
+	case m.agent == "":
+		return "main"
+	case m.kind == "dev":
+		return "builder"
+	case m.kind == "code-reviewer":
+		return "critic"
+	}
+	return "other"
 }
 
 // closed reports whether b's entity closed after b began and at or before t.
@@ -557,4 +621,13 @@ func (r resolver) resolve(id string) string {
 	}
 	r.memo[id] = out
 	return out
+}
+
+// Roles lists r's roles, sorted, when one is not main: a main-thread-only cost
+// has no per-role view to show (F-0384).
+func (r Report) Roles() []string {
+	if _, main := r.ByRole["main"]; len(r.ByRole) == 0 || main && len(r.ByRole) == 1 {
+		return nil
+	}
+	return slices.Sorted(maps.Keys(r.ByRole))
 }

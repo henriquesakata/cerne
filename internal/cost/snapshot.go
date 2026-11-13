@@ -90,7 +90,8 @@ func (s snapshot) save(cacheDir string) error {
 // Harvest refreshes the snapshot of every live feature (candidate, approved or
 // in_development) session sess is bound to, from its transcripts: the main
 // file at transcriptPath when it names the session, else found by index. Only
-// the files modified since the session's last harvest are re-read, and each
+// the files modified since the session's last harvest are re-read (all of
+// them after a retro bind, F-0384), and each
 // re-read file's entry is replaced, never added to; entries of files no longer
 // on disk are kept. A session outside the ledger or bound under another
 // harness is a no-op. now is the harvest start, recorded as harvested_at.
@@ -143,6 +144,13 @@ func Harvest(in Inputs, sess, transcriptPath string, now time.Time) error {
 	if len(snaps) == 0 {
 		return nil
 	}
+	// A retro bind since the last harvest moved messages already harvested
+	// (F-0384): re-read the whole session, so the entity they left drops them.
+	for _, b := range mine {
+		if b.Retro && b.TS.After(since) {
+			since = time.Time{}
+		}
+	}
 
 	files, err := harvestFiles(in.Roots, sess, transcriptPath)
 	if err != nil {
@@ -161,7 +169,8 @@ func Harvest(in Inputs, sess, transcriptPath string, now time.Time) error {
 	agg := map[aggKey]*fileAgg{}
 	spawn := spawnTimes(msgs)
 	for _, m := range msgs {
-		id := att.entity(mine, spawn, m)
+		var id string
+		id, m.role = att.entity(mine, spawn, m)
 		if snaps[id] == nil {
 			continue
 		}
