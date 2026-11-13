@@ -2,7 +2,8 @@
 
 <p align="center">
   <strong>Living documentation for projects built with AI agents.</strong><br>
-  You steer from a dashboard. Your agent does the paperwork, and reads only what is true today.
+  You steer from a dashboard. Your agent does the paperwork, and reads only what is true today.<br>
+  No SaaS, no account, no telemetry: your documentation lives in a git repository you choose.
 </p>
 
 <p align="center">
@@ -17,6 +18,7 @@
   <a href="#you-use-the-dashboard-your-agent-uses-the-cli">Who does what</a> ·
   <a href="#how-it-works">How it works</a> ·
   <a href="#what-you-get">Features</a> ·
+  <a href="#where-your-data-goes">Your data</a> ·
   <a href="INSTALL.md">Install guide</a>
 </p>
 
@@ -181,6 +183,21 @@ flowchart LR
 - **`.docs/`** is a projection of the current state. It is what the agent reads, and it is regenerated, never hand-curated.
 - **`docs.lock`** is committed in your project and pins the code to a documentation snapshot, so a checkout from last year reads last year's docs.
 
+## Where your data goes
+
+cerne has no hosted service. There is no account to create and nothing phones home: the binary talks to the places you point it at, and to nothing else.
+
+| What | Where it goes | When |
+|---|---|---|
+| Specs, plans, results, decisions, the event log | The backend git repository you chose: a folder on your machine, a git server you host, or a private repository on a hosting service | Always. It is the only place cerne stores your documentation |
+| `.docs/` and the search index | Your disk | Always. Both are rebuilt from the backend |
+| Prompts for `cerne ask`, drafts and the dashboard chat | By default, nowhere: cerne hands the prompt to the agent you already run. With `[llm]` configured, to the model provider you set, using your key | Only if you configure it |
+| Traces | An OTLP endpoint you set | Off by default. Metrics stay on the machine |
+| Webhook notifications | A URL you set | Off by default |
+| Fonts for the diagram editor | A public CDN (esm.sh), fetched by your browser | When you open a diagram. Nothing about your project is sent |
+
+Two things cerne does not change. Your AI agent still sends what it reads to its model provider, and a backend hosted on GitHub or GitLab lives on GitHub or GitLab. If nothing may leave your network, point cerne at a git server you host and use an agent whose model runs where you allow: cerne itself adds no third party.
+
 ## What you get
 
 | | |
@@ -208,6 +225,8 @@ The screenshots are from the [demo project](examples/demo/README.md), which you 
 | Docs-as-code (markdown, ADR folders) | no | yes | no |
 | RAG over your docs | no | no | no, it retrieves stale text just as happily |
 | **cerne** | **yes** | **yes** | **yes** |
+
+Unlike a hosted tracker or docs platform, cerne has no service of its own: [your data goes](#where-your-data-goes) only where you already send it.
 
 The idea is close to Karpathy's [LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f), with one difference: the lifecycle is data, so staleness is checked by a deterministic lint instead of a model's judgment.
 
