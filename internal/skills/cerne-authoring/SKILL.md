@@ -5,6 +5,8 @@ description: "Use this whenever you create, plan, finish, or manage a feature, d
 
 # Cerne-Native Authoring
 
+Not sure how to do something in cerne? `cerne guide "<question>"` answers about any cerne feature from the binary itself (this skill, every command's help and a FAQ), offline, and prints the exact command.
+
 ## Overview
 
 In a cerne-managed project the living documentation is owned by **cerne**: it holds the lifecycle of **features**, **decisions** (ADRs), **runbooks**, **notes** (durable team knowledge) and **references**, and is the source of truth for the current state. The backend (a git repo) is pinned by the committed `docs.lock`; `.cernerc` wires it. You author documents under `.docs/current/…` and push them back through cerne — you do **not** hand-create folders of loose markdown for tracked work.

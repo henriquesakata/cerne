@@ -73,6 +73,7 @@ func Root() *cobra.Command {
 	root.AddCommand(verbs.MarkChat(newStatusCmd()))
 	root.AddCommand(verbs.MarkChat(newNextCmd()))
 	root.AddCommand(verbs.MarkChat(newBriefCmd()))
+	root.AddCommand(verbs.MarkChat(newGuideCmd()))
 	root.AddCommand(verbs.MarkChat(newSavingsCmd()))
 	root.AddCommand(verbs.MarkChat(newStatsCmd()))
 	root.AddCommand(verbs.MarkLocal(newCostCmd()))
