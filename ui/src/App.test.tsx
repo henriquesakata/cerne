@@ -221,6 +221,15 @@ describe('App — passagens (F-0386)', () => {
     expect(fetchHandoff).toHaveBeenCalledWith('HO-0001')
   })
 
+  // Crítica do F-0386: um %-encoding quebrado não derruba a árvore com
+  // URIError — o id vai cru e o servidor responde 404.
+  it('#/handoffs/%E0%A4%A passa o id cru e mostra o 404', async () => {
+    window.location.hash = '#/handoffs/%E0%A4%A'
+    render(<App />)
+    expect(await screen.findByText('Erro ao carregar a passagem: handoff not found')).toBeInTheDocument()
+    expect(fetchHandoff).toHaveBeenCalledWith('%E0%A4%A')
+  })
+
   it('#/handoffsfoo não monta a área', async () => {
     window.location.hash = '#/handoffsfoo'
     render(<App />)
