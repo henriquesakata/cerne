@@ -1,7 +1,9 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
+  type DragEvent,
   type Dispatch,
   type MouseEvent as ReactMouseEvent,
   type SetStateAction,
@@ -9,6 +11,7 @@ import {
 import {
   fetchLint,
   fetchState,
+  postTransition,
   type Feature,
   type FeatureState,
 } from './api'
@@ -337,6 +340,48 @@ function Columns({
 }) {
   const { t } = useT()
   const columns = showClosed ? [...OPEN_COLUMNS, ...CLOSED_COLUMNS] : OPEN_COLUMNS
+  // Arraste (F-0388): dragover não lê dataTransfer.getData (modo protegido do
+  // browser), então o card em voo vive numa ref. Sem mudança otimista: o card
+  // só muda de coluna quando o servidor muda o estado (useLiveLoad).
+  const dragging = useRef<Feature | null>(null)
+  const [blocked, setBlocked] = useState<FeatureState | null>(null)
+  const [notice, setNotice] = useState<{ id: string; text: string; refused: boolean } | null>(null)
+  const dropProps = (target: FeatureState) => {
+    const rule = DROPS[target]
+    if (!rule) return {}
+    const okPair = () => dragging.current?.state === rule.from
+    return {
+      onDragOver: (e: DragEvent) => {
+        if (!okPair()) {
+          e.dataTransfer.dropEffect = 'none'
+          return
+        }
+        e.preventDefault() // sem isto o browser não dispara o drop
+        e.dataTransfer.dropEffect = 'move'
+        setBlocked(pendingClarify(dragging.current!.id) > 0 ? target : null)
+      },
+      onDragLeave: () => setBlocked(null),
+      onDrop: (e: DragEvent) => {
+        e.preventDefault()
+        const f = dragging.current
+        dragging.current = null
+        setBlocked(null)
+        if (!f || f.state !== rule.from) return
+        const n = pendingClarify(f.id)
+        if (n > 0) {
+          setNotice({ id: f.id, text: t.kanban.drag.pending(n), refused: true })
+          return
+        }
+        void postTransition(f.id, { action: rule.action, by: undefined, reason: undefined }).then((res) =>
+          setNotice(
+            res.ok
+              ? { id: f.id, text: `${t.state[res.data.from]} → ${t.state[res.data.to]}`, refused: false }
+              : { id: f.id, text: res.error, refused: true },
+          ),
+        )
+      },
+    }
+  }
   const byState = new Map<FeatureState, Feature[]>()
   for (const f of features.filter(matches)) {
     const list = byState.get(f.state) ?? []
@@ -344,8 +389,16 @@ function Columns({
     byState.set(f.state, list)
   }
   return (
+    <>
+    {notice && (
+      <p className="drag-notice" role={notice.refused ? 'alert' : 'status'}>
+        <span>{notice.text}</span>{' '}
+        <a href={`#/f/${notice.id}`}>{notice.id}</a>
+      </p>
+    )}
     <div className="board">
       <BacklogColumn
+        onDragStart={(f) => (dragging.current = f)}
         candidates={byState.get('candidate') ?? []}
         total={features.filter((f) => f.state === 'candidate').length}
         isEpic={isEpic}
@@ -356,7 +409,11 @@ function Columns({
       {columns.map((s) => {
         const fs = byState.get(s) ?? []
         return (
-          <section key={s} className="column">
+          <section
+            key={s}
+            className={`column${blocked === s ? ' drop-blocked' : ''}`}
+            {...dropProps(s)}
+          >
             <h2>
               {t.kanban.columnLabels[s]} <span className="column-count">{fs.length}</span>
             </h2>
@@ -383,6 +440,7 @@ function Columns({
                       pending={pendingClarify(f.id)}
                       activeWork={activeWorkFor(f.id)}
                       rolledUp={rolled.get(f.id) ?? 0}
+                      onDragStart={s === 'implemented' ? (x) => (dragging.current = x) : undefined}
                     />
                   ))}
                   <MoreInHistory hidden={hidden} />
@@ -393,7 +451,14 @@ function Columns({
         )
       })}
     </div>
+    </>
   )
+}
+
+// Destinos do arraste (F-0388): cada coluna aceita só o seu par origem→destino.
+const DROPS: Partial<Record<FeatureState, { from: FeatureState; action: 'approve' | 'accept' }>> = {
+  approved: { from: 'candidate', action: 'approve' },
+  done: { from: 'implemented', action: 'accept' },
 }
 
 // F-0342: a escolha recolhida/expandida da coluna Backlog é preferência de quem
@@ -428,7 +493,9 @@ function BacklogColumn({
   isStale,
   pendingClarify,
   activeWorkFor,
+  onDragStart,
 }: {
+  onDragStart: (f: Feature) => void
   candidates: Feature[]
   total: number
   isEpic: (id: string) => boolean
@@ -478,6 +545,7 @@ function BacklogColumn({
                 stale={isStale(f.id)}
                 pending={pendingClarify(f.id)}
                 activeWork={activeWorkFor(f.id)}
+                onDragStart={onDragStart}
               />
             ))
           )}
@@ -613,6 +681,7 @@ function Card({
   pending = 0,
   activeWork = [],
   rolledUp = 0,
+  onDragStart,
 }: {
   feature: Feature
   isEpic: boolean
@@ -621,6 +690,7 @@ function Card({
   pending?: number
   activeWork?: { id: string; actor: string }[]
   rolledUp?: number
+  onDragStart?: (f: Feature) => void
 }) {
   const { t } = useT()
   // Read-only chips: the whole card is an <a>, so a Tag button can't live here
@@ -628,7 +698,19 @@ function Card({
   const hasTags =
     (feature.facets?.length ?? 0) > 0 || (feature.components?.length ?? 0) > 0
   return (
-    <a className={`card card-${feature.state}`} href={`#/f/${feature.id}`}>
+    <a
+      className={`card card-${feature.state}`}
+      href={`#/f/${feature.id}`}
+      {...(onDragStart && {
+        draggable: true,
+        'aria-description': t.kanban.drag.cardHint,
+        onDragStart: (e: DragEvent<HTMLAnchorElement>) => {
+          e.dataTransfer.setData('text/plain', JSON.stringify({ id: feature.id, from: feature.state }))
+          e.dataTransfer.effectAllowed = 'move'
+          onDragStart(feature)
+        },
+      })}
+    >
       <span className="card-meta">
         <span className="card-id">{feature.id}</span>
         {/* F-0203: papel épico é estrutural (tem filhos) OU declarado (E-);
