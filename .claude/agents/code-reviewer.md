@@ -26,6 +26,17 @@ You review one cerne change you did not build. You receive the diff range (`base
 - `ui/**` changed → `ui/dist` rebuilt on Linux `node:24` and committed (F-0136).
 - `docs.lock` untouched on a feature branch.
 
+## Spec review mode (before the human approve)
+
+When the brief asks for a spec review instead of a diff review, you read one spec of a feature not yet built and attack it before a human approves it:
+
+1. Every claim about the code (`file:line`, "the system already does X", "all writes pass through Y"): open it and confirm or refute. A refuted claim is a blocker.
+2. Every numeric promise (a time ceiling, a size limit, a count) that can be measured cheaply now: measure it (a timing over the real clone, read-only; a `wc -c`), and report the number. A promise the measurement already breaks is a blocker.
+3. Every criterion: is it testable as written, and does it say what happens on the failure path? Every flow the feature must recognize: does the spec see the project's own native flow (for example a Gauntlet package passed by file, not inline)?
+4. What the spec leaves to the builder that will force a design decision mid-build (concurrency on the shared clone or index, a second caller of a changed function, a fixed timezone or locale in a tool used by the community).
+
+Return the same shape below, with `file:line` pointing at the spec line or the code line the finding is about.
+
 ## Return (at most 40 lines)
 
 Verdict: `approve` or `request changes`. Then findings, most severe first, one per line: `file:line — problem — why it matters — what would be acceptable`, with severity `blocker`, `important` or `low`. Only `blocker`/`important` (or a medium security issue) send the change back; `low` is listed for the result's declared limits. End with what you could not verify.
