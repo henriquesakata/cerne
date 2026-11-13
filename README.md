@@ -63,14 +63,14 @@ The CLI has many commands because the agent needs them. `cerne init` installs th
 
 ### The number
 
-This repository documents itself with cerne. After 375 features:
+This repository documents itself with cerne. After 403 features:
 
 | | Documents | ~Tokens |
 |---|---:|---:|
-| Full documentation corpus | 517 | 1,754,000 |
-| What the agent actually reads (`.docs/`) | 139 | 66,000 |
+| Full documentation corpus | 553 | 1,860,000 |
+| What the agent actually reads (`.docs/`) | 155 | 62,000 |
 
-**96% of the corpus stays out of the agent's context**, and none of it is lost. Run `cerne savings` on your own project to get your number.
+**97% of the corpus stays out of the agent's context**, and none of it is lost. Run `cerne savings` on your own project to get your number.
 
 ### Does writing all these documents cost more tokens?
 
@@ -83,7 +83,7 @@ Less than you would guess. Measured with `cerne cost` on nine recent features of
 
 The documents are the cheap part, and they pay back in two places:
 
-- **Reading.** Every session starts from 66,000 tokens of current state instead of 1.75 million tokens of everything ever written. That saving repeats on every session, for every agent.
+- **Reading.** Every session starts from 62,000 tokens of current state instead of 1.86 million tokens of everything ever written. That saving repeats on every session, for every agent.
 - **Rework.** You approve one page of spec before the agent spends tens or hundreds of thousands of tokens building it. A feature built on an ambiguous request, or on a design you abandoned months ago, costs the whole feature again.
 
 What is not measured: there is no side-by-side run of the same work with and without cerne, so the rework argument is reasoning, not a number. The two numbers above are, and `cerne savings` and `cerne cost` give you yours.
@@ -236,7 +236,7 @@ The idea is close to Karpathy's [LLM Wiki](https://gist.github.com/karpathy/442a
 
 ## Status
 
-cerne is young and in daily use. This repository has been built with it since day one, and the 375 features above went through the same gates you would use. Expect rough edges, and please [open an issue](https://github.com/henriquesakata/cerne/issues) when you hit one: feedback from early users shapes what comes next.
+cerne is young and in daily use. This repository has been built with it since day one, and the 403 features above went through the same gates you would use. Expect rough edges, and please [open an issue](https://github.com/henriquesakata/cerne/issues) when you hit one: feedback from early users shapes what comes next.
 
 Questions and ideas go to [Discussions](https://github.com/henriquesakata/cerne/discussions). To contribute code, start with [CONTRIBUTING.md](CONTRIBUTING.md).
 
