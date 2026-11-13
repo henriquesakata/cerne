@@ -17,7 +17,7 @@ func TestCompleteAndDeliverPrintTheDeliveryLine(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "delivery: commit abc1234de · PR o/r#12 — '## Entrega' in its result (cerne show F-0001 --doc result)"
+	want := "delivery: commit abc1234de · PR o/r#12 — '## Entrega' in its result (cerne show F-0001 --doc result) — mark it ready for review when CI is green"
 	if !strings.Contains(stdout, want+"\n") {
 		t.Fatalf("complete stdout lacks %q:\n%s", want, stdout)
 	}
@@ -29,7 +29,7 @@ func TestCompleteAndDeliverPrintTheDeliveryLine(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want = "delivery: commit abc1234 — '## Entrega' in its result (cerne show F-0002 --doc result)"
+	want = "delivery: commit abc1234 — '## Entrega' in its result (cerne show F-0002 --doc result) — mark it ready for review when CI is green"
 	if !strings.Contains(stdout, want+"\n") || strings.Contains(stdout, "PR o/r") {
 		t.Fatalf("no-PR stdout:\n%s", stdout)
 	}

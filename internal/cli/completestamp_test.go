@@ -146,3 +146,111 @@ func TestCompleteNoStampKeepsToday(t *testing.T) {
 		t.Errorf("transition or delivery lost: %+v", f)
 	}
 }
+
+// nextStepBlock returns the final "Next step:" block of a complete's stdout.
+func nextStepBlock(t *testing.T, out string) []string {
+	t.Helper()
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if lines[i] == "Next step:" {
+			return lines[i+1:]
+		}
+	}
+	t.Fatalf("no Next step: block:\n%s", out)
+	return nil
+}
+
+// F-0402 crit. 5: one closing block, the accept first, the delivery line only
+// with a link (from --mr, the forge or the stored one), never duplicated.
+func TestCompleteEndsWithOneNextStepBlock(t *testing.T) {
+	t.Run("no link", func(t *testing.T) {
+		projDir, _, repoDir := setupProject(t)
+		seedResultFeatures(t, repoDir, domain.StateInDevelopment)
+		costSessions(t, repoDir)
+		out, _, err := execCerneSplit(t, "feature", "complete", "F-0001", "--dir", projDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		block := nextStepBlock(t, out)
+		if len(block) != 1 || block[0] != "  - human accept: cerne feature accept F-0001 (or drag the card to Done)" {
+			t.Errorf("block = %q", block)
+		}
+		if strings.Count(out, "Next step") != 1 || strings.Contains(out, "delivery:") {
+			t.Errorf("output:\n%s", out)
+		}
+	})
+	t.Run("link from the forge", func(t *testing.T) {
+		f := &cliFakeForge{url: "https://github.com/o/r/pull/12"}
+		projDir, repoDir := forgeProject(t, "github", f)
+		seedDeliveryFeature(t, repoDir, "F-0001", domain.StateInDevelopment, "spec.md", "plan.md", "result.md")
+		out, _, err := execCerneSplit(t, "feature", "complete", "F-0001", "--commit", "abc1234", "--dir", projDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		block := nextStepBlock(t, out)
+		if len(block) != 2 || !strings.HasPrefix(block[1], "  - delivery: commit abc1234 · PR o/r#12") || !strings.HasSuffix(block[1], "— mark it ready for review when CI is green") {
+			t.Errorf("block = %q", block)
+		}
+		if strings.Count(out, "delivery:") != 1 {
+			t.Errorf("delivery line duplicated:\n%s", out)
+		}
+	})
+	t.Run("stored link", func(t *testing.T) {
+		projDir, _, repoDir := setupProject(t)
+		seedResultFeatures(t, repoDir, domain.StateInDevelopment)
+		f, err := store.LoadFeature(repoDir, "F-0001")
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.DeliveryMRURL = "https://github.com/o/r/pull/7"
+		if err := store.SaveFeature(repoDir, f); err != nil {
+			t.Fatal(err)
+		}
+		commitBackend(t, repoDir)
+		out, _, err := execCerneSplit(t, "feature", "complete", "F-0001", "--dir", projDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if block := nextStepBlock(t, out); len(block) != 2 || !strings.Contains(block[1], "PR o/r#7") {
+			t.Errorf("block = %q", block)
+		}
+	})
+	t.Run("no-stamp carries the cost step in the block", func(t *testing.T) {
+		projDir, _, repoDir := setupProject(t)
+		seedResultFeatures(t, repoDir, domain.StateInDevelopment)
+		out, _, err := execCerneSplit(t, "feature", "complete", "F-0001", "--no-stamp", "--dir", projDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		block := nextStepBlock(t, out)
+		if len(block) != 2 || !strings.Contains(block[0], "cerne cost F-0001 --stamp") || !strings.Contains(block[1], "human accept") {
+			t.Errorf("block = %q", block)
+		}
+	})
+}
+
+// F-0402 crit. 6: after a stamping complete `cerne next` no longer asks for the
+// stamp; after --no-stamp it still does.
+func TestNextAfterCompleteStampStep(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		flags   []string
+		stepAsk bool
+	}{{"stamped", nil, false}, {"no-stamp", []string{"--no-stamp"}, true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			projDir, _, repoDir := setupProject(t)
+			seedResultFeatures(t, repoDir, domain.StateInDevelopment)
+			costSessions(t, repoDir)
+			if _, err := execCerne(t, append([]string{"feature", "complete", "F-0001", "--dir", projDir}, tc.flags...)...); err != nil {
+				t.Fatal(err)
+			}
+			out, err := execCerne(t, "next", "F-0001", "--dir", projDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.Contains(out, "cerne cost F-0001 --stamp"); got != tc.stepAsk {
+				t.Errorf("next asks for the stamp = %v, want %v:\n%s", got, tc.stepAsk, out)
+			}
+		})
+	}
+}

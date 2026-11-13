@@ -157,14 +157,6 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s: %s → %s\n", out.ID, out.From, out.To)
 	printMovedPendings(cmd.OutOrStdout(), out.Pendings)
-	// Say what the complete recorded and where it shows (F-0355).
-	if delivery != nil && *delivery != (app.Delivery{}) {
-		if f, err := store.LoadFeature(ctx.repoDir, id); err == nil {
-			if line := app.DeliveryLine(f, true); line != "" {
-				fmt.Fprintln(cmd.OutOrStdout(), line)
-			}
-		}
-	}
 	// Approving is accepting the proposed bar (F-0308 crit. 9): say which.
 	if out.Bar != "" {
 		fmt.Fprintf(cmd.OutOrStdout(), "Accepted bar: %s\n", out.Bar)
@@ -203,8 +195,6 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 		if !noStamp {
 			o, serr := stampCost(ctx, id)
 			fmt.Fprintln(cmd.OutOrStdout(), completeStampLine(id, o, serr))
-		} else {
-			fmt.Fprintf(cmd.OutOrStdout(), "Next step: record its token cost with 'cerne cost %s --stamp' before the human accept (F-0309).\n", id)
 		}
 		printCompleteLearnings(cmd.OutOrStdout(), ctx.repoDir, id)
 	}
@@ -218,7 +208,27 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 		epic := out.EpicReadyToClose
 		fmt.Fprintf(cmd.OutOrStdout(), "↳ epic %s ready to close: fill content/features/%s/result.md and run 'cerne feature complete %s'\n", epic, epic, epic)
 	}
+	if action == domain.ActionComplete {
+		printCompleteNextStep(cmd.OutOrStdout(), ctx.repoDir, id, noStamp)
+	}
 	return nil
+}
+
+// printCompleteNextStep ends a complete with the one block of what stays
+// outside cerne (F-0402 crit. 5): the cost stamp when --no-stamp skipped it,
+// the human accept, and the delivery line when the feature carries a link
+// (--mr, the forge's PR or one recorded before).
+func printCompleteNextStep(w io.Writer, repoDir, id string, noStamp bool) {
+	fmt.Fprintln(w, "Next step:")
+	if noStamp {
+		fmt.Fprintf(w, "  - record its token cost: cerne cost %s --stamp, before the human accept (F-0309)\n", id)
+	}
+	fmt.Fprintf(w, "  - human accept: cerne feature accept %s (or drag the card to Done)\n", id)
+	if f, err := store.LoadFeature(repoDir, id); err == nil {
+		if line := app.DeliveryLine(f, true); line != "" {
+			fmt.Fprintf(w, "  - %s — mark it ready for review when CI is green\n", line)
+		}
+	}
 }
 
 // errCheckImpediments is the non-zero exit of an approve --check whose list
