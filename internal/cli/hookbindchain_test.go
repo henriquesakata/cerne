@@ -111,3 +111,31 @@ func TestHookBindWorkDoesNotWarnOnMentions(t *testing.T) {
 		})
 	}
 }
+
+// F-0376 critic round 1, item 3: a `cerne handoff take` whose output never
+// reached the hook binds nothing; the hook says so, as for work start, and
+// points at a remedy that does not re-run the take (already done). Mentions,
+// help and a refused take stay silent.
+func TestHookBindWorkWarnsOnUnboundTake(t *testing.T) {
+	got, _, hookOut := bindFromBash(t, `cerne handoff take HO-0001 --note li > /dev/null`, func(_, _ string) string { return "" })
+	if got != "" {
+		t.Fatalf("nothing to bind from, got %q", got)
+	}
+	for _, want := range []string{`"hookEventName":"PostToolUse"`, "NOT bound", "handoff take", "do not re-run", "--from"} {
+		if !strings.Contains(hookOut, want) {
+			t.Fatalf("hook output missing %q:\n%s", want, hookOut)
+		}
+	}
+	for name, tc := range map[string]struct{ command, stdout string }{
+		"grep":         {`grep "cerne handoff take" notes.md`, "notes.md: cerne handoff take HO-1"},
+		"help":         {`cerne handoff take --help`, "Usage: cerne handoff take <HO-id>"},
+		"refused take": {`cerne handoff take HO-0001`, "Error: handoff is not pending: HO-0001 was taken"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, _, hookOut := bindFromBash(t, tc.command, func(_, _ string) string { return tc.stdout })
+			if got != "" || strings.Contains(hookOut, "NOT bound") {
+				t.Fatalf("false alarm: bound=%q hook output:\n%s", got, hookOut)
+			}
+		})
+	}
+}

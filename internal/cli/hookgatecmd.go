@@ -88,31 +88,39 @@ var (
 	shellSepRe   = regexp.MustCompile(`&&|\|\||[;|&\n]`)
 	quotedRe     = regexp.MustCompile(`"[^"]*"|'[^']*'`)
 	cerneStartRe = regexp.MustCompile(`^(?:\w+=\S*\s+)*(?:\S*/)?cerne\s+(?:-\S+\s+)*work\s+start\b`)
+	cerneTakeRe  = regexp.MustCompile(`^(?:\w+=\S*\s+)*(?:\S*/)?cerne\s+(?:-\S+\s+)*handoff\s+take\b`)
 	helpFlagRe   = regexp.MustCompile(`(^|\s)(-h|--help)(\s|$)`)
 )
 
-// runsWorkStart reports whether a Bash command line actually RUNS
-// `cerne work start`: it sits at the start of a command (after ; && || | & or
-// a newline, optional VAR=x prefixes), outside quotes, and is not a --help call.
-// Quoted text is blanked first, so `echo "cerne work start"` and
-// `git commit -m "... work start"` are mentions, not runs (F-0876).
-func runsWorkStart(command string) bool {
+// runsCerne reports whether a Bash command line actually RUNS the cerne verb
+// re matches (`cerne work start`, `cerne handoff take`): it sits at the start
+// of a command (after ; && || | & or a newline, optional VAR=x prefixes),
+// outside quotes, and is not a --help call. Quoted text is blanked first, so
+// `echo "cerne work start"` and `git commit -m "... work start"` are
+// mentions, not runs (F-0876).
+func runsCerne(command string, re *regexp.Regexp) bool {
 	blanked := quotedRe.ReplaceAllString(command, `""`)
 	for _, seg := range shellSepRe.Split(blanked, -1) {
 		seg = strings.TrimSpace(seg)
-		if cerneStartRe.MatchString(seg) && !helpFlagRe.MatchString(seg) {
+		if re.MatchString(seg) && !helpFlagRe.MatchString(seg) {
 			return true
 		}
 	}
 	return false
 }
 
+// Unbound warnings: the minted id never reached the hook (F-0876; take F-0376).
+const (
+	unboundWorkStart = "cerne: the work may have been created, but this session is NOT bound to it: the output of `cerne work start` did not reach the hook intact (redirected, filtered, or the command failed). The Edit gate keeps denying until it is bound. Run `cerne work start` alone, without a pipe, redirect or chain, so it binds (check with `cerne work current <session-id>`)."
+	unboundTake      = "cerne: the handoff may have been taken, but this session is NOT bound to the new work: the output of `cerne handoff take` did not reach the hook intact (redirected, filtered, or the command failed). The Edit gate keeps denying until it is bound. The take is done, so do not re-run it: find the new W- in `cerne work list` (it carries the origin's title) and run `cerne work start \"<description>\" --from W-…` alone, without a pipe, redirect or chain, so this session binds."
+)
+
 // warnUnbound tells the agent, through the PostToolUse context channel, that
-// the work it just started could not be bound to this session (F-0876).
-func warnUnbound(cmd *cobra.Command) {
+// what it just registered could not be bound to this session (F-0876).
+func warnUnbound(cmd *cobra.Command, msg string) {
 	var out postToolContext
 	out.HookSpecificOutput.HookEventName = "PostToolUse"
-	out.HookSpecificOutput.AdditionalContext = "cerne: the work may have been created, but this session is NOT bound to it: the output of `cerne work start` did not reach the hook intact (redirected, filtered, or the command failed). The Edit gate keeps denying until it is bound. Run `cerne work start` alone, without a pipe, redirect or chain, so it binds (check with `cerne work current <session-id>`)."
+	out.HookSpecificOutput.AdditionalContext = msg
 	_ = json.NewEncoder(cmd.OutOrStdout()).Encode(out)
 }
 
@@ -168,8 +176,8 @@ func runHookBindWork(cmd *cobra.Command, format string) {
 			// minted id to bind, and the Edit gate will keep denying. Say so (F-0876).
 			// Only a real, un-helped, un-refused start: a Bash call that merely
 			// MENTIONS "work start" (grep, echo, a commit message) is not one.
-			if runsWorkStart(ti.Command) && !strings.Contains(string(in.ToolResponse), "Error") {
-				warnUnbound(cmd)
+			if runsCerne(ti.Command, cerneStartRe) && !strings.Contains(string(in.ToolResponse), "Error") {
+				warnUnbound(cmd, unboundWorkStart)
 			}
 		}
 	case handoffTakeRe.MatchString(ti.Command):
@@ -177,6 +185,8 @@ func runHookBindWork(cmd *cobra.Command, format string) {
 		// refused take prints no "(active)" and binds nothing (F-0376).
 		if m := workCreatedRe.FindStringSubmatch(string(in.ToolResponse)); m != nil {
 			id = m[1]
+		} else if runsCerne(ti.Command, cerneTakeRe) && !strings.Contains(string(in.ToolResponse), "Error") {
+			warnUnbound(cmd, unboundTake)
 		}
 	case featureStartRe.MatchString(ti.Command):
 		// The F-/E-/T- id is the argument; bind only if the response confirms the
