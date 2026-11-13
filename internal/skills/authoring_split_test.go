@@ -75,22 +75,40 @@ func TestSkillMdFitsTheBudget(t *testing.T) {
 }
 
 // TestSkillMdKeepsTheRules pins criterion 2: each rule an agent must not
-// forget stays in the file every session loads, by passage.
+// forget stays, as a whole sentence, in the file every session loads. Loose
+// tokens would not do: the catalog names every command, so a deleted rule
+// would still match.
 func TestSkillMdKeepsTheRules(t *testing.T) {
 	c := All()[0].Content
 	rules := map[string][]string{
-		"human gates":                  {"ask for approval and stop", "Do not run `cerne feature approve` yourself", "Do not run `cerne feature accept` yourself", "`\"auto\"`"},
-		"complete card":                {"--context", "--facet", "--component", "`capability-missing`"},
-		"never import a new case":      {"not for registering a single new case"},
-		"external source":              {"cerne reference new", "--informs"},
-		"note over local memory":       {"Durable, team-relevant project knowledge", "cerne note new"},
-		"the cycle":                    {"`cerne feature new", "cerne pull", "cerne push", "cerne feature approve", "cerne feature start", "cerne feature complete"},
-		"lint before the push":         {"cerne lint --staged"},
-		"the Gauntlet":                 {"`Barra:`", "critic", "judge", "## Gauntlet"},
-		"errata for the concluded":     {"is **history: its body is immutable**", "Append an **errata** instead"},
-		"do not turn the Gauntlet off": {"Do not switch it yourself to get past a gate"},
-		"triage the learnings":         {"Closing includes triaging the learnings (F-0401)", "cerne feature learnings --skip"},
-		"the pointers":                 {"cerne guide", "reference/"},
+		"human gates": {
+			"Do not run `cerne feature approve` yourself — an agent approving its own spec defeats the gate.",
+			"Do not run `cerne feature accept` yourself either — report the feature is implemented and ask a human to accept it.",
+			"**Only run `cerne feature approve`/`accept` yourself when `[gates]` explicitly sets that gate to `\"auto\"`**",
+		},
+		"complete card":           {"**Complete card at birth:** the spec, the tags", "`capability-missing`"},
+		"never import a new case": {"not for registering a single new case"},
+		"external source":         {"register it — as you use it, **without waiting to be asked**", "Register **only the sources that actually informed the outcome**"},
+		"note over local memory":  {"**Durable, team-relevant project knowledge → `cerne note new`.**", "**Personal or machine-specific knowledge → stays in local Claude Code memory, never pushed.**"},
+		"the cycle":               {"**Register at the start, not the end:**", "then `cerne feature complete F-NNNN` (gate: a real result)", "`cerne feature accept` is the only way to the actual `done`."},
+		"lint before the push":    {"`cerne lint --staged` — runs every lint rule over your **local** `.docs/` edits"},
+		"the Gauntlet": {
+			"A silent absence of a bar is never acceptable.",
+			"are three separate agents; one agent playing two collapses it into self-scoring.",
+			"Hand the critic one file path under the rule \"read exactly this file, do not run git, do not read the repository\".",
+			"Never fix the bar inside the delivery it is judging: route a hole in the bar as a separate improvement (a new feature, or a note).",
+			"A `Rodada N` line carries the judge's quoted verdict; a critic-only pass (no judge) goes on the `Achados do crítico` line, never on a `Rodada N` line.",
+			"`cerne feature complete` refuses a result whose record `cerne lint` would flag (a numbered criterion never cited, or no valid `## Gauntlet`), and `--force` does not cross it.",
+		},
+		"errata for the concluded":     {"is **history: its body is immutable**", "do **not** rewrite it and do **not** reopen it. Append an **errata** instead"},
+		"do not turn the Gauntlet off": {"Do not switch it yourself to get past a gate: turning the Gauntlet off is the project owner's decision"},
+		"triage the learnings":         {"**Closing includes triaging the learnings (F-0401).**"},
+		"mark ambiguity":               {"**Mark ambiguity, don't guess:** leave `[ESCLARECER: pergunta específica]`"},
+		"project language":             {"Write every document in the project's language: check the headings of the stub you are filling."},
+		"register non-feature work":    {"The moment you pick up a non-feature task, register it with `cerne work start", "run `cerne work list` before delegating an investigation"},
+		"ideas on demand":              {"Ideas are on demand only: never pull ideas in unasked."},
+		"pendings":                     {"`cerne feature complete` refuses a result that does not cite every pending the feature pays", "a promoted pending is never closed by hand"},
+		"the pointers":                 {"`cerne guide`", "reference/"},
 	}
 	for rule, passages := range rules {
 		for _, p := range passages {
