@@ -135,7 +135,7 @@ func FeatureCommits(dir, base, pinBranch, id string, excludes []string) (diff st
 		if len(f) < 3 || !citesID(f[2], id) {
 			continue
 		}
-		args := append([]string{"show", "--no-color", "--no-ext-diff", "--format=commit %h %s", f[0], "--", "."}, excludeArgs(excludes)...)
+		args := append([]string{"show", "--no-color", "--no-ext-diff", "--no-textconv", "--format=commit %h %s", f[0], "--", "."}, excludeArgs(excludes)...)
 		out, err := runGit(dir, args...)
 		if err != nil {
 			return "", nil, "", err
