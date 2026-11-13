@@ -63,6 +63,10 @@ type Config struct {
 	// it. 0 (absent) means the 8-hour default — read it via
 	// StaleWorkWindowHours.
 	StaleWorkHours int `toml:"stale_work_hours,omitzero"`
+	// StaleDecisionDays is N of the stale-decision lint's review window
+	// (F-0385). 0 (absent) means the 180-day default — read it via
+	// StaleDecisionWindowDays.
+	StaleDecisionDays int `toml:"stale_decision_days,omitzero"`
 	// RecentWorkDays is the activity window (days) the CONTEXT.md "In progress"
 	// board uses: older active works fold into one triage line (F-0319).
 	// 0 (absent) means the 14-day default — read it via RecentWorkWindowDays.
@@ -316,6 +320,15 @@ func (c Config) RecentWorkWindowDays() int {
 	return 14
 }
 
+// StaleDecisionWindowDays returns the configured stale_decision_days or the
+// 180-day default when absent/zero (F-0385).
+func (c Config) StaleDecisionWindowDays() int {
+	if c.StaleDecisionDays > 0 {
+		return c.StaleDecisionDays
+	}
+	return 180
+}
+
 // StaleWorkWindowHours returns the configured stale_work_hours or the 8-hour
 // default when absent/zero (F-0130).
 func (c Config) StaleWorkWindowHours() int {
@@ -421,6 +434,7 @@ func SaveConfig(dir string, c Config) error {
 		ComponentPaths           map[string][]string `toml:"component_paths,omitempty"`
 		StaleReadyDays           int                 `toml:"stale_ready_days,omitzero"`
 		StaleWorkHours           int                 `toml:"stale_work_hours,omitzero"`
+		StaleDecisionDays        int                 `toml:"stale_decision_days,omitzero"`
 		RecentWorkDays           int                 `toml:"recent_work_days,omitzero"`
 		Gates                    *GatesConfig        `toml:"gates,omitempty"`
 		Activity                 *ActivityConfig     `toml:"activity,omitempty"`
@@ -431,7 +445,7 @@ func SaveConfig(dir string, c Config) error {
 		Agent                    *AgentConfig        `toml:"agent,omitempty"`
 		Guard                    *GuardConfig        `toml:"guard,omitempty"`
 	}
-	w := wire{ProjectID: c.ProjectID, Backend: c.Backend, DefaultScope: c.DefaultScope, OKF: c.OKF, SyncSkills: c.SyncSkills, AutocommitLock: c.AutocommitLock, PinBranch: c.PinBranch, PushPin: c.PushPin, PinWriter: c.PinWriter, CompileOnPush: c.CompileOnPush, UnregisteredSourceIgnore: c.UnregisteredSourceIgnore, ModulePaths: c.ModulePaths, ComponentPaths: c.ComponentPaths, StaleReadyDays: c.StaleReadyDays, StaleWorkHours: c.StaleWorkHours, RecentWorkDays: c.RecentWorkDays}
+	w := wire{ProjectID: c.ProjectID, Backend: c.Backend, DefaultScope: c.DefaultScope, OKF: c.OKF, SyncSkills: c.SyncSkills, AutocommitLock: c.AutocommitLock, PinBranch: c.PinBranch, PushPin: c.PushPin, PinWriter: c.PinWriter, CompileOnPush: c.CompileOnPush, UnregisteredSourceIgnore: c.UnregisteredSourceIgnore, ModulePaths: c.ModulePaths, ComponentPaths: c.ComponentPaths, StaleReadyDays: c.StaleReadyDays, StaleWorkHours: c.StaleWorkHours, StaleDecisionDays: c.StaleDecisionDays, RecentWorkDays: c.RecentWorkDays}
 	if !c.Gates.isZero() {
 		gates := c.Gates
 		w.Gates = &gates
