@@ -218,4 +218,17 @@ describe('IdeasPanel (F-0312)', () => {
     fireEvent.click(row('atalho de teclado').getByRole('button', { name: 'Confirmar promoção de I-0001' }))
     await waitFor(() => expect(promoteIdea).toHaveBeenCalledWith('I-0001', 'web', false))
   })
+
+  it('lista as fontes que informam a ideia (F-0389)', async () => {
+    ideas = [
+      { ...idea('I-0001', 'com fonte'), informed_by: [{ id: 'R-0001', title: 'Artigo SDD', url: 'https://example.com/sdd' }] },
+      idea('I-0002', 'sem fonte'),
+    ]
+    render(<IdeasPanel modules={[]} onPromoted={() => {}} />)
+    await screen.findByText('com fonte')
+    const link = row('com fonte').getByRole('link', { name: 'Artigo SDD' })
+    expect(link).toHaveAttribute('href', 'https://example.com/sdd')
+    expect(row('com fonte').getByText('Fontes:')).toBeInTheDocument()
+    expect(row('sem fonte').queryByText('Fontes:')).toBeNull()
+  })
 })

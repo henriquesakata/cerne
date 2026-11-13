@@ -160,6 +160,23 @@ export default function IdeasPanel({ modules, onPromoted }: { modules: string[];
             {load.data.map((i) => (
               <li key={i.id} className="ideas-item">
                 <IdeaText text={i.text} />
+                {i.informed_by && i.informed_by.length > 0 && (
+                  <span className="ideas-sources muted">
+                    {t.ideas.sources.label}:{' '}
+                    {i.informed_by.map((r, n) => (
+                      <span key={r.id}>
+                        {n > 0 && ', '}
+                        {r.url ? (
+                          <a href={r.url} target="_blank" rel="noreferrer">
+                            {r.title}
+                          </a>
+                        ) : (
+                          r.title
+                        )}
+                      </span>
+                    ))}
+                  </span>
+                )}
                 <span className="ideas-meta">
                   <span className="card-id">{i.id}</span> <span className="muted">{new Date(i.created_at).toLocaleDateString(lang)}</span>
                 </span>
