@@ -94,8 +94,10 @@ func TestFeatureNew(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadEvents: %v", err)
 	}
-	if len(events) != 1 {
-		t.Fatalf("events = %d, want 1", len(events))
+	// F-0375: the seeded spec is a write by whoever passed --context — here a
+	// human (TestMain clears CERNE_ACTOR).
+	if len(events) != 2 || events[1].Type != "feature.doc_edited" || events[1].Payload["doc"] != "spec" || events[1].Payload["source"] != "human" {
+		t.Fatalf("events = %+v, want feature.created then the spec's feature.doc_edited by a human", events)
 	}
 	ev := events[0]
 	if ev.Type != "feature.created" || ev.EntityID != "F-0001" || ev.Actor != "local" {
@@ -133,8 +135,8 @@ func TestFeatureNew(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadEvents after second: %v", err)
 	}
-	if len(events) != 2 || events[1].Actor != "henrique" {
-		t.Fatalf("events = %+v, want second actor henrique", events)
+	if len(events) != 4 || events[2].Type != "feature.created" || events[2].Actor != "henrique" {
+		t.Fatalf("events = %+v, want F-0002's feature.created by henrique after F-0001's two", events)
 	}
 }
 
