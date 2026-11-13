@@ -1,3 +1,6 @@
+## Q: How do I close a feature? One command or two?
+Fill the result, `cerne push`, then `cerne feature complete <F-id>`: it moves the feature to implemented and stamps its token cost (`## Custo`) in the same command, the same stamp as `cerne cost <F-id> --stamp`. If the transition refuses, nothing is stamped. If the stamp cannot be made it prints `warning: cost not stamped: …` and still exits 0, because the feature is already implemented: when no session on this machine is bound to it, run `cerne cost <F-id> --stamp` from the machine that ran the work. `--no-stamp` skips the stamp. The output ends with one Next step block: the human `cerne feature accept <F-id>` and, when the feature has a PR link, the delivery line. Marking the PR ready for review is not done by cerne.
+
 ## Q: How do I change a project setting from the CLI?
 Use `cerne settings set <key> <value> --scope project`. `--scope` is required: `project` writes `.cernerc`, `host` writes the user's `settings.toml`. See every key, its value and where it comes from with `cerne settings list`, read one with `cerne settings get <key>`, remove an override with `cerne settings unset <key> --scope project`. Owner-only keys such as `gates.gauntlet` refuse an agent (`CERNE_ACTOR=agent`): ask the owner.
 

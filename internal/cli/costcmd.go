@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -124,46 +125,63 @@ func runCostStamp(cmd *cobra.Command, dir, id string) error {
 	if err != nil {
 		return err
 	}
-	f, err := store.LoadFeature(ctx.repoDir, id)
+	o, err := stampCost(ctx, id)
 	if err != nil {
 		return err
+	}
+	w := cmd.OutOrStdout()
+	switch o.kind {
+	case stampKeptHigher:
+		fmt.Fprintf(w, "%s cost unchanged — its stamp already covers more messages (%d) than the transcripts still hold.\n", id, o.report.Messages)
+	case stampLowerRefused:
+		fmt.Fprintf(w, "%s cost unchanged — %v\n", id, cost.ErrStampWouldLower)
+	case stampWritten:
+		fmt.Fprintf(w, "✓ %s cost stamped — '## Custo' in its result (cerne show %s --doc result).\n", id, id)
+	default:
+		fmt.Fprintf(w, "%s cost unchanged — the result already carries this stamp.\n", id)
+	}
+	return nil
+}
+
+// stampCost is the one stamp path: `cerne cost --stamp` and the complete
+// transition (F-0402) both run it, with no pull or push of their own.
+func stampCost(ctx projCtx, id string) (stampOutcome, error) {
+	f, err := store.LoadFeature(ctx.repoDir, id)
+	if err != nil {
+		return stampOutcome{}, err
 	}
 	cacheDir := filepath.Dir(ctx.repoDir)
 	r, err := cost.PrecheckStamp(cost.Inputs{CacheDir: cacheDir, RepoDir: ctx.repoDir, Roots: claudeRoots()}, f.State, id)
 	if err != nil {
-		return err
+		return stampOutcome{}, err
 	}
 	// The anchor already holds more than the transcripts: keep it, and drop the
 	// snapshot — it can only hold less (C12).
 	if r.Source == "stamp" {
-		fmt.Fprintf(cmd.OutOrStdout(), "%s cost unchanged — its stamp already covers more messages (%d) than the transcripts still hold.\n", id, r.Messages)
-		return cost.DropSnapshot(cacheDir, id)
+		return stampOutcome{report: r, kind: stampKeptHigher}, cost.DropSnapshot(cacheDir, id)
 	}
 	raw, err := os.ReadFile(app.FeatureDocPath(ctx.repoDir, id, "result.md"))
 	if err != nil {
-		return err
+		return stampOutcome{}, err
 	}
 	body, err := cost.Stamp(string(raw), r)
 	if errors.Is(err, cost.ErrStampWouldLower) {
-		fmt.Fprintf(cmd.OutOrStdout(), "%s cost unchanged — %v\n", id, err)
-		return cost.DropSnapshot(cacheDir, id)
+		return stampOutcome{report: r, kind: stampLowerRefused}, cost.DropSnapshot(cacheDir, id)
 	}
 	if err != nil {
-		return err
+		return stampOutcome{}, err
 	}
 	_, changed, err := app.AmendFeatureResult(ctx.repoDir, ctx.projDir, id, body, "cost stamp (F-0309)")
 	if err != nil {
-		return err
+		return stampOutcome{}, err
 	}
 	if err := cost.DropSnapshot(cacheDir, id); err != nil {
-		return err
+		return stampOutcome{}, err
 	}
 	if changed {
-		fmt.Fprintf(cmd.OutOrStdout(), "✓ %s cost stamped — '## Custo' in its result (cerne show %s --doc result).\n", id, id)
-	} else {
-		fmt.Fprintf(cmd.OutOrStdout(), "%s cost unchanged — the result already carries this stamp.\n", id)
+		return stampOutcome{report: r, kind: stampWritten}, nil
 	}
-	return nil
+	return stampOutcome{report: r, kind: stampUnchanged}, nil
 }
 
 func runCost(cmd *cobra.Command, dir, id string, asJSON bool) error {
@@ -458,4 +476,49 @@ func plural(n int, noun string) string {
 		return fmt.Sprintf("1 %s", noun)
 	}
 	return fmt.Sprintf("%d %ss", n, noun)
+}
+
+// stampOutcome is what stampCost did, for the caller to word (F-0402).
+type stampOutcome struct {
+	report cost.Report
+	kind   stampKind
+}
+
+type stampKind int
+
+const (
+	stampWritten      stampKind = iota // a new or changed '## Custo' went to the backend
+	stampKeptHigher                    // the anchor already covers more than the transcripts
+	stampLowerRefused                  // cost.Stamp refused to lower the anchor
+	stampUnchanged                     // the result already carried this stamp
+)
+
+// completeStampLine words a stamp outcome after a complete: the line that is
+// printed, always followed by exit 0 (F-0402 crit. 3).
+func completeStampLine(id string, o stampOutcome, err error) string {
+	switch {
+	case errors.Is(err, cost.ErrNothingToStamp):
+		return fmt.Sprintf("warning: cost not stamped: no session on this machine is bound to %s; stamp it from the machine that ran the work: cerne cost %s --stamp", id, id)
+	case err != nil:
+		return fmt.Sprintf("warning: cost not stamped: %s; run 'cerne cost %s --stamp'", strings.Join(strings.Fields(err.Error()), " "), id)
+	case o.kind == stampLowerRefused:
+		return "warning: cost not stamped: the stamped total is higher than this machine's sessions; nothing written"
+	case o.kind != stampWritten:
+		return "cost already stamped"
+	}
+	total := o.report.Counters
+	if o.report.Total != nil {
+		total = *o.report.Total
+	}
+	line := fmt.Sprintf("cost stamped: %.0f weighted tokens", cost.Weighted(total))
+	// An epic's headline is own plus children, the role shares are own only:
+	// no shares rather than shares of another base.
+	if whole := cost.Weighted(o.report.Counters); o.report.Total == nil && len(o.report.ByRole) > 0 && whole > 0 {
+		shares := make([]string, 0, len(o.report.ByRole))
+		for _, role := range slices.Sorted(maps.Keys(o.report.ByRole)) {
+			shares = append(shares, fmt.Sprintf("%s %.0f%%", role, 100*cost.Weighted(o.report.ByRole[role])/whole))
+		}
+		line += " (" + strings.Join(shares, ", ") + ")"
+	}
+	return line
 }
