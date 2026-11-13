@@ -16,3 +16,16 @@ func TestKeywords(t *testing.T) {
 		}
 	}
 }
+
+func TestTermsMirrorKeywords(t *testing.T) {
+	got := Terms("Como a configuração do marco?")
+	if len(got) != 2 {
+		t.Fatalf("Terms = %+v, want 2 (como is a stopword)", got)
+	}
+	if got[0].Word != "configuracao" || got[0].Stem != "configura" || got[0].Match != termQuery("configuração") {
+		t.Errorf("first term = %+v", got[0])
+	}
+	if got[1].Word != "marco" || got[1].Stem != "marc" {
+		t.Errorf("last term = %+v", got[1])
+	}
+}

@@ -3,6 +3,8 @@ package index
 import (
 	"strings"
 	"unicode"
+
+	"github.com/henriquesakata/cerne/internal/slug"
 )
 
 // stopwords are common pt-BR + en function words dropped from a natural-language
@@ -56,4 +58,22 @@ func Keywords(query string) string {
 		kept[i] = termQuery(t)
 	}
 	return strings.Join(kept, " OR ")
+}
+
+// Term is one salient keyword of a question, as the coverage ranking sees it.
+type Term struct {
+	Word  string // folded keyword
+	Stem  string // its stem (Word when it has none)
+	Match string // FTS5 expression: the word, plus its stem as a prefix
+}
+
+// Terms exposes the keyword terms of a question for rankers outside this
+// package (cerne guide, F-0398) that score coverage the same way.
+func Terms(query string) []Term {
+	var out []Term
+	for _, t := range keywordTerms(query) {
+		f := slug.Fold(t)
+		out = append(out, Term{Word: f, Stem: stem(f), Match: termQuery(t)})
+	}
+	return out
 }
