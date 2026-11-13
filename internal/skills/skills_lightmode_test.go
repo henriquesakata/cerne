@@ -9,7 +9,7 @@ import (
 // describes the light mode — the key, what it lifts, what stays — and no
 // longer claims that no mode removes the protocol.
 func TestCerneAuthoringDocumentsLightMode(t *testing.T) {
-	c := All()[0].Content
+	c := fullAuthoring(t)
 	for _, want := range []string{`gauntlet = "off"`, "light mode", "spec-missing-bar", "result-missing-gauntlet", "result-missing-evidence", "cerne status", "gates.gauntlet", "Settings screen", "cerne settings set gates.gauntlet on", "refuses an agent"} {
 		if !strings.Contains(c, want) {
 			t.Errorf("skill missing %q", want)

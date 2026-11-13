@@ -13,7 +13,7 @@ import (
 // but the skill never documented them, the guide drifted from reality. Each
 // assertion maps to an F-0086 acceptance criterion.
 func TestCerneAuthoringDocumentsTags(t *testing.T) {
-	c := All()[0].Content
+	c := fullAuthoring(t)
 
 	contains := func(crit, sub string) {
 		t.Helper()

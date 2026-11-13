@@ -1,0 +1,18 @@
+# Validating before a push, the harness, models and settings
+
+## Validate locally before pushing
+
+Catch documentation debts **before** they churn the backend — same lint engine, no commit, no backend write:
+
+- `cerne lint --staged` — runs every lint rule over your **local** `.docs/` edits (assembled over the pulled snapshot), without a pull, and fails only on what your edits broke; the rest of the project's debt is one count line (`--all` lists and fails on everything). With no local edit it answers at once (`cerne: no local edits to lint`), without running the project lint. A partial `.docs/` (implemented features not materialized) yields no false positive.
+- `cerne push --dry-run` — shows exactly which documents **would** go to the backend and lints them, then stops before any commit/push. Exits non-zero if they would lint dirty, so it doubles as a pre-push gate.
+
+Both use the same rules (and the same `content/…` paths) as `cerne lint` over the backend. A clean `--staged` means your edits are clean; `--staged --all` or `push --dry-run` gives the whole picture.
+
+**Inspect the agent harness itself.** `cerne harness` (add `--json` for machine reading) reports the project's effective harness inventory, read-only: cerne-managed hooks and skills with drift against the running build (`divergent`/`missing` + the repair command, e.g. `cerne hook install`), MCP servers (secrets masked), marketplace plugins, context files and provider parity — each line with its origin layer, and items outside the repository flagged (another machine does not inherit them). Use it to answer "is this hook actually active here?" before debugging a hook that never fired.
+
+**The model catalog (F-0311).** Every model list — the chat picker, its effort levels, the result stamp, the backend default — comes from one catalog: an embedded baseline plus a hand-editable global `models.json` in the user config dir, resolved field by field. `cerne ui`/`cerne serve` refresh it from the provider's listing at boot when it is older than 24h; `cerne models refresh [--force]` does it on demand and prints the diff (added / delisted / relisted). Demoting a model to legacy is a hand edit of the global file; never hardcode a model id in code (a guard test refuses it).
+
+**Settings (F-0314).** cerne's configurable keys are declared in one registry; a value resolves project (`.cernerc`, committed) > host (`settings.toml` in the user config dir, never in the repo) > the declared default. `cerne settings list [--json]` shows each key's value, default and winning scope plus the file behind each scope; `cerne settings get <key> [--all] [--show-scope] [--show-origin]` prints one (`--all`: every scope's value, winner first; scope and `file:<path>`, as `git config` shows them); `cerne settings set <key> <value> --scope project|host` and `cerne settings unset <key> --scope project|host` edit only that key's line. Put a personal preference in the host scope so it never enters the team's diff.
+
+**Acknowledging an intentional historical mention.** Sometimes an authored doc *should* name a superseded entity — a spec/ADR/note explaining "antes usávamos D-0003 (substituída por D-0005), e o trade-off era…". That is history, not a debt, but `cerne lint` flags it as `ref-to-superseded` by default. To declare the mention intentional, append the marker on the **same line**: `<!-- lint:ok-superseded D-0003 -->` (comma-separate several ids: `<!-- lint:ok-superseded D-0003, D-0005 -->`). The rule then tolerates that line only — an unmarked mention of the same id on another line is still a debt. Use it sparingly, for genuine historical context; it is an explicit acknowledgment, not a blanket silence.

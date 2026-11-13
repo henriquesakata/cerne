@@ -12,7 +12,7 @@ import (
 // acceptance, and the readiness check precedes the approve request — the old
 // "acceptance before it enters the spec" round-trip is gone.
 func TestCerneAuthoringBarIsAProposal(t *testing.T) {
-	c := All()[0].Content
+	c := fullAuthoring(t)
 	for _, want := range []string{
 		"is a proposal",
 		"the human's approve is its acceptance",
@@ -45,7 +45,7 @@ func TestCerneAuthoringBarIsAProposal(t *testing.T) {
 // prose of its own, outside the Barra: value (F-0327).
 func TestCerneAuthoringBarTemplatesRefusedVerbatim(t *testing.T) {
 	n := 0
-	for _, line := range strings.Split(All()[0].Content, "\n") {
+	for _, line := range strings.Split(fullAuthoring(t), "\n") {
 		if !strings.HasPrefix(line, "Barra:") {
 			continue
 		}
@@ -62,7 +62,7 @@ func TestCerneAuthoringBarTemplatesRefusedVerbatim(t *testing.T) {
 // TestCerneAuthoringJudgeQuestion pins F-0381 crit. 5: the judge's question is
 // part of the bar's approval and the check reports its absence.
 func TestCerneAuthoringJudgeQuestion(t *testing.T) {
-	c := All()[0].Content
+	c := fullAuthoring(t)
 	for _, want := range []string{"Pergunta ao juiz:", "is part of the bar's approval", "`judge-question-missing`"} {
 		if !strings.Contains(c, want) {
 			t.Errorf("skill missing %q", want)

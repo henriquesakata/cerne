@@ -8,7 +8,7 @@ import (
 // TestCerneAuthoringDocumentsStaleDecision pins F-0385: the authoring skill
 // cites the stale-decision rule and its two new exits, keep and retire.
 func TestCerneAuthoringDocumentsStaleDecision(t *testing.T) {
-	c := All()[0].Content
+	c := fullAuthoring(t)
 	for _, sub := range []string{
 		"stale-decision",
 		"cerne decision keep D-NNNN",

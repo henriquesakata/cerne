@@ -11,7 +11,7 @@ import (
 // `cerne feature approve`/`accept` on its own. It also documents the new
 // `done` state and the `stale-ready` lint rule.
 func TestCerneAuthoringDocumentsHumanGates(t *testing.T) {
-	c := All()[0].Content
+	c := fullAuthoring(t)
 
 	contains := func(crit, sub string) {
 		t.Helper()

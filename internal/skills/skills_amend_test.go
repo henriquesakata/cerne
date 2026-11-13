@@ -12,7 +12,7 @@ import (
 // `feature amend --doc spec|plan`, never appended; and the result amend is no
 // longer described as the only document amend.
 func TestCerneAuthoringDocumentsStageShowAndAmend(t *testing.T) {
-	c := All()[0].Content
+	c := fullAuthoring(t)
 	for _, sub := range []string{
 		"the real state is line 1 of `cerne show`",
 		"a status line in the body is history",

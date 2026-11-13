@@ -11,7 +11,7 @@ import (
 // new entry carrying the marker, which looks back only — not the old promise
 // that an entry pointing at the successor clears it.
 func TestSkillErrataTeachesMarker(t *testing.T) {
-	_, sec, ok := strings.Cut(All()[0].Content, "## Errata (correcting")
+	_, sec, ok := strings.Cut(fullAuthoring(t), "## Errata (correcting")
 	if !ok {
 		t.Fatal("skill has no Errata section")
 	}
