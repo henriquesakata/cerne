@@ -13,7 +13,7 @@ func TestValidStates(t *testing.T) {
 		has    []string
 	}{
 		{"feature", true, 7, []string{"candidate", "in_development", "implemented", "done", "superseded"}},
-		{"decision", true, 2, []string{"active", "superseded"}},
+		{"decision", true, 3, []string{"active", "superseded", "retired"}},
 		{"reference", true, 2, []string{"current", "obsolete"}},
 		{"runbook", true, 2, []string{"active", "superseded"}},
 		{"note", true, 2, []string{"active", "superseded"}},
