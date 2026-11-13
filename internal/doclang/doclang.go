@@ -107,10 +107,11 @@ const (
 
 // Positions, in their templates, of the sections a reader looks for by role.
 const (
-	specProblem    = 0 // where feature new seeds the context
-	specCriteria   = 1 // its numbered items are the acceptance contract
-	resultDebts    = 3 // what the delivery left open
-	resultGauntlet = 5 // the loop's record
+	specProblem      = 0 // where feature new seeds the context
+	specCriteria     = 1 // its numbered items are the acceptance contract
+	resultDebts      = 3 // what the delivery left open
+	specVerification = 4 // where the bar and the judge's question live
+	resultGauntlet   = 5 // the loop's record
 )
 
 // ProblemHeadings returns the heading of the spec's problem section in every
@@ -130,6 +131,10 @@ func IsDebtsSection(heading string) bool { return IsSection(Result, resultDebts,
 // IsGauntletSection reports whether heading opens the result's Gauntlet
 // section, in any language.
 func IsGauntletSection(heading string) bool { return IsSection(Result, resultGauntlet, heading) }
+
+// IsVerificationSection reports whether heading opens the spec section that
+// carries the Gauntlet bar and the judge's question, in any language.
+func IsVerificationSection(heading string) bool { return IsSection(Spec, specVerification, heading) }
 
 // IsCriteriaSection reports whether heading opens the spec section whose
 // numbered items are the acceptance contract, in any language.
@@ -253,6 +258,9 @@ const (
 	EvidenceLabel
 	IfLabel
 	NextStepLabel
+	// JudgeQuestionLabel opens the line under the bar that holds the question
+	// the blind judge answers (F-0381).
+	JudgeQuestionLabel
 	numTerms
 )
 
@@ -265,29 +273,30 @@ type form struct{ re, text string }
 // decomposed accents (a paste from macOS arrives decomposed) and the
 // unaccented spelling.
 var terms = map[Term]map[Lang]form{
-	BarLabel:       {PT: {`Barra`, "Barra"}, EN: {`Bar`, "Bar"}},
-	NotApplicable:  {PT: {`n(?:ã|a\x{0303}|a)o[\s-]+aplic(?:á|a\x{0301}|a)vel`, "não aplicável"}, EN: {`not[\s-]+applicable`, "not applicable"}},
-	Waived:         {PT: {`dispensada\s+por\s+decis(?:ã|a\x{0303}|a)o\s+humana`, "dispensada por decisão humana"}, EN: {`waived\s+by\s+human\s+decision`, "waived by human decision"}},
-	WaivedOpen:     {PT: {re: `dispensada`}, EN: {re: `waived\s+by\b`}},
-	MethodLabel:    {PT: {re: `M(?:é|e\x{0301}|e)todo`}, EN: {re: `Method`}},
-	ExitLabel:      {PT: {re: `Sa(?:í|i\x{0301}|i)da`}, EN: {re: `Exit`}},
-	Round:          {PT: {`Rodada`, "Rodada"}, EN: {`Round`, "Round"}},
-	CriticFindings: {PT: {`Achados? do cr(?:í|i\x{0301}|i)tico`, "Achados do crítico"}, EN: {`Critic(?:['’]s)? findings?`, "Critic findings"}},
-	Win:            {PT: {`vit(?:ó|o\x{0301}|o)ria`, "vitória"}, EN: {`win`, "win"}},
-	Loss:           {PT: {`derrota`, "derrota"}, EN: {`loss`, "loss"}},
-	Tie:            {PT: {`empate`, "empate"}, EN: {`tie`, "tie"}},
-	VerdictLabel:   {PT: {re: `veredito`}, EN: {re: `verdict`}},
-	TieLetter:      {PT: {re: `EMPATE`}, EN: {re: `TIE`}},
-	OutcomeLabel:   {PT: {re: `veredito|resultado`}, EN: {re: `verdict|result|outcome`}},
-	Criterion:      {PT: {re: `crit(?:é|e\x{0301}|e)rio`}, EN: {re: `criterion`}},
-	Criteria:       {PT: {re: `crit(?:é|e\x{0301}|e)rios`}, EN: {re: `criteria`}},
-	RangeTo:        {PT: {re: `a`}, EN: {re: `to`}},
-	ListAnd:        {PT: {re: `e`}, EN: {re: `and`}},
-	ListOr:         {PT: {re: `ou`}, EN: {re: `or`}},
-	Unmet:          {PT: {re: `PENDENTE`}, EN: {re: `UNMET`}},
-	EvidenceLabel:  {PT: {`Evid(?:ê|e\x{0302}|e)ncia`, "Evidência"}, EN: {`Evidence`, "Evidence"}},
-	IfLabel:        {PT: {`Se`, "Se"}, EN: {`If`, "If"}},
-	NextStepLabel:  {PT: {`Pr(?:ó|o\x{0301}|o)ximo passo`, "Próximo passo"}, EN: {`Next step`, "Next step"}},
+	BarLabel:           {PT: {`Barra`, "Barra"}, EN: {`Bar`, "Bar"}},
+	NotApplicable:      {PT: {`n(?:ã|a\x{0303}|a)o[\s-]+aplic(?:á|a\x{0301}|a)vel`, "não aplicável"}, EN: {`not[\s-]+applicable`, "not applicable"}},
+	Waived:             {PT: {`dispensada\s+por\s+decis(?:ã|a\x{0303}|a)o\s+humana`, "dispensada por decisão humana"}, EN: {`waived\s+by\s+human\s+decision`, "waived by human decision"}},
+	WaivedOpen:         {PT: {re: `dispensada`}, EN: {re: `waived\s+by\b`}},
+	MethodLabel:        {PT: {re: `M(?:é|e\x{0301}|e)todo`}, EN: {re: `Method`}},
+	ExitLabel:          {PT: {re: `Sa(?:í|i\x{0301}|i)da`}, EN: {re: `Exit`}},
+	Round:              {PT: {`Rodada`, "Rodada"}, EN: {`Round`, "Round"}},
+	CriticFindings:     {PT: {`Achados? do cr(?:í|i\x{0301}|i)tico`, "Achados do crítico"}, EN: {`Critic(?:['’]s)? findings?`, "Critic findings"}},
+	Win:                {PT: {`vit(?:ó|o\x{0301}|o)ria`, "vitória"}, EN: {`win`, "win"}},
+	Loss:               {PT: {`derrota`, "derrota"}, EN: {`loss`, "loss"}},
+	Tie:                {PT: {`empate`, "empate"}, EN: {`tie`, "tie"}},
+	VerdictLabel:       {PT: {re: `veredito`}, EN: {re: `verdict`}},
+	TieLetter:          {PT: {re: `EMPATE`}, EN: {re: `TIE`}},
+	OutcomeLabel:       {PT: {re: `veredito|resultado`}, EN: {re: `verdict|result|outcome`}},
+	Criterion:          {PT: {re: `crit(?:é|e\x{0301}|e)rio`}, EN: {re: `criterion`}},
+	Criteria:           {PT: {re: `crit(?:é|e\x{0301}|e)rios`}, EN: {re: `criteria`}},
+	RangeTo:            {PT: {re: `a`}, EN: {re: `to`}},
+	ListAnd:            {PT: {re: `e`}, EN: {re: `and`}},
+	ListOr:             {PT: {re: `ou`}, EN: {re: `or`}},
+	Unmet:              {PT: {re: `PENDENTE`}, EN: {re: `UNMET`}},
+	EvidenceLabel:      {PT: {`Evid(?:ê|e\x{0302}|e)ncia`, "Evidência"}, EN: {`Evidence`, "Evidence"}},
+	IfLabel:            {PT: {`Se`, "Se"}, EN: {`If`, "If"}},
+	NextStepLabel:      {PT: {`Pr(?:ó|o\x{0301}|o)ximo passo`, "Próximo passo"}, EN: {`Next step`, "Next step"}},
+	JudgeQuestionLabel: {PT: {`Pergunta ao juiz`, "Pergunta ao juiz"}, EN: {`Question for the judge`, "Question for the judge"}},
 }
 
 // in is term t as a regular-expression fragment in language l.

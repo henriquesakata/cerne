@@ -125,3 +125,41 @@ func BarLine(line string) (value string, ok bool) {
 	value, _, ok = doclang.BarLine(line, false)
 	return value, ok
 }
+
+// ErrJudgeQuestionMissing is a spec with a bar but no written judge-question
+// line in its Verificação section (F-0381).
+var ErrJudgeQuestionMissing = errors.New(`no "Pergunta ao juiz:" line`)
+
+// SpecJudgeQuestion returns the question the blind judge answers, read from the
+// Verificação section of a spec body, or ErrJudgeQuestionMissing when a bar is
+// named and no written question follows. A spec whose bar is "não aplicável",
+// waived, or absent owes none (the bar gate speaks for the last). Guide
+// comments are stripped first, as SpecBar does.
+func SpecJudgeQuestion(body []byte) (string, error) {
+	bar, err := SpecBar(body)
+	if err != nil {
+		return "", nil
+	}
+	_, value, _ := strings.Cut(bar, ":")
+	if exempt, _ := BarValue(value); exempt {
+		return "", nil
+	}
+	inCode, inVerif := false, false
+	for _, line := range strings.Split(htmlCommentRe.ReplaceAllString(string(body), ""), "\n") {
+		if doclang.Fence(line) {
+			inCode = !inCode
+			continue
+		}
+		if !inCode && strings.HasPrefix(line, "## ") {
+			inVerif = doclang.IsVerificationSection(line[3:])
+			continue
+		}
+		if !inVerif {
+			continue
+		}
+		if q, ok := doclang.JudgeQuestionLine(line, inCode); ok && !Unwritten(q) {
+			return q, nil
+		}
+	}
+	return "", ErrJudgeQuestionMissing
+}
