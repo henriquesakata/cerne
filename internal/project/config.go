@@ -63,9 +63,9 @@ type Config struct {
 	// it. 0 (absent) means the 8-hour default — read it via
 	// StaleWorkWindowHours.
 	StaleWorkHours int `toml:"stale_work_hours,omitzero"`
-	// StaleDecisionDays is N of the stale-decision lint's review window
-	// (F-0385). 0 (absent) means the 180-day default — read it via
-	// StaleDecisionWindowDays.
+	// StaleDecisionDays is the top-level form of lint.stale_decision_days
+	// (F-0385), kept here so SaveConfig preserves it; read the effective
+	// value via StaleDecisionDays(projDir), where [lint] wins.
 	StaleDecisionDays int `toml:"stale_decision_days,omitzero"`
 	// RecentWorkDays is the activity window (days) the CONTEXT.md "In progress"
 	// board uses: older active works fold into one triage line (F-0319).
@@ -318,15 +318,6 @@ func (c Config) RecentWorkWindowDays() int {
 		return c.RecentWorkDays
 	}
 	return 14
-}
-
-// StaleDecisionWindowDays returns the configured stale_decision_days or the
-// 180-day default when absent/zero (F-0385).
-func (c Config) StaleDecisionWindowDays() int {
-	if c.StaleDecisionDays > 0 {
-		return c.StaleDecisionDays
-	}
-	return 180
 }
 
 // StaleWorkWindowHours returns the configured stale_work_hours or the 8-hour

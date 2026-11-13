@@ -8,8 +8,10 @@ import (
 // ProjectLint is the lint pass under the project's settings — the windows,
 // the source ignores and the Gauntlet mode (F-0364) — the one entry point
 // every lint surface shares (lint, lint --staged, push --dry-run, next).
-func ProjectLint(repoDir string, cfg project.Config) ([]lint.Finding, error) {
-	findings, err := lint.RunConfig(repoDir, cfg.StaleReadyWindowDays(), cfg.StaleWorkWindowHours(), cfg.StaleDecisionWindowDays(), cfg.SourceIgnore()...)
+// projDir resolves the registry settings (lint.stale_decision_days, F-0385);
+// repoDir may be a staged copy of the backend.
+func ProjectLint(repoDir, projDir string, cfg project.Config) ([]lint.Finding, error) {
+	findings, err := lint.RunConfig(repoDir, cfg.StaleReadyWindowDays(), cfg.StaleWorkWindowHours(), project.StaleDecisionDays(projDir), cfg.SourceIgnore()...)
 	if err != nil {
 		return nil, err
 	}

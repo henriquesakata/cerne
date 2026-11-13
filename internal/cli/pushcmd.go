@@ -242,7 +242,7 @@ func reportDryRun(cmd *cobra.Command, ctx projCtx, docs []pushedDoc) error {
 		return err
 	}
 	defer cleanup()
-	findings, err := app.ProjectLint(root, ctx.cfg)
+	findings, err := app.ProjectLint(root, ctx.projDir, ctx.cfg)
 	if err != nil {
 		return err
 	}

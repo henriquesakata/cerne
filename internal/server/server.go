@@ -1215,7 +1215,7 @@ func handleLint(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 		p = lintParams{
 			staleReadyDays:    cfg.StaleReadyWindowDays(),
 			staleWorkHours:    cfg.StaleWorkWindowHours(),
-			staleDecisionDays: cfg.StaleDecisionWindowDays(),
+			staleDecisionDays: project.StaleDecisionDays(projDir),
 			ignore:            cfg.SourceIgnore(),
 		}
 	}

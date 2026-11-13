@@ -60,7 +60,7 @@ func runLint(cmd *cobra.Command, dir string, fixTasks, staged, all, scoped bool,
 	if cleanup != nil {
 		defer cleanup()
 	}
-	findings, err := app.ProjectLint(repoDir, cfg)
+	findings, err := app.ProjectLint(repoDir, dir, cfg)
 	if err != nil {
 		return err
 	}
@@ -121,7 +121,7 @@ func runLint(cmd *cobra.Command, dir string, fixTasks, staged, all, scoped bool,
 				return nil
 			}
 		}
-		base, err := app.ProjectLint(edits.base, cfg)
+		base, err := app.ProjectLint(edits.base, dir, cfg)
 		if err != nil {
 			return err
 		}

@@ -298,7 +298,7 @@ func TestLintEndpointMarksAdvisory(t *testing.T) {
 // TestLintPassesStaleDecisionDays (F-0385): GET /api/lint runs the pass
 // with the project's stale_decision_days.
 func TestLintPassesStaleDecisionDays(t *testing.T) {
-	h, _, _ := settingsBackend(t, "stale_decision_days = 30\n")
+	h, _, _ := settingsBackend(t, "stale_decision_days = 10\n[lint]\nstale_decision_days = 30\n")
 	var got atomic.Int32
 	prev := lintRunner
 	lintRunner = func(repoDir string, staleReadyDays, staleWorkHours, staleDecisionDays int, ignore ...string) ([]lint.Finding, error) {

@@ -13,6 +13,7 @@ import (
 	"github.com/henriquesakata/cerne/internal/cost"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gitback"
+	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -466,5 +467,12 @@ func TestNextHonorsStaleDecisionDays(t *testing.T) {
 	}
 	if !flagged() {
 		t.Fatal("stale_decision_days = 30 did not flag a 31-day-old decision")
+	}
+	// The registry form wins over the top-level key (criterion 8).
+	if err := project.SetSetting(projDir, "lint.stale_decision_days", project.ScopeProject, "400"); err != nil {
+		t.Fatalf("SetSetting: %v", err)
+	}
+	if flagged() {
+		t.Fatal("[lint] stale_decision_days = 400 did not win over the top-level 30")
 	}
 }
