@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/index"
@@ -49,7 +50,7 @@ func turnContextFixture(t *testing.T) (repoDir, dbPath string) {
 	commitBackend(t, repoDir)
 
 	dbPath = filepath.Join(t.TempDir(), "index.db")
-	if err := index.Rebuild(repoDir, dbPath); err != nil {
+	if err := index.Rebuild(repoDir, dbPath, time.Time{}); err != nil {
 		t.Fatalf("index.Rebuild: %v", err)
 	}
 	return repoDir, dbPath
@@ -103,7 +104,7 @@ func TestBuildTurnContextEmpty(t *testing.T) {
 	repoDir, _, _ := newFeatureBackend(t)
 	commitBackend(t, repoDir)
 	dbPath := filepath.Join(t.TempDir(), "index.db")
-	if err := index.Rebuild(repoDir, dbPath); err != nil {
+	if err := index.Rebuild(repoDir, dbPath, time.Time{}); err != nil {
 		t.Fatalf("index.Rebuild: %v", err)
 	}
 
@@ -173,7 +174,7 @@ func TestBuildTurnContextExcludesIdeas(t *testing.T) {
 		t.Fatalf("SaveIdea: %v", err)
 	}
 	commitBackend(t, repoDir)
-	if err := index.Rebuild(repoDir, dbPath); err != nil {
+	if err := index.Rebuild(repoDir, dbPath, time.Time{}); err != nil {
 		t.Fatalf("index.Rebuild: %v", err)
 	}
 	got, err := BuildTurnContext(repoDir, dbPath, "o que temos sobre zebra e conciliação?", 6000)

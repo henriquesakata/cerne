@@ -8,10 +8,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	_ "modernc.org/sqlite" // database/sql driver "sqlite" (pure Go, no cgo)
 
@@ -24,7 +26,9 @@ import (
 var featureDocFilenames = []string{"spec.md", "plan.md", "result.md"}
 
 const (
-	dropTableSQL = `DROP TABLE IF EXISTS docs`
+	dropTableSQL  = `DROP TABLE IF EXISTS docs`
+	dropMetaSQL   = `DROP TABLE IF EXISTS meta`
+	createMetaSQL = `CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)`
 	// entity_id, title and body are searchable; the remaining columns are
 	// metadata carried along for display only.
 	createTableSQL = `CREATE VIRTUAL TABLE docs USING fts5(
@@ -60,7 +64,7 @@ type Result struct {
 // row for their content doc; entities without any content doc still get one
 // title-only row (doc="", empty body). The whole rebuild runs in a single
 // transaction.
-func Rebuild(repoDir, dbPath string) error {
+func Rebuild(repoDir, dbPath string, syncedAt time.Time) error {
 	rows, err := collectRows(repoDir)
 	if err != nil {
 		return err
@@ -68,7 +72,7 @@ func Rebuild(repoDir, dbPath string) error {
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
 		return err
 	}
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := openDB(dbPath)
 	if err != nil {
 		return err
 	}
@@ -84,6 +88,17 @@ func Rebuild(repoDir, dbPath string) error {
 	}
 	if _, err := tx.Exec(createTableSQL); err != nil {
 		return err
+	}
+	if _, err := tx.Exec(dropMetaSQL); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(createMetaSQL); err != nil {
+		return err
+	}
+	if !syncedAt.IsZero() {
+		if _, err := tx.Exec(`INSERT INTO meta (key, value) VALUES ('synced_at', ?)`, syncedAt.UTC().Format(time.RFC3339)); err != nil {
+			return err
+		}
 	}
 	stmt, err := tx.Prepare(insertSQL)
 	if err != nil {
@@ -103,7 +118,7 @@ func Rebuild(repoDir, dbPath string) error {
 // as-is; when fts5 rejects it (special-character syntax error) the query is
 // retried quoted as a single phrase.
 func Search(dbPath, query string, limit int) ([]Result, error) {
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := openDB(dbPath)
 	if err != nil {
 		return nil, err
 	}
@@ -352,4 +367,34 @@ func readDoc(path string) (string, bool, error) {
 		return "", false, fmt.Errorf("reading %s: %w", path, err)
 	}
 	return string(data), true, nil
+}
+
+// openDB opens dbPath waiting up to 5 s on a lock held by another writer, so
+// two agents writing at once do not turn into a failed refresh (F-0394).
+// _txlock=immediate takes the write lock at BEGIN: a deferred read-then-write
+// upgrade fails SQLITE_BUSY at once without consulting the busy handler.
+func openDB(dbPath string) (*sql.DB, error) {
+	u := url.URL{Scheme: "file", Path: dbPath, RawQuery: "_pragma=busy_timeout(5000)&_txlock=immediate"}
+	return sql.Open("sqlite", u.String())
+}
+
+// SyncedAt returns when the index at dbPath was last synced with the backend.
+// ok is false when the index records no time (built lazily by a first search,
+// or built before F-0394); err is only for a real read failure.
+func SyncedAt(dbPath string) (t time.Time, ok bool, err error) {
+	db, err := openDB(dbPath)
+	if err != nil {
+		return t, false, err
+	}
+	defer db.Close()
+	var v string
+	err = db.QueryRow(`SELECT value FROM meta WHERE key = 'synced_at'`).Scan(&v)
+	if errors.Is(err, sql.ErrNoRows) || (err != nil && strings.Contains(err.Error(), "no such table")) {
+		return t, false, nil
+	}
+	if err != nil {
+		return t, false, err
+	}
+	t, err = time.Parse(time.RFC3339, v)
+	return t, err == nil, err
 }

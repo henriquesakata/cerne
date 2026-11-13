@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -72,7 +73,7 @@ func runAsk(cmd *cobra.Command, dir, query string, opts askOpts) error {
 		if !opts.asJSON {
 			fmt.Fprintln(out, "Building index...")
 		}
-		if err := index.Rebuild(ctx.repoDir, dbPath); err != nil {
+		if err := index.Rebuild(ctx.repoDir, dbPath, time.Time{}); err != nil {
 			return err
 		}
 	} else if err != nil {

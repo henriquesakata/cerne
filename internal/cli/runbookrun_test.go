@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/henriquesakata/cerne/internal/index"
 	"github.com/henriquesakata/cerne/internal/store"
@@ -243,7 +244,7 @@ func TestRunsDirDoesNotBreakLintPullAndIndex(t *testing.T) {
 	if out, err := execCerne(t, "pull", "--dir", projDir); err != nil {
 		t.Fatalf("pull: %v\n%s", err, out)
 	}
-	if err := index.Rebuild(repoDir, filepath.Join(t.TempDir(), "idx.db")); err != nil {
+	if err := index.Rebuild(repoDir, filepath.Join(t.TempDir(), "idx.db"), time.Time{}); err != nil {
 		t.Fatalf("index rebuild: %v", err)
 	}
 }

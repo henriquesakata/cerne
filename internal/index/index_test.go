@@ -152,7 +152,7 @@ func rebuild(t *testing.T) (repoDir, dbPath string) {
 	t.Helper()
 	repoDir = seedBackend(t)
 	dbPath = filepath.Join(t.TempDir(), "index.db")
-	if err := Rebuild(repoDir, dbPath); err != nil {
+	if err := Rebuild(repoDir, dbPath, time.Time{}); err != nil {
 		t.Fatalf("Rebuild: %v", err)
 	}
 	return repoDir, dbPath
@@ -287,7 +287,7 @@ func TestSearchSpecialCharsFallsBackToPhrase(t *testing.T) {
 
 func TestRebuildTwiceNoDupes(t *testing.T) {
 	repoDir, dbPath := rebuild(t)
-	if err := Rebuild(repoDir, dbPath); err != nil {
+	if err := Rebuild(repoDir, dbPath, time.Time{}); err != nil {
 		t.Fatalf("second Rebuild: %v", err)
 	}
 	results, err := Search(dbPath, "boleto", 10)
@@ -305,7 +305,7 @@ func TestIndexFeatureErrata(t *testing.T) {
 	writeContent(t, repoDir, "content/errata/F-0002.md",
 		"---\ncerne_id: F-0002\n---\n\n## errata 2026-07-02 — local\n\nA criptografia do cofre mudou.\n")
 	dbPath := filepath.Join(t.TempDir(), "index.db")
-	if err := Rebuild(repoDir, dbPath); err != nil {
+	if err := Rebuild(repoDir, dbPath, time.Time{}); err != nil {
 		t.Fatalf("Rebuild: %v", err)
 	}
 	rs, err := Search(dbPath, "criptografia", 10)

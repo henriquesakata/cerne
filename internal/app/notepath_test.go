@@ -30,7 +30,7 @@ func seedPathNote(t *testing.T, repoDir, id, title, body string, st domain.NoteS
 func buildIndex(t *testing.T, repoDir string) (cacheDir string) {
 	t.Helper()
 	cacheDir = t.TempDir()
-	if err := index.Rebuild(repoDir, filepath.Join(cacheDir, "index.db")); err != nil {
+	if err := index.Rebuild(repoDir, filepath.Join(cacheDir, "index.db"), time.Time{}); err != nil {
 		t.Fatal(err)
 	}
 	return cacheDir
