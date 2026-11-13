@@ -24,6 +24,15 @@ func CheckHumanGate(gate string) error {
 	return nil
 }
 
+// CheckHumanSetting refuses an agent actor on a setting only a human writes
+// (F-0392). Fail-open like CheckHumanGate; the UI server does not call it.
+func CheckHumanSetting(id string) error {
+	if project.SettingHumanOnly(id) && isAgentActor(os.Getenv("CERNE_ACTOR")) {
+		return fmt.Errorf("%w: %s is the project owner's decision — turning the Gauntlet on or off is done in the Settings screen of cerne ui, or by the owner in their own terminal", ErrHumanGate, id)
+	}
+	return nil
+}
+
 // projectGates loads the [gates] block from the project's .cernerc; a missing
 // or unreadable config yields the zero value, whose accessors resolve to the
 // human default on both ends.
