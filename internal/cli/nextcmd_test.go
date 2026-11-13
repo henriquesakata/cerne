@@ -380,3 +380,45 @@ func TestNextLedgerUnreadable(t *testing.T) {
 		t.Errorf("next F-0010 = %q, %v", out, err)
 	}
 }
+
+// TestNextListsStaleDecision pins F-0385 criterion 11: a stale-decision
+// finding is a debt in 'cerne next', like the other advisory rules.
+func TestNextListsStaleDecision(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	old := time.Now().UTC().Add(-200 * 24 * time.Hour)
+	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0001", Title: "Entregue", State: domain.StateImplemented, CreatedAt: old, UpdatedAt: old}); err != nil {
+		t.Fatalf("SaveFeature: %v", err)
+	}
+	if err := store.SaveDecision(repoDir, store.Decision{ID: "D-0001", Title: "Antiga", State: domain.DecisionActive, Facets: []string{"code"}, CreatedAt: old, UpdatedAt: old}); err != nil {
+		t.Fatalf("SaveDecision: %v", err)
+	}
+	spec := filepath.Join(repoDir, "content", "features", "F-0001", "spec.md")
+	if err := os.MkdirAll(filepath.Dir(spec), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(spec, []byte("---\ncerne_id: F-0001\n---\n\n# Entregue\n\nSegue a D-0001.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "seed stale decision"); err != nil {
+		t.Fatalf("CommitAndPush: %v", err)
+	}
+
+	out, err := execCerne(t, "next", "--json", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("next --json: %v\n%s", err, out)
+	}
+	var q struct {
+		Debts []struct {
+			Rule, Entity, Detail string
+		} `json:"debts"`
+	}
+	if err := json.Unmarshal([]byte(out), &q); err != nil {
+		t.Fatalf("decode: %v\n%s", err, out)
+	}
+	for _, d := range q.Debts {
+		if d.Rule == "stale-decision" && d.Entity == "D-0001" && strings.Contains(d.Detail, "cerne decision keep D-0001") {
+			return
+		}
+	}
+	t.Fatalf("next debts lack stale-decision for D-0001: %+v", q.Debts)
+}
