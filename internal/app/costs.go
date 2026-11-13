@@ -14,7 +14,6 @@ import (
 	"github.com/henriquesakata/cerne/internal/doccheck"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/lint"
-	"github.com/henriquesakata/cerne/internal/llm"
 	"github.com/henriquesakata/cerne/internal/restmpl"
 	"github.com/henriquesakata/cerne/internal/stats"
 	"github.com/henriquesakata/cerne/internal/store"
@@ -115,6 +114,9 @@ type CostDetail struct {
 	CostFeature
 	Report    cost.Report         `json:"report"`
 	RoundList []lint.RoundOutcome `json:"round_list"`
+	// WriteProviders: who drafted the feature's documents (F-0375) — not who
+	// spent the tokens, so never a vendor of the cost.
+	WriteProviders []string `json:"write_providers"`
 }
 
 // Costs builds the costs screen (F-0391) from the backend clone at repoDir:
@@ -144,7 +146,6 @@ func Costs(repoDir string, q CostsQuery, now time.Time) (CostsReport, error) {
 	rep := CostsReport{Since: q.Since.Format(time.DateOnly), Until: q.Until.Format(time.DateOnly), Weights: hubWeights(),
 		Features: []CostFeature{}, Weeks: []CostWeek{}, Roles: map[string]float64{}, Markers: []stats.MarkerReport{}}
 	ids, completed := completions(events)
-	providers := docProviders(events)
 	var all []CostFeature
 	for _, id := range ids {
 		at := completed[id]
@@ -157,7 +158,7 @@ func Costs(repoDir string, q CostsQuery, now time.Time) (CostsReport, error) {
 			rep.Coverage.Epics++
 			continue
 		}
-		d, ok, err := readCost(repoDir, f, at, providers[id])
+		d, ok, err := readCost(repoDir, f, at)
 		if err != nil {
 			return CostsReport{}, err
 		}
@@ -206,7 +207,8 @@ func Costs(repoDir string, q CostsQuery, now time.Time) (CostsReport, error) {
 }
 
 // FeatureCost is the costs detail of feature id: its row, the stamped report
-// (`cerne cost <id> --json` read from the stamp) and its Gauntlet rounds.
+// (`cerne cost <id> --json` read from the stamp), its Gauntlet rounds and the
+// providers its document writes recorded.
 // store.ErrNotFound for an unknown id; ErrNoCostStamped with no non-zero anchor.
 func FeatureCost(repoDir, id string) (CostDetail, error) {
 	f, err := store.LoadFeature(repoDir, id)
@@ -218,20 +220,22 @@ func FeatureCost(repoDir, id string) (CostDetail, error) {
 		return CostDetail{}, err
 	}
 	_, completed := completions(events)
-	d, ok, err := readCost(repoDir, f, completed[id], docProviders(events)[id])
+	d, ok, err := readCost(repoDir, f, completed[id])
 	if err != nil {
 		return CostDetail{}, err
 	}
 	if !ok {
 		return CostDetail{}, fmt.Errorf("%w for %s: run 'cerne cost %s --stamp' once it is implemented", ErrNoCostStamped, id, id)
 	}
+	d.WriteProviders = writeProviders(events, id)
 	return d, nil
 }
 
 // readCost reads feature f's stamped cost and what the screen shows beside it:
-// the spec's level, the declared effort, the Gauntlet record and the vendors.
+// the spec's level, the declared effort, the Gauntlet record and the vendors
+// its models name.
 // false with no anchor or an all-zero one (the process panel's no_cost).
-func readCost(repoDir string, f store.Feature, at time.Time, providers []string) (CostDetail, bool, error) {
+func readCost(repoDir string, f store.Feature, at time.Time) (CostDetail, bool, error) {
 	body, err := os.ReadFile(FeatureDocPath(repoDir, f.ID, "result.md"))
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return CostDetail{}, false, fmt.Errorf("costs: read the result of %s: %w", f.ID, err)
@@ -263,13 +267,11 @@ func readCost(repoDir string, f store.Feature, at time.Time, providers []string)
 		share := (d.WeightedByRole["critic"] + d.WeightedByRole["judge"]) / d.Weighted
 		d.GauntletShare = &share
 	}
+	// The vendor is the cost's: only the models that spent these tokens.
 	vendors := map[string]bool{}
 	for m, c := range r.ByModel {
 		d.WeightedByModel[m] = weigh(c)
 		vendors[modelVendor(m)] = true
-	}
-	for _, p := range providers {
-		vendors[providerVendor(p)] = true
 	}
 	delete(vendors, "")
 	d.Vendors = slices.Sorted(maps.Keys(vendors))
@@ -356,16 +358,16 @@ func completions(events []domain.Event) ([]string, map[string]time.Time) {
 	return ids, completed
 }
 
-// docProviders is, per feature, the providers its document writes recorded
-// (F-0375).
-func docProviders(events []domain.Event) map[string][]string {
-	out := map[string][]string{}
+// writeProviders is the distinct providers feature id's document writes
+// recorded (F-0375), sorted: who drafted, never who spent the cost.
+func writeProviders(events []domain.Event, id string) []string {
+	seen := map[string]bool{}
 	for _, ev := range events {
-		if p := ev.Payload["provider"]; ev.Type == "feature.doc_edited" && p != "" {
-			out[ev.EntityID] = append(out[ev.EntityID], p)
+		if p := strings.TrimSpace(ev.Payload["provider"]); ev.EntityID == id && ev.Type == "feature.doc_edited" && p != "" {
+			seen[p] = true
 		}
 	}
-	return out
+	return slices.Sorted(maps.Keys(seen))
 }
 
 // modelVendor is the vendor a model id names: claude-* is Anthropic's; any
@@ -375,15 +377,6 @@ func modelVendor(model string) string {
 		return "anthropic"
 	}
 	return ""
-}
-
-// providerVendor is the vendor of a recorded provider: claude-cli is Claude
-// Code, Anthropic's; any other provider names itself.
-func providerVendor(p string) string {
-	if p = strings.ToLower(strings.TrimSpace(p)); p == llm.ModeClaudeCLI {
-		return "anthropic"
-	}
-	return p
 }
 
 // hubWeights names the weights stats.Weighted applies, read from it — one

@@ -195,8 +195,8 @@ func TestCostsRows(t *testing.T) {
 		t.Errorf("F-0001 = %+v", f1)
 	}
 	if f2.Effort != "" || f2.EffortSource != "unknown" || f2.GauntletShare == nil || *f2.GauntletShare != 0 ||
-		!slices.Equal(f2.Vendors, []string{"anthropic", "openai"}) {
-		t.Errorf("F-0002 = %+v, want effort unknown, Gauntlet share 0, vendors anthropic+openai", f2)
+		!slices.Equal(f2.Vendors, []string{"anthropic"}) {
+		t.Errorf("F-0002 = %+v, want effort unknown, Gauntlet share 0, vendor anthropic only", f2)
 	}
 	if f3.EffortSource != "unknown" || f3.GauntletShare != nil || f3.WeightedByRole["unknown"] != 600 || len(f3.Vendors) != 0 || f3.HasGauntlet {
 		t.Errorf("F-0003 = %+v, want no Gauntlet share, all of it unknown role, no vendor, no Gauntlet", f3)
@@ -221,7 +221,7 @@ func TestCostsFilters(t *testing.T) {
 		{"&level=leve", []string{"F-0001"}},
 		{"&level=unknown", []string{"F-0006"}},
 		{"&model=claude-opus-5-5", []string{"F-0001", "F-0006"}},
-		{"&vendor=openai", []string{"F-0002"}},
+		{"&vendor=openai", nil},
 		{"&vendor=anthropic", []string{"F-0001", "F-0002", "F-0006"}},
 		{"&effort=high", []string{"F-0001"}},
 		{"&effort=unknown", []string{"F-0002", "F-0003"}},
@@ -241,8 +241,8 @@ func TestCostsFilters(t *testing.T) {
 		if n != len(c.want) {
 			t.Errorf("%s: weeks hold %d features, want %d", c.query, n, len(c.want))
 		}
-		if len(r.Options.Vendors) != 2 || r.Options.Vendors[0] != (app.CostOption{Value: "anthropic", N: 3}) || r.Options.Vendors[1] != (app.CostOption{Value: "openai", N: 1}) {
-			t.Errorf("%s: vendor options = %+v, want anthropic 3, openai 1", c.query, r.Options.Vendors)
+		if !slices.Equal(r.Options.Vendors, []app.CostOption{{Value: "anthropic", N: 3}}) {
+			t.Errorf("%s: vendor options = %+v, want anthropic 3 alone", c.query, r.Options.Vendors)
 		}
 	}
 	r := getCosts(t, repoDir, projDir, costsPeriod+"&effort=high")
@@ -348,4 +348,24 @@ func mapsEqual(a, b map[string]float64) bool {
 		}
 	}
 	return true
+}
+
+// The vendor is the cost's: who drafted a document (F-0375) spent none of
+// these tokens. F-0002's cost is all sonnet; its openai doc write shows in the
+// detail as the writes' provider, never as a vendor (critic, PR #68).
+func TestCostsVendorIsTheCostsModel(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	seedCostsFixture(t, repoDir)
+	if r := getCosts(t, repoDir, projDir, costsPeriod+"&vendor=openai"); len(r.Features) != 0 || r.Coverage.Vendor != 3 {
+		t.Errorf("vendor=openai = %v (vendor coverage %d), want none: no feature spent on OpenAI", costIDs(r), r.Coverage.Vendor)
+	}
+	rec := httptest.NewRecorder()
+	New(repoDir, projDir, "proj").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/costs/F-0002", nil))
+	var d app.CostDetail
+	if err := json.Unmarshal(rec.Body.Bytes(), &d); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !slices.Equal(d.Vendors, []string{"anthropic"}) || !slices.Equal(d.WriteProviders, []string{"openai"}) {
+		t.Errorf("F-0002 vendors = %v, write providers = %v; want anthropic, openai", d.Vendors, d.WriteProviders)
+	}
 }
