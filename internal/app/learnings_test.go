@@ -1,10 +1,12 @@
 package app
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -169,5 +171,80 @@ func TestSkipLearnings(t *testing.T) {
 		if treeDigest(t, filepath.Join(repoDir, "events")) != before {
 			t.Errorf("%s: a refused skip wrote to the backend", tt.id)
 		}
+	}
+}
+
+func TestLearningsNothingPendingIsAnEmptyList(t *testing.T) {
+	repoDir, _, _ := newFeatureBackend(t)
+	r, err := Learnings(repoDir, LearningsOpts{All: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(r)
+	if !strings.Contains(string(b), `"features":[]`) {
+		t.Errorf("json = %s, want \"features\":[]", b)
+	}
+}
+
+// An imported feature has no completed event: its CreatedAt, which never
+// moves, dates the conclusion, so a later edit cannot un-triage it.
+func TestLearningsImportedFeatureKeepsItsTriageAfterAnEdit(t *testing.T) {
+	repoDir, _, _ := newFeatureBackend(t)
+	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0001", Title: "Old", State: domain.StateImplemented, CreatedAt: t0, UpdatedAt: t0}); err != nil {
+		t.Fatal(err)
+	}
+	p := FeatureDocPath(repoDir, "F-0001", "result.md")
+	os.MkdirAll(filepath.Dir(p), 0o755)
+	os.WriteFile(p, []byte(withLearnings), 0o644)
+	if r, _ := Learnings(repoDir, LearningsOpts{All: true}); len(r.Features) != 1 || !r.Features[0].CompletedAt.Equal(t0) {
+		t.Fatalf("before the note: %+v", r.Features)
+	}
+	seedInformingNote(t, repoDir, "N-0001", []string{"F-0001"}, domain.NoteActive, t0.Add(time.Hour))
+	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0001", Title: "Old, renamed", State: domain.StateImplemented, CreatedAt: t0, UpdatedAt: t0.Add(24 * time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	if r, _ := Learnings(repoDir, LearningsOpts{All: true}); len(r.Features) != 0 {
+		t.Errorf("a later edit reopened a triaged feature: %v", listedIDs(r))
+	}
+}
+
+func TestLearningsRecompletionReopensTriage(t *testing.T) {
+	repoDir, _, _ := newFeatureBackend(t)
+	seedLearnFeature(t, repoDir, "F-0001", domain.StateImplemented, withLearnings, t0, "")
+	skip := domain.NewEvent("F-0001", eventLearningsTriaged, nil, "t")
+	skip.At = t0.Add(time.Hour)
+	store.AppendEvent(repoDir, skip)
+	if r, _ := Learnings(repoDir, LearningsOpts{All: true}); len(r.Features) != 0 {
+		t.Fatal("skipped feature listed")
+	}
+	again := domain.NewEvent("F-0001", "feature.completed", nil, "t")
+	again.At = t0.Add(2 * time.Hour)
+	store.AppendEvent(repoDir, again)
+	if r, _ := Learnings(repoDir, LearningsOpts{All: true}); len(r.Features) != 1 {
+		t.Errorf("a skip older than the latest completion must not count: %v", listedIDs(r))
+	}
+}
+
+func TestSkipLearningsRefusesWhatIsNotSkippable(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	seedLearnFeature(t, repoDir, "F-0001", domain.StateInDevelopment, withLearnings, t0, "")
+	seedLearnFeature(t, repoDir, "F-0002", domain.StateImplemented, withLearnings, t0, "")
+	seedLearnFeature(t, repoDir, "F-0003", domain.StateImplemented, withLearnings, t0, "F-0002")
+	seedInformingNote(t, repoDir, "N-0001", nil, domain.NoteActive, t0)
+	commitBackend(t, repoDir)
+	for _, tt := range []struct {
+		id  string
+		err error
+	}{{"N-0001", ErrNotFeatureID}, {"../F-0002", ErrNotFeatureID}, {"F-0001", ErrNotSkippable}, {"F-0002", ErrNotSkippable}} {
+		before := treeDigest(t, filepath.Join(repoDir, "events"))
+		if err := SkipLearnings(repoDir, projDir, tt.id, "", t0); !errors.Is(err, tt.err) {
+			t.Errorf("%s: err = %v, want %v", tt.id, err, tt.err)
+		}
+		if treeDigest(t, filepath.Join(repoDir, "events")) != before {
+			t.Errorf("%s: wrote to the backend", tt.id)
+		}
+	}
+	if err := SkipLearnings(repoDir, projDir, " f-0003 ", "", t0.Add(time.Hour)); err != nil {
+		t.Errorf("a lowercase id is canonicalised: %v", err)
 	}
 }

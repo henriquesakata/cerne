@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -63,27 +64,16 @@ func Learnings(repoDir string, opts LearningsOpts) (LearningsReport, error) {
 		return LearningsReport{}, err
 	}
 	epics := store.ChildrenByParent(feats)
-	done := map[string]time.Time{}
-	skipped := map[string]bool{}
-	for _, ev := range events {
-		switch ev.Type {
-		case "feature.completed":
-			if ev.At.After(done[ev.EntityID]) {
-				done[ev.EntityID] = ev.At
-			}
-		case eventLearningsTriaged:
-			skipped[ev.EntityID] = true
-		}
-	}
-	var rep LearningsReport
+	done, skipped := triageEvents(events)
+	rep := LearningsReport{Features: []LearningFeature{}}
 	for _, f := range feats {
 		if (f.State != domain.StateImplemented && f.State != domain.StateDone) ||
-			len(epics[f.ID]) > 0 || skipped[f.ID] || opts.Feature != "" && f.ID != opts.Feature {
+			len(epics[f.ID]) > 0 || skippedSince(skipped, done, f.ID) || opts.Feature != "" && f.ID != opts.Feature {
 			continue
 		}
 		at, ok := done[f.ID]
 		if !ok {
-			at = f.UpdatedAt // no completed event (imported history): the last touch stands in
+			at = f.CreatedAt // no completed event (imported history): the creation date, which never moves, stands in
 		}
 		if at.Before(opts.Since) || noteAfter(notes, f.ID, at) {
 			continue
@@ -116,6 +106,25 @@ func Learnings(repoDir string, opts LearningsOpts) (LearningsReport, error) {
 	return rep, nil
 }
 
+// triageEvents reads each feature's latest completion and latest skip.
+func triageEvents(events []domain.Event) (done, skipped map[string]time.Time) {
+	done, skipped = map[string]time.Time{}, map[string]time.Time{}
+	for _, ev := range events {
+		m := map[string]map[string]time.Time{"feature.completed": done, eventLearningsTriaged: skipped}[ev.Type]
+		if m != nil && !ev.At.Before(m[ev.EntityID]) {
+			m[ev.EntityID] = ev.At
+		}
+	}
+	return done, skipped
+}
+
+// skippedSince reports a skip recorded after the feature's latest completion:
+// completing again reopens the triage.
+func skippedSince(skipped, done map[string]time.Time, id string) bool {
+	at, ok := skipped[id]
+	return ok && at.After(done[id])
+}
+
 // noteAfter reports an active note informing id that was created after at.
 func noteAfter(notes []store.Note, id string, at time.Time) bool {
 	for _, n := range notes {
@@ -126,6 +135,8 @@ func noteAfter(notes []store.Note, id string, at time.Time) bool {
 	return false
 }
 
+var featureIDRe = regexp.MustCompile(`^F-\d+$`)
+
 var (
 	// ErrNoSuchFeature is returned when --skip names a feature the backend lacks.
 	ErrNoSuchFeature = errors.New("no such feature")
@@ -133,16 +144,32 @@ var (
 	ErrNoLearnings = errors.New("the feature's result has no learnings items")
 	// ErrAlreadyTriaged is returned when the feature already carries a --skip record.
 	ErrAlreadyTriaged = errors.New("the feature's learnings were already skipped")
+	// ErrNotFeatureID is returned when --skip names something that is not a feature id.
+	ErrNotFeatureID = errors.New("not a feature id")
+	// ErrNotSkippable is returned when --skip names an epic or a feature that is not implemented or done.
+	ErrNotSkippable = errors.New("only a concluded feature that is not an epic has learnings to skip")
 )
 
 // SkipLearnings records that nothing in a feature's learnings is durable: the
 // feature.learnings_triaged event takes it off Learnings' list (F-0401).
 func SkipLearnings(repoDir, projDir, id, reason string, now time.Time) error {
+	id = domain.CanonicalID(id)
+	if !featureIDRe.MatchString(id) {
+		return fmt.Errorf("%w: %q", ErrNotFeatureID, id)
+	}
 	return MutateAndSnapshot(repoDir, projDir, func() (string, error) {
-		if _, err := store.LoadFeature(repoDir, id); errors.Is(err, store.ErrNotFound) {
+		f, err := store.LoadFeature(repoDir, id)
+		if errors.Is(err, store.ErrNotFound) {
 			return "", fmt.Errorf("%w: %s", ErrNoSuchFeature, id)
 		} else if err != nil {
 			return "", err
+		}
+		feats, err := store.LoadAllFeatures(repoDir)
+		if err != nil {
+			return "", err
+		}
+		if (f.State != domain.StateImplemented && f.State != domain.StateDone) || len(store.ChildrenByParent(feats)[id]) > 0 {
+			return "", fmt.Errorf("%w: %s is %s", ErrNotSkippable, id, f.State)
 		}
 		raw, _ := os.ReadFile(FeatureDocPath(repoDir, id, "result.md"))
 		if len(restmpl.LearningItems(string(raw))) == 0 {
@@ -152,10 +179,9 @@ func SkipLearnings(repoDir, projDir, id, reason string, now time.Time) error {
 		if err != nil {
 			return "", err
 		}
-		for _, ev := range events {
-			if ev.EntityID == id && ev.Type == eventLearningsTriaged {
-				return "", fmt.Errorf("%w: %s", ErrAlreadyTriaged, id)
-			}
+		done, skipped := triageEvents(events)
+		if skippedSince(skipped, done, id) {
+			return "", fmt.Errorf("%w: %s", ErrAlreadyTriaged, id)
 		}
 		ev := domain.NewEvent(id, eventLearningsTriaged, map[string]string{"reason": reason}, EventActor())
 		ev.At = now.UTC()
