@@ -108,9 +108,9 @@ func TestPlanOlderThanSpecFindings(t *testing.T) {
 		}
 	}
 	want := map[string]string{
-		"F-0001": "F-0001 plan was written on 2026-08-11 12:10 UTC against an older spec (spec changed 2026-08-11 12:20 UTC) — re-read the spec, update the plan (a line recording the re-check is enough) and push it",
-		"F-0002": "F-0002 plan was written on 2026-08-11 12:10 UTC against an older spec (spec changed 2026-08-11 12:20 UTC) — re-read the spec, update the plan (a line recording the re-check is enough) and push it",
-		"F-0006": "F-0006 plan was written on 2026-08-11 12:10 UTC against an older spec (spec changed unknown) — re-read the spec, update the plan (a line recording the re-check is enough) and push it",
+		"F-0001": "F-0001 plan was written on 2026-08-11 12:10:00 UTC against an older spec (spec changed 2026-08-11 12:20:00 UTC) — re-read the spec, update the plan (a line recording the re-check is enough) and push it",
+		"F-0002": "F-0002 plan was written on 2026-08-11 12:10:00 UTC against an older spec (spec changed 2026-08-11 12:20:00 UTC) — re-read the spec, update the plan (a line recording the re-check is enough) and push it",
+		"F-0006": "F-0006 plan was written on 2026-08-11 12:10:00 UTC against an older spec (spec changed unknown) — re-read the spec, update the plan (a line recording the re-check is enough) and push it",
 	}
 	if len(got) != len(want) {
 		t.Fatalf("plan-older-than-spec on %v, want %v", got, want)
@@ -123,5 +123,22 @@ func TestPlanOlderThanSpecFindings(t *testing.T) {
 	}
 	if _, ok := ruleRank[RulePlanOlderThanSpec]; !ok {
 		t.Fatal("RulePlanOlderThanSpec missing from ruleRank")
+	}
+}
+
+// TestWriteTime (critic round 1, item 4): a plan and a spec written in the
+// same minute print apart — UTC to the second — and an unrecorded write is
+// "unknown".
+func TestWriteTime(t *testing.T) {
+	plan := time.Date(2026, 11, 12, 18, 44, 5, 0, time.FixedZone("BRT", -3*3600))
+	spec := plan.Add(40 * time.Second)
+	if got := WriteTime(plan); got != "2026-11-12 21:44:05 UTC" {
+		t.Fatalf("WriteTime(plan) = %q", got)
+	}
+	if WriteTime(plan) == WriteTime(spec) {
+		t.Fatalf("same-minute writes print alike: %q", WriteTime(spec))
+	}
+	if got := WriteTime(time.Time{}); got != "unknown" {
+		t.Fatalf("WriteTime(zero) = %q, want unknown", got)
 	}
 }

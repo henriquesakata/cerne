@@ -55,13 +55,13 @@ func planBehindSpec(repoDir string, f store.Feature, events []domain.Event) (beh
 }
 
 // WriteTime is how a plan-behind-spec message dates a write: UTC to the
-// minute — a spec rewritten the same afternoon still reads apart — and
-// "unknown" when no write is recorded.
+// second — a plan and a spec written in the same minute still read apart —
+// and "unknown" when no write is recorded.
 func WriteTime(t time.Time) string {
 	if t.IsZero() {
 		return "unknown"
 	}
-	return t.UTC().Format("2006-01-02 15:04 UTC")
+	return t.UTC().Format("2006-01-02 15:04:05 UTC")
 }
 
 // planOlderThanSpecFindings flags a plan behind its spec while the plan is the
