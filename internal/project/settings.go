@@ -56,6 +56,15 @@ type Setting struct {
 	// TopLevel is a top-level .cernerc key read as this setting when the
 	// project file has no [table] key (F-0385).
 	TopLevel string `json:"-"`
+	// HumanOnly marks a key only a human writes: the CLI refuses an agent
+	// actor (F-0392). The server does not read it.
+	HumanOnly bool `json:"-"`
+}
+
+// SettingHumanOnly reports whether id is declared human-only.
+func SettingHumanOnly(id string) bool {
+	i := slices.IndexFunc(settingsRegistry, func(s Setting) bool { return s.ID == id })
+	return i >= 0 && settingsRegistry[i].HumanOnly
 }
 
 // ResolvedSetting is a Setting with its effective value and the scope it came
@@ -100,6 +109,11 @@ var settingsRegistry = []Setting{
 		ID: "channel.human_name", Title: "Your name in the channel", Type: "string", Default: "",
 		Scopes:      []string{ScopeHost},
 		Description: "The name that signs the messages you send from the UI on a project's permanent channel. It applies to every project on this machine. It is not the project's name, which is set in the “Project name” field of the Settings screen. Empty uses your OS user name.",
+	},
+	{
+		ID: "gates.gauntlet", Title: "Gauntlet", Type: "string", Default: "on", Enum: []string{"on", "off"},
+		Scopes: []string{ScopeProject}, HumanOnly: true,
+		Description: "Turns the Gauntlet on or off for this project. With off (light mode), approve accepts a spec without a bar, complete accepts a result without a ## Gauntlet section, and lint stops charging both. Only the literal off turns it off; any other stored value counts as on. An agent cannot change this key through cerne settings: it is the project owner's decision.",
 	},
 	{
 		ID: "graph.enabled", Title: "Graph", Type: "bool", Default: true,

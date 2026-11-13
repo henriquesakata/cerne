@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/project"
 )
 
@@ -139,6 +140,9 @@ func newSettingsSetCmd(dir *string) *cobra.Command {
 		Short: "Write a setting in one scope",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := app.CheckHumanSetting(args[0]); err != nil {
+				return err
+			}
 			if err := project.SetSetting(*dir, args[0], scope, args[1]); err != nil {
 				return err
 			}
@@ -165,6 +169,9 @@ func newSettingsUnsetCmd(dir *string) *cobra.Command {
 		Short: "Remove a setting from one scope",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := app.CheckHumanSetting(args[0]); err != nil {
+				return err
+			}
 			if err := project.UnsetSetting(*dir, args[0], scope); err != nil {
 				return err
 			}

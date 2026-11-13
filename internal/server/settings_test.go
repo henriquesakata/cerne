@@ -682,3 +682,22 @@ func TestSettingsStaleDecisionDays(t *testing.T) {
 		}
 	}
 }
+
+// TestSettingsPutGauntletIgnoresServerActor pins F-0392 criterion 5: the
+// screen writes gates.gauntlet even when the server process carries
+// CERNE_ACTOR=agent; the environment does not say who clicked.
+func TestSettingsPutGauntletIgnoresServerActor(t *testing.T) {
+	t.Setenv("CERNE_ACTOR", "agent")
+	h, _, _ := settingsBackend(t, "")
+	var view project.SettingsView
+	rec := doJSON(t, h, http.MethodPut, "/api/settings/gates.gauntlet", `{"scope":"project","value":"off"}`, &view)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PUT status %d: %s", rec.Code, rec.Body.String())
+	}
+	if g := resolvedByID(view)["gates.gauntlet"]; g.Value != "off" {
+		t.Errorf("gates.gauntlet = %v, want off", g.Value)
+	}
+	if rec := doJSON(t, h, http.MethodDelete, "/api/settings/gates.gauntlet?scope=project", "", &view); rec.Code != http.StatusOK {
+		t.Errorf("DELETE status %d: %s", rec.Code, rec.Body.String())
+	}
+}

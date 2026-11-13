@@ -73,7 +73,7 @@ func TestLint_LightModeCLI(t *testing.T) {
 // JSON — and prints no such line with the Gauntlet on.
 func TestStatus_ShowsLightMode(t *testing.T) {
 	projDir, _, _ := setupProject(t)
-	const line = `Gauntlet: off (light mode) — turn it on with [gates] gauntlet = "on" in .cernerc`
+	const line = `Gauntlet: off (light mode) — turn it on in the Settings screen of cerne ui, or run: cerne settings set gates.gauntlet on --scope project`
 	for _, v := range []string{"", "off"} {
 		setGauntlet(t, projDir, v)
 		out, err := execCerne(t, "status", "--dir", projDir)

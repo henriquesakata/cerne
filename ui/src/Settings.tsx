@@ -386,7 +386,9 @@ function SettingRow({
   // The key's other scopes that store a value: above ws they override it.
   const others = s.scopes.filter((sc) => sc !== ws && s.stored?.[sc] !== undefined)
   const above = (sc: SettingScope) => ORDER.indexOf(sc) < ORDER.indexOf(ws)
-  const fmt = (v: unknown) => formatValue(v, ts)
+  // A declared value shows through the same label as its select option.
+  const fmt = (v: unknown) =>
+    s.enum?.length && typeof v === 'string' && v !== '' ? (ts.options[v] ?? v) : formatValue(v, ts)
   const desc = tx(s.description)
   const label = (sc: SettingScope) => (sc === 'host' ? `${ts.scopes.host} (${ts.global})` : ts.scopes[sc])
   // Busy is aria-disabled, never disabled (F-0302): the pressed control keeps
@@ -418,7 +420,28 @@ function SettingRow({
         <p id={descId} className="settings-desc">
           {desc}
         </p>
-        {s.type === 'string' ? (
+        {s.type === 'string' && s.enum && s.enum.length > 0 ? (
+          <select
+            id={controlId(s.id)}
+            className="settings-select"
+            value={String(current)}
+            aria-labelledby={titleId}
+            aria-describedby={descId}
+            aria-disabled={lock}
+            onChange={(e) => {
+              const next = e.target.value
+              // The default is not always a declared value (an empty one
+              // means "unset"): picking it removes the scope's value.
+              if (!busy) onWrite(ws, () => (next === '' ? unsetSetting(s.id, ws) : putSetting(s.id, ws, next)))
+            }}
+          >
+            {(s.enum.includes(String(s.default)) ? s.enum : [String(s.default), ...s.enum]).map((v) => (
+              <option key={v} value={v}>
+                {fmt(v)}
+              </option>
+            ))}
+          </select>
+        ) : s.type === 'string' ? (
           <form
             className="settings-string"
             onSubmit={(e) => {

@@ -99,7 +99,8 @@ const ptBR = {
     attentionLintChip: 'Lint',
     attentionLint: (n: number) => `${n} em aberto`,
     attentionClear: 'Nada aguardando você — nenhum gate aberto, nenhum débito.',
-    lightMode: 'Modo leve: sem Gauntlet — o approve não cobra barra e o complete não cobra o registro do Gauntlet. Para ligar: [gates] gauntlet = "on" no .cernerc.',
+    lightMode: 'Modo leve: sem Gauntlet — o approve não cobra barra e o complete não cobra o registro do Gauntlet. Para ligar: na tela de',
+    lightModeLink: 'Configurações',
     roster: 'Features por estado',
     totalFeatures: (n: number) => `${n} feature(s) no total`,
     epics: 'Épicos',
@@ -1195,6 +1196,9 @@ const ptBR = {
       'Your name in the channel': 'Seu nome no canal',
       "The name that signs the messages you send from the UI on a project's permanent channel. It applies to every project on this machine. It is not the project's name, which is set in the “Project name” field of the Settings screen. Empty uses your OS user name.":
         'O nome que assina as mensagens que você envia pela UI no canal permanente de um projeto. Vale para todos os projetos desta máquina. Não é o nome do projeto, que se define no campo “Nome do projeto” da tela de Configurações. Vazio usa o seu usuário do sistema.',
+      'Gauntlet': 'Gauntlet',
+      "Turns the Gauntlet on or off for this project. With off (light mode), approve accepts a spec without a bar, complete accepts a result without a ## Gauntlet section, and lint stops charging both. Only the literal off turns it off; any other stored value counts as on. An agent cannot change this key through cerne settings: it is the project owner's decision.":
+        'Liga ou desliga o Gauntlet neste projeto. Desligado (modo leve), o approve aceita uma spec sem barra, o complete aceita um result sem a seção ## Gauntlet e o lint deixa de cobrar os dois. Só o valor literal off desliga; qualquer outro valor gravado conta como ligado. Um agente não muda esta chave pelo cerne settings: a decisão é do dono do projeto.',
       'Graph': 'Grafo',
       'Shows the Graph tab in the UI. Off hides it.': 'Mostra a aba Grafo na UI. Desligado a esconde.',
       'CLI output language': 'Idioma da saída da CLI',
@@ -1212,6 +1216,8 @@ const ptBR = {
       'Off stops the work-gate hook from showing the notes that cite a file when the agent is about to edit it.':
         'Desligado, o gancho work-gate deixa de mostrar as notas que citam um arquivo quando o agente vai editá-lo.',
     } as Record<string, string>,
+    // Rótulos dos valores de uma chave de texto com valores declarados.
+    options: { on: 'ligado', off: 'desligado' } as Record<string, string>,
   },
 }
 
@@ -1293,7 +1299,8 @@ const en: Messages = {
     attentionLintChip: 'Lint',
     attentionLint: (n: number) => `${n} open`,
     attentionClear: 'Nothing waiting on you — no open gate, no debt.',
-    lightMode: 'Light mode: no Gauntlet — approve does not charge a bar and complete does not charge the Gauntlet record. To turn it on: [gates] gauntlet = "on" in .cernerc.',
+    lightMode: 'Light mode: no Gauntlet — approve does not charge a bar and complete does not charge the Gauntlet record. To turn it on: the',
+    lightModeLink: 'Settings screen',
     roster: 'Features by state',
     totalFeatures: (n: number) => `${n} feature(s) total`,
     epics: 'Epics',
@@ -2366,6 +2373,7 @@ const en: Messages = {
       failed: (e: string) => `Could not save the name: ${e}`,
     },
     text: {},
+    options: {},
   },
 }
 

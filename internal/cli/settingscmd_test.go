@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/project"
 )
 
@@ -199,7 +200,7 @@ func TestSettingsGet(t *testing.T) {
 		}
 	}
 	if _, err := execCerne(t, "settings", "get", "nope.enabled", "--dir", projDir); !errors.Is(err, project.ErrUnknownSetting) ||
-		!strings.Contains(err.Error(), "known: channel.human_name, graph.enabled, lint.cli_output_language, lint.stale_decision_days, mindmap.enabled, wiki.enabled") {
+		!strings.Contains(err.Error(), "known: channel.human_name, gates.gauntlet, graph.enabled, lint.cli_output_language, lint.stale_decision_days, mindmap.enabled, wiki.enabled") {
 		t.Errorf("unknown key: err = %v, want ErrUnknownSetting listing the known keys", err)
 	}
 }
@@ -424,5 +425,37 @@ func TestSettingsStaleDecisionDays(t *testing.T) {
 	}
 	if _, err := execCerne(t, "settings", "set", "lint.stale_decision_days", "soon", "--scope", "project", "--dir", projDir); !errors.Is(err, project.ErrInvalidSettingValue) {
 		t.Fatalf("set soon: err = %v, want ErrInvalidSettingValue", err)
+	}
+}
+
+// TestSettingsGauntletRefusesAgent pins F-0392 criterion 4: set and unset of
+// gates.gauntlet refuse CERNE_ACTOR=agent and leave .cernerc byte for byte;
+// without the actor they write.
+func TestSettingsGauntletRefusesAgent(t *testing.T) {
+	projDir, _ := settingsProject(t, "[gates]\ngauntlet = \"off\"\n")
+	rc := filepath.Join(projDir, ".cernerc")
+	before, _ := os.ReadFile(rc)
+	t.Setenv("CERNE_ACTOR", "agent")
+	for _, args := range [][]string{
+		{"settings", "set", "gates.gauntlet", "on", "--scope", "project", "--dir", projDir},
+		{"settings", "unset", "gates.gauntlet", "--scope", "project", "--dir", projDir},
+	} {
+		out, err := execCerne(t, args...)
+		if !errors.Is(err, app.ErrHumanGate) {
+			t.Errorf("%v: err = %v (%s), want ErrHumanGate", args[1], err, out)
+		}
+		if after, _ := os.ReadFile(rc); string(after) != string(before) {
+			t.Errorf("%v changed .cernerc:\n%s", args[1], after)
+		}
+	}
+	if _, err := execCerne(t, "settings", "set", "graph.enabled", "false", "--scope", "project", "--dir", projDir); err != nil {
+		t.Errorf("agent on an ordinary key: %v", err)
+	}
+	t.Setenv("CERNE_ACTOR", "")
+	if out, err := execCerne(t, "settings", "set", "gates.gauntlet", "on", "--scope", "project", "--dir", projDir); err != nil {
+		t.Errorf("human set: %v\n%s", err, out)
+	}
+	if out, err := execCerne(t, "settings", "unset", "gates.gauntlet", "--scope", "project", "--dir", projDir); err != nil {
+		t.Errorf("human unset: %v\n%s", err, out)
 	}
 }
