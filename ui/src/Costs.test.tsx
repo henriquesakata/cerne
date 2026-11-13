@@ -17,7 +17,9 @@ vi.mock('./api', async (importOriginal) => ({
   fetchCosts: api.fetchCosts,
   fetchCostDetail: api.fetchCostDetail,
 }))
-vi.mock('./live', () => ({ useLiveVersion: () => 0 }))
+// Versão ao vivo controlável (F-0300): a tela re-busca quando ela muda.
+const live = vi.hoisted(() => ({ version: 0 }))
+vi.mock('./live', () => ({ useLiveVersion: () => live.version }))
 
 const zero = { input: 0, cache_creation: 0, cache_read: 0, output: 0 }
 const feat = (id: string, weighted: number, extra: Partial<CostFeature> = {}): CostFeature => ({
@@ -147,6 +149,7 @@ beforeEach(() => {
   api.fetchCosts.mockReset()
   api.fetchCosts.mockResolvedValue(report())
   api.fetchCostDetail.mockReset()
+  live.version = 0
   window.location.hash = ''
 })
 
@@ -290,6 +293,16 @@ describe('Custos — filtros (crit. 7)', () => {
 })
 
 describe('Custos — vazio (crit. 8)', () => {
+  it('re-busca quando o backend avança (live)', async () => {
+    const { rerender } = render(<Costs hash="#/costs?level=leve" />)
+    await screen.findByRole('table', { name: 'Features do período' })
+    expect(api.fetchCosts).toHaveBeenCalledTimes(1)
+    live.version = 1
+    rerender(<Costs hash="#/costs?level=leve" />)
+    await waitFor(() => expect(api.fetchCosts).toHaveBeenCalledTimes(2))
+    expect(api.fetchCosts).toHaveBeenLastCalledWith('level=leve')
+  })
+
   it('sem custo registrado, explica como ele nasce', async () => {
     api.fetchCosts.mockResolvedValue(
       report({ features: [], weeks: [], roles: {}, markers: [], mean: 0, median: 0, coverage: { ...report().coverage, stamped: 0, matched: 0 } }),
