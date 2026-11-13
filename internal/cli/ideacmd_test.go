@@ -347,3 +347,28 @@ func TestShowIdeaPrintsItsHistory(t *testing.T) {
 		t.Fatalf("show I-0001 lacks its ordered history:\n%s", out)
 	}
 }
+
+// F-0389 crit. 5: show I- lists the references that inform the idea, text and JSON.
+func TestShowIdeaListsInformingReferences(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	ideaCmd(t, projDir, "new", "exportar o kanban")
+	out, err := execCerne(t, "show", "I-0001", "--dir", projDir)
+	if err != nil || strings.Contains(out, "informed by") {
+		t.Fatalf("no references: err=%v\n%s", err, out)
+	}
+	if out, err := execCerne(t, "reference", "new", "Artigo SDD", "--url", "https://example.com/sdd", "--informs", "I-0001", "--dir", projDir); err != nil {
+		t.Fatalf("reference new: %v\n%s", err, out)
+	}
+	out, err = execCerne(t, "show", "I-0001", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "informed by") || !strings.Contains(out, "R-0001") ||
+		!strings.Contains(out, "Artigo SDD") || !strings.Contains(out, "https://example.com/sdd") {
+		t.Fatalf("show lacks the source: err=%v\n%s", err, out)
+	}
+	out, err = execCerne(t, "show", "I-0001", "--json", "--dir", projDir)
+	var doc struct {
+		InformedBy []store.Reference `json:"informed_by"`
+	}
+	if err != nil || json.Unmarshal([]byte(out), &doc) != nil || len(doc.InformedBy) != 1 || doc.InformedBy[0].ID != "R-0001" {
+		t.Fatalf("show --json informed_by = %+v, %v\n%s", doc, err, out)
+	}
+}

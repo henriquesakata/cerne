@@ -46,6 +46,13 @@ type pendingShow struct {
 	PromotedToState domain.FeatureState `json:"promoted_to_state,omitempty"`
 }
 
+// ideaShow is how show presents an idea that sources inform (F-0389): the
+// stored entity plus the references, lifted to informed_by in the JSON.
+type ideaShow struct {
+	store.Idea
+	InformedBy []store.Reference `json:"-"`
+}
+
 type showResult struct {
 	kind    string
 	entity  any
@@ -319,6 +326,21 @@ func runShow(cmd *cobra.Command, dir, id, doc string, asJSON, all bool) error {
 			}
 		}
 		res.entity = ps
+	}
+	if i, ok := res.entity.(store.Idea); ok {
+		// F-0389: the sources that motivated the idea, as the feature page shows them.
+		refs, err := app.ReferencesInforming(ctx.repoDir, id)
+		if err != nil {
+			return err
+		}
+		if len(refs) > 0 {
+			var lines []string
+			for _, r := range refs {
+				lines = append(lines, strings.TrimSpace(fmt.Sprintf("%s  %s  %s", r.ID, r.Title, r.URL)))
+			}
+			res.content = append(res.content, showDoc{name: "informed by", body: strings.Join(lines, "\n")})
+			res.entity = ideaShow{Idea: i, InformedBy: refs}
+		}
 	}
 	if res.kind == "idea" {
 		// C20: the idea's own trail, from the raw log — idea.* never reaches
@@ -711,6 +733,10 @@ func (r showResult) renderText(w io.Writer) {
 		if e.State == domain.HandoffPending {
 			fmt.Fprintf(w, "take it: cerne handoff take %s\n", e.ID)
 		}
+	case ideaShow:
+		r.entity = e.Idea
+		r.renderText(w)
+		return
 	case store.Idea:
 		fmt.Fprintf(w, "%s  %s  [%s]\n", e.ID, r.kind, e.State)
 		fmt.Fprintf(w, "created: %s\n", e.CreatedAt.Format(time.DateOnly))
@@ -776,6 +802,7 @@ func writeSuccession(w io.Writer, supersededBy, reason string) {
 }
 
 type showJSON struct {
+	InformedBy     []store.Reference    `json:"informed_by,omitempty"` // ideas only (F-0389)
 	Kind           string               `json:"kind"`
 	Entity         any                  `json:"entity"`
 	Content        []showDocJSON        `json:"content,omitempty"`
@@ -862,11 +889,16 @@ type showDocJSON struct {
 func (r showResult) toJSON(handoffs []store.HandoffEntry) showJSON {
 	var docs []showDocJSON
 	for _, d := range r.content {
-		if d.name != "amendments" && d.name != "handoffs" && d.name != "legacy handoffs" { // structured in Amendments / Handoffs
+		if d.name != "informed by" && d.name != "amendments" && d.name != "handoffs" && d.name != "legacy handoffs" { // structured in Amendments / Handoffs
 			docs = append(docs, showDocJSON{d.name, d.body})
 		}
 	}
-	return showJSON{Kind: r.kind, Entity: r.entity, Content: docs, ApprovalStale: r.approvalStale, Amendments: r.amendments, Writes: r.writes, Handoffs: handoffs}
+	var informedBy []store.Reference
+	entity := r.entity
+	if is, ok := entity.(ideaShow); ok {
+		informedBy, entity = is.InformedBy, is.Idea
+	}
+	return showJSON{InformedBy: informedBy, Kind: r.kind, Entity: entity, Content: docs, ApprovalStale: r.approvalStale, Amendments: r.amendments, Writes: r.writes, Handoffs: handoffs}
 }
 
 // approvalStaleLine is how show and next flag a stale approval (F-0318): the

@@ -152,3 +152,31 @@ func TestReferenceList(t *testing.T) {
 		t.Fatalf("json list = %q, %v", out, err)
 	}
 }
+
+// F-0389 crit. 2/3: reference link adds, --unlink removes, prints the final list.
+func TestReferenceLink(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	if out, err := execCerne(t, "idea", "new", "uma ideia", "--dir", projDir); err != nil {
+		t.Fatalf("idea new: %v\n%s", err, out)
+	}
+	if out, err := execCerne(t, "reference", "new", "Fonte", "--url", "http://x", "--file", "/dev/null", "--dir", projDir); err != nil {
+		t.Fatalf("reference new: %v\n%s", err, out)
+	}
+	out, err := execCerne(t, "reference", "link", "R-0001", "--informs", "I-0001", "--dir", projDir)
+	if err != nil || !strings.HasPrefix(out, "R-0001 informs: I-0001\n") {
+		t.Fatalf("link: err=%v out=%q", err, out)
+	}
+	if r, _ := store.LoadReference(repoDir, "R-0001"); len(r.Informs) != 1 || r.Informs[0] != "I-0001" {
+		t.Fatalf("persisted = %+v", r.Informs)
+	}
+	out, err = execCerne(t, "reference", "link", "R-0001", "--unlink", "I-0001", "--dir", projDir)
+	if err != nil || !strings.HasPrefix(out, "R-0001 informs: (none)\n") {
+		t.Fatalf("unlink: err=%v out=%q", err, out)
+	}
+	if _, err := execCerne(t, "reference", "link", "R-0001", "--dir", projDir); err == nil {
+		t.Fatal("no flags must be refused")
+	}
+	if _, err := execCerne(t, "reference", "link", "R-0001", "--informs", "I-9999", "--dir", projDir); err == nil {
+		t.Fatal("dangling idea must be refused")
+	}
+}
