@@ -14,6 +14,7 @@
 package restmpl
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/henriquesakata/cerne/internal/doclang"
@@ -146,4 +147,36 @@ func StubIn(l doclang.Lang, title string) string {
 // the cerne_id frontmatter.
 func Stub(title string) string {
 	return "# " + strings.TrimSpace(title) + "\n\n" + Body
+}
+
+var (
+	commentRe   = regexp.MustCompile(`(?s)<!--.*?-->`)
+	agentLineRe = regexp.MustCompile(`(?i)\b(?:agente|agent)[*_]*:`)
+	effortRe    = regexp.MustCompile(`(?i)\b(?:esfor(?:ç|c\x{0327}|c)o|effort)[ \t]+([\pL\pM\pN-]+)`)
+)
+
+// DeclaredEffort reads the effort the agent declared about itself on the
+// result's Agente/Agent metadata line (F-0279) — the first "esforço <nível>"
+// or "effort <level>" after the label, lower-cased. "" when no such line sits
+// above the first "## " section, when it names no effort, or when it says
+// desconhecido/unknown: nothing is inferred (F-0391).
+func DeclaredEffort(result []byte) string {
+	for _, line := range strings.Split(commentRe.ReplaceAllString(string(result), ""), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "## ") {
+			break
+		}
+		loc := agentLineRe.FindStringIndex(line)
+		if loc == nil {
+			continue
+		}
+		m := effortRe.FindStringSubmatch(line[loc[1]:])
+		if m == nil {
+			return ""
+		}
+		if e := strings.ToLower(m[1]); e != "desconhecido" && e != "unknown" {
+			return e
+		}
+		return ""
+	}
+	return ""
 }
