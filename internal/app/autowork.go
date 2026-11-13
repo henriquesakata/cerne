@@ -53,8 +53,8 @@ func openAutoWorkUnless(repoDir string, f store.Feature, bound bool) error {
 	}
 	mine := myActors()
 	boundID := ""
-	if bound {
-		boundID = sessionBindingsIn(filepath.Dir(repoDir))[os.Getenv("CERNE_SESSION")]
+	if sess := os.Getenv("CERNE_SESSION"); bound && sess != "" {
+		boundID = sessionBindingsIn(filepath.Dir(repoDir))[sess]
 	}
 	for _, w := range works {
 		if w.State != domain.WorkActive || !slices.Contains(w.Refs, f.ID) {

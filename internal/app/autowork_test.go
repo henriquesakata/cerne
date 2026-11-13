@@ -411,3 +411,26 @@ func TestOpenAutoWorkForPushOpensWhenBindingIsDone(t *testing.T) {
 		t.Fatalf("works = %d, want 2", len(ws))
 	}
 }
+
+// TestOpenAutoWorkForPushIgnoresUnusableBinding (F-0383 L2): with no
+// CERNE_SESSION a stray binding file suppresses nothing, and a binding that
+// points at an F- id (not a work) suppresses nothing either.
+func TestOpenAutoWorkForPushIgnoresUnusableBinding(t *testing.T) {
+	for name, tc := range map[string]struct{ sess, bound string }{
+		"empty session": {"", "W-0001"},
+		"binding to F-": {"s1", "F-0001"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			repoDir, projDir, _ := newFeatureBackend(t)
+			t.Setenv("CERNE_SESSION", tc.sess)
+			seedFeatureInState(t, repoDir, "F-0001", domain.StateApproved, "spec.md", "plan.md")
+			seedActiveWork(t, repoDir, "W-0001", "someone@else", "F-0001", false)
+			bindTestSession(t, repoDir, "s1", tc.bound)
+
+			pushPlan(t, repoDir, projDir)
+			if ws := loadWorks(t, repoDir); len(ws) != 2 {
+				t.Fatalf("works = %d, want 2", len(ws))
+			}
+		})
+	}
+}
