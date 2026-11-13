@@ -658,3 +658,27 @@ func TestProjectNameStatus(t *testing.T) {
 		}
 	}
 }
+
+// TestSettingsStaleDecisionDays (F-0385 criterion 8): the settings view
+// serves lint.stale_decision_days resolved from a top-level .cernerc key, and
+// a PUT with a JSON number writes it; a fraction or a string is a 400.
+func TestSettingsStaleDecisionDays(t *testing.T) {
+	h, projDir, _ := settingsBackend(t, "stale_decision_days = 30\n")
+	var view project.SettingsView
+	if rec := doJSON(t, h, http.MethodGet, "/api/settings", "", &view); rec.Code != http.StatusOK {
+		t.Fatalf("GET status %d", rec.Code)
+	}
+	if s := resolvedByID(view)["lint.stale_decision_days"]; s.Type != "int" || s.Value != float64(30) || s.Origin != project.ScopeProject {
+		t.Fatalf("lint.stale_decision_days = %+v, want int 30 from the project", s)
+	}
+	rec := doJSON(t, h, http.MethodPut, "/api/settings/lint.stale_decision_days", `{"scope":"project","value":45}`, &view)
+	if rec.Code != http.StatusOK || resolvedByID(view)["lint.stale_decision_days"].Value != float64(45) || project.StaleDecisionDays(projDir) != 45 {
+		t.Fatalf("PUT 45: status %d: %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]string
+	for _, bad := range []string{`1.5`, `"45"`, `0`} {
+		if rec := doJSON(t, h, http.MethodPut, "/api/settings/lint.stale_decision_days", `{"scope":"project","value":`+bad+`}`, &body); rec.Code != http.StatusBadRequest {
+			t.Errorf("value %s: status %d, want 400", bad, rec.Code)
+		}
+	}
+}

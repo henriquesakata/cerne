@@ -199,7 +199,7 @@ func TestSettingsGet(t *testing.T) {
 		}
 	}
 	if _, err := execCerne(t, "settings", "get", "nope.enabled", "--dir", projDir); !errors.Is(err, project.ErrUnknownSetting) ||
-		!strings.Contains(err.Error(), "known: channel.human_name, graph.enabled, lint.cli_output_language, mindmap.enabled, wiki.enabled") {
+		!strings.Contains(err.Error(), "known: channel.human_name, graph.enabled, lint.cli_output_language, lint.stale_decision_days, mindmap.enabled, wiki.enabled") {
 		t.Errorf("unknown key: err = %v, want ErrUnknownSetting listing the known keys", err)
 	}
 }
@@ -397,5 +397,32 @@ func TestSettingsGetAll(t *testing.T) {
 		if err != nil || out != tc.want {
 			t.Errorf("get %v = %q (%v), want %q", tc.args, out, err, tc.want)
 		}
+	}
+}
+
+// TestSettingsStaleDecisionDays (F-0385 criterion 8): the int key is listed
+// with its 180 default, reads a top-level stale_decision_days, and set writes
+// [lint] stale_decision_days, which then wins.
+func TestSettingsStaleDecisionDays(t *testing.T) {
+	projDir, _ := settingsProject(t, "")
+	if s := settingsJSON(t, projDir)["lint.stale_decision_days"]; s.Type != "int" || s.Value != float64(180) || s.Origin != project.OriginDefault {
+		t.Fatalf("lint.stale_decision_days = %+v, want int 180 from default", s)
+	}
+	rc := filepath.Join(projDir, ".cernerc")
+	data, _ := os.ReadFile(rc)
+	if err := os.WriteFile(rc, append([]byte("stale_decision_days = 30\n"), data...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := execCerne(t, "settings", "get", "lint.stale_decision_days", "--dir", projDir); err != nil || out != "30\n" {
+		t.Fatalf("get = %q (%v), want 30 from the top-level key", out, err)
+	}
+	if out, err := execCerne(t, "settings", "set", "lint.stale_decision_days", "45", "--scope", "project", "--dir", projDir); err != nil {
+		t.Fatalf("set: %v\n%s", err, out)
+	}
+	if out, _ := execCerne(t, "settings", "get", "lint.stale_decision_days", "--dir", projDir); out != "45\n" {
+		t.Fatalf("get after set = %q, want 45 ([lint] wins)", out)
+	}
+	if _, err := execCerne(t, "settings", "set", "lint.stale_decision_days", "soon", "--scope", "project", "--dir", projDir); !errors.Is(err, project.ErrInvalidSettingValue) {
+		t.Fatalf("set soon: err = %v, want ErrInvalidSettingValue", err)
 	}
 }
