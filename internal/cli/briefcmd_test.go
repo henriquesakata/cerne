@@ -82,3 +82,11 @@ func TestBriefJSON(t *testing.T) {
 		t.Fatalf("brief --json notes = %+v, want one 'SSH gotcha'", data.Notes)
 	}
 }
+
+// TestIsHistoryStateRetired (F-0385): a retired decision is history, so the
+// default brief leaves it out like a superseded one.
+func TestIsHistoryStateRetired(t *testing.T) {
+	if !isHistoryState("retired") || isHistoryState("active") {
+		t.Fatalf("isHistoryState(retired)=%v isHistoryState(active)=%v, want true/false", isHistoryState("retired"), isHistoryState("active"))
+	}
+}

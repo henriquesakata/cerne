@@ -758,7 +758,7 @@ func buildNeedles(repoDir string, features []store.Feature, decisions []store.De
 		needles = append(needles, n)
 	}
 	for _, d := range decisions {
-		if d.State != domain.DecisionSuperseded {
+		if d.State != domain.DecisionSuperseded && d.State != domain.DecisionRetired {
 			continue
 		}
 		n := needle{id: d.ID, title: d.Title, state: string(d.State), use: d.SupersededBy, rxID: wordRx(d.ID)}

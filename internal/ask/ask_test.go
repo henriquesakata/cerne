@@ -61,6 +61,7 @@ func TestHistoricalFlag(t *testing.T) {
 		{"feature", "in_development", false},
 		{"decision", "active", false},
 		{"decision", "superseded", true},
+		{"decision", "retired", true}, // F-0385
 		{"runbook", "active", false},
 		{"note", "active", false},
 		{"reference", "current", false},
