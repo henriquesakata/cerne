@@ -28,7 +28,7 @@ func TestSearchFindsNoteByTag(t *testing.T) {
 		"---\ncerne_id: N-0001\n---\n\n# Procedimento de instalação\n\nPassos do setup sem citar a ferramenta.\n")
 
 	dbPath := filepath.Join(t.TempDir(), "index.db")
-	if err := Rebuild(repoDir, dbPath); err != nil {
+	if err := Rebuild(repoDir, dbPath, time.Time{}); err != nil {
 		t.Fatalf("Rebuild: %v", err)
 	}
 	results, err := Search(dbPath, "gitea", 10)
@@ -60,7 +60,7 @@ func TestSearchFindsReferenceByTag(t *testing.T) {
 		"---\ncerne_id: R-0001\n---\n\n# Artigo de setup\n\nPassos sem citar a ferramenta.\n")
 
 	dbPath := filepath.Join(t.TempDir(), "index.db")
-	if err := Rebuild(repoDir, dbPath); err != nil {
+	if err := Rebuild(repoDir, dbPath, time.Time{}); err != nil {
 		t.Fatalf("Rebuild: %v", err)
 	}
 	results, err := Search(dbPath, "gitea", 10)
@@ -91,7 +91,7 @@ func TestSearchFindsDecisionByTag(t *testing.T) {
 		"---\ncerne_id: D-0001\n---\n\n## Contexto\n\nPrecisamos de um provedor de identidade sem citar a ferramenta.\n")
 
 	dbPath := filepath.Join(t.TempDir(), "index.db")
-	if err := Rebuild(repoDir, dbPath); err != nil {
+	if err := Rebuild(repoDir, dbPath, time.Time{}); err != nil {
 		t.Fatalf("Rebuild: %v", err)
 	}
 	results, err := Search(dbPath, "keycloak", 10)

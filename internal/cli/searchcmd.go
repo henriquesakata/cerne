@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -70,11 +71,16 @@ func runSearch(cmd *cobra.Command, dir, query string, limit int, asJSON, perDoc 
 		if !asJSON {
 			fmt.Fprintln(out, "Building index...")
 		}
-		if err := index.Rebuild(ctx.repoDir, dbPath); err != nil {
+		if err := index.Rebuild(ctx.repoDir, dbPath, time.Time{}); err != nil {
 			return err
 		}
 	} else if err != nil {
 		return err
+	}
+
+	synced := indexSyncedAt(dbPath)
+	if !asJSON {
+		noteIndexAge(cmd.ErrOrStderr(), ctx.cfg.Backend, synced)
 	}
 
 	var results []index.EntityResult
@@ -114,9 +120,10 @@ func runSearch(cmd *cobra.Command, dir, query string, limit int, asJSON, perDoc 
 		enc := json.NewEncoder(out)
 		enc.SetIndent("", "  ")
 		return enc.Encode(struct {
-			Results   any  `json:"results"`
-			Broadened bool `json:"broadened,omitempty"`
-		}{payload, broadened})
+			Results       any     `json:"results"`
+			Broadened     bool    `json:"broadened,omitempty"`
+			IndexSyncedAt *string `json:"index_synced_at"`
+		}{payload, broadened, syncedAtJSON(synced)})
 	}
 
 	if len(results) == 0 {

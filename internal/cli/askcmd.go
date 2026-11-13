@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -72,11 +73,15 @@ func runAsk(cmd *cobra.Command, dir, query string, opts askOpts) error {
 		if !opts.asJSON {
 			fmt.Fprintln(out, "Building index...")
 		}
-		if err := index.Rebuild(ctx.repoDir, dbPath); err != nil {
+		if err := index.Rebuild(ctx.repoDir, dbPath, time.Time{}); err != nil {
 			return err
 		}
 	} else if err != nil {
 		return err
+	}
+	synced := indexSyncedAt(dbPath)
+	if !opts.asJSON {
+		noteIndexAge(cmd.ErrOrStderr(), ctx.cfg.Backend, synced)
 	}
 	snippets, err := ask.Retrieve(ctx.repoDir, dbPath, query, opts.history, 10)
 	if err != nil {
@@ -90,8 +95,9 @@ func runAsk(cmd *cobra.Command, dir, query string, opts askOpts) error {
 		enc := json.NewEncoder(out)
 		enc.SetIndent("", "  ")
 		return enc.Encode(struct {
-			Sources []ask.Snippet `json:"sources"`
-		}{snippets})
+			Sources       []ask.Snippet `json:"sources"`
+			IndexSyncedAt *string       `json:"index_synced_at"`
+		}{snippets, syncedAtJSON(synced)})
 	}
 
 	prompt := ask.BuildAskPrompt(query, snippets, !opts.noPreamble)

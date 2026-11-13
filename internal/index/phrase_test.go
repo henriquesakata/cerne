@@ -37,7 +37,7 @@ func TestPhraseNotesFiltersKindAndState(t *testing.T) {
 		t.Fatal(err)
 	}
 	db := filepath.Join(t.TempDir(), "index.db")
-	if err := Rebuild(repoDir, db); err != nil {
+	if err := Rebuild(repoDir, db, time.Time{}); err != nil {
 		t.Fatal(err)
 	}
 	hits, err := PhraseNotes(context.Background(), db, []string{"infra/k8s/scripts/release.sh", `we"ird (x)`})
@@ -60,7 +60,7 @@ func TestPhraseNotesLockedIndexIsBusy(t *testing.T) {
 	repoDir := t.TempDir()
 	seedNote(t, repoDir, "N-0001", "t", "see a/b.sh", domain.NoteActive)
 	db := filepath.Join(t.TempDir(), "index.db")
-	if err := Rebuild(repoDir, db); err != nil {
+	if err := Rebuild(repoDir, db, time.Time{}); err != nil {
 		t.Fatal(err)
 	}
 	unlock := lockIndex(t, db)
@@ -132,7 +132,7 @@ func benchIndex(tb testing.TB) string {
 		}
 	}
 	db := filepath.Join(tb.TempDir(), "index.db")
-	if err := Rebuild(repoDir, db); err != nil {
+	if err := Rebuild(repoDir, db, time.Time{}); err != nil {
 		tb.Fatal(err)
 	}
 	return db
@@ -144,7 +144,7 @@ func TestPhraseNotesMatchesTitleAndBodyOnly(t *testing.T) {
 	repoDir := t.TempDir()
 	seedNote(t, repoDir, "N-0001", "plain", "nothing", domain.NoteActive)
 	db := filepath.Join(t.TempDir(), "index.db")
-	if err := Rebuild(repoDir, db); err != nil {
+	if err := Rebuild(repoDir, db, time.Time{}); err != nil {
 		t.Fatal(err)
 	}
 	hits, err := PhraseNotes(context.Background(), db, []string{"N-0001"})

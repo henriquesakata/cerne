@@ -50,7 +50,7 @@ type EntityResult struct {
 // broadened is true when any line is Partial. Explicit FTS5 syntax and
 // single-keyword queries stay exact (F-0343).
 func SearchEntities(dbPath, query string, limit int) ([]EntityResult, bool, error) {
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := openDB(dbPath)
 	if err != nil {
 		return nil, false, err
 	}
@@ -90,7 +90,7 @@ func SearchEntities(dbPath, query string, limit int) ([]EntityResult, bool, erro
 // natural-language question (cerne ask), whatever punctuation it carries. A
 // question with no keyword left falls back to the exact search of the string.
 func RankEntities(dbPath, query string, limit int) ([]EntityResult, error) {
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := openDB(dbPath)
 	if err != nil {
 		return nil, err
 	}

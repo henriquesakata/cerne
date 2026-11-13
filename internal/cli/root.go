@@ -27,6 +27,9 @@ func Root() *cobra.Command {
 			app.RemintNotice = func(oldID, newID string) { // F-0356
 				fmt.Fprintf(cmd.ErrOrStderr(), "cerne: %s was taken upstream; registered as %s\n", oldID, newID)
 			}
+			app.IndexNotice = func(err error) { // F-0394
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: search index not refreshed: %v; run cerne pull\n", err)
+			}
 			if verbose {
 				// Text to stderr: op timings become visible without ever
 				// polluting the command's stdout (F-0149).

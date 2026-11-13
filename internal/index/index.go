@@ -8,13 +8,18 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"maps"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
+	"time"
 
 	_ "modernc.org/sqlite" // database/sql driver "sqlite" (pure Go, no cgo)
 
+	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -24,7 +29,9 @@ import (
 var featureDocFilenames = []string{"spec.md", "plan.md", "result.md"}
 
 const (
-	dropTableSQL = `DROP TABLE IF EXISTS docs`
+	dropTableSQL  = `DROP TABLE IF EXISTS docs`
+	dropMetaSQL   = `DROP TABLE IF EXISTS meta`
+	createMetaSQL = `CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)`
 	// entity_id, title and body are searchable; the remaining columns are
 	// metadata carried along for display only.
 	createTableSQL = `CREATE VIRTUAL TABLE docs USING fts5(
@@ -60,7 +67,8 @@ type Result struct {
 // row for their content doc; entities without any content doc still get one
 // title-only row (doc="", empty body). The whole rebuild runs in a single
 // transaction.
-func Rebuild(repoDir, dbPath string) error {
+func Rebuild(repoDir, dbPath string, syncedAt time.Time) error {
+	head := cloneHead(repoDir)
 	rows, err := collectRows(repoDir)
 	if err != nil {
 		return err
@@ -68,7 +76,7 @@ func Rebuild(repoDir, dbPath string) error {
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
 		return err
 	}
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := openDB(dbPath)
 	if err != nil {
 		return err
 	}
@@ -85,6 +93,62 @@ func Rebuild(repoDir, dbPath string) error {
 	if _, err := tx.Exec(createTableSQL); err != nil {
 		return err
 	}
+	if _, err := tx.Exec(dropMetaSQL); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(createMetaSQL); err != nil {
+		return err
+	}
+	if !syncedAt.IsZero() {
+		if _, err := tx.Exec(`INSERT INTO meta (key, value) VALUES ('synced_at', ?)`, syncedAt.UTC().Format(time.RFC3339)); err != nil {
+			return err
+		}
+	}
+	if err := insertRows(tx, rows); err != nil {
+		return err
+	}
+	if err := setHead(tx, head); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// cloneHead is the clone's HEAD sha, "" when it cannot be read (a test tree
+// that is not a git repo): the index then records no head.
+func cloneHead(repoDir string) string {
+	h, err := gitback.HeadSHA(repoDir)
+	if err != nil {
+		return ""
+	}
+	return h
+}
+
+// setHead records the clone head the index now reflects, in the caller's
+// transaction (the same one that wrote synced_at).
+func setHead(tx *sql.Tx, head string) error {
+	if head == "" {
+		return nil
+	}
+	_, err := tx.Exec(`INSERT OR REPLACE INTO meta (key, value) VALUES ('indexed_head', ?)`, head)
+	return err
+}
+
+// IndexedHead is the clone head the index at dbPath last indexed; ok is false
+// when none is recorded (the caller then rebuilds whole). A failed refresh
+// leaves it at the old value, so the next one re-covers the gap.
+func IndexedHead(dbPath string) (head string, ok bool) {
+	db, err := openDB(dbPath)
+	if err != nil {
+		return "", false
+	}
+	defer db.Close()
+	if err := db.QueryRow(`SELECT value FROM meta WHERE key = 'indexed_head'`).Scan(&head); err != nil {
+		return "", false
+	}
+	return head, head != ""
+}
+
+func insertRows(tx *sql.Tx, rows []row) error {
 	stmt, err := tx.Prepare(insertSQL)
 	if err != nil {
 		return err
@@ -95,7 +159,78 @@ func Rebuild(repoDir, dbPath string) error {
 			return err
 		}
 	}
+	return nil
+}
+
+// Update re-indexes only the entities in ids: their rows are deleted and
+// reinserted from the clone at repoDir, in one transaction; an id the clone no
+// longer has is only deleted. It needs an index Rebuild already built (an
+// error otherwise: the caller falls back to Rebuild). syncedAt, when not zero,
+// replaces the recorded sync time. Only the touched entities' files are read.
+func Update(repoDir, dbPath string, ids []string, syncedAt time.Time) error {
+	if _, err := os.Stat(dbPath); err != nil {
+		return err
+	}
+	head := cloneHead(repoDir)
+	rows, err := collectRowsFor(repoDir, ids)
+	if err != nil {
+		return err
+	}
+	want := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		want[id] = true
+	}
+	db, err := openDB(dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for id := range want {
+		if _, err := tx.Exec(`DELETE FROM docs WHERE entity_id = ?`, id); err != nil {
+			return err
+		}
+	}
+	if err := insertRows(tx, rows); err != nil {
+		return err
+	}
+	if !syncedAt.IsZero() {
+		if _, err := tx.Exec(`INSERT OR REPLACE INTO meta (key, value) VALUES ('synced_at', ?)`, syncedAt.UTC().Format(time.RFC3339)); err != nil {
+			return err
+		}
+	}
+	if err := setHead(tx, head); err != nil {
+		return err
+	}
 	return tx.Commit()
+}
+
+// IDsFromPaths maps backend paths (as `git diff --name-only` prints them) to
+// the entity ids they belong to: entities/<kind>/<id>.json,
+// content/features/<id>/<doc>.md and content/<kind>/<id>.md (errata included).
+// Other paths map to nothing; the result is sorted and de-duplicated.
+// ponytail: content/<other>/<x>.md (wiki, runs, ...) also yields an id, but one
+// with no FTS rows, so for Update it is a delete-only no-op; filter by kind if
+// that ever costs.
+func IDsFromPaths(paths []string) []string {
+	seen := map[string]bool{}
+	for _, p := range paths {
+		parts := strings.Split(p, "/")
+		stem := func(s string) string { return strings.TrimSuffix(s, filepath.Ext(s)) }
+		switch {
+		case len(parts) == 3 && parts[0] == "entities" && strings.HasSuffix(parts[2], ".json"):
+			seen[stem(parts[2])] = true
+		case len(parts) == 4 && parts[0] == "content" && parts[1] == "features":
+			seen[parts[2]] = true
+		case len(parts) == 3 && parts[0] == "content" && strings.HasSuffix(parts[2], ".md"):
+			seen[stem(parts[2])] = true
+		}
+	}
+	return slices.Sorted(maps.Keys(seen))
 }
 
 // Search runs an FTS5 MATCH query against the index at dbPath and returns up
@@ -103,7 +238,7 @@ func Rebuild(repoDir, dbPath string) error {
 // as-is; when fts5 rejects it (special-character syntax error) the query is
 // retried quoted as a single phrase.
 func Search(dbPath, query string, limit int) ([]Result, error) {
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := openDB(dbPath)
 	if err != nil {
 		return nil, err
 	}
@@ -190,111 +325,219 @@ func collectRows(repoDir string) ([]row, error) {
 
 	var rows []row
 	for _, f := range features {
-		base := row{entityID: f.ID, kind: "feature", state: string(f.State),
-			title: f.Title, supersededBy: f.SupersededBy}
-		// Index the tags (D-0003) so a search by facet/component finds the feature
-		// even when the term never appears in its prose (mirrors decisions/notes).
-		tags := strings.Join(append(append([]string{}, f.Facets...), f.Components...), " ")
-		if tags != "" {
-			base.body = tags // carried when the feature has no content doc yet
-		}
-		found := false
-		paths := make([]string, 0, len(featureDocFilenames)+1)
-		for _, filename := range featureDocFilenames {
-			paths = append(paths, filepath.Join(repoDir, "content", "features", f.ID, filename))
-		}
-		paths = append(paths, filepath.Join(repoDir, "content", "errata", f.ID+".md"))
-		for _, path := range paths {
-			body, exists, err := readDoc(path)
-			if err != nil {
-				return nil, err
-			}
-			if !exists {
-				continue
-			}
-			r := base
-			r.doc = strings.TrimSuffix(filepath.Base(path), ".md")
-			if r.doc == f.ID {
-				r.doc = "errata"
-			}
-			r.body = strings.TrimSpace(body + " " + tags)
-			rows = append(rows, r)
-			found = true
-		}
-		if !found {
-			rows = append(rows, base)
-		}
-	}
-	for _, d := range decisions {
-		r := row{entityID: d.ID, kind: "decision", state: string(d.State),
-			title: d.Title, supersededBy: d.SupersededBy}
-		body, exists, err := readDoc(filepath.Join(repoDir, "content", "decisions", d.ID+".md"))
+		r, err := featureRows(repoDir, f)
 		if err != nil {
 			return nil, err
 		}
-		if exists {
-			r.doc, r.body = "doc", body
-		}
-		// Index the tags into the body so a search by facet/component finds the
-		// decision even when the term never appears in its prose (mirrors notes).
-		if tags := strings.Join(append(append([]string{}, d.Facets...), d.Components...), " "); tags != "" {
-			r.body = strings.TrimSpace(r.body + " " + tags)
+		rows = append(rows, r...)
+	}
+	for _, d := range decisions {
+		r, err := decisionRow(repoDir, d)
+		if err != nil {
+			return nil, err
 		}
 		rows = append(rows, r)
 	}
 	for _, ref := range references {
-		r := row{entityID: ref.ID, kind: "reference", state: string(ref.State), title: ref.Title}
-		body, exists, err := readDoc(filepath.Join(repoDir, "content", "references", ref.ID+".md"))
+		r, err := referenceRow(repoDir, ref)
 		if err != nil {
 			return nil, err
-		}
-		if exists {
-			r.doc, r.body = "doc", body
-		}
-		// Index the tags into the body so a search by facet/component finds the
-		// reference even when the term never appears in its prose (mirrors notes).
-		if tags := strings.Join(append(append([]string{}, ref.Facets...), ref.Components...), " "); tags != "" {
-			r.body = strings.TrimSpace(r.body + " " + tags)
 		}
 		rows = append(rows, r)
 	}
 	for _, rb := range runbooks {
-		r := row{entityID: rb.ID, kind: "runbook", state: string(rb.State),
-			title: rb.Title, supersededBy: rb.SupersededBy}
-		body, exists, err := readDoc(filepath.Join(repoDir, "content", "runbooks", rb.ID+".md"))
+		r, err := runbookRow(repoDir, rb)
 		if err != nil {
 			return nil, err
-		}
-		if exists {
-			r.doc, r.body = "doc", body
 		}
 		rows = append(rows, r)
 	}
 	for _, n := range notes {
-		r := row{entityID: n.ID, kind: "note", state: string(n.State),
-			title: n.Title, supersededBy: n.SupersededBy}
-		body, exists, err := readDoc(filepath.Join(repoDir, "content", "notes", n.ID+".md"))
+		r, err := noteRow(repoDir, n)
 		if err != nil {
 			return nil, err
-		}
-		if exists {
-			r.doc, r.body = "doc", body
-		}
-		// Index the tags into the body so a search by facet/component finds the
-		// note even when the term never appears in its prose.
-		if tags := strings.Join(append(append([]string{}, n.Facets...), n.Components...), " "); tags != "" {
-			r.body = strings.TrimSpace(r.body + " " + tags)
 		}
 		rows = append(rows, r)
 	}
 	for _, h := range historicals {
-		// Historical entities have no content doc; their aliases and reason
-		// form the searchable body so the index is the door to them.
-		body := strings.TrimSpace(strings.Join(h.Aliases, " ") + " " + h.Reason)
-		rows = append(rows, row{entityID: h.ID, kind: "historical", state: string(h.State),
-			title: h.Name, body: body, supersededBy: h.SupersededBy})
+		rows = append(rows, historicalRow(h))
 	}
 	return rows, nil
+}
+
+// collectRowsFor is collectRows restricted to ids, in the same order: it opens
+// only those entities' files (entities/<kind>/<id>.json, their content docs and
+// errata), so an incremental Update does not read the whole clone. An id with
+// no entity file (removed, or a kind that is not indexed) yields no rows.
+func collectRowsFor(repoDir string, ids []string) ([]row, error) {
+	sorted := slices.Sorted(slices.Values(ids))
+	var rows []row
+	// Same kind order as collectRows.
+	for _, prefix := range []string{"F", "D", "R", "RB", "N", "H"} {
+		for _, id := range sorted {
+			if p, _, _ := strings.Cut(id, "-"); p != prefix {
+				continue
+			}
+			var r []row
+			var err error
+			switch prefix {
+			case "F":
+				var f store.Feature
+				if f, err = store.LoadFeature(repoDir, id); err == nil {
+					r, err = featureRows(repoDir, f)
+				}
+			case "D":
+				var d store.Decision
+				if d, err = store.LoadDecision(repoDir, id); err == nil {
+					var x row
+					x, err = decisionRow(repoDir, d)
+					r = []row{x}
+				}
+			case "R":
+				var d store.Reference
+				if d, err = store.LoadReference(repoDir, id); err == nil {
+					var x row
+					x, err = referenceRow(repoDir, d)
+					r = []row{x}
+				}
+			case "RB":
+				var d store.Runbook
+				if d, err = store.LoadRunbook(repoDir, id); err == nil {
+					var x row
+					x, err = runbookRow(repoDir, d)
+					r = []row{x}
+				}
+			case "N":
+				var d store.Note
+				if d, err = store.LoadNote(repoDir, id); err == nil {
+					var x row
+					x, err = noteRow(repoDir, d)
+					r = []row{x}
+				}
+			case "H":
+				var h store.Historical
+				if h, err = store.LoadHistorical(repoDir, id); err == nil {
+					r = []row{historicalRow(h)}
+				}
+			}
+			if errors.Is(err, store.ErrNotFound) {
+				continue
+			}
+			if err != nil {
+				return nil, err
+			}
+			rows = append(rows, r...)
+		}
+	}
+	return rows, nil
+}
+
+func featureRows(repoDir string, f store.Feature) ([]row, error) {
+	var rows []row
+	base := row{entityID: f.ID, kind: "feature", state: string(f.State),
+		title: f.Title, supersededBy: f.SupersededBy}
+	// Index the tags (D-0003) so a search by facet/component finds the feature
+	// even when the term never appears in its prose (mirrors decisions/notes).
+	tags := strings.Join(append(append([]string{}, f.Facets...), f.Components...), " ")
+	if tags != "" {
+		base.body = tags // carried when the feature has no content doc yet
+	}
+	found := false
+	paths := make([]string, 0, len(featureDocFilenames)+1)
+	for _, filename := range featureDocFilenames {
+		paths = append(paths, filepath.Join(repoDir, "content", "features", f.ID, filename))
+	}
+	paths = append(paths, filepath.Join(repoDir, "content", "errata", f.ID+".md"))
+	for _, path := range paths {
+		body, exists, err := readDoc(path)
+		if err != nil {
+			return nil, err
+		}
+		if !exists {
+			continue
+		}
+		r := base
+		r.doc = strings.TrimSuffix(filepath.Base(path), ".md")
+		if r.doc == f.ID {
+			r.doc = "errata"
+		}
+		r.body = strings.TrimSpace(body + " " + tags)
+		rows = append(rows, r)
+		found = true
+	}
+	if !found {
+		rows = append(rows, base)
+	}
+
+	return rows, nil
+}
+
+func decisionRow(repoDir string, d store.Decision) (row, error) {
+	r := row{entityID: d.ID, kind: "decision", state: string(d.State),
+		title: d.Title, supersededBy: d.SupersededBy}
+	body, exists, err := readDoc(filepath.Join(repoDir, "content", "decisions", d.ID+".md"))
+	if err != nil {
+		return r, err
+	}
+	if exists {
+		r.doc, r.body = "doc", body
+	}
+	if tags := strings.Join(append(append([]string{}, d.Facets...), d.Components...), " "); tags != "" {
+		r.body = strings.TrimSpace(r.body + " " + tags)
+	}
+	return r, nil
+}
+
+func referenceRow(repoDir string, ref store.Reference) (row, error) {
+	r := row{entityID: ref.ID, kind: "reference", state: string(ref.State), title: ref.Title}
+	body, exists, err := readDoc(filepath.Join(repoDir, "content", "references", ref.ID+".md"))
+	if err != nil {
+		return r, err
+	}
+	if exists {
+		r.doc, r.body = "doc", body
+	}
+	if tags := strings.Join(append(append([]string{}, ref.Facets...), ref.Components...), " "); tags != "" {
+		r.body = strings.TrimSpace(r.body + " " + tags)
+	}
+	return r, nil
+}
+
+func runbookRow(repoDir string, rb store.Runbook) (row, error) {
+	r := row{entityID: rb.ID, kind: "runbook", state: string(rb.State),
+		title: rb.Title, supersededBy: rb.SupersededBy}
+	body, exists, err := readDoc(filepath.Join(repoDir, "content", "runbooks", rb.ID+".md"))
+	if err != nil {
+		return r, err
+	}
+	if exists {
+		r.doc, r.body = "doc", body
+	}
+	return r, nil
+}
+
+func noteRow(repoDir string, n store.Note) (row, error) {
+	r := row{entityID: n.ID, kind: "note", state: string(n.State),
+		title: n.Title, supersededBy: n.SupersededBy}
+	body, exists, err := readDoc(filepath.Join(repoDir, "content", "notes", n.ID+".md"))
+	if err != nil {
+		return r, err
+	}
+	if exists {
+		r.doc, r.body = "doc", body
+	}
+	if tags := strings.Join(append(append([]string{}, n.Facets...), n.Components...), " "); tags != "" {
+		r.body = strings.TrimSpace(r.body + " " + tags)
+	}
+	return r, nil
+}
+
+// historicalRow: historical entities have no content doc; their aliases and
+// reason form the searchable body so the index is the door to them.
+func historicalRow(h store.Historical) row {
+	body := strings.TrimSpace(strings.Join(h.Aliases, " ") + " " + h.Reason)
+	return row{entityID: h.ID, kind: "historical", state: string(h.State),
+		title: h.Name, body: body, supersededBy: h.SupersededBy}
 }
 
 // identifier matches a run of letters/digits that starts with a letter.
@@ -352,4 +595,44 @@ func readDoc(path string) (string, bool, error) {
 		return "", false, fmt.Errorf("reading %s: %w", path, err)
 	}
 	return string(data), true, nil
+}
+
+// openDB opens dbPath waiting up to 5 s on a lock held by another writer, so
+// two agents writing at once do not turn into a failed refresh (F-0394).
+// _txlock=immediate takes the write lock at BEGIN: a deferred read-then-write
+// upgrade fails SQLITE_BUSY at once without consulting the busy handler.
+func openDB(dbPath string) (*sql.DB, error) {
+	return sql.Open("sqlite", dsn(dbPath))
+}
+
+// dsn is the sqlite URI for dbPath. A Windows drive path (C:\x\index.db) must
+// become file:///C:/x/index.db: url.URL alone would read "C:" as a host.
+func dsn(dbPath string) string {
+	p := dbPath
+	if len(p) >= 3 && p[1] == ':' && (p[2] == '\\' || p[2] == '/') && (p[0]|0x20 >= 'a' && p[0]|0x20 <= 'z') {
+		p = "/" + strings.ReplaceAll(p, `\`, "/")
+	}
+	u := url.URL{Scheme: "file", Path: p, RawQuery: "_pragma=busy_timeout(5000)&_txlock=immediate"}
+	return u.String()
+}
+
+// SyncedAt returns when the index at dbPath was last synced with the backend.
+// ok is false when the index records no time (built lazily by a first search,
+// or built before F-0394); err is only for a real read failure.
+func SyncedAt(dbPath string) (t time.Time, ok bool, err error) {
+	db, err := openDB(dbPath)
+	if err != nil {
+		return t, false, err
+	}
+	defer db.Close()
+	var v string
+	err = db.QueryRow(`SELECT value FROM meta WHERE key = 'synced_at'`).Scan(&v)
+	if errors.Is(err, sql.ErrNoRows) || (err != nil && strings.Contains(err.Error(), "no such table")) {
+		return t, false, nil
+	}
+	if err != nil {
+		return t, false, err
+	}
+	t, err = time.Parse(time.RFC3339, v)
+	return t, err == nil, err
 }

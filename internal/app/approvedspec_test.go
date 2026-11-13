@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gitback"
@@ -95,7 +96,7 @@ func TestApprovedCopyNotScanned(t *testing.T) {
 	})
 
 	db := filepath.Join(t.TempDir(), "index.db")
-	if err := index.Rebuild(repoDir, db); err != nil {
+	if err := index.Rebuild(repoDir, db, time.Time{}); err != nil {
 		t.Fatalf("index: %v", err)
 	}
 	if hits, err := index.Search(db, "zebraquartz", 10); err != nil || len(hits) != 0 {

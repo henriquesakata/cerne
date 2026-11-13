@@ -43,7 +43,7 @@ func seed(t *testing.T) (repoDir, dbPath string) {
 	writeWiki("modules/finance.md", "---\ncerne_wiki: finance\n---\n\n# Finance\n\nSíntese de boletos no finance.\n")
 
 	dbPath = filepath.Join(t.TempDir(), "index.db")
-	if err := index.Rebuild(repoDir, dbPath); err != nil {
+	if err := index.Rebuild(repoDir, dbPath, time.Time{}); err != nil {
 		t.Fatalf("index.Rebuild: %v", err)
 	}
 	return repoDir, dbPath
@@ -87,7 +87,7 @@ func TestRetrieveMarksImplementedHistorical(t *testing.T) {
 	if err := os.WriteFile(p, []byte("# F-0003\n\nOs boletos migraram.\n"), 0o644); err != nil {
 		t.Fatalf("write spec: %v", err)
 	}
-	if err := index.Rebuild(repoDir, dbPath); err != nil {
+	if err := index.Rebuild(repoDir, dbPath, time.Time{}); err != nil {
 		t.Fatalf("index.Rebuild: %v", err)
 	}
 	snips, err := Retrieve(repoDir, dbPath, "boletos", false, 10)
@@ -127,7 +127,7 @@ func TestRetrieveRetiredDecisionIsHistory(t *testing.T) {
 	if err := os.WriteFile(p, []byte("# Boletos via fila\n\nOs boletos passavam pela fila.\n"), 0o644); err != nil {
 		t.Fatalf("write decision: %v", err)
 	}
-	if err := index.Rebuild(repoDir, dbPath); err != nil {
+	if err := index.Rebuild(repoDir, dbPath, time.Time{}); err != nil {
 		t.Fatalf("index.Rebuild: %v", err)
 	}
 	find := func(history bool) (Snippet, bool) {
@@ -236,7 +236,7 @@ func seedWithCrossCutting(t *testing.T) (repoDir, dbPath string) {
 	writeFile("content/wiki/references.md", "---\ncerne_wiki: references\n---\n\n# Referências\n\nSíntese das referências vigentes.\n")
 
 	dbPath = filepath.Join(t.TempDir(), "index.db")
-	if err := index.Rebuild(repoDir, dbPath); err != nil {
+	if err := index.Rebuild(repoDir, dbPath, time.Time{}); err != nil {
 		t.Fatalf("index.Rebuild: %v", err)
 	}
 	return repoDir, dbPath
@@ -289,7 +289,7 @@ func seedForRanking(t *testing.T) (repoDir, dbPath string) {
 		t.Fatalf("write decision: %v", err)
 	}
 	dbPath = filepath.Join(t.TempDir(), "index.db")
-	if err := index.Rebuild(repoDir, dbPath); err != nil {
+	if err := index.Rebuild(repoDir, dbPath, time.Time{}); err != nil {
 		t.Fatalf("index.Rebuild: %v", err)
 	}
 	return repoDir, dbPath
@@ -519,7 +519,7 @@ func TestRetrieveOneSourcePerEntity(t *testing.T) {
 		}
 	}
 	dbPath := filepath.Join(t.TempDir(), "index.db")
-	if err := index.Rebuild(repoDir, dbPath); err != nil {
+	if err := index.Rebuild(repoDir, dbPath, time.Time{}); err != nil {
 		t.Fatalf("index.Rebuild: %v", err)
 	}
 	for _, q := range []string{"ambiente", "plataforma: qual o ambiente (k8s)?"} {

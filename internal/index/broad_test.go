@@ -29,7 +29,7 @@ func seedBroad(t *testing.T, specs ...string) string {
 		}
 	}
 	dbPath := filepath.Join(t.TempDir(), "index.db")
-	if err := Rebuild(repoDir, dbPath); err != nil {
+	if err := Rebuild(repoDir, dbPath, time.Time{}); err != nil {
 		t.Fatalf("Rebuild: %v", err)
 	}
 	return dbPath

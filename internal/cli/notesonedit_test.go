@@ -30,7 +30,7 @@ func seedEditNotes(t *testing.T, repoDir string, notes map[string][2]string) {
 			t.Fatal(err)
 		}
 	}
-	if err := index.Rebuild(repoDir, filepath.Join(filepath.Dir(repoDir), "index.db")); err != nil {
+	if err := index.Rebuild(repoDir, filepath.Join(filepath.Dir(repoDir), "index.db"), time.Time{}); err != nil {
 		t.Fatal(err)
 	}
 }

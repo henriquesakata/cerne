@@ -1,0 +1,238 @@
+package app
+
+import (
+	"database/sql"
+	"github.com/henriquesakata/cerne/internal/gitback"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/index"
+	"github.com/henriquesakata/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/store"
+)
+
+// saveNote is a mutate that writes the note id with the given title.
+func saveNote(repoDir, id, title string) func() (string, error) {
+	return func() (string, error) {
+		now := time.Now().UTC()
+		n := store.Note{ID: id, Title: title, State: domain.NoteActive, CreatedAt: now, UpdatedAt: now}
+		return "note " + id, store.SaveNote(repoDir, n)
+	}
+}
+
+func indexHas(t *testing.T, repoDir, id string) bool {
+	t.Helper()
+	res, _, err := index.SearchEntities(project.IndexPathForRepo(repoDir), id, 5)
+	if err != nil {
+		t.Fatalf("SearchEntities: %v", err)
+	}
+	return len(res) > 0 && res[0].EntityID == id
+}
+
+// F-0394 crit. 1: a write is findable on this machine with no pull.
+func TestMutateAndSnapshotRefreshesIndex(t *testing.T) {
+	_, repoDir, projDir, _ := remintFixture(t)
+	if err := MutateAndSnapshot(repoDir, projDir, saveNote(repoDir, "N-0001", "nota nova")); err != nil {
+		t.Fatalf("MutateAndSnapshot: %v", err)
+	}
+	if !indexHas(t, repoDir, "N-0001") {
+		t.Fatal("N-0001 not found in the index right after the write")
+	}
+	at, ok, err := index.SyncedAt(project.IndexPathForRepo(repoDir))
+	if err != nil || !ok || time.Since(at) > time.Minute {
+		t.Fatalf("SyncedAt = %v, %v, %v; want a fresh time", at, ok, err)
+	}
+}
+
+// F-0394 crit. 1: the push reconcile path refreshes too.
+func TestReconcileCommitPushRefreshesIndex(t *testing.T) {
+	_, repoDir, projDir, base := remintFixture(t)
+	_, _, _, err := ReconcileCommitPushMutate(repoDir, projDir, base, "note", nil, func() error {
+		_, err := saveNote(repoDir, "N-0002", "nota do push")()
+		return err
+	})
+	if err != nil {
+		t.Fatalf("ReconcileCommitPushMutate: %v", err)
+	}
+	if !indexHas(t, repoDir, "N-0002") {
+		t.Fatal("N-0002 not found in the index right after the push")
+	}
+}
+
+// F-0394 crit. 2: an index that cannot be rebuilt keeps the write and tells
+// IndexNotice once.
+func TestMutateAndSnapshotIndexFailureKeepsWrite(t *testing.T) {
+	origin, repoDir, projDir, _ := remintFixture(t)
+	if err := os.MkdirAll(project.IndexPathForRepo(repoDir), 0o755); err != nil { // a directory where the file should be
+		t.Fatal(err)
+	}
+	var got []error
+	IndexNotice = func(err error) { got = append(got, err) }
+	t.Cleanup(func() { IndexNotice = func(error) {} })
+	if err := MutateAndSnapshot(repoDir, projDir, saveNote(repoDir, "N-0003", "nota")); err != nil {
+		t.Fatalf("the write must survive an index failure: %v", err)
+	}
+	if len(got) != 1 || got[0] == nil {
+		t.Fatalf("IndexNotice calls = %v, want exactly one error", got)
+	}
+	if _, ok := originHas(t, origin, "entities/notes/N-0003.json"); !ok {
+		t.Fatal("N-0003 not pushed")
+	}
+}
+
+// F-0394 crit. 2: two writers at once end with the whole index and no notice.
+func TestConcurrentWritesLeaveWholeIndex(t *testing.T) {
+	_, repoDir, projDir, _ := remintFixture(t)
+	var mu sync.Mutex
+	var notices []string
+	IndexNotice = func(err error) { mu.Lock(); notices = append(notices, err.Error()); mu.Unlock() }
+	t.Cleanup(func() { IndexNotice = func(error) {} })
+	ids := []string{"N-0004", "N-0005"}
+	errs := make([]error, len(ids))
+	var wg sync.WaitGroup
+	for i, id := range ids {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs[i] = MutateAndSnapshot(repoDir, projDir, saveNote(repoDir, id, "nota "+id))
+		}()
+	}
+	wg.Wait()
+	for _, err := range errs {
+		if err != nil {
+			t.Fatalf("MutateAndSnapshot: %v", err)
+		}
+	}
+	if len(notices) > 0 {
+		t.Fatalf("index notices: %s", strings.Join(notices, "; "))
+	}
+	for _, id := range ids {
+		if !indexHas(t, repoDir, id) {
+			t.Fatalf("%s missing from the index", id)
+		}
+	}
+}
+
+// plantSentinel adds a row no rebuild would produce: it survives only when the
+// refresh is incremental.
+func plantSentinel(t *testing.T, repoDir string) {
+	t.Helper()
+	db, err := sql.Open("sqlite", project.IndexPathForRepo(repoDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`INSERT INTO docs (entity_id, kind, doc, state, title, body, superseded_by) VALUES ('ZZ-0001', 'note', '', 'active', 'sentinela', 'sentinela', '')`); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// F-0394 (owner's adjustment): only the changed entities are re-indexed.
+func TestWriteRefreshIsIncremental(t *testing.T) {
+	_, repoDir, projDir, _ := remintFixture(t)
+	if err := MutateAndSnapshot(repoDir, projDir, saveNote(repoDir, "N-0001", "primeira")); err != nil {
+		t.Fatal(err)
+	}
+	plantSentinel(t, repoDir)
+	if err := MutateAndSnapshot(repoDir, projDir, saveNote(repoDir, "N-0002", "segunda")); err != nil {
+		t.Fatal(err)
+	}
+	if !indexHas(t, repoDir, "ZZ-0001") {
+		t.Fatal("the whole index was rebuilt for a one-entity write")
+	}
+	if !indexHas(t, repoDir, "N-0002") {
+		t.Fatal("N-0002 missing")
+	}
+}
+
+// Another machine's commit folded in by the push rebase lands in the index.
+func TestWriteRefreshPicksUpOtherMachineEntity(t *testing.T) {
+	origin, repoDir, projDir, _ := remintFixture(t)
+	if err := MutateAndSnapshot(repoDir, projDir, saveNote(repoDir, "N-0001", "primeira")); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(t.TempDir(), "other")
+	if err := gitback.Clone(origin, other); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := saveNote(other, "N-0030", "da outra maquina")(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitback.CommitAndPush(other, "theirs"); err != nil {
+		t.Fatal(err)
+	}
+	if err := MutateAndSnapshot(repoDir, projDir, saveNote(repoDir, "N-0002", "segunda")); err != nil {
+		t.Fatal(err)
+	}
+	if !indexHas(t, repoDir, "N-0030") {
+		t.Fatal("the other machine's note is missing from the index")
+	}
+}
+
+// No index yet (or no recorded head): the refresh falls back to a full rebuild.
+func TestWriteRefreshFallsBackToFullRebuild(t *testing.T) {
+	_, repoDir, projDir, _ := remintFixture(t)
+	_ = os.Remove(project.IndexPathForRepo(repoDir))
+	if err := MutateAndSnapshot(repoDir, projDir, saveNote(repoDir, "N-0001", "primeira")); err != nil {
+		t.Fatal(err)
+	}
+	if !indexHas(t, repoDir, "N-0001") || !indexHas(t, repoDir, "F-0001") {
+		t.Fatal("full rebuild did not index the whole clone")
+	}
+	plantSentinel(t, repoDir)
+	db, err := sql.Open("sqlite", project.IndexPathForRepo(repoDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`DELETE FROM meta WHERE key = 'indexed_head'`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	if err := MutateAndSnapshot(repoDir, projDir, saveNote(repoDir, "N-0002", "segunda")); err != nil {
+		t.Fatal(err)
+	}
+	if !indexHas(t, repoDir, "N-0002") || !indexHas(t, repoDir, "F-0001") {
+		t.Fatal("no recorded head: full rebuild expected")
+	}
+	if indexHas(t, repoDir, "ZZ-0001") {
+		t.Fatal("no recorded head: the sentinel survived, so it was not a full rebuild")
+	}
+}
+
+// A refresh that fails leaves no permanent hole: the next successful write
+// re-indexes what the failed one wrote (the index records its own head).
+func TestFailedRefreshIsHealedByNextWrite(t *testing.T) {
+	_, repoDir, projDir, _ := remintFixture(t)
+	db := project.IndexPathForRepo(repoDir)
+	if err := MutateAndSnapshot(repoDir, projDir, saveNote(repoDir, "N-0001", "primeira")); err != nil {
+		t.Fatal(err)
+	}
+	var notices int
+	IndexNotice = func(error) { notices++ }
+	t.Cleanup(func() { IndexNotice = func(error) {} })
+	if err := os.Chmod(db, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	if err := MutateAndSnapshot(repoDir, projDir, saveNote(repoDir, "N-0002", "segunda")); err != nil {
+		t.Fatalf("the write must survive: %v", err)
+	}
+	if notices != 1 {
+		t.Fatalf("IndexNotice calls = %d, want 1", notices)
+	}
+	if err := os.Chmod(db, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := MutateAndSnapshot(repoDir, projDir, saveNote(repoDir, "N-0003", "terceira")); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"N-0001", "N-0002", "N-0003"} {
+		if !indexHas(t, repoDir, id) {
+			t.Fatalf("%s missing: the failed refresh left a hole", id)
+		}
+	}
+}

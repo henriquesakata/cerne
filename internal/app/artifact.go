@@ -7,8 +7,10 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"time"
 
 	"github.com/henriquesakata/cerne/internal/gitback"
+	"github.com/henriquesakata/cerne/internal/index"
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/telemetry"
 )
@@ -163,9 +165,34 @@ func mutateAndSnapshotOp(op *telemetry.Op, repoDir, projDir string, latest bool,
 		stop := op.Phase("snapshot")
 		err := updateSnapshot(projDir, head)
 		stop()
+		if err == nil {
+			refreshIndex(repoDir, head)
+		}
 		return err
 	}
 	return nil
+}
+
+// refreshIndex brings the local search index up to head, which a successful
+// write has just left equal to the backend: it re-indexes the entities that
+// changed since the head the INDEX last recorded (not the project snapshot,
+// which a failed refresh would have advanced past the gap): the write itself
+// plus whatever the push rebase folded in. With no recorded head, a failing
+// diff or no index yet, it rebuilds whole. It runs outside the lock, after the
+// write: a failure only reaches IndexNotice, never the caller, and leaves the
+// recorded head where it was so the next write heals the gap.
+func refreshIndex(repoDir, head string) {
+	dbPath := project.IndexPathForRepo(repoDir)
+	if old, ok := index.IndexedHead(dbPath); ok {
+		if paths, err := gitback.ChangedPaths(repoDir, old, head); err == nil {
+			if index.Update(repoDir, dbPath, index.IDsFromPaths(paths), time.Now()) == nil {
+				return
+			}
+		}
+	}
+	if err := index.Rebuild(repoDir, dbPath, time.Now()); err != nil {
+		IndexNotice(err)
+	}
 }
 
 // ErrIDRaceLost is returned when a re-minted id kept colliding with another
@@ -178,6 +205,11 @@ var ErrIDRaceLost = errors.New("id race lost 3 times; run 'cerne pull' and retry
 // reaches it too: the `ui` process logs the line on its own stderr, never in
 // the HTTP response.
 var RemintNotice func(oldID, newID string)
+
+// IndexNotice is told why the local search index could not be refreshed after
+// a write that already reached the backend. The write stands: the index is
+// derived and `cerne pull` rebuilds it (F-0394). The CLI root wires it to stderr.
+var IndexNotice = func(error) {}
 
 // fastForwardToOrigin fetches and, when origin is ahead of base, moves the
 // clone onto it, returning the new base. A clone that diverged from origin

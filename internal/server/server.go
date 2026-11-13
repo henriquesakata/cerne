@@ -684,7 +684,7 @@ func ensureIndex(repoDir, projectID string) (string, error) {
 		return "", err
 	}
 	if _, err := os.Stat(dbPath); errors.Is(err, os.ErrNotExist) {
-		if err := index.Rebuild(repoDir, dbPath); err != nil {
+		if err := index.Rebuild(repoDir, dbPath, time.Time{}); err != nil {
 			return "", err
 		}
 	} else if err != nil {

@@ -158,7 +158,7 @@ func runPull(cmd *cobra.Command, dir, scope string, okfFlag, force, syncSkillsFl
 	if err != nil {
 		return err
 	}
-	if err := index.Rebuild(ctx.repoDir, dbPath); err != nil {
+	if err := index.Rebuild(ctx.repoDir, dbPath, time.Now()); err != nil {
 		return err
 	}
 	nFeatures, nDecisions, nReferences := countManifest(manifest)
