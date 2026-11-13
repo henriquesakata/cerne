@@ -83,11 +83,12 @@ func TestWritePointsRecordAuthor(t *testing.T) {
 			return err
 		}, declared, map[string]string{"reason": "faltou prova"}},
 		{"push", "F-0003", "plan", func() error {
-			return RecordPushedDocs(repoDir, projDir, []FileChange{
+			changes := []FileChange{
 				{Path: "content/features/F-0003/plan.md", Content: []byte("x")},
 				{Path: "content/features/F-0003/notes.md", Content: []byte("not a lifecycle doc")},
 				{Path: "content/decisions/D-0001.md", Content: []byte("not a feature")},
-			})
+			}
+			return RecordPushedDocs(repoDir, changes, PushAuthor(projDir, changes))
 		}, declared, nil},
 		{"draft", "F-0003", "result", func() error {
 			return RecordDocWrite(repoDir, "F-0003", "result", chat)
@@ -194,7 +195,8 @@ func TestAuthorRecordLeavesBodiesAndGatesAlone(t *testing.T) {
 	if err := RecordDocWrite(repoDir, "F-0001", "spec", DocAuthor{Provider: "anthropic", Model: "claude-opus-5-5", Source: "transcript"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := RecordPushedDocs(repoDir, projDir, []FileChange{{Path: "content/features/F-0001/plan.md", Content: []byte(plan + "\nmais\n")}}); err != nil {
+	pushed := []FileChange{{Path: "content/features/F-0001/plan.md", Content: []byte(plan + "\nmais\n")}}
+	if err := RecordPushedDocs(repoDir, pushed, PushAuthor(projDir, pushed)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -220,5 +222,35 @@ func TestAuthorRecordLeavesBodiesAndGatesAlone(t *testing.T) {
 	}
 	if fmt.Sprint(findingsAfter) != fmt.Sprint(findingsBefore) {
 		t.Fatalf("lint changed with the records:\nbefore %v\nafter  %v", findingsBefore, findingsAfter)
+	}
+}
+
+// TestPushAuthor (critic round 1, item 3): the push resolves its writer
+// before the backend lock, and only when it sends a feature lifecycle
+// document — a push of other documents reads no transcript and records
+// nothing.
+func TestPushAuthor(t *testing.T) {
+	authorEnv(t)
+	t.Setenv("CERNE_ACTOR", "agent")
+	t.Setenv("CERNE_PROVIDER", "openai")
+	others := []FileChange{
+		{Path: "content/decisions/D-0001.md", Content: []byte("x")},
+		{Path: "content/features/F-0001/notes.md", Content: []byte("x")},
+		{Path: "content/features/F-0001/spec.md", Deleted: true},
+	}
+	if got := PushAuthor(t.TempDir(), others); got != (DocAuthor{}) {
+		t.Fatalf("PushAuthor(no feature doc) = %+v, want none", got)
+	}
+	docs := append(others, FileChange{Path: "content/features/F-0001/plan.md", Content: []byte("x")})
+	if got := PushAuthor(t.TempDir(), docs); got != (DocAuthor{Provider: "openai", Source: "declared"}) {
+		t.Fatalf("PushAuthor(plan) = %+v, want declared openai", got)
+	}
+	repoDir, _, _ := newFeatureBackend(t)
+	seedFeatureInState(t, repoDir, "F-0001", domain.StateApproved, "spec.md")
+	if err := RecordPushedDocs(repoDir, docs, DocAuthor{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, n := lastDocEdit(t, repoDir, "F-0001"); n != 0 {
+		t.Fatalf("no writer: %d doc_edited recorded, want 0", n)
 	}
 }

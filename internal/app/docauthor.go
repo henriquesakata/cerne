@@ -102,18 +102,40 @@ func RecordDocWrite(repoDir, id, doc string, a DocAuthor) error {
 	return store.AppendEvent(repoDir, a.docEdited(id, doc, f.State, nil))
 }
 
+// pushedFeatureDoc maps a pushed path to its feature and lifecycle document
+// (spec|plan|result); ok is false for any other path.
+func pushedFeatureDoc(ch FileChange) (id, doc string, ok bool) {
+	rest, isFeature := strings.CutPrefix(ch.Path, "content/features/")
+	id, file, _ := strings.Cut(rest, "/")
+	doc = strings.TrimSuffix(file, ".md")
+	return id, doc, isFeature && !ch.Deleted && featureDocFilenames[doc] == file
+}
+
+// PushAuthor is who writes a push's feature documents, resolved before the
+// push takes the backend lock — the transcript read stays outside it. The
+// zero DocAuthor when changes hold no feature lifecycle document: nothing
+// to record, nothing read.
+func PushAuthor(projDir string, changes []FileChange) DocAuthor {
+	for _, ch := range changes {
+		if _, _, ok := pushedFeatureDoc(ch); ok {
+			return docAuthor(projDir)
+		}
+	}
+	return DocAuthor{}
+}
+
 // RecordPushedDocs appends, inside the push's critical section (the mutate of
 // ReconcileCommitPushMutate), one feature.doc_edited per feature lifecycle
-// document among changes, by the process's author — with no rev, so it never
-// reads as an amend. A document equal to the tree the mutate runs on, or of a
-// feature the backend does not have, records nothing.
-func RecordPushedDocs(repoDir, projDir string, changes []FileChange) error {
-	var a *DocAuthor
+// document among changes, by by (PushAuthor) — with no rev, so it never reads
+// as an amend. A zero by records nothing; so does a document equal to the
+// tree the mutate runs on, or of a feature the backend does not have.
+func RecordPushedDocs(repoDir string, changes []FileChange, by DocAuthor) error {
+	if by == (DocAuthor{}) {
+		return nil
+	}
 	for _, ch := range changes {
-		rest, ok := strings.CutPrefix(ch.Path, "content/features/")
-		id, file, _ := strings.Cut(rest, "/")
-		doc := strings.TrimSuffix(file, ".md")
-		if !ok || ch.Deleted || featureDocFilenames[doc] != file {
+		id, doc, ok := pushedFeatureDoc(ch)
+		if !ok {
 			continue
 		}
 		if cur, err := os.ReadFile(filepath.Join(repoDir, filepath.FromSlash(ch.Path))); err == nil && bytes.Equal(cur, ch.Content) {
@@ -123,11 +145,7 @@ func RecordPushedDocs(repoDir, projDir string, changes []FileChange) error {
 		if err != nil {
 			continue
 		}
-		if a == nil {
-			v := docAuthor(projDir)
-			a = &v
-		}
-		if err := store.AppendEvent(repoDir, a.docEdited(id, doc, f.State, nil)); err != nil {
+		if err := store.AppendEvent(repoDir, by.docEdited(id, doc, f.State, nil)); err != nil {
 			return err
 		}
 	}

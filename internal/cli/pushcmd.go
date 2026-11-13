@@ -106,6 +106,9 @@ func runPush(cmd *cobra.Command, dir string, dryRun bool) error {
 		changes[i] = app.FileChange{Path: d.backendRel, Content: d.body}
 	}
 	staleBefore := pushedSpecStaleness(ctx.repoDir, docs)
+	// F-0375: who writes the feature documents, read before the lock below —
+	// the transcript read never holds the shared clone.
+	author := app.PushAuthor(ctx.projDir, changes)
 	// The lock wait, the fetch and the push live in this one call and can each
 	// take long: the phase beats on stderr so the wait never looks like a hang.
 	endReconcile := startPhase(cmd.ErrOrStderr(), "reconciling with the backend")
@@ -117,7 +120,7 @@ func runPush(cmd *cobra.Command, dir string, dryRun bool) error {
 				return err
 			}
 			// F-0375: who wrote each feature document, in the same commit.
-			return app.RecordPushedDocs(ctx.repoDir, ctx.projDir, changes)
+			return app.RecordPushedDocs(ctx.repoDir, changes, author)
 		})
 	endReconcile(err == nil && len(conflicts) == 0)
 	if err != nil {
