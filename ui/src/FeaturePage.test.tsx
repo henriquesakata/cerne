@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import FeaturePage from './FeaturePage'
+import { I18nProvider } from './i18n'
 import type { Feature, FeatureDetail, FeatureState, LLMMode, Pending } from './api'
 import {
   fetchArtifactText,
@@ -285,6 +286,37 @@ describe('FeaturePage approve readiness (F-0308)', () => {
     expect(items[0].closest('section')).toBe(approve.closest('section'))
     // Conselho não é impedimento: nem o título dos impedimentos aparece.
     expect(screen.queryByText('O que impede a aprovação:')).not.toBeInTheDocument()
+  })
+
+  it('conselhos em inglês: título e rótulo do dicionário en (F-0390)', async () => {
+    localStorage.setItem('cerne-lang', 'en')
+    try {
+      payload = {
+        ...detail('candidate'),
+        bar: 'Barra: não aplicável (efeito local, coberto por TestX)',
+        approve_advice: [
+          { code: 'standard-without-bar', message: 'level standard with "Barra: não aplicável": a behaviour or contract change usually goes through the Gauntlet — it took 7% of a standard feature\'s cost here; approving accepts the declared justification: "efeito local, coberto por TestX"' },
+        ],
+      }
+      render(
+        <I18nProvider>
+          <FeaturePage id="F-0221" />
+        </I18nProvider>,
+      )
+      expect(await screen.findByText('Advice (it never blocks the approve):')).toBeInTheDocument()
+      expect(screen.getByText('Standard or advanced level without a bar: confirm the declared justification')).toBeInTheDocument()
+      expect(screen.getByText(/it took 7% of a standard feature/)).toBeInTheDocument()
+    } finally {
+      localStorage.removeItem('cerne-lang')
+    }
+  })
+
+  it('sem conselho: a página não mostra a seção (F-0390)', async () => {
+    payload = { ...detail('candidate'), bar: 'Barra: cerne push --dry-run — ensaio com gate' }
+    const { container } = render(<FeaturePage id="F-0221" />)
+    await screen.findByRole('button', { name: 'Aprovar' })
+    expect(container.querySelector('.approve-advice')).toBeNull()
+    expect(screen.queryByText('Conselhos (não bloqueiam a aprovação):')).not.toBeInTheDocument()
   })
 
   it('impedimento duro: Aprovar desabilitado e a lista renderizada', async () => {
