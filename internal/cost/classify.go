@@ -65,8 +65,11 @@ func (s *roleScan) feed(line []byte) {
 // classifyRole is the subagent's role by its transcript: "judge" when its last
 // reply ends in the verdict line or its first message asked for it; "critic"
 // when its agentType is code-reviewer or the diff fence reached it, in the
-// first message or in a tool result; both signals, judge; else "".
+// first message or in a tool result; both signals, judge; else "". A dev subagent is never either.
 func (s *roleScan) classifyRole(kind string) string {
+	if kind == "dev" {
+		return "" // a builder, whatever it read or quoted: the one precedence roleOf and the backfill share
+	}
 	var l authorLine
 	judge := s.asked
 	if s.lastReply != nil && json.Unmarshal(s.lastReply, &l) == nil {

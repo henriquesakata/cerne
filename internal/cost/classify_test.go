@@ -128,3 +128,30 @@ func TestStampAttributesGauntletRolesWithoutAttribute(t *testing.T) {
 		t.Fatalf("ByRole = %+v, want %+v", r.ByRole, want)
 	}
 }
+
+// TestDevSubagentStaysBuilder (F-0396): a dev subagent that tested the
+// artifact — both fences in its tool results, a verdict line ending its last
+// reply — is a builder in the stamp and left out of the backfill, which
+// classifies by the same precedence.
+func TestDevSubagentStaysBuilder(t *testing.T) {
+	lines := []string{ask("s", "x", at(1), "Implemente o artifact."), toolResult("s", "x", at(2), diffFence), reply("s", "x", at(3), "Testei.\nVEREDITO: A")}
+	if got := classOf(t, "dev", lines...); got != "" {
+		t.Fatalf("class of a dev = %q, want none", got)
+	}
+
+	in := fixture(t)
+	anchored(t, in, "F-0001", domain.StateImplemented, cc(1000, 0, 0, 1000), nil)
+	saveFeature(t, in.RepoDir, "F-0002", domain.StateInDevelopment)
+	mainMsg(t, in, "s")
+	bindAt(t, in.CacheDir, "s", "", "F-0002", at(1))
+	writeLines(t, in.Roots[0], "-tmp-p/s/subagents/agent-d.jsonl", append([]string{
+		ask("s", "d", at(2), "Implemente o artifact."), toolResult("s", "d", at(3), diffFence), reply("s", "d", at(5), "Testei.\nVEREDITO: A"),
+	}, tmsg{ts: at(4), id: "dd", req: "r", agent: "d", c: cc(3, 0, 0, 3)}.line("s"))...)
+	writeMeta(t, in.Roots[0], "s", "d", "dev")
+	if r := compute(t, in, "F-0002"); r.ByRole["builder"] != cc(3, 0, 0, 3) || r.ByRole["judge"] != (Counters{}) {
+		t.Errorf("ByRole = %+v, want the dev as builder", r.ByRole)
+	}
+	if b, err := BackfillRoles(in, time.Time{}); err != nil || len(b.Features)+len(b.Ambiguous)+len(b.NoAnchor)+b.Unattributed != 0 {
+		t.Errorf("backfill = %+v, %v; want the dev left out", b, err)
+	}
+}
