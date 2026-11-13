@@ -165,3 +165,69 @@ func TestHandoffWorkContingencies(t *testing.T) {
 		t.Fatalf("content =\n%q\nwant\n%q", body, want)
 	}
 }
+
+// F-0397 crit. 6: a handoff carries the work log entries made since the
+// previous handoff of the same work (all of them in the first), and
+// `work start --from` prints them with the handoff.
+func TestHandoffCarriesWorkLogSincePrevious(t *testing.T) {
+	t.Setenv("CERNE_ACTOR", "")
+	repoDir, projDir, _ := newFeatureBackend(t)
+	w := startW(t, repoDir, projDir, "Operação longa", nil)
+	for _, txt := range []string{"primeira decisão", "segunda decisão"} {
+		if _, err := AppendWorkLog(repoDir, projDir, w.ID, "owner", txt, 0, logNow); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ho1, err := HandoffWork(repoDir, projDir, w.ID, "brief um", "passo", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body1, _ := store.LoadHandoffContent(repoDir, ho1)
+	for _, want := range []string{"Diário de decisões:", "#1  ", "primeira decisão", "#2  ", "segunda decisão"} {
+		if !strings.Contains(body1, want) {
+			t.Fatalf("first handoff missing %q:\n%s", want, body1)
+		}
+	}
+	if h, _ := store.LoadHandoff(repoDir, ho1); h.LogUpto != 2 {
+		t.Fatalf("LogUpto = %d, want 2", h.LogUpto)
+	}
+	if _, err := AppendWorkLog(repoDir, projDir, w.ID, "owner", "terceira decisão", 0, logNow); err != nil {
+		t.Fatal(err)
+	}
+	ho2, err := HandoffWork(repoDir, projDir, w.ID, "brief dois", "passo", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body2, _ := store.LoadHandoffContent(repoDir, ho2)
+	if !strings.Contains(body2, "terceira decisão") || strings.Contains(body2, "primeira decisão") {
+		t.Fatalf("second handoff must carry only the new entry:\n%s", body2)
+	}
+	// A handoff with nothing new has no log section.
+	ho3, err := HandoffWork(repoDir, projDir, w.ID, "brief três", "passo", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body3, _ := store.LoadHandoffContent(repoDir, ho3); strings.Contains(body3, "Diário de decisões") {
+		t.Fatalf("empty log section:\n%s", body3)
+	}
+}
+
+// F-0397 crit. 6: `work start --from` prints the log entries the handoff carries.
+func TestWorkStartFromPrintsLogEntries(t *testing.T) {
+	t.Setenv("CERNE_ACTOR", "")
+	repoDir, projDir, _ := newFeatureBackend(t)
+	w := startW(t, repoDir, projDir, "Operação longa", nil)
+	if _, err := AppendWorkLog(repoDir, projDir, w.ID, "owner", "pode aplicar em prod", 0, logNow); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := HandoffWork(repoDir, projDir, w.ID, "brief", "passo", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	started, err := StartWork(repoDir, projDir, "Assumir", nil, "", false, nil, w.ID)
+	if err != nil || len(started.Handoffs) == 0 {
+		t.Fatalf("StartWork --from: %v %+v", err, started.Handoffs)
+	}
+	if got := started.Handoffs[0].Entry.Text; !strings.Contains(got, "pode aplicar em prod") {
+		t.Fatalf("handoff text lacks the log:\n%s", got)
+	}
+}
