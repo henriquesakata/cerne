@@ -292,3 +292,16 @@ func TestLintStagedFrozenEditRefused(t *testing.T) {
 		t.Fatalf("want the frozen refusal, err=%v:\n%s", err, out)
 	}
 }
+
+// F-0393 crit. 2: --json with edits carries the number of edited documents.
+func TestLintStagedJSONEditsCount(t *testing.T) {
+	projDir, specPath := stagedDebtProject(t)
+	mustWrite(t, specPath, cleanSpec(""))
+	out, _ := execCerne(t, "lint", "--staged", "--json", "--dir", projDir)
+	var got struct {
+		Edits *int `json:"edits"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil || got.Edits == nil || *got.Edits != 1 {
+		t.Fatalf("want edits 1, err=%v:\n%s", err, out)
+	}
+}

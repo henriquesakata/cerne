@@ -155,7 +155,8 @@ func runLint(cmd *cobra.Command, dir string, fixTasks, staged, all, scoped bool,
 				Findings   []nextFinding `json:"findings"`
 				OtherCount int           `json:"other_count"`
 				FixedCount int           `json:"fixed_count"`
-			}{rows, otherCount, fixedCount}
+				Edits      int           `json:"edits"`
+			}{rows, otherCount, fixedCount, edits.count}
 		}
 		if err := enc.Encode(payload); err != nil {
 			return err
