@@ -105,3 +105,29 @@ func TestDiffNoBase(t *testing.T) {
 		t.Fatalf("err = %v, want ErrNoBase", err)
 	}
 }
+
+func TestDiffPinBeatsOriginHead(t *testing.T) {
+	dir := fixture(t, "release", false)
+	git(t, dir, "push", "-q", "origin", "feature/x:other")
+	git(t, dir, "remote", "set-head", "origin", "other")
+	_, base, err := Diff(dir, "", "release", nil)
+	if err != nil || base != "origin/release" {
+		t.Fatalf("base = %q err = %v, want origin/release", base, err)
+	}
+}
+
+func TestDiffNotGitRepo(t *testing.T) {
+	dir := t.TempDir()
+	for _, base := range []string{"", "main"} {
+		if _, _, err := Diff(dir, base, "", nil); !errors.Is(err, ErrNotGitRepo) {
+			t.Errorf("base %q: err = %v, want ErrNotGitRepo", base, err)
+		}
+	}
+}
+
+func TestDiffBadBase(t *testing.T) {
+	dir := fixture(t, "main", false)
+	if _, _, err := Diff(dir, "nope", "", nil); !errors.Is(err, ErrBadBase) {
+		t.Fatalf("err = %v, want ErrBadBase", err)
+	}
+}

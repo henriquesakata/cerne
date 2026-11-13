@@ -3,10 +3,18 @@
 package gauntlet
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/henriquesakata/cerne/internal/doclang"
 )
+
+// ErrNoCriteria means the spec has no acceptance criteria section.
+var ErrNoCriteria = errors.New("spec has no acceptance criteria section")
+
+// constraintsIdx is the position of the constraints section in the plan
+// template (pinned by TestConstraintsIndexPinned).
+const constraintsIdx = 4
 
 // Input is everything the critic's bundle is made of.
 type Input struct {
@@ -56,7 +64,7 @@ func planContracts(plan string) []string {
 	constraints := map[string]bool{}
 	for _, l := range doclang.Langs() {
 		s := doclang.Sections(doclang.Plan, l)
-		constraints[strings.ToLower(s[4])] = true // "Restrições para o agente" / "Constraints for the agent"
+		constraints[strings.ToLower(s[constraintsIdx])] = true
 	}
 	var out []string
 	for _, s := range splitSections(plan) {
@@ -70,7 +78,7 @@ func planContracts(plan string) []string {
 
 // Assemble renders the critic's single-file bundle: the criteria fence (spec
 // criteria, plan contracts, builder notes) then the diff fence.
-func Assemble(in Input) string {
+func Assemble(in Input) (string, error) {
 	f, ok := fenceText[in.Lang]
 	if !ok {
 		f = fenceText[doclang.PT]
@@ -80,6 +88,9 @@ func Assemble(in Input) string {
 		if doclang.IsCriteriaSection(s.heading) {
 			parts = append(parts, strings.TrimSpace(s.text))
 		}
+	}
+	if len(parts) == 0 {
+		return "", ErrNoCriteria
 	}
 	contracts := planContracts(in.Plan)
 	if len(contracts) == 0 {
@@ -92,5 +103,5 @@ func Assemble(in Input) string {
 	var b strings.Builder
 	b.WriteString(f.critStart + "\n" + strings.Join(parts, "\n\n") + "\n" + f.critEnd + "\n\n")
 	b.WriteString(f.diffStart + "\n" + strings.TrimRight(in.Diff, "\n") + "\n" + f.diffEnd + "\n")
-	return b.String()
+	return b.String(), nil
 }

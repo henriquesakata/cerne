@@ -1,6 +1,7 @@
 package gauntlet
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -36,6 +37,12 @@ func TestAssemble(t *testing.T) {
 			hasNot: []string{"Builder's declared deviations"},
 		},
 		{
+			name:   "criteria section with ### subheadings",
+			in:     Input{Lang: doclang.PT, Spec: "## Objetivo e critérios de aceitação\n\n1. a\n\n### Detalhe\n\nmais\n\n## Verificação\n\nnao\n", Diff: "d"},
+			has:    []string{"1. a", "### Detalhe", "mais"},
+			hasNot: []string{"nao"},
+		},
+		{
 			name:   "plan with only template sections",
 			in:     Input{Lang: doclang.PT, Spec: specPT, Plan: "## Estratégia\n\nx\n\n## Definição de pronto\n\ny\n", Diff: ""},
 			has:    []string{"(no plan contracts)"},
@@ -51,7 +58,10 @@ func TestAssemble(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := Assemble(tc.in)
+			got, err := Assemble(tc.in)
+			if err != nil {
+				t.Fatal(err)
+			}
 			for _, s := range tc.has {
 				if !strings.Contains(got, s) {
 					t.Errorf("missing %q in:\n%s", s, got)
@@ -71,5 +81,23 @@ func TestAssemble(t *testing.T) {
 				pos += i + len(s)
 			}
 		})
+	}
+}
+
+func TestAssembleNoCriteria(t *testing.T) {
+	for _, spec := range []string{"", "## Problema\n\nx\n"} {
+		if _, err := Assemble(Input{Lang: doclang.PT, Spec: spec}); !errors.Is(err, ErrNoCriteria) {
+			t.Errorf("spec %q: err = %v, want ErrNoCriteria", spec, err)
+		}
+	}
+}
+
+// planContracts reads the constraints section by position in the plan template.
+func TestConstraintsIndexPinned(t *testing.T) {
+	want := map[doclang.Lang]string{doclang.PT: "Restrições para o agente", doclang.EN: "Constraints for the agent"}
+	for l, h := range want {
+		if got := doclang.Sections(doclang.Plan, l)[constraintsIdx]; got != h {
+			t.Errorf("%s: index %d = %q, want %q", l, constraintsIdx, got, h)
+		}
 	}
 }

@@ -1,12 +1,15 @@
 package cli
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/henriquesakata/cerne/internal/gauntlet"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 func gitIn(t *testing.T, dir string, args ...string) string {
@@ -91,6 +94,9 @@ func TestGauntletArtifactOut(t *testing.T) {
 	if strings.Contains(string(data), "code.go") {
 		t.Errorf("--exclude ignored:\n%s", data)
 	}
+	if strings.Contains(string(data), "ui/dist") {
+		t.Errorf("--exclude must add to the defaults, ui/dist is back:\n%s", data)
+	}
 	for _, want := range []string{"cerne: gauntlet artifact for F-0001 → " + dest, " bytes; diff main..HEAD, excluded: ui/dist, docs.lock, code.go)"} {
 		if !strings.Contains(stderr, want) {
 			t.Errorf("stderr missing %q: %s", want, stderr)
@@ -99,12 +105,37 @@ func TestGauntletArtifactOut(t *testing.T) {
 }
 
 func TestGauntletArtifactErrors(t *testing.T) {
-	projDir, _ := gauntletFixture(t)
-	if out, err := execCerne(t, "gauntlet", "artifact", "F-0999", "--dir", projDir); err == nil || !strings.Contains(err.Error(), "F-0999") {
+	projDir, repoDir := gauntletFixture(t)
+	if out, err := execCerne(t, "gauntlet", "artifact", "F-0999", "--dir", projDir); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("unknown feature: err=%v out=%s", err, out)
 	}
-	if out, err := execCerne(t, "gauntlet", "artifact", "F-0001", "--base", "nope", "--dir", projDir); err == nil {
-		t.Errorf("bad base should fail: %s", out)
+	if out, err := execCerne(t, "gauntlet", "artifact", "F-0001", "--base", "nope", "--dir", projDir); !errors.Is(err, gauntlet.ErrBadBase) {
+		t.Errorf("bad base: err=%v out=%s", err, out)
+	}
+	// no criteria section: error, nothing written.
+	spec := filepath.Join(repoDir, "content", "features", "F-0001", "spec.md")
+	os.WriteFile(spec, []byte("## Problema\n\nx\n"), 0o644)
+	dest := filepath.Join(t.TempDir(), "a.txt")
+	if out, err := execCerne(t, "gauntlet", "artifact", "F-0001", "--out", dest, "--dir", projDir); !errors.Is(err, gauntlet.ErrNoCriteria) || !strings.Contains(err.Error(), "F-0001") {
+		t.Errorf("no criteria: err=%v out=%s", err, out)
+	}
+	if _, err := os.Stat(dest); err == nil {
+		t.Error("--out written despite the error")
+	}
+	// no base: a repo with neither main nor origin.
+	gitIn(t, projDir, "branch", "-m", "main", "trunk")
+	if out, err := execCerne(t, "gauntlet", "artifact", "F-0001", "--dir", projDir); !errors.Is(err, gauntlet.ErrNoBase) {
+		t.Errorf("no base: err=%v out=%s", err, out)
+	}
+}
+
+func TestGauntletArtifactNotGit(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	if out, err := execCerne(t, "feature", "new", "Alpha", "--context", "ctx", "--dir", projDir); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if out, err := execCerne(t, "gauntlet", "artifact", "F-0001", "--dir", projDir); !errors.Is(err, gauntlet.ErrNotGitRepo) {
+		t.Errorf("err=%v out=%s", err, out)
 	}
 }
 
