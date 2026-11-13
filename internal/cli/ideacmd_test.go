@@ -372,3 +372,29 @@ func TestShowIdeaListsInformingReferences(t *testing.T) {
 		t.Fatalf("show --json informed_by = %+v, %v\n%s", doc, err, out)
 	}
 }
+
+// F-0389 critic 6: a retired source stays listed, marked; a source without URL
+// prints no trailing blanks.
+func TestShowIdeaMarksRetiredAndEmptyURL(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	ideaCmd(t, projDir, "new", "exportar o kanban")
+	if out, err := execCerne(t, "reference", "new", "Velha", "--url", "https://example.com/v", "--informs", "I-0001", "--dir", projDir); err != nil {
+		t.Fatalf("reference new: %v\n%s", err, out)
+	}
+	if out, err := execCerne(t, "reference", "retire", "R-0001", "--reason", "dup", "--dir", projDir); err != nil {
+		t.Fatalf("retire: %v\n%s", err, out)
+	}
+	if err := store.SaveReference(repoDir, store.Reference{ID: "R-0002", Title: "Sem URL", State: domain.ReferenceCurrent, Informs: []string{"I-0001"}}); err != nil {
+		t.Fatal(err)
+	}
+	out, err := execCerne(t, "show", "I-0001", "--dir", projDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "R-0001  Velha  https://example.com/v (retired)") {
+		t.Fatalf("retired source not marked:\n%s", out)
+	}
+	if !strings.Contains(out, "R-0002  Sem URL\n") {
+		t.Fatalf("empty URL line wrong:\n%s", out)
+	}
+}

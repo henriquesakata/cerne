@@ -336,7 +336,11 @@ func runShow(cmd *cobra.Command, dir, id, doc string, asJSON, all bool) error {
 		if len(refs) > 0 {
 			var lines []string
 			for _, r := range refs {
-				lines = append(lines, strings.TrimSpace(fmt.Sprintf("%s  %s  %s", r.ID, r.Title, r.URL)))
+				line := strings.TrimSpace(fmt.Sprintf("%s  %s  %s", r.ID, r.Title, r.URL))
+				if r.State != domain.ReferenceCurrent {
+					line += " (retired)"
+				}
+				lines = append(lines, line)
 			}
 			res.content = append(res.content, showDoc{name: "informed by", body: strings.Join(lines, "\n")})
 			res.entity = ideaShow{Idea: i, InformedBy: refs}

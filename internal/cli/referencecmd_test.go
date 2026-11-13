@@ -179,4 +179,11 @@ func TestReferenceLink(t *testing.T) {
 	if _, err := execCerne(t, "reference", "link", "R-0001", "--informs", "I-9999", "--dir", projDir); err == nil {
 		t.Fatal("dangling idea must be refused")
 	}
+	_, stderr, err := execCerneSplit(t, "reference", "link", "R-0001", "--unlink", "F-0042", "--dir", projDir)
+	if err != nil || !strings.Contains(stderr, "not present: F-0042") {
+		t.Fatalf("unlink of an absent target: err=%v stderr=%q", err, stderr)
+	}
+	if _, _, err := execCerneSplit(t, "reference", "link", "R-0001", "--informs", "I-0001", "--unlink", "I-0001", "--dir", projDir); err == nil {
+		t.Fatal("an id in both lists must be refused")
+	}
 }

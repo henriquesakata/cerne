@@ -276,9 +276,12 @@ func newReferenceLinkCmd(dir *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			r, err := app.LinkReference(ctx.repoDir, ctx.projDir, args[0], splitInforms(informs), splitInforms(unlink))
+			r, absent, err := app.LinkReference(ctx.repoDir, ctx.projDir, args[0], splitInforms(informs), splitInforms(unlink))
 			if err != nil {
 				return err
+			}
+			if len(absent) > 0 {
+				fmt.Fprintf(cmd.ErrOrStderr(), "not present: %s\n", strings.Join(absent, ", "))
 			}
 			list := "(none)"
 			if len(r.Informs) > 0 {
