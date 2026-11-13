@@ -104,6 +104,10 @@ cerne ui        # your dashboard, at http://localhost:7717
 
 That is all you need to type. Now open your agent in the project (Claude Code picks up what `init` installed; Cursor, Codex CLI and Gemini CLI get the authoring guide when their config folder is present) and ask for something: *"add sign in with Google"*. It registers the feature and drafts the spec; the card shows up on your board, waiting for you to approve it.
 
+You do not type the commands below. This is your agent's shell: what it runs when you ask for a feature, and what it reads after you drop one. The rejected feature leaves its context and stays one search away.
+
+![The agent's shell: it registers two features, rejects one six months later, and from then on reads only the current state while the rejected one stays searchable](docs/assets/demo.gif)
+
 For a team, pass `--backend` an empty private repository on GitHub or GitLab instead. `init` prints how to move a local backend to a remote later.
 
 <details>
@@ -115,8 +119,6 @@ cerne pull      # materializes the current state into .docs/
 cerne status    # features grouped by state
 cerne search facebook   # history stays searchable
 ```
-
-![cerne in the terminal: a rejected feature leaves the current state and stays searchable](docs/assets/demo.gif)
 
 </details>
 
