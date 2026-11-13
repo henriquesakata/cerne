@@ -187,6 +187,9 @@ export type FeatureDetail = {
   bar?: string
   // F-0381: a pergunta ao juiz que o approve aceita junto da barra.
   judge_question?: string
+  // F-0390: conselhos do approve --check (custo medido do Gauntlet, nível
+  // leve com barra, padrão/avançado sem barra) — nunca impedem o approve.
+  approve_advice?: ApproveAdvice[]
   // F-0375: as escritas gravadas dos documentos, da mais antiga à mais nova;
   // ausente em servidor antigo. Escrita anterior à F-0375 nunca aparece.
   writes?: DocWrite[]
@@ -208,6 +211,13 @@ export type ApproveImpediment = {
   code: 'spec-missing' | 'bar-missing' | 'bar-malformed' | 'judge-question-missing' | 'judge-question-misplaced' | 'open-clarification'
   message: string
   hard: boolean
+}
+
+// Conselho do approve (F-0390): só informa, nunca recusa. A mensagem vem do
+// servidor (em inglês, com os números medidos); o rótulo é da UI.
+export type ApproveAdvice = {
+  code: 'gauntlet-cost' | 'light-with-bar' | 'standard-without-bar'
+  message: string
 }
 
 // RoastRound (F-0277): uma rodada persistida do roast. `at` vem do carimbo do

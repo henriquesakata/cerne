@@ -6,6 +6,7 @@ import {
   type ReactNode,
 } from 'react'
 import type {
+  ApproveAdvice,
   ApproveImpediment,
   ChannelState,
   FeatureState,
@@ -665,6 +666,18 @@ const ptBR = {
     noEpicOption: '— sem épico —',
     changeEpic: 'Trocar épico',
     setEpic: 'Definir épico',
+  },
+  // F-0390: conselhos do approve --check, ao lado da barra; nunca impedem.
+  approve: {
+    advice: {
+      title: 'Conselhos (não bloqueiam a aprovação):',
+      label: (code: ApproveAdvice['code']) =>
+        ({
+          'gauntlet-cost': 'Custo medido do Gauntlet neste projeto',
+          'light-with-bar': 'Nível leve com barra nomeada: se os testes bastam, cabe "Barra: não aplicável (…)"',
+          'standard-without-bar': 'Nível padrão ou avançado sem barra: confirme a justificativa declarada',
+        })[code] ?? code,
+    },
   },
   manage: {
     loadError: (e: string) => `Erro ao carregar features: ${e}`,
@@ -1749,6 +1762,17 @@ const en: Messages = {
     noEpicOption: '— no epic —',
     changeEpic: 'Change epic',
     setEpic: 'Set epic',
+  },
+  approve: {
+    advice: {
+      title: 'Advice (it never blocks the approve):',
+      label: (code: ApproveAdvice['code']) =>
+        ({
+          'gauntlet-cost': 'Gauntlet cost measured in this project',
+          'light-with-bar': 'Light level with a named bar: if the tests suffice, "Bar: not applicable (…)" fits',
+          'standard-without-bar': 'Standard or advanced level without a bar: confirm the declared justification',
+        })[code] ?? code,
+    },
   },
   manage: {
     loadError: (e: string) => `Failed to load features: ${e}`,

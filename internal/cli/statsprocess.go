@@ -43,7 +43,7 @@ func renderProcess(out io.Writer, r stats.ProcessReport) {
 	} else {
 		fmt.Fprintln(out, "Weekly median (ISO week, UTC):")
 		for _, w := range r.Weeks {
-			fmt.Fprintf(out, "  %s  %s  n=%d of %d delivered\n", w.Week, tokens(w.Median), w.N, w.Delivered)
+			fmt.Fprintf(out, "  %s  %s  n=%d of %d delivered\n", w.Week, stats.Tokens(w.Median), w.N, w.Delivered)
 		}
 	}
 	fmt.Fprintln(out)
@@ -84,25 +84,14 @@ func renderSide(out io.Writer, label string, s stats.Side) {
 	if s.N > 0 {
 		fmt.Fprintf(out, "  median %s  p25 %s  p75 %s · raw medians: input %.0f · cache_creation %.0f · cache_read %.0f · output %.0f"+
 			" · unattributed median %s · coverage %.0f%% · returned %.0f%% of %d with Gauntlet · escaped %s",
-			tokens(s.Median), tokens(s.P25), tokens(s.P75), s.RawMedian.Input, s.RawMedian.CacheCreation,
-			s.RawMedian.CacheRead, s.RawMedian.Output, tokens(s.UnattributedMedian), s.Coverage*100,
+			stats.Tokens(s.Median), stats.Tokens(s.P25), stats.Tokens(s.P75), s.RawMedian.Input, s.RawMedian.CacheCreation,
+			s.RawMedian.CacheRead, s.RawMedian.Output, stats.Tokens(s.UnattributedMedian), s.Coverage*100,
 			s.ReturnedShare*100, s.WithGauntlet, escapedShare(s))
 	}
 	if s.CutBy != "" {
 		fmt.Fprintf(out, "  (window cut at %s)", s.CutBy)
 	}
 	fmt.Fprintln(out)
-}
-
-// tokens renders a weighted token count compactly: 4.4M, 12.3k, 950.
-func tokens(v float64) string {
-	switch {
-	case v >= 1e6:
-		return fmt.Sprintf("%.1fM", v/1e6)
-	case v >= 1e3:
-		return fmt.Sprintf("%.1fk", v/1e3)
-	}
-	return fmt.Sprintf("%.0f", v)
 }
 
 // unguarded qualifies a melhorou whose guards were not both evaluated (C9):

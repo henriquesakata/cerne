@@ -354,6 +354,13 @@ func runApproveCheck(w io.Writer, ctx projCtx, id string) error {
 			fmt.Fprintf(w, "  - %s\n", msg)
 		}
 	}
+	// Advice never refuses either (F-0390): the exit code ignores it.
+	if advice := app.ApproveAdvices(ctx.repoDir, ctx.projDir, id); len(advice) > 0 {
+		fmt.Fprintln(w, "Advice (it never blocks the approve):")
+		for _, a := range advice {
+			fmt.Fprintf(w, "  - %s: %s\n", a.Code, a.Message)
+		}
+	}
 	if len(soft) > 0 {
 		fmt.Fprintf(w, "Do not answer them yourself: leave the questions for the human, with the approve request: 'cerne clarify list %s'.\n", id)
 	}

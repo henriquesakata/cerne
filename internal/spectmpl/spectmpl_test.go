@@ -255,3 +255,31 @@ func TestStubAsksForJudgeQuestion(t *testing.T) {
 		}
 	}
 }
+
+// TestStubSaysWhenTestsSuffice (F-0390 crit. 4): the Verificação guide says
+// when the Gauntlet pays and when the tests suffice, with the "não aplicável"
+// form, in both languages; light mode drops it with the rest of the guide.
+func TestStubSaysWhenTestsSuffice(t *testing.T) {
+	for name, tc := range map[string]struct {
+		stub  string
+		wants []string
+	}{
+		"pt": {spectmpl.Stub("t"), []string{
+			"Quando vale o Gauntlet: mudança de comportamento, de contrato, de formato persistido ou de UI\ncom escolha de desenho.",
+			"Quando os testes bastam (efeito único e local, ou correção com teste de\nregressão): \"Barra: não aplicável (<por que os testes bastam>)\"",
+		}},
+		"en": {spectmpl.StubIn(doclang.EN, "t"), []string{
+			"When the Gauntlet pays: a change of behaviour, of contract, of persisted format, or of UI with a\ndesign choice.",
+			"When the tests suffice (a single, local effect, or a fix with a regression test):\n\"Bar: not applicable (<why the tests suffice>)\"",
+		}},
+	} {
+		for _, want := range tc.wants {
+			if !strings.Contains(tc.stub, want) {
+				t.Errorf("%s: stub lacks %q", name, want)
+			}
+		}
+		if light := spectmpl.WithoutGauntlet(tc.stub); strings.Contains(light, "bastam") || strings.Contains(light, "suffice") {
+			t.Errorf("%s: light scaffold still carries the rule:\n%s", name, light)
+		}
+	}
+}

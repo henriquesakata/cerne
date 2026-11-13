@@ -203,7 +203,7 @@ func judge(m *MarkerReport, before, after []ProcessSample, now time.Time) {
 		m.Reason = fmt.Sprintf("small sample (n=%d before, n=%d after; %d per side needed)", b.N, a.N, minSample)
 		return
 	}
-	m.CostRatioCI = bootstrapCI(costs(before), costs(after), func(b, a []float64) float64 { return median(a) / median(b) })
+	m.CostRatioCI = bootstrapCI(costs(before), costs(after), func(b, a []float64) float64 { return Median(a) / Median(b) })
 	ratio := a.Median / b.Median
 	costText := fmt.Sprintf("median ratio %.2f (90%% CI %.2f–%.2f)", ratio, m.CostRatioCI[0], m.CostRatioCI[1])
 	switch {
@@ -351,20 +351,20 @@ func side(all []ProcessSample, from, to time.Time, cutBy string, now time.Time) 
 		return s
 	}
 	c := costs(ss)
-	s.Median, s.P25, s.P75 = median(c), quantile(c, 0.25), quantile(c, 0.75)
+	s.Median, s.P25, s.P75 = Median(c), quantile(c, 0.25), quantile(c, 0.75)
 	var raw [4][]float64
 	for _, x := range ss {
 		for k := range raw {
 			raw[k] = append(raw[k], float64(x.Raw[k]))
 		}
 	}
-	s.RawMedian = Raw{median(raw[0]), median(raw[1]), median(raw[2]), median(raw[3])}
+	s.RawMedian = Raw{Median(raw[0]), Median(raw[1]), Median(raw[2]), Median(raw[3])}
 	un := make([]float64, len(ss))
 	for i, x := range ss {
-		un[i] = weighted(x.Unattributed)
+		un[i] = Weighted(x.Unattributed)
 	}
 	bound, total := sum(c), sum(c)+sum(un)
-	s.UnattributedMedian, s.Coverage = median(un), bound/total
+	s.UnattributedMedian, s.Coverage = Median(un), bound/total
 	r := returns(ss)
 	s.WithGauntlet, s.ReturnedShare, s.ExcludedNoGauntlet = len(r), mean(r), len(ss)-len(r)
 	// A delivery under 28 days old has not had time to reveal its defect: the
@@ -392,13 +392,13 @@ func weeks(ss []ProcessSample) []WeekCost {
 		}
 		all[len(all)-1].Delivered++
 		if s.Excluded == "" {
-			byWeek[len(byWeek)-1] = append(byWeek[len(byWeek)-1], weighted(s.Raw))
+			byWeek[len(byWeek)-1] = append(byWeek[len(byWeek)-1], Weighted(s.Raw))
 		}
 	}
 	out := []WeekCost{}
 	for i, c := range byWeek {
 		if len(c) > 0 {
-			all[i].Median, all[i].N = median(c), len(c)
+			all[i].Median, all[i].N = Median(c), len(c)
 			out = append(out, all[i])
 		}
 	}
@@ -427,7 +427,10 @@ func between(ss []ProcessSample, from, to time.Time) []ProcessSample {
 	return out
 }
 
-func weighted(r [4]int64) float64 {
+// Weighted is a counter set ([input, cache_creation, cache_read, output]) in
+// input-token units, by the hub weights above — shared with the Gauntlet cost
+// advice (F-0390).
+func Weighted(r [4]int64) float64 {
 	return float64(r[0])*weightInput + float64(r[1])*weightCacheCreation +
 		float64(r[2])*weightCacheRead + float64(r[3])*weightOutput
 }
@@ -435,7 +438,7 @@ func weighted(r [4]int64) float64 {
 func costs(ss []ProcessSample) []float64 {
 	out := make([]float64, len(ss))
 	for i, s := range ss {
-		out[i] = weighted(s.Raw)
+		out[i] = Weighted(s.Raw)
 	}
 	return out
 }
@@ -492,9 +495,9 @@ func mean(v []float64) float64 {
 	return sum / float64(len(v))
 }
 
-// median is the middle value, or the mean of the two middle ones (the rule of
+// Median is the middle value, or the mean of the two middle ones (the rule of
 // medianAndP90).
-func median(v []float64) float64 {
+func Median(v []float64) float64 {
 	if len(v) == 0 {
 		return 0
 	}
@@ -513,4 +516,15 @@ func quantile(v []float64, p float64) float64 {
 	slices.Sort(s)
 	i := int(math.Ceil(p*float64(len(s)))) - 1
 	return s[max(0, min(i, len(s)-1))]
+}
+
+// Tokens renders a weighted token count compactly: 4.4M, 12.3k, 950.
+func Tokens(v float64) string {
+	switch {
+	case v >= 1e6:
+		return fmt.Sprintf("%.1fM", v/1e6)
+	case v >= 1e3:
+		return fmt.Sprintf("%.1fk", v/1e3)
+	}
+	return fmt.Sprintf("%.0f", v)
 }
