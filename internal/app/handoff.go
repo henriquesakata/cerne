@@ -225,7 +225,7 @@ func HandoffWork(repoDir, projDir, id, brief, next string, evidence, contingenci
 }
 
 // withWorkLog appends to a handoff brief the work log entries made since the
-// previous handoff of the same work (all of them for the first) and returns
+// previous TAKEN handoff of the same work (all of them when none was) and returns
 // the highest entry number carried (F-0397). Without new entries the brief is
 // unchanged and the number is the previous one.
 func withWorkLog(repoDir, work, brief string, lang doclang.Lang) (string, int, error) {
@@ -235,7 +235,7 @@ func withWorkLog(repoDir, work, brief string, lang doclang.Lang) (string, int, e
 	}
 	prev := 0
 	for _, h := range hs {
-		if h.FromWork == work {
+		if h.FromWork == work && h.State == domain.HandoffTaken { // a superseded or cancelled one was never read
 			prev = max(prev, h.LogUpto)
 		}
 	}

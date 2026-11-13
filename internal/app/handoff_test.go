@@ -199,16 +199,11 @@ func TestHandoffCarriesWorkLogSincePrevious(t *testing.T) {
 		t.Fatal(err)
 	}
 	body2, _ := store.LoadHandoffContent(repoDir, ho2)
-	if !strings.Contains(body2, "terceira decisão") || strings.Contains(body2, "primeira decisão") {
-		t.Fatalf("second handoff must carry only the new entry:\n%s", body2)
-	}
-	// A handoff with nothing new has no log section.
-	ho3, err := HandoffWork(repoDir, projDir, w.ID, "brief três", "passo", nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if body3, _ := store.LoadHandoffContent(repoDir, ho3); strings.Contains(body3, "Diário de decisões") {
-		t.Fatalf("empty log section:\n%s", body3)
+	// ho1 was never taken (ho2 superseded it): the receiver of ho2 has seen none.
+	for _, want := range []string{"primeira decisão", "segunda decisão", "terceira decisão"} {
+		if !strings.Contains(body2, want) {
+			t.Fatalf("second handoff must carry %q (ho1 was never taken):\n%s", want, body2)
+		}
 	}
 }
 
@@ -229,5 +224,56 @@ func TestWorkStartFromPrintsLogEntries(t *testing.T) {
 	}
 	if got := started.Handoffs[0].Entry.Text; !strings.Contains(got, "pode aplicar em prod") {
 		t.Fatalf("handoff text lacks the log:\n%s", got)
+	}
+}
+
+// F-0397: only a TAKEN handoff means its entries were read; a superseded or
+// cancelled one does not move the cut.
+func TestHandoffLogCutOnlyAfterTaken(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		settle  func(t *testing.T, repoDir, projDir, ho string)
+		wantOld bool
+	}{
+		{"taken", func(t *testing.T, repoDir, projDir, ho string) {
+			h, _ := store.LoadHandoff(repoDir, ho)
+			h.State = domain.HandoffTaken
+			if err := store.SaveHandoff(repoDir, h); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := gitback.CommitAndPush(repoDir, "taken"); err != nil {
+				t.Fatal(err)
+			}
+		}, false},
+		{"cancelled", func(t *testing.T, repoDir, projDir, ho string) {
+			if err := CancelHandoff(repoDir, projDir, ho, "não vale"); err != nil {
+				t.Fatal(err)
+			}
+		}, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Setenv("CERNE_ACTOR", "")
+			repoDir, projDir, _ := newFeatureBackend(t)
+			w := startW(t, repoDir, projDir, "Operação longa", nil)
+			if _, err := AppendWorkLog(repoDir, projDir, w.ID, "owner", "velha decisão", 0, logNow); err != nil {
+				t.Fatal(err)
+			}
+			ho1, err := HandoffWork(repoDir, projDir, w.ID, "um", "passo", nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			c.settle(t, repoDir, projDir, ho1)
+			if _, err := AppendWorkLog(repoDir, projDir, w.ID, "owner", "nova decisão", 0, logNow); err != nil {
+				t.Fatal(err)
+			}
+			ho2, err := HandoffWork(repoDir, projDir, w.ID, "dois", "passo", nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body, _ := store.LoadHandoffContent(repoDir, ho2)
+			if !strings.Contains(body, "nova decisão") || strings.Contains(body, "velha decisão") == !c.wantOld {
+				t.Fatalf("second handoff after %s (wantOld=%v):\n%s", c.name, c.wantOld, body)
+			}
+		})
 	}
 }

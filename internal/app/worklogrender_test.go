@@ -36,7 +36,7 @@ func TestRenderWorkLog(t *testing.T) {
 		{Seq: 1, UTC: "2026-11-13T15:33:00Z", Actor: "owner", RecordedBy: "agent:a@h", Text: "Sim, mergeia"},
 		{Seq: 2, UTC: "2026-11-13T15:40:00Z", Actor: "agent:a@h", RecordedBy: "agent:a@h", Text: "mergeado"},
 		{Seq: 3, UTC: "2026-11-14T02:30:00Z", Actor: "owner", RecordedBy: "owner", Text: "era outro", Corrects: 1}, // 23:30 local on the 13th
-		{Seq: 4, UTC: "2026-11-14T03:30:00Z", Actor: "owner", RecordedBy: "owner", Text: "dia seguinte"},         // 00:30 local on the 14th
+		{Seq: 4, UTC: "2026-11-14T03:30:00Z", Actor: "owner", RecordedBy: "owner", Text: "dia seguinte"},           // 00:30 local on the 14th
 	})
 	want := strings.Join([]string{
 		"2026-11-13",
