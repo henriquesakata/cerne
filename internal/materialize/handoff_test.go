@@ -65,7 +65,7 @@ func TestContextPendingHandoffs(t *testing.T) {
 	if want := "- W-0001 — Migração (ator, since 2026-11-12) — handoff HO-0012 pending\n"; !strings.Contains(ctx, want) {
 		t.Fatalf("missing %q:\n%s", want, ctx)
 	}
-	if want := "## Pending handoffs\n\n- HO-0002 pending 11h — W-0102 — from agent:a@b\n"; !strings.Contains(ctx, want) {
+	if want := "## Pending handoffs\n\n- HO-0002 pending 11h (since 2026-11-12 01:00 UTC) — W-0102 — from agent:a@b\n"; !strings.Contains(ctx, want) {
 		t.Fatalf("missing %q:\n%s", want, ctx)
 	}
 	if strings.Contains(ctx, "HO-0001") || strings.Contains(ctx, "HO-0012 pending 1h") {

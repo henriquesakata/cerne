@@ -34,7 +34,7 @@ func TestStartWorkFromClosesRunAndFiresWebhook(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := HandoffWork(repoDir, projDir, a.ID, "brief", "n", nil); err != nil {
+	if _, err := HandoffWork(repoDir, projDir, a.ID, "brief", "n", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	b, err := StartWork(repoDir, projDir, "Retomada da execução", nil, "agent-x", false, nil, a.ID)

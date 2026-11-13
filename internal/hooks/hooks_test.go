@@ -252,13 +252,25 @@ func TestInstall_MinimalDiff_AppendsToExistingPostToolUse(t *testing.T) {
         ]
       }
     ]`
+	// The PreCompact block (F-0368), appended after Stop.
+	pcBlock := `    "PreCompact": [
+      {
+        "matcher": "manual|auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-precompact.sh\""
+          }
+        ]
+      }
+    ]`
 	// Minimal diff: the Write entry's closing brace gains a comma; the Bash
 	// blocks (provenance + work-bind) are inserted before PostToolUse's closing
 	// bracket; the SessionStart, SubagentStart and PreToolUse members are
 	// appended to the hooks object; the CERNE_ACTOR key is appended inside the
 	// existing inline env object. Nothing else moves.
 	want := strings.Replace(pre, "\n      }\n    ]", "\n      },\n"+bashBlock+",\n"+bindBlock+",\n"+lifecycleBlock+"\n    ]", 1)
-	want = strings.Replace(want, "\n    ]\n  }\n}", "\n    ],\n"+ssBlock+",\n"+sbBlock+",\n"+preBlock+",\n"+stopBlock+"\n  }\n}", 1)
+	want = strings.Replace(want, "\n    ]\n  }\n}", "\n    ],\n"+ssBlock+",\n"+sbBlock+",\n"+preBlock+",\n"+stopBlock+",\n"+pcBlock+"\n  }\n}", 1)
 	want = strings.Replace(want, `"env": {"GREETING": "Olá & tchau"},`,
 		"\"env\": {\"GREETING\": \"Olá & tchau\",\n    \"CERNE_ACTOR\": \"agent\"},", 1)
 
@@ -381,6 +393,17 @@ func TestInstall_MinimalDiff_ScenarioB(t *testing.T) {
           }
         ]
       }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "manual|auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-precompact.sh\""
+          }
+        ]
+      }
     ]
   },
   "env": {
@@ -488,6 +511,17 @@ func TestInstall_MinimalDiff_ScenarioC(t *testing.T) {
           {
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-stop-closeout.sh\""
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "manual|auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-precompact.sh\""
           }
         ]
       }
@@ -963,4 +997,55 @@ func TestInstall_GuardCommitMsgGitHook(t *testing.T) {
 			t.Fatalf("result = %+v, want skipped", r)
 		}
 	})
+}
+
+// TestInstall_WiresPrecompact (F-0368 crit. 11): the PreCompact script is
+// installed and wired under PreCompact with matcher manual|auto, idempotently,
+// and the asset table (the harness inventory) lists it.
+func TestInstall_WiresPrecompact(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Install(dir); err != nil {
+		t.Fatal(err)
+	}
+	script, err := os.ReadFile(filepath.Join(dir, ".claude", "hooks", "cerne-precompact.sh"))
+	if err != nil {
+		t.Fatalf("precompact script not installed: %v", err)
+	}
+	for _, want := range []string{"cerne hook precompact", "exit 0", "CERNE_NO_AGENT_HOOKS"} {
+		if !strings.Contains(string(script), want) {
+			t.Fatalf("script missing %q:\n%s", want, script)
+		}
+	}
+	b, err := os.ReadFile(filepath.Join(dir, ".claude", "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var s struct {
+		Hooks map[string][]struct {
+			Matcher string `json:"matcher"`
+			Hooks   []struct {
+				Command string `json:"command"`
+			} `json:"hooks"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal(b, &s); err != nil {
+		t.Fatal(err)
+	}
+	pc := s.Hooks["PreCompact"]
+	if len(pc) != 1 || pc[0].Matcher != "manual|auto" || !strings.Contains(pc[0].Hooks[0].Command, "cerne-precompact.sh") {
+		t.Fatalf("PreCompact wiring = %+v\n%s", pc, b)
+	}
+	if _, err := Install(dir); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := os.ReadFile(filepath.Join(dir, ".claude", "settings.json")); string(again) != string(b) {
+		t.Fatalf("second install changed settings.json:\n%s", again)
+	}
+	found := false
+	for _, a := range Assets() {
+		found = found || (a.Script == "cerne-precompact.sh" && a.Event == "PreCompact" && a.Matcher == "manual|auto")
+	}
+	if !found {
+		t.Fatal("Assets() does not list the PreCompact hook")
+	}
 }

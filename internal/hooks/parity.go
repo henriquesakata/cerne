@@ -118,6 +118,13 @@ var parityTable = []ParityRow{
 		Gemini:     degraded + ": AfterAgent forces a retry — deferred",
 	},
 	{
+		Capability: "Handoff code through compaction",
+		Claude:     "PreCompact hook (cerne-precompact.sh) + SessionStart source=compact",
+		Cursor:     degraded + ": PreCompact not wired yet",
+		Codex:      degraded + ": PreCompact not wired yet",
+		Gemini:     degraded + ": no compaction hook",
+	},
+	{
 		Capability: "CERNE_ACTOR=agent (human gates)",
 		Claude:     "settings.json env block",
 		Cursor:     degraded + ": no per-project session env surface",
