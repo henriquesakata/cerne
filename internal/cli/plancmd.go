@@ -92,6 +92,9 @@ func runPlanDraft(cmd *cobra.Command, dir, id string) error {
 		if err := app.WriteStampedDraft(featureDocPath(ctx.repoDir, id, "plan.md"), id, "plan", body); err != nil {
 			return "", err
 		}
+		if err := app.RecordDocWrite(ctx.repoDir, id, "plan", app.LLMAuthor(ctx.cfg.LLM)); err != nil {
+			return "", err
+		}
 		return "cerne: draft plan " + id, nil
 	})
 	if err != nil {
