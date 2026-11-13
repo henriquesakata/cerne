@@ -263,6 +263,30 @@ describe('FeaturePage aprovação vencida (F-0318)', () => {
 // approve aceita e os impedimentos; havendo impedimento duro, Aprovar fica
 // desabilitado com o motivo visível.
 describe('FeaturePage approve readiness (F-0308)', () => {
+  it('conselhos do approve ao lado da barra, em estilo neutro, sem bloquear Aprovar (F-0390)', async () => {
+    payload = {
+      ...detail('candidate'),
+      bar: 'Barra: cerne push --dry-run — ensaio com gate',
+      approve_advice: [
+        { code: 'gauntlet-cost', message: 'Gauntlet cost measured in this project (critic + judge, N-0056): median 252.7k weighted tokens per feature, 10% of its cost, over 12 delivered features' },
+        { code: 'light-with-bar', message: 'level light with a named bar: when the tests suffice, a light change can use "Barra: não aplicável (<por que os testes bastam>)"' },
+      ],
+    }
+    const { container } = render(<FeaturePage id="F-0221" />)
+    const approve = await screen.findByRole('button', { name: 'Aprovar' })
+    expect(approve).toBeEnabled()
+    expect(screen.getByText('Conselhos (não bloqueiam a aprovação):')).toBeInTheDocument()
+    expect(screen.getByText('Custo medido do Gauntlet neste projeto')).toBeInTheDocument()
+    expect(screen.getByText(/Nível leve com barra nomeada/)).toBeInTheDocument()
+    expect(screen.getByText(/median 252.7k weighted tokens/)).toBeInTheDocument()
+    const items = container.querySelectorAll('.approve-advice li')
+    expect(items).toHaveLength(2)
+    items.forEach((li) => expect(li.className).not.toMatch(/impediment/))
+    expect(items[0].closest('section')).toBe(approve.closest('section'))
+    // Conselho não é impedimento: nem o título dos impedimentos aparece.
+    expect(screen.queryByText('O que impede a aprovação:')).not.toBeInTheDocument()
+  })
+
   it('impedimento duro: Aprovar desabilitado e a lista renderizada', async () => {
     payload = {
       ...detail('candidate'),

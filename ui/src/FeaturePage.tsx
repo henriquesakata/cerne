@@ -21,6 +21,7 @@ import {
   roastSpec,
   saveFeatureDoc,
   setFeatureParent,
+  type ApproveAdvice,
   type ApproveImpediment,
   type DocWrite,
   type Feature,
@@ -427,6 +428,7 @@ export default function FeaturePage({ id }: { id: string }) {
               readiness={detail.approve_readiness}
               bar={detail.bar}
               judgeQuestion={detail.judge_question}
+              advice={detail.approve_advice}
               onRefresh={load}
               onDone={(r: TransitionResult) => {
                 // F-0318: approve numa aprovada diz o que fez — "Aprovada →
@@ -1034,6 +1036,7 @@ function ActionsPanel({
   readiness = [],
   bar,
   judgeQuestion,
+  advice = [],
   onDone,
   onRefresh,
 }: {
@@ -1045,6 +1048,7 @@ function ActionsPanel({
   readiness?: ApproveImpediment[]
   bar?: string
   judgeQuestion?: string
+  advice?: ApproveAdvice[]
   onDone: (r: TransitionResult) => void
   onRefresh: () => void
 }) {
@@ -1132,6 +1136,19 @@ function ActionsPanel({
             <p className="approve-bar">
               {t.feature.approveJudgeQuestion} <code>{judgeQuestion}</code>
             </p>
+          )}
+          {bar && advice.length > 0 && (
+            <div className="approve-advice">
+              <p className="approve-readiness-title">{t.approve.advice.title}</p>
+              <ul>
+                {advice.map((a, i) => (
+                  <li key={i}>
+                    <strong>{t.approve.advice.label(a.code)}</strong>
+                    <span className="muted"> — {a.message}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
           {readiness.length > 0 && (
             <>
