@@ -77,3 +77,7 @@ func Terms(query string) []Term {
 	}
 	return out
 }
+
+// IsStopword reports whether the folded word is a function word the keyword
+// extraction drops.
+func IsStopword(word string) bool { return stopwords[word] }

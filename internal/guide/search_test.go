@@ -67,3 +67,15 @@ func TestSearchShortQueryFallsBack(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestSearchStopwordOnlyQueryMatchesNothing(t *testing.T) {
+	secs := []Section{{Title: "The And", Source: "faq", Text: "the and a b"}}
+	for _, q := range []string{"the", "AND", `a "b`, "to the"} {
+		if got := Search(secs, q, 3); len(got) != 0 {
+			t.Errorf("Search(%q) = %v, want nothing", q, titles(got))
+		}
+	}
+	if got := titles(Search(secs, "ui", 3)); got != "" {
+		t.Errorf("ui is not in this corpus: %q", got)
+	}
+}

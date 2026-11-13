@@ -100,11 +100,14 @@ func rowids(db *sql.DB, q, match string) ([]int, error) {
 }
 
 // fallbackTerms serves a query whose words are all too short or stopwords
-// (e.g. "ui"): every word is a term, quoted so it never reaches MATCH as syntax.
+// (e.g. "ui"): every word of two letters or more that is no stopword is a term, quoted so it never reaches MATCH as syntax.
 func fallbackTerms(query string) []index.Term {
 	var out []index.Term
 	for _, w := range strings.FieldsFunc(query, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }) {
 		f := slug.Fold(w)
+		if utf8.RuneCountInString(f) < 2 || index.IsStopword(f) {
+			continue
+		}
 		out = append(out, index.Term{Word: f, Stem: f, Match: `"` + strings.ReplaceAll(w, `"`, `""`) + `"`})
 	}
 	return out
