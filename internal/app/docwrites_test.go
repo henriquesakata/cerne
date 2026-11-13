@@ -1,9 +1,13 @@
 package app
 
 import (
+	"fmt"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/lint"
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
 )
@@ -153,5 +157,68 @@ func TestClarificationAuthors(t *testing.T) {
 	}
 	if ev, _ := lastDocEdit(t, repoDir, "F-0001"); ev.Payload["source"] != "declared" || ev.Payload["provider"] != "google" {
 		t.Fatalf("CLI answer = %v, want declared google", ev.Payload)
+	}
+}
+
+// TestAuthorRecordLeavesBodiesAndGatesAlone (F-0375 crit. 10, 12): recording
+// the writer never touches a document — every body stored is byte for byte
+// the one written, the approved spec stays approved, nothing names a model in
+// any document — and lint finds exactly what it found before the records.
+func TestAuthorRecordLeavesBodiesAndGatesAlone(t *testing.T) {
+	authorEnv(t)
+	t.Setenv("CERNE_ACTOR", "agent")
+	t.Setenv("CERNE_PROVIDER", "openai")
+	t.Setenv("CERNE_MODEL", "gpt-x")
+	repoDir, projDir, _ := newFeatureBackend(t)
+	spec := "# Spec\n\n## Problema\n\nCorpo real.\n" + testBarTail
+	if _, err := CreateFeatureWithSpec(repoDir, projDir, "Corpo intacto", "", "", nil, nil, spec, false, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionApprove, "", "", nil); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	specBefore, _ := os.ReadFile(FeatureDocPath(repoDir, "F-0001", "spec.md"))
+	f, _ := store.LoadFeature(repoDir, "F-0001")
+	if stale, _, _ := lint.SpecChangedAfterApproval(repoDir, f); stale {
+		t.Fatal("fresh approval reads stale")
+	}
+	plan := "# Plano\n\n## Tarefas\n\n1. Fazer.\n"
+	if err := SaveFeatureDoc(repoDir, projDir, "F-0001", "plan", plan); err != nil {
+		t.Fatal(err)
+	}
+	// The records below are events only: lint must not see them.
+	findingsBefore, err := lint.Run(repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := RecordDocWrite(repoDir, "F-0001", "spec", DocAuthor{Provider: "anthropic", Model: "claude-opus-5-5", Source: "transcript"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := RecordPushedDocs(repoDir, projDir, []FileChange{{Path: "content/features/F-0001/plan.md", Content: []byte(plan + "\nmais\n")}}); err != nil {
+		t.Fatal(err)
+	}
+
+	if got, _ := os.ReadFile(FeatureDocPath(repoDir, "F-0001", "spec.md")); string(got) != string(specBefore) {
+		t.Fatalf("spec.md changed:\n%q\nwant\n%q", got, specBefore)
+	}
+	if got, _ := os.ReadFile(FeatureDocPath(repoDir, "F-0001", "plan.md")); string(got) != plan {
+		t.Fatalf("plan.md = %q, want exactly the written body %q", got, plan)
+	}
+	for _, doc := range []string{"spec.md", "plan.md"} {
+		got, _ := os.ReadFile(FeatureDocPath(repoDir, "F-0001", doc))
+		if strings.Contains(string(got), "gpt-x") || strings.Contains(string(got), "claude-opus") {
+			t.Fatalf("%s names a model:\n%s", doc, got)
+		}
+	}
+	f, _ = store.LoadFeature(repoDir, "F-0001")
+	if stale, _, _ := lint.SpecChangedAfterApproval(repoDir, f); stale || f.State != domain.StateApproved {
+		t.Fatalf("after the records: stale %v, state %s — want the approval intact", stale, f.State)
+	}
+	findingsAfter, err := lint.Run(repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fmt.Sprint(findingsAfter) != fmt.Sprint(findingsBefore) {
+		t.Fatalf("lint changed with the records:\nbefore %v\nafter  %v", findingsBefore, findingsAfter)
 	}
 }
