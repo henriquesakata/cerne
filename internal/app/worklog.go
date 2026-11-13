@@ -70,3 +70,43 @@ func AppendWorkLog(repoDir, projDir, work, actor, text string, corrects int, now
 	}
 	return e, nil
 }
+
+// logZone is where entry times are shown: the reader's zone, never a fixed
+// one. A variable so tests can pin it (time.Local does not reload on a TZ
+// change at run time).
+var logZone = time.Local
+
+// LogTime shows a stored UTC time as "15:04 MST (15:04Z)" in the reader's zone.
+// A time that does not parse is returned as stored.
+func LogTime(utc string) string {
+	t, err := time.Parse(time.RFC3339, utc)
+	if err != nil {
+		return utc
+	}
+	return t.In(logZone).Format("15:04 MST") + " (" + t.UTC().Format("15:04") + "Z)"
+}
+
+// RenderWorkLog lists entries in order, one per line, with the local date on a
+// line of its own when the day changes.
+func RenderWorkLog(entries []store.LogEntry) string {
+	var lines []string
+	day := ""
+	for _, e := range entries {
+		if t, err := time.Parse(time.RFC3339, e.UTC); err == nil {
+			if d := t.In(logZone).Format(time.DateOnly); d != day {
+				day = d
+				lines = append(lines, d)
+			}
+		}
+		who := e.Actor
+		if e.RecordedBy != e.Actor {
+			who += " (recorded by " + e.RecordedBy + ")"
+		}
+		line := fmt.Sprintf("#%d  %s  %s  %s", e.Seq, LogTime(e.UTC), who, e.Text)
+		if e.Corrects > 0 {
+			line += fmt.Sprintf(" (corrects #%d)", e.Corrects)
+		}
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
+}
