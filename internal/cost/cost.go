@@ -40,6 +40,10 @@ func (c Counters) sub(o Counters) Counters {
 	return Counters{c.Input - o.Input, c.CacheCreation - o.CacheCreation, c.CacheRead - o.CacheRead, c.Output - o.Output}
 }
 
+func (c Counters) min(o Counters) Counters {
+	return Counters{min(c.Input, o.Input), min(c.CacheCreation, o.CacheCreation), min(c.CacheRead, o.CacheRead), min(c.Output, o.Output)}
+}
+
 func (c Counters) max(o Counters) Counters {
 	return Counters{max(c.Input, o.Input), max(c.CacheCreation, o.CacheCreation), max(c.CacheRead, o.CacheRead), max(c.Output, o.Output)}
 }
