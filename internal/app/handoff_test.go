@@ -44,7 +44,7 @@ func TestHandoffWorkCreatesHO(t *testing.T) {
 	seedFeatureInState(t, repoDir, "F-0001", domain.StateInDevelopment, "spec.md", "plan.md")
 	w := startW(t, repoDir, projDir, "Operação longa", []string{"F-0001"})
 	before, _ := gitback.HeadSHA(repoDir)
-	id, err := HandoffWork(repoDir, projDir, w.ID, "brief um", "rodar a suíte", []string{"docs/x.md", "F-0001"})
+	id, err := HandoffWork(repoDir, projDir, w.ID, "brief um", "rodar a suíte", []string{"docs/x.md", "F-0001"}, nil)
 	if err != nil || id != "HO-0001" {
 		t.Fatalf("HandoffWork = %q, %v; want HO-0001", id, err)
 	}
@@ -81,14 +81,14 @@ func TestHandoffWorkSupersedesPending(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	w := startW(t, repoDir, projDir, "Operação longa", nil)
 	other := startW(t, repoDir, projDir, "Outra frente bem distinta", nil)
-	if _, err := HandoffWork(repoDir, projDir, w.ID, "brief um", "n1", nil); err != nil {
+	if _, err := HandoffWork(repoDir, projDir, w.ID, "brief um", "n1", nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := HandoffWork(repoDir, projDir, other.ID, "brief alheio", "n", nil); err != nil {
+	if _, err := HandoffWork(repoDir, projDir, other.ID, "brief alheio", "n", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	before, _ := gitback.HeadSHA(repoDir)
-	id, err := HandoffWork(repoDir, projDir, w.ID, "brief dois", "n2", nil)
+	id, err := HandoffWork(repoDir, projDir, w.ID, "brief dois", "n2", nil, nil)
 	if err != nil || id != "HO-0003" {
 		t.Fatalf("second handoff = %q, %v", id, err)
 	}
@@ -129,7 +129,7 @@ func TestHandoffWorkRefusals(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			before, _ := gitback.HeadSHA(repoDir)
-			_, err := HandoffWork(repoDir, projDir, tc.id, tc.brief, tc.next, tc.ev)
+			_, err := HandoffWork(repoDir, projDir, tc.id, tc.brief, tc.next, tc.ev, nil)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("err = %v, want it to mention %q", err, tc.want)
 			}
@@ -140,5 +140,28 @@ func TestHandoffWorkRefusals(t *testing.T) {
 				t.Fatalf("refused handoff committed")
 			}
 		})
+	}
+}
+
+// F-0368 crit. 15 and 17: --if lines are stored verbatim (empty ones dropped)
+// and written in their own section, labels in the project's language (pt-BR
+// here, the default of a backend without docs_language).
+func TestHandoffWorkContingencies(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	w := startW(t, repoDir, projDir, "Operação longa", nil)
+	id, err := HandoffWork(repoDir, projDir, w.ID, "brief", "rodar a suíte", []string{"docs/x.md"}, []string{"CI vermelha, de novo → rodar uma vez", "  ", "conflito → rebase"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := store.LoadHandoff(repoDir, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"CI vermelha, de novo → rodar uma vez", "conflito → rebase"}; !slices.Equal(h.Contingencies, want) {
+		t.Fatalf("contingencies = %q, want %q", h.Contingencies, want)
+	}
+	body, _ := store.LoadHandoffContent(repoDir, id)
+	if want := "brief\n\nEvidência:\n- docs/x.md\n\nSe:\n- CI vermelha, de novo → rodar uma vez\n- conflito → rebase\n\nPróximo passo: rodar a suíte\n"; body != want {
+		t.Fatalf("content =\n%q\nwant\n%q", body, want)
 	}
 }

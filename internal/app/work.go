@@ -185,7 +185,8 @@ func startWorkTx(repoDir, projDir string, p startParams) (StartedWork, string, s
 		}
 	}
 	if p.ho != nil {
-		if out.Taken, err = markTaken(repoDir, *p.ho, resolveActor(actor), id, p.sess, p.note, now); err != nil {
+		// taken_by is the new W-'s actor (F-0368 crit. 16).
+		if out.Taken, err = markTaken(repoDir, *p.ho, actor, id, p.sess, p.note, now); err != nil {
 			return StartedWork{}, "", "", err
 		}
 	}

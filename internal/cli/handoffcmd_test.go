@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -129,14 +131,24 @@ func TestHandoffCmdTakeAndCancel(t *testing.T) {
 	projDir, repoDir := handoffProject(t)
 	out := mustCerne(t, "handoff", "take", "HO-0001", "--note", "li tudo", "--dir", projDir)
 	for _, want := range []string{
-		"HO-0001 taken — W-0002 created (active) — Operação longa de migração",
+		"— W-0002 created (active) — Operação longa de migração",
 		"closed W-0001 (handed off to W-0002 via HO-0001)",
 		"Brief da sessão anterior.",
-		"next step: rodar a suíte",
+		"Próximo passo: rodar a suíte",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("take output missing %q:\n%s", want, out)
 		}
+	}
+	// F-0368 crit. 16: who took it and when, absolute UTC; crit. 17: next step once.
+	if !regexp.MustCompile(`(?m)^HO-0001 taken by u@\S+ at \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC — W-0002 created`).MatchString(out) {
+		t.Fatalf("take header (crit. 16):\n%s", out)
+	}
+	if n := strings.Count(out, "rodar a suíte"); n != 1 || strings.Contains(out, "next step:") {
+		t.Fatalf("next step printed %d times (crit. 17):\n%s", n, out)
+	}
+	if strings.Contains(out, "no read-back recorded") {
+		t.Fatalf("read-back warning with --note given:\n%s", out)
 	}
 	wantWork(t, repoDir, "W-0001", domain.WorkDone, "handed off to W-0002 via HO-0001")
 	if _, err := execCerne(t, "handoff", "take", "HO-0001", "--dir", projDir); err == nil || !strings.Contains(err.Error(), "was taken by") {
@@ -201,9 +213,9 @@ func TestHandoffCmdList(t *testing.T) {
 	seedHandoffs(t, repoDir, now)
 
 	got := mustCerne(t, "handoff", "list", "--dir", projDir)
-	want := "HO-0006 pending 5h — W-1235 — from x@y\n" +
-		"HO-0001 pending 3h — W-1234 Migração — from agent:a@b\n" +
-		"HO-0002 taken 1d ago by u@h (W-1240) — from W-1230\n"
+	want := "HO-0006 pending 5h (since 2026-11-12 07:00 UTC) — W-1235 — from x@y\n" +
+		"HO-0001 pending 3h (since 2026-11-12 09:00 UTC) — W-1234 Migração — from agent:a@b\n" +
+		"HO-0002 taken 1d ago (2026-11-11 10:00 UTC) by u@h (W-1240) — from W-1230\n"
 	// Exact: the 20-day-old taken HO-0003, the superseded HO-0004 and the
 	// cancelled HO-0005 are absent from the default view.
 	if got != want {
@@ -282,5 +294,65 @@ func TestShowHandoff(t *testing.T) {
 	}
 	if len(j.Records) != 1 || j.Records[0].ID != "HO-0001" || j.Records[0].State != "taken" || len(j.Legacy) != 1 || j.Legacy[0].Text != "entrada antiga" || j.Legacy[0].Date == "" {
 		t.Fatalf("json = %+v", j)
+	}
+}
+
+// F-0368 crit. 16 and 18: the new W- carries taken_by's actor; a take without
+// --note warns for the read-back but still succeeds.
+func TestHandoffCmdTakeActorAndReadBack(t *testing.T) {
+	projDir, repoDir := handoffProject(t)
+	t.Setenv("CERNE_ACTOR", "agent:receiver")
+	out, err := execCerne(t, "handoff", "take", "HO-0001", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("take without --note must succeed: %v\n%s", err, out)
+	}
+	want := `no read-back recorded — confirm with: cerne handoff take … --note "<what you understood + first action>"`
+	if !strings.Contains(out, want) || !strings.HasPrefix(out, "HO-0001 taken by agent:receiver at ") {
+		t.Fatalf("take output:\n%s", out)
+	}
+	w, err := store.LoadWork(repoDir, "W-0002")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := store.LoadHandoff(repoDir, "HO-0001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w.Actor != "agent:receiver" || h.TakenBy != w.Actor {
+		t.Fatalf("W- actor %q, taken_by %q: want both agent:receiver", w.Actor, h.TakenBy)
+	}
+}
+
+// F-0368 crit. 15 and 17: --if lines are kept verbatim (commas included), get
+// their own section with the project's labels, and show up in take, show
+// HO- and --json — English labels in an English project.
+func TestHandoffCmdContingencies(t *testing.T) {
+	proj, _, err := initIn(t, newOrigin(t), "--docs-language", "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CERNE_SESSION", "")
+	mustCerne(t, "work", "start", "Long migration", "--dir", proj)
+	mustCerne(t, "work", "handoff", "W-0001", "--file", writeBrief(t, "Brief."), "--next", "run the suite",
+		"--evidence", "docs/x.md", "--if", "CI red, again → rerun once, then page the TL", "--if", "merge conflict → rebase", "--dir", proj)
+	section := "Evidence:\n- docs/x.md\n\nIf:\n- CI red, again → rerun once, then page the TL\n- merge conflict → rebase\n\nNext step: run the suite"
+	if out := mustCerne(t, "show", "HO-0001", "--dir", proj); !strings.Contains(out, section) {
+		t.Fatalf("show HO-0001 missing the section:\n%s", out)
+	}
+	var j struct {
+		Entity struct {
+			Contingencies []string `json:"contingencies"`
+		} `json:"entity"`
+	}
+	raw := mustCerne(t, "show", "HO-0001", "--json", "--dir", proj)
+	if err := json.Unmarshal([]byte(raw), &j); err != nil {
+		t.Fatalf("json: %v\n%s", err, raw)
+	}
+	if want := []string{"CI red, again → rerun once, then page the TL", "merge conflict → rebase"}; !slices.Equal(j.Entity.Contingencies, want) {
+		t.Fatalf("contingencies = %q, want %q\n%s", j.Entity.Contingencies, want, raw)
+	}
+	out := mustCerne(t, "handoff", "take", "HO-0001", "--note", "got it; rerunning", "--dir", proj)
+	if !strings.Contains(out, section) || strings.Count(out, "run the suite") != 1 || strings.Contains(out, "Próximo passo") {
+		t.Fatalf("take output (crit. 15/17):\n%s", out)
 	}
 }

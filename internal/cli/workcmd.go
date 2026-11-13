@@ -111,14 +111,15 @@ func runWorkStart(cmd *cobra.Command, dir, title, ref, agent, paths, from string
 
 func newWorkHandoffCmd(dir *string) *cobra.Command {
 	var file, next, evidence string
+	var ifs []string
 	cmd := &cobra.Command{
-		Use:   "handoff <id> --next <next step> [--file <brief.md>] [--evidence <ref>,…]",
+		Use:   "handoff <id> --next <next step> [--file <brief.md>] [--evidence <ref>,…] [--if \"<condition> → <action>\"]…",
 		Short: "Pass the baton: record a handoff (brief, evidence, next step) with its own HO- code",
 		Long: "Records a handoff of an active work as an HO- entity in the backend (F-0368): the brief (from --file or " +
 			"stdin), the evidence and the next step, in state pending. Pass only the printed HO- code: the receiver runs " +
 			"'cerne handoff take HO-…', which opens its own work and closes this one. A newer handoff of the same work " +
 			"supersedes the pending one. --evidence lists durable references (path, URL, command, cerne id); a path in a " +
-			"temporary folder is refused.",
+			"temporary folder is refused. --if (repeatable) records one contingency per flag, verbatim.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := resolveProject(*dir)
@@ -129,7 +130,7 @@ func newWorkHandoffCmd(dir *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			ho, err := app.HandoffWork(ctx.repoDir, ctx.projDir, args[0], brief, next, splitInforms(evidence))
+			ho, err := app.HandoffWork(ctx.repoDir, ctx.projDir, args[0], brief, next, splitInforms(evidence), ifs)
 			if err != nil {
 				return err
 			}
@@ -141,6 +142,7 @@ func newWorkHandoffCmd(dir *string) *cobra.Command {
 	cmd.Flags().StringVar(&file, "file", "", "markdown file with the brief (or pipe it on stdin)")
 	cmd.Flags().StringVar(&next, "next", "", "the next step (required)")
 	cmd.Flags().StringVar(&evidence, "evidence", "", "comma-separated durable references (path, URL, command, cerne id)")
+	cmd.Flags().StringArrayVar(&ifs, "if", nil, `a contingency "<condition> → <action>", kept verbatim (repeatable)`)
 	return cmd
 }
 

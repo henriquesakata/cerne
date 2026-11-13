@@ -16,7 +16,7 @@ func TestHandoffWorkEmptyActor(t *testing.T) {
 	if err := store.SaveWork(repoDir, w); err != nil {
 		t.Fatal(err)
 	}
-	id, err := HandoffWork(repoDir, projDir, w.ID, "brief", "n", nil)
+	id, err := HandoffWork(repoDir, projDir, w.ID, "brief", "n", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +35,7 @@ func TestWorkIDsAreCanonical(t *testing.T) {
 	if err := BindSession(filepath.Dir(repoDir), "sess-me", "W-0001"); err != nil {
 		t.Fatal(err)
 	}
-	id, err := HandoffWork(repoDir, projDir, "w-0001", "brief", "n1", nil)
+	id, err := HandoffWork(repoDir, projDir, "w-0001", "brief", "n1", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
