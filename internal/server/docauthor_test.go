@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/store"
@@ -77,5 +78,34 @@ func TestChatRegisterRecordsLLMConfig(t *testing.T) {
 	}
 	if p := lastDocEdited(t, repoDir, "F-0002"); p["source"] != "llm-config" || p["model"] != "claude-project" || p["state"] != string(domain.StateCandidate) {
 		t.Fatalf("chat refine = %v, want llm-config with the project's model", p)
+	}
+}
+
+// TestFeatureDetailWrites (F-0375 crit. 8, 11): the feature page gets every
+// recorded write of the feature's documents, oldest first — [] when none, and
+// a pre-F-0375 event (no source) is never one.
+func TestFeatureDetailWrites(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	h := New(repoDir, projDir, "")
+	var got struct {
+		Writes []struct {
+			Doc, Provider, Model, Source string
+		} `json:"writes"`
+	}
+	rec := doJSON(t, h, http.MethodGet, "/api/features/F-0001", "", &got)
+	if rec.Code != http.StatusOK || got.Writes == nil || len(got.Writes) != 0 {
+		t.Fatalf("no writes yet: status %d writes %v body %s, want []", rec.Code, got.Writes, rec.Body.String())
+	}
+	if err := store.AppendEvent(repoDir, domain.Event{ID: "old", At: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), EntityID: "F-0001",
+		Type: "feature.doc_edited", Payload: map[string]string{"doc": "spec", "state": "candidate"}}); err != nil {
+		t.Fatal(err)
+	}
+	agentServerEnv(t)
+	if rec := doJSON(t, h, http.MethodPut, "/api/features/F-0001/docs/spec", realDoc("F-0001", "Problema real."), &map[string]any{}); rec.Code != http.StatusOK {
+		t.Fatalf("PUT = %d", rec.Code)
+	}
+	rec = doJSON(t, h, http.MethodGet, "/api/features/F-0001", "", &got)
+	if rec.Code != http.StatusOK || len(got.Writes) != 1 || got.Writes[0].Doc != "spec" || got.Writes[0].Source != "human" {
+		t.Fatalf("writes = %+v, want the editor's one human write", got.Writes)
 	}
 }
