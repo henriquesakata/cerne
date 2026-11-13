@@ -221,6 +221,9 @@ func Update(repoDir, dbPath string, ids []string, syncedAt time.Time) error {
 // the entity ids they belong to: entities/<kind>/<id>.json,
 // content/features/<id>/<doc>.md and content/<kind>/<id>.md (errata included).
 // Other paths map to nothing; the result is sorted and de-duplicated.
+// ponytail: content/<other>/<x>.md (wiki, runs, ...) also yields an id, but one
+// with no FTS rows, so for Update it is a delete-only no-op; filter by kind if
+// that ever costs.
 func IDsFromPaths(paths []string) []string {
 	seen := map[string]bool{}
 	for _, p := range paths {
@@ -499,8 +502,18 @@ func readDoc(path string) (string, bool, error) {
 // _txlock=immediate takes the write lock at BEGIN: a deferred read-then-write
 // upgrade fails SQLITE_BUSY at once without consulting the busy handler.
 func openDB(dbPath string) (*sql.DB, error) {
-	u := url.URL{Scheme: "file", Path: dbPath, RawQuery: "_pragma=busy_timeout(5000)&_txlock=immediate"}
-	return sql.Open("sqlite", u.String())
+	return sql.Open("sqlite", dsn(dbPath))
+}
+
+// dsn is the sqlite URI for dbPath. A Windows drive path (C:\x\index.db) must
+// become file:///C:/x/index.db: url.URL alone would read "C:" as a host.
+func dsn(dbPath string) string {
+	p := dbPath
+	if len(p) >= 3 && p[1] == ':' && (p[2] == '\\' || p[2] == '/') && (p[0]|0x20 >= 'a' && p[0]|0x20 <= 'z') {
+		p = "/" + strings.ReplaceAll(p, `\`, "/")
+	}
+	u := url.URL{Scheme: "file", Path: p, RawQuery: "_pragma=busy_timeout(5000)&_txlock=immediate"}
+	return u.String()
 }
 
 // SyncedAt returns when the index at dbPath was last synced with the backend.
