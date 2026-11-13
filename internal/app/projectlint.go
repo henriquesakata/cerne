@@ -9,7 +9,7 @@ import (
 // the source ignores and the Gauntlet mode (F-0364) — the one entry point
 // every lint surface shares (lint, lint --staged, push --dry-run, next).
 func ProjectLint(repoDir string, cfg project.Config) ([]lint.Finding, error) {
-	findings, err := lint.RunConfig(repoDir, cfg.StaleReadyWindowDays(), cfg.StaleWorkWindowHours(), cfg.SourceIgnore()...)
+	findings, err := lint.RunConfig(repoDir, cfg.StaleReadyWindowDays(), cfg.StaleWorkWindowHours(), cfg.StaleDecisionWindowDays(), cfg.SourceIgnore()...)
 	if err != nil {
 		return nil, err
 	}

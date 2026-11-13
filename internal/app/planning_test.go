@@ -527,7 +527,7 @@ func TestWorkOutlivedFeatureAfterRealTransitions(t *testing.T) {
 	}
 	seedActiveWork(t, repoDir, "W-0005", "outro@host", "F-0001", false) // errata, after the complete
 
-	findings, err := lint.RunConfig(repoDir, 14, 8)
+	findings, err := lint.RunConfig(repoDir, 14, 8, 0)
 	if err != nil {
 		t.Fatalf("RunConfig: %v", err)
 	}

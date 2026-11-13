@@ -1213,9 +1213,10 @@ func handleLint(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 	if cfg, _, err := project.LoadConfig(projDir); err == nil {
 		gates = cfg.Gates
 		p = lintParams{
-			staleReadyDays: cfg.StaleReadyWindowDays(),
-			staleWorkHours: cfg.StaleWorkWindowHours(),
-			ignore:         cfg.SourceIgnore(),
+			staleReadyDays:    cfg.StaleReadyWindowDays(),
+			staleWorkHours:    cfg.StaleWorkWindowHours(),
+			staleDecisionDays: cfg.StaleDecisionWindowDays(),
+			ignore:            cfg.SourceIgnore(),
 		}
 	}
 	// Stale-while-revalidate per backend HEAD (F-0153/F-0155): the request

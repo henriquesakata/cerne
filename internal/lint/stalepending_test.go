@@ -65,7 +65,7 @@ func TestStalePendingAttributedToOrigin(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeDoc(t, dir, "content/features/F-0001/spec.md", "---\ncerne_id: F-0001\n---\n\n# Origem\n\nDeixou [[P-0001]].\n")
-	got, err := RunConfig(dir, 14, 8)
+	got, err := RunConfig(dir, 14, 8, 0)
 	if err != nil {
 		t.Fatalf("RunConfig: %v", err)
 	}

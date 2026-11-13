@@ -24,7 +24,7 @@ func TestIdeaLinksResolveAndIdeasFeedNoRule(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeDoc(t, dir, "content/features/F-0001/spec.md", "---\ncerne_id: F-0001\n---\n\n# Nasceu\n\n**Origem:** ideia [[I-0001]]; e [[I-0099]].\n")
-	got, err := RunConfig(dir, 14, 8)
+	got, err := RunConfig(dir, 14, 8, 0)
 	if err != nil {
 		t.Fatalf("RunConfig: %v", err)
 	}

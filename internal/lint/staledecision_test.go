@@ -244,7 +244,7 @@ func TestStaleDecisionIsAdvisoryAndWired(t *testing.T) {
 		t.Fatalf("SaveDecision: %v", err)
 	}
 	writeDoc(t, dir, "content/features/F-0001/spec.md", cites("D-0001"))
-	got, err := RunConfig(dir, 14, 8)
+	got, err := RunConfig(dir, 14, 8, 0)
 	if err != nil {
 		t.Fatalf("RunConfig: %v", err)
 	}
@@ -263,5 +263,32 @@ func TestStaleDecisionIsAdvisoryAndWired(t *testing.T) {
 	after, err := store.LoadDecision(dir, "D-0001")
 	if err != nil || after.State != domain.DecisionActive || after.ReviewedAt != nil || !after.UpdatedAt.Equal(old) {
 		t.Fatalf("decision after lint = %+v (%v), want untouched", after, err)
+	}
+}
+
+// TestStaleDecisionWindowFromRunConfig (F-0385): RunConfig's
+// staleDecisionDays is N of signal 1; 0 is the 180-day default.
+func TestStaleDecisionWindowFromRunConfig(t *testing.T) {
+	dir := t.TempDir()
+	at := time.Now().UTC().Add(-31 * 24 * time.Hour)
+	if err := store.SaveFeature(dir, store.Feature{ID: "F-0001", Title: "Rejeitada", State: domain.StateRejected, CreatedAt: at, UpdatedAt: at}); err != nil {
+		t.Fatalf("SaveFeature: %v", err)
+	}
+	if err := store.SaveDecision(dir, store.Decision{ID: "D-0001", Title: "Recente", State: domain.DecisionActive, Facets: []string{"code"}, CreatedAt: at, UpdatedAt: at}); err != nil {
+		t.Fatalf("SaveDecision: %v", err)
+	}
+	writeDoc(t, dir, "content/features/F-0001/spec.md", cites("D-0001"))
+	for _, c := range []struct {
+		days int
+		want bool
+	}{{30, true}, {0, false}} {
+		got, err := RunConfig(dir, 14, 8, c.days)
+		if err != nil {
+			t.Fatalf("RunConfig: %v", err)
+		}
+		flagged := slices.ContainsFunc(got, func(f Finding) bool { return f.Rule == RuleStaleDecision && f.Entity == "D-0001" })
+		if flagged != c.want {
+			t.Errorf("staleDecisionDays=%d: flagged %v, want %v", c.days, flagged, c.want)
+		}
 	}
 }

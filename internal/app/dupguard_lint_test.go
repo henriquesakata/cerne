@@ -10,7 +10,7 @@ import (
 
 func duplicateLiveFindings(t *testing.T, repoDir string) []lint.Finding {
 	t.Helper()
-	all, err := lint.RunConfig(repoDir, 0, 0)
+	all, err := lint.RunConfig(repoDir, 0, 0, 0)
 	if err != nil {
 		t.Fatalf("lint: %v", err)
 	}

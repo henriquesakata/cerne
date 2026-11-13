@@ -422,3 +422,49 @@ func TestNextListsStaleDecision(t *testing.T) {
 	}
 	t.Fatalf("next debts lack stale-decision for D-0001: %+v", q.Debts)
 }
+
+// TestNextHonorsStaleDecisionDays (F-0385): a .cernerc that sets
+// stale_decision_days = 30 flags a decision abandoned 31 days ago, which the
+// 180-day default leaves alone.
+func TestNextHonorsStaleDecisionDays(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	at := time.Now().UTC().Add(-31 * 24 * time.Hour)
+	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0001", Title: "Rejeitada", State: domain.StateRejected, CreatedAt: at, UpdatedAt: at}); err != nil {
+		t.Fatalf("SaveFeature: %v", err)
+	}
+	if err := store.SaveDecision(repoDir, store.Decision{ID: "D-0001", Title: "Recente", State: domain.DecisionActive, Facets: []string{"code"}, CreatedAt: at, UpdatedAt: at}); err != nil {
+		t.Fatalf("SaveDecision: %v", err)
+	}
+	spec := filepath.Join(repoDir, "content", "features", "F-0001", "spec.md")
+	if err := os.MkdirAll(filepath.Dir(spec), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(spec, []byte("---\ncerne_id: F-0001\n---\n\n# Rejeitada\n\nSegue a D-0001.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "seed abandoned decision"); err != nil {
+		t.Fatalf("CommitAndPush: %v", err)
+	}
+	flagged := func() bool {
+		t.Helper()
+		out, err := execCerne(t, "next", "--json", "--dir", projDir)
+		if err != nil {
+			t.Fatalf("next --json: %v\n%s", err, out)
+		}
+		return strings.Contains(out, `"rule": "stale-decision"`)
+	}
+	if flagged() {
+		t.Fatal("the 180-day default flagged a 31-day-old decision")
+	}
+	rc := filepath.Join(projDir, ".cernerc")
+	data, err := os.ReadFile(rc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rc, append([]byte("stale_decision_days = 30\n"), data...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !flagged() {
+		t.Fatal("stale_decision_days = 30 did not flag a 31-day-old decision")
+	}
+}

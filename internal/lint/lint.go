@@ -265,15 +265,16 @@ type scannedDoc struct {
 // applies) — pass staleReadyDays via RunConfig for callers that need a
 // non-default window, or use Run for the common case with the default.
 func Run(repoDir string, ignore ...string) ([]Finding, error) {
-	return RunConfig(repoDir, 0, 0, ignore...)
+	return RunConfig(repoDir, 0, 0, 0, ignore...)
 }
 
-// RunConfig is Run with explicit staleReadyDays (0 = default 14 days) and
-// staleWorkHours (0 = default 8 hours, F-0130) windows. Kept separate from Run
+// RunConfig is Run with explicit staleReadyDays (0 = default 14 days),
+// staleWorkHours (0 = default 8 hours, F-0130) and staleDecisionDays (0 =
+// default 180 days, F-0385) windows. Kept separate from Run
 // so every existing call site (CLI, server) keeps compiling unchanged;
 // callers that read stale_ready_days/stale_work_hours from .cernerc pass them
 // here instead.
-func RunConfig(repoDir string, staleReadyDays, staleWorkHours int, ignore ...string) ([]Finding, error) {
+func RunConfig(repoDir string, staleReadyDays, staleWorkHours, staleDecisionDays int, ignore ...string) ([]Finding, error) {
 	features, err := store.LoadAllFeatures(repoDir)
 	if err != nil {
 		return nil, err
@@ -391,7 +392,7 @@ func RunConfig(repoDir string, staleReadyDays, staleWorkHours int, ignore ...str
 
 	findings = append(findings, staleNoteFindings(features, decisions, notes)...)
 
-	staleDecisions, err := staleDecisionFindings(repoDir, features, decisions, notes, runbooks, 0, time.Now())
+	staleDecisions, err := staleDecisionFindings(repoDir, features, decisions, notes, runbooks, staleDecisionDays, time.Now())
 	if err != nil {
 		return nil, err
 	}

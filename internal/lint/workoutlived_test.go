@@ -81,7 +81,7 @@ func TestWorkOutlivedFeatureIsAdvisoryAndWired(t *testing.T) {
 	if err := store.SaveWork(dir, store.Work{ID: "W-0001", Title: "Planejamento", State: domain.WorkActive, Actor: "a@b", Refs: []string{"F-0001"}, CreatedAt: opened, UpdatedAt: opened}); err != nil {
 		t.Fatalf("SaveWork: %v", err)
 	}
-	got, err := RunConfig(dir, 14, 8)
+	got, err := RunConfig(dir, 14, 8, 0)
 	if err != nil {
 		t.Fatalf("RunConfig: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestWorkOutlivedFeatureOpenedAfterClose(t *testing.T) {
 			t.Fatalf("SaveWork: %v", err)
 		}
 	}
-	got, err := RunConfig(dir, 14, 8)
+	got, err := RunConfig(dir, 14, 8, 0)
 	if err != nil {
 		t.Fatalf("RunConfig: %v", err)
 	}

@@ -51,7 +51,7 @@ type lintRevalState struct {
 
 // lintParams carries the config knobs of one pass.
 type lintParams struct {
-	staleReadyDays, staleWorkHours int
+	staleReadyDays, staleWorkHours, staleDecisionDays int
 	ignore                         []string
 }
 
@@ -83,7 +83,7 @@ func lintFor(op *telemetry.Op, projectID, repoDir string, p lintParams) ([]lint.
 	}
 	stop := op.Phase("lint")
 	start := time.Now()
-	findings, err := lintRunner(repoDir, p.staleReadyDays, p.staleWorkHours, p.ignore...)
+	findings, err := lintRunner(repoDir, p.staleReadyDays, p.staleWorkHours, p.staleDecisionDays, p.ignore...)
 	stop()
 	if err != nil {
 		return nil, false, err
@@ -125,7 +125,7 @@ func scheduleLintRevalidation(projectID, repoDir string, p lintParams) {
 			head, herr := gitback.HeadSHA(repoDir)
 			start := time.Now()
 			stop := op.Phase("lint")
-			findings, err := lintRunner(repoDir, p.staleReadyDays, p.staleWorkHours, p.ignore...)
+			findings, err := lintRunner(repoDir, p.staleReadyDays, p.staleWorkHours, p.staleDecisionDays, p.ignore...)
 			stop()
 			if err != nil || herr != nil {
 				op.End("error")
