@@ -33,7 +33,7 @@ func TestBindSessionAndCurrent(t *testing.T) {
 	if err := BindSession(cacheDir, "sess-abc123", "W-0001"); err != nil {
 		t.Fatalf("BindSession: %v", err)
 	}
-	id, ok, err := CurrentBinding(cacheDir, repoDir, "sess-abc123")
+	id, ok, err := CurrentBinding(cacheDir, repoDir, "sess-abc123", "")
 	if err != nil {
 		t.Fatalf("CurrentBinding: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestCurrentBindingStaleWork(t *testing.T) {
 	if err := BindSession(cacheDir, "sess-x", "W-0002"); err != nil {
 		t.Fatalf("BindSession: %v", err)
 	}
-	_, ok, err := CurrentBinding(cacheDir, repoDir, "sess-x")
+	_, ok, err := CurrentBinding(cacheDir, repoDir, "sess-x", "")
 	if err != nil {
 		t.Fatalf("CurrentBinding: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestCurrentBindingStaleWork(t *testing.T) {
 // TestCurrentBindingAbsent: an unbound session reads as absent without error.
 func TestCurrentBindingAbsent(t *testing.T) {
 	cacheDir, repoDir := t.TempDir(), t.TempDir()
-	_, ok, err := CurrentBinding(cacheDir, repoDir, "sess-none")
+	_, ok, err := CurrentBinding(cacheDir, repoDir, "sess-none", "")
 	if err != nil {
 		t.Fatalf("CurrentBinding: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestCurrentBindingInDevelopmentFeature(t *testing.T) {
 	if err := BindSession(cacheDir, "sess-f", "F-0001"); err != nil {
 		t.Fatalf("BindSession: %v", err)
 	}
-	id, ok, err := CurrentBinding(cacheDir, repoDir, "sess-f")
+	id, ok, err := CurrentBinding(cacheDir, repoDir, "sess-f", "")
 	if err != nil {
 		t.Fatalf("CurrentBinding: %v", err)
 	}
@@ -111,13 +111,13 @@ func TestClearBindings(t *testing.T) {
 	if err := ClearBindings(cacheDir, "W-0003"); err != nil {
 		t.Fatalf("ClearBindings: %v", err)
 	}
-	if _, ok, _ := CurrentBinding(cacheDir, repoDir, "s1"); ok {
+	if _, ok, _ := CurrentBinding(cacheDir, repoDir, "s1", ""); ok {
 		t.Fatal("s1 still bound after clear")
 	}
-	if _, ok, _ := CurrentBinding(cacheDir, repoDir, "s2"); ok {
+	if _, ok, _ := CurrentBinding(cacheDir, repoDir, "s2", ""); ok {
 		t.Fatal("s2 still bound after clear")
 	}
-	if id, ok, _ := CurrentBinding(cacheDir, repoDir, "s3"); !ok || id != "W-0004" {
+	if id, ok, _ := CurrentBinding(cacheDir, repoDir, "s3", ""); !ok || id != "W-0004" {
 		t.Fatalf("s3 = (%q, %v), want (W-0004, true)", id, ok)
 	}
 }
@@ -236,7 +236,7 @@ func TestCostLedgerSurvivesClearAndSelfHeal(t *testing.T) {
 	if err := ClearBindings(cacheDir, "W-0001"); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, err := CurrentBinding(cacheDir, repoDir, "s2"); err != nil || ok {
+	if _, ok, err := CurrentBinding(cacheDir, repoDir, "s2", ""); err != nil || ok {
 		t.Fatalf("CurrentBinding(s2) = %v, %v, want stale", ok, err)
 	}
 	if _, err := LiveBindings(cacheDir, repoDir); err != nil {
@@ -271,7 +271,7 @@ func TestTouchBindingRefreshesMtimeKeepsContent(t *testing.T) {
 	cacheDir := t.TempDir()
 	path, _ := oldBinding(t, cacheDir, "sess-1", "W-0001")
 	before := time.Now().Add(-2 * time.Second)
-	if err := TouchBinding(cacheDir, "sess-1"); err != nil {
+	if err := TouchBinding(cacheDir, "sess-1", ""); err != nil {
 		t.Fatal(err)
 	}
 	fi, err := os.Stat(path)
@@ -289,13 +289,13 @@ func TestTouchBindingRefreshesMtimeKeepsContent(t *testing.T) {
 // TestTouchBindingNoFileCreatesNothing (F-0361 crit. 2) and unsafe id errors.
 func TestTouchBindingNoFileCreatesNothing(t *testing.T) {
 	cacheDir := t.TempDir()
-	if err := TouchBinding(cacheDir, "sess-none"); err != nil {
+	if err := TouchBinding(cacheDir, "sess-none", ""); err != nil {
 		t.Fatalf("missing binding must be a no-op: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(cacheDir, sessionsSubdir)); !os.IsNotExist(err) {
 		t.Fatalf("sessions dir created: %v", err)
 	}
-	if err := TouchBinding(cacheDir, "../x"); !errors.Is(err, ErrUnsafeSessionID) {
+	if err := TouchBinding(cacheDir, "../x", ""); !errors.Is(err, ErrUnsafeSessionID) {
 		t.Fatalf("err = %v, want ErrUnsafeSessionID", err)
 	}
 }

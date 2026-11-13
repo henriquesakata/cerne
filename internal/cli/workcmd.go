@@ -216,7 +216,7 @@ func runWorkCurrent(cmd *cobra.Command, dir, sess string, asJSON bool) error {
 	if err != nil {
 		return err
 	}
-	id, bound, err := app.CurrentBinding(filepath.Dir(ctx.repoDir), ctx.repoDir, sess)
+	id, bound, err := app.CurrentBinding(filepath.Dir(ctx.repoDir), ctx.repoDir, sess, "")
 	if err != nil {
 		return err
 	}
@@ -281,6 +281,7 @@ func runWorkList(cmd *cobra.Command, dir string, all, asJSON bool) error {
 		enc.SetIndent("", "  ")
 		type sessionJSON struct {
 			Session    string    `json:"session"`
+			Agent      string    `json:"agent,omitempty"` // a subagent's binding (F-0376)
 			LastSignal time.Time `json:"last_signal"`
 		}
 		var sessions map[string][]sessionJSON
@@ -289,7 +290,7 @@ func runWorkList(cmd *cobra.Command, dir string, all, asJSON bool) error {
 				sessions = map[string][]sessionJSON{}
 			}
 			for _, s := range l {
-				sessions[id] = append(sessions[id], sessionJSON{s.Session, s.LastSignal})
+				sessions[id] = append(sessions[id], sessionJSON{s.Session, s.Agent, s.LastSignal})
 			}
 		}
 		return enc.Encode(struct {
@@ -328,9 +329,9 @@ func sessionText(sigs []app.SessionSignal, actor, localHost string, now time.Tim
 	if len(sigs) > 0 {
 		parts := make([]string, len(sigs))
 		for i, s := range sigs {
-			id := s.Session
-			if len(id) > 8 {
-				id = id[:8]
+			id := short8(s.Session)
+			if s.Agent != "" { // F-0376: a subagent's own binding
+				id += " agent " + short8(s.Agent)
 			}
 			parts[i] = fmt.Sprintf("%s signal %s ago", id, formatAge(now.Sub(s.LastSignal)))
 		}
@@ -340,6 +341,14 @@ func sessionText(sigs []app.SessionSignal, actor, localHost string, now time.Tim
 		return "session: on another machine (" + h + ")"
 	}
 	return "session: none on this machine"
+}
+
+// short8 is the first 8 bytes of a session or agent id, as the list shows them.
+func short8(id string) string {
+	if len(id) > 8 {
+		return id[:8]
+	}
+	return id
 }
 
 // formatAge renders a duration compactly (e.g. "3h", "2d") for the list table.

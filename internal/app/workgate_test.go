@@ -41,7 +41,7 @@ func TestWorkGateCheck(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			allow, reason := WorkGateCheck(cacheDir, repoDir, projDir, tc.sess, tc.path, tc.extra)
+			allow, reason := WorkGateCheck(cacheDir, repoDir, projDir, tc.sess, "", tc.path, tc.extra)
 			if allow != tc.allow {
 				t.Fatalf("allow = %v, want %v (reason %q)", allow, tc.allow, reason)
 			}

@@ -73,7 +73,7 @@ func classifyParallelWorks(works []store.Work, featureID string, mine []string, 
 			continue
 		}
 		if mySession != "" {
-			if bindings[mySession] == w.ID {
+			if boundHere(bindings, w.ID, mySession) {
 				continue // this session's own registration (F-0208 pickup)
 			}
 			if boundElsewhere(bindings, w.ID, mySession) {
@@ -94,10 +94,11 @@ func classifyParallelWorks(works []store.Work, featureID string, mine []string, 
 }
 
 // boundElsewhere reports whether some session other than mySession holds the
-// binding for work id.
+// binding for work id. A subagent's <session>.<agent> key belongs to its
+// session: a subagent of mine is not elsewhere (F-0376).
 func boundElsewhere(bindings map[string]string, id, mySession string) bool {
-	for sess, bound := range bindings {
-		if bound == id && sess != mySession {
+	for key, bound := range bindings {
+		if sess, _ := splitBindingName(key); bound == id && sess != mySession {
 			return true
 		}
 	}
@@ -140,7 +141,8 @@ func guardParallelStart(repoDir, projDir, featureID string, force bool) (forced 
 }
 
 // sessionBindingsIn reads the session→entity bindings under cacheDir as is
-// (no liveness check); nil when there are none.
+// (no liveness check), keyed by file name — <session> or <session>.<agent>
+// (F-0376); nil when there are none.
 func sessionBindingsIn(cacheDir string) map[string]string {
 	entries, err := os.ReadDir(filepath.Join(cacheDir, sessionsSubdir))
 	if err != nil {
@@ -158,4 +160,15 @@ func sessionBindingsIn(cacheDir string) map[string]string {
 		out[e.Name()] = strings.TrimSpace(string(raw))
 	}
 	return out
+}
+
+// boundHere reports whether session sess — its main thread or one of its
+// subagents — holds the binding for work id (F-0376).
+func boundHere(bindings map[string]string, id, sess string) bool {
+	for key, bound := range bindings {
+		if s, _ := splitBindingName(key); bound == id && sess != "" && s == sess {
+			return true
+		}
+	}
+	return false
 }

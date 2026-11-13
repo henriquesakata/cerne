@@ -70,6 +70,7 @@ func newHookBindWorkCmd() *cobra.Command {
 var (
 	workStartRe    = regexp.MustCompile(`\bwork\s+start\b`)
 	featureStartRe = regexp.MustCompile(`\bfeature\s+start\b`)
+	handoffTakeRe  = regexp.MustCompile(`\bhandoff\s+take\b`)
 	// workCreatedRe is the line `work start` prints for the work it minted
 	// ("W-1755 created (active) — ..."). A chain that also lists works prints
 	// other W- ids first, so the created one is told apart by its "(active)".
@@ -87,38 +88,47 @@ var (
 	shellSepRe   = regexp.MustCompile(`&&|\|\||[;|&\n]`)
 	quotedRe     = regexp.MustCompile(`"[^"]*"|'[^']*'`)
 	cerneStartRe = regexp.MustCompile(`^(?:\w+=\S*\s+)*(?:\S*/)?cerne\s+(?:-\S+\s+)*work\s+start\b`)
+	cerneTakeRe  = regexp.MustCompile(`^(?:\w+=\S*\s+)*(?:\S*/)?cerne\s+(?:-\S+\s+)*handoff\s+take\b`)
 	helpFlagRe   = regexp.MustCompile(`(^|\s)(-h|--help)(\s|$)`)
 )
 
-// runsWorkStart reports whether a Bash command line actually RUNS
-// `cerne work start`: it sits at the start of a command (after ; && || | & or
-// a newline, optional VAR=x prefixes), outside quotes, and is not a --help call.
-// Quoted text is blanked first, so `echo "cerne work start"` and
-// `git commit -m "... work start"` are mentions, not runs (F-0876).
-func runsWorkStart(command string) bool {
+// runsCerne reports whether a Bash command line actually RUNS the cerne verb
+// re matches (`cerne work start`, `cerne handoff take`): it sits at the start
+// of a command (after ; && || | & or a newline, optional VAR=x prefixes),
+// outside quotes, and is not a --help call. Quoted text is blanked first, so
+// `echo "cerne work start"` and `git commit -m "... work start"` are
+// mentions, not runs (F-0876).
+func runsCerne(command string, re *regexp.Regexp) bool {
 	blanked := quotedRe.ReplaceAllString(command, `""`)
 	for _, seg := range shellSepRe.Split(blanked, -1) {
 		seg = strings.TrimSpace(seg)
-		if cerneStartRe.MatchString(seg) && !helpFlagRe.MatchString(seg) {
+		if re.MatchString(seg) && !helpFlagRe.MatchString(seg) {
 			return true
 		}
 	}
 	return false
 }
 
+// Unbound warnings: the minted id never reached the hook (F-0876; take F-0376).
+const (
+	unboundWorkStart = "cerne: the work may have been created, but this session is NOT bound to it: the output of `cerne work start` did not reach the hook intact (redirected, filtered, or the command failed). The Edit gate keeps denying until it is bound. Run `cerne work start` alone, without a pipe, redirect or chain, so it binds (check with `cerne work current <session-id>`)."
+	unboundTake      = "cerne: the handoff may have been taken, but this session is NOT bound to the new work: the output of `cerne handoff take` did not reach the hook intact (redirected, filtered, or the command failed). The Edit gate keeps denying until it is bound. The take is done, so do not re-run it: find the new W- in `cerne work list` (it carries the origin's title) and run `cerne work start \"<description>\" --from W-…` alone, without a pipe, redirect or chain, so this session binds."
+)
+
 // warnUnbound tells the agent, through the PostToolUse context channel, that
-// the work it just started could not be bound to this session (F-0876).
-func warnUnbound(cmd *cobra.Command) {
+// what it just registered could not be bound to this session (F-0876).
+func warnUnbound(cmd *cobra.Command, msg string) {
 	var out postToolContext
 	out.HookSpecificOutput.HookEventName = "PostToolUse"
-	out.HookSpecificOutput.AdditionalContext = "cerne: the work may have been created, but this session is NOT bound to it: the output of `cerne work start` did not reach the hook intact (redirected, filtered, or the command failed). The Edit gate keeps denying until it is bound. Run `cerne work start` alone, without a pipe, redirect or chain, so it binds (check with `cerne work current <session-id>`)."
+	out.HookSpecificOutput.AdditionalContext = msg
 	_ = json.NewEncoder(cmd.OutOrStdout()).Encode(out)
 }
 
 // runHookBindWork inspects a finished Bash call: when it was a successful
-// `cerne work start` / `cerne feature start`, the minted (or started) id is
-// bound to the session so the work gate recognizes it. Silent no-op on
-// anything else.
+// `cerne work start` / `cerne feature start` / `cerne handoff take`, the
+// minted (or started) id is bound to the session — to the (session, agent)
+// key inside a subagent (F-0376) — so the work gate recognizes it. Silent
+// no-op on anything else.
 func runHookBindWork(cmd *cobra.Command, format string) {
 	in, err := decodeHookInput(cmd.InOrStdin())
 	if err != nil {
@@ -147,7 +157,7 @@ func runHookBindWork(cmd *cobra.Command, format string) {
 		return
 	}
 	// F-0361: every Bash call is a sign of life for the session's binding.
-	_ = app.TouchBinding(cacheDir, in.SessionID)
+	_ = app.TouchBinding(cacheDir, in.SessionID, in.AgentID)
 	var ti struct {
 		Command string `json:"command"`
 	}
@@ -166,9 +176,17 @@ func runHookBindWork(cmd *cobra.Command, format string) {
 			// minted id to bind, and the Edit gate will keep denying. Say so (F-0876).
 			// Only a real, un-helped, un-refused start: a Bash call that merely
 			// MENTIONS "work start" (grep, echo, a commit message) is not one.
-			if runsWorkStart(ti.Command) && !strings.Contains(string(in.ToolResponse), "Error") {
-				warnUnbound(cmd)
+			if runsCerne(ti.Command, cerneStartRe) && !strings.Contains(string(in.ToolResponse), "Error") {
+				warnUnbound(cmd, unboundWorkStart)
 			}
+		}
+	case handoffTakeRe.MatchString(ti.Command):
+		// The take prints "HO-… taken by … — W-… created (active) — …"; a
+		// refused take prints no "(active)" and binds nothing (F-0376).
+		if m := workCreatedRe.FindStringSubmatch(string(in.ToolResponse)); m != nil {
+			id = m[1]
+		} else if runsCerne(ti.Command, cerneTakeRe) && !strings.Contains(string(in.ToolResponse), "Error") {
+			warnUnbound(cmd, unboundTake)
 		}
 	case featureStartRe.MatchString(ti.Command):
 		// The F-/E-/T- id is the argument; bind only if the response confirms the
@@ -186,7 +204,11 @@ func runHookBindWork(cmd *cobra.Command, format string) {
 	if format != "claude" {
 		harness = "other"
 	}
-	_ = app.BindSessionAgent(cacheDir, in.SessionID, in.AgentID, harness, id)
+	// Still exit 0 (fail-open), but a bind that cannot be recorded — e.g. a
+	// dotted session id (F-0376) — must not vanish without a word.
+	if err := app.BindSessionAgent(cacheDir, in.SessionID, in.AgentID, harness, id); err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: session binding not recorded: %v\n", err)
+	}
 }
 
 func newHookWorkGateCmd() *cobra.Command {
@@ -256,7 +278,7 @@ func runHookWorkGate(cmd *cobra.Command, format string) {
 		return
 	}
 	repoDir := filepath.Join(cacheDir, "repo")
-	_ = app.TouchBinding(cacheDir, in.SessionID) // F-0361: sign of life
+	_ = app.TouchBinding(cacheDir, in.SessionID, in.AgentID) // F-0361: sign of life
 	var ti struct {
 		FilePath string `json:"file_path"`
 	}
@@ -265,8 +287,11 @@ func runHookWorkGate(cmd *cobra.Command, format string) {
 		injectGateChannel(cmd, format, cacheDir, repoDir, projDir, in.SessionID, ti.FilePath)
 		return
 	}
-	allow, reason := app.WorkGateCheck(cacheDir, repoDir, projDir, in.SessionID, ti.FilePath, cfg.Gates.WorkGateAllow)
+	allow, reason := app.WorkGateCheck(cacheDir, repoDir, projDir, in.SessionID, in.AgentID, ti.FilePath, cfg.Gates.WorkGateAllow)
 	if allow {
+		if reason != "" { // allowed by fail-open: say why on stderr (F-0376)
+			fmt.Fprintln(cmd.ErrOrStderr(), "warning: "+reason)
+		}
 		injectGateChannel(cmd, format, cacheDir, repoDir, projDir, in.SessionID, ti.FilePath)
 		return
 	}

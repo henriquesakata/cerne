@@ -235,3 +235,39 @@ func TestWorkListSessionHostFromRealActor(t *testing.T) {
 	check(w.Actor[:i+1] + strings.ToUpper(w.Actor[i+1:]))
 	check("agent")
 }
+
+// TestWorkListSessionAgent (F-0376, the F-0361 signal per agent): a
+// subagent's binding shows as its session plus the agent, in text and JSON.
+func TestWorkListSessionAgent(t *testing.T) {
+	projDir, cacheDir := listFixture(t)
+	if err := app.BindSessionAgent(cacheDir, "aaaaaaaa-1111", "a17d7f8bcc197381c", "", "W-0002"); err != nil {
+		t.Fatal(err)
+	}
+	out, err := execCerne(t, "work", "list", "--dir", projDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "session: aaaaaaaa agent a17d7f8b signal 0m ago, bbbbbbbb signal 3d ago") {
+		t.Fatalf("want the subagent as session + agent:\n%s", out)
+	}
+	if !strings.Contains(out, "session: aaaaaaaa signal 2m ago") {
+		t.Fatalf("main thread's line drifted:\n%s", out)
+	}
+	out, err = execCerne(t, "work", "list", "--json", "--dir", projDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Sessions map[string][]map[string]any `json:"sessions"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatal(err)
+	}
+	l := got.Sessions["W-0002"]
+	if len(l) != 2 || l[0]["session"] != "aaaaaaaa-1111" || l[0]["agent"] != "a17d7f8bcc197381c" {
+		t.Fatalf("W-0002 sessions = %+v", l)
+	}
+	if _, ok := l[1]["agent"]; ok {
+		t.Fatalf("a main-thread session carries no agent key: %+v", l[1])
+	}
+}

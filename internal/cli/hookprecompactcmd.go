@@ -71,7 +71,7 @@ func boundActiveWork(dir, sess string) (cacheDir, repoDir, workID string, ok boo
 		return "", "", "", false
 	}
 	repoDir = filepath.Join(cacheDir, "repo")
-	id, live, err := app.CurrentBinding(cacheDir, repoDir, sess) // validates sess as a file name
+	id, live, err := app.CurrentBinding(cacheDir, repoDir, sess, "") // validates sess as a file name
 	if err != nil || !live || !strings.HasPrefix(id, "W-") {
 		return "", "", "", false
 	}

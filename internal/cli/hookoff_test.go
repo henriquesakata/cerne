@@ -83,7 +83,7 @@ func TestRuntimeHooksSilentWhenOff(t *testing.T) {
 			t.Errorf("written with the switch on: %s", p)
 		}
 	}
-	if _, ok, _ := app.CurrentBinding(filepath.Dir(repoDir), repoDir, "sess-off"); ok {
+	if _, ok, _ := app.CurrentBinding(filepath.Dir(repoDir), repoDir, "sess-off", ""); ok {
 		t.Error("bind-work bound the session with the switch on")
 	}
 }

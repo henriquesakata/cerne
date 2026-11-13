@@ -37,7 +37,7 @@ func identityOf(w store.Work) channelIdentity {
 // or for an F- binding the feature's auto work under one of my actors. A
 // dead, missing or unresolvable binding is no identity.
 func sessionWork(cacheDir, repoDir, sess string) (channelIdentity, bool) {
-	id, ok, err := CurrentBinding(cacheDir, repoDir, sess)
+	id, ok, err := CurrentBinding(cacheDir, repoDir, sess, "")
 	if err != nil || !ok {
 		return channelIdentity{}, false
 	}
@@ -486,7 +486,8 @@ func ChannelSend(cacheDir, repoDir, sess, body string, now time.Time) (room.Mess
 	seen := map[string]bool{}
 	var to []string
 	for s := range sessionBindingsIn(cacheDir) {
-		if s == sess {
+		// A subagent answers on the channel as its session's main thread (F-0376).
+		if owner, agent := splitBindingName(s); owner == sess || agent != "" {
 			continue
 		}
 		if other, ok := sessionWork(cacheDir, repoDir, s); ok && !seen[other.Work] {

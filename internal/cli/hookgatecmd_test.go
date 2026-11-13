@@ -78,7 +78,7 @@ func TestHookBindWorkBindsFromWorkStart(t *testing.T) {
 	}
 
 	cacheDir := filepath.Dir(repoDir)
-	id, ok, err := app.CurrentBinding(cacheDir, repoDir, "sess-hook")
+	id, ok, err := app.CurrentBinding(cacheDir, repoDir, "sess-hook", "")
 	if err != nil {
 		t.Fatalf("CurrentBinding: %v", err)
 	}
@@ -87,9 +87,10 @@ func TestHookBindWorkBindsFromWorkStart(t *testing.T) {
 	}
 }
 
-// TestHookBindWorkRecordsAgentInLedger (F-0309): a bind fired from inside a
-// subagent records the payload's agent_id (and the claude-code harness) on the
-// cost ledger line; the sessions/ binding is written as before.
+// TestHookBindWorkRecordsAgentInLedger (F-0309; F-0376 crit. 1): a bind fired
+// from inside a subagent records the payload's agent_id (and the claude-code
+// harness) on the cost ledger line, and binds the (session, agent) key — never
+// the main thread's.
 func TestHookBindWorkRecordsAgentInLedger(t *testing.T) {
 	t.Setenv("CLAUDECODE", "1")
 	projDir, _, repoDir := setupProject(t)
@@ -105,8 +106,11 @@ func TestHookBindWorkRecordsAgentInLedger(t *testing.T) {
 	}
 
 	cacheDir := filepath.Dir(repoDir)
-	if id, ok, err := app.CurrentBinding(cacheDir, repoDir, "sess-hook"); err != nil || !ok || id != "W-0001" {
-		t.Fatalf("binding = (%q, %v, %v), want (W-0001, true)", id, ok, err)
+	if id, ok, err := app.CurrentBinding(cacheDir, repoDir, "sess-hook", "a1b2"); err != nil || !ok || id != "W-0001" {
+		t.Fatalf("agent binding = (%q, %v, %v), want (W-0001, true)", id, ok, err)
+	}
+	if id, ok, err := app.CurrentBinding(cacheDir, repoDir, "sess-hook", ""); err != nil || ok {
+		t.Fatalf("main binding = (%q, %v, %v), want absent: the subagent bound its own key", id, ok, err)
 	}
 	raw, err := os.ReadFile(filepath.Join(cacheDir, "costbind.ndjson"))
 	if err != nil {
@@ -137,7 +141,7 @@ func TestHookBindWorkIgnoresOtherCommands(t *testing.T) {
 			t.Fatalf("%s: hook bind-work errored: %v\noutput: %s", name, err, out)
 		}
 	}
-	if _, ok, _ := app.CurrentBinding(filepath.Dir(repoDir), repoDir, "sess-a"); ok {
+	if _, ok, _ := app.CurrentBinding(filepath.Dir(repoDir), repoDir, "sess-a", ""); ok {
 		t.Fatal("nothing should have been bound")
 	}
 }
