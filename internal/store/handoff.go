@@ -140,8 +140,10 @@ func (h Handoff) Line(workTitle string, now time.Time) string {
 	}
 }
 
-// ShortAge renders a duration compactly: "45m", "3h", "2d".
+// ShortAge renders a duration compactly: "45m", "3h", "2d". A negative one
+// (clock skew between machines) reads as 0m.
 func ShortAge(d time.Duration) string {
+	d = max(d, 0)
 	switch {
 	case d < time.Hour:
 		return fmt.Sprintf("%dm", int(d.Minutes()))

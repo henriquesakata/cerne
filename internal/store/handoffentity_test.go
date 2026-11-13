@@ -80,3 +80,13 @@ func TestHandoffLines(t *testing.T) {
 		t.Fatalf("cancelled line = %q, want %q", got, want)
 	}
 }
+
+// F-0368 critic round 1, item 7: a handoff from a machine whose clock runs
+// ahead reads as 0m, never a negative age.
+func TestShortAgeClampsSkew(t *testing.T) {
+	now := time.Date(2026, 11, 12, 12, 0, 0, 0, time.UTC)
+	h := Handoff{ID: "HO-0001", State: domain.HandoffPending, FromWork: "W-0001", Actor: "a", CreatedAt: now.Add(2 * time.Hour)}
+	if got, want := h.Line("t", now), "HO-0001 pending 0m — W-0001 t — from a"; got != want {
+		t.Fatalf("line = %q, want %q", got, want)
+	}
+}
