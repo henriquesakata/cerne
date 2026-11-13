@@ -159,6 +159,17 @@ export function HandoffPage({ id }: { id: string }) {
         </h1>
         <p className="feature-meta">
           <StateChip state={h.state} /> {t.handoffs.passedBy(h.actor)} · <When iso={h.created_at} />
+          {(h.refs ?? []).map((r) =>
+            r.startsWith('F-') ? (
+              <a key={r} className="work-ref" href={`#/f/${encodeURIComponent(r)}`}>
+                {r}
+              </a>
+            ) : (
+              <span key={r} className="work-ref">
+                {r}
+              </span>
+            ),
+          )}
         </p>
         <p className="feature-note">
           {t.handoffs.origin} <a href={WORK_HREF}>{h.from_work}</a> {h.from_work_title}

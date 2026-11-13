@@ -205,6 +205,14 @@ describe('Passagens — detalhe (F-0386 crit. 4)', () => {
     expect(screen.queryByRole('button')).toBeNull()
   })
 
+  it('mostra os refs como chips, com link para as features', async () => {
+    api.fetchHandoff.mockResolvedValue({ ...ho6, refs: ['F-0386', 'W-0003'], brief: 'b' })
+    render(<HandoffPage id="HO-0006" />)
+    expect(await screen.findByRole('link', { name: 'F-0386' })).toHaveAttribute('href', '#/f/F-0386')
+    expect(screen.getByText('W-0003')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'W-0003' })).toBeNull()
+  })
+
   it('substituída: link para a passagem nova', async () => {
     api.fetchHandoff.mockResolvedValue({ ...ho5, brief: 'b' })
     render(<HandoffPage id="HO-0005" />)
