@@ -259,3 +259,37 @@ func TestHarvestRereadsAfterRetroBind(t *testing.T) {
 		t.Fatalf("from snapshots: entities = %+v, want x on F-0001 only", r.Entities)
 	}
 }
+
+// TestHarvestRereadsOnceAfterRetroBind (F-0384 critic L1): the harvest that
+// `cost attribute` runs at the bind's own instant re-reads the session; the
+// next one, with nothing new, goes back to reading only the changed files.
+func TestHarvestRereadsOnceAfterRetroBind(t *testing.T) {
+	in := fixture(t)
+	saveFeature(t, in.RepoDir, "F-0001", domain.StateInDevelopment)
+	writeSession(t, in.Roots[0], "s",
+		tmsg{ts: at(2), id: "m2", req: "r", c: cc(1, 0, 0, 0)},
+		tmsg{ts: at(4), id: "x4", req: "r", agent: "x", c: cc(0, 1, 0, 0)})
+	sub := sessDir(in, "s", "subagents", "agent-x.jsonl")
+	old := func() {
+		for _, p := range []string{sessDir(in, "s.jsonl"), sub} {
+			if err := os.Chtimes(p, at(5), at(5)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	old()
+	bindAt(t, in.CacheDir, "s", "", "F-0001", at(1))
+	harvest(t, in, "s", "", at(20))
+	retroAt(t, in.CacheDir, "s", "x", "F-0001", "critic", at(30))
+	harvest(t, in, "s", "", at(30)) // attribute's own harvest
+	before := readSnap(t, in.CacheDir, "F-0001").Sessions["s"].Files
+
+	if err := os.WriteFile(sub, []byte("garbage\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old()
+	harvest(t, in, "s", "", at(40))
+	if after := readSnap(t, in.CacheDir, "F-0001").Sessions["s"].Files; !reflect.DeepEqual(after, before) {
+		t.Fatalf("an already-harvested retro bind forced another full re-read:\n%+v\nwant\n%+v", after, before)
+	}
+}

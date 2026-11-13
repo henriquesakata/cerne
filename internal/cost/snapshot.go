@@ -147,7 +147,7 @@ func Harvest(in Inputs, sess, transcriptPath string, now time.Time) error {
 	// A retro bind since the last harvest moved messages already harvested
 	// (F-0384): re-read the whole session, so the entity they left drops them.
 	for _, b := range mine {
-		if b.Retro && !b.TS.Before(since) {
+		if b.Retro && b.TS.After(since) {
 			since = time.Time{}
 		}
 	}
