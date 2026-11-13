@@ -111,8 +111,9 @@ func citesID(msg, id string) bool {
 	}
 }
 
+// isIDChar: a char that glues to an id before it (branch and URL paths included).
 func isIDChar(c byte) bool {
-	return c == '-' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
+	return c == '-' || c == '/' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
 }
 
 // FeatureCommits returns, oldest first, the diff of every non-merge commit

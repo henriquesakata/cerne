@@ -196,3 +196,26 @@ func TestFeatureCommitsNone(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestCitesID(t *testing.T) {
+	cases := []struct {
+		msg  string
+		want bool
+	}{
+		{"feat: x (F-0001)", true},
+		{"F-0001.", true},
+		{"F-0001", true},
+		{"-F-0001", false},
+		{"feature/F-0001-x", false},
+		{"see https://x/F-0001/y", false},
+		{"F-00010", false},
+		{"f-0001", false},
+		{"XF-0001", false},
+		{"a F-00010 then F-0001", true},
+	}
+	for _, tc := range cases {
+		if got := citesID(tc.msg, "F-0001"); got != tc.want {
+			t.Errorf("citesID(%q) = %v, want %v", tc.msg, got, tc.want)
+		}
+	}
+}
