@@ -27,6 +27,7 @@ func newReferenceCmd() *cobra.Command {
 	cmd.AddCommand(verbs.MarkChat(newReferenceListCmd(&dir)))
 	cmd.AddCommand(verbs.MarkChat(newReferenceRetagCmd(&dir)))
 	cmd.AddCommand(newReferenceRetireCmd(&dir))
+	cmd.AddCommand(newReferenceLinkCmd(&dir))
 	return cmd
 }
 
@@ -109,7 +110,7 @@ func newReferenceNewCmd(dir *string) *cobra.Command {
 		Long: "Registers an external article/document as a reference (marked external + URL). " +
 			"The content (text/summary) comes from --file or standard input and enters the index, " +
 			"so 'ask' starts citing it. Use --informs to link the source to the entities " +
-			"(F-/D-/RB-/N-) it motivated. Use --facet (closed axis: infra,code,data,process,auth) and " +
+			"(F-/D-/RB-/N-/I-) it motivated. Use --facet (closed axis: infra,code,data,process,auth) and " +
 			"--component (subsystem/tool, e.g. gitea,kpack) to categorize — both multi-valued, " +
 			"comma-separated. A live reference with the same normalized URL refuses the creation (F-0324); --force overrides it.",
 		Args: cobra.ExactArgs(1),
@@ -118,7 +119,7 @@ func newReferenceNewCmd(dir *string) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&url, "url", "", "source URL (required)")
-	cmd.Flags().StringVar(&informs, "informs", "", "comma-separated F-/D-/RB-/N- ids this source motivated")
+	cmd.Flags().StringVar(&informs, "informs", "", "comma-separated F-/D-/RB-/N-/I- ids this source motivated")
 	cmd.Flags().StringVar(&file, "file", "", "file with the source content (defaults to stdin)")
 	cmd.Flags().StringVar(&facet, "facet", "", "facets (comma-separated; closed set: infra,code,data,process,auth)")
 	cmd.Flags().StringVar(&component, "component", "", "components (comma-separated subsystem/tool tags, e.g. gitea,kpack)")
@@ -255,4 +256,42 @@ func splitInforms(csv string) []string {
 		}
 	}
 	return out
+}
+
+func newReferenceLinkCmd(dir *string) *cobra.Command {
+	var informs, unlink string
+	cmd := &cobra.Command{
+		Use:   "link <id>",
+		Short: "Add or remove the entities a current reference informs",
+		Long: "Adds (--informs) or removes (--unlink) F-/D-/RB-/N-/I- targets of a current reference, without " +
+			"duplicating the ones already there. The path source -> idea -> feature: register the source with " +
+			"--informs I-…, then 'idea promote' carries the link to the new feature; or link later with " +
+			"'cerne reference link R-… --informs F-…'. Prints the final list.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if strings.TrimSpace(informs) == "" && strings.TrimSpace(unlink) == "" {
+				return fmt.Errorf("provide at least --informs or --unlink")
+			}
+			ctx, err := resolveProject(*dir)
+			if err != nil {
+				return err
+			}
+			r, absent, err := app.LinkReference(ctx.repoDir, ctx.projDir, args[0], splitInforms(informs), splitInforms(unlink))
+			if err != nil {
+				return err
+			}
+			if len(absent) > 0 {
+				fmt.Fprintf(cmd.ErrOrStderr(), "not present: %s\n", strings.Join(absent, ", "))
+			}
+			list := "(none)"
+			if len(r.Informs) > 0 {
+				list = strings.Join(r.Informs, ", ")
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%s informs: %s\n", r.ID, list)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&informs, "informs", "", "comma-separated F-/D-/RB-/N-/I- ids to add")
+	cmd.Flags().StringVar(&unlink, "unlink", "", "comma-separated ids to remove")
+	return verbs.MarkChat(cmd)
 }

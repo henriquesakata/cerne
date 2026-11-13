@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -145,7 +147,7 @@ func RetagReference(repoDir, projDir, id string, facets, components []string, se
 }
 
 // validateInforms trims, dedupes (preserving order) and checks each backlink
-// target: it must be a feature (F-), decision (D-), runbook (RB-) or note (N-)
+// target: it must be a feature (F-), decision (D-), runbook (RB-), note (N-) or idea (I-)
 // that exists in the backend, so no dangling backlink is stored (F-0108 added
 // runbooks/notes — a source may inform an operational procedure or a piece of
 // tacit knowledge, not only features/decisions). Returns the cleaned list (nil
@@ -178,6 +180,16 @@ func validateInforms(repoDir string, informs []string) ([]string, error) {
 			} else if err != nil {
 				return nil, err
 			}
+		case strings.HasPrefix(id, "I-"):
+			idea, err := store.LoadIdea(repoDir, id)
+			if errors.Is(err, store.ErrNotFound) {
+				return nil, fmt.Errorf("--informs: idea %s not found in backend", id)
+			} else if err != nil {
+				return nil, err
+			}
+			if idea.State == domain.IdeaDropped { // a dead link: nothing will ever be promoted from it
+				return nil, fmt.Errorf("--informs: idea %s is dropped", id)
+			}
 		case strings.HasPrefix(id, "N-"):
 			if _, err := store.LoadNote(repoDir, id); errors.Is(err, store.ErrNotFound) {
 				return nil, fmt.Errorf("--informs: note %s not found in backend", id)
@@ -185,7 +197,7 @@ func validateInforms(repoDir string, informs []string) ([]string, error) {
 				return nil, err
 			}
 		default:
-			return nil, fmt.Errorf("--informs: %q must be a feature (F-), decision (D-), runbook (RB-) or note (N-)", id)
+			return nil, fmt.Errorf("--informs: %q must be a feature (F-), decision (D-), runbook (RB-), note (N-) or idea (I-)", id)
 		}
 		out = append(out, id)
 	}
@@ -271,4 +283,91 @@ func RetireReference(repoDir, projDir, id, reason string) (ReferenceOutcome, err
 		return ReferenceOutcome{}, err
 	}
 	return out, nil
+}
+
+// LinkReference adds and removes informs targets of a current reference in one
+// mutation (F-0389). Targets to add are validated like --informs and never
+// duplicated; removing an absent target is a no-op. Appends reference.linked
+// and/or reference.unlinked with the ids actually changed.
+func LinkReference(repoDir, projDir, id string, add, remove []string) (store.Reference, []string, error) {
+	var r store.Reference
+	var absent []string
+	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		absent = nil // the mutation may run again
+		var err error
+		r, err = store.LoadReference(repoDir, id)
+		if errors.Is(err, store.ErrNotFound) {
+			return "", fmt.Errorf("reference %s not found in backend", id)
+		}
+		if err != nil {
+			return "", err
+		}
+		if r.State != domain.ReferenceCurrent {
+			return "", fmt.Errorf("reference %s is not current (it is %s) — link only applies to a current reference", id, r.State)
+		}
+		cleaned, err := validateInforms(repoDir, add)
+		if err != nil {
+			return "", err
+		}
+		var added, removed []string
+		for _, t := range cleaned {
+			if slices.Contains(remove, t) {
+				return "", fmt.Errorf("--informs and --unlink both name %s", t)
+			}
+			if !slices.Contains(r.Informs, t) {
+				r.Informs = append(r.Informs, t)
+				added = append(added, t)
+			}
+		}
+		seen := map[string]bool{}
+		for _, t := range remove {
+			t = strings.TrimSpace(t)
+			if t == "" || seen[t] {
+				continue
+			}
+			seen[t] = true
+			if slices.Contains(r.Informs, t) {
+				r.Informs = slices.DeleteFunc(r.Informs, func(x string) bool { return x == t })
+				removed = append(removed, t)
+			} else {
+				absent = append(absent, t)
+			}
+		}
+		if len(added)+len(removed) == 0 {
+			return "", nil
+		}
+		r.UpdatedAt = time.Now().UTC()
+		if err := store.SaveReference(repoDir, r); err != nil {
+			return "", err
+		}
+		if err := appendLinkEvents(repoDir, id, added, removed, ""); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: link %s", id), nil
+	})
+	if err != nil && !errors.Is(err, gitback.ErrNothingToCommit) { // unchanged: nothing to link
+		return store.Reference{}, nil, err
+	}
+	return r, absent, nil
+}
+
+// appendLinkEvents records reference.linked / reference.unlinked; via names
+// the path that linked (promote) when not a direct reference link.
+func appendLinkEvents(repoDir, id string, added, removed []string, via string) error {
+	for _, e := range []struct {
+		typ string
+		ids []string
+	}{{"reference.linked", added}, {"reference.unlinked", removed}} {
+		if len(e.ids) == 0 {
+			continue
+		}
+		p := map[string]string{"informs": strings.Join(e.ids, ",")}
+		if via != "" {
+			p["via"] = via
+		}
+		if err := store.AppendEvent(repoDir, domain.NewEvent(id, e.typ, p, EventActor())); err != nil {
+			return err
+		}
+	}
+	return nil
 }
