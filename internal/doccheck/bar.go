@@ -127,25 +127,56 @@ func BarLine(line string) (value string, ok bool) {
 }
 
 // ErrJudgeQuestionMissing is a spec with a bar but no written judge-question
-// line in its Verificação section (F-0381).
+// line anywhere (F-0381).
 var ErrJudgeQuestionMissing = errors.New(`no "Pergunta ao juiz:" line`)
 
-// SpecJudgeQuestion returns the question the blind judge answers, read from the
-// Verificação section of a spec body, or ErrJudgeQuestionMissing when a bar is
-// named and no written question follows. A spec whose bar is "não aplicável",
-// waived, or absent owes none (the bar gate speaks for the last). Guide
-// comments are stripped first, as SpecBar does.
-func SpecJudgeQuestion(body []byte) (string, error) {
+// ErrJudgeQuestionMisplaced is a spec whose judge-question line sits outside
+// the Verificação section (F-0381): reported apart from a missing one, with
+// its line, because the fix is to move it.
+var ErrJudgeQuestionMisplaced = errors.New("judge question outside the Verificação section")
+
+// MisplacedJudgeQuestion is the ErrJudgeQuestionMisplaced a spec yields: Line
+// is the question's 1-based line in the body.
+type MisplacedJudgeQuestion struct{ Line int }
+
+func (e *MisplacedJudgeQuestion) Error() string {
+	return fmt.Sprintf("%s (line %d)", ErrJudgeQuestionMisplaced, e.Line)
+}
+
+func (e *MisplacedJudgeQuestion) Unwrap() error { return ErrJudgeQuestionMisplaced }
+
+// BarExempt reports a spec whose bar is "não aplicável" or waived: the forms
+// that owe no judge question.
+func BarExempt(body []byte) bool {
 	bar, err := SpecBar(body)
 	if err != nil {
-		return "", nil
+		return false
 	}
 	_, value, _ := strings.Cut(bar, ":")
-	if exempt, _ := BarValue(value); exempt {
+	exempt, _ := BarValue(value)
+	return exempt
+}
+
+// blankComments drops HTML comments but keeps their newlines, so line numbers
+// still match the body.
+func blankComments(body string) string {
+	return htmlCommentRe.ReplaceAllStringFunc(body, func(c string) string {
+		return strings.Repeat("\n", strings.Count(c, "\n"))
+	})
+}
+
+// SpecJudgeQuestion returns the question the blind judge answers, read from the
+// Verificação section of a spec body. With a bar named and no written question
+// there it returns ErrJudgeQuestionMissing — or a *MisplacedJudgeQuestion when
+// the line exists elsewhere. A spec whose bar is "não aplicável", waived, or
+// absent owes none (the bar gate speaks for the last). Guide comments are
+// stripped first, as SpecBar does.
+func SpecJudgeQuestion(body []byte) (string, error) {
+	if _, err := SpecBar(body); err != nil || BarExempt(body) {
 		return "", nil
 	}
-	inCode, inVerif := false, false
-	for _, line := range strings.Split(htmlCommentRe.ReplaceAllString(string(body), ""), "\n") {
+	inCode, inVerif, misplaced := false, false, 0
+	for i, line := range strings.Split(blankComments(string(body)), "\n") {
 		if doclang.Fence(line) {
 			inCode = !inCode
 			continue
@@ -154,12 +185,19 @@ func SpecJudgeQuestion(body []byte) (string, error) {
 			inVerif = doclang.IsVerificationSection(line[3:])
 			continue
 		}
-		if !inVerif {
+		q, ok := doclang.JudgeQuestionLine(line, inCode)
+		if !ok || Unwritten(q) {
 			continue
 		}
-		if q, ok := doclang.JudgeQuestionLine(line, inCode); ok && !Unwritten(q) {
+		if inVerif {
 			return q, nil
 		}
+		if misplaced == 0 {
+			misplaced = i + 1
+		}
+	}
+	if misplaced > 0 {
+		return "", &MisplacedJudgeQuestion{misplaced}
 	}
 	return "", ErrJudgeQuestionMissing
 }
