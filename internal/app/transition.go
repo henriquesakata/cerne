@@ -42,6 +42,9 @@ type TransitionOutcome struct {
 	// Bar is the bar line an approve accepted (F-0308), also recorded on the
 	// approve event; "" for every other action.
 	Bar string
+	// JudgeQuestion is the judge question an approve accepted beside the bar
+	// (F-0381), also on the approve event; "" when none is charged.
+	JudgeQuestion string
 	// Baseline is true when an approve on an approved feature recorded its
 	// first approved copy (F-0318 crit. 14: approved before the copy existed)
 	// rather than renewing a stale one.
@@ -298,7 +301,7 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 		}
 		// Approving is accepting the proposed bar (F-0308 crit. 8): the line the
 		// gate just validated goes on the event, with the actor.
-		var bar string
+		var bar, judgeQuestion string
 		if action == domain.ActionApprove {
 			if bar, err = AcceptedBar(repoDir, id); err != nil {
 				return "", err
@@ -308,6 +311,12 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 					payload = map[string]string{}
 				}
 				payload["bar"] = bar
+				if judgeQuestion, _, err = AcceptedJudgeQuestion(repoDir, id); err != nil {
+					return "", err
+				}
+				if judgeQuestion != "" {
+					payload["judge_question"] = judgeQuestion
+				}
 			}
 		}
 		if err := store.AppendEvent(repoDir, domain.NewEvent(id, eventType, payload, EventActor())); err != nil {
@@ -420,7 +429,7 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 			msg += fmt.Sprintf(" (epic %s ready to close)", epicReady)
 		}
 		title = f.Title
-		out = TransitionOutcome{ID: id, From: oldState, To: newState, Propagated: propagated, EpicReadyToClose: epicReady, Warnings: warnings, Bar: bar, Baseline: baseline, Pendings: movedPendings}
+		out = TransitionOutcome{ID: id, From: oldState, To: newState, Propagated: propagated, EpicReadyToClose: epicReady, Warnings: warnings, Bar: bar, JudgeQuestion: judgeQuestion, Baseline: baseline, Pendings: movedPendings}
 		return msg, nil
 	})
 	if err != nil {

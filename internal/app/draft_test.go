@@ -28,10 +28,10 @@ func TestDriftDraftPrompt(t *testing.T) {
 		t.Fatalf("DriftDraftPrompt: %v", err)
 	}
 	for _, want := range []string{
-		"internal/core/core.go",           // changed path (crit. 6)
-		"internal/core/parser.go",         // changed path
-		"abcdef1",                         // short baseline (crit. 6)
-		"parser antigo XYZ",               // current doc content (crit. 6)
+		"internal/core/core.go",   // changed path (crit. 6)
+		"internal/core/parser.go", // changed path
+		"abcdef1",                 // short baseline (crit. 6)
+		"parser antigo XYZ",       // current doc content (crit. 6)
 		"cerne feature errata F-0001 --file .docs/.drift-proposals/F-0001.md", // apply cmd (crit. 5)
 	} {
 		if !strings.Contains(got, want) {

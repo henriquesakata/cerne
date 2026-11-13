@@ -138,3 +138,88 @@ func TestStartAndCompleteIgnoreJudgeQuestion(t *testing.T) {
 		}
 	})
 }
+
+const specMisplaced = "# t\n\nProblema real.\n\nPergunta ao juiz: qual é mais claro?\n\n## Verificação\n\nBarra: referência nomeada — acesso\n"
+
+// Round 2, point 1: the refusal says where the line goes and how to see the
+// form — in the project's documents language.
+func TestJudgeQuestionRefusalSaysHowToFix(t *testing.T) {
+	for name, tc := range map[string]struct{ lang, spec, want string }{
+		"pt": {"", specBarOnly, `spec has a bar but no judge question — add under the bar, in ## Verificação: "Pergunta ao juiz: <a pergunta que o juiz cego responde>" — run 'cerne feature approve F-0001 --check'`},
+		"en": {"en", "# t\n\nReal problem.\n\n## Verification\n\nBar: reference — access\n", `spec has a bar but no judge question — add under the bar, in ## Verification: "Question for the judge: <the question the blind judge answers>" — run 'cerne feature approve F-0001 --check'`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			repoDir, projDir, _ := newFeatureBackend(t)
+			if tc.lang != "" {
+				if err := store.SaveProject(repoDir, store.Project{Name: "Demo", DocsLanguage: tc.lang}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			seedCandidateSpec(t, repoDir, "F-0001", tc.spec)
+			_, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionApprove, "", "", nil)
+			if !errors.Is(err, ErrSpecMissingJudgeQuestion) || err.Error() != tc.want {
+				t.Fatalf("err = %v\nwant %s", err, tc.want)
+			}
+			imps := hardOnly(ApproveReadiness(repoDir, projDir, "F-0001"))
+			if len(imps) != 1 || imps[0].Code != ImpedimentJudgeQuestionMissing || strings.Contains(imps[0].Message, "run 'cerne") || !strings.Contains(imps[0].Message, "add under the bar") {
+				t.Fatalf("impediments = %+v", imps)
+			}
+		})
+	}
+}
+
+// Round 2, point 2: a question outside Verificação is told apart from a
+// missing one, in the approve and in the readiness.
+func TestJudgeQuestionMisplaced(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	seedCandidateSpec(t, repoDir, "F-0001", specMisplaced)
+	const want = "judge question found outside ## Verificação (line 5) — move it under the bar"
+	_, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionApprove, "", "", nil)
+	if !errors.Is(err, ErrSpecMisplacedJudgeQuestion) || err.Error() != want || strings.Contains(err.Error(), "no judge question") {
+		t.Fatalf("err = %v, want %q", err, want)
+	}
+	imps := hardOnly(ApproveReadiness(repoDir, projDir, "F-0001"))
+	if len(imps) != 1 || imps[0].Code != ImpedimentJudgeQuestionMisplaced || imps[0].Message != want || !imps[0].Hard {
+		t.Fatalf("impediments = %+v", imps)
+	}
+}
+
+// Round 2, point 4: what the approve accepts is readable and on the event.
+func TestAcceptedJudgeQuestion(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	seedCandidateSpec(t, repoDir, "F-0001", specBarAndQ)
+	if q, exempt, err := AcceptedJudgeQuestion(repoDir, "F-0001"); err != nil || exempt || q != "qual dos dois é mais claro?" {
+		t.Fatalf("AcceptedJudgeQuestion = %q, %v, %v", q, exempt, err)
+	}
+	out, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionApprove, "", "", nil)
+	if err != nil || out.JudgeQuestion != "qual dos dois é mais claro?" {
+		t.Fatalf("outcome = %+v, %v", out, err)
+	}
+	evs, _ := store.ReadEvents(repoDir)
+	var got string
+	for _, e := range evs {
+		if e.Type == "feature.approved" {
+			got = e.Payload["judge_question"]
+		}
+	}
+	if got != "qual dos dois é mais claro?" {
+		t.Fatalf("approve event judge_question = %q", got)
+	}
+
+	repo2, _, _ := newFeatureBackend(t)
+	seedCandidateSpec(t, repo2, "F-0001", specBarExempt)
+	if q, exempt, err := AcceptedJudgeQuestion(repo2, "F-0001"); err != nil || !exempt || q != "" {
+		t.Fatalf("exempt: %q, %v, %v", q, exempt, err)
+	}
+}
+
+// hardOnly drops the card's soft impediments (untagged fixtures).
+func hardOnly(imps []ApproveImpediment, err error) []ApproveImpediment {
+	var out []ApproveImpediment
+	for _, im := range imps {
+		if im.Hard && err == nil {
+			out = append(out, im)
+		}
+	}
+	return out
+}
