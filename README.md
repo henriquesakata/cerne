@@ -156,9 +156,9 @@ In a global client config, name the project with `--dir`:
 
 Outside a cerne project the server refuses to start.
 
-## The idea in six slides
+## The idea in three slides
 
-![Six slides: documentation that only grows makes an agent build on dead decisions; cerne keeps state as data, not prose; the agent does the volume and you keep the two decisions; the agent reads a projection of the current state from your git repo; install and run cerne savings](docs/assets/slides.gif)
+![Three slides: documentation that only grows makes an agent build on dead decisions; the agent reads a projection of the current state from your git repo; the agent does the volume and you keep the two decisions](docs/assets/slides.gif)
 
 ## How it works
 
