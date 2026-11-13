@@ -37,7 +37,7 @@ func identityOf(w store.Work) channelIdentity {
 // or for an F- binding the feature's auto work under one of my actors. A
 // dead, missing or unresolvable binding is no identity.
 func sessionWork(cacheDir, repoDir, sess string) (channelIdentity, bool) {
-	id, ok, err := CurrentBinding(cacheDir, repoDir, sess)
+	id, ok, err := CurrentBinding(cacheDir, repoDir, sess, "")
 	if err != nil || !ok {
 		return channelIdentity{}, false
 	}

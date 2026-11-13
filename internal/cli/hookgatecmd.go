@@ -147,7 +147,7 @@ func runHookBindWork(cmd *cobra.Command, format string) {
 		return
 	}
 	// F-0361: every Bash call is a sign of life for the session's binding.
-	_ = app.TouchBinding(cacheDir, in.SessionID)
+	_ = app.TouchBinding(cacheDir, in.SessionID, in.AgentID)
 	var ti struct {
 		Command string `json:"command"`
 	}
@@ -256,7 +256,7 @@ func runHookWorkGate(cmd *cobra.Command, format string) {
 		return
 	}
 	repoDir := filepath.Join(cacheDir, "repo")
-	_ = app.TouchBinding(cacheDir, in.SessionID) // F-0361: sign of life
+	_ = app.TouchBinding(cacheDir, in.SessionID, in.AgentID) // F-0361: sign of life
 	var ti struct {
 		FilePath string `json:"file_path"`
 	}
@@ -265,7 +265,7 @@ func runHookWorkGate(cmd *cobra.Command, format string) {
 		injectGateChannel(cmd, format, cacheDir, repoDir, projDir, in.SessionID, ti.FilePath)
 		return
 	}
-	allow, reason := app.WorkGateCheck(cacheDir, repoDir, projDir, in.SessionID, ti.FilePath, cfg.Gates.WorkGateAllow)
+	allow, reason := app.WorkGateCheck(cacheDir, repoDir, projDir, in.SessionID, in.AgentID, ti.FilePath, cfg.Gates.WorkGateAllow)
 	if allow {
 		injectGateChannel(cmd, format, cacheDir, repoDir, projDir, in.SessionID, ti.FilePath)
 		return

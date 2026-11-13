@@ -68,7 +68,7 @@ func runHookStopCheck(cmd *cobra.Command) {
 		return
 	}
 	repoDir := filepath.Join(cacheDir, "repo")
-	_ = app.TouchBinding(cacheDir, in.SessionID) // F-0361: sign of life, one stat + one chtimes, local
+	_ = app.TouchBinding(cacheDir, in.SessionID, "") // F-0361: sign of life, one stat + one chtimes, local
 
 	// F-0309: keep the session's live features' cost snapshot current, so a
 	// pruned transcript does not lose it before the stamp. Silent, fail-open.
@@ -108,7 +108,7 @@ func runHookStopCheck(cmd *cobra.Command) {
 // binding, compaction count) once the session compacted, when the line asking
 // for a handoff joins it (F-0368); mark records it.
 func stopCloseout(cacheDir, repoDir, sess string) (string, func()) {
-	id, ok, err := app.CurrentBinding(cacheDir, repoDir, sess)
+	id, ok, err := app.CurrentBinding(cacheDir, repoDir, sess, "")
 	if err != nil || !ok {
 		return "", nil
 	}

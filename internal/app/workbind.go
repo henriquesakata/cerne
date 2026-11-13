@@ -69,7 +69,7 @@ func BindSessionAgent(cacheDir, sess, agent, harness, id string) error {
 // TouchBinding refreshes the mtime of session sess's binding file — the
 // session's "last signal" (F-0361). A session without a binding file is a
 // silent no-op: it never creates one. Contents are untouched; local only.
-func TouchBinding(cacheDir, sess string) error {
+func TouchBinding(cacheDir, sess, agent string) error {
 	if err := safeSessionID(sess); err != nil {
 		return err
 	}
@@ -119,7 +119,7 @@ func SessionSignals(cacheDir string) []SessionSignal {
 // clone at repoDir: it returns the bound id only while the entity is still
 // live (active work / in_development feature). A missing binding is (_, false,
 // nil); a stale one is removed (self-heal) and also reads as absent.
-func CurrentBinding(cacheDir, repoDir, sess string) (string, bool, error) {
+func CurrentBinding(cacheDir, repoDir, sess, agent string) (string, bool, error) {
 	if err := safeSessionID(sess); err != nil {
 		return "", false, err
 	}

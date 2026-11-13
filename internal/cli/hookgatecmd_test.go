@@ -78,7 +78,7 @@ func TestHookBindWorkBindsFromWorkStart(t *testing.T) {
 	}
 
 	cacheDir := filepath.Dir(repoDir)
-	id, ok, err := app.CurrentBinding(cacheDir, repoDir, "sess-hook")
+	id, ok, err := app.CurrentBinding(cacheDir, repoDir, "sess-hook", "")
 	if err != nil {
 		t.Fatalf("CurrentBinding: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestHookBindWorkRecordsAgentInLedger(t *testing.T) {
 	}
 
 	cacheDir := filepath.Dir(repoDir)
-	if id, ok, err := app.CurrentBinding(cacheDir, repoDir, "sess-hook"); err != nil || !ok || id != "W-0001" {
+	if id, ok, err := app.CurrentBinding(cacheDir, repoDir, "sess-hook", ""); err != nil || !ok || id != "W-0001" {
 		t.Fatalf("binding = (%q, %v, %v), want (W-0001, true)", id, ok, err)
 	}
 	raw, err := os.ReadFile(filepath.Join(cacheDir, "costbind.ndjson"))
@@ -137,7 +137,7 @@ func TestHookBindWorkIgnoresOtherCommands(t *testing.T) {
 			t.Fatalf("%s: hook bind-work errored: %v\noutput: %s", name, err, out)
 		}
 	}
-	if _, ok, _ := app.CurrentBinding(filepath.Dir(repoDir), repoDir, "sess-a"); ok {
+	if _, ok, _ := app.CurrentBinding(filepath.Dir(repoDir), repoDir, "sess-a", ""); ok {
 		t.Fatal("nothing should have been bound")
 	}
 }

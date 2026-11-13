@@ -12,7 +12,7 @@ import (
 // binding. Everything else is denied with an actionable reason. The check is
 // fail-open: any internal error reads as allow — a broken cache must never
 // lock the user out of their own files.
-func WorkGateCheck(cacheDir, repoDir, projDir, sess, filePath string, extraAllow []string) (allow bool, reason string) {
+func WorkGateCheck(cacheDir, repoDir, projDir, sess, agent, filePath string, extraAllow []string) (allow bool, reason string) {
 	rel, err := filepath.Rel(projDir, filePath)
 	if err != nil {
 		return true, ""
@@ -30,7 +30,7 @@ func WorkGateCheck(cacheDir, repoDir, projDir, sess, filePath string, extraAllow
 		}
 	}
 	if sess != "" {
-		if _, ok, err := CurrentBinding(cacheDir, repoDir, sess); err != nil || ok {
+		if _, ok, err := CurrentBinding(cacheDir, repoDir, sess, agent); err != nil || ok {
 			return true, "" // bound, or fail-open on a cache error
 		}
 	}

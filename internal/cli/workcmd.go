@@ -216,7 +216,7 @@ func runWorkCurrent(cmd *cobra.Command, dir, sess string, asJSON bool) error {
 	if err != nil {
 		return err
 	}
-	id, bound, err := app.CurrentBinding(filepath.Dir(ctx.repoDir), ctx.repoDir, sess)
+	id, bound, err := app.CurrentBinding(filepath.Dir(ctx.repoDir), ctx.repoDir, sess, "")
 	if err != nil {
 		return err
 	}

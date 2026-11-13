@@ -36,7 +36,7 @@ func bindFromBash(t *testing.T, command string, stdout func(listed, created stri
 	if err != nil {
 		t.Fatalf("hook bind-work: %v", err)
 	}
-	id, ok, err := app.CurrentBinding(filepath.Dir(repoDir), repoDir, "sess-chain")
+	id, ok, err := app.CurrentBinding(filepath.Dir(repoDir), repoDir, "sess-chain", "")
 	if err != nil {
 		t.Fatalf("CurrentBinding: %v", err)
 	}

@@ -72,7 +72,7 @@ func TestTakeHandoff(t *testing.T) {
 	if n := countEvents(t, repoDir, "W-0002", "work.started"); n != 1 {
 		t.Fatalf("work.started events = %d", n)
 	}
-	if id, ok, err := CurrentBinding(cacheDir, repoDir, "sess-recv"); err != nil || !ok || id != "W-0002" {
+	if id, ok, err := CurrentBinding(cacheDir, repoDir, "sess-recv", ""); err != nil || !ok || id != "W-0002" {
 		t.Fatalf("binding = %q %v %v, want W-0002", id, ok, err)
 	}
 }
@@ -121,7 +121,7 @@ func TestTakeHandoffRefusals(t *testing.T) {
 				}
 			}
 			assertCloneUntouched(t, repoDir, before)
-			if _, ok, _ := CurrentBinding(cacheDir, repoDir, "sess-b"); ok {
+			if _, ok, _ := CurrentBinding(cacheDir, repoDir, "sess-b", ""); ok {
 				t.Fatalf("a refused take bound the session")
 			}
 		})
