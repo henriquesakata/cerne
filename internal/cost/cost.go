@@ -426,7 +426,8 @@ func (r *Report) addShare(s *share) {
 	r.First, r.Last = w.First, w.Last
 }
 
-// governing is the binding in force for m: the last binding of m's own
+// governing is the binding in force for m: the last retro binding of m's
+// subagent, whatever its instant (F-0384); else the last binding of m's own
 // subagent at or before m.ts; else, for a subagent, the main thread's binding
 // in force at its first message (spawned is that instant — a background
 // subagent keeps the entity it was launched for when the main thread rebinds
@@ -441,16 +442,22 @@ func governing(binds []Bind, m msg, spawned time.Time) (Bind, bool) {
 	if m.agent != "" && !spawned.IsZero() && spawned.Before(at) {
 		at = spawned
 	}
-	var main, own *Bind
+	var main, own, retro *Bind
 	for i, b := range binds {
-		if b.TS.After(m.ts) {
-			break
-		}
-		if b.Agent == "" && !b.TS.After(at) {
+		switch {
+		case b.Retro:
+			if b.Agent != "" && b.Agent == m.agent {
+				retro = &binds[i]
+			}
+		case b.TS.After(m.ts):
+		case b.Agent == "" && !b.TS.After(at):
 			main = &binds[i]
-		} else if b.Agent != "" && b.Agent == m.agent {
+		case b.Agent != "" && b.Agent == m.agent:
 			own = &binds[i]
 		}
+	}
+	if retro != nil {
+		return *retro, true
 	}
 	if own != nil {
 		return *own, true
