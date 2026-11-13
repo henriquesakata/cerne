@@ -108,7 +108,7 @@ func runStatus(cmd *cobra.Command, dir string, all, active, asJSON bool) error {
 	// when the Gauntlet is off, so a project with it on reads as before —
 	// and last, so a parser of the first line reads what it read before.
 	if gauntlet == "off" {
-		defer fmt.Fprintln(out, `Gauntlet: off (light mode) — turn it on with [gates] gauntlet = "on" in .cernerc`)
+		defer fmt.Fprintln(out, `Gauntlet: off (light mode) — turn it on in the Settings screen of cerne ui, or run: cerne settings set gates.gauntlet on --scope project`)
 	}
 	if active {
 		printChannelLead(out, ctx.cfg.ProjectID)
