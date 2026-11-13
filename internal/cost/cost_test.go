@@ -544,3 +544,60 @@ func TestAttributeLastRetroWins(t *testing.T) {
 		t.Fatalf("entities = %+v, want all of x on F-0002", r.Entities)
 	}
 }
+
+// writeMeta writes the .meta.json Claude Code keeps beside a subagent's
+// transcript — only agentType is read.
+func writeMeta(t *testing.T, root, sess, agent, agentType string) {
+	t.Helper()
+	writeLines(t, root, "-tmp-p/"+sess+"/subagents/agent-"+agent+".meta.json",
+		`{"agentType":"`+agentType+`","description":"d","model":"claude-opus-5-5","spawnDepth":1}`)
+}
+
+// TestComputeByRole (F-0384 crit. 3, 4): each attributed message counts under
+// a role — its bind's role; else, for a subagent, its agentType (dev →
+// builder, code-reviewer → critic, any other or none → other); else main. The
+// roles add up to the total.
+func TestComputeByRole(t *testing.T) {
+	in := fixture(t)
+	saveFeature(t, in.RepoDir, "F-0001", domain.StateInDevelopment)
+	m, d, c, g, n, j, k := cc(1, 0, 0, 0), cc(2, 0, 0, 0), cc(4, 0, 0, 0), cc(0, 1, 0, 0), cc(0, 2, 0, 0), cc(0, 0, 1, 0), cc(0, 0, 2, 0)
+	writeSession(t, in.Roots[0], "s",
+		tmsg{ts: at(2), id: "m", req: "r", c: m},
+		tmsg{ts: at(3), id: "d", req: "r", agent: "d", c: d},
+		tmsg{ts: at(3), id: "c", req: "r", agent: "c", c: c},
+		tmsg{ts: at(3), id: "g", req: "r", agent: "g", c: g},
+		tmsg{ts: at(3), id: "n", req: "r", agent: "n", c: n},
+		tmsg{ts: at(3), id: "j", req: "r", agent: "j", c: j},
+		tmsg{ts: at(3), id: "k", req: "r", agent: "k", c: k})
+	writeMeta(t, in.Roots[0], "s", "d", "dev")
+	writeMeta(t, in.Roots[0], "s", "c", "code-reviewer")
+	writeMeta(t, in.Roots[0], "s", "g", "general-purpose")
+	writeMeta(t, in.Roots[0], "s", "j", "code-reviewer")
+	writeMeta(t, in.Roots[0], "s", "k", "dev")
+	bindAt(t, in.CacheDir, "s", "", "F-0001", at(1))
+	retroAt(t, in.CacheDir, "s", "j", "F-0001", "judge", at(10))
+	retroAt(t, in.CacheDir, "s", "k", "F-0001", "", at(10))
+
+	r := compute(t, in, "F-0001")
+	want := map[string]Counters{"main": m, "builder": d.add(k), "critic": c, "other": g.add(n), "judge": j}
+	if !reflect.DeepEqual(r.ByRole, want) {
+		t.Fatalf("ByRole = %+v, want %+v", r.ByRole, want)
+	}
+	if got := r.Roles(); !reflect.DeepEqual(got, []string{"builder", "critic", "judge", "main", "other"}) {
+		t.Fatalf("Roles() = %v", got)
+	}
+}
+
+// TestComputeMainOnlyHasNoRoleView: a cost made on the main thread alone has
+// nothing to break down — Roles() is empty, so no block is printed.
+func TestComputeMainOnlyHasNoRoleView(t *testing.T) {
+	in := fixture(t)
+	saveFeature(t, in.RepoDir, "F-0001", domain.StateInDevelopment)
+	writeSession(t, in.Roots[0], "s", tmsg{ts: at(2), id: "m", req: "r", c: cc(1, 1, 1, 1)})
+	bindAt(t, in.CacheDir, "s", "", "F-0001", at(1))
+
+	r := compute(t, in, "F-0001")
+	if !reflect.DeepEqual(r.ByRole, map[string]Counters{"main": cc(1, 1, 1, 1)}) || r.Roles() != nil {
+		t.Fatalf("ByRole = %+v, Roles() = %v, want main only and no role view", r.ByRole, r.Roles())
+	}
+}

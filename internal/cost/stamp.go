@@ -47,6 +47,7 @@ type share struct {
 	Counters     Counters            `json:"counters"`
 	Sidechain    Counters            `json:"sidechain"`
 	ByModel      map[string]Counters `json:"by_model"`
+	ByRole       map[string]Counters `json:"by_role,omitempty"` // additive (F-0384): absent from older anchors
 	Messages     int                 `json:"messages"`
 	Sessions     int                 `json:"sessions"`
 	First        string              `json:"first"`

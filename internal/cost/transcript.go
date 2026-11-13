@@ -134,6 +134,8 @@ type msg struct {
 	model     string
 	file      string // tfile.rel
 	sidechain bool
+	kind      string // the subagent's agentType (its .meta.json); "" when none
+	role      string // set by attribution (roleOf)
 	c         Counters
 }
 
@@ -170,6 +172,7 @@ func readSession(sess string, files []tfile) ([]msg, error) {
 	var msgs []msg
 	byKey := map[string]int{}
 	for _, f := range files {
+		kind := agentType(f.abs)
 		err := eachLine(f.abs, func(line []byte) {
 			if !bytes.Contains(line, usageKey) {
 				return
@@ -184,7 +187,7 @@ func readSession(sess string, files []tfile) ([]msg, error) {
 				return
 			}
 			u := l.Message.Usage
-			m := msg{session: sess, agent: l.AgentID, model: l.Message.Model, file: f.rel, sidechain: l.IsSidechain,
+			m := msg{session: sess, agent: l.AgentID, model: l.Message.Model, file: f.rel, sidechain: l.IsSidechain, kind: kind,
 				c: Counters{Input: u.Input, CacheCreation: u.CacheCreation, CacheRead: u.CacheRead, Output: u.Output}}
 			m.ts, _ = time.Parse(time.RFC3339Nano, l.Timestamp)
 			if l.Message.ID != "" && l.RequestID != "" {
@@ -209,6 +212,20 @@ func readSession(sess string, files []tfile) ([]msg, error) {
 		}
 	}
 	return msgs, nil
+}
+
+// agentType is the agentType Claude Code records in the .meta.json beside a
+// subagent's transcript (F-0384) — the one key read, never the content; ""
+// when there is none (the main thread, an older Claude Code).
+func agentType(transcript string) string {
+	raw, err := os.ReadFile(strings.TrimSuffix(transcript, ".jsonl") + ".meta.json")
+	var meta struct {
+		AgentType string `json:"agentType"`
+	}
+	if err != nil || json.Unmarshal(raw, &meta) != nil {
+		return ""
+	}
+	return meta.AgentType
 }
 
 // eachLine calls fn with every line of path. bufio.Reader, not Scanner:

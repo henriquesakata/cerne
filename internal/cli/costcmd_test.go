@@ -104,7 +104,9 @@ func TestCostCommandLabelsEachCounter(t *testing.T) {
 	}
 }
 
-// TestCostCommandJSONStable (crit. 6): --json is the same content, byte-stable.
+// TestCostCommandJSONStable (crit. 6): --json is the same content, byte-stable;
+// by_role is the additive per-role view (F-0384 crit. 4) — the subagent with no
+// .meta.json counts as other.
 func TestCostCommandJSONStable(t *testing.T) {
 	projDir, _ := costProject(t, domain.StateInDevelopment)
 	out, err := execCerne(t, "cost", "F-0001", "--json", "--dir", projDir)
@@ -134,6 +136,20 @@ func TestCostCommandJSONStable(t *testing.T) {
       "output": 1000
     },
     "claude-sonnet-5": {
+      "input": 2,
+      "cache_creation": 20,
+      "cache_read": 200,
+      "output": 2000
+    }
+  },
+  "by_role": {
+    "main": {
+      "input": 1,
+      "cache_creation": 10,
+      "cache_read": 100,
+      "output": 1000
+    },
+    "other": {
       "input": 2,
       "cache_creation": 20,
       "cache_read": 200,
