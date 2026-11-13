@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -23,7 +25,16 @@ type LearningsOpts struct {
 
 // LearningItem is one learning of a result.
 type LearningItem struct {
-	Text string `json:"text"`
+	Text         string        `json:"text"`
+	RelatedNotes []RelatedNote `json:"related_notes"`
+}
+
+// RelatedNote is an active note a learning may complement or replace. Via says
+// why it matched: "path" (cites a file the learning cites) or "component".
+type RelatedNote struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	Via   string `json:"via"`
 }
 
 // LearningFeature is a concluded feature whose learnings are not triaged.
@@ -75,6 +86,7 @@ func Learnings(repoDir string, opts LearningsOpts) (LearningsReport, error) {
 			skipped[ev.EntityID] = true
 		}
 	}
+	rel := newRelator(repoDir, notes)
 	var rep LearningsReport
 	for _, f := range feats {
 		if (f.State != domain.StateImplemented && f.State != domain.StateDone) ||
@@ -98,7 +110,7 @@ func Learnings(repoDir string, opts LearningsOpts) (LearningsReport, error) {
 		}
 		lf := LearningFeature{ID: f.ID, Title: f.Title, CompletedAt: at}
 		for _, t := range texts {
-			lf.Items = append(lf.Items, LearningItem{Text: t})
+			lf.Items = append(lf.Items, LearningItem{Text: t, RelatedNotes: rel.related(t, f.Components)})
 		}
 		rep.Features = append(rep.Features, lf)
 		rep.TotalItems += len(lf.Items)
@@ -164,4 +176,85 @@ func SkipLearnings(repoDir, projDir, id, reason string, now time.Time) error {
 		}
 		return "cerne: learnings of " + id + " triaged", nil
 	})
+}
+
+// maxRelated caps the notes shown under one learning.
+const maxRelated = 2
+
+// pathTokenRe finds file-path candidates in prose: a token with a directory and
+// an extension, so a bare directory ("internal/") or a bare name never counts.
+var pathTokenRe = regexp.MustCompile(`[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+`)
+
+// citedPaths lists the file paths text cites, in order of appearance.
+func citedPaths(text string) []string {
+	var out []string
+	for _, loc := range pathTokenRe.FindAllStringIndex(text, -1) {
+		if loc[0] >= 2 && text[loc[0]-2:loc[0]] == "//" || loc[0] >= 1 && text[loc[0]-1] == '/' {
+			continue // a URL tail or the middle of a longer path
+		}
+		p := strings.TrimRight(text[loc[0]:loc[1]], ".")
+		if ext := filepath.Ext(p); len(ext) > 1 && !slices.Contains(out, p) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// relator finds the active notes a learning relates to without the search
+// index: notes are listed newest first once, their bodies read on demand.
+type relator struct {
+	repoDir string
+	notes   []store.Note
+	bodies  map[string]string
+}
+
+func newRelator(repoDir string, all []store.Note) *relator {
+	var active []store.Note
+	for _, n := range all {
+		if n.State == domain.NoteActive {
+			active = append(active, n)
+		}
+	}
+	slices.SortFunc(active, func(a, b store.Note) int {
+		if c := b.CreatedAt.Compare(a.CreatedAt); c != 0 {
+			return c
+		}
+		return strings.Compare(b.ID, a.ID)
+	})
+	return &relator{repoDir: repoDir, notes: active, bodies: map[string]string{}}
+}
+
+func (r *relator) text(n store.Note) string {
+	b, ok := r.bodies[n.ID]
+	if !ok {
+		b, _ = store.LoadNoteContent(r.repoDir, n.ID)
+		b = n.Title + "\n" + b
+		r.bodies[n.ID] = b
+	}
+	return b
+}
+
+// related returns up to maxRelated active notes: first those citing a file path
+// the item cites, then those sharing a component with the feature, newest first.
+func (r *relator) related(item string, comps []string) []RelatedNote {
+	var out []RelatedNote
+	add := func(n store.Note, via string) {
+		if len(out) < maxRelated && !slices.ContainsFunc(out, func(o RelatedNote) bool { return o.ID == n.ID }) {
+			out = append(out, RelatedNote{ID: n.ID, Title: n.Title, Via: via})
+		}
+	}
+	if paths := citedPaths(item); len(paths) > 0 {
+		for _, n := range r.notes {
+			body := r.text(n)
+			if slices.ContainsFunc(paths, func(p string) bool { return citesPath(body, p) }) {
+				add(n, "path")
+			}
+		}
+	}
+	for _, n := range r.notes {
+		if slices.ContainsFunc(n.Components, func(c string) bool { return slices.Contains(comps, c) }) {
+			add(n, "component")
+		}
+	}
+	return out
 }
