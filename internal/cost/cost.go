@@ -565,8 +565,9 @@ func (a attributor) entity(binds []Bind, spawn map[string]time.Time, m msg) (id,
 }
 
 // roleOf is m's role under its governing bind b (F-0384): the bind's role;
-// else, on a subagent, its agentType (dev → builder, code-reviewer → critic,
-// any other or none → other); else main.
+// else, on a subagent, its agentType (dev → builder), then what its transcript
+// says it was (classifyRole, F-0396: judge or critic), then code-reviewer →
+// critic, any other or none → other; else main.
 func roleOf(b Bind, m msg) string {
 	switch {
 	case b.Role != "":
@@ -575,6 +576,8 @@ func roleOf(b Bind, m msg) string {
 		return "main"
 	case m.kind == "dev":
 		return "builder"
+	case m.class != "":
+		return m.class
 	case m.kind == "code-reviewer":
 		return "critic"
 	}
