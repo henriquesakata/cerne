@@ -176,6 +176,8 @@ Saída: vencer ou empatar; derrota abre nova rodada; parar perdendo só por ence
 
 Filled in, the whole `<…>` gives way to the value — `Barra: modo spec do Kiro — kiro.dev/docs/specs; mesma classe: conduzir humano até spec completa`; a line that keeps the `<…>` is refused by the approve.
 
+A named bar also needs its judge question: a `Pergunta ao juiz: <a pergunta que o juiz cego responde>` line right under `Saída:` (EN: `Question for the judge:`) is part of the bar's approval, and `cerne feature approve F-NNNN --check` lists `judge-question-missing` while it is absent. The two exemption forms below owe no question.
+
 — or the single line `Barra: não aplicável (<justificativa de 1 linha>) — padrão alternativo: <teste/benchmark/invariante>`, when the delivery has no comparable artifact (a point fix, pure backend with nothing observable): that classification is a proposal too, made in the open — the justification in the line, never a silent omission — and the human's approve confirms it; a human who disagrees does not approve. — or the single line `Barra: dispensada por decisão humana (<citação curta da fala que dispensou>)`, which exists only when a human refuses the bar on their own; you never suggest it, and the quoted words are what separate it from forgetting. A silent absence of a bar is never acceptable; a recorded exemption is.
 
 ### Implementation — builders, then a critic, then a judge

@@ -58,3 +58,14 @@ func TestCerneAuthoringBarTemplatesRefusedVerbatim(t *testing.T) {
 		t.Fatal("skill has no Barra: template line")
 	}
 }
+
+// TestCerneAuthoringJudgeQuestion pins F-0381 crit. 5: the judge's question is
+// part of the bar's approval and the check reports its absence.
+func TestCerneAuthoringJudgeQuestion(t *testing.T) {
+	c := All()[0].Content
+	for _, want := range []string{"Pergunta ao juiz:", "is part of the bar's approval", "`judge-question-missing`"} {
+		if !strings.Contains(c, want) {
+			t.Errorf("skill missing %q", want)
+		}
+	}
+}
