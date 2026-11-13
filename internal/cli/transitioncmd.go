@@ -54,14 +54,14 @@ func newTransitionCmds(dir *string) []*cobra.Command {
 	cmds := make([]*cobra.Command, 0, len(transitionSpecs))
 	for _, ts := range transitionSpecs {
 		var by, reason, commit, mr string
-		var force, check bool
+		var force, check, noStamp bool
 		cmd := &cobra.Command{
 			Use:     ts.use + " <id>",
 			Short:   ts.short,
 			Example: ts.example,
 			Args:    cobra.ExactArgs(1),
 			RunE: func(cmd *cobra.Command, args []string) error {
-				return runTransition(cmd, *dir, ts.action, args[0], by, reason, commit, mr, force, check)
+				return runTransition(cmd, *dir, ts.action, args[0], by, reason, commit, mr, force, check, noStamp)
 			},
 		}
 		cmd.Flags().StringVar(&by, "by", "", "id of the superseding feature (substituir only)")
@@ -69,6 +69,9 @@ func newTransitionCmds(dir *string) []*cobra.Command {
 		cmd.Flags().StringVar(&commit, "commit", "", "delivery commit: full URL, or bare SHA resolved via [delivery] commit_url (complete only)")
 		cmd.Flags().StringVar(&mr, "mr", "", "delivery MR/PR: full URL, or #<n>/!<n> via [delivery] pr_url (complete only)")
 		cmd.Flags().BoolVar(&force, "force", false, "approve with open [ESCLARECER] clarifications (approve), or start despite another session's active work (start)")
+		if ts.action == domain.ActionComplete {
+			cmd.Flags().BoolVar(&noStamp, "no-stamp", false, "complete without stamping the cost; run 'cerne cost <id> --stamp' later (F-0402)")
+		}
 		if ts.action == domain.ActionApprove {
 			cmd.Flags().BoolVar(&check, "check", false, "list every impediment to approving without approving — no human gate, nothing written (F-0308)")
 		}
@@ -77,7 +80,7 @@ func newTransitionCmds(dir *string) []*cobra.Command {
 	return cmds
 }
 
-func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by, reason, commit, mr string, force, check bool) error {
+func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by, reason, commit, mr string, force, check, noStamp bool) error {
 	// Validate flags before resolveProject so bad invocations fail fast
 	// without touching origin.
 	if err := app.ValidateTransitionFlags(action, by, reason); err != nil {
@@ -197,9 +200,12 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 	if action == domain.ActionComplete {
 		// The transition is the act that counts: a stamp that cannot be made
 		// warns and the exit stays 0 (F-0402 crit. 3).
-		o, serr := stampCost(ctx, id)
-		fmt.Fprintln(cmd.OutOrStdout(), completeStampLine(id, o, serr))
-		fmt.Fprintf(cmd.OutOrStdout(), "Next step: record its token cost with 'cerne cost %s --stamp' before the human accept (F-0309).\n", id)
+		if !noStamp {
+			o, serr := stampCost(ctx, id)
+			fmt.Fprintln(cmd.OutOrStdout(), completeStampLine(id, o, serr))
+		} else {
+			fmt.Fprintf(cmd.OutOrStdout(), "Next step: record its token cost with 'cerne cost %s --stamp' before the human accept (F-0309).\n", id)
+		}
 		printCompleteLearnings(cmd.OutOrStdout(), ctx.repoDir, id)
 	}
 	if action == domain.ActionStart {

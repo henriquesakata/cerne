@@ -125,3 +125,24 @@ func TestCompleteStampLine(t *testing.T) {
 		}
 	}
 }
+
+// F-0402 crit. 4: --no-stamp keeps today's behaviour, also with --commit.
+func TestCompleteNoStampKeepsToday(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	seedResultFeatures(t, repoDir, domain.StateInDevelopment)
+	costSessions(t, repoDir)
+
+	out, err := execCerne(t, "feature", "complete", "F-0001", "--no-stamp", "--commit", "https://example.com/c/abc1234", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("complete: %v\n%s", err, out)
+	}
+	if strings.Contains(out, "cost stamped") || cost.Stamped(repoDir, "F-0001") || stampEvents(t, repoDir) != 0 {
+		t.Errorf("--no-stamp stamped:\n%s", out)
+	}
+	if !strings.Contains(out, "cerne cost F-0001 --stamp") {
+		t.Errorf("--no-stamp lost the cost next step:\n%s", out)
+	}
+	if f, _ := store.LoadFeature(repoDir, "F-0001"); f.State != domain.StateImplemented || f.DeliveryCommitURL == "" {
+		t.Errorf("transition or delivery lost: %+v", f)
+	}
+}
