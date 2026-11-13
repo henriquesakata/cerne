@@ -174,7 +174,7 @@ func TestWriteRefreshPicksUpOtherMachineEntity(t *testing.T) {
 	}
 }
 
-// No index yet (or no old snapshot): the refresh falls back to a full rebuild.
+// No index yet (or no recorded head): the refresh falls back to a full rebuild.
 func TestWriteRefreshFallsBackToFullRebuild(t *testing.T) {
 	_, repoDir, projDir, _ := remintFixture(t)
 	_ = os.Remove(project.IndexPathForRepo(repoDir))
@@ -184,11 +184,55 @@ func TestWriteRefreshFallsBackToFullRebuild(t *testing.T) {
 	if !indexHas(t, repoDir, "N-0001") || !indexHas(t, repoDir, "F-0001") {
 		t.Fatal("full rebuild did not index the whole clone")
 	}
-	_ = os.Remove(filepath.Join(projDir, ".docs", ".snapshot"))
+	plantSentinel(t, repoDir)
+	db, err := sql.Open("sqlite", project.IndexPathForRepo(repoDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`DELETE FROM meta WHERE key = 'indexed_head'`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
 	if err := MutateAndSnapshot(repoDir, projDir, saveNote(repoDir, "N-0002", "segunda")); err != nil {
 		t.Fatal(err)
 	}
 	if !indexHas(t, repoDir, "N-0002") || !indexHas(t, repoDir, "F-0001") {
-		t.Fatal("no old snapshot: full rebuild expected")
+		t.Fatal("no recorded head: full rebuild expected")
+	}
+	if indexHas(t, repoDir, "ZZ-0001") {
+		t.Fatal("no recorded head: the sentinel survived, so it was not a full rebuild")
+	}
+}
+
+// A refresh that fails leaves no permanent hole: the next successful write
+// re-indexes what the failed one wrote (the index records its own head).
+func TestFailedRefreshIsHealedByNextWrite(t *testing.T) {
+	_, repoDir, projDir, _ := remintFixture(t)
+	db := project.IndexPathForRepo(repoDir)
+	if err := MutateAndSnapshot(repoDir, projDir, saveNote(repoDir, "N-0001", "primeira")); err != nil {
+		t.Fatal(err)
+	}
+	var notices int
+	IndexNotice = func(error) { notices++ }
+	t.Cleanup(func() { IndexNotice = func(error) {} })
+	if err := os.Chmod(db, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	if err := MutateAndSnapshot(repoDir, projDir, saveNote(repoDir, "N-0002", "segunda")); err != nil {
+		t.Fatalf("the write must survive: %v", err)
+	}
+	if notices != 1 {
+		t.Fatalf("IndexNotice calls = %d, want 1", notices)
+	}
+	if err := os.Chmod(db, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := MutateAndSnapshot(repoDir, projDir, saveNote(repoDir, "N-0003", "terceira")); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"N-0001", "N-0002", "N-0003"} {
+		if !indexHas(t, repoDir, id) {
+			t.Fatalf("%s missing: the failed refresh left a hole", id)
+		}
 	}
 }

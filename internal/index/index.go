@@ -19,6 +19,7 @@ import (
 
 	_ "modernc.org/sqlite" // database/sql driver "sqlite" (pure Go, no cgo)
 
+	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -67,6 +68,7 @@ type Result struct {
 // title-only row (doc="", empty body). The whole rebuild runs in a single
 // transaction.
 func Rebuild(repoDir, dbPath string, syncedAt time.Time) error {
+	head := cloneHead(repoDir)
 	rows, err := collectRows(repoDir)
 	if err != nil {
 		return err
@@ -105,7 +107,45 @@ func Rebuild(repoDir, dbPath string, syncedAt time.Time) error {
 	if err := insertRows(tx, rows); err != nil {
 		return err
 	}
+	if err := setHead(tx, head); err != nil {
+		return err
+	}
 	return tx.Commit()
+}
+
+// cloneHead is the clone's HEAD sha, "" when it cannot be read (a test tree
+// that is not a git repo): the index then records no head.
+func cloneHead(repoDir string) string {
+	h, err := gitback.HeadSHA(repoDir)
+	if err != nil {
+		return ""
+	}
+	return h
+}
+
+// setHead records the clone head the index now reflects, in the caller's
+// transaction (the same one that wrote synced_at).
+func setHead(tx *sql.Tx, head string) error {
+	if head == "" {
+		return nil
+	}
+	_, err := tx.Exec(`INSERT OR REPLACE INTO meta (key, value) VALUES ('indexed_head', ?)`, head)
+	return err
+}
+
+// IndexedHead is the clone head the index at dbPath last indexed; ok is false
+// when none is recorded (the caller then rebuilds whole). A failed refresh
+// leaves it at the old value, so the next one re-covers the gap.
+func IndexedHead(dbPath string) (head string, ok bool) {
+	db, err := openDB(dbPath)
+	if err != nil {
+		return "", false
+	}
+	defer db.Close()
+	if err := db.QueryRow(`SELECT value FROM meta WHERE key = 'indexed_head'`).Scan(&head); err != nil {
+		return "", false
+	}
+	return head, head != ""
 }
 
 func insertRows(tx *sql.Tx, rows []row) error {
@@ -133,6 +173,7 @@ func Update(repoDir, dbPath string, ids []string, syncedAt time.Time) error {
 	if _, err := os.Stat(dbPath); err != nil {
 		return err
 	}
+	head := cloneHead(repoDir)
 	all, err := collectRows(repoDir)
 	if err != nil {
 		return err
@@ -169,6 +210,9 @@ func Update(repoDir, dbPath string, ids []string, syncedAt time.Time) error {
 		if _, err := tx.Exec(`INSERT OR REPLACE INTO meta (key, value) VALUES ('synced_at', ?)`, syncedAt.UTC().Format(time.RFC3339)); err != nil {
 			return err
 		}
+	}
+	if err := setHead(tx, head); err != nil {
+		return err
 	}
 	return tx.Commit()
 }
