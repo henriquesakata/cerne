@@ -655,7 +655,7 @@ export function CostDetailPage({ id }: { id: string }) {
         </div>
       </dl>
       {breakdown(t.costs.byRole, d.by_role, d.weighted_by_role, (k) => t.costs.roles[k] ?? k)}
-      {breakdown(t.costs.byModel, d.by_model, d.weighted_by_model, (k) => k)}
+      {breakdown(t.costs.byModel, d.by_model, d.weighted_by_model, (k) => (k === 'unknown' ? t.costs.unknownValue : k))}
       <dl className="costs-raw">
         <div>
           <dt>{t.costs.sidechain}</dt>

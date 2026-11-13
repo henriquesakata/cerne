@@ -366,6 +366,13 @@ describe('Custos — detalhe da feature (crit. 5)', () => {
     expect(screen.getByRole('link', { name: '← Custos' })).toHaveAttribute('href', '#/costs')
   })
 
+  it('sem divisão por modelo, a linha desconhecido leva o custo inteiro', async () => {
+    api.fetchCostDetail.mockResolvedValue({ ...detail, by_model: {}, weighted_by_model: { unknown: 100 } })
+    render(<CostDetailPage id="F-0001" />)
+    const models = await screen.findByRole('table', { name: 'Por modelo' })
+    expect(within(models).getByRole('row', { name: /^desconhecido/ })).toHaveTextContent(/desconhecido.*50.*0.*0.*10.*100.*100%/)
+  })
+
   it('id desconhecido ou sem custo: mostra o erro do servidor', async () => {
     api.fetchCostDetail.mockRejectedValue(new Error("no cost stamped for F-0004: run 'cerne cost F-0004 --stamp' once it is implemented"))
     render(<CostDetailPage id="F-0004" />)
