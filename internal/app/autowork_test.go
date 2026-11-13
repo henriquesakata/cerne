@@ -299,3 +299,138 @@ func TestAutoWorkOptOut(t *testing.T) {
 		t.Fatalf("works = %d, want 0 (opt-out)", len(ws))
 	}
 }
+
+// bindTestSession binds session sess to work id the way `work start` does:
+// <cache>/sessions/<sess> holds the id; the cache is repoDir's parent.
+func bindTestSession(t *testing.T, repoDir, sess, id string) {
+	t.Helper()
+	dir := filepath.Join(filepath.Dir(repoDir), "sessions")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, sess), []byte(id+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func pushPlan(t *testing.T, repoDir, projDir string) {
+	t.Helper()
+	changes := []FileChange{{Path: "content/features/F-0001/plan.md", Content: []byte("plano")}}
+	if err := OpenAutoWorkForPush(repoDir, projDir, changes); err != nil {
+		t.Fatalf("OpenAutoWorkForPush: %v", err)
+	}
+}
+
+// TestOpenAutoWorkForPushSkipsW0366Case (F-0383 crit. 4): the TL's manual
+// eight-ref work under <user>@<host>, bound to the session, then a plan push
+// under CERNE_ACTOR=agent opens nothing.
+func TestOpenAutoWorkForPushSkipsW0366Case(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	t.Setenv("CERNE_ACTOR", "agent")
+	t.Setenv("CERNE_SESSION", "s1")
+	seedFeatureInState(t, repoDir, "F-0001", domain.StateApproved, "spec.md", "plan.md")
+	now := time.Now().UTC()
+	w := store.Work{ID: "W-0366", Title: "lote", State: domain.WorkActive, Actor: defaultWorkActor(),
+		Refs: []string{"F-0001", "F-0002", "F-0003", "F-0004", "F-0005", "F-0006", "F-0007", "F-0008"}, CreatedAt: now, UpdatedAt: now}
+	if err := store.SaveWork(repoDir, w); err != nil {
+		t.Fatal(err)
+	}
+	bindTestSession(t, repoDir, "s1", "W-0366")
+
+	pushPlan(t, repoDir, projDir)
+	if ws := loadWorks(t, repoDir); len(ws) != 1 {
+		t.Fatalf("works = %d, want 1 (no spurious auto work)", len(ws))
+	}
+}
+
+// TestOpenAutoWorkForPushSkipsBoundWorkOfOtherActor (F-0383 crit. 1): the
+// session binding alone suppresses, whatever the work's actor.
+func TestOpenAutoWorkForPushSkipsBoundWorkOfOtherActor(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	t.Setenv("CERNE_SESSION", "s1")
+	seedFeatureInState(t, repoDir, "F-0001", domain.StateApproved, "spec.md", "plan.md")
+	seedActiveWork(t, repoDir, "W-0001", "someone@else", "F-0001", false)
+	bindTestSession(t, repoDir, "s1", "W-0001")
+
+	pushPlan(t, repoDir, projDir)
+	if ws := loadWorks(t, repoDir); len(ws) != 1 {
+		t.Fatalf("works = %d, want 1", len(ws))
+	}
+}
+
+// TestAutoWorkSkipsOtherOwnIdentity (F-0383 crit. 2): a work under my other
+// identity suppresses with no binding, on the push and the start path.
+func TestAutoWorkSkipsOtherOwnIdentity(t *testing.T) {
+	t.Setenv("CERNE_ACTOR", "agent")
+	repoDir, projDir, _ := newFeatureBackend(t)
+	seedFeatureInState(t, repoDir, "F-0001", domain.StateApproved, "spec.md", "plan.md")
+	seedActiveWork(t, repoDir, "W-0001", defaultWorkActor(), "F-0001", false)
+
+	pushPlan(t, repoDir, projDir)
+	f, err := store.LoadFeature(repoDir, "F-0001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := openAutoWork(repoDir, f); err != nil {
+		t.Fatal(err)
+	}
+	if ws := loadWorks(t, repoDir); len(ws) != 1 {
+		t.Fatalf("works = %d, want 1", len(ws))
+	}
+}
+
+// TestOpenAutoWorkForPushOpensForForeignUnboundWork (F-0383 crit. 3): another
+// actor's work, not bound to this session, does not suppress.
+func TestOpenAutoWorkForPushOpensForForeignUnboundWork(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	t.Setenv("CERNE_SESSION", "s1")
+	seedFeatureInState(t, repoDir, "F-0001", domain.StateApproved, "spec.md", "plan.md")
+	seedActiveWork(t, repoDir, "W-0001", "someone@else", "F-0001", false)
+
+	pushPlan(t, repoDir, projDir)
+	if ws := loadWorks(t, repoDir); len(ws) != 2 {
+		t.Fatalf("works = %d, want 2", len(ws))
+	}
+}
+
+// TestOpenAutoWorkForPushOpensWhenBindingIsDone (F-0383 crit. 1): a binding to
+// a finished work covers nothing.
+func TestOpenAutoWorkForPushOpensWhenBindingIsDone(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	t.Setenv("CERNE_SESSION", "s1")
+	seedFeatureInState(t, repoDir, "F-0001", domain.StateApproved, "spec.md", "plan.md")
+	now := time.Now().UTC()
+	w := store.Work{ID: "W-0001", Title: "x", State: domain.WorkDone, Actor: "someone@else", Refs: []string{"F-0001"}, CreatedAt: now, UpdatedAt: now}
+	if err := store.SaveWork(repoDir, w); err != nil {
+		t.Fatal(err)
+	}
+	bindTestSession(t, repoDir, "s1", "W-0001")
+
+	pushPlan(t, repoDir, projDir)
+	if ws := loadWorks(t, repoDir); len(ws) != 2 {
+		t.Fatalf("works = %d, want 2", len(ws))
+	}
+}
+
+// TestOpenAutoWorkForPushIgnoresUnusableBinding (F-0383 L2): with no
+// CERNE_SESSION a stray binding file suppresses nothing, and a binding that
+// points at an F- id (not a work) suppresses nothing either.
+func TestOpenAutoWorkForPushIgnoresUnusableBinding(t *testing.T) {
+	for name, tc := range map[string]struct{ sess, bound string }{
+		"empty session": {"", "W-0001"},
+		"binding to F-": {"s1", "F-0001"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			repoDir, projDir, _ := newFeatureBackend(t)
+			t.Setenv("CERNE_SESSION", tc.sess)
+			seedFeatureInState(t, repoDir, "F-0001", domain.StateApproved, "spec.md", "plan.md")
+			seedActiveWork(t, repoDir, "W-0001", "someone@else", "F-0001", false)
+			bindTestSession(t, repoDir, "s1", tc.bound)
+
+			pushPlan(t, repoDir, projDir)
+			if ws := loadWorks(t, repoDir); len(ws) != 2 {
+				t.Fatalf("works = %d, want 2", len(ws))
+			}
+		})
+	}
+}

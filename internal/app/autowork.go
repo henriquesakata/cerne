@@ -38,13 +38,29 @@ func autoWorkActor() string { return resolveActor(defaultWorkActor()) }
 // unless the same actor already has an active work referencing it (a manual
 // `work start --ref` or a previous auto-open) — re-registering would be noise.
 func openAutoWork(repoDir string, f store.Feature) error {
+	return openAutoWorkUnless(repoDir, f, false)
+}
+
+// openAutoWorkUnless is openAutoWork with the push path's extra dedup
+// (F-0383): any of this process's identities (myActors, F-0341) already on the
+// feature suppresses; with bound, so does the active work this session is
+// bound to that references it, whatever its actor or ref count.
+func openAutoWorkUnless(repoDir string, f store.Feature, bound bool) error {
 	actor := autoWorkActor()
 	works, err := store.LoadAllWorks(repoDir)
 	if err != nil {
 		return err
 	}
+	mine := myActors()
+	boundID := ""
+	if sess := os.Getenv("CERNE_SESSION"); bound && sess != "" {
+		boundID = sessionBindingsIn(filepath.Dir(repoDir))[sess]
+	}
 	for _, w := range works {
-		if w.State == domain.WorkActive && w.Actor == actor && slices.Contains(w.Refs, f.ID) {
+		if w.State != domain.WorkActive || !slices.Contains(w.Refs, f.ID) {
+			continue
+		}
+		if slices.Contains(mine, w.Actor) || (boundID != "" && w.ID == boundID) {
 			return nil
 		}
 	}
@@ -94,7 +110,7 @@ func OpenAutoWorkForPush(repoDir, projDir string, changes []FileChange) error {
 		if f.State != domain.StateApproved {
 			continue
 		}
-		if err := openAutoWork(repoDir, f); err != nil {
+		if err := openAutoWorkUnless(repoDir, f, true); err != nil {
 			return err
 		}
 	}
