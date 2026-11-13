@@ -107,7 +107,7 @@ func TestStartWarnsPlanBehindSpec(t *testing.T) {
 	if _, err := TransitionFeature(repoDir, projDir, behind.ID, domain.ActionApprove, "", "", nil); err != nil {
 		t.Fatalf("re-approve: %v", err)
 	}
-	const head, tail = "warning: F-0001 plan predates the current spec (plan written ", ") — re-read the spec and push the plan again"
+	const head, tail = "warning: F-0001 plan predates the current spec (plan written ", ") — re-read the spec, update the plan (a line recording the re-check is enough) and push it"
 
 	step, err := NextStep(repoDir, projDir, behind.ID)
 	if err != nil {

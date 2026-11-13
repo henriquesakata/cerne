@@ -108,9 +108,9 @@ func TestPlanOlderThanSpecFindings(t *testing.T) {
 		}
 	}
 	want := map[string]string{
-		"F-0001": "F-0001 plan was written on 2026-08-11 12:10 UTC against an older spec (spec changed 2026-08-11 12:20 UTC) — re-read the spec and push the plan again",
-		"F-0002": "F-0002 plan was written on 2026-08-11 12:10 UTC against an older spec (spec changed 2026-08-11 12:20 UTC) — re-read the spec and push the plan again",
-		"F-0006": "F-0006 plan was written on 2026-08-11 12:10 UTC against an older spec (spec changed unknown) — re-read the spec and push the plan again",
+		"F-0001": "F-0001 plan was written on 2026-08-11 12:10 UTC against an older spec (spec changed 2026-08-11 12:20 UTC) — re-read the spec, update the plan (a line recording the re-check is enough) and push it",
+		"F-0002": "F-0002 plan was written on 2026-08-11 12:10 UTC against an older spec (spec changed 2026-08-11 12:20 UTC) — re-read the spec, update the plan (a line recording the re-check is enough) and push it",
+		"F-0006": "F-0006 plan was written on 2026-08-11 12:10 UTC against an older spec (spec changed unknown) — re-read the spec, update the plan (a line recording the re-check is enough) and push it",
 	}
 	if len(got) != len(want) {
 		t.Fatalf("plan-older-than-spec on %v, want %v", got, want)

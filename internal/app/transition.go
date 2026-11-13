@@ -651,7 +651,7 @@ func planBehindWarning(repoDir string, f store.Feature) string {
 	if !behind {
 		return ""
 	}
-	return fmt.Sprintf("warning: %s plan predates the current spec (plan written %s, spec changed %s) — re-read the spec and push the plan again", f.ID, lint.WriteTime(planAt), lint.WriteTime(specAt))
+	return fmt.Sprintf("warning: %s plan predates the current spec (plan written %s, spec changed %s) — re-read the spec, update the plan (a line recording the re-check is enough) and push it", f.ID, lint.WriteTime(planAt), lint.WriteTime(specAt))
 }
 
 // checkActionDocs is the document gate of an action (a real plan to start, a

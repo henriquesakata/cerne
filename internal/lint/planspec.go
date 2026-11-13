@@ -80,7 +80,7 @@ func planOlderThanSpecFindings(repoDir string, features []store.Feature, events 
 			Rule:   RulePlanOlderThanSpec,
 			Entity: f.ID,
 			File:   "content/features/" + f.ID + "/plan.md",
-			Detail: fmt.Sprintf("%s plan was written on %s against an older spec (spec changed %s) — re-read the spec and push the plan again", f.ID, WriteTime(planAt), WriteTime(specAt)),
+			Detail: fmt.Sprintf("%s plan was written on %s against an older spec (spec changed %s) — re-read the spec, update the plan (a line recording the re-check is enough) and push it", f.ID, WriteTime(planAt), WriteTime(specAt)),
 		})
 	}
 	return out
