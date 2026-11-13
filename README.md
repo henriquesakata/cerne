@@ -156,6 +156,10 @@ In a global client config, name the project with `--dir`:
 
 Outside a cerne project the server refuses to start.
 
+## The idea in three slides
+
+![Three slides: documentation that only grows makes an agent build on dead decisions; the agent reads a projection of the current state from your git repo; the agent does the volume and you keep the two decisions](docs/assets/slides.gif)
+
 ## How it works
 
 ```mermaid
