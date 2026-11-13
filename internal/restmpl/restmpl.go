@@ -152,14 +152,20 @@ func Stub(title string) string {
 var (
 	commentRe   = regexp.MustCompile(`(?s)<!--.*?-->`)
 	agentLineRe = regexp.MustCompile(`(?i)\b(?:agente|agent)[*_]*:`)
-	effortRe    = regexp.MustCompile(`(?i)\b(?:esfor(?:ç|c\x{0327}|c)o|effort)[ \t]+([\pL\pM\pN-]+)`)
+	effortRe    = regexp.MustCompile(`(?i)\b(?:esfor(?:ç|c\x{0327}|c)o|effort)[ \t]+([\pL\pM\pN/-]+)`)
 )
 
+// effortLevels is the closed set a declared effort is read from: the harness
+// scales and the pt-BR words, kept as written — médio and medium stay apart.
+var effortLevels = map[string]bool{"low": true, "medium": true, "high": true, "xhigh": true, "max": true,
+	"baixo": true, "médio": true, "alto": true}
+
 // DeclaredEffort reads the effort the agent declared about itself on the
-// result's Agente/Agent metadata line (F-0279) — the first "esforço <nível>"
-// or "effort <level>" after the label, lower-cased. "" when no such line sits
-// above the first "## " section, when it names no effort, or when it says
-// desconhecido/unknown: nothing is inferred (F-0391).
+// result's Agente/Agent metadata line (F-0279): the word after the first
+// "esforço" or "effort" past the label, lower-cased, when it is one of
+// effortLevels. "" when no such line sits above the first "## " section, when
+// it names no effort, or when the word is anything else (desconhecido,
+// unknown, "do dev", "n/d"): nothing is inferred (F-0391).
 func DeclaredEffort(result []byte) string {
 	for _, line := range strings.Split(commentRe.ReplaceAllString(string(result), ""), "\n") {
 		if strings.HasPrefix(strings.TrimSpace(line), "## ") {
@@ -173,7 +179,7 @@ func DeclaredEffort(result []byte) string {
 		if m == nil {
 			return ""
 		}
-		if e := strings.ToLower(m[1]); e != "desconhecido" && e != "unknown" {
+		if e := strings.ReplaceAll(strings.ToLower(m[1]), "e\u0301", "é"); effortLevels[e] {
 			return e
 		}
 		return ""
