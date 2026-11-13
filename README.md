@@ -213,11 +213,13 @@ Two things cerne does not change. Your AI agent still sends what it reads to its
 | **Your agent already knows how** | `cerne init` installs the skills and hooks that teach Claude Code the workflow, and delivers the authoring guide to Cursor, Codex CLI and Gemini CLI when their config folder is present, so you just ask for the feature. Supported agents: **Claude Code, Cursor, Codex CLI and Gemini CLI**; what each one receives, and what degrades, is in the [provider parity matrix](docs/provider-parity.md). |
 | **Single binary** | macOS, Linux and Windows. The UI is embedded. No runtime dependencies. |
 
-![The dashboard: what is waiting on you, features by state, lint debts and context savings](docs/assets/ui-dashboard.png)
+![cerne's own dashboard: 403 features, 380 of them done, a year of activity, open lint debts and 96.7% of the corpus kept out of the agent's context](docs/assets/ui-dashboard.png)
+
+This is cerne's own project, in November 2026: the tool is built with itself, and the dashboard shows it, open lint debts included.
 
 ![The kanban board: every feature in its state, epics and tags](docs/assets/ui-kanban.png)
 
-The screenshots are from the [demo project](examples/demo/README.md), which you can build on your machine in a few seconds.
+The other screenshots are from the [demo project](examples/demo/README.md), which you can build on your machine in a few seconds.
 
 ## Why not just…
 
