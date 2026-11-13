@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -384,5 +385,42 @@ func TestCostsUnknownModel(t *testing.T) {
 	}
 	if !mapsEqual(d.WeightedByModel, map[string]float64{"unknown": 10}) || !mapsEqual(d.WeightedByRole, map[string]float64{"unknown": 10}) {
 		t.Errorf("weighted by model %v, by role %v; want all of it unknown", d.WeightedByModel, d.WeightedByRole)
+	}
+}
+
+// Crit. 5: the detail's report is, byte for byte, the stamped report `cerne
+// cost <id> --json` prints from the anchor (cost.StampedReport) of the same
+// result.md (critic, PR #68).
+func TestCostDetailReportIsTheStamp(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	seedCostsFixture(t, repoDir)
+	for _, id := range []string{"F-0001", "F-0003", "F-0006"} {
+		body, err := os.ReadFile(filepath.Join(repoDir, "content", "features", id, "result.md"))
+		if err != nil {
+			t.Fatalf("ReadFile: %v", err)
+		}
+		stamped, ok := cost.StampedReport(string(body))
+		if !ok {
+			t.Fatalf("%s: no anchor in the seeded result", id)
+		}
+		want, err := json.Marshal(stamped)
+		if err != nil {
+			t.Fatalf("Marshal: %v", err)
+		}
+		rec := httptest.NewRecorder()
+		New(repoDir, projDir, "proj").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/costs/"+id, nil))
+		var got struct {
+			Report json.RawMessage `json:"report"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		var compact bytes.Buffer
+		if err := json.Compact(&compact, got.Report); err != nil {
+			t.Fatalf("Compact: %v", err)
+		}
+		if compact.String() != string(want) {
+			t.Errorf("%s: report =\n%s\nwant the stamp\n%s", id, compact.String(), want)
+		}
 	}
 }
