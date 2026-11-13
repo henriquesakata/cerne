@@ -96,7 +96,8 @@ func runLint(cmd *cobra.Command, dir string, fixTasks, staged, all, scoped bool,
 		findings = append(findings, lits...)
 		lint.Sort(findings)
 	}
-	lint.DowngradeWikiDebt(findings, wikiEnabled(cmd, dir))
+	wiki := wikiEnabled(cmd, dir)
+	lint.DowngradeWikiDebt(findings, wiki)
 	out := cmd.OutOrStdout()
 	var label string
 	var outside int
@@ -108,20 +109,33 @@ func runLint(cmd *cobra.Command, dir string, fixTasks, staged, all, scoped bool,
 		label = l
 		findings, outside = lint.Scope(findings, ids)
 	}
-	// Staged without --all (and without an explicit scope): only the edit's
-	// findings fail; the rest is a count (F-0382).
+	// Staged without --all (and without an explicit scope): only the findings
+	// the edits introduced fail; what the snapshot already had is a count
+	// (F-0382, the before x after of golangci-lint's new-from-rev).
 	editOnly := staged && !all && !scoped
-	var otherCount int
+	var otherCount, fixedCount int
 	if editOnly {
-		if len(edits.files) == 0 {
+		if edits.count == 0 {
 			if asJSON, _ := cmd.Flags().GetBool("json"); !asJSON {
 				fmt.Fprintln(out, "cerne: no local edits to lint")
 				return nil
 			}
 		}
-		var rest []lint.Finding
-		findings, rest = classifyStaged(findings, edits)
-		otherCount = len(rest)
+		base, err := app.ProjectLint(edits.base, cfg)
+		if err != nil {
+			return err
+		}
+		if project.CLIOutputLanguage(dir) == "en" {
+			lits, err := lint.SpecCLILiteralFindings(edits.base)
+			if err != nil {
+				return err
+			}
+			base = append(base, lits...)
+		}
+		lint.DowngradeWikiDebt(base, wiki)
+		var kept []lint.Finding
+		findings, kept, fixedCount = diffFindings(findings, base)
+		otherCount = len(kept)
 	}
 	if asJSON, _ := cmd.Flags().GetBool("json"); asJSON {
 		rows := make([]nextFinding, 0, len(findings))
@@ -135,7 +149,8 @@ func runLint(cmd *cobra.Command, dir string, fixTasks, staged, all, scoped bool,
 			payload = struct {
 				Findings   []nextFinding `json:"findings"`
 				OtherCount int           `json:"other_count"`
-			}{rows, otherCount}
+				FixedCount int           `json:"fixed_count"`
+			}{rows, otherCount, fixedCount}
 		}
 		if err := enc.Encode(payload); err != nil {
 			return err
@@ -145,7 +160,10 @@ func runLint(cmd *cobra.Command, dir string, fixTasks, staged, all, scoped bool,
 	if editOnly {
 		defer func() {
 			if otherCount > 0 {
-				fmt.Fprintf(out, "cerne: %d other findings outside your edits (run cerne lint for the list)\n", otherCount)
+				fmt.Fprintf(out, "cerne: %d other findings outside your edits (run cerne lint --staged --all for the list)\n", otherCount)
+			}
+			if fixedCount > 0 {
+				fmt.Fprintf(out, "cerne: %d findings fixed by your edits\n", fixedCount)
 			}
 		}()
 	}

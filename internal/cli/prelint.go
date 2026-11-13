@@ -5,7 +5,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/henriquesakata/cerne/internal/lint"
 	"github.com/henriquesakata/cerne/internal/project"
@@ -42,10 +41,16 @@ func stagedLintRoot(repoDir, projDir string) (string, stagedEdits, func(), error
 		cleanup()
 		return "", stagedEdits{}, nil, err
 	}
-	edits := stagedEdits{files: map[string]bool{}, entities: map[string]bool{}}
+	// project.json carries the docs language: without it the staged tree reads
+	// as pt-BR whatever the project is.
+	if data, err := os.ReadFile(filepath.Join(repoDir, "project.json")); err == nil {
+		if err := os.WriteFile(filepath.Join(root, "project.json"), data, 0o644); err != nil {
+			cleanup()
+			return "", stagedEdits{}, nil, err
+		}
+	}
+	edits := stagedEdits{count: len(docs), base: repoDir}
 	for _, d := range docs {
-		edits.files[d.backendRel] = true
-		edits.entities[editEntity(d.backendRel)] = true
 		dst := filepath.Join(root, filepath.FromSlash(d.backendRel))
 		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 			cleanup()
@@ -59,37 +64,40 @@ func stagedLintRoot(repoDir, projDir string) (string, stagedEdits, func(), error
 	return root, edits, cleanup, nil
 }
 
-// stagedEdits is what the next push would send (F-0382): the backend paths of
-// the edited documents and the ids of the entities they belong to.
+// stagedEdits describes the local edits (F-0382): how many documents differ
+// from the manifest (the push edit set) and the pulled snapshot they are
+// compared against.
 type stagedEdits struct {
-	files    map[string]bool
-	entities map[string]bool
+	count int
+	base  string
 }
 
-// editEntity is the entity id of a backend content path:
-// content/features/F-1/spec.md -> F-1, content/notes/N-2.md -> N-2.
-func editEntity(backendRel string) string {
-	parts := strings.Split(backendRel, "/")
-	if len(parts) >= 4 && parts[1] == "features" {
-		return parts[2]
+// findingKey identifies a finding across the two lint runs: the line is left
+// out because an edit shifts it.
+func findingKey(f lint.Finding) string {
+	return f.Rule + "\x00" + f.Entity + "\x00" + f.File + "\x00" + f.Detail
+}
+
+// diffFindings compares the staged lint with the base lint (the snapshot
+// without the edits): added are the edit's findings, kept the old debt, and
+// fixed counts the base findings the edit cleared.
+func diffFindings(staged, base []lint.Finding) (added, kept []lint.Finding, fixed int) {
+	left := map[string]int{}
+	for _, f := range base {
+		left[findingKey(f)]++
 	}
-	return strings.TrimSuffix(parts[len(parts)-1], ".md")
-}
-
-// classifyStaged splits findings into those born from the local edits and the
-// rest. A finding is the edit's when its File is an edited document (a broken
-// link in an edited doc counts wherever it points) or its Entity owns an edited
-// document (whole-files: editing a spec owns the plan-older-than-spec on its
-// plan, and an old finding on that same entity counts too).
-func classifyStaged(findings []lint.Finding, e stagedEdits) (mine, other []lint.Finding) {
-	for _, f := range findings {
-		if (f.File != "" && e.files[f.File]) || (f.Entity != "" && e.entities[f.Entity]) {
-			mine = append(mine, f)
+	for _, f := range staged {
+		if k := findingKey(f); left[k] > 0 {
+			left[k]--
+			kept = append(kept, f)
 		} else {
-			other = append(other, f)
+			added = append(added, f)
 		}
 	}
-	return mine, other
+	for _, n := range left {
+		fixed += n
+	}
+	return added, kept, fixed
 }
 
 // copyTree recursively copies the directory src into dst. A missing src is a

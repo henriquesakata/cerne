@@ -238,7 +238,7 @@ func TestLintStagedParityWithBackend(t *testing.T) {
 	mustWrite(t, specPath, realDoc("F-0001", "ainda referencia F-0009 no fluxo"))
 
 	// Mode A: the same engine over the staged local tree.
-	stagedOut, _ := execCerne(t, "lint", "--staged", "--dir", projDir)
+	stagedOut, _ := execCerne(t, "lint", "--staged", "--all", "--dir", projDir)
 	// Mode B: push the edit, then lint over the backend.
 	if out, err := execCerne(t, "push", "--dir", projDir); err != nil {
 		t.Fatalf("push: %v\n%s", err, out)

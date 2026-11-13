@@ -2,6 +2,8 @@ package cli
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -13,7 +15,7 @@ import (
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
-var otherLineRe = regexp.MustCompile(`cerne: (\d+) other findings outside your edits \(run cerne lint for the list\)`)
+var otherLineRe = regexp.MustCompile(`cerne: (\d+) other findings outside your edits \(run cerne lint --staged --all for the list\)`)
 
 // stagedDebtProject is a pulled project (F-0001, clean) plus old debt the user
 // did not touch: F-0002 with a broken link, already in the backend.
@@ -29,8 +31,18 @@ func stagedDebtProject(t *testing.T) (projDir, specPath string) {
 	if _, err := gitback.CommitAndPush(repoDir, "seed old debt"); err != nil {
 		t.Fatalf("CommitAndPush: %v", err)
 	}
+	if out, err := execCerne(t, "pull", "--dir", projDir); err != nil {
+		t.Fatalf("pull: %v\n%s", err, out)
+	}
 	return projDir, specPath
 }
+
+// debtSpecPath is the materialized spec of the old-debt feature F-0002.
+func debtSpecPath(projDir string) string {
+	return filepath.Join(projDir, ".docs", "current", "features", "F-0002-divida-antiga", "spec.md")
+}
+
+const otherHint = "run cerne lint --staged --all for the list"
 
 // cleanSpec carries every template section and the bar, so it lints clean.
 func cleanSpec(extra string) string {
@@ -114,53 +126,81 @@ func TestLintStagedFeatureScopeWins(t *testing.T) {
 	}
 }
 
-// F-0382 crit. 5 and the entity-level fork: classification is by File, else by Entity.
-func TestClassifyStagedFindings(t *testing.T) {
-	edits := stagedEdits{
-		files:    map[string]bool{"content/features/F-0001/spec.md": true},
-		entities: map[string]bool{"F-0001": true},
+// Round 2 crit. 1: an old finding in an edited doc stays old debt (the line shifts, the key does not).
+func TestLintStagedOldFindingInEditedDocStaysOther(t *testing.T) {
+	projDir, _ := stagedDebtProject(t)
+	p := debtSpecPath(projDir)
+	b, _ := os.ReadFile(p)
+	mustWrite(t, p, strings.Replace(string(b), "# Divida antiga\n", "# Divida antiga\n\nParagrafo novo.\n", 1))
+	out, err := execCerne(t, "lint", "--staged", "--dir", projDir)
+	if err != nil || strings.Contains(out, "inexistente.md") {
+		t.Fatalf("old finding of an edited doc must not fail or be listed, err=%v:\n%s", err, out)
 	}
-	in := []lint.Finding{
-		{Rule: lint.RuleBrokenLink, Entity: "F-0001", File: "content/features/F-0001/spec.md"},
-		{Rule: lint.RuleBrokenLink, Entity: "F-0009", File: "content/features/F-0001/spec.md"},        // edited doc, points elsewhere
-		{Rule: lint.RuleMissingGateDoc, Entity: "F-0001"},                                             // entity-level
-		{Rule: lint.RulePlanOlderThanSpec, Entity: "F-0001", File: "content/features/F-0001/plan.md"}, // spec edited, plan not
-		{Rule: lint.RuleBrokenLink, Entity: "F-0002", File: "content/features/F-0002/spec.md"},
-		{Rule: lint.RuleMissingGateDoc, Entity: "F-0002"},
+	if m := otherLineRe.FindStringSubmatch(out); m == nil || !strings.Contains(out, otherHint) {
+		t.Fatalf("want the count line with the --staged --all hint:\n%s", out)
 	}
-	mine, other := classifyStaged(in, edits)
-	if len(mine) != 4 || len(other) != 2 {
-		t.Fatalf("mine=%d other=%d, want 4 and 2", len(mine), len(other))
+	if strings.Contains(out, "fixed by your edits") {
+		t.Fatalf("nothing was fixed, no fixed line expected:\n%s", out)
 	}
 }
 
-func TestEditEntityFromBackendRel(t *testing.T) {
-	for rel, want := range map[string]string{
-		"content/features/F-0001/plan.md": "F-0001",
-		"content/decisions/D-0003.md":     "D-0003",
-		"content/notes/N-0007.md":         "N-0007",
-	} {
-		if got := editEntity(rel); got != want {
-			t.Errorf("editEntity(%q) = %q, want %q", rel, got, want)
+// Round 2 crit. 1: a detail change is a new finding (and the old one is fixed).
+func TestLintStagedDetailChangeIsNew(t *testing.T) {
+	projDir, _ := stagedDebtProject(t)
+	p := debtSpecPath(projDir)
+	b, _ := os.ReadFile(p)
+	mustWrite(t, p, strings.Replace(string(b), "inexistente.md", "outro.md", 1))
+	out, err := execCerne(t, "lint", "--staged", "--dir", projDir)
+	if err == nil || !strings.Contains(out, "outro.md") || strings.Contains(out, "inexistente.md") {
+		t.Fatalf("a changed detail must be listed as new, err=%v:\n%s", err, out)
+	}
+	if !strings.Contains(out, "cerne: 1 findings fixed by your edits") {
+		t.Fatalf("the old detail is gone, want the fixed line:\n%s", out)
+	}
+}
+
+// Round 2 crit. 1: an edit that clears an old finding says so.
+func TestLintStagedFixedLine(t *testing.T) {
+	projDir, _ := stagedDebtProject(t)
+	p := debtSpecPath(projDir)
+	b, _ := os.ReadFile(p)
+	mustWrite(t, p, strings.Replace(string(b), "Veja [x](./inexistente.md).", "Sem link.", 1))
+	out, err := execCerne(t, "lint", "--staged", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "cerne: 1 findings fixed by your edits") || strings.Contains(out, "inexistente.md") {
+		t.Fatalf("want exit 0 and the fixed line, err=%v:\n%s", err, out)
+	}
+}
+
+// Round 2: --json carries fixed_count.
+func TestLintStagedJSONFixedCount(t *testing.T) {
+	projDir, _ := stagedDebtProject(t)
+	p := debtSpecPath(projDir)
+	b, _ := os.ReadFile(p)
+	mustWrite(t, p, strings.Replace(string(b), "Veja [x](./inexistente.md).", "Sem link.", 1))
+	out, _ := execCerne(t, "lint", "--staged", "--json", "--dir", projDir)
+	var got struct {
+		FixedCount int `json:"fixed_count"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil || got.FixedCount != 1 {
+		t.Fatalf("want fixed_count 1, err=%v:\n%s", err, out)
+	}
+}
+
+// Round 2, language bug: an English project's staged tree must print English section names.
+func TestLintStagedFollowsDocsLanguage(t *testing.T) {
+	projDir, _, repoDir, specPath := pulledProject(t)
+	if err := store.SaveProject(repoDir, store.Project{Name: "demo", DocsLanguage: "en"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "docs language en"); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, specPath, "---\ncerne_id: F-0001\n---\n\n# Parcelamento\n\n## Problem\n\nx\n")
+	for _, args := range [][]string{{"lint", "--staged", "--all"}, {"lint", "--staged"}} {
+		out, _ := execCerne(t, append(args, "--dir", projDir)...)
+		if !strings.Contains(out, "Goal and acceptance criteria") || strings.Contains(out, "Objetivo e critérios") {
+			t.Fatalf("%v: want English section names:\n%s", args, out)
 		}
-	}
-}
-
-// Edited decision, note and runbook docs own their entity's findings, wherever the File is.
-func TestClassifyStagedOtherKinds(t *testing.T) {
-	edits := stagedEdits{files: map[string]bool{}, entities: map[string]bool{}}
-	for _, rel := range []string{"content/decisions/D-0003.md", "content/notes/N-0007.md", "content/runbooks/RB-0002.md"} {
-		edits.files[rel] = true
-		edits.entities[editEntity(rel)] = true
-	}
-	in := []lint.Finding{
-		{Rule: lint.RuleStaleNote, Entity: "D-0003"},
-		{Rule: lint.RuleStaleNote, Entity: "N-0007"},
-		{Rule: lint.RuleStaleNote, Entity: "RB-0002"},
-		{Rule: lint.RuleStaleNote, Entity: "N-0008"},
-	}
-	if mine, other := classifyStaged(in, edits); len(mine) != 3 || len(other) != 1 {
-		t.Fatalf("mine=%d other=%d, want 3 and 1", len(mine), len(other))
 	}
 }
 
@@ -184,5 +224,20 @@ func TestLintStagedJSONNoEdits(t *testing.T) {
 	}
 	if err := json.Unmarshal([]byte(out), &got); err != nil || got.Findings == nil || len(got.Findings) != 0 || got.OtherCount == 0 {
 		t.Fatalf("want {findings: [], other_count: N>0}, err=%v got=%+v\n%s", err, got, out)
+	}
+}
+
+// Round 2 crit. 1 and 5: the diff of findings. A finding absent from the base is the
+// edit's wherever it lands (a plan-older-than-spec on the plan after a spec edit);
+// the line is not part of the identity; a base finding that vanished is fixed.
+func TestDiffFindings(t *testing.T) {
+	old := lint.Finding{Rule: lint.RuleBrokenLink, Entity: "F-1", File: "content/features/F-1/spec.md", Detail: "broken link a", Line: 3}
+	moved := old
+	moved.Line = 9
+	plan := lint.Finding{Rule: lint.RulePlanOlderThanSpec, Entity: "F-1", File: "content/features/F-1/plan.md", Detail: "plan older"}
+	gone := lint.Finding{Rule: lint.RuleBrokenLink, Entity: "F-2", File: "content/features/F-2/spec.md", Detail: "broken link b"}
+	added, kept, fixed := diffFindings([]lint.Finding{moved, plan}, []lint.Finding{old, gone})
+	if len(added) != 1 || added[0].Rule != lint.RulePlanOlderThanSpec || len(kept) != 1 || fixed != 1 {
+		t.Fatalf("added=%v kept=%v fixed=%d", added, kept, fixed)
 	}
 }
