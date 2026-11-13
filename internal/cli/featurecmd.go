@@ -34,6 +34,7 @@ func newFeatureCmd() *cobra.Command {
 	cmd.AddCommand(newTransitionCmds(&dir)...)
 	cmd.AddCommand(newFeatureDeliverCmd(&dir))
 	cmd.AddCommand(newFeatureAcceptCmd(&dir))
+	cmd.AddCommand(newFeatureLearningsCmd(&dir))
 	cmd.AddCommand(verbs.MarkChat(newErrataCmd(&dir)))
 	return cmd
 }
