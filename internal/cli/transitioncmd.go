@@ -226,7 +226,10 @@ func printCompleteNextStep(w io.Writer, repoDir, id string, noStamp bool) {
 	fmt.Fprintf(w, "  - human accept: cerne feature accept %s (or drag the card to Done)\n", id)
 	if f, err := store.LoadFeature(repoDir, id); err == nil {
 		if line := app.DeliveryLine(f, true); line != "" {
-			fmt.Fprintf(w, "  - %s — mark it ready for review when CI is green\n", line)
+			if f.DeliveryMRURL != "" {
+				line += " — mark it ready for review when CI is green"
+			}
+			fmt.Fprintf(w, "  - %s\n", line)
 		}
 	}
 }

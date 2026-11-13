@@ -118,6 +118,8 @@ func TestCompleteStampLine(t *testing.T) {
 		{"lower", stampOutcome{kind: stampLowerRefused}, nil, "warning: cost not stamped: the stamped total is higher than this machine's sessions; nothing written"},
 		{"nothing", stampOutcome{}, cost.ErrNothingToStamp, "warning: cost not stamped: no session on this machine is bound to F-0001; stamp it from the machine that ran the work: cerne cost F-0001 --stamp"},
 		{"other", stampOutcome{}, errors.New("push refused"), "warning: cost not stamped: push refused; run 'cerne cost F-0001 --stamp'"},
+		{"multi-line error", stampOutcome{}, errors.New("push refused:\n  remote: rejected\n"), "warning: cost not stamped: push refused: remote: rejected; run 'cerne cost F-0001 --stamp'"},
+		{"epic: no shares on a mixed base", stampOutcome{report: cost.Report{ID: "E-0001", Counters: cost.Counters{Input: 100}, Total: &cost.Counters{Input: 400}, ByRole: map[string]cost.Counters{"main": {Input: 60}, "critic": {Input: 40}}}, kind: stampWritten}, nil, "cost stamped: 400 weighted tokens"},
 	}
 	for _, c := range cases {
 		if got := completeStampLine("F-0001", c.o, c.err); got != c.want {
@@ -252,5 +254,48 @@ func TestNextAfterCompleteStampStep(t *testing.T) {
 				t.Errorf("next asks for the stamp = %v, want %v:\n%s", got, tc.stepAsk, out)
 			}
 		})
+	}
+}
+
+// F-0402 crit. 4: --no-stamp combines with --force and --mr.
+func TestCompleteNoStampCombinations(t *testing.T) {
+	for _, extra := range [][]string{{"--force"}, {"--mr", "https://github.com/o/r/pull/3"}} {
+		t.Run(extra[0], func(t *testing.T) {
+			projDir, _, repoDir := setupProject(t)
+			seedResultFeatures(t, repoDir, domain.StateInDevelopment)
+			costSessions(t, repoDir)
+			args := append([]string{"feature", "complete", "F-0001", "--no-stamp", "--dir", projDir}, extra...)
+			out, err := execCerne(t, args...)
+			if err != nil {
+				t.Fatalf("complete: %v\n%s", err, out)
+			}
+			if f, _ := store.LoadFeature(repoDir, "F-0001"); f.State != domain.StateImplemented {
+				t.Errorf("state = %s", f.State)
+			}
+			if strings.Contains(out, "cost stamped") || cost.Stamped(repoDir, "F-0001") {
+				t.Errorf("--no-stamp stamped:\n%s", out)
+			}
+		})
+	}
+}
+
+// F-0402 crit. 6: a warned stamp writes no anchor, and `cerne next` reports
+// what it can: with no session bound here there is nothing to stamp, so next
+// does not send the agent to a stamp that would warn again (a bound session
+// with no transcript stamps a zero cost, as `cost --stamp` always did).
+func TestNextAfterWarnedComplete(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	seedResultFeatures(t, repoDir, domain.StateInDevelopment)
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	out, err := execCerne(t, "feature", "complete", "F-0001", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "warning: cost not stamped") {
+		t.Fatalf("complete: %v\n%s", err, out)
+	}
+	if cost.Stamped(repoDir, "F-0001") {
+		t.Fatal("a warned complete wrote an anchor")
+	}
+	out, err = execCerne(t, "next", "F-0001", "--dir", projDir)
+	if err != nil || strings.Contains(out, "cerne cost F-0001 --stamp") {
+		t.Errorf("next after a warned complete: %v\n%s", err, out)
 	}
 }

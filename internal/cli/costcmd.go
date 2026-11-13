@@ -500,7 +500,7 @@ func completeStampLine(id string, o stampOutcome, err error) string {
 	case errors.Is(err, cost.ErrNothingToStamp):
 		return fmt.Sprintf("warning: cost not stamped: no session on this machine is bound to %s; stamp it from the machine that ran the work: cerne cost %s --stamp", id, id)
 	case err != nil:
-		return fmt.Sprintf("warning: cost not stamped: %v; run 'cerne cost %s --stamp'", err, id)
+		return fmt.Sprintf("warning: cost not stamped: %s; run 'cerne cost %s --stamp'", strings.Join(strings.Fields(err.Error()), " "), id)
 	case o.kind == stampLowerRefused:
 		return "warning: cost not stamped: the stamped total is higher than this machine's sessions; nothing written"
 	case o.kind != stampWritten:
@@ -511,7 +511,9 @@ func completeStampLine(id string, o stampOutcome, err error) string {
 		total = *o.report.Total
 	}
 	line := fmt.Sprintf("cost stamped: %.0f weighted tokens", cost.Weighted(total))
-	if whole := cost.Weighted(o.report.Counters); len(o.report.ByRole) > 0 && whole > 0 {
+	// An epic's headline is own plus children, the role shares are own only:
+	// no shares rather than shares of another base.
+	if whole := cost.Weighted(o.report.Counters); o.report.Total == nil && len(o.report.ByRole) > 0 && whole > 0 {
 		shares := make([]string, 0, len(o.report.ByRole))
 		for _, role := range slices.Sorted(maps.Keys(o.report.ByRole)) {
 			shares = append(shares, fmt.Sprintf("%s %.0f%%", role, 100*cost.Weighted(o.report.ByRole[role])/whole))
