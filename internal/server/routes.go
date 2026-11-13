@@ -52,6 +52,13 @@ func dataRoutes() []dataRoute {
 		{"GET", "/work", true, func(w http.ResponseWriter, _ *http.Request, repoDir, _, _ string) {
 			handleWork(w, repoDir)
 		}},
+		// Handoffs (F-0386): read-only, same read mode as /work.
+		{"GET", "/handoffs", true, func(w http.ResponseWriter, _ *http.Request, repoDir, _, _ string) {
+			handleHandoffs(w, repoDir)
+		}},
+		{"GET", "/handoffs/{id}", true, func(w http.ResponseWriter, r *http.Request, repoDir, _, _ string) {
+			handleHandoffDetail(w, repoDir, r.PathValue("id"))
+		}},
 		{"GET", "/version", true, func(w http.ResponseWriter, _ *http.Request, _, _, _ string) {
 			handleVersion(w)
 		}},

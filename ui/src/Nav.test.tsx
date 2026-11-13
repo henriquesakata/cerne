@@ -81,7 +81,7 @@ describe('Nav agrupada (F-0332)', () => {
   })
 
   it.each([
-    ['Trabalho', ['Kanban', 'Backlog', 'Pendências', 'Ideias', 'Gestão', 'War Room', 'Atividade']],
+    ['Trabalho', ['Kanban', 'Backlog', 'Pendências', 'Ideias', 'Gestão', 'War Room', 'Atividade', 'Passagens']],
     ['Conhecimento', ['Decisões', 'Referências', 'Runbooks', 'Notas', 'Convenções']],
     ['Explorar', ['Wiki', 'Perguntar', 'Busca', 'Grafo', 'Mapa mental']],
     ['Saúde', ['Lint', 'Harness', 'Histórico', 'Economia']],
@@ -193,6 +193,9 @@ describe('Nav agrupada (F-0332)', () => {
     ['#/rooms', 'Trabalho', 'War Room'],
     ['#/rooms/R1', 'Trabalho', 'War Room'],
     ['#/activity', 'Trabalho', 'Atividade'],
+    ['#/handoffs', 'Trabalho', 'Passagens'],
+    ['#/handoffs?f=closed', 'Trabalho', 'Passagens'],
+    ['#/handoffs/HO-0001', 'Trabalho', 'Passagens'],
     ['#/decisions', 'Conhecimento', 'Decisões'],
     ['#/d/D-0001', 'Conhecimento', 'Decisões'],
     ['#/references', 'Conhecimento', 'Referências'],
@@ -234,7 +237,7 @@ describe('Nav agrupada (F-0332)', () => {
 
   // F-0334 (crítica C6): a nav marca Pendências e Ideias pela mesma regra
   // que o App usa para montá-las; o que o App não monta cai no Dashboard.
-  it.each(['#/ideas?x=1', '#/pendingsfoo', '#/ideasfoo'])('F-0334: %s não marca grupo nenhum', (hash) => {
+  it.each(['#/ideas?x=1', '#/pendingsfoo', '#/ideasfoo', '#/handoffsfoo'])('F-0334: %s não marca grupo nenhum', (hash) => {
     const { container } = render(<Nav hash={hash} />)
     expect(container.querySelector('.nav-group-btn.active')).toBeNull()
     expect(screen.getByText('Dashboard')).toHaveClass('active')

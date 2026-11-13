@@ -19,6 +19,7 @@ import Manage from './Manage'
 import NewFeature from './NewFeature'
 import StatsPage from './Stats'
 import Activity from './Activity'
+import Handoffs, { HandoffPage } from './Handoffs'
 import Dashboard from './Dashboard'
 import WarRoom, { WarRoomDetail } from './WarRoom'
 import Channel from './Channel'
@@ -63,6 +64,16 @@ export default function App() {
   )
 }
 
+// decodeOr decodes a hash segment; a malformed %-escape stays raw, for the
+// server to 404, instead of throwing URIError out of the render (F-0386).
+function decodeOr(raw: string): string {
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    return raw
+  }
+}
+
 function Routed({ hash }: { hash: string }) {
   const { t } = useT()
   const { projects, activePid } = useProjects()
@@ -95,6 +106,8 @@ function Routed({ hash }: { hash: string }) {
   if (hash === '#/rooms/channel') return <Channel />
   const room = /^#\/rooms\/(.+)$/.exec(hash)
   if (room) return <WarRoomDetail key={room[1]} id={decodeURIComponent(room[1])} />
+  const handoff = /^#\/handoffs\/(.+)$/.exec(hash)
+  if (handoff) return <HandoffPage key={handoff[1]} id={decodeOr(handoff[1])} />
   const wikiPage = /^#\/wiki\/(.+)$/.exec(hash)
   if (wikiPage) return <WikiPageView key={wikiPage[1]} rel={decodeURIComponent(wikiPage[1])} />
   if (hash === '#/decisions') return <Decisions />
@@ -126,6 +139,7 @@ function Routed({ hash }: { hash: string }) {
   if (hash === '#/history') return <History />
   if (hash === '#/stats') return <StatsPage />
   if (hash === '#/activity') return <Activity />
+  if (hash === '#/handoffs' || hash.startsWith('#/handoffs?')) return <Handoffs hash={hash} />
   if (hash === '#/manage') return <Manage />
   if (hash === '#/settings') return <Settings />
   if (hash === '#/new') return <NewFeature />

@@ -1,4 +1,4 @@
-import { fetchWork, type Work } from './api'
+import { fetchHandoffs, fetchWork, type Handoff, type Work } from './api'
 import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
 import { useT } from './i18n'
 
@@ -24,12 +24,26 @@ function refHref(id: string): string {
   return '#/'
 }
 
+// loadActivity traz os W- e as passagens (F-0386) para o selo. Sem a rota de
+// passagens (um servidor anterior), a atividade carrega sem selo.
+async function loadActivity(): Promise<{ works: Work[]; handoffs: Handoff[] }> {
+  const [works, handoffs] = await Promise.all([fetchWork(), fetchHandoffs().catch(() => [])])
+  return { works, handoffs }
+}
+
+// handoffBadge é o selo do W- (F-0386 crit. 5), pelo join no cliente: o ativo
+// com passagem pendente, ou o encerrado por uma passagem assumida.
+function handoffBadge(w: Work, handoffs: Handoff[]): Handoff | undefined {
+  const want = w.state === 'active' ? 'pending' : w.state === 'done' ? 'taken' : null
+  return handoffs.find((h) => h.from_work === w.id && h.state === want)
+}
+
 export default function Activity() {
-  const load = useLiveLoad(fetchWork)
-  const works = load.data
+  const load = useLiveLoad(loadActivity)
   const { t, lang } = useT()
 
-  if (!works) return <LoadPending load={load} message={t.activity.loadError} />
+  if (!load.data) return <LoadPending load={load} message={t.activity.loadError} />
+  const { works, handoffs } = load.data
 
   const active = works
     .filter((w) => w.state === 'active')
@@ -53,7 +67,7 @@ export default function Activity() {
         {active.length === 0 && <p className="muted">{t.activity.emptyActive}</p>}
         <ul className="entity-list">
           {active.map((w) => (
-            <WorkRow key={w.id} w={w} lang={lang} />
+            <WorkRow key={w.id} w={w} lang={lang} handoff={handoffBadge(w, handoffs)} />
           ))}
         </ul>
       </section>
@@ -63,7 +77,7 @@ export default function Activity() {
           <h2>{t.activity.finishedGroup}</h2>
           <ul className="entity-list">
             {finished.map((w) => (
-              <WorkRow key={w.id} w={w} lang={lang} />
+              <WorkRow key={w.id} w={w} lang={lang} handoff={handoffBadge(w, handoffs)} />
             ))}
           </ul>
         </section>
@@ -72,7 +86,7 @@ export default function Activity() {
   )
 }
 
-function WorkRow({ w, lang }: { w: Work; lang: string }) {
+function WorkRow({ w, lang, handoff }: { w: Work; lang: string; handoff?: Handoff }) {
   const { t } = useT()
   const chipClass =
     w.state === 'active'
@@ -89,6 +103,14 @@ function WorkRow({ w, lang }: { w: Work; lang: string }) {
           {w.title}
           {w.note && <span className="muted"> — {w.note}</span>}
         </span>
+        {handoff && (
+          <a
+            className={handoff.state === 'pending' ? 'chip chip-lint' : 'chip chip-done'}
+            href={`#/handoffs/${handoff.id}`}
+          >
+            {handoff.state === 'pending' ? t.activity.handoffPending(handoff.id) : t.activity.handedOff(handoff.id)}
+          </a>
+        )}
         <span className="work-refs">
           {(w.refs ?? []).map((r) => (
             <a key={r} className="work-ref" href={refHref(r)}>
