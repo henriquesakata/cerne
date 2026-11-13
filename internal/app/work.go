@@ -77,6 +77,7 @@ type startParams struct {
 	title, actor string
 	refs, paths  []string
 	force        bool
+	finalRefs    bool // refs are final: never inherit the origin's (TakeHandoff dropped the dangling ones)
 	from         string
 	ho           *store.Handoff
 	sess, note   string
@@ -113,7 +114,7 @@ func startWorkTx(repoDir, projDir string, p startParams) (StartedWork, string, s
 		if origin.HandoffAt == nil && !force && boundElsewhere(sessionBindingsIn(filepath.Dir(repoDir)), from, os.Getenv("CERNE_SESSION")) {
 			return StartedWork{}, "", "", fmt.Errorf("--from: %s has no handoff and is bound to another session — it may be live work; confirm with that session, or use --force to take it over anyway", from)
 		}
-		if len(cleaned) == 0 {
+		if len(cleaned) == 0 && !p.finalRefs {
 			cleaned = origin.Refs
 		}
 		// F-0368 crit. 6: taking a work over takes its pending handoff.

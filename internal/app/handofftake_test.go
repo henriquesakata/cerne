@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
@@ -215,4 +216,32 @@ func TestHandoffMalformedID(t *testing.T) {
 		}
 	}
 	assertCloneUntouched(t, repoDir, before)
+}
+
+// F-0368 critic round 1, item 6: an origin that cannot be loaded is "not
+// active" (the take proceeds and says so); refs that no longer resolve are
+// dropped from the new work, named in the result, instead of blocking.
+func TestTakeHandoffMissingOriginAndRefs(t *testing.T) {
+	repoDir, projDir := passBaton(t)
+	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		for _, p := range []string{"entities/works/W-0001.json", "entities/features/F-0001.json"} {
+			if err := os.Remove(filepath.Join(repoDir, filepath.FromSlash(p))); err != nil {
+				return "", err
+			}
+		}
+		return "drop origin and ref", nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := TakeHandoff(repoDir, projDir, filepath.Dir(repoDir), "", "HO-0001", "", "")
+	if err != nil {
+		t.Fatalf("TakeHandoff: %v", err)
+	}
+	if r.OriginClosed || !r.OriginMissing || len(r.Refs) != 0 || !slices.Equal(r.DroppedRefs, []string{"F-0001"}) || r.Title == "" {
+		t.Fatalf("result = %+v", r)
+	}
+	if h, _ := store.LoadHandoff(repoDir, "HO-0001"); h.State != domain.HandoffTaken {
+		t.Fatalf("handoff = %+v", h)
+	}
 }

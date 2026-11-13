@@ -37,10 +37,12 @@ func canonicalHandoffID(id string) (string, error) {
 // local session-binding failure after the commit; the take itself stands.
 type TakeResult struct {
 	StartedWork
-	Brief        string
-	OriginClosed bool
-	OriginState  domain.WorkState // the origin's state when it was left as it is
-	Warning      string
+	Brief         string
+	OriginClosed  bool
+	OriginState   domain.WorkState // the origin's state when it was left as it is
+	OriginMissing bool             // the origin could not be loaded: treated as not active
+	DroppedRefs   []string         // the handoff's refs that no longer resolve, left off the new work
+	Warning       string
 }
 
 // TakeHandoff (F-0368 crit. 3) takes pending handoff id in one commit: opens
@@ -61,25 +63,37 @@ func TakeHandoff(repoDir, projDir, cacheDir, sess, id, title, note string) (Take
 		if err != nil {
 			return "", err
 		}
+		// An origin that cannot be loaded is not active: the take proceeds without it.
 		origin, err := store.LoadWork(repoDir, h.FromWork)
-		if err != nil {
-			return "", fmt.Errorf("%s: origin %s: %w", id, h.FromWork, err)
+		missing := err != nil
+		if missing {
+			origin = store.Work{ID: h.FromWork, Title: h.FromWork + " (taken from " + id + ")"}
+		}
+		// Refs that no longer resolve are dropped, not a reason to refuse the baton.
+		var refs, dropped []string
+		for _, r := range h.Refs {
+			if store.EntityExists(repoDir, r) {
+				refs = append(refs, r)
+			} else {
+				dropped = append(dropped, r)
+			}
 		}
 		body, err := store.LoadHandoffContent(repoDir, id)
 		if err != nil {
 			return "", err
 		}
-		p := startParams{title: strings.TrimSpace(title), refs: h.Refs, actor: defaultWorkActor(), ho: &h, sess: sess, note: strings.TrimSpace(note)}
+		p := startParams{title: strings.TrimSpace(title), refs: refs, finalRefs: true, actor: defaultWorkActor(), ho: &h, sess: sess, note: strings.TrimSpace(note)}
 		if p.title == "" {
 			p.title = origin.Title
 		}
 		// The handoff is the proof of continuity: the duplicate guard does not apply.
 		p.force = true
-		if origin.State == domain.WorkActive {
+		if !missing && origin.State == domain.WorkActive {
 			p.from = origin.ID
 		}
 		sw, ft, msg, err := startWorkTx(repoDir, projDir, p)
-		out, fromTitle = TakeResult{StartedWork: sw, Brief: strings.TrimSpace(body), OriginClosed: p.from != "", OriginState: origin.State}, ft
+		out, fromTitle = TakeResult{StartedWork: sw, Brief: strings.TrimSpace(body), OriginClosed: p.from != "", OriginState: origin.State,
+			OriginMissing: missing, DroppedRefs: dropped}, ft
 		return msg, err
 	})
 	if err != nil {

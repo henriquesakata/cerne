@@ -53,10 +53,16 @@ func newHandoffTakeCmd(dir *string) *cobra.Command {
 			}
 			out := cmd.OutOrStdout()
 			fmt.Fprintf(out, "%s taken — %s created (active) — %s (actor: %s)\n", r.Taken.ID, r.ID, r.Title, r.Actor)
-			if r.OriginClosed {
+			switch {
+			case r.OriginClosed:
 				fmt.Fprintf(out, "closed %s (handed off to %s via %s)\n", r.From, r.ID, r.Taken.ID)
-			} else {
+			case r.OriginMissing:
+				fmt.Fprintf(out, "%s is no longer in the backend: nothing to close\n", r.Taken.FromWork)
+			default:
 				fmt.Fprintf(out, "%s is %s: left as it is\n", r.Taken.FromWork, r.OriginState)
+			}
+			if len(r.DroppedRefs) > 0 {
+				fmt.Fprintf(out, "refs no longer in the backend, left off %s: %s\n", r.ID, strings.Join(r.DroppedRefs, ","))
 			}
 			if r.Warning != "" {
 				fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s\n", r.Warning)
