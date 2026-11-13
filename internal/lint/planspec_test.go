@@ -70,3 +70,57 @@ func TestPlanBehindSpec(t *testing.T) {
 		t.Fatal("no spec read as a plan behind it")
 	}
 }
+
+// TestPlanOlderThanSpecFindings (F-0377 crit. 2): the lint flags a plan
+// behind its spec only while the plan is the live contract (approved, in
+// development), names the feature and the two writes in English — "unknown"
+// when no spec write is recorded — and fails the lint.
+func TestPlanOlderThanSpecFindings(t *testing.T) {
+	repoDir := t.TempDir()
+	states := map[string]domain.FeatureState{
+		"F-0001": domain.StateApproved, "F-0002": domain.StateInDevelopment, "F-0003": domain.StateCandidate,
+		"F-0004": domain.StateImplemented, "F-0005": domain.StateDone, "F-0006": domain.StateApproved,
+	}
+	for id, s := range states {
+		writeSpecs(t, repoDir, id, "", "B\n")
+		if err := store.SaveFeature(repoDir, store.Feature{ID: id, Title: "t " + id, State: s}); err != nil {
+			t.Fatal(err)
+		}
+		events := []domain.Event{planWrite(id, 10, "A\n")}
+		if id != "F-0006" {
+			events = append(events, specEdit(id, string(s), 20))
+		}
+		for _, e := range events {
+			if err := store.AppendEvent(repoDir, e); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	findings, err := Run(repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]Finding{}
+	for _, f := range findings {
+		if f.Rule == RulePlanOlderThanSpec {
+			got[f.Entity] = f
+		}
+	}
+	want := map[string]string{
+		"F-0001": "F-0001 plan was written on 2026-08-11 12:10 UTC against an older spec (spec changed 2026-08-11 12:20 UTC) — re-read the spec and push the plan again",
+		"F-0002": "F-0002 plan was written on 2026-08-11 12:10 UTC against an older spec (spec changed 2026-08-11 12:20 UTC) — re-read the spec and push the plan again",
+		"F-0006": "F-0006 plan was written on 2026-08-11 12:10 UTC against an older spec (spec changed unknown) — re-read the spec and push the plan again",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("plan-older-than-spec on %v, want %v", got, want)
+	}
+	for id, detail := range want {
+		f := got[id]
+		if f.Detail != detail || f.File != "content/features/"+id+"/plan.md" || !Blocking(f) {
+			t.Errorf("%s: finding %+v, want detail %q on its plan.md, blocking", id, f, detail)
+		}
+	}
+	if _, ok := ruleRank[RulePlanOlderThanSpec]; !ok {
+		t.Fatal("RulePlanOlderThanSpec missing from ruleRank")
+	}
+}

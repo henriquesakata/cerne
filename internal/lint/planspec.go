@@ -1,6 +1,7 @@
 package lint
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -51,4 +52,36 @@ func planBehindSpec(repoDir string, f store.Feature, events []domain.Event) (beh
 		return false, planAt, specAt
 	}
 	return SpecDigest(spec) != digest, planAt, specAt
+}
+
+// WriteTime is how a plan-behind-spec message dates a write: UTC to the
+// minute — a spec rewritten the same afternoon still reads apart — and
+// "unknown" when no write is recorded.
+func WriteTime(t time.Time) string {
+	if t.IsZero() {
+		return "unknown"
+	}
+	return t.UTC().Format("2006-01-02 15:04 UTC")
+}
+
+// planOlderThanSpecFindings flags a plan behind its spec while the plan is the
+// live contract: approved and in development. Past that the plan is history.
+func planOlderThanSpecFindings(repoDir string, features []store.Feature, events []domain.Event) []Finding {
+	var out []Finding
+	for _, f := range features {
+		if f.State != domain.StateApproved && f.State != domain.StateInDevelopment {
+			continue
+		}
+		behind, planAt, specAt := planBehindSpec(repoDir, f, events)
+		if !behind {
+			continue
+		}
+		out = append(out, Finding{
+			Rule:   RulePlanOlderThanSpec,
+			Entity: f.ID,
+			File:   "content/features/" + f.ID + "/plan.md",
+			Detail: fmt.Sprintf("%s plan was written on %s against an older spec (spec changed %s) — re-read the spec and push the plan again", f.ID, WriteTime(planAt), WriteTime(specAt)),
+		})
+	}
+	return out
 }
