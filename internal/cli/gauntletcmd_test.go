@@ -391,3 +391,22 @@ func TestGauntletArtifactEmptyDiffWarns(t *testing.T) {
 		t.Errorf("unexpected warning: %q", stderr)
 	}
 }
+
+// two evidence files with one basename would share a fence name: refused, naming both.
+func TestGauntletArtifactEvidenceDuplicateName(t *testing.T) {
+	projDir, _ := gauntletFixture(t)
+	tmp := t.TempDir()
+	a, b := filepath.Join(tmp, "x", "run.txt"), filepath.Join(tmp, "y", "run.txt")
+	for _, p := range []string{a, b} {
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		os.WriteFile(p, []byte("o"), 0o644)
+	}
+	dest := filepath.Join(tmp, "a.txt")
+	out, err := execCerne(t, "gauntlet", "artifact", "F-0001", "--evidence", a, "--evidence", b, "--out", dest, "--dir", projDir)
+	if err == nil || !strings.Contains(err.Error(), a) || !strings.Contains(err.Error(), b) {
+		t.Errorf("err=%v out=%s", err, out)
+	}
+	if _, err := os.Stat(dest); err == nil {
+		t.Error("--out written despite the duplicate")
+	}
+}

@@ -79,7 +79,13 @@ func runGauntletArtifact(cmd *cobra.Command, dir, id, base, notesPath, outPath s
 		if err != nil {
 			return fmt.Errorf("reading --evidence: %w", err)
 		}
-		evidence = append(evidence, gauntlet.Evidence{Name: filepath.Base(p), Body: string(b)})
+		name := filepath.Base(p)
+		for i, e := range evidence {
+			if e.Name == name {
+				return fmt.Errorf("%w: %s and %s", errGauntletEvidenceName, evidencePaths[i], p)
+			}
+		}
+		evidence = append(evidence, gauntlet.Evidence{Name: name, Body: string(b)})
 	}
 	var diff, usedBase string
 	mode := ""
@@ -133,6 +139,8 @@ func runGauntletArtifact(cmd *cobra.Command, dir, id, base, notesPath, outPath s
 		id, outPath, len(text), mode, strings.Join(append([]string{"ui/dist", "docs.lock"}, excludes...), ", "), evNote)
 	return nil
 }
+
+var errGauntletEvidenceName = errors.New("--evidence files must have distinct names")
 
 var (
 	errGauntletRecordMode      = errors.New("pass either --verdict <file> --ours A|B, or --critic \"<line>\" (not both)")
