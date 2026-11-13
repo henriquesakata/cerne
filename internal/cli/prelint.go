@@ -77,12 +77,13 @@ func editEntity(backendRel string) string {
 }
 
 // classifyStaged splits findings into those born from the local edits and the
-// rest. A finding with a File belongs to the edit when that document was
-// edited, wherever it points (a broken link in an edited doc is the edit's);
-// an entity-level finding (no File) belongs when its entity was edited.
+// rest. A finding is the edit's when its File is an edited document (a broken
+// link in an edited doc counts wherever it points) or its Entity owns an edited
+// document (whole-files: editing a spec owns the plan-older-than-spec on its
+// plan, and an old finding on that same entity counts too).
 func classifyStaged(findings []lint.Finding, e stagedEdits) (mine, other []lint.Finding) {
 	for _, f := range findings {
-		if (f.File != "" && e.files[f.File]) || (f.File == "" && e.entities[f.Entity]) {
+		if (f.File != "" && e.files[f.File]) || (f.Entity != "" && e.entities[f.Entity]) {
 			mine = append(mine, f)
 		} else {
 			other = append(other, f)

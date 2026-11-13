@@ -61,7 +61,7 @@ Catch documentation debts **before** they churn the backend — same lint engine
 - `cerne lint --staged` — runs every lint rule over your **local** `.docs/` edits (assembled over the pulled snapshot), without a pull, and fails only on what your edits broke; the rest of the project's debt is one count line (`--all` lists and fails on everything). A partial `.docs/` (implemented features not materialized) yields no false positive.
 - `cerne push --dry-run` — shows exactly which documents **would** go to the backend and lints them, then stops before any commit/push. Exits non-zero if they would lint dirty, so it doubles as a pre-push gate.
 
-Both report the same findings (and the same `content/…` paths) as `cerne lint` over the backend — so a clean `--staged`/`--dry-run` means a clean push.
+Both use the same rules (and the same `content/…` paths) as `cerne lint` over the backend. A clean `--staged` means your edits are clean; `--staged --all` or `push --dry-run` gives the whole picture.
 
 **Inspect the agent harness itself.** `cerne harness` (add `--json` for machine reading) reports the project's effective harness inventory, read-only: cerne-managed hooks and skills with drift against the running build (`divergent`/`missing` + the repair command, e.g. `cerne hook install`), MCP servers (secrets masked), marketplace plugins, context files and provider parity — each line with its origin layer, and items outside the repository flagged (another machine does not inherit them). Use it to answer "is this hook actually active here?" before debugging a hook that never fired.
 

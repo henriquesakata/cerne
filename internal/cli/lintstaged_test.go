@@ -122,14 +122,15 @@ func TestClassifyStagedFindings(t *testing.T) {
 	}
 	in := []lint.Finding{
 		{Rule: lint.RuleBrokenLink, Entity: "F-0001", File: "content/features/F-0001/spec.md"},
-		{Rule: lint.RuleBrokenLink, Entity: "F-0009", File: "content/features/F-0001/spec.md"}, // edited doc, points elsewhere
-		{Rule: lint.RuleMissingGateDoc, Entity: "F-0001"},                                      // entity-level
+		{Rule: lint.RuleBrokenLink, Entity: "F-0009", File: "content/features/F-0001/spec.md"},        // edited doc, points elsewhere
+		{Rule: lint.RuleMissingGateDoc, Entity: "F-0001"},                                             // entity-level
+		{Rule: lint.RulePlanOlderThanSpec, Entity: "F-0001", File: "content/features/F-0001/plan.md"}, // spec edited, plan not
 		{Rule: lint.RuleBrokenLink, Entity: "F-0002", File: "content/features/F-0002/spec.md"},
 		{Rule: lint.RuleMissingGateDoc, Entity: "F-0002"},
 	}
 	mine, other := classifyStaged(in, edits)
-	if len(mine) != 3 || len(other) != 2 {
-		t.Fatalf("mine=%d other=%d, want 3 and 2", len(mine), len(other))
+	if len(mine) != 4 || len(other) != 2 {
+		t.Fatalf("mine=%d other=%d, want 4 and 2", len(mine), len(other))
 	}
 }
 
@@ -142,5 +143,46 @@ func TestEditEntityFromBackendRel(t *testing.T) {
 		if got := editEntity(rel); got != want {
 			t.Errorf("editEntity(%q) = %q, want %q", rel, got, want)
 		}
+	}
+}
+
+// Edited decision, note and runbook docs own their entity's findings, wherever the File is.
+func TestClassifyStagedOtherKinds(t *testing.T) {
+	edits := stagedEdits{files: map[string]bool{}, entities: map[string]bool{}}
+	for _, rel := range []string{"content/decisions/D-0003.md", "content/notes/N-0007.md", "content/runbooks/RB-0002.md"} {
+		edits.files[rel] = true
+		edits.entities[editEntity(rel)] = true
+	}
+	in := []lint.Finding{
+		{Rule: lint.RuleStaleNote, Entity: "D-0003"},
+		{Rule: lint.RuleStaleNote, Entity: "N-0007"},
+		{Rule: lint.RuleStaleNote, Entity: "RB-0002"},
+		{Rule: lint.RuleStaleNote, Entity: "N-0008"},
+	}
+	if mine, other := classifyStaged(in, edits); len(mine) != 3 || len(other) != 1 {
+		t.Fatalf("mine=%d other=%d, want 3 and 1", len(mine), len(other))
+	}
+}
+
+func TestLintAllNeedsStaged(t *testing.T) {
+	projDir, _ := stagedDebtProject(t)
+	out, err := execCerne(t, "lint", "--all", "--dir", projDir)
+	if err == nil || !strings.Contains(out, "--all needs --staged") {
+		t.Fatalf("want the --all needs --staged error, err=%v:\n%s", err, out)
+	}
+}
+
+func TestLintStagedJSONNoEdits(t *testing.T) {
+	projDir, _ := stagedDebtProject(t)
+	out, err := execCerne(t, "lint", "--staged", "--json", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("no edits must pass: %v\n%s", err, out)
+	}
+	var got struct {
+		Findings   []any `json:"findings"`
+		OtherCount int   `json:"other_count"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil || got.Findings == nil || len(got.Findings) != 0 || got.OtherCount == 0 {
+		t.Fatalf("want {findings: [], other_count: N>0}, err=%v got=%+v\n%s", err, got, out)
 	}
 }
