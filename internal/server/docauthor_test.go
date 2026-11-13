@@ -109,3 +109,26 @@ func TestFeatureDetailWrites(t *testing.T) {
 		t.Fatalf("writes = %+v, want the editor's one human write", got.Writes)
 	}
 }
+
+// TestPagePromoteNeverTakesTheServerEnv (critic round 1, item 4): the page's
+// only promote is an idea's (the pendings API is read-only, pendings.go). Its
+// spec is the idea's text in cerne's stub, written by whoever captured the
+// idea — so the promote records no writer at all, never the server's agent
+// environment.
+func TestPagePromoteNeverTakesTheServerEnv(t *testing.T) {
+	agentServerEnv(t)
+	repoDir, projDir, _ := newGitBackend(t)
+	h := New(repoDir, projDir, "")
+	if rec := doJSON(t, h, http.MethodPost, "/api/ideas", `{"text":"exportar CSV"}`, &map[string]any{}); rec.Code != http.StatusCreated {
+		t.Fatalf("POST idea = %d %s", rec.Code, rec.Body.String())
+	}
+	var promoted struct {
+		Feature store.Feature `json:"feature"`
+	}
+	if rec := doJSON(t, h, http.MethodPost, "/api/ideas/I-0001/promote", `{}`, &promoted); rec.Code != http.StatusOK {
+		t.Fatalf("promote = %d %s", rec.Code, rec.Body.String())
+	}
+	if p := lastDocEdited(t, repoDir, promoted.Feature.ID); p != nil {
+		t.Fatalf("page promote recorded a writer %v, want none", p)
+	}
+}
