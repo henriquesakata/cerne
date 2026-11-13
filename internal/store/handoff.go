@@ -85,6 +85,7 @@ type Handoff struct {
 	TakenNote     string     `json:"taken_note,omitempty"`
 	TakenAt       *time.Time `json:"taken_at,omitempty"`
 	CancelReason  string     `json:"cancel_reason,omitempty"`
+	LogUpto       int        `json:"log_upto,omitempty"` // highest work log entry (F-0397) this handoff carries
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
 }

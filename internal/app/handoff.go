@@ -166,6 +166,10 @@ func HandoffWork(repoDir, projDir, id, brief, next string, evidence, contingenci
 		if hoID, err = store.NextID(repoDir, "HO"); err != nil {
 			return "", err
 		}
+		body, logUpto, err := withWorkLog(repoDir, w.ID, text, lang)
+		if err != nil {
+			return "", err
+		}
 		now := time.Now().UTC()
 		prior, ok, err := pendingHandoffOf(repoDir, w.ID)
 		if err != nil {
@@ -192,13 +196,14 @@ func HandoffWork(repoDir, projDir, id, brief, next string, evidence, contingenci
 			FromSession:   os.Getenv("CERNE_SESSION"),
 			Next:          next,
 			Contingencies: ifs,
+			LogUpto:       logUpto,
 			CreatedAt:     now,
 			UpdatedAt:     now,
 		}
 		if err := store.SaveHandoff(repoDir, h); err != nil {
 			return "", err
 		}
-		if err := store.SaveHandoffContent(repoDir, hoID, text+"\n"); err != nil {
+		if err := store.SaveHandoffContent(repoDir, hoID, body+"\n"); err != nil {
 			return "", err
 		}
 		w.HandoffAt, w.UpdatedAt = &now, now
@@ -217,6 +222,37 @@ func HandoffWork(repoDir, projDir, id, brief, next string, evidence, contingenci
 		return "", err
 	}
 	return hoID, nil
+}
+
+// withWorkLog appends to a handoff brief the work log entries made since the
+// previous TAKEN handoff of the same work (all of them when none was) and returns
+// the highest entry number carried (F-0397). Without new entries the brief is
+// unchanged and the number is the previous one.
+func withWorkLog(repoDir, work, brief string, lang doclang.Lang) (string, int, error) {
+	hs, err := store.LoadAllHandoffs(repoDir)
+	if err != nil {
+		return "", 0, err
+	}
+	prev := 0
+	for _, h := range hs {
+		if h.FromWork == work && h.State == domain.HandoffTaken { // a superseded or cancelled one was never read
+			prev = max(prev, h.LogUpto)
+		}
+	}
+	all, err := store.LoadLog(repoDir, work)
+	if err != nil {
+		return "", 0, err
+	}
+	var fresh []store.LogEntry
+	for _, e := range all {
+		if e.Seq > prev {
+			fresh = append(fresh, e)
+		}
+	}
+	if len(fresh) == 0 {
+		return brief, prev, nil
+	}
+	return brief + "\n\n" + doclang.Display(doclang.LogLabel, lang) + ":\n" + RenderWorkLog(fresh), fresh[len(fresh)-1].Seq, nil
 }
 
 // pendingHandoffOf is work's pending handoff (at most one, F-0368 crit. 2).

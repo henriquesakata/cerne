@@ -264,7 +264,16 @@ func runShow(cmd *cobra.Command, dir, id, doc string, asJSON, all bool) error {
 	// with their state; the F-0339 entries after them, as legacy.
 	var handoffs []store.HandoffEntry
 	var records []store.Handoff
+	var workLog []store.LogEntry
 	if res.kind == "work" {
+		// F-0397: the decisions recorded on the work, in the reader's zone.
+		var err error
+		if workLog, err = store.LoadLog(ctx.repoDir, id); err != nil {
+			return err
+		}
+		if len(workLog) > 0 {
+			res.content = append(res.content, showDoc{name: "log", body: app.RenderWorkLog(workLog)})
+		}
 		all, err := store.LoadAllHandoffs(ctx.repoDir)
 		if err != nil {
 			return err
@@ -383,6 +392,7 @@ func runShow(cmd *cobra.Command, dir, id, doc string, asJSON, all bool) error {
 		enc.SetIndent("", "  ")
 		j := res.toJSON(handoffs)
 		j.HandoffRecords = records
+		j.Log = workLog
 		j.OpenErrata, j.SteplessErrata = openErrata, steplessErrata
 		j.MergedErrata, j.EarlierBodyRev = merged, earlier
 		return enc.Encode(j)
@@ -816,6 +826,7 @@ type showJSON struct {
 	OpenErrata     *int                 `json:"open_errata,omitempty"`      // runbooks with open items only (F-0345)
 	SteplessErrata *int                 `json:"stepless_errata,omitempty"`  // idem: those with no step
 	Handoffs       []store.HandoffEntry `json:"handoffs,omitempty"`         // works only: the F-0339 entries, shape kept for existing consumers (MCP show)
+	Log            []store.LogEntry     `json:"log,omitempty"`              // works only (F-0397): the decisions recorded on it
 	HandoffRecords []store.Handoff      `json:"handoff_records,omitempty"`  // works only (F-0368): the HO- from or into it
 	MergedErrata   []mergedErrataJSON   `json:"merged_errata,omitempty"`    // runbooks only (F-0351)
 	EarlierBodyRev int                  `json:"earlier_body_rev,omitempty"` // idem: the revision before the first merge listed
@@ -893,7 +904,7 @@ type showDocJSON struct {
 func (r showResult) toJSON(handoffs []store.HandoffEntry) showJSON {
 	var docs []showDocJSON
 	for _, d := range r.content {
-		if d.name != "informed by" && d.name != "amendments" && d.name != "handoffs" && d.name != "legacy handoffs" { // structured in Amendments / Handoffs
+		if d.name != "informed by" && d.name != "amendments" && d.name != "handoffs" && d.name != "legacy handoffs" && d.name != "log" { // structured in Amendments / Handoffs
 			docs = append(docs, showDocJSON{d.name, d.body})
 		}
 	}

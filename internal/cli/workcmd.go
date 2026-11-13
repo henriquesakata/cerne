@@ -25,6 +25,7 @@ func newWorkCmd() *cobra.Command {
 	_ = cmd.PersistentFlags().MarkHidden("dir")
 	cmd.AddCommand(newWorkStartCmd(&dir))
 	cmd.AddCommand(newWorkHandoffCmd(&dir))
+	cmd.AddCommand(newWorkLogCmd(&dir))
 	cmd.AddCommand(newWorkDoneCmd(&dir))
 	cmd.AddCommand(newWorkAbandonCmd(&dir))
 	cmd.AddCommand(newWorkListCmd(&dir))
@@ -371,4 +372,41 @@ func joinRefs(refs []string) string {
 		out += r
 	}
 	return out
+}
+
+func newWorkLogCmd(dir *string) *cobra.Command {
+	var file, actor string
+	var corrects int
+	cmd := &cobra.Command{
+		Use:   "log <id> [\"<text>\"] [--file <f>] [--actor owner|<nickname>] [--corrects <n>]",
+		Short: "Record one decision on an active work (append-only, with time and author)",
+		Long: "Appends one entry to the work's log (F-0397): the literal text (argument, --file or stdin), the UTC time, " +
+			"the actor and who recorded it. --actor owner marks the owner's word, --actor <nickname> a nickname; the " +
+			"default is this session's identity. recorded_by always holds this session's identity, so 'the owner said' " +
+			"written by an agent is never mistaken for the owner writing. An entry is never edited or deleted: correct " +
+			"one with a new entry, --corrects <n>. An e-mail or person id in the text or the actor is refused.",
+		Args: cobra.RangeArgs(1, 2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, err := resolveProject(*dir)
+			if err != nil {
+				return err
+			}
+			text := ""
+			if len(args) == 2 {
+				text = args[1]
+			} else if text, err = readOptionalBody(cmd, file); err != nil {
+				return err
+			}
+			e, err := app.AppendWorkLog(ctx.repoDir, ctx.projDir, args[0], actor, text, corrects, time.Now())
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "logged #%d on %s at %s\n", e.Seq, strings.ToUpper(strings.TrimSpace(args[0])), app.LogTime(e.UTC))
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&file, "file", "", "file with the text (or pipe it on stdin)")
+	cmd.Flags().StringVar(&actor, "actor", "", "who the decision came from: owner or a nickname (default: this session)")
+	cmd.Flags().IntVar(&corrects, "corrects", 0, "the entry number this one corrects")
+	return cmd
 }

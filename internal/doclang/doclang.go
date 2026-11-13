@@ -258,6 +258,8 @@ const (
 	EvidenceLabel
 	IfLabel
 	NextStepLabel
+	// LogLabel opens the work log entries a handoff carries (F-0397).
+	LogLabel
 	// JudgeQuestionLabel opens the line under the bar that holds the question
 	// the blind judge answers (F-0381).
 	JudgeQuestionLabel
@@ -296,6 +298,7 @@ var terms = map[Term]map[Lang]form{
 	EvidenceLabel:      {PT: {`Evid(?:ê|e\x{0302}|e)ncia`, "Evidência"}, EN: {`Evidence`, "Evidence"}},
 	IfLabel:            {PT: {`Se`, "Se"}, EN: {`If`, "If"}},
 	NextStepLabel:      {PT: {`Pr(?:ó|o\x{0301}|o)ximo passo`, "Próximo passo"}, EN: {`Next step`, "Next step"}},
+	LogLabel:           {PT: {`Di(?:á|a\x{0301}|a)rio de decis(?:õ|o\x{0303}|o)es`, "Diário de decisões"}, EN: {`Decision log`, "Decision log"}},
 	JudgeQuestionLabel: {PT: {`Pergunta ao juiz`, "Pergunta ao juiz"}, EN: {`Question for the judge`, "Question for the judge"}},
 }
 
