@@ -128,3 +128,28 @@ func TestAssembleEvidence(t *testing.T) {
 		}
 	}
 }
+
+// criterion 7 by bytes: without evidence the bundle is what origin/main's
+// Assemble produced for the same inputs (expected strings captured from it).
+func TestAssembleGoldenWithoutEvidence(t *testing.T) {
+	spec := "## Problema\n\nprosa\n\n## Objetivo e critérios de aceitação\n\n1. QUANDO x O SISTEMA DEVE y.\n\n## Verificação\n\nt\n"
+	plan := "## Estratégia\n\nlivre\n\n## Contratos fixados pelo TL\n\n- contrato A\n"
+	cases := []struct {
+		in   Input
+		want string
+	}{
+		{Input{Lang: doclang.PT, Spec: spec, Plan: plan, Notes: "desvio 1", Diff: "diff --git a/x b/x\n+a\n\n"},
+			"=== CRITÉRIOS (início) ===\n## Objetivo e critérios de aceitação\n\n1. QUANDO x O SISTEMA DEVE y.\n\n## Contratos fixados pelo TL\n\n- contrato A\n\n## Desvios declarados pelo builder\n\ndesvio 1\n=== CRITÉRIOS (fim) ===\n\n=== DIFF (início) ===\ndiff --git a/x b/x\n+a\n=== DIFF (fim) ===\n"},
+		{Input{Lang: doclang.EN, Spec: "## Goal and acceptance criteria\n\n1. WHEN a THE SYSTEM SHALL b.\n", Diff: "d\n"},
+			"=== CRITERIA (start) ===\n## Goal and acceptance criteria\n\n1. WHEN a THE SYSTEM SHALL b.\n\n(no plan contracts)\n=== CRITERIA (end) ===\n\n=== DIFF (start) ===\nd\n=== DIFF (end) ===\n"},
+	}
+	for _, tc := range cases {
+		got, err := Assemble(tc.in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != tc.want {
+			t.Errorf("%s: bytes differ:\n got %q\nwant %q", tc.in.Lang, got, tc.want)
+		}
+	}
+}
