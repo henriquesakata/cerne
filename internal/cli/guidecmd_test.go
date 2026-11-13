@@ -78,3 +78,18 @@ func TestGuideNoQuestionListsTopics(t *testing.T) {
 		t.Fatalf("empty json: %v\n%s", err, j)
 	}
 }
+
+func TestGuideStopwordQueryListsTopics(t *testing.T) {
+	out, err := execGuide(t, "the")
+	if err != nil || !strings.HasPrefix(out, "No guide section matches \"the\".") || !strings.Contains(out, "Topics") {
+		t.Fatalf("err=%v output:\n%s", err, out)
+	}
+}
+
+func TestGuideRefusesLimitBelowOne(t *testing.T) {
+	for _, l := range []string{"0", "-1"} {
+		if _, err := execGuide(t, "--limit", l, "settings"); err == nil || !strings.Contains(err.Error(), "--limit") {
+			t.Errorf("--limit %s: err = %v, want a refusal naming --limit", l, err)
+		}
+	}
+}

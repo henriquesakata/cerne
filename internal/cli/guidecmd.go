@@ -24,6 +24,9 @@ func newGuideCmd() *cobra.Command {
 			"structured output.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if limit < 1 {
+				return fmt.Errorf("--limit must be at least 1, got %d", limit)
+			}
 			q := ""
 			if len(args) == 1 {
 				q = strings.TrimSpace(args[0])
