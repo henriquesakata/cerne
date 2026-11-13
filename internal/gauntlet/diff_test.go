@@ -219,3 +219,35 @@ func TestCitesID(t *testing.T) {
 		}
 	}
 }
+
+// a revert and the commit it reverts both cite the id: both stay, on purpose,
+// so the critic sees the back-and-forth.
+func TestFeatureCommitsKeepsReverts(t *testing.T) {
+	dir := fixture(t, "main", false)
+	git(t, dir, "checkout", "-q", "main")
+	commitFile(t, dir, "r.go", "feat: add r (F-0001)")
+	git(t, dir, "revert", "--no-edit", "HEAD")
+	_, commits, _, err := FeatureCommits(dir, "", "", "F-0001", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(commits) != 2 || commits[0].Subject != "feat: add r (F-0001)" || !strings.HasPrefix(commits[1].Subject, "Revert") {
+		t.Fatalf("commits = %v", commits)
+	}
+}
+
+// each commit's diff is raw, like Diff: a textconv driver must not rewrite it.
+func TestFeatureCommitsNoTextconv(t *testing.T) {
+	dir := fixture(t, "main", false)
+	git(t, dir, "checkout", "-q", "main")
+	git(t, dir, "config", "diff.up.textconv", "tr a-z A-Z <")
+	write(t, dir, ".gitattributes", "*.dat diff=up\n")
+	commitFile(t, dir, "x.dat", "feat: dat (F-0001)")
+	diff, _, _, err := FeatureCommits(dir, "", "", "F-0001", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(diff, "+feat: dat (F-0001)") {
+		t.Errorf("textconv applied:\n%s", diff)
+	}
+}
