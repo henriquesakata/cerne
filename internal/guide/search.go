@@ -70,7 +70,13 @@ func Search(sections []Section, query string, limit int) []Section {
 	for _, id := range order {
 		score[id] += titleHits(sections[id].Title, terms)
 	}
-	sort.SliceStable(order, func(i, j int) bool { return score[order[i]] > score[order[j]] })
+	sort.SliceStable(order, func(i, j int) bool {
+		a, b := order[i], order[j]
+		if score[a] != score[b] {
+			return score[a] > score[b]
+		}
+		return sourceRank(sections[a].Source) < sourceRank(sections[b].Source) // equal coverage: bm25 order (stable) decides within a source
+	})
 	if limit > 0 && len(order) > limit {
 		order = order[:limit]
 	}
@@ -126,6 +132,18 @@ func titleHits(title string, terms []index.Term) int {
 		}
 	}
 	return n
+}
+
+// sourceRank orders equal-coverage sections: the FAQ answers a question
+// directly, the skill explains the concept, the command help is the reference.
+func sourceRank(source string) int {
+	switch {
+	case source == "faq":
+		return 0
+	case strings.HasPrefix(source, "skill: "):
+		return 1
+	}
+	return 2
 }
 
 // cut shortens text to maxText runes, ending in an ellipsis when it cuts.

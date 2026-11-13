@@ -79,3 +79,15 @@ func TestSearchStopwordOnlyQueryMatchesNothing(t *testing.T) {
 		t.Errorf("ui is not in this corpus: %q", got)
 	}
 }
+
+func TestSearchTieBreaksFAQThenSkillThenHelp(t *testing.T) {
+	secs := []Section{
+		{Title: "cerne settings", Source: "help: cerne settings", Text: strings.Repeat("settings ", 20)},
+		{Title: "Settings", Source: "skill: Settings", Text: strings.Repeat("settings ", 10)},
+		{Title: "How to settings", Source: "faq", Text: "settings"},
+	}
+	// "settings" covers one term in each; titles hold it in all three.
+	if got := titles(Search(secs, "settings", 3)); got != "How to settings|Settings|cerne settings" {
+		t.Fatalf("got %q", got)
+	}
+}
