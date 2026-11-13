@@ -122,9 +122,14 @@ func TestSkillMdKeepsTheRules(t *testing.T) {
 	}
 }
 
-// rewritten are the sentences F-0399 changed on purpose: the guide pointer at
-// the top of SKILL.md now describes the catalog and the reference files.
-var rewritten = []string{"`cerne guide \"<question>\"` answers about any cerne feature"}
+// rewritten are the sentences changed on purpose since the split: F-0399's
+// guide pointer at the top of SKILL.md now describes the catalog and the
+// reference files; F-0402's manual stamp step is now done by
+// `cerne feature complete` itself.
+var rewritten = []string{
+	"`cerne guide \"<question>\"` answers about any cerne feature",
+	"Between the two, run `cerne cost F-NNNN --stamp`",
+}
 
 var sentenceEnd = regexp.MustCompile(`(?:[.!?])\s+`)
 
