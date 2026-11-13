@@ -1,0 +1,127 @@
+package cli
+
+import (
+	"errors"
+	"regexp"
+	"strings"
+	"testing"
+
+	"github.com/henriquesakata/cerne/internal/cost"
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/gitback"
+	"github.com/henriquesakata/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/store"
+)
+
+// stampedLine is the table's success line (F-0402 crit. 3).
+var stampedLine = regexp.MustCompile(`(?m)^cost stamped: \d+ weighted tokens( \(.+\))?$`)
+
+// F-0402 crit. 1: complete stamps in the same command, the lock and the
+// backend end on the same commit as origin, and there is one stamp event.
+func TestCompleteStampsCostInTheSameCommand(t *testing.T) {
+	projDir, origin, repoDir := setupProject(t)
+	seedResultFeatures(t, repoDir, domain.StateInDevelopment)
+	costSessions(t, repoDir)
+
+	out, err := execCerne(t, "feature", "complete", "F-0001", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("complete: %v\n%s", err, out)
+	}
+	if !stampedLine.MatchString(out) {
+		t.Errorf("no stamped line:\n%s", out)
+	}
+	f, err := store.LoadFeature(repoDir, "F-0001")
+	if err != nil || f.State != domain.StateImplemented {
+		t.Fatalf("state = %v, %v", f.State, err)
+	}
+	if !cost.Stamped(repoDir, "F-0001") || stampEvents(t, repoDir) != 1 {
+		t.Errorf("stamped=%v events=%d", cost.Stamped(repoDir, "F-0001"), stampEvents(t, repoDir))
+	}
+	head, err := gitback.HeadSHA(repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originHead, err := gitback.HeadSHA(origin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock, err := project.LoadLock(projDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if head != originHead || lock.Snapshot != head {
+		t.Errorf("head %s, origin %s, lock %s: want all equal", head, originHead, lock.Snapshot)
+	}
+}
+
+// F-0402 crit. 2: a refused transition stamps nothing and prints no stamp line.
+func TestCompleteRefusedDoesNotStamp(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	seedResultFeatures(t, repoDir, domain.StateInDevelopment)
+	writeDoc(t, repoDir, "F-0001", "result.md", "---\ncerne_id: F-0001\n---\n")
+	commitBackend(t, repoDir)
+	costSessions(t, repoDir)
+
+	out, err := execCerne(t, "feature", "complete", "F-0001", "--dir", projDir)
+	if err == nil {
+		t.Fatalf("complete with a stub result succeeded:\n%s", out)
+	}
+	if strings.Contains(out, "cost stamped") || strings.Contains(out, "cost not stamped") || stampEvents(t, repoDir) != 0 || cost.Stamped(repoDir, "F-0001") {
+		t.Errorf("refused complete touched the stamp:\n%s", out)
+	}
+}
+
+// F-0402 crit. 3, the outcomes a project can reach end to end.
+func TestCompleteStampOutcomes(t *testing.T) {
+	t.Run("nothing to stamp", func(t *testing.T) {
+		projDir, _, repoDir := setupProject(t)
+		seedResultFeatures(t, repoDir, domain.StateInDevelopment)
+		t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+		out, err := execCerne(t, "feature", "complete", "F-0001", "--dir", projDir)
+		want := "warning: cost not stamped: no session on this machine is bound to F-0001; stamp it from the machine that ran the work: cerne cost F-0001 --stamp\n"
+		if err != nil || !strings.Contains(out, want) {
+			t.Fatalf("err=%v, want line %q in:\n%s", err, want, out)
+		}
+		if f, _ := store.LoadFeature(repoDir, "F-0001"); f.State != domain.StateImplemented {
+			t.Errorf("state = %s, want implemented", f.State)
+		}
+	})
+	t.Run("already stamped", func(t *testing.T) {
+		projDir, _, repoDir := setupProject(t)
+		seedResultFeatures(t, repoDir, domain.StateInDevelopment)
+		stamped, err := cost.Stamp(realDoc("F-0001", "Result original."), cost.Report{ID: "F-0001", Counters: cost.Counters{Input: 9}, Messages: 100, Sessions: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeDoc(t, repoDir, "F-0001", "result.md", stamped)
+		commitBackend(t, repoDir)
+		costSessions(t, repoDir)
+		out, err := execCerne(t, "feature", "complete", "F-0001", "--dir", projDir)
+		if err != nil || !strings.Contains(out, "\ncost already stamped\n") {
+			t.Fatalf("err=%v:\n%s", err, out)
+		}
+	})
+}
+
+// F-0402 crit. 3: each row of the table, worded from an outcome.
+func TestCompleteStampLine(t *testing.T) {
+	rep := cost.Report{ID: "F-0001", Counters: cost.Counters{Input: 1000}, ByRole: map[string]cost.Counters{"main": {Input: 750}, "critic": {Input: 250}}}
+	cases := []struct {
+		name string
+		o    stampOutcome
+		err  error
+		want string
+	}{
+		{"stamped", stampOutcome{report: rep, kind: stampWritten}, nil, "cost stamped: 1000 weighted tokens (critic 25%, main 75%)"},
+		{"kept higher", stampOutcome{report: rep, kind: stampKeptHigher}, nil, "cost already stamped"},
+		{"unchanged", stampOutcome{report: rep, kind: stampUnchanged}, nil, "cost already stamped"},
+		{"lower", stampOutcome{kind: stampLowerRefused}, nil, "warning: cost not stamped: the stamped total is higher than this machine's sessions; nothing written"},
+		{"nothing", stampOutcome{}, cost.ErrNothingToStamp, "warning: cost not stamped: no session on this machine is bound to F-0001; stamp it from the machine that ran the work: cerne cost F-0001 --stamp"},
+		{"other", stampOutcome{}, errors.New("push refused"), "warning: cost not stamped: push refused; run 'cerne cost F-0001 --stamp'"},
+	}
+	for _, c := range cases {
+		if got := completeStampLine("F-0001", c.o, c.err); got != c.want {
+			t.Errorf("%s: got %q, want %q", c.name, got, c.want)
+		}
+	}
+}

@@ -195,6 +195,10 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 		}
 	}
 	if action == domain.ActionComplete {
+		// The transition is the act that counts: a stamp that cannot be made
+		// warns and the exit stays 0 (F-0402 crit. 3).
+		o, serr := stampCost(ctx, id)
+		fmt.Fprintln(cmd.OutOrStdout(), completeStampLine(id, o, serr))
 		fmt.Fprintf(cmd.OutOrStdout(), "Next step: record its token cost with 'cerne cost %s --stamp' before the human accept (F-0309).\n", id)
 		printCompleteLearnings(cmd.OutOrStdout(), ctx.repoDir, id)
 	}
