@@ -26,7 +26,8 @@ func newGauntletCmd() *cobra.Command {
 
 func newGauntletArtifactCmd() *cobra.Command {
 	var dir, base, notes, out string
-	var excludes []string
+	var commits bool
+	var excludes, evidence []string
 	cmd := &cobra.Command{
 		Use:   "artifact <id>",
 		Short: "Build the critic's bundle: spec criteria, plan contracts and the diff without noise",
@@ -34,14 +35,18 @@ func newGauntletArtifactCmd() *cobra.Command {
 			"(and, with --notes, the builder's declared deviations), then the diff of the current branch against the base. " +
 			"The base defaults to the merge-base with origin/<pin_branch>, origin/HEAD or main, in that order. " +
 			"ui/dist and docs.lock are left out of the diff; --exclude adds paths. Read-only: nothing is written to the backend. " +
-			"The spec and plan are read from the backend: push .docs/ edits first.",
+			"The spec and plan are read from the backend: push .docs/ edits first. " +
+			"For a feature already merged, --commits swaps the branch diff for the diff of each non-merge commit on the base that cites the id, " +
+			"and --evidence <file> (repeatable) adds runtime output, whole, in its own fence before the diff.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runGauntletArtifact(cmd, dir, args[0], base, notes, out, excludes)
+			return runGauntletArtifact(cmd, dir, args[0], base, notes, out, excludes, evidence, commits)
 		},
 	}
 	cmd.Flags().StringVar(&base, "base", "", "diff base ref (default: origin/<pin_branch>, origin/HEAD or main)")
 	cmd.Flags().StringArrayVar(&excludes, "exclude", nil, "path glob to leave out of the diff (repeatable; ui/dist and docs.lock always are)")
+	cmd.Flags().StringArrayVar(&evidence, "evidence", nil, "file of runtime output to include whole in its own fence before the diff (repeatable)")
+	cmd.Flags().BoolVar(&commits, "commits", false, "for a feature already merged: replace the branch diff with the diff of each non-merge commit on the base whose message cites the id")
 	cmd.Flags().StringVar(&notes, "notes", "", "file with the builder's declared deviations")
 	cmd.Flags().StringVar(&out, "out", "", "write the bundle to this path instead of stdout")
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
@@ -49,7 +54,7 @@ func newGauntletArtifactCmd() *cobra.Command {
 	return cmd
 }
 
-func runGauntletArtifact(cmd *cobra.Command, dir, id, base, notesPath, outPath string, excludes []string) error {
+func runGauntletArtifact(cmd *cobra.Command, dir, id, base, notesPath, outPath string, excludes, evidencePaths []string, byCommits bool) error {
 	ctx, err := resolveProject(dir)
 	if err != nil {
 		return err
@@ -68,16 +73,53 @@ func runGauntletArtifact(cmd *cobra.Command, dir, id, base, notesPath, outPath s
 		}
 		notes = string(b)
 	}
-	diff, usedBase, err := gauntlet.Diff(ctx.projDir, base, ctx.cfg.PinBranch, excludes)
-	if err != nil {
-		return err
+	var evidence []gauntlet.Evidence
+	for _, p := range evidencePaths {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return fmt.Errorf("reading --evidence: %w", err)
+		}
+		name := filepath.Base(p)
+		for i, e := range evidence {
+			if e.Name == name {
+				return fmt.Errorf("%w: %s and %s", errGauntletEvidenceName, evidencePaths[i], p)
+			}
+		}
+		evidence = append(evidence, gauntlet.Evidence{Name: name, Body: string(b)})
+	}
+	var diff, usedBase string
+	mode := ""
+	if byCommits {
+		var found []gauntlet.Commit
+		var skipped []gauntlet.Commit
+		diff, found, skipped, usedBase, err = gauntlet.FeatureCommits(ctx.projDir, base, ctx.cfg.PinBranch, id, excludes)
+		if err != nil {
+			return err
+		}
+		for _, c := range found {
+			fmt.Fprintf(cmd.ErrOrStderr(), "%s %s\n", c.Sha, c.Subject)
+		}
+		for _, c := range skipped {
+			fmt.Fprintf(cmd.ErrOrStderr(), "skipped %s %s (subject cites %s)\n", c.Sha, c.Subject, c.Other)
+		}
+		mode = fmt.Sprintf("%d commits citing %s on %s", len(found), id, usedBase)
+	} else {
+		diff, usedBase, err = gauntlet.Diff(ctx.projDir, base, ctx.cfg.PinBranch, excludes)
+		if err != nil {
+			return err
+		}
+		mode = "diff " + usedBase + "..HEAD"
+		if strings.TrimSpace(diff) == "" {
+			fmt.Fprintf(cmd.ErrOrStderr(), "warning: empty diff against %s; for a feature already merged pass --commits, and add runtime output with --evidence\n", usedBase)
+		}
 	}
 	text, err := gauntlet.Assemble(gauntlet.Input{
-		Lang:  store.DocsLanguage(ctx.repoDir),
-		Spec:  readFeatureDoc(ctx.repoDir, id, "spec.md"),
-		Plan:  readFeatureDoc(ctx.repoDir, id, "plan.md"),
-		Notes: notes,
-		Diff:  diff,
+		Lang:     store.DocsLanguage(ctx.repoDir),
+		Spec:     readFeatureDoc(ctx.repoDir, id, "spec.md"),
+		Plan:     readFeatureDoc(ctx.repoDir, id, "plan.md"),
+		Notes:    notes,
+		Diff:     diff,
+		Evidence: evidence,
 	})
 	if err != nil {
 		return fmt.Errorf("%s: %w", id, err)
@@ -89,10 +131,20 @@ func runGauntletArtifact(cmd *cobra.Command, dir, id, base, notesPath, outPath s
 	if err := os.WriteFile(outPath, []byte(text), 0o644); err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.ErrOrStderr(), "cerne: gauntlet artifact for %s → %s (%d bytes; diff %s..HEAD, excluded: %s)\n",
-		id, outPath, len(text), usedBase, strings.Join(append([]string{"ui/dist", "docs.lock"}, excludes...), ", "))
+	var evSizes []string
+	for _, e := range evidence {
+		evSizes = append(evSizes, fmt.Sprintf("%s %d bytes", e.Name, len(e.Body)))
+	}
+	evNote := ""
+	if len(evSizes) > 0 {
+		evNote = "; evidence: " + strings.Join(evSizes, ", ")
+	}
+	fmt.Fprintf(cmd.ErrOrStderr(), "cerne: gauntlet artifact for %s → %s (%d bytes; %s, excluded: %s%s)\n",
+		id, outPath, len(text), mode, strings.Join(append([]string{"ui/dist", "docs.lock"}, excludes...), ", "), evNote)
 	return nil
 }
+
+var errGauntletEvidenceName = errors.New("--evidence files must have distinct names")
 
 var (
 	errGauntletRecordMode      = errors.New("pass either --verdict <file> --ours A|B, or --critic \"<line>\" (not both)")

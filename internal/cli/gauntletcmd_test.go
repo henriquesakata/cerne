@@ -297,3 +297,141 @@ func TestGauntletRecordEnglishPassesTheCompleteGate(t *testing.T) {
 		t.Errorf("gate refused the English result: %v", err)
 	}
 }
+
+func TestGauntletArtifactEvidence(t *testing.T) {
+	projDir, _ := gauntletFixture(t)
+	tmp := t.TempDir()
+	ev := filepath.Join(tmp, "runtime.txt")
+	os.WriteFile(ev, []byte("saida real\n"), 0o644)
+	dest := filepath.Join(tmp, "a.txt")
+	_, stderr, err := execCerneSplit(t, "gauntlet", "artifact", "F-0001", "--evidence", ev, "--out", dest, "--dir", projDir)
+	if err != nil {
+		t.Fatalf("artifact: %v\n%s", err, stderr)
+	}
+	data, _ := os.ReadFile(dest)
+	for _, want := range []string{"=== EVIDÊNCIA: runtime.txt (início) ===", "saida real", "=== EVIDÊNCIA: runtime.txt (fim) ==="} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("bundle missing %q", want)
+		}
+	}
+	if !strings.Contains(stderr, "evidence: runtime.txt 11 bytes") {
+		t.Errorf("stderr lacks the evidence size: %s", stderr)
+	}
+}
+
+// critério 2: a missing evidence file refuses, names the file, writes nothing.
+func TestGauntletArtifactEvidenceMissing(t *testing.T) {
+	projDir, _ := gauntletFixture(t)
+	dest := filepath.Join(t.TempDir(), "a.txt")
+	missing := filepath.Join(t.TempDir(), "ghost.txt")
+	out, err := execCerne(t, "gauntlet", "artifact", "F-0001", "--evidence", missing, "--out", dest, "--dir", projDir)
+	if !errors.Is(err, os.ErrNotExist) || !strings.Contains(err.Error(), missing) {
+		t.Errorf("err=%v out=%s", err, out)
+	}
+	if _, err := os.Stat(dest); err == nil {
+		t.Error("--out written despite the missing evidence")
+	}
+}
+
+func TestGauntletArtifactCommits(t *testing.T) {
+	projDir, _ := gauntletFixture(t)
+	gitIn(t, projDir, "checkout", "-q", "main")
+	os.WriteFile(filepath.Join(projDir, "m1.go"), []byte("package m\n"), 0o644)
+	gitIn(t, projDir, "add", "m1.go")
+	gitIn(t, projDir, "commit", "-q", "-m", "feat: m1 (F-0001)")
+	os.WriteFile(filepath.Join(projDir, "m2.go"), []byte("package m\n"), 0o644)
+	gitIn(t, projDir, "add", "m2.go")
+	gitIn(t, projDir, "commit", "-q", "-m", "feat: m2 F-00010")
+	gitIn(t, projDir, "checkout", "-q", "feature/x")
+	ev := filepath.Join(t.TempDir(), "run.txt")
+	os.WriteFile(ev, []byte("ok"), 0o644)
+	dest := filepath.Join(t.TempDir(), "a.txt")
+
+	_, stderr, err := execCerneSplit(t, "gauntlet", "artifact", "F-0001", "--commits", "--evidence", ev, "--out", dest, "--dir", projDir)
+	if err != nil {
+		t.Fatalf("artifact: %v\n%s", err, stderr)
+	}
+	data, _ := os.ReadFile(dest)
+	if !strings.Contains(string(data), "m1.go") || strings.Contains(string(data), "m2.go") || strings.Contains(string(data), "code.go") {
+		t.Errorf("wrong diff for --commits:\n%s", data)
+	}
+	lines := strings.Split(strings.TrimSpace(stderr), "\n")
+	if len(lines) != 2 || !strings.HasSuffix(lines[0], " feat: m1 (F-0001)") || len(strings.Fields(lines[0])[0]) < 7 {
+		t.Fatalf("stderr = %q", stderr)
+	}
+	if !strings.Contains(lines[1], "(") || !strings.Contains(lines[1], "; 1 commits citing F-0001 on main, excluded: ui/dist, docs.lock; evidence: run.txt 2 bytes)") {
+		t.Errorf("final line: %s", lines[1])
+	}
+
+	// no commit cites it: refuses, writes nothing.
+	dest2 := filepath.Join(t.TempDir(), "b.txt")
+	out, err := execCerne(t, "gauntlet", "artifact", "F-0001", "--commits", "--base", "HEAD", "--out", dest2, "--dir", projDir)
+	if !errors.Is(err, gauntlet.ErrNoFeatureCommits) {
+		t.Errorf("err=%v out=%s", err, out)
+	}
+	if _, err := os.Stat(dest2); err == nil {
+		t.Error("--out written despite no commits")
+	}
+}
+
+func TestGauntletArtifactEmptyDiffWarns(t *testing.T) {
+	projDir, _ := gauntletFixture(t)
+	gitIn(t, projDir, "checkout", "-q", "main")
+	_, stderr, err := execCerneSplit(t, "gauntlet", "artifact", "F-0001", "--dir", projDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "warning: empty diff against main; for a feature already merged pass --commits, and add runtime output with --evidence"
+	if !strings.Contains(stderr, want) {
+		t.Errorf("stderr = %q", stderr)
+	}
+	// a non-empty diff stays silent.
+	gitIn(t, projDir, "checkout", "-q", "feature/x")
+	if _, stderr, _ := execCerneSplit(t, "gauntlet", "artifact", "F-0001", "--dir", projDir); strings.Contains(stderr, "warning") {
+		t.Errorf("unexpected warning: %q", stderr)
+	}
+}
+
+// two evidence files with one basename would share a fence name: refused, naming both.
+func TestGauntletArtifactEvidenceDuplicateName(t *testing.T) {
+	projDir, _ := gauntletFixture(t)
+	tmp := t.TempDir()
+	a, b := filepath.Join(tmp, "x", "run.txt"), filepath.Join(tmp, "y", "run.txt")
+	for _, p := range []string{a, b} {
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		os.WriteFile(p, []byte("o"), 0o644)
+	}
+	dest := filepath.Join(tmp, "a.txt")
+	out, err := execCerne(t, "gauntlet", "artifact", "F-0001", "--evidence", a, "--evidence", b, "--out", dest, "--dir", projDir)
+	if err == nil || !strings.Contains(err.Error(), a) || !strings.Contains(err.Error(), b) {
+		t.Errorf("err=%v out=%s", err, out)
+	}
+	if _, err := os.Stat(dest); err == nil {
+		t.Error("--out written despite the duplicate")
+	}
+}
+
+func TestGauntletArtifactCommitsSkippedOnStderr(t *testing.T) {
+	projDir, _ := gauntletFixture(t)
+	gitIn(t, projDir, "checkout", "-q", "main")
+	for _, c := range [][2]string{{"a.go", "feat: a (F-0001)"}, {"b.go", "fix: b (F-0002)"}} {
+		os.WriteFile(filepath.Join(projDir, c[0]), []byte("package m\n"), 0o644)
+		gitIn(t, projDir, "add", c[0])
+		gitIn(t, projDir, "commit", "-q", "-m", c[1], "-m", "also F-0001")
+	}
+	gitIn(t, projDir, "checkout", "-q", "feature/x")
+	dest := filepath.Join(t.TempDir(), "a.txt")
+	_, stderr, err := execCerneSplit(t, "gauntlet", "artifact", "F-0001", "--commits", "--out", dest, "--dir", projDir)
+	if err != nil {
+		t.Fatalf("artifact: %v\n%s", err, stderr)
+	}
+	lines := strings.Split(strings.TrimSpace(stderr), "\n")
+	if len(lines) != 3 || !strings.HasSuffix(lines[0], " feat: a (F-0001)") ||
+		!strings.HasPrefix(lines[1], "skipped ") || !strings.HasSuffix(lines[1], " fix: b (F-0002) (subject cites F-0002)") ||
+		!strings.Contains(lines[2], "1 commits citing F-0001 on main") {
+		t.Fatalf("stderr = %q", stderr)
+	}
+	if data, _ := os.ReadFile(dest); strings.Contains(string(data), "b.go") {
+		t.Errorf("skipped commit in the bundle")
+	}
+}

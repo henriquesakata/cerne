@@ -23,13 +23,18 @@ type Input struct {
 	Plan  string // plan.md, or "" when absent
 	Notes string // the builder's declared deviations, optional
 	Diff  string
+	// Evidence is runtime output, each file in its own fence before the diff.
+	Evidence []Evidence
 }
 
-type fences struct{ critStart, critEnd, diffStart, diffEnd, notes string }
+// Evidence is one file of runtime proof: its display name and whole body.
+type Evidence struct{ Name, Body string }
+
+type fences struct{ critStart, critEnd, diffStart, diffEnd, notes, evPre, evStart, evEnd string }
 
 var fenceText = map[doclang.Lang]fences{
-	doclang.PT: {"=== CRITÉRIOS (início) ===", "=== CRITÉRIOS (fim) ===", "=== DIFF (início) ===", "=== DIFF (fim) ===", "Desvios declarados pelo builder"},
-	doclang.EN: {"=== CRITERIA (start) ===", "=== CRITERIA (end) ===", "=== DIFF (start) ===", "=== DIFF (end) ===", "Builder's declared deviations"},
+	doclang.PT: {"=== CRITÉRIOS (início) ===", "=== CRITÉRIOS (fim) ===", "=== DIFF (início) ===", "=== DIFF (fim) ===", "Desvios declarados pelo builder", "=== EVIDÊNCIA: ", " (início) ===", " (fim) ==="},
+	doclang.EN: {"=== CRITERIA (start) ===", "=== CRITERIA (end) ===", "=== DIFF (start) ===", "=== DIFF (end) ===", "Builder's declared deviations", "=== EVIDENCE: ", " (start) ===", " (end) ==="},
 }
 
 type section struct{ heading, text string }
@@ -102,6 +107,13 @@ func Assemble(in Input) (string, error) {
 	}
 	var b strings.Builder
 	b.WriteString(f.critStart + "\n" + strings.Join(parts, "\n\n") + "\n" + f.critEnd + "\n\n")
+	for _, e := range in.Evidence {
+		body := e.Body
+		if !strings.HasSuffix(body, "\n") {
+			body += "\n"
+		}
+		b.WriteString(f.evPre + e.Name + f.evStart + "\n" + body + f.evPre + e.Name + f.evEnd + "\n\n")
+	}
 	b.WriteString(f.diffStart + "\n" + strings.TrimRight(in.Diff, "\n") + "\n" + f.diffEnd + "\n")
 	return b.String(), nil
 }

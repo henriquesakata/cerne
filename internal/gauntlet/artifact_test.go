@@ -101,3 +101,69 @@ func TestConstraintsIndexPinned(t *testing.T) {
 		}
 	}
 }
+
+func TestAssembleEvidence(t *testing.T) {
+	ev := []Evidence{{Name: "a.txt", Body: "out A\nline2\n"}, {Name: "b.log", Body: "out B"}}
+	cases := []struct {
+		lang    doclang.Lang
+		ordered []string
+	}{
+		{doclang.PT, []string{"=== CRITÉRIOS (fim) ===", "=== EVIDÊNCIA: a.txt (início) ===", "out A\nline2", "=== EVIDÊNCIA: a.txt (fim) ===",
+			"=== EVIDÊNCIA: b.log (início) ===", "out B", "=== EVIDÊNCIA: b.log (fim) ===", "=== DIFF (início) ==="}},
+		{doclang.EN, []string{"=== CRITERIA (end) ===", "=== EVIDENCE: a.txt (start) ===", "out A\nline2", "=== EVIDENCE: a.txt (end) ===",
+			"=== EVIDENCE: b.log (start) ===", "out B", "=== EVIDENCE: b.log (end) ===", "=== DIFF (start) ==="}},
+	}
+	for _, tc := range cases {
+		got, err := Assemble(Input{Lang: tc.lang, Spec: specPT, Diff: "d", Evidence: ev})
+		if err != nil {
+			t.Fatal(err)
+		}
+		pos := 0
+		for _, s := range tc.ordered {
+			i := strings.Index(got[pos:], s)
+			if i < 0 {
+				t.Fatalf("%s: %q out of order/missing in:\n%s", tc.lang, s, got)
+			}
+			pos += i + len(s)
+		}
+	}
+}
+
+// criterion 7 by bytes: without evidence the bundle is what origin/main's
+// Assemble produced for the same inputs (expected strings captured from it).
+func TestAssembleGoldenWithoutEvidence(t *testing.T) {
+	spec := "## Problema\n\nprosa\n\n## Objetivo e critérios de aceitação\n\n1. QUANDO x O SISTEMA DEVE y.\n\n## Verificação\n\nt\n"
+	plan := "## Estratégia\n\nlivre\n\n## Contratos fixados pelo TL\n\n- contrato A\n"
+	cases := []struct {
+		in   Input
+		want string
+	}{
+		{Input{Lang: doclang.PT, Spec: spec, Plan: plan, Notes: "desvio 1", Diff: "diff --git a/x b/x\n+a\n\n"},
+			"=== CRITÉRIOS (início) ===\n## Objetivo e critérios de aceitação\n\n1. QUANDO x O SISTEMA DEVE y.\n\n## Contratos fixados pelo TL\n\n- contrato A\n\n## Desvios declarados pelo builder\n\ndesvio 1\n=== CRITÉRIOS (fim) ===\n\n=== DIFF (início) ===\ndiff --git a/x b/x\n+a\n=== DIFF (fim) ===\n"},
+		{Input{Lang: doclang.EN, Spec: "## Goal and acceptance criteria\n\n1. WHEN a THE SYSTEM SHALL b.\n", Diff: "d\n"},
+			"=== CRITERIA (start) ===\n## Goal and acceptance criteria\n\n1. WHEN a THE SYSTEM SHALL b.\n\n(no plan contracts)\n=== CRITERIA (end) ===\n\n=== DIFF (start) ===\nd\n=== DIFF (end) ===\n"},
+	}
+	for _, tc := range cases {
+		got, err := Assemble(tc.in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != tc.want {
+			t.Errorf("%s: bytes differ:\n got %q\nwant %q", tc.in.Lang, got, tc.want)
+		}
+	}
+}
+
+// the evidence body is kept whole: only a missing final newline is added.
+func TestAssembleEvidenceKeptWhole(t *testing.T) {
+	got, err := Assemble(Input{Lang: doclang.EN, Spec: specPT, Diff: "d",
+		Evidence: []Evidence{{Name: "a", Body: "x\n\n\n"}, {Name: "b", Body: "y"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"=== EVIDENCE: a (start) ===\nx\n\n\n=== EVIDENCE: a (end) ===", "=== EVIDENCE: b (start) ===\ny\n=== EVIDENCE: b (end) ==="} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+}

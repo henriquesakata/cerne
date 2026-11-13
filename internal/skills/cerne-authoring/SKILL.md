@@ -209,7 +209,7 @@ Achados do crítico: <n> — corrigidos <…>; refutados <… com file:line>; ac
 
 The quoted verdict is what makes the record checkable at the human `accept` gate: a Gauntlet section with no quoted verdict per round and no disposition per finding cannot be told apart from a loop that never ran.
 
-The critic's bundle: `cerne gauntlet artifact F-NNNN --out <file>` writes one file with the spec criteria, the plan contracts and the branch diff without noise (`ui/dist` and `docs.lock` are left out; `--base`, `--exclude` and `--notes` adjust it).
+The critic's bundle: `cerne gauntlet artifact F-NNNN --out <file>` writes one file with the spec criteria, the plan contracts and the branch diff without noise (`ui/dist` and `docs.lock` are left out; `--base`, `--exclude` and `--notes` adjust it). For a feature already merged (several MRs, proof from runtime steps) pass `--commits` (the diff of each non-merge commit on the base that cites the id, listed on stderr) and `--evidence <file>` (repeatable, each whole in its own fence before the diff), so the critic does not flag as missing the proof that exists.
 
 Recording the loop: `cerne gauntlet record F-NNNN --verdict <judge-reply-file> --ours A|B` writes the next `Rodada N` line into the result's `## Gauntlet` in `.docs/` (win, loss or tie for your side, from the reply's last `VEREDITO: A|B|EMPATE` line; the quote is the last quoted line before it, or `--quote`), and `--critic "<line>"` appends the `Achados do crítico` line; then `cerne push`. Do not hand-write those lines.
 
