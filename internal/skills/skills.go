@@ -31,6 +31,13 @@ func All() []Skill {
 	}
 }
 
+// Read returns one embedded skill file by its path under skills/ (e.g.
+// "cerne-authoring/SKILL.md"); ok is false when it is not embedded.
+func Read(rel string) (content string, ok bool) {
+	b, err := files.ReadFile(rel)
+	return string(b), err == nil
+}
+
 // mustRead returns the embedded file or panics — a missing embed is a build-time
 // bug, not a runtime condition.
 func mustRead(name string) string {
