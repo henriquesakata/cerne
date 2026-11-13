@@ -22,9 +22,23 @@ func handleIdeas(w http.ResponseWriter, repoDir string) {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
+	// F-0389: each idea carries the external sources that informed it.
+	type ideaWithSources struct {
+		store.Idea
+		InformedBy []store.Reference `json:"informed_by"`
+	}
+	out := make([]ideaWithSources, 0, len(ideas))
+	for _, i := range ideas {
+		refs, err := informedByRefs(repoDir, i.ID)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+			return
+		}
+		out = append(out, ideaWithSources{i, refs})
+	}
 	writeJSON(w, http.StatusOK, struct {
-		Ideas []store.Idea `json:"ideas"`
-	}{ideas})
+		Ideas []ideaWithSources `json:"ideas"`
+	}{out})
 }
 
 func handleCreateIdea(w http.ResponseWriter, r *http.Request, repoDir, projDir string) {

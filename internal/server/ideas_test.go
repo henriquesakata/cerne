@@ -270,3 +270,44 @@ func TestIdeaWriteRoutesRefuseCrossOrigin(t *testing.T) {
 		t.Fatalf("a refused promote minted a candidate: %d features", len(fs))
 	}
 }
+
+// F-0389 crit. 5: GET /api/ideas carries the references informing each idea.
+func TestIdeasAPIInformedBy(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	h := New(repoDir, projDir, "")
+	i, err := app.CreateIdea(repoDir, projDir, "com fonte", nil, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.CreateIdea(repoDir, projDir, "sem fonte", nil, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.CreateExternalReference(repoDir, projDir, "Artigo", "http://a", "c", []string{i.ID}, nil, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	var list struct {
+		Ideas []struct {
+			ID         string            `json:"id"`
+			InformedBy []store.Reference `json:"informed_by"`
+		} `json:"ideas"`
+	}
+	doJSON(t, h, http.MethodGet, "/api/ideas", "", &list)
+	if len(list.Ideas) != 2 {
+		t.Fatalf("ideas = %+v", list.Ideas)
+	}
+	for _, it := range list.Ideas {
+		want := 0
+		if it.ID == i.ID {
+			want = 1
+		}
+		if len(it.InformedBy) != want || (want == 1 && it.InformedBy[0].URL != "http://a") {
+			t.Fatalf("%s informed_by = %+v, want %d", it.ID, it.InformedBy, want)
+		}
+	}
+	if rec := httptest.NewRecorder(); true {
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/ideas", nil))
+		if strings.Contains(rec.Body.String(), `"informed_by": null`) {
+			t.Fatal("informed_by must be [] not null")
+		}
+	}
+}
