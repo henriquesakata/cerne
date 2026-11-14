@@ -110,6 +110,42 @@ func TestDemo_BuildsWithoutShell(t *testing.T) {
 	assertSentinelsUntouched(t)
 }
 
+// F-0412: the README quickstart runs `cerne demo`, then a first command in the
+// project from the user's own shell, whose cache dir is not the demo's. That
+// command clones the cache and says so as progress, never as a warning.
+func TestDemo_FirstCommandPrintsNoWarning(t *testing.T) {
+	demoEnv(t)
+	if out, err := runDemoCmd(t, "cerne-demo"); err != nil {
+		t.Fatalf("cerne demo: %v\n%s", err, out)
+	}
+	assertSentinelsUntouched(t)
+	abs, _ := filepath.Abs("cerne-demo")
+	t.Setenv("CERNE_ROOT", "") // the user's shell has no CERNE_ROOT
+	t.Chdir(filepath.Join(abs, "taskflow"))
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stderr
+	os.Stderr = w
+	out, berr := execCerne(t, "brief")
+	os.Stderr = old
+	w.Close()
+	var stderr bytes.Buffer
+	_, _ = stderr.ReadFrom(r)
+	if berr != nil {
+		t.Fatalf("cerne brief: %v\n%s", berr, out)
+	}
+	want := "cerne: cloning the backend from " + filepath.Join(abs, "taskflow-docs.git") + " into the local cache...\n"
+	if stderr.String() != want {
+		t.Errorf("stderr = %q, want only %q", stderr.String(), want)
+	}
+	if !strings.Contains(out, "F-0001") {
+		t.Errorf("brief printed no features:\n%s", out)
+	}
+}
+
 // A step failing after the gates were opened removes the whole demo and names
 // the step.
 func TestDemo_FailureRemovesTheDemo(t *testing.T) {
