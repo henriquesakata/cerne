@@ -107,19 +107,42 @@ func CreateIdea(repoDir, projDir, title, body string, facets, components []strin
 	return i, nil
 }
 
-// ListIdeas returns the ideas newest first (ties: higher id first): active
-// only unless all; search keeps those whose text contains every word of it, in
-// any order, case- and accent-insensitively.
-func ListIdeas(repoDir string, all bool, search string) ([]store.Idea, error) {
+// IdeaFilter selects ideas for ListIdeas: State "" means active and all keeps
+// every state; Component is slugged; Search keeps the ideas whose title and
+// body contain every word of it, in any order, case- and accent-insensitively.
+// Empty fields do not filter.
+type IdeaFilter struct{ State, Component, Search string }
+
+// ErrIdeaStateInvalid is a state filter that is not an idea state nor all; its
+// text lists the accepted values, for the caller to prefix with the value.
+var ErrIdeaStateInvalid = errors.New("want one of " + strings.Join(ideaStateFilters, ", "))
+
+var ideaStateFilters = []string{"active", "resolved", "dropped", "promoted", "all"}
+
+// ValidIdeaState reports whether state is an idea state or all. Empty is not:
+// ListIdeas reads it as active, the CLI refuses it.
+func ValidIdeaState(state string) bool { return slices.Contains(ideaStateFilters, state) }
+
+// ListIdeas is the one idea selection the CLI list and the ui route share
+// (F-0419), newest first (ties: higher id first) and never nil (the JSON's []).
+func ListIdeas(repoDir string, f IdeaFilter) ([]store.Idea, error) {
+	state := f.State
+	if state == "" {
+		state = string(domain.IdeaActive)
+	}
+	if !ValidIdeaState(state) {
+		return nil, fmt.Errorf("invalid idea state %q: %w", state, ErrIdeaStateInvalid)
+	}
 	ideas, err := store.LoadAllIdeas(repoDir)
 	if err != nil {
 		return nil, err
 	}
-	words := strings.Fields(slug.Fold(search))
-	out := ideas[:0]
+	words := strings.Fields(slug.Fold(f.Search))
+	comp := slug.Make(f.Component)
+	out := []store.Idea{}
 	for _, i := range ideas {
 		text := slug.Fold(i.Title + " " + i.Body)
-		if (all || i.State == domain.IdeaActive) && !slices.ContainsFunc(words, func(w string) bool { return !strings.Contains(text, w) }) {
+		if (state == "all" || string(i.State) == state) && (comp == "" || slices.Contains(i.Components, comp)) && !slices.ContainsFunc(words, func(w string) bool { return !strings.Contains(text, w) }) {
 			out = append(out, i)
 		}
 	}

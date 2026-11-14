@@ -77,17 +77,23 @@ func newIdeaNewCmd(dir *string) *cobra.Command {
 
 func newIdeaListCmd(dir *string) *cobra.Command {
 	var all, asJSON bool
-	var search string
+	var state, component, search string
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List ideas — active by default, newest first: id, date, state, first line",
+		Short: "List ideas — active by default, newest first: id, date, state, title",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if all {
+				state = "all"
+			}
+			if !app.ValidIdeaState(state) { // before the project, as always
+				return fmt.Errorf("--state %q: %w", state, app.ErrIdeaStateInvalid)
+			}
 			ctx, err := resolveProject(*dir)
 			if err != nil {
 				return err
 			}
-			ideas, err := app.ListIdeas(ctx.repoDir, all, search)
+			ideas, err := app.ListIdeas(ctx.repoDir, app.IdeaFilter{State: state, Component: component, Search: search})
 			if err != nil {
 				return err
 			}
@@ -115,8 +121,10 @@ func newIdeaListCmd(dir *string) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&all, "all", false, "include dropped and promoted ideas")
-	cmd.Flags().StringVar(&search, "search", "", "only ideas whose text contains every word of this term, in any order (case- and accent-insensitive)")
+	cmd.Flags().StringVar(&state, "state", string(domain.IdeaActive), "active, resolved, dropped, promoted or all (each line shows its own state)")
+	cmd.Flags().BoolVar(&all, "all", false, "same as --state all")
+	cmd.Flags().StringVar(&component, "component", "", "only ideas tagged with this component")
+	cmd.Flags().StringVar(&search, "search", "", "only ideas whose title or body contains every word of this term, in any order (case- and accent-insensitive)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output")
 	return cmd
 }

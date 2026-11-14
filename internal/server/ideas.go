@@ -3,7 +3,6 @@ package server
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 
 	"github.com/henriquesakata/cerne/internal/app"
@@ -17,15 +16,16 @@ type ideaResponse struct {
 	Idea store.Idea `json:"idea"`
 }
 
-// handleIdeas lists the active ideas; ?state=all (F-0416) adds the dropped and
-// the promoted, the same selection as `cerne idea list --all`.
+// handleIdeas lists the ideas of ?state=&component=&search= (F-0419): no state
+// is the active ones, all every one — the same selection, in the same order,
+// as `cerne idea list --json` with those filters.
 func handleIdeas(w http.ResponseWriter, r *http.Request, repoDir string) {
-	state := r.URL.Query().Get("state")
-	if state != "" && state != "all" {
-		writeJSON(w, http.StatusBadRequest, errorBody(fmt.Sprintf("state %q: want all, or none for the active ideas", state)))
+	q := r.URL.Query()
+	ideas, err := app.ListIdeas(repoDir, app.IdeaFilter{State: q.Get("state"), Component: q.Get("component"), Search: q.Get("search")})
+	if errors.Is(err, app.ErrIdeaStateInvalid) {
+		writeJSON(w, http.StatusBadRequest, errorBody(err.Error()))
 		return
 	}
-	ideas, err := app.ListIdeas(repoDir, state == "all", "")
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return

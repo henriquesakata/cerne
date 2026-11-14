@@ -356,7 +356,7 @@ func TestIdeasStateFilter(t *testing.T) {
 	if code != http.StatusOK || ids(rs) != "I-0003:active,I-0002:dropped,I-0001:promoted" {
 		t.Fatalf("GET ?state=all = %d %s", code, ids(rs))
 	}
-	want, err := app.ListIdeas(repoDir, true, "")
+	want, err := app.ListIdeas(repoDir, app.IdeaFilter{State: "all"})
 	if err != nil || len(want) != len(rs) {
 		t.Fatalf("app.ListIdeas(all) = %d ideas, %v", len(want), err)
 	}

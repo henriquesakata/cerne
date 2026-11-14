@@ -118,17 +118,17 @@ func TestListIdeasFilters(t *testing.T) {
 		}
 		return out
 	}
-	active, err := ListIdeas(repoDir, false, "")
+	active, err := ListIdeas(repoDir, IdeaFilter{Search: ""})
 	if err != nil || !slices.Equal(ids(active), []string{"I-0003", "I-0001"}) {
 		t.Fatalf("active = %v, %v; want [I-0003 I-0001]", ids(active), err)
 	}
-	if all, _ := ListIdeas(repoDir, true, ""); !slices.Equal(ids(all), []string{"I-0003", "I-0002", "I-0001"}) {
+	if all, _ := ListIdeas(repoDir, IdeaFilter{State: "all", Search: ""}); !slices.Equal(ids(all), []string{"I-0003", "I-0002", "I-0001"}) {
 		t.Fatalf("all = %v, want [I-0003 I-0002 I-0001]", ids(all))
 	}
-	if hit, _ := ListIdeas(repoDir, true, "CONCILIACAO"); !slices.Equal(ids(hit), []string{"I-0002"}) {
+	if hit, _ := ListIdeas(repoDir, IdeaFilter{State: "all", Search: "CONCILIACAO"}); !slices.Equal(ids(hit), []string{"I-0002"}) {
 		t.Fatalf("search = %v, want [I-0002]", ids(hit))
 	}
-	if hit, _ := ListIdeas(repoDir, false, "CONCILIACAO"); len(hit) != 0 {
+	if hit, _ := ListIdeas(repoDir, IdeaFilter{Search: "CONCILIACAO"}); len(hit) != 0 {
 		t.Fatalf("search over active = %v, want none (I-0002 is dropped)", ids(hit))
 	}
 }
@@ -225,7 +225,7 @@ func TestPromoteIdeaCreatesLinkedCandidate(t *testing.T) {
 	if got.State != domain.IdeaPromoted || got.PromotedTo != f.ID || got.ClosedAt == nil {
 		t.Fatalf("idea = %+v, want promoted to %s", got, f.ID)
 	}
-	if active, _ := ListIdeas(repoDir, false, ""); len(active) != 0 {
+	if active, _ := ListIdeas(repoDir, IdeaFilter{Search: ""}); len(active) != 0 {
 		t.Fatalf("a promoted idea is still active: %+v", active)
 	}
 	types, payloads := ideaEvents(t, repoDir, i.ID)
@@ -322,7 +322,7 @@ func TestListIdeasSearchEveryWord(t *testing.T) {
 		"zebraquux":       {"I-0003", "I-0001"},
 		"zebraquux nada":  nil,
 	} {
-		got, err := ListIdeas(repoDir, false, term)
+		got, err := ListIdeas(repoDir, IdeaFilter{Search: term})
 		var ids []string
 		for _, i := range got {
 			ids = append(ids, i.ID)
