@@ -3109,5 +3109,29 @@ button.clarify-chip { cursor: pointer; font: inherit; }
 .settings-empty,
 .settings-note { color: var(--muted); }
 .code-copy-failed { margin: 0.3rem 0 0; font-size: 0.8rem; }
+/* F-0415: destaque de destino desde o dragstart. Pronto e ativo diferem pela
+   forma do outline (tracejado × contínuo), não só pela cor; outline não muda a
+   largura da coluna. Só o .drop-hint desce os cards do destino, que nunca é a
+   coluna sob o cursor no dragstart (DROPS liga colunas distintas). */
+.column.drop-ready {
+  outline: 2px dashed var(--accent);
+  outline-offset: -1px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-2));
+}
+.column.drop-active {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+  background: color-mix(in srgb, var(--accent) 22%, var(--surface-2));
+}
 .column.drop-blocked { outline: 2px dashed var(--faint); cursor: not-allowed; }
+.column.drop-off { opacity: 0.45; }
+.drop-hint { margin: 0.4rem 0 0; font-size: 0.85rem; font-weight: 600; color: var(--accent); }
+/* o motivo do bloqueio usa a cor do badge ❓ do card: o mesmo sinal */
+.column.drop-blocked .drop-hint { color: var(--purple); }
+.card.card-in-flight { opacity: 0.4; }
+.card-draggable { cursor: grab; }
+@media (prefers-reduced-motion: no-preference) {
+  .column { transition: background-color 120ms ease, opacity 120ms ease; }
+  .card { transition: opacity 120ms ease; }
+}
 .drag-notice { margin: 0 0 0.75rem; }

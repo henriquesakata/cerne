@@ -180,3 +180,17 @@ describe('t.pendings (F-0334 crit. 8)', () => {
     expect([en.pendings, en.ideas]).toEqual(['Pendings', 'Ideas'])
   })
 })
+
+// F-0415 crit. 10: o texto do destino do arraste existe nas duas línguas.
+describe('t.kanban.drag hints (F-0415 crit. 10)', () => {
+  const drag = (lang: Lang) => {
+    localStorage.setItem('cerne-lang', lang)
+    const { result } = renderHook(() => useT(), { wrapper: I18nProvider })
+    return result.current.t.kanban.drag
+  }
+
+  it('Solte para aprovar/aceitar em pt-BR e Drop to approve/accept em en', () => {
+    expect(drag('pt-BR')).toMatchObject({ hintApprove: 'Solte para aprovar', hintAccept: 'Solte para aceitar' })
+    expect(drag('en')).toMatchObject({ hintApprove: 'Drop to approve', hintAccept: 'Drop to accept' })
+  })
+})

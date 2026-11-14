@@ -405,6 +405,8 @@ const ptBR = {
     drag: {
       cardHint: 'Arrastável: solte em Aprovadas ou Concluída. Aprovar ou aceitar também se faz pela página da feature.',
       pending: (n: number) => `Responda os ${n} esclarecimentos antes de aprovar`,
+      hintApprove: 'Solte para aprovar',
+      hintAccept: 'Solte para aceitar',
     },
   },
   pendings: {
@@ -1590,6 +1592,8 @@ const en: Messages = {
     drag: {
       cardHint: 'Draggable: drop on Approved or Done. Approving or accepting can also be done from the feature page.',
       pending: (n: number) => `Answer the ${n} clarifications before approving`,
+      hintApprove: 'Drop to approve',
+      hintAccept: 'Drop to accept',
     },
   },
   pendings: {

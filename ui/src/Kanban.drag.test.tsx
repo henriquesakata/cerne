@@ -1,5 +1,6 @@
+import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import Kanban from './Kanban'
 import type { Feature, StateResponse } from './api'
@@ -32,7 +33,8 @@ vi.mock('./api', async (importOriginal) => ({
   postTransition: vi.fn(),
   transitionBody: vi.fn((action: string) => ({ action, sentinel: true })),
 }))
-vi.mock('./live', () => ({ useLiveVersion: () => 0 }))
+const live = vi.hoisted(() => ({ version: 0 }))
+vi.mock('./live', () => ({ useLiveVersion: () => live.version }))
 
 const noticeEl = () => document.querySelector('.drag-notice') as HTMLElement
 const findNotice = () => waitFor(() => { expect(noticeEl()).not.toBeEmptyDOMElement(); return noticeEl() })
@@ -241,7 +243,10 @@ describe('Kanban drag (F-0388)', () => {
     }
     leave(col.querySelector('h2')!)
     expect(col).toHaveClass('drop-blocked')
+    // F-0415 critério 3: o bloqueio é do card, não do cursor — fica até o dragend.
     leave(document.body)
+    expect(col).toHaveClass('drop-blocked')
+    fireEvent.dragEnd(cardOf('F-0001'))
     expect(col).not.toHaveClass('drop-blocked')
   })
 
@@ -275,5 +280,162 @@ describe('Kanban drag (F-0388)', () => {
     await screen.findByText('F-0001')
     expect(fireEvent.click(cardOf('F-0001'))).toBe(true)
     expect(cardOf('F-0001')).toHaveAttribute('href', '#/f/F-0001')
+  })
+})
+
+describe('destaque de destino (F-0415)', () => {
+  const backlog = () => screen.getByRole('heading', { name: /Backlog/ }).closest('details') as HTMLElement
+  const start = (id: string) => {
+    const dataTransfer = dt()
+    fireEvent.dragStart(cardOf(id), { dataTransfer })
+    return dataTransfer
+  }
+  const leave = (col: HTMLElement, to: Element) => {
+    const ev = createEvent.dragLeave(col)
+    Object.defineProperty(ev, 'relatedTarget', { value: to })
+    fireEvent(col, ev)
+  }
+  const MARKS = '.drop-ready, .drop-active, .drop-blocked, .drop-off, .card-in-flight, .drop-hint'
+  afterEach(() => vi.useRealTimers())
+
+  it('critério 1: o destino fica pronto desde o dragstart, com o texto do resultado', async () => {
+    render(<Kanban />)
+    await screen.findByText('F-0001')
+    start('F-0001')
+    expect(columnOf('Aprovadas')).toHaveClass('drop-ready')
+    expect(columnOf('Aprovadas')).toHaveTextContent('Solte para aprovar')
+    expect(columnOf('Conclu')).not.toHaveClass('drop-ready')
+    fireEvent.dragEnd(cardOf('F-0001'))
+    start('F-0002')
+    expect(columnOf('Conclu')).toHaveClass('drop-ready')
+    expect(columnOf('Conclu')).toHaveTextContent('Solte para aceitar')
+    expect(columnOf('Aprovadas')).not.toHaveClass('drop-ready')
+  })
+
+  it('critério 2: cursor sobre o destino o ativa; filho não é saída; sair volta a pronto', async () => {
+    render(<Kanban />)
+    await screen.findByText('F-0001')
+    const col = columnOf('Aprovadas')
+    const dataTransfer = start('F-0001')
+    fireEvent.dragOver(col, { dataTransfer })
+    expect(col).toHaveClass('drop-active')
+    expect(col).not.toHaveClass('drop-ready')
+    leave(col, col.querySelector('h2')!)
+    expect(col).toHaveClass('drop-active')
+    leave(col, document.body)
+    expect(col).toHaveClass('drop-ready')
+    expect(col).not.toHaveClass('drop-active')
+  })
+
+  it('critério 3: pendência bloqueia desde o dragstart, com o motivo, até o dragend', async () => {
+    payload = mkState({ 'F-0001': 2 })
+    render(<Kanban />)
+    await screen.findByText('F-0001')
+    const col = columnOf('Aprovadas')
+    start('F-0001')
+    expect(col).toHaveClass('drop-blocked')
+    expect(col).not.toHaveClass('drop-ready')
+    expect(col).toHaveTextContent('Responda os 2 esclarecimentos antes de aprovar')
+    expect(col).not.toHaveTextContent('Solte para aprovar')
+    leave(col, document.body)
+    expect(col).toHaveClass('drop-blocked')
+    fireEvent.dragEnd(cardOf('F-0001'))
+    expect(col).not.toHaveClass('drop-blocked')
+  })
+
+  it('critério 4: colunas que não aceitam o card esmaecem, menos a de origem', async () => {
+    payload = { ...mkState(), features: [...mkState().features, feature('F-0004', 'rejected')] }
+    render(<Kanban />)
+    await screen.findByText('F-0001')
+    fireEvent.click(screen.getByLabelText(/fechad|encerrad/i))
+    start('F-0001')
+    for (const name of ['Em desenvolvimento', 'Prontas', 'Conclu', 'Rejeitadas', 'Substitu']) {
+      expect(columnOf(name), name).toHaveClass('drop-off')
+    }
+    expect(backlog()).not.toHaveClass('drop-off')
+    expect(columnOf('Aprovadas')).not.toHaveClass('drop-off')
+    fireEvent.dragEnd(cardOf('F-0001'))
+    start('F-0002')
+    expect(backlog()).toHaveClass('drop-off')
+    expect(columnOf('Aprovadas')).toHaveClass('drop-off')
+    expect(columnOf('Prontas')).not.toHaveClass('drop-off')
+    expect(columnOf('Conclu')).not.toHaveClass('drop-off')
+  })
+
+  it('critério 5: o fantasma só liga depois que o browser capturou a imagem de arraste', async () => {
+    render(<Kanban />)
+    await screen.findByText('F-0001')
+    vi.useFakeTimers()
+    start('F-0001')
+    expect(cardOf('F-0001')).not.toHaveClass('card-in-flight')
+    act(() => void vi.runAllTimers())
+    expect(cardOf('F-0001')).toHaveClass('card-in-flight')
+    expect(cardOf('F-0002')).not.toHaveClass('card-in-flight')
+  })
+
+  it('critério 6: só os cards arrastáveis têm o cursor de agarrar', async () => {
+    render(<Kanban />)
+    await screen.findByText('F-0001')
+    expect(cardOf('F-0001')).toHaveClass('card-draggable')
+    expect(cardOf('F-0002')).toHaveClass('card-draggable')
+    expect(cardOf('F-0003')).not.toHaveClass('card-draggable')
+    expect(readFileSync('src/app.css', 'utf8')).toMatch(/\.card-draggable\s*\{[^}]*cursor:\s*grab/)
+  })
+
+  it('critério 7: o fim do gesto (dragend, drop, dragend antes do timer) limpa todas as marcas', async () => {
+    post.mockResolvedValue({ ok: true, data: { id: 'F-0001', from: 'candidate', to: 'approved' } })
+    render(<Kanban />)
+    await screen.findByText('F-0001')
+    vi.useFakeTimers()
+    const col = columnOf('Aprovadas')
+    let dataTransfer = start('F-0001')
+    act(() => void vi.runAllTimers())
+    fireEvent.dragOver(col, { dataTransfer })
+    expect(document.querySelectorAll(MARKS).length).toBeGreaterThan(0)
+    fireEvent.dragEnd(cardOf('F-0001'))
+    expect(document.querySelectorAll(MARKS)).toHaveLength(0)
+
+    dataTransfer = start('F-0001')
+    act(() => void vi.runAllTimers())
+    fireEvent.dragOver(col, { dataTransfer })
+    fireEvent.drop(col, { dataTransfer })
+    expect(document.querySelectorAll(MARKS)).toHaveLength(0)
+
+    start('F-0001')
+    fireEvent.dragEnd(cardOf('F-0001'))
+    act(() => void vi.runAllTimers())
+    expect(document.querySelectorAll(MARKS)).toHaveLength(0)
+  })
+
+  it('critério 7: o card em voo muda de estado no meio do gesto (live reload) e as marcas somem', async () => {
+    live.version = 0
+    const { rerender } = render(<Kanban />)
+    await screen.findByText('F-0001')
+    start('F-0001')
+    expect(document.querySelectorAll(MARKS).length).toBeGreaterThan(0)
+    // Outro ator aprovou F-0001: o <a> de origem sai do Backlog e o dragend dele
+    // nunca chega ao board.
+    payload = { ...mkState(), features: [feature('F-0001', 'approved'), ...mkState().features.slice(1)] }
+    live.version = 1
+    rerender(<Kanban />)
+    await waitFor(() => expect(columnOf('Aprovadas')).toHaveTextContent('F-0001'))
+    expect(document.querySelectorAll(MARKS)).toHaveLength(0)
+    live.version = 0
+  })
+
+  it('critério 8: estados distintos pela forma da borda; transições só sem movimento reduzido', () => {
+    const css = readFileSync('src/app.css', 'utf8')
+    const media = /@media \(prefers-reduced-motion: no-preference\)\s*\{[\s\S]*?\}\s*\}/g
+    const motion = css.match(media) ?? []
+    expect(motion.join('\n')).toMatch(/\.column[^{]*\{[^}]*transition/)
+    const rest = css.replace(media, '')
+    // Todas as regras com exatamente esse seletor, não só a primeira.
+    const rule = (sel: string) =>
+      [...rest.matchAll(new RegExp(`(?:^|[}\\s])${sel.replace(/\./g, '\\.')}\\s*\\{([^}]*)\\}`, 'g'))].map((m) => m[1]).join('\n')
+    expect(rule('.column.drop-ready')).toMatch(/dashed/)
+    expect(rule('.column.drop-active')).toMatch(/solid/)
+    for (const sel of ['.column', '.column.drop-ready', '.column.drop-active', '.column.drop-off', '.card.card-in-flight']) {
+      expect(rule(sel), sel).not.toMatch(/transition/)
+    }
   })
 })
