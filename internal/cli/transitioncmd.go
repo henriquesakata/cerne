@@ -81,6 +81,19 @@ func newTransitionCmds(dir *string) []*cobra.Command {
 	return cmds
 }
 
+// transitionLine is a transition's headline. Renewing a stale approval
+// (F-0318) says so and names the approval it renewed (F-0417), instead of the
+// bare "approved → approved".
+func transitionLine(action domain.Action, out app.TransitionOutcome) string {
+	if action != domain.ActionApprove || out.From != domain.StateApproved || out.Baseline {
+		return fmt.Sprintf("%s: %s → %s", out.ID, out.From, out.To)
+	}
+	if out.RenewedApprovalAt.IsZero() {
+		return out.ID + ": re-approved (the spec changed since its last approval)"
+	}
+	return fmt.Sprintf("%s: re-approved (the spec changed since the approval of %s UTC)", out.ID, out.RenewedApprovalAt.UTC().Format("2006-01-02 15:04"))
+}
+
 func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by, reason, commit, mr string, force, check, noStamp bool) error {
 	// Validate flags before resolveProject so bad invocations fail fast
 	// without touching origin.
@@ -156,7 +169,7 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 	for _, w := range out.Warnings {
 		fmt.Fprintln(cmd.ErrOrStderr(), w)
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "%s: %s → %s\n", out.ID, out.From, out.To)
+	fmt.Fprintln(cmd.OutOrStdout(), transitionLine(action, out))
 	printMovedPendings(cmd.OutOrStdout(), out.Pendings)
 	printMovedPendings(cmd.OutOrStdout(), out.Ideas)
 	// Approving is accepting the proposed bar (F-0308 crit. 9): say which.

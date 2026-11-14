@@ -49,6 +49,10 @@ type TransitionOutcome struct {
 	// first approved copy (F-0318 crit. 14: approved before the copy existed)
 	// rather than renewing a stale one.
 	Baseline bool
+	// RenewedApprovalAt is when the approval this approve renewed was given —
+	// the feature's last feature.approved event (F-0417); zero for every other
+	// action, a first approve and a baseline record.
+	RenewedApprovalAt time.Time
 	// Pendings holds one line per pending the feature paid that this
 	// transition moved (F-0885: resolved on accept, reopened on reject,
 	// transferred on supersede), for the caller to print. Empty otherwise.
@@ -90,6 +94,22 @@ func checkReapprove(repoDir string, f store.Feature) error {
 		return fmt.Errorf("%w: %s is approved and its spec is the approved version", ErrNothingToReapprove, f.ID)
 	}
 	return nil
+}
+
+// lastEventAt is the time of entity id's last event of type typ; zero when
+// the log holds none.
+func lastEventAt(repoDir, id, typ string) (time.Time, error) {
+	evs, err := store.ReadEvents(repoDir)
+	if err != nil {
+		return time.Time{}, err
+	}
+	var at time.Time
+	for _, ev := range evs {
+		if ev.EntityID == id && ev.Type == typ {
+			at = ev.At
+		}
+	}
+	return at, nil
 }
 
 // eventTypes maps each lifecycle action to the event type it appends.
@@ -140,6 +160,7 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 	var out TransitionOutcome
 	var title string
 	var baseline bool
+	var renewedAt time.Time
 	if err := ValidateTransitionFlags(action, by, reason); err != nil {
 		return out, err
 	}
@@ -181,6 +202,11 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 				return "", err
 			}
 			baseline = ApprovalBaselineMissing(repoDir, f)
+			if f.State == domain.StateApproved && !baseline {
+				if renewedAt, err = lastEventAt(repoDir, id, eventType); err != nil {
+					return "", err
+				}
+			}
 		}
 		if action == domain.ActionStart {
 			if err := CheckStartNotStale(repoDir, f); err != nil {
@@ -437,7 +463,7 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 			msg += fmt.Sprintf(" (epic %s ready to close)", epicReady)
 		}
 		title = f.Title
-		out = TransitionOutcome{ID: id, From: oldState, To: newState, Propagated: propagated, EpicReadyToClose: epicReady, Warnings: warnings, Bar: bar, JudgeQuestion: judgeQuestion, Baseline: baseline, Pendings: movedPendings, Ideas: movedIdeas}
+		out = TransitionOutcome{ID: id, From: oldState, To: newState, Propagated: propagated, EpicReadyToClose: epicReady, Warnings: warnings, Bar: bar, JudgeQuestion: judgeQuestion, Baseline: baseline, RenewedApprovalAt: renewedAt, Pendings: movedPendings, Ideas: movedIdeas}
 		return msg, nil
 	})
 	if err != nil {
