@@ -1102,3 +1102,49 @@ describe('Settings — grupos (F-0413)', () => {
     expect(screen.getByRole('button', { name: /^Host/ })).toBeInTheDocument()
   })
 })
+
+describe('Settings — livro-razão (F-0413)', () => {
+  beforeEach(() => {
+    window.location.hash = '#/settings'
+  })
+
+  it('checkbox afirmativo: o rótulo visível ao lado da caixa é o título; a descrição fica abaixo, por aria-describedby', async () => {
+    render(<Settings />)
+    const extra = await screen.findByRole('listitem', { name: 'Extra toggle' })
+    const box = within(extra).getByRole('checkbox', { name: 'Extra toggle' })
+    expect(box.closest('label')).toHaveTextContent(/^Extra toggle$/)
+    const desc = within(extra).getByText('An injected key the screen never heard of.')
+    expect(box.closest('label')).not.toContainElement(desc)
+    expect(box).toHaveAccessibleDescription('An injected key the screen never heard of.')
+  })
+
+  it('escopo visto sem valor e outro com valor: "Herdado de Host", sem "Também modificado em"', async () => {
+    render(<Settings />)
+    const extra = await screen.findByRole('listitem', { name: 'Extra toggle' })
+    expect(within(extra).getByText('Herdado de Host')).toBeInTheDocument()
+    expect(within(extra).queryByText(/Também modificado em/)).toBeNull()
+  })
+
+  it('en: "Inherited from Host"', async () => {
+    render(
+      <I18nProvider>
+        <Settings />
+      </I18nProvider>,
+    )
+    const extra = await screen.findByRole('listitem', { name: 'Extra toggle' })
+    expect(within(extra).getByText('Inherited from Host')).toBeInTheDocument()
+  })
+
+  it('a precedência é dita junto do seletor de escopo', async () => {
+    render(<Settings />)
+    await screen.findByRole('listitem', { name: 'Extra toggle' })
+    const sel = screen.getByRole('group', { name: /escopo/i })
+    expect(within(sel.parentElement as HTMLElement).getByText('Projeto vence Host, que vence o padrão.')).toBeInTheDocument()
+  })
+
+  it('cada linha mostra o escopo em que a escrita cai', async () => {
+    render(<Settings />)
+    const extra = await screen.findByRole('listitem', { name: 'Extra toggle' })
+    expect(within(extra).getByText('Grava em Projeto')).toBeInTheDocument()
+  })
+})

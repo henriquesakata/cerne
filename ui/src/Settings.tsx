@@ -232,6 +232,7 @@ export default function Settings({ group = 'general' }: { group?: SettingGroup }
             <p id={hintId} className="settings-hint">
               {ts.scopeHint[scope]}
             </p>
+            <p className="settings-hint">{ts.precedence}</p>
           </div>
           {/* The escape to the raw file (R-0042): where the selected scope lives,
               for whoever would rather edit it by hand. */}
@@ -325,7 +326,7 @@ function ProjectName({ name }: { name: string }) {
   // Busy is aria-disabled, never disabled (F-0302).
   const lock = saving || undefined
   return (
-    <section aria-labelledby={titleId}>
+    <section className="settings-name" aria-labelledby={titleId}>
       <h2 id={titleId} className="settings-title">
         {tn.title}
       </h2>
@@ -432,6 +433,8 @@ function SettingRow({
   // The key's other scopes that store a value: above ws they override it.
   const others = s.scopes.filter((sc) => sc !== ws && s.stored?.[sc] !== undefined)
   const above = (sc: SettingScope) => ORDER.indexOf(sc) < ORDER.indexOf(ws)
+  // Nothing stored here, a lower scope's value shows through (F-0413).
+  const inherited = !modified && others.some((sc) => !above(sc))
   // A declared value shows through the same label as its select option.
   const fmt = (v: unknown) =>
     s.enum?.length && typeof v === 'string' && v !== '' ? (ts.options[v] ?? v) : formatValue(v, ts)
@@ -441,9 +444,12 @@ function SettingRow({
   // the focus, and a press during the write does nothing.
   const lock = busy || undefined
 
-  let control
+  // A bool is an affirmative checkbox: the title is its visible label, the
+  // description sits below the title (aria-describedby).
+  let titleNode = <span id={titleId}>{tx(s.title)}</span>
+  let control = null
   if (s.type === 'bool') {
-    control = (
+    titleNode = (
       <label className="settings-check">
         <input
           id={controlId(s.id)}
@@ -457,15 +463,12 @@ function SettingRow({
             if (!busy) onWrite(ws, () => putSetting(s.id, ws, next))
           }}
         />
-        <span id={descId}>{desc}</span>
+        <span id={titleId}>{tx(s.title)}</span>
       </label>
     )
   } else {
     control = (
       <>
-        <p id={descId} className="settings-desc">
-          {desc}
-        </p>
         {s.type === 'string' && s.enum && s.enum.length > 0 ? (
           <select
             id={controlId(s.id)}
@@ -535,43 +538,74 @@ function SettingRow({
       aria-labelledby={titleId}
       aria-busy={lock}
     >
-      <h2 className="settings-title">
-        <span id={titleId}>{tx(s.title)}</span>
-        <code className="card-id">{s.id}</code>
-        {groupName && <span className="badge settings-group">{groupName}</span>}
-        {modified && (
-          <span className="badge settings-modified" title={ts.modifiedTitle(ts.scopes[ws])}>
-            {ts.modified}
-          </span>
-        )}
-        {ws === 'host' && (
-          <span className="badge" title={ts.hostGlobalTitle}>
-            {ts.hostGlobal}
-          </span>
-        )}
-      </h2>
-      {(others.length > 0 || ws !== scope) && (
-        <p className="settings-scope-info">
-          {others.map((sc) => (
-            <span key={sc}>
-              {above(sc) ? ts.overriddenBy(ts.scopes[sc]) : ts.alsoModifiedIn(ts.scopes[sc])}{' '}
-              <button type="button" className="settings-switch" aria-describedby={titleId} onClick={() => onScope(sc)}>
-                {ts.editIn(ts.scopes[sc])}
-              </button>
+      <div className="settings-row-text">
+        <h2 className="settings-title">
+          {titleNode}
+          {groupName && <span className="badge settings-group">{groupName}</span>}
+          {modified && (
+            <span className="badge settings-modified" title={ts.modifiedTitle(ts.scopes[ws])}>
+              {ts.modified}
             </span>
-          ))}
-          {ws !== scope && <span>{ts.writesTo(label(ws))}</span>}
+          )}
+          {ws === 'host' && (
+            <span className="badge" title={ts.hostGlobalTitle}>
+              {ts.hostGlobal}
+            </span>
+          )}
+        </h2>
+        <p id={descId} className="settings-desc">
+          {desc}
         </p>
-      )}
-      {/* The top escape shows the selected scope's file; a row writing
-          elsewhere shows its own (critic C18). */}
-      {ws !== scope && files[ws] && (
-        <div className="settings-file">
-          <span>{ts.file}</span>
-          <FixBlock command={files[ws]} copyFailed={ts.copyFailed} />
-        </div>
-      )}
-      {control}
+        <code className="settings-id">{s.id}</code>
+        {(others.length > 0 || inherited) && (
+          <p className="settings-scope-info">
+            {others.map((sc) => (
+              <span key={sc}>
+                {above(sc) ? ts.overriddenBy(ts.scopes[sc]) : inherited ? ts.inheritedFrom(ts.scopes[sc]) : ts.alsoModifiedIn(ts.scopes[sc])}{' '}
+                <button type="button" className="settings-switch" aria-describedby={titleId} onClick={() => onScope(sc)}>
+                  {ts.editIn(ts.scopes[sc])}
+                </button>
+              </span>
+            ))}
+          </p>
+        )}
+        {/* The top escape shows the selected scope's file; a row writing
+            elsewhere shows its own (critic C18). */}
+        {ws !== scope && files[ws] && (
+          <div className="settings-file">
+            <span>{ts.file}</span>
+            <FixBlock command={files[ws]} copyFailed={ts.copyFailed} />
+          </div>
+        )}
+      </div>
+      <div className="settings-row-control">
+        {control}
+        <p className="settings-meta">
+          <span className="settings-effective">
+            {/* An empty name (even only spaces) signs with the fallback: said
+                in text, not only in the placeholder (F-0333, critic C3). */}
+            {s.fallback && typeof s.value === 'string' && s.value.trim() === ''
+              ? ts.effectiveFallback(s.fallback)
+              : s.origin === 'default'
+                ? ts.effectiveDefault(fmt(s.value))
+                : ts.effective(fmt(s.value), ts.scopes[s.origin])}
+          </span>
+          <span>{ts.defaultValue(fmt(s.default))}</span>
+          <span className="badge settings-write-chip">{ts.writesTo(label(ws))}</span>
+          {modified && (
+            <button
+              type="button"
+              className="settings-switch"
+              aria-describedby={titleId}
+              aria-disabled={lock}
+              onClick={busy ? undefined : () => onWrite(ws, () => unsetSetting(s.id, ws))}
+            >
+              {/* Named when it acts outside the selected scope (critic C10). */}
+              {ws === scope ? ts.reset : ts.resetIn(label(ws))}
+            </button>
+          )}
+        </p>
+      </div>
       {/* A stored value the resolution skipped (critic C9): said in text —
           scope, file and value — and removable in the scope being edited;
           another scope's is one "Edit in" away. */}
@@ -597,30 +631,6 @@ function SettingRow({
           )}
         </p>
       ))}
-      <p className="settings-meta">
-        <span>
-          {/* An empty name (even only spaces) signs with the fallback: said
-              in text, not only in the placeholder (F-0333, critic C3). */}
-          {s.fallback && typeof s.value === 'string' && s.value.trim() === ''
-            ? ts.effectiveFallback(s.fallback)
-            : s.origin === 'default'
-              ? ts.effectiveDefault(fmt(s.value))
-              : ts.effective(fmt(s.value), ts.scopes[s.origin])}
-        </span>
-        <span>{ts.defaultValue(fmt(s.default))}</span>
-        {modified && (
-          <button
-            type="button"
-            className="settings-switch"
-            aria-describedby={titleId}
-            aria-disabled={lock}
-            onClick={busy ? undefined : () => onWrite(ws, () => unsetSetting(s.id, ws))}
-          >
-            {/* Named when it acts outside the selected scope (critic C10). */}
-            {ws === scope ? ts.reset : ts.resetIn(label(ws))}
-          </button>
-        )}
-      </p>
       {failure?.retry && (
         <Notice message={ts.writeError(refusalText(failure, ts, files[ws]))} onRetry={failure.retry} busy={busy} />
       )}

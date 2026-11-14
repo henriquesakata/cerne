@@ -1159,6 +1159,8 @@ const ptBR = {
       host: 'Grava no settings.toml deste host: vale para todos os projetos dele, fora de qualquer repositório.',
     } satisfies Record<SettingScope, string>,
     alsoModifiedIn: (scope: string) => `Também modificado em ${scope}`,
+    inheritedFrom: (scope: string) => `Herdado de ${scope}`,
+    precedence: 'Projeto vence Host, que vence o padrão.',
     overriddenBy: (scope: string) => `Sobrescrito por ${scope}`,
     editIn: (scope: string) => `Editar em ${scope}`,
     writesTo: (scope: string) => `Grava em ${scope}`,
@@ -1216,11 +1218,11 @@ const ptBR = {
       'Mindmap': 'Mapa mental',
       'Shows the Mindmap tab in the UI. Off hides it.': 'Mostra a aba Mapa mental na UI. Desligado a esconde.',
       'Wiki': 'Wiki',
-      "Off stops compile_on_push and turns wiki lint debt into advisory findings left out of 'cerne next'; the wiki stays readable, with a stale banner and an on-demand recompile.":
-        "Desligado, para o compile_on_push e transforma a dívida de lint da wiki em achados informativos, fora do 'cerne next'; a wiki continua legível, com aviso de desatualizada e recompilação sob demanda.",
+      "On compiles the wiki on every push and counts its lint debt as pending work in 'cerne next'. Off stops that: the wiki stays readable, with a stale banner and an on-demand recompile.":
+        "Ligado, compila a wiki a cada push e conta a dívida de lint dela como trabalho pendente no 'cerne next'. Desligado, isso para: a wiki continua legível, com aviso de desatualizada e recompilação sob demanda.",
       'Notes on edit': 'Notas ao editar',
-      'Off stops the work-gate hook from showing the notes that cite a file when the agent is about to edit it.':
-        'Desligado, o gancho work-gate deixa de mostrar as notas que citam um arquivo quando o agente vai editá-lo.',
+      'On shows the agent the notes that cite a file when it is about to edit that file, through the work-gate hook. Off stops showing them.':
+        'Ligado, o gancho work-gate mostra ao agente as notas que citam um arquivo quando ele vai editá-lo. Desligado, deixa de mostrá-las.',
     } as Record<string, string>,
     // Rótulos dos valores de uma chave de texto com valores declarados.
     options: { on: 'ligado', off: 'desligado' } as Record<string, string>,
@@ -2349,6 +2351,8 @@ const en: Messages = {
       host: "Writes to this host's settings.toml: applies to every project on it, outside any repository.",
     },
     alsoModifiedIn: (scope: string) => `Also modified in ${scope}`,
+    inheritedFrom: (scope: string) => `Inherited from ${scope}`,
+    precedence: 'Project beats Host, which beats the default.',
     overriddenBy: (scope: string) => `Overridden by ${scope}`,
     editIn: (scope: string) => `Edit in ${scope}`,
     writesTo: (scope: string) => `Writes to ${scope}`,
