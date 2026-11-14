@@ -1263,6 +1263,10 @@ export type SettingScope = 'project' | 'host'
 
 export type SettingProblem = { scope: SettingScope; file: string; raw?: string; error: string }
 
+// Subject groups, in display order (F-0413); mirrors settingGroups in Go.
+export const SETTING_GROUPS = ['general', 'process', 'interface', 'integrations', 'ai'] as const
+export type SettingGroup = (typeof SETTING_GROUPS)[number]
+
 export type ResolvedSetting = {
   id: string
   title: string
@@ -1270,6 +1274,10 @@ export type ResolvedSetting = {
   default: unknown
   scopes: SettingScope[]
   description: string
+  // Absent or unknown (an older payload): the screen files it under general.
+  group?: SettingGroup
+  // Only a human writes this key (the CLI refuses an agent): the screen guards it.
+  human_only?: boolean
   // Values a string key may hold (F-0353); absent = free text.
   enum?: string[]
   value: unknown

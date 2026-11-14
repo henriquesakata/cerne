@@ -26,8 +26,9 @@ let liveVersion = 0
 // Estável entre renders, como no LiveProvider: só muda de identidade quando a
 // lista é relida (o evento SSE "projects").
 let mockProjects = [{ pid: 'p1', name: 'Projeto A' }]
+let mockPid = 'p1'
 vi.mock('./live', () => ({
-  useProjects: () => ({ projects: mockProjects, activePid: 'p1' }),
+  useProjects: () => ({ projects: mockProjects, activePid: mockPid }),
   useLiveVersion: () => liveVersion,
 }))
 
@@ -105,6 +106,7 @@ beforeEach(() => {
   cleanup()
   localStorage.clear()
   liveVersion = 0
+  mockPid = 'p1'
   mockProjects = [{ pid: 'p1', name: 'Projeto A' }]
   fetchSettings.mockReset()
   putSetting.mockReset()
@@ -145,8 +147,10 @@ describe('Settings — leitura derivada do registro (F-0315)', () => {
     const count = row('Retry count')
     expect(within(count).queryByRole('checkbox')).toBeNull()
     expect(within(count).queryByRole('textbox')).toBeNull()
-    expect(within(count).getByText('3')).toBeInTheDocument()
-    expect(within(count).getByText(/edite no arquivo/)).toBeInTheDocument()
+    const num = within(count).getByRole('spinbutton', { name: 'Retry count' })
+    expect(num).toHaveValue(3)
+    expect(num).toHaveAttribute('min', '1')
+    expect(num).toHaveAttribute('step', '1')
   })
 
   it('c3: a busca filtra por título e descrição, sem caixa nem diacrítico', async () => {
@@ -170,12 +174,12 @@ describe('Settings — leitura derivada do registro (F-0315)', () => {
     expect(screen.getByText('Nenhuma configuração corresponde a “zzz”.')).toBeInTheDocument()
   })
 
-  it('c8: chave de escopo host leva o selo "global do host"; o cabeçalho nomeia o projeto ativo', async () => {
+  it('c8: chave de escopo host leva o selo "Host (global)"; o cabeçalho nomeia o projeto ativo', async () => {
     render(<Settings />)
     const channel = await screen.findByRole('listitem', { name: 'Seu nome no canal' })
-    const badge = within(channel).getByText('global do host')
+    const badge = within(channel).getByText('Host (global)')
     expect(badge).toHaveAttribute('title', expect.stringMatching(/todos os projetos/))
-    expect(within(row('Grafo')).queryByText('global do host')).toBeNull()
+    expect(within(row('Grafo')).queryByText('Host (global)')).toBeNull()
     expect(screen.getByText('Projeto A')).toBeInTheDocument()
   })
 
@@ -309,13 +313,13 @@ describe('Settings — edição por escopo (F-0315)', () => {
   it('c8: o escopo Host é marcado como global, com a dica de que vale para todos os projetos', async () => {
     render(<Settings />)
     await screen.findByRole('listitem', { name: 'Grafo' })
-    // O selo entra no nome com espaço: "Host global", nunca "Hostglobal".
-    const host = within(scopeGroup()).getByRole('button', { name: 'Host global' })
+    // O selo entra no nome com espaço: "Host (global)".
+    const host = within(scopeGroup()).getByRole('button', { name: 'Host (global)' })
     expect(host).toHaveAttribute('title', expect.stringMatching(/todos os projetos/))
     expect(screen.getByText(/versionado/)).toBeInTheDocument()
     fireEvent.click(host)
     expect(screen.getByText(/vale para todos os projetos/)).toBeInTheDocument()
-    expect(within(row('Grafo')).getByText('global do host')).toBeInTheDocument()
+    expect(within(row('Grafo')).getByText('Host (global)')).toBeInTheDocument()
   })
 
   it('c9: escrita recusada mantém a lista, mostra o erro na linha e a nova tentativa reenvia o mesmo PUT', async () => {
@@ -439,7 +443,7 @@ describe('Settings — falha de escrita por chave e escopo (F-0315, crítica C6)
     expect(putSetting).toHaveBeenLastCalledWith('mindmap.enabled', 'project', false)
 
     fireEvent.click(within(row('Mapa mental')).getByRole('button', { name: 'Editar em Host' }))
-    expect(within(scopeGroup()).getByRole('button', { name: 'Host global' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(scopeGroup()).getByRole('button', { name: 'Host (global)' })).toHaveAttribute('aria-pressed', 'true')
     expect(within(row('Mapa mental')).queryByRole('status')).toBeNull()
 
     fireEvent.click(within(row('Mapa mental')).getByRole('button', { name: 'Editar em Projeto' }))
@@ -940,27 +944,37 @@ describe('Settings: chave de texto com valores declarados', () => {
     putSetting.mockReset()
   })
 
-  it('mostra um select com os valores declarados e o efetivo selecionado, em pt-BR', async () => {
+  it('enum exatamente on/off vira um checkbox rotulado pelo título, desmarcado quando o efetivo é off', async () => {
     fetchSettings.mockResolvedValue(withGauntlet())
     render(<Settings />)
     const r = await screen.findByRole('listitem', { name: 'Gauntlet' })
-    const select = within(r).getByRole('combobox', { name: 'Gauntlet' }) as HTMLSelectElement
-    expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual(['ligado', 'desligado'])
-    expect(select.value).toBe('off')
+    expect(within(r).queryByRole('combobox')).toBeNull()
+    expect(within(r).getByRole('checkbox', { name: 'Gauntlet' })).not.toBeChecked()
     expect(within(r).queryByRole('textbox')).toBeNull()
     expect(within(r).getByText(/Liga ou desliga o Gauntlet/)).toBeInTheDocument()
   })
 
-  it('trocar a opção grava a string escolhida no escopo editado', async () => {
+  it('marcar o checkbox grava a string on no escopo editado; desmarcar grava off', async () => {
     fetchSettings.mockResolvedValue(withGauntlet())
     putSetting.mockResolvedValue(withGauntlet(gauntlet({ value: 'on', stored: { project: 'on' } })))
     render(<Settings />)
     const r = await screen.findByRole('listitem', { name: 'Gauntlet' })
-    fireEvent.change(within(r).getByRole('combobox', { name: 'Gauntlet' }), { target: { value: 'on' } })
+    fireEvent.click(within(r).getByRole('checkbox', { name: 'Gauntlet' }))
     await waitFor(() => expect(putSetting).toHaveBeenCalledWith('gates.gauntlet', 'project', 'on'))
   })
 
-  it('no I18nProvider (en) os rótulos são os valores', async () => {
+  it('chave on/off que NÃO é só-humano: desmarcar grava off direto, sem pergunta', async () => {
+    fetchSettings.mockResolvedValue(withGauntlet(gauntlet({ value: 'on', origin: 'default', stored: undefined })))
+    putSetting.mockResolvedValue(withGauntlet())
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Gauntlet' })
+    const box = within(r).getByRole('checkbox', { name: 'Gauntlet' })
+    expect(box).toBeChecked()
+    fireEvent.click(box)
+    await waitFor(() => expect(putSetting).toHaveBeenCalledWith('gates.gauntlet', 'project', 'off'))
+  })
+
+  it('no I18nProvider (en) continua um checkbox rotulado pelo título', async () => {
     fetchSettings.mockResolvedValue(withGauntlet())
     render(
       <I18nProvider>
@@ -968,11 +982,10 @@ describe('Settings: chave de texto com valores declarados', () => {
       </I18nProvider>,
     )
     const r = await screen.findByRole('listitem', { name: 'Gauntlet' })
-    const select = within(r).getByRole('combobox', { name: 'Gauntlet' })
-    expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual(['on', 'off'])
+    expect(within(r).getByRole('checkbox', { name: 'Gauntlet' })).not.toBeChecked()
   })
 
-  it('a linha Efetivo/Padrão traduz o valor como o select: ligado/desligado em pt-BR, on/off em en', async () => {
+  it('a linha Efetivo/Padrão traduz o valor: ligado/desligado em pt-BR, on/off em en', async () => {
     fetchSettings.mockResolvedValue(withGauntlet())
     const { unmount } = render(<Settings />)
     const r = await screen.findByRole('listitem', { name: 'Gauntlet' })
@@ -989,17 +1002,17 @@ describe('Settings: chave de texto com valores declarados', () => {
     expect(within(en).getByText('Default: on')).toBeInTheDocument()
   })
 
-  it('durante a escrita o select fica aria-disabled e mudar de novo não grava', async () => {
+  it('durante a escrita o checkbox fica aria-disabled e clicar de novo não grava', async () => {
     fetchSettings.mockResolvedValue(withGauntlet())
     let release = () => {}
     putSetting.mockImplementationOnce(() => new Promise<SettingsView>((r) => (release = () => r(withGauntlet()))))
     render(<Settings />)
     const r = await screen.findByRole('listitem', { name: 'Gauntlet' })
-    const select = within(r).getByRole('combobox', { name: 'Gauntlet' })
-    fireEvent.change(select, { target: { value: 'on' } })
+    const box = within(r).getByRole('checkbox', { name: 'Gauntlet' })
+    fireEvent.click(box)
     await waitFor(() => expect(row('Gauntlet')).toHaveAttribute('aria-busy', 'true'))
-    expect(select).toHaveAttribute('aria-disabled', 'true')
-    fireEvent.change(select, { target: { value: 'off' } })
+    expect(box).toHaveAttribute('aria-disabled', 'true')
+    fireEvent.click(box)
     expect(putSetting).toHaveBeenCalledTimes(1)
     release()
     await waitFor(() => expect(row('Gauntlet')).not.toHaveAttribute('aria-busy'))
@@ -1024,5 +1037,503 @@ describe('Settings: chave de texto com valores declarados', () => {
     expect(select.value).toBe('')
     fireEvent.change(select, { target: { value: 'en' } })
     await waitFor(() => expect(putSetting).toHaveBeenCalledWith('lint.cli_output_language', 'project', 'en'))
+  })
+})
+
+describe('Settings — grupos (F-0413)', () => {
+  const grouped = () =>
+    fixture({
+      settings: [
+        key({ id: 'channel.human_name', title: 'Your name in the channel', type: 'string', default: '', scopes: ['host'], value: '', group: 'general' }),
+        key({ id: 'gates.gauntlet', title: 'Gauntlet', type: 'string', default: 'on', scopes: ['project'], value: 'on', group: 'process' }),
+        key({ id: 'graph.enabled', title: 'Graph', group: 'interface' }),
+        key({ id: 'wiki.enabled', title: 'Wiki', group: 'interface' }),
+      ],
+    })
+  const nav = () => within(screen.getByRole('navigation', { name: 'Grupos de configurações' }))
+
+  beforeEach(() => {
+    window.location.hash = '#/settings'
+    fetchSettings.mockResolvedValue(grouped())
+  })
+
+  it('c4: a navegação lista só grupos com chave, e o nome do projeto conta para Geral', async () => {
+    render(<Settings />)
+    await screen.findByRole('listitem', { name: 'Seu nome no canal' })
+    expect(nav().getAllByRole('link').map((a) => a.textContent)).toEqual(['Geral', 'Processo', 'Interface'])
+    cleanup()
+    fetchSettings.mockResolvedValue(fixture({ settings: [key({ id: 'graph.enabled', title: 'Graph', group: 'interface' })] }))
+    render(<Settings group="interface" />)
+    await screen.findByRole('listitem', { name: 'Grafo' })
+    expect(nav().getAllByRole('link').map((a) => a.textContent)).toEqual(['Geral', 'Interface'])
+  })
+
+  it('c4: um grupo aberto mostra só as suas chaves; o aberto tem aria-current', async () => {
+    render(<Settings group="process" />)
+    await screen.findByRole('listitem', { name: 'Gauntlet' })
+    expect(screen.queryByRole('listitem', { name: 'Grafo' })).toBeNull()
+    expect(screen.queryByRole('listitem', { name: 'Wiki' })).toBeNull()
+    expect(screen.queryByRole('textbox', { name: 'Nome do projeto' })).toBeNull()
+    expect(nav().getByRole('link', { name: 'Processo' })).toHaveAttribute('aria-current', 'page')
+    expect(nav().getByRole('link', { name: 'Interface' })).not.toHaveAttribute('aria-current')
+    expect(nav().getByRole('link', { name: 'Interface' })).toHaveAttribute('href', '#/settings/interface')
+  })
+
+  it('c4: chave sem grupo (payload antigo) cai em Geral', async () => {
+    fetchSettings.mockResolvedValue(fixture())
+    render(<Settings group="general" />)
+    expect(await screen.findByRole('listitem', { name: 'Grafo' })).toBeInTheDocument()
+  })
+
+  it('c4: abaixo de 640 px a navegação é um select rotulado que troca o hash', async () => {
+    render(<Settings group="process" />)
+    await screen.findByRole('listitem', { name: 'Gauntlet' })
+    const select = screen.getByRole('combobox', { name: 'Grupos de configurações' })
+    expect(select).toHaveValue('process')
+    fireEvent.change(select, { target: { value: 'interface' } })
+    expect(window.location.hash).toBe('#/settings/interface')
+  })
+
+  it('c5: com texto na busca aparecem chaves de todos os grupos, cada uma com o nome do grupo; limpar volta ao grupo aberto', async () => {
+    render(<Settings group="process" />)
+    await screen.findByRole('listitem', { name: 'Gauntlet' })
+    const box = screen.getByRole('searchbox', { name: 'Buscar configurações' })
+    fireEvent.change(box, { target: { value: 'enabled' } })
+    const graph = screen.getByRole('listitem', { name: 'Grafo' })
+    expect(within(graph).getByText('Interface')).toBeInTheDocument()
+    expect(screen.getByRole('listitem', { name: 'Wiki' })).toBeInTheDocument()
+    expect(screen.queryByRole('listitem', { name: 'Gauntlet' })).toBeNull()
+    fireEvent.change(box, { target: { value: '' } })
+    expect(screen.getByRole('listitem', { name: 'Gauntlet' })).toBeInTheDocument()
+    expect(screen.queryByRole('listitem', { name: 'Grafo' })).toBeNull()
+  })
+
+  it('c6: o seletor Projeto | Host aparece em toda página de grupo', async () => {
+    render(<Settings group="interface" />)
+    await screen.findByRole('listitem', { name: 'Grafo' })
+    expect(screen.getByRole('group', { name: /escopo/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Host/ })).toBeInTheDocument()
+  })
+})
+
+describe('Settings — livro-razão (F-0413)', () => {
+  beforeEach(() => {
+    window.location.hash = '#/settings'
+  })
+
+  it('checkbox afirmativo: o rótulo visível ao lado da caixa é o título; a descrição fica abaixo, por aria-describedby', async () => {
+    render(<Settings />)
+    const extra = await screen.findByRole('listitem', { name: 'Extra toggle' })
+    const box = within(extra).getByRole('checkbox', { name: 'Extra toggle' })
+    // F-0413 (crítica de fechamento): a caixa vive na coluna direita, sob o efetivo.
+    const right = box.closest('.settings-row-control') as HTMLElement
+    expect(right).not.toBeNull()
+    expect(right.firstElementChild).toHaveTextContent('Efetivo: ligado, de Host')
+    const desc = within(extra).getByText('An injected key the screen never heard of.')
+    expect(right).not.toContainElement(desc)
+    expect(box).toHaveAccessibleDescription('An injected key the screen never heard of.')
+  })
+
+  it('escopo visto sem valor e outro com valor: "Herdado de Host", sem "Também modificado em"', async () => {
+    render(<Settings />)
+    const extra = await screen.findByRole('listitem', { name: 'Extra toggle' })
+    expect(within(extra).getByText('Herdado de Host')).toBeInTheDocument()
+    expect(within(extra).queryByText(/Também modificado em/)).toBeNull()
+  })
+
+  it('en: "Inherited from Host"', async () => {
+    render(
+      <I18nProvider>
+        <Settings />
+      </I18nProvider>,
+    )
+    const extra = await screen.findByRole('listitem', { name: 'Extra toggle' })
+    expect(within(extra).getByText('Inherited from Host')).toBeInTheDocument()
+  })
+
+  it('a precedência é dita junto do seletor de escopo', async () => {
+    render(<Settings />)
+    await screen.findByRole('listitem', { name: 'Extra toggle' })
+    const sel = screen.getByRole('group', { name: /escopo/i })
+    expect(within(sel.parentElement as HTMLElement).getByText('Projeto vence Host, que vence o padrão.')).toBeInTheDocument()
+  })
+
+  it('o chip do escopo de escrita é a exceção: só quando a chave grava fora do escopo visto', async () => {
+    render(<Settings />)
+    const extra = await screen.findByRole('listitem', { name: 'Extra toggle' })
+    // O chip só aparece como exceção: a chave que grava fora do escopo visto.
+    expect(within(extra).queryByText('Grava em Projeto')).toBeNull()
+    expect(within(row('Seu nome no canal')).getByText('Grava em Host (global)')).toBeInTheDocument()
+  })
+})
+
+describe('Settings — nome do projeto na coluna (F-0413)', () => {
+  it('o nome do projeto fica na mesma coluna de conteúdo do seletor de escopo, ao lado da navegação', async () => {
+    render(<Settings group="general" />)
+    await screen.findByRole('listitem', { name: 'Grafo' })
+    const body = screen.getByRole('group', { name: /escopo/i }).closest('.settings-body') as HTMLElement
+    expect(within(body).getByRole('textbox', { name: 'Nome do projeto' })).toBeInTheDocument()
+    expect(body.parentElement).toContainElement(screen.getByRole('navigation', { name: 'Grupos de configurações' }))
+  })
+})
+
+describe('Settings — editor numérico (F-0413)', () => {
+  const withCount = () => fixture()
+  it('Salvar grava o inteiro no escopo editado', async () => {
+    fetchSettings.mockResolvedValue(withCount())
+    putSetting.mockResolvedValue(withCount())
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Retry count' })
+    fireEvent.change(within(r).getByRole('spinbutton'), { target: { value: '7' } })
+    fireEvent.click(within(r).getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(putSetting).toHaveBeenCalledWith('test.count', 'project', 7))
+  })
+  it('vazio redefine, como a chave de texto', async () => {
+    fetchSettings.mockResolvedValue(withCount())
+    unsetSetting.mockResolvedValue(withCount())
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Retry count' })
+    fireEvent.change(within(r).getByRole('spinbutton'), { target: { value: '' } })
+    fireEvent.click(within(r).getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(unsetSetting).toHaveBeenCalledWith('test.count', 'project'))
+  })
+  it('não inteiro é recusado no cliente, sem escrita', async () => {
+    fetchSettings.mockResolvedValue(withCount())
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Retry count' })
+    fireEvent.change(within(r).getByRole('spinbutton'), { target: { value: '2.5' } })
+    fireEvent.click(within(r).getByRole('button', { name: 'Salvar' }))
+    expect(putSetting).not.toHaveBeenCalled()
+    expect(await within(r).findByRole('alert')).toBeInTheDocument()
+  })
+})
+
+describe('Settings — cabeçalho de escopo, busca e confirmação (F-0413)', () => {
+  const onlyProject = () =>
+    fixture({
+      settings: [
+        key({ id: 'gates.gauntlet', title: 'Gauntlet', type: 'string', default: 'on', enum: ['on', 'off'], scopes: ['project'], value: 'on', group: 'process' }),
+        key({ id: 'channel.human_name', title: 'Your name in the channel', type: 'string', default: '', scopes: ['host'], value: '', group: 'general' }),
+        key({ id: 'graph.enabled', title: 'Graph', group: 'interface' }),
+      ],
+    })
+  beforeEach(() => {
+    fetchSettings.mockResolvedValue(onlyProject())
+  })
+
+  it('página em que nenhuma chave aceita os dois escopos: sem seletor, o escopo dito uma vez, sem chip por linha', async () => {
+    render(<Settings group="process" />)
+    const r = await screen.findByRole('listitem', { name: 'Gauntlet' })
+    expect(screen.queryByRole('group', { name: /escopo/i })).toBeNull()
+    expect(screen.getByText(/ficam no \.cernerc do projeto/)).toBeInTheDocument()
+    expect(within(r).queryByText(/^Grava em/)).toBeNull()
+  })
+
+  it('General só-host: o texto fala do settings.toml do host', async () => {
+    render(<Settings group="general" />)
+    await screen.findByRole('listitem', { name: 'Seu nome no canal' })
+    expect(screen.queryByRole('group', { name: /escopo/i })).toBeNull()
+    expect(screen.getByText(/ficam no settings\.toml deste host, fora de qualquer repositório, e valem para todos os projetos\./)).toBeInTheDocument()
+  })
+
+  it('página com chave dos dois escopos mantém o seletor', async () => {
+    render(<Settings group="interface" />)
+    await screen.findByRole('listitem', { name: 'Grafo' })
+    expect(screen.getByRole('group', { name: /escopo/i })).toBeInTheDocument()
+  })
+
+  it('o grupo aberto tem título e descrição visíveis; com busca ninguém é a página atual', async () => {
+    render(<Settings group="process" />)
+    await screen.findByRole('listitem', { name: 'Gauntlet' })
+    expect(screen.getByRole('heading', { name: 'Processo' })).toBeInTheDocument()
+    expect(screen.getByText('Portões do ciclo de vida e regras do lint.')).toBeInTheDocument()
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar configurações' }), { target: { value: 'graph' } })
+    const nav = within(screen.getByRole('navigation', { name: 'Grupos de configurações' }))
+    expect(nav.queryByRole('link', { current: 'page' })).toBeNull()
+  })
+
+  it('clicar num grupo com busca ativa limpa a busca', async () => {
+    render(<Settings group="process" />)
+    await screen.findByRole('listitem', { name: 'Gauntlet' })
+    const box = screen.getByRole('searchbox', { name: 'Buscar configurações' })
+    fireEvent.change(box, { target: { value: 'graph' } })
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Grupos de configurações' })).getByRole('link', { name: 'Interface' }))
+    expect(box).toHaveValue('')
+  })
+
+  it('escrita com sucesso: confirmação em região aria-live (não role=status: os testes de escrita da F-0315 exigem nenhum status após o sucesso), com o lembrete do .cernerc no escopo Projeto', async () => {
+    putSetting.mockResolvedValue(onlyProject())
+    render(<Settings group="interface" />)
+    const r = await screen.findByRole('listitem', { name: 'Grafo' })
+    fireEvent.click(within(r).getByRole('checkbox', { name: 'Grafo' }))
+    expect(await within(r).findByText('Salvo no .cernerc — lembre de commitar.')).toHaveAttribute('aria-live', 'polite')
+  })
+
+  it('a confirmação some na próxima interação com a linha', async () => {
+    putSetting.mockResolvedValueOnce(onlyProject())
+    render(<Settings group="interface" />)
+    const r = await screen.findByRole('listitem', { name: 'Grafo' })
+    const box = within(r).getByRole('checkbox', { name: 'Grafo' })
+    fireEvent.click(box)
+    await within(r).findByText(/^Salvo/)
+    putSetting.mockImplementationOnce(() => new Promise<SettingsView>(() => {}))
+    fireEvent.click(box)
+    expect(within(r).queryByText(/^Salvo/)).toBeNull()
+  })
+
+  it('o erro do campo numérico entra no aria-describedby do campo', async () => {
+    fetchSettings.mockResolvedValue(fixture())
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Retry count' })
+    const num = within(r).getByRole('spinbutton')
+    fireEvent.change(num, { target: { value: '2.5' } })
+    fireEvent.click(within(r).getByRole('button', { name: 'Salvar' }))
+    await within(r).findByRole('alert')
+    expect(num).toHaveAccessibleDescription(/Informe um número inteiro/)
+  })
+})
+
+describe('Settings — alvo do toggle, busca estável e textos (F-0413)', () => {
+  beforeEach(() => {
+    window.location.hash = '#/settings'
+  })
+
+  it('clicar (ou duplo clique) no título não grava: só o toggle da coluna direita é alvo', async () => {
+    putSetting.mockResolvedValue(fixture())
+    render(<Settings />)
+    const extra = await screen.findByRole('listitem', { name: 'Extra toggle' })
+    const box = within(extra).getByRole('checkbox', { name: 'Extra toggle' })
+    const title = within(extra).getByText('Extra toggle')
+    expect(title.closest('label')).toBeNull()
+    expect(box).toBeChecked()
+    fireEvent.click(title)
+    fireEvent.doubleClick(title)
+    expect(putSetting).not.toHaveBeenCalled()
+    expect(box).toBeChecked()
+  })
+
+  it('a caixa fica num label.settings-toggle com a palavra de estado visível, fora do nome acessível', async () => {
+    render(<Settings />)
+    const extra = await screen.findByRole('listitem', { name: 'Extra toggle' })
+    const box = within(extra).getByRole('checkbox', { name: 'Extra toggle' })
+    const toggle = box.closest('label.settings-toggle') as HTMLElement
+    expect(toggle).not.toBeNull()
+    expect(within(toggle).getByText('Ligado')).toBeInTheDocument()
+    expect(box).toHaveAccessibleName('Extra toggle')
+  })
+
+  it('a região aria-live da confirmação fica sempre montada, vazia quando não há o que dizer', async () => {
+    render(<Settings />)
+    const extra = await screen.findByRole('listitem', { name: 'Extra toggle' })
+    const live = extra.querySelector('[aria-live="polite"]')
+    expect(live).not.toBeNull()
+    expect(live).toBeEmptyDOMElement()
+  })
+
+  it('com busca, o cabeçalho do grupo fica no lugar e troca o texto; sem resultado, o seletor de escopo continua', async () => {
+    render(<Settings />)
+    await screen.findByRole('listitem', { name: 'Extra toggle' })
+    const box = screen.getByRole('searchbox', { name: 'Buscar configurações' })
+    fireEvent.change(box, { target: { value: 'extra' } })
+    expect(screen.getByRole('heading', { name: 'Resultados em todos os grupos' })).toBeInTheDocument()
+    fireEvent.change(box, { target: { value: 'zzz' } })
+    // O seletor de escopo fica montado: o campo de busca nunca pula.
+    expect(screen.getByRole('group', { name: /escopo/i })).toBeInTheDocument()
+  })
+
+  it('enum com valor vazio mostra "Nenhum" (en: "None") em vez de "(vazio)"', async () => {
+    const lang = key({ id: 'lint.cli_output_language', title: 'CLI output language', type: 'string', default: '', enum: ['en'], scopes: ['project'], description: 'x', value: '' })
+    fetchSettings.mockResolvedValue(fixture({ settings: [...fixture().settings, lang] }))
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Idioma da saída da CLI' })
+    expect(within(within(r).getByRole('combobox')).getAllByRole('option').map((o) => o.textContent)).toEqual(['Nenhum', 'en'])
+  })
+
+  it('o título da linha e o do bloco do nome do projeto são h3 sob o h2 do grupo', async () => {
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Grafo' })
+    expect(within(r).getByRole('heading', { level: 3 })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 3, name: 'Nome do projeto' })).toBeInTheDocument()
+  })
+})
+
+describe('Settings — chave só-humano (F-0413)', () => {
+  const gate = (over: Partial<ResolvedSetting> = {}) =>
+    key({ id: 'gates.gauntlet', title: 'Gauntlet', type: 'string', default: 'on', enum: ['on', 'off'], scopes: ['project'], value: 'on', human_only: true, ...over })
+  const load = (g = gate()) => fetchSettings.mockResolvedValue(fixture({ settings: [...fixture().settings, g] }))
+  const box = (r: HTMLElement) => within(r).getByRole('checkbox', { name: 'Gauntlet' })
+
+  beforeEach(() => {
+    window.location.hash = '#/settings'
+    putSetting.mockResolvedValue(fixture())
+  })
+
+  it('o selo "Só humano" aparece só na chave só-humano', async () => {
+    load()
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Gauntlet' })
+    expect(within(r).getByText('Só humano')).toBeInTheDocument()
+    expect(within(row('Grafo')).queryByText('Só humano')).toBeNull()
+  })
+
+  it('desligar pergunta antes; só grava off depois de Desligar', async () => {
+    load()
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Gauntlet' })
+    fireEvent.click(box(r))
+    expect(putSetting).not.toHaveBeenCalled()
+    const group = within(r).getByRole('group', { name: /^Esta chave é só do dono do projeto\. Desligar Gauntlet grava off no \.cernerc, versionado — lembre de commitar; dá para religar aqui\./ })
+    // O foco abre no Cancelar, a escolha segura.
+    expect(within(group).getByRole('button', { name: 'Cancelar' })).toHaveFocus()
+    fireEvent.click(within(group).getByRole('button', { name: 'Desligar' }))
+    await waitFor(() => expect(putSetting).toHaveBeenCalledWith('gates.gauntlet', 'project', 'off'))
+  })
+
+  it('Cancelar não grava, mantém a caixa marcada e devolve o foco a ela', async () => {
+    load()
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Gauntlet' })
+    fireEvent.click(box(r))
+    fireEvent.click(within(r).getByRole('button', { name: 'Cancelar' }))
+    expect(putSetting).not.toHaveBeenCalled()
+    expect(box(r)).toBeChecked()
+    expect(box(r)).toHaveFocus()
+    expect(within(r).queryByRole('button', { name: 'Desligar' })).toBeNull()
+  })
+
+  it('Esc cancela', async () => {
+    load()
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Gauntlet' })
+    fireEvent.click(box(r))
+    fireEvent.keyDown(within(r).getByRole('button', { name: 'Desligar' }), { key: 'Escape' })
+    expect(putSetting).not.toHaveBeenCalled()
+    expect(within(r).queryByRole('button', { name: 'Desligar' })).toBeNull()
+  })
+
+  it('ligar grava direto, sem pergunta', async () => {
+    load(gate({ value: 'off', stored: { project: 'off' }, origin: 'project' }))
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Gauntlet' })
+    fireEvent.click(box(r))
+    await waitFor(() => expect(putSetting).toHaveBeenCalledWith('gates.gauntlet', 'project', 'on'))
+  })
+
+  it('en: texto e botões em inglês', async () => {
+    load()
+    render(
+      <I18nProvider>
+        <Settings />
+      </I18nProvider>,
+    )
+    const r = await screen.findByRole('listitem', { name: 'Gauntlet' })
+    expect(within(r).getByText('Human only')).toBeInTheDocument()
+    fireEvent.click(box(r))
+    expect(within(r).getByRole('group', { name: /^This key is the project owner's alone\. Turning Gauntlet off writes off to \.cernerc, versioned — remember to commit; you can turn it back on here\./ })).toBeInTheDocument()
+    expect(within(r).getByRole('button', { name: 'Turn off' })).toBeInTheDocument()
+    expect(within(r).getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
+  })
+})
+
+describe('Settings — proveniência na descrição do controle (F-0413)', () => {
+  it('o select tem o efetivo e a origem na descrição acessível', async () => {
+    const lang = key({ id: 'lint.cli_output_language', title: 'CLI output language', type: 'string', default: '', enum: ['en'], scopes: ['project'], description: 'x', value: '' })
+    fetchSettings.mockResolvedValue(fixture({ settings: [lang] }))
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Idioma da saída da CLI' })
+    expect(within(r).getByRole('combobox')).toHaveAccessibleDescription(/^x.*Efetivo: Nenhum \(padrão\)/)
+  })
+})
+
+describe('Settings — achados do crítico (F-0413)', () => {
+  beforeEach(() => {
+    window.location.hash = '#/settings'
+  })
+
+  it('#1 número que o navegador não consegue ler (badInput) não grava nem apaga: mostra o erro', async () => {
+    fetchSettings.mockResolvedValue(fixture())
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Retry count' })
+    const num = within(r).getByRole('spinbutton')
+    Object.defineProperty(num, 'validity', { value: { badInput: true, valid: false } })
+    fireEvent.change(num, { target: { value: '' } })
+    fireEvent.click(within(r).getByRole('button', { name: 'Salvar' }))
+    expect(putSetting).not.toHaveBeenCalled()
+    expect(unsetSetting).not.toHaveBeenCalled()
+    expect(await within(r).findByRole('alert')).toBeInTheDocument()
+  })
+
+  it('#4 a confirmação "Salvo" não atravessa a troca de projeto', async () => {
+    putSetting.mockResolvedValue(fixture())
+    const { rerender } = render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Grafo' })
+    fireEvent.click(within(r).getByRole('checkbox', { name: 'Grafo' }))
+    await within(r).findByText(/^Salvo/)
+    mockPid = 'p2'
+    rerender(<Settings />)
+    const r2 = await screen.findByRole('listitem', { name: 'Grafo' })
+    expect(within(r2).queryByText(/^Salvo/)).toBeNull()
+  })
+
+  it('#7 a busca vem antes do cabeçalho do grupo e do escopo, numa página de escopo único', async () => {
+    fetchSettings.mockResolvedValue(
+      fixture({ settings: [key({ id: 'gates.gauntlet', title: 'Gauntlet', type: 'string', default: 'on', enum: ['on', 'off'], scopes: ['project'], value: 'on', group: 'process' })] }),
+    )
+    render(<Settings group="process" />)
+    await screen.findByRole('listitem', { name: 'Gauntlet' })
+    const box = screen.getByRole('searchbox', { name: 'Buscar configurações' })
+    const before = box
+    expect(box.compareDocumentPosition(screen.getByRole('heading', { name: 'Processo' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(box.compareDocumentPosition(screen.getByText(/ficam no \.cernerc/)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    fireEvent.change(box, { target: { value: 'gaunt' } })
+    expect(screen.getByRole('searchbox', { name: 'Buscar configurações' })).toBe(before)
+  })
+
+  it('#9 grupo sem chave na URL abre Geral', async () => {
+    fetchSettings.mockResolvedValue(fixture({ settings: [key({ id: 'channel.human_name', title: 'Your name in the channel', type: 'string', default: '', scopes: ['host'], value: '', group: 'general' })] }))
+    render(<Settings group="ai" />)
+    expect(await screen.findByRole('listitem', { name: 'Seu nome no canal' })).toBeInTheDocument()
+    expect(within(screen.getByRole('navigation', { name: 'Grupos de configurações' })).getByRole('link', { name: 'Geral' })).toHaveAttribute('aria-current', 'page')
+  })
+
+  describe('confirmação genérica e trava de escrita', () => {
+    const gate = (over: Partial<ResolvedSetting> = {}) =>
+      key({ id: 'gates.gauntlet', title: 'Gauntlet', type: 'string', default: 'on', enum: ['on', 'off'], scopes: ['project'], value: 'on', human_only: true, ...over })
+    const load = (g = gate()) => fetchSettings.mockResolvedValue(fixture({ settings: [...fixture().settings, g] }))
+
+    it('#11 chave só-humano do host: a pergunta cita o título e o settings.toml, sem "versionado"', async () => {
+      load(gate({ id: 'test.hostgate', title: 'Host gate', type: 'bool', default: true, enum: undefined, scopes: ['host'], value: true }))
+      render(<Settings />)
+      const r = await screen.findByRole('listitem', { name: 'Host gate' })
+      fireEvent.click(within(r).getByRole('checkbox', { name: 'Host gate' }))
+      const g = within(r).getByRole('group')
+      expect(g).toHaveTextContent('Desligar Host gate grava off no settings.toml; dá para religar aqui.')
+      expect(g).not.toHaveTextContent(/versionado/)
+    })
+
+    it('#6 "Desligar" respeita a trava: com a linha ocupada não grava e fica aria-disabled', async () => {
+      load(gate({ origin: 'project', stored: { project: 'on' } }))
+      unsetSetting.mockImplementation(() => new Promise<SettingsView>(() => {}))
+      render(<Settings />)
+      const r = await screen.findByRole('listitem', { name: 'Gauntlet' })
+      fireEvent.click(within(r).getByRole('checkbox', { name: 'Gauntlet' }))
+      fireEvent.click(within(r).getByRole('button', { name: 'Redefinir neste escopo' }))
+      await waitFor(() => expect(row('Gauntlet')).toHaveAttribute('aria-busy', 'true'))
+      const yes = within(r).getByRole('button', { name: 'Desligar' })
+      expect(yes).toHaveAttribute('aria-disabled', 'true')
+      fireEvent.click(yes)
+      expect(putSetting).not.toHaveBeenCalled()
+    })
+
+    it('#13 depois de Desligar o foco volta à caixa, também quando a escrita falha', async () => {
+      load()
+      putSetting.mockRejectedValue(new Error('boom'))
+      render(<Settings />)
+      const r = await screen.findByRole('listitem', { name: 'Gauntlet' })
+      fireEvent.click(within(r).getByRole('checkbox', { name: 'Gauntlet' }))
+      fireEvent.click(within(r).getByRole('button', { name: 'Desligar' }))
+      await waitFor(() => expect(putSetting).toHaveBeenCalled())
+      expect(within(r).getByRole('checkbox', { name: 'Gauntlet' })).toHaveFocus()
+    })
   })
 })

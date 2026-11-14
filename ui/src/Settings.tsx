@@ -5,7 +5,9 @@ import {
   putSetting,
   renameProject,
   unsetSetting,
+  SETTING_GROUPS,
   type ResolvedSetting,
+  type SettingGroup,
   type SettingScope,
   type SettingsView,
 } from './api'
@@ -69,7 +71,17 @@ const retryable = (e: unknown) => !(e instanceof HTTPError) || e.status === 409 
 // another scope's row never shows it, and its retry goes where it failed.
 const failureKey = (id: string, scope: SettingScope) => `${id}\n${scope}`
 
-export default function Settings() {
+// A key with no group, or one this build does not know, files under general.
+const groupOf = (s: ResolvedSetting): SettingGroup =>
+  s.group && SETTING_GROUPS.includes(s.group) ? s.group : 'general'
+
+// groupFromHash reads '#/settings/<group>'; anything else opens general.
+export function groupFromHash(hash: string): SettingGroup {
+  const g = hash.split('/')[2] as SettingGroup | undefined
+  return g && SETTING_GROUPS.includes(g) ? g : 'general'
+}
+
+export default function Settings({ group: asked = 'general' }: { group?: SettingGroup }) {
   const { t } = useT()
   const ts = t.settings
   const { projects, activePid } = useProjects()
@@ -85,6 +97,10 @@ export default function Settings() {
   // value the server kept (trimmed, or reset) instead of what was typed.
   const [landed, setLanded] = useState<Readonly<Record<string, number>>>({})
   const refocus = useRef<string | null>(null)
+  // Per key: the scope of its last landed write, until the row is touched again.
+  const [saved, setSaved] = useState<Readonly<Record<string, SettingScope>>>({})
+  useEffect(() => setSaved({}), [activePid])
+  const clearSaved = (id: string) => setSaved(({ [id]: _, ...rest }) => rest)
   // The view a landed write answered with (critic C5), shown over the loaded
   // one until a later load replaces that (`base` is the load it was written
   // over). A failed refresh after the write leaves the written value up.
@@ -126,11 +142,13 @@ export default function Settings() {
       setBusy((b) => new Set([...b].filter((k) => k !== id)))
     }
     setBusy((b) => new Set(b).add(id))
+    clearSaved(id)
     run().then(
       (view) => {
         // A write answering after a project switch belongs to the old project.
         if (latest.current.pid === pid) setWritten({ base: latest.current.data, view })
         setLanded((l) => ({ ...l, [id]: (l[id] ?? 0) + 1 }))
+        if (latest.current.pid === pid) setSaved((sv) => ({ ...sv, [id]: scope }))
         refocus.current = id
         settle(null)
       },
@@ -153,9 +171,22 @@ export default function Settings() {
   // Registry texts come in English; the catalog is keyed by the source text.
   const tx = (src: string) => ts.text[src] ?? src
   const q = norm(query.trim())
-  const shown = (view?.settings ?? []).filter(
-    (s) => q === '' || norm(`${tx(s.title)} ${tx(s.description)} ${s.id}`).includes(q),
-  )
+  // Search is global: with text, every group; without, only the open one.
+  const all = view?.settings ?? []
+  // A group with no key (the URL names one, e.g. ai) opens general.
+  const hasKeys = (g: SettingGroup) => all.some((s) => groupOf(s) === g)
+  const group: SettingGroup = view && asked !== 'general' && !hasKeys(asked) ? 'general' : asked
+  const pool = q === '' ? all.filter((s) => groupOf(s) === group) : all
+  const shown = pool.filter((s) => q === '' || norm(`${tx(s.title)} ${tx(s.description)} ${s.id}`).includes(q))
+  // Only groups with a key; the project name counts for general.
+  // The Project | Host selector only where it has a choice: some key takes both
+  // scopes, or the keys shown take different single scopes. Otherwise the page
+  // has one scope, said once in text.
+  const singles = new Set(pool.map((s) => (s.scopes.length === 1 ? s.scopes[0] : '')))
+  const chooser = pool.some((s) => s.scopes.length > 1) || singles.size > 1
+  const pageScope: SettingScope = !chooser && pool.length > 0 ? pool[0].scopes[0] : scope
+  const effScope = chooser ? scope : pageScope
+  const groups = SETTING_GROUPS.filter((g) => (g === 'general' ? true : all.some((s) => groupOf(s) === g)))
 
   // The name block does not hang on the settings registry (critic C13): it
   // shows while that load is pending or failed, at the same place in the tree,
@@ -167,36 +198,96 @@ export default function Settings() {
       <p className="settings-project">
         {ts.project} <strong>{name}</strong>
       </p>
-      <ProjectName key={activePid} name={name} />
-      {view ? (
-        <>
-          <div className="settings-scope">
-            <span className="lang-toggle settings-scopes" role="group" aria-label={ts.scopeGroup} aria-describedby={hintId}>
-              {ORDER.map((sc) => (
-                <button
-                  key={sc}
-                  type="button"
-                  className={sc === scope ? 'lang-option active' : 'lang-option'}
-                  aria-pressed={sc === scope}
-                  title={sc === 'host' ? ts.hostGlobalTitle : undefined}
-                  onClick={() => setScope(sc)}
-                >
-                  {ts.scopes[sc]}
-                  {/* The space keeps the accessible name "Host global". */}
-                  {sc === 'host' && <> <span className="badge settings-global">{ts.global}</span></>}
-                </button>
-              ))}
-            </span>
-            <p id={hintId} className="settings-hint">
-              {ts.scopeHint[scope]}
-            </p>
-          </div>
+      <div className="settings-layout">
+        {view && (
+          <>
+          <nav className="settings-groups" aria-label={ts.groupsNav}>
+            {groups.map((g) => (
+              <a
+                key={g}
+                href={`#/settings/${g}`}
+                aria-current={g === group && q === '' ? 'page' : undefined}
+                title={ts.groups[g].description}
+                onClick={() => setQuery('')}
+              >
+                {ts.groups[g].title}
+              </a>
+            ))}
+          </nav>
+          <select
+            className="settings-select settings-groups-select"
+            aria-label={ts.groupsNav}
+            value={group}
+            onChange={(e) => {
+              setQuery('')
+              window.location.hash = `#/settings/${e.target.value}`
+            }}
+          >
+            {groups.map((g) => (
+              <option key={g} value={g}>
+                {ts.groups[g].title}
+              </option>
+            ))}
+          </select>
+          </>
+        )}
+        <div className="settings-body">
+          {view && (
+            <>
+          <input
+            type="search"
+            className="settings-search"
+            aria-label={ts.search}
+            placeholder={ts.search}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          <p className="counts" aria-live="polite">
+            {ts.count(shown.length, pool.length)}
+          </p>
+            </>
+          )}
+          {view && (
+            <header className="settings-group-head">
+              <h2 className="settings-group-title">{q === '' ? ts.groups[group].title : ts.resultsAll}</h2>
+              <p className="settings-hint settings-group-sub">{q === '' ? ts.groups[group].description : ''}</p>
+            </header>
+          )}
+          {group === 'general' && <ProjectName key={activePid} name={name} />}
+          {view ? (
+          <>
+          {chooser ? (
+            <div className="settings-scope">
+              <span className="lang-toggle settings-scopes" role="group" aria-label={ts.scopeGroup} aria-describedby={hintId}>
+                {ORDER.map((sc) => (
+                  <button
+                    key={sc}
+                    type="button"
+                    className={sc === scope ? 'lang-option active' : 'lang-option'}
+                    aria-pressed={sc === scope}
+                    title={sc === 'host' ? ts.hostGlobalTitle : undefined}
+                    onClick={() => setScope(sc)}
+                  >
+                    {sc === 'host' ? ts.hostGlobal : ts.scopes[sc]}
+                  </button>
+                ))}
+              </span>
+              <p id={hintId} className="settings-hint">
+                {ts.scopeHint[scope]}
+              </p>
+              <p className="settings-hint">{ts.precedence}</p>
+            </div>
+          ) : (
+            pool.length > 0 && (
+              <p className="settings-hint settings-scope-fixed">{ts.scopeFixed[pageScope]}</p>
+            )
+          )}
           {/* The escape to the raw file (R-0042): where the selected scope lives,
               for whoever would rather edit it by hand. */}
-          {view.files[scope] && (
+          {view.files[effScope] && pool.length > 0 && (
             <div className="settings-file">
               <span>{ts.file}</span>
-              <FixBlock command={view.files[scope]} copyFailed={ts.copyFailed} />
+              <FixBlock command={view.files[effScope]} copyFailed={ts.copyFailed} />
             </div>
           )}
           {(view.errors ?? []).map((e) => (
@@ -207,17 +298,6 @@ export default function Settings() {
               busy={load.retrying}
             />
           ))}
-          <input
-            type="search"
-            className="settings-search"
-            aria-label={ts.search}
-            placeholder={ts.search}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          <p className="counts" aria-live="polite">
-            {ts.count(shown.length, view.settings.length)}
-          </p>
           {shown.length === 0 ? (
             <p className="settings-empty">{ts.noMatch(query.trim())}</p>
           ) : (
@@ -226,7 +306,10 @@ export default function Settings() {
                 <SettingRow
                   key={s.id}
                   s={s}
-                  scope={scope}
+                  groupName={q === '' ? undefined : ts.groups[groupOf(s)].title}
+                  scope={effScope}
+                  saved={saved[s.id]}
+                  onTouch={() => clearSaved(s.id)}
                   tx={tx}
                   files={view.files}
                   busy={busy.has(s.id)}
@@ -238,10 +321,12 @@ export default function Settings() {
               ))}
             </ul>
           )}
-        </>
-      ) : (
-        <LoadPending load={load} message={ts.loadError} />
-      )}
+          </>
+          ) : (
+            <LoadPending load={load} message={ts.loadError} />
+          )}
+        </div>
+      </div>
     </main>
   )
 }
@@ -281,10 +366,10 @@ function ProjectName({ name }: { name: string }) {
   // Busy is aria-disabled, never disabled (F-0302).
   const lock = saving || undefined
   return (
-    <section aria-labelledby={titleId}>
-      <h2 id={titleId} className="settings-title">
+    <section className="settings-name" aria-labelledby={titleId}>
+      <h3 id={titleId} className="settings-title">
         {tn.title}
-      </h2>
+      </h3>
       <form
         className="settings-string"
         onSubmit={(e) => {
@@ -354,6 +439,9 @@ function ProjectName({ name }: { name: string }) {
 
 function SettingRow({
   s,
+  groupName,
+  saved,
+  onTouch,
   scope,
   tx,
   files,
@@ -364,6 +452,9 @@ function SettingRow({
   onScope,
 }: {
   s: ResolvedSetting
+  groupName?: string
+  saved?: SettingScope
+  onTouch: () => void
   scope: SettingScope
   tx: (src: string) => string
   files: SettingsView['files']
@@ -376,6 +467,20 @@ function SettingRow({
   const { t } = useT()
   const ts = t.settings
   const uid = useId()
+  const [intError, setIntError] = useState(false)
+  const errId = `${uid}-interr`
+  const effId = `${uid}-eff`
+  const infoId = `${uid}-info`
+  const askId = `${uid}-ask`
+  const [confirming, setConfirming] = useState(false)
+  const confirmBtn = useRef<HTMLButtonElement | null>(null)
+  useEffect(() => {
+    if (confirming) confirmBtn.current?.focus()
+  }, [confirming])
+  const cancel = () => {
+    setConfirming(false)
+    document.getElementById(controlId(s.id))?.focus()
+  }
   const titleId = `${uid}-title`
   const descId = `${uid}-desc`
   // A key that does not take the selected scope writes to the one it takes.
@@ -386,47 +491,103 @@ function SettingRow({
   // The key's other scopes that store a value: above ws they override it.
   const others = s.scopes.filter((sc) => sc !== ws && s.stored?.[sc] !== undefined)
   const above = (sc: SettingScope) => ORDER.indexOf(sc) < ORDER.indexOf(ws)
+  // Nothing stored here, a lower scope's value shows through (F-0413).
+  const inherited = !modified && others.some((sc) => !above(sc))
   // A declared value shows through the same label as its select option.
   const fmt = (v: unknown) =>
-    s.enum?.length && typeof v === 'string' && v !== '' ? (ts.options[v] ?? v) : formatValue(v, ts)
+    s.enum?.length && typeof v === 'string' ? (v === '' ? ts.emptyEnum : (ts.options[v] ?? v)) : formatValue(v, ts)
   const desc = tx(s.description)
-  const label = (sc: SettingScope) => (sc === 'host' ? `${ts.scopes.host} (${ts.global})` : ts.scopes[sc])
+  const label = (sc: SettingScope) => (sc === 'host' ? ts.hostGlobal : ts.scopes[sc])
   // Busy is aria-disabled, never disabled (F-0302): the pressed control keeps
   // the focus, and a press during the write does nothing.
   const lock = busy || undefined
+  // What a screen reader hears with the field: the description, then the
+  // effective value and where a stored value shows through from.
+  const hasInfo = others.length > 0 || inherited
+  const described = `${descId} ${effId}${hasInfo ? ` ${infoId}` : ''}`
 
-  let control
-  if (s.type === 'bool') {
+  // A bool is an affirmative checkbox: the title is its visible label, the
+  // description sits below the title (aria-describedby).
+  // A string key whose only values are on/off is a switch, written as on/off.
+  const onOff = s.type === 'string' && s.enum?.length === 2 && s.enum.includes('on') && s.enum.includes('off')
+  const isToggle = s.type === 'bool' || onOff
+  const titleNode = <span id={titleId}>{tx(s.title)}</span>
+  let control = null
+  if (isToggle) {
+    const on = onOff ? current === 'on' : current === true
     control = (
-      <label className="settings-check">
+      <label className="settings-toggle">
         <input
           id={controlId(s.id)}
+          className="settings-check"
           type="checkbox"
-          checked={current === true}
+          checked={on}
           aria-labelledby={titleId}
           aria-describedby={descId}
           aria-disabled={lock}
           onChange={(e) => {
-            const next = e.target.checked
-            if (!busy) onWrite(ws, () => putSetting(s.id, ws, next))
+            const next = onOff ? (e.target.checked ? 'on' : 'off') : e.target.checked
+            if (busy) return
+            // A human-only gate asks before it is relaxed (turning it on does not).
+            if (s.human_only && !e.target.checked) {
+              setConfirming(true)
+              return
+            }
+            onWrite(ws, () => putSetting(s.id, ws, next))
           }}
         />
-        <span id={descId}>{desc}</span>
+        <span aria-hidden="true">{on ? ts.stateOn : ts.stateOff}</span>
       </label>
     )
+    {
+      const off = onOff ? 'off' : false
+      // Always a fragment, so the box is not remounted when the question opens.
+      control = (
+        <>
+          {control}
+          {confirming && (
+          <div
+            className="settings-confirm"
+            role="group"
+            aria-labelledby={askId}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') cancel()
+            }}
+          >
+            <p id={askId}>{ts.confirmOff(tx(s.title), ws === 'project' ? '.cernerc' : 'settings.toml', ws === 'project')}</p>
+            <button
+              type="button"
+              className="settings-confirm-yes"
+              aria-disabled={lock}
+              onClick={() => {
+                if (busy) return
+                setConfirming(false)
+                // The question unmounts with the pressed button: hand the focus
+                // back to the box now, so a failed write leaves it there too.
+                document.getElementById(controlId(s.id))?.focus()
+                onWrite(ws, () => putSetting(s.id, ws, off))
+              }}
+            >
+              {ts.turnOff}
+            </button>{' '}
+            <button type="button" ref={confirmBtn} className="settings-confirm-no" onClick={cancel}>
+              {ts.cancel}
+            </button>
+          </div>
+          )}
+        </>
+      )
+    }
   } else {
     control = (
       <>
-        <p id={descId} className="settings-desc">
-          {desc}
-        </p>
         {s.type === 'string' && s.enum && s.enum.length > 0 ? (
           <select
             id={controlId(s.id)}
             className="settings-select"
             value={String(current)}
             aria-labelledby={titleId}
-            aria-describedby={descId}
+            aria-describedby={described}
             aria-disabled={lock}
             onChange={(e) => {
               const next = e.target.value
@@ -467,12 +628,64 @@ function SettingRow({
               defaultValue={String(current)}
               placeholder={s.fallback}
               aria-labelledby={titleId}
-              aria-describedby={descId}
+              aria-describedby={described}
               aria-disabled={lock}
             />
             <button type="submit" aria-describedby={titleId} aria-disabled={lock}>
               {t.common.save}
             </button>
+          </form>
+        ) : s.type === 'int' ? (
+          <form
+            className="settings-string"
+            noValidate
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (busy) return
+              const raw = String(new FormData(e.currentTarget).get('value') ?? '').trim()
+              // A browser that cannot parse the text reports '' too: that is
+              // bad input, not "reset".
+              const field = e.currentTarget.elements.namedItem('value') as HTMLInputElement | null
+              if (field?.validity.badInput) {
+                setIntError(true)
+                return
+              }
+              if (raw === '') {
+                setIntError(false)
+                onWrite(ws, () => unsetSetting(s.id, ws))
+                return
+              }
+              const n = Number(raw)
+              if (!Number.isInteger(n) || n < 1) {
+                setIntError(true)
+                return
+              }
+              setIntError(false)
+              onWrite(ws, () => putSetting(s.id, ws, n))
+            }}
+          >
+            <input
+              key={`${ws}:${landed}:${String(current)}`}
+              id={controlId(s.id)}
+              name="value"
+              type="number"
+              min="1"
+              step="1"
+              className="settings-text"
+              defaultValue={String(current)}
+              aria-labelledby={titleId}
+              aria-describedby={intError ? `${described} ${errId}` : described}
+              aria-invalid={intError ? true : undefined}
+              aria-disabled={lock}
+            />
+            <button type="submit" aria-describedby={titleId} aria-disabled={lock}>
+              {t.common.save}
+            </button>
+            {intError && (
+              <p id={errId} role="alert" className="form-error">
+                {ts.notInteger}
+              </p>
+            )}
           </form>
         ) : (
           <p className="settings-readonly">
@@ -488,43 +701,85 @@ function SettingRow({
       className={modified ? 'settings-row modified' : 'settings-row'}
       aria-labelledby={titleId}
       aria-busy={lock}
+      onChangeCapture={onTouch}
+      onClickCapture={onTouch}
     >
-      <h2 className="settings-title">
-        <span id={titleId}>{tx(s.title)}</span>
-        <code className="card-id">{s.id}</code>
-        {modified && (
-          <span className="badge settings-modified" title={ts.modifiedTitle(ts.scopes[ws])}>
-            {ts.modified}
-          </span>
-        )}
-        {ws === 'host' && (
-          <span className="badge" title={ts.hostGlobalTitle}>
-            {ts.hostGlobal}
-          </span>
-        )}
-      </h2>
-      {(others.length > 0 || ws !== scope) && (
-        <p className="settings-scope-info">
-          {others.map((sc) => (
-            <span key={sc}>
-              {above(sc) ? ts.overriddenBy(ts.scopes[sc]) : ts.alsoModifiedIn(ts.scopes[sc])}{' '}
-              <button type="button" className="settings-switch" aria-describedby={titleId} onClick={() => onScope(sc)}>
-                {ts.editIn(ts.scopes[sc])}
-              </button>
+      <div className="settings-row-text">
+        <h3 className="settings-title">
+          {titleNode}
+          {s.human_only && (
+            <span className="badge" title={ts.humanOnlyTitle}>
+              {ts.humanOnly}
             </span>
-          ))}
-          {ws !== scope && <span>{ts.writesTo(label(ws))}</span>}
+          )}
+          {groupName && <span className="badge settings-group">{groupName}</span>}
+          {modified && (
+            <span className="badge settings-modified" title={ts.modifiedTitle(ts.scopes[ws])}>
+              {ts.modified}
+            </span>
+          )}
+          {ws === 'host' && (
+            <span className="badge" title={ts.hostGlobalTitle}>
+              {ts.hostGlobal}
+            </span>
+          )}
+        </h3>
+        <p id={descId} className="settings-desc">
+          {desc}
         </p>
-      )}
-      {/* The top escape shows the selected scope's file; a row writing
-          elsewhere shows its own (critic C18). */}
-      {ws !== scope && files[ws] && (
-        <div className="settings-file">
-          <span>{ts.file}</span>
-          <FixBlock command={files[ws]} copyFailed={ts.copyFailed} />
-        </div>
-      )}
-      {control}
+        <code className="settings-id">{s.id}</code>
+        {/* The top escape shows the selected scope's file; a row writing
+            elsewhere shows its own (critic C18). */}
+        {ws !== scope && files[ws] && (
+          <div className="settings-file">
+            <span>{ts.file}</span>
+            <FixBlock command={files[ws]} copyFailed={ts.copyFailed} />
+          </div>
+        )}
+      </div>
+      <div className="settings-row-control">
+        <p id={effId} className="settings-effective">
+            {/* An empty name (even only spaces) signs with the fallback: said
+                in text, not only in the placeholder (F-0333, critic C3). */}
+            {s.fallback && typeof s.value === 'string' && s.value.trim() === ''
+              ? ts.effectiveFallback(s.fallback)
+              : s.origin === 'default'
+                ? ts.effectiveDefault(fmt(s.value))
+                : ts.effective(fmt(s.value), ts.scopes[s.origin])}
+        </p>
+        {control}
+        <p className="settings-meta">
+          <span>{ts.defaultValue(fmt(s.default))}</span>
+          {ws !== scope && <span className="badge settings-write-chip">{ts.writesTo(label(ws))}</span>}
+          {modified && (
+            <button
+              type="button"
+              className="settings-switch"
+              aria-describedby={titleId}
+              aria-disabled={lock}
+              onClick={busy ? undefined : () => onWrite(ws, () => unsetSetting(s.id, ws))}
+            >
+              {/* Named when it acts outside the selected scope (critic C10). */}
+              {ws === scope ? ts.reset : ts.resetIn(label(ws))}
+            </button>
+          )}
+        </p>
+        {(others.length > 0 || inherited) && (
+          <p id={infoId} className="settings-scope-info">
+            {others.map((sc) => (
+              <span key={sc}>
+                {above(sc) ? ts.overriddenBy(ts.scopes[sc]) : inherited ? ts.inheritedFrom(ts.scopes[sc]) : ts.alsoModifiedIn(ts.scopes[sc])}{' '}
+                <button type="button" className="settings-switch" aria-describedby={titleId} onClick={() => onScope(sc)}>
+                  {ts.editIn(ts.scopes[sc])}
+                </button>
+              </span>
+            ))}
+          </p>
+        )}
+        <p aria-live="polite" className="settings-saved">
+          {saved ? (saved === 'project' ? ts.savedProject : ts.saved) : ''}
+        </p>
+      </div>
       {/* A stored value the resolution skipped (critic C9): said in text —
           scope, file and value — and removable in the scope being edited;
           another scope's is one "Edit in" away. */}
@@ -550,30 +805,6 @@ function SettingRow({
           )}
         </p>
       ))}
-      <p className="settings-meta">
-        <span>
-          {/* An empty name (even only spaces) signs with the fallback: said
-              in text, not only in the placeholder (F-0333, critic C3). */}
-          {s.fallback && typeof s.value === 'string' && s.value.trim() === ''
-            ? ts.effectiveFallback(s.fallback)
-            : s.origin === 'default'
-              ? ts.effectiveDefault(fmt(s.value))
-              : ts.effective(fmt(s.value), ts.scopes[s.origin])}
-        </span>
-        <span>{ts.defaultValue(fmt(s.default))}</span>
-        {modified && (
-          <button
-            type="button"
-            className="settings-switch"
-            aria-describedby={titleId}
-            aria-disabled={lock}
-            onClick={busy ? undefined : () => onWrite(ws, () => unsetSetting(s.id, ws))}
-          >
-            {/* Named when it acts outside the selected scope (critic C10). */}
-            {ws === scope ? ts.reset : ts.resetIn(label(ws))}
-          </button>
-        )}
-      </p>
       {failure?.retry && (
         <Notice message={ts.writeError(refusalText(failure, ts, files[ws]))} onRetry={failure.retry} busy={busy} />
       )}

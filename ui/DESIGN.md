@@ -552,7 +552,15 @@ readable; the strikethrough is that thesis rendered.
 - **Style:** `1px solid rule`, 6px radius, `leaf` background, `font: inherit` with
   an explicit size (`0.88rem` in inline action forms, `0.95rem` in page-level
   forms). Textareas add `resize: vertical`.
+- **Field edge (`--border-field`, F-0413):** `rule` measures 1.41:1 (light) and 1.77:1
+  (dark) against the page, below the 3:1 a control's boundary needs (WCAG 1.4.11).
+  `--border-field` aliases `ink-faint` (3.08:1 light, 4.46:1 dark) and is the border
+  of a field whose edge is the only cue that it is editable. Today only the Settings
+  screen's fields use it; adopting it app-wide is a follow-up.
 - **Focus:** `2px solid` ink outline, `1px` offset. No glow, no colour shift.
+  One exception (F-0413): inside a container that clips (`overflow: hidden`, the
+  Settings Project | Host toggle) the ring is inset, `outline-offset: -2px`, so it is
+  not cut off.
 - **Error:** message text in `danger`; the field itself is not recoloured.
 
 ### Navigation

@@ -1127,6 +1127,14 @@ const ptBR = {
     title: 'Configurações',
     project: 'Projeto',
     search: 'Buscar configurações',
+    groupsNav: 'Grupos de configurações',
+    groups: {
+      general: { title: 'Geral', description: 'Nome do projeto e identidade no canal.' },
+      process: { title: 'Processo', description: 'Portões do ciclo de vida e regras do lint.' },
+      interface: { title: 'Interface', description: 'Abas e recursos que a UI mostra.' },
+      integrations: { title: 'Integrações', description: 'Hooks e ligações com outras ferramentas.' },
+      ai: { title: 'IA', description: 'O agente de IA e seus modos.' },
+    },
     count: (shown: number, total: number) => {
       const noun = total === 1 ? 'configuração' : 'configurações'
       return shown === total ? `${total} ${noun}` : `${shown} de ${total} ${noun}`
@@ -1141,18 +1149,36 @@ const ptBR = {
     on: 'ligado',
     off: 'desligado',
     empty: '(vazio)',
-    hostGlobal: 'global do host',
+    hostGlobal: 'Host (global)',
     hostGlobalTitle: 'Vale para todos os projetos deste host (settings.toml, fora de qualquer repositório).',
     readOnly: 'Sem editor para este tipo na tela: edite no arquivo.',
+    notInteger: 'Informe um número inteiro maior ou igual a 1.',
     loadError: (e: string) => `Erro ao carregar as configurações: ${e}`,
     fileError: (file: string, e: string) => `Não foi possível ler ${file}: ${e}`,
     scopeGroup: 'Escopo de edição',
-    global: 'global',
     scopeHint: {
       project: 'Grava no .cernerc do projeto, que é versionado: lembre de commitar.',
       host: 'Grava no settings.toml deste host: vale para todos os projetos dele, fora de qualquer repositório.',
     } satisfies Record<SettingScope, string>,
     alsoModifiedIn: (scope: string) => `Também modificado em ${scope}`,
+    inheritedFrom: (scope: string) => `Herdado de ${scope}`,
+    precedence: 'Projeto vence Host, que vence o padrão.',
+    scopeFixed: {
+      project: 'Estas configurações ficam no .cernerc do projeto, versionado: lembre de commitar.',
+      host: 'Estas configurações ficam no settings.toml deste host, fora de qualquer repositório, e valem para todos os projetos.',
+    } satisfies Record<SettingScope, string>,
+    saved: 'Salvo.',
+    humanOnly: 'Só humano',
+    humanOnlyTitle: 'Só o dono do projeto muda esta chave.',
+    confirmOff: (title: string, file: string, versioned: boolean) =>
+      `Esta chave é só do dono do projeto. Desligar ${title} grava off no ${file}${versioned ? ', versionado — lembre de commitar' : ''}; dá para religar aqui.`,
+    turnOff: 'Desligar',
+    cancel: 'Cancelar',
+    stateOn: 'Ligado',
+    stateOff: 'Desligado',
+    emptyEnum: 'Nenhum',
+    resultsAll: 'Resultados em todos os grupos',
+    savedProject: 'Salvo no .cernerc — lembre de commitar.',
     overriddenBy: (scope: string) => `Sobrescrito por ${scope}`,
     editIn: (scope: string) => `Editar em ${scope}`,
     writesTo: (scope: string) => `Grava em ${scope}`,
@@ -1210,11 +1236,11 @@ const ptBR = {
       'Mindmap': 'Mapa mental',
       'Shows the Mindmap tab in the UI. Off hides it.': 'Mostra a aba Mapa mental na UI. Desligado a esconde.',
       'Wiki': 'Wiki',
-      "Off stops compile_on_push and turns wiki lint debt into advisory findings left out of 'cerne next'; the wiki stays readable, with a stale banner and an on-demand recompile.":
-        "Desligado, para o compile_on_push e transforma a dívida de lint da wiki em achados informativos, fora do 'cerne next'; a wiki continua legível, com aviso de desatualizada e recompilação sob demanda.",
+      "On keeps the wiki live: when compile_on_push is set, a push recompiles the dirty pages, and wiki lint debt counts as pending work in 'cerne next'. Off stops both; the wiki stays readable, with a stale banner and an on-demand recompile.":
+        "Ligado mantém a wiki viva: com compile_on_push ligado, um push recompila as páginas sujas, e a dívida de lint da wiki conta como trabalho pendente no 'cerne next'. Desligado, os dois param: a wiki continua legível, com aviso de desatualizada e recompilação sob demanda.",
       'Notes on edit': 'Notas ao editar',
-      'Off stops the work-gate hook from showing the notes that cite a file when the agent is about to edit it.':
-        'Desligado, o gancho work-gate deixa de mostrar as notas que citam um arquivo quando o agente vai editá-lo.',
+      'On shows the agent the notes that cite a file when it is about to edit that file, through the work-gate hook. Off stops showing them.':
+        'Ligado, o gancho work-gate mostra ao agente as notas que citam um arquivo quando ele vai editá-lo. Desligado, deixa de mostrá-las.',
     } as Record<string, string>,
     // Rótulos dos valores de uma chave de texto com valores declarados.
     options: { on: 'ligado', off: 'desligado' } as Record<string, string>,
@@ -2311,6 +2337,14 @@ const en: Messages = {
     title: 'Settings',
     project: 'Project',
     search: 'Search settings',
+    groupsNav: 'Settings groups',
+    groups: {
+      general: { title: 'General', description: 'Project name and your identity in the channel.' },
+      process: { title: 'Process', description: 'Lifecycle gates and lint rules.' },
+      interface: { title: 'Interface', description: 'Tabs and features the UI shows.' },
+      integrations: { title: 'Integrations', description: 'Hooks and links to other tools.' },
+      ai: { title: 'AI', description: 'The AI agent and its modes.' },
+    },
     count: (shown: number, total: number) => {
       const noun = total === 1 ? 'setting' : 'settings'
       return shown === total ? `${total} ${noun}` : `${shown} of ${total} ${noun}`
@@ -2325,18 +2359,36 @@ const en: Messages = {
     on: 'on',
     off: 'off',
     empty: '(empty)',
-    hostGlobal: 'host-global',
+    hostGlobal: 'Host (global)',
     hostGlobalTitle: 'Applies to every project on this host (settings.toml, outside any repository).',
     readOnly: 'No editor for this type on screen: edit it in the file.',
+    notInteger: 'Enter a whole number, 1 or more.',
     loadError: (e: string) => `Could not load the settings: ${e}`,
     fileError: (file: string, e: string) => `Could not read ${file}: ${e}`,
     scopeGroup: 'Editing scope',
-    global: 'global',
     scopeHint: {
       project: "Writes to the project's .cernerc, which is versioned: remember to commit it.",
       host: "Writes to this host's settings.toml: applies to every project on it, outside any repository.",
     },
     alsoModifiedIn: (scope: string) => `Also modified in ${scope}`,
+    inheritedFrom: (scope: string) => `Inherited from ${scope}`,
+    precedence: 'Project beats Host, which beats the default.',
+    scopeFixed: {
+      project: "These settings live in the project's .cernerc, which is versioned: remember to commit it.",
+      host: "These settings live in this host's settings.toml, outside any repository, and apply to every project.",
+    } satisfies Record<SettingScope, string>,
+    saved: 'Saved.',
+    humanOnly: 'Human only',
+    humanOnlyTitle: 'Only the project owner changes this key.',
+    confirmOff: (title: string, file: string, versioned: boolean) =>
+      `This key is the project owner's alone. Turning ${title} off writes off to ${file}${versioned ? ', versioned — remember to commit' : ''}; you can turn it back on here.`,
+    turnOff: 'Turn off',
+    cancel: 'Cancel',
+    stateOn: 'On',
+    stateOff: 'Off',
+    emptyEnum: 'None',
+    resultsAll: 'Results in all groups',
+    savedProject: 'Saved to .cernerc — remember to commit it.',
     overriddenBy: (scope: string) => `Overridden by ${scope}`,
     editIn: (scope: string) => `Edit in ${scope}`,
     writesTo: (scope: string) => `Writes to ${scope}`,

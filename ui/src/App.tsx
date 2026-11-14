@@ -24,7 +24,7 @@ import Costs, { CostDetailPage } from './Costs'
 import Dashboard from './Dashboard'
 import WarRoom, { WarRoomDetail } from './WarRoom'
 import Channel from './Channel'
-import Settings from './Settings'
+import Settings, { groupFromHash } from './Settings'
 import Pendings from './Pendings'
 import IdeasPanel from './IdeasPanel'
 import { fetchState } from './api'
@@ -145,7 +145,7 @@ function Routed({ hash }: { hash: string }) {
   if (hash === '#/handoffs' || hash.startsWith('#/handoffs?')) return <Handoffs hash={hash} />
   if (hash === '#/costs' || hash.startsWith('#/costs?')) return <Costs hash={hash} />
   if (hash === '#/manage') return <Manage />
-  if (hash === '#/settings') return <Settings />
+  if (hash === '#/settings' || hash.startsWith('#/settings/')) return <Settings group={groupFromHash(hash)} />
   if (hash === '#/new') return <NewFeature />
   if (hash === '#/pendings' || hash.startsWith('#/pendings?')) return <Pendings hash={hash} />
   if (hash === '#/ideas' || hash.startsWith('#/ideas?')) return <IdeasPage hash={hash} />
