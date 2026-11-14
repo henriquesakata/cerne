@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -55,6 +56,96 @@ func TestDupGuardRefusesActiveWork(t *testing.T) {
 	if w, err := StartWork(repoDir, projDir, "Atividade W-0001", nil, "", true, nil, ""); err != nil || w.ID == "" {
 		t.Fatalf("forced work start: %v", err)
 	}
+}
+
+// planningTitle is the work title the F-0208 rule prescribes for picking up
+// F-0001: it repeats the feature's own title.
+const planningTitle = "F-0001: Painel de custo por feature — planejamento"
+
+// seedRefFeatures seeds F-0001 (the feature the planning title names) and an
+// unrelated F-0002, both approved, and pushes them.
+func seedRefFeatures(t *testing.T) (repoDir, projDir string) {
+	t.Helper()
+	repoDir, projDir, _ = newFeatureBackend(t)
+	for _, f := range []store.Feature{
+		{ID: "F-0001", Title: "Painel de custo por feature", State: domain.StateApproved},
+		{ID: "F-0002", Title: "Exportar o kanban em CSV", State: domain.StateApproved},
+	} {
+		if err := store.SaveFeature(repoDir, f); err != nil {
+			t.Fatalf("SaveFeature: %v", err)
+		}
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "seed features"); err != nil {
+		t.Fatalf("CommitAndPush: %v", err)
+	}
+	return repoDir, projDir
+}
+
+// workStartedForced reports whether id's work.started event carries the
+// F-0147 override marker.
+func workStartedForced(t *testing.T, repoDir, id string) bool {
+	t.Helper()
+	evs, err := store.ReadEvents(repoDir)
+	if err != nil {
+		t.Fatalf("ReadEvents: %v", err)
+	}
+	for _, ev := range evs {
+		if ev.EntityID == id && ev.Type == "work.started" && ev.Payload["guard"] == "forced" {
+			return true
+		}
+	}
+	return false
+}
+
+// TestDupGuardIgnoresReferencedFeature (F-0423): the planning work the F-0208
+// rule prescribes repeats its feature's title; the feature it names in --ref
+// is not a duplicate of it. A similar unreferenced feature, and a similar
+// active work on the same feature, still refuse.
+func TestDupGuardIgnoresReferencedFeature(t *testing.T) {
+	t.Run("crit 1 and 4: the referenced feature is no collision", func(t *testing.T) {
+		for _, force := range []bool{false, true} {
+			repoDir, projDir := seedRefFeatures(t)
+			w, err := StartWork(repoDir, projDir, planningTitle, []string{"F-0001"}, "", force, nil, "")
+			if err != nil {
+				t.Fatalf("force=%v: work start --ref F-0001: %v", force, err)
+			}
+			if workStartedForced(t, repoDir, w.ID) {
+				t.Fatalf("force=%v: %s work.started carries guard=forced, want no override marker", force, w.ID)
+			}
+		}
+	})
+
+	t.Run("crit 2: an unreferenced similar feature still refuses", func(t *testing.T) {
+		repoDir, projDir := seedRefFeatures(t)
+		title := "F-0002: Exportar o kanban em CSV — planejamento"
+		for _, refs := range [][]string{nil, {"F-0001"}} {
+			if _, err := StartWork(repoDir, projDir, title, refs, "", false, nil, ""); !errors.Is(err, ErrSimilarExists) {
+				t.Fatalf("refs=%v: err = %v, want ErrSimilarExists", refs, err)
+			}
+		}
+	})
+
+	t.Run("crit 3: a similar active work on the same feature still refuses", func(t *testing.T) {
+		repoDir, projDir := seedRefFeatures(t)
+		if _, err := StartWork(repoDir, projDir, planningTitle, []string{"F-0001"}, "other@host", false, nil, ""); err != nil {
+			t.Fatalf("first planning work: %v", err)
+		}
+		_, err := StartWork(repoDir, projDir, planningTitle, []string{"F-0001"}, "", false, nil, "")
+		var se *SimilarExistsError
+		if !errors.As(err, &se) {
+			t.Fatalf("second planning work err = %v, want ErrSimilarExists", err)
+		}
+		if len(se.Live) != 1 || se.Live[0].ID != "W-0001" {
+			t.Fatalf("matches = %+v, want only W-0001 (F-0001 is referenced)", se.Live)
+		}
+	})
+
+	t.Run("crit 5: the ignore list compares ids without case", func(t *testing.T) {
+		repoDir, _ := seedRefFeatures(t)
+		if _, err := guardRegistration(repoDir, planningTitle, false, "f-0001"); err != nil {
+			t.Fatalf("ignore f-0001: %v, want F-0001 ignored", err)
+		}
+	})
 }
 
 // TestDupGuardReadyOnlyWarns (crit. 5): a Ready (implemented) match does not

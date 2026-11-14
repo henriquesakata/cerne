@@ -260,7 +260,7 @@ func (n newFeature) mint(repoDir string) (store.Feature, string, error) {
 		if err := checkDuplicateTitle(repoDir, title); err != nil {
 			return err
 		}
-		forced, err := guardRegistration(repoDir, title, force, "")
+		forced, err := guardRegistration(repoDir, title, force)
 		if err != nil {
 			return err
 		}
