@@ -126,7 +126,7 @@ func startWorkTx(repoDir, projDir string, p startParams) (StartedWork, string, s
 			}
 		}
 	}
-	forced, err := guardRegistration(repoDir, title, force, append(cleaned, from)...)
+	forced, err := guardRegistration(repoDir, title, force, append([]string{from}, cleaned...)...)
 	if err != nil {
 		return StartedWork{}, "", "", err
 	}
