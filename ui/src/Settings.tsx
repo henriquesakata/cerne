@@ -81,7 +81,7 @@ export function groupFromHash(hash: string): SettingGroup {
   return g && SETTING_GROUPS.includes(g) ? g : 'general'
 }
 
-export default function Settings({ group = 'general' }: { group?: SettingGroup }) {
+export default function Settings({ group: asked = 'general' }: { group?: SettingGroup }) {
   const { t } = useT()
   const ts = t.settings
   const { projects, activePid } = useProjects()
@@ -99,6 +99,7 @@ export default function Settings({ group = 'general' }: { group?: SettingGroup }
   const refocus = useRef<string | null>(null)
   // Per key: the scope of its last landed write, until the row is touched again.
   const [saved, setSaved] = useState<Readonly<Record<string, SettingScope>>>({})
+  useEffect(() => setSaved({}), [activePid])
   const clearSaved = (id: string) => setSaved(({ [id]: _, ...rest }) => rest)
   // The view a landed write answered with (critic C5), shown over the loaded
   // one until a later load replaces that (`base` is the load it was written
@@ -172,6 +173,9 @@ export default function Settings({ group = 'general' }: { group?: SettingGroup }
   const q = norm(query.trim())
   // Search is global: with text, every group; without, only the open one.
   const all = view?.settings ?? []
+  // A group with no key (the URL names one, e.g. ai) opens general.
+  const hasKeys = (g: SettingGroup) => all.some((s) => groupOf(s) === g)
+  const group: SettingGroup = view && asked !== 'general' && !hasKeys(asked) ? 'general' : asked
   const pool = q === '' ? all.filter((s) => groupOf(s) === group) : all
   const shown = pool.filter((s) => q === '' || norm(`${tx(s.title)} ${tx(s.description)} ${s.id}`).includes(q))
   // Only groups with a key; the project name counts for general.
@@ -229,6 +233,21 @@ export default function Settings({ group = 'general' }: { group?: SettingGroup }
         )}
         <div className="settings-body">
           {view && (
+            <>
+          <input
+            type="search"
+            className="settings-search"
+            aria-label={ts.search}
+            placeholder={ts.search}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          <p className="counts" aria-live="polite">
+            {ts.count(shown.length, pool.length)}
+          </p>
+            </>
+          )}
+          {view && (
             <header className="settings-group-head">
               <h2 className="settings-group-title">{q === '' ? ts.groups[group].title : ts.resultsAll}</h2>
               <p className="settings-hint settings-group-sub">{q === '' ? ts.groups[group].description : ''}</p>
@@ -279,17 +298,6 @@ export default function Settings({ group = 'general' }: { group?: SettingGroup }
               busy={load.retrying}
             />
           ))}
-          <input
-            type="search"
-            className="settings-search"
-            aria-label={ts.search}
-            placeholder={ts.search}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          <p className="counts" aria-live="polite">
-            {ts.count(shown.length, pool.length)}
-          </p>
           {shown.length === 0 ? (
             <p className="settings-empty">{ts.noMatch(query.trim())}</p>
           ) : (
@@ -546,12 +554,17 @@ function SettingRow({
               if (e.key === 'Escape') cancel()
             }}
           >
-            <p id={askId}>{ts.confirmOff(tx(s.title))}</p>
+            <p id={askId}>{ts.confirmOff(tx(s.title), ws === 'project' ? '.cernerc' : 'settings.toml', ws === 'project')}</p>
             <button
               type="button"
               className="settings-confirm-yes"
+              aria-disabled={lock}
               onClick={() => {
+                if (busy) return
                 setConfirming(false)
+                // The question unmounts with the pressed button: hand the focus
+                // back to the box now, so a failed write leaves it there too.
+                document.getElementById(controlId(s.id))?.focus()
                 onWrite(ws, () => putSetting(s.id, ws, off))
               }}
             >
@@ -630,6 +643,13 @@ function SettingRow({
               e.preventDefault()
               if (busy) return
               const raw = String(new FormData(e.currentTarget).get('value') ?? '').trim()
+              // A browser that cannot parse the text reports '' too: that is
+              // bad input, not "reset".
+              const field = e.currentTarget.elements.namedItem('value') as HTMLInputElement | null
+              if (field?.validity.badInput) {
+                setIntError(true)
+                return
+              }
               if (raw === '') {
                 setIntError(false)
                 onWrite(ws, () => unsetSetting(s.id, ws))

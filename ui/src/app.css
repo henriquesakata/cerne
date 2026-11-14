@@ -3169,7 +3169,7 @@ button.clarify-chip { cursor: pointer; font: inherit; }
 .settings-text,
 .settings-select {
   font: inherit;
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   width: 100%;
   max-width: 24rem;
   padding: 0.3rem 0.5rem;
@@ -3182,7 +3182,7 @@ button.clarify-chip { cursor: pointer; font: inherit; }
 .settings-scopes .lang-option:focus-visible { outline: 2px solid var(--fg); outline-offset: -2px; }
 .settings-scopes .lang-option.active:focus-visible { outline-color: var(--bg); }
 .settings-file .code-copy:focus-visible,
-.settings-file pre:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+.settings-file pre:focus-visible { outline: 2px solid var(--fg); outline-offset: 1px; }
 .settings-text:focus-visible,
 .settings-select:focus-visible,
 .settings-string button:focus-visible,
@@ -3190,7 +3190,7 @@ button.clarify-chip { cursor: pointer; font: inherit; }
 .settings-check:focus-visible,
 .settings-search:focus-visible,
 .settings-groups a:focus-visible,
-.settings-groups-select:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+.settings-groups-select:focus-visible { outline: 2px solid var(--fg); outline-offset: 1px; }
 .settings-readonly { margin: 0; font-size: 0.9rem; }
 /* Provenance is the main read of a row: ink, not muted. */
 .settings-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.75rem; margin: 0.4rem 0 0; font-size: 0.85rem; color: var(--muted); }
@@ -3201,7 +3201,7 @@ button.clarify-chip { cursor: pointer; font: inherit; }
 .settings-confirm-no { font: inherit; font-size: 0.85rem; padding: 0.3rem 0.8rem; border: 1px solid var(--border-field); border-radius: 6px; background: transparent; color: var(--fg); cursor: pointer; }
 .settings-confirm-yes { color: var(--danger); }
 .settings-confirm-no:focus-visible,
-.settings-confirm-yes:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+.settings-confirm-yes:focus-visible { outline: 2px solid var(--fg); outline-offset: 1px; }
 .settings-saved { margin: 0.4rem 0 0; font-size: 0.85rem; color: var(--fg); }
 .settings-group-head { margin-top: 1rem; }
 .settings-group-title { margin: 0; font-size: 1rem; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--fg); }
@@ -3289,7 +3289,7 @@ button.clarify-chip { cursor: pointer; font: inherit; }
 .settings-groups a:hover { color: var(--fg); }
 .settings-groups a[aria-current='page'] { color: var(--fg); font-weight: 600; text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 0.3em; }
 .settings-groups-select { display: none; }
-@media (max-width: 639px) {
+@media (max-width: 640px) {
   .settings-row { grid-template-columns: minmax(0, 1fr); }
   .settings-layout { grid-template-columns: minmax(0, 1fr); }
   .settings-body { grid-column: 1; }

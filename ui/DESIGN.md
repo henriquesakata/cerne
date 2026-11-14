@@ -558,6 +558,9 @@ readable; the strikethrough is that thesis rendered.
   of a field whose edge is the only cue that it is editable. Today only the Settings
   screen's fields use it; adopting it app-wide is a follow-up.
 - **Focus:** `2px solid` ink outline, `1px` offset. No glow, no colour shift.
+  One exception (F-0413): inside a container that clips (`overflow: hidden`, the
+  Settings Project | Host toggle) the ring is inset, `outline-offset: -2px`, so it is
+  not cut off.
 - **Error:** message text in `danger`; the field itself is not recoloured.
 
 ### Navigation
