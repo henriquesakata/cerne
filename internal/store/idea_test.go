@@ -11,7 +11,7 @@ import (
 
 func testIdea(id string) Idea {
 	at := time.Date(2026, 11, 6, 10, 0, 0, 0, time.UTC)
-	return Idea{ID: id, Text: "talvez um dia X", State: domain.IdeaActive, CreatedAt: at, UpdatedAt: at}
+	return Idea{ID: id, Title: "talvez um dia X", State: domain.IdeaActive, CreatedAt: at, UpdatedAt: at}
 }
 
 func TestIdeaRoundTrip(t *testing.T) {
@@ -34,7 +34,7 @@ func TestIdeaRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadIdea: %v", err)
 	}
-	if got.ID != want.ID || got.Text != want.Text || got.State != want.State ||
+	if got.ID != want.ID || got.Title != want.Title || got.State != want.State ||
 		got.Reason != want.Reason || got.PromotedTo != want.PromotedTo {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}
