@@ -78,8 +78,8 @@ describe('Backlog (F-0202)', () => {
     payload = state([feature('F-0001'), feature('F-0002')])
     const at = '2026-11-06T10:00:00Z'
     ideasPayload = [
-      { id: 'I-0002', text: 'ideia dois', state: 'active', created_at: at, updated_at: at },
-      { id: 'I-0001', text: 'ideia um', state: 'active', created_at: at, updated_at: at },
+      { id: 'I-0002', title: 'ideia dois', state: 'active', created_at: at, updated_at: at },
+      { id: 'I-0001', title: 'ideia um', state: 'active', created_at: at, updated_at: at },
     ]
     const { container } = render(<Backlog />)
     expect(await screen.findByText('ideia um')).toBeInTheDocument()

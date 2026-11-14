@@ -53,6 +53,9 @@ type TransitionOutcome struct {
 	// transition moved (F-0885: resolved on accept, reopened on reject,
 	// transferred on supersede), for the caller to print. Empty otherwise.
 	Pendings []string
+	// Ideas is Pendings for the ideas promoted or linked to the feature
+	// (F-0419): one line per idea moved.
+	Ideas []string
 }
 
 // ErrApprovalStale is the start refusal for an approved feature whose spec
@@ -347,6 +350,11 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 		if err != nil {
 			return "", err
 		}
+		// So do the ideas promoted or linked to it (F-0419).
+		movedIdeas, err := moveLinkedIdeas(repoDir, f, reason)
+		if err != nil {
+			return "", err
+		}
 		// Approving a candidate opens the plan phase: scaffold the plan stub from the
 		// canonical template so it is committed alongside the approval (mirrors the
 		// spec stub written at create time). No-op if a real plan already exists.
@@ -429,7 +437,7 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 			msg += fmt.Sprintf(" (epic %s ready to close)", epicReady)
 		}
 		title = f.Title
-		out = TransitionOutcome{ID: id, From: oldState, To: newState, Propagated: propagated, EpicReadyToClose: epicReady, Warnings: warnings, Bar: bar, JudgeQuestion: judgeQuestion, Baseline: baseline, Pendings: movedPendings}
+		out = TransitionOutcome{ID: id, From: oldState, To: newState, Propagated: propagated, EpicReadyToClose: epicReady, Warnings: warnings, Bar: bar, JudgeQuestion: judgeQuestion, Baseline: baseline, Pendings: movedPendings, Ideas: movedIdeas}
 		return msg, nil
 	})
 	if err != nil {
