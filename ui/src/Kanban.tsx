@@ -345,11 +345,60 @@ function Columns({
   // browser), então o card em voo vive numa ref. Sem mudança otimista: o card
   // só muda de coluna quando o servidor muda o estado (useLiveLoad).
   const dragging = useRef<Feature | null>(null)
-  const [blocked, setBlocked] = useState<FeatureState | null>(null)
+  // F-0415: o mesmo card também é estado, só para desenhar o destaque de destino.
+  // A ref continua decidindo dragover e drop (N-0064).
+  const [inFlight, setInFlight] = useState<Feature | null>(null)
+  const [ghost, setGhost] = useState<string | null>(null)
+  const [over, setOver] = useState<FeatureState | null>(null)
+  const ghostTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
   const [notice, setNotice] = useState<{ id: string; text: string; refused: boolean } | null>(null)
+  // F-0420: destino cuja coluna está fora da vista, apontado pela faixa na borda.
+  const boardRef = useRef<HTMLDivElement>(null)
+  const [edge, setEdge] = useState<FeatureState | null>(null)
+  const measureEdge = (f: Feature) => {
+    const target = (Object.keys(DROPS) as FeatureState[]).find((s) => DROPS[s]!.from === f.state)
+    const board = boardRef.current
+    const col = target && board?.querySelector(`:scope > section[data-state="${target}"]`)
+    setEdge(col && offscreenRight(board!.getBoundingClientRect(), col.getBoundingClientRect()) ? target : null)
+  }
   const endGesture = () => {
     dragging.current = null
-    setBlocked(null)
+    clearTimeout(ghostTimer.current)
+    setInFlight(null)
+    setGhost(null)
+    setOver(null)
+    setEdge(null)
+  }
+  // Um live reload que tira o card em voo do seu estado desmonta o <a> de origem:
+  // o dragend dele nunca chega ao board, então o gesto termina aqui.
+  const inFlightGone = inFlight !== null && !features.some((f) => f.id === inFlight.id && f.state === inFlight.state)
+  useEffect(() => {
+    if (inFlightGone) endGesture()
+  }, [inFlightGone])
+  const beginGesture = (f: Feature) => {
+    dragging.current = f
+    setInFlight(f)
+    measureEdge(f)
+    // O browser captura a imagem de arraste depois do dragstart: esmaecer o card
+    // dentro dele esmaeceria a imagem também.
+    ghostTimer.current = setTimeout(() => setGhost(f.id), 0)
+  }
+  // Classe de arraste da coluna s durante o gesto: destino pronto/ativo/bloqueado,
+  // coluna que não aceita esmaecida, origem intacta (a Backlog é a 'candidate').
+  const dragClass = (s: FeatureState) => {
+    if (!inFlight) return ''
+    const rule = DROPS[s]
+    if (rule?.from === inFlight.state) {
+      if (rule.action === 'approve' && pendingClarify(inFlight.id) > 0) return 'drop-blocked'
+      return over === s ? 'drop-active' : 'drop-ready'
+    }
+    return s === inFlight.state ? '' : 'drop-off'
+  }
+  const dropHint = (s: FeatureState) => {
+    const rule = DROPS[s]
+    if (!inFlight || rule?.from !== inFlight.state) return null
+    if (dragClass(s) === 'drop-blocked') return t.kanban.drag.pending(pendingClarify(inFlight.id))
+    return rule.action === 'approve' ? t.kanban.drag.hintApprove : t.kanban.drag.hintAccept
   }
   const dropProps = (target: FeatureState) => {
     const rule = DROPS[target]
@@ -366,12 +415,11 @@ function Columns({
         }
         e.preventDefault() // sem isto o browser não dispara o drop
         e.dataTransfer.dropEffect = 'move'
-        // Esclarecimento aberto só barra o approve; accept segue (critério 2).
-        setBlocked(rule.action === 'approve' && pendingClarify(dragging.current!.id) > 0 ? target : null)
+        setOver(target)
       },
       onDragLeave: (e: DragEvent) => {
         // Entrar num filho dispara dragleave no pai; só limpa ao sair de verdade.
-        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setBlocked(null)
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(null)
       },
       onDrop: (e: DragEvent) => {
         e.preventDefault()
@@ -421,18 +469,24 @@ function Columns({
         </>
       )}
     </div>
+    <div className="board-wrap">
     <div
       className="board"
+      ref={boardRef}
       // Todo dragstart (inclusive de card não arrastável, cujo <a> é arrastável
       // por padrão) zera o gesto anterior; o card arrastável o reabre logo depois.
       onDragStartCapture={() => {
-        dragging.current = null
+        endGesture()
         setNotice(null)
       }}
       onDragEnd={endGesture}
+      // A rolagem nativa na borda (ou a roda) pode trazer o destino para a vista.
+      onScroll={() => dragging.current && measureEdge(dragging.current)}
     >
       <BacklogColumn
-        onDragStart={(f) => (dragging.current = f)}
+        onDragStart={beginGesture}
+        dragClass={dragClass('candidate')}
+        ghost={ghost}
         candidates={byState.get('candidate') ?? []}
         total={features.filter((f) => f.state === 'candidate').length}
         isEpic={isEpic}
@@ -442,15 +496,18 @@ function Columns({
       />
       {columns.map((s) => {
         const fs = byState.get(s) ?? []
+        const hint = dropHint(s)
         return (
           <section
             key={s}
-            className={`column${blocked === s ? ' drop-blocked' : ''}`}
+            data-state={s}
+            className={`column ${dragClass(s)}`.trim()}
             {...dropProps(s)}
           >
             <h2>
               {t.kanban.columnLabels[s]} <span className="column-count">{fs.length}</span>
             </h2>
+            {hint && <p className="drop-hint">{hint}</p>}
             {fs.length === 0 && <p className="column-empty">—</p>}
             {(() => {
               // Coluna terminal: filhas sobem para o épico e a ordem é por
@@ -474,7 +531,8 @@ function Columns({
                       pending={pendingClarify(f.id)}
                       activeWork={activeWorkFor(f.id)}
                       rolledUp={rolled.get(f.id) ?? 0}
-                      onDragStart={s === 'implemented' ? (x) => (dragging.current = x) : undefined}
+                      onDragStart={s === 'implemented' ? beginGesture : undefined}
+                      ghost={ghost === f.id}
                     />
                   ))}
                   <MoreInHistory hidden={hidden} />
@@ -485,6 +543,18 @@ function Columns({
         )
       })}
     </div>
+    {/* F-0420: só visual, fora do contêiner que rola. Sem dropProps e com
+        pointer-events: none, o soltar e a rolagem nativa vão à coluna de baixo:
+        a faixa pode nascer sob o cursor, e soltar sem mover não aprova nada. */}
+    {edge && (
+      <div className={`drop-edge ${dragClass(edge)}`.trim()} aria-hidden="true">
+        <div className="drop-edge-inner">
+          <h2>{t.kanban.columnLabels[edge]} →</h2>
+          <p className="drop-hint">{dropHint(edge)}</p>
+        </div>
+      </div>
+    )}
+    </div>
     </>
   )
 }
@@ -493,6 +563,17 @@ function Columns({
 const DROPS: Partial<Record<FeatureState, { from: FeatureState; action: 'approve' | 'accept' }>> = {
   approved: { from: 'candidate', action: 'approve' },
   done: { from: 'implemented', action: 'accept' },
+}
+
+// F-0420: o destino está fora da vista, pela direita, quando passa da borda
+// direita do board e menos da metade da largura dele cabe na área visível.
+// Coluna não medida (largura 0) nunca conta.
+export function offscreenRight(board: DOMRect, col: DOMRect): boolean {
+  return (
+    col.width > 0 &&
+    col.right > board.right &&
+    Math.min(col.right, board.right) - Math.max(col.left, board.left) < col.width / 2
+  )
 }
 
 // F-0342: a escolha recolhida/expandida da coluna Backlog é preferência de quem
@@ -528,8 +609,12 @@ function BacklogColumn({
   pendingClarify,
   activeWorkFor,
   onDragStart,
+  dragClass,
+  ghost,
 }: {
   onDragStart: (f: Feature) => void
+  dragClass: string
+  ghost: string | null
   candidates: Feature[]
   total: number
   isEpic: (id: string) => boolean
@@ -547,7 +632,7 @@ function BacklogColumn({
   }
   return (
     <details
-      className="column backlog-column"
+      className={`column backlog-column ${dragClass}`.trim()}
       open={open}
       onDragOver={(e) => (e.dataTransfer.dropEffect = 'none')}
     >
@@ -584,6 +669,7 @@ function BacklogColumn({
                 pending={pendingClarify(f.id)}
                 activeWork={activeWorkFor(f.id)}
                 onDragStart={onDragStart}
+                ghost={ghost === f.id}
               />
             ))
           )}
@@ -720,6 +806,7 @@ function Card({
   activeWork = [],
   rolledUp = 0,
   onDragStart,
+  ghost = false,
 }: {
   feature: Feature
   isEpic: boolean
@@ -729,6 +816,7 @@ function Card({
   activeWork?: { id: string; actor: string }[]
   rolledUp?: number
   onDragStart?: (f: Feature) => void
+  ghost?: boolean
 }) {
   const { t } = useT()
   // Read-only chips: the whole card is an <a>, so a Tag button can't live here
@@ -737,7 +825,7 @@ function Card({
     (feature.facets?.length ?? 0) > 0 || (feature.components?.length ?? 0) > 0
   return (
     <a
-      className={`card card-${feature.state}`}
+      className={`card card-${feature.state}${onDragStart ? ' card-draggable' : ''}${ghost ? ' card-in-flight' : ''}`}
       href={`#/f/${feature.id}`}
       {...(onDragStart && {
         draggable: true,

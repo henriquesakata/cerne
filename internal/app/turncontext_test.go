@@ -170,7 +170,7 @@ func TestBuildTurnContextBrokenIndex(t *testing.T) {
 // corpus is read on demand only (cerne idea list --search).
 func TestBuildTurnContextExcludesIdeas(t *testing.T) {
 	repoDir, dbPath := turnContextFixture(t)
-	if err := store.SaveIdea(repoDir, store.Idea{ID: "I-0001", Text: "conciliação via planilha zebra", State: domain.IdeaActive}); err != nil {
+	if err := store.SaveIdea(repoDir, store.Idea{ID: "I-0001", Title: "conciliação via planilha zebra", State: domain.IdeaActive}); err != nil {
 		t.Fatalf("SaveIdea: %v", err)
 	}
 	commitBackend(t, repoDir)

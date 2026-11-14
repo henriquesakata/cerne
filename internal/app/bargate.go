@@ -35,7 +35,7 @@ func CheckSpecBar(repoDir, id string) error {
 	if !doccheck.HasRealContent(data) {
 		return nil
 	}
-	if _, err := doccheck.SpecBar(data); err != nil {
+	if _, err := doccheck.SpecBarIn(data, store.DocsLanguage(repoDir)); err != nil {
 		// One line (F-0308 crit. 11): the three literal forms are taught by the
 		// check, not repeated in every refusal.
 		return fmt.Errorf("%w: %v — run 'cerne feature approve %s --check' for the accepted forms", ErrSpecMissingBar, err, id)

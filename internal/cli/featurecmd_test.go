@@ -32,13 +32,19 @@ func execCerne(t *testing.T, args ...string) (string, error) {
 // returns the project dir, the origin path and the cached backend clone dir.
 func setupProject(t *testing.T, modules ...string) (projDir, origin, repoDir string) {
 	t.Helper()
+	// pt-BR: the suite predates docs.language (F-0359) and asserts the
+	// Portuguese scaffold; English has its own tests.
+	return setupProjectIn(t, "pt-BR", modules...)
+}
+
+// setupProjectIn is setupProject for a backend documented in lang (F-0418).
+func setupProjectIn(t *testing.T, lang string, modules ...string) (projDir, origin, repoDir string) {
+	t.Helper()
 	cacheRoot := t.TempDir()
 	t.Setenv("CERNE_CACHE_DIR", cacheRoot)
 	origin = newOrigin(t)
 	projDir = t.TempDir()
-	// pt-BR: the suite predates docs.language (F-0359) and asserts the
-	// Portuguese scaffold; English has its own tests.
-	args := []string{"--docs-language", "pt-BR", "--name", "demo", "--backend", origin, "--dir", projDir}
+	args := []string{"--docs-language", lang, "--name", "demo", "--backend", origin, "--dir", projDir}
 	for _, m := range modules {
 		args = append(args, "--module", m)
 	}

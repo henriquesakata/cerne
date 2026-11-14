@@ -35,18 +35,18 @@ func Correction(state domain.FeatureState, id, doc string) (CorrectionKind, stri
 	}
 }
 
-// resultFix renders, in Portuguese like the lint details, the way to correct
-// the result of f in its state; section names what the errata must carry for
+// resultFix renders, in English like every message an agent reads (N-0068,
+// F-0418), the way to correct the result of f in its state; section names what the errata must carry for
 // the rule that fired (the lint reads the errata, F-0305).
 func resultFix(f store.Feature, section string) string {
 	kind, cmd := Correction(f.State, f.ID, "result")
 	switch kind {
 	case CorrectByPush:
-		return "edite o result em .docs/current/features/ e rode '" + cmd + "'"
+		return "edit the result in .docs/current/features/ and run '" + cmd + "'"
 	case CorrectByAmend:
-		return fmt.Sprintf("o result não volta ao .docs/; corrija com '%s' (texto atual: 'cerne show %s --doc result')", cmd, f.ID)
+		return fmt.Sprintf("the result does not return to .docs/; correct it with '%s' (current text: 'cerne show %s --doc result')", cmd, f.ID)
 	case CorrectByErrata:
-		return fmt.Sprintf("documento congelado; anexe com '%s', %s (o lint lê a errata)", cmd, section)
+		return fmt.Sprintf("frozen document; append with '%s', %s (the lint reads the errata)", cmd, section)
 	}
-	return "nenhum comando altera o documento (histórico terminal)"
+	return "no command changes the document (terminal history)"
 }

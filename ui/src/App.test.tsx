@@ -155,7 +155,7 @@ describe('App — pendências e ideias (F-0334)', () => {
     await waitFor(() => expect(fetchPendings).toHaveBeenCalledWith({ state: 'all', from: 'F-0331', component: '' }))
   })
 
-  it.each(['#/pendingsfoo', '#/ideas?x=1'])('%s não monta pendências nem ideias (a mesma regra da nav)', async (hash) => {
+  it.each(['#/pendingsfoo', '#/ideasfoo'])('%s não monta pendências nem ideias (a mesma regra da nav)', async (hash) => {
     window.location.hash = hash
     render(<App />)
     expect(await screen.findByRole('heading', { level: 1, name: 'Dashboard' })).toBeInTheDocument()
@@ -166,11 +166,18 @@ describe('App — pendências e ideias (F-0334)', () => {
   it('#/ideas monta o painel de ideias', async () => {
     window.location.hash = '#/ideas'
     render(<App />)
-    expect(await screen.findByRole('heading', { level: 2, name: 'Ideias' })).toBeInTheDocument()
+    // Crítica C14: como toda tela, um h1 — visível desde a F-0416 (crit. 2).
+    const h1 = await screen.findByRole('heading', { level: 1, name: 'Ideias' })
+    expect(h1).not.toHaveClass('sr-only')
+    expect(screen.queryByRole('heading', { level: 2, name: 'Ideias' })).toBeNull()
     expect(screen.getByPlaceholderText('Anote uma ideia e tecle Enter…')).toBeInTheDocument()
-    // Crítica C14: como toda tela, um h1 — oculto, porque o painel já titula.
-    const h1 = screen.getByRole('heading', { level: 1, name: 'Ideias' })
-    expect(h1).toHaveClass('sr-only')
+  })
+
+  it('#/ideas?state=… também monta o painel, com o filtro (F-0416 crit. 3)', async () => {
+    window.location.hash = '#/ideas?state=promoted'
+    render(<App />)
+    expect(await screen.findByRole('heading', { level: 1, name: 'Ideias' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Promovidas/ })).toHaveAttribute('aria-pressed', 'true')
   })
 })
 
@@ -203,7 +210,7 @@ describe('App — #/ideas anuncia a promoção (F-0334, crítica C5)', () => {
   afterEach(() => vi.mocked(fetchIdeas).mockImplementation(async () => []))
 
   it('promover mostra o aviso com o link para o Backlog', async () => {
-    const idea = { id: 'I-0001', text: 'Uma ideia', state: 'active' as const, created_at: '2026-11-01T00:00:00Z', updated_at: '2026-11-01T00:00:00Z' }
+    const idea = { id: 'I-0001', title: 'Uma ideia', state: 'active' as const, created_at: '2026-11-01T00:00:00Z', updated_at: '2026-11-01T00:00:00Z' }
     vi.mocked(fetchIdeas).mockImplementation(async () => [idea])
     vi.mocked(promoteIdea).mockResolvedValue({ idea: { ...idea, state: 'promoted', promoted_to: 'F-0009' }, feature: {} as never })
     window.location.hash = '#/ideas'

@@ -224,6 +224,30 @@ func HandoffWork(repoDir, projDir, id, brief, next string, evidence, contingenci
 	return hoID, nil
 }
 
+// HandoffBriefBody is the handoff's content without the sections
+// HandoffWork composed from fields the record already carries — the
+// contingencies and the next step — so a reader that shows those fields does
+// not repeat them (F-0421). The giver's brief, the evidence and the work log
+// stay. The composed tail is matched where HandoffWork puts it, closing the
+// content or opening the work log, so a log entry quoting the same line is
+// left alone; a content without it verbatim (composed in another docs
+// language) comes back whole. lang is the backend's docs language.
+func HandoffBriefBody(lang doclang.Lang, h store.Handoff, content string) string {
+	tail := "\n\n" + doclang.Display(doclang.NextStepLabel, lang) + ": " + h.Next
+	if len(h.Contingencies) > 0 {
+		tail = "\n\n" + doclang.Display(doclang.IfLabel, lang) + ":\n- " + strings.Join(h.Contingencies, "\n- ") + tail
+	}
+	if i := strings.Index(content, tail+"\n\n"+doclang.Display(doclang.LogLabel, lang)+":\n"); i >= 0 {
+		return content[:i] + content[i+len(tail):]
+	}
+	for _, end := range []string{"\n", ""} {
+		if strings.HasSuffix(content, tail+end) {
+			return strings.TrimSuffix(content, tail+end) + end
+		}
+	}
+	return content
+}
+
 // withWorkLog appends to a handoff brief the work log entries made since the
 // previous TAKEN handoff of the same work (all of them when none was) and returns
 // the highest entry number carried (F-0397). Without new entries the brief is
@@ -315,4 +339,50 @@ func HandoffsFor(repoDir string, refs []string, exclude string) ([]WorkHandoff, 
 		}
 	}
 	return out, nil
+}
+
+// ListHandoffs returns every handoff in list order (F-0386 crit. 2, F-0421
+// crit. 8): pending first, oldest first, then the closed ones by closing time,
+// newest first. The CLI and the API both list through it.
+func ListHandoffs(repoDir string) ([]store.Handoff, error) {
+	all, err := store.LoadAllHandoffs(repoDir)
+	if err != nil {
+		return nil, err
+	}
+	slices.SortStableFunc(all, handoffOrder)
+	return all, nil
+}
+
+// handoffClosedAt is when a closed handoff closed: taken_at, else updated_at.
+func handoffClosedAt(h store.Handoff) time.Time {
+	if h.TakenAt != nil {
+		return *h.TakenAt
+	}
+	return h.UpdatedAt
+}
+
+func handoffOrder(a, b store.Handoff) int {
+	ap, bp := a.State == domain.HandoffPending, b.State == domain.HandoffPending
+	switch {
+	case ap && bp:
+		return a.CreatedAt.Compare(b.CreatedAt)
+	case ap:
+		return -1
+	case bp:
+		return 1
+	}
+	return handoffClosedAt(b).Compare(handoffClosedAt(a))
+}
+
+// WorkTitles maps each work id to its title.
+func WorkTitles(repoDir string) (map[string]string, error) {
+	works, err := store.LoadAllWorks(repoDir)
+	if err != nil {
+		return nil, err
+	}
+	m := make(map[string]string, len(works))
+	for _, w := range works {
+		m[w.ID] = w.Title
+	}
+	return m, nil
 }

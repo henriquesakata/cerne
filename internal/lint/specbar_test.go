@@ -129,3 +129,38 @@ func TestBarReadersAgreeOnValues(t *testing.T) {
 		})
 	}
 }
+
+// TestSpecMissingBar_English (F-0418 crit. 3): in a project documented in
+// English the finding names the English label, for a missing line and for a
+// malformed one the author wrote in English.
+func TestSpecMissingBar_English(t *testing.T) {
+	for _, tc := range []struct{ spec, want string }{
+		{"# t\n\n## Problem\n\nA real problem.\n", `no "Bar:" line`},
+		{"# t\n\n## Problem\n\nA real problem.\n\nBar: <named reference>\n", `malformed "Bar:" line: "Bar:" holds only`},
+	} {
+		dir := t.TempDir()
+		if err := store.SaveProject(dir, store.Project{DocsLanguage: "en"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.SaveFeature(dir, store.Feature{ID: "F-0001", Title: "t", State: domain.StateCandidate}); err != nil {
+			t.Fatal(err)
+		}
+		writeDoc(t, dir, "content/features/F-0001/spec.md", tc.spec)
+		got, err := Run(dir)
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		found := false
+		for _, f := range got {
+			if f.Rule == RuleSpecMissingBar {
+				found = true
+				if !strings.Contains(f.Detail, tc.want) || strings.Contains(f.Detail, "Barra") {
+					t.Fatalf("detail = %q, want %q and no Barra", f.Detail, tc.want)
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("no spec-missing-bar finding for %q: %+v", tc.spec, got)
+		}
+	}
+}

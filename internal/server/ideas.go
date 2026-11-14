@@ -16,8 +16,16 @@ type ideaResponse struct {
 	Idea store.Idea `json:"idea"`
 }
 
-func handleIdeas(w http.ResponseWriter, repoDir string) {
-	ideas, err := app.ListIdeas(repoDir, false, "")
+// handleIdeas lists the ideas of ?state=&component=&search= (F-0419): no state
+// is the active ones, all every one — the same selection, in the same order,
+// as `cerne idea list --json` with those filters.
+func handleIdeas(w http.ResponseWriter, r *http.Request, repoDir string) {
+	q := r.URL.Query()
+	ideas, err := app.ListIdeas(repoDir, app.IdeaFilter{State: q.Get("state"), Component: q.Get("component"), Search: q.Get("search")})
+	if errors.Is(err, app.ErrIdeaStateInvalid) {
+		writeJSON(w, http.StatusBadRequest, errorBody(err.Error()))
+		return
+	}
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
@@ -47,7 +55,8 @@ func handleCreateIdea(w http.ResponseWriter, r *http.Request, repoDir, projDir s
 		return
 	}
 	var req struct {
-		Text       string   `json:"text"`
+		Title      string   `json:"title"`
+		Body       string   `json:"body"`
 		Facets     []string `json:"facets"`
 		Components []string `json:"components"`
 		Token      string   `json:"token"` // C2: per submission, reused by "Tentar de novo"
@@ -56,7 +65,7 @@ func handleCreateIdea(w http.ResponseWriter, r *http.Request, repoDir, projDir s
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
 		return
 	}
-	i, err := app.CreateIdea(repoDir, projDir, req.Text, req.Facets, req.Components, req.Token)
+	i, err := app.CreateIdea(repoDir, projDir, req.Title, req.Body, req.Facets, req.Components, req.Token)
 	if err != nil {
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error())) // blank text, unknown facet
 		return

@@ -33,7 +33,7 @@ func TestIdeaNewPrintsIDWithoutExtras(t *testing.T) {
 		t.Fatalf("output does not name the created id:\n%s", out)
 	}
 	i, err := store.LoadIdea(repoDir, "I-0001")
-	if err != nil || i.State != domain.IdeaActive || i.Text != "talvez um dia X" || len(i.Facets)+len(i.Components) != 0 {
+	if err != nil || i.State != domain.IdeaActive || i.Title != "talvez um dia X" || len(i.Facets)+len(i.Components) != 0 {
 		t.Fatalf("idea = %+v, %v; want active, untagged", i, err)
 	}
 }
@@ -59,8 +59,12 @@ func TestIdeaNewPersistsOptionalTags(t *testing.T) {
 // --search filters; --json is the agents' contract; empty says so.
 func TestIdeaListActiveNewestFirstAllSearchJSON(t *testing.T) {
 	projDir, _, _ := setupProject(t)
-	if out := ideaCmd(t, projDir, "list"); strings.TrimSpace(out) != "No ideas." {
-		t.Fatalf("empty list = %q, want No ideas.", out)
+	// The empty list names the filter in force, as the pendings' does (judge F-0419).
+	if out := ideaCmd(t, projDir, "list"); strings.TrimSpace(out) != "No active ideas." {
+		t.Fatalf("empty list = %q, want No active ideas.", out)
+	}
+	if out := ideaCmd(t, projDir, "list", "--state", "all"); strings.TrimSpace(out) != "No ideas." {
+		t.Fatalf("empty --state all = %q, want No ideas.", out)
 	}
 	ideaCmd(t, projDir, "new", "primeira ideia")
 	ideaCmd(t, projDir, "new", "conciliação do OFX")
@@ -86,7 +90,7 @@ func TestIdeaListActiveNewestFirstAllSearchJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &doc); err != nil || len(doc.Ideas) != 2 {
 		t.Fatalf("--json = %+v, %v\n%s", doc, err, out)
 	}
-	if i := doc.Ideas[0]; i.ID != "I-0003" || i.Text != "terceira ideia" || i.State != domain.IdeaActive || i.CreatedAt.IsZero() {
+	if i := doc.Ideas[0]; i.ID != "I-0003" || i.Title != "terceira ideia" || i.State != domain.IdeaActive || i.CreatedAt.IsZero() {
 		t.Fatalf("--json first = %+v, want I-0003 active with created_at", i)
 	}
 }
@@ -112,7 +116,7 @@ func TestShowResolvesIdeaPrefix(t *testing.T) {
 		Kind   string     `json:"kind"`
 		Entity store.Idea `json:"entity"`
 	}
-	if err != nil || json.Unmarshal([]byte(out), &doc) != nil || doc.Kind != "idea" || doc.Entity.Text != "exportar o kanban" {
+	if err != nil || json.Unmarshal([]byte(out), &doc) != nil || doc.Kind != "idea" || doc.Entity.Title != "exportar o kanban" {
 		t.Fatalf("show --json = %+v, %v\n%s", doc, err, out)
 	}
 	if out, err := execCerne(t, "idea", "show", "F-0001", "--dir", projDir); err == nil {
@@ -129,7 +133,7 @@ func TestIdeaDropWithAndWithoutReason(t *testing.T) {
 		t.Fatalf("drop output = %q", out)
 	}
 	ideaCmd(t, projDir, "drop", "I-0002", "--reason", "não vale")
-	if out := ideaCmd(t, projDir, "list"); strings.TrimSpace(out) != "No ideas." {
+	if out := ideaCmd(t, projDir, "list"); strings.TrimSpace(out) != "No active ideas." {
 		t.Fatalf("dropped ideas still listed as active:\n%s", out)
 	}
 	if out := ideaCmd(t, projDir, "list", "--all"); !strings.Contains(out, "dropped  outra  — não vale") || !strings.Contains(out, "dropped  uma") {
@@ -155,7 +159,7 @@ func TestIdeaPromotePrintsBothIDs(t *testing.T) {
 		t.Fatalf("promote output = %q, features = %+v", out, features)
 	}
 	fid := features[0].ID
-	if out := ideaCmd(t, projDir, "list"); strings.TrimSpace(out) != "No ideas." {
+	if out := ideaCmd(t, projDir, "list"); strings.TrimSpace(out) != "No active ideas." {
 		t.Fatalf("a promoted idea is still listed as active:\n%s", out)
 	}
 	if out := ideaCmd(t, projDir, "list", "--all"); !strings.Contains(out, "promoted  Exportar o kanban em CSV  → "+fid) {
@@ -287,8 +291,8 @@ func TestIdeaNewRetriesIdempotentlyAfterPostPushFailure(t *testing.T) {
 func TestIdeaNewJoinsWordsAndHintsDoubleDash(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
 	ideaCmd(t, projDir, "new", "talvez", "um", "dia", "X")
-	if i, _ := store.LoadIdea(repoDir, "I-0001"); i.Text != "talvez um dia X" {
-		t.Fatalf("text = %q, want the joined words", i.Text)
+	if i, _ := store.LoadIdea(repoDir, "I-0001"); i.Title != "talvez um dia X" {
+		t.Fatalf("text = %q, want the joined words", i.Title)
 	}
 	_, err := execCerne(t, "idea", "new", "-x ideia", "--dir", projDir)
 	if err == nil || !strings.Contains(err.Error(), "cerne idea new -- ") {
@@ -297,8 +301,8 @@ func TestIdeaNewJoinsWordsAndHintsDoubleDash(t *testing.T) {
 	if out, err := execCerne(t, "idea", "new", "--dir", projDir, "--", "-x ideia"); err != nil {
 		t.Fatalf("idea new -- -x ideia: %v\n%s", err, out)
 	}
-	if i, _ := store.LoadIdea(repoDir, "I-0002"); i.Text != "-x ideia" {
-		t.Fatalf("text after -- = %q, want '-x ideia'", i.Text)
+	if i, _ := store.LoadIdea(repoDir, "I-0002"); i.Title != "-x ideia" {
+		t.Fatalf("text after -- = %q, want '-x ideia'", i.Title)
 	}
 }
 
@@ -396,5 +400,14 @@ func TestShowIdeaMarksRetiredAndEmptyURL(t *testing.T) {
 	}
 	if !strings.Contains(out, "R-0002  Sem URL\n") {
 		t.Fatalf("empty URL line wrong:\n%s", out)
+	}
+}
+
+// Critic F-0419 #7: --all and a different --state contradict each other; the
+// command says so instead of silently listing everything.
+func TestIdeaListAllAndStateContradict(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	if _, err := execCerne(t, "idea", "list", "--all", "--state", "dropped", "--dir", projDir); err == nil || !strings.Contains(err.Error(), "--all") {
+		t.Fatalf("--all --state dropped = %v, want a refusal naming --all", err)
 	}
 }

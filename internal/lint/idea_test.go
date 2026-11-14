@@ -20,7 +20,7 @@ func TestIdeaLinksResolveAndIdeasFeedNoRule(t *testing.T) {
 	if err := store.SaveFeature(dir, f); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveIdea(dir, store.Idea{ID: "I-0001", Text: "sem tag", State: domain.IdeaActive, CreatedAt: now, UpdatedAt: now}); err != nil {
+	if err := store.SaveIdea(dir, store.Idea{ID: "I-0001", Title: "sem tag", State: domain.IdeaActive, CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
 	writeDoc(t, dir, "content/features/F-0001/spec.md", "---\ncerne_id: F-0001\n---\n\n# Nasceu\n\n**Origem:** ideia [[I-0001]]; e [[I-0099]].\n")

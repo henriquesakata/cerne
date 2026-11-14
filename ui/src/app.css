@@ -333,23 +333,62 @@ h2 {
    discreto abaixo dele, fora do <a>. */
 .backlog-card { display: flex; flex-direction: column; gap: 0.25rem; }
 
-/* F-0312: painel de ideias — matéria-prima, visualmente fora das candidatas. */
-.ideas-panel { margin: 0 0 1rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border); }
-.ideas-panel h2 { font-size: 1rem; margin: 0 0 0.25rem; }
-.ideas-capture { display: flex; flex-wrap: wrap; gap: 0.4rem; }
-.ideas-capture > input { flex: 1 1 12rem; min-width: 0; }
-.ideas-capture details { flex-basis: 100%; font-size: 0.8rem; }
-.ideas-capture details input { display: block; width: 100%; margin-top: 0.25rem; }
-.ideas-list { list-style: none; margin: 0.5rem 0 0; padding: 0; max-height: 40vh; overflow-y: auto; }
-.ideas-item { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 0.6rem; padding: 0.35rem 0; border-bottom: 1px solid var(--border); }
-.ideas-text { flex: 1 1 100%; overflow-wrap: anywhere; white-space: pre-wrap; }
-.ideas-more { font: inherit; font-size: 0.72rem; margin-left: 0.4rem; padding: 0 0.3rem; }
-.ideas-meta { font-size: 0.75rem; }
-.ideas-sources { flex: 1 1 100%; font-size: 0.75rem; overflow-wrap: anywhere; }
-.ideas-actions { display: flex; gap: 0.3rem; margin-left: auto; }
-.ideas-drop, .ideas-similar { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; font-size: 0.8rem; }
-.ideas-drop input { flex: 1 1 10rem; min-width: 0; }
-.ideas-actions button, .ideas-actions select { font: inherit; font-size: 0.72rem; padding: 0.1rem 0.4rem; }
+/* F-0312: painel de ideias — matéria-prima, visualmente fora das candidatas.
+   F-0416: o mesmo painel é a tela #/ideas (h1, a lista na altura da página) e,
+   no Backlog, uma faixa com teto de altura acima das candidatas. */
+.ideas-panel { margin: 0 0 1rem; }
+.ideas-panel > h2 + .muted { margin: 0 0 0.5rem; }
+.backlog-list-col .ideas-panel { padding-bottom: 0.75rem; border-bottom: 1px solid var(--border); }
+.backlog-list-col .ideas-list { max-height: 40vh; overflow-y: auto; }
+.ideas-capture { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1rem 0 0; }
+.ideas-capture > input { flex: 1 1 16rem; min-width: 0; }
+.ideas-capture input,
+.ideas-drop input,
+.ideas-actions select {
+  font: inherit;
+  font-size: 0.95rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg);
+}
+.ideas-capture input::placeholder,
+.ideas-drop input::placeholder { color: var(--muted); }
+.ideas-capture input:focus-visible,
+.ideas-drop input:focus-visible,
+.ideas-actions select:focus-visible { outline: 2px solid var(--fg); outline-offset: 1px; }
+.ideas-capture details { flex-basis: 100%; font-size: 0.85rem; }
+.ideas-capture summary { width: fit-content; color: var(--muted); cursor: pointer; }
+.ideas-capture summary:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+.ideas-capture textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 0.4rem;
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg);
+  resize: vertical;
+}
+.ideas-capture textarea::placeholder { color: var(--muted); }
+.ideas-capture textarea:focus-visible { outline: 2px solid var(--fg); outline-offset: 1px; }
+.ideas-tags { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.4rem; }
+.ideas-tags input { flex: 1 1 14rem; min-width: 0; font-size: 0.9rem; }
+.ideas-actions { display: flex; align-items: center; gap: 0.4rem; margin-left: auto; }
+.ideas-actions select { font-size: 0.85rem; padding: 0.2rem 0.4rem; }
+.queue-detail > .ideas-sources { margin: 0 0 0.4rem; font-size: 0.85rem; color: var(--muted); overflow-wrap: anywhere; }
+.queue-detail > .ideas-tagset { display: flex; flex-wrap: wrap; gap: 0.25rem; margin: 0 0 0.4rem; }
+.ideas-drop,
+.ideas-similar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; padding: 0.5rem 0.7rem 0.7rem; border-top: 1px solid var(--border-soft); font-size: 0.85rem; }
+.ideas-drop input { flex: 1 1 12rem; min-width: 0; font-size: 0.9rem; padding: 0.25rem 0.5rem; }
+.ideas-similar > p,
+.ideas-similar > ul { flex-basis: 100%; margin: 0; }
+.ideas-similar > ul { padding-left: 1.1rem; }
 
 .backlog-card-refine {
   align-self: flex-start;
@@ -2139,14 +2178,61 @@ h2 {
 .entity-row:hover { border-color: var(--border-strong); }
 .entity-title { flex: 1; font-size: 0.92rem; }
 
+/* Linha de fila (F-0416): Ideias e Pendências. Recolhida, uma linha do
+   ledger — chevron, id, o texto curto com reticências, o metadado à direita;
+   expandida, o detalhe logo abaixo, separado por uma régua suave. Sem
+   transição (Still Frame Rule): o chevron vira na hora em que abre. */
+.queue-tools { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem 1rem; margin: 1rem 0 0.5rem; }
+.page .queue-tools .counts { margin: 0; }
+.queue-expand { display: flex; gap: 0.4rem; margin-left: auto; }
+.queue-list { display: flex; flex-direction: column; gap: 0.4rem; margin: 0; padding: 0; list-style: none; }
+.queue-item { background: var(--surface); border: 1px solid var(--border-card); border-radius: 6px; }
+.queue-item:hover { border-color: var(--border-strong); }
+/* Metadado legível: dentro da linha, o .muted sobe de ink-faint para ink-muted (contraste AA). */
+.queue-item .muted { color: var(--muted); }
+.queue-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem 0.7rem; padding: 0.5rem 0.7rem; }
+.queue-toggle { display: flex; flex: 1 1 14rem; align-items: baseline; gap: 0.5rem; min-width: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.queue-toggle:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+/* Top-aligned, not centred: an open row's title can wrap to several lines. */
+.queue-chevron { flex: none; align-self: flex-start; margin-top: 0.2rem; color: var(--fg); }
+/* Open is said twice: the chevron turns and the card's rule darkens (judge, round 1). */
+.queue-item:has(> .queue-row > .queue-toggle[aria-expanded='true']) { border-color: var(--border-strong); }
+.queue-toggle[aria-expanded='true'] .queue-chevron { transform: rotate(90deg); }
+.queue-toggle .card-id { flex: none; }
+.queue-title { flex: 1; min-width: 0; overflow: hidden; font-size: 0.92rem; text-overflow: ellipsis; white-space: nowrap; }
+/* The title is a field, not a preview (pendings; ideas since F-0419): open, it shows whole. */
+.queue-toggle[aria-expanded='true'] .queue-title { overflow: visible; white-space: normal; overflow-wrap: anywhere; }
+.queue-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.5rem; font-size: 0.85rem; color: var(--muted); }
+.queue-detail { padding: 0.5rem 0.7rem 0.7rem 2.2rem; border-top: 1px solid var(--border-soft); }
+.queue-detail > :first-child { margin-top: 0; }
+.queue-detail > :last-child { margin-bottom: 0; }
+/* The same measure as the idea's text: a pending's body is prose too. */
+.queue-detail > p { max-width: 75ch; margin: 0 0 0.4rem; font-size: 0.9rem; line-height: 1.55; }
+.queue-btn,
+.queue-btn-primary {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg);
+  cursor: pointer;
+}
+.queue-btn:hover:not(:disabled) { background: var(--surface-2); border-color: var(--border-strong); }
+.queue-btn-primary { font-size: 0.95rem; padding: 0.4rem 1.1rem; background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.queue-btn-danger { color: var(--danger); border-color: var(--danger); }
+.queue-btn:disabled,
+.queue-btn-primary:disabled { opacity: 0.5; cursor: default; }
+.queue-btn:focus-visible,
+.queue-btn-primary:focus-visible { outline: 2px solid var(--fg); outline-offset: 1px; }
+
 /* pendências (F-0334): a linha abre o detalhe pelo botão id + título */
 .pending-row { flex-wrap: wrap; }
 /* visually hidden, still read by screen readers (e.g. the #/ideas h1) */
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 /* ids never break mid-token (P- / 0002) on a phone */
 .pending-row .card-id, .pending-row a { white-space: nowrap; }
-.pending-toggle { display: flex; flex: 1 1 14rem; gap: 0.5rem; align-items: baseline; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-.pending-detail { padding: 0.5rem 0.7rem 0.75rem; margin: 0 0 0.5rem; }
 /* .harness-fix pre drops the room .code-block keeps for the copy button: give
    it back and scroll, so the button never covers the end of a command */
 .pending-detail .harness-fix pre { padding-right: 5rem; overflow-x: auto; }
@@ -2155,6 +2241,32 @@ h2 {
 /* #/ideas promotion notice: a live region kept in the DOM, flat while empty */
 .ideas-promoted:empty { margin: 0; }
 .pendings-form label { display: flex; flex: 1 1 12rem; gap: 0.4rem; align-items: center; min-width: 0; }
+
+/* Passagens (F-0421): a linha de fila da F-0416; o detalhe é o mesmo na linha
+   e na página #/handoffs/<id>. O próximo passo abre o detalhe no peso de
+   título — é a instrução que o receptor veio buscar; o resto é contexto. */
+.handoff-row .card-id,
+.handoff-works { white-space: nowrap; }
+.page > .handoff-detail { margin-top: 1.5rem; }
+.handoff-detail > h2 { margin: 0.9rem 0 0.25rem; }
+.handoff-detail > h2:first-child { margin-top: 0; }
+.handoff-detail > .handoff-next { max-width: 75ch; margin: 0 0 0.4rem; font-size: 1rem; font-weight: 600; line-height: 1.45; color: var(--fg); white-space: pre-wrap; overflow-wrap: anywhere; }
+.handoff-detail > .handoff-open { margin-top: 0.7rem; font-size: 0.85rem; }
+.handoff-detail > ul { max-width: 75ch; margin: 0 0 0.4rem; padding-left: 1.1rem; font-size: 0.9rem; line-height: 1.55; }
+.handoff-detail > .handoff-fact { margin: 0 0 0.2rem; font-size: 0.85rem; color: var(--muted); overflow-wrap: anywhere; }
+.handoff-detail > .handoff-fact .work-ref + .work-ref { margin-left: 0.35rem; }
+.handoff-actor { max-width: 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.handoff-brief { max-width: 75ch; font-size: 0.9rem; line-height: 1.55; overflow-wrap: anywhere; }
+/* The brief's own headings sit under the BRIEF label: prose subheadings, not
+   more uppercase labels, so the label stays the only one at its level. */
+.handoff-brief :is(h1, h2, h3, h4, h5, h6) { margin: 0.9rem 0 0.3rem; font-size: 0.95rem; font-weight: 600; line-height: 1.3; color: var(--fg); text-transform: none; letter-spacing: normal; }
+.handoff-brief p,
+.handoff-brief ul,
+.handoff-brief ol { margin: 0 0 0.5rem; }
+.handoff-brief ul,
+.handoff-brief ol { padding-left: 1.1rem; }
+.handoff-brief > :first-child { margin-top: 0; }
+.handoff-brief > :last-child { margin-bottom: 0; }
 
 .chip-active,
 .chip-current { background: var(--green-bg); color: var(--green); }
@@ -3109,5 +3221,57 @@ button.clarify-chip { cursor: pointer; font: inherit; }
 .settings-empty,
 .settings-note { color: var(--muted); }
 .code-copy-failed { margin: 0.3rem 0 0; font-size: 0.8rem; }
+/* F-0415: destaque de destino desde o dragstart. Pronto e ativo diferem pela
+   forma do outline (tracejado × contínuo), não só pela cor; outline não muda a
+   largura da coluna. Só o .drop-hint desce os cards do destino, que nunca é a
+   coluna sob o cursor no dragstart (DROPS liga colunas distintas). */
+.drop-edge.drop-ready > .drop-edge-inner,
+.column.drop-ready {
+  outline: 2px dashed var(--accent);
+  outline-offset: -1px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-2));
+}
+.drop-edge.drop-active > .drop-edge-inner,
+.column.drop-active {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+  background: color-mix(in srgb, var(--accent) 22%, var(--surface-2));
+}
+.drop-edge.drop-blocked > .drop-edge-inner,
 .column.drop-blocked { outline: 2px dashed var(--faint); cursor: not-allowed; }
+.column.drop-off { opacity: 0.45; }
+.drop-hint { margin: 0.4rem 0 0; font-size: 0.85rem; font-weight: 600; color: var(--accent); }
+/* o motivo do bloqueio usa a cor do badge ❓ do card: o mesmo sinal */
+.drop-edge.drop-blocked .drop-hint,
+.column.drop-blocked .drop-hint { color: var(--purple); }
+/* F-0420: faixa que aponta o destino fora da vista, na borda direita do board.
+   A faixa é um trilho transparente da altura do board, fora do contêiner que
+   rola e sem receber ponteiro: o soltar e a rolagem nativa vão à coluna de
+   baixo, e os cards e a barra de rolagem continuam à vista. Só o rótulo, preso
+   no topo da parte visível, tem o destaque da coluna de destino (as regras
+   acima). Sem transição (estado instantâneo, ui/DESIGN.md). */
+.board-wrap { position: relative; }
+.drop-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  /* cabe "CONCLUÍDAS →" (114 px no system-ui) numa linha, sem a seta solta */
+  width: 9rem;
+  pointer-events: none;
+}
+.drop-edge-inner {
+  position: sticky;
+  top: 0.75rem;
+  box-sizing: border-box;
+  padding: 0.75rem;
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+.card.card-in-flight { opacity: 0.4; }
+.card-draggable { cursor: grab; }
+@media (prefers-reduced-motion: no-preference) {
+  .column { transition: background-color 120ms ease, opacity 120ms ease; }
+  .card { transition: opacity 120ms ease; }
+}
 .drag-notice { margin: 0 0 0.75rem; }

@@ -58,33 +58,63 @@ func Unwritten(s string) bool {
 // exemption form missing its parenthesized text. exempt reports a value in
 // one of the two exemption forms.
 func BarValue(value string) (exempt bool, err error) {
+	return barValueIn(value, doclang.PT)
+}
+
+// barValueIn is BarValue with its causes naming the label of a bar line
+// written in l (F-0418).
+func barValueIn(value string, l doclang.Lang) (exempt bool, err error) {
+	label := doclang.Display(doclang.BarLabel, l)
 	plain := strings.TrimSpace(emphasis.Replace(value))
 	switch t := bare(value); {
 	case t == "":
-		return false, fmt.Errorf(`%w: no value after "Barra:"`, ErrBarMalformed)
+		return false, malformed(l, `no value after "%s:"`, label)
 	case slots(t):
-		return false, fmt.Errorf(`%w: "Barra:" holds only a <…> template placeholder, not a named reference`, ErrBarMalformed)
+		return false, malformed(l, `"%s:" holds only a <…> template placeholder, not a named reference`, label)
 	}
-	if t, l, inner, complete, ok := doclang.Exemption(plain); ok {
+	if t, el, inner, complete, ok := doclang.Exemption(plain); ok {
 		need := "needs its one-line justification in parentheses"
 		if t == doclang.Waived {
 			need = "needs the quoted words in parentheses"
 		}
-		return true, exemptionError(inner, complete, `"`+doclang.Display(t, l)+`" `+need)
+		return true, exemptionError(l, inner, complete, `"`+doclang.Display(t, el)+`" `+need)
 	}
 	return false, nil
 }
 
 // exemptionError checks an exemption form's parenthesized text: missing or
-// blank gets need, a template slot is named as such.
-func exemptionError(inner string, complete bool, need string) error {
+// blank gets need, a template slot is named as such; l is the language of
+// the bar line's label.
+func exemptionError(l doclang.Lang, inner string, complete bool, need string) error {
 	if !complete || bare(inner) == "" {
-		return fmt.Errorf("%w: %s", ErrBarMalformed, need)
+		return malformed(l, "%s", need)
 	}
 	if slots(bare(inner)) {
-		return fmt.Errorf("%w: %s, not a <…> template placeholder", ErrBarMalformed, need)
+		return malformed(l, "%s, not a <…> template placeholder", need)
 	}
 	return nil
+}
+
+// barError is a bar cause worded for one language (F-0418): Error is the
+// text the author reads, Unwrap the sentinel callers match with errors.Is.
+type barError struct {
+	sentinel error
+	msg      string
+}
+
+func (e *barError) Error() string { return e.msg }
+func (e *barError) Unwrap() error { return e.sentinel }
+
+// missing is ErrBarMissing naming the label of language l. In Portuguese its
+// text is the sentinel's own.
+func missing(l doclang.Lang) error {
+	return &barError{ErrBarMissing, fmt.Sprintf(`no "%s:" line`, doclang.Display(doclang.BarLabel, l))}
+}
+
+// malformed is ErrBarMalformed for a bar line whose label is in language l:
+// the cause names the label the author wrote.
+func malformed(l doclang.Lang, format string, a ...any) error {
+	return &barError{ErrBarMalformed, fmt.Sprintf(`malformed "%s:" line: `, doclang.Display(doclang.BarLabel, l)) + fmt.Sprintf(format, a...)}
 }
 
 // SpecBar returns the first valid bar line of a spec body, or the reason none
@@ -96,7 +126,14 @@ func exemptionError(inner string, complete bool, need string) error {
 // the caller's job (the document gate). A template placeholder "<…>" is not a
 // value, nor an exemption's justification or quote.
 func SpecBar(body []byte) (string, error) {
-	firstInvalid := ErrBarMissing
+	return SpecBarIn(body, doclang.PT)
+}
+
+// SpecBarIn is SpecBar with the causes worded for an author (F-0418): a
+// missing bar names lang's label — the project's documentation language —
+// and a malformed one the label of the line the author wrote.
+func SpecBarIn(body []byte, lang doclang.Lang) (string, error) {
+	var firstInvalid error
 	inCode := false
 	for _, line := range strings.Split(htmlCommentRe.ReplaceAllString(string(body), ""), "\n") {
 		if doclang.Fence(line) {
@@ -107,13 +144,16 @@ func SpecBar(body []byte) (string, error) {
 		if !ok {
 			continue
 		}
-		_, err := BarValue(value)
+		_, err := barValueIn(value, l)
 		if err == nil {
 			return doclang.Display(doclang.BarLabel, l) + ": " + value, nil
 		}
-		if firstInvalid == ErrBarMissing {
+		if firstInvalid == nil {
 			firstInvalid = err
 		}
+	}
+	if firstInvalid == nil {
+		return "", missing(lang)
 	}
 	return "", firstInvalid
 }

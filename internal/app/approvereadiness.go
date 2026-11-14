@@ -74,7 +74,7 @@ func approveReadiness(repoDir, id string, gauntletOn bool) ([]ApproveImpediment,
 	var out []ApproveImpediment
 	if domain.CheckGate(id, domain.ActionApprove, docs) != nil {
 		out = append(out, ApproveImpediment{ImpedimentSpecMissing, "the spec is missing or still the template stub", true})
-	} else if _, err := doccheck.SpecBar(spec); gauntletOn && err != nil {
+	} else if _, err := doccheck.SpecBarIn(spec, store.DocsLanguage(repoDir)); gauntletOn && err != nil {
 		code := ImpedimentBarMissing
 		if errors.Is(err, doccheck.ErrBarMalformed) {
 			code = ImpedimentBarMalformed

@@ -1,16 +1,20 @@
+import { useEffect, useId } from 'react'
 import { fetchHandoff, fetchHandoffs, type Handoff, type HandoffState } from './api'
+import { Chevron, ExpandAll, useExpanded } from './Expand'
 import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
 import Markdown from './Markdown'
 import { useT } from './i18n'
 
 // Área Passagens (F-0386): os HO- da F-0368, somente leitura — passar e
-// assumir o bastão são atos do agente pela CLI. O filtro vive no hash
-// (#/handoffs?f=open|closed|all, padrão open) e a ordem é a do servidor:
-// pendentes primeiro (a mais antiga primeiro), depois as fechadas pelo momento
-// do fechamento (a mais recente primeiro). A tela só recorta, não reordena.
+// assumir o bastão são atos do agente pela CLI. F-0421: a linha de fila da
+// F-0416, com o detalhe na própria linha, e o filtro com os estados da CLI
+// (#/handoffs?state=…, como `cerne handoff list --state`). A ordem é a do
+// servidor (app.ListHandoffs, a mesma da CLI): pendentes primeiro (a mais
+// antiga primeiro), depois as fechadas pelo fechamento (a mais recente
+// primeiro). A tela só recorta, não reordena.
 
-const FILTERS = ['open', 'closed', 'all'] as const
-type Filter = (typeof FILTERS)[number]
+const STATES = ['pending', 'taken', 'superseded', 'cancelled', 'all'] as const
+type State = (typeof STATES)[number]
 
 const CHIP: Record<HandoffState, string> = {
   pending: 'chip-lint',
@@ -22,14 +26,21 @@ const CHIP: Record<HandoffState, string> = {
 // Um W- não tem página própria: o link leva à Atividade, onde ele aparece.
 const WORK_HREF = '#/activity'
 
-// Um valor desconhecido (link velho ou editado à mão) conta como open.
-function parseFilter(hash: string): Filter {
-  const f = new URLSearchParams(hash.split('?')[1] ?? '').get('f')
-  return FILTERS.find((x) => x === f) ?? 'open'
+// parseState reads the hash; an unknown state (a hand-edited or old link) is
+// read as pending, and `bad` tells the screen to rewrite the hash in place.
+function parseState(hash: string): { state: State; bad: boolean } {
+  const i = hash.indexOf('?')
+  const raw = new URLSearchParams(i < 0 ? '' : hash.slice(i + 1)).get('state')
+  const state = STATES.find((s) => s === raw)
+  return { state: state ?? 'pending', bad: raw !== null && !state }
 }
 
-// Aberta = pending; fechada = taken, superseded ou cancelled.
-const inFilter = (h: Handoff, f: Filter) => f === 'all' || (h.state === 'pending') === (f === 'open')
+const stateHash = (s: State) => `#/handoffs?state=${s}`
+const inState = (h: Handoff, s: State) => s === 'all' || h.state === s
+
+// A closed handoff closed at taken_at, else updated_at — the moment the list
+// is ordered by, so a closed row ages from it (F-0386).
+const closedAt = (h: Handoff) => (h.state === 'pending' ? undefined : (h.taken_at ?? h.updated_at))
 
 // A hora como o `handoff list` imprime: UTC, ao minuto.
 const utc = (iso: string) => new Date(iso).toISOString().slice(0, 16).replace('T', ' ') + ' UTC'
@@ -43,6 +54,13 @@ function When({ iso }: { iso: string }) {
   )
 }
 
+// Age: the row's last field, so it lines up as a column; the UTC time stays in
+// the title.
+function Age({ iso }: { iso: string }) {
+  const { t } = useT()
+  return <span title={utc(iso)}>{t.notif.age((Date.now() - Date.parse(iso)) / 60000)}</span>
+}
+
 function StateChip({ state }: { state: HandoffState }) {
   const { t } = useT()
   return <span className={`chip ${CHIP[state]}`}>{t.handoffs.stateLabels[state]}</span>
@@ -50,32 +68,36 @@ function StateChip({ state }: { state: HandoffState }) {
 
 export default function Handoffs({ hash }: { hash: string }) {
   const { t } = useT()
-  const f = parseFilter(hash)
+  const { state, bad } = parseState(hash)
+  useEffect(() => {
+    if (bad) window.location.replace(stateHash(state)) // in place: Back skips the dead link
+  }, [bad, state])
   const load = useLiveLoad(fetchHandoffs)
   const all = load.data ?? []
-  const shown = all.filter((h) => inFilter(h, f))
+  const shown = all.filter((h) => inState(h, state))
+  const x = useExpanded()
 
   return (
     <main className="page">
       <h1>{t.handoffs.title}</h1>
-      <p className="counts">{t.handoffs.subtitle}</p>
+      <p className="muted">{t.handoffs.subtitle}</p>
       {load.data !== null && <LoadNotice load={load} />}
       <div className="filters" role="group" aria-label={t.handoffs.filterLabel}>
-        {FILTERS.map((x) => (
+        {STATES.map((s) => (
           <button
-            key={x}
+            key={s}
             type="button"
-            className={f === x ? 'filter active' : 'filter'}
-            aria-pressed={f === x}
+            className={state === s ? 'filter active' : 'filter'}
+            aria-pressed={state === s}
             onClick={() => {
-              if (x !== f) window.location.hash = `#/handoffs?f=${x}`
+              if (s !== state) window.location.hash = stateHash(s)
             }}
           >
-            {t.handoffs.filters[x]}
+            {t.handoffs.states[s]}
             {load.data !== null && (
               <>
                 {' '}
-                <span className="column-count">{all.filter((h) => inFilter(h, x)).length}</span>
+                <span className="column-count">{all.filter((h) => inState(h, s)).length}</span>
               </>
             )}
           </button>
@@ -85,7 +107,7 @@ export default function Handoffs({ hash }: { hash: string }) {
         <LoadPending load={load} message={t.handoffs.loadError} />
       ) : shown.length === 0 ? (
         <>
-          <p className="muted">{t.handoffs.empty[f]}</p>
+          <p className="muted">{t.handoffs.emptyIn(t.handoffs.states[state])}</p>
           {all.length === 0 && (
             <p className="muted">
               {t.handoffs.howToCreate} <code>cerne work handoff W-… --next "…"</code>
@@ -93,65 +115,153 @@ export default function Handoffs({ hash }: { hash: string }) {
           )}
         </>
       ) : (
-        <ul className="entity-list">
-          {shown.map((h) => (
-            <HandoffRow key={h.id} h={h} />
-          ))}
-        </ul>
+        <>
+          <div className="queue-tools">
+            <p className="counts">{t.handoffs.count(shown.length)}</p>
+            <ExpandAll ids={shown.map((h) => h.id)} x={x} />
+          </div>
+          <ul className="queue-list">
+            {shown.map((h) => (
+              <HandoffRow key={h.id} h={h} open={x.isOpen(h.id)} onToggle={() => x.toggle(h.id)} />
+            ))}
+          </ul>
+        </>
       )}
     </main>
   )
 }
 
-function HandoffRow({ h }: { h: Handoff }) {
+function HandoffRow({ h, open, onToggle }: { h: Handoff; open: boolean; onToggle: () => void }) {
   const { t } = useT()
-  // A closed row ages from its closing — the moment the list is ordered by.
-  const closedAt = h.state === 'pending' ? undefined : (h.taken_at ?? h.updated_at)
+  const detailId = useId()
   return (
-    <li>
-      <div className="entity-row work-row">
-        <a className="card-id" href={`#/handoffs/${h.id}`}>
-          {h.id}
-        </a>
-        <StateChip state={h.state} />
-        <span className="entity-title">
-          <a className="work-ref" href={WORK_HREF}>
-            {h.from_work}
-          </a>{' '}
-          {h.from_work_title}
-        </span>
-        <span className="work-actor">
-          {t.handoffs.passedBy(h.actor)}
-          {!closedAt && (
-            <>
-              {' · '}
-              <When iso={h.created_at} />
-            </>
-          )}
-        </span>
-        {h.state === 'taken' ? (
-          <span className="work-actor">
-            {t.handoffs.takenBy(h.taken_by ?? '')}
-            {closedAt && (
+    <li className="queue-item">
+      <div className="queue-row handoff-row">
+        <button type="button" className="queue-toggle" aria-expanded={open} aria-controls={detailId} onClick={onToggle}>
+          <Chevron />
+          <span className="card-id">{h.id}</span>
+          {/* The origin work's title is the subject; with that W- gone, the next step keeps the row from reading empty. */}
+          <span className="queue-title">{h.from_work_title || h.next}</span>
+        </button>
+        <span className="queue-meta">
+          {h.state !== 'pending' && <StateChip state={h.state} />}
+          <span className="handoff-works">
+            <a className="work-ref" href={WORK_HREF}>
+              {h.from_work}
+            </a>
+            {h.state === 'taken' && h.taken_work && (
               <>
-                {' · '}
-                <When iso={closedAt} />
+                {' → '}
+                <a className="work-ref" href={WORK_HREF}>
+                  {h.taken_work}
+                </a>
               </>
             )}
-            {' → '}
-            <a className="work-ref" href={WORK_HREF}>
-              {h.taken_work}
-            </a>
           </span>
-        ) : (
-          closedAt && (
-            <span className="work-actor">
-              <When iso={closedAt} />
-            </span>
-          )
-        )}
+          {/* An actor is often agent:<user>@<host>: capped here, whole in the title and in the detail. */}
+          <span className="handoff-actor" title={h.state === 'taken' ? h.taken_by : h.actor}>
+            {h.state === 'taken' ? t.handoffs.takenBy(h.taken_by ?? '') : t.handoffs.passedBy(h.actor)}
+          </span>
+          <Age iso={closedAt(h) ?? h.created_at} />
+        </span>
       </div>
+      {open && (
+        <div className="queue-detail handoff-detail" id={detailId}>
+          <HandoffDetailBody h={h} />
+          <p className="handoff-open">
+            <a href={`#/handoffs/${h.id}`}>{t.handoffs.openPage}</a>
+          </p>
+        </div>
+      )}
     </li>
+  )
+}
+
+// HandoffDetailBody is the handoff's detail, the same in the expanded row and
+// on #/handoffs/<id> (F-0421 crit. 4–5): the next step first, then what the
+// receiver needs to act, the facts, and the brief.
+function HandoffDetailBody({ h }: { h: Handoff }) {
+  const { t } = useT()
+  const closed = closedAt(h)
+  return (
+    <>
+      <h2>{t.handoffs.next}</h2>
+      <p className="handoff-next">{h.next}</p>
+      {(h.contingencies ?? []).length > 0 && (
+        <>
+          <h2>{t.handoffs.contingencies}</h2>
+          <ul>
+            {h.contingencies?.map((c, i) => (
+              <li key={i}>{c}</li>
+            ))}
+          </ul>
+        </>
+      )}
+      {h.state === 'taken' && (
+        <>
+          <h2>{t.handoffs.readBack}</h2>
+          {h.taken_note ? <p>{h.taken_note}</p> : <p className="muted">{t.handoffs.noReadBack}</p>}
+        </>
+      )}
+      <p className="handoff-fact">
+        {t.handoffs.origin} <a href={WORK_HREF}>{h.from_work}</a> {h.from_work_title}
+      </p>
+      <p className="handoff-fact">
+        {t.handoffs.passedBy(h.actor)} · {t.handoffs.created} {utc(h.created_at)}
+      </p>
+      {closed && (
+        <p className="handoff-fact">
+          {h.state === 'taken' && (
+            <>
+              {t.handoffs.takenBy(h.taken_by ?? '')}
+              {' · '}
+            </>
+          )}
+          {h.superseded_by && (
+            <>
+              {t.handoffs.supersededBy} <a href={`#/handoffs/${h.superseded_by}`}>{h.superseded_by}</a>
+              {' · '}
+            </>
+          )}
+          {h.cancel_reason && (
+            <>
+              {t.common.reasonLabel} {h.cancel_reason}
+              {' · '}
+            </>
+          )}
+          {t.handoffs.closed} {utc(closed)}
+          {h.state === 'taken' && h.taken_work && (
+            <>
+              {' · '}
+              {t.handoffs.newWork} <a href={WORK_HREF}>{h.taken_work}</a>
+            </>
+          )}
+        </p>
+      )}
+      {(h.refs ?? []).length > 0 && (
+        <p className="handoff-fact">
+          {h.refs?.map((r) =>
+            r.startsWith('F-') ? (
+              <a key={r} className="work-ref" href={`#/f/${encodeURIComponent(r)}`}>
+                {r}
+              </a>
+            ) : (
+              <span key={r} className="work-ref">
+                {r}
+              </span>
+            ),
+          )}
+        </p>
+      )}
+      {h.brief && (
+        <>
+          <h2>{t.handoffs.brief}</h2>
+          <div className="handoff-brief">
+            <Markdown>{h.brief}</Markdown>
+          </div>
+        </>
+      )}
+    </>
   )
 }
 
@@ -172,70 +282,12 @@ export function HandoffPage({ id }: { id: string }) {
           <span className="feature-id">{h.id}</span>
         </h1>
         <p className="feature-meta">
-          <StateChip state={h.state} /> {t.handoffs.passedBy(h.actor)} · <When iso={h.created_at} />
-          {(h.refs ?? []).map((r) =>
-            r.startsWith('F-') ? (
-              <a key={r} className="work-ref" href={`#/f/${encodeURIComponent(r)}`}>
-                {r}
-              </a>
-            ) : (
-              <span key={r} className="work-ref">
-                {r}
-              </span>
-            ),
-          )}
+          <StateChip state={h.state} /> <When iso={closedAt(h) ?? h.created_at} />
         </p>
-        <p className="feature-note">
-          {t.handoffs.origin} <a href={WORK_HREF}>{h.from_work}</a> {h.from_work_title}
-        </p>
-        {h.state === 'taken' && (
-          <p className="feature-note">
-            {t.handoffs.takenBy(h.taken_by ?? '')}
-            {h.taken_at && (
-              <>
-                {' · '}
-                <When iso={h.taken_at} />
-              </>
-            )}
-            {' · '}
-            {t.handoffs.newWork} <a href={WORK_HREF}>{h.taken_work}</a>
-          </p>
-        )}
-        {h.superseded_by && (
-          <p className="feature-note">
-            {t.handoffs.supersededBy} <a href={`#/handoffs/${h.superseded_by}`}>{h.superseded_by}</a>
-          </p>
-        )}
-        {h.cancel_reason && (
-          <p className="feature-note">
-            {t.common.reasonLabel} {h.cancel_reason}
-          </p>
-        )}
       </header>
-      <section>
-        <h2>{t.handoffs.next}</h2>
-        <p>{h.next}</p>
-        {(h.contingencies ?? []).length > 0 && (
-          <>
-            <h2>{t.handoffs.contingencies}</h2>
-            <ul>
-              {h.contingencies?.map((c, i) => (
-                <li key={i}>{c}</li>
-              ))}
-            </ul>
-          </>
-        )}
-        {h.state === 'taken' && (
-          <>
-            <h2>{t.handoffs.readBack}</h2>
-            {h.taken_note ? <p>{h.taken_note}</p> : <p className="muted">{t.handoffs.noReadBack}</p>}
-          </>
-        )}
+      <section className="handoff-detail">
+        <HandoffDetailBody h={h} />
       </section>
-      <article className="doc">
-        <h2>{t.handoffs.brief}</h2>
-        <Markdown>{h.brief}</Markdown>
-      </article>
     </main>
   )
 }

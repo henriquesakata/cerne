@@ -148,7 +148,7 @@ function Routed({ hash }: { hash: string }) {
   if (hash === '#/settings') return <Settings />
   if (hash === '#/new') return <NewFeature />
   if (hash === '#/pendings' || hash.startsWith('#/pendings?')) return <Pendings hash={hash} />
-  if (hash === '#/ideas') return <IdeasPage />
+  if (hash === '#/ideas' || hash.startsWith('#/ideas?')) return <IdeasPage hash={hash} />
   if (hash === '#/kanban') return <Kanban />
   if (hash === '#/backlog') return <Backlog />
   if (hash === '#/rooms') return <WarRoom />
@@ -160,7 +160,7 @@ function Routed({ hash }: { hash: string }) {
 // com os módulos do projeto para o Promover.
 // O painel só monta com os módulos na mão: sem eles, o Promover num projeto de
 // 2+ módulos sairia sem --module e seria recusado (crítica C16).
-function IdeasPage() {
+function IdeasPage({ hash }: { hash: string }) {
   const { t } = useT()
   const load = useLiveLoad(fetchState)
   // Here no candidate list sits beside the panel, so the promotion is said in a
@@ -168,8 +168,6 @@ function IdeasPage() {
   const [promoted, setPromoted] = useState(false)
   return (
     <main className="page">
-      {/* Every screen has an h1; the panel already titles itself (its h2). */}
-      <h1 className="sr-only">{t.nav.ideas}</h1>
       {load.data === null ? (
         <LoadPending load={load} message={t.kanban.loadError} />
       ) : (
@@ -181,7 +179,7 @@ function IdeasPage() {
               </>
             )}
           </p>
-          <IdeasPanel modules={load.data.project.modules ?? []} onPromoted={() => setPromoted(true)} />
+          <IdeasPanel modules={load.data.project.modules ?? []} onPromoted={() => setPromoted(true)} hash={hash} />
         </>
       )}
     </main>

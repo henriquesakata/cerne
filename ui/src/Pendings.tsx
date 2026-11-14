@@ -1,5 +1,6 @@
-import { useEffect, useId, useState, type FormEvent } from 'react'
+import { useEffect, useId, type FormEvent } from 'react'
 import { fetchPendings, type Pending, type PendingState } from './api'
+import { Chevron, ExpandAll, useExpanded } from './Expand'
 import { FixBlock } from './Harness'
 import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
 import Markdown from './Markdown'
@@ -62,6 +63,7 @@ export default function Pendings({ hash }: { hash: string }) {
   const load = useLiveLoad(() => fetchPendings({ state: 'all', from: f.from, component: f.component }), [f.from, f.component])
   const ofState = (s: string) => (load.data ?? []).filter((p) => s === 'all' || p.state === s)
   const shown = ofState(f.state)
+  const x = useExpanded()
   const go = (part: Partial<Filter>) => {
     const next = filterHash({ ...f, ...part })
     if (next !== canonical) window.location.hash = next // the filter in force adds no history entry (C19)
@@ -111,12 +113,17 @@ export default function Pendings({ hash }: { hash: string }) {
         <p className="muted">{t.pendings.empty(stateLabel, f.from || undefined, f.component || undefined)}</p>
       ) : (
         <>
-          <p className="counts">{t.pendings.count(shown.length)}</p>
-          <ul className="entity-list">
+          <div className="queue-tools">
+            <p className="counts">{t.pendings.count(shown.length)}</p>
+            <ExpandAll ids={shown.map((p) => p.id)} x={x} />
+          </div>
+          <ul className="queue-list">
             {shown.map((p) => (
               <PendingRow
                 key={p.id}
                 p={p}
+                open={x.isOpen(p.id)}
+                onToggle={() => x.toggle(p.id)}
                 component={slug(f.component)}
                 onComponent={(c) => go({ component: c === slug(f.component) ? '' : c })}
               />
@@ -128,38 +135,47 @@ export default function Pendings({ hash }: { hash: string }) {
   )
 }
 
-function PendingRow({ p, component, onComponent }: { p: Pending; component: string; onComponent: (c: string) => void }) {
+function PendingRow({
+  p,
+  open,
+  onToggle,
+  component,
+  onComponent,
+}: {
+  p: Pending
+  open: boolean
+  onToggle: () => void
+  component: string
+  onComponent: (c: string) => void
+}) {
   const { t, lang } = useT()
-  const [open, setOpen] = useState(false)
   const detailId = useId()
   // O mesmo truncamento do pendingAge do CLI (dias inteiros).
   const age = Math.floor((Date.now() - Date.parse(p.created_at)) / 86_400_000)
   const date = (iso: string) => new Date(iso).toLocaleDateString(lang)
   return (
-    <li>
-      <div className="entity-row pending-row">
-        <button
-          type="button"
-          className="pending-toggle"
-          aria-expanded={open}
-          aria-controls={detailId}
-          onClick={() => setOpen(!open)}
-        >
+    <li className="queue-item">
+      <div className="queue-row pending-row">
+        <button type="button" className="queue-toggle" aria-expanded={open} aria-controls={detailId} onClick={onToggle}>
+          <Chevron />
           <span className="card-id">{p.id}</span>
-          <span className="entity-title">{p.title}</span>
+          <span className="queue-title">{p.title}</span>
         </button>
-        {p.state !== 'open' && <span className={`chip ${CHIP[p.state]}`}>{t.pendings.stateChip[p.state]}</span>}
-        {/* A closed pending stops aging: it shows when it closed (C11). */}
-        <span className="muted">
-          {p.state !== 'open' && p.closed_at ? `${t.pendings.closed} ${date(p.closed_at)}` : t.pendings.age(age)}
+        <span className="queue-meta">
+          {p.state !== 'open' && <span className={`chip ${CHIP[p.state]}`}>{t.pendings.stateChip[p.state]}</span>}
+          {(p.components ?? []).map((c) => (
+            <Tag key={c} axis="component" value={c} active={c === component} onToggle={onComponent} />
+          ))}
+          <a href={fHref(p.from)}>{p.from}</a>
+          {/* A closed pending stops aging: it shows when it closed (C11). Last,
+              so the age lines up as a column at the row's right edge. */}
+          <span className="muted">
+            {p.state !== 'open' && p.closed_at ? `${t.pendings.closed} ${date(p.closed_at)}` : t.pendings.age(age)}
+          </span>
         </span>
-        <a href={fHref(p.from)}>{p.from}</a>
-        {(p.components ?? []).map((c) => (
-          <Tag key={c} axis="component" value={c} active={c === component} onToggle={onComponent} />
-        ))}
       </div>
       {open && (
-        <div className="pending-detail" id={detailId}>
+        <div className="queue-detail pending-detail" id={detailId}>
           {p.body && <Markdown>{p.body}</Markdown>}
           <p className="muted">
             <span>

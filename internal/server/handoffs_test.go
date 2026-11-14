@@ -83,6 +83,16 @@ func TestHandoffsEndpointOrder(t *testing.T) {
 	if r := rows[3]; r.TakenBy != "c@d" || r.TakenWork != "W-0012" || r.TakenAt == nil || r.TakenNote != "entendi Y" {
 		t.Fatalf("HO-0002 = %+v, want the taken fields", r)
 	}
+	// F-0421 crit. 7: each row carries its brief, as the detail does, so the
+	// queue row opens without one request per row.
+	for _, r := range rows {
+		if !strings.Contains(r.Brief, "brief de "+r.ID) {
+			t.Fatalf("%s brief = %q, want its content/handoffs body", r.ID, r.Brief)
+		}
+		if strings.Contains(r.Brief, "Próximo passo") {
+			t.Fatalf("%s brief = %q, want it without the next step the row carries as a field", r.ID, r.Brief)
+		}
+	}
 }
 
 // TestHandoffsEndpointPreF0368Backend: a backend without entities/handoffs
@@ -108,7 +118,7 @@ func TestHandoffDetailEndpoint(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
-	var d handoffDetail
+	var d handoffRow
 	if err := json.NewDecoder(rec.Body).Decode(&d); err != nil {
 		t.Fatalf("decode: %v", err)
 	}

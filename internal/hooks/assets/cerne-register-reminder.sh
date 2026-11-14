@@ -25,7 +25,7 @@ RULES
 # no cerne, or a cerne that fails, the item is printed as written here.
 if ! { command -v cerne >/dev/null 2>&1 && cerne hook gauntlet-rule </dev/null 2>/dev/null; }; then
   cat <<'GAUNTLET'
-- GAUNTLET (F-0270): every feature is born with a bar and does not close without the loop — the spec's Verificação carries a literal `Barra:` line (approve refuses it otherwise) — the line you write is a proposal and the human approve is its acceptance, so run `cerne feature approve <id> --check` before asking for it — and `result.md` carries `## Gauntlet` with the judge's quoted verdict (`cerne lint` charges it). Protocol details: cerne-authoring skill.
+- GAUNTLET (F-0270): every feature is born with a bar and does not close without the loop — the spec's Verification (pt-BR: Verificação) section carries a literal bar line, `Bar:` (pt-BR: `Barra:`), in the project's documentation language (approve refuses it otherwise) — the line you write is a proposal and the human approve is its acceptance, so run `cerne feature approve <id> --check` before asking for it — and `result.md` carries `## Gauntlet` with the judge's quoted verdict (`cerne lint` charges it). Protocol details: cerne-authoring skill.
 GAUNTLET
 fi
 cat <<'RULES'

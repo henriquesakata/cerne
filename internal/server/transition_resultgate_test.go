@@ -24,7 +24,7 @@ func TestTransitionCompleteRequiresResultRecord(t *testing.T) {
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want 422; body: %s", rec.Code, rec.Body.String())
 	}
-	for _, want := range []string{"result incompleto", "## Gauntlet", "content/features/F-0001/result.md", "cerne push"} {
+	for _, want := range []string{"incomplete result", "## Gauntlet", "content/features/F-0001/result.md", "cerne push"} {
 		if !strings.Contains(got["error"], want) {
 			t.Fatalf("error = %q, want it to contain %q", got["error"], want)
 		}

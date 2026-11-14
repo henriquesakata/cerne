@@ -121,7 +121,7 @@ func TestResultEvidenceFindings(t *testing.T) {
 		{
 			name: "missing one criterion names it", state: domain.StateImplemented, completedAt: after,
 			spec: specTwoCriteria, result: "Critério 1: teste A.",
-			wantDetail: "critério(s) 2",
+			wantDetail: "criterion(s) 2",
 		},
 		{
 			name: "spec without numbered criteria is silent", state: domain.StateDone, completedAt: after,

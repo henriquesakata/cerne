@@ -33,7 +33,7 @@ func specBarFindings(repoDir string, features []store.Feature) ([]Finding, error
 		if !doccheck.HasRealContent(data) {
 			continue
 		}
-		if _, err := doccheck.SpecBar(data); err != nil {
+		if _, err := doccheck.SpecBarIn(data, store.DocsLanguage(repoDir)); err != nil {
 			out = append(out, Finding{
 				Rule:   RuleSpecMissingBar,
 				Entity: f.ID,

@@ -15,7 +15,7 @@ import (
 // core, so CLI and UI complete alike, and NOT bypassed by --force: once
 // implemented the result is frozen out of .docs/, so this is the last moment
 // the author can still fix it.
-var ErrResultIncomplete = errors.New("result incompleto")
+var ErrResultIncomplete = errors.New("incomplete result")
 
 // CheckResultRecord refuses when the feature's result would be flagged by the
 // lint's result rules (evidence per criterion, Gauntlet record) right after
@@ -27,7 +27,7 @@ func CheckResultRecord(repoDir string, f store.Feature, gates project.GatesConfi
 		return nil
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "%d pendência(s):", len(findings))
+	fmt.Fprintf(&b, "%d problem(s):", len(findings))
 	for _, fi := range findings {
 		b.WriteString("\n  - " + fi.Detail)
 	}

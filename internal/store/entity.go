@@ -142,21 +142,21 @@ type Work struct {
 	ID        string           `json:"id"`
 	Title     string           `json:"title"` // the activity description
 	State     domain.WorkState `json:"state"`
-	Actor     string           `json:"actor"`          // who is doing it: "<agent>" or "<user>@<hostname>"
-	Refs      []string         `json:"refs,omitempty"`  // F-/D- ids this activity relates to
-	Note      string           `json:"note,omitempty"`  // closing note (done) or reason (abandoned)
-	Auto      bool             `json:"auto,omitempty"`  // opened by a feature transition (F-0146), not by `cerne work start`
-	Paths     []string         `json:"paths,omitempty"` // path globs this activity intends to touch (F-0151)
+	Actor     string           `json:"actor"`                // who is doing it: "<agent>" or "<user>@<hostname>"
+	Refs      []string         `json:"refs,omitempty"`       // F-/D- ids this activity relates to
+	Note      string           `json:"note,omitempty"`       // closing note (done) or reason (abandoned)
+	Auto      bool             `json:"auto,omitempty"`       // opened by a feature transition (F-0146), not by `cerne work start`
+	Paths     []string         `json:"paths,omitempty"`      // path globs this activity intends to touch (F-0151)
 	HandoffAt *time.Time       `json:"handoff_at,omitempty"` // last session handoff (F-0339); the text is content/works/<id>/handoff.md
 	CreatedAt time.Time        `json:"created_at"`
 	UpdatedAt time.Time        `json:"updated_at"`
 }
 
 const (
-	featuresSubdir   = "entities/features"
-	decisionsSubdir   = "entities/decisions"
-	referencesSubdir  = "entities/references"
-	runbooksSubdir    = "entities/runbooks"
+	featuresSubdir     = "entities/features"
+	decisionsSubdir    = "entities/decisions"
+	referencesSubdir   = "entities/references"
+	runbooksSubdir     = "entities/runbooks"
 	notesSubdir        = "entities/notes"
 	historicalsSubdir  = "entities/historicals"
 	worksSubdir        = "entities/works"
@@ -355,8 +355,12 @@ func LoadAllPendings(backendDir string) ([]Pending, error) {
 // stamped by drop and promote; Reason (optional) by drop; PromotedTo holds
 // the candidate a promote created.
 type Idea struct {
-	ID         string           `json:"id"`
-	Text       string           `json:"text"`
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	Body  string `json:"body,omitempty"`
+	// Text is the pre-F-0419 single field, read only: UnmarshalJSON folds it
+	// into Title/Body and clears it, so no write ever emits it.
+	Text       string           `json:"text,omitempty"`
 	State      domain.IdeaState `json:"state"`
 	Facets     []string         `json:"facets,omitempty"`
 	Components []string         `json:"components,omitempty"`
@@ -368,6 +372,31 @@ type Idea struct {
 	// Token is the capture's idempotency key (C2): a retry of the same
 	// submission returns this idea instead of minting a twin.
 	Token string `json:"token,omitempty"`
+
+	legacy bool // read from the text-only format (see Legacy)
+}
+
+// Legacy reports that the idea was read from the pre-F-0419 text-only format
+// and still needs `cerne idea migrate` to be stored as title + body.
+func (i Idea) Legacy() bool { return i.legacy }
+
+// UnmarshalJSON reads the legacy text-only format as title (first line) +
+// body (the rest, trimmed): the safety net for a backend not yet migrated
+// (F-0419).
+func (i *Idea) UnmarshalJSON(data []byte) error {
+	type plain Idea
+	var p plain
+	if err := json.Unmarshal(data, &p); err != nil {
+		return err
+	}
+	if p.Text != "" && p.Title == "" {
+		title, body, _ := strings.Cut(strings.TrimSpace(p.Text), "\n")
+		p.Title, p.Body = strings.TrimSpace(title), strings.TrimSpace(body)
+		p.legacy = true
+	}
+	p.Text = ""
+	*i = Idea(p)
+	return nil
 }
 
 // SaveIdea writes the idea to entities/ideas/<ID>.json, creating the subdir

@@ -347,3 +347,43 @@ describe('Pendings — largura de celular (crítica C10)', () => {
     expect(screen.getByRole('button', { name: 'Filtrar' }).closest('form')).toHaveClass('pendings-form')
   })
 })
+
+describe('Pendings — expandir e recolher (F-0416 crit. 4, 5, 6)', () => {
+  it('o toggle carrega o chevron e aponta para o detalhe que abre', async () => {
+    render(<Pendings hash="#/pendings" />)
+    await screen.findByText('Documentar a rota nova')
+    const t = toggle('P-0001')
+    expect(t.querySelector('svg.queue-chevron')).not.toBeNull()
+    expect(t).toHaveAttribute('aria-controls')
+    fireEvent.click(t)
+    expect(document.getElementById(t.getAttribute('aria-controls')!)).toHaveTextContent('contexto do débito')
+    fireEvent.click(t)
+    expect(t).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('contexto do débito')).toBeNull()
+  })
+
+  it('Expandir tudo abre todas as linhas, Recolher tudo fecha, e cada um desabilita no seu estado', async () => {
+    render(<Pendings hash="#/pendings" />)
+    await screen.findByText('Documentar a rota nova')
+    const expand = screen.getByRole('button', { name: 'Expandir tudo' })
+    const collapse = screen.getByRole('button', { name: 'Recolher tudo' })
+    expect(collapse).toBeDisabled()
+    fireEvent.click(expand)
+    expect([toggle('P-0002'), toggle('P-0001')].map((b) => b.getAttribute('aria-expanded'))).toEqual(['true', 'true'])
+    expect(expand).toBeDisabled()
+    expect(collapse).toBeEnabled()
+    fireEvent.click(collapse)
+    expect([toggle('P-0002'), toggle('P-0001')].map((b) => b.getAttribute('aria-expanded'))).toEqual(['false', 'false'])
+    expect(collapse).toBeDisabled()
+    fireEvent.click(toggle('P-0002'))
+    expect(expand).toBeEnabled()
+    expect(collapse).toBeEnabled()
+  })
+
+  it('a lista vazia não mostra os botões de expandir', async () => {
+    api.fetchPendings.mockResolvedValue([])
+    render(<Pendings hash="#/pendings" />)
+    await screen.findByText(/Nenhuma pendência/)
+    expect(screen.queryByRole('button', { name: 'Expandir tudo' })).toBeNull()
+  })
+})
