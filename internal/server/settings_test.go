@@ -722,3 +722,27 @@ func TestSettingsPayloadCarriesGroup(t *testing.T) {
 		}
 	}
 }
+
+// TestSettingsPayloadMarksHumanOnly: the GET marks a human-only key so the UI
+// can guard it; an ordinary key carries no human_only field.
+func TestSettingsPayloadMarksHumanOnly(t *testing.T) {
+	h, _, _ := settingsBackend(t, "")
+	var got struct {
+		Settings []map[string]any `json:"settings"`
+	}
+	if rec := doJSON(t, h, http.MethodGet, "/api/settings", "", &got); rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	for _, s := range got.Settings {
+		switch s["id"] {
+		case "gates.gauntlet":
+			if s["human_only"] != true {
+				t.Errorf("gates.gauntlet human_only = %v, want true", s["human_only"])
+			}
+		case "graph.enabled":
+			if _, ok := s["human_only"]; ok {
+				t.Errorf("graph.enabled carries human_only = %v", s["human_only"])
+			}
+		}
+	}
+}

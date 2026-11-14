@@ -59,8 +59,9 @@ type Setting struct {
 	// project file has no [table] key (F-0385).
 	TopLevel string `json:"-"`
 	// HumanOnly marks a key only a human writes: the CLI refuses an agent
-	// actor (F-0392). The server does not read it.
-	HumanOnly bool `json:"-"`
+	// actor (F-0392). The server only serializes it, for the UI to guard the
+	// key; the CLI still enforces it.
+	HumanOnly bool `json:"human_only,omitempty"`
 }
 
 // settingGroups are the subject groups in display order (F-0413).
