@@ -2,6 +2,14 @@
 
 cerne is a single executable with no dependencies. Put it on your `PATH` and you are done.
 
+## Homebrew (macOS and Linux)
+
+```bash
+brew install henriquesakata/tap/cerne
+```
+
+`brew upgrade cerne` updates it. Use the full name `henriquesakata/tap/cerne`: since Homebrew 6.0 a third-party tap must be trusted before use, and installing by the full name trusts this formula only, in the same command.
+
 ## Quick install (macOS and Linux)
 
 ```bash
@@ -17,7 +25,29 @@ The script picks the release file for your machine, verifies it against the rele
 
 To set one, put it before `sh`: `curl -fsSL … | CERNE_VERSION=v0.5.0 sh`.
 
-Then skip to [What you need](#3-what-you-need). On Windows, or to install by hand, follow sections 1 and 2.
+## Quick install (Windows)
+
+In PowerShell (Windows PowerShell 5.1 or PowerShell 7):
+
+```powershell
+irm https://raw.githubusercontent.com/henriquesakata/cerne/main/install.ps1 | iex
+```
+
+The script downloads `cerne.exe` for the latest release, verifies it against the release's `SHA256SUMS` and installs it in `%LOCALAPPDATA%\Programs\cerne`, without admin rights. It adds that folder to your user `PATH` (and to the current session) when it is not there yet, so `cerne` works right away and in new terminals. Run it again to update; a running `cerne ui` does not block the update. On Windows on ARM it installs the amd64 build, which Windows 11 runs under emulation.
+
+It reads the same `CERNE_VERSION` and `CERNE_INSTALL_DIR` variables, set before the line: `$env:CERNE_VERSION = 'v0.5.0'; irm … | iex`.
+
+Then skip to [What you need](#3-what-you-need). To install by hand, follow sections 1 and 2.
+
+## Verifying a release
+
+Every release file carries a build provenance attestation, signed by the GitHub Actions run that built it. With the [GitHub CLI](https://cli.github.com/):
+
+```bash
+gh attestation verify cerne_v0.5.0_darwin_arm64 --repo henriquesakata/cerne
+```
+
+It confirms the file was built by this repository's release workflow, from the tagged commit. The install scripts check the SHA-256 against `SHA256SUMS`; the attestation also proves where `SHA256SUMS` came from.
 
 ## 1. Which file to download
 
@@ -43,7 +73,7 @@ If you have Go installed, you can build it yourself:
 go install github.com/henriquesakata/cerne/cmd/cerne@latest
 ```
 
-A binary built this way reports its version as `dev`; release binaries carry the tag.
+A binary installed this way from a release tag (`@latest`, `@v0.5.0`) reports that version, like the release binaries.
 
 ## 2. Install
 
@@ -71,7 +101,7 @@ cerne --version
 
 ### Windows (PowerShell)
 
-In the folder that holds `cerne.exe`:
+The [quick install](#quick-install-windows) does all of this in one line. By hand, in the folder that holds `cerne.exe`:
 
 ```powershell
 Unblock-File .\cerne.exe
@@ -85,7 +115,7 @@ Close and reopen the terminal, then run `cerne --version`. If Windows shows *"Wi
 
 ### Updating
 
-Same process: replace the old executable with the new one.
+`brew upgrade cerne`, or run the install script again. Installed by hand: replace the old executable with the new one.
 
 ## 3. What you need
 
