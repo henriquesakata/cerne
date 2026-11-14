@@ -588,7 +588,7 @@ func resolveEntity(repoDir, id string) (showResult, error) {
 		if err != nil {
 			return showResult{}, fmt.Errorf("idea %s: %w", id, err)
 		}
-		return showResult{kind, i, []showDoc{{"", i.Text}}, nil, nil, nil}, nil
+		return showResult{kind, i, []showDoc{{"", strings.TrimSpace("# " + i.Title + "\n\n" + i.Body)}}, nil, nil, nil}, nil
 	}
 	return showResult{}, fmt.Errorf("%q: %w", id, ErrUnknownIDPrefix)
 }

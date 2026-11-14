@@ -33,7 +33,7 @@ func TestIdeaNewPrintsIDWithoutExtras(t *testing.T) {
 		t.Fatalf("output does not name the created id:\n%s", out)
 	}
 	i, err := store.LoadIdea(repoDir, "I-0001")
-	if err != nil || i.State != domain.IdeaActive || i.Text != "talvez um dia X" || len(i.Facets)+len(i.Components) != 0 {
+	if err != nil || i.State != domain.IdeaActive || i.Title != "talvez um dia X" || len(i.Facets)+len(i.Components) != 0 {
 		t.Fatalf("idea = %+v, %v; want active, untagged", i, err)
 	}
 }
@@ -86,7 +86,7 @@ func TestIdeaListActiveNewestFirstAllSearchJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &doc); err != nil || len(doc.Ideas) != 2 {
 		t.Fatalf("--json = %+v, %v\n%s", doc, err, out)
 	}
-	if i := doc.Ideas[0]; i.ID != "I-0003" || i.Text != "terceira ideia" || i.State != domain.IdeaActive || i.CreatedAt.IsZero() {
+	if i := doc.Ideas[0]; i.ID != "I-0003" || i.Title != "terceira ideia" || i.State != domain.IdeaActive || i.CreatedAt.IsZero() {
 		t.Fatalf("--json first = %+v, want I-0003 active with created_at", i)
 	}
 }
@@ -112,7 +112,7 @@ func TestShowResolvesIdeaPrefix(t *testing.T) {
 		Kind   string     `json:"kind"`
 		Entity store.Idea `json:"entity"`
 	}
-	if err != nil || json.Unmarshal([]byte(out), &doc) != nil || doc.Kind != "idea" || doc.Entity.Text != "exportar o kanban" {
+	if err != nil || json.Unmarshal([]byte(out), &doc) != nil || doc.Kind != "idea" || doc.Entity.Title != "exportar o kanban" {
 		t.Fatalf("show --json = %+v, %v\n%s", doc, err, out)
 	}
 	if out, err := execCerne(t, "idea", "show", "F-0001", "--dir", projDir); err == nil {
@@ -287,8 +287,8 @@ func TestIdeaNewRetriesIdempotentlyAfterPostPushFailure(t *testing.T) {
 func TestIdeaNewJoinsWordsAndHintsDoubleDash(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
 	ideaCmd(t, projDir, "new", "talvez", "um", "dia", "X")
-	if i, _ := store.LoadIdea(repoDir, "I-0001"); i.Text != "talvez um dia X" {
-		t.Fatalf("text = %q, want the joined words", i.Text)
+	if i, _ := store.LoadIdea(repoDir, "I-0001"); i.Title != "talvez um dia X" {
+		t.Fatalf("text = %q, want the joined words", i.Title)
 	}
 	_, err := execCerne(t, "idea", "new", "-x ideia", "--dir", projDir)
 	if err == nil || !strings.Contains(err.Error(), "cerne idea new -- ") {
@@ -297,8 +297,8 @@ func TestIdeaNewJoinsWordsAndHintsDoubleDash(t *testing.T) {
 	if out, err := execCerne(t, "idea", "new", "--dir", projDir, "--", "-x ideia"); err != nil {
 		t.Fatalf("idea new -- -x ideia: %v\n%s", err, out)
 	}
-	if i, _ := store.LoadIdea(repoDir, "I-0002"); i.Text != "-x ideia" {
-		t.Fatalf("text after -- = %q, want '-x ideia'", i.Text)
+	if i, _ := store.LoadIdea(repoDir, "I-0002"); i.Title != "-x ideia" {
+		t.Fatalf("text after -- = %q, want '-x ideia'", i.Title)
 	}
 }
 

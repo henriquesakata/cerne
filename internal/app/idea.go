@@ -16,8 +16,11 @@ import (
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
-// ErrIdeaTextRequired is returned by CreateIdea with a blank text.
-var ErrIdeaTextRequired = errors.New("the idea text cannot be empty")
+// ErrIdeaTitleRequired is returned by CreateIdea with a blank title.
+var ErrIdeaTitleRequired = errors.New("the idea title cannot be empty")
+
+// ErrIdeaTitleMultiline is returned by CreateIdea for a title with a line break.
+var ErrIdeaTitleMultiline = errors.New("the idea title must be a single line")
 
 // ErrIdeaNotActive: drop/promote on a dropped or promoted idea; the wrap
 // names the state and the feature (promoted) or the reason (dropped).
@@ -45,10 +48,13 @@ func CanonicalIdeaID(id string) (string, error) {
 // checked inside the lock, a token already in the backend returns that idea
 // and writes nothing — so retrying a capture whose push landed but whose tail
 // failed never mints a twin. An empty token always mints.
-func CreateIdea(repoDir, projDir, text string, facets, components []string, token string) (store.Idea, error) {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return store.Idea{}, ErrIdeaTextRequired
+func CreateIdea(repoDir, projDir, title, body string, facets, components []string, token string) (store.Idea, error) {
+	title, body = strings.TrimSpace(title), strings.TrimSpace(body)
+	if title == "" {
+		return store.Idea{}, ErrIdeaTitleRequired
+	}
+	if strings.ContainsAny(title, "\r\n") {
+		return store.Idea{}, ErrIdeaTitleMultiline
 	}
 	normFacets, err := domain.NormalizeFacets(facets)
 	if err != nil {
@@ -75,7 +81,8 @@ func CreateIdea(repoDir, projDir, text string, facets, components []string, toke
 		now := time.Now().UTC()
 		i = store.Idea{
 			ID:         id,
-			Text:       text,
+			Title:      title,
+			Body:       body,
 			State:      domain.IdeaActive,
 			Facets:     normFacets,
 			Components: domain.NormalizeComponents(components),
@@ -111,7 +118,7 @@ func ListIdeas(repoDir string, all bool, search string) ([]store.Idea, error) {
 	words := strings.Fields(slug.Fold(search))
 	out := ideas[:0]
 	for _, i := range ideas {
-		text := slug.Fold(i.Text)
+		text := slug.Fold(i.Title + " " + i.Body)
 		if (all || i.State == domain.IdeaActive) && !slices.ContainsFunc(words, func(w string) bool { return !strings.Contains(text, w) }) {
 			out = append(out, i)
 		}
@@ -171,15 +178,16 @@ func PromoteIdea(repoDir, projDir, id, title, module string, force bool) (store.
 		if i, err = loadActiveIdea(repoDir, id); err != nil {
 			return "", err
 		}
+		// The context carries the body; a title cut to 80 runes keeps its full
+		// text there so nothing the capture said is lost.
+		text := i.Body
 		if title = strings.TrimSpace(title); title == "" {
-			for _, l := range strings.Split(i.Text, "\n") {
-				if l = strings.TrimSpace(l); l != "" {
-					title = truncateDraftRunes(l, 80)
-					break
-				}
+			title = truncateDraftRunes(i.Title, 80)
+			if title != i.Title {
+				text = strings.TrimSpace(i.Title + "\n\n" + i.Body)
 			}
 		}
-		context := fmt.Sprintf("**Origem:** ideia [[%s]] (capturada em %s)\n\n%s", i.ID, i.CreatedAt.Format(time.DateOnly), i.Text)
+		context := fmt.Sprintf("**Origem:** ideia [[%s]] (capturada em %s)\n\n%s", i.ID, i.CreatedAt.Format(time.DateOnly), text)
 		n, err := prepareFeature("F", title, module, "", i.Facets, i.Components, spectmpl.StubWithContextIn(store.DocsLanguage(repoDir), title, context), force, "", "")
 		if err != nil {
 			return "", err

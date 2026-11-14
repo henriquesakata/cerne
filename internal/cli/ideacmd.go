@@ -53,16 +53,16 @@ func newIdeaNewCmd(dir *string) *cobra.Command {
 			// retried without minting a twin (C2).
 			token := rand.Text()
 			create := func() (store.Idea, error) {
-				return app.CreateIdea(ctx.repoDir, ctx.projDir, strings.Join(args, " "), splitInforms(facet), splitInforms(component), token)
+				return app.CreateIdea(ctx.repoDir, ctx.projDir, strings.Join(args, " "), "", splitInforms(facet), splitInforms(component), token)
 			}
 			i, err := create()
-			if err != nil && !errors.Is(err, app.ErrIdeaTextRequired) && !errors.Is(err, domain.ErrUnknownFacet) {
+			if err != nil && !errors.Is(err, app.ErrIdeaTitleRequired) && !errors.Is(err, domain.ErrUnknownFacet) {
 				i, err = create()
 			}
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s created (%s) — %s\n", i.ID, i.State, ideaFirstLine(i.Text))
+			fmt.Fprintf(cmd.OutOrStdout(), "%s created (%s) — %s\n", i.ID, i.State, ideaFirstLine(i.Title))
 			return nil
 		},
 	}
@@ -100,7 +100,7 @@ func newIdeaListCmd(dir *string) *cobra.Command {
 				}{ideas})
 			}
 			for _, i := range ideas {
-				line := fmt.Sprintf("%s  %s  %s  %s", i.ID, i.CreatedAt.Format(time.DateOnly), i.State, ideaFirstLine(i.Text))
+				line := fmt.Sprintf("%s  %s  %s  %s", i.ID, i.CreatedAt.Format(time.DateOnly), i.State, ideaFirstLine(i.Title))
 				switch {
 				case i.PromotedTo != "":
 					line += "  → " + i.PromotedTo

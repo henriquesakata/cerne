@@ -55,7 +55,8 @@ func handleCreateIdea(w http.ResponseWriter, r *http.Request, repoDir, projDir s
 		return
 	}
 	var req struct {
-		Text       string   `json:"text"`
+		Title      string   `json:"title"`
+		Body       string   `json:"body"`
 		Facets     []string `json:"facets"`
 		Components []string `json:"components"`
 		Token      string   `json:"token"` // C2: per submission, reused by "Tentar de novo"
@@ -64,7 +65,7 @@ func handleCreateIdea(w http.ResponseWriter, r *http.Request, repoDir, projDir s
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
 		return
 	}
-	i, err := app.CreateIdea(repoDir, projDir, req.Text, req.Facets, req.Components, req.Token)
+	i, err := app.CreateIdea(repoDir, projDir, req.Title, req.Body, req.Facets, req.Components, req.Token)
 	if err != nil {
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error())) // blank text, unknown facet
 		return

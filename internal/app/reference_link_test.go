@@ -17,7 +17,7 @@ import (
 // F-0389 crit. 1: --informs accepts an existing idea, refuses a missing one.
 func TestCreateReferenceInformsIdea(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	i, err := CreateIdea(repoDir, projDir, "uma ideia", nil, nil, "")
+	i, err := CreateIdea(repoDir, projDir, "uma ideia", "", nil, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func TestCreateReferenceInformsIdea(t *testing.T) {
 // F-0389 crit. 2/3: link adds without duplicating, unlink removes, events logged.
 func TestLinkReference(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	i, _ := CreateIdea(repoDir, projDir, "uma ideia", nil, nil, "")
+	i, _ := CreateIdea(repoDir, projDir, "uma ideia", "", nil, nil, "")
 	r, err := CreateExternalReference(repoDir, projDir, "Fonte", "http://a", "c", []string{i.ID}, nil, nil, false)
 	if err != nil {
 		t.Fatal(err)
@@ -76,7 +76,7 @@ func TestLinkReference(t *testing.T) {
 // A retired reference is refused.
 func TestLinkReferenceRefusesRetired(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	i, _ := CreateIdea(repoDir, projDir, "uma ideia", nil, nil, "")
+	i, _ := CreateIdea(repoDir, projDir, "uma ideia", "", nil, nil, "")
 	r, _ := CreateExternalReference(repoDir, projDir, "Fonte", "http://a", "c", nil, nil, nil, false)
 	if _, err := RetireReference(repoDir, projDir, r.ID, "dup"); err != nil {
 		t.Fatal(err)
@@ -90,7 +90,7 @@ func TestLinkReferenceRefusesRetired(t *testing.T) {
 // F-0389 crit. 4: promote adds the new feature to live references informing the idea.
 func TestPromoteIdeaCarriesReferenceLinks(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	i, _ := CreateIdea(repoDir, projDir, "Exportar CSV", nil, nil, "")
+	i, _ := CreateIdea(repoDir, projDir, "Exportar CSV", "", nil, nil, "")
 	live, _ := CreateExternalReference(repoDir, projDir, "Viva", "http://a", "c", []string{i.ID}, nil, nil, false)
 	dead, _ := CreateExternalReference(repoDir, projDir, "Morta", "http://b", "c", []string{i.ID}, nil, nil, false)
 	if _, err := RetireReference(repoDir, projDir, dead.ID, "dup"); err != nil {
@@ -132,7 +132,7 @@ func linkEventCount(t *testing.T, repoDir, id string) int {
 // and reports the removed ids that were absent (critic 5).
 func TestLinkReferenceNoOpCommitsNothing(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	i, _ := CreateIdea(repoDir, projDir, "uma ideia", nil, nil, "")
+	i, _ := CreateIdea(repoDir, projDir, "uma ideia", "", nil, nil, "")
 	r, _ := CreateExternalReference(repoDir, projDir, "Fonte", "http://a", "c", []string{i.ID}, nil, nil, false)
 	before, err := gitback.HeadSHA(repoDir)
 	if err != nil {
@@ -157,7 +157,7 @@ func TestLinkReferenceNoOpCommitsNothing(t *testing.T) {
 // Critic 4: an id in both lists is refused; the remove list is deduped.
 func TestLinkReferenceBothListsAndDedupe(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	i, _ := CreateIdea(repoDir, projDir, "uma ideia", nil, nil, "")
+	i, _ := CreateIdea(repoDir, projDir, "uma ideia", "", nil, nil, "")
 	r, _ := CreateExternalReference(repoDir, projDir, "Fonte", "http://a", "c", []string{i.ID}, nil, nil, false)
 	_, _, err := LinkReference(repoDir, projDir, r.ID, []string{i.ID}, []string{i.ID})
 	if err == nil || !strings.Contains(err.Error(), "--informs and --unlink both name "+i.ID) {
@@ -174,9 +174,9 @@ func TestLinkReferenceBothListsAndDedupe(t *testing.T) {
 // Critic 3: a dropped idea is a dead link; active and promoted are accepted.
 func TestInformsIdeaStates(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	active, _ := CreateIdea(repoDir, projDir, "ativa", nil, nil, "")
-	dropped, _ := CreateIdea(repoDir, projDir, "descartada", nil, nil, "")
-	promoted, _ := CreateIdea(repoDir, projDir, "promovida", nil, nil, "")
+	active, _ := CreateIdea(repoDir, projDir, "ativa", "", nil, nil, "")
+	dropped, _ := CreateIdea(repoDir, projDir, "descartada", "", nil, nil, "")
+	promoted, _ := CreateIdea(repoDir, projDir, "promovida", "", nil, nil, "")
 	if _, err := DropIdea(repoDir, projDir, dropped.ID, "no"); err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +201,7 @@ func TestInformsIdeaStates(t *testing.T) {
 // Critic 2: a corrupt reference makes the promote fail whole.
 func TestPromoteIdeaAtomicWithCorruptReference(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	i, _ := CreateIdea(repoDir, projDir, "Exportar CSV", nil, nil, "")
+	i, _ := CreateIdea(repoDir, projDir, "Exportar CSV", "", nil, nil, "")
 	r, _ := CreateExternalReference(repoDir, projDir, "Viva", "http://a", "c", []string{i.ID}, nil, nil, false)
 	bad := filepath.Join(repoDir, "entities", "references", "R-0099.json")
 	if err := os.WriteFile(bad, []byte("{not json"), 0o644); err != nil {
