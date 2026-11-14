@@ -51,6 +51,8 @@ type Setting struct {
 	Default     any      `json:"default"`
 	Scopes      []string `json:"scopes"`
 	Description string   `json:"description"`
+	// Group is the subject page the key belongs to, one of settingGroups.
+	Group string `json:"group"`
 	// Enum limits a string key to these values (F-0353); empty = any string.
 	Enum []string `json:"enum,omitempty"`
 	// TopLevel is a top-level .cernerc key read as this setting when the
@@ -60,6 +62,9 @@ type Setting struct {
 	// actor (F-0392). The server does not read it.
 	HumanOnly bool `json:"-"`
 }
+
+// settingGroups are the subject groups in display order (F-0413).
+var settingGroups = []string{"general", "process", "interface", "integrations", "ai"}
 
 // SettingHumanOnly reports whether id is declared human-only.
 func SettingHumanOnly(id string) bool {
@@ -106,42 +111,42 @@ type SettingsView struct {
 // endpoint and the UI all derive from it. Kept in id order.
 var settingsRegistry = []Setting{
 	{
-		ID: "channel.human_name", Title: "Your name in the channel", Type: "string", Default: "",
+		ID: "channel.human_name", Group: "general", Title: "Your name in the channel", Type: "string", Default: "",
 		Scopes:      []string{ScopeHost},
 		Description: "The name that signs the messages you send from the UI on a project's permanent channel. It applies to every project on this machine. It is not the project's name, which is set in the “Project name” field of the Settings screen. Empty uses your OS user name.",
 	},
 	{
-		ID: "gates.gauntlet", Title: "Gauntlet", Type: "string", Default: "on", Enum: []string{"on", "off"},
+		ID: "gates.gauntlet", Group: "process", Title: "Gauntlet", Type: "string", Default: "on", Enum: []string{"on", "off"},
 		Scopes: []string{ScopeProject}, HumanOnly: true,
 		Description: "Turns the Gauntlet on or off for this project. With off (light mode), approve accepts a spec without a bar, complete accepts a result without a ## Gauntlet section, and lint stops charging both. Only the literal off turns it off; any other stored value counts as on. An agent cannot change this key through cerne settings: it is the project owner's decision.",
 	},
 	{
-		ID: "graph.enabled", Title: "Graph", Type: "bool", Default: true,
+		ID: "graph.enabled", Group: "interface", Title: "Graph", Type: "bool", Default: true,
 		Scopes:      []string{ScopeProject, ScopeHost},
 		Description: "Shows the Graph tab in the UI. Off hides it.",
 	},
 	{
-		ID: "lint.cli_output_language", Title: "CLI output language", Type: "string", Default: "", Enum: []string{"en"},
+		ID: "lint.cli_output_language", Group: "process", Title: "CLI output language", Type: "string", Default: "", Enum: []string{"en"},
 		Scopes:      []string{ScopeProject},
 		Description: "Set to en when the project's CLI prints English: lint then warns when a spec criterion quotes a CLI message that reads Portuguese. Empty turns the check off.",
 	},
 	{
-		ID: "lint.stale_decision_days", Title: "Stale decision window", Type: "int", Default: int64(180),
+		ID: "lint.stale_decision_days", Group: "process", Title: "Stale decision window", Type: "int", Default: int64(180),
 		Scopes: []string{ScopeProject}, TopLevel: "stale_decision_days",
 		Description: "Days an active decision may go unreviewed, cited only by rejected or superseded features and by nothing live, before lint flags it as stale-decision. In .cernerc, [lint] stale_decision_days wins over a top-level stale_decision_days.",
 	},
 	{
-		ID: "mindmap.enabled", Title: "Mindmap", Type: "bool", Default: true,
+		ID: "mindmap.enabled", Group: "interface", Title: "Mindmap", Type: "bool", Default: true,
 		Scopes:      []string{ScopeProject, ScopeHost},
 		Description: "Shows the Mindmap tab in the UI. Off hides it.",
 	},
 	{
-		ID: "wiki.enabled", Title: "Wiki", Type: "bool", Default: true,
+		ID: "wiki.enabled", Group: "interface", Title: "Wiki", Type: "bool", Default: true,
 		Scopes:      []string{ScopeProject, ScopeHost},
 		Description: "Off stops compile_on_push and turns wiki lint debt into advisory findings left out of 'cerne next'; the wiki stays readable, with a stale banner and an on-demand recompile.",
 	},
 	{
-		ID: "hooks.notes_on_edit", Title: "Notes on edit", Type: "bool", Default: true,
+		ID: "hooks.notes_on_edit", Group: "integrations", Title: "Notes on edit", Type: "bool", Default: true,
 		Scopes:      []string{ScopeProject, ScopeHost},
 		Description: "Off stops the work-gate hook from showing the notes that cite a file when the agent is about to edit it.",
 	},

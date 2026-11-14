@@ -794,3 +794,28 @@ func TestNotesOnEdit(t *testing.T) {
 		})
 	}
 }
+
+func TestSettingsRegistryGroups(t *testing.T) {
+	want := map[string]string{
+		"channel.human_name":       "general",
+		"gates.gauntlet":           "process",
+		"lint.stale_decision_days": "process",
+		"lint.cli_output_language": "process",
+		"graph.enabled":            "interface",
+		"mindmap.enabled":          "interface",
+		"wiki.enabled":             "interface",
+		"hooks.notes_on_edit":      "integrations",
+	}
+	for _, s := range settingsRegistry {
+		if !slices.Contains(settingGroups, s.Group) {
+			t.Errorf("%s: group %q is not in settingGroups", s.ID, s.Group)
+		}
+		if w, ok := want[s.ID]; ok && s.Group != w {
+			t.Errorf("%s: group %q, want %q", s.ID, s.Group, w)
+		}
+		delete(want, s.ID)
+	}
+	for id := range want {
+		t.Errorf("registry lacks %s", id)
+	}
+}
