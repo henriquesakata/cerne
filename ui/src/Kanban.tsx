@@ -352,12 +352,22 @@ function Columns({
   const [over, setOver] = useState<FeatureState | null>(null)
   const ghostTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
   const [notice, setNotice] = useState<{ id: string; text: string; refused: boolean } | null>(null)
+  // F-0420: destino cuja coluna está fora da vista, apontado pela faixa na borda.
+  const boardRef = useRef<HTMLDivElement>(null)
+  const [edge, setEdge] = useState<FeatureState | null>(null)
+  const measureEdge = (f: Feature) => {
+    const target = (Object.keys(DROPS) as FeatureState[]).find((s) => DROPS[s]!.from === f.state)
+    const board = boardRef.current
+    const col = target && board?.querySelector(`[data-state="${target}"]`)
+    setEdge(col && offscreenRight(board!.getBoundingClientRect(), col.getBoundingClientRect()) ? target : null)
+  }
   const endGesture = () => {
     dragging.current = null
     clearTimeout(ghostTimer.current)
     setInFlight(null)
     setGhost(null)
     setOver(null)
+    setEdge(null)
   }
   // Um live reload que tira o card em voo do seu estado desmonta o <a> de origem:
   // o dragend dele nunca chega ao board, então o gesto termina aqui.
@@ -368,6 +378,7 @@ function Columns({
   const beginGesture = (f: Feature) => {
     dragging.current = f
     setInFlight(f)
+    measureEdge(f)
     // O browser captura a imagem de arraste depois do dragstart: esmaecer o card
     // dentro dele esmaeceria a imagem também.
     ghostTimer.current = setTimeout(() => setGhost(f.id), 0)
@@ -458,8 +469,10 @@ function Columns({
         </>
       )}
     </div>
+    <div className="board-wrap">
     <div
       className="board"
+      ref={boardRef}
       // Todo dragstart (inclusive de card não arrastável, cujo <a> é arrastável
       // por padrão) zera o gesto anterior; o card arrastável o reabre logo depois.
       onDragStartCapture={() => {
@@ -467,6 +480,8 @@ function Columns({
         setNotice(null)
       }}
       onDragEnd={endGesture}
+      // A rolagem nativa na borda (ou a roda) pode trazer o destino para a vista.
+      onScroll={() => dragging.current && measureEdge(dragging.current)}
     >
       <BacklogColumn
         onDragStart={beginGesture}
@@ -485,6 +500,7 @@ function Columns({
         return (
           <section
             key={s}
+            data-state={s}
             className={`column ${dragClass(s)}`.trim()}
             {...dropProps(s)}
           >
@@ -527,6 +543,18 @@ function Columns({
         )
       })}
     </div>
+    {/* F-0420: só visual, fora do contêiner que rola. Sem dropProps e com
+        pointer-events: none, o soltar e a rolagem nativa vão à coluna de baixo:
+        a faixa pode nascer sob o cursor, e soltar sem mover não aprova nada. */}
+    {edge && (
+      <div className={`drop-edge ${dragClass(edge)}`.trim()} aria-hidden="true">
+        <div className="drop-edge-inner">
+          <span className="drop-edge-label">{t.kanban.columnLabels[edge]} →</span>
+          <p className="drop-hint">{dropHint(edge)}</p>
+        </div>
+      </div>
+    )}
+    </div>
     </>
   )
 }
@@ -535,6 +563,12 @@ function Columns({
 const DROPS: Partial<Record<FeatureState, { from: FeatureState; action: 'approve' | 'accept' }>> = {
   approved: { from: 'candidate', action: 'approve' },
   done: { from: 'implemented', action: 'accept' },
+}
+
+// F-0420: o destino está fora da vista quando menos da metade da largura dele
+// cabe na área visível do board. Coluna não medida (largura 0) nunca conta.
+export function offscreenRight(board: DOMRect, col: DOMRect): boolean {
+  return col.width > 0 && Math.min(col.right, board.right) - Math.max(col.left, board.left) < col.width / 2
 }
 
 // F-0342: a escolha recolhida/expandida da coluna Backlog é preferência de quem
