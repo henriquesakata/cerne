@@ -507,6 +507,8 @@ describe('destino fora da tela (F-0420)', () => {
     // coluna não medida (jsdom, display:none) nunca conta como fora da vista
     expect(offscreenRight(board, rect({ left: 900, width: 0 }))).toBe(false)
     expect(offscreenRight(rect({ left: 0, width: 0 }), rect({ left: 0, width: 0 }))).toBe(false)
+    // só a borda direita: uma coluna rolada para fora pela esquerda não ganha seta →
+    expect(offscreenRight(board, rect({ left: -300, width: 208 }))).toBe(false)
   })
 
   it('critério 3: rolar o board durante o gesto mede de novo; sem gesto, nada', async () => {
@@ -549,7 +551,10 @@ describe('destino fora da tela (F-0420)', () => {
     expect(document.querySelector('.drop-active')).toBeNull()
     fireEvent.drop(band, { dataTransfer })
     expect(post).not.toHaveBeenCalled()
-    expect(readFileSync('src/app.css', 'utf8')).toMatch(/\.drop-edge\s*\{[^}]*pointer-events:\s*none/)
+    const css = readFileSync('src/app.css', 'utf8')
+    expect(css).toMatch(/\.drop-edge\s*\{[^}]*pointer-events:\s*none/)
+    // só o rótulo tem fundo: o resto da faixa deixa ver os cards e a barra de rolagem
+    expect(css.match(/\.drop-edge\s*\{([^}]*)\}/)![1]).not.toMatch(/background|outline|border/)
   })
 
   it('critério 6: a faixa fica fora do fluxo do board e nada rola', async () => {
@@ -562,7 +567,7 @@ describe('destino fora da tela (F-0420)', () => {
     expect(band.parentElement).toHaveClass('board-wrap')
     expect(readFileSync('src/app.css', 'utf8')).toMatch(/\.drop-edge\s*\{[^}]*position:\s*absolute/)
     // jsdom nunca muda scrollLeft: a leitura do código é o que prova que nada rola
-    expect(readFileSync('src/Kanban.tsx', 'utf8')).not.toMatch(/scrollTo|scrollBy|scrollIntoView|scrollLeft\s*=[^=]/)
+    expect(readFileSync('src/Kanban.tsx', 'utf8')).not.toMatch(/\.scroll(To|By|IntoView)?\(|scroll(Left|Top)\s*[-+]?=[^=]/)
   })
 
   it('critério 7: o fim do gesto tira a faixa (dragend, drop, live reload)', async () => {

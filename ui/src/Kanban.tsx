@@ -358,7 +358,7 @@ function Columns({
   const measureEdge = (f: Feature) => {
     const target = (Object.keys(DROPS) as FeatureState[]).find((s) => DROPS[s]!.from === f.state)
     const board = boardRef.current
-    const col = target && board?.querySelector(`[data-state="${target}"]`)
+    const col = target && board?.querySelector(`:scope > section[data-state="${target}"]`)
     setEdge(col && offscreenRight(board!.getBoundingClientRect(), col.getBoundingClientRect()) ? target : null)
   }
   const endGesture = () => {
@@ -565,10 +565,15 @@ const DROPS: Partial<Record<FeatureState, { from: FeatureState; action: 'approve
   done: { from: 'implemented', action: 'accept' },
 }
 
-// F-0420: o destino está fora da vista quando menos da metade da largura dele
-// cabe na área visível do board. Coluna não medida (largura 0) nunca conta.
+// F-0420: o destino está fora da vista, pela direita, quando passa da borda
+// direita do board e menos da metade da largura dele cabe na área visível.
+// Coluna não medida (largura 0) nunca conta.
 export function offscreenRight(board: DOMRect, col: DOMRect): boolean {
-  return col.width > 0 && Math.min(col.right, board.right) - Math.max(col.left, board.left) < col.width / 2
+  return (
+    col.width > 0 &&
+    col.right > board.right &&
+    Math.min(col.right, board.right) - Math.max(col.left, board.left) < col.width / 2
+  )
 }
 
 // F-0342: a escolha recolhida/expandida da coluna Backlog é preferência de quem
