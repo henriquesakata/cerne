@@ -12,7 +12,7 @@ name: quickstart
 # the assets exist when this runs.
 on:
   pull_request:
-    paths: [README.md, INSTALL.md, install.sh, scripts/quickstart-check.sh]
+    paths: [README.md, INSTALL.md, install.sh, install.ps1, scripts/quickstart-check.sh, scripts/homebrew-formula.sh, .github/workflows/quickstart.yml]
   release:
     types: [published]
 
@@ -47,3 +47,72 @@ jobs:
           for f in README.md INSTALL.md; do
             sh scripts/quickstart-check.sh "$f" "$RUNNER_TEMP/cerne-bin/cerne"
           done
+
+  # Windows end to end (F-0410): the PR's own install.ps1 against the latest
+  # release (the tag just published, on a release), then the first commands a
+  # visitor runs.
+  quickstart-windows:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cerne with install.ps1
+        shell: pwsh
+        env:
+          CERNE_VERSION: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
+          CERNE_INSTALL_DIR: ${{ runner.temp }}\cerne-bin
+        run: |
+          # As the README runs it: the script text through Invoke-Expression.
+          $log = Get-Content -Raw install.ps1 | Invoke-Expression *>&1 | Out-String
+          Write-Host $log
+          if ($log -notmatch 'Installed cerne (\S+) to ') { throw 'install.ps1 did not report an install' }
+          $installed = $Matches[1]
+          if ($env:CERNE_VERSION -and $installed -ne $env:CERNE_VERSION) {
+            throw "quickstart: installed '$installed' but the published release is '$env:CERNE_VERSION'"
+          }
+          Add-Content $env:GITHUB_PATH $env:CERNE_INSTALL_DIR
+      - name: cerne --version and cerne init
+        shell: pwsh
+        env:
+          GIT_AUTHOR_NAME: quickstart
+          GIT_AUTHOR_EMAIL: quickstart@example.invalid
+          GIT_COMMITTER_NAME: quickstart
+          GIT_COMMITTER_EMAIL: quickstart@example.invalid
+        run: |
+          $work = Join-Path $env:RUNNER_TEMP 'quickstart'
+          $env:CERNE_CACHE_DIR = "$work\cache"; $env:CERNE_DATA_DIR = "$work\data"; $env:CERNE_CONFIG_DIR = "$work\config"
+          New-Item -ItemType Directory -Force "$work\repo" | Out-Null
+          Set-Location "$work\repo"
+          cerne --version
+          if ($LASTEXITCODE) { throw "cerne --version exited $LASTEXITCODE" }
+          git init -q
+          if ($LASTEXITCODE) { throw "git init exited $LASTEXITCODE" }
+          cerne init --name demo
+          if ($LASTEXITCODE) { throw "cerne init exited $LASTEXITCODE" }
+          if (-not (Test-Path .cernerc)) { throw 'cerne init wrote no .cernerc' }
+
+  # The formula the release will push to the tap, rendered from the latest
+  # published release and installed through a local tap: a broken formula
+  # fails here, on the PR, not after the binaries are out (F-0410).
+  homebrew-formula:
+    if: github.event_name == 'pull_request'
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the rendered formula
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! command -v brew >/dev/null; then eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"; fi
+          tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName)
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" -p SHA256SUMS -D "$RUNNER_TEMP"
+          brew tap-new --no-git cerne-ci/local
+          sh scripts/homebrew-formula.sh "$tag" "$RUNNER_TEMP/SHA256SUMS" >"$(brew --repository cerne-ci/local)/Formula/cerne.rb"
+          brew install cerne-ci/local/cerne
+          brew test cerne-ci/local/cerne
+          "$(brew --prefix)/bin/cerne" --version
