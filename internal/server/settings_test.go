@@ -701,3 +701,24 @@ func TestSettingsPutGauntletIgnoresServerActor(t *testing.T) {
 		t.Errorf("DELETE status %d: %s", rec.Code, rec.Body.String())
 	}
 }
+
+// TestSettingsPayloadCarriesGroup pins F-0413 criterion 2: every key in the
+// GET carries the group its registry entry declares.
+func TestSettingsPayloadCarriesGroup(t *testing.T) {
+	h, projDir, _ := settingsBackend(t, "")
+	var got struct {
+		Settings []map[string]any `json:"settings"`
+	}
+	if rec := doJSON(t, h, http.MethodGet, "/api/settings", "", &got); rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	want := project.ResolveSettings(projDir)
+	if len(got.Settings) != len(want.Settings) {
+		t.Fatalf("served %d settings, registry declares %d", len(got.Settings), len(want.Settings))
+	}
+	for i, s := range got.Settings {
+		if want.Settings[i].Group == "" || s["group"] != want.Settings[i].Group {
+			t.Errorf("%v: group = %v, want %q", s["id"], s["group"], want.Settings[i].Group)
+		}
+	}
+}
