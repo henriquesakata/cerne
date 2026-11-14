@@ -91,6 +91,38 @@ func TestPlanningWorkRealCase(t *testing.T) {
 	})
 }
 
+// TestBatchWorkRealCase (F-0422 crit. 8): the TL's batch work on two features
+// stays active while one of them is live and closes in the commit of the
+// last one's exit, with the work-outlived-feature lint left silent. F-0002 is
+// a candidate: the FSM rejects from candidate only.
+func TestBatchWorkRealCase(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	t.Setenv("USER", "u")
+	t.Setenv("CERNE_SESSION", "")
+	a := newFeature(t, projDir, "Feature A", 1)
+	b := newFeature(t, projDir, "Feature B", 2)
+	writeDoc(t, repoDir, a, "spec.md", realDoc(a, "Problema real descrito aqui."))
+	commitBackend(t, repoDir)
+	mustCerne(t, "feature", "approve", a, "--dir", projDir)
+	mustCerne(t, "work", "start", "Lote A e B — planejamento", "--ref", a+","+b, "--dir", projDir)
+	writeDoc(t, repoDir, a, "plan.md", realDoc(a, "Passo 1: implementar."))
+	commitBackend(t, repoDir)
+
+	t.Setenv("CERNE_ACTOR", "agent")
+	mustCerne(t, "feature", "start", a, "--dir", projDir)
+	writeDoc(t, repoDir, a, "result.md", realDoc(a, "Entregue conforme o plano."))
+	commitBackend(t, repoDir)
+	mustCerne(t, "feature", "complete", a, "--dir", projDir)
+	wantWork(t, repoDir, "W-0001", domain.WorkActive, "") // B still live
+
+	mustCerne(t, "feature", "reject", b, "--reason", "x", "--dir", projDir)
+	wantWork(t, repoDir, "W-0001", domain.WorkDone, "all refs closed (feature implemented, rejected)")
+	out, _ := execCerne(t, "lint", "--dir", projDir)
+	if strings.Contains(out, "W-0001") {
+		t.Fatalf("lint still names W-0001:\n%s", out)
+	}
+}
+
 // mustCerne runs a cerne command and fails the test on error.
 func mustCerne(t *testing.T, args ...string) string {
 	t.Helper()
