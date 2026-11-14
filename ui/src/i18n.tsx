@@ -1233,8 +1233,8 @@ const ptBR = {
       'Mindmap': 'Mapa mental',
       'Shows the Mindmap tab in the UI. Off hides it.': 'Mostra a aba Mapa mental na UI. Desligado a esconde.',
       'Wiki': 'Wiki',
-      "On compiles the wiki on every push and counts its lint debt as pending work in 'cerne next'. Off stops that: the wiki stays readable, with a stale banner and an on-demand recompile.":
-        "Ligado, compila a wiki a cada push e conta a dívida de lint dela como trabalho pendente no 'cerne next'. Desligado, isso para: a wiki continua legível, com aviso de desatualizada e recompilação sob demanda.",
+      "On keeps the wiki live: when compile_on_push is set, a push recompiles the dirty pages, and wiki lint debt counts as pending work in 'cerne next'. Off stops both; the wiki stays readable, with a stale banner and an on-demand recompile.":
+        "Ligado mantém a wiki viva: com compile_on_push ligado, um push recompila as páginas sujas, e a dívida de lint da wiki conta como trabalho pendente no 'cerne next'. Desligado, os dois param: a wiki continua legível, com aviso de desatualizada e recompilação sob demanda.",
       'Notes on edit': 'Notas ao editar',
       'On shows the agent the notes that cite a file when it is about to edit that file, through the work-gate hook. Off stops showing them.':
         'Ligado, o gancho work-gate mostra ao agente as notas que citam um arquivo quando ele vai editá-lo. Desligado, deixa de mostrá-las.',

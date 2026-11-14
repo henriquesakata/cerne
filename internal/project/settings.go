@@ -144,7 +144,7 @@ var settingsRegistry = []Setting{
 	{
 		ID: "wiki.enabled", Group: "interface", Title: "Wiki", Type: "bool", Default: true,
 		Scopes:      []string{ScopeProject, ScopeHost},
-		Description: "On compiles the wiki on every push and counts its lint debt as pending work in 'cerne next'. Off stops that: the wiki stays readable, with a stale banner and an on-demand recompile.",
+		Description: "On keeps the wiki live: when compile_on_push is set, a push recompiles the dirty pages, and wiki lint debt counts as pending work in 'cerne next'. Off stops both; the wiki stays readable, with a stale banner and an on-demand recompile.",
 	},
 	{
 		ID: "hooks.notes_on_edit", Group: "integrations", Title: "Notes on edit", Type: "bool", Default: true,
