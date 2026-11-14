@@ -134,3 +134,41 @@ func TestWorkOutlivedFeatureOpenedAfterClose(t *testing.T) {
 		t.Fatalf("work-outlived-feature = %v, want [W-0001]", flagged)
 	}
 }
+
+// TestOutlivedWorks (F-0422 crit. 7): the predicate behind
+// work-outlived-feature is one exported function the transition also calls —
+// the works it returns, in order, with their refs' distinct closed states in
+// ref order, are exactly the ones the rule flags.
+func TestOutlivedWorks(t *testing.T) {
+	features := []store.Feature{
+		{ID: "F-0001", State: domain.StateImplemented},
+		{ID: "F-0003", State: domain.StateRejected},
+		{ID: "F-0004", State: domain.StateSuperseded},
+		{ID: "F-0005", State: domain.StateInDevelopment},
+	}
+	works := []store.Work{
+		{ID: "W-0001", State: domain.WorkActive, Refs: []string{"F-0001"}},
+		{ID: "W-0002", State: domain.WorkActive, Refs: []string{"F-0004", "F-0003", "F-0004"}},
+		{ID: "W-0003", State: domain.WorkActive, Refs: []string{"F-0001", "F-0005"}},
+	}
+	closed := time.Date(2026, 11, 1, 10, 0, 0, 0, time.UTC)
+	events := []domain.Event{
+		{EntityID: "F-0001", Type: "feature.completed", At: closed},
+		{EntityID: "F-0003", Type: "feature.rejected", At: closed},
+		{EntityID: "F-0004", Type: "feature.superseded", At: closed},
+	}
+
+	got := OutlivedWorks(works, features, events)
+	var ids []string
+	states := map[string][]string{}
+	for _, o := range got {
+		ids = append(ids, o.Work.ID)
+		states[o.Work.ID] = o.States
+	}
+	if !slices.Equal(ids, []string{"W-0001", "W-0002"}) {
+		t.Fatalf("OutlivedWorks ids = %v, want [W-0001 W-0002]", ids)
+	}
+	if !slices.Equal(states["W-0001"], []string{"implemented"}) || !slices.Equal(states["W-0002"], []string{"superseded", "rejected"}) {
+		t.Fatalf("OutlivedWorks states = %v, want W-0001 [implemented], W-0002 [superseded rejected]", states)
+	}
+}

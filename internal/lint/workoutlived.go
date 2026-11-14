@@ -18,15 +18,22 @@ var closingEvent = map[domain.FeatureState]string{
 	domain.StateSuperseded:  "feature.superseded",
 }
 
-// workOutlivedFeatureFindings flags an active work whose refs are all
+// OutlivedWork is an active work whose refs are all features already out of
+// the live cycle, with those refs' distinct closed states in ref order.
+type OutlivedWork struct {
+	Work   store.Work
+	States []string
+}
+
+// OutlivedWorks picks, in works order, every active work whose refs are all
 // features already out of the live cycle (F-0341 crit. 8) — the planning
 // works opened before the transitions learned to close them, or one another
 // session held. Only a work created before each ref's last move into its
 // current state outlived it: one opened after (an errata, the QA of an
-// accept) is live work the Fix would close, and with no such event logged
-// (an imported feature) no work can predate it. Fix carries the closing
-// command, the states as its note.
-func workOutlivedFeatureFindings(works []store.Work, features []store.Feature, events []domain.Event) []Finding {
+// accept) is live work, and with no such event logged (an imported feature)
+// no work can predate it. The work-outlived-feature rule and the transition
+// that closes a batch work (F-0422) both ask this one function.
+func OutlivedWorks(works []store.Work, features []store.Feature, events []domain.Event) []OutlivedWork {
 	state := make(map[string]domain.FeatureState, len(features))
 	for _, f := range features {
 		state[f.ID] = f.State
@@ -37,7 +44,7 @@ func workOutlivedFeatureFindings(works []store.Work, features []store.Feature, e
 			closedAt[ev.EntityID] = ev.At
 		}
 	}
-	var findings []Finding
+	var out []OutlivedWork
 	for _, w := range works {
 		if w.State != domain.WorkActive || len(w.Refs) == 0 {
 			continue
@@ -53,14 +60,24 @@ func workOutlivedFeatureFindings(works []store.Work, features []store.Feature, e
 				states = append(states, string(s))
 			}
 		}
-		if states == nil {
-			continue
+		if states != nil {
+			out = append(out, OutlivedWork{Work: w, States: states})
 		}
-		fix := fmt.Sprintf("cerne work done %s --note %q", w.ID, "feature "+strings.Join(states, ", "))
+	}
+	return out
+}
+
+// workOutlivedFeatureFindings flags each OutlivedWorks work; Fix carries the
+// closing command, the states as its note.
+func workOutlivedFeatureFindings(works []store.Work, features []store.Feature, events []domain.Event) []Finding {
+	var findings []Finding
+	for _, o := range OutlivedWorks(works, features, events) {
+		w := o.Work
+		fix := fmt.Sprintf("cerne work done %s --note %q", w.ID, "feature "+strings.Join(o.States, ", "))
 		findings = append(findings, Finding{
 			Rule:   RuleWorkOutlivedFeature,
 			Entity: w.ID,
-			Detail: fmt.Sprintf("active, but every feature it refs is closed (%s: %s) — run '%s'", strings.Join(w.Refs, ", "), strings.Join(states, ", "), fix),
+			Detail: fmt.Sprintf("active, but every feature it refs is closed (%s: %s) — run '%s'", strings.Join(w.Refs, ", "), strings.Join(o.States, ", "), fix),
 			Fix:    fix,
 		})
 	}
