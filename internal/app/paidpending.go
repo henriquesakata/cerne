@@ -71,15 +71,13 @@ func visibleText(md []byte) []byte {
 	return []byte(strings.Join(out, "\n"))
 }
 
-// movePaidPendings carries the pendings f pays along the transition f just
-// went through, inside that transition's critical section, so they land in
-// its commit (F-0885): done resolves them; rejected reopens them; superseded
-// transfers them to the successor, or reopens them when the successor is not
-// live — a debt is never left pointing at a feature that will not pay it. It
-// returns one line per pending moved; any other state moves nothing.
-func movePaidPendings(repoDir string, f store.Feature, reason string) ([]string, error) {
-	action, target := domain.ActionReopen, ""
-	payload := map[string]string{"feature": f.ID}
+// followFeature is what a transition does to whatever follows the feature
+// (F-0885, F-0419): done resolves; rejected reopens; superseded transfers to
+// the successor, or reopens when the successor is not live — a debt or an
+// idea is never left pointing at a feature that will not carry it. ok is
+// false for any other state: nothing moves.
+func followFeature(repoDir string, f store.Feature, reason string) (action domain.Action, target string, payload map[string]string, ok bool, err error) {
+	action, payload = domain.ActionReopen, map[string]string{"feature": f.ID}
 	switch f.State {
 	case domain.StateDone:
 		action = domain.ActionResolve
@@ -88,7 +86,7 @@ func movePaidPendings(repoDir string, f store.Feature, reason string) ([]string,
 	case domain.StateSuperseded:
 		successor, err := store.LoadFeature(repoDir, f.SupersededBy)
 		if err != nil {
-			return nil, err
+			return "", "", nil, false, err
 		}
 		if featureLive(successor.State) {
 			action, target = domain.ActionTransfer, successor.ID
@@ -97,7 +95,19 @@ func movePaidPendings(repoDir string, f store.Feature, reason string) ([]string,
 			payload["reason"] = fmt.Sprintf("superseded by %s, which is %s", successor.ID, successor.State)
 		}
 	default:
-		return nil, nil
+		return "", "", nil, false, nil
+	}
+	return action, target, payload, true, nil
+}
+
+// movePaidPendings carries the pendings f pays along the transition f just
+// went through, inside that transition's critical section, so they land in
+// its commit (F-0885; see followFeature). It returns one line per pending
+// moved; any other state moves nothing.
+func movePaidPendings(repoDir string, f store.Feature, reason string) ([]string, error) {
+	action, target, payload, ok, err := followFeature(repoDir, f, reason)
+	if err != nil || !ok {
+		return nil, err
 	}
 	paid, err := PendingsPaidBy(repoDir, f.ID)
 	if err != nil {
