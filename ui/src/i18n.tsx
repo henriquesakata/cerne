@@ -1125,6 +1125,14 @@ const ptBR = {
     title: 'Configurações',
     project: 'Projeto',
     search: 'Buscar configurações',
+    groupsNav: 'Grupos de configurações',
+    groups: {
+      general: { title: 'Geral', description: 'Nome do projeto e identidade no canal.' },
+      process: { title: 'Processo', description: 'Portões do ciclo de vida e regras do lint.' },
+      interface: { title: 'Interface', description: 'Abas e recursos que a UI mostra.' },
+      integrations: { title: 'Integrações', description: 'Hooks e ligações com outras ferramentas.' },
+      ai: { title: 'IA', description: 'O agente de IA e seus modos.' },
+    },
     count: (shown: number, total: number) => {
       const noun = total === 1 ? 'configuração' : 'configurações'
       return shown === total ? `${total} ${noun}` : `${shown} de ${total} ${noun}`
@@ -2307,6 +2315,14 @@ const en: Messages = {
     title: 'Settings',
     project: 'Project',
     search: 'Search settings',
+    groupsNav: 'Settings groups',
+    groups: {
+      general: { title: 'General', description: 'Project name and your identity in the channel.' },
+      process: { title: 'Process', description: 'Lifecycle gates and lint rules.' },
+      interface: { title: 'Interface', description: 'Tabs and features the UI shows.' },
+      integrations: { title: 'Integrations', description: 'Hooks and links to other tools.' },
+      ai: { title: 'AI', description: 'The AI agent and its modes.' },
+    },
     count: (shown: number, total: number) => {
       const noun = total === 1 ? 'setting' : 'settings'
       return shown === total ? `${total} ${noun}` : `${shown} of ${total} ${noun}`

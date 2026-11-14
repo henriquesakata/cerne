@@ -5,7 +5,9 @@ import {
   putSetting,
   renameProject,
   unsetSetting,
+  SETTING_GROUPS,
   type ResolvedSetting,
+  type SettingGroup,
   type SettingScope,
   type SettingsView,
 } from './api'
@@ -69,7 +71,17 @@ const retryable = (e: unknown) => !(e instanceof HTTPError) || e.status === 409 
 // another scope's row never shows it, and its retry goes where it failed.
 const failureKey = (id: string, scope: SettingScope) => `${id}\n${scope}`
 
-export default function Settings() {
+// A key with no group, or one this build does not know, files under general.
+const groupOf = (s: ResolvedSetting): SettingGroup =>
+  s.group && SETTING_GROUPS.includes(s.group) ? s.group : 'general'
+
+// groupFromHash reads '#/settings/<group>'; anything else opens general.
+export function groupFromHash(hash: string): SettingGroup {
+  const g = hash.split('/')[2] as SettingGroup | undefined
+  return g && SETTING_GROUPS.includes(g) ? g : 'general'
+}
+
+export default function Settings({ group = 'general' }: { group?: SettingGroup }) {
   const { t } = useT()
   const ts = t.settings
   const { projects, activePid } = useProjects()
@@ -153,9 +165,12 @@ export default function Settings() {
   // Registry texts come in English; the catalog is keyed by the source text.
   const tx = (src: string) => ts.text[src] ?? src
   const q = norm(query.trim())
-  const shown = (view?.settings ?? []).filter(
-    (s) => q === '' || norm(`${tx(s.title)} ${tx(s.description)} ${s.id}`).includes(q),
-  )
+  // Search is global: with text, every group; without, only the open one.
+  const all = view?.settings ?? []
+  const pool = q === '' ? all.filter((s) => groupOf(s) === group) : all
+  const shown = pool.filter((s) => q === '' || norm(`${tx(s.title)} ${tx(s.description)} ${s.id}`).includes(q))
+  // Only groups with a key; the project name counts for general.
+  const groups = SETTING_GROUPS.filter((g) => (g === 'general' ? true : all.some((s) => groupOf(s) === g)))
 
   // The name block does not hang on the settings registry (critic C13): it
   // shows while that load is pending or failed, at the same place in the tree,
@@ -167,9 +182,36 @@ export default function Settings() {
       <p className="settings-project">
         {ts.project} <strong>{name}</strong>
       </p>
-      <ProjectName key={activePid} name={name} />
+      {group === 'general' && <ProjectName key={activePid} name={name} />}
       {view ? (
-        <>
+        <div className="settings-layout">
+          <nav className="settings-groups" aria-label={ts.groupsNav}>
+            {groups.map((g) => (
+              <a
+                key={g}
+                href={`#/settings/${g}`}
+                aria-current={g === group ? 'page' : undefined}
+                title={ts.groups[g].description}
+              >
+                {ts.groups[g].title}
+              </a>
+            ))}
+          </nav>
+          <select
+            className="settings-groups-select"
+            aria-label={ts.groupsNav}
+            value={group}
+            onChange={(e) => {
+              window.location.hash = `#/settings/${e.target.value}`
+            }}
+          >
+            {groups.map((g) => (
+              <option key={g} value={g}>
+                {ts.groups[g].title}
+              </option>
+            ))}
+          </select>
+          <div className="settings-body">
           <div className="settings-scope">
             <span className="lang-toggle settings-scopes" role="group" aria-label={ts.scopeGroup} aria-describedby={hintId}>
               {ORDER.map((sc) => (
@@ -216,7 +258,7 @@ export default function Settings() {
             onChange={(e) => setQuery(e.target.value)}
           />
           <p className="counts" aria-live="polite">
-            {ts.count(shown.length, view.settings.length)}
+            {ts.count(shown.length, pool.length)}
           </p>
           {shown.length === 0 ? (
             <p className="settings-empty">{ts.noMatch(query.trim())}</p>
@@ -226,6 +268,7 @@ export default function Settings() {
                 <SettingRow
                   key={s.id}
                   s={s}
+                  groupName={q === '' ? undefined : ts.groups[groupOf(s)].title}
                   scope={scope}
                   tx={tx}
                   files={view.files}
@@ -238,7 +281,8 @@ export default function Settings() {
               ))}
             </ul>
           )}
-        </>
+          </div>
+        </div>
       ) : (
         <LoadPending load={load} message={ts.loadError} />
       )}
@@ -354,6 +398,7 @@ function ProjectName({ name }: { name: string }) {
 
 function SettingRow({
   s,
+  groupName,
   scope,
   tx,
   files,
@@ -364,6 +409,7 @@ function SettingRow({
   onScope,
 }: {
   s: ResolvedSetting
+  groupName?: string
   scope: SettingScope
   tx: (src: string) => string
   files: SettingsView['files']
@@ -492,6 +538,7 @@ function SettingRow({
       <h2 className="settings-title">
         <span id={titleId}>{tx(s.title)}</span>
         <code className="card-id">{s.id}</code>
+        {groupName && <span className="badge settings-group">{groupName}</span>}
         {modified && (
           <span className="badge settings-modified" title={ts.modifiedTitle(ts.scopes[ws])}>
             {ts.modified}

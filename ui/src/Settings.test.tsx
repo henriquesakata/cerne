@@ -1026,3 +1026,79 @@ describe('Settings: chave de texto com valores declarados', () => {
     await waitFor(() => expect(putSetting).toHaveBeenCalledWith('lint.cli_output_language', 'project', 'en'))
   })
 })
+
+describe('Settings — grupos (F-0413)', () => {
+  const grouped = () =>
+    fixture({
+      settings: [
+        key({ id: 'channel.human_name', title: 'Your name in the channel', type: 'string', default: '', scopes: ['host'], value: '', group: 'general' }),
+        key({ id: 'gates.gauntlet', title: 'Gauntlet', type: 'string', default: 'on', scopes: ['project'], value: 'on', group: 'process' }),
+        key({ id: 'graph.enabled', title: 'Graph', group: 'interface' }),
+        key({ id: 'wiki.enabled', title: 'Wiki', group: 'interface' }),
+      ],
+    })
+  const nav = () => within(screen.getByRole('navigation', { name: 'Grupos de configurações' }))
+
+  beforeEach(() => {
+    window.location.hash = '#/settings'
+    fetchSettings.mockResolvedValue(grouped())
+  })
+
+  it('c4: a navegação lista só grupos com chave, e o nome do projeto conta para Geral', async () => {
+    render(<Settings />)
+    await screen.findByRole('listitem', { name: 'Seu nome no canal' })
+    expect(nav().getAllByRole('link').map((a) => a.textContent)).toEqual(['Geral', 'Processo', 'Interface'])
+    cleanup()
+    fetchSettings.mockResolvedValue(fixture({ settings: [key({ id: 'graph.enabled', title: 'Graph', group: 'interface' })] }))
+    render(<Settings group="interface" />)
+    await screen.findByRole('listitem', { name: 'Grafo' })
+    expect(nav().getAllByRole('link').map((a) => a.textContent)).toEqual(['Geral', 'Interface'])
+  })
+
+  it('c4: um grupo aberto mostra só as suas chaves; o aberto tem aria-current', async () => {
+    render(<Settings group="process" />)
+    await screen.findByRole('listitem', { name: 'Gauntlet' })
+    expect(screen.queryByRole('listitem', { name: 'Grafo' })).toBeNull()
+    expect(screen.queryByRole('listitem', { name: 'Wiki' })).toBeNull()
+    expect(screen.queryByRole('textbox', { name: 'Nome do projeto' })).toBeNull()
+    expect(nav().getByRole('link', { name: 'Processo' })).toHaveAttribute('aria-current', 'page')
+    expect(nav().getByRole('link', { name: 'Interface' })).not.toHaveAttribute('aria-current')
+    expect(nav().getByRole('link', { name: 'Interface' })).toHaveAttribute('href', '#/settings/interface')
+  })
+
+  it('c4: chave sem grupo (payload antigo) cai em Geral', async () => {
+    fetchSettings.mockResolvedValue(fixture())
+    render(<Settings group="general" />)
+    expect(await screen.findByRole('listitem', { name: 'Grafo' })).toBeInTheDocument()
+  })
+
+  it('c4: abaixo de 640 px a navegação é um select rotulado que troca o hash', async () => {
+    render(<Settings group="process" />)
+    await screen.findByRole('listitem', { name: 'Gauntlet' })
+    const select = screen.getByRole('combobox', { name: 'Grupos de configurações' })
+    expect(select).toHaveValue('process')
+    fireEvent.change(select, { target: { value: 'interface' } })
+    expect(window.location.hash).toBe('#/settings/interface')
+  })
+
+  it('c5: com texto na busca aparecem chaves de todos os grupos, cada uma com o nome do grupo; limpar volta ao grupo aberto', async () => {
+    render(<Settings group="process" />)
+    await screen.findByRole('listitem', { name: 'Gauntlet' })
+    const box = screen.getByRole('searchbox', { name: 'Buscar configurações' })
+    fireEvent.change(box, { target: { value: 'enabled' } })
+    const graph = screen.getByRole('listitem', { name: 'Grafo' })
+    expect(within(graph).getByText('Interface')).toBeInTheDocument()
+    expect(screen.getByRole('listitem', { name: 'Wiki' })).toBeInTheDocument()
+    expect(screen.queryByRole('listitem', { name: 'Gauntlet' })).toBeNull()
+    fireEvent.change(box, { target: { value: '' } })
+    expect(screen.getByRole('listitem', { name: 'Gauntlet' })).toBeInTheDocument()
+    expect(screen.queryByRole('listitem', { name: 'Grafo' })).toBeNull()
+  })
+
+  it('c6: o seletor Projeto | Host aparece em toda página de grupo', async () => {
+    render(<Settings group="interface" />)
+    await screen.findByRole('listitem', { name: 'Grafo' })
+    expect(screen.getByRole('group', { name: /escopo/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Host/ })).toBeInTheDocument()
+  })
+})
