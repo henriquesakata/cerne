@@ -252,13 +252,21 @@ func TestInstallPS1_RelativeInstallDir(t *testing.T) {
 		}
 		abs := filepath.Join(cwd, "rel", "bin")
 		assertInstalledExe(t, abs, "v1.2.3")
+		want, err := os.Stat(abs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// The temp dir may come as a short 8.3 name (RUNNER~1) and the script
+		// writes the long one: compare the directories, not the strings.
 		_, entries := userPath(t, host)
 		var found bool
 		for _, e := range entries {
 			if strings.EqualFold(e, `rel\bin`) {
 				t.Errorf("user PATH got the relative dir: %q", entries)
 			}
-			found = found || strings.EqualFold(strings.TrimRight(e, `\`), abs)
+			if st, err := os.Stat(e); err == nil && filepath.IsAbs(e) && os.SameFile(st, want) {
+				found = true
+			}
 		}
 		if !found {
 			t.Errorf("user PATH lacks %s: %q", abs, entries)

@@ -39,7 +39,7 @@ function Install-Cerne {
   $note = $null
   switch ($arch) {
     'AMD64' { }
-    'ARM64' { $note = 'Windows on ARM64: installed the amd64 build, which Windows 11 runs under emulation.' }
+    'ARM64' { $note = 'Windows on ARM64: installed the amd64 build, which Windows 11 runs under emulation (Windows 10 on ARM cannot run it).' }
     default { throw "cerne install: unsupported architecture: $arch (releases cover 64-bit Windows: amd64, and ARM64 through emulation)" }
   }
 
