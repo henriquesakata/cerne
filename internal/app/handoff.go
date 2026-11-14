@@ -224,24 +224,28 @@ func HandoffWork(repoDir, projDir, id, brief, next string, evidence, contingenci
 	return hoID, nil
 }
 
-// HandoffBriefBody is the handoff's content without the two sections
+// HandoffBriefBody is the handoff's content without the sections
 // HandoffWork composed from fields the record already carries — the
 // contingencies and the next step — so a reader that shows those fields does
 // not repeat them (F-0421). The giver's brief, the evidence and the work log
-// stay. A content that does not carry them verbatim (composed in another docs
-// language) comes back whole.
-func HandoffBriefBody(repoDir string, h store.Handoff, content string) string {
-	lang := store.DocsLanguage(repoDir)
-	cut := func(s, part string) string {
-		if i := strings.LastIndex(s, part); i >= 0 {
-			return s[:i] + s[i+len(part):]
-		}
-		return s
-	}
+// stay. The composed tail is matched where HandoffWork puts it, closing the
+// content or opening the work log, so a log entry quoting the same line is
+// left alone; a content without it verbatim (composed in another docs
+// language) comes back whole. lang is the backend's docs language.
+func HandoffBriefBody(lang doclang.Lang, h store.Handoff, content string) string {
+	tail := "\n\n" + doclang.Display(doclang.NextStepLabel, lang) + ": " + h.Next
 	if len(h.Contingencies) > 0 {
-		content = cut(content, "\n\n"+doclang.Display(doclang.IfLabel, lang)+":\n- "+strings.Join(h.Contingencies, "\n- "))
+		tail = "\n\n" + doclang.Display(doclang.IfLabel, lang) + ":\n- " + strings.Join(h.Contingencies, "\n- ") + tail
 	}
-	return cut(content, "\n\n"+doclang.Display(doclang.NextStepLabel, lang)+": "+h.Next)
+	if i := strings.Index(content, tail+"\n\n"+doclang.Display(doclang.LogLabel, lang)+":\n"); i >= 0 {
+		return content[:i] + content[i+len(tail):]
+	}
+	for _, end := range []string{"\n", ""} {
+		if strings.HasSuffix(content, tail+end) {
+			return strings.TrimSuffix(content, tail+end) + end
+		}
+	}
+	return content
 }
 
 // withWorkLog appends to a handoff brief the work log entries made since the

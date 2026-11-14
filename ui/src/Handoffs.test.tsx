@@ -180,6 +180,9 @@ describe('Passagens — contagem e expandir tudo (F-0421 crit. 2)', () => {
     const ids = ['HO-0007', 'HO-0006', 'HO-0005', 'HO-0004']
     const expand = screen.getByRole('button', { name: 'Expandir tudo' })
     const collapse = screen.getByRole('button', { name: 'Recolher tudo' })
+    // crit. 6: the controls wear the F-0416 queue classes (font: inherit, 6px, 2px focus), none the browser default.
+    expect([expand, collapse].map((b) => b.className)).toEqual(['queue-btn', 'queue-btn'])
+    expect(ids.map((id) => toggle(id).className)).toEqual(Array(4).fill('queue-toggle'))
     expect(collapse).toBeDisabled()
     fireEvent.click(expand)
     expect(ids.map((id) => toggle(id).getAttribute('aria-expanded'))).toEqual(['true', 'true', 'true', 'true'])

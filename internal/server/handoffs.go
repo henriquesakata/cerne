@@ -6,6 +6,7 @@ import (
 	"regexp"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -24,9 +25,9 @@ type handoffRow struct {
 	Brief         string `json:"brief"`
 }
 
-func newHandoffRow(repoDir string, h store.Handoff, titles map[string]string) (handoffRow, error) {
+func newHandoffRow(repoDir string, lang doclang.Lang, h store.Handoff, titles map[string]string) (handoffRow, error) {
 	content, err := readContentDoc(repoDir, "handoffs", h.ID)
-	return handoffRow{h, titles[h.FromWork], app.HandoffBriefBody(repoDir, h, content)}, err
+	return handoffRow{h, titles[h.FromWork], app.HandoffBriefBody(lang, h, content)}, err
 }
 
 func handleHandoffs(w http.ResponseWriter, repoDir string) {
@@ -40,9 +41,10 @@ func handleHandoffs(w http.ResponseWriter, repoDir string) {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
+	lang := store.DocsLanguage(repoDir)
 	rows := make([]handoffRow, 0, len(all))
 	for _, h := range all {
-		row, err := newHandoffRow(repoDir, h, titles)
+		row, err := newHandoffRow(repoDir, lang, h, titles)
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 			return
@@ -71,7 +73,7 @@ func handleHandoffDetail(w http.ResponseWriter, repoDir, id string) {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	row, err := newHandoffRow(repoDir, h, titles)
+	row, err := newHandoffRow(repoDir, store.DocsLanguage(repoDir), h, titles)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
