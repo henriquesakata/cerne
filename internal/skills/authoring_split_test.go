@@ -132,6 +132,13 @@ var rewritten = []string{
 	"Between the two, run `cerne cost F-NNNN --stamp`",
 	// F-0418: the forms follow the project's documentation language.
 	"The spec's **Verificação** section then carries exactly one of three literal forms",
+	// F-0419: the idea lifecycle (title + body, resolve, link, unlink, state
+	// filters) rewrote the idea capture/read/drop/promote bullets.
+	"- **Capture:** `cerne idea new",
+	"- **Read:** `cerne idea list` (active only",
+	"- **Drop:** `cerne idea drop I-NNNN",
+	"- **Promote:** `cerne idea promote I-NNNN",
+	"Prints both ids. A dropped or promoted idea is refused",
 }
 
 var sentenceEnd = regexp.MustCompile(`(?:[.!?])\s+`)
