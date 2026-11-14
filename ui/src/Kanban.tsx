@@ -359,6 +359,12 @@ function Columns({
     setGhost(null)
     setOver(null)
   }
+  // Um live reload que tira o card em voo do seu estado desmonta o <a> de origem:
+  // o dragend dele nunca chega ao board, então o gesto termina aqui.
+  const inFlightGone = inFlight !== null && !features.some((f) => f.id === inFlight.id && f.state === inFlight.state)
+  useEffect(() => {
+    if (inFlightGone) endGesture()
+  }, [inFlightGone])
   const beginGesture = (f: Feature) => {
     dragging.current = f
     setInFlight(f)

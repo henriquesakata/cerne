@@ -33,7 +33,8 @@ vi.mock('./api', async (importOriginal) => ({
   postTransition: vi.fn(),
   transitionBody: vi.fn((action: string) => ({ action, sentinel: true })),
 }))
-vi.mock('./live', () => ({ useLiveVersion: () => 0 }))
+const live = vi.hoisted(() => ({ version: 0 }))
+vi.mock('./live', () => ({ useLiveVersion: () => live.version }))
 
 const noticeEl = () => document.querySelector('.drag-notice') as HTMLElement
 const findNotice = () => waitFor(() => { expect(noticeEl()).not.toBeEmptyDOMElement(); return noticeEl() })
@@ -406,13 +407,31 @@ describe('destaque de destino (F-0415)', () => {
     expect(document.querySelectorAll(MARKS)).toHaveLength(0)
   })
 
+  it('critério 7: o card em voo muda de estado no meio do gesto (live reload) e as marcas somem', async () => {
+    live.version = 0
+    const { rerender } = render(<Kanban />)
+    await screen.findByText('F-0001')
+    start('F-0001')
+    expect(document.querySelectorAll(MARKS).length).toBeGreaterThan(0)
+    // Outro ator aprovou F-0001: o <a> de origem sai do Backlog e o dragend dele
+    // nunca chega ao board.
+    payload = { ...mkState(), features: [feature('F-0001', 'approved'), ...mkState().features.slice(1)] }
+    live.version = 1
+    rerender(<Kanban />)
+    await waitFor(() => expect(columnOf('Aprovadas')).toHaveTextContent('F-0001'))
+    expect(document.querySelectorAll(MARKS)).toHaveLength(0)
+    live.version = 0
+  })
+
   it('critério 8: estados distintos pela forma da borda; transições só sem movimento reduzido', () => {
     const css = readFileSync('src/app.css', 'utf8')
     const media = /@media \(prefers-reduced-motion: no-preference\)\s*\{[\s\S]*?\}\s*\}/g
     const motion = css.match(media) ?? []
     expect(motion.join('\n')).toMatch(/\.column[^{]*\{[^}]*transition/)
     const rest = css.replace(media, '')
-    const rule = (sel: string) => rest.match(new RegExp(`${sel.replace(/\./g, '\\.')}\\s*\\{([^}]*)\\}`))?.[1] ?? ''
+    // Todas as regras com exatamente esse seletor, não só a primeira.
+    const rule = (sel: string) =>
+      [...rest.matchAll(new RegExp(`(?:^|[}\\s])${sel.replace(/\./g, '\\.')}\\s*\\{([^}]*)\\}`, 'g'))].map((m) => m[1]).join('\n')
     expect(rule('.column.drop-ready')).toMatch(/dashed/)
     expect(rule('.column.drop-active')).toMatch(/solid/)
     for (const sel of ['.column', '.column.drop-ready', '.column.drop-active', '.column.drop-off', '.card.card-in-flight']) {
