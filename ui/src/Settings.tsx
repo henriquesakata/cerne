@@ -97,6 +97,9 @@ export default function Settings({ group = 'general' }: { group?: SettingGroup }
   // value the server kept (trimmed, or reset) instead of what was typed.
   const [landed, setLanded] = useState<Readonly<Record<string, number>>>({})
   const refocus = useRef<string | null>(null)
+  // Per key: the scope of its last landed write, until the row is touched again.
+  const [saved, setSaved] = useState<Readonly<Record<string, SettingScope>>>({})
+  const clearSaved = (id: string) => setSaved(({ [id]: _, ...rest }) => rest)
   // The view a landed write answered with (critic C5), shown over the loaded
   // one until a later load replaces that (`base` is the load it was written
   // over). A failed refresh after the write leaves the written value up.
@@ -138,11 +141,13 @@ export default function Settings({ group = 'general' }: { group?: SettingGroup }
       setBusy((b) => new Set([...b].filter((k) => k !== id)))
     }
     setBusy((b) => new Set(b).add(id))
+    clearSaved(id)
     run().then(
       (view) => {
         // A write answering after a project switch belongs to the old project.
         if (latest.current.pid === pid) setWritten({ base: latest.current.data, view })
         setLanded((l) => ({ ...l, [id]: (l[id] ?? 0) + 1 }))
+        if (latest.current.pid === pid) setSaved((sv) => ({ ...sv, [id]: scope }))
         refocus.current = id
         settle(null)
       },
@@ -170,6 +175,13 @@ export default function Settings({ group = 'general' }: { group?: SettingGroup }
   const pool = q === '' ? all.filter((s) => groupOf(s) === group) : all
   const shown = pool.filter((s) => q === '' || norm(`${tx(s.title)} ${tx(s.description)} ${s.id}`).includes(q))
   // Only groups with a key; the project name counts for general.
+  // The Project | Host selector only where it has a choice: some key takes both
+  // scopes, or the keys shown take different single scopes. Otherwise the page
+  // has one scope, said once in text.
+  const singles = new Set(pool.map((s) => (s.scopes.length === 1 ? s.scopes[0] : '')))
+  const chooser = pool.some((s) => s.scopes.length > 1) || singles.size > 1
+  const pageScope: SettingScope = !chooser && pool.length > 0 ? pool[0].scopes[0] : scope
+  const effScope = chooser ? scope : pageScope
   const groups = SETTING_GROUPS.filter((g) => (g === 'general' ? true : all.some((s) => groupOf(s) === g)))
 
   // The name block does not hang on the settings registry (critic C13): it
@@ -190,18 +202,20 @@ export default function Settings({ group = 'general' }: { group?: SettingGroup }
               <a
                 key={g}
                 href={`#/settings/${g}`}
-                aria-current={g === group ? 'page' : undefined}
+                aria-current={g === group && q === '' ? 'page' : undefined}
                 title={ts.groups[g].description}
+                onClick={() => setQuery('')}
               >
                 {ts.groups[g].title}
               </a>
             ))}
           </nav>
           <select
-            className="settings-groups-select"
+            className="settings-select settings-groups-select"
             aria-label={ts.groupsNav}
             value={group}
             onChange={(e) => {
+              setQuery('')
               window.location.hash = `#/settings/${e.target.value}`
             }}
           >
@@ -214,35 +228,47 @@ export default function Settings({ group = 'general' }: { group?: SettingGroup }
           </>
         )}
         <div className="settings-body">
+          {view && q === '' && (
+            <header className="settings-group-head">
+              <h2 className="settings-group-title">{ts.groups[group].title}</h2>
+              <p className="settings-hint">{ts.groups[group].description}</p>
+            </header>
+          )}
           {group === 'general' && <ProjectName key={activePid} name={name} />}
           {view ? (
           <>
-          <div className="settings-scope">
-            <span className="lang-toggle settings-scopes" role="group" aria-label={ts.scopeGroup} aria-describedby={hintId}>
-              {ORDER.map((sc) => (
-                <button
-                  key={sc}
-                  type="button"
-                  className={sc === scope ? 'lang-option active' : 'lang-option'}
-                  aria-pressed={sc === scope}
-                  title={sc === 'host' ? ts.hostGlobalTitle : undefined}
-                  onClick={() => setScope(sc)}
-                >
-                  {sc === 'host' ? ts.hostGlobal : ts.scopes[sc]}
-                </button>
-              ))}
-            </span>
-            <p id={hintId} className="settings-hint">
-              {ts.scopeHint[scope]}
-            </p>
-            <p className="settings-hint">{ts.precedence}</p>
-          </div>
+          {chooser ? (
+            <div className="settings-scope">
+              <span className="lang-toggle settings-scopes" role="group" aria-label={ts.scopeGroup} aria-describedby={hintId}>
+                {ORDER.map((sc) => (
+                  <button
+                    key={sc}
+                    type="button"
+                    className={sc === scope ? 'lang-option active' : 'lang-option'}
+                    aria-pressed={sc === scope}
+                    title={sc === 'host' ? ts.hostGlobalTitle : undefined}
+                    onClick={() => setScope(sc)}
+                  >
+                    {sc === 'host' ? ts.hostGlobal : ts.scopes[sc]}
+                  </button>
+                ))}
+              </span>
+              <p id={hintId} className="settings-hint">
+                {ts.scopeHint[scope]}
+              </p>
+              <p className="settings-hint">{ts.precedence}</p>
+            </div>
+          ) : (
+            pool.length > 0 && (
+              <p className="settings-hint settings-scope-fixed">{ts.scopeFixed[pageScope]}</p>
+            )
+          )}
           {/* The escape to the raw file (R-0042): where the selected scope lives,
               for whoever would rather edit it by hand. */}
-          {view.files[scope] && (
+          {view.files[effScope] && pool.length > 0 && (
             <div className="settings-file">
               <span>{ts.file}</span>
-              <FixBlock command={view.files[scope]} copyFailed={ts.copyFailed} />
+              <FixBlock command={view.files[effScope]} copyFailed={ts.copyFailed} />
             </div>
           )}
           {(view.errors ?? []).map((e) => (
@@ -273,7 +299,10 @@ export default function Settings({ group = 'general' }: { group?: SettingGroup }
                   key={s.id}
                   s={s}
                   groupName={q === '' ? undefined : ts.groups[groupOf(s)].title}
-                  scope={scope}
+                  scope={effScope}
+                  chip={chooser}
+                  saved={saved[s.id]}
+                  onTouch={() => clearSaved(s.id)}
                   tx={tx}
                   files={view.files}
                   busy={busy.has(s.id)}
@@ -404,6 +433,9 @@ function ProjectName({ name }: { name: string }) {
 function SettingRow({
   s,
   groupName,
+  chip,
+  saved,
+  onTouch,
   scope,
   tx,
   files,
@@ -415,6 +447,11 @@ function SettingRow({
 }: {
   s: ResolvedSetting
   groupName?: string
+  // Whether the write-scope chip shows: always under the selector, else only
+  // when the key writes elsewhere than the page's scope.
+  chip: boolean
+  saved?: SettingScope
+  onTouch: () => void
   scope: SettingScope
   tx: (src: string) => string
   files: SettingsView['files']
@@ -428,6 +465,7 @@ function SettingRow({
   const ts = t.settings
   const uid = useId()
   const [intError, setIntError] = useState(false)
+  const errId = `${uid}-interr`
   const titleId = `${uid}-title`
   const descId = `${uid}-desc`
   // A key that does not take the selected scope writes to the one it takes.
@@ -454,25 +492,23 @@ function SettingRow({
   // A string key whose only values are on/off is a switch, written as on/off.
   const onOff = s.type === 'string' && s.enum?.length === 2 && s.enum.includes('on') && s.enum.includes('off')
   const isToggle = s.type === 'bool' || onOff
-  let titleNode = <span id={titleId}>{tx(s.title)}</span>
+  const titleNode = <span id={titleId}>{tx(s.title)}</span>
   let control = null
   if (isToggle) {
-    titleNode = (
-      <label className="settings-check">
-        <input
-          id={controlId(s.id)}
-          type="checkbox"
-          checked={onOff ? current === 'on' : current === true}
-          aria-labelledby={titleId}
-          aria-describedby={descId}
-          aria-disabled={lock}
-          onChange={(e) => {
-            const next = onOff ? (e.target.checked ? 'on' : 'off') : e.target.checked
-            if (!busy) onWrite(ws, () => putSetting(s.id, ws, next))
-          }}
-        />
-        <span id={titleId}>{tx(s.title)}</span>
-      </label>
+    control = (
+      <input
+        id={controlId(s.id)}
+        className="settings-check"
+        type="checkbox"
+        checked={onOff ? current === 'on' : current === true}
+        aria-labelledby={titleId}
+        aria-describedby={descId}
+        aria-disabled={lock}
+        onChange={(e) => {
+          const next = onOff ? (e.target.checked ? 'on' : 'off') : e.target.checked
+          if (!busy) onWrite(ws, () => putSetting(s.id, ws, next))
+        }}
+      />
     )
   } else {
     control = (
@@ -563,7 +599,7 @@ function SettingRow({
               className="settings-text"
               defaultValue={String(current)}
               aria-labelledby={titleId}
-              aria-describedby={descId}
+              aria-describedby={intError ? `${descId} ${errId}` : descId}
               aria-invalid={intError ? true : undefined}
               aria-disabled={lock}
             />
@@ -571,7 +607,7 @@ function SettingRow({
               {t.common.save}
             </button>
             {intError && (
-              <p role="alert" className="form-error">
+              <p id={errId} role="alert" className="form-error">
                 {ts.notInteger}
               </p>
             )}
@@ -590,6 +626,8 @@ function SettingRow({
       className={modified ? 'settings-row modified' : 'settings-row'}
       aria-labelledby={titleId}
       aria-busy={lock}
+      onChangeCapture={onTouch}
+      onClickCapture={onTouch}
     >
       <div className="settings-row-text">
         <h2 className="settings-title">
@@ -610,18 +648,6 @@ function SettingRow({
           {desc}
         </p>
         <code className="settings-id">{s.id}</code>
-        {(others.length > 0 || inherited) && (
-          <p className="settings-scope-info">
-            {others.map((sc) => (
-              <span key={sc}>
-                {above(sc) ? ts.overriddenBy(ts.scopes[sc]) : inherited ? ts.inheritedFrom(ts.scopes[sc]) : ts.alsoModifiedIn(ts.scopes[sc])}{' '}
-                <button type="button" className="settings-switch" aria-describedby={titleId} onClick={() => onScope(sc)}>
-                  {ts.editIn(ts.scopes[sc])}
-                </button>
-              </span>
-            ))}
-          </p>
-        )}
         {/* The top escape shows the selected scope's file; a row writing
             elsewhere shows its own (critic C18). */}
         {ws !== scope && files[ws] && (
@@ -632,9 +658,7 @@ function SettingRow({
         )}
       </div>
       <div className="settings-row-control">
-        {control}
-        <p className="settings-meta">
-          <span className="settings-effective">
+        <p className="settings-effective">
             {/* An empty name (even only spaces) signs with the fallback: said
                 in text, not only in the placeholder (F-0333, critic C3). */}
             {s.fallback && typeof s.value === 'string' && s.value.trim() === ''
@@ -642,9 +666,11 @@ function SettingRow({
               : s.origin === 'default'
                 ? ts.effectiveDefault(fmt(s.value))
                 : ts.effective(fmt(s.value), ts.scopes[s.origin])}
-          </span>
+        </p>
+        {control}
+        <p className="settings-meta">
           <span>{ts.defaultValue(fmt(s.default))}</span>
-          <span className="badge settings-write-chip">{ts.writesTo(label(ws))}</span>
+          {(chip || ws !== scope) && <span className="badge settings-write-chip">{ts.writesTo(label(ws))}</span>}
           {modified && (
             <button
               type="button"
@@ -658,6 +684,23 @@ function SettingRow({
             </button>
           )}
         </p>
+        {(others.length > 0 || inherited) && (
+          <p className="settings-scope-info">
+            {others.map((sc) => (
+              <span key={sc}>
+                {above(sc) ? ts.overriddenBy(ts.scopes[sc]) : inherited ? ts.inheritedFrom(ts.scopes[sc]) : ts.alsoModifiedIn(ts.scopes[sc])}{' '}
+                <button type="button" className="settings-switch" aria-describedby={titleId} onClick={() => onScope(sc)}>
+                  {ts.editIn(ts.scopes[sc])}
+                </button>
+              </span>
+            ))}
+          </p>
+        )}
+        {saved && (
+          <p aria-live="polite" className="settings-saved">
+            {saved === 'project' ? ts.savedProject : ts.saved}
+          </p>
+        )}
       </div>
       {/* A stored value the resolution skipped (critic C9): said in text —
           scope, file and value — and removable in the scope being edited;

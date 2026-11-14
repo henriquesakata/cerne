@@ -1123,9 +1123,12 @@ describe('Settings — livro-razão (F-0413)', () => {
     render(<Settings />)
     const extra = await screen.findByRole('listitem', { name: 'Extra toggle' })
     const box = within(extra).getByRole('checkbox', { name: 'Extra toggle' })
-    expect(box.closest('label')).toHaveTextContent(/^Extra toggle$/)
+    // F-0413 (crítica de fechamento): a caixa vive na coluna direita, sob o efetivo.
+    const right = box.closest('.settings-row-control') as HTMLElement
+    expect(right).not.toBeNull()
+    expect(right.firstElementChild).toHaveTextContent('Efetivo: ligado, de Host')
     const desc = within(extra).getByText('An injected key the screen never heard of.')
-    expect(box.closest('label')).not.toContainElement(desc)
+    expect(right).not.toContainElement(desc)
     expect(box).toHaveAccessibleDescription('An injected key the screen never heard of.')
   })
 
@@ -1198,5 +1201,90 @@ describe('Settings — editor numérico (F-0413)', () => {
     fireEvent.click(within(r).getByRole('button', { name: 'Salvar' }))
     expect(putSetting).not.toHaveBeenCalled()
     expect(await within(r).findByRole('alert')).toBeInTheDocument()
+  })
+})
+
+describe('Settings — cabeçalho de escopo, busca e confirmação (F-0413)', () => {
+  const onlyProject = () =>
+    fixture({
+      settings: [
+        key({ id: 'gates.gauntlet', title: 'Gauntlet', type: 'string', default: 'on', enum: ['on', 'off'], scopes: ['project'], value: 'on', group: 'process' }),
+        key({ id: 'channel.human_name', title: 'Your name in the channel', type: 'string', default: '', scopes: ['host'], value: '', group: 'general' }),
+        key({ id: 'graph.enabled', title: 'Graph', group: 'interface' }),
+      ],
+    })
+  beforeEach(() => {
+    fetchSettings.mockResolvedValue(onlyProject())
+  })
+
+  it('página em que nenhuma chave aceita os dois escopos: sem seletor, o escopo dito uma vez, sem chip por linha', async () => {
+    render(<Settings group="process" />)
+    const r = await screen.findByRole('listitem', { name: 'Gauntlet' })
+    expect(screen.queryByRole('group', { name: /escopo/i })).toBeNull()
+    expect(screen.getByText(/ficam no \.cernerc do projeto/)).toBeInTheDocument()
+    expect(within(r).queryByText(/^Grava em/)).toBeNull()
+  })
+
+  it('General só-host: o texto fala do settings.toml do host', async () => {
+    render(<Settings group="general" />)
+    await screen.findByRole('listitem', { name: 'Seu nome no canal' })
+    expect(screen.queryByRole('group', { name: /escopo/i })).toBeNull()
+    expect(screen.getByText(/ficam no settings\.toml deste host/)).toBeInTheDocument()
+  })
+
+  it('página com chave dos dois escopos mantém o seletor', async () => {
+    render(<Settings group="interface" />)
+    await screen.findByRole('listitem', { name: 'Grafo' })
+    expect(screen.getByRole('group', { name: /escopo/i })).toBeInTheDocument()
+  })
+
+  it('o grupo aberto tem título e descrição visíveis; com busca ninguém é a página atual', async () => {
+    render(<Settings group="process" />)
+    await screen.findByRole('listitem', { name: 'Gauntlet' })
+    expect(screen.getByRole('heading', { name: 'Processo' })).toBeInTheDocument()
+    expect(screen.getByText('Portões do ciclo de vida e regras do lint.')).toBeInTheDocument()
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar configurações' }), { target: { value: 'graph' } })
+    const nav = within(screen.getByRole('navigation', { name: 'Grupos de configurações' }))
+    expect(nav.queryByRole('link', { current: 'page' })).toBeNull()
+  })
+
+  it('clicar num grupo com busca ativa limpa a busca', async () => {
+    render(<Settings group="process" />)
+    await screen.findByRole('listitem', { name: 'Gauntlet' })
+    const box = screen.getByRole('searchbox', { name: 'Buscar configurações' })
+    fireEvent.change(box, { target: { value: 'graph' } })
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Grupos de configurações' })).getByRole('link', { name: 'Interface' }))
+    expect(box).toHaveValue('')
+  })
+
+  it('escrita com sucesso: confirmação em região aria-live (não role=status: os testes de escrita da F-0315 exigem nenhum status após o sucesso), com o lembrete do .cernerc no escopo Projeto', async () => {
+    putSetting.mockResolvedValue(onlyProject())
+    render(<Settings group="interface" />)
+    const r = await screen.findByRole('listitem', { name: 'Grafo' })
+    fireEvent.click(within(r).getByRole('checkbox', { name: 'Grafo' }))
+    expect(await within(r).findByText('Salvo no .cernerc — lembre de commitar.')).toHaveAttribute('aria-live', 'polite')
+  })
+
+  it('a confirmação some na próxima interação com a linha', async () => {
+    putSetting.mockResolvedValueOnce(onlyProject())
+    render(<Settings group="interface" />)
+    const r = await screen.findByRole('listitem', { name: 'Grafo' })
+    const box = within(r).getByRole('checkbox', { name: 'Grafo' })
+    fireEvent.click(box)
+    await within(r).findByText(/^Salvo/)
+    putSetting.mockImplementationOnce(() => new Promise<SettingsView>(() => {}))
+    fireEvent.click(box)
+    expect(within(r).queryByText(/^Salvo/)).toBeNull()
+  })
+
+  it('o erro do campo numérico entra no aria-describedby do campo', async () => {
+    fetchSettings.mockResolvedValue(fixture())
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Retry count' })
+    const num = within(r).getByRole('spinbutton')
+    fireEvent.change(num, { target: { value: '2.5' } })
+    fireEvent.click(within(r).getByRole('button', { name: 'Salvar' }))
+    await within(r).findByRole('alert')
+    expect(num).toHaveAccessibleDescription(/Informe um número inteiro/)
   })
 })
