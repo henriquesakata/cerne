@@ -409,6 +409,8 @@ const ptBR = {
       hintAccept: 'Solte para aceitar',
     },
   },
+  // Linha de fila recolhível (F-0416), compartilhada por Ideias e Pendências.
+  queue: { expandAll: 'Expandir tudo', collapseAll: 'Recolher tudo' },
   pendings: {
     title: 'Pendências',
     intro: 'Débitos conhecidos que uma entrega deixou, registrados pelo CLI (cerne pending new).',
@@ -1596,6 +1598,7 @@ const en: Messages = {
       hintAccept: 'Drop to accept',
     },
   },
+  queue: { expandAll: 'Expand all', collapseAll: 'Collapse all' },
   pendings: {
     title: 'Pendings',
     intro: 'Known debts a delivery left behind, registered from the CLI (cerne pending new).',
