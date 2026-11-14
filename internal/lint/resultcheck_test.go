@@ -156,7 +156,7 @@ func TestCheckResultReadsEveryGauntletSection(t *testing.T) {
 	}
 	dir, f := writeResultFixture(t, domain.StateInDevelopment, checkSpec, cites+"## O que mudou\n\n```\n## Gauntlet\n```\n\n## Gauntlet\nBarra: R-0008\nRodada 1 — vitória\n")
 	got := CheckResult(dir, f)
-	if len(got) != 1 || !strings.Contains(got[0].Detail, "rodada 1 sem citação do juiz") {
+	if len(got) != 1 || !strings.Contains(got[0].Detail, `"Rodada 1" has no judge quote`) {
 		t.Fatalf("want the last section's problem (the record, not the copy above it), got %+v", got)
 	}
 }
@@ -252,14 +252,14 @@ func TestResultRulesErrataOnlyOnceClosed(t *testing.T) {
 func TestResultGauntletDetailNamesTheResult(t *testing.T) {
 	noBar := "## Gauntlet\n\nRodada 1 — vitória: \"ok\"\n"
 	for _, tc := range []struct{ name, result, want string }{
-		{"result section", "critério 1 e critério 2\n\n" + badGauntlet, "rodada 1 sem citação do juiz"},
-		{"no result section", "critério 1 e critério 2\n", `sem seção "## Gauntlet"`},
+		{"result section", "critério 1 e critério 2\n\n" + badGauntlet, `"Rodada 1" has no judge quote`},
+		{"no result section", "critério 1 e critério 2\n", `no "## Gauntlet" section`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir, f := writeResultFixture(t, domain.StateImplemented, checkSpec, tc.result)
 			addErrata(t, dir, noBar)
 			got := gauntletFinding(dir, f, false)
-			if len(got) != 1 || !strings.Contains(got[0].Detail, "result.md "+tc.want) {
+			if len(got) != 1 || !strings.Contains(got[0].Detail, "result.md has no complete Gauntlet record: "+tc.want) {
 				t.Fatalf("want one finding with detail %q, got %+v", tc.want, got)
 			}
 		})
@@ -311,7 +311,7 @@ func TestResultFindingsNameStateAndPath(t *testing.T) {
 			if !strings.Contains(fd.Detail, "'"+cmd+"'") {
 				t.Errorf("%s %s: detail lacks the command %q: %q", state, fd.Rule, cmd, fd.Detail)
 			}
-			if !strings.Contains(fd.Detail, ". Forma: ") {
+			if !strings.Contains(fd.Detail, ". Form: ") {
 				t.Errorf("%s %s: detail lacks the form: %q", state, fd.Rule, fd.Detail)
 			}
 		}

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/store"
 )
@@ -28,10 +29,10 @@ func TestResultGauntletFindings(t *testing.T) {
 		{"verdict recorded is clean", domain.StateImplemented, after, recorded, ""},
 		{"exemption recorded is clean", domain.StateImplemented, after, exempt, ""},
 		{"nfd verdict is clean", domain.StateDone, after, "## Gauntlet\nBarra: x\nRodada 1 \u2014 vito\u0301ria: \u201ccita\u00e7a\u0303o\u201d\n", ""},
-		{"quote on another line does not vouch", domain.StateImplemented, after, "## Gauntlet\nBarra: \"refer\u00eancia\"\nRodada 1 \u2014 vit\u00f3ria\n", "rodada 1 sem citação do juiz"},
-		{"no section flags", domain.StateImplemented, after, "## Resultado\n\nfeito\n", "sem seção"},
-		{"section without cited verdict flags", domain.StateImplemented, after, emptySection, "sem linha \"Barra:\""},
-		{"verdict without quote flags", domain.StateImplemented, after, "## Gauntlet\nBarra: x\nRodada 1 — vitória\n", "rodada 1 sem citação do juiz"},
+		{"quote on another line does not vouch", domain.StateImplemented, after, "## Gauntlet\nBarra: \"refer\u00eancia\"\nRodada 1 \u2014 vit\u00f3ria\n", "\"Rodada 1\" has no judge quote"},
+		{"no section flags", domain.StateImplemented, after, "## Resultado\n\nfeito\n", `no "## Gauntlet" section`},
+		{"section without cited verdict flags", domain.StateImplemented, after, emptySection, "no \"Barra:\" line"},
+		{"verdict without quote flags", domain.StateImplemented, after, "## Gauntlet\nBarra: x\nRodada 1 — vitória\n", "\"Rodada 1\" has no judge quote"},
 		{"completed before cutoff is grandfathered", domain.StateImplemented, before, "## Resultado\n\nfeito\n", ""},
 		{"live states are ignored", domain.StateInDevelopment, after, "## Resultado\n\nfeito\n", ""},
 	}
@@ -76,13 +77,13 @@ func TestResultGauntletMissingDoc(t *testing.T) {
 	}
 	events := []domain.Event{{EntityID: "F-0001", Type: "feature.completed", At: resultGauntletSince.Add(time.Hour)}}
 	got := resultGauntletFindings(dir, []store.Feature{f}, events)
-	if len(got) != 1 || !strings.Contains(got[0].Detail, "sem seção") {
-		t.Fatalf("want one 'sem seção' finding, got %v", got)
+	if len(got) != 1 || !strings.Contains(got[0].Detail, `no "## Gauntlet" section`) {
+		t.Fatalf("want one missing-section finding, got %v", got)
 	}
 }
 
 // gauntletProblem runs the round reader on a section body.
-func gauntletProblem(section string) string { return parseGauntlet(section).problem() }
+func gauntletProblem(section string) string { return parseGauntlet(section).problem(doclang.PT) }
 
 func readFixture(t *testing.T, name string) string {
 	t.Helper()
@@ -143,26 +144,26 @@ func TestGauntletRoundLayouts(t *testing.T) {
 // Criterion 3.
 func TestGauntletRoundWithoutQuote(t *testing.T) {
 	runGauntletCases(t, []gauntletCase{
-		{"quote only on the Barra line", "Barra: \"ref\"\nRodada 1 \u2014 vit\u00f3ria\n", "rodada 1 sem citação do juiz"},
-		{"quote only in round 1", "Barra: x\nRodada 1 \u2014 derrota: \"a\"\nRodada 2 \u2014 vit\u00f3ria\n", "rodada 2 sem citação do juiz"},
-		{"quote only in Achados (NFC)", "Barra: x\nRodada 1 \u2014 vit\u00f3ria\nAchados do cr\u00edtico: 1 \u2014 \"x\"\n", "rodada 1 sem citação do juiz"},
-		{"quote only in Achados (NFD)", "Barra: x\nRodada 1 \u2014 vit\u00f3ria\nAchados do cri\u0301tico: 1 \u2014 \"x\"\n", "rodada 1 sem citação do juiz"},
-		{"empty quote pair", "Barra: x\nRodada 1 \u2014 vit\u00f3ria: \"  \"\n", "rodada 1 sem citação do juiz"},
-		{"lone quote char", "Barra: x\nRodada 1 \u2014 vit\u00f3ria: 5\" tela\n", "rodada 1 sem citação do juiz"},
-		{"table: citation only in the next row", "Barra: x\n| Rodada 1 | vit\u00f3ria |\n| Rodada 2 | vit\u00f3ria | \"y\" |\n", "rodada 1 sem citação do juiz"},
-		{"only Barra, no round", "Barra: x\n", "rodada sem citação do juiz"},
-		{"implicit round: quote only on Barra", "Barra: \"x\"\nvit\u00f3ria sem citar\n", "rodada sem citação do juiz"},
+		{"quote only on the Barra line", "Barra: \"ref\"\nRodada 1 \u2014 vit\u00f3ria\n", "\"Rodada 1\" has no judge quote"},
+		{"quote only in round 1", "Barra: x\nRodada 1 \u2014 derrota: \"a\"\nRodada 2 \u2014 vit\u00f3ria\n", "\"Rodada 2\" has no judge quote"},
+		{"quote only in Achados (NFC)", "Barra: x\nRodada 1 \u2014 vit\u00f3ria\nAchados do cr\u00edtico: 1 \u2014 \"x\"\n", "\"Rodada 1\" has no judge quote"},
+		{"quote only in Achados (NFD)", "Barra: x\nRodada 1 \u2014 vit\u00f3ria\nAchados do cri\u0301tico: 1 \u2014 \"x\"\n", "\"Rodada 1\" has no judge quote"},
+		{"empty quote pair", "Barra: x\nRodada 1 \u2014 vit\u00f3ria: \"  \"\n", "\"Rodada 1\" has no judge quote"},
+		{"lone quote char", "Barra: x\nRodada 1 \u2014 vit\u00f3ria: 5\" tela\n", "\"Rodada 1\" has no judge quote"},
+		{"table: citation only in the next row", "Barra: x\n| Rodada 1 | vit\u00f3ria |\n| Rodada 2 | vit\u00f3ria | \"y\" |\n", "\"Rodada 1\" has no judge quote"},
+		{"only Barra, no round", "Barra: x\n", "the round has no judge quote"},
+		{"implicit round: quote only on Barra", "Barra: \"x\"\nvit\u00f3ria sem citar\n", "the round has no judge quote"},
 	})
 }
 
 // Criterion 4.
 func TestGauntletRoundWithoutVerdict(t *testing.T) {
 	runGauntletCases(t, []gauntletCase{
-		{"quote, no verdict", "Barra: x\nRodada 1: \"cita\"\n", "rodada 1 sem veredito"},
-		{"verdict only in other round", "Barra: x\nRodada 1 \u2014 vit\u00f3ria: \"a\"\nRodada 2: \"b\"\n", "rodada 2 sem veredito"},
+		{"quote, no verdict", "Barra: x\nRodada 1: \"cita\"\n", "\"Rodada 1\" has no verdict"},
+		{"verdict only in other round", "Barra: x\nRodada 1 \u2014 vit\u00f3ria: \"a\"\nRodada 2: \"b\"\n", "\"Rodada 2\" has no verdict"},
 		{"literal EMPATE + quote", "Barra: x\nRodada 1: \"cita\"\nVEREDITO: EMPATE\n", ""},
 		{"literal A, lowercase keyword", "Barra: x\nRodada 1: \"cita\"\nveredito: A\n", ""},
-		{"VEREDITO: C is no verdict", "Barra: x\nRodada 1: \"cita\"\nVEREDITO: C\n", "rodada 1 sem veredito"},
+		{"VEREDITO: C is no verdict", "Barra: x\nRodada 1: \"cita\"\nVEREDITO: C\n", "\"Rodada 1\" has no verdict"},
 	})
 }
 
@@ -170,12 +171,12 @@ func TestGauntletRoundWithoutVerdict(t *testing.T) {
 func TestGauntletMissingBar(t *testing.T) {
 	complete := "Rodada 1 \u2014 vit\u00f3ria: \"cita\"\n"
 	runGauntletCases(t, []gauntletCase{
-		{"no Barra line", complete, `sem linha "Barra:"`},
-		{"empty Barra", "Barra:\n" + complete, `sem linha "Barra:"`},
-		{"bold Barra without value", "**Barra:**\n" + complete, `sem linha "Barra:"`},
+		{"no Barra line", complete, `no "Barra:" line`},
+		{"empty Barra", "Barra:\n" + complete, `no "Barra:" line`},
+		{"bold Barra without value", "**Barra:**\n" + complete, `no "Barra:" line`},
 		{"bold list Barra with value", "- **Barra:** x\n" + complete, ""},
 		{"quoted Barra", "> Barra: x\n" + complete, ""},
-		{"Barra mid-sentence is no Barra line", "ver Barra: x\n" + complete, `sem linha "Barra:"`},
+		{"Barra mid-sentence is no Barra line", "ver Barra: x\n" + complete, `no "Barra:" line`},
 	})
 }
 
@@ -188,16 +189,16 @@ func TestGauntletExemptions(t *testing.T) {
 		{"dispensada NFD", "Barra: dispensada por decisa\u0303o humana (x)\n", ""},
 		{"bold list exemption", "- **Barra:** n\u00e3o aplic\u00e1vel (x)\n", ""},
 		{"exemption with rounds incomplete", "Barra: dispensada por decis\u00e3o humana (x)\nRodada 1 \u2014 vit\u00f3ria\n", ""},
-		{"exemption without parenthesis is no exemption", "Barra: n\u00e3o aplic\u00e1vel\n", "rodada sem citação do juiz"},
+		{"exemption without parenthesis is no exemption", "Barra: n\u00e3o aplic\u00e1vel\n", "the round has no judge quote"},
 	})
 }
 
 // Criterion 8.
 func TestGauntletProblemOrder(t *testing.T) {
 	runGauntletCases(t, []gauntletCase{
-		{"no bar and incomplete round: bar only", "Rodada 1 \u2014 vit\u00f3ria\n", `sem linha "Barra:"`},
-		{"quote before verdict", "Barra: x\nRodada 1\n", "rodada 1 sem citação do juiz"},
-		{"first incomplete round named", "Barra: x\nRodada 1: \"a\" VEREDITO: A\nRodada 2: \"b\"\nRodada 3\n", "rodada 2 sem veredito"},
+		{"no bar and incomplete round: bar only", "Rodada 1 \u2014 vit\u00f3ria\n", `no "Barra:" line`},
+		{"quote before verdict", "Barra: x\nRodada 1\n", "\"Rodada 1\" has no judge quote"},
+		{"first incomplete round named", "Barra: x\nRodada 1: \"a\" VEREDITO: A\nRodada 2: \"b\"\nRodada 3\n", "\"Rodada 2\" has no verdict"},
 	})
 	if got := gauntletProblem("Rodada 1 \u2014 vit\u00f3ria\n"); strings.Contains(got, "rodada") {
 		t.Fatalf("bar problem must not mention rounds: %q", got)
@@ -212,8 +213,8 @@ func TestGauntletMergedRounds(t *testing.T) {
 		{"disposition after Achados merges", "Barra: x\nRodada 1 \u2014 vit\u00f3ria: \"a\"\nRodada 2 \u2014 vit\u00f3ria: \"b\"\nAchados do crítico: 2\n- Rodada 2 \u2192 `.cernerc` ileg\u00edvel\n", ""},
 		{"lowercase wrapped prose opens no round", "Barra: x\nRodada 1 \u2014 vit\u00f3ria: \"a\"\n  rodada 2 aberta com crítico novo.\n", ""},
 		{"uppercase RODADA is no anchor", "Barra: x\nRodada 1 \u2014 vit\u00f3ria: \"a\"\nRODADA 2 sem nada\n", ""},
-		{"incomplete numbered round still flags", "Barra: x\nRodada 1 \u2014 vit\u00f3ria: \"a\"\nRodada 2 \u2014 correções\n### Rodada 2 \u2014 notas\n", "rodada 2 sem citação do juiz"},
-		{"merged round, quote but no verdict", "Barra: x\nRodada 2: \"q\"\nRodada 2 \u2014 notas\n", "rodada 2 sem veredito"},
+		{"incomplete numbered round still flags", "Barra: x\nRodada 1 \u2014 vit\u00f3ria: \"a\"\nRodada 2 \u2014 correções\n### Rodada 2 \u2014 notas\n", "\"Rodada 2\" has no judge quote"},
+		{"merged round, quote but no verdict", "Barra: x\nRodada 2: \"q\"\nRodada 2 \u2014 notas\n", "\"Rodada 2\" has no verdict"},
 	})
 }
 
@@ -230,14 +231,14 @@ func TestGauntletBarQualifier(t *testing.T) {
 		{"lowercase qualified", "barra da spec: x\n" + round, ""},
 		{"qualified exemption", "Barra da spec: n\u00e3o aplic\u00e1vel (y)\n", ""},
 		{"bold qualified exemption NFD", "**Barra (da spec):** na\u0303o aplica\u0301vel (y)\n", ""},
-		{"mid-line after round anchor", "**Rodada 1 \u2014 vit\u00f3ria.** Barra: x \"c\"\n", `sem linha "Barra:"`},
-		{"prose exemption mid-line", "A spec fixou Barra: n\u00e3o aplic\u00e1vel (y)\n" + round, `sem linha "Barra:"`},
-		{"veredito barra prose", "Veredito: barra n\u00e3o aplic\u00e1vel (y)\n" + round, `sem linha "Barra:"`},
-		{"qualifier over 40 chars", long + round, `sem linha "Barra:"`},
-		{"no colon", "Barra da spec x\n" + round, `sem linha "Barra:"`},
-		{"empty value", "Barra da spec:\n" + round, `sem linha "Barra:"`},
-		{"empty bold value", "**Barra (da spec):**\n" + round, `sem linha "Barra:"`},
-		{"word glued to Barra is no qualifier", "Barras: x\n" + round, `sem linha "Barra:"`},
+		{"mid-line after round anchor", "**Rodada 1 \u2014 vit\u00f3ria.** Barra: x \"c\"\n", `no "Barra:" line`},
+		{"prose exemption mid-line", "A spec fixou Barra: n\u00e3o aplic\u00e1vel (y)\n" + round, `no "Barra:" line`},
+		{"veredito barra prose", "Veredito: barra n\u00e3o aplic\u00e1vel (y)\n" + round, `no "Barra:" line`},
+		{"qualifier over 40 chars", long + round, `no "Barra:" line`},
+		{"no colon", "Barra da spec x\n" + round, `no "Barra:" line`},
+		{"empty value", "Barra da spec:\n" + round, `no "Barra:" line`},
+		{"empty bold value", "**Barra (da spec):**\n" + round, `no "Barra:" line`},
+		{"word glued to Barra is no qualifier", "Barras: x\n" + round, `no "Barra:" line`},
 	})
 }
 
@@ -256,17 +257,17 @@ func TestGauntletBarEmphasis(t *testing.T) {
 // C2+C3: "Achados do crítico" opens a critic block, not a round cut.
 func TestGauntletCriticBlock(t *testing.T) {
 	runGauntletCases(t, []gauntletCase{
-		{"A: anchor inside critic mode reopens nothing", "Barra: x\nRodada 2 — vitória\nAchados do crítico: 1\n- Rodada 2 → \"lock stale…\"\n", "rodada 2 sem citação do juiz"},
+		{"A: anchor inside critic mode reopens nothing", "Barra: x\nRodada 2 — vitória\nAchados do crítico: 1\n- Rodada 2 → \"lock stale…\"\n", "\"Rodada 2\" has no judge quote"},
 		{"B: anchor in critic mode does not anchor", "Barra: x\n- **vitória** — juiz: \"x\"\nAchados do crítico: 1\n- Rodada 1 → refutado\n", ""},
-		{"singular Achado", "Barra: x\nRodada 1 — vitória\nAchado do crítico: \"x\"\n", "rodada 1 sem citação do juiz"},
-		{"NFD critico", "Barra: x\nRodada 1 — vitória\nAchados do cri\u0301tico: \"x\" empate\n", "rodada 1 sem citação do juiz"},
-		{"C3: judge paragraph after the Achados line is critic text", "Barra: x\n### Rodada 1\n**Achados do crítico:** 2 — corrigidos\n\n**Juiz** (A = nosso): \"hierarquia clara\" — VEREDITO: A\n", "rodada 1 sem citação do juiz"},
+		{"singular Achado", "Barra: x\nRodada 1 — vitória\nAchado do crítico: \"x\"\n", "\"Rodada 1\" has no judge quote"},
+		{"NFD critico", "Barra: x\nRodada 1 — vitória\nAchados do cri\u0301tico: \"x\" empate\n", "\"Rodada 1\" has no judge quote"},
+		{"C3: judge paragraph after the Achados line is critic text", "Barra: x\n### Rodada 1\n**Achados do crítico:** 2 — corrigidos\n\n**Juiz** (A = nosso): \"hierarquia clara\" — VEREDITO: A\n", "\"Rodada 1\" has no judge quote"},
 		{"critic ends at heading", "Barra: x\nRodada 1 — vitória\nAchados do crítico: 1\n### Fechamento\nJuiz: \"c\"\n", ""},
-		{"list item after blank stays critic", "Barra: x\nRodada 1 — vitória\nAchados do crítico: 1\n\n- item \"q\"\n", "rodada 1 sem citação do juiz"},
-		{"critic verdict word does not count", "Barra: x\nRodada 1: \"c\"\nAchados do crítico: 1 — empate\n", "rodada 1 sem veredito"},
-		{"dense layout: non-list anchor ends critic mode", "Barra: x\nRodada 1 — vitória: \"a\"\nAchados do crítico: 1 — corrigido\nRodada 2 — crítico, sem juiz\n", "rodada 2 sem citação do juiz"},
-		{"T-0040 shape", "Barra: x\nRodada 1 — derrota: \"VEREDITO: B\"\nAchados do crítico: 7 — \"VEREDITO DO CRÍTICO: 1 HIGH\"\nRodada 2 — derrota: \"VEREDITO: A\"\nAchados do crítico: 8 — corrigidos 7\nRodada 4 do crítico, sobre as correções (sem juiz): \"VEREDITO DO CRÍTICO: 0 HIGH\"\nAchados do crítico: 6 — corrigidos 4\nEncerramento perdendo por decisão humana: \"Encerrar\"\n", "rodada 4 sem veredito"},
-		{"bold non-list anchor ends critic mode", "Barra: x\nRodada 1 — vitória: \"a\"\nAchados do crítico: 1\n**Rodada 2 — notas**\n", "rodada 2 sem citação do juiz"},
+		{"list item after blank stays critic", "Barra: x\nRodada 1 — vitória\nAchados do crítico: 1\n\n- item \"q\"\n", "\"Rodada 1\" has no judge quote"},
+		{"critic verdict word does not count", "Barra: x\nRodada 1: \"c\"\nAchados do crítico: 1 — empate\n", "\"Rodada 1\" has no verdict"},
+		{"dense layout: non-list anchor ends critic mode", "Barra: x\nRodada 1 — vitória: \"a\"\nAchados do crítico: 1 — corrigido\nRodada 2 — crítico, sem juiz\n", "\"Rodada 2\" has no judge quote"},
+		{"T-0040 shape", "Barra: x\nRodada 1 — derrota: \"VEREDITO: B\"\nAchados do crítico: 7 — \"VEREDITO DO CRÍTICO: 1 HIGH\"\nRodada 2 — derrota: \"VEREDITO: A\"\nAchados do crítico: 8 — corrigidos 7\nRodada 4 do crítico, sobre as correções (sem juiz): \"VEREDITO DO CRÍTICO: 0 HIGH\"\nAchados do crítico: 6 — corrigidos 4\nEncerramento perdendo por decisão humana: \"Encerrar\"\n", "\"Rodada 4\" has no verdict"},
+		{"bold non-list anchor ends critic mode", "Barra: x\nRodada 1 — vitória: \"a\"\nAchados do crítico: 1\n**Rodada 2 — notas**\n", "\"Rodada 2\" has no judge quote"},
 		{"F-0275 shape", "Barra: x\nRodada 1 — vitória: \"VEREDITO: A\" — \"a\"\nRodada 2 — vitória: \"VEREDITO: B\" — \"b\"\nAchados do crítico: 8 — corrigidos 5\n```\n\n**Achados do crítico de contexto fresco (rodada 1):**\n\n- **Corrigidos (5):** (1) x\n- **Refutado (1):** (6) \"campo sem enum\"\n\n**Lacunas apontadas pelos juízes:**\n\n- Rodada 2 → `.cernerc` ilegível\n\n**Nota de método:** a rodada 2 apontou\n", ""},
 	})
 }
@@ -275,14 +276,14 @@ func TestGauntletCriticBlock(t *testing.T) {
 // non-list round anchor, or a sibling list-item anchor of a list-item Achados.
 func TestGauntletCriticBlockEnds(t *testing.T) {
 	runGauntletCases(t, []gauntletCase{
-		{"R1: sibling list-item anchor ends a list-item Achados", "Barra: x\n- **Rodada 1 — derrota.** Juiz: \"B\" — VEREDITO: B\n- **Achados do crítico:** 3\n- **Rodada 2 — vitória.**\n", "rodada 2 sem citação do juiz"},
+		{"R1: sibling list-item anchor ends a list-item Achados", "Barra: x\n- **Rodada 1 — derrota.** Juiz: \"B\" — VEREDITO: B\n- **Achados do crítico:** 3\n- **Rodada 2 — vitória.**\n", "\"Rodada 2\" has no judge quote"},
 		{"nested list-item anchor stays critic", "Barra: x\n- **Rodada 1 — vitória.** \"a\"\n- **Achados do crítico:** 3\n  - Rodada 2 → \"lock stale\"\n", ""},
-		{"R2: numbered disposition with quote on continuation", "Barra: x\nRodada 1 — vitória\nAchados do crítico: 2\n1. corrigido (x)\n\n   \"lock stale\" no arquivo\n", "rodada 1 sem citação do juiz"},
-		{"R3: Achados heading, blank, table with quote", "Barra: x\nRodada 1 — vitória\n### Achados do crítico\n\n| # | \"q\" |\n", "rodada 1 sem citação do juiz"},
-		{"R4: #1 is not a heading", "Barra: x\nRodada 1 — vitória\nAchados do crítico: 2\n#1 lock stale\n#2 \"x\"\n", "rodada 1 sem citação do juiz"},
+		{"R2: numbered disposition with quote on continuation", "Barra: x\nRodada 1 — vitória\nAchados do crítico: 2\n1. corrigido (x)\n\n   \"lock stale\" no arquivo\n", "\"Rodada 1\" has no judge quote"},
+		{"R3: Achados heading, blank, table with quote", "Barra: x\nRodada 1 — vitória\n### Achados do crítico\n\n| # | \"q\" |\n", "\"Rodada 1\" has no judge quote"},
+		{"R4: #1 is not a heading", "Barra: x\nRodada 1 — vitória\nAchados do crítico: 2\n#1 lock stale\n#2 \"x\"\n", "\"Rodada 1\" has no judge quote"},
 		{"a real heading still ends it", "Barra: x\nRodada 1 — vitória\nAchados do crítico: 2\n#1 lock stale\n### x\nJuiz: \"c\"\n", ""},
 		{"S1: a heading that is also a Saída line ends it", "Barra: x\nRodada 1 — vitória\nAchados do crítico: 1 — corrigido\n### Saída: vencer\nJuiz: \"hierarquia clara\"\n", ""},
-		{"S2: sibling item of an existing round does not end it", "Barra: x\n- **Rodada 1 — vitória.** Juiz escolheu A.\n- **Achados do crítico:** 1\n- Rodada 1 → \"lock stale\" corrigido\n", "rodada 1 sem citação do juiz"},
+		{"S2: sibling item of an existing round does not end it", "Barra: x\n- **Rodada 1 — vitória.** Juiz escolheu A.\n- **Achados do crítico:** 1\n- Rodada 1 → \"lock stale\" corrigido\n", "\"Rodada 1\" has no judge quote"},
 		{"R6: Barra right after Achados is the bar", "Rodada 1 — vitória: \"c\"\nAchados do crítico: 1\nBarra: x\n", ""},
 	})
 }
@@ -291,11 +292,11 @@ func TestGauntletCriticBlockEnds(t *testing.T) {
 func TestGauntletHeaderEdges(t *testing.T) {
 	runGauntletCases(t, []gauntletCase{
 		{"E-0003 shape: exemption citing child verdicts", "Barra: n\u00e3o aplic\u00e1vel (x); padr\u00e3o alternativo cumprido: filha \"VEREDITO: B\"\n", ""},
-		{"accepted limit (R5): Sa\u00edda carrying the literal is still consumed", "Barra: x\nRodada 1: \"c\"\nSa\u00edda: VEREDITO: A\n", "rodada 1 sem veredito"},
-		{"accepted limit (R5): M\u00e9todo listing the literals is consumed", "Barra: x\nRodada 1: \"c\"\nM\u00e9todo: juiz responde VEREDITO: A, B ou EMPATE\n", "rodada 1 sem veredito"},
-		{"R7: emphasised Método/Saída are consumed", "Barra: x\n**Método**: y \"vitória\"\n**Saída**: derrota\n", "rodada sem citação do juiz"},
+		{"accepted limit (R5): Sa\u00edda carrying the literal is still consumed", "Barra: x\nRodada 1: \"c\"\nSa\u00edda: VEREDITO: A\n", "\"Rodada 1\" has no verdict"},
+		{"accepted limit (R5): M\u00e9todo listing the literals is consumed", "Barra: x\nRodada 1: \"c\"\nM\u00e9todo: juiz responde VEREDITO: A, B ou EMPATE\n", "\"Rodada 1\" has no verdict"},
+		{"R7: emphasised Método/Saída are consumed", "Barra: x\n**Método**: y \"vitória\"\n**Saída**: derrota\n", "the round has no judge quote"},
 		{"R9: NBSP inside the exemption", "Barra: n\u00e3o\u00a0aplic\u00e1vel (x)\n", ""},
-		{"S4: NBSP-only bar value is no value", "Barra:\u00a0\nRodada 1 — vitória: \"c\"\n", `sem linha "Barra:"`},
+		{"S4: NBSP-only bar value is no value", "Barra:\u00a0\nRodada 1 — vitória: \"c\"\n", `no "Barra:" line`},
 		{"R9: NBSP after the colon", "Barra:\u00a0n\u00e3o aplic\u00e1vel (x)\n", ""},
 	})
 }
@@ -303,7 +304,7 @@ func TestGauntletHeaderEdges(t *testing.T) {
 // C4: every bar line is consumed; any of them may carry the exemption.
 func TestGauntletBarLinesConsumed(t *testing.T) {
 	runGauntletCases(t, []gauntletCase{
-		{"second bar line inside round 2 is not a quote", "Barra: x\nRodada 1 — vitória: \"a\"\nRodada 2 — vitória\nBarra (herdada da spec): y (\"x\")\n", "rodada 2 sem citação do juiz"},
+		{"second bar line inside round 2 is not a quote", "Barra: x\nRodada 1 — vitória: \"a\"\nRodada 2 — vitória\nBarra (herdada da spec): y (\"x\")\n", "\"Rodada 2\" has no judge quote"},
 		{"exemption on the second bar line", "Barra da spec: x\nBarra: dispensada por decisão humana (y)\n", ""},
 	})
 }
@@ -311,7 +312,7 @@ func TestGauntletBarLinesConsumed(t *testing.T) {
 // C5: keyword case-insensitive, value case-sensitive.
 func TestGauntletVerdictLiteralCase(t *testing.T) {
 	runGauntletCases(t, []gauntletCase{
-		{"a definir is no verdict", "Barra: x\nRodada 1: \"c\"\nVeredito: a definir\n", "rodada 1 sem veredito"},
+		{"a definir is no verdict", "Barra: x\nRodada 1: \"c\"\nVeredito: a definir\n", "\"Rodada 1\" has no verdict"},
 		{"Veredito: B", "Barra: x\nRodada 1: \"c\"\nVeredito: B\n", ""},
 	})
 }
@@ -319,9 +320,9 @@ func TestGauntletVerdictLiteralCase(t *testing.T) {
 // C6: Método/Saída header lines are consumed; the implicit round reads the whole block.
 func TestGauntletHeaderLinesAndImplicitRound(t *testing.T) {
 	runGauntletCases(t, []gauntletCase{
-		{"header lines do not feed the implicit round", "Barra: x\nMétodo: y \"vitória\"\nSaída: vencer; derrota abre nova rodada\n\nO crítico disse \"foi ruim\".\n", "rodada sem veredito"},
-		{"NFD Metodo", "Barra: x\nRodada 1 — vitória\nMe\u0301todo: \"cego\"\n", "rodada 1 sem citação do juiz"},
-		{"Saida inside a round", "Barra: x\nRodada 1: \"c\"\nsaída: empate\n", "rodada 1 sem veredito"},
+		{"header lines do not feed the implicit round", "Barra: x\nMétodo: y \"vitória\"\nSaída: vencer; derrota abre nova rodada\n\nO crítico disse \"foi ruim\".\n", "the round has no verdict"},
+		{"NFD Metodo", "Barra: x\nRodada 1 — vitória\nMe\u0301todo: \"cego\"\n", "\"Rodada 1\" has no judge quote"},
+		{"Saida inside a round", "Barra: x\nRodada 1: \"c\"\nsaída: empate\n", "\"Rodada 1\" has no verdict"},
 		{"single list item stays clean", "Barra: x\n- **vitória** — juiz: \"x\"\n", ""},
 		{"implicit round reads the whole block", "Barra: x\nvitória no eixo\n\njuiz disse \"x\"\n", ""},
 	})
@@ -330,22 +331,22 @@ func TestGauntletHeaderLinesAndImplicitRound(t *testing.T) {
 // C7: more markers and NBSP.
 func TestGauntletMarkersAndSpaces(t *testing.T) {
 	runGauntletCases(t, []gauntletCase{
-		{"N) numbering", "Barra: x\nRodada 1 — vitória: \"a\"\n1) Rodada 2 — vitória\n", "rodada 2 sem citação do juiz"},
-		{"plus bullet", "Barra: x\nRodada 1 — vitória: \"a\"\n+ Rodada 2 — vitória\n", "rodada 2 sem citação do juiz"},
-		{"NBSP before number", "Barra: x\nRodada 1 — vitória: \"a\"\nRodada\u00a02 — vitória\n", "rodada 2 sem citação do juiz"},
-		{"leading NBSP", "Barra: x\nRodada 1 — vitória: \"a\"\n\u00a0\u00a0Rodada 2 — vitória\n", "rodada 2 sem citação do juiz"},
+		{"N) numbering", "Barra: x\nRodada 1 — vitória: \"a\"\n1) Rodada 2 — vitória\n", "\"Rodada 2\" has no judge quote"},
+		{"plus bullet", "Barra: x\nRodada 1 — vitória: \"a\"\n+ Rodada 2 — vitória\n", "\"Rodada 2\" has no judge quote"},
+		{"NBSP before number", "Barra: x\nRodada 1 — vitória: \"a\"\nRodada\u00a02 — vitória\n", "\"Rodada 2\" has no judge quote"},
+		{"leading NBSP", "Barra: x\nRodada 1 — vitória: \"a\"\n\u00a0\u00a0Rodada 2 — vitória\n", "\"Rodada 2\" has no judge quote"},
 	})
 }
 
 // C8+C12: what counts as a quoted span.
 func TestGauntletQuoteShapes(t *testing.T) {
 	runGauntletCases(t, []gauntletCase{
-		{"two spaced empty pairs", "Barra: x\nRodada 1 — vitória: \"\" \"\"\n", "rodada 1 sem citação do juiz"},
-		{"quote inside code span", "Barra: x\nRodada 1 — vitória: `go test -run \"TestX\"`\n", "rodada 1 sem citação do juiz"},
+		{"two spaced empty pairs", "Barra: x\nRodada 1 — vitória: \"\" \"\"\n", "\"Rodada 1\" has no judge quote"},
+		{"quote inside code span", "Barra: x\nRodada 1 — vitória: `go test -run \"TestX\"`\n", "\"Rodada 1\" has no judge quote"},
 		{"wrapped quote pairs across lines", "Barra: x\nRodada 1 — vitória: \"linha um\nlinha dois\"\n", ""},
 		{"mixed open curly close straight", "Barra: x\nRodada 1 — vitória: “hierarquia clara\"\n", ""},
 		{"right curly both sides", "Barra: x\nRodada 1 — vitória: ”x”\n", ""},
-		{"guillemets stay their own pair", "Barra: x\nRodada 1 — vitória: «x\"\n", "rodada 1 sem citação do juiz"},
+		{"guillemets stay their own pair", "Barra: x\nRodada 1 — vitória: «x\"\n", "\"Rodada 1\" has no judge quote"},
 	})
 }
 
@@ -371,10 +372,10 @@ func TestGauntletGrandfather(t *testing.T) {
 		{"legacy-only record before cutoff", before, noBar, ""},
 		{"legacy-only nfd before cutoff", before, noBarNFD, ""},
 		{"legacy-only implicit round before cutoff", before, noRoundBar, ""},
-		{"legacy-only record after cutoff", after, noBar, `sem linha "Barra:"`},
-		{"legacy-only nfd after cutoff", after, noBarNFD, `sem linha "Barra:"`},
-		{"legacy-only implicit round after cutoff", after, noRoundBar, `sem linha "Barra:"`},
-		{"before cutoff, legacy fails too", before, "## Gauntlet\nBarra: x\nRodada 1 \u2014 vit\u00f3ria\n", "rodada 1 sem citação do juiz"},
+		{"legacy-only record after cutoff", after, noBar, `no "Barra:" line`},
+		{"legacy-only nfd after cutoff", after, noBarNFD, `no "Barra:" line`},
+		{"legacy-only implicit round after cutoff", after, noRoundBar, `no "Barra:" line`},
+		{"before cutoff, legacy fails too", before, "## Gauntlet\nBarra: x\nRodada 1 \u2014 vit\u00f3ria\n", "\"Rodada 1\" has no judge quote"},
 		{"complete record after cutoff", after, "## Gauntlet\nBarra: x\nRodada 1 \u2014 vit\u00f3ria: \"cita\"\n", ""},
 	}
 	for _, tc := range cases {
