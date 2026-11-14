@@ -67,6 +67,7 @@ const ho = (h: Partial<Handoff> & Pick<Handoff, 'id' | 'state' | 'from_work'>): 
   from_work_title: '',
   actor: 'agent',
   next: 'n',
+  brief: '',
   created_at: '2026-09-30T00:00:00Z',
   updated_at: '2026-09-30T00:00:00Z',
   ...h,

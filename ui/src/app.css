@@ -2226,6 +2226,22 @@ h2 {
 .ideas-promoted:empty { margin: 0; }
 .pendings-form label { display: flex; flex: 1 1 12rem; gap: 0.4rem; align-items: center; min-width: 0; }
 
+/* Passagens (F-0421): a linha de fila da F-0416; o detalhe é o mesmo na linha
+   e na página #/handoffs/<id>. O próximo passo abre o detalhe no peso de
+   título — é a instrução que o receptor veio buscar; o resto é contexto. */
+.handoff-row .card-id,
+.handoff-works { white-space: nowrap; }
+.handoff-detail > h2 { margin: 0.9rem 0 0.25rem; }
+.handoff-detail > h2:first-child { margin-top: 0; }
+.handoff-detail > .handoff-next { max-width: 75ch; margin: 0 0 0.4rem; font-size: 1rem; font-weight: 600; line-height: 1.45; color: var(--fg); white-space: pre-wrap; overflow-wrap: anywhere; }
+.handoff-detail > ul { max-width: 75ch; margin: 0 0 0.4rem; padding-left: 1.1rem; font-size: 0.9rem; line-height: 1.55; }
+.handoff-detail > .handoff-fact { margin: 0 0 0.2rem; font-size: 0.85rem; color: var(--muted); overflow-wrap: anywhere; }
+.handoff-detail > .handoff-fact + h2 { margin-top: 0.9rem; }
+.handoff-detail > .handoff-fact .work-ref + .work-ref { margin-left: 0.35rem; }
+.handoff-brief { max-width: 75ch; font-size: 0.9rem; line-height: 1.55; overflow-wrap: anywhere; }
+.handoff-brief > :first-child { margin-top: 0; }
+.handoff-brief > :last-child { margin-bottom: 0; }
+
 .chip-active,
 .chip-current { background: var(--green-bg); color: var(--green); }
 .chip-obsolete { background: var(--state-terminal-bg); color: var(--faint); text-decoration: line-through; }

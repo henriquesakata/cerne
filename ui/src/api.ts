@@ -510,7 +510,8 @@ export async function fetchWork(): Promise<Work[]> {
 
 // Passagens de bastão (F-0386): os HO- da F-0368, somente leitura. A lista já
 // vem ordenada pelo servidor — pendentes primeiro (a mais antiga primeiro),
-// depois as fechadas pelo momento do fechamento (a mais recente primeiro).
+// depois as fechadas pelo momento do fechamento (a mais recente primeiro) — e
+// cada linha traz o brief, como o detalhe (F-0421).
 export type HandoffState = 'pending' | 'taken' | 'superseded' | 'cancelled'
 
 export type Handoff = {
@@ -528,11 +529,10 @@ export type Handoff = {
   taken_note?: string
   taken_at?: string
   cancel_reason?: string
+  brief: string
   created_at: string
   updated_at: string
 }
-
-export type HandoffDetail = Handoff & { brief: string }
 
 export async function fetchHandoffs(): Promise<Handoff[]> {
   const r = await fetch(`${base()}/handoffs`)
@@ -540,10 +540,10 @@ export async function fetchHandoffs(): Promise<Handoff[]> {
   return ((await r.json()) as Handoff[] | null) ?? []
 }
 
-export async function fetchHandoff(id: string): Promise<HandoffDetail> {
+export async function fetchHandoff(id: string): Promise<Handoff> {
   const r = await fetch(`${base()}/handoffs/${encodeURIComponent(id)}`)
   if (!r.ok) throw new Error(await errorMessage(r))
-  return (await r.json()) as HandoffDetail
+  return (await r.json()) as Handoff
 }
 
 // fetchVersion devolve a versão do binário que está servindo a UI (F-0129).

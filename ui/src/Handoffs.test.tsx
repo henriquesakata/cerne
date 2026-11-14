@@ -1,13 +1,14 @@
+import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import Handoffs, { HandoffPage } from './Handoffs'
-import type { Handoff, HandoffDetail } from './api'
+import type { Handoff } from './api'
 import { I18nProvider } from './i18n'
 
 const api = vi.hoisted(() => ({
   fetchHandoffs: vi.fn<() => Promise<Handoff[]>>(),
-  fetchHandoff: vi.fn<(id: string) => Promise<HandoffDetail>>(),
+  fetchHandoff: vi.fn<(id: string) => Promise<Handoff>>(),
 }))
 vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api')>()),
@@ -19,7 +20,7 @@ vi.mock('./api', async (importOriginal) => ({
 const live = vi.hoisted(() => ({ version: 0 }))
 vi.mock('./live', () => ({ useLiveVersion: () => live.version }))
 
-// A ordem é a do servidor (abertas da mais antiga, depois fechadas da mais
+// A ordem é a do servidor (pendentes da mais antiga, depois fechadas da mais
 // recente): a tela não reordena.
 const ho7: Handoff = {
   id: 'HO-0007',
@@ -28,6 +29,7 @@ const ho7: Handoff = {
   from_work_title: 'Investigar erro X',
   actor: 'a@b',
   next: 'rodar X',
+  brief: 'Parei no X.',
   created_at: '2026-11-12T20:30:00Z',
   updated_at: '2026-11-12T20:30:00Z',
 }
@@ -36,6 +38,7 @@ const ho6: Handoff = {
   state: 'taken',
   from_work: 'W-0011',
   from_work_title: 'Refatorar Y',
+  refs: ['F-0386', 'W-0003'],
   actor: 'a@b',
   next: 'rodar os testes de Y',
   contingencies: ['teste vermelho → reverter o último commit'],
@@ -43,6 +46,7 @@ const ho6: Handoff = {
   taken_work: 'W-0012',
   taken_at: '2026-11-12T22:15:00Z',
   taken_note: 'entendi Y; começo pelos testes',
+  brief: 'Parei no parser.\n\nEvidência:\n- internal/x/parser.go\n',
   created_at: '2026-11-12T18:00:00Z',
   updated_at: '2026-11-12T22:15:00Z',
 }
@@ -54,25 +58,30 @@ const ho5: Handoff = {
   actor: 'a@b',
   next: 'n',
   superseded_by: 'HO-0007',
+  brief: 'b5',
   created_at: '2026-11-12T10:00:00Z',
   updated_at: '2026-11-12T20:30:00Z',
 }
+// Its W- is gone: the row falls back to the next step.
 const ho4: Handoff = {
   id: 'HO-0004',
   state: 'cancelled',
   from_work: 'W-0009',
   from_work_title: '',
   actor: 'a@b',
-  next: 'n',
+  next: 'reproduzir o bug do cache',
   cancel_reason: 'o bug sumiu',
+  brief: 'b4',
   created_at: '2026-11-11T10:00:00Z',
   updated_at: '2026-11-12T09:00:00Z',
 }
 const all = [ho7, ho6, ho5, ho4]
 
-const filterGroup = () => screen.getByRole('group', { name: 'Filtro' })
-const filterButton = (label: string) => within(filterGroup()).getByRole('button', { name: new RegExp(`^${label}`) })
+const filterGroup = () => screen.getByRole('group', { name: 'Estado' })
+const stateButton = (label: string) => within(filterGroup()).getByRole('button', { name: new RegExp(`^${label}`) })
+const toggle = (id: string) => screen.getByRole('button', { name: new RegExp(`^${id}`) })
 const rowIds = () => screen.getAllByRole('listitem').map((li) => within(li).getByText(/^HO-\d{4}$/).textContent)
+const rowOf = (id: string) => toggle(id).closest('li') as HTMLElement
 
 beforeEach(() => {
   cleanup()
@@ -91,96 +100,221 @@ afterEach(() => {
   localStorage.clear()
 })
 
-describe('Passagens — filtro (F-0386 crit. 3)', () => {
-  it('abre em Abertas, com a contagem de cada opção', async () => {
+describe('Passagens — filtro por estado (F-0421 crit. 1)', () => {
+  it('abre em Pendentes, com as pílulas dos estados da CLI e a contagem de cada uma', async () => {
     render(<Handoffs hash="#/handoffs" />)
     await screen.findByText('Investigar erro X')
     expect(rowIds()).toEqual(['HO-0007'])
     expect(within(filterGroup()).getAllByRole('button').map((b) => b.textContent)).toEqual([
-      'Abertas 1',
-      'Fechadas 3',
+      'Pendentes 1',
+      'Assumidas 1',
+      'Substituídas 1',
+      'Canceladas 1',
       'Todas 4',
     ])
-    expect(filterButton('Abertas')).toHaveAttribute('aria-pressed', 'true')
+    expect(stateButton('Pendentes')).toHaveAttribute('aria-pressed', 'true')
   })
 
-  it('um valor inválido no endereço conta como Abertas', async () => {
-    render(<Handoffs hash="#/handoffs?f=bogus" />)
-    await screen.findByText('Investigar erro X')
-    expect(rowIds()).toEqual(['HO-0007'])
-    expect(filterButton('Abertas')).toHaveAttribute('aria-pressed', 'true')
-  })
-
-  it('o filtro escolhido vai para o endereço e recorta a lista na ordem do servidor', async () => {
+  it('a pílula leva o estado ao endereço e recorta a lista na ordem do servidor', async () => {
     const { rerender } = render(<Handoffs hash="#/handoffs" />)
     await screen.findByText('Investigar erro X')
-    fireEvent.click(filterButton('Fechadas'))
-    expect(window.location.hash).toBe('#/handoffs?f=closed')
+    fireEvent.click(stateButton('Canceladas'))
+    expect(window.location.hash).toBe('#/handoffs?state=cancelled')
     rerender(<Handoffs hash={window.location.hash} />)
-    expect(rowIds()).toEqual(['HO-0006', 'HO-0005', 'HO-0004'])
-    expect(filterButton('Fechadas')).toHaveAttribute('aria-pressed', 'true')
-    fireEvent.click(filterButton('Todas'))
-    expect(window.location.hash).toBe('#/handoffs?f=all')
+    expect(rowIds()).toEqual(['HO-0004'])
+    expect(stateButton('Canceladas')).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(stateButton('Todas'))
+    expect(window.location.hash).toBe('#/handoffs?state=all')
     rerender(<Handoffs hash={window.location.hash} />)
     expect(rowIds()).toEqual(['HO-0007', 'HO-0006', 'HO-0005', 'HO-0004'])
   })
 
   it('um link direto chega já filtrado', async () => {
-    render(<Handoffs hash="#/handoffs?f=closed" />)
+    render(<Handoffs hash="#/handoffs?state=taken" />)
     await screen.findByText('Refatorar Y')
-    expect(rowIds()).toEqual(['HO-0006', 'HO-0005', 'HO-0004'])
+    expect(rowIds()).toEqual(['HO-0006'])
   })
-})
 
-describe('Passagens — linha (F-0386 crit. 2)', () => {
-  it('mostra código, estado, W- de origem com o título, quem passou, idade e hora UTC', async () => {
+  it('clicar no estado já ativo não navega', async () => {
     render(<Handoffs hash="#/handoffs" />)
-    const row = (await screen.findByText('Investigar erro X')).closest('li') as HTMLElement
-    expect(within(row).getByRole('link', { name: 'HO-0007' })).toHaveAttribute('href', '#/handoffs/HO-0007')
-    expect(within(row).getByText('pendente')).toBeInTheDocument()
-    expect(within(row).getByText('W-0010')).toBeInTheDocument()
-    expect(row).toHaveTextContent('a@b')
-    expect(row).toHaveTextContent('há 3 horas')
-    expect(row).toHaveTextContent('2026-11-12 20:30 UTC')
+    await screen.findByText('Investigar erro X')
+    fireEvent.click(stateButton('Pendentes'))
+    expect(window.location.hash).toBe('')
   })
 
-  it('numa assumida mostra também quem assumiu, quando e o W- novo', async () => {
-    render(<Handoffs hash="#/handoffs?f=closed" />)
-    const row = (await screen.findByText('Refatorar Y')).closest('li') as HTMLElement
-    expect(within(row).getByText('assumida')).toBeInTheDocument()
-    expect(row).toHaveTextContent('c@d')
-    expect(row).toHaveTextContent('há 1 hora')
-    expect(row).toHaveTextContent('2026-11-12 22:15 UTC')
-    expect(within(row).getByText('W-0012')).toBeInTheDocument()
+  it('um estado desconhecido vira Pendentes, com o endereço reescrito no lugar', async () => {
+    window.location.hash = '#/handoffs?state=bogus'
+    render(<Handoffs hash={window.location.hash} />)
+    await waitFor(() => expect(window.location.hash).toBe('#/handoffs?state=pending'))
+    expect(await screen.findByText('Investigar erro X')).toBeInTheDocument()
+    expect(stateButton('Pendentes')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByText(/bogus/)).toBeNull()
   })
 
-  // Crítica do F-0386: a lista das fechadas é ordenada pelo fechamento, então
-  // a idade que a linha mostra é a do fechamento, não a da criação.
-  it('uma fechada mostra a idade do fechamento (taken_at, senão updated_at)', async () => {
-    render(<Handoffs hash="#/handoffs?f=closed" />)
-    await screen.findByText('Refatorar Y')
-    const [taken, superseded, cancelled] = screen.getAllByRole('listitem')
-    expect(taken).toHaveTextContent('2026-11-12 22:15 UTC')
-    expect(taken).not.toHaveTextContent('2026-11-12 18:00 UTC')
-    expect(superseded).toHaveTextContent('há 3 horas (2026-11-12 20:30 UTC)')
-    expect(superseded).not.toHaveTextContent('2026-11-12 10:00 UTC')
-    expect(cancelled).toHaveTextContent('há 14 horas (2026-11-12 09:00 UTC)')
-    expect(cancelled).not.toHaveTextContent('2026-11-11 10:00 UTC')
+  it('o filtro vazio diz qual estado está ativo', async () => {
+    api.fetchHandoffs.mockResolvedValue([ho6])
+    render(<Handoffs hash="#/handoffs" />)
+    expect(await screen.findByText('Nenhuma passagem no filtro Pendentes.')).toBeInTheDocument()
+    expect(screen.queryByText(/cerne work handoff/)).toBeNull()
   })
-})
 
-describe('Passagens — vazia e somente leitura (F-0386 crit. 7, 8)', () => {
-  it('sem passagens, mostra a lista vazia e como uma passagem nasce', async () => {
+  it('sem passagem nenhuma, ensina como uma nasce', async () => {
     api.fetchHandoffs.mockResolvedValue([])
     render(<Handoffs hash="#/handoffs" />)
     expect(await screen.findByText('cerne work handoff W-… --next "…"')).toBeInTheDocument()
     expect(screen.queryAllByRole('listitem')).toHaveLength(0)
+    expect(screen.queryByRole('button', { name: 'Expandir tudo' })).toBeNull()
+  })
+})
+
+describe('Passagens — contagem e expandir tudo (F-0421 crit. 2)', () => {
+  it('mostra a contagem das passagens mostradas', async () => {
+    render(<Handoffs hash="#/handoffs?state=all" />)
+    await screen.findByText('Refatorar Y')
+    expect(screen.getByText('4 passagens')).toBeInTheDocument()
   })
 
-  it('a área só tem os botões do filtro: nada de assumir nem cancelar', async () => {
-    render(<Handoffs hash="#/handoffs?f=all" />)
+  it('Expandir tudo abre todas as linhas, Recolher tudo fecha, e cada um desabilita no seu estado', async () => {
+    render(<Handoffs hash="#/handoffs?state=all" />)
     await screen.findByText('Refatorar Y')
-    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['Abertas 1', 'Fechadas 3', 'Todas 4'])
+    const ids = ['HO-0007', 'HO-0006', 'HO-0005', 'HO-0004']
+    const expand = screen.getByRole('button', { name: 'Expandir tudo' })
+    const collapse = screen.getByRole('button', { name: 'Recolher tudo' })
+    expect(collapse).toBeDisabled()
+    fireEvent.click(expand)
+    expect(ids.map((id) => toggle(id).getAttribute('aria-expanded'))).toEqual(['true', 'true', 'true', 'true'])
+    expect(expand).toBeDisabled()
+    fireEvent.click(collapse)
+    expect(ids.map((id) => toggle(id).getAttribute('aria-expanded'))).toEqual(['false', 'false', 'false', 'false'])
+    expect(collapse).toBeDisabled()
+  })
+})
+
+describe('Passagens — linha recolhida (F-0421 crit. 3)', () => {
+  it('chevron, id, título do W- de origem e o metadado; a pendente sem chip', async () => {
+    render(<Handoffs hash="#/handoffs" />)
+    await screen.findByText('Investigar erro X')
+    const t = toggle('HO-0007')
+    expect(t).toHaveAttribute('aria-expanded', 'false')
+    expect(t.querySelector('svg.queue-chevron')).not.toBeNull()
+    expect(within(t).getByText('Investigar erro X')).toHaveClass('queue-title')
+    const row = rowOf('HO-0007')
+    expect(within(row).queryByText('pendente')).toBeNull()
+    expect(within(row).getByRole('link', { name: 'W-0010' })).toHaveAttribute('href', '#/activity')
+    expect(row).toHaveTextContent('passada por a@b')
+    const age = within(row).getByText('há 3 horas')
+    expect(age).toHaveAttribute('title', '2026-11-12 20:30 UTC')
+    // Collapsed, the detail is not in the DOM.
+    expect(within(row).queryByText('rodar X')).toBeNull()
+  })
+
+  it('a assumida: chip, W- de origem → W- novo, quem assumiu e a idade do fechamento', async () => {
+    render(<Handoffs hash="#/handoffs?state=taken" />)
+    await screen.findByText('Refatorar Y')
+    const row = rowOf('HO-0006')
+    expect(within(row).getByText('assumida')).toHaveClass('chip')
+    expect(within(row).getByRole('link', { name: 'W-0011' })).toBeInTheDocument()
+    expect(within(row).getByRole('link', { name: 'W-0012' })).toBeInTheDocument()
+    expect(row).toHaveTextContent('W-0011 → W-0012')
+    expect(row).toHaveTextContent('assumida por c@d')
+    expect(within(row).getByText('há 1 hora')).toHaveAttribute('title', '2026-11-12 22:15 UTC')
+  })
+
+  // Crítica do F-0386: a lista das fechadas é ordenada pelo fechamento, então
+  // a idade da linha é a do fechamento (taken_at, senão updated_at).
+  it('substituída e cancelada envelhecem desde o fechamento', async () => {
+    render(<Handoffs hash="#/handoffs?state=all" />)
+    await screen.findByText('Refatorar Y')
+    expect(within(rowOf('HO-0005')).getByText('há 3 horas')).toHaveAttribute('title', '2026-11-12 20:30 UTC')
+    expect(within(rowOf('HO-0004')).getByText('há 14 horas')).toHaveAttribute('title', '2026-11-12 09:00 UTC')
+  })
+
+  it('sem o W- de origem, o texto curto é o próximo passo', async () => {
+    render(<Handoffs hash="#/handoffs?state=cancelled" />)
+    expect(await screen.findByText('reproduzir o bug do cache')).toHaveClass('queue-title')
+  })
+})
+
+describe('Passagens — detalhe na linha (F-0421 crit. 4)', () => {
+  it('o toggle abre o detalhe logo abaixo, com aria-controls, e um segundo clique recolhe', async () => {
+    render(<Handoffs hash="#/handoffs?state=taken" />)
+    await screen.findByText('Refatorar Y')
+    const t = toggle('HO-0006')
+    fireEvent.click(t)
+    expect(t).toHaveAttribute('aria-expanded', 'true')
+    const detail = document.getElementById(t.getAttribute('aria-controls') ?? '') as HTMLElement
+    expect(detail).toBeInTheDocument()
+    expect(detail).toHaveTextContent('rodar os testes de Y')
+    fireEvent.click(t)
+    expect(t).toHaveAttribute('aria-expanded', 'false')
+    expect(document.getElementById(t.getAttribute('aria-controls') ?? '')).toBeNull()
+  })
+
+  it('assumida: próximo passo primeiro, contingências, read-back, os dois W-, refs, horas UTC, brief e o link da página', async () => {
+    render(<Handoffs hash="#/handoffs?state=taken" />)
+    await screen.findByText('Refatorar Y')
+    fireEvent.click(toggle('HO-0006'))
+    const detail = rowOf('HO-0006').querySelector('.queue-detail') as HTMLElement
+    const headings = within(detail).getAllByRole('heading').map((h) => h.textContent)
+    expect(headings).toEqual(['Próximo passo', 'Contingências', 'Read-back de quem recebeu', 'Brief'])
+    expect(within(detail).getByText('teste vermelho → reverter o último commit')).toBeInTheDocument()
+    expect(within(detail).getByText('entendi Y; começo pelos testes')).toBeInTheDocument()
+    expect(detail).toHaveTextContent('W- de origem: W-0011 Refatorar Y')
+    expect(detail).toHaveTextContent('W- novo: W-0012')
+    expect(within(detail).getByRole('link', { name: 'F-0386' })).toHaveAttribute('href', '#/f/F-0386')
+    expect(within(detail).getByText('W-0003')).toBeInTheDocument()
+    expect(within(detail).queryByRole('link', { name: 'W-0003' })).toBeNull()
+    expect(detail).toHaveTextContent('Criada em 2026-11-12 18:00 UTC')
+    expect(detail).toHaveTextContent('Fechada em 2026-11-12 22:15 UTC')
+    expect(within(detail).getByText('internal/x/parser.go')).toBeInTheDocument()
+    expect(within(detail).getByRole('link', { name: 'Abrir a página da passagem' })).toHaveAttribute(
+      'href',
+      '#/handoffs/HO-0006',
+    )
+  })
+
+  it('pendente: sem read-back nem hora de fechamento', async () => {
+    render(<Handoffs hash="#/handoffs" />)
+    await screen.findByText('Investigar erro X')
+    fireEvent.click(toggle('HO-0007'))
+    const detail = rowOf('HO-0007').querySelector('.queue-detail') as HTMLElement
+    expect(within(detail).getAllByRole('heading').map((h) => h.textContent)).toEqual(['Próximo passo', 'Brief'])
+    expect(detail).toHaveTextContent('Criada em 2026-11-12 20:30 UTC')
+    expect(detail).not.toHaveTextContent('Fechada em')
+  })
+
+  it('assumida sem read-back diz que não há', async () => {
+    api.fetchHandoffs.mockResolvedValue([{ ...ho6, taken_note: undefined }])
+    render(<Handoffs hash="#/handoffs?state=taken" />)
+    await screen.findByText('Refatorar Y')
+    fireEvent.click(toggle('HO-0006'))
+    expect(screen.getByText('Nenhum read-back registrado.')).toBeInTheDocument()
+  })
+
+  it('substituída: a sucessora como link; cancelada: o motivo', async () => {
+    render(<Handoffs hash="#/handoffs?state=all" />)
+    await screen.findByText('Refatorar Y')
+    fireEvent.click(toggle('HO-0005'))
+    fireEvent.click(toggle('HO-0004'))
+    const sup = rowOf('HO-0005').querySelector('.queue-detail') as HTMLElement
+    expect(within(sup).getByRole('link', { name: 'HO-0007' })).toHaveAttribute('href', '#/handoffs/HO-0007')
+    expect(rowOf('HO-0004').querySelector('.queue-detail')).toHaveTextContent('Motivo: o bug sumiu')
+  })
+
+  it('a tela segue somente leitura: só pílulas, expandir e as linhas', async () => {
+    render(<Handoffs hash="#/handoffs?state=all" />)
+    await screen.findByText('Refatorar Y')
+    fireEvent.click(screen.getByRole('button', { name: 'Expandir tudo' }))
+    const names = screen.getAllByRole('button').map((b) => b.textContent)
+    expect(names.filter((n) => !/^HO-\d{4}/.test(n ?? ''))).toEqual([
+      'Pendentes 1',
+      'Assumidas 1',
+      'Substituídas 1',
+      'Canceladas 1',
+      'Todas 4',
+      'Expandir tudo',
+      'Recolher tudo',
+    ])
   })
 })
 
@@ -196,49 +330,34 @@ describe('Passagens — ao vivo (F-0386 crit. 6)', () => {
   })
 })
 
-describe('Passagens — detalhe (F-0386 crit. 4)', () => {
-  it('assumida: brief, próximo passo, contingências, read-back, quem e quando, links dos dois W-', async () => {
-    api.fetchHandoff.mockResolvedValue({
-      ...ho6,
-      brief: 'Parei no parser.\n\nEvidência:\n- internal/x/parser.go\n\nPróximo passo: rodar os testes de Y\n',
-    })
+describe('Passagens — página da passagem (F-0421 crit. 5)', () => {
+  it('o cabeçalho de hoje e o mesmo detalhe da linha', async () => {
+    api.fetchHandoff.mockResolvedValue(ho6)
     render(<HandoffPage id="HO-0006" />)
     expect(await screen.findByText('Parei no parser.')).toBeInTheDocument()
     expect(api.fetchHandoff).toHaveBeenCalledWith('HO-0006')
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('HO-0006')
-    expect(screen.getByText('internal/x/parser.go')).toBeInTheDocument()
-    expect(screen.getAllByText('rodar os testes de Y').length).toBeGreaterThan(0)
-    expect(screen.getByText('teste vermelho → reverter o último commit')).toBeInTheDocument()
-    expect(screen.getByText('entendi Y; começo pelos testes')).toBeInTheDocument()
-    const main = screen.getByRole('main')
-    expect(main).toHaveTextContent('assumida por c@d')
-    expect(main).toHaveTextContent('2026-11-12 22:15 UTC')
-    expect(screen.getByRole('link', { name: 'W-0011' })).toHaveAttribute('href', '#/activity')
-    expect(screen.getByRole('link', { name: 'W-0012' })).toHaveAttribute('href', '#/activity')
     expect(screen.getByRole('link', { name: /Passagens/ })).toHaveAttribute('href', '#/handoffs')
+    const main = screen.getByRole('main')
+    expect(within(main).getAllByRole('heading', { level: 2 }).map((h) => h.textContent)).toEqual([
+      'Próximo passo',
+      'Contingências',
+      'Read-back de quem recebeu',
+      'Brief',
+    ])
+    expect(main).toHaveTextContent('W- novo: W-0012')
+    expect(main).toHaveTextContent('Fechada em 2026-11-12 22:15 UTC')
+    expect(screen.getByRole('link', { name: 'F-0386' })).toHaveAttribute('href', '#/f/F-0386')
+    // The page is where the link points: it does not link to itself.
+    expect(screen.queryByRole('link', { name: 'Abrir a página da passagem' })).toBeNull()
     expect(screen.queryByRole('button')).toBeNull()
   })
 
-  it('mostra os refs como chips, com link para as features', async () => {
-    api.fetchHandoff.mockResolvedValue({ ...ho6, refs: ['F-0386', 'W-0003'], brief: 'b' })
-    render(<HandoffPage id="HO-0006" />)
-    expect(await screen.findByRole('link', { name: 'F-0386' })).toHaveAttribute('href', '#/f/F-0386')
-    expect(screen.getByText('W-0003')).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'W-0003' })).toBeNull()
-  })
-
   it('substituída: link para a passagem nova', async () => {
-    api.fetchHandoff.mockResolvedValue({ ...ho5, brief: 'b' })
+    api.fetchHandoff.mockResolvedValue(ho5)
     render(<HandoffPage id="HO-0005" />)
     expect(await screen.findByText('substituída')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'HO-0007' })).toHaveAttribute('href', '#/handoffs/HO-0007')
-  })
-
-  it('cancelada: o motivo', async () => {
-    api.fetchHandoff.mockResolvedValue({ ...ho4, brief: 'b' })
-    render(<HandoffPage id="HO-0004" />)
-    expect(await screen.findByText('cancelada')).toBeInTheDocument()
-    expect(screen.getByRole('main')).toHaveTextContent('Motivo: o bug sumiu')
   })
 
   it('um id desconhecido mostra o erro da API', async () => {
@@ -248,19 +367,37 @@ describe('Passagens — detalhe (F-0386 crit. 4)', () => {
   })
 })
 
-describe('Passagens — inglês (F-0386 crit. 9)', () => {
-  it('título, filtro e estado em inglês', async () => {
+describe('Passagens — inglês (F-0421 crit. 9)', () => {
+  it('título, pílulas, estados, contagem e detalhe em inglês', async () => {
     localStorage.setItem('cerne-lang', 'en')
     render(
       <I18nProvider>
-        <Handoffs hash="#/handoffs?f=all" />
+        <Handoffs hash="#/handoffs?state=all" />
       </I18nProvider>,
     )
     await screen.findByText('Refatorar Y')
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Handoffs')
-    const group = screen.getByRole('group', { name: 'Filter' })
-    expect(within(group).getAllByRole('button').map((b) => b.textContent)).toEqual(['Open 1', 'Closed 3', 'All 4'])
-    for (const s of ['pending', 'taken', 'superseded', 'cancelled']) expect(screen.getByText(s)).toBeInTheDocument()
-    expect(screen.getAllByRole('listitem')[0]).toHaveTextContent('3 hours ago')
+    const group = screen.getByRole('group', { name: 'State' })
+    expect(within(group).getAllByRole('button').map((b) => b.textContent)).toEqual([
+      'Pending 1',
+      'Taken 1',
+      'Superseded 1',
+      'Cancelled 1',
+      'All 4',
+    ])
+    for (const s of ['taken', 'superseded', 'cancelled']) expect(screen.getByText(s)).toBeInTheDocument()
+    expect(screen.getByText('4 handoffs')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Expand all' }))
+    expect(rowOf('HO-0006')).toHaveTextContent('Closed at 2026-11-12 22:15 UTC')
+    expect(screen.getAllByRole('link', { name: "Open the handoff's page" })).toHaveLength(4)
+  })
+})
+
+describe('Passagens — CSS (F-0421 crit. 6)', () => {
+  const css = readFileSync('src/app.css', 'utf8')
+  it('nenhum literal de cor e nenhuma transição nas regras da passagem (DESIGN.md)', () => {
+    const own = css.match(/\n[^\n{}]*\.handoff-[^{]*\{[^}]*\}/g)!.join('\n')
+    expect(own).toContain('.handoff-next')
+    expect(own).not.toMatch(/#[0-9a-f]{3,8}\b|rgb\(|transition|animation/i)
   })
 })
