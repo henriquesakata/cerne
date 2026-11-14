@@ -10,6 +10,7 @@
   --fg: #1f2421;
   --muted: #5c635e;
   --faint: #8a8f8b;
+  --border-field: var(--faint);
   --dim: #c4bfb4;
   --dim-inverse: #cbd2cc;
   --surface: #fff;
@@ -72,6 +73,7 @@
   --fg: #e8e4da;
   --muted: #a9ada3;
   --faint: #7d8178;
+  --border-field: var(--faint);
   --dim: #55534b;
   --dim-inverse: #4d5148;
   --surface: #232220;
@@ -3121,11 +3123,13 @@ button.clarify-chip { cursor: pointer; font: inherit; }
   font: inherit;
   font-size: 0.95rem;
   padding: 0.45rem 0.6rem;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-field);
   border-radius: 6px;
   background: var(--surface);
   color: var(--fg);
 }
+.settings-search::placeholder,
+.settings-text::placeholder { color: var(--muted); opacity: 1; }
 .settings-list { list-style: none; margin: 0.5rem 0 0; padding: 0; border-top: 1px solid var(--border); }
 /* Ledger row (F-0413): text left, the control and its provenance right,
    a 1px rule between rows, no fill and no side-tab. */
@@ -3155,8 +3159,7 @@ button.clarify-chip { cursor: pointer; font: inherit; }
 .settings-id { display: block; margin-top: 0.25rem; font-size: 0.78rem; color: var(--muted); user-select: all; }
 .settings-modified { color: var(--fg); border-color: var(--fg); background: transparent; }
 .settings-desc { margin: 0; max-width: 70ch; font-size: 0.9rem; color: var(--muted); }
-.settings-check { display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer; }
-.settings-check input { margin: 0; }
+.settings-check { margin: 0.25rem 0; cursor: pointer; }
 .settings-text,
 .settings-select {
   font: inherit;
@@ -3164,23 +3167,31 @@ button.clarify-chip { cursor: pointer; font: inherit; }
   width: 100%;
   max-width: 24rem;
   padding: 0.3rem 0.5rem;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-field);
   border-radius: 6px;
   background: var(--surface);
   color: var(--fg);
 }
+.settings-check { accent-color: var(--fg); }
+.settings-scopes .lang-option:focus-visible { outline: 2px solid var(--fg); outline-offset: -2px; }
+.settings-scopes .lang-option.active:focus-visible { outline-color: var(--bg); }
+.settings-file .code-copy:focus-visible,
+.settings-file pre:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
 .settings-text:focus-visible,
 .settings-select:focus-visible,
 .settings-string button:focus-visible,
 .settings-switch:focus-visible,
-.settings-check input:focus-visible,
+.settings-check:focus-visible,
 .settings-search:focus-visible,
 .settings-groups a:focus-visible,
 .settings-groups-select:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
 .settings-readonly { margin: 0; font-size: 0.9rem; }
 /* Provenance is the main read of a row: ink, not muted. */
 .settings-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.75rem; margin: 0.4rem 0 0; font-size: 0.85rem; color: var(--muted); }
-.settings-effective { color: var(--fg); }
+.settings-effective { margin: 0 0 0.4rem; font-size: 0.95rem; color: var(--fg); }
+.settings-saved { margin: 0.4rem 0 0; font-size: 0.85rem; color: var(--fg); }
+.settings-group-head { margin-top: 1rem; }
+.settings-group-title { margin: 0; font-size: 1rem; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--fg); }
 .settings-write-chip { font-size: 0.72rem; }
 .settings-scope { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.75rem; margin: 1rem 0 0; }
 .settings-scopes .lang-option { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.9rem; padding: 0.4rem 0.8rem; }
@@ -3214,8 +3225,11 @@ button.clarify-chip { cursor: pointer; font: inherit; }
 .settings-file { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin: 0.6rem 0 0; font-size: 0.85rem; }
 .settings-file > span { color: var(--muted); }
 .settings-file .harness-fix { flex: 1; min-width: 0; margin: 0; max-width: none; }
-/* .harness-fix pre resets the padding .code-block reserves for the copy button */
-.settings-file .harness-fix pre { padding-right: 5rem; overflow-x: auto; }
+/* Path and Copy side by side: the button never covers the text. */
+.settings-file .harness-fix { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0.4rem; }
+.settings-file .harness-fix pre { flex: 1; min-width: 0; padding-right: 0.6rem; overflow-x: auto; }
+.settings-file .code-copy { position: static; flex: none; }
+.settings-file .code-copy-failed { flex-basis: 100%; }
 .settings-invalid { grid-column: 1 / -1; margin: 0.35rem 0 0; font-size: 0.85rem; }
 /* releitura da lista de projetos que falhou depois do boot (F-0315): aviso
    acima do app, que continua de pé */
@@ -3255,9 +3269,12 @@ button.clarify-chip { cursor: pointer; font: inherit; }
 /* Settings groups (F-0413): side column on desktop, a select below 640px. */
 .settings-layout { display: grid; grid-template-columns: 12rem minmax(0, 1fr); gap: 0 2rem; align-items: start; }
 .settings-groups { margin-top: 1rem; }
-.settings-body { grid-column: 2; min-width: 0; }
-.settings-groups a { display: block; padding: 0.35rem 0; text-decoration: none; }
-.settings-groups a[aria-current='page'] { font-weight: 600; }
+.settings-body { grid-column: 2; min-width: 0; container-type: inline-size; }
+/* Stack the row by its own column width, so the text never gets narrower than the control. */
+@container (max-width: 40rem) { .settings-row { grid-template-columns: minmax(0, 1fr); } }
+.settings-groups a { display: block; padding: 0.35rem 0; text-decoration: none; color: var(--muted); }
+.settings-groups a:hover { color: var(--fg); }
+.settings-groups a[aria-current='page'] { color: var(--fg); font-weight: 600; text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 0.3em; }
 .settings-groups-select { display: none; }
 @media (max-width: 639px) {
   .settings-row { grid-template-columns: minmax(0, 1fr); }
