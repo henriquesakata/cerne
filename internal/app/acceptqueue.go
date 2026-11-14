@@ -47,9 +47,10 @@ var (
 	// foi, se aplica, houve...), pending or waiting, "n/a", or nothing. Heuristic:
 	// "Não houve erro" reads as absent too, the safe side for a decision queue.
 	// "na sexta..." and "sem erro nos logs" are positive and stay evidence.
-	// English (F-0418): "no" counts only alone or before evidence/record/data,
-	// so the Portuguese "no ar" stays evidence.
-	prodNegRe = regexp.MustCompile(`(?i)^[\s>*_\x60-]*(?:n[aã]o\b|ainda\s+n[aã]o|pendente|aguardando|n/a\b|a\s+(?:verificar|conferir)|tbd\b|sem\s+(?:evid[eê]ncia|registro|dados?|informa)|nada\b|no\s*[.!]?\s*$|no\s+(?:evidence|record|data|info)|not\s+yet\b|pending\b|awaiting\b|to\s+(?:verify|check)\b|nothing\b|none\b)|^[\s*_\x60.—–-]*$`)
+	// English (F-0418): "no" counts only before punctuation or the end ("No,
+	// rolled back") or as a whole "no evidence/record/data/information", so the
+	// Portuguese "no ar" and "no database primário" stay evidence.
+	prodNegRe = regexp.MustCompile(`(?i)^[\s>*_\x60-]*(?:n[aã]o\b|ainda\s+n[aã]o|pendente|aguardando|n/a\b|a\s+(?:verificar|conferir)|tbd\b|sem\s+(?:evid[eê]ncia|registro|dados?|informa)|nada\b|no\s*(?:[.,;:!—–-]|$)|no\s+(?:evidence|records?|data|information|info)\b|not\s+yet\b|pending\b|awaiting\b|to\s+(?:verify|check)\b|nothing\b|none\b)|^[\s*_\x60.—–-]*$`)
 	// PENDENTE counts only on an acceptance line (list item or table row that
 	// names a "critério"), never in loose prose.
 	pendingWord = regexp.MustCompile(`^\s*(?:[-*+]|\d+[.)]|\|).*crit[ée]rio.*\bPENDENTE\b`)

@@ -1,6 +1,7 @@
 package hooks
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -19,11 +20,15 @@ func firstBefore(t *testing.T, name, s, a, b string) {
 // first and the Portuguese one as its equivalent — the copy embedded in the
 // installed script included.
 func TestStaticGuidance_Bilingual(t *testing.T) {
+	script, err := os.ReadFile("assets/cerne-register-reminder.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
 	for name, s := range map[string]string{
 		"GauntletRule":     GauntletRule,
 		"RegisterRules":    RegisterRules,
 		"SessionRules(on)": SessionRules(true),
-		"installed script": RegisterRules, // providers.go embeds this very constant
+		"installed script": string(script), // the fallback copy cerne hook install writes
 	} {
 		firstBefore(t, name, s, "`Bar:`", "`Barra:`")
 		firstBefore(t, name, s, "Verification", "Verificação")

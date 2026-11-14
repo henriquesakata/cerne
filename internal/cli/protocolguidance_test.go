@@ -86,6 +86,9 @@ func TestNext_EnglishBarCause(t *testing.T) {
 		"F-0002 [candidate] — next: bar-malformed: malformed \"Bar:\" line: \"Bar:\" holds only",
 		"spec has no valid Gauntlet bar: no \"Bar:\" line",
 		"content/features/F-0001/spec.md — no \"Bar:\" line (Missing bar)",
+		// The judge question's cause names the English label too (bargate.go
+		// judgeQuestionProblem, F-0381).
+		"F-0003 [candidate] — next: judge-question-missing: spec has a bar but no judge question — add under the bar, in ## Verification: \"Question for the judge: <the question the blind judge answers>\"",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("transcript missing %q:\n%s", want, out)

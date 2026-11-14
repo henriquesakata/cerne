@@ -19,6 +19,8 @@ func TestAcceptQueue_EnglishProduction(t *testing.T) {
 		{"Production: pending\n", ""},
 		{"Production: none\n", ""},
 		{"Production: no\n", ""},
+		{"Production: No, the deploy was rolled back\n", ""},
+		{"Production: no information yet\n", ""},
 		{"Production: n/a\n", ""},
 		{"Production: TBD\n", ""},
 		{"Production: no evidence yet\n", ""},
@@ -27,6 +29,9 @@ func TestAcceptQueue_EnglishProduction(t *testing.T) {
 		{"## Production\n\nnothing yet\n", ""},
 		// pt-BR, as before F-0418.
 		{"Em produção: v1.2 no ar\n", "v1.2 no ar"},
+		{"Em produção: no database primário, 200 OK\n", "no database primário"},
+		{"Em produção: no dataset de prod, sem erro\n", "no dataset de prod"},
+		{"Em produção: no informe semanal\n", "no informe semanal"},
 		{"## Produção\n\nno ar desde segunda\n", "no ar desde segunda"},
 		{"Em produção: ainda não\n", ""},
 		{"Produção: pendente\n", ""},

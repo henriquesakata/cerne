@@ -2,6 +2,8 @@ package cli
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -29,7 +31,16 @@ func TestEnglishProject_NoPortugueseProtocolForm(t *testing.T) {
 			fmt.Fprintf(&b, "error: %v\n", err)
 		}
 	}
-	id := newFeature(t, projDir, "Export widgets", 1)
+	// feature new --file ends with the approve readiness (F-0418 crit. 3).
+	bare := filepath.Join(t.TempDir(), "spec.md")
+	if err := os.WriteFile(bare, []byte("# Bare\n\n## Problem\n\nA real problem.\n\n## Verification\n\nUnit test.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("feature", "new", "Bare spec without a bar", "--file", bare, "--component", "test")
+	if !strings.Contains(b.String(), "bar-missing") {
+		t.Fatalf("feature new readiness did not report the missing bar:\n%s", b.String())
+	}
+	id := newFeature(t, projDir, "Export widgets", 2)
 	writeDoc(t, repoDir, id, "spec.md", "---\ncerne_id: "+id+"\n---\n\n# Export widgets\n\n## Problem\n\nA real problem.\n\n## Goal and acceptance criteria\n\nGoal.\n\n1. WHEN a THE SYSTEM SHALL b.\n2. WHEN c THE SYSTEM SHALL d.\n\n## Verification\n\nBar: test fixture — named reference\nQuestion for the judge: which is clearer?\n")
 	commitBackend(t, repoDir)
 	run("feature", "approve", id)
