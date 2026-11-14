@@ -3239,7 +3239,8 @@ button.clarify-chip { cursor: pointer; font: inherit; }
   top: 0;
   bottom: 0;
   right: 0;
-  width: 7rem;
+  /* cabe "CONCLUÍDAS →" (114 px no system-ui) numa linha, sem a seta solta */
+  width: 9rem;
   box-sizing: border-box;
   padding: 0.75rem;
   border-radius: 8px;
