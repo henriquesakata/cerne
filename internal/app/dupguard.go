@@ -154,14 +154,18 @@ func globPrefix(g string) (string, bool) {
 // guardRegistration enforces the guard for a new registration: with force it
 // passes reporting whether there were live matches (so the caller can mark the
 // override); without it, a live match refuses with the matches listed.
-// ignore is an id the registration takes over (work start --from, F-0339): it
-// never counts as a collision.
-func guardRegistration(repoDir, title string, force bool, ignore string) (hadLive bool, err error) {
+// ignore lists ids the registration itself names, which never count as a
+// collision: the work it takes over (work start --from, F-0339) and the
+// features it references (--ref, F-0423 — the F-0208 planning title repeats
+// its feature's title by convention).
+func guardRegistration(repoDir, title string, force bool, ignore ...string) (hadLive bool, err error) {
 	matches, err := FindSimilar(repoDir, title)
 	if err != nil {
 		return false, err
 	}
-	matches.Live = slices.DeleteFunc(matches.Live, func(m SimilarMatch) bool { return ignore != "" && m.ID == ignore })
+	matches.Live = slices.DeleteFunc(matches.Live, func(m SimilarMatch) bool {
+		return slices.ContainsFunc(ignore, func(id string) bool { return strings.EqualFold(id, m.ID) })
+	})
 	if len(matches.Live) == 0 {
 		return false, nil
 	}

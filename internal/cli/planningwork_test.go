@@ -156,3 +156,26 @@ func wantWork(t *testing.T, repoDir, id string, state domain.WorkState, note str
 	}
 	return w
 }
+
+// TestPlanningWorkStartRepeatsFeatureTitle (F-0423 crit. 7): the exact F-0208
+// pickup command, whose title repeats the approved feature's, opens the
+// planning work; the same title without --ref (another agent, a similar
+// registration) is still refused by the F-0147 guard.
+func TestPlanningWorkStartRepeatsFeatureTitle(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	t.Setenv("USER", "u")
+	t.Setenv("CERNE_SESSION", "")
+	id := newFeature(t, projDir, "Painel de custo por feature", 1)
+	writeDoc(t, repoDir, id, "spec.md", realDoc(id, "Problema real descrito aqui."))
+	commitBackend(t, repoDir)
+	mustCerne(t, "feature", "approve", id, "--dir", projDir)
+
+	title := "F-0001: Painel de custo por feature — planejamento"
+	mustCerne(t, "work", "start", title, "--ref", id, "--dir", projDir)
+	wantWork(t, repoDir, "W-0001", domain.WorkActive, "")
+
+	out, err := execCerne(t, "work", "start", title, "--dir", projDir)
+	if err == nil || !strings.Contains(err.Error()+out, "a similar registration already exists") {
+		t.Fatalf("work start without --ref: err = %v, out = %s; want the duplicate refusal", err, out)
+	}
+}
