@@ -58,6 +58,7 @@ func TestBatchWorkClosedOnLastExit(t *testing.T) {
 	}{
 		{"last exit is a complete", both, false, false, domain.ActionComplete, false, domain.ActionComplete, domain.WorkDone, "all refs closed (feature implemented)"},
 		{"every ref rejected", both, false, false, domain.ActionReject, false, domain.ActionReject, domain.WorkAbandoned, "all refs closed (feature rejected)"},
+		{"every ref superseded", both, false, false, domain.ActionSupersede, false, domain.ActionSupersede, domain.WorkAbandoned, "all refs closed (feature superseded)"},
 		{"one delivery makes it done", both, false, false, domain.ActionComplete, false, domain.ActionSupersede, domain.WorkDone, "all refs closed (feature superseded, implemented)"},
 		{"a ref still live", both, false, false, "", false, domain.ActionComplete, domain.WorkActive, ""},
 		{"opened after a ref closed", both, false, false, domain.ActionComplete, true, domain.ActionComplete, domain.WorkActive, ""},
