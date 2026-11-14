@@ -545,11 +545,28 @@ func TestReapproveIsHumanGated(t *testing.T) {
 	id := newFeature(t, projDir, "Feature A", 1)
 	writeDoc(t, repoDir, id, "spec.md", realDoc(id, "Problema real descrito aqui."))
 	commitBackend(t, repoDir)
+	// The first approve keeps the plain transition line (F-0417 crit. 3).
 	if out, err := execCerne(t, "feature", "approve", id, "--dir", projDir); err != nil {
 		t.Fatalf("approve: %v\n%s", err, out)
+	} else if !strings.Contains(out, id+": candidate → approved") {
+		t.Errorf("first approve output missing %q:\n%s", id+": candidate → approved", out)
 	}
 	writeDoc(t, repoDir, id, "spec.md", realDoc(id, "Problema real, com um critério novo."))
 	commitBackend(t, repoDir)
+	// The approval the re-approve renews: its time names it (F-0417 crit. 1).
+	evs, err := store.ReadEvents(repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var approvedAt string
+	for _, ev := range evs {
+		if ev.EntityID == id && ev.Type == "feature.approved" {
+			approvedAt = ev.At.UTC().Format("2006-01-02 15:04") + " UTC"
+		}
+	}
+	if approvedAt == "" {
+		t.Fatalf("no feature.approved event for %s", id)
+	}
 
 	t.Setenv("CERNE_ACTOR", "agent")
 	if _, err := execCerne(t, "feature", "approve", id, "--dir", projDir); !errors.Is(err, app.ErrHumanGate) {
@@ -560,10 +577,16 @@ func TestReapproveIsHumanGated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("human re-approve: %v\n%s", err, out)
 	}
-	for _, want := range []string{id + ": approved → approved", "Approval renewed: the current spec is now the approved version."} {
+	for _, want := range []string{
+		id + ": re-approved (the spec changed since the approval of " + approvedAt + ")",
+		"Approval renewed: the current spec is now the approved version.",
+	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("re-approve output missing %q:\n%s", want, out)
 		}
+	}
+	if strings.Contains(out, "approved → approved") {
+		t.Errorf("re-approve still prints the bare transition line:\n%s", out)
 	}
 }
 
@@ -624,6 +647,10 @@ func TestApproveRecordsBaselineCLI(t *testing.T) {
 	out, err = execCerne(t, "feature", "approve", id, "--dir", projDir)
 	if err != nil || !strings.Contains(out, "Approval baseline recorded: the current spec is now the approved version.") || !strings.Contains(out, "fill in the plan") {
 		t.Fatalf("baseline approve (%v):\n%s", err, out)
+	}
+	// A baseline renews nothing: its headline stays the transition (F-0417 crit. 3).
+	if !strings.Contains(out, id+": approved → approved") || strings.Contains(out, "re-approved") {
+		t.Fatalf("baseline headline is not the plain transition:\n%s", out)
 	}
 	if _, err := os.Stat(store.ApprovedSpecPath(repoDir, id)); err != nil {
 		t.Fatalf("no baseline copy: %v", err)
