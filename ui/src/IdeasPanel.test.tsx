@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
@@ -378,5 +379,23 @@ describe('IdeasPanel — expandir e recolher tudo (F-0416 crit. 6)', () => {
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveClass('form-error')
     expect(alert).not.toHaveClass('status')
+  })
+})
+
+// F-0416 crit. 1: the 40vh ceiling is the Backlog's, not the panel's — on
+// #/ideas the list takes the page. Layout is CSS: pin the rules.
+describe('IdeasPanel — teto de altura só no Backlog (F-0416 crit. 1)', () => {
+  const css = readFileSync('src/app.css', 'utf8')
+  const rule = (sel: string) =>
+    new RegExp(`(^|\\n)${sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{([^}]*)\\}`).exec(css)?.[2] ?? null
+
+  it('a lista não tem teto no painel; o Backlog põe o seu', () => {
+    expect(css).not.toMatch(/(^|\n)\.ideas-list \{[^}]*max-height/)
+    expect(rule('.backlog-list-col .ideas-list')).toMatch(/max-height: 40vh/)
+  })
+
+  it('nenhum literal de cor e nenhuma transição nas regras da fila e das ideias (DESIGN.md)', () => {
+    const own = css.match(/\n\.(queue|ideas)-[^{]*\{[^}]*\}/g)!.join('\n')
+    expect(own).not.toMatch(/#[0-9a-f]{3,8}\b|rgb\(|transition|animation/i)
   })
 })

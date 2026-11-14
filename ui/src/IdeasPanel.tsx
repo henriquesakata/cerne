@@ -234,10 +234,11 @@ export default function IdeasPanel({ modules, onPromoted, hash }: { modules: str
                     </button>
                     <span className="queue-meta">
                       {i.state !== 'active' && <span className={`chip ${CHIP[i.state]}`}>{t.ideas.stateChip[i.state]}</span>}
-                      <span className="muted">{date(i.created_at)}</span>
                       {(i.components ?? []).map((c) => (
                         <Tag key={c} axis="component" value={c} />
                       ))}
+                      {/* The date closes the row: the most uniform width, so it lines up as a column. */}
+                      <span className="muted">{date(i.created_at)}</span>
                     </span>
                     {i.state === 'active' && (
                       <span className="ideas-actions">

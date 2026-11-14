@@ -163,14 +163,15 @@ function PendingRow({
         </button>
         <span className="queue-meta">
           {p.state !== 'open' && <span className={`chip ${CHIP[p.state]}`}>{t.pendings.stateChip[p.state]}</span>}
-          {/* A closed pending stops aging: it shows when it closed (C11). */}
-          <span className="muted">
-            {p.state !== 'open' && p.closed_at ? `${t.pendings.closed} ${date(p.closed_at)}` : t.pendings.age(age)}
-          </span>
-          <a href={fHref(p.from)}>{p.from}</a>
           {(p.components ?? []).map((c) => (
             <Tag key={c} axis="component" value={c} active={c === component} onToggle={onComponent} />
           ))}
+          <a href={fHref(p.from)}>{p.from}</a>
+          {/* A closed pending stops aging: it shows when it closed (C11). Last,
+              so the age lines up as a column at the row's right edge. */}
+          <span className="muted">
+            {p.state !== 'open' && p.closed_at ? `${t.pendings.closed} ${date(p.closed_at)}` : t.pendings.age(age)}
+          </span>
         </span>
       </div>
       {open && (
