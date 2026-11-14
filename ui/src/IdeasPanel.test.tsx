@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
@@ -13,14 +14,14 @@ const idea = (id: string, text: string): Idea => ({
 })
 
 let ideas: Idea[] = []
-const fetchIdeas = vi.fn(async () => ideas)
+const fetchIdeas = vi.fn(async (_state?: 'all') => ideas)
 const createIdea = vi.fn<(text: string, facets: string[], components: string[], token: string) => Promise<Idea>>()
 const dropIdea = vi.fn<(id: string, reason: string) => Promise<Idea>>()
 const promoteIdea = vi.fn<(id: string, module: string, force?: boolean) => Promise<{ idea: Idea; feature: Feature }>>()
 
 vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api')>()),
-  fetchIdeas: () => fetchIdeas(),
+  fetchIdeas: (state?: 'all') => fetchIdeas(state),
   createIdea: (text: string, facets: string[], components: string[], token: string) =>
     createIdea(text, facets, components, token),
   dropIdea: (id: string, reason: string) => dropIdea(id, reason),
@@ -41,7 +42,10 @@ const capture = (text: string) => {
   fireEvent.change(input(), { target: { value: text } })
   fireEvent.submit(input().closest('form')!)
 }
-const row = (text: string) => within(screen.getByText(text).closest('li')!)
+// An expanded row repeats its text in the detail (F-0416): the first match is the summary.
+const row = (text: string) => within(screen.getAllByText(text)[0].closest('li')!)
+// The row's disclosure (F-0416): its name starts with the idea id.
+const toggle = (id: string) => screen.getByRole('button', { name: new RegExp(`^${id}`) })
 
 describe('IdeasPanel (F-0312)', () => {
   it('captura só com o texto', async () => {
@@ -151,15 +155,20 @@ describe('IdeasPanel (F-0312)', () => {
     await waitFor(() => expect(promoteIdea).toHaveBeenLastCalledWith('I-0001', '', true))
   })
 
-  it('ideia longa aparece recortada, com mostrar mais (C10)', async () => {
+  it('ideia longa aparece recortada, e a linha expande o resto (C10, F-0416 crit. 4 e 5)', async () => {
     const long = 'Primeira linha da ideia longa\n' + 'detalhe '.repeat(200)
     ideas = [idea('I-0001', long)]
     render(<IdeasPanel modules={[]} onPromoted={() => {}} />)
     const shown = await screen.findByText(/Primeira linha da ideia longa/)
     expect(shown.textContent).not.toContain('detalhe')
-    fireEvent.click(screen.getByRole('button', { name: 'Mostrar mais' }))
-    expect(screen.getByText(/detalhe detalhe/)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Mostrar menos' }))
+    expect(document.body.textContent).not.toContain('detalhe')
+    const t = toggle('I-0001')
+    expect(t).toHaveAttribute('aria-expanded', 'false')
+    expect(t.querySelector('svg.queue-chevron')).not.toBeNull()
+    fireEvent.click(t)
+    expect(t).toHaveAttribute('aria-expanded', 'true')
+    expect(document.getElementById(t.getAttribute('aria-controls')!)).toHaveTextContent(/detalhe detalhe/)
+    fireEvent.click(t)
     expect(screen.queryByText(/detalhe detalhe/)).toBeNull()
   })
 
@@ -184,6 +193,7 @@ describe('IdeasPanel (F-0312)', () => {
     await screen.findByText('uma ideia')
     capture('outra')
     expect(await screen.findByRole('alert')).toHaveTextContent('backend fora')
+    expect(screen.getByRole('alert')).toHaveClass('form-error') // F-0416 crit. 8, the capture too
     fireEvent.click(row('uma ideia').getByRole('button', { name: 'Promover I-0001' }))
     await waitFor(() => expect(screen.getAllByRole('alert').map((a) => a.textContent).join(' ')).toContain('push recusado'))
   })
@@ -226,6 +236,7 @@ describe('IdeasPanel (F-0312)', () => {
     ]
     render(<IdeasPanel modules={[]} onPromoted={() => {}} />)
     await screen.findByText('com fonte')
+    fireEvent.click(screen.getByRole('button', { name: 'Expandir tudo' }))
     const link = row('com fonte').getByRole('link', { name: 'Artigo SDD' })
     expect(link).toHaveAttribute('href', 'https://example.com/sdd')
     expect(row('com fonte').getByText('Fontes:')).toBeInTheDocument()
@@ -244,11 +255,161 @@ describe('IdeasPanel (F-0312)', () => {
     ]
     render(<IdeasPanel modules={[]} onPromoted={() => {}} />)
     await screen.findByText('com fontes')
+    fireEvent.click(toggle('I-0001'))
     const r = row('com fontes')
     expect(r.getByRole('link', { name: 'Velha' })).toBeInTheDocument()
     expect(r.getByText('(aposentada)')).toBeInTheDocument()
     expect(r.getByText(/Sem URL/)).toBeInTheDocument()
     expect(r.queryByRole('link', { name: 'Sem URL' })).toBeNull()
     expect(r.getAllByText(/aposentada/)).toHaveLength(1)
+  })
+})
+
+// F-0416: a tela #/ideas (modo página, com o hash) e a linha de fila.
+const closed: Idea[] = [
+  idea('I-0003', 'ainda ativa'),
+  { ...idea('I-0002', 'virou feature'), state: 'promoted', promoted_to: 'F-0340', closed_at: '2026-11-08T10:00:00Z', facets: ['code'], components: ['kanban'] },
+  { ...idea('I-0001', 'não vale a pena'), state: 'dropped', reason: 'fora do produto', closed_at: '2026-11-07T10:00:00Z' },
+]
+const pill = (label: string) =>
+  within(screen.getByRole('group', { name: 'Estado' })).getByRole('button', { name: new RegExp(`^${label}`) })
+
+describe('IdeasPanel — tela #/ideas (F-0416 crit. 2 e 3)', () => {
+  beforeEach(() => {
+    window.location.hash = ''
+  })
+
+  it('h1, pílulas com contagem e uma busca só com state=all; abre nas ativas', async () => {
+    ideas = closed
+    render(<IdeasPanel modules={[]} onPromoted={() => {}} hash="#/ideas" />)
+    expect(await screen.findByText('ainda ativa')).toBeInTheDocument()
+    expect(fetchIdeas).toHaveBeenCalledWith('all')
+    expect(screen.getByRole('heading', { level: 1, name: 'Ideias' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { level: 2 })).toBeNull()
+    expect(within(screen.getByRole('group', { name: 'Estado' })).getAllByRole('button').map((b) => b.textContent)).toEqual([
+      'Ativas 1',
+      'Promovidas 1',
+      'Descartadas 1',
+      'Todas 3',
+    ])
+    expect(pill('Ativas')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('1 ideia')).toBeInTheDocument()
+    expect(screen.queryByText('virou feature')).toBeNull()
+  })
+
+  it('a pílula leva o estado ao hash', async () => {
+    ideas = closed
+    render(<IdeasPanel modules={[]} onPromoted={() => {}} hash="#/ideas" />)
+    await screen.findByText('ainda ativa')
+    fireEvent.click(pill('Descartadas'))
+    expect(window.location.hash).toBe('#/ideas?state=dropped')
+  })
+
+  it('o estado vem do hash; um estado desconhecido é reescrito para ativas', async () => {
+    ideas = closed
+    const { unmount } = render(<IdeasPanel modules={[]} onPromoted={() => {}} hash="#/ideas?state=all" />)
+    await screen.findByText('virou feature')
+    expect(screen.getByText('3 ideias')).toBeInTheDocument()
+    unmount()
+    window.location.hash = '#/ideas?state=xyz'
+    render(<IdeasPanel modules={[]} onPromoted={() => {}} hash="#/ideas?state=xyz" />)
+    await screen.findByText('ainda ativa')
+    expect(window.location.hash).toBe('#/ideas?state=active')
+  })
+
+  it('o filtro vazio diz qual estado está ativo', async () => {
+    ideas = [closed[0]]
+    render(<IdeasPanel modules={[]} onPromoted={() => {}} hash="#/ideas?state=dropped" />)
+    expect(await screen.findByText('Nenhuma ideia no filtro Descartadas.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Expandir tudo' })).toBeNull()
+  })
+
+  it('sem o hash, o modo Backlog: h2, só as ativas da API, sem pílulas', async () => {
+    ideas = [closed[0]]
+    render(<IdeasPanel modules={[]} onPromoted={() => {}} />)
+    await screen.findByText('ainda ativa')
+    expect(fetchIdeas).toHaveBeenCalledWith(undefined)
+    expect(screen.getByRole('heading', { level: 2, name: 'Ideias' })).toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Estado' })).toBeNull()
+  })
+})
+
+describe('IdeasPanel — ideia fechada (F-0416 crit. 4 e 5)', () => {
+  it('a promovida tem chip, nenhuma ação e, no detalhe, o link da feature criada', async () => {
+    ideas = closed
+    render(<IdeasPanel modules={[]} onPromoted={() => {}} hash="#/ideas?state=promoted" />)
+    await screen.findByText('virou feature')
+    const r = row('virou feature')
+    expect(r.getByText('Promovida')).toHaveClass('chip')
+    expect(r.queryByRole('button', { name: /Promover|Descartar/ })).toBeNull()
+    fireEvent.click(toggle('I-0002'))
+    expect(r.getByRole('link', { name: 'F-0340' })).toHaveAttribute('href', '#/f/F-0340')
+    // crit. 5: the detail carries the facets and the components (critic #2).
+    const detail = within(document.getElementById(toggle('I-0002').getAttribute('aria-controls')!)!)
+    expect(detail.getByText('code')).toHaveClass('tag-facet')
+    expect(detail.getByText('kanban')).toHaveClass('tag-component')
+    expect(r.getByText(`Fechada em ${new Date('2026-11-08T10:00:00Z').toLocaleDateString('pt-BR')}`)).toBeInTheDocument()
+  })
+
+  it('a descartada sai riscada, sem ação, e o detalhe mostra o motivo', async () => {
+    ideas = closed
+    render(<IdeasPanel modules={[]} onPromoted={() => {}} hash="#/ideas?state=dropped" />)
+    await screen.findByText('não vale a pena')
+    const r = row('não vale a pena')
+    expect(r.getByText('Descartada')).toHaveClass('chip-obsolete')
+    expect(r.queryByRole('button', { name: /Promover|Descartar/ })).toBeNull()
+    fireEvent.click(toggle('I-0001'))
+    expect(r.getByText(/fora do produto/)).toBeInTheDocument()
+  })
+})
+
+describe('IdeasPanel — expandir e recolher tudo (F-0416 crit. 6)', () => {
+  it('abre e fecha todas as linhas mostradas', async () => {
+    ideas = [idea('I-0002', 'duas'), idea('I-0001', 'uma')]
+    render(<IdeasPanel modules={[]} onPromoted={() => {}} />)
+    await screen.findByText('duas')
+    fireEvent.click(screen.getByRole('button', { name: 'Expandir tudo' }))
+    expect([toggle('I-0002'), toggle('I-0001')].map((b) => b.getAttribute('aria-expanded'))).toEqual(['true', 'true'])
+    expect(screen.getByRole('button', { name: 'Expandir tudo' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Recolher tudo' }))
+    expect([toggle('I-0002'), toggle('I-0001')].map((b) => b.getAttribute('aria-expanded'))).toEqual(['false', 'false'])
+  })
+
+  it('uma ideia que começa por linha vazia resume pela primeira linha com texto (crítica #10)', async () => {
+    ideas = [idea('I-0001', '\n\n  segunda linha real\nmais')]
+    render(<IdeasPanel modules={[]} onPromoted={() => {}} />)
+    expect(await screen.findByText('segunda linha real')).toHaveClass('queue-title')
+  })
+
+  it('o erro de ação usa o estilo de erro de formulário (crit. 8)', async () => {
+    ideas = [idea('I-0001', 'uma ideia')]
+    promoteIdea.mockRejectedValueOnce(new Error('push recusado'))
+    render(<IdeasPanel modules={[]} onPromoted={() => {}} />)
+    await screen.findByText('uma ideia')
+    fireEvent.click(row('uma ideia').getByRole('button', { name: 'Promover I-0001' }))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveClass('form-error')
+    expect(alert).not.toHaveClass('status')
+  })
+})
+
+// F-0416 crit. 1: the 40vh ceiling is the Backlog's, not the panel's — on
+// #/ideas the list takes the page. Layout is CSS: pin the rules.
+describe('IdeasPanel — teto de altura só no Backlog (F-0416 crit. 1)', () => {
+  const css = readFileSync('src/app.css', 'utf8')
+  const rule = (sel: string) =>
+    new RegExp(`(^|\\n)${sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{([^}]*)\\}`).exec(css)?.[2] ?? null
+
+  it('a lista não tem teto no painel; o Backlog põe o seu', () => {
+    expect(css).not.toMatch(/(^|\n)\.ideas-list \{[^}]*max-height/)
+    expect(rule('.backlog-list-col .ideas-list')).toMatch(/max-height: 40vh/)
+  })
+
+  it('nenhum literal de cor e nenhuma transição nas regras da fila e das ideias (DESIGN.md)', () => {
+    // Every rule whose selector names a .queue-/.ideas- class, compound ones included (critic #8).
+    const own = css.match(/\n[^\n{}]*\.(queue|ideas)-[^{]*\{[^}]*\}/g)!.join('\n')
+    expect(own).toContain('.backlog-list-col .ideas-list')
+    expect(own).toContain('.pending-row .queue-toggle')
+    expect(own).not.toMatch(/#[0-9a-f]{3,8}\b|rgb\(|transition|animation/i)
   })
 })

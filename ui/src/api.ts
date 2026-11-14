@@ -1735,9 +1735,10 @@ export type Idea = {
   informed_by?: { id: string; title: string; url?: string; state?: string }[]
 }
 
-// fetchIdeas lista as ideias ativas, mais novas primeiro.
-export async function fetchIdeas(): Promise<Idea[]> {
-  const r = await fetch(`${base()}/ideas`)
+// fetchIdeas lista as ideias ativas, mais novas primeiro; 'all' (F-0416)
+// traz também as promovidas e descartadas, como `cerne idea list --all`.
+export async function fetchIdeas(state?: 'all'): Promise<Idea[]> {
+  const r = await fetch(`${base()}/ideas${state ? `?state=${state}` : ''}`)
   if (!r.ok) throw new Error(await errorMessage(r))
   return ((await r.json()) as { ideas: Idea[] }).ideas
 }

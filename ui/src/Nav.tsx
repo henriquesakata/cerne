@@ -65,7 +65,7 @@ function activeHref(hash: string): string {
   if (hash.startsWith('#/backlog')) return '#/backlog'
   // The same rule App routes them by (F-0334): anything else is the dashboard.
   if (hash === '#/pendings' || hash.startsWith('#/pendings?')) return '#/pendings'
-  if (hash === '#/ideas') return '#/ideas'
+  if (hash === '#/ideas' || hash.startsWith('#/ideas?')) return '#/ideas'
   if (hash.startsWith('#/rooms')) return '#/rooms'
   if (hash.startsWith('#/manage') || hash.startsWith('#/new')) return '#/manage'
   if (hash.startsWith('#/decisions') || hash.startsWith('#/d/')) return '#/decisions'

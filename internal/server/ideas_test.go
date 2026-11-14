@@ -311,3 +311,68 @@ func TestIdeasAPIInformedBy(t *testing.T) {
 		}
 	}
 }
+
+// TestIdeasStateFilter (F-0416 crit. 9): no parameter keeps today's answer
+// (active only); state=all adds the dropped and the promoted, in the order of
+// app.ListIdeas(…, true, "") and with their sources; anything else is a 400.
+func TestIdeasStateFilter(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	h := New(repoDir, projDir, "")
+	for _, text := range []string{"primeira", "segunda", "terceira"} {
+		if rec := doJSON(t, h, http.MethodPost, "/api/ideas", fmt.Sprintf(`{"text":%q}`, text), &map[string]any{}); rec.Code != http.StatusCreated {
+			t.Fatalf("POST %q = %d: %s", text, rec.Code, rec.Body.String())
+		}
+	}
+	// A source on the idea that gets dropped: state=all must carry the
+	// sources of the closed ones too, not only an empty key (critic F-0416 #4).
+	if _, err := app.CreateExternalReference(repoDir, projDir, "Artigo", "http://a", "c", []string{"I-0002"}, nil, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	doJSON(t, h, http.MethodPost, "/api/ideas/I-0002/drop", `{}`, &map[string]any{})
+	doJSON(t, h, http.MethodPost, "/api/ideas/I-0001/promote", `{}`, &map[string]any{})
+	type row struct {
+		ID         string            `json:"id"`
+		State      string            `json:"state"`
+		InformedBy []store.Reference `json:"informed_by"`
+	}
+	get := func(path string) (int, []row) {
+		var list struct {
+			Ideas []row `json:"ideas"`
+		}
+		rec := doJSON(t, h, http.MethodGet, path, "", &list)
+		return rec.Code, list.Ideas
+	}
+	ids := func(rs []row) string {
+		var out []string
+		for _, r := range rs {
+			out = append(out, r.ID+":"+r.State)
+		}
+		return strings.Join(out, ",")
+	}
+	if code, rs := get("/api/ideas"); code != http.StatusOK || ids(rs) != "I-0003:active" {
+		t.Fatalf("GET /ideas = %d %s, want only I-0003:active", code, ids(rs))
+	}
+	code, rs := get("/api/ideas?state=all")
+	if code != http.StatusOK || ids(rs) != "I-0003:active,I-0002:dropped,I-0001:promoted" {
+		t.Fatalf("GET ?state=all = %d %s", code, ids(rs))
+	}
+	want, err := app.ListIdeas(repoDir, true, "")
+	if err != nil || len(want) != len(rs) {
+		t.Fatalf("app.ListIdeas(all) = %d ideas, %v", len(want), err)
+	}
+	for n, i := range want {
+		sources := 0
+		if i.ID == "I-0002" {
+			sources = 1
+		}
+		if rs[n].ID != i.ID || rs[n].InformedBy == nil || len(rs[n].InformedBy) != sources {
+			t.Fatalf("row %d = %+v, want %s with %d source(s)", n, rs[n], i.ID, sources)
+		}
+	}
+	if rs[1].InformedBy[0].URL != "http://a" {
+		t.Fatalf("the dropped idea's source = %+v, want http://a", rs[1].InformedBy[0])
+	}
+	if code, _ := get("/api/ideas?state=xyz"); code != http.StatusBadRequest {
+		t.Fatalf("GET ?state=xyz = %d, want 400", code)
+	}
+}
