@@ -2188,7 +2188,8 @@ h2 {
 .queue-detail { padding: 0.5rem 0.7rem 0.7rem 2.2rem; border-top: 1px solid var(--border-soft); }
 .queue-detail > :first-child { margin-top: 0; }
 .queue-detail > :last-child { margin-bottom: 0; }
-.queue-detail > p { margin: 0 0 0.4rem; font-size: 0.9rem; }
+/* The same measure as the idea's text: a pending's body is prose too. */
+.queue-detail > p { max-width: 75ch; margin: 0 0 0.4rem; font-size: 0.9rem; line-height: 1.55; }
 .queue-btn,
 .queue-btn-primary {
   font: inherit;
