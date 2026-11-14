@@ -16,7 +16,8 @@ var handoffIDRe = regexp.MustCompile(`^HO-\d{4,}$`)
 // handoffRow is one GET /api/handoffs entry (F-0386) and the GET
 // /api/handoffs/{id} payload: the HO- record, its origin work's title ("" when
 // that work is gone) and its brief — in the list too, so a queue row opens
-// without one request per row (F-0421 crit. 7).
+// without one request per row (F-0421 crit. 7). The brief leaves out the next
+// step and the contingencies, which the record carries as fields.
 type handoffRow struct {
 	store.Handoff
 	FromWorkTitle string `json:"from_work_title"`
@@ -24,8 +25,8 @@ type handoffRow struct {
 }
 
 func newHandoffRow(repoDir string, h store.Handoff, titles map[string]string) (handoffRow, error) {
-	brief, err := readContentDoc(repoDir, "handoffs", h.ID)
-	return handoffRow{h, titles[h.FromWork], brief}, err
+	content, err := readContentDoc(repoDir, "handoffs", h.ID)
+	return handoffRow{h, titles[h.FromWork], app.HandoffBriefBody(repoDir, h, content)}, err
 }
 
 func handleHandoffs(w http.ResponseWriter, repoDir string) {

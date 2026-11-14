@@ -89,6 +89,9 @@ func TestHandoffsEndpointOrder(t *testing.T) {
 		if !strings.Contains(r.Brief, "brief de "+r.ID) {
 			t.Fatalf("%s brief = %q, want its content/handoffs body", r.ID, r.Brief)
 		}
+		if strings.Contains(r.Brief, "Próximo passo") {
+			t.Fatalf("%s brief = %q, want it without the next step the row carries as a field", r.ID, r.Brief)
+		}
 	}
 }
 

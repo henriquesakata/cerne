@@ -224,6 +224,26 @@ func HandoffWork(repoDir, projDir, id, brief, next string, evidence, contingenci
 	return hoID, nil
 }
 
+// HandoffBriefBody is the handoff's content without the two sections
+// HandoffWork composed from fields the record already carries — the
+// contingencies and the next step — so a reader that shows those fields does
+// not repeat them (F-0421). The giver's brief, the evidence and the work log
+// stay. A content that does not carry them verbatim (composed in another docs
+// language) comes back whole.
+func HandoffBriefBody(repoDir string, h store.Handoff, content string) string {
+	lang := store.DocsLanguage(repoDir)
+	cut := func(s, part string) string {
+		if i := strings.LastIndex(s, part); i >= 0 {
+			return s[:i] + s[i+len(part):]
+		}
+		return s
+	}
+	if len(h.Contingencies) > 0 {
+		content = cut(content, "\n\n"+doclang.Display(doclang.IfLabel, lang)+":\n- "+strings.Join(h.Contingencies, "\n- "))
+	}
+	return cut(content, "\n\n"+doclang.Display(doclang.NextStepLabel, lang)+": "+h.Next)
+}
+
 // withWorkLog appends to a handoff brief the work log entries made since the
 // previous TAKEN handoff of the same work (all of them when none was) and returns
 // the highest entry number carried (F-0397). Without new entries the brief is
