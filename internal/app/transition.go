@@ -411,6 +411,10 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 			if err := closePlanningWorks(repoDir, id, oldState, workAction, "feature "+string(action)); err != nil {
 				return "", err
 			}
+			// A batch work ends with the last of its features (F-0422).
+			if err := closeBatchWorks(repoDir, id); err != nil {
+				return "", err
+			}
 		}
 		// Starting development opens the result phase: scaffold the result stub so it
 		// is committed alongside the transition (mirrors the plan stub at approve).

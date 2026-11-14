@@ -6,9 +6,11 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/lint"
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
 )
@@ -268,6 +270,46 @@ func closePlanningWorks(repoDir, featureID string, state domain.FeatureState, wo
 	}
 	for _, w := range planning {
 		if err := closeWork(repoDir, w, workAction, note); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// closeBatchWorks (F-0422) closes, of any actor, every active manual work
+// with several refs, featureID among them, that the work-outlived-feature
+// predicate finds dead once featureID has left the live cycle: done when a
+// ref was delivered, abandoned when all were dropped. Single-ref works follow
+// F-0341 and auto works F-0146. Features and the event log are read only when
+// such a work exists.
+func closeBatchWorks(repoDir, featureID string) error {
+	works, err := store.LoadAllWorks(repoDir)
+	if err != nil {
+		return err
+	}
+	var batch []store.Work
+	for _, w := range works {
+		if w.State == domain.WorkActive && !w.Auto && len(w.Refs) > 1 && slices.Contains(w.Refs, featureID) {
+			batch = append(batch, w)
+		}
+	}
+	if len(batch) == 0 {
+		return nil
+	}
+	features, err := store.LoadAllFeatures(repoDir)
+	if err != nil {
+		return err
+	}
+	events, err := store.ReadEvents(repoDir)
+	if err != nil {
+		return err
+	}
+	for _, o := range lint.OutlivedWorks(batch, features, events) {
+		workAction := domain.ActionAbandon
+		if slices.Contains(o.States, string(domain.StateImplemented)) || slices.Contains(o.States, string(domain.StateDone)) {
+			workAction = domain.ActionComplete
+		}
+		if err := closeWork(repoDir, o.Work, workAction, "all refs closed (feature "+strings.Join(o.States, ", ")+")"); err != nil {
 			return err
 		}
 	}
