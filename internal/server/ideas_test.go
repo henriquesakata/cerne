@@ -311,3 +311,56 @@ func TestIdeasAPIInformedBy(t *testing.T) {
 		}
 	}
 }
+
+// TestIdeasStateFilter (F-0416 crit. 9): no parameter keeps today's answer
+// (active only); state=all adds the dropped and the promoted, in the order of
+// app.ListIdeas(…, true, "") and with their sources; anything else is a 400.
+func TestIdeasStateFilter(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	h := New(repoDir, projDir, "")
+	for _, text := range []string{"primeira", "segunda", "terceira"} {
+		if rec := doJSON(t, h, http.MethodPost, "/api/ideas", fmt.Sprintf(`{"text":%q}`, text), &map[string]any{}); rec.Code != http.StatusCreated {
+			t.Fatalf("POST %q = %d: %s", text, rec.Code, rec.Body.String())
+		}
+	}
+	doJSON(t, h, http.MethodPost, "/api/ideas/I-0002/drop", `{}`, &map[string]any{})
+	doJSON(t, h, http.MethodPost, "/api/ideas/I-0001/promote", `{}`, &map[string]any{})
+	type row struct {
+		ID         string            `json:"id"`
+		State      string            `json:"state"`
+		InformedBy []json.RawMessage `json:"informed_by"`
+	}
+	get := func(path string) (int, []row) {
+		var list struct {
+			Ideas []row `json:"ideas"`
+		}
+		rec := doJSON(t, h, http.MethodGet, path, "", &list)
+		return rec.Code, list.Ideas
+	}
+	ids := func(rs []row) string {
+		var out []string
+		for _, r := range rs {
+			out = append(out, r.ID+":"+r.State)
+		}
+		return strings.Join(out, ",")
+	}
+	if code, rs := get("/api/ideas"); code != http.StatusOK || ids(rs) != "I-0003:active" {
+		t.Fatalf("GET /ideas = %d %s, want only I-0003:active", code, ids(rs))
+	}
+	code, rs := get("/api/ideas?state=all")
+	if code != http.StatusOK || ids(rs) != "I-0003:active,I-0002:dropped,I-0001:promoted" {
+		t.Fatalf("GET ?state=all = %d %s", code, ids(rs))
+	}
+	want, err := app.ListIdeas(repoDir, true, "")
+	if err != nil || len(want) != len(rs) {
+		t.Fatalf("app.ListIdeas(all) = %d ideas, %v", len(want), err)
+	}
+	for n, i := range want {
+		if rs[n].ID != i.ID || rs[n].InformedBy == nil {
+			t.Fatalf("row %d = %+v, want %s with informed_by", n, rs[n], i.ID)
+		}
+	}
+	if code, _ := get("/api/ideas?state=xyz"); code != http.StatusBadRequest {
+		t.Fatalf("GET ?state=xyz = %d, want 400", code)
+	}
+}
