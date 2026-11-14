@@ -3115,17 +3115,18 @@ button.clarify-chip { cursor: pointer; font: inherit; }
 .column.drop-ready {
   outline: 2px dashed var(--accent);
   outline-offset: -1px;
-  background: color-mix(in srgb, var(--accent) 8%, var(--surface-2));
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-2));
 }
 .column.drop-active {
   outline: 2px solid var(--accent);
   outline-offset: -1px;
-  background: color-mix(in srgb, var(--accent) 18%, var(--surface-2));
+  background: color-mix(in srgb, var(--accent) 22%, var(--surface-2));
 }
 .column.drop-blocked { outline: 2px dashed var(--faint); cursor: not-allowed; }
 .column.drop-off { opacity: 0.45; }
 .drop-hint { margin: 0.4rem 0 0; font-size: 0.85rem; font-weight: 600; color: var(--accent); }
-.column.drop-blocked .drop-hint { color: var(--muted); }
+/* o motivo do bloqueio usa a cor do badge ❓ do card: o mesmo sinal */
+.column.drop-blocked .drop-hint { color: var(--purple); }
 .card.card-in-flight { opacity: 0.4; }
 .card-draggable { cursor: grab; }
 @media (prefers-reduced-motion: no-preference) {
