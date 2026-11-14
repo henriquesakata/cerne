@@ -158,14 +158,17 @@ function HandoffRow({ h, open, onToggle }: { h: Handoff; open: boolean; onToggle
               </>
             )}
           </span>
-          <span>{h.state === 'taken' ? t.handoffs.takenBy(h.taken_by ?? '') : t.handoffs.passedBy(h.actor)}</span>
+          {/* An actor is often agent:<user>@<host>: capped here, whole in the title and in the detail. */}
+          <span className="handoff-actor" title={h.state === 'taken' ? h.taken_by : h.actor}>
+            {h.state === 'taken' ? t.handoffs.takenBy(h.taken_by ?? '') : t.handoffs.passedBy(h.actor)}
+          </span>
           <Age iso={closedAt(h) ?? h.created_at} />
         </span>
       </div>
       {open && (
         <div className="queue-detail handoff-detail" id={detailId}>
           <HandoffDetailBody h={h} />
-          <p>
+          <p className="handoff-open">
             <a href={`#/handoffs/${h.id}`}>{t.handoffs.openPage}</a>
           </p>
         </div>
@@ -203,19 +206,36 @@ function HandoffDetailBody({ h }: { h: Handoff }) {
       <p className="handoff-fact">
         {t.handoffs.origin} <a href={WORK_HREF}>{h.from_work}</a> {h.from_work_title}
       </p>
-      {h.state === 'taken' && h.taken_work && (
+      <p className="handoff-fact">
+        {t.handoffs.passedBy(h.actor)} · {t.handoffs.created} {utc(h.created_at)}
+      </p>
+      {closed && (
         <p className="handoff-fact">
-          {t.handoffs.newWork} <a href={WORK_HREF}>{h.taken_work}</a>
-        </p>
-      )}
-      {h.superseded_by && (
-        <p className="handoff-fact">
-          {t.handoffs.supersededBy} <a href={`#/handoffs/${h.superseded_by}`}>{h.superseded_by}</a>
-        </p>
-      )}
-      {h.cancel_reason && (
-        <p className="handoff-fact">
-          {t.common.reasonLabel} {h.cancel_reason}
+          {h.state === 'taken' && (
+            <>
+              {t.handoffs.takenBy(h.taken_by ?? '')}
+              {' · '}
+            </>
+          )}
+          {h.superseded_by && (
+            <>
+              {t.handoffs.supersededBy} <a href={`#/handoffs/${h.superseded_by}`}>{h.superseded_by}</a>
+              {' · '}
+            </>
+          )}
+          {h.cancel_reason && (
+            <>
+              {t.common.reasonLabel} {h.cancel_reason}
+              {' · '}
+            </>
+          )}
+          {t.handoffs.closed} {utc(closed)}
+          {h.state === 'taken' && h.taken_work && (
+            <>
+              {' · '}
+              {t.handoffs.newWork} <a href={WORK_HREF}>{h.taken_work}</a>
+            </>
+          )}
         </p>
       )}
       {(h.refs ?? []).length > 0 && (
@@ -233,15 +253,6 @@ function HandoffDetailBody({ h }: { h: Handoff }) {
           )}
         </p>
       )}
-      <p className="handoff-fact">
-        {t.handoffs.created} {utc(h.created_at)}
-        {closed && (
-          <>
-            {' · '}
-            {t.handoffs.closed} {utc(closed)}
-          </>
-        )}
-      </p>
       {h.brief && (
         <>
           <h2>{t.handoffs.brief}</h2>
@@ -271,7 +282,7 @@ export function HandoffPage({ id }: { id: string }) {
           <span className="feature-id">{h.id}</span>
         </h1>
         <p className="feature-meta">
-          <StateChip state={h.state} /> {t.handoffs.passedBy(h.actor)} · <When iso={h.created_at} />
+          <StateChip state={h.state} /> <When iso={closedAt(h) ?? h.created_at} />
         </p>
       </header>
       <section className="handoff-detail">

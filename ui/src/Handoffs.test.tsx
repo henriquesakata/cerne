@@ -216,7 +216,8 @@ describe('Passagens — linha recolhida (F-0421 crit. 3)', () => {
     expect(within(row).getByRole('link', { name: 'W-0011' })).toBeInTheDocument()
     expect(within(row).getByRole('link', { name: 'W-0012' })).toBeInTheDocument()
     expect(row).toHaveTextContent('W-0011 → W-0012')
-    expect(row).toHaveTextContent('assumida por c@d')
+    // The actor is capped by CSS; the whole value stays in the title.
+    expect(within(row).getByText('assumida por c@d')).toHaveAttribute('title', 'c@d')
     expect(within(row).getByText('há 1 hora')).toHaveAttribute('title', '2026-11-12 22:15 UTC')
   })
 
@@ -264,8 +265,8 @@ describe('Passagens — detalhe na linha (F-0421 crit. 4)', () => {
     expect(within(detail).getByRole('link', { name: 'F-0386' })).toHaveAttribute('href', '#/f/F-0386')
     expect(within(detail).getByText('W-0003')).toBeInTheDocument()
     expect(within(detail).queryByRole('link', { name: 'W-0003' })).toBeNull()
-    expect(detail).toHaveTextContent('Criada em 2026-11-12 18:00 UTC')
-    expect(detail).toHaveTextContent('Fechada em 2026-11-12 22:15 UTC')
+    expect(detail).toHaveTextContent('passada por a@b · Criada em 2026-11-12 18:00 UTC')
+    expect(detail).toHaveTextContent('assumida por c@d · Fechada em 2026-11-12 22:15 UTC · W- novo: W-0012')
     expect(within(detail).getByText('internal/x/parser.go')).toBeInTheDocument()
     expect(within(detail).getByRole('link', { name: 'Abrir a página da passagem' })).toHaveAttribute(
       'href',

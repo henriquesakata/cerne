@@ -2231,14 +2231,24 @@ h2 {
    título — é a instrução que o receptor veio buscar; o resto é contexto. */
 .handoff-row .card-id,
 .handoff-works { white-space: nowrap; }
+.page > .handoff-detail { margin-top: 1.5rem; }
 .handoff-detail > h2 { margin: 0.9rem 0 0.25rem; }
 .handoff-detail > h2:first-child { margin-top: 0; }
 .handoff-detail > .handoff-next { max-width: 75ch; margin: 0 0 0.4rem; font-size: 1rem; font-weight: 600; line-height: 1.45; color: var(--fg); white-space: pre-wrap; overflow-wrap: anywhere; }
+.handoff-detail > .handoff-open { margin-top: 0.7rem; font-size: 0.85rem; }
 .handoff-detail > ul { max-width: 75ch; margin: 0 0 0.4rem; padding-left: 1.1rem; font-size: 0.9rem; line-height: 1.55; }
 .handoff-detail > .handoff-fact { margin: 0 0 0.2rem; font-size: 0.85rem; color: var(--muted); overflow-wrap: anywhere; }
-.handoff-detail > .handoff-fact + h2 { margin-top: 0.9rem; }
 .handoff-detail > .handoff-fact .work-ref + .work-ref { margin-left: 0.35rem; }
+.handoff-actor { max-width: 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .handoff-brief { max-width: 75ch; font-size: 0.9rem; line-height: 1.55; overflow-wrap: anywhere; }
+/* The brief's own headings sit under the BRIEF label: prose subheadings, not
+   more uppercase labels, so the label stays the only one at its level. */
+.handoff-brief :is(h1, h2, h3, h4, h5, h6) { margin: 0.9rem 0 0.3rem; font-size: 0.95rem; font-weight: 600; line-height: 1.3; color: var(--fg); text-transform: none; letter-spacing: normal; }
+.handoff-brief p,
+.handoff-brief ul,
+.handoff-brief ol { margin: 0 0 0.5rem; }
+.handoff-brief ul,
+.handoff-brief ol { padding-left: 1.1rem; }
 .handoff-brief > :first-child { margin-top: 0; }
 .handoff-brief > :last-child { margin-bottom: 0; }
 
