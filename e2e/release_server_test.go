@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -58,4 +59,20 @@ func releaseServer(t *testing.T, corruptSums bool) (*httptest.Server, *atomic.In
 	}))
 	t.Cleanup(srv.Close)
 	return srv, &hits
+}
+
+// Both install scripts resolve the latest release through the
+// /releases/latest redirect, never the GitHub API, which rate-limits
+// anonymous callers (F-0357 criterion 3, F-0410 criterion 7). The fake server
+// only answers release paths, so the API is checked in the source.
+func TestInstallScripts_NoGitHubAPI(t *testing.T) {
+	for _, f := range []string{"../install.sh", "../install.ps1"} {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(b), "api.github.com") {
+			t.Errorf("%s calls the GitHub API", f)
+		}
+	}
 }

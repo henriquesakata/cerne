@@ -30,6 +30,25 @@ func psHosts(t *testing.T) []string {
 	return hosts
 }
 
+// psEnv is the environment of a PowerShell child: this process's, minus two
+// variables a real session would not carry, plus extra. PROCESSOR_ARCHITEW6432
+// only exists in a 32-bit process, and Windows copies it over
+// PROCESSOR_ARCHITECTURE when it starts a 64-bit one, even when it is empty.
+// PSModulePath, inherited from the pwsh CI step, would make Windows
+// PowerShell 5.1 load PowerShell 7's modules and miss Get-FileHash; pwsh
+// resets it when it starts powershell.exe itself, a Go test does not.
+func psEnv(host string, extra ...string) []string {
+	var env []string
+	for _, kv := range os.Environ() {
+		k, _, _ := strings.Cut(kv, "=")
+		if strings.EqualFold(k, "PROCESSOR_ARCHITEW6432") || (host == "powershell" && strings.EqualFold(k, "PSModulePath")) {
+			continue
+		}
+		env = append(env, kv)
+	}
+	return append(env, extra...)
+}
+
 // keepUserPath restores the registry user PATH when the test ends: the
 // script appends its install dir to it.
 func keepUserPath(t *testing.T, host string) {
@@ -37,7 +56,9 @@ func keepUserPath(t *testing.T, host string) {
 	const read = `$k = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment')
 $v = $k.GetValue('Path', $null, 'DoNotExpandEnvironmentNames')
 if ($null -eq $v) { '<none>' } else { [string]$k.GetValueKind('Path') + '|' + $v }`
-	out, err := exec.Command(host, "-NoProfile", "-NonInteractive", "-Command", read).Output()
+	cmd := exec.Command(host, "-NoProfile", "-NonInteractive", "-Command", read)
+	cmd.Env = psEnv(host)
+	out, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("read user PATH: %v", err)
 	}
@@ -47,22 +68,37 @@ if ($null -eq $v) { '<none>' } else { [string]$k.GetValueKind('Path') + '|' + $v
 if ($env:CERNE_TEST_SAVED -eq '<none>') { $k.DeleteValue('Path', $false) }
 else { $kind, $v = $env:CERNE_TEST_SAVED -split '\|', 2; $k.SetValue('Path', $v, $kind) }`
 		cmd := exec.Command(host, "-NoProfile", "-NonInteractive", "-Command", restore)
-		cmd.Env = append(os.Environ(), "CERNE_TEST_SAVED="+saved)
+		cmd.Env = psEnv(host, "CERNE_TEST_SAVED="+saved)
 		if b, err := cmd.CombinedOutput(); err != nil {
 			t.Errorf("restore user PATH: %v\n%s", err, b)
 		}
 	})
 }
 
-// userPathEntries reads the registry user PATH, unexpanded, split on ';'.
-func userPathEntries(t *testing.T, host string) []string {
+// userPath reads the registry user PATH unexpanded, with its value kind.
+func userPath(t *testing.T, host string) (kind string, entries []string) {
 	t.Helper()
-	out, err := exec.Command(host, "-NoProfile", "-NonInteractive", "-Command",
-		`[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment').GetValue('Path', '', 'DoNotExpandEnvironmentNames')`).Output()
+	cmd := exec.Command(host, "-NoProfile", "-NonInteractive", "-Command",
+		`$k = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment')
+[string]$k.GetValueKind('Path') + '|' + $k.GetValue('Path', '', 'DoNotExpandEnvironmentNames')`)
+	cmd.Env = psEnv(host)
+	out, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("read user PATH: %v", err)
 	}
-	return strings.Split(strings.TrimRight(string(out), "\r\n"), ";")
+	kind, raw, _ := strings.Cut(strings.TrimRight(string(out), "\r\n"), "|")
+	return kind, strings.Split(raw, ";")
+}
+
+// seedUserPath replaces the registry user PATH (keepUserPath restores it).
+func seedUserPath(t *testing.T, host, raw string) {
+	t.Helper()
+	cmd := exec.Command(host, "-NoProfile", "-NonInteractive", "-Command",
+		`[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true).SetValue('Path', $env:CERNE_TEST_SEED, 'ExpandString')`)
+	cmd.Env = psEnv(host, "CERNE_TEST_SEED="+raw)
+	if b, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("seed user PATH: %v\n%s", err, b)
+	}
 }
 
 // sessionAlive is printed after the script by runPS1's wrapper: an `exit` in
@@ -70,8 +106,10 @@ func userPathEntries(t *testing.T, host string) []string {
 const sessionAlive = "SESSION-ALIVE"
 
 // runPS1 runs install.ps1 the way the README does, as text through
-// Invoke-Expression inside a session, then prints sessionAlive. A thrown
-// error makes the wrapper exit 1 after the marker.
+// Invoke-Expression inside a session, CERNE_TEST_RUNS times (default 1), from
+// CERNE_TEST_CWD when set. Then it prints how many entries of the session's
+// $env:Path are CERNE_INSTALL_DIR, and sessionAlive. A thrown error makes the
+// wrapper exit 1 after the marker.
 func runPS1(t *testing.T, host string, env ...string) (string, error) {
 	t.Helper()
 	script, err := filepath.Abs("../install.ps1")
@@ -80,12 +118,21 @@ func runPS1(t *testing.T, host string, env ...string) (string, error) {
 	}
 	keepUserPath(t, host)
 	const wrapper = `$failed = $false
-try { Invoke-Expression (Get-Content -Raw -LiteralPath $env:CERNE_TEST_SCRIPT) }
-catch { Write-Host "ERROR: $_"; $failed = $true }
+if ($env:CERNE_TEST_CWD) { Set-Location -LiteralPath $env:CERNE_TEST_CWD }
+$runs = 1
+if ($env:CERNE_TEST_RUNS) { $runs = [int]$env:CERNE_TEST_RUNS }
+for ($i = 0; $i -lt $runs; $i++) {
+  try { Invoke-Expression (Get-Content -Raw -LiteralPath $env:CERNE_TEST_SCRIPT) }
+  catch { Write-Host "ERROR: $_"; $failed = $true }
+}
+if ($env:CERNE_INSTALL_DIR) {
+  $abs = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($env:CERNE_INSTALL_DIR).TrimEnd('\')
+  Write-Host ('SESSION-PATH-COUNT=' + @($env:Path -split ';' | Where-Object { $_.TrimEnd('\') -ieq $abs }).Count)
+}
 Write-Host '` + sessionAlive + `'
 if ($failed) { exit 1 }`
 	cmd := exec.Command(host, "-NoProfile", "-NonInteractive", "-Command", wrapper)
-	cmd.Env = append(os.Environ(), append([]string{"CERNE_TEST_SCRIPT=" + script, "CERNE_VERSION="}, env...)...)
+	cmd.Env = psEnv(host, append([]string{"CERNE_TEST_SCRIPT=" + script, "CERNE_VERSION="}, env...)...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
@@ -158,25 +205,63 @@ func TestInstallPS1_ResolvesLatest(t *testing.T) {
 	})
 }
 
-// Criterion 8: the install dir lands on the user PATH once, however many
-// times the script runs.
+// Criterion 8: the install dir lands on the user PATH and on the session's
+// PATH once, however many times the script runs in that session, and the
+// user PATH keeps its unexpanded entries and its REG_EXPAND_SZ kind.
 func TestInstallPS1_PathOnce(t *testing.T) {
 	eachHost(t, func(t *testing.T, host string) {
+		keepUserPath(t, host)
+		seedUserPath(t, host, `%USERPROFILE%\cerne-test-keep;C:\cerne-test-a`)
 		srv, _ := releaseServer(t, false)
 		dir := t.TempDir()
-		for i := 0; i < 2; i++ {
-			if out, err := runPS1(t, host, "CERNE_BASE_URL="+srv.URL, "CERNE_VERSION=v1.2.3", "CERNE_INSTALL_DIR="+dir); err != nil {
-				t.Fatalf("install %d failed: %v\n%s", i+1, err, out)
-			}
+		out, err := runPS1(t, host, "CERNE_BASE_URL="+srv.URL, "CERNE_VERSION=v1.2.3", "CERNE_INSTALL_DIR="+dir, "CERNE_TEST_RUNS=2")
+		if err != nil {
+			t.Fatalf("install failed: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "SESSION-PATH-COUNT=1") {
+			t.Errorf("the session PATH does not hold the install dir exactly once:\n%s", out)
+		}
+		kind, entries := userPath(t, host)
+		if kind != "ExpandString" {
+			t.Errorf("user PATH kind = %q, want ExpandString", kind)
+		}
+		if len(entries) < 2 || entries[0] != `%USERPROFILE%\cerne-test-keep` || entries[1] != `C:\cerne-test-a` {
+			t.Errorf("user PATH lost or expanded its existing entries: %q", entries)
 		}
 		n := 0
-		for _, e := range userPathEntries(t, host) {
+		for _, e := range entries {
 			if strings.EqualFold(strings.TrimRight(e, `\`), strings.TrimRight(dir, `\`)) {
 				n++
 			}
 		}
 		if n != 1 {
-			t.Errorf("user PATH holds the install dir %d times, want 1", n)
+			t.Errorf("user PATH holds the install dir %d times, want 1: %q", n, entries)
+		}
+	})
+}
+
+// A relative CERNE_INSTALL_DIR resolves against the session's folder, and the
+// user PATH gets the absolute dir.
+func TestInstallPS1_RelativeInstallDir(t *testing.T) {
+	eachHost(t, func(t *testing.T, host string) {
+		srv, _ := releaseServer(t, false)
+		cwd := t.TempDir()
+		out, err := runPS1(t, host, "CERNE_BASE_URL="+srv.URL, "CERNE_VERSION=v1.2.3", `CERNE_INSTALL_DIR=rel\bin`, "CERNE_TEST_CWD="+cwd)
+		if err != nil {
+			t.Fatalf("install failed: %v\n%s", err, out)
+		}
+		abs := filepath.Join(cwd, "rel", "bin")
+		assertInstalledExe(t, abs, "v1.2.3")
+		_, entries := userPath(t, host)
+		var found bool
+		for _, e := range entries {
+			if strings.EqualFold(e, `rel\bin`) {
+				t.Errorf("user PATH got the relative dir: %q", entries)
+			}
+			found = found || strings.EqualFold(strings.TrimRight(e, `\`), abs)
+		}
+		if !found {
+			t.Errorf("user PATH lacks %s: %q", abs, entries)
 		}
 	})
 }
@@ -187,7 +272,7 @@ func TestInstallPS1_Architecture(t *testing.T) {
 		srv, hits := releaseServer(t, false)
 		dir := t.TempDir()
 		out, err := runPS1(t, host, "CERNE_BASE_URL="+srv.URL, "CERNE_VERSION=v1.2.3", "CERNE_INSTALL_DIR="+dir,
-			"PROCESSOR_ARCHITECTURE=x86", "PROCESSOR_ARCHITEW6432=")
+			"PROCESSOR_ARCHITECTURE=x86")
 		if err == nil {
 			t.Fatalf("install succeeded on 32-bit x86:\n%s", out)
 		}
@@ -199,7 +284,7 @@ func TestInstallPS1_Architecture(t *testing.T) {
 		}
 
 		out, err = runPS1(t, host, "CERNE_BASE_URL="+srv.URL, "CERNE_VERSION=v1.2.3", "CERNE_INSTALL_DIR="+dir,
-			"PROCESSOR_ARCHITECTURE=ARM64", "PROCESSOR_ARCHITEW6432=")
+			"PROCESSOR_ARCHITECTURE=ARM64")
 		if err != nil {
 			t.Fatalf("install failed on ARM64: %v\n%s", err, out)
 		}

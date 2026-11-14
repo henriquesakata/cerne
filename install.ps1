@@ -51,6 +51,8 @@ function Install-Cerne {
     $r = Invoke-WebRequest @params
     $final = $r.BaseResponse.ResponseUri
     if (-not $final) { $final = $r.BaseResponse.RequestMessage.RequestUri }
+    # Checked after the fact: a downgraded redirect has already been fetched,
+    # but its body is thrown away before anything reads it.
     if ($secure -and $final.Scheme -ne 'https') {
       throw "$Uri redirected to a non-https address ($final)"
     }
@@ -70,7 +72,11 @@ function Install-Cerne {
   }
 
   $dir = Join-Path $env:LOCALAPPDATA 'Programs\cerne'
-  if ($env:CERNE_INSTALL_DIR) { $dir = $env:CERNE_INSTALL_DIR }
+  if ($env:CERNE_INSTALL_DIR) {
+    # A relative dir would land on the user PATH as is, and resolve against
+    # whatever folder each later terminal starts in.
+    $dir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($env:CERNE_INSTALL_DIR)
+  }
   $target = Join-Path $dir 'cerne.exe'
   if (Test-Path -LiteralPath $target -PathType Container) {
     throw "cerne install: $target is a directory; set `$env:CERNE_INSTALL_DIR to another directory"
@@ -91,7 +97,7 @@ function Install-Cerne {
     $want = $null
     foreach ($line in Get-Content -LiteralPath $sums) {
       $fields = -split $line
-      if ($fields.Count -ge 2 -and $fields[1] -eq $asset) { $want = $fields[0].ToLowerInvariant() }
+      if ($fields.Count -ge 2 -and $fields[1].TrimStart('*') -eq $asset) { $want = $fields[0].ToLowerInvariant() }
     }
     if (-not $want) { throw "cerne install: SHA256SUMS of release $version has no entry for $asset" }
     $got = (Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -102,12 +108,15 @@ function Install-Cerne {
     try { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
     catch { throw "cerne install: could not create $dir; set `$env:CERNE_INSTALL_DIR to a directory you can write to" }
     # Stage next to the target, then swap. A running cerne.exe (a `cerne ui`)
-    # cannot be overwritten, but it can be renamed out of the way.
+    # cannot be overwritten, but it can be renamed out of the way, under a
+    # name of its own: an older one may still be running too. Copies left by
+    # earlier installs go now, unless still running.
+    Get-ChildItem -LiteralPath $dir -Filter 'cerne.exe.*.old' -ErrorAction SilentlyContinue |
+      Remove-Item -Force -ErrorAction SilentlyContinue
     $staged = Join-Path $dir ".cerne.install.$PID.exe"
-    $old = "$target.old"
+    $old = "$target.$PID.old"
     try {
       Copy-Item -LiteralPath $download -Destination $staged -Force
-      Remove-Item -LiteralPath $old -Force -ErrorAction SilentlyContinue
       if (Test-Path -LiteralPath $target) { Move-Item -LiteralPath $target -Destination $old -Force }
       Move-Item -LiteralPath $staged -Destination $target -Force
     } catch {

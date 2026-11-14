@@ -128,6 +128,9 @@ func TestHomebrewFormula_RubySyntax(t *testing.T) {
 	}
 	ruby, err := exec.LookPath("ruby")
 	if err != nil {
+		if os.Getenv("CI") != "" {
+			t.Fatal("ruby not installed on CI: criterion 3 would go unproven")
+		}
 		t.Skip("ruby not installed")
 	}
 	path := filepath.Join(t.TempDir(), "cerne.rb")
