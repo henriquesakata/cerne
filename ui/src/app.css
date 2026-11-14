@@ -3197,7 +3197,10 @@ button.clarify-chip { cursor: pointer; font: inherit; }
 .settings-effective { margin: 0 0 0.4rem; font-size: 0.95rem; color: var(--fg); }
 .settings-confirm { margin: 0.4rem 0 0; font-size: 0.9rem; }
 .settings-confirm p { margin: 0 0 0.4rem; }
-.settings-confirm-yes { font: inherit; font-size: 0.85rem; padding: 0.3rem 0.8rem; border: 1px solid var(--fg); border-radius: 6px; background: var(--fg); color: var(--bg); cursor: pointer; }
+.settings-confirm-yes,
+.settings-confirm-no { font: inherit; font-size: 0.85rem; padding: 0.3rem 0.8rem; border: 1px solid var(--border-field); border-radius: 6px; background: transparent; color: var(--fg); cursor: pointer; }
+.settings-confirm-yes { color: var(--danger); }
+.settings-confirm-no:focus-visible,
 .settings-confirm-yes:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
 .settings-saved { margin: 0.4rem 0 0; font-size: 0.85rem; color: var(--fg); }
 .settings-group-head { margin-top: 1rem; }

@@ -1380,10 +1380,11 @@ describe('Settings — chave só-humano (F-0413)', () => {
     const r = await screen.findByRole('listitem', { name: 'Gauntlet' })
     fireEvent.click(box(r))
     expect(putSetting).not.toHaveBeenCalled()
-    expect(within(r).getByText('Desligar o Gauntlet relaxa o approve e o complete deste projeto.')).toBeInTheDocument()
-    const confirm = within(r).getByRole('button', { name: 'Desligar' })
-    expect(confirm).toHaveFocus()
-    fireEvent.click(confirm)
+    const group = within(r).getByRole('group', { name: /^Desligar o Gauntlet relaxa o approve e o complete deste projeto\./ })
+    expect(group).toHaveTextContent('Grava off no .cernerc (versionado); dá para religar aqui.')
+    // O foco abre no Cancelar, a escolha segura.
+    expect(within(group).getByRole('button', { name: 'Cancelar' })).toHaveFocus()
+    fireEvent.click(within(group).getByRole('button', { name: 'Desligar' }))
     await waitFor(() => expect(putSetting).toHaveBeenCalledWith('gates.gauntlet', 'project', 'off'))
   })
 
@@ -1427,8 +1428,18 @@ describe('Settings — chave só-humano (F-0413)', () => {
     const r = await screen.findByRole('listitem', { name: 'Gauntlet' })
     expect(within(r).getByText('Human only')).toBeInTheDocument()
     fireEvent.click(box(r))
-    expect(within(r).getByText('Turning the Gauntlet off relaxes approve and complete for this project.')).toBeInTheDocument()
+    expect(within(r).getByRole('group', { name: /^Turning the Gauntlet off relaxes approve and complete for this project\./ })).toBeInTheDocument()
     expect(within(r).getByRole('button', { name: 'Turn off' })).toBeInTheDocument()
     expect(within(r).getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
+  })
+})
+
+describe('Settings — proveniência na descrição do controle (F-0413)', () => {
+  it('o select tem o efetivo e a origem na descrição acessível', async () => {
+    const lang = key({ id: 'lint.cli_output_language', title: 'CLI output language', type: 'string', default: '', enum: ['en'], scopes: ['project'], description: 'x', value: '' })
+    fetchSettings.mockResolvedValue(fixture({ settings: [lang] }))
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Idioma da saída da CLI' })
+    expect(within(r).getByRole('combobox')).toHaveAccessibleDescription(/^x.*Efetivo: Desligado \(padrão\)/)
   })
 })

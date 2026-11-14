@@ -461,6 +461,9 @@ function SettingRow({
   const uid = useId()
   const [intError, setIntError] = useState(false)
   const errId = `${uid}-interr`
+  const effId = `${uid}-eff`
+  const infoId = `${uid}-info`
+  const askId = `${uid}-ask`
   const [confirming, setConfirming] = useState(false)
   const confirmBtn = useRef<HTMLButtonElement | null>(null)
   useEffect(() => {
@@ -490,6 +493,10 @@ function SettingRow({
   // Busy is aria-disabled, never disabled (F-0302): the pressed control keeps
   // the focus, and a press during the write does nothing.
   const lock = busy || undefined
+  // What a screen reader hears with the field: the description, then the
+  // effective value and where a stored value shows through from.
+  const hasInfo = others.length > 0 || inherited
+  const described = `${descId} ${effId}${hasInfo ? ` ${infoId}` : ''}`
 
   // A bool is an affirmative checkbox: the title is its visible label, the
   // description sits below the title (aria-describedby).
@@ -533,14 +540,15 @@ function SettingRow({
           {confirming && (
           <div
             className="settings-confirm"
+            role="group"
+            aria-labelledby={askId}
             onKeyDown={(e) => {
               if (e.key === 'Escape') cancel()
             }}
           >
-            <p>{ts.confirmOff(tx(s.title))}</p>
+            <p id={askId}>{ts.confirmOff(tx(s.title))}</p>
             <button
               type="button"
-              ref={confirmBtn}
               className="settings-confirm-yes"
               onClick={() => {
                 setConfirming(false)
@@ -549,7 +557,7 @@ function SettingRow({
             >
               {ts.turnOff}
             </button>{' '}
-            <button type="button" className="settings-switch" onClick={cancel}>
+            <button type="button" ref={confirmBtn} className="settings-confirm-no" onClick={cancel}>
               {ts.cancel}
             </button>
           </div>
@@ -566,7 +574,7 @@ function SettingRow({
             className="settings-select"
             value={String(current)}
             aria-labelledby={titleId}
-            aria-describedby={descId}
+            aria-describedby={described}
             aria-disabled={lock}
             onChange={(e) => {
               const next = e.target.value
@@ -607,7 +615,7 @@ function SettingRow({
               defaultValue={String(current)}
               placeholder={s.fallback}
               aria-labelledby={titleId}
-              aria-describedby={descId}
+              aria-describedby={described}
               aria-disabled={lock}
             />
             <button type="submit" aria-describedby={titleId} aria-disabled={lock}>
@@ -646,7 +654,7 @@ function SettingRow({
               className="settings-text"
               defaultValue={String(current)}
               aria-labelledby={titleId}
-              aria-describedby={intError ? `${descId} ${errId}` : descId}
+              aria-describedby={intError ? `${described} ${errId}` : described}
               aria-invalid={intError ? true : undefined}
               aria-disabled={lock}
             />
@@ -710,7 +718,7 @@ function SettingRow({
         )}
       </div>
       <div className="settings-row-control">
-        <p className="settings-effective">
+        <p id={effId} className="settings-effective">
             {/* An empty name (even only spaces) signs with the fallback: said
                 in text, not only in the placeholder (F-0333, critic C3). */}
             {s.fallback && typeof s.value === 'string' && s.value.trim() === ''
@@ -737,7 +745,7 @@ function SettingRow({
           )}
         </p>
         {(others.length > 0 || inherited) && (
-          <p className="settings-scope-info">
+          <p id={infoId} className="settings-scope-info">
             {others.map((sc) => (
               <span key={sc}>
                 {above(sc) ? ts.overriddenBy(ts.scopes[sc]) : inherited ? ts.inheritedFrom(ts.scopes[sc]) : ts.alsoModifiedIn(ts.scopes[sc])}{' '}
