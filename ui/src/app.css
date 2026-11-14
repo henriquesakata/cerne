@@ -3209,21 +3209,49 @@ button.clarify-chip { cursor: pointer; font: inherit; }
    forma do outline (tracejado × contínuo), não só pela cor; outline não muda a
    largura da coluna. Só o .drop-hint desce os cards do destino, que nunca é a
    coluna sob o cursor no dragstart (DROPS liga colunas distintas). */
+.drop-edge.drop-ready > .drop-edge-inner,
 .column.drop-ready {
   outline: 2px dashed var(--accent);
   outline-offset: -1px;
   background: color-mix(in srgb, var(--accent) 12%, var(--surface-2));
 }
+.drop-edge.drop-active > .drop-edge-inner,
 .column.drop-active {
   outline: 2px solid var(--accent);
   outline-offset: -1px;
   background: color-mix(in srgb, var(--accent) 22%, var(--surface-2));
 }
+.drop-edge.drop-blocked > .drop-edge-inner,
 .column.drop-blocked { outline: 2px dashed var(--faint); cursor: not-allowed; }
 .column.drop-off { opacity: 0.45; }
 .drop-hint { margin: 0.4rem 0 0; font-size: 0.85rem; font-weight: 600; color: var(--accent); }
 /* o motivo do bloqueio usa a cor do badge ❓ do card: o mesmo sinal */
+.drop-edge.drop-blocked .drop-hint,
 .column.drop-blocked .drop-hint { color: var(--purple); }
+/* F-0420: faixa que aponta o destino fora da vista, na borda direita do board.
+   A faixa é um trilho transparente da altura do board, fora do contêiner que
+   rola e sem receber ponteiro: o soltar e a rolagem nativa vão à coluna de
+   baixo, e os cards e a barra de rolagem continuam à vista. Só o rótulo, preso
+   no topo da parte visível, tem o destaque da coluna de destino (as regras
+   acima). Sem transição (estado instantâneo, ui/DESIGN.md). */
+.board-wrap { position: relative; }
+.drop-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  /* cabe "CONCLUÍDAS →" (114 px no system-ui) numa linha, sem a seta solta */
+  width: 9rem;
+  pointer-events: none;
+}
+.drop-edge-inner {
+  position: sticky;
+  top: 0.75rem;
+  box-sizing: border-box;
+  padding: 0.75rem;
+  border-radius: 8px;
+  background: var(--surface-2);
+}
 .card.card-in-flight { opacity: 0.4; }
 .card-draggable { cursor: grab; }
 @media (prefers-reduced-motion: no-preference) {
