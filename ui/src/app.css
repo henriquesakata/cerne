@@ -3195,6 +3195,10 @@ button.clarify-chip { cursor: pointer; font: inherit; }
 /* Provenance is the main read of a row: ink, not muted. */
 .settings-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.75rem; margin: 0.4rem 0 0; font-size: 0.85rem; color: var(--muted); }
 .settings-effective { margin: 0 0 0.4rem; font-size: 0.95rem; color: var(--fg); }
+.settings-confirm { margin: 0.4rem 0 0; font-size: 0.9rem; }
+.settings-confirm p { margin: 0 0 0.4rem; }
+.settings-confirm-yes { font: inherit; font-size: 0.85rem; padding: 0.3rem 0.8rem; border: 1px solid var(--fg); border-radius: 6px; background: var(--fg); color: var(--bg); cursor: pointer; }
+.settings-confirm-yes:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
 .settings-saved { margin: 0.4rem 0 0; font-size: 0.85rem; color: var(--fg); }
 .settings-group-head { margin-top: 1rem; }
 .settings-group-title { margin: 0; font-size: 1rem; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--fg); }
@@ -3202,7 +3206,7 @@ button.clarify-chip { cursor: pointer; font: inherit; }
 .settings-scope { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.75rem; margin: 1rem 0 0; }
 .settings-scopes .lang-option { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.9rem; padding: 0.4rem 0.8rem; }
 .settings-scopes .lang-option.active .badge { background: transparent; color: inherit; border-color: currentColor; }
-.settings-hint { margin: 0; font-size: 0.85rem; color: var(--muted); }
+.settings-hint { max-width: 70ch; margin: 0; font-size: 0.85rem; color: var(--muted); }
 .settings-scope-info { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; margin: 0.4rem 0 0; font-size: 0.85rem; color: var(--muted); }
 .settings-switch {
   font: inherit;

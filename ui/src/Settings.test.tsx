@@ -1296,15 +1296,18 @@ describe('Settings — alvo do toggle, busca estável e textos (F-0413)', () => 
     window.location.hash = '#/settings'
   })
 
-  it('o título da linha é um label do checkbox: clicar nele alterna', async () => {
+  it('clicar (ou duplo clique) no título não grava: só o toggle da coluna direita é alvo', async () => {
     putSetting.mockResolvedValue(fixture())
     render(<Settings />)
     const extra = await screen.findByRole('listitem', { name: 'Extra toggle' })
     const box = within(extra).getByRole('checkbox', { name: 'Extra toggle' })
     const title = within(extra).getByText('Extra toggle')
-    expect(title.closest('label')).toHaveAttribute('for', box.id)
+    expect(title.closest('label')).toBeNull()
+    expect(box).toBeChecked()
     fireEvent.click(title)
-    await waitFor(() => expect(putSetting).toHaveBeenCalledWith('test.extra', 'project', false))
+    fireEvent.doubleClick(title)
+    expect(putSetting).not.toHaveBeenCalled()
+    expect(box).toBeChecked()
   })
 
   it('a caixa fica num label.settings-toggle com a palavra de estado visível, fora do nome acessível', async () => {
@@ -1325,14 +1328,15 @@ describe('Settings — alvo do toggle, busca estável e textos (F-0413)', () => 
     expect(live).toBeEmptyDOMElement()
   })
 
-  it('com busca, o cabeçalho do grupo fica no lugar e troca o texto; sem resultado, some o seletor de escopo', async () => {
+  it('com busca, o cabeçalho do grupo fica no lugar e troca o texto; sem resultado, o seletor de escopo continua', async () => {
     render(<Settings />)
     await screen.findByRole('listitem', { name: 'Extra toggle' })
     const box = screen.getByRole('searchbox', { name: 'Buscar configurações' })
     fireEvent.change(box, { target: { value: 'extra' } })
     expect(screen.getByRole('heading', { name: 'Resultados em todos os grupos' })).toBeInTheDocument()
     fireEvent.change(box, { target: { value: 'zzz' } })
-    expect(screen.queryByRole('group', { name: /escopo/i })).toBeNull()
+    // O seletor de escopo fica montado: o campo de busca nunca pula.
+    expect(screen.getByRole('group', { name: /escopo/i })).toBeInTheDocument()
   })
 
   it('enum com valor vazio mostra "Desligado" (en: "Off") em vez de "(vazio)"', async () => {
@@ -1348,5 +1352,83 @@ describe('Settings — alvo do toggle, busca estável e textos (F-0413)', () => 
     const r = await screen.findByRole('listitem', { name: 'Grafo' })
     expect(within(r).getByRole('heading', { level: 3 })).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 3, name: 'Nome do projeto' })).toBeInTheDocument()
+  })
+})
+
+describe('Settings — chave só-humano (F-0413)', () => {
+  const gate = (over: Partial<ResolvedSetting> = {}) =>
+    key({ id: 'gates.gauntlet', title: 'Gauntlet', type: 'string', default: 'on', enum: ['on', 'off'], scopes: ['project'], value: 'on', human_only: true, ...over })
+  const load = (g = gate()) => fetchSettings.mockResolvedValue(fixture({ settings: [...fixture().settings, g] }))
+  const box = (r: HTMLElement) => within(r).getByRole('checkbox', { name: 'Gauntlet' })
+
+  beforeEach(() => {
+    window.location.hash = '#/settings'
+    putSetting.mockResolvedValue(fixture())
+  })
+
+  it('o selo "Só humano" aparece só na chave só-humano', async () => {
+    load()
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Gauntlet' })
+    expect(within(r).getByText('Só humano')).toBeInTheDocument()
+    expect(within(row('Grafo')).queryByText('Só humano')).toBeNull()
+  })
+
+  it('desligar pergunta antes; só grava off depois de Desligar', async () => {
+    load()
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Gauntlet' })
+    fireEvent.click(box(r))
+    expect(putSetting).not.toHaveBeenCalled()
+    expect(within(r).getByText('Desligar o Gauntlet relaxa o approve e o complete deste projeto.')).toBeInTheDocument()
+    const confirm = within(r).getByRole('button', { name: 'Desligar' })
+    expect(confirm).toHaveFocus()
+    fireEvent.click(confirm)
+    await waitFor(() => expect(putSetting).toHaveBeenCalledWith('gates.gauntlet', 'project', 'off'))
+  })
+
+  it('Cancelar não grava, mantém a caixa marcada e devolve o foco a ela', async () => {
+    load()
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Gauntlet' })
+    fireEvent.click(box(r))
+    fireEvent.click(within(r).getByRole('button', { name: 'Cancelar' }))
+    expect(putSetting).not.toHaveBeenCalled()
+    expect(box(r)).toBeChecked()
+    expect(box(r)).toHaveFocus()
+    expect(within(r).queryByRole('button', { name: 'Desligar' })).toBeNull()
+  })
+
+  it('Esc cancela', async () => {
+    load()
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Gauntlet' })
+    fireEvent.click(box(r))
+    fireEvent.keyDown(within(r).getByRole('button', { name: 'Desligar' }), { key: 'Escape' })
+    expect(putSetting).not.toHaveBeenCalled()
+    expect(within(r).queryByRole('button', { name: 'Desligar' })).toBeNull()
+  })
+
+  it('ligar grava direto, sem pergunta', async () => {
+    load(gate({ value: 'off', stored: { project: 'off' }, origin: 'project' }))
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Gauntlet' })
+    fireEvent.click(box(r))
+    await waitFor(() => expect(putSetting).toHaveBeenCalledWith('gates.gauntlet', 'project', 'on'))
+  })
+
+  it('en: texto e botões em inglês', async () => {
+    load()
+    render(
+      <I18nProvider>
+        <Settings />
+      </I18nProvider>,
+    )
+    const r = await screen.findByRole('listitem', { name: 'Gauntlet' })
+    expect(within(r).getByText('Human only')).toBeInTheDocument()
+    fireEvent.click(box(r))
+    expect(within(r).getByText('Turning the Gauntlet off relaxes approve and complete for this project.')).toBeInTheDocument()
+    expect(within(r).getByRole('button', { name: 'Turn off' })).toBeInTheDocument()
+    expect(within(r).getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
   })
 })

@@ -1276,6 +1276,8 @@ export type ResolvedSetting = {
   description: string
   // Absent or unknown (an older payload): the screen files it under general.
   group?: SettingGroup
+  // Only a human writes this key (the CLI refuses an agent): the screen guards it.
+  human_only?: boolean
   // Values a string key may hold (F-0353); absent = free text.
   enum?: string[]
   value: unknown

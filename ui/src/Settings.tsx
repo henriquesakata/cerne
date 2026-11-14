@@ -237,7 +237,7 @@ export default function Settings({ group = 'general' }: { group?: SettingGroup }
           {group === 'general' && <ProjectName key={activePid} name={name} />}
           {view ? (
           <>
-          {q !== '' && shown.length === 0 ? null : chooser ? (
+          {chooser ? (
             <div className="settings-scope">
               <span className="lang-toggle settings-scopes" role="group" aria-label={ts.scopeGroup} aria-describedby={hintId}>
                 {ORDER.map((sc) => (
@@ -265,7 +265,7 @@ export default function Settings({ group = 'general' }: { group?: SettingGroup }
           )}
           {/* The escape to the raw file (R-0042): where the selected scope lives,
               for whoever would rather edit it by hand. */}
-          {view.files[effScope] && pool.length > 0 && !(q !== '' && shown.length === 0) && (
+          {view.files[effScope] && pool.length > 0 && (
             <div className="settings-file">
               <span>{ts.file}</span>
               <FixBlock command={view.files[effScope]} copyFailed={ts.copyFailed} />
@@ -461,6 +461,15 @@ function SettingRow({
   const uid = useId()
   const [intError, setIntError] = useState(false)
   const errId = `${uid}-interr`
+  const [confirming, setConfirming] = useState(false)
+  const confirmBtn = useRef<HTMLButtonElement | null>(null)
+  useEffect(() => {
+    if (confirming) confirmBtn.current?.focus()
+  }, [confirming])
+  const cancel = () => {
+    setConfirming(false)
+    document.getElementById(controlId(s.id))?.focus()
+  }
   const titleId = `${uid}-title`
   const descId = `${uid}-desc`
   // A key that does not take the selected scope writes to the one it takes.
@@ -487,14 +496,7 @@ function SettingRow({
   // A string key whose only values are on/off is a switch, written as on/off.
   const onOff = s.type === 'string' && s.enum?.length === 2 && s.enum.includes('on') && s.enum.includes('off')
   const isToggle = s.type === 'bool' || onOff
-  // A toggle's title is a real label of the box: it can sit far from it.
-  const titleNode = isToggle ? (
-    <label id={titleId} htmlFor={controlId(s.id)}>
-      {tx(s.title)}
-    </label>
-  ) : (
-    <span id={titleId}>{tx(s.title)}</span>
-  )
+  const titleNode = <span id={titleId}>{tx(s.title)}</span>
   let control = null
   if (isToggle) {
     const on = onOff ? current === 'on' : current === true
@@ -510,12 +512,51 @@ function SettingRow({
           aria-disabled={lock}
           onChange={(e) => {
             const next = onOff ? (e.target.checked ? 'on' : 'off') : e.target.checked
-            if (!busy) onWrite(ws, () => putSetting(s.id, ws, next))
+            if (busy) return
+            // A human-only gate asks before it is relaxed (turning it on does not).
+            if (s.human_only && !e.target.checked) {
+              setConfirming(true)
+              return
+            }
+            onWrite(ws, () => putSetting(s.id, ws, next))
           }}
         />
         <span aria-hidden="true">{on ? ts.stateOn : ts.stateOff}</span>
       </label>
     )
+    {
+      const off = onOff ? 'off' : false
+      // Always a fragment, so the box is not remounted when the question opens.
+      control = (
+        <>
+          {control}
+          {confirming && (
+          <div
+            className="settings-confirm"
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') cancel()
+            }}
+          >
+            <p>{ts.confirmOff(tx(s.title))}</p>
+            <button
+              type="button"
+              ref={confirmBtn}
+              className="settings-confirm-yes"
+              onClick={() => {
+                setConfirming(false)
+                onWrite(ws, () => putSetting(s.id, ws, off))
+              }}
+            >
+              {ts.turnOff}
+            </button>{' '}
+            <button type="button" className="settings-switch" onClick={cancel}>
+              {ts.cancel}
+            </button>
+          </div>
+          )}
+        </>
+      )
+    }
   } else {
     control = (
       <>
@@ -638,6 +679,11 @@ function SettingRow({
       <div className="settings-row-text">
         <h3 className="settings-title">
           {titleNode}
+          {s.human_only && (
+            <span className="badge" title={ts.humanOnlyTitle}>
+              {ts.humanOnly}
+            </span>
+          )}
           {groupName && <span className="badge settings-group">{groupName}</span>}
           {modified && (
             <span className="badge settings-modified" title={ts.modifiedTitle(ts.scopes[ws])}>
