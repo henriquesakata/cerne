@@ -119,7 +119,7 @@ func TestPagePromoteNeverTakesTheServerEnv(t *testing.T) {
 	agentServerEnv(t)
 	repoDir, projDir, _ := newGitBackend(t)
 	h := New(repoDir, projDir, "")
-	if rec := doJSON(t, h, http.MethodPost, "/api/ideas", `{"text":"exportar CSV"}`, &map[string]any{}); rec.Code != http.StatusCreated {
+	if rec := doJSON(t, h, http.MethodPost, "/api/ideas", `{"title":"exportar CSV"}`, &map[string]any{}); rec.Code != http.StatusCreated {
 		t.Fatalf("POST idea = %d %s", rec.Code, rec.Body.String())
 	}
 	var promoted struct {

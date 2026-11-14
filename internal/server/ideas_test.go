@@ -68,7 +68,7 @@ func TestIdeasLeaveAPIOutputsUnchanged(t *testing.T) {
 		t.FailNow()
 	}
 	for _, text := range []string{"zebra listrada", "conciliação do OFX", "terceira"} {
-		if _, err := app.CreateIdea(repoDir, projDir, text, nil, []string{"lint"}, ""); err != nil {
+		if _, err := app.CreateIdea(repoDir, projDir, text, "", nil, []string{"lint"}, ""); err != nil {
 			t.Fatalf("CreateIdea: %v", err)
 		}
 	}
@@ -93,7 +93,7 @@ func TestIdeasAPIRoundTrip(t *testing.T) {
 		Idea store.Idea `json:"idea"`
 	}
 	for _, text := range []string{"primeira", "segunda", "terceira"} {
-		if rec := doJSON(t, h, http.MethodPost, "/api/ideas", fmt.Sprintf(`{"text":%q,"components":["kanban"]}`, text), &created); rec.Code != http.StatusCreated {
+		if rec := doJSON(t, h, http.MethodPost, "/api/ideas", fmt.Sprintf(`{"title":%q,"components":["kanban"]}`, text), &created); rec.Code != http.StatusCreated {
 			t.Fatalf("POST %q = %d: %s", text, rec.Code, rec.Body.String())
 		}
 	}
@@ -101,7 +101,7 @@ func TestIdeasAPIRoundTrip(t *testing.T) {
 		t.Fatalf("created = %+v, want I-0003 with component kanban", created.Idea)
 	}
 	var e map[string]any
-	if rec := doJSON(t, h, http.MethodPost, "/api/ideas", `{"text":" "}`, &e); rec.Code != http.StatusUnprocessableEntity {
+	if rec := doJSON(t, h, http.MethodPost, "/api/ideas", `{"title":" "}`, &e); rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("blank text = %d, want 422", rec.Code)
 	}
 	var list struct {
@@ -160,12 +160,12 @@ func TestIdeaCaptureConcurrentAcrossSurfaces(t *testing.T) {
 			defer wg.Done()
 			text := fmt.Sprintf("corpo %d", k)
 			if k%2 == 0 {
-				i, err := app.CreateIdea(repoDir, projDir, text, nil, nil, "")
+				i, err := app.CreateIdea(repoDir, projDir, text, "", nil, nil, "")
 				ids[k], errs[k] = i.ID, err
 				return
 			}
 			rec := httptest.NewRecorder()
-			h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/ideas", strings.NewReader(fmt.Sprintf(`{"text":%q}`, text))))
+			h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/ideas", strings.NewReader(fmt.Sprintf(`{"title":%q}`, text))))
 			var got struct {
 				Idea store.Idea `json:"idea"`
 			}
@@ -198,7 +198,7 @@ func TestIdeaCaptureConcurrentAcrossSurfaces(t *testing.T) {
 	for id, k := range seen {
 		var i store.Idea
 		data, err := os.ReadFile(filepath.Join(verify, "entities", "ideas", id+".json"))
-		if err != nil || json.Unmarshal(data, &i) != nil || i.Text != fmt.Sprintf("corpo %d", k) {
+		if err != nil || json.Unmarshal(data, &i) != nil || i.Title != fmt.Sprintf("corpo %d", k) {
 			t.Fatalf("%s on origin = %q, %v; want text 'corpo %d'", id, data, err, k)
 		}
 	}
@@ -229,7 +229,7 @@ func TestIdeaCaptureRouteIsIdempotentByToken(t *testing.T) {
 		Idea store.Idea `json:"idea"`
 	}
 	for k := 0; k < 2; k++ {
-		if rec := doJSON(t, h, http.MethodPost, "/api/ideas", `{"text":"uma vez só","token":"t-1"}`, &got); rec.Code != http.StatusCreated || got.Idea.ID != "I-0001" {
+		if rec := doJSON(t, h, http.MethodPost, "/api/ideas", `{"title":"uma vez só","token":"t-1"}`, &got); rec.Code != http.StatusCreated || got.Idea.ID != "I-0001" {
 			t.Fatalf("POST #%d = %d %+v, want 201 I-0001", k+1, rec.Code, got.Idea)
 		}
 	}
@@ -244,7 +244,7 @@ func TestIdeaCaptureRouteIsIdempotentByToken(t *testing.T) {
 func TestIdeaWriteRoutesRefuseCrossOrigin(t *testing.T) {
 	repoDir, projDir, _ := newGitBackend(t)
 	h := New(repoDir, projDir, "")
-	if _, err := app.CreateIdea(repoDir, projDir, "alvo", nil, nil, ""); err != nil {
+	if _, err := app.CreateIdea(repoDir, projDir, "alvo", "", nil, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	for _, path := range []string{"/api/ideas", "/api/ideas/I-0001/drop", "/api/ideas/I-0001/promote"} {
@@ -252,7 +252,7 @@ func TestIdeaWriteRoutesRefuseCrossOrigin(t *testing.T) {
 			{"Origin": "https://evil.example", "Content-Type": "application/json"},
 			{"Content-Type": "text/plain"},
 		} {
-			req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"text":"plantada"}`))
+			req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"title":"plantada"}`))
 			for k, v := range hdr {
 				req.Header.Set(k, v)
 			}
@@ -275,11 +275,11 @@ func TestIdeaWriteRoutesRefuseCrossOrigin(t *testing.T) {
 func TestIdeasAPIInformedBy(t *testing.T) {
 	repoDir, projDir, _ := newGitBackend(t)
 	h := New(repoDir, projDir, "")
-	i, err := app.CreateIdea(repoDir, projDir, "com fonte", nil, nil, "")
+	i, err := app.CreateIdea(repoDir, projDir, "com fonte", "", nil, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := app.CreateIdea(repoDir, projDir, "sem fonte", nil, nil, ""); err != nil {
+	if _, err := app.CreateIdea(repoDir, projDir, "sem fonte", "", nil, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := app.CreateExternalReference(repoDir, projDir, "Artigo", "http://a", "c", []string{i.ID}, nil, nil, false); err != nil {
@@ -319,7 +319,7 @@ func TestIdeasStateFilter(t *testing.T) {
 	repoDir, projDir, _ := newGitBackend(t)
 	h := New(repoDir, projDir, "")
 	for _, text := range []string{"primeira", "segunda", "terceira"} {
-		if rec := doJSON(t, h, http.MethodPost, "/api/ideas", fmt.Sprintf(`{"text":%q}`, text), &map[string]any{}); rec.Code != http.StatusCreated {
+		if rec := doJSON(t, h, http.MethodPost, "/api/ideas", fmt.Sprintf(`{"title":%q}`, text), &map[string]any{}); rec.Code != http.StatusCreated {
 			t.Fatalf("POST %q = %d: %s", text, rec.Code, rec.Body.String())
 		}
 	}
@@ -356,7 +356,7 @@ func TestIdeasStateFilter(t *testing.T) {
 	if code != http.StatusOK || ids(rs) != "I-0003:active,I-0002:dropped,I-0001:promoted" {
 		t.Fatalf("GET ?state=all = %d %s", code, ids(rs))
 	}
-	want, err := app.ListIdeas(repoDir, true, "")
+	want, err := app.ListIdeas(repoDir, app.IdeaFilter{State: "all"})
 	if err != nil || len(want) != len(rs) {
 		t.Fatalf("app.ListIdeas(all) = %d ideas, %v", len(want), err)
 	}

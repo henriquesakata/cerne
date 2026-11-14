@@ -5,9 +5,10 @@ import '@testing-library/jest-dom/vitest'
 import IdeasPanel from './IdeasPanel'
 import { HTTPError, SimilarExists, type Feature, type Idea } from './api'
 
-const idea = (id: string, text: string): Idea => ({
+const idea = (id: string, title: string, body?: string): Idea => ({
   id,
-  text,
+  title,
+  body,
   state: 'active',
   created_at: '2026-11-06T10:00:00Z',
   updated_at: '2026-11-06T10:00:00Z',
@@ -15,15 +16,15 @@ const idea = (id: string, text: string): Idea => ({
 
 let ideas: Idea[] = []
 const fetchIdeas = vi.fn(async (_state?: 'all') => ideas)
-const createIdea = vi.fn<(text: string, facets: string[], components: string[], token: string) => Promise<Idea>>()
+const createIdea = vi.fn<(title: string, body: string, facets: string[], components: string[], token: string) => Promise<Idea>>()
 const dropIdea = vi.fn<(id: string, reason: string) => Promise<Idea>>()
 const promoteIdea = vi.fn<(id: string, module: string, force?: boolean) => Promise<{ idea: Idea; feature: Feature }>>()
 
 vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api')>()),
   fetchIdeas: (state?: 'all') => fetchIdeas(state),
-  createIdea: (text: string, facets: string[], components: string[], token: string) =>
-    createIdea(text, facets, components, token),
+  createIdea: (title: string, body: string, facets: string[], components: string[], token: string) =>
+    createIdea(title, body, facets, components, token),
   dropIdea: (id: string, reason: string) => dropIdea(id, reason),
   promoteIdea: (...a: [string, string, boolean?]) => promoteIdea(...a),
 }))
@@ -55,7 +56,7 @@ describe('IdeasPanel (F-0312)', () => {
     const details = input().closest('form')!.querySelector('details')!
     expect(details.open).toBe(false)
     capture('  talvez um dia X ')
-    await waitFor(() => expect(createIdea).toHaveBeenCalledWith('talvez um dia X', [], [], expect.any(String)))
+    await waitFor(() => expect(createIdea).toHaveBeenCalledWith('talvez um dia X', '', [], [], expect.any(String)))
   })
 
   it('a ideia nova aparece sem recarregar', async () => {
@@ -84,7 +85,7 @@ describe('IdeasPanel (F-0312)', () => {
     // push landed before the failure is returned, never duplicated.
     const [first, second] = createIdea.mock.calls
     expect(second).toEqual(first)
-    expect(first[3]).toMatch(/.+/)
+    expect(first[4]).toMatch(/.+/)
     await waitFor(() => expect(input().value).toBe(''))
     expect(screen.queryByText(/backend fora/)).toBeNull()
   })
@@ -98,7 +99,7 @@ describe('IdeasPanel (F-0312)', () => {
     await waitFor(() => expect(input().value).toBe(''))
     capture('outra')
     await waitFor(() => expect(createIdea).toHaveBeenCalledTimes(2))
-    expect(createIdea.mock.calls[1][3]).not.toBe(createIdea.mock.calls[0][3])
+    expect(createIdea.mock.calls[1][4]).not.toBe(createIdea.mock.calls[0][4])
   })
 
   it('texto digitado durante o envio é mantido (C4)', async () => {
@@ -146,8 +147,8 @@ describe('IdeasPanel (F-0312)', () => {
     )
     promoteIdea.mockResolvedValueOnce({ idea: { ...ideas[0], state: 'promoted' }, feature: {} as Feature })
     render(<IdeasPanel modules={[]} onPromoted={() => {}} />)
-    await screen.findByText(ideas[0].text)
-    fireEvent.click(row(ideas[0].text).getByRole('button', { name: 'Promover I-0001' }))
+    await screen.findByText(ideas[0].title)
+    fireEvent.click(row(ideas[0].title).getByRole('button', { name: 'Promover I-0001' }))
     const similar = await screen.findByRole('link', { name: /F-0004/ })
     expect(similar).toHaveAttribute('href', '#/f/F-0004')
     expect(screen.getByText(/Cache the lint results per backend HEAD/)).toBeInTheDocument()
@@ -155,12 +156,11 @@ describe('IdeasPanel (F-0312)', () => {
     await waitFor(() => expect(promoteIdea).toHaveBeenLastCalledWith('I-0001', '', true))
   })
 
-  it('ideia longa aparece recortada, e a linha expande o resto (C10, F-0416 crit. 4 e 5)', async () => {
-    const long = 'Primeira linha da ideia longa\n' + 'detalhe '.repeat(200)
-    ideas = [idea('I-0001', long)]
+  it('o corpo só entra no DOM com a linha aberta (C10, F-0416 crit. 4 e 5, F-0419 crit. 6)', async () => {
+    ideas = [idea('I-0001', 'Primeira linha da ideia longa', 'detalhe '.repeat(200))]
     render(<IdeasPanel modules={[]} onPromoted={() => {}} />)
-    const shown = await screen.findByText(/Primeira linha da ideia longa/)
-    expect(shown.textContent).not.toContain('detalhe')
+    const shown = await screen.findByText('Primeira linha da ideia longa')
+    expect(shown).toHaveClass('queue-title')
     expect(document.body.textContent).not.toContain('detalhe')
     const t = toggle('I-0001')
     expect(t).toHaveAttribute('aria-expanded', 'false')
@@ -270,6 +270,7 @@ const closed: Idea[] = [
   idea('I-0003', 'ainda ativa'),
   { ...idea('I-0002', 'virou feature'), state: 'promoted', promoted_to: 'F-0340', closed_at: '2026-11-08T10:00:00Z', facets: ['code'], components: ['kanban'] },
   { ...idea('I-0001', 'não vale a pena'), state: 'dropped', reason: 'fora do produto', closed_at: '2026-11-07T10:00:00Z' },
+  { ...idea('I-0004', 'já atendida', 'veio junto da **F-0350**'), state: 'resolved', reason: 'coberta pela F-0350', closed_at: '2026-11-09T10:00:00Z' },
 ]
 const pill = (label: string) =>
   within(screen.getByRole('group', { name: 'Estado' })).getByRole('button', { name: new RegExp(`^${label}`) })
@@ -288,9 +289,10 @@ describe('IdeasPanel — tela #/ideas (F-0416 crit. 2 e 3)', () => {
     expect(screen.queryByRole('heading', { level: 2 })).toBeNull()
     expect(within(screen.getByRole('group', { name: 'Estado' })).getAllByRole('button').map((b) => b.textContent)).toEqual([
       'Ativas 1',
-      'Promovidas 1',
+      'Resolvidas 1',
       'Descartadas 1',
-      'Todas 3',
+      'Promovidas 1',
+      'Todas 4',
     ])
     expect(pill('Ativas')).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByText('1 ideia')).toBeInTheDocument()
@@ -309,7 +311,7 @@ describe('IdeasPanel — tela #/ideas (F-0416 crit. 2 e 3)', () => {
     ideas = closed
     const { unmount } = render(<IdeasPanel modules={[]} onPromoted={() => {}} hash="#/ideas?state=all" />)
     await screen.findByText('virou feature')
-    expect(screen.getByText('3 ideias')).toBeInTheDocument()
+    expect(screen.getByText('4 ideias')).toBeInTheDocument()
     unmount()
     window.location.hash = '#/ideas?state=xyz'
     render(<IdeasPanel modules={[]} onPromoted={() => {}} hash="#/ideas?state=xyz" />)
@@ -375,12 +377,6 @@ describe('IdeasPanel — expandir e recolher tudo (F-0416 crit. 6)', () => {
     expect([toggle('I-0002'), toggle('I-0001')].map((b) => b.getAttribute('aria-expanded'))).toEqual(['false', 'false'])
   })
 
-  it('uma ideia que começa por linha vazia resume pela primeira linha com texto (crítica #10)', async () => {
-    ideas = [idea('I-0001', '\n\n  segunda linha real\nmais')]
-    render(<IdeasPanel modules={[]} onPromoted={() => {}} />)
-    expect(await screen.findByText('segunda linha real')).toHaveClass('queue-title')
-  })
-
   it('o erro de ação usa o estilo de erro de formulário (crit. 8)', async () => {
     ideas = [idea('I-0001', 'uma ideia')]
     promoteIdea.mockRejectedValueOnce(new Error('push recusado'))
@@ -409,7 +405,65 @@ describe('IdeasPanel — teto de altura só no Backlog (F-0416 crit. 1)', () => 
     // Every rule whose selector names a .queue-/.ideas- class, compound ones included (critic #8).
     const own = css.match(/\n[^\n{}]*\.(queue|ideas)-[^{]*\{[^}]*\}/g)!.join('\n')
     expect(own).toContain('.backlog-list-col .ideas-list')
-    expect(own).toContain('.pending-row .queue-toggle')
+    expect(own).toContain(".queue-toggle[aria-expanded='true'] .queue-title")
     expect(own).not.toMatch(/#[0-9a-f]{3,8}\b|rgb\(|transition|animation/i)
+  })
+})
+
+// F-0419: a ideia no padrão das pendências — título, corpo e o estado resolvida.
+describe('IdeasPanel — título, corpo e resolvida (F-0419 crit. 6)', () => {
+  beforeEach(() => {
+    window.location.hash = ''
+  })
+
+  it('a resolvida tem pílula e chip de concluída, sem ação; o corpo sai em markdown no detalhe', async () => {
+    ideas = closed
+    render(<IdeasPanel modules={[]} onPromoted={() => {}} hash="#/ideas?state=resolved" />)
+    await screen.findByText('já atendida')
+    expect(pill('Resolvidas')).toHaveAttribute('aria-pressed', 'true')
+    const r = row('já atendida')
+    expect(r.getByText('Resolvida')).toHaveClass('chip-done')
+    expect(r.queryByRole('button', { name: /Promover|Descartar/ })).toBeNull()
+    fireEvent.click(toggle('I-0004'))
+    expect(r.getByText('F-0350', { selector: 'strong' })).toBeInTheDocument()
+    expect(r.getByText(/coberta pela F-0350/)).toBeInTheDocument()
+  })
+
+  it('a captura manda título e, aberto o "mais", o corpo', async () => {
+    createIdea.mockResolvedValue(idea('I-0001', 'exportar CSV'))
+    render(<IdeasPanel modules={[]} onPromoted={() => {}} />)
+    await screen.findByText('Nenhuma ideia ativa.')
+    fireEvent.change(screen.getByRole('textbox', { name: 'Corpo (opcional, markdown)' }), { target: { value: 'com **cabeçalho**' } })
+    capture('exportar CSV')
+    await waitFor(() => expect(createIdea).toHaveBeenCalledWith('exportar CSV', 'com **cabeçalho**', [], [], expect.any(String)))
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Corpo (opcional, markdown)' })).toHaveValue(''))
+  })
+
+  it('o título com quebra de linha recusado pelo servidor sai em pt-BR (crítica F-0419 #5)', async () => {
+    createIdea.mockRejectedValueOnce(new HTTPError('the idea title must be a single line', 422))
+    render(<IdeasPanel modules={[]} onPromoted={() => {}} />)
+    await screen.findByText('Nenhuma ideia ativa.')
+    capture('x')
+    expect(await screen.findByRole('alert')).toHaveTextContent('O título da ideia é uma linha só')
+  })
+
+  it('o título vazio recusado pelo servidor sai em pt-BR', async () => {
+    createIdea.mockRejectedValueOnce(new HTTPError('the idea title cannot be empty', 422))
+    render(<IdeasPanel modules={[]} onPromoted={() => {}} />)
+    await screen.findByText('Nenhuma ideia ativa.')
+    capture('x')
+    expect(await screen.findByRole('alert')).toHaveTextContent('O título da ideia não pode ficar vazio.')
+  })
+})
+
+describe('IdeasPanel — título longo (F-0419 crit. 6)', () => {
+  it('recolhida, o título corta em 280; aberta, mostra o título inteiro', async () => {
+    const long = 'palavra '.repeat(50) + 'FIM'
+    ideas = [idea('I-0001', long)]
+    render(<IdeasPanel modules={[]} onPromoted={() => {}} />)
+    const t = await screen.findByRole('button', { name: /^I-0001/ })
+    expect(t.textContent).not.toContain('FIM')
+    fireEvent.click(t)
+    expect(t.textContent).toContain('FIM')
   })
 })

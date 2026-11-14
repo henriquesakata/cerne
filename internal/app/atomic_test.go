@@ -40,7 +40,7 @@ func TestConcurrentCreationsDistinctIDs(t *testing.T) {
 			return rb.ID, err
 		}, func(id string) string { return "content/runbooks/" + id + ".md" }},
 		{"idea", func(r, p string, i int) (string, error) {
-			idea, err := CreateIdea(r, p, fmt.Sprintf("corpo %d", i), nil, nil, "")
+			idea, err := CreateIdea(r, p, fmt.Sprintf("corpo %d", i), "", nil, nil, "")
 			return idea.ID, err
 		}, func(id string) string { return "entities/ideas/" + id + ".json" }},
 	}

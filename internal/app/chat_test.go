@@ -638,7 +638,7 @@ func TestBuildChatSystemPromptNoteContract(t *testing.T) {
 // confirmed card — never in delegation or without a channel (F-0224 crit. 3).
 func TestBuildChatSystemPromptIdeasOnDemand(t *testing.T) {
 	repoDir, projDir := chatFixture(t)
-	if err := store.SaveIdea(repoDir, store.Idea{ID: "I-0001", Text: "conciliação via planilha", State: domain.IdeaActive}); err != nil {
+	if err := store.SaveIdea(repoDir, store.Idea{ID: "I-0001", Title: "conciliação via planilha", State: domain.IdeaActive}); err != nil {
 		t.Fatal(err)
 	}
 	commitBackend(t, repoDir)

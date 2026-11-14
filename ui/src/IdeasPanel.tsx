@@ -3,11 +3,12 @@ import { createIdea, dropIdea, fetchIdeas, HTTPError, promoteIdea, SimilarExists
 import { Chevron, ExpandAll, useExpanded } from './Expand'
 import { useT, type Messages } from './i18n'
 import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
+import Markdown from './Markdown'
 import Tag from './Tag'
 
 // A submission keeps the fields as typed (raw), so success clears only what
 // was not edited while it was in flight (C4).
-type Submission = { body: string; facets: string[]; components: string[]; token: string; raw: [string, string, string] }
+type Submission = { title: string; body: string; facets: string[]; components: string[]; token: string; raw: [string, string, string, string] }
 
 // newToken identifies one capture submission (C2). Not crypto.randomUUID: a
 // remote `cerne serve` over plain http is not a secure context.
@@ -19,7 +20,8 @@ function refusal(err: unknown, t: Messages): string {
   const msg = err instanceof Error ? err.message : String(err)
   if (!(err instanceof HTTPError) || err.status !== 422) return msg
   const r = t.ideas.refusals
-  if (msg.startsWith('the idea text cannot be empty')) return r.textRequired
+  if (msg.startsWith('the idea title cannot be empty')) return r.textRequired
+  if (msg.startsWith('the idea title must be a single line')) return r.titleMultiline
   if (msg.startsWith('facet desconhecida')) return r.unknownFacet
   if (msg.startsWith('the idea is not active')) return r.notActive
   if (msg.startsWith('--module is required')) return r.moduleRequired
@@ -33,11 +35,15 @@ const csv = (s: string) =>
     .map((x) => x.trim())
     .filter(Boolean)
 
-// The idea's states as the #/ideas filter shows them (F-0416), in one list so
-// F-0419 (resolved) adds a pill here and nowhere else.
-const IDEA_STATES = ['active', 'promoted', 'dropped', 'all'] as const
+// The idea's states as the #/ideas filter shows them (F-0416), in the order and
+// with the chips of the pendings' (F-0419: the idea follows their pattern).
+const IDEA_STATES = ['active', 'resolved', 'dropped', 'promoted', 'all'] as const
 type StateFilter = (typeof IDEA_STATES)[number]
-const CHIP: Record<Exclude<Idea['state'], 'active'>, string> = { promoted: 'chip-implemented', dropped: 'chip-obsolete' }
+const CHIP: Record<Exclude<Idea['state'], 'active'>, string> = {
+  resolved: 'chip-done',
+  dropped: 'chip-obsolete',
+  promoted: 'chip-implemented',
+}
 
 // parseState reads #/ideas?state=…; no state is active, and an unknown one is
 // read as active with `bad` set, so the screen rewrites the hash (as #/pendings, C9).
@@ -49,11 +55,12 @@ function parseState(hash: string): { state: StateFilter; bad: boolean } {
 }
 const stateHash = (s: StateFilter) => `#/ideas?state=${s}`
 
-// ideaSummary is the row's one-line text: the first line with text, 280 chars at most,
-// so one 200 KB idea neither pushes the others off screen nor fills the DOM
-// while collapsed (C10). F-0419 swaps it for the idea's title.
+// ideaSummary is the row's one-line text: the title (F-0419), 280 chars at
+// most — a legacy idea's title is its whole first line — so a long one neither
+// pushes the others off screen nor fills the DOM while collapsed (C10); the
+// body only mounts with the row open.
 const PREVIEW = 280
-const ideaSummary = (i: Idea) => i.text.trimStart().split('\n')[0].slice(0, PREVIEW)
+const ideaSummary = (i: Idea, open: boolean) => (open ? i.title : i.title.slice(0, PREVIEW))
 
 // IdeasPanel (F-0312): captura e triagem de ideias, não elaboração. Mesmo
 // contrato do `cerne idea new` — só o texto é exigido, tags opcionais. Ao vivo
@@ -73,6 +80,7 @@ export default function IdeasPanel({ modules, onPromoted, hash }: { modules: str
   const x = useExpanded()
   const detailPrefix = useId()
   const [text, setText] = useState('')
+  const [body, setBody] = useState('')
   const [facets, setFacets] = useState('')
   const [components, setComponents] = useState('')
   const [sending, setSending] = useState(false)
@@ -95,10 +103,11 @@ export default function IdeasPanel({ modules, onPromoted, hash }: { modules: str
     if (sending) return
     setSending(true)
     setFailed(null)
-    createIdea(sub.body, sub.facets, sub.components, sub.token)
+    createIdea(sub.title, sub.body, sub.facets, sub.components, sub.token)
       .then(() => {
-        const [rt, rf, rc] = sub.raw
+        const [rt, rb, rf, rc] = sub.raw
         setText((cur) => (cur === rt ? '' : cur))
+        setBody((cur) => (cur === rb ? '' : cur))
         setFacets((cur) => (cur === rf ? '' : cur))
         setComponents((cur) => (cur === rc ? '' : cur))
         setActionError(null) // C18: a later success clears an older failure
@@ -109,9 +118,16 @@ export default function IdeasPanel({ modules, onPromoted, hash }: { modules: str
   }
   const submit = (e: FormEvent) => {
     e.preventDefault()
-    const body = text.trim()
-    if (body === '') return
-    send({ body, facets: csv(facets), components: csv(components), token: newToken(), raw: [text, facets, components] })
+    const title = text.trim()
+    if (title === '') return
+    send({
+      title,
+      body: body.trim(),
+      facets: csv(facets),
+      components: csv(components),
+      token: newToken(),
+      raw: [text, body, facets, components],
+    })
   }
 
   const act = (id: string, run: () => Promise<unknown>, after?: () => void) => {
@@ -160,6 +176,7 @@ export default function IdeasPanel({ modules, onPromoted, hash }: { modules: str
         </button>
         <details>
           <summary>{t.ideas.tags}</summary>
+          <textarea aria-label={t.ideas.body} placeholder={t.ideas.body} rows={3} value={body} onChange={(e) => setBody(e.target.value)} />
           <span className="ideas-tags">
             <input type="text" aria-label={t.ideas.facets} placeholder={t.ideas.facets} value={facets} onChange={(e) => setFacets(e.target.value)} />
             <input
@@ -221,8 +238,8 @@ export default function IdeasPanel({ modules, onPromoted, hash }: { modules: str
           )}
           <ul className="queue-list ideas-list">
             {shown.map((i) => {
-              const summary = ideaSummary(i)
               const open = x.isOpen(i.id)
+              const summary = ideaSummary(i, open)
               const detailId = `${detailPrefix}-${i.id}`
               return (
                 <li key={i.id} className="queue-item">
@@ -277,9 +294,8 @@ export default function IdeasPanel({ modules, onPromoted, hash }: { modules: str
                   </div>
                   {open && (
                     <div className="queue-detail" id={detailId}>
-                      {/* Always the whole text: the summary is cut by width too
-                          (an ellipsis), not only at 280 chars or at the first line. */}
-                      <p className="ideas-text">{i.text}</p>
+                      {/* The title shows whole in the open row (CSS); the body is markdown, as the pending's. */}
+                      {i.body && <Markdown>{i.body}</Markdown>}
                       {i.informed_by && i.informed_by.length > 0 && (
                         <p className="ideas-sources">
                           {t.ideas.sources.label}:{' '}

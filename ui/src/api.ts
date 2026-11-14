@@ -1728,10 +1728,13 @@ export async function postChannel(body: string): Promise<ChannelMessage> {
 
 // Idea espelha store.Idea: matéria-prima fora do funil — texto e tags
 // opcionais, sem spec nem gates.
+// F-0419: a ideia tem título (uma linha) e corpo opcional em markdown, como a
+// pendência; o servidor normaliza o formato legado (só `text`) ao ler.
 export type Idea = {
   id: string
-  text: string
-  state: 'active' | 'dropped' | 'promoted'
+  title: string
+  body?: string
+  state: 'active' | 'resolved' | 'dropped' | 'promoted'
   facets?: string[]
   components?: string[]
   created_at: string
@@ -1807,11 +1810,11 @@ async function postIdea<T>(path: string, body: unknown): Promise<T> {
   return (await r.json()) as T
 }
 
-// createIdea tem o contrato do `cerne idea new`: só o texto é exigido. token
-// identifica o envio (C2): o "Tentar de novo" reenvia o mesmo, e o servidor
-// devolve a ideia já capturada em vez de duplicá-la.
-export async function createIdea(text: string, facets: string[], components: string[], token: string): Promise<Idea> {
-  return (await postIdea<{ idea: Idea }>('', { text, facets, components, token })).idea
+// createIdea tem o contrato do `cerne idea new`: só o título é exigido, o corpo
+// é opcional (F-0419). token identifica o envio (C2): o "Tentar de novo"
+// reenvia o mesmo, e o servidor devolve a ideia já capturada em vez de duplicá-la.
+export async function createIdea(title: string, body: string, facets: string[], components: string[], token: string): Promise<Idea> {
+  return (await postIdea<{ idea: Idea }>('', { title, body, facets, components, token })).idea
 }
 
 // dropIdea descarta sem apagar; reason (opcional) aparece no `--all`.
