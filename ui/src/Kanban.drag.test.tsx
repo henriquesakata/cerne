@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
-import Kanban from './Kanban'
+import Kanban, { offscreenRight } from './Kanban'
 import type { Feature, StateResponse } from './api'
 import { postTransition, transitionBody } from './api'
 
@@ -437,5 +437,176 @@ describe('destaque de destino (F-0415)', () => {
     for (const sel of ['.column', '.column.drop-ready', '.column.drop-active', '.column.drop-off', '.card.card-in-flight']) {
       expect(rule(sel), sel).not.toMatch(/transition/)
     }
+  })
+})
+
+describe('destino fora da tela (F-0420)', () => {
+  type Box = { left: number; width: number }
+  // jsdom não faz layout: todo retângulo vem zerado. A spy devolve o do board e
+  // o de cada coluna (pelo data-state) e zero para o resto.
+  const rect = (b: Box) =>
+    ({ left: b.left, right: b.left + b.width, width: b.width, top: 0, bottom: 0, height: 0, x: b.left, y: 0 }) as DOMRect
+  let spy: { mockRestore: () => void } | undefined
+  const geometry = (board: Box, cols: Partial<Record<Feature['state'], Box>>) => {
+    spy?.mockRestore()
+    spy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      if (this.classList.contains('board')) return rect(board)
+      const s = this.getAttribute('data-state') as Feature['state'] | null
+      return rect((s && cols[s]) || { left: 0, width: 0 })
+    })
+  }
+  afterEach(() => {
+    spy?.mockRestore()
+    spy = undefined
+  })
+  const NARROW = { left: 0, width: 800 }
+  const OFF = { left: 900, width: 208 }
+  const edge = () => document.querySelector('.drop-edge') as HTMLElement | null
+  const boardEl = () => document.querySelector('.board') as HTMLElement
+  const start = (id: string) => {
+    const dataTransfer = dt()
+    fireEvent.dragStart(cardOf(id), { dataTransfer })
+    return dataTransfer
+  }
+
+  it('critério 1: destino fora da vista ganha a faixa na borda desde o dragstart', async () => {
+    render(<Kanban />)
+    await screen.findByText('F-0002')
+    geometry(NARROW, { done: OFF, approved: { left: 230, width: 208 } })
+    start('F-0002')
+    expect(edge()).not.toBeNull()
+    expect(edge()).toHaveClass('drop-ready')
+    expect(edge()).toHaveTextContent('Concluídas')
+    expect(edge()).toHaveTextContent('→')
+    expect(edge()).toHaveTextContent('Solte para aceitar')
+    fireEvent.dragEnd(cardOf('F-0002'))
+    geometry(NARROW, { approved: OFF })
+    start('F-0001')
+    expect(edge()).toHaveTextContent('Aprovadas')
+    expect(edge()).toHaveTextContent('Solte para aprovar')
+  })
+
+  it('critério 2: destino com pelo menos metade visível não ganha faixa', async () => {
+    render(<Kanban />)
+    await screen.findByText('F-0002')
+    geometry(NARROW, { done: { left: 400, width: 208 } })
+    start('F-0002')
+    expect(edge()).toBeNull()
+    fireEvent.dragEnd(cardOf('F-0002'))
+    // exatamente metade: 104 de 208 dentro do board
+    geometry(NARROW, { done: { left: 696, width: 208 } })
+    start('F-0002')
+    expect(edge()).toBeNull()
+  })
+
+  it('critério 2: offscreenRight decide pela metade da largura', () => {
+    const board = rect(NARROW)
+    expect(offscreenRight(board, rect({ left: 696, width: 208 }))).toBe(false)
+    expect(offscreenRight(board, rect({ left: 697, width: 208 }))).toBe(true)
+    expect(offscreenRight(board, rect(OFF))).toBe(true)
+    // coluna não medida (jsdom, display:none) nunca conta como fora da vista
+    expect(offscreenRight(board, rect({ left: 900, width: 0 }))).toBe(false)
+    expect(offscreenRight(rect({ left: 0, width: 0 }), rect({ left: 0, width: 0 }))).toBe(false)
+    // só a borda direita: uma coluna rolada para fora pela esquerda não ganha seta →
+    expect(offscreenRight(board, rect({ left: -300, width: 208 }))).toBe(false)
+  })
+
+  it('critério 3: rolar o board durante o gesto mede de novo; sem gesto, nada', async () => {
+    render(<Kanban />)
+    await screen.findByText('F-0002')
+    geometry(NARROW, { done: OFF })
+    start('F-0002')
+    expect(edge()).not.toBeNull()
+    geometry(NARROW, { done: { left: 600, width: 208 } })
+    fireEvent.scroll(boardEl())
+    expect(edge()).toBeNull()
+    geometry(NARROW, { done: OFF })
+    fireEvent.scroll(boardEl())
+    expect(edge()).not.toBeNull()
+    fireEvent.dragEnd(cardOf('F-0002'))
+    fireEvent.scroll(boardEl())
+    expect(edge()).toBeNull()
+  })
+
+  it('critério 4: a faixa repete o destino bloqueado, com o motivo', async () => {
+    payload = mkState({ 'F-0001': 2 })
+    render(<Kanban />)
+    await screen.findByText('F-0001')
+    geometry(NARROW, { approved: OFF })
+    start('F-0001')
+    expect(edge()).toHaveClass('drop-blocked')
+    expect(edge()).not.toHaveClass('drop-ready')
+    expect(edge()).toHaveTextContent('Responda os 2 esclarecimentos antes de aprovar')
+    expect(edge()).not.toHaveTextContent('Solte para aprovar')
+  })
+
+  it('critério 5: a faixa não é lugar de soltar nem recebe ponteiro', async () => {
+    post.mockResolvedValue({ ok: true, data: { id: 'F-0002', from: 'implemented', to: 'done' } })
+    render(<Kanban />)
+    await screen.findByText('F-0002')
+    geometry(NARROW, { done: OFF })
+    const dataTransfer = start('F-0002')
+    const band = edge()!
+    fireEvent.dragOver(band, { dataTransfer })
+    expect(document.querySelector('.drop-active')).toBeNull()
+    fireEvent.drop(band, { dataTransfer })
+    expect(post).not.toHaveBeenCalled()
+    const css = readFileSync('src/app.css', 'utf8')
+    expect(css).toMatch(/\.drop-edge\s*\{[^}]*pointer-events:\s*none/)
+    // só o rótulo tem fundo: o resto da faixa deixa ver os cards e a barra de rolagem
+    expect(css.match(/\.drop-edge\s*\{([^}]*)\}/)![1]).not.toMatch(/background|outline|border/)
+  })
+
+  it('critério 6: a faixa fica fora do fluxo do board e nada rola', async () => {
+    render(<Kanban />)
+    await screen.findByText('F-0002')
+    geometry(NARROW, { done: OFF })
+    start('F-0002')
+    const band = edge()!
+    expect(boardEl().contains(band)).toBe(false)
+    expect(band.parentElement).toHaveClass('board-wrap')
+    expect(readFileSync('src/app.css', 'utf8')).toMatch(/\.drop-edge\s*\{[^}]*position:\s*absolute/)
+    // jsdom nunca muda scrollLeft: a leitura do código é o que prova que nada rola
+    expect(readFileSync('src/Kanban.tsx', 'utf8')).not.toMatch(/\.scroll(To|By|IntoView)?\(|scroll(Left|Top)\s*[-+]?=[^=]/)
+  })
+
+  it('critério 7: o fim do gesto tira a faixa (dragend, drop, live reload)', async () => {
+    post.mockResolvedValue({ ok: true, data: { id: 'F-0002', from: 'implemented', to: 'done' } })
+    live.version = 0
+    const { rerender } = render(<Kanban />)
+    await screen.findByText('F-0002')
+    geometry(NARROW, { done: OFF })
+    start('F-0002')
+    expect(edge()).not.toBeNull()
+    fireEvent.dragEnd(cardOf('F-0002'))
+    expect(edge()).toBeNull()
+
+    const dataTransfer = start('F-0002')
+    expect(edge()).not.toBeNull()
+    fireEvent.dragOver(columnOf('Conclu'), { dataTransfer })
+    fireEvent.drop(columnOf('Conclu'), { dataTransfer })
+    expect(edge()).toBeNull()
+    await waitFor(() => expect(post).toHaveBeenCalled())
+
+    start('F-0002')
+    expect(edge()).not.toBeNull()
+    // Outro ator aceitou F-0002: o <a> de origem sai de Prontas sem dragend.
+    payload = { ...mkState(), features: [feature('F-0001', 'candidate'), feature('F-0002', 'done'), feature('F-0003', 'in_development')] }
+    live.version = 1
+    rerender(<Kanban />)
+    await waitFor(() => expect(columnOf('Conclu')).toHaveTextContent('F-0002'))
+    expect(edge()).toBeNull()
+    live.version = 0
+  })
+
+  it('critério 8: faixa aria-hidden e sem transição', async () => {
+    render(<Kanban />)
+    await screen.findByText('F-0002')
+    geometry(NARROW, { done: OFF })
+    start('F-0002')
+    expect(edge()).toHaveAttribute('aria-hidden', 'true')
+    const rules = [...readFileSync('src/app.css', 'utf8').matchAll(/([^{}]*\.drop-edge[^{}]*)\{([^}]*)\}/g)]
+    expect(rules.length).toBeGreaterThan(0)
+    for (const [, sel, body] of rules) expect(body, sel.trim()).not.toMatch(/transition/)
   })
 })
