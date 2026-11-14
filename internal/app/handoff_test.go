@@ -166,6 +166,52 @@ func TestHandoffWorkContingencies(t *testing.T) {
 	}
 }
 
+// F-0421: the brief a reader shows next to the next step and the
+// contingencies drops the two sections HandoffWork composed from them; the
+// evidence and the work log stay. A log entry quoting the next-step line is
+// left alone, and a content without the sections verbatim comes back whole.
+func TestHandoffBriefBody(t *testing.T) {
+	t.Setenv("CERNE_ACTOR", "")
+	repoDir, projDir, _ := newFeatureBackend(t)
+	lang := store.DocsLanguage(repoDir)
+	w := startW(t, repoDir, projDir, "Operação longa", nil)
+	id, err := HandoffWork(repoDir, projDir, w.ID, "brief", "rodar a suíte", []string{"docs/x.md"}, []string{"CI vermelha → rodar uma vez", "conflito → rebase"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := store.LoadHandoff(repoDir, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := store.LoadHandoffContent(repoDir, id)
+	if got, want := HandoffBriefBody(lang, h, body), "brief\n\nEvidência:\n- docs/x.md\n"; got != want {
+		t.Fatalf("brief body =\n%q\nwant\n%q", got, want)
+	}
+	other := "brief\n\nNext step: rodar a suíte\n" // composed in another docs language
+	if got := HandoffBriefBody(lang, h, other); got != other {
+		t.Fatalf("foreign content = %q, want it whole", got)
+	}
+
+	// With a work log after the next step, and one entry quoting the line.
+	w2 := startW(t, repoDir, projDir, "Outra operação", nil)
+	if _, err := AppendWorkLog(repoDir, projDir, w2.ID, "owner", "anotei:\n\nPróximo passo: medir", 0, logNow); err != nil {
+		t.Fatal(err)
+	}
+	id2, err := HandoffWork(repoDir, projDir, w2.ID, "brief dois", "medir", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h2, _ := store.LoadHandoff(repoDir, id2)
+	body2, _ := store.LoadHandoffContent(repoDir, id2)
+	got := HandoffBriefBody(lang, h2, body2)
+	if !strings.HasPrefix(got, "brief dois\n\nDiário de decisões:\n") {
+		t.Fatalf("brief body with log =\n%q\nwant the brief, then the log", got)
+	}
+	if strings.Count(got, "Próximo passo: medir") != 1 || !strings.Contains(got, "anotei:\n\nPróximo passo: medir") {
+		t.Fatalf("brief body with log =\n%q\nwant the log entry intact and the composed line gone", got)
+	}
+}
+
 // F-0397 crit. 6: a handoff carries the work log entries made since the
 // previous handoff of the same work (all of them in the first), and
 // `work start --from` prints them with the handoff.

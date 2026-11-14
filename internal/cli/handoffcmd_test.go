@@ -2,6 +2,8 @@ package cli
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -11,6 +13,7 @@ import (
 	"time"
 
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/server"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -259,6 +262,53 @@ func TestHandoffCmdList(t *testing.T) {
 		if h["id"] == "HO-0002" && (h["taken_session"] != "s1" || h["taken_work"] != "W-1240" || h["state"] != "taken") {
 			t.Fatalf("json HO-0002 = %v", h)
 		}
+	}
+}
+
+// F-0421 crit. 8: for every state (plus all), `cerne handoff list --state X
+// --json` and the ui's GET /handoffs cut by X are the same ids in the same
+// order — the closed ones by closing time, newest first, not by id. Both sides
+// run for real, so a drift in either one's ordering fails here.
+func TestHandoffListMatchesAPI(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	now := time.Date(2026, 11, 12, 12, 0, 0, 0, time.UTC)
+	handoffNow = func() time.Time { return now }
+	t.Cleanup(func() { handoffNow = time.Now })
+	seedHandoffs(t, repoDir, now)
+
+	rec := httptest.NewRecorder()
+	server.New(repoDir, projDir, "").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/handoffs", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/handoffs = %d: %s", rec.Code, rec.Body.String())
+	}
+	var api []store.Handoff
+	if err := json.Unmarshal(rec.Body.Bytes(), &api); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []string{"pending", "taken", "superseded", "cancelled", "all"} {
+		var cli []store.Handoff
+		if err := json.Unmarshal([]byte(mustCerne(t, "handoff", "list", "--state", s, "--json", "--dir", projDir)), &cli); err != nil {
+			t.Fatal(err)
+		}
+		var got, want []string
+		for _, h := range cli {
+			got = append(got, h.ID)
+		}
+		for _, h := range api {
+			if s == "all" || string(h.State) == s {
+				want = append(want, h.ID)
+			}
+		}
+		if !slices.Equal(got, want) {
+			t.Fatalf("--state %s: cli %v, api %v", s, got, want)
+		}
+	}
+	var all []string
+	for _, h := range api {
+		all = append(all, h.ID)
+	}
+	if got, want := strings.Join(all, ","), "HO-0006,HO-0001,HO-0002,HO-0005,HO-0003,HO-0004"; got != want {
+		t.Fatalf("order = %s, want %s (pending oldest first, then closed newest first)", got, want)
 	}
 }
 
