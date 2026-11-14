@@ -76,3 +76,22 @@ func TestProtocolGuidance_Portuguese(t *testing.T) {
 		t.Fatalf("pt-BR guidance differs from %s:\ngot:\n%s\nwant:\n%s", golden, got, want)
 	}
 }
+
+// TestNext_EnglishBarCause (F-0418 crit. 3): in an English project the
+// approve, next and lint name the bar by its English label.
+func TestNext_EnglishBarCause(t *testing.T) {
+	out := protocolGuidanceTranscript(t, "en")
+	for _, want := range []string{
+		"F-0001 [candidate] — next: bar-missing: no \"Bar:\" line",
+		"F-0002 [candidate] — next: bar-malformed: malformed \"Bar:\" line: \"Bar:\" holds only",
+		"spec has no valid Gauntlet bar: no \"Bar:\" line",
+		"content/features/F-0001/spec.md — no \"Bar:\" line (Missing bar)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("transcript missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, `"Barra:"`) {
+		t.Fatalf("English project transcript cites \"Barra:\":\n%s", out)
+	}
+}
