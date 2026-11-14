@@ -115,14 +115,15 @@ func gauntletFinding(repoDir string, f store.Feature, legacy bool) []Finding {
 	// copy or a narrative section above the record must not hide it. With none
 	// complete, the last section's problem is told — the template puts the
 	// record last, and copies or narrative sit above it.
-	detail := "sem seção \"## Gauntlet\""
+	lang := store.DocsLanguage(repoDir)
+	detail := `no "## Gauntlet" section`
 	// The errata entries' Gauntlet sections count like the result's once the
 	// feature is closed (F-0305); an entry ends at the next "## errata" heading.
 	// They can only vouch: the finding's File is result.md, so the detail is
 	// always the result's own problem.
 	own := gauntletSections(StripHTMLComments(result))
 	for i, section := range append(own, gauntletSections(errataText(repoDir, f))...) {
-		p := parseGauntlet(section).problem()
+		p := parseGauntlet(section).problem(lang)
 		// The legacy predicate vouches only for the result's own sections: an
 		// erratum is written now and answers to the strict reader.
 		if p == "" || (legacy && i < len(own) && legacyGauntletRecorded(section)) {
@@ -136,7 +137,7 @@ func gauntletFinding(repoDir string, f store.Feature, legacy bool) []Finding {
 		Rule:   RuleResultMissingGauntlet,
 		Entity: f.ID,
 		File:   filepath.ToSlash(resultPath),
-		Detail: fmt.Sprintf("result.md %s (%s) — feature %s: %s. Forma: Barra + \"Rodada N — <veredito>: \\\"<citação do juiz>\\\"\" + disposição por achado do crítico, ou a dispensa literal (skill cerne-authoring)", detail, f.Title, f.State, resultFix(f, "dentro de uma seção \"## Gauntlet\"")),
+		Detail: fmt.Sprintf("result.md has no complete Gauntlet record: %s (%s) — feature %s: %s. Form: %s (cerne-authoring skill)", detail, f.Title, f.State, resultFix(f, `inside a "## Gauntlet" section`), gauntletForm(lang)),
 	}}
 }
 
@@ -309,27 +310,37 @@ func gauntletQuote(text string) bool {
 }
 
 // problem returns "" for a complete record, else the first missing piece:
-// the Barra line, then the first incomplete round (citation before verdict).
-func (r gauntletRecord) problem() string {
+// the bar line, then the first incomplete round (citation before verdict).
+// The prose is English; the labels it names are language l's (F-0418).
+func (r gauntletRecord) problem(l doclang.Lang) string {
 	if r.exempt {
 		return ""
 	}
 	if r.bar == "" {
-		return `sem linha "Barra:"`
+		return fmt.Sprintf(`no "%s:" line`, doclang.Display(doclang.BarLabel, l))
 	}
 	for _, rd := range r.rounds {
-		name := "rodada"
+		name := "the round"
 		if rd.n > 0 {
-			name = fmt.Sprintf("rodada %d", rd.n)
+			name = fmt.Sprintf(`"%s %d"`, doclang.Display(doclang.Round, l), rd.n)
 		}
 		if !rd.quote {
-			return name + " sem citação do juiz"
+			return name + " has no judge quote"
 		}
 		if !rd.verdict {
-			return name + " sem veredito"
+			return name + " has no verdict"
 		}
 	}
 	return ""
+}
+
+// gauntletForm is the record result-missing-gauntlet teaches: English prose
+// with the literal forms of language l (N-0068, F-0418).
+func gauntletForm(l doclang.Lang) string {
+	d := func(t doclang.Term) string { return doclang.Display(t, l) }
+	bar := d(doclang.BarLabel)
+	return fmt.Sprintf(`a "%s:" line + one "%s N — <%s|%s|%s>: \"<judge's quote>\"" line per round + a "%s:" line with a disposition per finding, or the literal exemption "%s: %s (<justification>)"`,
+		bar, d(doclang.Round), d(doclang.Win), d(doclang.Loss), d(doclang.Tie), d(doclang.CriticFindings), bar, d(doclang.NotApplicable))
 }
 
 // GauntletVerdict reads a result's Gauntlet outcome for the accept queue

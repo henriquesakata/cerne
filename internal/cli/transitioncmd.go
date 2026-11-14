@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/store"
 	"github.com/henriquesakata/cerne/internal/verbs"
@@ -40,8 +41,8 @@ var transitionSpecs = []transitionSpec{
 			"  cerne push && cerne feature start <id>\n" + lifecycleSeq},
 	{"complete", "Complete development (requires a real result)", domain.ActionComplete,
 		"  # gate: the result must be filled in (not the stub) and pushed, cite\n" +
-			"  # \"critério N\" for each numbered spec criterion, and carry a\n" +
-			"  # \"## Gauntlet\" record (cited verdict, or the literal exemption)\n" +
+			"  # \"criterion N\" (pt-BR: \"critério N\") for each numbered spec criterion,\n" +
+			"  # and carry a \"## Gauntlet\" record (cited verdict, or the literal exemption)\n" +
 			"  cerne push && cerne feature complete <id>\n" + lifecycleSeq},
 	{"substituir", "Supersede a feature with another (requires --by and --reason)", domain.ActionSupersede, ""},
 	{"revert", "Send an approved feature back to candidate (requires --reason)", domain.ActionRevert,
@@ -68,7 +69,7 @@ func newTransitionCmds(dir *string) []*cobra.Command {
 		cmd.Flags().StringVar(&reason, "reason", "", "reason for the transition (reject, substituir and revert)")
 		cmd.Flags().StringVar(&commit, "commit", "", "delivery commit: full URL, or bare SHA resolved via [delivery] commit_url (complete only)")
 		cmd.Flags().StringVar(&mr, "mr", "", "delivery MR/PR: full URL, or #<n>/!<n> via [delivery] pr_url (complete only)")
-		cmd.Flags().BoolVar(&force, "force", false, "approve with open [ESCLARECER] clarifications (approve), or start despite another session's active work (start)")
+		cmd.Flags().BoolVar(&force, "force", false, "approve with open [CLARIFY]/[ESCLARECER] clarifications (approve), or start despite another session's active work (start)")
 		if ts.action == domain.ActionComplete {
 			cmd.Flags().BoolVar(&noStamp, "no-stamp", false, "complete without stamping the cost; run 'cerne cost <id> --stamp' later (F-0402)")
 		}
@@ -239,13 +240,21 @@ func printCompleteNextStep(w io.Writer, repoDir, id string, noStamp bool) {
 var errCheckImpediments = errors.New("approve check found impediments")
 
 // barForms are the three literal bar forms (cerne-authoring skill, F-0270),
-// taught by the check instead of every refusal (F-0308 crit. 11). They stay
-// pt-BR: they are text written inside the spec.
-const barForms = `The spec's Verificação section needs one of the three literal forms:
+// taught by the check instead of every refusal (F-0308 crit. 11). The prose
+// is English; the forms are text written inside the spec, so they follow the
+// project's documentation language (N-0068, F-0418).
+var barForms = map[doclang.Lang]string{
+	doclang.PT: `The spec's Verificação section needs one of the three literal forms:
   Barra: <referência nomeada + acesso (URL, comando ou arquivo que um crítico abre)>
   Barra: não aplicável (<justificativa de 1 linha>) — padrão alternativo: <teste/benchmark/invariante>
   Barra: dispensada por decisão humana (<citação curta da fala que dispensou>)
-`
+`,
+	doclang.EN: `The spec's Verification section needs one of the three literal forms:
+  Bar: <named reference + access (URL, command or file a critic opens)>
+  Bar: not applicable (<one-line justification>) — alternative standard: <test/benchmark/invariant>
+  Bar: waived by human decision (<short quote of the words that waived it>)
+`,
+}
 
 // lightModeApprove replaces the accepted-bar line when the project runs
 // without the Gauntlet (F-0364): a ready spec then has no bar to accept.
@@ -256,11 +265,17 @@ const lightModeApprove = `light mode: no Gauntlet bar or judge question is charg
 const barExemptApprove = "bar not applicable/waived: no judge question is charged"
 
 // judgeQuestionForms are the accepted forms of the question line, taught by
-// the check like the bar's three (F-0381). They stay as written in the spec.
-const judgeQuestionForms = `Under the bar, in the spec's Verificação section, one line:
+// the check like the bar's three (F-0381), per documentation language like
+// them (F-0418).
+var judgeQuestionForms = map[doclang.Lang]string{
+	doclang.PT: `Under the bar, in the spec's Verificação section, one line:
   Pergunta ao juiz: <a pergunta que o juiz cego responde>
   Question for the judge: <the question the blind judge answers>
-`
+`,
+	doclang.EN: `Under the bar, in the spec's Verification section, one line:
+  Question for the judge: <the question the blind judge answers>
+`,
+}
 
 // printJudgeQuestionAccepted ends an approve's confirmation with what the
 // approve accepted beside the bar, or why no question was charged (F-0381).
@@ -320,11 +335,12 @@ func runApproveCheck(w io.Writer, ctx projCtx, id string) error {
 			barProblem = barProblem || im.Code == app.ImpedimentBarMissing || im.Code == app.ImpedimentBarMalformed
 			questionProblem = questionProblem || im.Code == app.ImpedimentJudgeQuestionMissing || im.Code == app.ImpedimentJudgeQuestionMisplaced
 		}
+		lang := store.DocsLanguage(ctx.repoDir)
 		if barProblem {
-			fmt.Fprint(w, "\n"+barForms)
+			fmt.Fprint(w, "\n"+barForms[lang])
 		}
 		if questionProblem {
-			fmt.Fprint(w, "\n"+judgeQuestionForms)
+			fmt.Fprint(w, "\n"+judgeQuestionForms[lang])
 		}
 		if hard > 0 {
 			fmt.Fprintf(w, "The check reads the backend: edit the spec (.docs/current/features/%s-*/spec.md), 'cerne push', and check again.\n", id)

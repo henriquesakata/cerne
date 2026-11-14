@@ -147,8 +147,8 @@ func wantFix(state domain.FeatureState, id, doc string) string {
 }
 
 const (
-	evidenceMark = "sem evidência do(s) critério(s)"
-	gauntletMark = "result.md sem " // "sem seção "## Gauntlet"", "sem veredito…": the rule's own opening
+	evidenceMark = "has no evidence for spec criterion(s)"
+	gauntletMark = "result.md has no complete Gauntlet record: " // the rule's own opening
 )
 
 // lintLine returns the lint output line of the rule's finding ("" when absent).

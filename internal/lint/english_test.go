@@ -93,14 +93,14 @@ func TestResultGauntlet_English(t *testing.T) {
 		{"exemption", "Bar: not applicable (sample data, nothing to compare against)\n", ""},
 		{"waived", "Bar: waived by human decision (\"ship it\")\n", ""},
 		{"verdict literal", "Bar: internal/x.go\nRound 1: the judge wrote \"VERDICT: TIE\" after comparing both\n", ""},
-		{"round without a quote", "Bar: internal/x.go\nRound 1 — win\n", "rodada 1 sem citação do juiz"},
-		{"round without a verdict", "Bar: internal/x.go\nRound 1: \"both read fine to me\"\n", "rodada 1 sem veredito"},
-		{"no bar", "Round 1 — win: \"A is better\"\n", `sem linha "Barra:"`},
-		{"critic-only pass is not a round", "Bar: internal/x.go\nCritic findings: 3 — fixed 3, one was \"a clear win\"\n", "rodada sem citação do juiz"},
+		{"round without a quote", "Bar: internal/x.go\nRound 1 — win\n", `"Round 1" has no judge quote`},
+		{"round without a verdict", "Bar: internal/x.go\nRound 1: \"both read fine to me\"\n", `"Round 1" has no verdict`},
+		{"no bar", "Round 1 — win: \"A is better\"\n", `no "Bar:" line`},
+		{"critic-only pass is not a round", "Bar: internal/x.go\nCritic findings: 3 — fixed 3, one was \"a clear win\"\n", "the round has no judge quote"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := parseGauntlet(tt.section).problem(); got != tt.problem {
+			if got := parseGauntlet(tt.section).problem(doclang.EN); got != tt.problem {
 				t.Errorf("problem = %q, want %q", got, tt.problem)
 			}
 		})
@@ -174,13 +174,13 @@ func TestResultGauntlet_EnglishIsStrict(t *testing.T) {
 		// Quoted, but the round never says who won: the block mentions "tie"
 		// and "win" only in passing.
 		section := "Bar: internal/x.go\nRound 1: \"we tie the two outputs together to compare\"; a quick win for readability\n"
-		if got := parseGauntlet(section).problem(); got != "rodada 1 sem veredito" {
+		if got := parseGauntlet(section).problem(doclang.EN); got != `"Round 1" has no verdict` {
 			t.Errorf("problem = %q, want the missing verdict", got)
 		}
 	})
 	t.Run("the typographic apostrophe", func(t *testing.T) {
 		section := "Bar: internal/x.go\nCritic’s findings: 2 — one called it \"a win\"\n"
-		if got := parseGauntlet(section).problem(); got != "rodada sem citação do juiz" {
+		if got := parseGauntlet(section).problem(doclang.EN); got != "the round has no judge quote" {
 			t.Errorf("problem = %q: the critic's line was read as a round", got)
 		}
 	})

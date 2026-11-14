@@ -294,7 +294,7 @@ var terms = map[Term]map[Lang]form{
 	VerdictLabel:       {PT: {re: `veredito`}, EN: {re: `verdict`}},
 	TieLetter:          {PT: {re: `EMPATE`}, EN: {re: `TIE`}},
 	OutcomeLabel:       {PT: {re: `veredito|resultado`}, EN: {re: `verdict|result|outcome`}},
-	Criterion:          {PT: {re: `crit(?:é|e\x{0301}|e)rio`}, EN: {re: `criterion`}},
+	Criterion:          {PT: {`crit(?:é|e\x{0301}|e)rio`, "critério"}, EN: {`criterion`, "criterion"}},
 	Criteria:           {PT: {re: `crit(?:é|e\x{0301}|e)rios`}, EN: {re: `criteria`}},
 	RangeTo:            {PT: {re: `a`}, EN: {re: `to`}},
 	ListAnd:            {PT: {re: `e`}, EN: {re: `and`}},

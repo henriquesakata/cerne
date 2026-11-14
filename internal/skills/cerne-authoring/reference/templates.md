@@ -6,10 +6,10 @@ cerne scaffolds a new feature's `spec.md` from a canonical template (the same on
 2. **Objetivo e critérios de aceitação** — one objective sentence, then **numbered, testable** criteria (1 criterion : 1 test). For behaviour, use EARS — *"QUANDO `<condição>` O SISTEMA DEVE `<comportamento>`"*; structural invariants as a direct, measurable assertion.
 3. **Decisões do design** — a `| Fork | Decisão | Razão |` table; record the rejected alternatives, not just the chosen path.
 4. **Desenho** — by module/package, grounded in real files, with explicit contracts (signatures, schemas, endpoints, events). Include the *how* — don't strip it out.
-5. **Verificação** — the test plan (TDD), 1:1 with the acceptance criteria.
+5. **Verificação** — the test plan (TDD), 1:1 with the acceptance criteria. In English: **Verification**.
 6. **Fora de escopo** — what you will **not** do now, and why (or what becomes a follow-up).
 
-**Ordering is deliberate, not cosmetic.** Problema and the acceptance criteria sit at the top and Verificação near the end, so the most decision-bearing, testable content lands where long-context models attend best (primacy/recency) rather than buried in the middle. Keep it dense — a bloated spec hurts more than it helps.
+**Ordering is deliberate, not cosmetic.** Problema and the acceptance criteria sit at the top and Verificação near the end, so the most decision-bearing, testable content lands where long-context models attend best (primacy/recency) rather than buried in the middle. Keep it dense — a bloated spec hurts more than it helps. In English the sections are Problem and Verification.
 
 **Mark ambiguity, don't guess.** Wherever something is unresolved, leave `[ESCLARECER: pergunta específica]` instead of a plausible-but-maybe-wrong guess, and resolve every marker before `cerne feature approve`. **Write the marker in the doc's own language** — the vocabulary is a per-language catalog (pt `[ESCLARECER:]`/`[ESCLARECIDO:]`, en `[CLARIFY:]`/`[CLARIFIED:]`) and cerne recognizes all of it everywhere (UI chips, tab badge, lint, approve gate), so an English doc uses `[CLARIFY: specific question]` and gates exactly like a pt-BR one. Options work the same in any vocabulary (`[CLARIFY: where? | doc | sidecar]`), and answering via the UI writes the resolved form in the marker's own vocabulary.
 
@@ -30,7 +30,7 @@ cerne scaffolds `plan.md` from a canonical template when you **approve** a featu
 5. **Restrições para o agente** — execution guardrails: what **not** to touch, decisions already settled in the spec to respect, and where to **pause** for human review. Literal instructions — the agent follows them to the letter.
 6. **Definição de pronto** — a **binary** checklist (each item MET/UNMET with `file:line` evidence, not "looks done"): every spec criterion has both an implementation and a test that proves it, tracked by number; full suite green; result.md written. It is the `cerne feature complete` gate.
 
-**Ordering is deliberate, not cosmetic.** Estratégia and the Sequência de tarefas sit at the top and the Definição de pronto at the end, so the most decision-bearing, executable content and the exit gate land where long-context models attend best (primacy/recency). **Mark ambiguity, don't guess** — leave `[ESCLARECER: pergunta específica]` and resolve every marker before `cerne feature start`. The evidence behind this structure (context engineering / lost-in-the-middle, plan-and-solve decomposition, spec-driven plan→tasks, agentic-coding best practices) is registered in the backend as external references.
+**Ordering is deliberate, not cosmetic.** Estratégia and the Sequência de tarefas sit at the top and the Definição de pronto at the end, so the most decision-bearing, executable content and the exit gate land where long-context models attend best (primacy/recency). **Mark ambiguity, don't guess** — leave `[ESCLARECER: pergunta específica]` and resolve every marker before `cerne feature start`. The evidence behind this structure (context engineering / lost-in-the-middle, plan-and-solve decomposition, spec-driven plan→tasks, agentic-coding best practices) is registered in the backend as external references. Mark it `[CLARIFY: specific question]` in an English document.
 
 ## Result structure (the template cerne scaffolds)
 
@@ -42,7 +42,7 @@ cerne scaffolds `result.md` from a canonical template when you **start** a featu
 4. **Débitos e follow-ups** — what's incomplete or deferred, as concrete work (a new feature/case), not an orphan TODO. Register each known debt as a pending (`cerne pending new … --from F-NNNN`, see **Pendings**) and cite its `P-NNNN` here — prose alone is forgotten the day after `complete`.
 5. **Aprendizados e desvios** — what you learned and any intentional deviations from the spec/plan (what changed and why). Concise; "N/A" if nothing notable.
 
-**Ordering is deliberate** (primacy/recency): Resultado and Aceitação lead — the outcome and its proof — and the softer learnings sit last. **Mark ambiguity, don't guess** — `[ESCLARECER: pergunta específica]`. The evidence behind this structure (Definition of Done, show-evidence-not-assertion, binary acceptance verification, Keep a Changelog) is registered in the backend as external references.
+**Ordering is deliberate** (primacy/recency): Resultado and Aceitação lead — the outcome and its proof — and the softer learnings sit last. **Mark ambiguity, don't guess** — `[ESCLARECER: pergunta específica]`. The evidence behind this structure (Definition of Done, show-evidence-not-assertion, binary acceptance verification, Keep a Changelog) is registered in the backend as external references. Mark it `[CLARIFY: specific question]` in an English document.
 
 ## ADR structure (the template cerne scaffolds)
 
@@ -54,7 +54,7 @@ cerne scaffolds `content/decisions/D-NNNN.md` from a canonical ADR template when
 4. **Alternativas consideradas** — the options weighed (2+ when there is a real trade-off), each with pros/cons and **why it was rejected**.
 5. **Implementação e relações** — where the decision shows up in code (real files/modules) and the links: the features and ADRs it affects, supersedes, or that motivated it (use F-/D- ids).
 
-**Ordering is deliberate** (primacy/recency): Contexto and Decisão lead; Implementação e relações is lookup material at the end. **The title records the decision, not the question** ("Use Postgres for primary storage", not "Which database?"). **Status is data, not prose** — the lifecycle is owned by cerne (`cerne decision substituir`), so the template has no Status section, and **an accepted ADR is a historical record: to change course, supersede it — don't rewrite it.** **Mark ambiguity, don't guess** — leave `[ESCLARECER: pergunta específica]` and resolve it before treating the decision as accepted. The evidence behind this structure (Nygard's ADRs, MADR, ThoughtWorks' lightweight ADRs, the create-adr skill) is registered in the backend as external references.
+**Ordering is deliberate** (primacy/recency): Contexto and Decisão lead; Implementação e relações is lookup material at the end. **The title records the decision, not the question** ("Use Postgres for primary storage", not "Which database?"). **Status is data, not prose** — the lifecycle is owned by cerne (`cerne decision substituir`), so the template has no Status section, and **an accepted ADR is a historical record: to change course, supersede it — don't rewrite it.** **Mark ambiguity, don't guess** — leave `[ESCLARECER: pergunta específica]` and resolve it before treating the decision as accepted. The evidence behind this structure (Nygard's ADRs, MADR, ThoughtWorks' lightweight ADRs, the create-adr skill) is registered in the backend as external references. Mark it `[CLARIFY: specific question]` in an English document.
 
 ## Runbook structure (the template cerne scaffolds)
 
@@ -63,7 +63,7 @@ cerne scaffolds `content/runbooks/RB-NNNN.md` from a canonical template when you
 1. **Quando usar** — the trigger, symptoms or goal: the situation that fires this runbook, so the reader confirms in seconds it is the right one.
 2. **Pré-requisitos** — access/tokens, tools and versions, environment state, window/approvals to confirm before starting.
 3. **Procedimento** — numbered, action-first steps with copy-pasteable commands, each with its expected output ("você deve ver: X"); note idempotency where a step is safe to repeat.
-4. **Verificação** — how to confirm success: observable checks/signals with expected output.
+4. **Verificação** — how to confirm success: observable checks/signals with expected output. In English: **Verification**.
 5. **Rollback e troubleshooting** — how to undo/recover (flag destructive steps), common failures as a symptom → cause → solution table, and **who to escalate to** when the runbook does not resolve.
 
-**Ordering is deliberate** (primacy): the trigger, prerequisites and procedure lead — what an operator needs first under pressure. **Mark ambiguity, don't guess** — `[ESCLARECER: pergunta específica]`. The evidence behind this structure (Google SRE playbooks, PagerDuty incident response, lightweight runbook practice) is registered in the backend as external references.
+**Ordering is deliberate** (primacy): the trigger, prerequisites and procedure lead — what an operator needs first under pressure. **Mark ambiguity, don't guess** — `[ESCLARECER: pergunta específica]`. The evidence behind this structure (Google SRE playbooks, PagerDuty incident response, lightweight runbook practice) is registered in the backend as external references. Mark it `[CLARIFY: specific question]` in an English document.

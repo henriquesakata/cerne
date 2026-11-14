@@ -38,14 +38,19 @@ type AcceptRow struct {
 var (
 	// A production line is "<label>:" at the line start (list marker, quote and
 	// emphasis allowed); the value after the colon is what counts as evidence.
-	prodLineRe = regexp.MustCompile(`(?i)^[\s>*_-]*(?:em produ[cç][aã]o|produ[cç][aã]o|prod)[*_]*\s*:[*_]*(.*)$`)
-	// A section whose title is just "Produção": its first body line is the evidence.
-	prodHeadRe = regexp.MustCompile(`(?i)^(?:em\s+)?produ[cç][aã]o\s*:?$`)
+	// The label reads in either language, in any project (F-0418).
+	prodLineRe = regexp.MustCompile(`(?i)^[\s>*_-]*(?:em produ[cç][aã]o|produ[cç][aã]o|in\s+production|production|prod)[*_]*\s*:[*_]*(.*)$`)
+	// A section whose title is just "Produção" or "Production": its first body
+	// line is the evidence.
+	prodHeadRe = regexp.MustCompile(`(?i)^(?:(?:em\s+)?produ[cç][aã]o|(?:in\s+)?production)\s*:?$`)
 	// Negative or empty evidence is no evidence: any line led by "não" (verificado,
 	// foi, se aplica, houve...), pending or waiting, "n/a", or nothing. Heuristic:
 	// "Não houve erro" reads as absent too, the safe side for a decision queue.
 	// "na sexta..." and "sem erro nos logs" are positive and stay evidence.
-	prodNegRe = regexp.MustCompile(`(?i)^[\s>*_\x60-]*(?:n[aã]o\b|ainda\s+n[aã]o|pendente|aguardando|n/a\b|a\s+(?:verificar|conferir)|tbd\b|sem\s+(?:evid[eê]ncia|registro|dados?|informa)|nada\b)|^[\s*_\x60.—–-]*$`)
+	// English (F-0418): "no" counts only before punctuation or the end ("No,
+	// rolled back") or as a whole "no evidence/record/data/information", so the
+	// Portuguese "no ar" and "no database primário" stay evidence.
+	prodNegRe = regexp.MustCompile(`(?i)^[\s>*_\x60-]*(?:n[aã]o\b|ainda\s+n[aã]o|pendente|aguardando|n/a\b|a\s+(?:verificar|conferir)|tbd\b|sem\s+(?:evid[eê]ncia|registro|dados?|informa)|nada\b|no\s*(?:[.,;:!—–-]|$)|no\s+(?:evidence|records?|data|information|info)\b|not\s+yet\b|pending\b|awaiting\b|to\s+(?:verify|check)\b|nothing\b|none\b)|^[\s*_\x60.—–-]*$`)
 	// PENDENTE counts only on an acceptance line (list item or table row that
 	// names a "critério"), never in loose prose.
 	pendingWord = regexp.MustCompile(`^\s*(?:[-*+]|\d+[.)]|\|).*crit[ée]rio.*\bPENDENTE\b`)

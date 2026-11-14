@@ -165,11 +165,13 @@ func evidenceFinding(repoDir string, f store.Feature) []Finding {
 	if len(missing) == 0 {
 		return nil
 	}
+	// English prose, the citation in the project's language (N-0068, F-0418).
+	cite := doclang.Display(doclang.Criterion, store.DocsLanguage(repoDir)) + " N"
 	return []Finding{{
 		Rule:   RuleResultMissingEvidence,
 		Entity: f.ID,
 		File:   filepath.ToSlash(resultPath),
-		Detail: fmt.Sprintf("result.md sem evidência do(s) critério(s) %s da spec (%s) — feature %s: %s. Forma: cite \"critério N\" com a prova de cada um", strings.Join(missing, ", "), f.Title, f.State, resultFix(f, "citando \"critério N\"")),
+		Detail: fmt.Sprintf(`result.md has no evidence for spec criterion(s) %s (%s) — feature %s: %s. Form: cite "%s" with the proof of each one`, strings.Join(missing, ", "), f.Title, f.State, resultFix(f, `citing "`+cite+`"`), cite),
 	}}
 }
 
