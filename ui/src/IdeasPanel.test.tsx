@@ -439,6 +439,14 @@ describe('IdeasPanel — título, corpo e resolvida (F-0419 crit. 6)', () => {
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'Corpo (opcional, markdown)' })).toHaveValue(''))
   })
 
+  it('o título com quebra de linha recusado pelo servidor sai em pt-BR (crítica F-0419 #5)', async () => {
+    createIdea.mockRejectedValueOnce(new HTTPError('the idea title must be a single line', 422))
+    render(<IdeasPanel modules={[]} onPromoted={() => {}} />)
+    await screen.findByText('Nenhuma ideia ativa.')
+    capture('x')
+    expect(await screen.findByRole('alert')).toHaveTextContent('O título da ideia é uma linha só')
+  })
+
   it('o título vazio recusado pelo servidor sai em pt-BR', async () => {
     createIdea.mockRejectedValueOnce(new HTTPError('the idea title cannot be empty', 422))
     render(<IdeasPanel modules={[]} onPromoted={() => {}} />)

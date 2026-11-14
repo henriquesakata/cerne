@@ -488,8 +488,9 @@ const ptBR = {
     dropConfirmOf: (id: string) => `Confirmar descarte de ${id}`,
     refusals: {
       textRequired: 'O título da ideia não pode ficar vazio.',
+      titleMultiline: 'O título da ideia é uma linha só — o resto vai no corpo.',
       unknownFacet: 'Faceta desconhecida — use infra, code, data, process ou auth.',
-      notActive: 'A ideia não está mais ativa: já foi promovida ou descartada.',
+      notActive: 'A ideia não está mais ativa: já foi promovida, resolvida ou descartada.',
       moduleRequired: 'Este projeto exige um módulo para a candidata.',
       duplicateTitle: 'Já existe uma feature viva com este título — promova pelo terminal com --title.',
     },
@@ -1679,8 +1680,9 @@ const en: Messages = {
     dropConfirmOf: (id: string) => `Confirm dropping ${id}`,
     refusals: {
       textRequired: 'The idea title cannot be empty.',
+      titleMultiline: 'The idea title is a single line — the rest goes in the body.',
       unknownFacet: 'Unknown facet — use infra, code, data, process or auth.',
-      notActive: 'The idea is no longer active: it was already promoted or dropped.',
+      notActive: 'The idea is no longer active: it was already promoted, resolved or dropped.',
       moduleRequired: 'This project requires a module for the candidate.',
       duplicateTitle: 'A live feature already has this title — promote it from the terminal with --title.',
     },

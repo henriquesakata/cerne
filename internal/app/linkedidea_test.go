@@ -1,7 +1,10 @@
 package app
 
 import (
+	"errors"
+	"os"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/domain"
@@ -81,6 +84,9 @@ func TestAcceptResolvesLinkedIdeas(t *testing.T) {
 	if got := loadIdea(t, repoDir, other.ID); got.State != domain.IdeaPromoted || got.PromotedTo != "F-0011" {
 		t.Fatalf("idea of another feature = %+v, want untouched", got)
 	}
+	if got := loadIdea(t, repoDir, closed.ID); got.State != domain.IdeaResolved || got.UpdatedAt != closed.UpdatedAt {
+		t.Fatalf("already-closed idea = %+v, want untouched", got) // critic F-0419 #8
+	}
 
 	cfg := project.Config{ProjectID: "demo", Backend: "b", Gates: project.GatesConfig{Accept: project.GateAuto}}
 	if err := project.SaveConfig(projDir, cfg); err != nil {
@@ -143,5 +149,101 @@ func TestRejectReopensAndSupersedeTransfersLinkedIdeas(t *testing.T) {
 	}
 	if got := loadIdea(t, repoDir, back.ID); got.State != domain.IdeaActive || got.PromotedTo != "" {
 		t.Fatalf("superseded by a done feature: %+v, want active (the idea is never lost)", got)
+	}
+}
+
+// Critic F-0419 #1: an idea promoted before F-0419 never saw its feature's
+// accept or reject. The migration reconciles it: done resolves it, rejected
+// reopens it; a live feature keeps it promoted. A second run moves nothing.
+func TestMigrateFollowsTheFeatureOfAStrandedIdea(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	seedFeatureInState(t, repoDir, "F-0010", domain.StateDone)
+	seedFeatureInState(t, repoDir, "F-0011", domain.StateRejected)
+	seedFeatureInState(t, repoDir, "F-0012", domain.StateApproved)
+	done := seedLinkedIdea(t, repoDir, projDir, "virou feature aceita", "F-0010")
+	rejected := seedLinkedIdea(t, repoDir, projDir, "virou feature rejeitada", "F-0011")
+	live := seedLinkedIdea(t, repoDir, projDir, "virou feature viva", "F-0012")
+
+	ids, err := MigrateIdeas(repoDir, projDir, true)
+	if err != nil || !slices.Equal(ids, []string{done.ID, rejected.ID}) {
+		t.Fatalf("dry run = %v, %v; want [%s %s]", ids, err, done.ID, rejected.ID)
+	}
+	if got := loadIdea(t, repoDir, done.ID); got.State != domain.IdeaPromoted {
+		t.Fatalf("dry run wrote: %+v", got)
+	}
+	if ids, err = MigrateIdeas(repoDir, projDir, false); err != nil || !slices.Equal(ids, []string{done.ID, rejected.ID}) {
+		t.Fatalf("migrate = %v, %v", ids, err)
+	}
+	if got := loadIdea(t, repoDir, done.ID); got.State != domain.IdeaResolved || got.ClosedAt == nil {
+		t.Fatalf("idea of a done feature = %+v, want resolved", got)
+	}
+	if got := loadIdea(t, repoDir, rejected.ID); got.State != domain.IdeaActive || got.PromotedTo != "" {
+		t.Fatalf("idea of a rejected feature = %+v, want active again", got)
+	}
+	if got := loadIdea(t, repoDir, live.ID); got.State != domain.IdeaPromoted || got.PromotedTo != "F-0012" {
+		t.Fatalf("idea of a live feature = %+v, want untouched", got)
+	}
+	if ids, err = MigrateIdeas(repoDir, projDir, false); err != nil || len(ids) != 0 {
+		t.Fatalf("second run = %v, %v; want nothing", ids, err)
+	}
+}
+
+// Critic F-0419 #1: a done feature already resolved the idea it carried (or
+// will, on migrate); unlinking it would reopen accepted work.
+func TestUnlinkIdeaRefusesADoneFeature(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	seedFeatureInState(t, repoDir, "F-0010", domain.StateDone)
+	i := seedLinkedIdea(t, repoDir, projDir, "ideia de feature aceita", "F-0010")
+	if _, err := UnlinkIdea(repoDir, projDir, i.ID); !errors.Is(err, ErrIdeaLinked) {
+		t.Fatalf("unlink from a done feature = %v, want ErrIdeaLinked", err)
+	}
+}
+
+// Critic F-0419 #6: link refuses a closed idea with the same sentinel as
+// resolve, drop and promote — not a raw FSM error naming "promote".
+func TestLinkIdeaRefusesAClosedIdeaWithErrIdeaNotActive(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	seedFeatureInState(t, repoDir, "F-0010", domain.StateApproved)
+	i, err := CreateIdea(repoDir, projDir, "uma ideia", "", nil, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ResolveIdea(repoDir, projDir, i.ID, "feita"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LinkIdea(repoDir, projDir, i.ID, "F-0010"); !errors.Is(err, ErrIdeaNotActive) {
+		t.Fatalf("link a resolved idea = %v, want ErrIdeaNotActive", err)
+	}
+}
+
+// Critic F-0419 #8: a linked idea is not dropped by hand either — it follows
+// its feature.
+func TestDropRefusesALinkedIdea(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	seedFeatureInState(t, repoDir, "F-0010", domain.StateApproved)
+	i := seedLinkedIdea(t, repoDir, projDir, "ideia vinculada", "F-0010")
+	if _, err := DropIdea(repoDir, projDir, i.ID, "x"); !errors.Is(err, ErrIdeaNotActive) {
+		t.Fatalf("drop a linked idea = %v, want ErrIdeaNotActive", err)
+	}
+}
+
+// Critic F-0419 #2: promote --title keeps the idea's own title in the
+// candidate's context, so the sentence the idea said is not lost.
+func TestPromoteIdeaWithATitleKeepsTheIdeaTitle(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	i, err := CreateIdea(repoDir, projDir, "Exportar o kanban", "em CSV", nil, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, f, err := PromoteIdea(repoDir, projDir, i.ID, "Exportar o kanban v2", "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec, err := os.ReadFile(FeatureDocPath(repoDir, f.ID, "spec.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(spec), "Exportar o kanban\n") || !strings.Contains(string(spec), "em CSV") {
+		t.Fatalf("spec context lost the idea's title or body:\n%s", spec)
 	}
 }

@@ -107,8 +107,9 @@ func TestLinkIdeaOnlyToLiveFeature(t *testing.T) {
 			t.Fatalf("%s.from_idea = %q, want %s", id, f.FromIdea, q.ID)
 		}
 	}
-	if _, err := LinkIdea(repoDir, projDir, "I-0002", "F-0020"); !errors.Is(err, domain.ErrInvalidTransition) {
-		t.Fatalf("link of an already promoted idea: err = %v, want ErrInvalidTransition", err)
+	// Not a raw FSM error: the sentinel every manual move of a closed idea uses (critic F-0419 #6).
+	if _, err := LinkIdea(repoDir, projDir, "I-0002", "F-0020"); !errors.Is(err, ErrIdeaNotActive) {
+		t.Fatalf("link of an already promoted idea: err = %v, want ErrIdeaNotActive", err)
 	}
 }
 

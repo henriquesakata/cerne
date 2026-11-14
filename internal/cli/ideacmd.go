@@ -97,6 +97,9 @@ func newIdeaListCmd(dir *string) *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if all {
+				if cmd.Flags().Changed("state") && state != "all" {
+					return fmt.Errorf("--all and --state %q contradict each other: use one of them", state)
+				}
 				state = "all"
 			}
 			if !app.ValidIdeaState(state) { // before the project, as always
@@ -128,8 +131,12 @@ func newIdeaListCmd(dir *string) *cobra.Command {
 				}
 				fmt.Fprintln(w, line)
 			}
-			if len(ideas) == 0 {
-				fmt.Fprintln(w, "No ideas.")
+			if len(ideas) == 0 { // names the filter in force, as the pendings' list does
+				if state == "all" {
+					fmt.Fprintln(w, "No ideas.")
+				} else {
+					fmt.Fprintf(w, "No %s ideas.\n", state)
+				}
 			}
 			return nil
 		},

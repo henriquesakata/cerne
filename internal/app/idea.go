@@ -201,14 +201,15 @@ func PromoteIdea(repoDir, projDir, id, title, module string, force bool) (store.
 		if i, err = loadActiveIdea(repoDir, id); err != nil {
 			return "", err
 		}
-		// The context carries the body; a title cut to 80 runes keeps its full
-		// text there so nothing the capture said is lost.
-		text := i.Body
+		// The context carries the body; when the candidate's title is not the
+		// idea's own (cut to 80 runes, or a --title), the idea's title goes there
+		// too, so nothing the capture said is lost (critic F-0419 #2).
 		if title = strings.TrimSpace(title); title == "" {
 			title = truncateDraftRunes(i.Title, 80)
-			if title != i.Title {
-				text = strings.TrimSpace(i.Title + "\n\n" + i.Body)
-			}
+		}
+		text := i.Body
+		if title != i.Title {
+			text = strings.TrimSpace(i.Title + "\n\n" + i.Body)
 		}
 		context := fmt.Sprintf("**Origem:** ideia [[%s]] (capturada em %s)\n\n%s", i.ID, i.CreatedAt.Format(time.DateOnly), text)
 		n, err := prepareFeature("F", title, module, "", i.Facets, i.Components, spectmpl.StubWithContextIn(store.DocsLanguage(repoDir), title, context), force, "", "")
@@ -339,25 +340,68 @@ func legacyIdeas(repoDir string) ([]store.Idea, error) {
 	return slices.DeleteFunc(all, func(i store.Idea) bool { return !i.Legacy() }), nil
 }
 
+// strandedIdeas are the promoted ideas whose feature already went through a
+// transition they must follow (done, rejected, superseded) without them:
+// promoted before F-0419, they never saw it (critic F-0419 #1).
+func strandedIdeas(repoDir string) ([]store.Idea, error) {
+	all, err := store.LoadAllIdeas(repoDir)
+	if err != nil {
+		return nil, err
+	}
+	var out []store.Idea
+	for _, i := range all {
+		if i.State != domain.IdeaPromoted || i.PromotedTo == "" {
+			continue
+		}
+		f, err := store.LoadFeature(repoDir, i.PromotedTo)
+		if err != nil {
+			return nil, err
+		}
+		if _, _, _, ok, err := followFeature(repoDir, f, ""); err != nil {
+			return nil, err
+		} else if ok {
+			out = append(out, i)
+		}
+	}
+	return out, nil
+}
+
+// toMigrate is what MigrateIdeas touches: the legacy ideas, then the stranded
+// ones not already in that set, by id.
+func toMigrate(repoDir string) (legacy, stranded []store.Idea, err error) {
+	if legacy, err = legacyIdeas(repoDir); err != nil {
+		return nil, nil, err
+	}
+	if stranded, err = strandedIdeas(repoDir); err != nil {
+		return nil, nil, err
+	}
+	return legacy, stranded, nil
+}
+
+func unionIDs(a, b []store.Idea) []string {
+	ids := append(ideaIDs(a), ideaIDs(b)...)
+	slices.Sort(ids)
+	return slices.Compact(ids)
+}
+
 // MigrateIdeas rewrites every idea stored as text only into title + body, in
 // one commit with an idea.migrated event each (F-0419). It returns the ids it
 // migrated — or, with dryRun, the ones it would — and nothing when none is
 // left, so a second run writes nothing.
 func MigrateIdeas(repoDir, projDir string, dryRun bool) ([]string, error) {
-	legacy, err := legacyIdeas(repoDir)
-	if err != nil || len(legacy) == 0 || dryRun {
-		return ideaIDs(legacy), err
+	legacy, stranded, err := toMigrate(repoDir)
+	if err != nil || len(legacy)+len(stranded) == 0 || dryRun {
+		return unionIDs(legacy, stranded), err
 	}
-	var migrated []store.Idea
 	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		var err error
-		if migrated, err = legacyIdeas(repoDir); err != nil { // re-read under the lock
+		if legacy, stranded, err = toMigrate(repoDir); err != nil { // re-read under the lock
 			return "", err
 		}
-		if len(migrated) == 0 {
+		if len(legacy)+len(stranded) == 0 {
 			return "", nil
 		}
-		for _, i := range migrated {
+		for _, i := range legacy {
 			if err := store.SaveIdea(repoDir, i); err != nil {
 				return "", err
 			}
@@ -365,12 +409,28 @@ func MigrateIdeas(repoDir, projDir string, dryRun bool) ([]string, error) {
 				return "", err
 			}
 		}
-		return fmt.Sprintf("cerne: migrate %d ideas to title and body", len(migrated)), nil
+		// A stranded idea follows its feature now, as the transition would have
+		// moved it (the same followFeature switch), with via=migrate on the event.
+		for _, i := range stranded {
+			f, err := store.LoadFeature(repoDir, i.PromotedTo)
+			if err != nil {
+				return "", err
+			}
+			action, target, payload, _, err := followFeature(repoDir, f, "")
+			if err != nil {
+				return "", err
+			}
+			payload["via"] = "migrate"
+			if err := moveIdea(repoDir, &i, action, target, payload); err != nil {
+				return "", err
+			}
+		}
+		return fmt.Sprintf("cerne: migrate %d ideas to title and body, %d to their feature's state", len(legacy), len(stranded)), nil
 	})
 	if errors.Is(err, gitback.ErrNothingToCommit) {
 		err = nil // someone migrated them between the read and the lock
 	}
-	return ideaIDs(migrated), err
+	return unionIDs(legacy, stranded), err
 }
 
 func ideaIDs(ideas []store.Idea) []string {
@@ -440,7 +500,7 @@ func LinkIdea(repoDir, projDir, id, featureID string) (store.Idea, error) {
 		if !featureLive(f.State) {
 			return "", fmt.Errorf("%w: %s is %s", ErrIdeaTargetClosed, f.ID, f.State)
 		}
-		if i, err = store.LoadIdea(repoDir, id); err != nil {
+		if i, err = loadActiveIdea(repoDir, id); err != nil { // the sentinel resolve/drop/promote use (critic #6)
 			return "", err
 		}
 		if err := moveIdea(repoDir, &i, domain.ActionPromote, f.ID, map[string]string{"promoted_to": f.ID, "via": "link"}); err != nil {
@@ -486,8 +546,10 @@ func UnlinkIdea(repoDir, projDir, id string) (store.Idea, error) {
 		if err != nil {
 			return "", err
 		}
-		if f.State == domain.StateImplemented {
-			return "", fmt.Errorf("%w: %s is promoted to %s, which is implemented — %s's accept resolves it and a reject reopens it", ErrIdeaLinked, id, f.ID, f.ID)
+		// Implemented: its accept resolves the idea; done: it already accepted the
+		// work the idea asked for (critic F-0419 #1) — unlinking reopens neither.
+		if f.State == domain.StateImplemented || f.State == domain.StateDone {
+			return "", fmt.Errorf("%w: %s is promoted to %s, which is %s — the accept resolves it and a reject reopens it", ErrIdeaLinked, id, f.ID, f.State)
 		}
 		if err := moveIdea(repoDir, &i, domain.ActionReopen, "", map[string]string{"feature": f.ID, "via": "unlink"}); err != nil {
 			return "", err

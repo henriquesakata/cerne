@@ -59,8 +59,12 @@ func TestIdeaNewPersistsOptionalTags(t *testing.T) {
 // --search filters; --json is the agents' contract; empty says so.
 func TestIdeaListActiveNewestFirstAllSearchJSON(t *testing.T) {
 	projDir, _, _ := setupProject(t)
-	if out := ideaCmd(t, projDir, "list"); strings.TrimSpace(out) != "No ideas." {
-		t.Fatalf("empty list = %q, want No ideas.", out)
+	// The empty list names the filter in force, as the pendings' does (judge F-0419).
+	if out := ideaCmd(t, projDir, "list"); strings.TrimSpace(out) != "No active ideas." {
+		t.Fatalf("empty list = %q, want No active ideas.", out)
+	}
+	if out := ideaCmd(t, projDir, "list", "--state", "all"); strings.TrimSpace(out) != "No ideas." {
+		t.Fatalf("empty --state all = %q, want No ideas.", out)
 	}
 	ideaCmd(t, projDir, "new", "primeira ideia")
 	ideaCmd(t, projDir, "new", "conciliação do OFX")
@@ -129,7 +133,7 @@ func TestIdeaDropWithAndWithoutReason(t *testing.T) {
 		t.Fatalf("drop output = %q", out)
 	}
 	ideaCmd(t, projDir, "drop", "I-0002", "--reason", "não vale")
-	if out := ideaCmd(t, projDir, "list"); strings.TrimSpace(out) != "No ideas." {
+	if out := ideaCmd(t, projDir, "list"); strings.TrimSpace(out) != "No active ideas." {
 		t.Fatalf("dropped ideas still listed as active:\n%s", out)
 	}
 	if out := ideaCmd(t, projDir, "list", "--all"); !strings.Contains(out, "dropped  outra  — não vale") || !strings.Contains(out, "dropped  uma") {
@@ -155,7 +159,7 @@ func TestIdeaPromotePrintsBothIDs(t *testing.T) {
 		t.Fatalf("promote output = %q, features = %+v", out, features)
 	}
 	fid := features[0].ID
-	if out := ideaCmd(t, projDir, "list"); strings.TrimSpace(out) != "No ideas." {
+	if out := ideaCmd(t, projDir, "list"); strings.TrimSpace(out) != "No active ideas." {
 		t.Fatalf("a promoted idea is still listed as active:\n%s", out)
 	}
 	if out := ideaCmd(t, projDir, "list", "--all"); !strings.Contains(out, "promoted  Exportar o kanban em CSV  → "+fid) {
@@ -396,5 +400,14 @@ func TestShowIdeaMarksRetiredAndEmptyURL(t *testing.T) {
 	}
 	if !strings.Contains(out, "R-0002  Sem URL\n") {
 		t.Fatalf("empty URL line wrong:\n%s", out)
+	}
+}
+
+// Critic F-0419 #7: --all and a different --state contradict each other; the
+// command says so instead of silently listing everything.
+func TestIdeaListAllAndStateContradict(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	if _, err := execCerne(t, "idea", "list", "--all", "--state", "dropped", "--dir", projDir); err == nil || !strings.Contains(err.Error(), "--all") {
+		t.Fatalf("--all --state dropped = %v, want a refusal naming --all", err)
 	}
 }
