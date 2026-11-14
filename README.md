@@ -90,13 +90,25 @@ What is not measured: there is no side-by-side run of the same work with and wit
 
 ## Try it in two minutes
 
-Install on macOS or Linux:
+Install with Homebrew (macOS or Linux):
+
+```bash
+brew install henriquesakata/tap/cerne
+```
+
+Or with the install script, on macOS or Linux:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/henriquesakata/cerne/main/install.sh | sh
 ```
 
-The script downloads the latest release for your machine, verifies its SHA-256 and installs it without `sudo`. On Windows, or to install by hand or with Go, see [INSTALL.md](INSTALL.md).
+On Windows, in PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/henriquesakata/cerne/main/install.ps1 | iex
+```
+
+The scripts download the latest release for your machine, verify its SHA-256 and install it without admin rights. To install by hand or with Go, see [INSTALL.md](INSTALL.md).
 
 Then, inside your project's git repository (with no `--backend`, `init` creates a local backend for you):
 

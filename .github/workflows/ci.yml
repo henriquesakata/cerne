@@ -29,6 +29,17 @@ jobs:
           done
           exit 1
 
+  # install.ps1 runs only on Windows, in both PowerShell hosts the runner has
+  # (5.1 and 7); the rest of the suite stays on Linux (F-0410).
+  install-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go test ./e2e/ -run TestInstallPS1 -count=1 -v
+
   gitleaks:
     runs-on: ubuntu-latest
     steps:
