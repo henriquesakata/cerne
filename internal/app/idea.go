@@ -329,6 +329,58 @@ func carryReferenceLinks(repoDir, ideaID, fID string) error {
 	return nil
 }
 
+// legacyIdeas lists the ideas still stored in the pre-F-0419 text-only
+// format, in ascending id order.
+func legacyIdeas(repoDir string) ([]store.Idea, error) {
+	all, err := store.LoadAllIdeas(repoDir)
+	if err != nil {
+		return nil, err
+	}
+	return slices.DeleteFunc(all, func(i store.Idea) bool { return !i.Legacy() }), nil
+}
+
+// MigrateIdeas rewrites every idea stored as text only into title + body, in
+// one commit with an idea.migrated event each (F-0419). It returns the ids it
+// migrated — or, with dryRun, the ones it would — and nothing when none is
+// left, so a second run writes nothing.
+func MigrateIdeas(repoDir, projDir string, dryRun bool) ([]string, error) {
+	legacy, err := legacyIdeas(repoDir)
+	if err != nil || len(legacy) == 0 || dryRun {
+		return ideaIDs(legacy), err
+	}
+	var migrated []store.Idea
+	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		var err error
+		if migrated, err = legacyIdeas(repoDir); err != nil { // re-read under the lock
+			return "", err
+		}
+		if len(migrated) == 0 {
+			return "", nil
+		}
+		for _, i := range migrated {
+			if err := store.SaveIdea(repoDir, i); err != nil {
+				return "", err
+			}
+			if err := store.AppendEvent(repoDir, domain.NewEvent(i.ID, "idea.migrated", nil, EventActor())); err != nil {
+				return "", err
+			}
+		}
+		return fmt.Sprintf("cerne: migrate %d ideas to title and body", len(migrated)), nil
+	})
+	if errors.Is(err, gitback.ErrNothingToCommit) {
+		err = nil // someone migrated them between the read and the lock
+	}
+	return ideaIDs(migrated), err
+}
+
+func ideaIDs(ideas []store.Idea) []string {
+	ids := make([]string, len(ideas))
+	for k, i := range ideas {
+		ids[k] = i.ID
+	}
+	return ids
+}
+
 // ResolveIdea closes an active idea as taken care of: active -> resolved,
 // closed_at stamped, the reason (optional) persisted. A promoted idea is not
 // resolved by hand — it follows its feature.

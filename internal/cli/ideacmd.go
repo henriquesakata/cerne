@@ -37,6 +37,7 @@ func newIdeaCmd() *cobra.Command {
 	cmd.AddCommand(verbs.MarkLocal(newIdeaDropCmd(&dir)))
 	cmd.AddCommand(verbs.MarkLocal(newIdeaLinkCmd(&dir)))
 	cmd.AddCommand(verbs.MarkLocal(newIdeaUnlinkCmd(&dir)))
+	cmd.AddCommand(verbs.MarkLocal(newIdeaMigrateCmd(&dir)))
 	cmd.AddCommand(verbs.MarkLocal(newIdeaPromoteCmd(&dir)))
 	return cmd
 }
@@ -240,6 +241,43 @@ func newIdeaUnlinkCmd(dir *string) *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func newIdeaMigrateCmd(dir *string) *cobra.Command {
+	var dryRun bool
+	cmd := &cobra.Command{
+		Use:   "migrate",
+		Short: "Rewrite the ideas stored as plain text into title + body (one commit, idempotent)",
+		Long: "Ideas captured before F-0419 hold a single text. They stay readable (title = first non-blank line, " +
+			"body = the rest), and this command rewrites them in the new format in one commit, recording " +
+			"idea.migrated for each. A second run finds nothing to do. --dry-run lists the ideas without writing.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, err := resolveProject(*dir)
+			if err != nil {
+				return err
+			}
+			ids, err := app.MigrateIdeas(ctx.repoDir, ctx.projDir, dryRun)
+			if err != nil {
+				return err
+			}
+			noun, verb := "ideas", "migrated"
+			if len(ids) == 1 {
+				noun = "idea"
+			}
+			if dryRun {
+				verb = "would be migrated (dry run)"
+			}
+			line := fmt.Sprintf("%d %s %s", len(ids), noun, verb)
+			if len(ids) > 0 {
+				line += ": " + strings.Join(ids, ", ")
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), line)
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "list the ideas that would be migrated without writing")
+	return cmd
 }
 
 func newIdeaDropCmd(dir *string) *cobra.Command {
