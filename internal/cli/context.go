@@ -142,9 +142,11 @@ func noteCerneRoot(startDir, projDir string) {
 	fmt.Fprintf(os.Stderr, "cerne: no project from %s; using CERNE_ROOT=%s\n", abs, projDir)
 }
 
-// recreateCache re-clones the backend into repoDir when the cached clone is
+// recreateCache clones the backend into repoDir when the cached clone is
 // missing. A partial repoDir is wiped first; the notice goes to stderr so it
-// never pollutes machine-readable stdout (e.g. `status --json`).
+// never pollutes machine-readable stdout (e.g. `status --json`). It is worded
+// as progress: the first use of a project on a machine always lands here
+// (a fresh clone, CI, right after `cerne demo`), and nothing is wrong (F-0412).
 func recreateCache(cacheDir, repoDir, backend string) error {
 	if err := os.RemoveAll(repoDir); err != nil {
 		return err
@@ -152,9 +154,9 @@ func recreateCache(cacheDir, repoDir, backend string) error {
 	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "cerne: cache clone missing — re-cloning from %s...\n", backend)
+	fmt.Fprintf(os.Stderr, "cerne: cloning the backend from %s into the local cache...\n", backend)
 	if err := gitback.Clone(backend, repoDir); err != nil {
-		return fmt.Errorf("re-cloning the cache clone from %s failed: %w", backend, err)
+		return fmt.Errorf("cloning the backend from %s into the local cache failed: %w", backend, err)
 	}
 	return nil
 }
