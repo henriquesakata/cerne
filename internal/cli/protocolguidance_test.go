@@ -95,3 +95,37 @@ func TestNext_EnglishBarCause(t *testing.T) {
 		t.Fatalf("English project transcript cites \"Barra:\":\n%s", out)
 	}
 }
+
+// TestApproveCheck_EnglishBarForms (F-0418 crit. 1): in an English project
+// the check teaches the three bar forms in English, under Verification.
+func TestApproveCheck_EnglishBarForms(t *testing.T) {
+	out := protocolGuidanceTranscript(t, "en")
+	for _, want := range []string{
+		"The spec's Verification section needs one of the three literal forms:\n",
+		"  Bar: <named reference + access (URL, command or file a critic opens)>\n",
+		"  Bar: not applicable (<one-line justification>) — alternative standard: <test/benchmark/invariant>\n",
+		"  Bar: waived by human decision (<short quote of the words that waived it>)\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("check output missing %q:\n%s", want, out)
+		}
+	}
+	for _, pt := range []string{"Barra", "Verificação", "não aplicável", "dispensada"} {
+		if strings.Contains(out, pt) {
+			t.Fatalf("English project check shows %q:\n%s", pt, out)
+		}
+	}
+}
+
+// TestApproveCheck_EnglishJudgeQuestionForms (F-0418 crit. 2): the judge
+// question is taught in its English form only, under Verification.
+func TestApproveCheck_EnglishJudgeQuestionForms(t *testing.T) {
+	out := protocolGuidanceTranscript(t, "en")
+	want := "Under the bar, in the spec's Verification section, one line:\n  Question for the judge: <the question the blind judge answers>\nThe check"
+	if !strings.Contains(out, want) {
+		t.Fatalf("check output missing %q:\n%s", want, out)
+	}
+	if strings.Contains(out, "Pergunta ao juiz") {
+		t.Fatalf("English project check shows the Portuguese judge question:\n%s", out)
+	}
+}
