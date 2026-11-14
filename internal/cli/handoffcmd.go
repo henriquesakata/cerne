@@ -110,30 +110,23 @@ func newHandoffListCmd(dir *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			all, err := store.LoadAllHandoffs(ctx.repoDir)
+			all, err := app.ListHandoffs(ctx.repoDir)
 			if err != nil {
 				return err
 			}
 			now := handoffNow()
-			var pending, rest []store.Handoff
+			list := []store.Handoff{}
 			for _, h := range all {
 				switch {
 				case state == "" && h.State == domain.HandoffTaken && h.TakenAt != nil && now.Sub(*h.TakenAt) > takenWindow:
 				case state == "" && h.State != domain.HandoffPending && h.State != domain.HandoffTaken:
 				case state != "" && state != "all" && string(h.State) != state:
-				case h.State == domain.HandoffPending:
-					pending = append(pending, h)
 				default:
-					rest = append(rest, h)
+					list = append(list, h)
 				}
 			}
-			slices.SortStableFunc(pending, func(a, b store.Handoff) int { return a.CreatedAt.Compare(b.CreatedAt) })
-			list := append(pending, rest...)
 			out := cmd.OutOrStdout()
 			if asJSON {
-				if list == nil {
-					list = []store.Handoff{}
-				}
 				enc := json.NewEncoder(out)
 				enc.SetIndent("", "  ")
 				return enc.Encode(list)
@@ -142,7 +135,7 @@ func newHandoffListCmd(dir *string) *cobra.Command {
 				fmt.Fprintln(out, "no handoffs")
 				return nil
 			}
-			titles, err := workTitles(ctx.repoDir)
+			titles, err := app.WorkTitles(ctx.repoDir)
 			if err != nil {
 				return err
 			}
@@ -155,19 +148,6 @@ func newHandoffListCmd(dir *string) *cobra.Command {
 	cmd.Flags().StringVar(&state, "state", "", "only this state: pending|taken|superseded|cancelled|all (default: pending + taken in the last 14 days)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output, every field")
 	return cmd
-}
-
-// workTitles maps each work id to its title.
-func workTitles(repoDir string) (map[string]string, error) {
-	works, err := store.LoadAllWorks(repoDir)
-	if err != nil {
-		return nil, err
-	}
-	m := map[string]string{}
-	for _, w := range works {
-		m[w.ID] = w.Title
-	}
-	return m, nil
 }
 
 func newHandoffCancelCmd(dir *string) *cobra.Command {

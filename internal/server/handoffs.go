@@ -1,14 +1,11 @@
 package server
 
 import (
-	"cmp"
 	"errors"
 	"net/http"
 	"regexp"
-	"slices"
-	"time"
 
-	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -29,53 +26,17 @@ type handoffDetail struct {
 	Brief string `json:"brief"`
 }
 
-// closedAt is when a closed handoff closed: taken_at, else updated_at.
-func closedAt(h store.Handoff) time.Time {
-	if h.TakenAt != nil {
-		return *h.TakenAt
-	}
-	return h.UpdatedAt
-}
-
-// handoffOrder sorts pending first (oldest first), then the closed ones by
-// closing time, newest first (F-0386 crit. 2).
-func handoffOrder(a, b store.Handoff) int {
-	ap, bp := a.State == domain.HandoffPending, b.State == domain.HandoffPending
-	switch {
-	case ap && bp:
-		return a.CreatedAt.Compare(b.CreatedAt)
-	case ap:
-		return -1
-	case bp:
-		return 1
-	}
-	return cmp.Compare(closedAt(b).UnixNano(), closedAt(a).UnixNano())
-}
-
-func workTitles(repoDir string) (map[string]string, error) {
-	works, err := store.LoadAllWorks(repoDir)
-	if err != nil {
-		return nil, err
-	}
-	m := make(map[string]string, len(works))
-	for _, w := range works {
-		m[w.ID] = w.Title
-	}
-	return m, nil
-}
-
 func handleHandoffs(w http.ResponseWriter, repoDir string) {
-	all, err := store.LoadAllHandoffs(repoDir)
+	all, err := app.ListHandoffs(repoDir)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	titles, err := workTitles(repoDir)
+	titles, err := app.WorkTitles(repoDir)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	slices.SortStableFunc(all, handoffOrder)
 	rows := make([]handoffRow, 0, len(all))
 	for _, h := range all {
 		rows = append(rows, handoffRow{h, titles[h.FromWork]})
@@ -102,7 +63,7 @@ func handleHandoffDetail(w http.ResponseWriter, repoDir, id string) {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	titles, err := workTitles(repoDir)
+	titles, err := app.WorkTitles(repoDir)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return

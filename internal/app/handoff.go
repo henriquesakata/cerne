@@ -316,3 +316,49 @@ func HandoffsFor(repoDir string, refs []string, exclude string) ([]WorkHandoff, 
 	}
 	return out, nil
 }
+
+// ListHandoffs returns every handoff in list order (F-0386 crit. 2, F-0421
+// crit. 8): pending first, oldest first, then the closed ones by closing time,
+// newest first. The CLI and the API both list through it.
+func ListHandoffs(repoDir string) ([]store.Handoff, error) {
+	all, err := store.LoadAllHandoffs(repoDir)
+	if err != nil {
+		return nil, err
+	}
+	slices.SortStableFunc(all, handoffOrder)
+	return all, nil
+}
+
+// handoffClosedAt is when a closed handoff closed: taken_at, else updated_at.
+func handoffClosedAt(h store.Handoff) time.Time {
+	if h.TakenAt != nil {
+		return *h.TakenAt
+	}
+	return h.UpdatedAt
+}
+
+func handoffOrder(a, b store.Handoff) int {
+	ap, bp := a.State == domain.HandoffPending, b.State == domain.HandoffPending
+	switch {
+	case ap && bp:
+		return a.CreatedAt.Compare(b.CreatedAt)
+	case ap:
+		return -1
+	case bp:
+		return 1
+	}
+	return handoffClosedAt(b).Compare(handoffClosedAt(a))
+}
+
+// WorkTitles maps each work id to its title.
+func WorkTitles(repoDir string) (map[string]string, error) {
+	works, err := store.LoadAllWorks(repoDir)
+	if err != nil {
+		return nil, err
+	}
+	m := make(map[string]string, len(works))
+	for _, w := range works {
+		m[w.ID] = w.Title
+	}
+	return m, nil
+}
