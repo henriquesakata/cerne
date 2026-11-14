@@ -210,7 +210,7 @@ describe('App — #/ideas anuncia a promoção (F-0334, crítica C5)', () => {
   afterEach(() => vi.mocked(fetchIdeas).mockImplementation(async () => []))
 
   it('promover mostra o aviso com o link para o Backlog', async () => {
-    const idea = { id: 'I-0001', text: 'Uma ideia', state: 'active' as const, created_at: '2026-11-01T00:00:00Z', updated_at: '2026-11-01T00:00:00Z' }
+    const idea = { id: 'I-0001', title: 'Uma ideia', state: 'active' as const, created_at: '2026-11-01T00:00:00Z', updated_at: '2026-11-01T00:00:00Z' }
     vi.mocked(fetchIdeas).mockImplementation(async () => [idea])
     vi.mocked(promoteIdea).mockResolvedValue({ idea: { ...idea, state: 'promoted', promoted_to: 'F-0009' }, feature: {} as never })
     window.location.hash = '#/ideas'
