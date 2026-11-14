@@ -228,16 +228,16 @@ export default function Settings({ group = 'general' }: { group?: SettingGroup }
           </>
         )}
         <div className="settings-body">
-          {view && q === '' && (
+          {view && (
             <header className="settings-group-head">
-              <h2 className="settings-group-title">{ts.groups[group].title}</h2>
-              <p className="settings-hint">{ts.groups[group].description}</p>
+              <h2 className="settings-group-title">{q === '' ? ts.groups[group].title : ts.resultsAll}</h2>
+              <p className="settings-hint settings-group-sub">{q === '' ? ts.groups[group].description : ''}</p>
             </header>
           )}
           {group === 'general' && <ProjectName key={activePid} name={name} />}
           {view ? (
           <>
-          {chooser ? (
+          {q !== '' && shown.length === 0 ? null : chooser ? (
             <div className="settings-scope">
               <span className="lang-toggle settings-scopes" role="group" aria-label={ts.scopeGroup} aria-describedby={hintId}>
                 {ORDER.map((sc) => (
@@ -265,7 +265,7 @@ export default function Settings({ group = 'general' }: { group?: SettingGroup }
           )}
           {/* The escape to the raw file (R-0042): where the selected scope lives,
               for whoever would rather edit it by hand. */}
-          {view.files[effScope] && pool.length > 0 && (
+          {view.files[effScope] && pool.length > 0 && !(q !== '' && shown.length === 0) && (
             <div className="settings-file">
               <span>{ts.file}</span>
               <FixBlock command={view.files[effScope]} copyFailed={ts.copyFailed} />
@@ -300,7 +300,6 @@ export default function Settings({ group = 'general' }: { group?: SettingGroup }
                   s={s}
                   groupName={q === '' ? undefined : ts.groups[groupOf(s)].title}
                   scope={effScope}
-                  chip={chooser}
                   saved={saved[s.id]}
                   onTouch={() => clearSaved(s.id)}
                   tx={tx}
@@ -360,9 +359,9 @@ function ProjectName({ name }: { name: string }) {
   const lock = saving || undefined
   return (
     <section className="settings-name" aria-labelledby={titleId}>
-      <h2 id={titleId} className="settings-title">
+      <h3 id={titleId} className="settings-title">
         {tn.title}
-      </h2>
+      </h3>
       <form
         className="settings-string"
         onSubmit={(e) => {
@@ -433,7 +432,6 @@ function ProjectName({ name }: { name: string }) {
 function SettingRow({
   s,
   groupName,
-  chip,
   saved,
   onTouch,
   scope,
@@ -447,9 +445,6 @@ function SettingRow({
 }: {
   s: ResolvedSetting
   groupName?: string
-  // Whether the write-scope chip shows: always under the selector, else only
-  // when the key writes elsewhere than the page's scope.
-  chip: boolean
   saved?: SettingScope
   onTouch: () => void
   scope: SettingScope
@@ -480,7 +475,7 @@ function SettingRow({
   const inherited = !modified && others.some((sc) => !above(sc))
   // A declared value shows through the same label as its select option.
   const fmt = (v: unknown) =>
-    s.enum?.length && typeof v === 'string' && v !== '' ? (ts.options[v] ?? v) : formatValue(v, ts)
+    s.enum?.length && typeof v === 'string' ? (v === '' ? ts.emptyEnum : (ts.options[v] ?? v)) : formatValue(v, ts)
   const desc = tx(s.description)
   const label = (sc: SettingScope) => (sc === 'host' ? ts.hostGlobal : ts.scopes[sc])
   // Busy is aria-disabled, never disabled (F-0302): the pressed control keeps
@@ -492,23 +487,34 @@ function SettingRow({
   // A string key whose only values are on/off is a switch, written as on/off.
   const onOff = s.type === 'string' && s.enum?.length === 2 && s.enum.includes('on') && s.enum.includes('off')
   const isToggle = s.type === 'bool' || onOff
-  const titleNode = <span id={titleId}>{tx(s.title)}</span>
+  // A toggle's title is a real label of the box: it can sit far from it.
+  const titleNode = isToggle ? (
+    <label id={titleId} htmlFor={controlId(s.id)}>
+      {tx(s.title)}
+    </label>
+  ) : (
+    <span id={titleId}>{tx(s.title)}</span>
+  )
   let control = null
   if (isToggle) {
+    const on = onOff ? current === 'on' : current === true
     control = (
-      <input
-        id={controlId(s.id)}
-        className="settings-check"
-        type="checkbox"
-        checked={onOff ? current === 'on' : current === true}
-        aria-labelledby={titleId}
-        aria-describedby={descId}
-        aria-disabled={lock}
-        onChange={(e) => {
-          const next = onOff ? (e.target.checked ? 'on' : 'off') : e.target.checked
-          if (!busy) onWrite(ws, () => putSetting(s.id, ws, next))
-        }}
-      />
+      <label className="settings-toggle">
+        <input
+          id={controlId(s.id)}
+          className="settings-check"
+          type="checkbox"
+          checked={on}
+          aria-labelledby={titleId}
+          aria-describedby={descId}
+          aria-disabled={lock}
+          onChange={(e) => {
+            const next = onOff ? (e.target.checked ? 'on' : 'off') : e.target.checked
+            if (!busy) onWrite(ws, () => putSetting(s.id, ws, next))
+          }}
+        />
+        <span aria-hidden="true">{on ? ts.stateOn : ts.stateOff}</span>
+      </label>
     )
   } else {
     control = (
@@ -630,7 +636,7 @@ function SettingRow({
       onClickCapture={onTouch}
     >
       <div className="settings-row-text">
-        <h2 className="settings-title">
+        <h3 className="settings-title">
           {titleNode}
           {groupName && <span className="badge settings-group">{groupName}</span>}
           {modified && (
@@ -643,7 +649,7 @@ function SettingRow({
               {ts.hostGlobal}
             </span>
           )}
-        </h2>
+        </h3>
         <p id={descId} className="settings-desc">
           {desc}
         </p>
@@ -670,7 +676,7 @@ function SettingRow({
         {control}
         <p className="settings-meta">
           <span>{ts.defaultValue(fmt(s.default))}</span>
-          {(chip || ws !== scope) && <span className="badge settings-write-chip">{ts.writesTo(label(ws))}</span>}
+          {ws !== scope && <span className="badge settings-write-chip">{ts.writesTo(label(ws))}</span>}
           {modified && (
             <button
               type="button"
@@ -696,11 +702,9 @@ function SettingRow({
             ))}
           </p>
         )}
-        {saved && (
-          <p aria-live="polite" className="settings-saved">
-            {saved === 'project' ? ts.savedProject : ts.saved}
-          </p>
-        )}
+        <p aria-live="polite" className="settings-saved">
+          {saved ? (saved === 'project' ? ts.savedProject : ts.saved) : ''}
+        </p>
       </div>
       {/* A stored value the resolution skipped (critic C9): said in text —
           scope, file and value — and removable in the scope being edited;

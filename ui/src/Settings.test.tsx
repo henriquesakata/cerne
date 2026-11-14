@@ -1156,10 +1156,12 @@ describe('Settings — livro-razão (F-0413)', () => {
     expect(within(sel.parentElement as HTMLElement).getByText('Projeto vence Host, que vence o padrão.')).toBeInTheDocument()
   })
 
-  it('cada linha mostra o escopo em que a escrita cai', async () => {
+  it('o chip do escopo de escrita é a exceção: só quando a chave grava fora do escopo visto', async () => {
     render(<Settings />)
     const extra = await screen.findByRole('listitem', { name: 'Extra toggle' })
-    expect(within(extra).getByText('Grava em Projeto')).toBeInTheDocument()
+    // O chip só aparece como exceção: a chave que grava fora do escopo visto.
+    expect(within(extra).queryByText('Grava em Projeto')).toBeNull()
+    expect(within(row('Seu nome no canal')).getByText('Grava em Host (global)')).toBeInTheDocument()
   })
 })
 
@@ -1286,5 +1288,65 @@ describe('Settings — cabeçalho de escopo, busca e confirmação (F-0413)', ()
     fireEvent.click(within(r).getByRole('button', { name: 'Salvar' }))
     await within(r).findByRole('alert')
     expect(num).toHaveAccessibleDescription(/Informe um número inteiro/)
+  })
+})
+
+describe('Settings — alvo do toggle, busca estável e textos (F-0413)', () => {
+  beforeEach(() => {
+    window.location.hash = '#/settings'
+  })
+
+  it('o título da linha é um label do checkbox: clicar nele alterna', async () => {
+    putSetting.mockResolvedValue(fixture())
+    render(<Settings />)
+    const extra = await screen.findByRole('listitem', { name: 'Extra toggle' })
+    const box = within(extra).getByRole('checkbox', { name: 'Extra toggle' })
+    const title = within(extra).getByText('Extra toggle')
+    expect(title.closest('label')).toHaveAttribute('for', box.id)
+    fireEvent.click(title)
+    await waitFor(() => expect(putSetting).toHaveBeenCalledWith('test.extra', 'project', false))
+  })
+
+  it('a caixa fica num label.settings-toggle com a palavra de estado visível, fora do nome acessível', async () => {
+    render(<Settings />)
+    const extra = await screen.findByRole('listitem', { name: 'Extra toggle' })
+    const box = within(extra).getByRole('checkbox', { name: 'Extra toggle' })
+    const toggle = box.closest('label.settings-toggle') as HTMLElement
+    expect(toggle).not.toBeNull()
+    expect(within(toggle).getByText('Ligado')).toBeInTheDocument()
+    expect(box).toHaveAccessibleName('Extra toggle')
+  })
+
+  it('a região aria-live da confirmação fica sempre montada, vazia quando não há o que dizer', async () => {
+    render(<Settings />)
+    const extra = await screen.findByRole('listitem', { name: 'Extra toggle' })
+    const live = extra.querySelector('[aria-live="polite"]')
+    expect(live).not.toBeNull()
+    expect(live).toBeEmptyDOMElement()
+  })
+
+  it('com busca, o cabeçalho do grupo fica no lugar e troca o texto; sem resultado, some o seletor de escopo', async () => {
+    render(<Settings />)
+    await screen.findByRole('listitem', { name: 'Extra toggle' })
+    const box = screen.getByRole('searchbox', { name: 'Buscar configurações' })
+    fireEvent.change(box, { target: { value: 'extra' } })
+    expect(screen.getByRole('heading', { name: 'Resultados em todos os grupos' })).toBeInTheDocument()
+    fireEvent.change(box, { target: { value: 'zzz' } })
+    expect(screen.queryByRole('group', { name: /escopo/i })).toBeNull()
+  })
+
+  it('enum com valor vazio mostra "Desligado" (en: "Off") em vez de "(vazio)"', async () => {
+    const lang = key({ id: 'lint.cli_output_language', title: 'CLI output language', type: 'string', default: '', enum: ['en'], scopes: ['project'], description: 'x', value: '' })
+    fetchSettings.mockResolvedValue(fixture({ settings: [...fixture().settings, lang] }))
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Idioma da saída da CLI' })
+    expect(within(within(r).getByRole('combobox')).getAllByRole('option').map((o) => o.textContent)).toEqual(['Desligado', 'en'])
+  })
+
+  it('o título da linha e o do bloco do nome do projeto são h3 sob o h2 do grupo', async () => {
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Grafo' })
+    expect(within(r).getByRole('heading', { level: 3 })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 3, name: 'Nome do projeto' })).toBeInTheDocument()
   })
 })

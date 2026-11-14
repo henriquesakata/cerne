@@ -3159,7 +3159,13 @@ button.clarify-chip { cursor: pointer; font: inherit; }
 .settings-id { display: block; margin-top: 0.25rem; font-size: 0.78rem; color: var(--muted); user-select: all; }
 .settings-modified { color: var(--fg); border-color: var(--fg); background: transparent; }
 .settings-desc { margin: 0; max-width: 70ch; font-size: 0.9rem; color: var(--muted); }
-.settings-check { margin: 0.25rem 0; cursor: pointer; }
+.settings-check { margin: 0; cursor: pointer; }
+.settings-toggle { display: inline-flex; align-items: center; gap: 0.5rem; min-height: 1.5rem; cursor: pointer; }
+.settings-title label { cursor: pointer; }
+.settings-group-sub { min-height: 1.4em; }
+/* Inside a focused row the fill drops the field edge below 3:1: use the muted ink. */
+.settings-row:focus-within .settings-text,
+.settings-row:focus-within .settings-select { border-color: var(--muted); }
 .settings-text,
 .settings-select {
   font: inherit;
