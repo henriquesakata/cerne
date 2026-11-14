@@ -143,12 +143,12 @@ var settingsRegistry = []Setting{
 	{
 		ID: "wiki.enabled", Group: "interface", Title: "Wiki", Type: "bool", Default: true,
 		Scopes:      []string{ScopeProject, ScopeHost},
-		Description: "Off stops compile_on_push and turns wiki lint debt into advisory findings left out of 'cerne next'; the wiki stays readable, with a stale banner and an on-demand recompile.",
+		Description: "On compiles the wiki on every push and counts its lint debt as pending work in 'cerne next'. Off stops that: the wiki stays readable, with a stale banner and an on-demand recompile.",
 	},
 	{
 		ID: "hooks.notes_on_edit", Group: "integrations", Title: "Notes on edit", Type: "bool", Default: true,
 		Scopes:      []string{ScopeProject, ScopeHost},
-		Description: "Off stops the work-gate hook from showing the notes that cite a file when the agent is about to edit it.",
+		Description: "On shows the agent the notes that cite a file when it is about to edit that file, through the work-gate hook. Off stops showing them.",
 	},
 }
 
