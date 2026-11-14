@@ -3209,21 +3209,45 @@ button.clarify-chip { cursor: pointer; font: inherit; }
    forma do outline (tracejado × contínuo), não só pela cor; outline não muda a
    largura da coluna. Só o .drop-hint desce os cards do destino, que nunca é a
    coluna sob o cursor no dragstart (DROPS liga colunas distintas). */
+.drop-edge.drop-ready,
 .column.drop-ready {
   outline: 2px dashed var(--accent);
   outline-offset: -1px;
   background: color-mix(in srgb, var(--accent) 12%, var(--surface-2));
 }
+.drop-edge.drop-active,
 .column.drop-active {
   outline: 2px solid var(--accent);
   outline-offset: -1px;
   background: color-mix(in srgb, var(--accent) 22%, var(--surface-2));
 }
+.drop-edge.drop-blocked,
 .column.drop-blocked { outline: 2px dashed var(--faint); cursor: not-allowed; }
 .column.drop-off { opacity: 0.45; }
 .drop-hint { margin: 0.4rem 0 0; font-size: 0.85rem; font-weight: 600; color: var(--accent); }
 /* o motivo do bloqueio usa a cor do badge ❓ do card: o mesmo sinal */
+.drop-edge.drop-blocked .drop-hint,
 .column.drop-blocked .drop-hint { color: var(--purple); }
+/* F-0420: faixa que aponta o destino fora da vista. É um toco da coluna de
+   destino na borda direita do board: os estados acima são os mesmos da coluna.
+   Fica fora do contêiner que rola e não recebe ponteiro, então o soltar e a
+   rolagem nativa vão à coluna de baixo. Fundo opaco para ler sobre os cards;
+   sem transição (estado instantâneo, ui/DESIGN.md). */
+.board-wrap { position: relative; }
+.drop-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 7rem;
+  box-sizing: border-box;
+  padding: 0.75rem;
+  border-radius: 8px;
+  background: var(--surface-2);
+  pointer-events: none;
+}
+/* o board pode ser mais alto que a janela: o texto acompanha a parte visível */
+.drop-edge-inner { position: sticky; top: 0.75rem; }
 .card.card-in-flight { opacity: 0.4; }
 .card-draggable { cursor: grab; }
 @media (prefers-reduced-motion: no-preference) {

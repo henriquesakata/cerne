@@ -549,7 +549,7 @@ function Columns({
     {edge && (
       <div className={`drop-edge ${dragClass(edge)}`.trim()} aria-hidden="true">
         <div className="drop-edge-inner">
-          <span className="drop-edge-label">{t.kanban.columnLabels[edge]} →</span>
+          <h2>{t.kanban.columnLabels[edge]} →</h2>
           <p className="drop-hint">{dropHint(edge)}</p>
         </div>
       </div>
