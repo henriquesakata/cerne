@@ -182,9 +182,9 @@ export default function Settings({ group = 'general' }: { group?: SettingGroup }
       <p className="settings-project">
         {ts.project} <strong>{name}</strong>
       </p>
-      {group === 'general' && <ProjectName key={activePid} name={name} />}
-      {view ? (
-        <div className="settings-layout">
+      <div className="settings-layout">
+        {view && (
+          <>
           <nav className="settings-groups" aria-label={ts.groupsNav}>
             {groups.map((g) => (
               <a
@@ -211,7 +211,12 @@ export default function Settings({ group = 'general' }: { group?: SettingGroup }
               </option>
             ))}
           </select>
-          <div className="settings-body">
+          </>
+        )}
+        <div className="settings-body">
+          {group === 'general' && <ProjectName key={activePid} name={name} />}
+          {view ? (
+          <>
           <div className="settings-scope">
             <span className="lang-toggle settings-scopes" role="group" aria-label={ts.scopeGroup} aria-describedby={hintId}>
               {ORDER.map((sc) => (
@@ -282,11 +287,12 @@ export default function Settings({ group = 'general' }: { group?: SettingGroup }
               ))}
             </ul>
           )}
-          </div>
+          </>
+          ) : (
+            <LoadPending load={load} message={ts.loadError} />
+          )}
         </div>
-      ) : (
-        <LoadPending load={load} message={ts.loadError} />
-      )}
+      </div>
     </main>
   )
 }

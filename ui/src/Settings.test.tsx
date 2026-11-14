@@ -1148,3 +1148,13 @@ describe('Settings — livro-razão (F-0413)', () => {
     expect(within(extra).getByText('Grava em Projeto')).toBeInTheDocument()
   })
 })
+
+describe('Settings — nome do projeto na coluna (F-0413)', () => {
+  it('o nome do projeto fica na mesma coluna de conteúdo do seletor de escopo, ao lado da navegação', async () => {
+    render(<Settings group="general" />)
+    await screen.findByRole('listitem', { name: 'Grafo' })
+    const body = screen.getByRole('group', { name: /escopo/i }).closest('.settings-body') as HTMLElement
+    expect(within(body).getByRole('textbox', { name: 'Nome do projeto' })).toBeInTheDocument()
+    expect(body.parentElement).toContainElement(screen.getByRole('navigation', { name: 'Grupos de configurações' }))
+  })
+})
