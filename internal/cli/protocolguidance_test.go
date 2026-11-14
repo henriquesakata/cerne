@@ -129,3 +129,27 @@ func TestApproveCheck_EnglishJudgeQuestionForms(t *testing.T) {
 		t.Fatalf("English project check shows the Portuguese judge question:\n%s", out)
 	}
 }
+
+// TestStaticGuidance_BilingualCLI (F-0418 crit. 6): the feature new reminder
+// and the transition help name the English form first.
+func TestStaticGuidance_BilingualCLI(t *testing.T) {
+	before := func(name, s, a, b string) {
+		t.Helper()
+		i, j := strings.Index(s, a), strings.Index(s, b)
+		if i < 0 || j < 0 || i > j {
+			t.Errorf("%s: want %q before %q:\n%s", name, a, b, s)
+		}
+	}
+	reminder, err := execCerneStdin(t, hookJSON(t, "sess-lang", "/tmp/proj", "Bash",
+		map[string]any{"command": `cerne feature new "Thing" --context "why"`},
+		map[string]any{"stdout": "F-0042 created (candidate) with its context seeded into the spec."}),
+		"hook", "lifecycle-reminder")
+	if err != nil {
+		t.Fatalf("lifecycle-reminder: %v\n%s", err, reminder)
+	}
+	before("feature new reminder", reminder, "`Bar:`", "`Barra:`")
+	complete, _ := execCerne(t, "feature", "complete", "--help")
+	before("complete help", complete, `"criterion N"`, `"critério N"`)
+	approve, _ := execCerne(t, "feature", "approve", "--help")
+	before("approve --force help", approve, "[CLARIFY]", "[ESCLARECER]")
+}

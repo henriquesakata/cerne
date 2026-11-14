@@ -41,8 +41,8 @@ var transitionSpecs = []transitionSpec{
 			"  cerne push && cerne feature start <id>\n" + lifecycleSeq},
 	{"complete", "Complete development (requires a real result)", domain.ActionComplete,
 		"  # gate: the result must be filled in (not the stub) and pushed, cite\n" +
-			"  # \"critério N\" for each numbered spec criterion, and carry a\n" +
-			"  # \"## Gauntlet\" record (cited verdict, or the literal exemption)\n" +
+			"  # \"criterion N\" (pt-BR: \"critério N\") for each numbered spec criterion,\n" +
+			"  # and carry a \"## Gauntlet\" record (cited verdict, or the literal exemption)\n" +
 			"  cerne push && cerne feature complete <id>\n" + lifecycleSeq},
 	{"substituir", "Supersede a feature with another (requires --by and --reason)", domain.ActionSupersede, ""},
 	{"revert", "Send an approved feature back to candidate (requires --reason)", domain.ActionRevert,
@@ -69,7 +69,7 @@ func newTransitionCmds(dir *string) []*cobra.Command {
 		cmd.Flags().StringVar(&reason, "reason", "", "reason for the transition (reject, substituir and revert)")
 		cmd.Flags().StringVar(&commit, "commit", "", "delivery commit: full URL, or bare SHA resolved via [delivery] commit_url (complete only)")
 		cmd.Flags().StringVar(&mr, "mr", "", "delivery MR/PR: full URL, or #<n>/!<n> via [delivery] pr_url (complete only)")
-		cmd.Flags().BoolVar(&force, "force", false, "approve with open [ESCLARECER] clarifications (approve), or start despite another session's active work (start)")
+		cmd.Flags().BoolVar(&force, "force", false, "approve with open [CLARIFY]/[ESCLARECER] clarifications (approve), or start despite another session's active work (start)")
 		if ts.action == domain.ActionComplete {
 			cmd.Flags().BoolVar(&noStamp, "no-stamp", false, "complete without stamping the cost; run 'cerne cost <id> --stamp' later (F-0402)")
 		}
