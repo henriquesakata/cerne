@@ -46,7 +46,7 @@ export function ExpandAll({ ids, x }: { ids: string[]; x: Expanded }) {
 // the toggle's aria-expanded, so the state has one source.
 export function Chevron() {
   return (
-    <svg className="queue-chevron" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" focusable="false">
+    <svg className="queue-chevron" viewBox="0 0 12 12" width="14" height="14" aria-hidden="true" focusable="false">
       <path d="M4.5 2.5 8 6l-3.5 3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )

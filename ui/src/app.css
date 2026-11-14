@@ -367,7 +367,7 @@ h2 {
 .ideas-actions select { font-size: 0.85rem; padding: 0.2rem 0.4rem; }
 .queue-detail > .ideas-text { margin: 0 0 0.5rem; max-width: 75ch; font-size: 0.95rem; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
 .queue-detail > .ideas-sources { margin: 0 0 0.4rem; font-size: 0.85rem; color: var(--muted); overflow-wrap: anywhere; }
-.queue-detail > .ideas-facets { display: flex; flex-wrap: wrap; gap: 0.25rem; margin: 0 0 0.4rem; }
+.queue-detail > .ideas-tagset { display: flex; flex-wrap: wrap; gap: 0.25rem; margin: 0 0 0.4rem; }
 .ideas-drop,
 .ideas-similar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; padding: 0.5rem 0.7rem 0.7rem; border-top: 1px solid var(--border-soft); font-size: 0.85rem; }
 .ideas-drop input { flex: 1 1 12rem; min-width: 0; font-size: 0.9rem; padding: 0.25rem 0.5rem; }
@@ -2178,7 +2178,9 @@ h2 {
 .queue-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem 0.7rem; padding: 0.5rem 0.7rem; }
 .queue-toggle { display: flex; flex: 1 1 14rem; align-items: baseline; gap: 0.5rem; min-width: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .queue-toggle:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
-.queue-chevron { flex: none; align-self: center; color: var(--muted); }
+.queue-chevron { flex: none; align-self: center; color: var(--fg); }
+/* Open is said twice: the chevron turns and the card's rule darkens (judge, round 1). */
+.queue-item:has(> .queue-row > .queue-toggle[aria-expanded='true']) { border-color: var(--border-strong); }
 .queue-toggle[aria-expanded='true'] .queue-chevron { transform: rotate(90deg); }
 .queue-toggle .card-id { flex: none; }
 .queue-title { flex: 1; min-width: 0; overflow: hidden; font-size: 0.92rem; text-overflow: ellipsis; white-space: nowrap; }

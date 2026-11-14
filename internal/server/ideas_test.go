@@ -323,12 +323,17 @@ func TestIdeasStateFilter(t *testing.T) {
 			t.Fatalf("POST %q = %d: %s", text, rec.Code, rec.Body.String())
 		}
 	}
+	// A source on the idea that gets dropped: state=all must carry the
+	// sources of the closed ones too, not only an empty key (critic F-0416 #4).
+	if _, err := app.CreateExternalReference(repoDir, projDir, "Artigo", "http://a", "c", []string{"I-0002"}, nil, nil, false); err != nil {
+		t.Fatal(err)
+	}
 	doJSON(t, h, http.MethodPost, "/api/ideas/I-0002/drop", `{}`, &map[string]any{})
 	doJSON(t, h, http.MethodPost, "/api/ideas/I-0001/promote", `{}`, &map[string]any{})
 	type row struct {
 		ID         string            `json:"id"`
 		State      string            `json:"state"`
-		InformedBy []json.RawMessage `json:"informed_by"`
+		InformedBy []store.Reference `json:"informed_by"`
 	}
 	get := func(path string) (int, []row) {
 		var list struct {
@@ -356,9 +361,16 @@ func TestIdeasStateFilter(t *testing.T) {
 		t.Fatalf("app.ListIdeas(all) = %d ideas, %v", len(want), err)
 	}
 	for n, i := range want {
-		if rs[n].ID != i.ID || rs[n].InformedBy == nil {
-			t.Fatalf("row %d = %+v, want %s with informed_by", n, rs[n], i.ID)
+		sources := 0
+		if i.ID == "I-0002" {
+			sources = 1
 		}
+		if rs[n].ID != i.ID || rs[n].InformedBy == nil || len(rs[n].InformedBy) != sources {
+			t.Fatalf("row %d = %+v, want %s with %d source(s)", n, rs[n], i.ID, sources)
+		}
+	}
+	if rs[1].InformedBy[0].URL != "http://a" {
+		t.Fatalf("the dropped idea's source = %+v, want http://a", rs[1].InformedBy[0])
 	}
 	if code, _ := get("/api/ideas?state=xyz"); code != http.StatusBadRequest {
 		t.Fatalf("GET ?state=xyz = %d, want 400", code)

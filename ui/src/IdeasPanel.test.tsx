@@ -193,6 +193,7 @@ describe('IdeasPanel (F-0312)', () => {
     await screen.findByText('uma ideia')
     capture('outra')
     expect(await screen.findByRole('alert')).toHaveTextContent('backend fora')
+    expect(screen.getByRole('alert')).toHaveClass('form-error') // F-0416 crit. 8, the capture too
     fireEvent.click(row('uma ideia').getByRole('button', { name: 'Promover I-0001' }))
     await waitFor(() => expect(screen.getAllByRole('alert').map((a) => a.textContent).join(' ')).toContain('push recusado'))
   })
@@ -267,7 +268,7 @@ describe('IdeasPanel (F-0312)', () => {
 // F-0416: a tela #/ideas (modo página, com o hash) e a linha de fila.
 const closed: Idea[] = [
   idea('I-0003', 'ainda ativa'),
-  { ...idea('I-0002', 'virou feature'), state: 'promoted', promoted_to: 'F-0340', closed_at: '2026-11-08T10:00:00Z' },
+  { ...idea('I-0002', 'virou feature'), state: 'promoted', promoted_to: 'F-0340', closed_at: '2026-11-08T10:00:00Z', facets: ['code'], components: ['kanban'] },
   { ...idea('I-0001', 'não vale a pena'), state: 'dropped', reason: 'fora do produto', closed_at: '2026-11-07T10:00:00Z' },
 ]
 const pill = (label: string) =>
@@ -343,6 +344,10 @@ describe('IdeasPanel — ideia fechada (F-0416 crit. 4 e 5)', () => {
     expect(r.queryByRole('button', { name: /Promover|Descartar/ })).toBeNull()
     fireEvent.click(toggle('I-0002'))
     expect(r.getByRole('link', { name: 'F-0340' })).toHaveAttribute('href', '#/f/F-0340')
+    // crit. 5: the detail carries the facets and the components (critic #2).
+    const detail = within(document.getElementById(toggle('I-0002').getAttribute('aria-controls')!)!)
+    expect(detail.getByText('code')).toHaveClass('tag-facet')
+    expect(detail.getByText('kanban')).toHaveClass('tag-component')
     expect(r.getByText(`Fechada em ${new Date('2026-11-08T10:00:00Z').toLocaleDateString('pt-BR')}`)).toBeInTheDocument()
   })
 
@@ -370,6 +375,12 @@ describe('IdeasPanel — expandir e recolher tudo (F-0416 crit. 6)', () => {
     expect([toggle('I-0002'), toggle('I-0001')].map((b) => b.getAttribute('aria-expanded'))).toEqual(['false', 'false'])
   })
 
+  it('uma ideia que começa por linha vazia resume pela primeira linha com texto (crítica #10)', async () => {
+    ideas = [idea('I-0001', '\n\n  segunda linha real\nmais')]
+    render(<IdeasPanel modules={[]} onPromoted={() => {}} />)
+    expect(await screen.findByText('segunda linha real')).toHaveClass('queue-title')
+  })
+
   it('o erro de ação usa o estilo de erro de formulário (crit. 8)', async () => {
     ideas = [idea('I-0001', 'uma ideia')]
     promoteIdea.mockRejectedValueOnce(new Error('push recusado'))
@@ -395,7 +406,10 @@ describe('IdeasPanel — teto de altura só no Backlog (F-0416 crit. 1)', () => 
   })
 
   it('nenhum literal de cor e nenhuma transição nas regras da fila e das ideias (DESIGN.md)', () => {
-    const own = css.match(/\n\.(queue|ideas)-[^{]*\{[^}]*\}/g)!.join('\n')
+    // Every rule whose selector names a .queue-/.ideas- class, compound ones included (critic #8).
+    const own = css.match(/\n[^\n{}]*\.(queue|ideas)-[^{]*\{[^}]*\}/g)!.join('\n')
+    expect(own).toContain('.backlog-list-col .ideas-list')
+    expect(own).toContain('.pending-row .queue-toggle')
     expect(own).not.toMatch(/#[0-9a-f]{3,8}\b|rgb\(|transition|animation/i)
   })
 })

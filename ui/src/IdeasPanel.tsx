@@ -49,11 +49,11 @@ function parseState(hash: string): { state: StateFilter; bad: boolean } {
 }
 const stateHash = (s: StateFilter) => `#/ideas?state=${s}`
 
-// ideaSummary is the row's one-line text: the first line, 280 chars at most,
+// ideaSummary is the row's one-line text: the first line with text, 280 chars at most,
 // so one 200 KB idea neither pushes the others off screen nor fills the DOM
 // while collapsed (C10). F-0419 swaps it for the idea's title.
 const PREVIEW = 280
-const ideaSummary = (i: Idea) => i.text.split('\n')[0].slice(0, PREVIEW)
+const ideaSummary = (i: Idea) => i.text.trimStart().split('\n')[0].slice(0, PREVIEW)
 
 // IdeasPanel (F-0312): captura e triagem de ideias, não elaboração. Mesmo
 // contrato do `cerne idea new` — só o texto é exigido, tags opcionais. Ao vivo
@@ -298,10 +298,13 @@ export default function IdeasPanel({ modules, onPromoted, hash }: { modules: str
                           ))}
                         </p>
                       )}
-                      {(i.facets ?? []).length > 0 && (
-                        <p className="ideas-facets">
+                      {(i.facets ?? []).length + (i.components ?? []).length > 0 && (
+                        <p className="ideas-tagset">
                           {(i.facets ?? []).map((f) => (
                             <Tag key={f} axis="facet" value={f} />
+                          ))}
+                          {(i.components ?? []).map((c) => (
+                            <Tag key={c} axis="component" value={c} />
                           ))}
                         </p>
                       )}
