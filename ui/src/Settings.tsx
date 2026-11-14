@@ -228,9 +228,7 @@ export default function Settings({ group = 'general' }: { group?: SettingGroup }
                   title={sc === 'host' ? ts.hostGlobalTitle : undefined}
                   onClick={() => setScope(sc)}
                 >
-                  {ts.scopes[sc]}
-                  {/* The space keeps the accessible name "Host global". */}
-                  {sc === 'host' && <> <span className="badge settings-global">{ts.global}</span></>}
+                  {sc === 'host' ? ts.hostGlobal : ts.scopes[sc]}
                 </button>
               ))}
             </span>
@@ -429,6 +427,7 @@ function SettingRow({
   const { t } = useT()
   const ts = t.settings
   const uid = useId()
+  const [intError, setIntError] = useState(false)
   const titleId = `${uid}-title`
   const descId = `${uid}-desc`
   // A key that does not take the selected scope writes to the one it takes.
@@ -445,27 +444,30 @@ function SettingRow({
   const fmt = (v: unknown) =>
     s.enum?.length && typeof v === 'string' && v !== '' ? (ts.options[v] ?? v) : formatValue(v, ts)
   const desc = tx(s.description)
-  const label = (sc: SettingScope) => (sc === 'host' ? `${ts.scopes.host} (${ts.global})` : ts.scopes[sc])
+  const label = (sc: SettingScope) => (sc === 'host' ? ts.hostGlobal : ts.scopes[sc])
   // Busy is aria-disabled, never disabled (F-0302): the pressed control keeps
   // the focus, and a press during the write does nothing.
   const lock = busy || undefined
 
   // A bool is an affirmative checkbox: the title is its visible label, the
   // description sits below the title (aria-describedby).
+  // A string key whose only values are on/off is a switch, written as on/off.
+  const onOff = s.type === 'string' && s.enum?.length === 2 && s.enum.includes('on') && s.enum.includes('off')
+  const isToggle = s.type === 'bool' || onOff
   let titleNode = <span id={titleId}>{tx(s.title)}</span>
   let control = null
-  if (s.type === 'bool') {
+  if (isToggle) {
     titleNode = (
       <label className="settings-check">
         <input
           id={controlId(s.id)}
           type="checkbox"
-          checked={current === true}
+          checked={onOff ? current === 'on' : current === true}
           aria-labelledby={titleId}
           aria-describedby={descId}
           aria-disabled={lock}
           onChange={(e) => {
-            const next = e.target.checked
+            const next = onOff ? (e.target.checked ? 'on' : 'off') : e.target.checked
             if (!busy) onWrite(ws, () => putSetting(s.id, ws, next))
           }}
         />
@@ -528,6 +530,51 @@ function SettingRow({
             <button type="submit" aria-describedby={titleId} aria-disabled={lock}>
               {t.common.save}
             </button>
+          </form>
+        ) : s.type === 'int' ? (
+          <form
+            className="settings-string"
+            noValidate
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (busy) return
+              const raw = String(new FormData(e.currentTarget).get('value') ?? '').trim()
+              if (raw === '') {
+                setIntError(false)
+                onWrite(ws, () => unsetSetting(s.id, ws))
+                return
+              }
+              const n = Number(raw)
+              if (!Number.isInteger(n) || n < 1) {
+                setIntError(true)
+                return
+              }
+              setIntError(false)
+              onWrite(ws, () => putSetting(s.id, ws, n))
+            }}
+          >
+            <input
+              key={`${ws}:${landed}:${String(current)}`}
+              id={controlId(s.id)}
+              name="value"
+              type="number"
+              min="1"
+              step="1"
+              className="settings-text"
+              defaultValue={String(current)}
+              aria-labelledby={titleId}
+              aria-describedby={descId}
+              aria-invalid={intError ? true : undefined}
+              aria-disabled={lock}
+            />
+            <button type="submit" aria-describedby={titleId} aria-disabled={lock}>
+              {t.common.save}
+            </button>
+            {intError && (
+              <p role="alert" className="form-error">
+                {ts.notInteger}
+              </p>
+            )}
           </form>
         ) : (
           <p className="settings-readonly">

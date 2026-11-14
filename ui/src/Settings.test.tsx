@@ -145,8 +145,10 @@ describe('Settings — leitura derivada do registro (F-0315)', () => {
     const count = row('Retry count')
     expect(within(count).queryByRole('checkbox')).toBeNull()
     expect(within(count).queryByRole('textbox')).toBeNull()
-    expect(within(count).getByText('3')).toBeInTheDocument()
-    expect(within(count).getByText(/edite no arquivo/)).toBeInTheDocument()
+    const num = within(count).getByRole('spinbutton', { name: 'Retry count' })
+    expect(num).toHaveValue(3)
+    expect(num).toHaveAttribute('min', '1')
+    expect(num).toHaveAttribute('step', '1')
   })
 
   it('c3: a busca filtra por título e descrição, sem caixa nem diacrítico', async () => {
@@ -170,12 +172,12 @@ describe('Settings — leitura derivada do registro (F-0315)', () => {
     expect(screen.getByText('Nenhuma configuração corresponde a “zzz”.')).toBeInTheDocument()
   })
 
-  it('c8: chave de escopo host leva o selo "global do host"; o cabeçalho nomeia o projeto ativo', async () => {
+  it('c8: chave de escopo host leva o selo "Host (global)"; o cabeçalho nomeia o projeto ativo', async () => {
     render(<Settings />)
     const channel = await screen.findByRole('listitem', { name: 'Seu nome no canal' })
-    const badge = within(channel).getByText('global do host')
+    const badge = within(channel).getByText('Host (global)')
     expect(badge).toHaveAttribute('title', expect.stringMatching(/todos os projetos/))
-    expect(within(row('Grafo')).queryByText('global do host')).toBeNull()
+    expect(within(row('Grafo')).queryByText('Host (global)')).toBeNull()
     expect(screen.getByText('Projeto A')).toBeInTheDocument()
   })
 
@@ -309,13 +311,13 @@ describe('Settings — edição por escopo (F-0315)', () => {
   it('c8: o escopo Host é marcado como global, com a dica de que vale para todos os projetos', async () => {
     render(<Settings />)
     await screen.findByRole('listitem', { name: 'Grafo' })
-    // O selo entra no nome com espaço: "Host global", nunca "Hostglobal".
-    const host = within(scopeGroup()).getByRole('button', { name: 'Host global' })
+    // O selo entra no nome com espaço: "Host (global)".
+    const host = within(scopeGroup()).getByRole('button', { name: 'Host (global)' })
     expect(host).toHaveAttribute('title', expect.stringMatching(/todos os projetos/))
     expect(screen.getByText(/versionado/)).toBeInTheDocument()
     fireEvent.click(host)
     expect(screen.getByText(/vale para todos os projetos/)).toBeInTheDocument()
-    expect(within(row('Grafo')).getByText('global do host')).toBeInTheDocument()
+    expect(within(row('Grafo')).getByText('Host (global)')).toBeInTheDocument()
   })
 
   it('c9: escrita recusada mantém a lista, mostra o erro na linha e a nova tentativa reenvia o mesmo PUT', async () => {
@@ -439,7 +441,7 @@ describe('Settings — falha de escrita por chave e escopo (F-0315, crítica C6)
     expect(putSetting).toHaveBeenLastCalledWith('mindmap.enabled', 'project', false)
 
     fireEvent.click(within(row('Mapa mental')).getByRole('button', { name: 'Editar em Host' }))
-    expect(within(scopeGroup()).getByRole('button', { name: 'Host global' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(scopeGroup()).getByRole('button', { name: 'Host (global)' })).toHaveAttribute('aria-pressed', 'true')
     expect(within(row('Mapa mental')).queryByRole('status')).toBeNull()
 
     fireEvent.click(within(row('Mapa mental')).getByRole('button', { name: 'Editar em Projeto' }))
@@ -940,27 +942,37 @@ describe('Settings: chave de texto com valores declarados', () => {
     putSetting.mockReset()
   })
 
-  it('mostra um select com os valores declarados e o efetivo selecionado, em pt-BR', async () => {
+  it('enum exatamente on/off vira um checkbox rotulado pelo título, desmarcado quando o efetivo é off', async () => {
     fetchSettings.mockResolvedValue(withGauntlet())
     render(<Settings />)
     const r = await screen.findByRole('listitem', { name: 'Gauntlet' })
-    const select = within(r).getByRole('combobox', { name: 'Gauntlet' }) as HTMLSelectElement
-    expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual(['ligado', 'desligado'])
-    expect(select.value).toBe('off')
+    expect(within(r).queryByRole('combobox')).toBeNull()
+    expect(within(r).getByRole('checkbox', { name: 'Gauntlet' })).not.toBeChecked()
     expect(within(r).queryByRole('textbox')).toBeNull()
     expect(within(r).getByText(/Liga ou desliga o Gauntlet/)).toBeInTheDocument()
   })
 
-  it('trocar a opção grava a string escolhida no escopo editado', async () => {
+  it('marcar o checkbox grava a string on no escopo editado; desmarcar grava off', async () => {
     fetchSettings.mockResolvedValue(withGauntlet())
     putSetting.mockResolvedValue(withGauntlet(gauntlet({ value: 'on', stored: { project: 'on' } })))
     render(<Settings />)
     const r = await screen.findByRole('listitem', { name: 'Gauntlet' })
-    fireEvent.change(within(r).getByRole('combobox', { name: 'Gauntlet' }), { target: { value: 'on' } })
+    fireEvent.click(within(r).getByRole('checkbox', { name: 'Gauntlet' }))
     await waitFor(() => expect(putSetting).toHaveBeenCalledWith('gates.gauntlet', 'project', 'on'))
   })
 
-  it('no I18nProvider (en) os rótulos são os valores', async () => {
+  it('desmarcar grava off', async () => {
+    fetchSettings.mockResolvedValue(withGauntlet(gauntlet({ value: 'on', origin: 'default', stored: undefined })))
+    putSetting.mockResolvedValue(withGauntlet())
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Gauntlet' })
+    const box = within(r).getByRole('checkbox', { name: 'Gauntlet' })
+    expect(box).toBeChecked()
+    fireEvent.click(box)
+    await waitFor(() => expect(putSetting).toHaveBeenCalledWith('gates.gauntlet', 'project', 'off'))
+  })
+
+  it('no I18nProvider (en) continua um checkbox rotulado pelo título', async () => {
     fetchSettings.mockResolvedValue(withGauntlet())
     render(
       <I18nProvider>
@@ -968,11 +980,10 @@ describe('Settings: chave de texto com valores declarados', () => {
       </I18nProvider>,
     )
     const r = await screen.findByRole('listitem', { name: 'Gauntlet' })
-    const select = within(r).getByRole('combobox', { name: 'Gauntlet' })
-    expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual(['on', 'off'])
+    expect(within(r).getByRole('checkbox', { name: 'Gauntlet' })).not.toBeChecked()
   })
 
-  it('a linha Efetivo/Padrão traduz o valor como o select: ligado/desligado em pt-BR, on/off em en', async () => {
+  it('a linha Efetivo/Padrão traduz o valor: ligado/desligado em pt-BR, on/off em en', async () => {
     fetchSettings.mockResolvedValue(withGauntlet())
     const { unmount } = render(<Settings />)
     const r = await screen.findByRole('listitem', { name: 'Gauntlet' })
@@ -989,17 +1000,17 @@ describe('Settings: chave de texto com valores declarados', () => {
     expect(within(en).getByText('Default: on')).toBeInTheDocument()
   })
 
-  it('durante a escrita o select fica aria-disabled e mudar de novo não grava', async () => {
+  it('durante a escrita o checkbox fica aria-disabled e clicar de novo não grava', async () => {
     fetchSettings.mockResolvedValue(withGauntlet())
     let release = () => {}
     putSetting.mockImplementationOnce(() => new Promise<SettingsView>((r) => (release = () => r(withGauntlet()))))
     render(<Settings />)
     const r = await screen.findByRole('listitem', { name: 'Gauntlet' })
-    const select = within(r).getByRole('combobox', { name: 'Gauntlet' })
-    fireEvent.change(select, { target: { value: 'on' } })
+    const box = within(r).getByRole('checkbox', { name: 'Gauntlet' })
+    fireEvent.click(box)
     await waitFor(() => expect(row('Gauntlet')).toHaveAttribute('aria-busy', 'true'))
-    expect(select).toHaveAttribute('aria-disabled', 'true')
-    fireEvent.change(select, { target: { value: 'off' } })
+    expect(box).toHaveAttribute('aria-disabled', 'true')
+    fireEvent.click(box)
     expect(putSetting).toHaveBeenCalledTimes(1)
     release()
     await waitFor(() => expect(row('Gauntlet')).not.toHaveAttribute('aria-busy'))
@@ -1156,5 +1167,36 @@ describe('Settings — nome do projeto na coluna (F-0413)', () => {
     const body = screen.getByRole('group', { name: /escopo/i }).closest('.settings-body') as HTMLElement
     expect(within(body).getByRole('textbox', { name: 'Nome do projeto' })).toBeInTheDocument()
     expect(body.parentElement).toContainElement(screen.getByRole('navigation', { name: 'Grupos de configurações' }))
+  })
+})
+
+describe('Settings — editor numérico (F-0413)', () => {
+  const withCount = () => fixture()
+  it('Salvar grava o inteiro no escopo editado', async () => {
+    fetchSettings.mockResolvedValue(withCount())
+    putSetting.mockResolvedValue(withCount())
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Retry count' })
+    fireEvent.change(within(r).getByRole('spinbutton'), { target: { value: '7' } })
+    fireEvent.click(within(r).getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(putSetting).toHaveBeenCalledWith('test.count', 'project', 7))
+  })
+  it('vazio redefine, como a chave de texto', async () => {
+    fetchSettings.mockResolvedValue(withCount())
+    unsetSetting.mockResolvedValue(withCount())
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Retry count' })
+    fireEvent.change(within(r).getByRole('spinbutton'), { target: { value: '' } })
+    fireEvent.click(within(r).getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(unsetSetting).toHaveBeenCalledWith('test.count', 'project'))
+  })
+  it('não inteiro é recusado no cliente, sem escrita', async () => {
+    fetchSettings.mockResolvedValue(withCount())
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Retry count' })
+    fireEvent.change(within(r).getByRole('spinbutton'), { target: { value: '2.5' } })
+    fireEvent.click(within(r).getByRole('button', { name: 'Salvar' }))
+    expect(putSetting).not.toHaveBeenCalled()
+    expect(await within(r).findByRole('alert')).toBeInTheDocument()
   })
 })
