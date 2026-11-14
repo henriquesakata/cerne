@@ -36,7 +36,10 @@ jobs:
       # The workflow token cannot write to another repository: HOMEBREW_TAP_TOKEN
       # is a fine-grained token with contents:write on henriquesakata/homebrew-tap
       # only. Without it the job fails, so a stale tap never passes in silence.
-      - name: update the Homebrew tap
+      # A prerelease tag (v1.0.0-rc.1) leaves the tap alone: brew users get
+      # stable releases only.
+      - name: check the Homebrew tap token
+        if: ${{ !contains(github.ref_name, '-') }}
         env:
           TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
@@ -44,11 +47,18 @@ jobs:
             echo "::error::HOMEBREW_TAP_TOKEN is not set: the release is published, but the Homebrew tap still installs the previous version"
             exit 1
           fi
-          tap="$RUNNER_TEMP/homebrew-tap"
-          git clone -q "https://x-access-token:${TAP_TOKEN}@github.com/henriquesakata/homebrew-tap.git" "$tap"
-          mkdir -p "$tap/Formula"
-          sh scripts/homebrew-formula.sh "$GITHUB_REF_NAME" dist/SHA256SUMS >"$tap/Formula/cerne.rb"
-          cd "$tap"
+      - uses: actions/checkout@v4
+        if: ${{ !contains(github.ref_name, '-') }}
+        with:
+          repository: henriquesakata/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+      - name: update the Homebrew tap
+        if: ${{ !contains(github.ref_name, '-') }}
+        run: |
+          mkdir -p homebrew-tap/Formula
+          sh scripts/homebrew-formula.sh "$GITHUB_REF_NAME" dist/SHA256SUMS >homebrew-tap/Formula/cerne.rb
+          cd homebrew-tap
           git add Formula/cerne.rb
           # A re-run on the same tag has nothing to commit.
           git diff --cached --quiet || git -c user.name='github-actions[bot]' \
@@ -60,6 +70,9 @@ jobs:
   # binary reports the tag (cerne --version prints MAJOR.MINOR).
   brew-check:
     needs: release
+    if: ${{ !contains(github.ref_name, '-') }}
+    permissions:
+      contents: read
     strategy:
       matrix:
         os: [macos-latest, ubuntu-latest]
@@ -80,3 +93,13 @@ jobs:
             echo "::error::brew installed '$got', want '$want'"
             exit 1
           fi
+
+  # The README's commands against the release just published, on Linux and
+  # Windows (quickstart.yml).
+  quickstart:
+    needs: release
+    permissions:
+      contents: read
+    uses: ./.github/workflows/quickstart.yml
+    with:
+      tag: ${{ github.ref_name }}
