@@ -27,6 +27,7 @@ import CommandProposal, { CopyCommands, ToolRuns } from './CommandProposal'
 import Markdown from './Markdown'
 import NoteProposal from './NoteProposal'
 import ProposalDraft from './ProposalDraft'
+import QuestionCard from './QuestionCard'
 import ConversationList from './ConversationList'
 import { useT } from './i18n'
 import type { Conversation } from './useBacklogChats'
@@ -41,6 +42,8 @@ const NOTE_FENCE = 'cerne-nota'
 // Diferente dos outros dois, aqui a confirmação não grava nada por si: ela
 // devolve o turno ao agente, agora com as ferramentas de escrita liberadas.
 const COMMAND_FENCE = 'cerne-comando'
+// QUESTION_FENCE (F-0437): perguntas de decisão de produto, um cartão cada.
+const QUESTION_FENCE = 'cerne-pergunta'
 
 // ParsedProposal is what the agent's reply carries when it is ready for
 // confirmation: a fenced ```cerne-proposta block whose first line is "#
@@ -160,8 +163,98 @@ function parseFenced(reply: string, fence: string): ParsedProposal | null {
 // repeti-la no scroll enterraria a condução da conversa. O bloco de nota
 // (F-0249) sai pelo mesmo motivo — ele é renderizado como card. Mensagem sem
 // bloco volta intacta.
+// Question (F-0437) é um bloco ```cerne-pergunta válido: a pergunta, de uma a
+// quatro opções e exatamente uma recomendada. A recomendada termina em
+// "(recomendada)" no prompt pt-BR e "(recommended)" no inglês.
+export type Question = { question: string; options: { label: string; consequence: string; recommended: boolean }[] }
+
+const RECOMMENDED_MARK = /\s*\((?:recomendada|recommended)\)\s*$/i
+const OPTION_LINE = /^[-*]\s+(.+)$/
+
+function parseQuestionBlock(block: string): Question | null {
+  const p = parseFenced(block, QUESTION_FENCE)
+  if (!p || !p.title) return null
+  const options = p.body
+    .split('\n')
+    .map((l) => OPTION_LINE.exec(l.trim())?.[1])
+    .filter((l): l is string => !!l)
+    .map((l) => {
+      const recommended = RECOMMENDED_MARK.test(l)
+      const [label, ...rest] = l.replace(RECOMMENDED_MARK, '').split(' — ')
+      return { label: label.trim(), consequence: rest.join(' — ').trim(), recommended }
+    })
+  if (options.length < 2 || options.length > 4 || options.filter((o) => o.recommended).length !== 1) return null
+  return { question: p.title, options }
+}
+
+// questionBlocks percorre a resposta bloco a bloco: cada cerne-pergunta é uma
+// decisão. Os mal formados não entram — a prosa os mantém como texto
+// (critério 6).
+function questionBlocks(raw: string): { q: Question; start: number; end: number }[] {
+  // CRLF would hide the closing fence from findFence's line anchor; the
+  // normalized text is only ever displayed or parsed, never written back.
+  const reply = raw.replace(/\r\n/g, '\n')
+  // A question block inside a proposal/note is spec content, not a question.
+  const inside = [PROPOSAL_FENCE, NOTE_FENCE]
+    .map((fence) => findFence(reply, fence))
+    .filter((f): f is NonNullable<typeof f> => f !== null)
+  const found: { q: Question; start: number; end: number }[] = []
+  let pos = 0
+  for (;;) {
+    const f = findFence(reply.slice(pos), QUESTION_FENCE)
+    if (!f) break
+    const start = pos + f.open
+    const end = pos + (f.endOfClose < 0 ? reply.length - pos : f.endOfClose + 1)
+    const q = parseQuestionBlock(reply.slice(start, end))
+    if (q && !inside.some((s) => start >= s.open && start < (s.endOfClose < 0 ? reply.length : s.endOfClose))) {
+      found.push({ q, start, end })
+    }
+    pos = end
+  }
+  return found
+}
+
+export function parseQuestions(reply: string): Question[] {
+  return questionBlocks(reply).map((b) => b.q)
+}
+
+// answerTo finds the user turn that answered `question` after message `from`:
+// the card is derived from the transcript, so nothing extra is stored.
+function answerTo(messages: ChatMsg[], from: number, question: string, nth: number): string | undefined {
+  const prefix = `**${question}** →`
+  // The window ends at the next assistant turn: a later re-ask has its own answer.
+  const rest = messages.slice(from + 1)
+  const stop = rest.findIndex((m) => m.role === 'assistant')
+  return (stop < 0 ? rest : rest.slice(0, stop)).filter((m) => m.role === 'user' && m.content.startsWith(prefix))[nth]?.content
+}
+
+// UserTurn renders a user bubble as plain text — except the card's answer turn
+// "**<question>** → <rest>", whose question shows in weight 600 without the
+// asterisks (the stored text is unchanged: answerTo reads it).
+const ANSWER_TURN = /^\*\*(.+?)\*\* → (.+)$/s
+
+function UserTurn({ text }: { text: string }) {
+  const m = ANSWER_TURN.exec(text)
+  if (!m) return <p>{text}</p>
+  return (
+    <p>
+      <strong>{m[1]}</strong>
+      {' → '}
+      {m[2]}
+    </p>
+  )
+}
+
+function stripQuestions(raw: string): string {
+  const blocks = questionBlocks(raw)
+  if (blocks.length === 0) return raw
+  let out = raw.replace(/\r\n/g, '\n')
+  for (const b of blocks.reverse()) out = out.slice(0, b.start) + out.slice(b.end)
+  return out.trim()
+}
+
 export function stripProposalFence(reply: string): string {
-  return stripFence(stripFence(stripFence(reply, PROPOSAL_FENCE), NOTE_FENCE), COMMAND_FENCE)
+  return stripQuestions(stripFence(stripFence(stripFence(reply, PROPOSAL_FENCE), NOTE_FENCE), COMMAND_FENCE))
 }
 
 // turnSourceHref (F-0436) leva à página da entidade pelo prefixo do id; um
@@ -931,6 +1024,16 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
     })
   }
 
+  // answerQuestion (F-0437): the card's choice is a plain user turn — no new
+  // state, no new request; the composer text is left alone.
+  const answerQuestion = (content: string) => {
+    if (busy) return
+    const next = [...messages, { role: 'user' as const, content }]
+    setMessages(next)
+    sendMessages(next)
+    onUpdate({ messages: next })
+  }
+
   const submitMessage = () => {
     const content = input.trim()
     if (content === '' || busy) return
@@ -1151,6 +1254,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
       <div className="backlog-chat-history" ref={historyRef} onScroll={onHistoryScroll}>
         {messages.length === 0 && <p className="muted">{t.backlogChat.intro}</p>}
         {messages.map((m, i) => {
+          const lastAssistant = messages.map((x) => x.role).lastIndexOf('assistant')
           const version = versionByMessage.get(i)
           const note = m.role === 'assistant' ? parseNote(m.content) : null
           // F-0260: o card de comandos só vale na ÚLTIMA mensagem. Um eco antigo
@@ -1162,7 +1266,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
           const commands = fenced && !m.noExec && i === messages.length - 1 ? fenced : null
           return (
             <div key={i} className={`backlog-chat-msg backlog-chat-msg-${m.role}`}>
-              {m.role !== 'assistant' && <p>{m.content}</p>}
+              {m.role !== 'assistant' && <UserTurn text={m.content} />}
               {/* F-0255 critério 1: a mensagem que traz proposta mostra só a
                   condução em volta e uma referência ao painel — a spec inteira
                   no scroll enterrava a conversa a cada revisão. */}
@@ -1181,6 +1285,18 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
                       onQuote={appendQuote}
                     />
                   )}
+                  {parseQuestions(m.content).map((q, k, all) => (
+                    <QuestionCard
+                      key={`${i}-${k}`}
+                      q={q}
+                      index={k + 1}
+                      total={all.length}
+                      answer={answerTo(messages, i, q.question, all.slice(0, k).filter((x) => x.question === q.question).length)}
+                      busy={busy}
+                      stale={i !== lastAssistant}
+                      onAnswer={answerQuestion}
+                    />
+                  ))}
                   {commands && (
                     <CommandProposal commands={commands} busy={busy} bound={cardBound} onConfirm={confirmCommands} />
                   )}

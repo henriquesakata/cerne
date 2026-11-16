@@ -584,6 +584,20 @@ const ptBR = {
     confirmed: 'Confirmado: execute os comandos que você propôs e me diga o resultado real (os ids que o cerne devolveu).',
     noExecHint: 'Este modo não executa comandos: copie e rode no seu terminal.',
   },
+  // F-0437: cartão de pergunta do analista. As três origens vão no turno do
+  // usuário que o analista lê — ficam na língua da interface.
+  questionCard: {
+    title: (n: number, total: number) => `Pergunta ${n} de ${total}`,
+    answered: ' · Respondida',
+    unanswered: ' · sem resposta',
+    yourAnswer: 'Sua resposta',
+    recommended: 'Recomendada',
+    other: 'Outra resposta',
+    send: 'Responder',
+    accepted: 'recomendação aceita',
+    otherOption: 'outra opção',
+    free: 'resposta livre',
+  },
   toolRuns: {
     title: 'Execuções',
     ok: (id: string) => `✓ ${id}`,
@@ -1917,6 +1931,19 @@ const en: Messages = {
     run: 'Run',
     confirmed: 'Confirmed: run the commands you proposed and report the real outcome (the ids cerne returned).',
     noExecHint: 'This mode cannot run commands: copy them and run them in your terminal.',
+  },
+  // F-0437: the analyst's question card.
+  questionCard: {
+    title: (n: number, total: number) => `Question ${n} of ${total}`,
+    answered: ' · Answered',
+    unanswered: ' · not answered',
+    yourAnswer: 'Your answer',
+    recommended: 'Recommended',
+    other: 'Other answer',
+    send: 'Answer',
+    accepted: 'recommendation accepted',
+    otherOption: 'other option',
+    free: 'free answer',
   },
   toolRuns: {
     title: 'Runs',
