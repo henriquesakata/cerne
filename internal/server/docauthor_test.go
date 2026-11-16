@@ -72,7 +72,7 @@ func TestChatRegisterRecordsLLMConfig(t *testing.T) {
 		t.Fatalf("chat create = %v, want llm-config anthropic/claude-chosen", p)
 	}
 	rec = doJSON(t, h, http.MethodPost, "/api/chat/register",
-		`{"feature_id":"F-0002","spec_body":"# Exportar CSV\n\n## Problema\nFalta exportação e importação.\n"}`, &map[string]any{})
+		`{"feature_id":"F-0002","spec_body":"# Exportar CSV\n\n## Problema\nFalta exportação e importação.\n\n## Problema\n\nX.\n\n## Objetivo e critérios de aceitação\n\nX.\n\n## Decisões do design\n\nX.\n\n## Desenho\n\nX.\n\n## Verificação\n\nX.\n\n## Execução recomendada (agente)\n\nX.\n\n## Fora de escopo\n\nX.\n"}`, &map[string]any{})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("refine = %d %s", rec.Code, rec.Body.String())
 	}

@@ -824,7 +824,7 @@ func TestChatRegisterUpdate(t *testing.T) {
 		Feature store.Feature `json:"feature"`
 	}
 	rec := doJSON(t, New(repoDir, projDir, "proj-chat-upd"), http.MethodPost, "/api/chat/register",
-		`{"feature_id":"F-0001","title":"Feature A","spec_body":"## Problema\n\nVersão nova.\n"}`, &got)
+		`{"feature_id":"F-0001","title":"Feature A","spec_body":"## Problema\n\nVersão nova.\n\n## Problema\n\nX.\n\n## Objetivo e critérios de aceitação\n\nX.\n\n## Decisões do design\n\nX.\n\n## Desenho\n\nX.\n\n## Verificação\n\nX.\n\n## Execução recomendada (agente)\n\nX.\n\n## Fora de escopo\n\nX.\n"}`, &got)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
 	}
@@ -857,7 +857,7 @@ func TestChatRegisterUpdateIdenticalIsNoOp(t *testing.T) {
 	repoDir, projDir, origin := newGitBackend(t)
 	seedSpec(t, repoDir, "F-0001", "## Problema\n\nVersão antiga.\n")
 	h := New(repoDir, projDir, "proj-chat-upd-same")
-	const req = `{"feature_id":"F-0001","title":"Feature A","spec_body":"## Problema\n\nVersão nova.\n"}`
+	const req = `{"feature_id":"F-0001","title":"Feature A","spec_body":"## Problema\n\nVersão nova.\n\n## Problema\n\nX.\n\n## Objetivo e critérios de aceitação\n\nX.\n\n## Decisões do design\n\nX.\n\n## Desenho\n\nX.\n\n## Verificação\n\nX.\n\n## Execução recomendada (agente)\n\nX.\n\n## Fora de escopo\n\nX.\n"}`
 	type resp struct {
 		Feature   store.Feature `json:"feature"`
 		Warning   string        `json:"warning"`
@@ -894,12 +894,12 @@ func TestChatRegisterUpdateRefusals(t *testing.T) {
 
 	var got map[string]string
 	rec := doJSON(t, h, http.MethodPost, "/api/chat/register",
-		`{"feature_id":"F-9999","title":"X","spec_body":"## Problema\n\nX.\n"}`, &got)
+		`{"feature_id":"F-9999","title":"X","spec_body":"## Problema\n\nX.\n\n## Problema\n\nX.\n\n## Objetivo e critérios de aceitação\n\nX.\n\n## Decisões do design\n\nX.\n\n## Desenho\n\nX.\n\n## Verificação\n\nX.\n\n## Execução recomendada (agente)\n\nX.\n\n## Fora de escopo\n\nX.\n"}`, &got)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("unknown id status = %d, want 404; body: %s", rec.Code, rec.Body.String())
 	}
 	rec = doJSON(t, h, http.MethodPost, "/api/chat/register",
-		`{"feature_id":"F-0002","title":"Em desenvolvimento","spec_body":"## Problema\n\nBurlado.\n"}`, &got)
+		`{"feature_id":"F-0002","title":"Em desenvolvimento","spec_body":"## Problema\n\nBurlado.\n\n## Problema\n\nX.\n\n## Objetivo e critérios de aceitação\n\nX.\n\n## Decisões do design\n\nX.\n\n## Desenho\n\nX.\n\n## Verificação\n\nX.\n\n## Execução recomendada (agente)\n\nX.\n\n## Fora de escopo\n\nX.\n"}`, &got)
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("in_development status = %d, want 422; body: %s", rec.Code, rec.Body.String())
 	}
@@ -916,21 +916,21 @@ func TestChatRegisterUpdateRefusals(t *testing.T) {
 		Error string `json:"error"`
 	}
 	rec = doJSON(t, h, http.MethodPost, "/api/chat/register",
-		`{"feature_id":"F-0003","title":"Candidata","spec_body":"---\ncerne_id: F-0009\n---\n\n## Problema\n\nDe outra.\n"}`, &refused)
+		`{"feature_id":"F-0003","title":"Candidata","spec_body":"---\ncerne_id: F-0009\n---\n\n## Problema\n\nDe outra.\n\n## Problema\n\nX.\n\n## Objetivo e critérios de aceitação\n\nX.\n\n## Decisões do design\n\nX.\n\n## Desenho\n\nX.\n\n## Verificação\n\nX.\n\n## Execução recomendada (agente)\n\nX.\n\n## Fora de escopo\n\nX.\n"}`, &refused)
 	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(refused.Error, `cerne_id "F-0009", not F-0003`) {
 		t.Fatalf("foreign frontmatter status = %d, want 422 naming F-0009; body: %s", rec.Code, rec.Body.String())
 	}
 	// Its own block first does not let another feature's in behind it (C1).
 	rec = doJSON(t, h, http.MethodPost, "/api/chat/register",
-		`{"feature_id":"F-0003","title":"Candidata","spec_body":"---\ncerne_id: F-0003\n---\n\n---\ncerne_id: F-0009\n---\n\n# x\n"}`, &refused)
+		`{"feature_id":"F-0003","title":"Candidata","spec_body":"---\ncerne_id: F-0003\n---\n\n---\ncerne_id: F-0009\n---\n\n# x\n\n## Problema\n\nX.\n\n## Objetivo e critérios de aceitação\n\nX.\n\n## Decisões do design\n\nX.\n\n## Desenho\n\nX.\n\n## Verificação\n\nX.\n\n## Execução recomendada (agente)\n\nX.\n\n## Fora de escopo\n\nX.\n"}`, &refused)
 	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(refused.Error, `cerne_id "F-0009", not F-0003`) {
 		t.Fatalf("second foreign block status = %d, want 422 naming F-0009; body: %s", rec.Code, rec.Body.String())
 	}
 	// A body that is only its frontmatter is empty (critic C5): 422, not a wipe.
 	rec = doJSON(t, h, http.MethodPost, "/api/chat/register",
 		`{"feature_id":"F-0003","title":"Candidata","spec_body":"---\ncerne_id: F-0003\n---\n"}`, &refused)
-	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(refused.Error, "empty body") {
-		t.Fatalf("frontmatter-only status = %d, want 422 empty body; body: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("frontmatter-only status = %d, want 422; body: %s", rec.Code, rec.Body.String())
 	}
 	if spec, _ := os.ReadFile(filepath.Join(repoDir, "content", "features", "F-0003", "spec.md")); !strings.Contains(string(spec), "Original.") || strings.Contains(string(spec), "F-0009") {
 		t.Fatalf("spec.md changed on a refused frontmatter: %q", spec)
@@ -1200,6 +1200,8 @@ func fullSpecBody(title string) string {
 func TestChatRegister_RefusesIncompleteSpec(t *testing.T) {
 	repoDir, projDir, origin := newGitBackend(t)
 	head0, _ := gitback.HeadSHA(origin)
+	local0, _ := gitback.HeadSHA(repoDir)
+	featsBefore := func() int { f, _ := store.LoadAllFeatures(repoDir); return len(f) }()
 	var got struct {
 		Error   string   `json:"error"`
 		Missing []string `json:"missing"`
@@ -1214,5 +1216,40 @@ func TestChatRegister_RefusesIncompleteSpec(t *testing.T) {
 	}
 	if head1, _ := gitback.HeadSHA(origin); head1 != head0 {
 		t.Fatalf("backend gained a commit on a refused registration")
+	}
+	if local1, _ := gitback.HeadSHA(repoDir); local1 != local0 {
+		t.Fatalf("local clone gained a commit on a refused registration")
+	}
+	if feats, _ := store.LoadAllFeatures(repoDir); len(feats) != featsBefore {
+		t.Fatalf("features = %d, want %d: nothing may be written", len(feats), featsBefore)
+	}
+}
+
+// TestChatRegister_RefineRefusesIncompleteSpec (F-0435 crit. 3): a refine reply
+// missing sections is 422 with the list, and the candidate's spec is untouched.
+func TestChatRegister_RefineRefusesIncompleteSpec(t *testing.T) {
+	repoDir, projDir, origin := newGitBackend(t)
+	seedSpec(t, repoDir, "F-0001", fullSpecBody("Feature A"))
+	head0, _ := gitback.HeadSHA(origin)
+	local0, _ := gitback.HeadSHA(repoDir)
+	path := filepath.Join(repoDir, "content", "features", "F-0001", "spec.md")
+	before, _ := os.ReadFile(path)
+	var got struct {
+		Missing []string `json:"missing"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, "proj-chat-ref-inc"), http.MethodPost, "/api/chat/register",
+		`{"feature_id":"F-0001","title":"Feature A","spec_body":"# A\n\n## Problema\n\nX.\n"}`, &got)
+	if rec.Code != http.StatusUnprocessableEntity || len(got.Missing) == 0 {
+		t.Fatalf("status = %d body %s, want 422 with missing", rec.Code, rec.Body.String())
+	}
+	after, _ := os.ReadFile(path)
+	if string(after) != string(before) {
+		t.Fatalf("spec overwritten by a refused refine")
+	}
+	if h, _ := gitback.HeadSHA(origin); h != head0 {
+		t.Fatalf("origin gained a commit")
+	}
+	if l, _ := gitback.HeadSHA(repoDir); l != local0 {
+		t.Fatalf("local clone gained a commit")
 	}
 }
