@@ -255,6 +255,12 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 	defer cancel()
 	prompt := app.BuildChatPrompt(sysPrompt, msgs)
 
+	// F-0438: the proposal block, if any, is checked once the reply is whole —
+	// by the same check the approve and the lint run. Never corrected here.
+	check := func(reply string) []doccheck.Issue {
+		return proposalIssues(reply, store.DocsLanguage(repoDir), !cfg.Gates.GauntletEnabled())
+	}
+
 	// F-0323: the confirmed turn of a function-calling provider executes
 	// through the verb catalog — and only it is offered the tool. Single-shot
 	// (the turn is short, and its terminal line is a valid one-event stream).
@@ -273,14 +279,8 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 		}
 		// C5: a confirmed turn that executed nothing says so — never a silent
 		// success, whatever the reply claims.
-		writeChatLine(w, http.StatusOK, chatResponse{Answered: true, Reply: reply, Runs: runs, NoRuns: len(runs) == 0, Truncated: truncated, Context: injected})
+		writeChatLine(w, http.StatusOK, chatResponse{Answered: true, Reply: reply, Runs: runs, NoRuns: len(runs) == 0, Truncated: truncated, Context: injected, ProposalIssues: check(reply)})
 		return
-	}
-
-	// F-0438: the proposal block, if any, is checked once the reply is whole —
-	// by the same check the approve and the lint run. Never corrected here.
-	check := func(reply string) []doccheck.Issue {
-		return proposalIssues(reply, store.DocsLanguage(repoDir), !cfg.Gates.GauntletEnabled())
 	}
 
 	// F-0240: a provider with the Streamer capability transmits the reply as
@@ -604,37 +604,31 @@ func handleChatNote(w http.ResponseWriter, r *http.Request, repoDir, projDir str
 	writeJSON(w, http.StatusCreated, map[string]store.Note{"note": n})
 }
 
-var (
-	proposalOpenRe     = regexp.MustCompile("(`{3,})" + regexp.QuoteMeta("cerne-proposta"))
-	proposalMetadataRe = regexp.MustCompile(`(?i)^(facet|module|components|capability|parent|feature|informs):`)
-)
+var proposalOpenRe = regexp.MustCompile("(`{3,})cerne-proposta")
 
 // proposalIssues runs doccheck.CheckSpecBody on the spec body of the reply's
-// cerne-proposta block (F-0438); nil when there is no closed block. The fence
-// rule is F-0435's: the block closes on the first bare line of at least as
-// many backticks as opened it, so a three-backtick code block inside a
+// LAST cerne-proposta block — the UI shows the latest revision (F-0438); nil
+// when there is none. An unclosed block is an issue, not a clean pass. The
+// fence rule is F-0435's: the block closes on the first bare line of at least
+// as many backticks as opened it, so a three-backtick code block inside a
 // four-backtick proposal does not cut it short.
 func proposalIssues(reply string, lang doclang.Lang, light bool) []doccheck.Issue {
-	m := proposalOpenRe.FindStringSubmatchIndex(reply)
-	if m == nil {
+	reply = strings.ReplaceAll(reply, "\r\n", "\n")
+	all := proposalOpenRe.FindAllStringSubmatchIndex(reply, -1)
+	if len(all) == 0 {
 		return nil
 	}
+	m := all[len(all)-1]
+	unclosed := []doccheck.Issue{{Code: doccheck.IssueUnclosed, Severity: doccheck.SeverityError, Detail: "the proposal block was never closed"}}
 	nl := strings.IndexByte(reply[m[0]:], '\n')
 	if nl < 0 {
-		return nil
+		return unclosed
 	}
 	rest := reply[m[0]+nl+1:]
 	closer := regexp.MustCompile("(?m)^ {0,3}`{" + strconv.Itoa(m[3]-m[2]) + ",}[ \\t]*$")
 	c := closer.FindStringIndex(rest)
 	if c == nil {
-		return nil
+		return unclosed
 	}
-	lines := strings.Split(strings.TrimSpace(rest[:c[0]]), "\n")
-	if len(lines) > 0 && strings.HasPrefix(lines[0], "# ") {
-		lines = lines[1:] // the title is not the spec body
-	}
-	for len(lines) > 0 && (strings.TrimSpace(lines[0]) == "" || proposalMetadataRe.MatchString(strings.TrimSpace(lines[0]))) {
-		lines = lines[1:]
-	}
-	return doccheck.CheckSpecBody([]byte(strings.Join(lines, "\n")), lang, light)
+	return doccheck.CheckSpecBody([]byte(doccheck.ProposalSpecBody(rest[:c[0]])), lang, light)
 }

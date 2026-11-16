@@ -1494,3 +1494,38 @@ func TestHandleChat_ProposalIssues(t *testing.T) {
 		})
 	}
 }
+
+// TestProposalIssues_Extractor (F-0438): the LAST block is checked (the UI
+// shows the latest revision), CRLF is tolerated, an unclosed block is an
+// issue and a reply with none is clean.
+func TestProposalIssues_Extractor(t *testing.T) {
+	var full strings.Builder
+	for _, h := range doclang.Sections(doclang.Spec, doclang.PT) {
+		full.WriteString("## " + h + "\n\ntexto\n\n")
+	}
+	full.WriteString("Barra: não aplicável (sem comparável) — padrão alternativo: testes\n")
+	bad := proposalReply("## Problema\n\ntexto\n")
+	good := proposalReply(full.String())
+	codes := func(reply string) string {
+		var c []string
+		for _, i := range proposalIssues(reply, doclang.PT, false) {
+			c = append(c, i.Code)
+		}
+		return strings.Join(c, ",")
+	}
+	if got := codes(bad + "\n" + good); got != "" {
+		t.Errorf("a good last block must win over a bad first one: %q", got)
+	}
+	if got := codes(good + "\n" + bad); got != "incomplete-spec,bar-missing" {
+		t.Errorf("a bad last block must win over a good first one: %q", got)
+	}
+	if got := codes(strings.ReplaceAll(good, "\n", "\r\n")); got != "" {
+		t.Errorf("CRLF reply: %q", got)
+	}
+	if got := codes("````cerne-proposta\n# T\n## Problema\n\ntexto\n"); got != "unclosed-proposal" {
+		t.Errorf("unclosed block: %q", got)
+	}
+	if got := codes("sem proposta"); got != "" {
+		t.Errorf("no block: %q", got)
+	}
+}

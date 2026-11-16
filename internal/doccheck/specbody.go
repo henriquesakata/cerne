@@ -2,6 +2,7 @@ package doccheck
 
 import (
 	"errors"
+	"regexp"
 	"strings"
 
 	"github.com/henriquesakata/cerne/internal/clarify"
@@ -18,6 +19,7 @@ const (
 	IssueBarMissing     = "bar-missing"
 	IssueBarMalformed   = "bar-malformed"
 	IssueOpenClarify    = "open-clarification"
+	IssueUnclosed       = "unclosed-proposal" // chat only: the proposal block never closed
 )
 
 // Issue is one finding of CheckSpecBody.
@@ -58,4 +60,21 @@ func CheckBody(body []byte, kind doclang.Kind, lang doclang.Lang, light bool) []
 		out = append(out, Issue{Code: IssueOpenClarify, Severity: SeverityWarning, Detail: q})
 	}
 	return out
+}
+
+var proposalMetadataRe = regexp.MustCompile(`(?i)^(facet|module|components|capability|parent|feature|informs):`)
+
+// ProposalSpecBody is the spec body of a proposal block's inner text: the
+// leading "# title" line and the metadata lines (facet:, module:, …) are the
+// card's, not the spec's. The chat and "cerne spec check" read a draft the
+// same way through it (F-0438).
+func ProposalSpecBody(inner string) string {
+	lines := strings.Split(strings.TrimSpace(strings.ReplaceAll(inner, "\r\n", "\n")), "\n")
+	if len(lines) > 0 && strings.HasPrefix(lines[0], "# ") {
+		lines = lines[1:]
+	}
+	for len(lines) > 0 && (strings.TrimSpace(lines[0]) == "" || proposalMetadataRe.MatchString(strings.TrimSpace(lines[0]))) {
+		lines = lines[1:]
+	}
+	return strings.Join(lines, "\n")
 }
