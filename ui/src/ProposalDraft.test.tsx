@@ -211,8 +211,8 @@ describe('ProposalCard shows issues (F-0438)', () => {
     )
     const alert = screen.getByRole('alert')
     expect(alert).toHaveTextContent('Verificação')
-    expect(alert).toHaveTextContent('no "Barra:" line')
-    expect(alert).toHaveTextContent('qual o limite?')
+    expect(alert).toHaveTextContent(/linha de barra/i)
+    expect(screen.getByText(/qual o limite\?/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /pedir correção/i }))
     expect(onAskFix).toHaveBeenCalledTimes(1)
     const text = onAskFix.mock.calls[0][0] as string
@@ -223,5 +223,33 @@ describe('ProposalCard shows issues (F-0438)', () => {
   it('shows no issue list and no button without issues', () => {
     render(<ProposalDraft revisions={[rev()]} registering={false} onRegister={vi.fn()} onQuote={vi.fn()} />)
     expect(screen.queryByRole('button', { name: /pedir correção/i })).not.toBeInTheDocument()
+  })
+
+  it('warnings alone are a note: no heading, no button', () => {
+    render(
+      <ProposalDraft
+        revisions={[rev()]}
+        registering={false}
+        issues={[issues[2]]}
+        onAskFix={vi.fn()}
+        onRegister={vi.fn()}
+        onQuote={vi.fn()}
+      />,
+    )
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getByText(/qual o limite\?/)).toBeInTheDocument()
+    expect(screen.queryByText(/ainda não passa/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /pedir correção/i })).not.toBeInTheDocument()
+  })
+
+  it('localizes the card text by code while the agent turn keeps the detail', () => {
+    const onAskFix = vi.fn()
+    render(
+      <ProposalDraft revisions={[rev()]} registering={false} issues={[issues[1]]} onAskFix={onAskFix} onRegister={vi.fn()} onQuote={vi.fn()} />,
+    )
+    expect(screen.getByRole('alert')).toHaveTextContent(/linha de barra/i)
+    expect(screen.getByRole('alert')).not.toHaveTextContent('no "Barra:" line')
+    fireEvent.click(screen.getByRole('button', { name: /pedir correção/i }))
+    expect(onAskFix.mock.calls[0][0]).toContain('no "Barra:" line')
   })
 })

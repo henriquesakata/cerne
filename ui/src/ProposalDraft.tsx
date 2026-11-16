@@ -63,6 +63,10 @@ export default function ProposalDraft({
   const [showDiff, setShowDiff] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const { t } = useT()
+  const errors = issues.filter((i) => i.severity === 'error')
+  const warnings = issues.filter((i) => i.severity !== 'error')
+  // Section names and localized text by code; the raw detail stays for the agent turn.
+  const issueLines = (i: ProposalIssue) => (i.missing?.length ? i.missing : [t.proposalDraft.issueLabels[i.code] ?? i.detail])
 
   // Revisão nova chega selecionada: é ela que o usuário acabou de pedir. E
   // chega em DIFF quando há versão anterior — a spec repetida inteira a cada
@@ -171,22 +175,29 @@ export default function ProposalDraft({
           </QuoteComment>
 
           {stale && <p className="proposal-draft-stale">{t.proposalDraft.stale(revisions.length)}</p>}
-          {(missing.length > 0 || issues.length > 0) && (
+          {(missing.length > 0 || errors.length > 0) && (
             <div role="alert" className="form-error proposal-draft-missing">
               <p>{missing.length > 0 ? t.proposalDraft.missingSections : t.proposalDraft.issuesHeading}</p>
               <ul>
-                {[...missing, ...issues.flatMap((i) => (i.missing?.length ? i.missing : [i.detail]))].map((m) => (
-                  <li key={m}>{m}</li>
+                {[...missing, ...errors.flatMap((i) => issueLines(i))].map((m, n) => (
+                  <li key={`${n}-${m}`}>{m}</li>
                 ))}
               </ul>
-              {issues.length > 0 && onAskFix && (
-                <button
-                  type="button"
-                  onClick={() => onAskFix(t.proposalDraft.fixRequest(issues.map((i) => `- ${i.detail}`).join('\n')))}
-                >
+              {errors.length > 0 && onAskFix && (
+                <button type="button" onClick={() => onAskFix(t.proposalDraft.fixRequest(issues.map((i) => `- ${i.detail}`).join('\n')))}>
                   {t.proposalDraft.askFix}
                 </button>
               )}
+            </div>
+          )}
+          {warnings.length > 0 && (
+            <div className="proposal-draft-note">
+              <p>{t.proposalDraft.warningsNote}</p>
+              <ul>
+                {warnings.map((w, n) => (
+                  <li key={`${n}-${w.detail}`}>{w.detail}</li>
+                ))}
+              </ul>
             </div>
           )}
           {refining && approvedTarget && <p className="form-error">{t.proposalDraft.approvedTarget}</p>}

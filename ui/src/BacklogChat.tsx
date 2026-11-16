@@ -983,7 +983,10 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
 
   // F-0438: o cartão mostra os achados da conferência da última versão — a
   // mensagem que a carrega é a do msgIndex da revisão mais nova.
-  const latestIssues = messages[revisions[revisions.length - 1]?.msgIndex]?.proposalIssues ?? []
+  const lastRevision = revisions[revisions.length - 1]
+  const lastAssistant = messages.map((m) => m.role).lastIndexOf('assistant')
+  // A later reply with no proposal makes the issues stale: the card hides them.
+  const latestIssues = lastRevision && lastRevision.msgIndex === lastAssistant ? (messages[lastRevision.msgIndex].proposalIssues ?? []) : []
   // "Pedir correção" é um turno do usuário como outro qualquer.
   const askFix = (content: string) => {
     if (busy) return

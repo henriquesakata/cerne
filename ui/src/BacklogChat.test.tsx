@@ -1,3 +1,4 @@
+import type { ProposalIssue } from './api'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
@@ -1396,5 +1397,50 @@ describe('TurnContextDisclosure (F-0436)', () => {
     renderChat({ messages: [{ role: 'user', content: 'oi' }, { role: 'assistant', content: 'olá' }] })
     expect(screen.getByText('olá')).toBeInTheDocument()
     expect(document.querySelector('details.turn-context')).toBeNull()
+  })
+})
+
+describe('BacklogChat proposal issues (F-0438)', () => {
+  const issues: ProposalIssue[] = [
+    { code: 'bar-missing', severity: 'error', detail: 'no "Barra:" line' },
+    { code: 'open-clarification', severity: 'warning', detail: 'qual o limite?' },
+  ]
+  const send = async (text: string) => {
+    fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: text } })
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+  }
+
+  it('persists the issues on the message, and Pedir correção sends them as a user turn', async () => {
+    streamChat.mockResolvedValueOnce({
+      answered: true,
+      reply: '````cerne-proposta\n# Exportar CSV\n\n## Problema\nFalta.\n````\n',
+      proposal_issues: issues,
+    })
+    const { onUpdate } = renderChat()
+    await send('Oi')
+    fireEvent.click(await screen.findByRole('button', { name: /pedir correção/i }))
+    await waitFor(() => expect(streamChat).toHaveBeenCalledTimes(2))
+    const sent = streamChat.mock.calls[1][0] as { role: string; content: string }[]
+    expect(sent[sent.length - 1].role).toBe('user')
+    expect(sent[sent.length - 1].content).toContain('no "Barra:" line')
+    // the stored message carries them (a reload shows the card with its issues)
+    const stored = JSON.stringify(window.localStorage)
+    expect(stored).toContain('proposalIssues')
+    expect(onUpdate).toHaveBeenCalled()
+  })
+
+  it('a later reply without a proposal clears the stale issues', async () => {
+    streamChat.mockResolvedValueOnce({
+      answered: true,
+      reply: '````cerne-proposta\n# Exportar CSV\n\n## Problema\nFalta.\n````\n',
+      proposal_issues: issues,
+    })
+    renderChat()
+    await send('Oi')
+    await screen.findByRole('button', { name: /pedir correção/i })
+    streamChat.mockResolvedValueOnce({ answered: true, reply: 'Qual formato?' })
+    await send('e agora?')
+    await screen.findByText('Qual formato?')
+    expect(screen.queryByRole('button', { name: /pedir correção/i })).not.toBeInTheDocument()
   })
 })

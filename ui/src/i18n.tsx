@@ -556,6 +556,12 @@ const ptBR = {
     stale: (latest: number) => `Versão antiga: só a v${latest} pode ser registrada.`,
     issuesHeading: 'A proposta ainda não passa na conferência do template — peça a correção ao agente:',
     askFix: 'Pedir correção',
+    issueLabels: {
+      'bar-missing': 'A spec não tem a linha de barra (Barra:).',
+      'bar-malformed': 'A linha de barra está malformada.',
+      'unclosed-proposal': 'O bloco da proposta não foi fechado.',
+    } as Record<string, string>,
+    warningsNote: 'Perguntas em aberto na proposta (não impedem o registro):',
     fixRequest: (lines: string) => `A proposta não passou na conferência do template (cerne spec check). Reemita a spec inteira corrigida:\n${lines}`,
     missingSections: 'A proposta veio incompleta e nada foi gravado. Seções que faltam — peça ao agente para reemitir a spec inteira:',
     approvedTarget:
@@ -1886,6 +1892,12 @@ const en: Messages = {
     stale: (latest: number) => `Older version: only v${latest} can be registered.`,
     issuesHeading: 'The proposal does not pass the template check yet — ask the agent to fix it:',
     askFix: 'Ask for a fix',
+    issueLabels: {
+      'bar-missing': 'The spec has no bar line (Barra:).',
+      'bar-malformed': 'The bar line is malformed.',
+      'unclosed-proposal': 'The proposal block was never closed.',
+    } as Record<string, string>,
+    warningsNote: 'Open questions in the proposal (they do not block registering):',
     fixRequest: (lines: string) => `The proposal failed the template check (cerne spec check). Re-emit the whole spec, corrected:\n${lines}`,
     missingSections: 'The proposal came back incomplete and nothing was written. Missing sections — ask the agent to re-emit the whole spec:',
     approvedTarget:
