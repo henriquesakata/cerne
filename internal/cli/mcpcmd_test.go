@@ -393,3 +393,47 @@ func TestMCPProjectFileSnapshot(t *testing.T) {
 		}
 	}
 }
+
+// TestCodexChatTurnWritesNothing (F-0439 criterion 4): a Codex chat turn gets
+// the project-files server and cerne's read tools. Calling every tool of both
+// leaves the project, the cache (clone and index) and the origin as they were.
+func TestCodexChatTurnWritesNothing(t *testing.T) {
+	projDir, origin, repoDir := mcpFixture(t)
+	if err := os.WriteFile(filepath.Join(projDir, "Stage.yaml"), []byte("sky: sunrise\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, projDir, "init", "-q")
+	gitRun(t, projDir, "add", "Stage.yaml")
+	gitRun(t, projDir, "commit", "-qm", "stage")
+	cache := os.Getenv("CERNE_CACHE_DIR")
+	if cache == "" {
+		t.Fatal("setupProject must isolate CERNE_CACHE_DIR")
+	}
+	proj, cch, clone, orig := treeDigest(t, projDir), treeDigest(t, cache), treeDigest(t, repoDir), gitHead(t, origin)
+	headProj := gitHead(t, projDir)
+
+	cs, _, stop := startMCP(t, projDir)
+	for _, c := range allCalls {
+		callTool(t, cs, c.tool, c.args)
+	}
+	if err := stop(); err != nil {
+		t.Fatalf("cerne mcp: %v", err)
+	}
+	cs, _, stop = startMCP(t, projDir, "--project-files")
+	if got := callTool(t, cs, "find_files", map[string]any{"query": "stage"}); got != "Stage.yaml" {
+		t.Fatalf("find_files = %q", got)
+	}
+	callTool(t, cs, "read_file", map[string]any{"path": "Stage.yaml"})
+	if err := stop(); err != nil {
+		t.Fatalf("cerne mcp --project-files: %v", err)
+	}
+	if treeDigest(t, projDir) != proj || gitHead(t, projDir) != headProj {
+		t.Error("the project changed")
+	}
+	if treeDigest(t, cache) != cch {
+		t.Error("the cache changed")
+	}
+	if treeDigest(t, repoDir) != clone || gitHead(t, origin) != orig {
+		t.Error("the backend clone or origin changed")
+	}
+}
