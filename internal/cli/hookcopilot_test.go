@@ -218,3 +218,33 @@ func TestHookWorkGateCopilotPatchShapes(t *testing.T) {
 		t.Error("empty cwd + process cwd: relative path not gated")
 	}
 }
+
+// TestHookBindWorkCopilotFailureSignal (F-0444 critic item 10): probed on
+// Copilot CLI 1.0.112, a failing shell command still has result_type "success"
+// and says its status as "<shellId: 0 completed with exit code 3>" in
+// text_result_for_llm. A refused `work start` (no "Error" word in its text)
+// must not trigger the unbound warning; a run that exited 0 without the minted
+// id still does.
+func TestHookBindWorkCopilotFailureSignal(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	cmdJSON := `{"command":"cerne work start \"x y z\"","description":"x","mode":"sync","initial_wait":30}`
+	result := func(rt, text string) string {
+		return `,"tool_result":{"result_type":` + jsonString(rt) + `,"text_result_for_llm":` + jsonString(text) + `}`
+	}
+	run := func(extra string) string {
+		out, err := execCerneStdin(t, copilotPayload("sess-f", projDir, "PostToolUse", "Bash", cmdJSON, extra), "hook", "bind-work", "--format", "copilot")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	if out := run(result("success", "cerne: refused, a similar work is already active\n<shellId: 0 completed with exit code 1>")); strings.TrimSpace(out) != "" {
+		t.Errorf("failed start (exit code 1) warned as unbound:\n%s", out)
+	}
+	if out := run(result("failure", "tool failed")); strings.TrimSpace(out) != "" {
+		t.Errorf("failed tool result warned as unbound:\n%s", out)
+	}
+	if out := run(result("success", "ok\n<shellId: 0 completed with exit code 0>")); !strings.Contains(out, "NOT bound") {
+		t.Errorf("a clean run with no minted id must still warn:\n%s", out)
+	}
+}

@@ -209,6 +209,31 @@ func runsCerne(command string, re *regexp.Regexp) bool {
 	return cerneRun(command, re) != ""
 }
 
+// shellExitRe is the status line Copilot appends to a shell tool's result.
+var shellExitRe = regexp.MustCompile(`completed with exit code (\d+)>`)
+
+// toolFailed reports a Bash call that failed: the word "Error" in its response
+// (Claude Code and the others), or — Copilot, probed on 1.0.112, where a failed
+// command still has result_type "success" — a non-zero exit code in
+// text_result_for_llm, or a result_type other than success (F-0444).
+func toolFailed(in hookInput) bool {
+	if strings.Contains(string(in.ToolResponse), "Error") {
+		return true
+	}
+	var r struct {
+		Type string `json:"result_type"`
+		Text string `json:"text_result_for_llm"`
+	}
+	if json.Unmarshal(in.ToolResult, &r) != nil {
+		return false
+	}
+	if r.Type != "" && r.Type != "success" {
+		return true
+	}
+	m := shellExitRe.FindStringSubmatch(r.Text)
+	return m != nil && m[1] != "0"
+}
+
 // cerneRun is the first command of the line that runs the cerne verb re
 // matches, as runsCerne decides it; "" when none.
 func cerneRun(command string, re *regexp.Regexp) string {
@@ -292,7 +317,7 @@ func runHookBindWork(cmd *cobra.Command, format string) {
 			// minted id to bind, and the Edit gate will keep denying. Say so (F-0876).
 			// Only a real, un-helped, un-refused start: a Bash call that merely
 			// MENTIONS "work start" (grep, echo, a commit message) is not one.
-			if runsCerne(ti.Command, cerneStartRe) && !strings.Contains(string(in.ToolResponse), "Error") {
+			if runsCerne(ti.Command, cerneStartRe) && !toolFailed(in) {
 				warnUnbound(cmd, in, format, unboundWorkStart)
 			}
 		}
@@ -301,7 +326,7 @@ func runHookBindWork(cmd *cobra.Command, format string) {
 		// refused take prints no "(active)" and binds nothing (F-0376).
 		if m := workCreatedRe.FindStringSubmatch(string(in.ToolResponse)); m != nil {
 			id = m[1]
-		} else if runsCerne(ti.Command, cerneTakeRe) && !strings.Contains(string(in.ToolResponse), "Error") {
+		} else if runsCerne(ti.Command, cerneTakeRe) && !toolFailed(in) {
 			warnUnbound(cmd, in, format, unboundTake)
 		}
 	case featureStartRe.MatchString(ti.Command):
