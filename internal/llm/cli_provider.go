@@ -448,8 +448,8 @@ func (p *cliProvider) completeCodex(ctx context.Context, prompt string) (string,
 // authErrorRE recognizes a CLI error that a login fixes.
 var authErrorRE = regexp.MustCompile(`(?i)401|unauthori|log(ged)? ?in|sign(ed)? ?in|not authenticated|auth`)
 
-// claudeModelRE is a claude model id or alias (claude-haiku-5-5, opus,
-// sonnet[1m]): a leftover id of another vendor (gpt-4o) or a leading dash never
+// claudeModelRE is a claude model id or alias (claude-<family>-<version>, opus,
+// sonnet[1m]): a leftover id of another vendor (<other-vendor-model>) or a leading dash never
 // reaches `--model` (B-0007).
 var claudeModelRE = regexp.MustCompile(`^(claude-[A-Za-z0-9._-]+|opus|sonnet|haiku)(\[[0-9a-z]+\])?$`)
 
