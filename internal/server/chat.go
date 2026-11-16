@@ -162,7 +162,7 @@ type answeredBy struct {
 	Effort   string `json:"effort,omitempty"`
 }
 
-func turnAnsweredBy(cfg project.LLMConfig) *answeredBy {
+func turnAnsweredBy(cfg project.LLMConfig, prov llm.Provider) *answeredBy {
 	vendors := llm.ConfiguredProviders(cfg)
 	if len(vendors) == 0 {
 		return nil
@@ -170,6 +170,11 @@ func turnAnsweredBy(cfg project.LLMConfig) *answeredBy {
 	by := &answeredBy{Provider: vendors[0]}
 	switch mode := llm.ResolveMode(cfg.Mode); mode {
 	case llm.ModeClaudeCLI:
+		// claude is never passed --model or an effort: only what the CLI itself
+		// reported it ran is named.
+		if r, ok := prov.(interface{ AnsweredModel() string }); ok {
+			by.Model = r.AnsweredModel()
+		}
 	case llm.ModeCodexCLI, llm.ModeGeminiCLI, llm.ModeCursorCLI:
 		if cfg.Provider == "" {
 			by.Model = cfg.Model
@@ -325,7 +330,7 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 		}
 		// C5: a confirmed turn that executed nothing says so — never a silent
 		// success, whatever the reply claims.
-		writeChatLine(w, http.StatusOK, chatResponse{Answered: true, Reply: reply, Runs: runs, NoRuns: len(runs) == 0, Truncated: truncated, Context: injected, ProposalIssues: check(reply), AnsweredBy: turnAnsweredBy(cfg.LLM)})
+		writeChatLine(w, http.StatusOK, chatResponse{Answered: true, Reply: reply, Runs: runs, NoRuns: len(runs) == 0, Truncated: truncated, Context: injected, ProposalIssues: check(reply), AnsweredBy: turnAnsweredBy(cfg.LLM, prov)})
 		return
 	}
 
@@ -336,7 +341,7 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 	// client never needs to know which path ran.
 	if streamer, ok := prov.(llm.Streamer); ok {
 		if flusher, ok := w.(http.Flusher); ok {
-			streamChatReply(ctx, w, flusher, streamer, prompt, !channel, injected, check, turnAnsweredBy(cfg.LLM))
+			streamChatReply(ctx, w, flusher, streamer, prompt, !channel, injected, check, turnAnsweredBy(cfg.LLM, prov))
 			return
 		}
 	}
@@ -345,7 +350,7 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	writeChatLine(w, http.StatusOK, chatResponse{Answered: true, Reply: reply, NoExec: !channel, Context: injected, ProposalIssues: check(reply), AnsweredBy: turnAnsweredBy(cfg.LLM)})
+	writeChatLine(w, http.StatusOK, chatResponse{Answered: true, Reply: reply, NoExec: !channel, Context: injected, ProposalIssues: check(reply), AnsweredBy: turnAnsweredBy(cfg.LLM, prov)})
 }
 
 // lastUserMessage is the retrieval query for the turn (F-0253): the message

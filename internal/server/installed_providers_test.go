@@ -340,3 +340,31 @@ func TestChatReplyNamesWhoAnswered(t *testing.T) {
 	newAgentProvider = func(project.LLMConfig, string, bool) (llm.Provider, error) { return &toolFake{}, nil }
 	check("tool turn", post(`{"messages":[`+confirmedTranscript+`],"conversation_id":"c1","confirm_turn":1,"confirm":true,"provider":"openai","model":"gpt-x","effort":"high"}`))
 }
+
+type reportingFake struct {
+	llm.Fake
+	model string
+}
+
+func (r *reportingFake) AnsweredModel() string { return r.model }
+
+// TestChatClaudeReplyNamesTheModelTheCLIReported (F-0440 criterion 4): a
+// claude-cli turn names the model the CLI reported it ran, not the composer's
+// chip (claude is never passed --model) and no effort it was never given.
+func TestChatClaudeReplyNamesTheModelTheCLIReported(t *testing.T) {
+	t.Setenv("CERNE_CONFIG_DIR", t.TempDir())
+	stubInstalledCLIs(t, "claude")
+	repoDir, projDir := claudeProject(t, "claude-cli", "")
+	orig := newAgentProvider
+	t.Cleanup(func() { newAgentProvider = orig })
+	newAgentProvider = func(project.LLMConfig, string, bool) (llm.Provider, error) {
+		return &reportingFake{llm.Fake{Reply: "ok"}, "claude-opus-5-5"}, nil
+	}
+	var got struct {
+		By *struct{ Provider, Model, Effort string } `json:"answered_by"`
+	}
+	doJSON(t, New(repoDir, projDir, "p"), http.MethodPost, "/api/chat", `{"messages":[{"role":"user","content":"Oi"}],"model":"claude-sonnet-5-5","effort":"medium"}`, &got)
+	if got.By == nil || got.By.Provider != "anthropic" || got.By.Model != "claude-opus-5-5" || got.By.Effort != "" {
+		t.Fatalf("answered_by = %+v, want anthropic / the reported model / no effort", got.By)
+	}
+}

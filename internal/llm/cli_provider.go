@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -234,6 +235,36 @@ type cliProvider struct {
 	dir         string   // working directory for the CLI (project root in agentic mode)
 	agentTools  []string // Claude Code permission rules passed via --allowedTools; nil = one-shot
 	deniedTools []string // permission rules passed via --disallowedTools (secret-file denials, F-0258)
+	answered    string   // the model claude reported for the last agentic turn (F-0440)
+}
+
+// AnsweredModel is the model the CLI itself reported for the last turn, "" when
+// it reported none (F-0440): what the chat shows as the model that really ran.
+func (p *cliProvider) AnsweredModel() string { return p.answered }
+
+// claudeJSON is the part of `claude -p --output-format json` cerne reads.
+type claudeJSON struct {
+	Type       string `json:"type"`
+	Result     string `json:"result"`
+	ModelUsage map[string]struct {
+		OutputTokens int `json:"outputTokens"`
+	} `json:"modelUsage"`
+}
+
+// parseClaudeJSON reads the reply and the busiest model of a JSON result; ok is
+// false for anything else (a CLI that ignored the format), kept as plain text.
+func parseClaudeJSON(out string) (reply, model string, ok bool) {
+	var r claudeJSON
+	if json.Unmarshal([]byte(out), &r) != nil || r.Type != "result" {
+		return "", "", false
+	}
+	best := -1
+	for m, u := range r.ModelUsage {
+		if u.OutputTokens > best || (u.OutputTokens == best && m < model) {
+			best, model = u.OutputTokens, m
+		}
+	}
+	return r.Result, model, true
 }
 
 // oneShotIsolation are the flags that turn `claude -p` back into what the
@@ -302,9 +333,10 @@ func (p *cliProvider) Complete(ctx context.Context, prompt string) (string, erro
 		return p.completeCursor(ctx, prompt)
 	}
 	base := []string{"-p", "--output-format", "text"}
-	args := base
+	args := slices.Clone(base)
 	agentic := len(p.agentTools) > 0
 	if agentic {
+		args[2] = "json" // F-0440: the result carries the model that ran (a copy; base stays text for the old-CLI retry)
 		args = append(args, "--allowedTools", strings.Join(p.agentTools, ","))
 		if len(p.deniedTools) > 0 {
 			args = append(args, "--disallowedTools", strings.Join(p.deniedTools, ","))
@@ -322,6 +354,12 @@ func (p *cliProvider) Complete(ctx context.Context, prompt string) (string, erro
 	}
 	if s := strings.TrimSpace(stderr); agentic && s != "" {
 		log.Printf("claude-cli stderr: %s", truncate([]byte(s), maxOutputBytes))
+	}
+	if agentic {
+		if reply, model, ok := parseClaudeJSON(out); ok {
+			p.answered = model
+			return strings.TrimSpace(reply), nil
+		}
 	}
 	return strings.TrimSpace(out), nil
 }

@@ -299,7 +299,7 @@ func TestAgentProviderAllowlistFlags(t *testing.T) {
 		"Bash(cerne note list:*),Bash(cerne note show:*),Bash(cerne reference list:*),Bash(cerne decision list:*)," +
 		"Bash(cerne idea list:*),Bash(cerne spec check:*)"
 	wantDenied := "Read(.env),Read(.env.*),Read(**/credentials*),Read(**/*.pem),Read(**/*.key)"
-	want := []string{"-p", "--output-format", "text", "--allowedTools", wantList, "--disallowedTools", wantDenied}
+	want := []string{"-p", "--output-format", "json", "--allowedTools", wantList, "--disallowedTools", wantDenied}
 	if !reflect.DeepEqual(gotArgs, want) {
 		t.Fatalf("runner args = %v, want %v", gotArgs, want)
 	}
@@ -1126,5 +1126,31 @@ func TestSwitchedCodexTurnKeepsProjectFilesAndChoices(t *testing.T) {
 	want, _ := json.Marshal([]string{"mcp", "--project-files", "--dir", root})
 	if !slices.Contains(args, "mcp_servers.cerne_project.args="+string(want)) || !slices.Contains(args, "gpt-x") || !slices.Contains(args, `model_reasoning_effort="high"`) {
 		t.Fatalf("codex argv = %v", args)
+	}
+}
+
+// TestAgenticClaudeReportsTheModelThatRan (F-0440 criterion 4): the chat agent
+// asks claude for JSON, returns its result as the reply and remembers the model
+// the CLI reports (the busiest key of modelUsage); a plain-text answer from a
+// CLI that ignored the format is still the reply, with no model claimed.
+func TestAgenticClaudeReportsTheModelThatRan(t *testing.T) {
+	var args []string
+	out := `{"type":"result","is_error":false,"result":" feito ","modelUsage":{"claude-haiku-5":{"outputTokens":3},"claude-opus-5-5":{"outputTokens":40}}}`
+	p := &cliProvider{bin: "claude", dir: "/proj", agentTools: AgentReadTools, run: func(_ context.Context, _, _ string, a []string, _ string) (string, string, error) {
+		args = a
+		return out, "", nil
+	}}
+	got, err := p.Complete(t.Context(), "q")
+	if err != nil || got != "feito" {
+		t.Fatalf("reply = %q, %v", got, err)
+	}
+	if !slices.Contains(args, "json") || p.AnsweredModel() != "claude-opus-5-5" {
+		t.Fatalf("argv %v, model %q", args, p.AnsweredModel())
+	}
+	plain := &cliProvider{bin: "claude", dir: "/proj", agentTools: AgentReadTools, run: func(context.Context, string, string, []string, string) (string, string, error) {
+		return "so texto", "", nil
+	}}
+	if got, _ := plain.Complete(t.Context(), "q"); got != "so texto" || plain.AnsweredModel() != "" {
+		t.Fatalf("plain = %q model %q", got, plain.AnsweredModel())
 	}
 }
