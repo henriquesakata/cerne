@@ -535,6 +535,10 @@ const ptBR = {
   },
   turnContext: {
     label: (n: number) => `Contexto deste turno (${n})`,
+    caption: 'Injetado pelo cerne neste turno',
+    retrieved: (n: number) => `Recuperado para esta mensagem (${n})`,
+    decision: (n: number) => `Decisões ativas (${n})`,
+    convention: (n: number) => `Convenções (${n})`,
   },
   quoteComment: {
     title: 'Comentar trecho',
@@ -1858,6 +1862,10 @@ const en: Messages = {
   },
   turnContext: {
     label: (n: number) => `This turn's context (${n})`,
+    caption: 'Injected by cerne this turn',
+    retrieved: (n: number) => `Retrieved for this message (${n})`,
+    decision: (n: number) => `Active decisions (${n})`,
+    convention: (n: number) => `Conventions (${n})`,
   },
   quoteComment: {
     title: 'Comment on excerpt',

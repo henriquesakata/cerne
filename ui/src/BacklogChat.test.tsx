@@ -1333,7 +1333,28 @@ describe('TurnContextDisclosure (F-0436)', () => {
     expect(screen.getByText('Contexto deste turno (2)')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'D-0001' })).toHaveAttribute('href', '#/d/D-0001')
     expect(screen.getByRole('link', { name: 'F-0001' })).toHaveAttribute('href', '#/f/F-0001')
-    expect(container.textContent).toContain('[implemented]')
+    expect(container.textContent).toContain('· Pronta')
+    expect(container.textContent).not.toContain('Ativa')
+  })
+
+  it('critério 2: grupos por tipo na ordem recuperadas, decisões, convenções, com contagem e legenda', () => {
+    cleanup()
+    const { container } = render(
+      <TurnContextDisclosure
+        sources={[
+          { id: 'D-0001', title: 'D', kind: 'decision' as const, state: 'active' },
+          { id: 'N-0001', title: 'N', kind: 'convention' as const, state: 'active' },
+          { id: 'F-0001', title: 'A', kind: 'retrieved' as const, state: 'implemented' },
+          { id: 'F-0002', title: 'B', kind: 'retrieved' as const, state: 'implemented' },
+        ]}
+      />,
+    )
+    expect(screen.getByText('Injetado pelo cerne neste turno')).toBeInTheDocument()
+    const labels = [...container.querySelectorAll('.turn-context-group, .turn-context-group-details > summary')].map((e) => e.textContent)
+    expect(labels).toEqual(['Recuperado para esta mensagem (2)', 'Decisões ativas (1)', 'Convenções (1)'])
+    const ids = [...container.querySelectorAll('.turn-context a')].map((e) => e.textContent)
+    expect(ids).toEqual(['F-0001', 'F-0002', 'D-0001', 'N-0001'])
+    expect(container.querySelectorAll('.turn-context-group-details[open]')).toHaveLength(0)
   })
 
   it('critério 2: cada prefixo vai à rota do roteador; tipo desconhecido vira texto', () => {
