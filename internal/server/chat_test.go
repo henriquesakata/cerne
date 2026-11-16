@@ -1189,6 +1189,7 @@ func TestChatSubscriptionCLIsDegradeLikeNoFunctionCalling(t *testing.T) {
 
 func TestCodexChatProjectFilesLocalOnly(t *testing.T) {
 	repo, dir, _ := newGitBackend(t)
+	commitProject(t, dir)
 	if err := project.SaveConfig(dir, project.Config{ProjectID: "test", Backend: "unused", LLM: project.LLMConfig{Mode: llm.ModeCodexCLI}}); err != nil {
 		t.Fatal(err)
 	}
@@ -1196,9 +1197,11 @@ func TestCodexChatProjectFilesLocalOnly(t *testing.T) {
 	t.Cleanup(func() { newAgentProvider = orig })
 	for _, remote := range []bool{false, true} {
 		fake := &llm.Fake{Reply: "ok"}
+		var gotRoot = "unset"
 		newAgentProvider = func(_ project.LLMConfig, root string, write bool) (llm.Provider, error) {
-			if (remote && root != "") || (!remote && root != dir) || write {
-				t.Fatalf("remote=%v root=%q write=%v", remote, root, write)
+			gotRoot = root
+			if write {
+				t.Fatalf("remote=%v write=%v", remote, write)
 			}
 			return fake, nil
 		}
@@ -1207,9 +1210,39 @@ func TestCodexChatProjectFilesLocalOnly(t *testing.T) {
 		req = req.WithContext(context.WithValue(req.Context(), remoteKey{}, remote))
 		rec := httptest.NewRecorder()
 		handleChat(rec, req, repo, dir, "test")
-		if rec.Code != 200 || len(fake.Prompts) != 1 || strings.Contains(fake.Prompts[0], app.ChatCodexLiveQuery) == remote {
-			t.Fatalf("remote=%v: %d %s", remote, rec.Code, rec.Body.String())
+		// The provider decides the argv from this root: empty means no MCP.
+		wantRoot := dir
+		if remote {
+			wantRoot = ""
 		}
+		if rec.Code != 200 || len(fake.Prompts) != 1 || gotRoot != wantRoot || strings.Contains(fake.Prompts[0], app.ChatCodexLiveQuery) == remote {
+			t.Fatalf("remote=%v: %d root=%q %s", remote, rec.Code, gotRoot, rec.Body.String())
+		}
+	}
+}
+
+// F-0439: a project without a commit has nothing for the files server to read,
+// so the turn gets no MCP root and no live-query block — the same answer the
+// live_query flag gives.
+func TestCodexChatWithoutCommitHasNoLiveQuery(t *testing.T) {
+	repo, dir, _ := newGitBackend(t)
+	if err := project.SaveConfig(dir, project.Config{ProjectID: "test", Backend: "unused", LLM: project.LLMConfig{Mode: llm.ModeCodexCLI}}); err != nil {
+		t.Fatal(err)
+	}
+	orig := newAgentProvider
+	t.Cleanup(func() { newAgentProvider = orig })
+	fake := &llm.Fake{Reply: "ok"}
+	gotRoot := "unset"
+	newAgentProvider = func(_ project.LLMConfig, root string, _ bool) (llm.Provider, error) {
+		gotRoot = root
+		return fake, nil
+	}
+	req := httptest.NewRequest("POST", "/api/chat", strings.NewReader(`{"messages":[{"role":"user","content":"stage?"}]}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handleChat(rec, req, repo, dir, "test")
+	if rec.Code != 200 || len(fake.Prompts) != 1 || gotRoot != "" || strings.Contains(fake.Prompts[0], app.ChatCodexLiveQuery) {
+		t.Fatalf("%d root=%q %s", rec.Code, gotRoot, rec.Body.String())
 	}
 }
 

@@ -264,7 +264,8 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 	remote := servedRemotely(r)
 	agentDir := projDir
 	codexFiles := llm.ResolveMode(cfg.LLM.Mode) == llm.ModeCodexCLI
-	if remote && codexFiles {
+	liveCodex := codexLiveQuery(projDir, llm.ResolveMode(cfg.LLM.Mode), remote)
+	if codexFiles && !liveCodex {
 		agentDir = ""
 	}
 	prov, err := newAgentProvider(cfg.LLM, agentDir, confirmed && !remote)
@@ -279,7 +280,7 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	if codexFiles && agentDir != "" {
+	if liveCodex {
 		sysPrompt += app.ChatCodexLiveQuery
 	}
 

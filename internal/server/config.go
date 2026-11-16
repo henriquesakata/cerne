@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/henriquesakata/cerne/internal/gitback"
 	"io/fs"
 	"net/http"
 	"slices"
@@ -120,7 +121,7 @@ func llmConfig(cfg project.LLMConfig, remote bool) llmConfigResponse {
 		}
 	}
 	resp := llmConfigResponse{
-		Mode: mode, Models: cat.Entries, DefaultModel: cat.DefaultModel, LiveQuery: mode == llm.ModeClaudeCLI || (mode == llm.ModeCodexCLI && !remote),
+		Mode: mode, Models: cat.Entries, DefaultModel: cat.DefaultModel, LiveQuery: mode == llm.ModeClaudeCLI,
 		Providers: reachableProviders(cfg, remote), PreferredProvider: cat.PreferredProvider,
 		Source: source, Provider: eff.Provider, Model: model, BaseURL: eff.BaseURL,
 	}
@@ -204,7 +205,21 @@ func handleLLMConfigGet(w http.ResponseWriter, r *http.Request, projDir string) 
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	writeJSON(w, http.StatusOK, llmConfig(cfg.LLM, remote))
+	resp := llmConfig(cfg.LLM, remote)
+	resp.LiveQuery = resp.LiveQuery || codexLiveQuery(projDir, resp.Mode, remote)
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// codexLiveQuery is the one answer to "does this codex-cli chat turn read the
+// project": local, and the project has a commit for the files server to serve.
+// The live_query flag, the MCP root and the prompt block all come from it, so
+// the UI never promises what the turn lacks (F-0439).
+func codexLiveQuery(projDir, mode string, remote bool) bool {
+	if mode != llm.ModeCodexCLI || remote {
+		return false
+	}
+	_, err := gitback.ProjectTree(projDir)
+	return err == nil
 }
 
 // handleLLMConfigPut sets the [llm] mode in .cernerc, preserving every other

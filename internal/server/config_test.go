@@ -2,9 +2,13 @@ package server
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -367,13 +371,49 @@ func TestLLMConfigCodexServesCLIModels(t *testing.T) {
 }
 
 // TestLLMConfigGetLiveQueryCodex (F-0439 criterion 3): the local codex-cli chat
-// consults live; the remote serve does not, in any mode.
+// consults live only where the turn really has the tools — a project with a
+// commit, served locally. The remote serve and a project without a commit
+// (nothing for the files server to read) get false, so the UI never promises
+// what the prompt does not carry.
 func TestLLMConfigGetLiveQueryCodex(t *testing.T) {
-	cfg := project.LLMConfig{Mode: "codex-cli"}
-	if !llmConfig(cfg, false).LiveQuery || llmConfig(cfg, true).LiveQuery {
-		t.Fatal("live_query must be true for local codex-cli and false for the remote serve")
+	for _, tt := range []struct {
+		name   string
+		commit bool
+		remote bool
+		want   bool
+	}{{"local with commit", true, false, true}, {"remote", true, true, false}, {"local without commit", false, false, false}} {
+		_, projDir, _ := newGitBackend(t)
+		if tt.commit {
+			commitProject(t, projDir)
+		}
+		if err := project.SaveConfig(projDir, project.Config{ProjectID: "p", Backend: "b", LLM: project.LLMConfig{Mode: "codex-cli"}}); err != nil {
+			t.Fatal(err)
+		}
+		var got struct {
+			LiveQuery bool `json:"live_query"`
+		}
+		req := httptest.NewRequest(http.MethodGet, "/api/config/llm", nil)
+		req = req.WithContext(context.WithValue(req.Context(), remoteKey{}, tt.remote))
+		rec := httptest.NewRecorder()
+		handleLLMConfigGet(rec, req, projDir)
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || got.LiveQuery != tt.want {
+			t.Errorf("%s: live_query = %v (%v), want %v", tt.name, got.LiveQuery, err, tt.want)
+		}
 	}
-	if llmConfig(project.LLMConfig{Mode: "claude-cli"}, true).LiveQuery != true {
-		t.Fatal("claude-cli live_query is unchanged")
+}
+
+// commitProject makes dir a git project with one commit, what the codex chat's
+// files server reads.
+func commitProject(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, "Stage.yaml"), []byte("sky: sunrise\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"init", "-q"}, {"add", "."}, {"-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "c"}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
 	}
 }
