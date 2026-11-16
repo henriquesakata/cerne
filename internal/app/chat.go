@@ -6,10 +6,10 @@ import (
 	"os"
 	"strings"
 
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/llm"
 	"github.com/henriquesakata/cerne/internal/project"
-	"github.com/henriquesakata/cerne/internal/spectmpl"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -87,6 +87,34 @@ ou a linha "Barra: dispensada por decisão humana (<citação curta da fala que 
 
 Você nunca sugere a dispensa — ela só nasce de recusa espontânea do humano, e a citação registrada é o que a distingue de esquecimento. A ausência silenciosa de barra nunca é aceitável; a dispensa registrada é.`
 
+// gauntletContractIn is GauntletContract with the protocol forms of the
+// project's documentation language (F-0433). The prose stays Portuguese (N-0068
+// debt); only the forms an author writes into the document change, so the spec
+// the model emits teaches the reader the project's own protocol.
+func gauntletContractIn(l doclang.Lang) string {
+	if l != doclang.EN {
+		return GauntletContract
+	}
+	return englishGauntlet.Replace(GauntletContract)
+}
+
+// chatEnglishDirective is the shared directive minus its "never [ESCLARECER: …]"
+// aside: a draft prompt still teaches the Portuguese marker above it, so the
+// aside is a correction there; the chat prompt teaches none, and naming the
+// Portuguese form would put it back in the prompt (F-0433 crit. 2).
+var chatEnglishDirective = strings.Replace(doclang.EnglishDirective, " (never [ESCLARECER: …])", "", 1)
+
+var englishGauntlet = strings.NewReplacer(
+	"Barra: não aplicável", "Bar: not applicable",
+	"Barra: dispensada por decisão humana", "Bar: waived by human decision",
+	"padrão alternativo:", "alternative stop standard:",
+	"Barra de elite", "Elite bar",
+	"Barra:", "Bar:",
+	"Método:", "Method:",
+	"Saída:", "Exit:",
+	"seção \"Verificação\"", "section \"Verification\"",
+)
+
 // chatProposalFence is the fenced-block info string the system prompt tells
 // the model to use when it is ready to propose a candidate — the UI (and any
 // future Go-side consumer) detects it the same way SanitizeMermaid/
@@ -147,6 +175,9 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config, channel 
 		return "", err
 	}
 
+	l := store.DocsLanguage(repoDir)
+	sections := doclang.Sections(doclang.Spec, l)
+
 	var b strings.Builder
 	b.WriteString(persona)
 	b.WriteString("\n\n")
@@ -185,7 +216,7 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config, channel 
 		// F-0258: reading code to specify is not implementing — the role
 		// boundary below still forbids emitting code, diffs or step-by-step
 		// implementation plans.
-		b.WriteString("Você também pode LER o código do projeto (ferramentas Read, Grep e Glob) para fundamentar as seções Problema e Desenho em arquivos reais — assinaturas, contratos e nomes verificados, nunca supostos. ")
+		b.WriteString("Você também pode LER o código do projeto (ferramentas Read, Grep e Glob) para fundamentar as seções " + sections[secProblem] + " e " + sections[secDesign] + " em arquivos reais — assinaturas, contratos e nomes verificados, nunca supostos. ")
 		b.WriteString("Ao final da resposta, cite os ids que consultou (ex.: \"Consultei: F-0132, D-0007\") e os arquivos que leu no formato caminho:linha (ex.: \"internal/app/chat.go:131\"); se não consultou nada, não invente citações. ")
 		// F-0267: this sentence used to deny writing outright — true under
 		// F-0224, false since F-0260/F-0265. The denial won over the contract
@@ -215,7 +246,7 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config, channel 
 
 	// F-0270: the bar question is part of conduction, so it comes right after
 	// it — and before the role boundary, which keeps the last word on role.
-	b.WriteString(GauntletContract)
+	b.WriteString(gauntletContractIn(l))
 	b.WriteString("\n\n")
 
 	// F-0245: the role boundary goes last among the behavior instructions, so
@@ -238,18 +269,28 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config, channel 
 	// closed epic) registers the candidate anyway, without parent.
 	b.WriteString("parent: <opcional: id F-/E- do épico que esta feature decompõe; omita a linha quando não houver>\n\n")
 	b.WriteString("Escreva a spec COMPLETA em Markdown, com exatamente estas seções nesta ordem:\n")
-	for _, s := range spectmpl.Sections {
+	for _, s := range sections {
 		// F-0266: "Execução recomendada (agente)" now lives in spectmpl.Sections,
 		// so the list below already carries it (it used to be injected here).
 		b.WriteString("## " + s + "\n")
 	}
 	b.WriteString("````\n\n")
-	b.WriteString("Preencha de verdade a seção \"Execução recomendada (agente)\" (capacidade de modelo sugerida + tarefas a manter juntas/separáveis) — não deixe placeholder. ")
-	b.WriteString("Critérios de aceitação numerados e testáveis; para comportamento, use EARS: \"QUANDO <condição> O SISTEMA DEVE <comportamento>\". ")
-	b.WriteString("Marque qualquer incerteza com \"" + spectmpl.AmbiguityMarker + " pergunta específica]\" em vez de supor. ")
+	if l == doclang.EN {
+		b.WriteString("Really fill in the \"" + sections[secExecution] + "\" section (suggested model capability + tasks to keep together/separable) — leave no placeholder. ")
+		b.WriteString("Numbered, testable acceptance criteria; for behaviour use EARS: \"WHEN <condition> THE SYSTEM SHALL <behaviour>\". ")
+		b.WriteString("Mark any uncertainty with \"" + doclang.AmbiguityMarker(l) + " specific question]\" instead of guessing. ")
+	} else {
+		b.WriteString("Preencha de verdade a seção \"Execução recomendada (agente)\" (capacidade de modelo sugerida + tarefas a manter juntas/separáveis) — não deixe placeholder. ")
+		b.WriteString("Critérios de aceitação numerados e testáveis; para comportamento, use EARS: \"QUANDO <condição> O SISTEMA DEVE <comportamento>\". ")
+		b.WriteString("Marque qualquer incerteza com \"" + doclang.AmbiguityMarker(l) + " pergunta específica]\" em vez de supor. ")
+	}
 	// F-0270: the fill instruction lives here, next to the template the model
 	// actually completes — the protocol block above explains, this line binds.
-	b.WriteString("Na seção \"Verificação\", inclua as linhas do " + ChatGauntletMarker + " — Barra/Método/Saída, ou uma das duas dispensas registradas; proposta sem isso está incompleta. ")
+	if l == doclang.EN {
+		b.WriteString("In the \"" + sections[secVerification] + "\" section, include the lines of the " + ChatGauntletMarker + " — Bar/Method/Exit, or one of the two recorded exemptions; a proposal without them is incomplete. Optionally add a line \"Question for the judge: <the question the blind judge answers>\" under the bar. ")
+	} else {
+		b.WriteString("Na seção \"Verificação\", inclua as linhas do " + ChatGauntletMarker + " — Barra/Método/Saída, ou uma das duas dispensas registradas; proposta sem isso está incompleta. ")
+	}
 	b.WriteString("Fora desse bloco, converse normalmente — só o produza quando estiver pronto para o usuário confirmar o registro.\n\n")
 	// F-0250 critérios 4/7: o feedback por trecho volta como turno normal —
 	// citações em blockquote recortadas da SUA proposta anterior. Não há
@@ -265,6 +306,9 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config, channel 
 		b.WriteString(chatCommandContract)
 	} else {
 		b.WriteString(chatNoChannelContract)
+	}
+	if l == doclang.EN {
+		b.WriteString(chatEnglishDirective)
 	}
 	return b.String(), nil
 }
@@ -450,3 +494,11 @@ func BuildChatPrompt(system string, messages []ChatMessage) string {
 	b.WriteString("Agente:")
 	return b.String()
 }
+
+// Indexes into doclang.Sections(doclang.Spec, l); TestChatSectionIndexes pins them.
+const (
+	secProblem      = 0
+	secDesign       = 3
+	secVerification = 4
+	secExecution    = 5
+)
