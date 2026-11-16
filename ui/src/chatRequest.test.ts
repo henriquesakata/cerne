@@ -373,4 +373,17 @@ describe('chatRequest (F-0310): resumo do primeiro par', () => {
 
     expect(readChats().chats.find((c) => c.id === 'c9')?.messages.at(-1)).toEqual({ role: 'assistant', content: 'Ok.', context })
   })
+
+  // F-0440 critério 4: quem respondeu fica na mensagem do agente (storage
+  // local, sobrevive ao reload) — e o transcript enviado não o carrega.
+  it('guarda quem respondeu na mensagem do agente', async () => {
+    seedConversation('c10')
+    const answered_by = { provider: 'openai', model: 'gpt-x', effort: 'high' }
+    streamChat.mockResolvedValue({ answered: true, reply: 'Ok.', answered_by } as never)
+
+    send('c10', [{ role: 'user', content: 'Oi' }], {})
+    await vi.waitFor(() => expect(status('c10').pending).toBe(false))
+
+    expect(readChats().chats.find((c) => c.id === 'c10')?.messages.at(-1)).toEqual({ role: 'assistant', content: 'Ok.', answeredBy: answered_by })
+  })
 })

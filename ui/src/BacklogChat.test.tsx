@@ -2,7 +2,7 @@ import type { ProposalIssue } from './api'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
-import BacklogChat, { parseCommands, parseNote, TurnContextDisclosure } from './BacklogChat'
+import BacklogChat, { AnsweredByLine, parseCommands, parseNote, providerName, TurnContextDisclosure } from './BacklogChat'
 import { ChatRunsError, setApiProject, type ChatAnswer, type ChatOverride, type ChatTitle, type CreateOutcome, type Feature, type FeatureDetail, type LLMOptions, type ModelEntry, type Note } from './api'
 import { getConversation, useBacklogChats, writeChats, type Conversation } from './useBacklogChats'
 
@@ -1458,5 +1458,34 @@ describe('BacklogChat proposal issues (F-0438)', () => {
     await send('e agora?')
     await screen.findByText('Qual formato?')
     expect(screen.queryByRole('button', { name: /pedir correção/i })).not.toBeInTheDocument()
+  })
+})
+
+describe('quem respondeu (F-0440)', () => {
+  it('providerName usa o nome de marca, com fallback capitalizado', () => {
+    expect(['anthropic', 'openai', 'gemini', 'cursor', 'vendor'].map(providerName)).toEqual(['Anthropic', 'OpenAI', 'Gemini', 'Cursor', 'Vendor'])
+  })
+
+  it('AnsweredByLine mostra provedor, modelo (rótulo do catálogo) e esforço; sem dado, nada', () => {
+    const entry: ModelEntry = { id: 'gpt-x', label: 'GPT X', provider: 'openai', visibility: 'current' }
+    const { container, rerender } = render(<AnsweredByLine by={{ provider: 'openai', model: 'gpt-x', effort: 'medium' }} catalog={[entry]} />)
+    expect(container.textContent).toBe('OpenAI · GPT X · medium')
+    rerender(<AnsweredByLine by={{ provider: 'anthropic' }} catalog={[entry]} />)
+    expect(container.textContent).toBe('Anthropic')
+    rerender(<AnsweredByLine by={undefined} catalog={[entry]} />)
+    expect(container.textContent).toBe('')
+  })
+
+  it('a mensagem gravada mostra a linha ao reabrir; a antiga sem o dado não mostra', async () => {
+    const entry: ModelEntry = { id: 'gpt-x', label: 'GPT X', provider: 'openai', efforts: ['low'], default_effort: 'low', visibility: 'current' }
+    fetchLLMOptions.mockResolvedValue(opts({ providers: ['anthropic', 'openai'], models: [...CATALOG, entry] }))
+    renderChat({ messages: [
+      { role: 'user', content: 'a' },
+      { role: 'assistant', content: 'nova', answeredBy: { provider: 'openai', model: 'gpt-x', effort: 'low' } },
+      { role: 'user', content: 'b' },
+      { role: 'assistant', content: 'antiga' },
+    ] } as never)
+    expect(await screen.findByText('OpenAI · GPT X · low')).toBeInTheDocument()
+    expect(document.querySelectorAll('.answered-by')).toHaveLength(1)
   })
 })

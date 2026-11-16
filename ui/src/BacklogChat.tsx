@@ -19,6 +19,7 @@ import {
   type DupMatch,
   type Feature,
   type ModelEntry,
+  type AnsweredBy,
   type TurnSource,
 } from './api'
 import * as chatRequest from './chatRequest'
@@ -579,9 +580,21 @@ export function reconcileEffort(entry: ModelEntry | undefined, effort: string): 
   return efforts.includes(def) ? def : (efforts[0] ?? '')
 }
 
-// providerName só capitaliza o nome técnico do provedor ("anthropic").
-function providerName(p: string): string {
-  return p.charAt(0).toUpperCase() + p.slice(1)
+// Nomes de marca: independem do idioma e não saem de capitalizar o id.
+const PROVIDER_NAMES: Record<string, string> = { anthropic: 'Anthropic', openai: 'OpenAI', gemini: 'Gemini', cursor: 'Cursor' }
+
+// providerName é o nome de marca do provedor; um id desconhecido só é capitalizado.
+export function providerName(p: string): string {
+  return PROVIDER_NAMES[p] ?? p.charAt(0).toUpperCase() + p.slice(1)
+}
+
+// AnsweredByLine (F-0440) diz ao humano quem rodou o turno: provedor, modelo
+// (rótulo do catálogo) e esforço, como o servidor os devolveu. Mensagem
+// antiga, sem o dado, não desenha nada.
+export function AnsweredByLine({ by, catalog }: { by?: AnsweredBy; catalog: ModelEntry[] }) {
+  if (!by) return null
+  const model = by.model ? (catalog.find((e) => e.id === by.model)?.label ?? by.model) : ''
+  return <p className="answered-by">{[providerName(by.provider), model, by.effort].filter(Boolean).join(' · ')}</p>
 }
 
 // Tolerância do glue-scroll (F-0239): "no fim" não pode exigir pixel exato —
@@ -1176,6 +1189,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
                     <ToolRuns runs={m.runs ?? []} noRuns={m.noRuns} truncated={m.truncated} />
                   )}
                   <TurnContextDisclosure sources={m.context} />
+                  <AnsweredByLine by={m.answeredBy} catalog={catalog} />
                 </>
               )}
             </div>
