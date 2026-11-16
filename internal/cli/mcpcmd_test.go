@@ -433,3 +433,100 @@ func TestMCPProjectFileSnapshot(t *testing.T) {
 		}
 	}
 }
+
+// TestCodexChatTurnWritesNothing (F-0439 criterion 4): a Codex chat turn gets
+// the project-files server and cerne's read tools. Calling every tool of both
+// leaves the project, the cache (clone and index) and the origin as they were.
+func TestCodexChatTurnWritesNothing(t *testing.T) {
+	projDir, origin, repoDir := mcpFixture(t)
+	if err := os.WriteFile(filepath.Join(projDir, "Stage.yaml"), []byte("sky: sunrise\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, projDir, "init", "-q")
+	gitRun(t, projDir, "add", "Stage.yaml")
+	gitRun(t, projDir, "commit", "-qm", "stage")
+	cache := os.Getenv("CERNE_CACHE_DIR")
+	if cache == "" {
+		t.Fatal("setupProject must isolate CERNE_CACHE_DIR")
+	}
+	proj, cch, clone, orig := treeDigest(t, projDir), treeDigest(t, cache), treeDigest(t, repoDir), gitHead(t, origin)
+	headProj := gitHead(t, projDir)
+
+	// A tool that fails early is a no-op the hashes cannot see: every tool the
+	// turn is given must run for real (callTool fails on an error result) and
+	// answer something.
+	called := map[string]bool{}
+	cs, _, stop := startMCP(t, projDir)
+	for _, c := range allCalls {
+		if strings.TrimSpace(callTool(t, cs, c.tool, c.args)) == "" {
+			t.Errorf("tool %s %v answered nothing", c.tool, c.args)
+		}
+		called[c.tool] = true
+	}
+	for _, name := range mcp.ToolNames {
+		if !called[name] {
+			t.Errorf("tool %s is given to the turn but never called here", name)
+		}
+	}
+	if err := stop(); err != nil {
+		t.Fatalf("cerne mcp: %v", err)
+	}
+	cs, _, stop = startMCP(t, projDir, "--project-files")
+	if got := callTool(t, cs, "find_files", map[string]any{"query": "stage"}); got != "Stage.yaml" {
+		t.Fatalf("find_files = %q", got)
+	}
+	callTool(t, cs, "read_file", map[string]any{"path": "Stage.yaml"})
+	if err := stop(); err != nil {
+		t.Fatalf("cerne mcp --project-files: %v", err)
+	}
+	if treeDigest(t, projDir) != proj || gitHead(t, projDir) != headProj {
+		t.Error("the project changed")
+	}
+	if treeDigest(t, cache) != cch {
+		t.Error("the cache changed")
+	}
+	if treeDigest(t, repoDir) != clone || gitHead(t, origin) != orig {
+		t.Error("the backend clone or origin changed")
+	}
+}
+
+func indexFiles(t *testing.T, cache string) []string {
+	t.Helper()
+	var out []string
+	_ = filepath.WalkDir(cache, func(p string, d os.DirEntry, _ error) error {
+		if d != nil && !d.IsDir() && filepath.Base(p) == "index.db" {
+			out = append(out, p)
+		}
+		return nil
+	})
+	return out
+}
+
+// TestCodexChatColdIndexRebuildsOnlyTheDerivedCache (F-0439 criterion 4): the
+// warm case is TestCodexChatTurnWritesNothing (the cache digest is unchanged).
+// On a cold index `search` rebuilds index.db — a derived, rebuildable cache,
+// accepted — and still leaves the project, the backend clone and the origin
+// untouched.
+func TestCodexChatColdIndexRebuildsOnlyTheDerivedCache(t *testing.T) {
+	projDir, origin, repoDir := mcpFixture(t)
+	cache := os.Getenv("CERNE_CACHE_DIR")
+	for _, f := range indexFiles(t, cache) {
+		if err := os.Remove(f); err != nil {
+			t.Fatal(err)
+		}
+	}
+	proj, clone, orig := treeDigest(t, projDir), treeDigest(t, repoDir), gitHead(t, origin)
+	cs, _, stop := startMCP(t, projDir)
+	if got := callTool(t, cs, "search", map[string]any{"query": "Postgres"}); !strings.Contains(got, "Postgres") {
+		t.Fatalf("search on a cold index = %q", got)
+	}
+	if err := stop(); err != nil {
+		t.Fatal(err)
+	}
+	if len(indexFiles(t, cache)) == 0 {
+		t.Error("expected the cold search to rebuild index.db")
+	}
+	if treeDigest(t, projDir) != proj || treeDigest(t, repoDir) != clone || gitHead(t, origin) != orig {
+		t.Error("a cold search changed the project, the clone or the origin")
+	}
+}

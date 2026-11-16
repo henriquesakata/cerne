@@ -384,6 +384,13 @@ func scratchDir() (string, func(), error) {
 	return dir, func() { os.RemoveAll(dir) }, nil
 }
 
+// cerneReadTools are the read-only tools of `cerne mcp` the Codex chat turn
+// approves; a test keeps the list equal to mcp.ToolNames.
+var cerneReadTools = []string{"status", "brief", "next", "search", "show", "ask", "guide"}
+
+// cerneEnvVars are the locations a fixture or a user points cerne at.
+var cerneEnvVars = []string{"CERNE_CACHE_DIR", "CERNE_DATA_DIR", "CERNE_CONFIG_DIR"}
+
 // completeCodex runs `codex exec` (R-0093): prompt on stdin ("-"), the final
 // message written by the CLI to the -o file, read-only sandbox, no session
 // persisted, in an empty scratch dir.
@@ -413,7 +420,27 @@ func (p *cliProvider) completeCodex(ctx context.Context, prompt string) (string,
 		argv, _ := json.Marshal([]string{"mcp", "--project-files", "--dir", root})
 		args = append(args, "-c", "mcp_servers.cerne_project.command="+string(command), "-c", "mcp_servers.cerne_project.args="+string(argv),
 			"-c", `mcp_servers.cerne_project.tools.find_files.approval_mode="approve"`,
-			"-c", `mcp_servers.cerne_project.tools.read_file.approval_mode="approve"`)
+			"-c", `mcp_servers.cerne_project.tools.read_file.approval_mode="approve"`,
+			"-c", `mcp_servers.cerne_project.tools.search_files.approval_mode="approve"`)
+		// F-0439: cerne's own read tools (status, search, show…) beside the
+		// files. Every name in mcp.ToolNames is a read command; none writes.
+		cerneArgv, _ := json.Marshal([]string{"mcp", "--dir", root})
+		args = append(args, "-c", "mcp_servers.cerne.command="+string(command), "-c", "mcp_servers.cerne.args="+string(cerneArgv))
+		for _, name := range cerneReadTools {
+			args = append(args, "-c", "mcp_servers.cerne.tools."+name+`.approval_mode="approve"`)
+		}
+		// Codex starts a stdio server with a restricted environment: name the
+		// cerne locations that are set, so the children read this project's cache.
+		var set []string
+		for _, n := range cerneEnvVars {
+			if os.Getenv(n) != "" {
+				set = append(set, n)
+			}
+		}
+		if len(set) > 0 {
+			names, _ := json.Marshal(set)
+			args = append(args, "-c", "mcp_servers.cerne_project.env_vars="+string(names), "-c", "mcp_servers.cerne.env_vars="+string(names))
+		}
 	}
 	if p.model != "" {
 		args = append(args, "-m", p.model)
@@ -442,7 +469,26 @@ func (p *cliProvider) completeCodex(ctx context.Context, prompt string) (string,
 	if err != nil || len(bytes.TrimSpace(b)) == 0 {
 		return "", fmt.Errorf("%w: codex exec returned no answer — run 'codex login' or check the Codex CLI version", ErrCodexCLI)
 	}
-	return strings.TrimSpace(string(b)), nil
+	// The scratch dir is gone after the turn: a path the model wrote under it
+	// becomes the project-relative path the files tools return (F-0439).
+	prefixes := []string{dir}
+	if real, err := filepath.EvalSymlinks(dir); err == nil {
+		prefixes = append(prefixes, real)
+	}
+	reply := stripTurnDir(string(b), prefixes...)
+	return strings.TrimSpace(reply), nil
+}
+
+// stripTurnDir removes each dir + "/" prefix from reply, longest dir first: the
+// resolved /private/var/... form contains the /var/... one, so the short form
+// first would leave "/private" glued to the relative path.
+func stripTurnDir(reply string, dirs ...string) string {
+	dirs = slices.Clone(dirs)
+	slices.SortFunc(dirs, func(a, b string) int { return len(b) - len(a) })
+	for _, d := range dirs {
+		reply = strings.ReplaceAll(reply, d+"/", "")
+	}
+	return reply
 }
 
 // authErrorRE recognizes a CLI error that a login fixes.

@@ -15,6 +15,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/henriquesakata/cerne/internal/mcp"
 	"github.com/henriquesakata/cerne/internal/project"
 )
 
@@ -1152,6 +1153,150 @@ func TestAgenticClaudeReportsTheModelThatRan(t *testing.T) {
 	}}
 	if got, _ := plain.Complete(t.Context(), "q"); got != "so texto" || plain.AnsweredModel() != "" {
 		t.Fatalf("plain = %q model %q", got, plain.AnsweredModel())
+	}
+}
+
+// codexIsolation is the isolation every Codex turn keeps (F-0414, PR #20):
+// the argv up to the -o file.
+var codexIsolation = []string{"exec", "--skip-git-repo-check", "--ephemeral", "--sandbox", "read-only",
+	"--ignore-user-config", "--ignore-rules", "--disable", "shell_tool", "--disable", "apps",
+	"-c", `web_search="disabled"`, "-c", "project_doc_max_bytes=0", "-o"}
+
+// codexArgv runs one Codex turn on a fake and returns the argv with the -o
+// path dropped.
+func codexArgv(t *testing.T, dir string) []string {
+	t.Helper()
+	var args []string
+	var stdin, cwd string
+	p := &cliProvider{kind: ModeCodexCLI, bin: "codex", dir: dir, run: codexFake("ok", &args, &stdin, &cwd)}
+	if _, err := p.Complete(t.Context(), "q"); err != nil {
+		t.Fatal(err)
+	}
+	return slices.Delete(args, len(codexIsolation)-1, len(codexIsolation)+1)
+}
+
+// TestCodexChatArgv (F-0439 criteria 1 and 2): the one-shot callers and the
+// remote serve (no dir) carry no MCP server; the local chat turn keeps the
+// PR #20 isolation, adds the project-files server and cerne's read-only tools,
+// and never a tool that writes.
+func TestCodexChatArgv(t *testing.T) {
+	iso := codexIsolation[:len(codexIsolation)-1] // without the dangling -o
+	oneShot := codexArgv(t, "")
+	if want := append(slices.Clone(iso), "-"); !reflect.DeepEqual(oneShot, want) {
+		t.Fatalf("one-shot argv = %v, want %v", oneShot, want)
+	}
+	root := t.TempDir() + "/a b\"c"
+	chat := codexArgv(t, root)
+	if !reflect.DeepEqual(chat[:len(iso)], iso) {
+		t.Fatalf("chat isolation changed: %v", chat)
+	}
+	bin, _ := os.Executable()
+	cmd, _ := json.Marshal(bin)
+	files, _ := json.Marshal([]string{"mcp", "--project-files", "--dir", root})
+	want := []string{"-c", "mcp_servers.cerne_project.command=" + string(cmd), "-c", "mcp_servers.cerne_project.args=" + string(files),
+		"-c", `mcp_servers.cerne_project.tools.find_files.approval_mode="approve"`,
+		"-c", `mcp_servers.cerne_project.tools.read_file.approval_mode="approve"`,
+		"-c", `mcp_servers.cerne_project.tools.search_files.approval_mode="approve"`}
+	if got := chat[len(iso) : len(iso)+len(want)]; !reflect.DeepEqual(got, want) {
+		t.Fatalf("project-files server = %v, want %v", got, want)
+	}
+	// F-0439: cerne's read tools, each approved, and nothing that writes.
+	cerne, _ := json.Marshal([]string{"mcp", "--dir", root})
+	if !slices.Contains(chat, "mcp_servers.cerne.args="+string(cerne)) {
+		t.Fatalf("no cerne read-only server in %v", chat)
+	}
+	if !slices.Contains(chat, "mcp_servers.cerne.command="+string(cmd)) {
+		t.Fatalf("the cerne server must run the same executable as the files server: %v", chat)
+	}
+	for _, name := range mcp.ToolNames {
+		if !slices.Contains(chat, "mcp_servers.cerne.tools."+name+`.approval_mode="approve"`) {
+			t.Errorf("tool %s is not approved in %v", name, chat)
+		}
+	}
+	for _, a := range chat {
+		if strings.Contains(a, "mcp_servers.cerne.tools.") && !strings.HasSuffix(a, `.approval_mode="approve"`) {
+			t.Errorf("unexpected tool setting %s", a)
+		}
+	}
+}
+
+// TestCerneReadToolsMatchMCP keeps llm's list of approved tool names equal to
+// what the MCP server announces, without llm importing mcp (F-0439).
+func TestCerneReadToolsMatchMCP(t *testing.T) {
+	if !slices.Equal(cerneReadTools, mcp.ToolNames) {
+		t.Fatalf("cerneReadTools = %v, mcp.ToolNames = %v", cerneReadTools, mcp.ToolNames)
+	}
+}
+
+// TestCodexChatForwardsCerneEnv (F-0439): Codex starts an MCP stdio server with
+// a restricted environment, so the cerne locations set for this process are
+// named in env_vars of both servers — names only, never values — and nothing is
+// declared when none is set.
+func TestCodexChatForwardsCerneEnv(t *testing.T) {
+	root := t.TempDir()
+	for _, n := range cerneEnvVars {
+		t.Setenv(n, "")
+		os.Unsetenv(n)
+	}
+	for _, a := range codexArgv(t, root) {
+		if strings.Contains(a, "env_vars") {
+			t.Fatalf("env_vars declared with nothing set: %s", a)
+		}
+	}
+	t.Setenv("CERNE_CACHE_DIR", "/secret/cache")
+	got := codexArgv(t, root)
+	for _, srv := range []string{"cerne_project", "cerne"} {
+		if !slices.Contains(got, "mcp_servers."+srv+`.env_vars=["CERNE_CACHE_DIR"]`) {
+			t.Errorf("%s does not get CERNE_CACHE_DIR: %v", srv, got)
+		}
+	}
+	for _, a := range got {
+		if strings.Contains(a, "/secret/cache") {
+			t.Fatalf("a value leaked into the argv: %s", a)
+		}
+	}
+}
+
+// TestCodexReplyDropsTheTurnTempDir (F-0439 round 2): the model sometimes
+// writes paths under its scratch working directory, which is gone after the
+// turn; the reply gets the project-relative path instead.
+func TestCodexReplyDropsTheTurnTempDir(t *testing.T) {
+	p := &cliProvider{kind: ModeCodexCLI, bin: "codex", dir: t.TempDir(), run: func(_ context.Context, dir, _ string, args []string, _ string) (string, string, error) {
+		reply := "see [stage](" + dir + "/game/src/stages/stage-one.js:2) and " + dir + "/game/a.json"
+		for i, a := range args {
+			if a == "-o" {
+				return "", "", os.WriteFile(args[i+1], []byte(reply), 0o600)
+			}
+		}
+		return "", "", nil
+	}}
+	got, err := p.Complete(t.Context(), "q")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "see [stage](game/src/stages/stage-one.js:2) and game/a.json"; got != want {
+		t.Fatalf("reply = %q, want %q", got, want)
+	}
+}
+
+// TestStripTurnDirLongestFirst (F-0439 round 6): the scratch dir is known as
+// /var/... and as its symlink-resolved /private/var/...; stripping the short
+// form first used to leave "/private" glued to the project-relative path.
+func TestStripTurnDirLongestFirst(t *testing.T) {
+	short, long := "/var/folders/ab/T/cerne-cli-1", "/private/var/folders/ab/T/cerne-cli-1"
+	rel := "game/src/stages/stage-one.js"
+	for _, tt := range []struct{ name, in, want string }{
+		{"long in link text and target", "[" + long + "/" + rel + ":4](" + long + "/" + rel + ":4)", "[" + rel + ":4](" + rel + ":4)"},
+		{"short in link text and target", "[" + short + "/" + rel + "](" + short + "/" + rel + ")", "[" + rel + "](" + rel + ")"},
+		{"plain text, both forms", "see " + long + "/" + rel + ":4 and " + short + "/a.json", "see " + rel + ":4 and a.json"},
+		{"outside the temp dir", "see /private/var/other/x.js and /usr/lib/y", "see /private/var/other/x.js and /usr/lib/y"},
+	} {
+		if got := stripTurnDir(tt.in, short, long); got != tt.want {
+			t.Errorf("%s: got %q, want %q", tt.name, got, tt.want)
+		}
+		if got := stripTurnDir(tt.in, long, short); got != tt.want { // argument order must not matter
+			t.Errorf("%s (swapped): got %q, want %q", tt.name, got, tt.want)
+		}
 	}
 }
 

@@ -187,6 +187,7 @@ func TestChatSwitchedTurnGetsProjectDirAndCodexMode(t *testing.T) {
 	t.Setenv("CERNE_CONFIG_DIR", t.TempDir())
 	stubInstalledCLIs(t, "claude", "codex")
 	repoDir, projDir := claudeProject(t, "claude-cli", "effort = \"max\"\n")
+	commitProject(t, projDir) // the files server needs a commit to serve (F-0439)
 	body := `{"messages":[{"role":"user","content":"Oi"}],"provider":"openai"}`
 	var seen project.LLMConfig
 	var dir string
