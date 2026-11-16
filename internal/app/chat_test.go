@@ -967,3 +967,40 @@ func TestBuildChatSystemPrompt_QuestionContract(t *testing.T) {
 		}
 	}
 }
+
+// TestBuildChatSystemPrompt_InterviewProtocol (F-0443 crit. 1-6): the
+// conduction block interviews over the spec's decision tree, in frontier
+// rounds, and sits between the conduction header and the Gauntlet block.
+func TestBuildChatSystemPrompt_InterviewProtocol(t *testing.T) {
+	repoDir, projDir := chatFixture(t)
+	prompt, err := BuildChatSystemPrompt(repoDir, projDir, project.Config{}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		ChatInterviewMarker,
+		"Mapeie as decisões que a spec precisa",              // (b) the decision map
+		"só a fronteira",                                     // (c) frontier only
+		"depende da resposta de outra ainda aberta",          // (c) no dependent question in a round
+		"muda um critério de aceitação, o escopo ou a barra", // (d) relevance filter
+		"Assumi:",                    // (d) low-impact list
+		"no máximo 3 perguntas",      // (e) cap
+		"bloco " + chatQuestionFence, // (e) cites the F-0437 contract
+		"\"sim\" aceite",             // (e) recommendation phrased for "sim"
+		"Árvore: <n> resolvidas · <n> abertas · <n> suposições", // (f) progress line
+		"NÃO emita " + chatProposalFence,                        // (g) no proposal while open
+		"propõe já",                                             // (g) human exit
+		"marcador de esclarecimento",                            // (g) open ones become markers
+		"confirmação numa linha",                                // (g) confirm before emitting
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt lacks interview rule %q", want)
+		}
+	}
+	conduction := strings.Index(prompt, "Conduza a elaboração")
+	interview := strings.Index(prompt, ChatInterviewMarker)
+	gauntlet := strings.Index(prompt, ChatGauntletMarker)
+	if !(conduction < interview && interview < gauntlet) {
+		t.Errorf("interview block out of order: conduction=%d interview=%d gauntlet=%d", conduction, interview, gauntlet)
+	}
+}

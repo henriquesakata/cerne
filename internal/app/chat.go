@@ -121,6 +121,21 @@ var englishGauntlet = strings.NewReplacer(
 // extractFencedBlock detect a ```mermaid block in diagram.go.
 const chatProposalFence = "cerne-proposta"
 
+// ChatInterviewMarker heads the interview protocol (F-0443). Exported so the
+// tests can locate the block, like ChatGauntletMarker.
+const ChatInterviewMarker = "PROTOCOLO DE ENTREVISTA"
+
+// chatInterviewProtocol is the conduction block's decision-tree interview.
+const chatInterviewProtocol = ChatInterviewMarker + `
+- Situe a demanda no roster acima: se ela sobrepõe uma feature viva, aponte a sobreposição citando os ids e pergunte se é ajuste da existente ou feature nova.
+- Quando houver mais de um caminho viável, apresente 1–2 abordagens com trade-offs no nível de spec (nunca código) antes de emitir o bloco de proposta.
+- Mapeie as decisões que a spec precisa: problema e quem sofre, gatilho, comportamento esperado por caminho (inclusive erro e borda), fora de escopo e barra.
+- Pergunte em rodadas só a fronteira: as decisões cujas dependências já estão resolvidas. Nunca ponha na mesma rodada uma pergunta que depende da resposta de outra ainda aberta.
+- Só vira pergunta a decisão cuja resposta muda um critério de aceitação, o escopo ou a barra. As de baixo impacto entram numa lista "Assumi:" no fim da rodada, um item por linha, que o humano derruba numa linha. Um fato que os comandos de leitura do cerne ou o código respondem nunca é pergunta.
+- Cada rodada tem no máximo 3 perguntas, as de maior impacto da fronteira; o resto da fronteira fica para a rodada seguinte. Faça cada uma pelo bloco ` + chatQuestionFence + ` (contrato abaixo), com a sua recomendação numa das opções, redigida para que "sim" aceite a recomendação.
+- Termine cada rodada com a linha de progresso: "Árvore: <n> resolvidas · <n> abertas · <n> suposições".
+- NÃO emita ` + chatProposalFence + ` enquanto houver decisão aberta. Se o humano pedir para propor já ("propõe já"), cada decisão aberta entra na spec como marcador de esclarecimento. Antes de emitir, resuma as decisões tomadas e as suposições e peça a confirmação numa linha.`
+
 // chatQuestionFence is the fourth fenced block (F-0437): a product question
 // the UI draws as an option card with one recommended option.
 const chatQuestionFence = "cerne-pergunta"
@@ -266,10 +281,8 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config, channel 
 	// situate it in the roster (conversational mirror of the F-0147 duplicate
 	// guard) and offer paths before proposing.
 	b.WriteString("Conduza a elaboração: entenda o problema real, não apenas a solução pedida.\n")
-	b.WriteString("- Situe a demanda no roster acima: se ela sobrepõe uma feature viva, aponte a sobreposição citando os ids e pergunte se é ajuste da existente ou feature nova.\n")
-	b.WriteString("- Quando houver mais de um caminho viável, apresente 1–2 abordagens com trade-offs no nível de spec (nunca código) antes de emitir o bloco de proposta.\n")
-	b.WriteString("- Faça suas perguntas de decisão de produto pelo bloco " + chatQuestionFence + " (contrato abaixo), com a sua recomendação em uma das opções.\n")
-	b.WriteString("- Quando problema, objetivo e critérios de aceitação testáveis fecharem — e SOMENTE então — proponha a candidata.\n\n")
+	b.WriteString(chatInterviewProtocol)
+	b.WriteString("\n\n")
 
 	// F-0270: the bar question is part of conduction, so it comes right after
 	// it — and before the role boundary, which keeps the last word on role.
