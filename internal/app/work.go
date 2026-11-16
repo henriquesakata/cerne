@@ -334,7 +334,7 @@ const (
 )
 
 // actorEnv is the actor the environment declares: CERNE_ACTOR, or the legacy
-// "agent" in a Cursor agent shell (F-0428). Cursor does not apply the
+// "agent" in a Cursor or Copilot CLI agent shell (F-0428, F-0444). Cursor does not apply the
 // settings.json env block that stamps CERNE_ACTOR, but puts CURSOR_AGENT=1 on
 // its agent's terminals (seen in Cursor 3.25.6, undocumented — if it goes, the
 // actor is simply the human default again).
@@ -342,7 +342,9 @@ func actorEnv() string {
 	if a := os.Getenv("CERNE_ACTOR"); a != "" {
 		return a
 	}
-	if os.Getenv("CURSOR_AGENT") == "1" {
+	// Copilot CLI marks its bash tool's shell with COPILOT_CLI=1 (probed on
+	// 1.0.112, F-0444); the hooks' env block does not reach that shell.
+	if os.Getenv("CURSOR_AGENT") == "1" || os.Getenv("COPILOT_CLI") == "1" {
 		return legacyAgentActor
 	}
 	return ""

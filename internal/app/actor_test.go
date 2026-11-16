@@ -316,3 +316,27 @@ func TestLegacyAgentActorStillRefusedAtHumanGates(t *testing.T) {
 		t.Errorf("event actor = %+v", evs)
 	}
 }
+
+// TestCopilotCLIShellIsAgent (F-0444): Copilot CLI marks the shell of its bash
+// tool with COPILOT_CLI=1 (probed on 1.0.112), and the hooks' env block does
+// not reach that shell — so the marker makes the process an agent; an explicit
+// CERNE_ACTOR still decides.
+func TestCopilotCLIShellIsAgent(t *testing.T) {
+	pinMachine(t, "alice", "m1")
+	t.Setenv("COPILOT_CLI", "1")
+	t.Setenv("CERNE_ACTOR", "")
+	want := "agent:" + domain.MachinePseudonym("alice@m1")
+	if got := EventActor(); got != want || strings.Contains(got, "@") {
+		t.Errorf("EventActor = %q, want %s (pseudonym, no login@host)", got, want)
+	}
+	if got := autoWorkActor(); got != want {
+		t.Errorf("autoWorkActor = %q, want %s", got, want)
+	}
+	if err := CheckHumanGate(project.GateHuman); !errors.Is(err, ErrHumanGate) {
+		t.Errorf("CheckHumanGate = %v, want ErrHumanGate", err)
+	}
+	t.Setenv("CERNE_ACTOR", "human")
+	if err := CheckHumanGate(project.GateHuman); errors.Is(err, ErrHumanGate) {
+		t.Errorf("explicit CERNE_ACTOR=human must decide, got %v", err)
+	}
+}
