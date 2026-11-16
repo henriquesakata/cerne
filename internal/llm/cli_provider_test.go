@@ -1278,3 +1278,24 @@ func TestCodexReplyDropsTheTurnTempDir(t *testing.T) {
 		t.Fatalf("reply = %q, want %q", got, want)
 	}
 }
+
+// TestStripTurnDirLongestFirst (F-0439 round 6): the scratch dir is known as
+// /var/... and as its symlink-resolved /private/var/...; stripping the short
+// form first used to leave "/private" glued to the project-relative path.
+func TestStripTurnDirLongestFirst(t *testing.T) {
+	short, long := "/var/folders/ab/T/cerne-cli-1", "/private/var/folders/ab/T/cerne-cli-1"
+	rel := "game/src/stages/stage-one.js"
+	for _, tt := range []struct{ name, in, want string }{
+		{"long in link text and target", "[" + long + "/" + rel + ":4](" + long + "/" + rel + ":4)", "[" + rel + ":4](" + rel + ":4)"},
+		{"short in link text and target", "[" + short + "/" + rel + "](" + short + "/" + rel + ")", "[" + rel + "](" + rel + ")"},
+		{"plain text, both forms", "see " + long + "/" + rel + ":4 and " + short + "/a.json", "see " + rel + ":4 and a.json"},
+		{"outside the temp dir", "see /private/var/other/x.js and /usr/lib/y", "see /private/var/other/x.js and /usr/lib/y"},
+	} {
+		if got := stripTurnDir(tt.in, short, long); got != tt.want {
+			t.Errorf("%s: got %q, want %q", tt.name, got, tt.want)
+		}
+		if got := stripTurnDir(tt.in, long, short); got != tt.want { // argument order must not matter
+			t.Errorf("%s (swapped): got %q, want %q", tt.name, got, tt.want)
+		}
+	}
+}

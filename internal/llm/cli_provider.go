@@ -461,15 +461,24 @@ func (p *cliProvider) completeCodex(ctx context.Context, prompt string) (string,
 	}
 	// The scratch dir is gone after the turn: a path the model wrote under it
 	// becomes the project-relative path the files tools return (F-0439).
-	reply := string(b)
-	prefixes := []string{dir + "/"}
-	if real, err := filepath.EvalSymlinks(dir); err == nil && real != dir {
-		prefixes = append(prefixes, real+"/")
+	prefixes := []string{dir}
+	if real, err := filepath.EvalSymlinks(dir); err == nil {
+		prefixes = append(prefixes, real)
 	}
-	for _, pre := range prefixes {
-		reply = strings.ReplaceAll(reply, pre, "")
-	}
+	reply := stripTurnDir(string(b), prefixes...)
 	return strings.TrimSpace(reply), nil
+}
+
+// stripTurnDir removes each dir + "/" prefix from reply, longest dir first: the
+// resolved /private/var/... form contains the /var/... one, so the short form
+// first would leave "/private" glued to the relative path.
+func stripTurnDir(reply string, dirs ...string) string {
+	dirs = slices.Clone(dirs)
+	slices.SortFunc(dirs, func(a, b string) int { return len(b) - len(a) })
+	for _, d := range dirs {
+		reply = strings.ReplaceAll(reply, d+"/", "")
+	}
+	return reply
 }
 
 // authErrorRE recognizes a CLI error that a login fixes.
