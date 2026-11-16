@@ -979,7 +979,17 @@ func TestBuildChatSystemPrompt_InterviewProtocol(t *testing.T) {
 	}
 	for _, want := range []string{
 		ChatInterviewMarker,
-		"Mapeie as decisões que a spec precisa",              // (b) the decision map
+		"Mapeie as decisões que a spec precisa", // (b) the decision map
+		"(a) quem é afetado ou recebe e quem fica de fora",
+		"(b) o gatilho",
+		"dado ausente, item concluído ou cancelado, repetição ou recorrência, dado que muda depois",
+		"(d) como a pessoa controla ou desliga",
+		"(e) o que fica FORA do escopo, perguntado ao humano, nunca suposto",
+		"(f) a barra",
+		"NUNCA é suposição, mesmo que custe mais rodadas",
+		"Exemplos que são pergunta",
+		"Exemplos que podem ser \"Assumi:\"",
+		"\"0 abertas\" só vale quando",
 		"só a fronteira",                                     // (c) frontier only
 		"depende da resposta de outra ainda aberta",          // (c) no dependent question in a round
 		"muda um critério de aceitação, o escopo ou a barra", // (d) relevance filter
@@ -1038,6 +1048,16 @@ func TestBuildChatSystemPrompt_EnglishInterviewForms(t *testing.T) {
 	for _, want := range []string{"Assumed:", "Tree: <n> resolved · <n> open · <n> assumptions", "propose now",
 		"resuma as decisões tomadas e as suposições e peça a confirmação numa linha",                                    // summary + one-line confirmation
 		"Só proponha quando problema, objetivo e critérios de aceitação testáveis fecharem e não houver decisão aberta", // positive gate
+		"(a) quem é afetado ou recebe e quem fica de fora",
+		"(b) o gatilho",
+		"dado ausente, item concluído ou cancelado, repetição ou recorrência, dado que muda depois",
+		"(d) como a pessoa controla ou desliga",
+		"(e) o que fica FORA do escopo, perguntado ao humano, nunca suposto",
+		"(f) a barra",
+		"NUNCA é suposição, mesmo que custe mais rodadas",
+		"Exemplos que são pergunta",
+		"Exemplos que podem ser \"Assumi:\"",
+		"\"0 abertas\" só vale quando",
 		"o turno TERMINA no resumo e na pergunta de confirmação numa linha, sem " + chatProposalFence,
 		"só sai no turno seguinte, depois que o humano confirmar ou corrigir",
 		"emita na hora, com as abertas como marcador de esclarecimento",
