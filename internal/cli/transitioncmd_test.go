@@ -48,6 +48,12 @@ func writeDoc(t *testing.T, repoDir, id, filename, content string) {
 	if filename == "spec.md" {
 		content = completeSpec(content)
 	}
+	writeDocRaw(t, repoDir, id, filename, content)
+}
+
+// writeDocRaw writes content exactly as given (no sections added).
+func writeDocRaw(t *testing.T, repoDir, id, filename, content string) {
+	t.Helper()
 	dir := filepath.Join(repoDir, "content", "features", id)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
@@ -74,7 +80,7 @@ func realDoc(id, body string) string {
 	// The Verificação/Barra tail satisfies the approve bar gate and the
 	// Gauntlet tail the result-missing-gauntlet lint rule (F-0545), for every
 	// fixture doc; sections a doc kind does not need are carried harmlessly.
-	return "---\ncerne_id: " + id + "\n---\n\n# Título\n\n" + body + "\n\n## Problema\n\nX.\n\n## Objetivo e critérios de aceitação\n\nX.\n\n## Decisões do design\n\nX.\n\n## Desenho\n\nX.\n\n## Execução recomendada (agente)\n\nX.\n\n## Fora de escopo\n\nX.\n\n## Verificação\n\nBarra: fixture de teste — referência nomeada\nPergunta ao juiz: qual é mais claro?\n\n## Gauntlet\n\nBarra: fixture de teste — referência nomeada\nRodada 1 — vitória: \"fixture\"\n"
+	return "---\ncerne_id: " + id + "\n---\n\n# Título\n\n" + body + "\n\n## Verificação\n\nBarra: fixture de teste — referência nomeada\nPergunta ao juiz: qual é mais claro?\n\n## Gauntlet\n\nBarra: fixture de teste — referência nomeada\nRodada 1 — vitória: \"fixture\"\n"
 }
 
 func TestTransitionFullLifecycle(t *testing.T) {
@@ -448,7 +454,7 @@ func TestTransitionRevert(t *testing.T) {
 	// Nothing was deleted: the spec is intact and the plan stub scaffolded by
 	// the approve is still there for a future re-approval.
 	data, err := os.ReadFile(filepath.Join(repoDir, "content", "features", id, "spec.md"))
-	if err != nil || string(data) != spec {
+	if err != nil || string(data) != completeSpec(spec) {
 		t.Fatalf("spec.md after revert = (%v) %q, want the original spec intact", err, data)
 	}
 	if _, err := os.Stat(filepath.Join(repoDir, "content", "features", id, "plan.md")); err != nil {

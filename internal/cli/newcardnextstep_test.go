@@ -267,7 +267,7 @@ func TestLifecycleGuidanceWithoutHooks(t *testing.T) {
 	wantInOrder(t, stepBlock(out), stepCardNow, stepSpec+"F-0001-", stepTags+"F-0001", stepHuman+"F-0001'")
 
 	spec := filepath.Join(t.TempDir(), "spec.md")
-	if err := os.WriteFile(spec, []byte(strings.SplitN(realDoc("F-0002", "Importar a planilha de custos."), "---\n", 3)[2]), 0o644); err != nil {
+	if err := os.WriteFile(spec, []byte(completeSpec(strings.SplitN(realDoc("F-0002", "Importar a planilha de custos."), "---\n", 3)[2])), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	out, err = cardNew(t, "Importar planilha de custos", "--file", spec, "--facet", "code", "--component", "cli", "--dir", projDir)

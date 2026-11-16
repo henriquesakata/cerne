@@ -198,7 +198,7 @@ func seedDocFeature(t *testing.T, repoDir, id string, s domain.FeatureState, spe
 	if err := store.SaveFeature(repoDir, store.Feature{ID: id, Title: "Feature " + id, State: s, Facets: []string{"code"}, CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	writeDoc(t, repoDir, id, "spec.md", spec)
+	writeDocRaw(t, repoDir, id, "spec.md", spec)
 	writeDoc(t, repoDir, id, "plan.md", plan)
 	commitBackend(t, repoDir)
 }

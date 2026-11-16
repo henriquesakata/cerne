@@ -113,7 +113,7 @@ func TestReadinessLineNamesCardCodes(t *testing.T) {
 	projDir, _, _ := setupProject(t)
 	mustExec(t, projDir, "capability", "new", "Studio")
 	specFile := t.TempDir() + "/spec.md"
-	if err := os.WriteFile(specFile, []byte(realDoc("F-0001", "Problema real descrito aqui.")), 0o644); err != nil {
+	if err := os.WriteFile(specFile, []byte(completeSpec(realDoc("F-0001", "Problema real descrito aqui."))), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	out, err := execCerne(t, "feature", "new", "Card sem tag", "--file", specFile, "--dir", projDir)

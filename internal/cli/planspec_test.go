@@ -23,7 +23,7 @@ func TestFeatureStartWarnsPlanBehindSpec(t *testing.T) {
 	if err := app.SaveFeatureDoc(repoDir, projDir, id, "plan", realDoc(id, "Passo 1: os seis.")); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.SaveFeatureDoc(repoDir, projDir, id, "spec", realDoc(id, "Quinze critérios.")); err != nil {
+	if err := app.SaveFeatureDoc(repoDir, projDir, id, "spec", completeSpec(realDoc(id, "Quinze critérios."))); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := execCerne(t, "feature", "approve", id, "--dir", projDir); err != nil {
