@@ -280,3 +280,40 @@ func TestInstallCopilotMCPNeverClobbers(t *testing.T) {
 		}
 	}
 }
+
+// TestCopilotStates (F-0444 crit. 5): the hooks file and the MCP server report
+// ok / divergent / missing, and only a divergent hooks file is "stale" for the
+// session-start check (a missing one is not nagged: the team may not want it).
+func TestCopilotStates(t *testing.T) {
+	dir := t.TempDir()
+	if CopilotHooksState(dir) != FileMissing || CopilotMCPState(dir) != FileMissing {
+		t.Fatal("empty project must be missing")
+	}
+	if len(Stale(dir)) != len(Assets()) {
+		t.Fatalf("missing copilot file must not be stale: %v", Stale(dir))
+	}
+	if _, err := Install(dir, ProviderCopilot); err != nil {
+		t.Fatal(err)
+	}
+	if CopilotHooksState(dir) != FileOK || CopilotMCPState(dir) != FileOK {
+		t.Fatalf("fresh install: hooks %s mcp %s", CopilotHooksState(dir), CopilotMCPState(dir))
+	}
+	if err := os.WriteFile(copilotHooksPath(dir), []byte(`{"version":1,"hooks":{}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".mcp.json"), []byte(`{"mcpServers":{"cerne":{"command":"x"}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if CopilotHooksState(dir) != FileDivergent || CopilotMCPState(dir) != FileDivergent {
+		t.Fatalf("edited: hooks %s mcp %s", CopilotHooksState(dir), CopilotMCPState(dir))
+	}
+	found := false
+	for _, s := range Stale(dir) {
+		if s == "copilot: .github/hooks/cerne.json" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("divergent copilot hooks file not in Stale: %v", Stale(dir))
+	}
+}

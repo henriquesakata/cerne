@@ -298,9 +298,8 @@ func copilotEntry(matcher, invocation string) map[string]any {
 	return e
 }
 
-func installCopilot(projDir string) []Result {
-	asset := "copilot: hooks/cerne.json"
-	dst := filepath.Join(projDir, filepath.FromSlash(copilotHooksFile))
+// copilotHooksBytes is the exact content of .github/hooks/cerne.json.
+func copilotHooksBytes() ([]byte, error) {
 	doc := map[string]any{
 		"version": 1,
 		"hooks": map[string]any{
@@ -314,6 +313,13 @@ func installCopilot(projDir string) []Result {
 		},
 	}
 	out, err := marshalIndentNoHTML(doc, "", "  ")
+	return append(out, '\n'), err
+}
+
+func installCopilot(projDir string) []Result {
+	asset := "copilot: hooks/cerne.json"
+	dst := filepath.Join(projDir, filepath.FromSlash(copilotHooksFile))
+	out, err := copilotHooksBytes()
 	if err != nil {
 		return []Result{{Asset: asset, Status: StatusSkipped, Note: "cannot render config: " + err.Error()}}
 	}
@@ -325,7 +331,7 @@ func installCopilot(projDir string) []Result {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return []Result{{Asset: asset, Status: StatusSkipped, Note: "cannot create directory: " + err.Error()}}
 	}
-	st, err := writeIfChanged(dst, append(out, '\n'))
+	st, err := writeIfChanged(dst, out)
 	r := Result{Asset: asset, Status: st}
 	if err != nil {
 		r = Result{Asset: asset, Status: StatusSkipped, Note: "cannot write: " + err.Error()}

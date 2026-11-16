@@ -14,6 +14,7 @@ import (
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/hooks"
 	"github.com/henriquesakata/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/skills"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -118,12 +119,19 @@ func runHookSessionContext(cmd *cobra.Command, format string) {
 		}
 	}
 
+	stale := ""
+	if format == "copilot" {
+		stale = copilotStaleNotice(projDir)
+	}
 	ours := cloneIsOurs(cfg, projDir) // F-0434: never list another backend's work
 	work := "- none"
 	if ours {
 		work = activeWorkLines(cfg.ProjectID)
 	}
 	text := hooks.SessionRules(cfg.Gates.GauntletEnabled()) + "\n\nACTIVE WORK RIGHT NOW (cerne work list):\n" + work
+	if stale != "" {
+		text += "\n\n" + stale
+	}
 	if in.Source == "compact" && ours {
 		if block := compactBlock(dir, in.SessionID); block != "" {
 			text += "\n\n" + block
@@ -198,4 +206,20 @@ func compactBlock(dir, sess string) string {
 	}
 	return fmt.Sprintf("AFTER COMPACTION — this session is bound to %s.\nLatest handoff: %s %s %s — next: %s\nRead it first: cerne show %s",
 		workID, h.ID, h.State, store.ShortAge(time.Since(h.CreatedAt)), app.TruncateBody(h.Next, handoffNextRunes, 4*handoffNextRunes), h.ID)
+}
+
+// copilotStaleNotice is the F-0405 session-start check over the Copilot files:
+// only the Copilot entries of the shared stale lists, so a Copilot-only
+// project is not told about the Claude Code skills it never installed.
+func copilotStaleNotice(projDir string) string {
+	var names []string
+	for _, n := range append(hooks.Stale(projDir), skills.Stale(projDir)...) {
+		if strings.Contains(n, "copilot") {
+			names = append(names, n)
+		}
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	return "cerne: managed Copilot file(s) out of date with this cerne build: " + strings.Join(names, ", ") + " — run `cerne hook install --provider copilot` and `cerne skill install`."
 }

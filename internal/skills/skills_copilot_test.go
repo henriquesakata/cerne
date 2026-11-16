@@ -91,3 +91,43 @@ func TestSkillInstallCopilotSymlinkInstructionsSkipped(t *testing.T) {
 		t.Fatalf("symlink target written or no skip: %q skipped=%v", b, skipped)
 	}
 }
+
+// TestCopilotStates (F-0444 crit. 5): skill and instructions report ok /
+// divergent / missing; a divergent copy is stale, a missing one is not.
+func TestCopilotStates(t *testing.T) {
+	dir := t.TempDir()
+	if CopilotSkillState(dir) != hooks.FileMissing || CopilotInstructionsState(dir) != hooks.FileMissing {
+		t.Fatal("empty project must be missing")
+	}
+	for _, n := range Stale(dir) {
+		if strings.Contains(n, "copilot") {
+			t.Fatalf("missing copilot install must not be stale: %v", Stale(dir))
+		}
+	}
+	if _, err := Install(dir, hooks.ProviderCopilot); err != nil {
+		t.Fatal(err)
+	}
+	if CopilotSkillState(dir) != hooks.FileOK || CopilotInstructionsState(dir) != hooks.FileOK {
+		t.Fatal("fresh install must be ok")
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".github", "skills", guideName, "SKILL.md"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".github", "instructions", "cerne.instructions.md"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if CopilotSkillState(dir) != hooks.FileDivergent || CopilotInstructionsState(dir) != hooks.FileDivergent {
+		t.Fatal("edited copies must be divergent")
+	}
+	want := map[string]bool{"cerne-authoring (copilot)": false, "copilot instructions": false}
+	for _, n := range Stale(dir) {
+		if _, ok := want[n]; ok {
+			want[n] = true
+		}
+	}
+	for n, ok := range want {
+		if !ok {
+			t.Errorf("%q not in Stale: %v", n, Stale(dir))
+		}
+	}
+}

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -132,5 +133,26 @@ func TestHookBindWorkCopilotToolResult(t *testing.T) {
 	}
 	if id, ok, err := app.CurrentBinding(filepath.Dir(repoDir), repoDir, "sess-cp-bind", ""); err != nil || !ok || id != "W-0001" {
 		t.Fatalf("session not bound: (%q, %v, %v)", id, ok, err)
+	}
+}
+
+// TestHookSessionContextCopilotStale (F-0444 crit. 5): a Copilot session start
+// runs the F-0405 check over the Copilot files, so a divergent hooks file is
+// flagged in the context the agent receives.
+func TestHookSessionContextCopilotStale(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	if err := os.MkdirAll(filepath.Join(projDir, ".github", "hooks"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projDir, ".github", "hooks", "cerne.json"), []byte(`{"version":1,"hooks":{}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := execCerneStdin(t, sessionPayload("sess-st", projDir, ""), "hook", "session-context", "--format", "copilot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, _ := decodeTop(t, out)["additionalContext"].(string)
+	if !strings.Contains(text, "out of date with this cerne build") {
+		t.Fatalf("stale copilot file not flagged:\n%s", text)
 	}
 }

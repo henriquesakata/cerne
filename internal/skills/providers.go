@@ -70,6 +70,12 @@ func installProvider(projDir string, p hooks.Provider) []Result {
 	return out
 }
 
+// copilotInstructions renders the always-applied instructions file.
+func copilotInstructions(skillPath string) string {
+	return "---\ndescription: cerne project rules — work registration discipline\napplyTo: \"**\"\n---\n\n" +
+		hooks.RegisterRules + "\n\ncerne authoring guide: before creating or managing cerne features, decisions or references, read `" + skillPath + "`.\n"
+}
+
 // writeInstructions writes cerne's own always-applied instructions file: the
 // registration floor plus the pointer to the skill. Never through a symlink.
 func writeInstructions(projDir, rel, skillPath string) Result {
@@ -78,8 +84,7 @@ func writeInstructions(projDir, rel, skillPath string) Result {
 		res.Status, res.Note = StatusSkipped, link+" is a symlink — not written through; copy the registration rules there by hand"
 		return res
 	}
-	content := "---\ndescription: cerne project rules — work registration discipline\napplyTo: \"**\"\n---\n\n" +
-		hooks.RegisterRules + "\n\ncerne authoring guide: before creating or managing cerne features, decisions or references, read `" + skillPath + "`.\n"
+	content := copilotInstructions(skillPath)
 	st, err := writeSkill(filepath.Join(projDir, filepath.FromSlash(rel)), content)
 	if err != nil {
 		res.Status, res.Note = StatusSkipped, "could not write "+rel+" ("+err.Error()+")"
