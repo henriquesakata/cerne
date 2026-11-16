@@ -1183,6 +1183,8 @@ func TestCodexChatProjectFilesLocalOnly(t *testing.T) {
 		if rec.Code != 200 || len(fake.Prompts) != 1 || strings.Contains(fake.Prompts[0], "find_files") == remote {
 			t.Fatalf("remote=%v: %d %s", remote, rec.Code, rec.Body.String())
 		}
+	}
+}
 
 // fullSpecBody is a spec carrying every template section (pt), the shape a
 // registration must have since F-0435.
