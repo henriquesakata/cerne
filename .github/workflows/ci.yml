@@ -17,6 +17,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - name: release notes extractor
+        run: sh scripts/release-notes_test.sh
       - run: go vet ./...
       # -timeout 30m is required, not decorative: the default is 10 min per
       # package and internal/cli + internal/app spawn real git per test (F-0289).
