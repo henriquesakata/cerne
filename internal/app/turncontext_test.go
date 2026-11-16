@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -61,10 +62,11 @@ func turnContextFixture(t *testing.T) (repoDir, dbPath string) {
 func TestBuildTurnContextRetrieves(t *testing.T) {
 	repoDir, dbPath := turnContextFixture(t)
 
-	got, err := BuildTurnContext(repoDir, dbPath, "como funciona a conciliação do extrato OFX?", 6000)
+	tc, err := BuildTurnContext(repoDir, dbPath, "como funciona a conciliação do extrato OFX?", 6000)
 	if err != nil {
 		t.Fatalf("BuildTurnContext: %v", err)
 	}
+	got := tc.Prompt
 	if !strings.Contains(got, "F-0001") {
 		t.Fatalf("context missing the relevant feature:\n%s", got)
 	}
@@ -81,10 +83,11 @@ func TestBuildTurnContextRetrieves(t *testing.T) {
 func TestBuildTurnContextBaseline(t *testing.T) {
 	repoDir, dbPath := turnContextFixture(t)
 
-	got, err := BuildTurnContext(repoDir, dbPath, "xyzzy plugh", 6000)
+	tc, err := BuildTurnContext(repoDir, dbPath, "xyzzy plugh", 6000)
 	if err != nil {
 		t.Fatalf("BuildTurnContext: %v", err)
 	}
+	got := tc.Prompt
 	for _, want := range []string{"D-0001", "Backend git é a fonte da verdade", "N-0001", "Specs usam EARS"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("context missing always-on baseline %q:\n%s", want, got)
@@ -108,10 +111,11 @@ func TestBuildTurnContextEmpty(t *testing.T) {
 		t.Fatalf("index.Rebuild: %v", err)
 	}
 
-	got, err := BuildTurnContext(repoDir, dbPath, "qualquer coisa", 6000)
+	tc, err := BuildTurnContext(repoDir, dbPath, "qualquer coisa", 6000)
 	if err != nil {
 		t.Fatalf("BuildTurnContext: %v", err)
 	}
+	got := tc.Prompt
 	if got != "" {
 		t.Fatalf("context should be empty, got:\n%s", got)
 	}
@@ -123,10 +127,11 @@ func TestBuildTurnContextBudget(t *testing.T) {
 	repoDir, dbPath := turnContextFixture(t)
 
 	const budget = 120
-	got, err := BuildTurnContext(repoDir, dbPath, "conciliação extrato OFX lançamentos", budget)
+	tc, err := BuildTurnContext(repoDir, dbPath, "conciliação extrato OFX lançamentos", budget)
 	if err != nil {
 		t.Fatalf("BuildTurnContext: %v", err)
 	}
+	got := tc.Prompt
 	if !strings.Contains(got, "…") {
 		t.Fatalf("small budget should have truncated a snippet:\n%s", got)
 	}
@@ -142,10 +147,11 @@ func TestBuildTurnContextBudget(t *testing.T) {
 func TestBuildTurnContextDisabled(t *testing.T) {
 	repoDir, dbPath := turnContextFixture(t)
 
-	got, err := BuildTurnContext(repoDir, dbPath, "conciliação", -1)
+	tc, err := BuildTurnContext(repoDir, dbPath, "conciliação", -1)
 	if err != nil {
 		t.Fatalf("BuildTurnContext: %v", err)
 	}
+	got := tc.Prompt
 	if got != "" {
 		t.Fatalf("negative budget should disable the injection, got:\n%s", got)
 	}
@@ -156,10 +162,11 @@ func TestBuildTurnContextDisabled(t *testing.T) {
 func TestBuildTurnContextBrokenIndex(t *testing.T) {
 	repoDir, _ := turnContextFixture(t)
 
-	got, err := BuildTurnContext(repoDir, filepath.Join(t.TempDir(), "absent.db"), "conciliação", 6000)
+	tc, err := BuildTurnContext(repoDir, filepath.Join(t.TempDir(), "absent.db"), "conciliação", 6000)
 	if err != nil {
 		t.Fatalf("BuildTurnContext: %v", err)
 	}
+	got := tc.Prompt
 	if !strings.Contains(got, "D-0001") {
 		t.Fatalf("baseline should survive a broken index:\n%s", got)
 	}
@@ -177,10 +184,11 @@ func TestBuildTurnContextExcludesIdeas(t *testing.T) {
 	if err := index.Rebuild(repoDir, dbPath, time.Time{}); err != nil {
 		t.Fatalf("index.Rebuild: %v", err)
 	}
-	got, err := BuildTurnContext(repoDir, dbPath, "o que temos sobre zebra e conciliação?", 6000)
+	tc, err := BuildTurnContext(repoDir, dbPath, "o que temos sobre zebra e conciliação?", 6000)
 	if err != nil {
 		t.Fatalf("BuildTurnContext: %v", err)
 	}
+	got := tc.Prompt
 	if !strings.Contains(got, "F-0001") {
 		t.Fatalf("the priming lost the matching feature (fixture broken):\n%s", got)
 	}
@@ -193,12 +201,34 @@ func TestBuildTurnContextExcludesIdeas(t *testing.T) {
 // (F-0436 criterion 5): reporting the sources must not touch what the model reads.
 func TestBuildTurnContext_PromptUnchanged(t *testing.T) {
 	repoDir, dbPath := turnContextFixture(t)
-	got, err := BuildTurnContext(repoDir, dbPath, "como funciona a conciliação do extrato OFX?", 600)
+	tc, err := BuildTurnContext(repoDir, dbPath, "como funciona a conciliação do extrato OFX?", 600)
 	if err != nil {
 		t.Fatalf("BuildTurnContext: %v", err)
 	}
+	got := tc.Prompt
 	const want = "Contexto recuperado do projeto (injetado automaticamente pelo cerne; o estado ao lado de cada id é a verdade atual):\n\nDecisões ativas do projeto:\n- D-0001 Backend git é a fonte da verdade\n\nConvenções registradas (notas; consulte com cerne note show <id> quando precisar do texto):\n- N-0001 Specs usam EARS nos critérios\n\nTrechos recuperados do backend, relevantes à mensagem do usuário:\n- F-0001 [implemented]: ## Problema\nO «extrato» do banco chega em «OFX» e ninguém «concilia» os…\n\n"
 	if got != want {
 		t.Fatalf("prompt changed:\n%q", got)
+	}
+}
+
+// TestBuildTurnContext_ReturnsSources: the sources come in prompt order with
+// id, title, kind and state — never the snippet text (F-0436 criterion 1).
+func TestBuildTurnContext_ReturnsSources(t *testing.T) {
+	repoDir, dbPath := turnContextFixture(t)
+	tc, err := BuildTurnContext(repoDir, dbPath, "como funciona a conciliação do extrato OFX?", 600)
+	if err != nil {
+		t.Fatalf("BuildTurnContext: %v", err)
+	}
+	want := []TurnSource{
+		{ID: "D-0001", Title: "Backend git é a fonte da verdade", Kind: "decision", State: "active"},
+		{ID: "N-0001", Title: "Specs usam EARS nos critérios", Kind: "convention", State: "active"},
+		{ID: "F-0001", Title: "Conciliação bancária", Kind: "retrieved", State: "implemented"},
+	}
+	if !slices.Equal(tc.Sources, want) {
+		t.Fatalf("sources = %+v, want %+v", tc.Sources, want)
+	}
+	if empty, _ := BuildTurnContext(repoDir, dbPath, "x", 0); len(empty.Sources) != 0 {
+		t.Fatalf("zero budget must report no sources: %+v", empty.Sources)
 	}
 }

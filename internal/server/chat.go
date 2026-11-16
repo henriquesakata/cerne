@@ -237,8 +237,8 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 	// search/ask).
 	if dbPath, err := ensureIndex(repoDir, projectID); err == nil {
 		turnCtx, err := app.BuildTurnContext(repoDir, dbPath, lastUserMessage(msgs), cfg.Agent.RetrievalBudgetOrDefault())
-		if err == nil && turnCtx != "" {
-			sysPrompt += "\n" + turnCtx
+		if err == nil && turnCtx.Prompt != "" {
+			sysPrompt += "\n" + turnCtx.Prompt
 		}
 	}
 
