@@ -19,6 +19,7 @@ import {
   type DupMatch,
   type Feature,
   type ModelEntry,
+  type TurnSource,
 } from './api'
 import * as chatRequest from './chatRequest'
 import CommandProposal, { CopyCommands, ToolRuns } from './CommandProposal'
@@ -158,6 +159,39 @@ function parseFenced(reply: string, fence: string): ParsedProposal | null {
 // repeti-la no scroll enterraria a condução da conversa. O bloco de nota
 // (F-0249) sai pelo mesmo motivo — ele é renderizado como card. Mensagem sem
 // bloco volta intacta.
+// turnSourceHref (F-0436) leva à página da entidade pelo prefixo do id; um
+// prefixo sem página própria fica como texto.
+function turnSourceHref(id: string): string | null {
+  const route = { 'F-': 'f', 'D-': 'd', 'N-': 'n', 'R-': 'r' }[id.slice(0, 2)]
+  if (route) return `#/${route}/${encodeURIComponent(id)}`
+  return id.startsWith('wiki:') ? `#/wiki/${encodeURIComponent(id.slice(5))}` : null
+}
+
+// TurnContextDisclosure (F-0436) mostra ao humano o que o servidor injetou no
+// turno: id, título, tipo e estado — nunca o trecho. Recolhido; lista vazia
+// não desenha nada.
+export function TurnContextDisclosure({ sources }: { sources?: TurnSource[] }) {
+  const { t } = useT()
+  if (!sources?.length) return null
+  return (
+    <details className="turn-context">
+      <summary>{t.turnContext.label(sources.length)}</summary>
+      <ul>
+        {sources.map((s) => {
+          const href = turnSourceHref(s.id)
+          return (
+            <li key={`${s.kind}:${s.id}`}>
+              {href ? <a href={href}>{s.id}</a> : s.id}
+              {s.title ? ` ${s.title}` : ''}
+              {s.state ? <span className="muted"> [{s.state}]</span> : null}
+            </li>
+          )
+        })}
+      </ul>
+    </details>
+  )
+}
+
 export function stripProposalFence(reply: string): string {
   return stripFence(stripFence(stripFence(reply, PROPOSAL_FENCE), NOTE_FENCE), COMMAND_FENCE)
 }
@@ -1094,6 +1128,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
                     <CommandProposal commands={commands} busy={busy} bound={cardBound} onConfirm={confirmCommands} />
                   )}
                   {fenced && m.noExec && <CopyCommands commands={fenced} />}
+                  <TurnContextDisclosure sources={m.context} />
                   {(m.runs || m.noRuns || m.truncated) && (
                     <ToolRuns runs={m.runs ?? []} noRuns={m.noRuns} truncated={m.truncated} />
                   )}

@@ -533,6 +533,9 @@ const ptBR = {
     confirmCapReached: (title: string, max: number) =>
       `Limite de ${max} conversas atingido — "${title}" será removida. Continuar?`,
   },
+  turnContext: {
+    label: (n: number) => `Contexto deste turno (${n})`,
+  },
   quoteComment: {
     title: 'Comentar trecho',
     placeholder: 'O que ajustar neste trecho?',
@@ -1852,6 +1855,9 @@ const en: Messages = {
       `Delete the conversation "${title}"? This cannot be undone.`,
     confirmCapReached: (title: string, max: number) =>
       `${max}-conversation limit reached — "${title}" will be removed. Continue?`,
+  },
+  turnContext: {
+    label: (n: number) => `This turn's context (${n})`,
   },
   quoteComment: {
     title: 'Comment on excerpt',

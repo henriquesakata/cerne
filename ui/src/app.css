@@ -927,6 +927,11 @@ h2 {
 .tool-run-failed span { color: var(--danger); }
 .tool-runs-warning { margin: 0 0 0.4rem; font-size: 0.8rem; color: var(--danger); }
 
+/* Contexto injetado no turno (F-0436). */
+.turn-context { margin: 0.4rem 0 0; font-size: 0.8rem; color: var(--muted); }
+.turn-context summary { cursor: pointer; }
+.turn-context ul { margin: 0.3rem 0 0; padding-left: 1.2rem; }
+
 /* Referência ao painel na transcrição (F-0255 critério 1). */
 .backlog-chat-proposal-ref {
   margin: 0.4rem 0 0;

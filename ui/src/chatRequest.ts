@@ -1,4 +1,4 @@
-import { ChatRunsError, streamChat, summarizeChatTitle, type ChatMsg, type ChatOverride, type ChatRun } from './api'
+import { ChatRunsError, streamChat, summarizeChatTitle, type ChatMsg, type ChatOverride, type ChatRun, type TurnSource } from './api'
 import { applySummaryTitle, getConversation, readChats, writeChats } from './useBacklogChats'
 
 // chatRequest (F-0230) é um singleton por conversa, fora do ciclo de vida do
@@ -75,7 +75,7 @@ export function send(convId: string, messages: ChatMsg[], override: ChatOverride
   let appended = false
   // F-0323: o terminal traz as execuções e a ausência de canal; elas ficam na
   // mensagem do agente (só quando presentes, para não sujar as demais).
-  const writeAssistant = (content: string, res?: { runs?: ChatRun[]; no_exec?: boolean; no_runs?: boolean; truncated?: boolean }) => {
+  const writeAssistant = (content: string, res?: { runs?: ChatRun[]; no_exec?: boolean; no_runs?: boolean; truncated?: boolean; context?: TurnSource[] }) => {
     const msg: ChatMsg = {
       role: 'assistant',
       content,
@@ -83,6 +83,7 @@ export function send(convId: string, messages: ChatMsg[], override: ChatOverride
       ...(res?.no_exec ? { noExec: true } : {}),
       ...(res?.no_runs ? { noRuns: true } : {}),
       ...(res?.truncated ? { truncated: true } : {}),
+      ...(res?.context?.length ? { context: res.context } : {}),
     }
     patchMessages(convId, (current) => {
       const last = current[current.length - 1]

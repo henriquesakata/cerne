@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
-import BacklogChat, { parseCommands, parseNote } from './BacklogChat'
+import BacklogChat, { parseCommands, parseNote, TurnContextDisclosure } from './BacklogChat'
 import { ChatRunsError, setApiProject, type ChatAnswer, type ChatOverride, type ChatTitle, type CreateOutcome, type Feature, type FeatureDetail, type LLMOptions, type ModelEntry, type Note } from './api'
 import { getConversation, useBacklogChats, writeChats, type Conversation } from './useBacklogChats'
 
@@ -1316,5 +1316,29 @@ describe('BacklogChat — confirmação de comandos (F-0260)', () => {
     await sendAndGetReply('Me conta mais sobre o formato.')
     await waitFor(() => expect(screen.getByText('Me conta mais sobre o formato.')).toBeInTheDocument())
     expect(screen.queryByRole('button', { name: /executar/i })).not.toBeInTheDocument()
+  })
+})
+
+describe('TurnContextDisclosure (F-0436)', () => {
+  const sources = [
+    { id: 'D-0001', title: 'Backend git é a fonte da verdade', kind: 'decision' as const, state: 'active' },
+    { id: 'F-0001', title: 'Conciliação', kind: 'retrieved' as const, state: 'implemented' },
+  ]
+
+  it('critério 2: <details> recolhido com a contagem e um link por fonte', () => {
+    cleanup()
+    const { container } = render(<TurnContextDisclosure sources={sources} />)
+    const details = container.querySelector('details')
+    expect(details).not.toHaveAttribute('open')
+    expect(screen.getByText('Contexto deste turno (2)')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'D-0001' })).toHaveAttribute('href', '#/d/D-0001')
+    expect(screen.getByRole('link', { name: 'F-0001' })).toHaveAttribute('href', '#/f/F-0001')
+    expect(container.textContent).toContain('[implemented]')
+  })
+
+  it('critério 3: sem fontes não desenha nada', () => {
+    cleanup()
+    const { container } = render(<TurnContextDisclosure sources={[]} />)
+    expect(container).toBeEmptyDOMElement()
   })
 })
