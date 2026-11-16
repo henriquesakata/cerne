@@ -13,16 +13,26 @@ file=${CHANGELOG:-CHANGELOG.md}
 ver=${tag#v}
 ver=${ver%%-*}
 
-notes=$(awk -v head="## [$ver]" '
-  /^```/ { fence = !fence }
+# CR is stripped (a CRLF file). A fence opens with 3+ backticks or tildes and
+# closes with the same character, at least as long; inside one, nothing ends
+# the section.
+notes=$(tr -d '\r' <"$file" | awk -v head="## [$ver]" '
+  match($0, /^(```+|~~~+)/) {
+    c = substr($0, 1, 1); n = RLENGTH
+    if (!fence) { fence = c; flen = n }
+    else if (c == fence && n >= flen && $0 ~ /^(`+|~+)[ \t]*$/) fence = ""
+  }
   !fence && (index($0, "## [") == 1 || $0 ~ /^\[[^]]+\]: /) {
     if (on) exit
     if (index($0, head) == 1) { on = 1; found = 1 }
   }
-  on { print }
-  END { exit !found }
-' "$file") || {
-  echo "release-notes: no section '## [$ver]' in $file" >&2
+  on { print; if (!start) start = NR; else if ($0 !~ /^[ \t]*$/) body++ }
+  END { if (!found) exit 2; if (!body) exit 3 }
+') || {
+  case $? in
+    3) echo "release-notes: section '## [$ver]' in $file is empty" >&2 ;;
+    *) echo "release-notes: no section '## [$ver]' in $file" >&2 ;;
+  esac
   exit 1
 }
 
