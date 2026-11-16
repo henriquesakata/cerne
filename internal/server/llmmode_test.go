@@ -7,7 +7,7 @@ import (
 )
 
 func TestValidLLMModeAcceptsSubscriptionCLIs(t *testing.T) {
-	for _, m := range []string{"claude-cli", "codex-cli", "gemini-cli", "cursor-cli", "byo-key", "delegation"} {
+	for _, m := range []string{"claude-cli", "codex-cli", "gemini-cli", "cursor-cli", "copilot-cli", "byo-key", "delegation"} {
 		if !validLLMMode(m) {
 			t.Errorf("%q rejected", m)
 		}
@@ -24,6 +24,17 @@ func TestLLMConfigModelForCursor(t *testing.T) {
 		t.Errorf("model = %q, want m", got)
 	}
 	if got := llmConfig(project.LLMConfig{Mode: "cursor-cli", Model: "m", Provider: "anthropic"}, true).Model; got != "" {
+		t.Errorf("model with a byo-key provider = %q, want empty", got)
+	}
+}
+
+// F-0445: like the other subscription CLIs, copilot is given llm.model only
+// when no byo-key provider is set, and the panel reports exactly that.
+func TestLLMConfigModelForCopilot(t *testing.T) {
+	if got := llmConfig(project.LLMConfig{Mode: "copilot-cli", Model: "m"}, true).Model; got != "m" {
+		t.Errorf("model = %q, want m", got)
+	}
+	if got := llmConfig(project.LLMConfig{Mode: "copilot-cli", Model: "m", Provider: "anthropic"}, true).Model; got != "" {
 		t.Errorf("model with a byo-key provider = %q, want empty", got)
 	}
 }

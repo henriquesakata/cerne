@@ -1356,8 +1356,8 @@ const ptBR = {
       "The API endpoint for the OpenAI-compatible providers, for example a local Ollama (http://localhost:11434/v1). Required for the compatible provider; empty uses the provider's own address.":
         'O endereço da API dos provedores compatíveis com a OpenAI, por exemplo um Ollama local (http://localhost:11434/v1). Obrigatório no provedor compatível; vazio usa o endereço do próprio provedor.',
       'AI agent': 'Agente de IA',
-      "How cerne reaches a model for ask, compile and the chat. A subscription CLI (claude-cli, codex-cli, gemini-cli, cursor-cli) uses the plan you already pay for; byo-key calls a provider's API with a key; delegation hands the prompt to the agent already running. Unset, it follows the subscription CLI found on PATH.":
-        'Como o cerne chega a um modelo para o ask, o compile e o chat. Um CLI de assinatura (claude-cli, codex-cli, gemini-cli, cursor-cli) usa o plano que você já paga; byo-key chama a API de um provedor com uma chave; delegation entrega o prompt ao agente que já está rodando. Sem valor, segue o CLI de assinatura encontrado no PATH.',
+      "How cerne reaches a model for ask, compile and the chat. A subscription CLI (claude-cli, codex-cli, gemini-cli, cursor-cli, copilot-cli) uses the plan you already pay for; byo-key calls a provider's API with a key; delegation hands the prompt to the agent already running. Unset, it follows the subscription CLI found on PATH.":
+        'Como o cerne chega a um modelo para o ask, o compile e o chat. Um CLI de assinatura (claude-cli, codex-cli, gemini-cli, cursor-cli, copilot-cli) usa o plano que você já paga; byo-key chama a API de um provedor com uma chave; delegation entrega o prompt ao agente que já está rodando. Sem valor, segue o CLI de assinatura encontrado no PATH.',
       'Model': 'Modelo',
       "The model id sent to the CLI or the API. Empty uses the CLI's own default, or the catalog default for the anthropic provider.":
         'O id do modelo enviado ao CLI ou à API. Vazio usa o padrão do próprio CLI, ou o padrão do catálogo no provedor anthropic.',

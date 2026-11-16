@@ -110,12 +110,12 @@ func llmConfig(cfg project.LLMConfig, remote bool) llmConfigResponse {
 	mode, source := llm.ResolveModeSource(cfg.Mode)
 	eff := cfg.WithDefaults()
 	// The model the mode in use is actually given: claude-cli is never forced
-	// one, codex, gemini and cursor get it only when no byo-key provider is set.
+	// one, codex, gemini, cursor and copilot get it only when no byo-key provider is set.
 	model := cfg.Model
 	switch mode {
 	case llm.ModeClaudeCLI:
 		model = ""
-	case llm.ModeCodexCLI, llm.ModeGeminiCLI, llm.ModeCursorCLI:
+	case llm.ModeCodexCLI, llm.ModeGeminiCLI, llm.ModeCursorCLI, llm.ModeCopilotCLI:
 		if cfg.Provider != "" {
 			model = ""
 		}
@@ -184,7 +184,7 @@ type llmConfigRequest struct {
 // validLLMMode reports whether mode is one cerne understands.
 func validLLMMode(mode string) bool {
 	switch mode {
-	case llm.ModeDelegation, llm.ModeByoKey, llm.ModeClaudeCLI, llm.ModeCodexCLI, llm.ModeGeminiCLI, llm.ModeCursorCLI:
+	case llm.ModeDelegation, llm.ModeByoKey, llm.ModeClaudeCLI, llm.ModeCodexCLI, llm.ModeGeminiCLI, llm.ModeCursorCLI, llm.ModeCopilotCLI:
 		return true
 	}
 	return false
@@ -234,7 +234,7 @@ func handleLLMConfigPut(w http.ResponseWriter, r *http.Request, projDir string) 
 	}
 	if !validLLMMode(req.Mode) {
 		writeJSON(w, http.StatusBadRequest,
-			errorBody(`invalid mode (expected "delegation", "claude-cli", "codex-cli", "gemini-cli", "cursor-cli" or "byo-key")`))
+			errorBody(`invalid mode (expected "delegation", "claude-cli", "codex-cli", "gemini-cli", "cursor-cli", "copilot-cli" or "byo-key")`))
 		return
 	}
 	_, dir, err := project.LoadConfig(projDir)

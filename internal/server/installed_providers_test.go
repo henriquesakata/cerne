@@ -28,17 +28,17 @@ func stubInstalledCLIs(t *testing.T, found ...string) {
 // remote serve keeps only the configured one.
 func TestLLMConfigListsInstalledCLIs(t *testing.T) {
 	t.Setenv("CERNE_CONFIG_DIR", t.TempDir())
-	stubInstalledCLIs(t, "claude", "codex", "cursor-agent")
+	stubInstalledCLIs(t, "claude", "codex", "cursor-agent", "copilot")
 	cfg := project.LLMConfig{Mode: "claude-cli"}
-	if got := strings.Join(llmConfig(cfg, false).Providers, ","); got != "anthropic,openai,cursor" {
-		t.Fatalf("local providers = %q, want anthropic,openai,cursor", got)
+	if got := strings.Join(llmConfig(cfg, false).Providers, ","); got != "anthropic,openai,cursor,copilot" {
+		t.Fatalf("local providers = %q, want anthropic,openai,cursor,copilot", got)
 	}
 	if got := strings.Join(llmConfig(cfg, true).Providers, ","); got != "anthropic" {
 		t.Fatalf("remote providers = %q, want anthropic", got)
 	}
 	// byo-key with an installed CLI of the same vendor: no duplicate.
-	if got := strings.Join(llmConfig(project.LLMConfig{Mode: "byo-key"}, false).Providers, ","); got != "anthropic,openai,cursor" {
-		t.Fatalf("byo-key providers = %q, want anthropic,openai,cursor", got)
+	if got := strings.Join(llmConfig(project.LLMConfig{Mode: "byo-key"}, false).Providers, ","); got != "anthropic,openai,cursor,copilot" {
+		t.Fatalf("byo-key providers = %q, want anthropic,openai,cursor,copilot", got)
 	}
 }
 
@@ -94,12 +94,16 @@ func providerTurnDir(t *testing.T, projDir, repoDir, provider string) (*project.
 // provider built.
 func TestChatProviderSwitchesMode(t *testing.T) {
 	t.Setenv("CERNE_CONFIG_DIR", t.TempDir())
-	stubInstalledCLIs(t, "claude", "codex")
+	stubInstalledCLIs(t, "claude", "codex", "copilot")
 	repoDir, projDir, _ := newGitBackend(t)
 	if err := project.SaveConfig(projDir, project.Config{ProjectID: "proj-chat", Backend: "unused", LLM: project.LLMConfig{Mode: "claude-cli"}}); err != nil {
 		t.Fatal(err)
 	}
 	before, _ := os.ReadFile(filepath.Join(projDir, ".cernerc"))
+	// F-0445: the Copilot CLI is a provider of its own.
+	if cfg, code, body := providerTurn(t, projDir, repoDir, "copilot"); code != http.StatusOK || cfg == nil || cfg.Mode != "copilot-cli" || cfg.Model != "gpt-x" || cfg.Effort != "high" {
+		t.Fatalf("copilot turn = %d %+v; body: %s", code, cfg, body)
+	}
 
 	if cfg, code, body := providerTurn(t, projDir, repoDir, "openai"); code != http.StatusOK || cfg == nil || cfg.Mode != "codex-cli" || cfg.Model != "gpt-x" || cfg.Effort != "high" {
 		t.Fatalf("openai turn = %d %+v; body: %s", code, cfg, body)
