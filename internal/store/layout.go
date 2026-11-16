@@ -234,6 +234,9 @@ func ReadAllEvents(backendDir string) ([]domain.Event, error) {
 				return nil, fmt.Errorf("%s: %w", de.Name(), err)
 			}
 			ev.Actor = domain.ActorLabel(ev.Actor) // F-0442: read only
+			if pa, ok := ev.Payload["actor"]; ok { // work.started carries the owner too
+				ev.Payload["actor"] = domain.ActorLabel(pa)
+			}
 			events = append(events, ev)
 		}
 	}

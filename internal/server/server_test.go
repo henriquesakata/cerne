@@ -853,6 +853,24 @@ func TestEventsEndpoint(t *testing.T) {
 	}
 }
 
+// F-0442: a legacy work.started serves the pseudonym in payload.actor too.
+func TestEventsEndpointLabelsPayloadActor(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	ev := domain.NewEvent("W-0001", "work.started", map[string]string{"title": "t", "actor": "agent:alice@mac.local"}, "agent:alice@mac.local")
+	if err := store.AppendEvent(repoDir, ev); err != nil {
+		t.Fatal(err)
+	}
+	var sink map[string]any
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/events", "", &sink)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if body := rec.Body.String(); strings.Contains(body, "alice") || strings.Contains(body, "mac.local") ||
+		!strings.Contains(body, domain.MachinePseudonym("alice@mac.local")) {
+		t.Errorf("events body leaks the login or host (or lacks the pseudonym): %s", body)
+	}
+}
+
 func TestEventsEndpointEmpty(t *testing.T) {
 	repoDir, projDir := newBackend(t)
 	var got struct {

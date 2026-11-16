@@ -122,3 +122,31 @@ func TestHandoffBodyLogAndWritesLabeled(t *testing.T) {
 		t.Errorf("log = %+v, %v", es, err)
 	}
 }
+
+// F-0442: the actor inside a legacy work.started payload is read as the
+// pseudonym too; the file stays byte-identical and a content key is untouched.
+func TestLegacyPayloadActorReadAsPseudonym(t *testing.T) {
+	dir := t.TempDir()
+	if err := InitLayout(dir, Project{Name: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	ev := domain.NewEvent("W-0001", "work.started", map[string]string{"title": "alice@mac.local fala", "actor": "agent:alice@mac.local", "by": "D-0052"}, "agent:alice@mac.local")
+	if err := AppendEvent(dir, ev); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshotTree(t, dir)
+	evs, err := ReadEvents(dir)
+	if err != nil || len(evs) != 1 {
+		t.Fatalf("events = %v, %v", evs, err)
+	}
+	want := "agent:" + domain.MachinePseudonym("alice@mac.local")
+	if got := evs[0].Payload["actor"]; got != want {
+		t.Errorf("payload actor = %q, want %q", got, want)
+	}
+	if evs[0].Payload["by"] != "D-0052" || evs[0].Payload["title"] != "alice@mac.local fala" {
+		t.Errorf("non-actor payload keys changed: %v", evs[0].Payload)
+	}
+	if snapshotTree(t, dir) != before {
+		t.Fatal("reading rewrote a file")
+	}
+}
