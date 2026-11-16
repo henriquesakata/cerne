@@ -271,7 +271,7 @@ Outside a cerne project the server refuses to start.
 
 ## Agent integrations
 
-cerne is built for Claude Code, Cursor, Codex CLI and Gemini CLI, and has been used extensively only with Claude Code. "Supported" below means cerne installs the files; it does not mean the integration has been validated in daily use.
+cerne is built for Claude Code, Cursor, Codex CLI, Gemini CLI and GitHub Copilot, and has been used extensively only with Claude Code. Support for Cursor, Codex CLI and GitHub Copilot grew in November 2026 and passed each delivery's tests, but has seen little real use yet. "Supported" below means cerne installs the files; it does not mean the integration has been validated in daily use.
 
 | Agent | What `init` / `cerne hook install` delivers | How it has been tested |
 |---|---|---|
@@ -279,6 +279,7 @@ cerne is built for Claude Code, Cursor, Codex CLI and Gemini CLI, and has been u
 | **Cursor** | A rule in `.cursor/rules/cerne.mdc`, hooks, the authoring guide in `.cursor/skills/` | **Partially.** Light use; some hooks are degraded or not wired yet |
 | **Codex CLI** | Hooks and `.codex/config.toml`, the guide in `.agents/skills/` plus a pointer in `AGENTS.md` | **Early testing.** Built from Codex's documentation; hands-on testing has only just started |
 | **Gemini CLI** | `.gemini/settings.json` and `.gemini/.env`, the guide in `.gemini/skills/` plus a pointer in `GEMINI.md` | **Not tested.** Built from Gemini's documentation |
+| **GitHub Copilot** | An instructions file in `.github/instructions/cerne.instructions.md`, hooks in `.github/hooks/cerne.json`, the guide in `.github/skills/` | **Early testing.** Hooks probed on Copilot CLI; VS Code agent mode and the cloud agent are not verified |
 | **Any MCP client** | `cerne mcp`, read-only, over stdio | Covered by automated tests through the MCP Go SDK client; not validated against specific clients |
 
 `init` delivers the guide to Claude Code always, and to the other agents only when their config folder (`.cursor/`, `.codex/`, `.gemini/`) exists in the project; it prints one line per agent, including the ones not detected. To add one whose folder is missing:
@@ -290,7 +291,7 @@ cerne skill install                                 # the authoring guide, for a
 
 "Delivered" means the file is in place: cerne cannot verify that an agent loads it. What each agent receives, its load condition and what degrades are in the [provider parity matrix](docs/provider-parity.md), generated from the installer's own table.
 
-Separately, some commands call a model themselves (see [Where your data goes](#where-your-data-goes)). They can use the subscription CLI of Claude Code, Codex CLI or Gemini CLI, and on `main` (not yet in a release) the Cursor CLI. Of these, Claude Code is the one in daily use here.
+Separately, some commands call a model themselves (see [Where your data goes](#where-your-data-goes)). They can use the subscription CLI of Claude Code, Codex CLI or Gemini CLI, and, from v0.14.0, the Cursor CLI and the GitHub Copilot CLI. Of these, Claude Code is the one in daily use here.
 
 ## Architecture
 
@@ -328,7 +329,7 @@ cerne is young and pre-1.0: commands and file formats can still change between r
 
 **Most exercised.** The lifecycle and its gates, `pull`/`push`/`sync`, lint, search, the dashboard and the Claude Code integration: this repository runs on them daily.
 
-**Still changing quickly.** The dashboard's Backlog chat, the Cursor CLI model mode (on `main`, not yet released), and the integrations with agents other than Claude Code.
+**Still changing quickly.** The dashboard's Backlog chat, the Cursor CLI and GitHub Copilot CLI model modes (new in v0.14.0), and the integrations with agents other than Claude Code.
 
 **Known limitations.**
 
