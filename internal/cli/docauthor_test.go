@@ -5,8 +5,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -177,5 +179,47 @@ func TestShowDocWrites(t *testing.T) {
 	}
 	if !strings.Contains(js, `"provider": ""`) || !strings.Contains(js, `"model": ""`) {
 		t.Fatalf("a write keeps provider and model keys even when empty:\n%s", js)
+	}
+}
+
+// F-0445 critic: a draft written through copilot-cli (model "auto") is
+// credited to the model the CLI reported it ran, read from its JSON events.
+func TestDraftsRecordTheModelCopilotReported(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a shell script stands in for the copilot binary")
+	}
+	body := "## Resultado\n\nEntregue. A emissão de boletos passou a rodar no fechamento, sem planilha intermediária.\n\n## Aceitação\n\n1. ATENDIDO — TestX prova a emissão para um pedido aprovado, com o boleto gravado no fechamento."
+	msg, _ := json.Marshal(map[string]any{"type": "assistant.message", "data": map[string]any{"model": "mai-code-1.1-flash", "phase": "final_answer", "content": body}})
+	bin := t.TempDir()
+	events := filepath.Join(bin, "events.jsonl")
+	mustWrite(t, events, string(msg)+"\n")
+	mustWrite(t, filepath.Join(bin, "copilot"), "#!/bin/sh\ncat >/dev/null\ncat "+events+"\n")
+	if err := os.Chmod(filepath.Join(bin, "copilot"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	projDir, _, repoDir := setupProject(t, "finance")
+	if out, err := execCerne(t, "feature", "new", "Boletos", "--context", "ctx de teste", "--module", "finance", "--dir", projDir); err != nil {
+		t.Fatalf("feature new: %v\n%s", err, out)
+	}
+	cfg, dir, err := project.LoadConfig(projDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.LLM.Mode = "copilot-cli"
+	if err := project.SaveConfig(dir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := execCerne(t, "result", "draft", "F-0001", "--dir", projDir); err != nil {
+		t.Fatalf("result draft: %v\n%s", err, out)
+	}
+	evs, err := store.ReadEvents(repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := evs[len(evs)-1].Payload
+	if p["doc"] != "result" || p["provider"] != "copilot-cli" || p["model"] != "mai-code-1.1-flash" || p["source"] != "llm-config" {
+		t.Fatalf("last event payload = %v, want copilot-cli/mai-code-1.1-flash", p)
 	}
 }

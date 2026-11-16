@@ -92,3 +92,12 @@ func (f *Fake) Complete(_ context.Context, prompt string) (string, error) {
 	f.Prompts = append(f.Prompts, prompt)
 	return f.Reply, nil
 }
+
+// AnsweredModel is the model a provider's CLI reported it ran on its last call,
+// "" when the provider reports none.
+func AnsweredModel(p Provider) string {
+	if r, ok := p.(interface{ AnsweredModel() string }); ok {
+		return r.AnsweredModel()
+	}
+	return ""
+}

@@ -38,7 +38,12 @@ func HumanAuthor() DocAuthor { return DocAuthor{Source: "human"} }
 
 // LLMAuthor is the [llm] config c of a call cerne itself made (a draft, the
 // Backlog chat). claude-cli is never passed --model, so it names no model.
-func LLMAuthor(c project.LLMConfig) DocAuthor {
+func LLMAuthor(c project.LLMConfig) DocAuthor { return LLMAuthorAnswered(c, "") }
+
+// LLMAuthorAnswered is LLMAuthor for a call whose CLI reported the model that
+// really ran (copilot-cli under "auto" picks its own): that model replaces the
+// configured one, which is what documents then credit.
+func LLMAuthorAnswered(c project.LLMConfig, answered string) DocAuthor {
 	if llm.ResolveMode(c.Mode) == llm.ModeClaudeCLI {
 		return DocAuthor{Provider: llm.ModeClaudeCLI, Source: "llm-config"}
 	}
@@ -47,6 +52,9 @@ func LLMAuthor(c project.LLMConfig) DocAuthor {
 	if mode := llm.ResolveMode(c.Mode); mode == llm.ModeCodexCLI || mode == llm.ModeGeminiCLI || mode == llm.ModeCursorCLI || mode == llm.ModeCopilotCLI {
 		if c.Provider != "" {
 			c.Model = ""
+		}
+		if mode == llm.ModeCopilotCLI && answered != "" {
+			c.Model = answered
 		}
 		return DocAuthor{Provider: mode, Model: c.Model, Source: "llm-config"}
 	}
