@@ -121,6 +121,30 @@ var englishGauntlet = strings.NewReplacer(
 // extractFencedBlock detect a ```mermaid block in diagram.go.
 const chatProposalFence = "cerne-proposta"
 
+// chatQuestionFence is the fourth fenced block (F-0437): a product question
+// the UI draws as an option card with one recommended option.
+const chatQuestionFence = "cerne-pergunta"
+
+// chatQuestionContract teaches the question block. The protocol forms an
+// author writes into the spec (the recommended marker, the origin of each
+// decision, the section name) follow the project's documentation language;
+// the prose stays Portuguese (N-0068 debt, N-0087).
+func chatQuestionContract(l doclang.Lang, designSection string) string {
+	marker, accepted, other, free := "recomendada", "recomendação aceita", "outra opção", "resposta livre do usuário"
+	if l == doclang.EN {
+		marker, accepted, other, free = "recommended", "recommendation accepted", "other option", "user's free answer"
+	}
+	return "PERGUNTAS AO USUÁRIO (cartão de opções)\n\n" +
+		"Quando precisar de uma DECISÃO DE PRODUTO que o contexto e o código não resolvem, não pergunte em prosa: emita um bloco cercado, com QUATRO crases na abertura e no fechamento, que a interface desenha como cartão de opções:\n\n" +
+		"````" + chatQuestionFence + "\n" +
+		"# <pergunta>\n" +
+		"- <opção> — <consequência em uma linha>\n" +
+		"- <opção> — <consequência em uma linha> (" + marker + ")\n" +
+		"````\n\n" +
+		"Regras: uma pergunta por bloco, de 2 a 4 opções, cada uma com uma linha de consequência, e EXATAMENTE uma terminada em \"(" + marker + ")\" — a sua recomendação. Bloco sem opção, sem recomendada ou com mais de uma aparece como texto. Emita no máximo 3 blocos por turno; mais que isso é sinal de condução ruim. Não use o bloco para dúvida que você resolve lendo o cerne ou o código.\n\n" +
+		"O usuário responde num turno com a forma \"**<pergunta>** → <escolha> (<origem>)\". Ao emitir a proposta, registre CADA pergunta respondida como uma linha da seção \"" + designSection + "\", com a escolha e a origem: \"" + accepted + "\", \"" + other + "\" ou \"" + free + "\"."
+}
+
 // ChatMessage is one turn of the Backlog chat transcript (F-0210). The
 // server is stateless: the whole transcript is resent on every call and
 // flattened into a single prompt via BuildChatPrompt (Provider.Complete takes
@@ -244,6 +268,7 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config, channel 
 	b.WriteString("Conduza a elaboração: entenda o problema real, não apenas a solução pedida.\n")
 	b.WriteString("- Situe a demanda no roster acima: se ela sobrepõe uma feature viva, aponte a sobreposição citando os ids e pergunte se é ajuste da existente ou feature nova.\n")
 	b.WriteString("- Quando houver mais de um caminho viável, apresente 1–2 abordagens com trade-offs no nível de spec (nunca código) antes de emitir o bloco de proposta.\n")
+	b.WriteString("- Faça suas perguntas de decisão de produto pelo bloco " + chatQuestionFence + " (contrato abaixo), com a sua recomendação em uma das opções.\n")
 	b.WriteString("- Quando problema, objetivo e critérios de aceitação testáveis fecharem — e SOMENTE então — proponha a candidata.\n\n")
 
 	// F-0270: the bar question is part of conduction, so it comes right after
@@ -302,6 +327,8 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config, channel 
 	b.WriteString("Quando o turno do usuário trouxer citações (linhas iniciadas com \"> \") recortadas de uma proposta sua, trate-as como pedido de revisão daqueles trechos: localize cada trecho na sua proposta anterior e REEMITA o bloco ")
 	fmt.Fprintf(&b, "````%s INTEIRO já corrigido. ", chatProposalFence)
 	b.WriteString("Não descreva a correção em prosa, não devolva só o trecho alterado e não peça para o usuário reescrever a spec — a proposta é sempre reemitida completa.\n\n")
+	b.WriteString(chatQuestionContract(l, sections[secDesign]))
+	b.WriteString("\n\n")
 	b.WriteString(chatNoteContract)
 	b.WriteString("\n\n")
 	if channel {

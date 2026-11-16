@@ -917,3 +917,44 @@ func TestBuildChatSystemPrompt_DraftCheck(t *testing.T) {
 		}
 	}
 }
+
+// TestBuildChatSystemPrompt_QuestionContract (F-0437 crit. 1 and 4): the
+// prompt teaches the cerne-pergunta block (format, 2-4 options, one
+// recommended, at most 3 per turn) and the rule that answered questions
+// become "Decisões do design" lines with their origin. The English prompt
+// carries the English forms and no Portuguese ones.
+func TestBuildChatSystemPrompt_QuestionContract(t *testing.T) {
+	repoDir, projDir := chatFixture(t)
+	pt, err := BuildChatSystemPrompt(repoDir, projDir, project.Config{}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"\n````" + chatQuestionFence + "\n",
+		"# <pergunta>",
+		"- <opção> — <consequência em uma linha>",
+		"(recomendada)",
+		"de 2 a 4 opções",
+		"no máximo 3",
+		"Decisões do design",
+		"recomendação aceita",
+		"outra opção",
+		"resposta livre do usuário",
+	} {
+		if !strings.Contains(pt, want) {
+			t.Errorf("pt prompt lacks %q", want)
+		}
+	}
+
+	en := englishChatPrompt(t)
+	for _, want := range []string{"(recommended)", "recommendation accepted", "other option", "user's free answer", "## Design decisions"} {
+		if !strings.Contains(en, want) {
+			t.Errorf("en prompt lacks %q", want)
+		}
+	}
+	for _, bad := range []string{"(recomendada)", "recomendação aceita", "outra opção", "resposta livre do usuário", "Decisões do design"} {
+		if strings.Contains(en, bad) {
+			t.Errorf("en prompt carries the Portuguese form %q", bad)
+		}
+	}
+}
