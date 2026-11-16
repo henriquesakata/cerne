@@ -143,7 +143,7 @@ func NewAgentProvider(cfg project.LLMConfig, dir string, write bool) (Provider, 
 	raw := cfg
 	cfg = cfg.WithDefaults()
 	if ResolveMode(cfg.Mode) == ModeCodexCLI && dir != "" {
-		return &cliProvider{kind: ModeCodexCLI, bin: "codex", model: cliModel(raw), run: execRun, dir: dir}, nil
+		return &cliProvider{kind: ModeCodexCLI, bin: "codex", model: cliModel(raw), effort: raw.Effort, run: execRun, dir: dir}, nil
 	}
 	if ResolveMode(cfg.Mode) == ModeClaudeCLI {
 		tools := AgentReadTools

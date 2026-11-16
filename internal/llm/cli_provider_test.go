@@ -797,6 +797,11 @@ func TestCodexCLIPassesEffort(t *testing.T) {
 	if e := np.(*cliProvider).effort; e != "low" {
 		t.Fatalf("NewProvider effort = %q, want low", e)
 	}
+	// The chat runs the agent path (project files, PR #20): it carries it too.
+	ap, _ := NewAgentProvider(project.LLMConfig{Mode: ModeCodexCLI, Effort: "low"}, t.TempDir(), false)
+	if e := ap.(*cliProvider).effort; e != "low" {
+		t.Fatalf("NewAgentProvider effort = %q, want low", e)
+	}
 }
 
 func TestCodexCLIErrorsNameTheFix(t *testing.T) {
