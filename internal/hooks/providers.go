@@ -273,5 +273,61 @@ func ensureLineFile(path, asset, marker, content string, appendable bool) Result
 	return Result{Asset: asset, Status: StatusCreated}
 }
 
-// installCopilot is filled in by the hooks file task (F-0444).
-func installCopilot(projDir string) []Result { return nil }
+// ─────────────────────────── Copilot (F-0444) ───────────────────────────
+
+// copilotHooksFile is cerne's own hook file; other files under .github/hooks/
+// belong to the team and are never read or touched.
+const copilotHooksFile = ".github/hooks/cerne.json"
+
+// copilotEntry builds one flat Copilot hook entry: bash and powershell are both
+// fail-open (the cloud agent honors bash only), and the env block declares the
+// agent actor and the document provider.
+func copilotEntry(matcher, invocation string) map[string]any {
+	e := map[string]any{
+		"type":       "command",
+		"bash":       failOpenCmd(invocation),
+		"powershell": "if (Get-Command cerne -ErrorAction SilentlyContinue) { " + invocation + " 2>$null }; exit 0",
+		"env":        map[string]any{"CERNE_ACTOR": "agent", "CERNE_PROVIDER": "copilot"},
+	}
+	if matcher != "" {
+		e["matcher"] = matcher
+	}
+	return e
+}
+
+func installCopilot(projDir string) []Result {
+	asset := "copilot: hooks/cerne.json"
+	dst := filepath.Join(projDir, filepath.FromSlash(copilotHooksFile))
+	doc := map[string]any{
+		"version": 1,
+		"hooks": map[string]any{
+			"SessionStart": []any{copilotEntry("", "cerne hook session-context --format copilot")},
+			"PreToolUse":   []any{copilotEntry("Edit|Write", "cerne hook work-gate --format copilot")},
+			"PostToolUse": []any{
+				copilotEntry("Bash", "cerne hook bind-work --format copilot"),
+				copilotEntry("Bash", "cerne hook provenance --format copilot"),
+			},
+			"Stop": []any{copilotEntry("", "cerne hook stop-check")},
+		},
+	}
+	out, err := marshalIndentNoHTML(doc, "", "  ")
+	if err != nil {
+		return []Result{{Asset: asset, Status: StatusSkipped, Note: "cannot render config: " + err.Error()}}
+	}
+	// The file is cerne's, rewritten whole — unless an existing one is not JSON,
+	// which the user may be mid-edit on: leave it (fail-closed, F-0174).
+	if raw, rErr := os.ReadFile(dst); rErr == nil && !json.Valid(raw) {
+		return []Result{{Asset: asset, Status: StatusSkipped, Note: "existing file is not valid JSON — fix or delete it, then rerun"}}
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return []Result{{Asset: asset, Status: StatusSkipped, Note: "cannot create directory: " + err.Error()}}
+	}
+	st, err := writeIfChanged(dst, append(out, '\n'))
+	r := Result{Asset: asset, Status: st}
+	if err != nil {
+		r = Result{Asset: asset, Status: StatusSkipped, Note: "cannot write: " + err.Error()}
+	}
+	return []Result{r,
+		{Asset: "copilot: precompact", Status: StatusSkipped, Note: "Copilot's preCompact hook is notification-only — the handoff code is not kept through compaction"},
+	}
+}
