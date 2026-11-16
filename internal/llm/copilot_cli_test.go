@@ -130,6 +130,13 @@ func TestCopilotRejectedFlag(t *testing.T) {
 // F-0445 criterion 4: one message per cause, naming the fix. The texts come
 // from the probe, except the organization policy, which no probe could cause.
 func TestCopilotFailureHints(t *testing.T) {
+	// The login hint depends on the platform and on a token in the environment
+	// (GITHUB_TOKEN is set on CI runners): pin both, the per-platform cases are
+	// in TestCopilotLoginHintPerPlatform.
+	origOS, origEnv := copilotGOOS, copilotLookEnv
+	t.Cleanup(func() { copilotGOOS, copilotLookEnv = origOS, origEnv })
+	copilotGOOS = "darwin"
+	copilotLookEnv = func(string) (string, bool) { return "", false }
 	if got := cliProduct("copilot"); got != "GitHub Copilot CLI" {
 		t.Fatalf("cliProduct = %q", got)
 	}
