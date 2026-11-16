@@ -79,3 +79,46 @@ func snapshotTree(t *testing.T, dir string) string {
 	}
 	return b.String()
 }
+
+// A plain name round-trips unchanged (F-0442): only an "@" is swapped.
+func TestPlainActorRoundTripsUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	at := time.Date(2026, 11, 12, 9, 0, 0, 0, time.UTC)
+	for _, a := range []string{"fulano", "agent", "human", "agent:session-0123abcd"} {
+		if err := SaveWork(dir, Work{ID: "W-0001", State: domain.WorkActive, Actor: a, CreatedAt: at, UpdatedAt: at}); err != nil {
+			t.Fatal(err)
+		}
+		if w, _ := LoadWork(dir, "W-0001"); w.Actor != a {
+			t.Errorf("actor %q read back as %q", a, w.Actor)
+		}
+	}
+}
+
+// The handoff.md headers and the work log are labeled for every reader; a
+// write never stores a login@host author.
+func TestHandoffBodyLogAndWritesLabeled(t *testing.T) {
+	dir := t.TempDir()
+	p := domain.MachinePseudonym("alice@mac.local")
+	body := "---\ncerne_id: W-0001\n---\n\n## handoff 2026-11-11 — agent:alice@mac.local\n\ntexto com alice@mac.local no corpo\n"
+	got := LabelHandoffHeaders(body)
+	if !strings.Contains(got, "## handoff 2026-11-11 — agent:"+p+"\n") || strings.Contains(strings.SplitN(got, "\n\n", 3)[1], "@") {
+		t.Errorf("header not labeled:\n%s", got)
+	}
+	if !strings.Contains(got, "texto com alice@mac.local no corpo") {
+		t.Errorf("free text must stay as written:\n%s", got)
+	}
+	if err := AppendHandoff(dir, "W-0002", "brief", "alice@mac.local", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(filepath.Join(dir, "content", "works", "W-0002", "handoff.md"))
+	if strings.Contains(string(raw), "@") {
+		t.Errorf("AppendHandoff stored a login@host author:\n%s", raw)
+	}
+	if err := SaveLogEntry(dir, "W-0001", LogEntry{Seq: 1, UTC: "2026-11-01T10:00:00Z", Actor: "alice@mac.local", RecordedBy: "agent:alice@mac.local", Text: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	es, err := LoadLog(dir, "W-0001")
+	if err != nil || len(es) != 1 || es[0].Actor != p || es[0].RecordedBy != "agent:"+p {
+		t.Errorf("log = %+v, %v", es, err)
+	}
+}

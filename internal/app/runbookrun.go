@@ -109,9 +109,9 @@ func StartRun(repoDir, projDir, rbID, window string, steps []string, expected, a
 		}
 		seen[s] = true
 	}
-	actor := strings.TrimSpace(agent)
+	actor := domain.ActorLabel(strings.TrimSpace(agent))
 	if actor == "" {
-		actor = defaultWorkActor()
+		actor = resolveActor(defaultWorkActor()) // F-0442: the one actor rule
 	}
 	var w store.Work
 	var run store.Run

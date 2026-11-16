@@ -50,11 +50,33 @@ func TestLegacyActorsNeverSurface(t *testing.T) {
 	if !strings.Contains(out, "agent:"+pseudo) {
 		t.Errorf("work list lacks agent:%s:\n%s", pseudo, out)
 	}
+	// the session-start board reads the stored legacy work
+	board, err := execCerneStdin(t, sessionPayload("sess-x", projDir, "startup"), "hook", "session-context")
+	if err != nil {
+		t.Fatalf("session-context: %v\n%s", err, board)
+	}
+	if !strings.Contains(board, "W-0001") || strings.Contains(board, "alice") || strings.Contains(board, "mac.local") {
+		t.Errorf("session-start board leaks the login or host (or lacks the work):\n%s", board)
+	}
 	raw, err := os.ReadFile(filepath.Join(repoDir, "entities", "works", "W-0001.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(raw), "alice@mac.local") {
 		t.Errorf("reading rewrote the work file: %s", raw)
+	}
+}
+
+// F-0442 crit. 3: `work start` prints the actor it recorded, transformed.
+func TestWorkStartOutputShowsRecordedActor(t *testing.T) {
+	t.Setenv("CERNE_ACTOR", "")
+	t.Setenv("CURSOR_AGENT", "")
+	projDir, _, _ := setupProject(t)
+	out, err := execCerne(t, "work", "start", "Revisar", "--agent", "bob@x.local", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("work start: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "actor: "+domain.MachinePseudonym("bob@x.local")) || strings.Contains(out, "@") {
+		t.Errorf("work start output does not show the recorded pseudonym:\n%s", out)
 	}
 }

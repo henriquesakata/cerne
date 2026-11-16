@@ -5,11 +5,14 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // pinMachine fixes the user and host the actor identities derive from, so no
@@ -234,5 +237,82 @@ func TestWorkStartRecordsNoPersonalActor(t *testing.T) {
 		if err := CheckHumanGate(project.GateHuman); !errors.Is(err, ErrHumanGate) {
 			t.Errorf("CERNE_ACTOR=%q: gate = %v, want ErrHumanGate", env, err)
 		}
+	}
+}
+
+// TestStoredLegacyWorkIsTheHouses (F-0442 crit. 5): works STORED as
+// `agent:alice@m1` / `alice@m1` (the pre-F-0442 files) are the house's when the
+// process is alice@m1 — myActors (the dupguard's and the parallel guard's
+// test), the channel's session work and closeAutoWorks — and another actor's
+// when it is bob@m1.
+func TestStoredLegacyWorkIsTheHouses(t *testing.T) {
+	for _, tc := range []struct {
+		user string
+		mine bool
+	}{{"alice", true}, {"bob", false}} {
+		for _, stored := range []string{"agent:alice@m1", "alice@m1"} {
+			t.Run(tc.user+"/"+stored, func(t *testing.T) {
+				pinMachine(t, tc.user, "m1")
+				t.Setenv("CERNE_ACTOR", "agent")
+				t.Setenv("CERNE_SESSION", "sess-me")
+				repoDir, projDir, _ := newFeatureBackend(t)
+				seedFeatureInState(t, repoDir, "F-0001", domain.StateInDevelopment, "spec.md", "plan.md", "result.md")
+				seedStartEvent(t, repoDir, "F-0001", time.Now().UTC().Add(-time.Hour))
+				seedActiveWork(t, repoDir, "W-0001", stored, "F-0001", false)
+				seedActiveWork(t, repoDir, "W-0002", stored, "F-0001", true)
+				raw, _ := os.ReadFile(filepath.Join(repoDir, "entities", "works", "W-0001.json"))
+				if !strings.Contains(string(raw), "alice@m1") {
+					t.Fatalf("fixture is not a stored legacy work: %s", raw)
+				}
+				w, err := store.LoadWork(repoDir, "W-0001")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got := slices.Contains(myActors(), w.Actor); got != tc.mine {
+					t.Errorf("myActors contains %q = %v, want %v", w.Actor, got, tc.mine)
+				}
+				cacheDir := filepath.Dir(repoDir)
+				if err := BindSession(cacheDir, "sess-me", "F-0001"); err != nil {
+					t.Fatal(err)
+				}
+				if _, ok := sessionWork(cacheDir, repoDir, "sess-me"); ok != tc.mine {
+					// the channel resolves the auto work of any identity of this process
+					t.Errorf("sessionWork resolved = %v for %s as %s", ok, stored, tc.user)
+				}
+				// the adoption on complete: only the house's own manual work, bound here
+				if err := BindSession(cacheDir, "sess-me", "W-0001"); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionComplete, "", "", nil); err != nil {
+					t.Fatalf("complete: %v", err)
+				}
+				after, _ := store.LoadWork(repoDir, "W-0001")
+				if closed := after.State != domain.WorkActive; closed != tc.mine {
+					t.Errorf("manual work %s as %s: closed = %v, want %v", stored, tc.user, closed, tc.mine)
+				}
+			})
+		}
+	}
+}
+
+// TestLegacyAgentActorStillRefusedAtHumanGates (F-0442 crit. 8): an old
+// environment that still says CERNE_ACTOR=agent:<login>@<host> is an agent: the
+// human gates (approve, accept) refuse it, and the event the transition records
+// carries the pseudonym, never the "@".
+func TestLegacyAgentActorStillRefusedAtHumanGates(t *testing.T) {
+	pinMachine(t, "alice", "mac.local")
+	t.Setenv("CERNE_ACTOR", "agent:alice@mac.local")
+	if err := CheckHumanGate(project.GateHuman); !errors.Is(err, ErrHumanGate) {
+		t.Errorf("CheckHumanGate = %v, want ErrHumanGate", err)
+	}
+	repoDir, projDir, _ := newFeatureBackend(t)
+	seedFeatureInState(t, repoDir, "F-0001", domain.StateImplemented, "spec.md", "plan.md", "result.md")
+	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionAccept, "", "ok", nil); err != nil {
+		t.Fatal(err)
+	}
+	scanForActorAt(t, repoDir)
+	evs, _ := store.ReadEvents(repoDir)
+	if n := len(evs); n == 0 || evs[n-1].Actor != "agent:"+domain.MachinePseudonym("alice@mac.local") {
+		t.Errorf("event actor = %+v", evs)
 	}
 }

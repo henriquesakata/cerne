@@ -10,6 +10,9 @@ func TestMachinePseudonym(t *testing.T) {
 	if a != MachinePseudonym("Alice@M1") || a != MachinePseudonym("alice@m1") {
 		t.Fatalf("not stable / case-insensitive: %s", a)
 	}
+	if a != "m-f6c9ba7c" { // golden vector: sha256("alice@m1")[:8], so no test mirrors the function
+		t.Fatalf("golden: %s", a)
+	}
 	if len(a) != 10 || !strings.HasPrefix(a, "m-") {
 		t.Fatalf("shape: %s", a)
 	}
