@@ -33,8 +33,14 @@ type Issue struct {
 // warning, a legitimate question to the human). The approve readiness, the
 // lint and the chat all call it, so they cannot disagree (F-0438).
 func CheckSpecBody(body []byte, lang doclang.Lang, light bool) []Issue {
+	return CheckBody(body, doclang.Spec, lang, light)
+}
+
+// CheckBody is CheckSpecBody for a document kind: a bug report (doclang.Bug)
+// has its own sections but the same bar and clarification rules.
+func CheckBody(body []byte, kind doclang.Kind, lang doclang.Lang, light bool) []Issue {
 	var out []Issue
-	if missing := MissingSections(body, doclang.Spec, lang); len(missing) > 0 {
+	if missing := MissingSections(body, kind, lang); len(missing) > 0 {
 		out = append(out, Issue{IssueIncompleteSpec, SeverityError, "the spec is missing template sections: " + strings.Join(missing, ", "), missing})
 	}
 	if _, err := SpecBarIn(body, lang); !light && err != nil {

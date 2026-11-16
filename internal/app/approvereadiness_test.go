@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -379,60 +380,83 @@ func writeRawSpec(t *testing.T, repoDir, id, body string) {
 	}
 }
 
-// TestCheckSpecBody_SameRuleAsApproveAndLint (F-0438 crit. 5): for one body the
-// approve readiness, the lint and doccheck.CheckSpecBody say the same about
-// sections and bar.
-func TestCheckSpecBody_SameRuleAsApproveAndLint(t *testing.T) {
-	bodies := map[string]string{
-		"truncated":    "# t\n\n## Problema\n\nProblema real.\n",
-		"no bar":       completeSpec("# t\n\nProblema real.\n"),
-		"bar":          completeSpec("# t\n\nProblema real.\n\nBarra: não aplicável (sem comparável) — padrão alternativo: testes\n"),
-		"malformed":    completeSpec("# t\n\nProblema real.\n\nBarra:\n"),
-		"no sections+": "# t\n\nProblema real.\n\nBarra: não aplicável (sem comparável) — padrão alternativo: testes\n",
+// sameRuleCases are spec shapes whose approve impediments and lint findings
+// were captured from main (testdata/samerule_golden.json) before F-0438 routed
+// them through doccheck.CheckSpecBody: the refactor must change none of them.
+var sameRuleCases = []struct {
+	name, id, spec string
+	gauntlet       bool
+}{
+	{"feature ok", "F-0001", completeSpec("# t\n\nProblema real.\n\n## Verificação\n\nBarra: não aplicável (sem comparável) — padrão alternativo: testes\n"), true},
+	{"feature truncated", "F-0001", "# t\n\n## Problema\n\nProblema real.\n", true},
+	{"feature no bar", "F-0001", completeSpec("# t\n\nProblema real.\n"), true},
+	{"feature malformed bar", "F-0001", completeSpec("# t\n\nProblema real.\n\nBarra:\n"), true},
+	{"feature light, no bar", "F-0001", completeSpec("# t\n\nProblema real.\n"), false},
+	{"feature light, truncated", "F-0001", "# t\n\n## Problema\n\nProblema real.\n", false},
+	{"feature inherited bar", "F-0001", completeSpec("# t\n\nProblema real.\n\nBarra: herdada de F-0002\n"), true},
+	{"task inherited bar", "T-0001", completeSpec("# t\n\nProblema real.\n\nBarra: herdada de F-0002\n"), true},
+	{"task inherited bar without id", "T-0001", completeSpec("# t\n\nProblema real.\n\nBarra: herdada de\n"), true},
+	{"task own bar", "T-0001", completeSpec("# t\n\nProblema real.\n\nBarra: não aplicável (sem comparável) — padrão alternativo: testes\n"), true},
+	{"task truncated", "T-0001", "# t\n\n## Problema\n\nProblema real.\n", true},
+	{"bug truncated", "B-0001", "# t\n\n## Problema\n\nProblema real.\n", true},
+	{"bug no bar", "B-0001", completeBug("# t\n\nProblema real.\n"), true},
+}
+
+func completeBug(body string) string {
+	for _, h := range doccheck.MissingSections([]byte(body), doclang.Bug, doclang.PT) {
+		body += "\n## " + h + "\n\nN/A.\n"
 	}
-	for name, body := range bodies {
-		t.Run(name, func(t *testing.T) {
-			repoDir, _, _ := newFeatureBackend(t)
-			seedRawCandidateSpec(t, repoDir, "F-0001", body)
-			var want []string
-			for _, is := range doccheck.CheckSpecBody([]byte(body), doclang.PT, false) {
-				if is.Severity == doccheck.SeverityError {
-					want = append(want, is.Code)
-				}
+	return body
+}
+
+// TestCheckSpecBody_SameRuleAsApproveAndLint (F-0438 crit. 5): approve readiness
+// and lint say, for every shape, exactly what main said before the shared check.
+func TestCheckSpecBody_SameRuleAsApproveAndLint(t *testing.T) {
+	got := map[string][]string{}
+	for _, tc := range sameRuleCases {
+		repoDir, _, _ := newFeatureBackend(t)
+		seedRawCandidateSpec(t, repoDir, tc.id, tc.spec)
+		var out []string
+		imps, err := approveReadiness(repoDir, tc.id, tc.gauntlet)
+		if err != nil {
+			out = append(out, "ERR "+err.Error())
+		}
+		for _, im := range imps {
+			if im.Code == ImpedimentUntagged || im.Code == ImpedimentCapabilityMissing {
+				continue
 			}
-			var gotApprove []string
-			imps, err := approveReadiness(repoDir, "F-0001", true)
-			if err != nil {
-				t.Fatal(err)
+			out = append(out, fmt.Sprintf("approve %s hard=%v %s", im.Code, im.Hard, im.Message))
+		}
+		findings, err := lint.Run(repoDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range findings {
+			if (f.Rule == lint.RuleIncompleteDoc || f.Rule == lint.RuleSpecMissingBar) && (f.Entity == tc.id || strings.Contains(f.File, tc.id)) {
+				out = append(out, fmt.Sprintf("lint %s %s", f.Rule, f.Detail))
 			}
-			for _, im := range imps {
-				if im.Code == ImpedimentIncompleteSpec || im.Code == ImpedimentBarMissing || im.Code == ImpedimentBarMalformed {
-					gotApprove = append(gotApprove, im.Code)
-				}
-			}
-			var gotLint []string
-			findings, err := lint.Run(repoDir)
-			if err != nil {
-				t.Fatal(err)
-			}
-			for _, f := range findings {
-				if f.Entity == "F-0001" || strings.Contains(f.File, "F-0001") {
-					switch f.Rule {
-					case lint.RuleIncompleteDoc:
-						gotLint = append(gotLint, doccheck.IssueIncompleteSpec)
-					case lint.RuleSpecMissingBar:
-						gotLint = append(gotLint, "bar")
-					}
-				}
-			}
-			wantBar := slices.Contains(want, doccheck.IssueBarMissing) || slices.Contains(want, doccheck.IssueBarMalformed)
-			if slices.Contains(want, doccheck.IssueIncompleteSpec) != slices.Contains(gotApprove, doccheck.IssueIncompleteSpec) ||
-				slices.Contains(want, doccheck.IssueIncompleteSpec) != slices.Contains(gotLint, doccheck.IssueIncompleteSpec) {
-				t.Errorf("sections: check %v approve %v lint %v", want, gotApprove, gotLint)
-			}
-			if wantBar != (len(gotApprove) > 0 && (slices.Contains(gotApprove, ImpedimentBarMissing) || slices.Contains(gotApprove, ImpedimentBarMalformed))) || wantBar != slices.Contains(gotLint, "bar") {
-				t.Errorf("bar: check %v approve %v lint %v", want, gotApprove, gotLint)
-			}
-		})
+		}
+		got[tc.name] = out
+	}
+	path := filepath.Join("testdata", "samerule_golden.json")
+	if os.Getenv("CERNE_GOLDEN_OUT") != "" {
+		data, _ := json.MarshalIndent(got, "", "  ")
+		if err := os.WriteFile(os.Getenv("CERNE_GOLDEN_OUT"), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want map[string][]string
+	if err := json.Unmarshal(raw, &want); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		g, _ := json.MarshalIndent(got, "", "  ")
+		w, _ := json.MarshalIndent(want, "", "  ")
+		t.Fatalf("approve/lint output diverged from main.\ngot:\n%s\nwant:\n%s", g, w)
 	}
 }

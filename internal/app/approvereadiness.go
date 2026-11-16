@@ -9,6 +9,7 @@ import (
 
 	"github.com/henriquesakata/cerne/internal/clarify"
 	"github.com/henriquesakata/cerne/internal/doccheck"
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/lint"
 	"github.com/henriquesakata/cerne/internal/store"
@@ -78,32 +79,25 @@ func approveReadiness(repoDir, id string, gauntletOn bool) ([]ApproveImpediment,
 	if domain.CheckGate(id, domain.ActionApprove, docs) != nil {
 		out = append(out, ApproveImpediment{ImpedimentSpecMissing, "the spec is missing or still the template stub", true})
 	} else {
-		// Section and bar impediments are independent: list both (F-0435). A
-		// spec's come from doccheck.CheckSpecBody, the one check the lint and the
-		// chat run too (F-0438); a bug's sections stay on specSectionsMissing.
-		barBad := false
+		// Section and bar impediments are independent: list both (F-0435). They
+		// come from doccheck.CheckBody, the one check the lint and the chat run
+		// too (F-0438). The inherited form is a task's only: specBarFor resolves
+		// it first, and only when the check found no bar problem of its own.
+		kind := doclang.Spec
 		if strings.HasPrefix(id, "B-") {
-			missing, err := specSectionsMissing(repoDir, id)
-			if err != nil {
-				return nil, err
+			kind = doclang.Bug
+		}
+		barBad := false
+		for _, is := range doccheck.CheckBody(spec, kind, lang, !gauntletOn) {
+			if is.Severity != doccheck.SeverityError {
+				continue
 			}
-			if len(missing) > 0 {
-				out = append(out, ApproveImpediment{ImpedimentIncompleteSpec, "the spec is missing template sections: " + strings.Join(missing, ", "), true})
-			}
-			if _, err := specBarFor(id, spec, lang); gauntletOn && err != nil {
+			out = append(out, ApproveImpediment{is.Code, is.Detail, true})
+			barBad = barBad || is.Code != doccheck.IssueIncompleteSpec
+		}
+		if !barBad && gauntletOn {
+			if _, err := specBarFor(id, spec, lang); err != nil {
 				out = append(out, barImpediment(err))
-				barBad = true
-			}
-		} else {
-			for _, is := range doccheck.CheckSpecBody(spec, lang, !gauntletOn) {
-				if is.Severity != doccheck.SeverityError {
-					continue
-				}
-				out = append(out, ApproveImpediment{is.Code, is.Detail, true})
-				barBad = barBad || is.Code != doccheck.IssueIncompleteSpec
-			}
-			if _, err := specBarFor(id, spec, lang); gauntletOn && err != nil && !barBad {
-				out = append(out, barImpediment(err)) // the inherited form is a task's only
 				barBad = true
 			}
 		}
