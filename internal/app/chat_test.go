@@ -175,7 +175,7 @@ func TestBuildChatSystemPromptRoleBoundary(t *testing.T) {
 		"cerne feature start",
 		"cerne work start",
 		"cerne prompt compose",
-		"~3 perguntas por turno",
+		"Nunca pergunte o que os comandos de leitura do cerne já respondem",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing role-boundary element %q:\n%s", want, prompt)
@@ -536,7 +536,7 @@ Antes de começar, registre o trabalho: ` + "`cerne feature start <id>`" + ` —
 
 Se a demanda ainda não estiver registrada, recomende registrar antes (handoff sem id sai do board sem rastro) — mas não bloqueie quem insistir: emita o bloco com "não registrada". Para um handoff completo com o contexto já materializado, aponte ` + "`cerne prompt compose <id>`" + ` como rota canônica.
 
-Disciplina de perguntas: pergunte só o necessário, priorizado — alvo de ~3 perguntas por turno, mais quando a demanda genuinamente exigir, nunca interrogatório exaustivo. Nunca pergunte o que os comandos de leitura do cerne já respondem.`
+Disciplina de perguntas: pergunte pelo protocolo de entrevista acima. Nunca pergunte o que os comandos de leitura do cerne já respondem.`
 	if chatRoleBoundary != want {
 		t.Fatalf("chatRoleBoundary drifted from the F-0245 golden text:\n--- got ---\n%s\n--- want ---\n%s", chatRoleBoundary, want)
 	}
@@ -964,6 +964,114 @@ func TestBuildChatSystemPrompt_QuestionContract(t *testing.T) {
 	for _, bad := range []string{"(recomendada)", "recomendação aceita", "outra opção", "resposta livre do usuário", "Decisões do design"} {
 		if strings.Contains(en, bad) {
 			t.Errorf("en prompt carries the Portuguese form %q", bad)
+		}
+	}
+}
+
+// TestBuildChatSystemPrompt_InterviewProtocol (F-0443 crit. 1-6): the
+// conduction block interviews over the spec's decision tree, in frontier
+// rounds, and sits between the conduction header and the Gauntlet block.
+func TestBuildChatSystemPrompt_InterviewProtocol(t *testing.T) {
+	repoDir, projDir := chatFixture(t)
+	prompt, err := BuildChatSystemPrompt(repoDir, projDir, project.Config{}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		ChatInterviewMarker,
+		"Mapeie as decisões que a spec precisa", // (b) the decision map
+		"(a) quem é afetado ou recebe e quem fica de fora",
+		"(b) o gatilho",
+		"dado ausente, item concluído ou cancelado, repetição ou recorrência, dado que muda depois",
+		"(d) como a pessoa controla ou desliga",
+		"(e) o que fica FORA do escopo, perguntado ao humano, nunca suposto",
+		"(f) a barra",
+		"NUNCA é suposição, mesmo que custe mais rodadas",
+		"Exemplos que são pergunta",
+		"Exemplos que podem ser \"Assumi:\"",
+		"\"0 abertas\" só vale quando",
+		"só a fronteira",                                     // (c) frontier only
+		"depende da resposta de outra ainda aberta",          // (c) no dependent question in a round
+		"muda um critério de aceitação, o escopo ou a barra", // (d) relevance filter
+		"Assumi:",                    // (d) low-impact list
+		"no máximo 3 perguntas",      // (e) cap
+		"bloco " + chatQuestionFence, // (e) cites the F-0437 contract
+		"\"sim\" aceite",             // (e) recommendation phrased for "sim"
+		"Árvore: <n> resolvidas · <n> abertas · <n> suposições", // (f) progress line
+		"NÃO emita " + chatProposalFence,                        // (g) no proposal while open
+		"propõe já",                                             // (g) human exit
+		"marcador de esclarecimento",                            // (g) open ones become markers
+		"confirmação numa linha",                                // (g) confirm before emitting
+		"Só proponha quando problema, objetivo e critérios de aceitação testáveis fecharem e não houver decisão aberta",
+		"o turno TERMINA no resumo e na pergunta de confirmação numa linha, sem " + chatProposalFence,
+		"só sai no turno seguinte, depois que o humano confirmar ou corrigir",
+		"emita na hora, com as abertas como marcador de esclarecimento",
+		"Nenhum item de \"Assumi:\" contradiz ou substitui o que o humano respondeu",
+		"toda resposta do humano aparece no rascunho da spec",
+		"uma resposta sem lugar na spec vira pergunta, não descarte silencioso",
+		"marcador de esclarecimento (" + doclang.AmbiguityMarker(doclang.PT) + " pergunta])",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt lacks interview rule %q", want)
+		}
+	}
+	conduction := strings.Index(prompt, "Conduza a elaboração")
+	interview := strings.Index(prompt, ChatInterviewMarker)
+	gauntlet := strings.Index(prompt, ChatGauntletMarker)
+	if !(conduction < interview && interview < gauntlet) {
+		t.Errorf("interview block out of order: conduction=%d interview=%d gauntlet=%d", conduction, interview, gauntlet)
+	}
+}
+
+// TestBuildChatSystemPrompt_NoFixedQuestionTarget (F-0443 crit. 7): neither
+// language carries the fixed question target or the "never interrogation" wording.
+func TestBuildChatSystemPrompt_NoFixedQuestionTarget(t *testing.T) {
+	repoDir, projDir := chatFixture(t)
+	pt, err := BuildChatSystemPrompt(repoDir, projDir, project.Config{}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, prompt := range map[string]string{"pt": pt, "en": englishChatPrompt(t)} {
+		for _, bad := range []string{"~3", "interrogatório", "interrogation"} {
+			if strings.Contains(prompt, bad) {
+				t.Errorf("%s prompt still carries %q", name, bad)
+			}
+		}
+	}
+}
+
+// TestBuildChatSystemPrompt_EnglishInterviewForms (F-0443 crit. 7): the
+// English prompt carries the interview protocol with English protocol forms
+// and none of the Portuguese ones.
+func TestBuildChatSystemPrompt_EnglishInterviewForms(t *testing.T) {
+	prompt := englishChatPrompt(t)
+	for _, want := range []string{"Assumed:", "Tree: <n> resolved · <n> open · <n> assumptions", "propose now",
+		"resuma as decisões tomadas e as suposições e peça a confirmação numa linha",                                    // summary + one-line confirmation
+		"Só proponha quando problema, objetivo e critérios de aceitação testáveis fecharem e não houver decisão aberta", // positive gate
+		"(a) quem é afetado ou recebe e quem fica de fora",
+		"(b) o gatilho",
+		"dado ausente, item concluído ou cancelado, repetição ou recorrência, dado que muda depois",
+		"(d) como a pessoa controla ou desliga",
+		"(e) o que fica FORA do escopo, perguntado ao humano, nunca suposto",
+		"(f) a barra",
+		"NUNCA é suposição, mesmo que custe mais rodadas",
+		"Exemplos que são pergunta",
+		"Exemplos que podem ser \"Assumi:\"",
+		"\"0 abertas\" só vale quando",
+		"o turno TERMINA no resumo e na pergunta de confirmação numa linha, sem " + chatProposalFence,
+		"só sai no turno seguinte, depois que o humano confirmar ou corrigir",
+		"emita na hora, com as abertas como marcador de esclarecimento",
+		"Nenhum item de \"Assumi:\" contradiz ou substitui o que o humano respondeu",
+		"toda resposta do humano aparece no rascunho da spec",
+		"uma resposta sem lugar na spec vira pergunta, não descarte silencioso",
+		"marcador de esclarecimento (" + doclang.AmbiguityMarker(doclang.EN) + " pergunta])"} {
+		if !strings.Contains(prompt, englishInterview.Replace(want)) {
+			t.Errorf("English prompt lacks %q", want)
+		}
+	}
+	for _, bad := range []string{"Assumi:", "Árvore:", "propõe já", "<n> resolvidas", "<n> suposições"} {
+		if strings.Contains(prompt, bad) {
+			t.Errorf("English prompt still carries the Portuguese form %q", bad)
 		}
 	}
 }
