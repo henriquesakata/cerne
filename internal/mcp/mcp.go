@@ -125,6 +125,11 @@ type guideArgs struct {
 	Query string `json:"query" jsonschema:"what you want to do or know about cerne, in English; returns the matching skill, help and FAQ sections"`
 }
 
+// ToolNames lists the tools NewServer serves, in order: the one list a client
+// config that must name its tools (Copilot's .mcp.json, F-0444) copies. A test
+// keeps it equal to what the server announces.
+var ToolNames = []string{"status", "brief", "next", "search", "show", "ask", "guide"}
+
 // NewServer registers the tools on an MCP server named cerne.
 func NewServer(version string, exec Exec) *sdk.Server {
 	s := sdk.NewServer(&sdk.Implementation{Name: "cerne", Version: version}, nil)

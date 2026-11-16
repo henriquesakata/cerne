@@ -33,3 +33,50 @@ func TestParityMatrixCoversProviders(t *testing.T) {
 		}
 	}
 }
+
+// TestParityCopilotColumn (F-0444 crit. 4): every row states the real Copilot
+// state, the degraded ones carry their reason, and the guide condition exists.
+func TestParityCopilotColumn(t *testing.T) {
+	deg := 0
+	for _, r := range ParityRows() {
+		if r.For(ProviderCopilot) == "" {
+			t.Errorf("row %q has no Copilot cell", r.Capability)
+		}
+		if d, reason := r.Degraded(ProviderCopilot); d {
+			deg++
+			if reason == "" {
+				t.Errorf("row %q: degraded without a reason", r.Capability)
+			}
+		}
+	}
+	if deg == 0 {
+		t.Error("expected at least one degraded Copilot row (compaction handoff)")
+	}
+	if GuideCondition(ProviderCopilot) == "" {
+		t.Error("no guide condition for copilot")
+	}
+	if !strings.Contains(ParityMatrix(), "GitHub Copilot") {
+		t.Error("matrix lacks the Copilot column")
+	}
+}
+
+// TestParityCopilotStatesTheProbedLimits (F-0444): the matrix carries the
+// double execution, the unverified Stop block and the CLI-only actor marker.
+func TestParityCopilotStatesTheProbedLimits(t *testing.T) {
+	byCap := map[string]ParityRow{}
+	for _, r := range ParityRows() {
+		byCap[r.Capability] = r
+	}
+	if d, reason := byCap["Double execution with the .claude hooks"].Degraded(ProviderCopilot); !d || !strings.Contains(reason, "side effects") {
+		t.Errorf("double execution row: degraded=%v reason=%q", d, reason)
+	}
+	if d, reason := byCap["Stop closeout"].Degraded(ProviderCopilot); !d || !strings.Contains(reason, "never exercised") {
+		t.Errorf("stop row: degraded=%v reason=%q", d, reason)
+	}
+	actor := byCap["CERNE_ACTOR=agent (human gates)"].For(ProviderCopilot)
+	for _, want := range []string{"Copilot CLI 1.0.112", "VS Code", "cloud agent", "unverified"} {
+		if !strings.Contains(actor, want) {
+			t.Errorf("actor cell lacks %q: %s", want, actor)
+		}
+	}
+}

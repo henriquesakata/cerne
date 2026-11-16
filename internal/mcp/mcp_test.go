@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -250,5 +251,24 @@ func TestMCP_PanicBecomesToolError(t *testing.T) {
 	}
 	if text, isErr := callText(t, cs, "brief"); isErr {
 		t.Fatalf("call after a panic: %q, want service to go on", text)
+	}
+}
+
+// TestToolNamesMatchServer (F-0444): ToolNames is the served set, in order.
+func TestToolNamesMatchServer(t *testing.T) {
+	cs := connect(t, (&fakeExec{}).run)
+	res, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var served []string
+	for _, tool := range res.Tools {
+		served = append(served, tool.Name)
+	}
+	sort.Strings(served)
+	want := append([]string(nil), ToolNames...)
+	sort.Strings(want)
+	if !reflect.DeepEqual(served, want) {
+		t.Fatalf("ToolNames %v != served %v", ToolNames, served)
 	}
 }

@@ -179,7 +179,7 @@ func staleManagedNotice(projDir string, syncSkills bool) string {
 		list := strings.Join(names, ", ")
 		if !syncSkills {
 			fmt.Fprintf(&b, "cerne: canonical skill(s) out of date with this cerne build: %s — run `cerne skill install`.\n", list)
-		} else if _, err := skills.Install(projDir); err == nil {
+		} else if _, err := skills.Install(projDir, staleProviders(projDir, names)...); err == nil {
 			fmt.Fprintf(&b, "cerne: updated canonical skill(s) from this cerne build: %s — the new version applies from the next session (or after reloading skills).\n", list)
 		}
 	}
@@ -187,6 +187,24 @@ func staleManagedNotice(projDir string, syncSkills bool) string {
 		fmt.Fprintf(&b, "cerne: %d managed hook(s) out of date with this cerne build — run `cerne hook install` and review the diff.\n", n)
 	}
 	return b.String()
+}
+
+// staleProviders is the provider set a sync rewrites: every detected provider,
+// plus Copilot when its copies are among the stale names (F-0444).
+func staleProviders(projDir string, names []string) []hooks.Provider {
+	ps := hooks.DetectProviders(projDir)
+	for _, n := range names {
+		if !strings.Contains(n, "copilot") {
+			continue
+		}
+		for _, p := range ps {
+			if p == hooks.ProviderCopilot {
+				return ps
+			}
+		}
+		return append(ps, hooks.ProviderCopilot)
+	}
+	return ps
 }
 
 // channelBlock is session sess's pending channel block for the project, ""

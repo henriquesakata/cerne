@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
+
+	"github.com/henriquesakata/cerne/internal/mcp"
 )
 
 // Provider adapters (F-0174): each install function writes the assets and
@@ -271,4 +274,144 @@ func ensureLineFile(path, asset, marker, content string, appendable bool) Result
 		return Result{Asset: asset, Status: StatusSkipped, Note: "cannot write: " + err.Error()}
 	}
 	return Result{Asset: asset, Status: StatusCreated}
+}
+
+// ─────────────────────────── Copilot (F-0444) ───────────────────────────
+
+// copilotHooksFile is cerne's own hook file; other files under .github/hooks/
+// belong to the team and are never read or touched.
+const copilotHooksFile = ".github/hooks/cerne.json"
+
+// copilotEntry builds one flat Copilot hook entry: bash and powershell are both
+// fail-open (the cloud agent honors bash only), and the env block declares the
+// agent actor and the document provider.
+func copilotEntry(matcher, invocation string) map[string]any {
+	e := map[string]any{
+		"type":       "command",
+		"bash":       failOpenCmd(invocation),
+		"powershell": "if (Get-Command cerne -ErrorAction SilentlyContinue) { " + invocation + " 2>$null }; exit 0",
+		"env":        map[string]any{"CERNE_ACTOR": "agent", "CERNE_PROVIDER": "copilot"},
+	}
+	if matcher != "" {
+		e["matcher"] = matcher
+	}
+	return e
+}
+
+// copilotHooksBytes is the exact content of .github/hooks/cerne.json.
+func copilotHooksBytes() ([]byte, error) {
+	doc := map[string]any{
+		"version": 1,
+		"hooks": map[string]any{
+			"SessionStart": []any{copilotEntry("", "cerne hook session-context --format copilot")},
+			"PreToolUse":   []any{copilotEntry("Edit|Write", "cerne hook work-gate --format copilot")},
+			"PostToolUse": []any{
+				copilotEntry("Bash", "cerne hook bind-work --format copilot"),
+				copilotEntry("Bash", "cerne hook provenance --format copilot"),
+			},
+			"Stop": []any{copilotEntry("", "cerne hook stop-check")},
+		},
+	}
+	out, err := marshalIndentNoHTML(doc, "", "  ")
+	return append(out, '\n'), err
+}
+
+func installCopilot(projDir string) []Result {
+	asset := "copilot: hooks/cerne.json"
+	dst := filepath.Join(projDir, filepath.FromSlash(copilotHooksFile))
+	out, err := copilotHooksBytes()
+	if err != nil {
+		return []Result{{Asset: asset, Status: StatusSkipped, Note: "cannot render config: " + err.Error()}}
+	}
+	// The file is cerne's, rewritten whole — unless an existing one is not JSON,
+	// which the user may be mid-edit on: leave it (fail-closed, F-0174).
+	if raw, rErr := os.ReadFile(dst); rErr == nil && !json.Valid(raw) {
+		return []Result{{Asset: asset, Status: StatusSkipped, Note: "existing file is not valid JSON — fix or delete it, then rerun"}}
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return []Result{{Asset: asset, Status: StatusSkipped, Note: "cannot create directory: " + err.Error()}}
+	}
+	st, err := writeIfChanged(dst, out)
+	r := Result{Asset: asset, Status: st}
+	if st == StatusUpdated {
+		r.Note = "cerne-managed file rewritten whole — local edits are not kept; put team hooks in their own file under .github/hooks/"
+	}
+	if err != nil {
+		r = Result{Asset: asset, Status: StatusSkipped, Note: "cannot write: " + err.Error()}
+	}
+	mcpRes, block := copilotMCP(projDir)
+	return []Result{r, mcpRes,
+		{Asset: "copilot: cloud agent MCP", Status: StatusSkipped, Note: "the cloud agent does not read .mcp.json — paste this block in the repository settings (Copilot, coding agent, MCP configuration), and install the cerne binary in its environment (.github/workflows/copilot-setup-steps.yml):\n" + block},
+		{Asset: "copilot: double execution", Status: StatusSkipped, Note: "Copilot CLI also runs the cerne hooks of .claude/settings.json when both are installed; it ignores their Claude-format output, so only side effects repeat (session binding, sign of life)"},
+		{Asset: "copilot: stop closeout", Status: StatusSkipped, Note: "the Stop block decision was never exercised live (only the payload was captured) — treat the closeout reminder as unverified"},
+		{Asset: "copilot: precompact", Status: StatusSkipped, Note: "Copilot's preCompact hook is notification-only — the handoff code is not kept through compaction"},
+		{Asset: "copilot: CERNE_PROVIDER", Status: StatusSkipped, Note: "CERNE_PROVIDER=copilot reaches the hook processes only, not the bash tool shell — documents written from the shell record their author as unknown unless it is exported there"},
+		{Asset: "copilot: subagent-context", Status: StatusSkipped, Note: "no subagent hook is wired — subagents start without the live board"},
+	}
+}
+
+// copilotMCPServer is the read-only cerne server as Copilot's .mcp.json wants
+// it: the CLI requires the explicit tools list (F-0444).
+func copilotMCPServer() map[string]any {
+	tools := make([]any, len(mcp.ToolNames))
+	for i, n := range mcp.ToolNames {
+		tools[i] = n
+	}
+	return map[string]any{"type": "stdio", "command": "cerne", "args": []any{"mcp"}, "tools": tools}
+}
+
+// copilotMCP merges the cerne server into the root .mcp.json, keeping every
+// other server and key; it returns the result and the JSON block for the
+// repository settings (the cloud agent's only MCP source). A different cerne
+// entry or an unreadable file stays untouched, reported skipped.
+func copilotMCP(projDir string) (Result, string) {
+	asset := "copilot: .mcp.json"
+	server := copilotMCPServer()
+	blockRaw, _ := marshalIndentNoHTML(map[string]any{"mcpServers": map[string]any{"cerne": server}}, "", "  ")
+	block := string(blockRaw)
+	path := filepath.Join(projDir, ".mcp.json")
+	skip := func(note string) (Result, string) {
+		return Result{Asset: asset, Status: StatusSkipped, Note: note}, block
+	}
+
+	root := map[string]any{}
+	raw, err := os.ReadFile(path)
+	exists := err == nil
+	if exists {
+		if json.Unmarshal(raw, &root) != nil || root == nil {
+			return skip("existing file is not valid JSON — add the cerne server by hand (block below)")
+		}
+	} else if !os.IsNotExist(err) {
+		return skip("cannot read: " + err.Error())
+	}
+	servers, _ := root["mcpServers"].(map[string]any)
+	if servers == nil {
+		if _, has := root["mcpServers"]; has {
+			return skip(`existing "mcpServers" key has an unexpected type — add the cerne server by hand (block below)`)
+		}
+		servers = map[string]any{}
+		root["mcpServers"] = servers
+	}
+	if cur, has := servers["cerne"]; has {
+		// Compare through JSON so both sides carry the same dynamic types.
+		var want any
+		wantRaw, _ := json.Marshal(server)
+		_ = json.Unmarshal(wantRaw, &want)
+		if reflect.DeepEqual(cur, want) {
+			return Result{Asset: asset, Status: StatusUnchanged}, block
+		}
+		return skip(`a different "cerne" server is already declared — left as is; the read-only one is in the block below`)
+	}
+	servers["cerne"] = server
+	out, err := marshalIndentNoHTML(root, "", "  ")
+	if err != nil {
+		return skip("cannot render config: " + err.Error())
+	}
+	if err := os.WriteFile(path, append(out, '\n'), 0o644); err != nil {
+		return skip("cannot write: " + err.Error())
+	}
+	if exists {
+		return Result{Asset: asset, Status: StatusUpdated, Note: "read-only server, also read by Claude Code from this file"}, block
+	}
+	return Result{Asset: asset, Status: StatusCreated, Note: "read-only server, also read by Claude Code from this file"}, block
 }

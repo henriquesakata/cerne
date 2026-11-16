@@ -172,8 +172,8 @@ func TestSkillInstallDeliversToDetectedAgents(t *testing.T) {
 		t.Fatalf("rerun: %v\n%s", err, out)
 	}
 	lines := strings.Split(strings.TrimSpace(out), "\n")
-	if len(lines) != 11 { // 7 asset lines + 4 per-agent lines
-		t.Fatalf("want 11 lines, got %d:\n%s", len(lines), out)
+	if len(lines) != 12 { // 7 asset lines + 5 per-agent lines (copilot not detected)
+		t.Fatalf("want 12 lines, got %d:\n%s", len(lines), out)
 	}
 	for _, l := range lines[:7] {
 		if !strings.Contains(l, ": up to date in ") {

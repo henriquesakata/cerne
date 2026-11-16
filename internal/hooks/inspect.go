@@ -189,5 +189,10 @@ func Stale(projDir string) []string {
 		}
 		out = append(out, a.Script)
 	}
+	// Copilot's hook file is only checked when it exists: a project that never
+	// installed it is not nagged (F-0444).
+	if CopilotHooksState(projDir) == FileDivergent {
+		out = append(out, "copilot: "+copilotHooksFile)
+	}
 	return out
 }

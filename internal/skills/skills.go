@@ -208,6 +208,13 @@ func Stale(projDir string) []string {
 			}
 		}
 	}
+	// Copilot's copies are only checked once installed (F-0444).
+	if CopilotSkillState(projDir) == hooks.FileDivergent {
+		out = append(out, guideName+" (copilot)")
+	}
+	if CopilotInstructionsState(projDir) == hooks.FileDivergent {
+		out = append(out, "copilot instructions")
+	}
 	return out
 }
 

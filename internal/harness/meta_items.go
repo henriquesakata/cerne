@@ -10,6 +10,7 @@ import (
 
 	"github.com/henriquesakata/cerne/internal/hooks"
 	"github.com/henriquesakata/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/skills"
 )
 
 // StateDegraded marks a provider capability the surface cannot host (F-0174)
@@ -197,7 +198,7 @@ func providerItems(opts Options) []Item {
 			it := Item{
 				Class:  "providers",
 				Name:   string(p) + ": " + row.Capability,
-				Path:   "." + string(p) + "/",
+				Path:   providerPath(p),
 				Origin: OriginProject,
 			}
 			if deg, reason := row.Degraded(p); deg {
@@ -209,8 +210,45 @@ func providerItems(opts Options) []Item {
 			}
 			items = append(items, it)
 		}
+		if p == hooks.ProviderCopilot {
+			items = append(items, copilotItems(opts.ProjDir)...)
+		}
 	}
 	return items
+}
+
+// copilotItems lists what the Copilot install put in the project, each with
+// the same ok / divergent / missing state as the other agents' assets (F-0444).
+func copilotItems(projDir string) []Item {
+	const fixHook, fixSkill = "cerne hook install --provider copilot", "cerne skill install"
+	rows := []struct{ name, path, state, fix string }{
+		{"copilot: hooks file", ".github/hooks/cerne.json", hooks.CopilotHooksState(projDir), fixHook},
+		{"copilot: skill", ".github/skills/cerne-authoring/SKILL.md", skills.CopilotSkillState(projDir), fixSkill},
+		{"copilot: instructions", ".github/instructions/cerne.instructions.md", skills.CopilotInstructionsState(projDir), fixSkill},
+		{"copilot: mcp server", ".mcp.json", hooks.CopilotMCPState(projDir), fixHook},
+	}
+	items := make([]Item, 0, len(rows))
+	for _, r := range rows {
+		it := Item{Class: "providers", Name: r.name, Path: r.path, Origin: OriginProject}
+		switch r.state {
+		case hooks.FileOK:
+			it.State = StateOK
+		case hooks.FileDivergent:
+			it.State, it.Fix = StateDivergent, r.fix
+		default:
+			it.State, it.Fix = StateMissing, r.fix
+		}
+		items = append(items, it)
+	}
+	return items
+}
+
+// providerPath is the project directory a provider's install lives in.
+func providerPath(p hooks.Provider) string {
+	if p == hooks.ProviderCopilot {
+		return ".github/"
+	}
+	return "." + string(p) + "/"
 }
 
 // configItems lists the settings layers as inventory lines, so the screen's

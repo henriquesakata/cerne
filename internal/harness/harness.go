@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/henriquesakata/cerne/internal/hooks"
 	"github.com/henriquesakata/cerne/internal/version"
 )
 
@@ -196,7 +197,11 @@ func Inspect(opts Options) Inventory {
 		{Name: "context", Items: contextItems(opts)},
 		{Name: "providers", Items: providerItems(opts)},
 	}
-	annotateConsumers(classes)
+	usesCopilot := false
+	for _, p := range hooks.DetectProviders(opts.ProjDir) {
+		usesCopilot = usesCopilot || p == hooks.ProviderCopilot
+	}
+	annotateConsumers(classes, usesCopilot)
 	return Inventory{
 		Version:  version.Short(),
 		Classes:  classes,

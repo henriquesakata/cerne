@@ -55,7 +55,7 @@ func coverage(projDir string, classes []Class) []ProviderCoverage {
 				pc.Gaps = append(pc.Gaps, Gap{
 					Name: row.Capability, Class: "providers", Kind: StateDegraded, Detail: reason,
 				})
-			} else if !detected[p] && row.For(hooks.Provider(p)) != hooks.EveryHarness {
+			} else if !detected[p] && row.For(hooks.Provider(p)) != hooks.EveryHarness && row.For(hooks.Provider(p)) != hooks.NotApplicable {
 				pc.Gaps = append(pc.Gaps, Gap{
 					Name: row.Capability, Class: "providers", Kind: StateMissing,
 					Fix: "cerne hook install --provider " + p,

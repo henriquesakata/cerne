@@ -43,6 +43,8 @@ type hookInput struct {
 	ToolName     string          `json:"tool_name"`
 	ToolInput    json.RawMessage `json:"tool_input"`
 	ToolResponse json.RawMessage `json:"tool_response"`
+	// ToolResult is Copilot's name for the tool response (F-0444).
+	ToolResult json.RawMessage `json:"tool_result"`
 	// AgentID is present only when the hook fires inside a subagent (whose
 	// session_id is still the parent's); TranscriptPath is the session's
 	// JSONL (F-0309).
@@ -84,6 +86,9 @@ func decodeHookInput(r io.Reader) (hookInput, error) {
 	var in hookInput
 	if err := json.Unmarshal(raw, &in); err != nil {
 		return in, err
+	}
+	if len(in.ToolResponse) == 0 {
+		in.ToolResponse = in.ToolResult
 	}
 	var c cursorInput
 	if json.Unmarshal(raw, &c) == nil && c.CursorVersion != "" {
@@ -137,11 +142,14 @@ func workspaceDir(cwd string, roots []string) string {
 }
 
 // writeToolContext answers a PostToolUse hook with msg as context, in the
-// envelope of the harness that sent in (F-0428).
-func writeToolContext(cmd *cobra.Command, in hookInput, msg string) error {
+// envelope of the harness that sent in (F-0428); Copilot reads it top-level.
+func writeToolContext(cmd *cobra.Command, in hookInput, format, msg string) error {
 	enc := json.NewEncoder(cmd.OutOrStdout())
 	if in.cursor() {
 		return enc.Encode(cursorContext{AdditionalContext: msg})
+	}
+	if format == "copilot" {
+		return enc.Encode(copilotContext{AdditionalContext: msg})
 	}
 	var out postToolContext
 	out.HookSpecificOutput.HookEventName = "PostToolUse"
@@ -161,7 +169,7 @@ func newHookBindWorkCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&format, "format", "claude", "input contract: claude|codex|cursor|gemini (F-0174)")
+	cmd.Flags().StringVar(&format, "format", "claude", "input contract: claude|codex|cursor|gemini|copilot (F-0174)")
 	return cmd
 }
 
@@ -201,6 +209,31 @@ func runsCerne(command string, re *regexp.Regexp) bool {
 	return cerneRun(command, re) != ""
 }
 
+// shellExitRe is the status line Copilot appends to a shell tool's result.
+var shellExitRe = regexp.MustCompile(`completed with exit code (\d+)>`)
+
+// toolFailed reports a Bash call that failed: the word "Error" in its response
+// (Claude Code and the others), or — Copilot, probed on 1.0.112, where a failed
+// command still has result_type "success" — a non-zero exit code in
+// text_result_for_llm, or a result_type other than success (F-0444).
+func toolFailed(in hookInput) bool {
+	if strings.Contains(string(in.ToolResponse), "Error") {
+		return true
+	}
+	var r struct {
+		Type string `json:"result_type"`
+		Text string `json:"text_result_for_llm"`
+	}
+	if json.Unmarshal(in.ToolResult, &r) != nil {
+		return false
+	}
+	if r.Type != "" && r.Type != "success" {
+		return true
+	}
+	m := shellExitRe.FindStringSubmatch(r.Text)
+	return m != nil && m[1] != "0"
+}
+
 // cerneRun is the first command of the line that runs the cerne verb re
 // matches, as runsCerne decides it; "" when none.
 func cerneRun(command string, re *regexp.Regexp) string {
@@ -222,8 +255,8 @@ const (
 
 // warnUnbound tells the agent, through the PostToolUse context channel, that
 // what it just registered could not be bound to this session (F-0876).
-func warnUnbound(cmd *cobra.Command, in hookInput, msg string) {
-	_ = writeToolContext(cmd, in, msg)
+func warnUnbound(cmd *cobra.Command, in hookInput, format, msg string) {
+	_ = writeToolContext(cmd, in, format, msg)
 }
 
 // runHookBindWork inspects a finished Bash call: when it was a successful
@@ -284,8 +317,8 @@ func runHookBindWork(cmd *cobra.Command, format string) {
 			// minted id to bind, and the Edit gate will keep denying. Say so (F-0876).
 			// Only a real, un-helped, un-refused start: a Bash call that merely
 			// MENTIONS "work start" (grep, echo, a commit message) is not one.
-			if runsCerne(ti.Command, cerneStartRe) && !strings.Contains(string(in.ToolResponse), "Error") {
-				warnUnbound(cmd, in, unboundWorkStart)
+			if runsCerne(ti.Command, cerneStartRe) && !toolFailed(in) {
+				warnUnbound(cmd, in, format, unboundWorkStart)
 			}
 		}
 	case handoffTakeRe.MatchString(ti.Command):
@@ -293,8 +326,8 @@ func runHookBindWork(cmd *cobra.Command, format string) {
 		// refused take prints no "(active)" and binds nothing (F-0376).
 		if m := workCreatedRe.FindStringSubmatch(string(in.ToolResponse)); m != nil {
 			id = m[1]
-		} else if runsCerne(ti.Command, cerneTakeRe) && !strings.Contains(string(in.ToolResponse), "Error") {
-			warnUnbound(cmd, in, unboundTake)
+		} else if runsCerne(ti.Command, cerneTakeRe) && !toolFailed(in) {
+			warnUnbound(cmd, in, format, unboundTake)
 		}
 	case featureStartRe.MatchString(ti.Command):
 		// The F-/E-/T- id is the argument; bind only if the response confirms the
@@ -337,7 +370,7 @@ func newHookWorkGateCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&format, "format", "claude", "deny envelope: claude|codex|cursor|gemini (F-0174)")
+	cmd.Flags().StringVar(&format, "format", "claude", "deny envelope: claude|codex|cursor|gemini|copilot (F-0174)")
 	return cmd
 }
 
@@ -355,6 +388,13 @@ type gateDeny struct {
 type cursorGateDeny struct {
 	Permission   string `json:"permission"`
 	AgentMessage string `json:"agent_message"`
+}
+
+// copilotGateDeny is Copilot's PreToolUse decision: top-level fields, not the
+// nested hookSpecificOutput of Claude Code (F-0444).
+type copilotGateDeny struct {
+	PermissionDecision       string `json:"permissionDecision"`
+	PermissionDecisionReason string `json:"permissionDecisionReason"`
 }
 
 // geminiGateDeny is Gemini's BeforeTool decision envelope (R-0036).
@@ -386,6 +426,9 @@ func runHookWorkGate(cmd *cobra.Command, format string) {
 			}
 		}
 	}
+	if format == "copilot" && in.CWD == "" { // F-0444: project dir from the host env, then the process cwd
+		in.CWD = os.Getenv("COPILOT_PROJECT_DIR")
+	}
 	cfg, projDir, err := project.LoadConfig(in.CWD)
 	if err != nil {
 		return
@@ -399,20 +442,39 @@ func runHookWorkGate(cmd *cobra.Command, format string) {
 		return // F-0434
 	}
 	_ = app.TouchBinding(cacheDir, in.SessionID, in.AgentID) // F-0361: sign of life
-	var ti struct {
-		FilePath string `json:"file_path"`
+	paths := editedPaths(in.ToolInput)
+	for i, p := range paths { // Copilot's patch paths are relative to its cwd
+		if !filepath.IsAbs(p) {
+			base := in.CWD
+			if base == "" {
+				base, _ = os.Getwd()
+			}
+			paths[i] = filepath.Join(base, p) // never left relative
+		}
 	}
-	_ = json.Unmarshal(in.ToolInput, &ti)
-	if !cfg.Gates.WorkGateEnabled() || ti.FilePath == "" {
-		injectGateChannel(cmd, format, cacheDir, repoDir, projDir, in.SessionID, ti.FilePath)
+	first := ""
+	if len(paths) > 0 {
+		first = paths[0]
+	}
+	if !cfg.Gates.WorkGateEnabled() || first == "" {
+		injectGateChannel(cmd, format, cacheDir, repoDir, projDir, in.SessionID, first)
 		return
 	}
-	allow, reason := app.WorkGateCheck(cacheDir, repoDir, projDir, in.SessionID, in.AgentID, ti.FilePath, cfg.Gates.WorkGateAllow)
+	allow, reason := true, ""
+	for _, p := range paths {
+		var r string
+		if allow, r = app.WorkGateCheck(cacheDir, repoDir, projDir, in.SessionID, in.AgentID, p, cfg.Gates.WorkGateAllow); !allow {
+			reason = r
+			break
+		} else if r != "" {
+			reason = r
+		}
+	}
 	if allow {
 		if reason != "" { // allowed by fail-open: say why on stderr (F-0376)
 			fmt.Fprintln(cmd.ErrOrStderr(), "warning: "+reason)
 		}
-		injectGateChannel(cmd, format, cacheDir, repoDir, projDir, in.SessionID, ti.FilePath)
+		injectGateChannel(cmd, format, cacheDir, repoDir, projDir, in.SessionID, first)
 		return
 	}
 	// F-0170: the deny message is also a teaching moment — append the
@@ -427,6 +489,8 @@ func runHookWorkGate(cmd *cobra.Command, format string) {
 		payload = cursorGateDeny{Permission: "deny", AgentMessage: reason}
 	case "gemini":
 		payload = geminiGateDeny{Decision: "deny", Reason: reason}
+	case "copilot":
+		payload = copilotGateDeny{PermissionDecision: "deny", PermissionDecisionReason: reason}
 	default: // claude and codex share the envelope (R-0035)
 		var d gateDeny
 		d.HookSpecificOutput.HookEventName = "PreToolUse"
@@ -437,6 +501,37 @@ func runHookWorkGate(cmd *cobra.Command, format string) {
 	if err := enc.Encode(payload); err != nil {
 		fmt.Fprintln(cmd.ErrOrStderr(), err)
 	}
+}
+
+// patchFileRe matches the file lines of an apply_patch text.
+var patchFileRe = regexp.MustCompile(`(?m)^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+?)\s*$`)
+
+// editedPaths lists the files an edit tool call targets: file_path, or path
+// (Copilot's own arguments), or — when tool_input is the apply_patch text
+// Copilot sends for file edits (probed, F-0444) — the files the patch names.
+func editedPaths(toolInput json.RawMessage) []string {
+	var obj struct {
+		FilePath string `json:"file_path"`
+		Path     string `json:"path"`
+	}
+	if json.Unmarshal(toolInput, &obj) == nil {
+		if obj.FilePath != "" {
+			return []string{obj.FilePath}
+		}
+		if obj.Path != "" {
+			return []string{obj.Path}
+		}
+		return nil
+	}
+	var patch string
+	if json.Unmarshal(toolInput, &patch) != nil {
+		return nil
+	}
+	var out []string
+	for _, m := range patchFileRe.FindAllStringSubmatch(patch, -1) {
+		out = append(out, m[1])
+	}
+	return out
 }
 
 // injectGateChannel delivers, on an allowed edit, the session's pending channel
