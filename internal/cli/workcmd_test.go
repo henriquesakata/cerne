@@ -39,7 +39,7 @@ func TestWorkStartHappyDefaultActor(t *testing.T) {
 		t.Fatalf("work = %+v, want active 'Investigar erro X'", w)
 	}
 	host, _ := os.Hostname()
-	wantActor := "tester@" + host
+	wantActor := domain.MachinePseudonym("tester@" + host) // F-0442
 	if w.Actor != wantActor {
 		t.Fatalf("actor = %q, want %q", w.Actor, wantActor)
 	}

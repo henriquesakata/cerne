@@ -1,7 +1,9 @@
 package app
 
 import (
+	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -24,11 +26,13 @@ func pinMachine(t *testing.T, user, host string) {
 // another explicit value is untouched, unset keeps each caller's fallback.
 func TestResolveActor(t *testing.T) {
 	pinMachine(t, "alice", "m1")
+	m1 := domain.MachinePseudonym("alice@m1")
+	m9 := domain.MachinePseudonym("bob@m9")
 	for _, tc := range []struct{ env, wantEvent, wantWork string }{
-		{"agent", "agent:alice@m1", "agent:alice@m1"},
+		{"agent", "agent:" + m1, "agent:" + m1},
 		{"drift-auto", "drift-auto", "drift-auto"},
-		{"agent:bob@m9", "agent:bob@m9", "agent:bob@m9"},
-		{"", "local", "alice@m1"},
+		{"agent:bob@m9", "agent:" + m9, "agent:" + m9},
+		{"", "local", m1},
 	} {
 		t.Setenv("CERNE_ACTOR", tc.env)
 		if got := EventActor(); got != tc.wantEvent {
@@ -39,7 +43,7 @@ func TestResolveActor(t *testing.T) {
 		}
 	}
 	t.Setenv("CERNE_ACTOR", "agent")
-	if got := myActors(); len(got) != 2 || got[0] != "alice@m1" || got[1] != "agent:alice@m1" {
+	if got := myActors(); len(got) != 2 || got[0] != m1 || got[1] != "agent:"+m1 {
 		t.Fatalf("myActors = %v", got)
 	}
 }
@@ -67,7 +71,9 @@ func TestParallelGuardAgentIdentities(t *testing.T) {
 		actor   string
 		blocked bool
 	}{
-		{"agent:alice@m1", false},
+		{"agent:alice@m1", false}, // legacy record, read as the pseudonym (F-0442 crit. 5)
+		{"alice@m1", false},
+		{"agent:" + domain.MachinePseudonym("alice@m1"), false}, // new record
 		{"agent:alice@m2", true},
 		{"agent", false},
 	} {
@@ -145,11 +151,12 @@ func TestCursorAgentShellIsAgent(t *testing.T) {
 	pinMachine(t, "alice", "m1")
 	t.Setenv("CURSOR_AGENT", "1")
 	t.Setenv("CERNE_ACTOR", "")
-	if got := EventActor(); got != "agent:alice@m1" {
-		t.Errorf("EventActor = %q, want agent:alice@m1", got)
+	want := "agent:" + domain.MachinePseudonym("alice@m1")
+	if got := EventActor(); got != want {
+		t.Errorf("EventActor = %q, want %s", got, want)
 	}
-	if got := autoWorkActor(); got != "agent:alice@m1" {
-		t.Errorf("autoWorkActor = %q, want agent:alice@m1", got)
+	if got := autoWorkActor(); got != want {
+		t.Errorf("autoWorkActor = %q, want %s", got, want)
 	}
 	if err := CheckHumanGate(project.GateHuman); !errors.Is(err, ErrHumanGate) {
 		t.Errorf("CheckHumanGate = %v, want ErrHumanGate", err)
@@ -180,5 +187,52 @@ func TestCursorAgentShellOrigin(t *testing.T) {
 	t.Setenv("CURSOR_AGENT", "1")
 	if origin, _, err := resolveOrigin(""); err != nil || origin != "agent" {
 		t.Fatalf("resolveOrigin = %q, %v; want agent", origin, err)
+	}
+}
+
+// TestWorkStartRecordsNoPersonalActor (F-0442 crit. 1, 3, 8): whatever the
+// environment declares, `work start` records an actor without "@" that
+// refusePersonal accepts, and an agent actor still cannot approve or accept.
+func TestWorkStartRecordsNoPersonalActor(t *testing.T) {
+	pinMachine(t, "alice", "mac.local")
+	m := domain.MachinePseudonym("alice@mac.local")
+	for _, tc := range []struct{ name, env, cursor, flag, want string }{
+		{"agent env", "agent", "", "", "agent:" + m},
+		{"cursor", "", "1", "", "agent:" + m},
+		{"no actor", "", "", "", m},
+		{"explicit name", "fulano", "", "", "fulano"},
+		{"flag with @", "", "", "bob@x", domain.MachinePseudonym("bob@x")},
+		{"agent flag with @", "", "", "agent:bob@x", "agent:" + domain.MachinePseudonym("bob@x")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("CERNE_ACTOR", tc.env)
+			t.Setenv("CURSOR_AGENT", tc.cursor)
+			repoDir, projDir, _ := newFeatureBackend(t)
+			out, err := StartWork(repoDir, projDir, "Investigar", nil, tc.flag, false, nil, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			// the raw file, not LoadWork: the store would mask a bad write
+			raw, err := os.ReadFile(filepath.Join(repoDir, "entities", "works", out.ID+".json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var w struct{ Actor string }
+			if err := json.Unmarshal(raw, &w); err != nil {
+				t.Fatal(err)
+			}
+			if w.Actor != tc.want {
+				t.Errorf("actor = %q, want %q", w.Actor, tc.want)
+			}
+			if err := refusePersonal("actor", w.Actor); err != nil {
+				t.Errorf("refusePersonal(%q) = %v", w.Actor, err)
+			}
+		})
+	}
+	for _, env := range []string{"agent:" + m} {
+		t.Setenv("CERNE_ACTOR", env)
+		if err := CheckHumanGate(project.GateHuman); !errors.Is(err, ErrHumanGate) {
+			t.Errorf("CERNE_ACTOR=%q: gate = %v, want ErrHumanGate", env, err)
+		}
 	}
 }

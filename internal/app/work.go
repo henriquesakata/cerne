@@ -38,7 +38,7 @@ type StartedWork struct {
 // clone at repoDir: validates each ref (F-/D- id) exists, allocates the next
 // W- id, persists the entity, appends the work.started event and commits+
 // pushes the backend, refreshing the docs.lock snapshot in projDir. actor is
-// agent when non-empty, else "<os user>@<hostname>" — the default identity of
+// agent when non-empty, else the machine pseudonym (F-0442) — the default identity of
 // whoever/whatever is running this activity. In the same commit, the new work
 // supersedes the same actor's planning works on its features (F-0341).
 // from (F-0339) is an active work this one takes over: its refs are inherited
@@ -49,9 +49,9 @@ func StartWork(repoDir, projDir, title string, refs []string, agent string, forc
 	if title == "" {
 		return StartedWork{}, fmt.Errorf("the activity description cannot be empty")
 	}
-	actor := strings.TrimSpace(agent)
+	actor := domain.ActorLabel(strings.TrimSpace(agent))
 	if actor == "" {
-		actor = defaultWorkActor()
+		actor = resolveActor(defaultWorkActor()) // F-0442: the one actor rule
 	}
 	var out StartedWork
 	var fromTitle string
@@ -313,9 +313,10 @@ func FinishWork(repoDir, projDir, id, note string, abandon bool, reason string) 
 var hostname = os.Hostname
 
 // resolveActor is the one actor function (F-0350): CERNE_ACTOR="agent" becomes
-// "agent:<user>@<host>" (the agent says whose and which machine it is; the
-// host is derived at run time, never written to the committed settings.json),
-// any other explicit value is kept as is, and unset yields fallback.
+// "agent:m-<8hex>" (the machine pseudonym, derived at run time, never written
+// to the committed settings.json), any other explicit value goes through
+// domain.ActorLabel (F-0442: nothing with an "@" is recorded), and unset yields
+// fallback.
 func resolveActor(fallback string) string {
 	switch a := actorEnv(); a {
 	case "":
@@ -323,7 +324,7 @@ func resolveActor(fallback string) string {
 	case legacyAgentActor:
 		return agentActorPrefix + defaultWorkActor()
 	default:
-		return a
+		return domain.ActorLabel(a)
 	}
 }
 
@@ -352,10 +353,14 @@ func isAgentActor(a string) bool {
 	return a == legacyAgentActor || strings.HasPrefix(a, agentActorPrefix)
 }
 
-// defaultWorkActor returns "<user>@<hostname>" for the current process, best
-// effort: an empty/unavailable piece is simply omitted rather than failing
-// StartWork over an identity nicety.
+// defaultWorkActor returns the machine pseudonym of "<user>@<hostname>" for the
+// current process (F-0442), best effort: an empty/unavailable piece is simply
+// omitted rather than failing StartWork over an identity nicety.
 func defaultWorkActor() string {
+	return domain.MachinePseudonym(rawUserAtHost())
+}
+
+func rawUserAtHost() string {
 	host, _ := hostname()
 	user := os.Getenv("USER")
 	if user == "" {

@@ -36,14 +36,6 @@ func TestWorkSessionsAttribution(t *testing.T) {
 	}
 }
 
-func TestActorHost(t *testing.T) {
-	for in, want := range map[string]string{"agent:u@h": "h", "u@h": "h", "agent": "", "": ""} {
-		if got := ActorHost(in); got != want {
-			t.Errorf("ActorHost(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
 // A feature binding belongs to every active auto work referencing the feature.
 func TestWorkSessionsFeatureBindingToEveryAutoWork(t *testing.T) {
 	t0 := time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC)
