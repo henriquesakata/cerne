@@ -124,7 +124,7 @@ Close and reopen the terminal, then run `cerne --version`. If Windows shows *"Wi
   - **SSH** (`git@github.com:you/my-project-docs.git`): uses your SSH agent, or your key files (`~/.ssh/id_ed25519`, `id_rsa` or `id_ecdsa`). Check that `ssh -T git@github.com` works. For a passphrase-protected key, load it into the agent first with `ssh-add`.
   - **HTTPS** (`https://…`): export a token in `CERNE_GIT_TOKEN` (and the user in `CERNE_GIT_USER`, if the host requires it).
   - **Just trying it out?** Skip the backend: `cerne init --name my-project` creates a local one for you (see below).
-- **An AI agent** (optional, recommended): cerne is built to work alongside one. `init` installs the skills and hooks that teach Claude Code to use cerne, and delivers the authoring guide to the other agents it detects: Cursor, Codex CLI, Gemini CLI and GitHub Copilot (see "AI agents" below). Claude Code is the one used extensively; Cursor has had light use, Codex CLI is in early testing, and Gemini CLI has not been tested yet.
+- **An AI agent** (optional, recommended): cerne is built to work alongside one. `init` installs the skills and hooks that teach Claude Code to use cerne, and delivers the authoring guide to the other agents it detects: Cursor, Codex CLI, Gemini CLI and GitHub Copilot (see "AI agents" below). Claude Code is the one used extensively; Cursor has had light use, Codex CLI is in early testing, GitHub Copilot is verified on the Copilot CLI only (VS Code agent mode and the cloud agent are not verified, and it has had little real-project use), and Gemini CLI has not been tested yet.
 
 ## 4. Getting started
 
@@ -148,7 +148,7 @@ Besides those files, `init` also writes:
 
 ### AI agents
 
-`init` and `cerne skill install` deliver the `cerne-authoring` guide to Claude Code and to every agent whose config folder exists in the project (`.cursor/`, `.codex/`, `.gemini/`), and print one line per agent, including the ones not detected. "Delivered" means the file is in place: cerne cannot verify that an agent loads it, so each line adds what the agent's own docs say about loading. `cerne hook install` wires the hooks the same way (Claude Code plus detected agents). To add an agent whose folder is missing, create it with its hooks first, then deliver the guide:
+`init` and `cerne skill install` deliver the `cerne-authoring` guide to Claude Code and to every agent whose config folder exists in the project (`.cursor/`, `.codex/`, `.gemini/`; for Copilot, one of `.github/copilot-instructions.md`, `.github/hooks/`, `.github/skills/` or `.github/agents/`, never `.github/` alone), and print one line per agent, including the ones not detected. "Delivered" means the file is in place: cerne cannot verify that an agent loads it, so each line adds what the agent's own docs say about loading. `cerne hook install` wires the hooks the same way (Claude Code plus detected agents). To add an agent whose folder is missing, create it with its hooks first, then deliver the guide:
 
 ```bash
 cerne hook install --provider cursor,codex,gemini,copilot   # hooks; creates each agent's config folder
