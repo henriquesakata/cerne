@@ -124,7 +124,7 @@ Close and reopen the terminal, then run `cerne --version`. If Windows shows *"Wi
   - **SSH** (`git@github.com:you/my-project-docs.git`): uses your SSH agent, or your key files (`~/.ssh/id_ed25519`, `id_rsa` or `id_ecdsa`). Check that `ssh -T git@github.com` works. For a passphrase-protected key, load it into the agent first with `ssh-add`.
   - **HTTPS** (`https://…`): export a token in `CERNE_GIT_TOKEN` (and the user in `CERNE_GIT_USER`, if the host requires it).
   - **Just trying it out?** Skip the backend: `cerne init --name my-project` creates a local one for you (see below).
-- **An AI agent** (optional, recommended): cerne is built to work alongside one. `init` installs the skills and hooks that teach Claude Code to use cerne, and delivers the authoring guide to the other agents it detects: Cursor, Codex CLI and Gemini CLI (see "AI agents" below). Claude Code is the one used extensively; Cursor has had light use, Codex CLI is in early testing, and Gemini CLI has not been tested yet.
+- **An AI agent** (optional, recommended): cerne is built to work alongside one. `init` installs the skills and hooks that teach Claude Code to use cerne, and delivers the authoring guide to the other agents it detects: Cursor, Codex CLI, Gemini CLI and GitHub Copilot (see "AI agents" below). Claude Code is the one used extensively; Cursor has had light use, Codex CLI is in early testing, GitHub Copilot is verified on the Copilot CLI only (VS Code agent mode and the cloud agent are not verified, and it has had little real-project use), and Gemini CLI has not been tested yet.
 
 ## 4. Getting started
 
@@ -148,10 +148,10 @@ Besides those files, `init` also writes:
 
 ### AI agents
 
-`init` and `cerne skill install` deliver the `cerne-authoring` guide to Claude Code and to every agent whose config folder exists in the project (`.cursor/`, `.codex/`, `.gemini/`), and print one line per agent, including the ones not detected. "Delivered" means the file is in place: cerne cannot verify that an agent loads it, so each line adds what the agent's own docs say about loading. `cerne hook install` wires the hooks the same way (Claude Code plus detected agents). To add an agent whose folder is missing, create it with its hooks first, then deliver the guide:
+`init` and `cerne skill install` deliver the `cerne-authoring` guide to Claude Code and to every agent whose config folder exists in the project (`.cursor/`, `.codex/`, `.gemini/`; for Copilot, one of `.github/copilot-instructions.md`, `.github/hooks/`, `.github/skills/` or `.github/agents/`, never `.github/` alone), and print one line per agent, including the ones not detected. "Delivered" means the file is in place: cerne cannot verify that an agent loads it, so each line adds what the agent's own docs say about loading. `cerne hook install` wires the hooks the same way (Claude Code plus detected agents). To add an agent whose folder is missing, create it with its hooks first, then deliver the guide:
 
 ```bash
-cerne hook install --provider cursor,codex,gemini   # hooks; creates each agent's config folder
+cerne hook install --provider cursor,codex,gemini,copilot   # hooks; creates each agent's config folder
 cerne skill install                                 # the authoring guide, for agents whose config folder exists
 ```
 
@@ -161,6 +161,7 @@ cerne skill install                                 # the authoring guide, for a
 | Cursor | `.cursor/rules/cerne.mdc`, `.cursor/hooks.json` | `.cursor/skills/` | documented as loaded automatically; no setting documented |
 | Codex CLI | `.codex/hooks.json`, `.codex/config.toml` | `.agents/skills/`, plus a one-line pointer in `AGENTS.md` | detected automatically; restart Codex if it does not appear |
 | Gemini CLI | `.gemini/settings.json`, `.gemini/.env` | `.gemini/skills/`, plus a one-line pointer in `GEMINI.md` | only while the skill is enabled (`/skills list`, `/skills enable cerne-authoring`); asks your consent on activation |
+| GitHub Copilot | `.github/hooks/cerne.json`, `.mcp.json` | `.github/skills/`, plus `.github/instructions/cerne.instructions.md` | see "Using cerne with GitHub Copilot" below |
 
 Some hooks cannot be hosted by a given agent's extension surface; the hook install prints them as `skipped`, with the manual step. The full table is in [docs/provider-parity.md](docs/provider-parity.md).
 
@@ -176,3 +177,35 @@ cerne ui            # web dashboard at http://localhost:7717
 ```
 
 State transitions are gated. `cerne feature approve` needs a real spec, including its `Barra:` line (the bar the delivery is measured against); `start` needs a real plan; `complete` needs a real result. `approve` and `accept` (implemented → done) are human acts by default. With Claude Code, ask the agent: the `cerne-authoring` skill installed by `init` drives the whole flow. All commands: `cerne --help`.
+
+### Using cerne with GitHub Copilot
+
+There are two separate things, and you can use either one without the other: Copilot as the agent that works in your project, and the Copilot CLI as the model cerne itself calls.
+
+**As the project's agent.** `init` detects Copilot only when `.github/` already holds `copilot-instructions.md`, `hooks/`, `skills/` or `agents/`, so ask for it explicitly:
+
+```bash
+cerne hook install --provider copilot   # hooks and MCP
+cerne skill install                     # the authoring guide and instructions
+```
+
+What lands in the project:
+
+| File | What it is |
+|---|---|
+| `.github/hooks/cerne.json` | The hooks: the work gate (an edit is refused until you have started a unit of work), session context, provenance. Wholly owned by cerne; a teammate's other files in `.github/hooks/` are untouched |
+| `.github/skills/cerne-authoring/` | The authoring guide, with its references |
+| `.github/instructions/cerne.instructions.md` | A short instructions file that applies to every file (`applyTo: "**"`); `.github/copilot-instructions.md` is never touched |
+| `.mcp.json` | The read-only `cerne mcp` server, merged into your existing file without disturbing other servers |
+
+Where it was verified: the hooks, the skill, the instructions and the MCP server were exercised on the **Copilot CLI** (1.0.112). **VS Code agent mode** and the **Copilot cloud agent** were not verified. The cloud agent does not read `.mcp.json`: its MCP servers are set in the repository's settings on GitHub, and `cerne hook install` prints the block to paste there. Some hooks cannot be hosted by Copilot's extension surface (for example the subagent and compaction ones); the install prints them as `skipped`, and [docs/provider-parity.md](docs/provider-parity.md) lists each one.
+
+**As cerne's AI provider.** Commands that call a model (`cerne ask`, the draft commands, the dashboard's chat) can use your Copilot subscription through the Copilot CLI, with no API key:
+
+```toml
+# .cernerc
+[llm]
+mode = "copilot-cli"
+```
+
+Install the Copilot CLI and sign in once with `copilot login`. cerne runs it with every tool, MCP server and instruction file turned off, in an empty temporary folder and a throwaway `COPILOT_HOME`, so it only answers the prompt. On macOS the login lives in the keychain and carries over. On Linux and Windows the stored login may not be visible to that throwaway home: export `COPILOT_GITHUB_TOKEN` (a token with Copilot access) instead. By default Copilot picks the model (`auto`); set `llm.model` only to a model your subscription actually offers, because the CLI cannot list them and refuses one it does not offer.
