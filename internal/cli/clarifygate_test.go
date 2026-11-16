@@ -19,7 +19,7 @@ import (
 func newFeatureWithSpec(t *testing.T, projDir, title, specBody string) {
 	t.Helper()
 	specFile := filepath.Join(t.TempDir(), "spec.md")
-	if err := os.WriteFile(specFile, []byte(specBody), 0o644); err != nil {
+	if err := os.WriteFile(specFile, []byte(completeSpec(specBody)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if out, err := execCerne(t, "feature", "new", title, "--file", specFile, "--component", "test", "--dir", projDir); err != nil {

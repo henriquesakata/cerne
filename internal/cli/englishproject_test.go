@@ -33,7 +33,7 @@ func TestEnglishProject_NoPortugueseProtocolForm(t *testing.T) {
 	}
 	// feature new --file ends with the approve readiness (F-0418 crit. 3).
 	bare := filepath.Join(t.TempDir(), "spec.md")
-	if err := os.WriteFile(bare, []byte("# Bare\n\n## Problem\n\nA real problem.\n\n## Verification\n\nUnit test.\n"), 0o644); err != nil {
+	if err := os.WriteFile(bare, []byte(completeSpec("# Bare\n\n## Problem\n\nA real problem.\n\n## Verification\n\nUnit test.\n")), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	run("feature", "new", "Bare spec without a bar", "--file", bare, "--component", "test")

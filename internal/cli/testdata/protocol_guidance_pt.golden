@@ -48,15 +48,10 @@ error: spec has a bar but no judge question — add under the bar, in ## Verific
 $ cerne next F-0003
 F-0003 [candidate] — next: judge-question-missing: spec has a bar but no judge question — add under the bar, in ## Verificação: "Pergunta ao juiz: <a pergunta que o juiz cego responde>" — edit content/features/F-0003/spec.md (backend) and run 'cerne push'
 $ cerne lint
-INCOMPLETE-DOC (3)
-  content/features/F-0001/spec.md — content/features/F-0001/spec.md: missing template sections: Objetivo e critérios de aceitação, Decisões do design, Desenho, Execução recomendada (agente), Fora de escopo
-  content/features/F-0002/spec.md — content/features/F-0002/spec.md: missing template sections: Objetivo e critérios de aceitação, Decisões do design, Desenho, Execução recomendada (agente), Fora de escopo
-  content/features/F-0003/spec.md — content/features/F-0003/spec.md: missing template sections: Objetivo e critérios de aceitação, Decisões do design, Desenho, Execução recomendada (agente), Fora de escopo
-
 SPEC-MISSING-BAR (2)
   content/features/F-0001/spec.md — no "Barra:" line (Missing bar) — the approve refuses it; 'cerne feature approve F-0001 --check' lists the accepted forms
   content/features/F-0002/spec.md — malformed "Barra:" line: "Barra:" holds only a <…> template placeholder, not a named reference (Placeholder slot) — the approve refuses it; 'cerne feature approve F-0002 --check' lists the accepted forms
 
-Total: 5 problem(s).
-Error: 5 problem(s) found
-error: 5 problem(s) found
+Total: 2 problem(s).
+Error: 2 problem(s) found
+error: 2 problem(s) found

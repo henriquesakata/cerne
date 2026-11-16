@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/doccheck"
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/project"
@@ -29,8 +31,23 @@ func newFeature(t *testing.T, projDir, title string, seq int) string {
 }
 
 // writeDoc writes a feature lifecycle document straight into the backend clone.
+// completeSpec appends every template section the spec lacks (F-0435: the
+// approve refuses a spec without them), so fixtures keep testing their gate.
+func completeSpec(body string) string {
+	if !doccheck.HasRealContent([]byte(body)) {
+		return body // a stub stays a stub: the document gate refuses it first
+	}
+	for _, h := range doccheck.MissingSections([]byte(body), doclang.Spec, doclang.PT) {
+		body += "\n## " + h + "\n\nN/A.\n"
+	}
+	return body
+}
+
 func writeDoc(t *testing.T, repoDir, id, filename, content string) {
 	t.Helper()
+	if filename == "spec.md" {
+		content = completeSpec(content)
+	}
 	dir := filepath.Join(repoDir, "content", "features", id)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
@@ -57,7 +74,7 @@ func realDoc(id, body string) string {
 	// The Verificação/Barra tail satisfies the approve bar gate and the
 	// Gauntlet tail the result-missing-gauntlet lint rule (F-0545), for every
 	// fixture doc; sections a doc kind does not need are carried harmlessly.
-	return "---\ncerne_id: " + id + "\n---\n\n# Título\n\n" + body + "\n\n## Verificação\n\nBarra: fixture de teste — referência nomeada\nPergunta ao juiz: qual é mais claro?\n\n## Gauntlet\n\nBarra: fixture de teste — referência nomeada\nRodada 1 — vitória: \"fixture\"\n"
+	return "---\ncerne_id: " + id + "\n---\n\n# Título\n\n" + body + "\n\n## Problema\n\nX.\n\n## Objetivo e critérios de aceitação\n\nX.\n\n## Decisões do design\n\nX.\n\n## Desenho\n\nX.\n\n## Execução recomendada (agente)\n\nX.\n\n## Fora de escopo\n\nX.\n\n## Verificação\n\nBarra: fixture de teste — referência nomeada\nPergunta ao juiz: qual é mais claro?\n\n## Gauntlet\n\nBarra: fixture de teste — referência nomeada\nRodada 1 — vitória: \"fixture\"\n"
 }
 
 func TestTransitionFullLifecycle(t *testing.T) {
