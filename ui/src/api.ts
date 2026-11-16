@@ -1008,6 +1008,9 @@ export class ChatRunsError extends Error {
 // conversa (proveniência das escritas) e o índice da mensagem do agente que o
 // trazia — sem eles o servidor recusa o confirm com 422.
 export type ChatOverride = {
+  // provider (F-0440): o fornecedor escolhido no seletor — o servidor roda o
+  // turno no CLI de assinatura dele, sem mexer no .cernerc.
+  provider?: string
   model?: string
   effort?: string
   featureId?: string
@@ -1061,6 +1064,7 @@ export async function streamChat(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       messages: messages.map(({ role, content, runs, noRuns }) => ({ role, content: content + runsSummary(runs, noRuns) })),
+      provider: override?.provider,
       model: override?.model,
       effort: override?.effort,
       feature_id: override?.featureId,
@@ -1122,6 +1126,7 @@ export async function registerChatCandidate(
   parent = '',
   featureId = '',
   model = '',
+  provider = '',
 ): Promise<CreateOutcome & { warning?: string; unchanged?: boolean; matches?: DupMatch[]; missing?: string[] }> {
   const r = await fetch(`${base()}/chat/register`, {
     method: 'POST',
@@ -1137,6 +1142,7 @@ export async function registerChatCandidate(
       feature_id: featureId,
       // F-0375: o modelo da conversa — quem escreveu a spec fica gravado.
       model,
+      provider,
     }),
   })
   if (!r.ok) {

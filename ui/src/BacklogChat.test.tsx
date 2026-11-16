@@ -523,7 +523,7 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
     await waitFor(() =>
       expect(streamChat).toHaveBeenCalledWith(
         [{ role: 'user', content: 'Oi' }],
-        { model: 'claude-sonnet-5-5', effort: 'low', conversationId: expect.any(String) },
+        { provider: 'anthropic', model: 'claude-sonnet-5-5', effort: 'low', conversationId: expect.any(String) },
         expect.any(Function),
       ),
     )
@@ -658,6 +658,22 @@ describe('BacklogChat — menu hierárquico de modelos (F-0311)', () => {
     expect(screen.getByLabelText(/esfor/i)).toHaveTextContent('fast')
     fireEvent.click(screen.getByLabelText(/modelo/i))
     expect(screen.getAllByRole('menuitemradio').map((el) => el.textContent)).toEqual([expect.stringMatching(/Vendor X 1/)])
+  })
+
+  it('F-0440: escolher OpenAI mostra os modelos do Codex e o turno leva o provedor escolhido', async () => {
+    streamChat.mockResolvedValue({ answered: true, reply: 'ok' })
+    const codex: ModelEntry = { id: 'gpt-x', label: 'GPT X', provider: 'openai', efforts: ['low', 'high'], default_effort: 'high', visibility: 'current' }
+    fetchLLMOptions.mockResolvedValue(opts({ providers: ['anthropic', 'openai'], models: [...CATALOG, codex] }))
+    renderChat()
+    await screen.findByText('Claude Opus 5.5')
+    fireEvent.click(screen.getByLabelText(/provedor/i))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /Openai/i }))
+    expect(screen.getByLabelText(/modelo/i)).toHaveTextContent('GPT X')
+
+    fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+    await waitFor(() => expect(streamChat).toHaveBeenCalled())
+    expect(streamChat.mock.calls[0][1]).toMatchObject({ provider: 'openai', model: 'gpt-x', effort: 'high' })
   })
 
   it('C4: sem rota de preferência (cerne serve), a escolha vale na sessão e nada quebra na tela', async () => {

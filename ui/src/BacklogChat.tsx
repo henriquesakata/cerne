@@ -904,6 +904,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
     setNotice(null)
     setFailedMessages(next)
     chatRequest.send(conversation.id, next, {
+      provider: provider || undefined,
       model: model || undefined,
       effort: effort || undefined,
       // F-0256: o id vai a cada turno — é ele que faz o servidor recarregar a
@@ -1049,6 +1050,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
       proposal.parent,
       linkTo || refineId,
       model,
+      provider,
     )
       .then((res) => {
         setRegistering(false)
