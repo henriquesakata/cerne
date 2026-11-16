@@ -401,6 +401,9 @@ func runHookWorkGate(cmd *cobra.Command, format string) {
 			}
 		}
 	}
+	if format == "copilot" && in.CWD == "" { // F-0444: project dir from the host env, then the process cwd
+		in.CWD = os.Getenv("COPILOT_PROJECT_DIR")
+	}
 	cfg, projDir, err := project.LoadConfig(in.CWD)
 	if err != nil {
 		return
@@ -416,8 +419,12 @@ func runHookWorkGate(cmd *cobra.Command, format string) {
 	_ = app.TouchBinding(cacheDir, in.SessionID, in.AgentID) // F-0361: sign of life
 	paths := editedPaths(in.ToolInput)
 	for i, p := range paths { // Copilot's patch paths are relative to its cwd
-		if !filepath.IsAbs(p) && in.CWD != "" {
-			paths[i] = filepath.Join(in.CWD, p)
+		if !filepath.IsAbs(p) {
+			base := in.CWD
+			if base == "" {
+				base, _ = os.Getwd()
+			}
+			paths[i] = filepath.Join(base, p) // never left relative
 		}
 	}
 	first := ""
@@ -472,7 +479,7 @@ func runHookWorkGate(cmd *cobra.Command, format string) {
 }
 
 // patchFileRe matches the file lines of an apply_patch text.
-var patchFileRe = regexp.MustCompile(`(?m)^\*\*\* (?:Add|Update|Delete) File: (.+?)\s*$`)
+var patchFileRe = regexp.MustCompile(`(?m)^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+?)\s*$`)
 
 // editedPaths lists the files an edit tool call targets: file_path, or path
 // (Copilot's own arguments), or — when tool_input is the apply_patch text

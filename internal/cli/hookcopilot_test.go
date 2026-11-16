@@ -156,3 +156,65 @@ func TestHookSessionContextCopilotStale(t *testing.T) {
 		t.Fatalf("stale copilot file not flagged:\n%s", text)
 	}
 }
+
+func gateCopilot(t *testing.T, projDir, cwd, toolInput string) string {
+	t.Helper()
+	out, err := execCerneStdin(t, copilotPayload("sess-g", cwd, "PreToolUse", "Edit", toolInput, ""), "hook", "work-gate", "--format", "copilot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+func denied(t *testing.T, out string) bool {
+	t.Helper()
+	if strings.TrimSpace(out) == "" {
+		return false
+	}
+	return decodeTop(t, out)["permissionDecision"] == "deny"
+}
+
+// TestHookWorkGateCopilotPatchShapes (F-0444 critic items 4/5): every file a
+// patch names is gated — Move to, Delete, any one of several — paths resolve
+// against the project, never stay relative, and a patch we cannot parse fails
+// open.
+func TestHookWorkGateCopilotPatchShapes(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	enableWorkGate(t, projDir, "docs/**")
+	patch := func(lines ...string) string {
+		return jsonString("*** Begin Patch\n" + strings.Join(lines, "\n") + "\n*** End Patch\n")
+	}
+	outside := filepath.Join(t.TempDir(), "x.go")
+	for name, tc := range map[string]struct {
+		input string
+		deny  bool
+	}{
+		"move into a gated path":       {patch("*** Update File: docs/a.md", "*** Move to: internal/a.go", "@@", "-a", "+b"), true},
+		"move out of gated, to docs":   {patch("*** Update File: internal/a.go", "*** Move to: docs/a.md", "@@", "-a", "+b"), true},
+		"delete":                       {patch("*** Delete File: internal/a.go"), true},
+		"multi-file, one denied":       {patch("*** Update File: docs/a.md", "@@", "-a", "+b", "*** Add File: internal/b.go", "+x"), true},
+		"multi-file, all allowed":      {patch("*** Update File: docs/a.md", "@@", "-a", "+b", "*** Add File: .docs/n.md", "+x"), false},
+		"dot-dot traversal inside":     {patch("*** Add File: docs/../internal/a.go", "+x"), true},
+		"dot-dot escaping the project": {patch("*** Add File: ../outside.go", "+x"), false},
+		"absolute path outside":        {patch("*** Add File: " + outside, "+x"), false},
+		"unparseable patch":            {jsonString("this is not a patch"), false},
+		"object path, gated":           {`{"path":"internal/a.go"}`, true},
+	} {
+		if got := denied(t, gateCopilot(t, projDir, projDir, tc.input)); got != tc.deny {
+			t.Errorf("%s: deny=%v, want %v", name, got, tc.deny)
+		}
+	}
+
+	// A relative path with no cwd in the payload resolves against
+	// COPILOT_PROJECT_DIR, then the process cwd — never stays relative.
+	rel := patch("*** Add File: internal/a.go", "+x")
+	t.Setenv("COPILOT_PROJECT_DIR", projDir)
+	if !denied(t, gateCopilot(t, projDir, "", rel)) {
+		t.Error("empty cwd + COPILOT_PROJECT_DIR: relative path not gated")
+	}
+	t.Setenv("COPILOT_PROJECT_DIR", "")
+	t.Chdir(projDir)
+	if !denied(t, gateCopilot(t, projDir, "", rel)) {
+		t.Error("empty cwd + process cwd: relative path not gated")
+	}
+}
