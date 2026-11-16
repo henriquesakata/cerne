@@ -33,12 +33,18 @@ func specBarFindings(repoDir string, features []store.Feature) ([]Finding, error
 		if !doccheck.HasRealContent(data) {
 			continue
 		}
-		if _, err := doccheck.SpecBarIn(data, store.DocsLanguage(repoDir)); err != nil {
+		barIssue := ""
+		for _, is := range doccheck.CheckSpecBody(data, store.DocsLanguage(repoDir), false) {
+			if is.Code == doccheck.IssueBarMissing || is.Code == doccheck.IssueBarMalformed {
+				barIssue = is.Detail
+			}
+		}
+		if barIssue != "" {
 			out = append(out, Finding{
 				Rule:   RuleSpecMissingBar,
 				Entity: f.ID,
 				File:   rel,
-				Detail: fmt.Sprintf("%v (%s) — the approve refuses it; 'cerne feature approve %s --check' lists the accepted forms", err, f.Title, f.ID),
+				Detail: fmt.Sprintf("%s (%s) — the approve refuses it; 'cerne feature approve %s --check' lists the accepted forms", barIssue, f.Title, f.ID),
 			})
 		}
 	}

@@ -78,21 +78,36 @@ func approveReadiness(repoDir, id string, gauntletOn bool) ([]ApproveImpediment,
 	if domain.CheckGate(id, domain.ActionApprove, docs) != nil {
 		out = append(out, ApproveImpediment{ImpedimentSpecMissing, "the spec is missing or still the template stub", true})
 	} else {
-		// Section and bar impediments are independent: list both (F-0435).
-		missing, err := specSectionsMissing(repoDir, id)
-		if err != nil {
-			return nil, err
-		}
-		if len(missing) > 0 {
-			out = append(out, ApproveImpediment{ImpedimentIncompleteSpec, "the spec is missing template sections: " + strings.Join(missing, ", "), true})
-		}
-		if _, err := specBarFor(id, spec, lang); gauntletOn && err != nil {
-			code := ImpedimentBarMissing
-			if errors.Is(err, doccheck.ErrBarMalformed) {
-				code = ImpedimentBarMalformed
+		// Section and bar impediments are independent: list both (F-0435). A
+		// spec's come from doccheck.CheckSpecBody, the one check the lint and the
+		// chat run too (F-0438); a bug's sections stay on specSectionsMissing.
+		barBad := false
+		if strings.HasPrefix(id, "B-") {
+			missing, err := specSectionsMissing(repoDir, id)
+			if err != nil {
+				return nil, err
 			}
-			out = append(out, ApproveImpediment{code, err.Error(), true})
-		} else if gauntletOn {
+			if len(missing) > 0 {
+				out = append(out, ApproveImpediment{ImpedimentIncompleteSpec, "the spec is missing template sections: " + strings.Join(missing, ", "), true})
+			}
+			if _, err := specBarFor(id, spec, lang); gauntletOn && err != nil {
+				out = append(out, barImpediment(err))
+				barBad = true
+			}
+		} else {
+			for _, is := range doccheck.CheckSpecBody(spec, lang, !gauntletOn) {
+				if is.Severity != doccheck.SeverityError {
+					continue
+				}
+				out = append(out, ApproveImpediment{is.Code, is.Detail, true})
+				barBad = barBad || is.Code != doccheck.IssueIncompleteSpec
+			}
+			if _, err := specBarFor(id, spec, lang); gauntletOn && err != nil && !barBad {
+				out = append(out, barImpediment(err)) // the inherited form is a task's only
+				barBad = true
+			}
+		}
+		if gauntletOn && !barBad {
 			if _, err := doccheck.SpecJudgeQuestion(spec); err != nil {
 				code := ImpedimentJudgeQuestionMissing
 				if errors.Is(err, doccheck.ErrJudgeQuestionMisplaced) {
@@ -204,4 +219,12 @@ func CheckIncompleteCard(repoDir, projDir, id string) error {
 // nor the UI button lists it — the core gate skips it the same way.
 func ApproveReadiness(repoDir, projDir, id string) ([]ApproveImpediment, error) {
 	return approveReadiness(repoDir, id, projectGates(projDir).GauntletEnabled())
+}
+
+func barImpediment(err error) ApproveImpediment {
+	code := ImpedimentBarMissing
+	if errors.Is(err, doccheck.ErrBarMalformed) {
+		code = ImpedimentBarMalformed
+	}
+	return ApproveImpediment{code, err.Error(), true}
 }

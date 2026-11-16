@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/henriquesakata/cerne/internal/doccheck"
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/lint"
@@ -374,5 +376,63 @@ func writeRawSpec(t *testing.T, repoDir, id, body string) {
 	}
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestCheckSpecBody_SameRuleAsApproveAndLint (F-0438 crit. 5): for one body the
+// approve readiness, the lint and doccheck.CheckSpecBody say the same about
+// sections and bar.
+func TestCheckSpecBody_SameRuleAsApproveAndLint(t *testing.T) {
+	bodies := map[string]string{
+		"truncated":    "# t\n\n## Problema\n\nProblema real.\n",
+		"no bar":       completeSpec("# t\n\nProblema real.\n"),
+		"bar":          completeSpec("# t\n\nProblema real.\n\nBarra: não aplicável (sem comparável) — padrão alternativo: testes\n"),
+		"malformed":    completeSpec("# t\n\nProblema real.\n\nBarra:\n"),
+		"no sections+": "# t\n\nProblema real.\n\nBarra: não aplicável (sem comparável) — padrão alternativo: testes\n",
+	}
+	for name, body := range bodies {
+		t.Run(name, func(t *testing.T) {
+			repoDir, _, _ := newFeatureBackend(t)
+			seedRawCandidateSpec(t, repoDir, "F-0001", body)
+			var want []string
+			for _, is := range doccheck.CheckSpecBody([]byte(body), doclang.PT, false) {
+				if is.Severity == doccheck.SeverityError {
+					want = append(want, is.Code)
+				}
+			}
+			var gotApprove []string
+			imps, err := approveReadiness(repoDir, "F-0001", true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, im := range imps {
+				if im.Code == ImpedimentIncompleteSpec || im.Code == ImpedimentBarMissing || im.Code == ImpedimentBarMalformed {
+					gotApprove = append(gotApprove, im.Code)
+				}
+			}
+			var gotLint []string
+			findings, err := lint.Run(repoDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, f := range findings {
+				if f.Entity == "F-0001" || strings.Contains(f.File, "F-0001") {
+					switch f.Rule {
+					case lint.RuleIncompleteDoc:
+						gotLint = append(gotLint, doccheck.IssueIncompleteSpec)
+					case lint.RuleSpecMissingBar:
+						gotLint = append(gotLint, "bar")
+					}
+				}
+			}
+			wantBar := slices.Contains(want, doccheck.IssueBarMissing) || slices.Contains(want, doccheck.IssueBarMalformed)
+			if slices.Contains(want, doccheck.IssueIncompleteSpec) != slices.Contains(gotApprove, doccheck.IssueIncompleteSpec) ||
+				slices.Contains(want, doccheck.IssueIncompleteSpec) != slices.Contains(gotLint, doccheck.IssueIncompleteSpec) {
+				t.Errorf("sections: check %v approve %v lint %v", want, gotApprove, gotLint)
+			}
+			if wantBar != (len(gotApprove) > 0 && (slices.Contains(gotApprove, ImpedimentBarMissing) || slices.Contains(gotApprove, ImpedimentBarMalformed))) || wantBar != slices.Contains(gotLint, "bar") {
+				t.Errorf("bar: check %v approve %v lint %v", want, gotApprove, gotLint)
+			}
+		})
 	}
 }
