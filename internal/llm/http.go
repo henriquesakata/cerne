@@ -96,7 +96,7 @@ func NewProvider(cfg project.LLMConfig) (Provider, error) {
 	case ModeClaudeCLI:
 		return &cliProvider{bin: cfg.ClaudeBin, run: execRun}, nil
 	case ModeCodexCLI:
-		return &cliProvider{kind: mode, bin: "codex", model: cliModel(raw), run: execRun}, nil
+		return &cliProvider{kind: mode, bin: "codex", model: cliModel(raw), effort: raw.Effort, run: execRun}, nil
 	case ModeGeminiCLI:
 		return &cliProvider{kind: mode, bin: "gemini", model: cliModel(raw), run: execRun}, nil
 	}
@@ -143,7 +143,7 @@ func NewAgentProvider(cfg project.LLMConfig, dir string, write bool) (Provider, 
 	raw := cfg
 	cfg = cfg.WithDefaults()
 	if ResolveMode(cfg.Mode) == ModeCodexCLI && dir != "" {
-		return &cliProvider{kind: ModeCodexCLI, bin: "codex", model: cliModel(raw), run: execRun, dir: dir}, nil
+		return &cliProvider{kind: ModeCodexCLI, bin: "codex", model: cliModel(raw), effort: raw.Effort, run: execRun, dir: dir}, nil
 	}
 	if ResolveMode(cfg.Mode) == ModeClaudeCLI {
 		tools := AgentReadTools

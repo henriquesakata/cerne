@@ -56,8 +56,8 @@ type chatMessage struct {
 
 // chatRequest is the POST /api/chat body. Model/Effort (F-0218) are optional
 // per-call overrides from the chat's model/effort selector: Model replaces
-// cfg.LLM.Model for the byo-key provider; Effort travels here for forward
-// compatibility but no provider applies it yet (silently ignored).
+// cfg.LLM.Model; Effort fills cfg.LLM.Effort, which codex-cli applies
+// (B-0006) and the other providers ignore.
 type chatRequest struct {
 	Messages []chatMessage `json:"messages"`
 	Model    string        `json:"model,omitempty"`
@@ -193,6 +193,7 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 	if req.Model != "" {
 		cfg.LLM.Model = req.Model
 	}
+	cfg.LLM.Effort = req.Effort
 
 	// F-0224: the chat provider runs claude-cli as an agent in the project dir;
 	// the budget covers chained cerne queries, not just one shot. F-0260: the

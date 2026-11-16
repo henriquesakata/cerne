@@ -101,6 +101,11 @@ func llmConfig(cfg project.LLMConfig, remote bool) llmConfigResponse {
 		Providers: llm.ConfiguredProviders(cfg), PreferredProvider: cat.PreferredProvider,
 		Source: source, Provider: eff.Provider, Model: model, BaseURL: eff.BaseURL,
 	}
+	// B-0006: the baseline knows no Codex model (each account sees its own);
+	// the CLI's cache is what its picker offers.
+	if mode == llm.ModeCodexCLI {
+		resp.Models = append(resp.Models, llm.CodexModels()...)
+	}
 	if !remote {
 		resp.CLIs = cliStatuses()
 		resp.Keys = keyStatuses(cfg)

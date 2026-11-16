@@ -253,6 +253,30 @@ func TestChatNonStreamerFallback(t *testing.T) {
 	}
 }
 
+// TestChatPassesEffortToProvider (B-0006): the chat's effort selection reaches
+// the provider config of that turn, next to the model.
+func TestChatPassesEffortToProvider(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	configureChatByoKey(t, projDir, "http://unused.invalid")
+
+	var got project.LLMConfig
+	orig := newAgentProvider
+	newAgentProvider = func(cfg project.LLMConfig, _ string, _ bool) (llm.Provider, error) {
+		got = cfg
+		return &llm.Fake{Reply: "ok"}, nil
+	}
+	t.Cleanup(func() { newAgentProvider = orig })
+
+	rec := doJSON(t, New(repoDir, projDir, "proj-chat"), http.MethodPost, "/api/chat",
+		`{"messages":[{"role":"user","content":"Oi"}],"model":"gpt-x","effort":"high"}`, &struct{}{})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d; body: %s", rec.Code, rec.Body.String())
+	}
+	if got.Model != "gpt-x" || got.Effort != "high" {
+		t.Fatalf("provider cfg model=%q effort=%q, want gpt-x/high", got.Model, got.Effort)
+	}
+}
+
 // TestChatConfirmArmsWriteTools (F-0260 criterion 3) is the whole gate: without
 // an explicit confirmation on the turn the server does not even hand the agent
 // the write tools, so "no write happened" is not a matter of the agent behaving
