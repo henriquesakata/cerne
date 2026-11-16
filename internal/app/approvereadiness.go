@@ -74,25 +74,32 @@ func approveReadiness(repoDir, id string, gauntletOn bool) ([]ApproveImpediment,
 		return nil, err
 	}
 	var out []ApproveImpediment
+	lang := store.DocsLanguage(repoDir)
 	if domain.CheckGate(id, domain.ActionApprove, docs) != nil {
 		out = append(out, ApproveImpediment{ImpedimentSpecMissing, "the spec is missing or still the template stub", true})
-	} else if missing, err := specSectionsMissing(repoDir, id); err != nil {
-		return nil, err
-	} else if len(missing) > 0 {
-		out = append(out, ApproveImpediment{ImpedimentIncompleteSpec, "the spec is missing template sections: " + strings.Join(missing, ", "), true})
-	} else if _, err := specBarFor(id, spec, store.DocsLanguage(repoDir)); gauntletOn && err != nil {
-		code := ImpedimentBarMissing
-		if errors.Is(err, doccheck.ErrBarMalformed) {
-			code = ImpedimentBarMalformed
+	} else {
+		// Section and bar impediments are independent: list both (F-0435).
+		missing, err := specSectionsMissing(repoDir, id)
+		if err != nil {
+			return nil, err
 		}
-		out = append(out, ApproveImpediment{code, err.Error(), true})
-	} else if gauntletOn {
-		if _, err := doccheck.SpecJudgeQuestion(spec); err != nil {
-			code := ImpedimentJudgeQuestionMissing
-			if errors.Is(err, doccheck.ErrJudgeQuestionMisplaced) {
-				code = ImpedimentJudgeQuestionMisplaced
+		if len(missing) > 0 {
+			out = append(out, ApproveImpediment{ImpedimentIncompleteSpec, "the spec is missing template sections: " + strings.Join(missing, ", "), true})
+		}
+		if _, err := specBarFor(id, spec, lang); gauntletOn && err != nil {
+			code := ImpedimentBarMissing
+			if errors.Is(err, doccheck.ErrBarMalformed) {
+				code = ImpedimentBarMalformed
 			}
-			out = append(out, ApproveImpediment{code, judgeQuestionProblem(err, store.DocsLanguage(repoDir), "").Error(), true})
+			out = append(out, ApproveImpediment{code, err.Error(), true})
+		} else if gauntletOn {
+			if _, err := doccheck.SpecJudgeQuestion(spec); err != nil {
+				code := ImpedimentJudgeQuestionMissing
+				if errors.Is(err, doccheck.ErrJudgeQuestionMisplaced) {
+					code = ImpedimentJudgeQuestionMisplaced
+				}
+				out = append(out, ApproveImpediment{code, judgeQuestionProblem(err, lang, "").Error(), true})
+			}
 		}
 	}
 	for _, c := range clarify.Open(string(spec)) {
