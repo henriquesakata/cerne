@@ -704,3 +704,22 @@ func TestChatPromptBarTemplatesRefusedVerbatim(t *testing.T) {
 		t.Fatal("prompt has no Barra: template line")
 	}
 }
+
+// TestBuildChatSystemPrompt_FourBacktickContract (F-0435): the proposal opens
+// and closes with four backticks so code blocks inside the spec do not end it.
+func TestBuildChatSystemPrompt_FourBacktickContract(t *testing.T) {
+	repoDir, projDir := chatFixture(t)
+	prompt, err := BuildChatSystemPrompt(repoDir, projDir, project.Config{}, true)
+	if err != nil {
+		t.Fatalf("BuildChatSystemPrompt: %v", err)
+	}
+	if !strings.Contains(prompt, "\n````cerne-proposta\n") {
+		t.Error("prompt does not open the proposal with four backticks")
+	}
+	if !strings.Contains(prompt, "\n````\n\nPreencha") {
+		t.Error("prompt does not close the proposal with four backticks")
+	}
+	if strings.Contains(prompt, "\n```cerne-proposta\n") {
+		t.Error("prompt still shows a three-backtick proposal opening")
+	}
+}
