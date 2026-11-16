@@ -59,3 +59,24 @@ func TestParityCopilotColumn(t *testing.T) {
 		t.Error("matrix lacks the Copilot column")
 	}
 }
+
+// TestParityCopilotStatesTheProbedLimits (F-0444): the matrix carries the
+// double execution, the unverified Stop block and the CLI-only actor marker.
+func TestParityCopilotStatesTheProbedLimits(t *testing.T) {
+	byCap := map[string]ParityRow{}
+	for _, r := range ParityRows() {
+		byCap[r.Capability] = r
+	}
+	if d, reason := byCap["Double execution with the .claude hooks"].Degraded(ProviderCopilot); !d || !strings.Contains(reason, "side effects") {
+		t.Errorf("double execution row: degraded=%v reason=%q", d, reason)
+	}
+	if d, reason := byCap["Stop closeout"].Degraded(ProviderCopilot); !d || !strings.Contains(reason, "never exercised") {
+		t.Errorf("stop row: degraded=%v reason=%q", d, reason)
+	}
+	actor := byCap["CERNE_ACTOR=agent (human gates)"].For(ProviderCopilot)
+	for _, want := range []string{"Copilot CLI 1.0.112", "VS Code", "cloud agent", "unverified"} {
+		if !strings.Contains(actor, want) {
+			t.Errorf("actor cell lacks %q: %s", want, actor)
+		}
+	}
+}

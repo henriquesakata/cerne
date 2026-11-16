@@ -333,12 +333,17 @@ func installCopilot(projDir string) []Result {
 	}
 	st, err := writeIfChanged(dst, out)
 	r := Result{Asset: asset, Status: st}
+	if st == StatusUpdated {
+		r.Note = "cerne-managed file rewritten whole — local edits are not kept; put team hooks in their own file under .github/hooks/"
+	}
 	if err != nil {
 		r = Result{Asset: asset, Status: StatusSkipped, Note: "cannot write: " + err.Error()}
 	}
 	mcpRes, block := copilotMCP(projDir)
 	return []Result{r, mcpRes,
 		{Asset: "copilot: cloud agent MCP", Status: StatusSkipped, Note: "the cloud agent does not read .mcp.json — paste this block in the repository settings (Copilot, coding agent, MCP configuration), and install the cerne binary in its environment (.github/workflows/copilot-setup-steps.yml):\n" + block},
+		{Asset: "copilot: double execution", Status: StatusSkipped, Note: "Copilot CLI also runs the cerne hooks of .claude/settings.json when both are installed; it ignores their Claude-format output, so only side effects repeat (session binding, sign of life)"},
+		{Asset: "copilot: stop closeout", Status: StatusSkipped, Note: "the Stop block decision was never exercised live (only the payload was captured) — treat the closeout reminder as unverified"},
 		{Asset: "copilot: precompact", Status: StatusSkipped, Note: "Copilot's preCompact hook is notification-only — the handoff code is not kept through compaction"},
 		{Asset: "copilot: CERNE_PROVIDER", Status: StatusSkipped, Note: "CERNE_PROVIDER=copilot reaches the hook processes only, not the bash tool shell — documents written from the shell record their author as unknown unless it is exported there"},
 		{Asset: "copilot: subagent-context", Status: StatusSkipped, Note: "no subagent hook is wired — subagents start without the live board"},

@@ -83,6 +83,10 @@ const degraded = "degraded"
 // no install, no hook, the same on every provider — never an install gap.
 const EveryHarness = "CLI output (every harness)"
 
+// NotApplicable marks a capability that does not exist for a provider — never
+// an install gap.
+const NotApplicable = "n/a"
+
 var parityTable = []ParityRow{
 	{
 		Capability: "Static registration rules (floor)",
@@ -139,7 +143,7 @@ var parityTable = []ParityRow{
 		Cursor:     ".claude Stop hook via the third-party import → followup_message, completed turns only",
 		Codex:      "Stop hook",
 		Gemini:     degraded + ": AfterAgent forces a retry — deferred",
-		Copilot:    "Stop hook (decision/reason as Claude Code)",
+		Copilot:    degraded + ": the Stop block decision was never exercised live (only the payload was captured) — treat the closeout reminder as unverified",
 	},
 	{
 		Capability: "Handoff code through compaction",
@@ -155,7 +159,7 @@ var parityTable = []ParityRow{
 		Cursor:     "CURSOR_AGENT=1 on Cursor's agent shells (seen in 3.25.6, undocumented) — no install",
 		Codex:      "shell_environment_policy.set in .codex/config.toml",
 		Gemini:     ".gemini/.env",
-		Copilot:    "env block on each hook + COPILOT_CLI=1 on the bash tool shell (probed on CLI 1.0.112) — no install",
+		Copilot:    "env block on each hook + COPILOT_CLI=1 on the bash tool shell — verified on Copilot CLI 1.0.112 only; VS Code agent mode and the cloud agent unverified — no install",
 	},
 	{
 		Capability: "Document author (CERNE_PROVIDER, F-0375)",
@@ -180,6 +184,14 @@ var parityTable = []ParityRow{
 		Codex:      "delivered to .agents/skills/cerne-authoring/ + one-line pointer in AGENTS.md — " + GuideCondition(ProviderCodex),
 		Gemini:     "delivered to .gemini/skills/cerne-authoring/ + one-line pointer in GEMINI.md — " + GuideCondition(ProviderGemini),
 		Copilot:    "delivered to .github/skills/cerne-authoring/ + .github/instructions/cerne.instructions.md — " + GuideCondition(ProviderCopilot),
+	},
+	{
+		Capability: "Double execution with the .claude hooks",
+		Claude:     NotApplicable,
+		Cursor:     NotApplicable,
+		Codex:      NotApplicable,
+		Gemini:     NotApplicable,
+		Copilot:    degraded + ": Copilot CLI also runs the cerne hooks of .claude/settings.json (probed) — it ignores their Claude-format output, so only side effects repeat (binding, sign of life)",
 	},
 	{
 		Capability: "Trust prerequisite",
