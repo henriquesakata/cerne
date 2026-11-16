@@ -228,6 +228,23 @@ function answerTo(messages: ChatMsg[], from: number, question: string, nth: numb
   return (stop < 0 ? rest : rest.slice(0, stop)).filter((m) => m.role === 'user' && m.content.startsWith(prefix))[nth]?.content
 }
 
+// UserTurn renders a user bubble as plain text — except the card's answer turn
+// "**<question>** → <rest>", whose question shows in weight 600 without the
+// asterisks (the stored text is unchanged: answerTo reads it).
+const ANSWER_TURN = /^\*\*(.+?)\*\* → (.+)$/s
+
+function UserTurn({ text }: { text: string }) {
+  const m = ANSWER_TURN.exec(text)
+  if (!m) return <p>{text}</p>
+  return (
+    <p>
+      <strong>{m[1]}</strong>
+      {' → '}
+      {m[2]}
+    </p>
+  )
+}
+
 function stripQuestions(raw: string): string {
   const blocks = questionBlocks(raw)
   if (blocks.length === 0) return raw
@@ -1237,6 +1254,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
       <div className="backlog-chat-history" ref={historyRef} onScroll={onHistoryScroll}>
         {messages.length === 0 && <p className="muted">{t.backlogChat.intro}</p>}
         {messages.map((m, i) => {
+          const lastAssistant = messages.map((x) => x.role).lastIndexOf('assistant')
           const version = versionByMessage.get(i)
           const note = m.role === 'assistant' ? parseNote(m.content) : null
           // F-0260: o card de comandos só vale na ÚLTIMA mensagem. Um eco antigo
@@ -1248,7 +1266,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
           const commands = fenced && !m.noExec && i === messages.length - 1 ? fenced : null
           return (
             <div key={i} className={`backlog-chat-msg backlog-chat-msg-${m.role}`}>
-              {m.role !== 'assistant' && <p>{m.content}</p>}
+              {m.role !== 'assistant' && <UserTurn text={m.content} />}
               {/* F-0255 critério 1: a mensagem que traz proposta mostra só a
                   condução em volta e uma referência ao painel — a spec inteira
                   no scroll enterrava a conversa a cada revisão. */}
@@ -1275,6 +1293,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
                       total={all.length}
                       answer={answerTo(messages, i, q.question, all.slice(0, k).filter((x) => x.question === q.question).length)}
                       busy={busy}
+                      stale={i !== lastAssistant}
                       onAnswer={answerQuestion}
                     />
                   ))}

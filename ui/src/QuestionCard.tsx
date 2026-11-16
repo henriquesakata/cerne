@@ -19,6 +19,9 @@ type Props = {
   // answer: the user turn that answered this question, when one exists.
   answer?: string
   busy: boolean
+  // stale: the question sits in an earlier assistant turn and was never
+  // answered — the analyst moved on, so the card is locked.
+  stale?: boolean
   onAnswer: (turn: string) => void
 }
 
@@ -28,11 +31,12 @@ function chosenOf(answer: string, question: string): string {
   return rest.replace(/\s*\([^()]*\)$/, '')
 }
 
-export default function QuestionCard({ q, index, total, answer, busy, onAnswer }: Props) {
+export default function QuestionCard({ q, index, total, answer, busy, stale, onAnswer }: Props) {
   const { t } = useT()
   const [free, setFree] = useState('')
   const answered = answer !== undefined
-  const locked = answered || busy
+  const dead = stale && !answered
+  const locked = answered || busy || !!dead
   const chosen = answered ? chosenOf(answer, q.question) : ''
   const matched = q.options.some((o) => o.label === chosen)
   const reply = (choice: string, origin: string) => onAnswer(`**${q.question}** → ${choice} (${origin})`)
@@ -43,6 +47,7 @@ export default function QuestionCard({ q, index, total, answer, busy, onAnswer }
         <h4>
           {t.questionCard.title(index, total)}
           {answered && t.questionCard.answered}
+          {dead && t.questionCard.unanswered}
         </h4>
       </header>
       <p className="question-card-question">{q.question}</p>
@@ -78,7 +83,7 @@ export default function QuestionCard({ q, index, total, answer, busy, onAnswer }
           {chosen}
         </p>
       )}
-      {!answered && (
+      {!answered && !dead && (
         <form
           className="question-card-free"
           onSubmit={(e) => {

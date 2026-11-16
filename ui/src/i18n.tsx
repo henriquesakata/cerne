@@ -589,6 +589,7 @@ const ptBR = {
   questionCard: {
     title: (n: number, total: number) => `Pergunta ${n} de ${total}`,
     answered: ' · Respondida',
+    unanswered: ' · sem resposta',
     yourAnswer: 'Sua resposta',
     recommended: 'Recomendada',
     other: 'Outra resposta',
@@ -1935,6 +1936,7 @@ const en: Messages = {
   questionCard: {
     title: (n: number, total: number) => `Question ${n} of ${total}`,
     answered: ' · Answered',
+    unanswered: ' · not answered',
     yourAnswer: 'Your answer',
     recommended: 'Recommended',
     other: 'Other answer',

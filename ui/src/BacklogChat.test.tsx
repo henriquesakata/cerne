@@ -1634,6 +1634,51 @@ describe('cartão de pergunta (F-0437)', () => {
     expect(screen.getByText('Pergunta 2 de 2')).toBeInTheDocument()
   })
 
+  it('the answer turn renders the question in <strong> with no asterisks; other user text stays literal', () => {
+    renderChat({
+      messages: [
+        { role: 'user', content: 'preciso de **negrito** literal' },
+        { role: 'assistant', content: reply },
+        { role: 'user', content: '**Qual canal?** → Push (recomendação aceita)' },
+      ],
+    })
+    const strong = screen.getAllByText('Qual canal?').find((e) => e.tagName === 'STRONG')
+    expect(strong).toBeDefined()
+    expect(strong!.closest('.backlog-chat-msg-user')!.textContent).toBe('Qual canal? → Push (recomendação aceita)')
+    expect(screen.getByText('preciso de **negrito** literal')).toBeInTheDocument()
+  })
+
+  it('only the latest assistant message has live cards; an earlier unanswered one is locked', () => {
+    renderChat({
+      messages: [
+        { role: 'user', content: 'x' },
+        { role: 'assistant', content: reply },
+        { role: 'user', content: 'e então?' },
+        { role: 'assistant', content: reply },
+      ],
+    })
+    const groups = screen.getAllByRole('group', { name: 'Qual canal?' })
+    const [old, latest] = groups
+    expect(within(old).getByText(/sem resposta/)).toBeInTheDocument()
+    expect(within(old).getByRole('button', { name: /Push/ })).toBeDisabled()
+    expect(within(old).queryByLabelText('Outra resposta')).not.toBeInTheDocument()
+    expect(within(latest).getByRole('button', { name: /Push/ })).toBeEnabled()
+    expect(within(latest).queryByText(/sem resposta/)).not.toBeInTheDocument()
+  })
+
+  it('an earlier answered card keeps its chosen state', () => {
+    renderChat({
+      messages: [
+        { role: 'user', content: 'x' },
+        { role: 'assistant', content: reply },
+        { role: 'user', content: '**Qual canal?** → Email (outra opção)' },
+        { role: 'assistant', content: 'Ok, mais algo?' },
+      ],
+    })
+    expect(screen.getByRole('button', { name: /Email/ })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByText(/sem resposta/)).not.toBeInTheDocument()
+  })
+
   it('a malformed block draws no card and stays as text', async () => {
     streamChat.mockResolvedValueOnce({ answered: true, reply: '````cerne-pergunta\n# Sem opções\n````\n' })
     renderChat()
