@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -65,6 +66,10 @@ type chatRequest struct {
 	Messages []chatMessage `json:"messages"`
 	Model    string        `json:"model,omitempty"`
 	Effort   string        `json:"effort,omitempty"`
+	// Provider (F-0440) is the vendor the human picked in the selector: empty
+	// or the configured one runs the turn as configured, an installed
+	// subscription CLI's runs it on that CLI; anything else is refused.
+	Provider string `json:"provider,omitempty"`
 	// FeatureID (F-0256) turns the turn into a refine of that candidate: its
 	// current spec joins the system prompt. Read from the backend on every
 	// call, so a resumed conversation never answers from a stale snapshot.
@@ -199,6 +204,14 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 		writeChatLine(w, http.StatusOK, chatResponse{Answered: false, NeedsProvider: true})
 		return
 	}
+	// F-0440: the turn's copy of the config only — ask, compile and drafts
+	// keep the project's mode, and nothing here writes .cernerc.
+	turnCfg, err := turnLLM(cfg.LLM, req.Provider, servedRemotely(r))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody(err.Error()))
+		return
+	}
+	cfg.LLM = turnCfg
 	if req.Model != "" {
 		cfg.LLM.Model = req.Model
 	}
@@ -385,15 +398,37 @@ type chatRegisterRequest struct {
 	// Model (F-0375) is the conversation's model selection, the same override
 	// chatRequest carries: the spec's writer is recorded with it.
 	Model string `json:"model,omitempty"`
+	// Provider (F-0440) is the vendor that answered, as the chat request had it.
+	Provider string `json:"provider,omitempty"`
+}
+
+// turnLLM is the [llm] config of one chat turn (F-0440): cfg as configured
+// when provider is empty or the configured vendor's, otherwise the mode of the
+// installed subscription CLI of that vendor, with the project's model dropped
+// (it names another vendor's model). The caller's copy only: nothing is saved.
+func turnLLM(cfg project.LLMConfig, provider string, remote bool) (project.LLMConfig, error) {
+	if provider == "" || slices.Contains(llm.ConfiguredProviders(cfg), provider) {
+		return cfg, nil
+	}
+	if !slices.Contains(reachableProviders(cfg, remote), provider) {
+		return cfg, fmt.Errorf("provider %q is not available on this machine", provider)
+	}
+	cfg.Mode, cfg.Provider, cfg.Model = llm.ModeForProvider(provider), "", ""
+	return cfg, nil
 }
 
 // chatAuthor is who wrote a spec the chat proposed (F-0375): the project's
 // [llm] config with the conversation's model; unknown when the config is
 // unreadable — never a default it did not call.
-func chatAuthor(projDir, model string) app.DocAuthor {
+func chatAuthor(projDir, model, provider string) app.DocAuthor {
 	cfg, _, err := project.LoadConfig(projDir)
 	if err != nil {
 		return app.DocAuthor{Source: "unknown"}
+	}
+	// An unreachable provider keeps the project's own config (best effort: the
+	// registration was already confirmed).
+	if turn, err := turnLLM(cfg.LLM, provider, false); err == nil {
+		cfg.LLM = turn
 	}
 	if model != "" {
 		cfg.LLM.Model = model
@@ -492,7 +527,7 @@ func handleChatRegister(w http.ResponseWriter, r *http.Request, repoDir, projDir
 	// candidate. Same gate as the creation (an explicit click got here), same
 	// backend write path, but nothing is minted and no state moves.
 	if fid := strings.TrimSpace(req.FeatureID); fid != "" {
-		f, changed, err := app.UpdateCandidateSpecBy(repoDir, projDir, fid, req.SpecBody, chatAuthor(projDir, req.Model))
+		f, changed, err := app.UpdateCandidateSpecBy(repoDir, projDir, fid, req.SpecBody, chatAuthor(projDir, req.Model, req.Provider))
 		if !writeRefineError(w, err) {
 			return
 		}
@@ -510,7 +545,7 @@ func handleChatRegister(w http.ResponseWriter, r *http.Request, repoDir, projDir
 	parent := strings.TrimSpace(req.Parent)
 	module := strings.TrimSpace(req.Module)
 	warning := ""
-	author := chatAuthor(projDir, req.Model)
+	author := chatAuthor(projDir, req.Model, req.Provider)
 	f, err := app.CreateFeatureWithSpecBy(repoDir, projDir, req.Title, module, parent, req.Facets, req.Components, req.SpecBody, author)
 	// F-0254: a bad parent degrades to no parent instead of failing the
 	// registration — the refusal happens before anything is written, so the

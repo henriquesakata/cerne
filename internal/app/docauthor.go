@@ -42,6 +42,14 @@ func LLMAuthor(c project.LLMConfig) DocAuthor {
 	if llm.ResolveMode(c.Mode) == llm.ModeClaudeCLI {
 		return DocAuthor{Provider: llm.ModeClaudeCLI, Source: "llm-config"}
 	}
+	// The other subscription CLIs answer as themselves (F-0440), with the model
+	// the call named unless a byo-key provider's model sits in the config.
+	if mode := llm.ResolveMode(c.Mode); mode == llm.ModeCodexCLI || mode == llm.ModeGeminiCLI || mode == llm.ModeCursorCLI {
+		if c.Provider != "" {
+			c.Model = ""
+		}
+		return DocAuthor{Provider: mode, Model: c.Model, Source: "llm-config"}
+	}
 	c = c.WithDefaults()
 	return DocAuthor{Provider: c.Provider, Model: c.Model, Source: "llm-config"}
 }

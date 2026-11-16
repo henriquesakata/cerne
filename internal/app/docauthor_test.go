@@ -135,4 +135,8 @@ func TestNamedAuthors(t *testing.T) {
 	if got := LLMAuthor(project.LLMConfig{Mode: "claude-cli", Model: "claude-opus-5-5"}); got != (DocAuthor{Provider: "claude-cli", Source: "llm-config"}) {
 		t.Fatalf("LLMAuthor claude-cli = %+v (the CLI is never passed --model)", got)
 	}
+	// F-0440: the other subscription CLIs answer as themselves.
+	if got := LLMAuthor(project.LLMConfig{Mode: "codex-cli", Model: "gpt-x"}); got != (DocAuthor{Provider: "codex-cli", Model: "gpt-x", Source: "llm-config"}) {
+		t.Fatalf("LLMAuthor codex-cli = %+v", got)
+	}
 }
