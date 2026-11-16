@@ -15,6 +15,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/henriquesakata/cerne/internal/mcp"
 	"github.com/henriquesakata/cerne/internal/project"
 )
 
@@ -1176,7 +1177,8 @@ func codexArgv(t *testing.T, dir string) []string {
 
 // TestCodexChatArgv (F-0439 criteria 1 and 2): the one-shot callers and the
 // remote serve (no dir) carry no MCP server; the local chat turn keeps the
-// PR #20 isolation and the project-files server.
+// PR #20 isolation, adds the project-files server and cerne's read-only tools,
+// and never a tool that writes.
 func TestCodexChatArgv(t *testing.T) {
 	iso := codexIsolation[:len(codexIsolation)-1] // without the dangling -o
 	oneShot := codexArgv(t, "")
@@ -1196,5 +1198,20 @@ func TestCodexChatArgv(t *testing.T) {
 		"-c", `mcp_servers.cerne_project.tools.read_file.approval_mode="approve"`}
 	if got := chat[len(iso) : len(iso)+len(want)]; !reflect.DeepEqual(got, want) {
 		t.Fatalf("project-files server = %v, want %v", got, want)
+	}
+	// F-0439: cerne's read tools, each approved, and nothing that writes.
+	cerne, _ := json.Marshal([]string{"mcp", "--dir", root})
+	if !slices.Contains(chat, "mcp_servers.cerne.args="+string(cerne)) {
+		t.Fatalf("no cerne read-only server in %v", chat)
+	}
+	for _, name := range mcp.ToolNames {
+		if !slices.Contains(chat, "mcp_servers.cerne.tools."+name+`.approval_mode="approve"`) {
+			t.Errorf("tool %s is not approved in %v", name, chat)
+		}
+	}
+	for _, a := range chat {
+		if strings.Contains(a, "mcp_servers.cerne.tools.") && !strings.HasSuffix(a, `.approval_mode="approve"`) {
+			t.Errorf("unexpected tool setting %s", a)
+		}
 	}
 }

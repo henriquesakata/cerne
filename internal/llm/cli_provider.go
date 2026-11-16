@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/henriquesakata/cerne/internal/mcp"
 )
 
 // ModeClaudeCLI is the provider mode that shells to the Claude Code CLI
@@ -404,6 +406,13 @@ func (p *cliProvider) completeCodex(ctx context.Context, prompt string) (string,
 		args = append(args, "-c", "mcp_servers.cerne_project.command="+string(command), "-c", "mcp_servers.cerne_project.args="+string(argv),
 			"-c", `mcp_servers.cerne_project.tools.find_files.approval_mode="approve"`,
 			"-c", `mcp_servers.cerne_project.tools.read_file.approval_mode="approve"`)
+		// F-0439: cerne's own read tools (status, search, show…) beside the
+		// files. Every name in mcp.ToolNames is a read command; none writes.
+		cerneArgv, _ := json.Marshal([]string{"mcp", "--dir", root})
+		args = append(args, "-c", "mcp_servers.cerne.command="+string(command), "-c", "mcp_servers.cerne.args="+string(cerneArgv))
+		for _, name := range mcp.ToolNames {
+			args = append(args, "-c", "mcp_servers.cerne.tools."+name+`.approval_mode="approve"`)
+		}
 	}
 	if p.model != "" {
 		args = append(args, "-m", p.model)
