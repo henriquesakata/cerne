@@ -24,7 +24,7 @@ type cliStatus struct {
 func cliStatuses() []cliStatus {
 	found := project.FoundSubscriptionCLIs()
 	var out []cliStatus
-	for _, name := range []string{"claude", "codex", "gemini", "cursor-agent"} {
+	for _, name := range []string{"claude", "codex", "gemini", "cursor-agent", "copilot"} {
 		out = append(out, cliStatus{Name: name, Mode: project.CLIMode(name), Found: slices.Contains(found, name)})
 	}
 	return out

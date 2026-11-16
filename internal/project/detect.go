@@ -6,7 +6,7 @@ import (
 )
 
 // subscriptionCLIs is the detection order: the first one on PATH wins.
-var subscriptionCLIs = []string{"claude", "codex", "gemini", "cursor-agent"}
+var subscriptionCLIs = []string{"claude", "codex", "gemini", "cursor-agent", "copilot"}
 
 // CLIMode is the [llm] mode a subscription CLI binary runs as: the binary name
 // plus "-cli", except the Cursor CLI, whose binary is cursor-agent (F-0441).
@@ -21,7 +21,7 @@ func CLIMode(bin string) string {
 var lookPath = exec.LookPath
 
 // FoundSubscriptionCLIs lists, in detection order, the subscription CLIs on
-// PATH ("claude", "codex", "gemini", "cursor-agent"); none when CERNE_NO_CLI_DETECT is set,
+// PATH ("claude", "codex", "gemini", "cursor-agent", "copilot"); none when CERNE_NO_CLI_DETECT is set,
 // which the test binaries do so no test reaches a real CLI. Probed on every
 // call (a PATH lookup is cheap), so a CLI installed while `cerne ui` runs shows
 // up on the next request; tests replace it.

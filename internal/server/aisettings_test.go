@@ -104,7 +104,7 @@ func TestAIStatusReportsDetectionAndKeyWithoutTheValue(t *testing.T) {
 	for _, c := range st.CLIs {
 		found[c.Mode] = c.Found
 	}
-	if len(st.CLIs) != 4 || !found["codex-cli"] || found["claude-cli"] || found["gemini-cli"] || found["cursor-cli"] {
+	if len(st.CLIs) != 5 || !found["codex-cli"] || found["claude-cli"] || found["gemini-cli"] || found["cursor-cli"] || found["copilot-cli"] {
 		t.Fatalf("clis = %+v", st.CLIs)
 	}
 

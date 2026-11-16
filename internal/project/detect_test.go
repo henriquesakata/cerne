@@ -57,8 +57,8 @@ func firstCLI(look func(string) (string, error)) string {
 
 func TestFoundCLIsListsAllInOrder(t *testing.T) {
 	t.Setenv("CERNE_NO_CLI_DETECT", "")
-	got := foundCLIs(fakeLook("cursor-agent", "gemini", "claude"))
-	if len(got) != 3 || got[0] != "claude" || got[1] != "gemini" || got[2] != "cursor-agent" {
+	got := foundCLIs(fakeLook("copilot", "cursor-agent", "gemini", "claude"))
+	if len(got) != 4 || got[0] != "claude" || got[1] != "gemini" || got[2] != "cursor-agent" || got[3] != "copilot" {
 		t.Fatalf("got %v", got)
 	}
 }
@@ -66,7 +66,7 @@ func TestFoundCLIsListsAllInOrder(t *testing.T) {
 // F-0441: the Cursor binary is cursor-agent but its mode is cursor-cli, so the
 // mode is no longer the binary name plus "-cli".
 func TestCLIMode(t *testing.T) {
-	for bin, want := range map[string]string{"claude": "claude-cli", "codex": "codex-cli", "gemini": "gemini-cli", "cursor-agent": "cursor-cli"} {
+	for bin, want := range map[string]string{"claude": "claude-cli", "codex": "codex-cli", "gemini": "gemini-cli", "cursor-agent": "cursor-cli", "copilot": "copilot-cli"} {
 		if got := CLIMode(bin); got != want {
 			t.Errorf("CLIMode(%q) = %q, want %q", bin, got, want)
 		}

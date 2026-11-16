@@ -15,6 +15,7 @@ func TestResolveMode(t *testing.T) {
 		{"", "codex", ModeCodexCLI, SourceDetected},
 		{"", "gemini", ModeGeminiCLI, SourceDetected},
 		{"", "cursor-agent", ModeCursorCLI, SourceDetected},
+		{"", "copilot", ModeCopilotCLI, SourceDetected},
 		{"delegation", "claude", ModeDelegation, SourceConfigured},
 		{"byo-key", "codex", "byo-key", SourceConfigured},
 		{"gemini-cli", "", ModeGeminiCLI, SourceConfigured},
