@@ -265,6 +265,29 @@ func TestNewProviderClaudeCLIDefaultBin(t *testing.T) {
 	}
 }
 
+// TestAgentProviderIsolatesUserConfig pins B-0008: the agentic turn drops the
+// user's settings and MCP servers but keeps the project's (no --safe-mode).
+func TestAgentProviderIsolatesUserConfig(t *testing.T) {
+	var got []string
+	fake := func(_ context.Context, _, _ string, args []string, _ string) (string, string, error) {
+		got = args
+		return "ok", "", nil
+	}
+	p := &cliProvider{bin: "claude", run: fake, dir: "/proj", agentTools: AgentReadTools}
+	if _, err := p.Complete(context.Background(), "q"); err != nil {
+		t.Fatal(err)
+	}
+	j := " " + strings.Join(got, " ") + " "
+	for _, w := range []string{" --setting-sources project,local ", " --strict-mcp-config "} {
+		if !strings.Contains(j, w) {
+			t.Fatalf("agentic argv %v lacks %q", got, w)
+		}
+	}
+	if strings.Contains(j, "--safe-mode") {
+		t.Fatalf("agentic argv %v must keep project config (no --safe-mode)", got)
+	}
+}
+
 // TestAgentProviderAllowlistFlags pins the F-0224 permission boundary: the
 // agentic provider must pass EXACTLY the cerne read-command allowlist via one
 // comma-joined --allowedTools argument, run in the project dir, and keep the
@@ -300,7 +323,7 @@ func TestAgentProviderAllowlistFlags(t *testing.T) {
 		"Bash(cerne note list:*),Bash(cerne note show:*),Bash(cerne reference list:*),Bash(cerne decision list:*)," +
 		"Bash(cerne idea list:*),Bash(cerne spec check:*)"
 	wantDenied := "Read(.env),Read(.env.*),Read(**/credentials*),Read(**/*.pem),Read(**/*.key)"
-	want := []string{"-p", "--output-format", "json", "--allowedTools", wantList, "--disallowedTools", wantDenied}
+	want := []string{"-p", "--output-format", "json", "--setting-sources", "project,local", "--strict-mcp-config", "--allowedTools", wantList, "--disallowedTools", wantDenied}
 	if !reflect.DeepEqual(gotArgs, want) {
 		t.Fatalf("runner args = %v, want %v", gotArgs, want)
 	}
@@ -407,27 +430,17 @@ func TestAgentProviderFallbackOldBinary(t *testing.T) {
 	var calls [][]string
 	fake := func(_ context.Context, _, _ string, args []string, _ string) (string, string, error) {
 		calls = append(calls, args)
-		if len(calls) == 1 {
-			return "", "", errors.New("error: unknown option '--allowedTools'")
-		}
-		return "resposta one-shot", "", nil
+		return "", "", errors.New("error: unknown option '--setting-sources'")
 	}
 	p := &cliProvider{bin: "claude", run: fake, dir: "/proj", agentTools: AgentReadTools}
 
-	out, err := p.Complete(context.Background(), "pergunta")
-	if err != nil {
-		t.Fatalf("Complete after fallback: %v", err)
+	// B-0008: a rejected isolation flag must not retry with less isolation.
+	_, err := p.Complete(context.Background(), "pergunta")
+	if !errors.Is(err, ErrClaudeCLI) || !strings.Contains(err.Error(), "update Claude Code") {
+		t.Fatalf("err = %v, want ErrClaudeCLI asking to update Claude Code", err)
 	}
-	if out != "resposta one-shot" {
-		t.Fatalf("Complete = %q", out)
-	}
-	if len(calls) != 2 {
-		t.Fatalf("runner called %d times, want 2 (agentic then one-shot)", len(calls))
-	}
-	for _, a := range calls[1] {
-		if a == "--allowedTools" {
-			t.Fatalf("fallback args %v still carry --allowedTools", calls[1])
-		}
+	if len(calls) != 1 {
+		t.Fatalf("runner called %d times, want 1 (no less-isolated retry)", len(calls))
 	}
 	// A genuine failure (not an unknown flag) must NOT trigger the fallback.
 	calls = nil
@@ -1365,5 +1378,50 @@ func TestOneShotClaudeNeverGetsModelOrEffort(t *testing.T) {
 	joined := " " + strings.Join(got, " ") + " "
 	if strings.Contains(joined, " --model ") || strings.Contains(joined, " --effort ") || !strings.Contains(joined, " --safe-mode ") {
 		t.Fatalf("one-shot argv = %v", got)
+	}
+}
+
+// TestAgentProviderFullArgvWithModelEffort fixes the order and presence of the
+// isolation flags next to B-0007's --model/--effort.
+func TestAgentProviderFullArgvWithModelEffort(t *testing.T) {
+	var got []string
+	fake := func(_ context.Context, _, _ string, args []string, _ string) (string, string, error) {
+		got = args
+		return "ok", "", nil
+	}
+	p := &cliProvider{bin: "claude", run: fake, dir: "/proj", agentTools: []string{"Read", "Grep"}, deniedTools: []string{"Read(.env)"}, model: "opus", effort: "high"}
+	if _, err := p.Complete(context.Background(), "q"); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"-p", "--output-format", "json", "--setting-sources", "project,local", "--strict-mcp-config",
+		"--allowedTools", "Read,Grep", "--disallowedTools", "Read(.env)", "--model", "opus", "--effort", "high"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv = %v, want %v", got, want)
+	}
+}
+
+// TestAgentProviderOnlyRejectedFlagMeansUpdate: auth, model and rate-limit
+// failures are not "update Claude Code"; only a rejected flag is.
+func TestAgentProviderOnlyRejectedFlagMeansUpdate(t *testing.T) {
+	for _, tc := range []struct {
+		msg    string
+		update bool
+	}{
+		{"error: unknown option '--effort'", true},
+		{"error: unknown option '--setting-sources'", true},
+		{"unknown flag: --strict-mcp-config", true},
+		{"Invalid API key · Please run /login", false},
+		{"Not logged in · Please run /login", false},
+		{"There's an issue with the selected model (unknown model 'foo')", false},
+		{"429 rate limit exceeded", false},
+	} {
+		fake := func(context.Context, string, string, []string, string) (string, string, error) {
+			return "", "", errors.New(tc.msg)
+		}
+		p := &cliProvider{bin: "claude", run: fake, dir: "/proj", agentTools: AgentReadTools}
+		_, err := p.Complete(context.Background(), "q")
+		if !errors.Is(err, ErrClaudeCLI) || strings.Contains(err.Error(), "update Claude Code") != tc.update {
+			t.Fatalf("%q: err = %v, update message = %v wanted", tc.msg, err, tc.update)
+		}
 	}
 }
