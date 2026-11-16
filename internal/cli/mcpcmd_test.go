@@ -17,6 +17,7 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/henriquesakata/cerne/internal/mcp"
 	"github.com/henriquesakata/cerne/internal/project"
 )
 
@@ -412,9 +413,21 @@ func TestCodexChatTurnWritesNothing(t *testing.T) {
 	proj, cch, clone, orig := treeDigest(t, projDir), treeDigest(t, cache), treeDigest(t, repoDir), gitHead(t, origin)
 	headProj := gitHead(t, projDir)
 
+	// A tool that fails early is a no-op the hashes cannot see: every tool the
+	// turn is given must run for real (callTool fails on an error result) and
+	// answer something.
+	called := map[string]bool{}
 	cs, _, stop := startMCP(t, projDir)
 	for _, c := range allCalls {
-		callTool(t, cs, c.tool, c.args)
+		if strings.TrimSpace(callTool(t, cs, c.tool, c.args)) == "" {
+			t.Errorf("tool %s %v answered nothing", c.tool, c.args)
+		}
+		called[c.tool] = true
+	}
+	for _, name := range mcp.ToolNames {
+		if !called[name] {
+			t.Errorf("tool %s is given to the turn but never called here", name)
+		}
 	}
 	if err := stop(); err != nil {
 		t.Fatalf("cerne mcp: %v", err)
@@ -435,5 +448,46 @@ func TestCodexChatTurnWritesNothing(t *testing.T) {
 	}
 	if treeDigest(t, repoDir) != clone || gitHead(t, origin) != orig {
 		t.Error("the backend clone or origin changed")
+	}
+}
+
+func indexFiles(t *testing.T, cache string) []string {
+	t.Helper()
+	var out []string
+	_ = filepath.WalkDir(cache, func(p string, d os.DirEntry, _ error) error {
+		if d != nil && !d.IsDir() && filepath.Base(p) == "index.db" {
+			out = append(out, p)
+		}
+		return nil
+	})
+	return out
+}
+
+// TestCodexChatColdIndexRebuildsOnlyTheDerivedCache (F-0439 criterion 4): the
+// warm case is TestCodexChatTurnWritesNothing (the cache digest is unchanged).
+// On a cold index `search` rebuilds index.db — a derived, rebuildable cache,
+// accepted — and still leaves the project, the backend clone and the origin
+// untouched.
+func TestCodexChatColdIndexRebuildsOnlyTheDerivedCache(t *testing.T) {
+	projDir, origin, repoDir := mcpFixture(t)
+	cache := os.Getenv("CERNE_CACHE_DIR")
+	for _, f := range indexFiles(t, cache) {
+		if err := os.Remove(f); err != nil {
+			t.Fatal(err)
+		}
+	}
+	proj, clone, orig := treeDigest(t, projDir), treeDigest(t, repoDir), gitHead(t, origin)
+	cs, _, stop := startMCP(t, projDir)
+	if got := callTool(t, cs, "search", map[string]any{"query": "Postgres"}); !strings.Contains(got, "Postgres") {
+		t.Fatalf("search on a cold index = %q", got)
+	}
+	if err := stop(); err != nil {
+		t.Fatal(err)
+	}
+	if len(indexFiles(t, cache)) == 0 {
+		t.Error("expected the cold search to rebuild index.db")
+	}
+	if treeDigest(t, projDir) != proj || treeDigest(t, repoDir) != clone || gitHead(t, origin) != orig {
+		t.Error("a cold search changed the project, the clone or the origin")
 	}
 }
