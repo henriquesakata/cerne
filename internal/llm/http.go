@@ -66,6 +66,8 @@ func ConfiguredProviders(cfg project.LLMConfig) []string {
 		return []string{"gemini"}
 	case ModeCursorCLI:
 		return []string{"cursor"}
+	case ModeCopilotCLI:
+		return []string{"copilot"}
 	}
 	return []string{cfg.WithDefaults().Provider}
 }
@@ -73,7 +75,7 @@ func ConfiguredProviders(cfg project.LLMConfig) []string {
 // ModeForProvider is the inverse of ConfiguredProviders for the subscription
 // CLIs: the mode whose vendor is provider, "" when none (F-0440).
 func ModeForProvider(provider string) string {
-	for _, mode := range []string{ModeClaudeCLI, ModeCodexCLI, ModeGeminiCLI, ModeCursorCLI} {
+	for _, mode := range []string{ModeClaudeCLI, ModeCodexCLI, ModeGeminiCLI, ModeCursorCLI, ModeCopilotCLI} {
 		if p := ConfiguredProviders(project.LLMConfig{Mode: mode}); len(p) == 1 && p[0] == provider {
 			return mode
 		}
@@ -114,6 +116,8 @@ func NewProvider(cfg project.LLMConfig) (Provider, error) {
 		return &cliProvider{kind: mode, bin: "gemini", model: cliModel(raw), run: execRun}, nil
 	case ModeCursorCLI:
 		return &cliProvider{kind: mode, bin: "cursor-agent", model: cliModel(raw), run: execRun}, nil
+	case ModeCopilotCLI:
+		return &cliProvider{kind: mode, bin: "copilot", model: cliModel(raw), effort: raw.Effort, run: execRun}, nil
 	}
 	switch cfg.Provider {
 	case providerAnthropic, providerOpenAI, providerGemini, providerOpenRouter, providerCompatible:
@@ -313,7 +317,7 @@ type modelsListResponse struct {
 func ListModels(ctx context.Context, cfg project.LLMConfig) ([]models.Entry, error) {
 	raw := cfg
 	cfg = cfg.WithDefaults()
-	if mode := ResolveMode(cfg.Mode); mode == ModeDelegation || mode == ModeClaudeCLI || mode == ModeCodexCLI || mode == ModeGeminiCLI || mode == ModeCursorCLI {
+	if mode := ResolveMode(cfg.Mode); mode == ModeDelegation || mode == ModeClaudeCLI || mode == ModeCodexCLI || mode == ModeGeminiCLI || mode == ModeCursorCLI || mode == ModeCopilotCLI {
 		return nil, fmt.Errorf("%w (mode %s)", ErrNoListing, mode)
 	}
 	if cfg.Provider != providerAnthropic {

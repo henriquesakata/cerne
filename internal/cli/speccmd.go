@@ -88,7 +88,7 @@ func runSpecDraft(cmd *cobra.Command, dir, id string) error {
 		if err := app.WriteStampedDraft(specPath(ctx.repoDir, id), id, "spec", body); err != nil {
 			return "", err
 		}
-		if err := app.RecordDocWrite(ctx.repoDir, id, "spec", app.LLMAuthor(ctx.cfg.LLM)); err != nil {
+		if err := app.RecordDocWrite(ctx.repoDir, id, "spec", app.LLMAuthorAnswered(ctx.cfg.LLM, llm.AnsweredModel(prov))); err != nil {
 			return "", err
 		}
 		return "cerne: draft spec " + id, nil

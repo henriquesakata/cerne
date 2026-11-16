@@ -339,6 +339,19 @@ describe('AISettings (F-0414)', () => {
     expect(within(cursor).getByText('curl https://cursor.com/install -fsS | bash')).toBeInTheDocument()
   })
 
+  it('F-0445: o Copilot CLI aparece com o plano, o que o cerne nega, o login e a instalação', async () => {
+    fetchLLMConfig.mockResolvedValue(cfg({ clis: [...cfg().clis!, { name: 'copilot', mode: 'copilot-cli', found: false }] }))
+    mount()
+    await screen.findByText(/Em uso:/)
+    const copilot = screen.getByText('GitHub Copilot CLI').closest('li')!
+    expect(copilot).toHaveTextContent('assinatura do GitHub Copilot')
+    expect(copilot).toHaveTextContent('nega todas as ferramentas')
+    expect(copilot).toHaveTextContent('copilot login')
+    expect(copilot).toHaveTextContent('COPILOT_GITHUB_TOKEN')
+    expect(copilot).toHaveTextContent('COPILOT_HOME descartável')
+    expect(within(copilot).getByText('npm install -g @github/copilot')).toBeInTheDocument()
+  })
+
   it('item 12: o campo da chave é new-password e uma chave recusada entra na descrição', async () => {
     fetchLLMConfig.mockResolvedValue(cfg({ key: { env: 'ANTHROPIC_API_KEY', set: false, problem: 'mode 0644' } }))
     mount()

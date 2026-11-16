@@ -178,12 +178,16 @@ func turnAnsweredBy(cfg project.LLMConfig, prov llm.Provider) *answeredBy {
 		if r, ok := prov.(interface{ AnsweredEffort() string }); ok {
 			by.Effort = r.AnsweredEffort()
 		}
-	case llm.ModeCodexCLI, llm.ModeGeminiCLI, llm.ModeCursorCLI:
+	case llm.ModeCodexCLI, llm.ModeGeminiCLI, llm.ModeCursorCLI, llm.ModeCopilotCLI:
 		if cfg.Provider == "" {
 			by.Model = cfg.Model
 		}
 		if mode == llm.ModeCodexCLI {
 			by.Effort = cfg.Effort
+		}
+		// The Copilot CLI may pick its own model (auto): name what it reported.
+		if r, ok := prov.(interface{ AnsweredModel() string }); ok && mode == llm.ModeCopilotCLI && r.AnsweredModel() != "" {
+			by.Model = r.AnsweredModel()
 		}
 	default:
 		by.Model = cfg.WithDefaults().Model

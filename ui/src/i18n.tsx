@@ -1066,7 +1066,7 @@ const ptBR = {
     savedProject: 'salvo no .cernerc — lembre de commitar',
     savedAuto: 'detecção automática',
     notTested: 'Ainda não testado.',
-    cliLogin: { claude: 'Depois, rode claude e digite /login.', codex: 'Depois, rode codex login.', gemini: 'Depois, rode gemini e entre com a conta.', 'cursor-agent': 'Depois, rode cursor-agent login.' } as Record<string, string>,
+    cliLogin: { claude: 'Depois, rode claude e digite /login.', codex: 'Depois, rode codex login.', gemini: 'Depois, rode gemini e entre com a conta.', 'cursor-agent': 'Depois, rode cursor-agent login.', copilot: 'Depois, rode copilot login (ou defina COPILOT_GITHUB_TOKEN).' } as Record<string, string>,
     notFoundReason: (cmd: string) => `não encontrado no PATH — instale com ${cmd}`,
     copyInstall: (n: string) => `Copiar comando de instalação do ${n}`,
     copyFix: 'Copiar comando de correção',
@@ -1084,6 +1084,7 @@ const ptBR = {
       codex: 'Usa o ChatGPT Plus/Pro.',
       gemini: 'Usa a conta Google/Gemini.',
       'cursor-agent': 'Usa a assinatura do Cursor. O cerne nega shell, escrita, leitura, web e MCP; as regras, hooks e plugins da sua conta Cursor ainda carregam.',
+      copilot: 'Usa a assinatura do GitHub Copilot. O cerne nega todas as ferramentas e o MCP, e a sua configuração do Copilot (instruções, skills, hooks) não carrega. No Linux e no Windows (não verificado), o cerne roda o Copilot com um COPILOT_HOME descartável, que esconde o login guardado: defina COPILOT_GITHUB_TOKEN.',
     } as Record<string, string>,
     cliInstall: 'Instale com',
     details: 'Detalhes',
@@ -1097,7 +1098,7 @@ const ptBR = {
       delegation: { title: 'Delegação', use: 'Usar delegação', hint: 'O agente da sessão em curso responde; o cerne não chama nenhum modelo, então o Perguntar devolve só as fontes.' },
     },
     delegationWho: 'o agente da sessão',
-    clis: { claude: 'Claude Code', codex: 'Codex CLI', gemini: 'Gemini CLI', 'cursor-agent': 'Cursor CLI' } as Record<string, string>,
+    clis: { claude: 'Claude Code', codex: 'Codex CLI', gemini: 'Gemini CLI', 'cursor-agent': 'Cursor CLI', copilot: 'GitHub Copilot CLI' } as Record<string, string>,
     providers: {
       anthropic: 'Anthropic',
       openai: 'OpenAI',
@@ -1356,8 +1357,8 @@ const ptBR = {
       "The API endpoint for the OpenAI-compatible providers, for example a local Ollama (http://localhost:11434/v1). Required for the compatible provider; empty uses the provider's own address.":
         'O endereço da API dos provedores compatíveis com a OpenAI, por exemplo um Ollama local (http://localhost:11434/v1). Obrigatório no provedor compatível; vazio usa o endereço do próprio provedor.',
       'AI agent': 'Agente de IA',
-      "How cerne reaches a model for ask, compile and the chat. A subscription CLI (claude-cli, codex-cli, gemini-cli, cursor-cli) uses the plan you already pay for; byo-key calls a provider's API with a key; delegation hands the prompt to the agent already running. Unset, it follows the subscription CLI found on PATH.":
-        'Como o cerne chega a um modelo para o ask, o compile e o chat. Um CLI de assinatura (claude-cli, codex-cli, gemini-cli, cursor-cli) usa o plano que você já paga; byo-key chama a API de um provedor com uma chave; delegation entrega o prompt ao agente que já está rodando. Sem valor, segue o CLI de assinatura encontrado no PATH.',
+      "How cerne reaches a model for ask, compile and the chat. A subscription CLI (claude-cli, codex-cli, gemini-cli, cursor-cli, copilot-cli) uses the plan you already pay for; byo-key calls a provider's API with a key; delegation hands the prompt to the agent already running. Unset, it follows the subscription CLI found on PATH.":
+        'Como o cerne chega a um modelo para o ask, o compile e o chat. Um CLI de assinatura (claude-cli, codex-cli, gemini-cli, cursor-cli, copilot-cli) usa o plano que você já paga; byo-key chama a API de um provedor com uma chave; delegation entrega o prompt ao agente que já está rodando. Sem valor, segue o CLI de assinatura encontrado no PATH.',
       'Model': 'Modelo',
       "The model id sent to the CLI or the API. Empty uses the CLI's own default, or the catalog default for the anthropic provider.":
         'O id do modelo enviado ao CLI ou à API. Vazio usa o padrão do próprio CLI, ou o padrão do catálogo no provedor anthropic.',
@@ -2408,7 +2409,7 @@ const en: Messages = {
     savedProject: 'saved in .cernerc — remember to commit',
     savedAuto: 'automatic detection',
     notTested: 'Not tested yet.',
-    cliLogin: { claude: 'Then run claude and type /login.', codex: 'Then run codex login.', gemini: 'Then run gemini and sign in.', 'cursor-agent': 'Then run cursor-agent login.' } as Record<string, string>,
+    cliLogin: { claude: 'Then run claude and type /login.', codex: 'Then run codex login.', gemini: 'Then run gemini and sign in.', 'cursor-agent': 'Then run cursor-agent login.', copilot: 'Then run copilot login (or set COPILOT_GITHUB_TOKEN).' } as Record<string, string>,
     notFoundReason: (cmd: string) => `not found on PATH — install with ${cmd}`,
     copyInstall: (n: string) => `Copy the install command for ${n}`,
     copyFix: 'Copy the fix command',
@@ -2426,6 +2427,7 @@ const en: Messages = {
       codex: 'Uses your ChatGPT Plus/Pro plan.',
       gemini: 'Uses your Google/Gemini account.',
       'cursor-agent': 'Uses your Cursor subscription. cerne denies shell, writes, reads, web and MCP; your Cursor account rules, hooks and plugins still load.',
+      copilot: 'Uses your GitHub Copilot subscription. cerne denies every tool and MCP, and your Copilot configuration (instructions, skills, hooks) does not load. On Linux and Windows (unverified) cerne runs Copilot with a throwaway COPILOT_HOME, which hides the stored login: set COPILOT_GITHUB_TOKEN.',
     } as Record<string, string>,
     cliInstall: 'Install with',
     details: 'Details',
@@ -2439,7 +2441,7 @@ const en: Messages = {
       delegation: { title: 'Delegation', use: 'Use delegation', hint: 'The session’s running agent answers; cerne calls no model, so Ask returns only the sources.' },
     },
     delegationWho: 'the session agent',
-    clis: { claude: 'Claude Code', codex: 'Codex CLI', gemini: 'Gemini CLI', 'cursor-agent': 'Cursor CLI' } as Record<string, string>,
+    clis: { claude: 'Claude Code', codex: 'Codex CLI', gemini: 'Gemini CLI', 'cursor-agent': 'Cursor CLI', copilot: 'GitHub Copilot CLI' } as Record<string, string>,
     providers: {
       anthropic: 'Anthropic',
       openai: 'OpenAI',

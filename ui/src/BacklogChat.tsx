@@ -674,7 +674,7 @@ export function reconcileEffort(entry: ModelEntry | undefined, effort: string): 
 }
 
 // Nomes de marca: independem do idioma e não saem de capitalizar o id.
-const PROVIDER_NAMES: Record<string, string> = { anthropic: 'Anthropic', openai: 'OpenAI', gemini: 'Gemini', cursor: 'Cursor' }
+const PROVIDER_NAMES: Record<string, string> = { anthropic: 'Anthropic', openai: 'OpenAI', gemini: 'Gemini', cursor: 'Cursor', copilot: 'GitHub Copilot' }
 
 // providerName é o nome de marca do provedor; um id desconhecido só é capitalizado.
 export function providerName(p: string): string {
@@ -1165,7 +1165,9 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
       proposal.capability,
       proposal.parent,
       linkTo || refineId,
-      model,
+      // F-0445: o modelo que o CLI disse ter rodado vence o do compositor
+      // (o Copilot escolhe sozinho): é ele que o documento credita.
+      [...messages].reverse().find((m) => m.answeredBy?.model)?.answeredBy?.model || model,
       provider,
     )
       .then((res) => {

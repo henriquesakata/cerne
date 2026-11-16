@@ -15,6 +15,7 @@ func TestResolveMode(t *testing.T) {
 		{"", "codex", ModeCodexCLI, SourceDetected},
 		{"", "gemini", ModeGeminiCLI, SourceDetected},
 		{"", "cursor-agent", ModeCursorCLI, SourceDetected},
+		{"", "copilot", ModeCopilotCLI, SourceDetected},
 		{"delegation", "claude", ModeDelegation, SourceConfigured},
 		{"byo-key", "codex", "byo-key", SourceConfigured},
 		{"gemini-cli", "", ModeGeminiCLI, SourceConfigured},
@@ -83,7 +84,7 @@ func TestResolveModeFollowsTheProjectDetector(t *testing.T) {
 // TestModeForProviderInvertsConfiguredProviders (F-0440): every subscription
 // CLI mode maps to its vendor and back; any other vendor has no CLI mode.
 func TestModeForProviderInvertsConfiguredProviders(t *testing.T) {
-	for _, mode := range []string{ModeClaudeCLI, ModeCodexCLI, ModeGeminiCLI, ModeCursorCLI} {
+	for _, mode := range []string{ModeClaudeCLI, ModeCodexCLI, ModeGeminiCLI, ModeCursorCLI, ModeCopilotCLI} {
 		p := ConfiguredProviders(project.LLMConfig{Mode: mode})
 		if got := ModeForProvider(p[0]); got != mode {
 			t.Fatalf("ModeForProvider(%q) = %q, want %q", p[0], got, mode)

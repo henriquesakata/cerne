@@ -143,4 +143,35 @@ func TestNamedAuthors(t *testing.T) {
 	if got := LLMAuthor(project.LLMConfig{Mode: "codex-cli", Model: "gpt-x"}); got != (DocAuthor{Provider: "codex-cli", Model: "gpt-x", Source: "llm-config"}) {
 		t.Fatalf("LLMAuthor codex-cli = %+v", got)
 	}
+	// F-0445: copilot-cli credits the provider and the model the call named,
+	// and only the provider when none was (the CLI picked one itself).
+	if got := LLMAuthor(project.LLMConfig{Mode: "copilot-cli", Model: "claude-sonnet-5.5"}); got != (DocAuthor{Provider: "copilot-cli", Model: "claude-sonnet-5.5", Source: "llm-config"}) {
+		t.Fatalf("LLMAuthor copilot-cli = %+v", got)
+	}
+	if got := LLMAuthor(project.LLMConfig{Mode: "copilot-cli"}); got != (DocAuthor{Provider: "copilot-cli", Source: "llm-config"}) {
+		t.Fatalf("LLMAuthor copilot-cli without a model = %+v", got)
+	}
+}
+
+// F-0445 critic: a copilot-cli document credits the model the CLI reported
+// (auto picks its own), then the configured one, then none.
+func TestLLMAuthorAnsweredModel(t *testing.T) {
+	cfg := project.LLMConfig{Mode: "copilot-cli"}
+	if got := LLMAuthorAnswered(cfg, "mai-code-1.1-flash"); got != (DocAuthor{Provider: "copilot-cli", Model: "mai-code-1.1-flash", Source: "llm-config"}) {
+		t.Fatalf("auto: %+v", got)
+	}
+	cfg.Model = "asked"
+	if got := LLMAuthorAnswered(cfg, "ran"); got.Model != "ran" {
+		t.Fatalf("reported must win over the configured one: %+v", got)
+	}
+	if got := LLMAuthorAnswered(cfg, ""); got.Model != "asked" {
+		t.Fatalf("configured fallback: %+v", got)
+	}
+	// Only copilot-cli reads it: claude-cli never names a model, byo-key keeps its own.
+	if got := LLMAuthorAnswered(project.LLMConfig{Mode: "claude-cli"}, "x"); got.Model != "" {
+		t.Fatalf("claude-cli: %+v", got)
+	}
+	if got := LLMAuthorAnswered(project.LLMConfig{Mode: "byo-key", Provider: "openai", Model: "gpt-x"}, "x"); got.Model != "gpt-x" {
+		t.Fatalf("byo-key: %+v", got)
+	}
 }
