@@ -1102,6 +1102,8 @@ func TestAgentReadTools_IncludesSpecCheck(t *testing.T) {
 		if strings.HasPrefix(tool, "Bash(cerne spec ") && tool != "Bash(cerne spec check:*)" {
 			t.Errorf("a spec verb other than check in the read boundary: %s", tool)
 		}
+	}
+}
 
 // TestSwitchedCodexTurnKeepsProjectFilesAndChoices (F-0440 criterion 3): a
 // claude-cli project's turn switched to openai builds the codex agent with the

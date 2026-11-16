@@ -148,6 +148,39 @@ type chatResponse struct {
 	// ProposalIssues (F-0438) is what the cerne-proposta block of this reply
 	// still lacks, by the one spec-body check; the UI lists it on the card.
 	ProposalIssues []doccheck.Issue `json:"proposal_issues,omitempty"`
+	// AnsweredBy (F-0440) is what the turn really ran on, read from the turn's
+	// config, never echoed from the request.
+	AnsweredBy *answeredBy `json:"answered_by,omitempty"`
+}
+
+// answeredBy names the provider, model and effort that ran a turn. Model and
+// effort are empty where the vendor is never given one (claude-cli, or a
+// subscription CLI whose model is the CLI's own default).
+type answeredBy struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model,omitempty"`
+	Effort   string `json:"effort,omitempty"`
+}
+
+func turnAnsweredBy(cfg project.LLMConfig) *answeredBy {
+	vendors := llm.ConfiguredProviders(cfg)
+	if len(vendors) == 0 {
+		return nil
+	}
+	by := &answeredBy{Provider: vendors[0]}
+	switch mode := llm.ResolveMode(cfg.Mode); mode {
+	case llm.ModeClaudeCLI:
+	case llm.ModeCodexCLI, llm.ModeGeminiCLI, llm.ModeCursorCLI:
+		if cfg.Provider == "" {
+			by.Model = cfg.Model
+		}
+		if mode == llm.ModeCodexCLI {
+			by.Effort = cfg.Effort
+		}
+	default:
+		by.Model = cfg.WithDefaults().Model
+	}
+	return by
 }
 
 // handleChat answers one turn of the Backlog domain-agent chat (F-0210): the
@@ -292,7 +325,7 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 		}
 		// C5: a confirmed turn that executed nothing says so — never a silent
 		// success, whatever the reply claims.
-		writeChatLine(w, http.StatusOK, chatResponse{Answered: true, Reply: reply, Runs: runs, NoRuns: len(runs) == 0, Truncated: truncated, Context: injected, ProposalIssues: check(reply)})
+		writeChatLine(w, http.StatusOK, chatResponse{Answered: true, Reply: reply, Runs: runs, NoRuns: len(runs) == 0, Truncated: truncated, Context: injected, ProposalIssues: check(reply), AnsweredBy: turnAnsweredBy(cfg.LLM)})
 		return
 	}
 
@@ -303,7 +336,7 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 	// client never needs to know which path ran.
 	if streamer, ok := prov.(llm.Streamer); ok {
 		if flusher, ok := w.(http.Flusher); ok {
-			streamChatReply(ctx, w, flusher, streamer, prompt, !channel, injected, check)
+			streamChatReply(ctx, w, flusher, streamer, prompt, !channel, injected, check, turnAnsweredBy(cfg.LLM))
 			return
 		}
 	}
@@ -312,7 +345,7 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	writeChatLine(w, http.StatusOK, chatResponse{Answered: true, Reply: reply, NoExec: !channel, Context: injected, ProposalIssues: check(reply)})
+	writeChatLine(w, http.StatusOK, chatResponse{Answered: true, Reply: reply, NoExec: !channel, Context: injected, ProposalIssues: check(reply), AnsweredBy: turnAnsweredBy(cfg.LLM)})
 }
 
 // lastUserMessage is the retrieval query for the turn (F-0253): the message
@@ -345,7 +378,7 @@ func writeChatLine(w http.ResponseWriter, status int, v any) {
 // {"error":...} when the stream broke after output already went out (the
 // partial the client holds stays valid; F-0240 criterion 8). An error before
 // any delta still becomes the plain 500 JSON of the single-shot path.
-func streamChatReply(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, streamer llm.Streamer, prompt string, noExec bool, injected []app.TurnSource, check func(string) []doccheck.Issue) {
+func streamChatReply(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, streamer llm.Streamer, prompt string, noExec bool, injected []app.TurnSource, check func(string) []doccheck.Issue, by *answeredBy) {
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	enc := json.NewEncoder(w)
 	wrote := false
@@ -366,7 +399,7 @@ func streamChatReply(ctx context.Context, w http.ResponseWriter, flusher http.Fl
 		flusher.Flush()
 		return
 	}
-	_ = enc.Encode(chatResponse{Answered: true, Reply: reply, NoExec: noExec, Context: injected, ProposalIssues: check(reply)})
+	_ = enc.Encode(chatResponse{Answered: true, Reply: reply, NoExec: noExec, Context: injected, ProposalIssues: check(reply), AnsweredBy: by})
 	flusher.Flush()
 }
 

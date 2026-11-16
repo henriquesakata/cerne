@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -281,4 +282,61 @@ func TestPreferredProviderRefusalNamesInstalledCLIs(t *testing.T) {
 	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "installed") {
 		t.Fatalf("refusal = %d %s, want a 400 naming installed CLIs", rec.Code, rec.Body.String())
 	}
+}
+
+type streamFake struct{ llm.Fake }
+
+func (streamFake) Stream(_ context.Context, _ string, onDelta func(string) error) (string, error) {
+	_ = onDelta("o")
+	return "ok", nil
+}
+
+// TestChatReplyNamesWhoAnswered (F-0440 criterion 4): the single-shot reply, the
+// streaming terminal event and the tool turn each carry the provider, model and
+// effort the turn really ran on after a switch — not an echo of the request.
+func TestChatReplyNamesWhoAnswered(t *testing.T) {
+	t.Setenv("CERNE_CONFIG_DIR", t.TempDir())
+	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
+	stubInstalledCLIs(t, "claude", "codex")
+	repoDir, projDir := claudeProject(t, "claude-cli", "")
+	orig := newAgentProvider
+	t.Cleanup(func() { newAgentProvider = orig })
+	last := func(body string) struct {
+		By *struct{ Provider, Model, Effort string } `json:"answered_by"`
+	} {
+		var got struct {
+			By *struct{ Provider, Model, Effort string } `json:"answered_by"`
+		}
+		lines := strings.Split(strings.TrimSpace(body), "\n")
+		if err := json.Unmarshal([]byte(lines[len(lines)-1]), &got); err != nil {
+			t.Fatalf("last line %q: %v", lines[len(lines)-1], err)
+		}
+		return got
+	}
+	check := func(name, body string) {
+		t.Helper()
+		by := last(body).By
+		if by == nil || by.Provider != "openai" || by.Model != "gpt-x" || by.Effort != "high" {
+			t.Fatalf("%s: answered_by = %+v; body: %s", name, by, body)
+		}
+	}
+	post := func(body string) string {
+		req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		New(repoDir, projDir, "p").ServeHTTP(rec, req)
+		return rec.Body.String()
+	}
+	turn := `{"messages":[{"role":"user","content":"Oi"}],"provider":"openai","model":"gpt-x","effort":"high"}`
+	newAgentProvider = func(project.LLMConfig, string, bool) (llm.Provider, error) { return &llm.Fake{Reply: "ok"}, nil }
+	check("single-shot", post(turn))
+	newAgentProvider = func(project.LLMConfig, string, bool) (llm.Provider, error) { return &streamFake{}, nil }
+	check("streaming", post(turn))
+	// the configured vendor answers as itself: claude-cli names no model.
+	if by := last(post(`{"messages":[{"role":"user","content":"Oi"}],"model":"claude-opus-5-5"}`)).By; by == nil || by.Provider != "anthropic" || by.Model != "" {
+		t.Fatalf("configured turn answered_by = %+v", by)
+	}
+	setTree(t, fixtureTree)
+	newAgentProvider = func(project.LLMConfig, string, bool) (llm.Provider, error) { return &toolFake{}, nil }
+	check("tool turn", post(`{"messages":[`+confirmedTranscript+`],"conversation_id":"c1","confirm_turn":1,"confirm":true,"provider":"openai","model":"gpt-x","effort":"high"}`))
 }
