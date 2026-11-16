@@ -1154,3 +1154,45 @@ func TestAgenticClaudeReportsTheModelThatRan(t *testing.T) {
 		t.Fatalf("plain = %q model %q", got, plain.AnsweredModel())
 	}
 }
+
+// TestAgentClaudeGetsModelAndEffort (B-0007): the composer's model and effort
+// reach the agentic `claude -p` as --model/--effort; none chosen → no flag; a
+// value that is not a bare word never reaches the argv.
+func TestAgentClaudeGetsModelAndEffort(t *testing.T) {
+	for _, tc := range []struct {
+		name, model, effort string
+		want, absent        []string
+	}{
+		{"both", "claude-haiku-5-5", "high", []string{"--model", "claude-haiku-5-5", "--effort", "high"}, nil},
+		{"none", "", "", nil, []string{"--model", "--effort"}},
+		{"dash model", "-x", "low", []string{"--effort", "low"}, []string{"--model", "-x"}},
+		{"dash effort", "claude-haiku-5-5", "--x", []string{"--model", "claude-haiku-5-5"}, []string{"--effort", "--x"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var got []string
+			fake := func(_ context.Context, _, _ string, args []string, _ string) (string, string, error) {
+				got = args
+				return "ok", "", nil
+			}
+			prov, err := NewAgentProvider(project.LLMConfig{Mode: "claude-cli", Provider: "anthropic", Model: tc.model, Effort: tc.effort}, "/proj", false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			prov.(*cliProvider).run = fake
+			if _, err := prov.Complete(context.Background(), "q"); err != nil {
+				t.Fatal(err)
+			}
+			joined := " " + strings.Join(got, " ") + " "
+			for _, w := range tc.want {
+				if !strings.Contains(joined, " "+w+" ") {
+					t.Errorf("argv %v lacks %q", got, w)
+				}
+			}
+			for _, a := range tc.absent {
+				if strings.Contains(joined, " "+a+" ") {
+					t.Errorf("argv %v must not carry %q", got, a)
+				}
+			}
+		})
+	}
+}

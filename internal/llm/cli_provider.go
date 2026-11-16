@@ -228,8 +228,8 @@ func cliProduct(bin string) string {
 // byte, used by ask/compile/diagram.
 type cliProvider struct {
 	kind        string // ModeClaudeCLI (also ""), ModeCodexCLI, ModeGeminiCLI or ModeCursorCLI
-	model       string // -m for codex/gemini; never forced on claude
-	effort      string // codex model_reasoning_effort for one chat turn (B-0006)
+	model       string // -m for codex/gemini; --model on the claude chat turn only (B-0007)
+	effort      string // codex model_reasoning_effort / claude --effort for one chat turn (B-0006, B-0007)
 	bin         string
 	run         runner
 	dir         string   // working directory for the CLI (project root in agentic mode)
@@ -314,8 +314,8 @@ func isUnknownFlag(err error) bool {
 // them as an argument fails with "The filename or extension is too long".
 // `claude -p` reads the prompt from stdin when no positional prompt is given.
 // It deliberately omits --bare (which would ignore the subscription token and
-// require an API key) and --model (which would force a model possibly
-// unavailable on the plan). Any failure becomes an actionable ErrClaudeCLI.
+// require an API key). --model/--effort go only on the agentic chat turn, from
+// the composer (B-0007); the one-shot never forces a model. Any failure becomes an actionable ErrClaudeCLI.
 //
 // In agentic mode (agentTools set, F-0224) the allowlist travels as one
 // comma-joined --allowedTools argument; otherwise the call is isolated with
@@ -340,6 +340,12 @@ func (p *cliProvider) Complete(ctx context.Context, prompt string) (string, erro
 		args = append(args, "--allowedTools", strings.Join(p.agentTools, ","))
 		if len(p.deniedTools) > 0 {
 			args = append(args, "--disallowedTools", strings.Join(p.deniedTools, ","))
+		}
+		if p.model != "" {
+			args = append(args, "--model", p.model)
+		}
+		if p.effort != "" {
+			args = append(args, "--effort", p.effort)
 		}
 	} else {
 		args = append(args, oneShotIsolation...)
@@ -437,6 +443,10 @@ func (p *cliProvider) completeCodex(ctx context.Context, prompt string) (string,
 
 // authErrorRE recognizes a CLI error that a login fixes.
 var authErrorRE = regexp.MustCompile(`(?i)401|unauthori|log(ged)? ?in|sign(ed)? ?in|not authenticated|auth`)
+
+// claudeModelRE is a bare claude model id or alias (claude-haiku-5-5, opus,
+// sonnet[1m]): never a leading dash, so it cannot pass for a flag (B-0007).
+var claudeModelRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._\[\]-]*$`)
 
 // effortRE is the shape of a reasoning effort level (low, medium, xhigh…).
 var effortRE = regexp.MustCompile(`^[a-z]+$`)

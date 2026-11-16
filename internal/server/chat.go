@@ -154,8 +154,8 @@ type chatResponse struct {
 }
 
 // answeredBy names the provider, model and effort that ran a turn. Model and
-// effort are empty where the vendor is never given one (claude-cli, or a
-// subscription CLI whose model is the CLI's own default).
+// effort are empty where the vendor is never given one (a subscription CLI
+// whose model is the CLI's own default).
 type answeredBy struct {
 	Provider string `json:"provider"`
 	Model    string `json:"model,omitempty"`
@@ -170,11 +170,12 @@ func turnAnsweredBy(cfg project.LLMConfig, prov llm.Provider) *answeredBy {
 	by := &answeredBy{Provider: vendors[0]}
 	switch mode := llm.ResolveMode(cfg.Mode); mode {
 	case llm.ModeClaudeCLI:
-		// claude is never passed --model or an effort: only what the CLI itself
-		// reported it ran is named.
+		// The model is what the CLI itself reported it ran; the effort is the
+		// one the turn passed via --effort (B-0007).
 		if r, ok := prov.(interface{ AnsweredModel() string }); ok {
 			by.Model = r.AnsweredModel()
 		}
+		by.Effort = cfg.Effort
 	case llm.ModeCodexCLI, llm.ModeGeminiCLI, llm.ModeCursorCLI:
 		if cfg.Provider == "" {
 			by.Model = cfg.Model
