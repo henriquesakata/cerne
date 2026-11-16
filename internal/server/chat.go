@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -139,6 +140,9 @@ type chatResponse struct {
 	// Context (F-0436) lists the sources the server injected into this turn,
 	// without their text — what the UI shows under the reply.
 	Context []app.TurnSource `json:"context,omitempty"`
+	// ProposalIssues (F-0438) is what the cerne-proposta block of this reply
+	// still lacks, by the one spec-body check; the UI lists it on the card.
+	ProposalIssues []doccheck.Issue `json:"proposal_issues,omitempty"`
 }
 
 // handleChat answers one turn of the Backlog domain-agent chat (F-0210): the
@@ -273,6 +277,12 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 		return
 	}
 
+	// F-0438: the proposal block, if any, is checked once the reply is whole —
+	// by the same check the approve and the lint run. Never corrected here.
+	check := func(reply string) []doccheck.Issue {
+		return proposalIssues(reply, store.DocsLanguage(repoDir), !cfg.Gates.GauntletEnabled())
+	}
+
 	// F-0240: a provider with the Streamer capability transmits the reply as
 	// NDJSON deltas; anyone else keeps the single-shot path below — whose body
 	// is byte-for-byte the streaming path's terminal event (F-0244: a single
@@ -280,7 +290,7 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 	// client never needs to know which path ran.
 	if streamer, ok := prov.(llm.Streamer); ok {
 		if flusher, ok := w.(http.Flusher); ok {
-			streamChatReply(ctx, w, flusher, streamer, prompt, !channel, injected)
+			streamChatReply(ctx, w, flusher, streamer, prompt, !channel, injected, check)
 			return
 		}
 	}
@@ -289,7 +299,7 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	writeChatLine(w, http.StatusOK, chatResponse{Answered: true, Reply: reply, NoExec: !channel, Context: injected})
+	writeChatLine(w, http.StatusOK, chatResponse{Answered: true, Reply: reply, NoExec: !channel, Context: injected, ProposalIssues: check(reply)})
 }
 
 // lastUserMessage is the retrieval query for the turn (F-0253): the message
@@ -322,7 +332,7 @@ func writeChatLine(w http.ResponseWriter, status int, v any) {
 // {"error":...} when the stream broke after output already went out (the
 // partial the client holds stays valid; F-0240 criterion 8). An error before
 // any delta still becomes the plain 500 JSON of the single-shot path.
-func streamChatReply(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, streamer llm.Streamer, prompt string, noExec bool, injected []app.TurnSource) {
+func streamChatReply(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, streamer llm.Streamer, prompt string, noExec bool, injected []app.TurnSource, check func(string) []doccheck.Issue) {
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	enc := json.NewEncoder(w)
 	wrote := false
@@ -343,7 +353,7 @@ func streamChatReply(ctx context.Context, w http.ResponseWriter, flusher http.Fl
 		flusher.Flush()
 		return
 	}
-	_ = enc.Encode(chatResponse{Answered: true, Reply: reply, NoExec: noExec, Context: injected})
+	_ = enc.Encode(chatResponse{Answered: true, Reply: reply, NoExec: noExec, Context: injected, ProposalIssues: check(reply)})
 	flusher.Flush()
 }
 
@@ -592,4 +602,39 @@ func handleChatNote(w http.ResponseWriter, r *http.Request, repoDir, projDir str
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]store.Note{"note": n})
+}
+
+var (
+	proposalOpenRe     = regexp.MustCompile("(`{3,})" + regexp.QuoteMeta("cerne-proposta"))
+	proposalMetadataRe = regexp.MustCompile(`(?i)^(facet|module|components|capability|parent|feature|informs):`)
+)
+
+// proposalIssues runs doccheck.CheckSpecBody on the spec body of the reply's
+// cerne-proposta block (F-0438); nil when there is no closed block. The fence
+// rule is F-0435's: the block closes on the first bare line of at least as
+// many backticks as opened it, so a three-backtick code block inside a
+// four-backtick proposal does not cut it short.
+func proposalIssues(reply string, lang doclang.Lang, light bool) []doccheck.Issue {
+	m := proposalOpenRe.FindStringSubmatchIndex(reply)
+	if m == nil {
+		return nil
+	}
+	nl := strings.IndexByte(reply[m[0]:], '\n')
+	if nl < 0 {
+		return nil
+	}
+	rest := reply[m[0]+nl+1:]
+	closer := regexp.MustCompile("(?m)^ {0,3}`{" + strconv.Itoa(m[3]-m[2]) + ",}[ \\t]*$")
+	c := closer.FindStringIndex(rest)
+	if c == nil {
+		return nil
+	}
+	lines := strings.Split(strings.TrimSpace(rest[:c[0]]), "\n")
+	if len(lines) > 0 && strings.HasPrefix(lines[0], "# ") {
+		lines = lines[1:] // the title is not the spec body
+	}
+	for len(lines) > 0 && (strings.TrimSpace(lines[0]) == "" || proposalMetadataRe.MatchString(strings.TrimSpace(lines[0]))) {
+		lines = lines[1:]
+	}
+	return doccheck.CheckSpecBody([]byte(strings.Join(lines, "\n")), lang, light)
 }
