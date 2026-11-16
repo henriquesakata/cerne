@@ -21,22 +21,33 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      # The release body is the tag's CHANGELOG.md section. Extracted before the
+      # build so a missing section fails the run in seconds, with nothing built.
+      - name: extract the release notes
+        run: sh scripts/release-notes.sh "$GITHUB_REF_NAME" >"$RUNNER_TEMP/changelog-section.md"
       - run: bash scripts/build-release.sh "$GITHUB_REF_NAME"
       # Verifiable with `gh attestation verify <file> --repo henriquesakata/cerne`.
       - uses: actions/attest-build-provenance@v2
         with:
           subject-path: 'dist/*'
-      # --generate-notes lists the pull requests merged since the previous tag,
-      # under the install line: a pull request title is a release-notes line,
-      # so the template asks for a user-readable Conventional Commit title.
+      # Body = the CHANGELOG section, then a fixed install and verify block.
+      # A tag with a hyphen (v1.0.0-rc.1) is published as a pre-release.
       - name: publish
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >
-          gh release create "$GITHUB_REF_NAME" dist/*
-          --title "cerne $GITHUB_REF_NAME"
-          --generate-notes
-          --notes "Cross-compiled binaries (linux and darwin amd64/arm64, windows amd64) and SHA256SUMS. Install: https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/INSTALL.md"
+        run: |
+          notes="$RUNNER_TEMP/notes.md"
+          {
+            cat "$RUNNER_TEMP/changelog-section.md"
+            printf '\n---\n\n'
+            printf '## Install\n\nCross-compiled binaries (linux and darwin amd64/arm64, windows amd64) and `SHA256SUMS`. See [INSTALL.md](https://github.com/%s/blob/%s/INSTALL.md).\n\n' "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME"
+            printf '## Verify\n\nEvery file carries a signed provenance attestation:\n\n```sh\ngh attestation verify <file> --repo %s\n```\n' "$GITHUB_REPOSITORY"
+          } >"$notes"
+          pre=
+          case "$GITHUB_REF_NAME" in *-*) pre=--prerelease ;; esac
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "cerne $GITHUB_REF_NAME" \
+            --notes-file "$notes" $pre
       # The workflow token cannot write to another repository: HOMEBREW_TAP_TOKEN
       # is a fine-grained token with contents:write on henriquesakata/homebrew-tap
       # only. Without it the job fails, so a stale tap never passes in silence.
