@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/hooks"
+	"github.com/henriquesakata/cerne/internal/skills"
 )
 
 // decodeTop parses a hook answer and fails when it is not one JSON object.
@@ -196,7 +198,7 @@ func TestHookWorkGateCopilotPatchShapes(t *testing.T) {
 		"multi-file, all allowed":      {patch("*** Update File: docs/a.md", "@@", "-a", "+b", "*** Add File: .docs/n.md", "+x"), false},
 		"dot-dot traversal inside":     {patch("*** Add File: docs/../internal/a.go", "+x"), true},
 		"dot-dot escaping the project": {patch("*** Add File: ../outside.go", "+x"), false},
-		"absolute path outside":        {patch("*** Add File: " + outside, "+x"), false},
+		"absolute path outside":        {patch("*** Add File: "+outside, "+x"), false},
 		"unparseable patch":            {jsonString("this is not a patch"), false},
 		"object path, gated":           {`{"path":"internal/a.go"}`, true},
 	} {
@@ -246,5 +248,41 @@ func TestHookBindWorkCopilotFailureSignal(t *testing.T) {
 	}
 	if out := run(result("success", "ok\n<shellId: 0 completed with exit code 0>")); !strings.Contains(out, "NOT bound") {
 		t.Errorf("a clean run with no minted id must still warn:\n%s", out)
+	}
+}
+
+// TestStaleSyncKeepsOtherProviders (F-0444 critic item 9): when a Copilot copy
+// is stale, the sync_skills rewrite covers every detected provider PLUS
+// Copilot — not Copilot alone.
+func TestStaleSyncKeepsOtherProviders(t *testing.T) {
+	proj := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(proj, ".cursor"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(proj, ".github", "skills"), 0o755); err != nil { // detects copilot
+		t.Fatal(err)
+	}
+	if _, err := skills.Install(proj, hooks.DetectProviders(proj)...); err != nil {
+		t.Fatal(err)
+	}
+	stale := []string{
+		filepath.Join(".cursor", "skills", "cerne-authoring", "SKILL.md"),
+		filepath.Join(".github", "skills", "cerne-authoring", "SKILL.md"),
+	}
+	for _, p := range stale {
+		if err := os.WriteFile(filepath.Join(proj, p), []byte("old"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(proj, ".claude", "skills", "cerne-authoring", "SKILL.md"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out := staleManagedNotice(proj, true); !strings.Contains(out, "updated canonical skill") {
+		t.Fatalf("no sync happened:\n%s", out)
+	}
+	for _, p := range stale {
+		if b, _ := os.ReadFile(filepath.Join(proj, p)); string(b) == "old" {
+			t.Errorf("%s left stale by the sync", p)
+		}
 	}
 }
