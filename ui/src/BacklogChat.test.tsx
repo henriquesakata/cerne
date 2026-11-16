@@ -676,6 +676,19 @@ describe('BacklogChat — menu hierárquico de modelos (F-0311)', () => {
     expect(streamChat.mock.calls[0][1]).toMatchObject({ provider: 'openai', model: 'gpt-x', effort: 'high' })
   })
 
+  it('F-0445: o Copilot entra no seletor como GitHub Copilot e o pedido leva provider copilot', async () => {
+    streamChat.mockResolvedValue({ answered: true, reply: 'ok' })
+    fetchLLMOptions.mockResolvedValue(opts({ providers: ['anthropic', 'copilot'] }))
+    renderChat({ model: 'claude-opus-5-5', effort: 'medium' })
+    await screen.findByText('Claude Opus 5.5')
+    fireEvent.click(screen.getByLabelText(/provedor/i))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /GitHub Copilot/ }))
+    fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+    await waitFor(() => expect(streamChat).toHaveBeenCalled())
+    expect(streamChat.mock.calls.at(-1)![1]).toMatchObject({ provider: 'copilot' })
+  })
+
   it('F-0440: um provedor sem modelos no catálogo (Cursor) mantém o seletor, esconde modelo/esforço e não manda nenhum', async () => {
     streamChat.mockResolvedValue({ answered: true, reply: 'ok' })
     fetchLLMOptions.mockResolvedValue(opts({ providers: ['anthropic', 'openai', 'cursor'] }))
@@ -1488,7 +1501,7 @@ describe('BacklogChat proposal issues (F-0438)', () => {
 
 describe('quem respondeu (F-0440)', () => {
   it('providerName usa o nome de marca, com fallback capitalizado', () => {
-    expect(['anthropic', 'openai', 'gemini', 'cursor', 'vendor'].map(providerName)).toEqual(['Anthropic', 'OpenAI', 'Gemini', 'Cursor', 'Vendor'])
+    expect(['anthropic', 'openai', 'gemini', 'cursor', 'copilot', 'vendor'].map(providerName)).toEqual(['Anthropic', 'OpenAI', 'Gemini', 'Cursor', 'GitHub Copilot', 'Vendor'])
   })
 
   it('AnsweredByLine mostra provedor, modelo (rótulo do catálogo) e esforço; sem dado, nada', () => {

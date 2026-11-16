@@ -674,7 +674,7 @@ export function reconcileEffort(entry: ModelEntry | undefined, effort: string): 
 }
 
 // Nomes de marca: independem do idioma e não saem de capitalizar o id.
-const PROVIDER_NAMES: Record<string, string> = { anthropic: 'Anthropic', openai: 'OpenAI', gemini: 'Gemini', cursor: 'Cursor' }
+const PROVIDER_NAMES: Record<string, string> = { anthropic: 'Anthropic', openai: 'OpenAI', gemini: 'Gemini', cursor: 'Cursor', copilot: 'GitHub Copilot' }
 
 // providerName é o nome de marca do provedor; um id desconhecido só é capitalizado.
 export function providerName(p: string): string {
