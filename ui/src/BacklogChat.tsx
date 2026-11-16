@@ -41,6 +41,8 @@ const NOTE_FENCE = 'cerne-nota'
 // Diferente dos outros dois, aqui a confirmação não grava nada por si: ela
 // devolve o turno ao agente, agora com as ferramentas de escrita liberadas.
 const COMMAND_FENCE = 'cerne-comando'
+// QUESTION_FENCE (F-0437): perguntas de decisão de produto, um cartão cada.
+const QUESTION_FENCE = 'cerne-pergunta'
 
 // ParsedProposal is what the agent's reply carries when it is ready for
 // confirmation: a fenced ```cerne-proposta block whose first line is "#
@@ -160,8 +162,59 @@ function parseFenced(reply: string, fence: string): ParsedProposal | null {
 // repeti-la no scroll enterraria a condução da conversa. O bloco de nota
 // (F-0249) sai pelo mesmo motivo — ele é renderizado como card. Mensagem sem
 // bloco volta intacta.
+// Question (F-0437) é um bloco ```cerne-pergunta válido: a pergunta, de uma a
+// quatro opções e exatamente uma recomendada. A recomendada termina em
+// "(recomendada)" no prompt pt-BR e "(recommended)" no inglês.
+export type Question = { question: string; options: { label: string; consequence: string; recommended: boolean }[] }
+
+const RECOMMENDED_MARK = /\s*\((?:recomendada|recommended)\)\s*$/i
+const OPTION_LINE = /^[-*]\s+(.+)$/
+
+function parseQuestionBlock(block: string): Question | null {
+  const p = parseFenced(block, QUESTION_FENCE)
+  if (!p || !p.title) return null
+  const options = p.body
+    .split('\n')
+    .map((l) => OPTION_LINE.exec(l.trim())?.[1])
+    .filter((l): l is string => !!l)
+    .map((l) => {
+      const recommended = RECOMMENDED_MARK.test(l)
+      const [label, ...rest] = l.replace(RECOMMENDED_MARK, '').split(' — ')
+      return { label: label.trim(), consequence: rest.join(' — ').trim(), recommended }
+    })
+  if (options.length === 0 || options.length > 4 || options.filter((o) => o.recommended).length !== 1) return null
+  return { question: p.title, options }
+}
+
+// questionBlocks percorre a resposta bloco a bloco: cada cerne-pergunta é uma
+// decisão. Os mal formados não entram — a prosa os mantém como texto
+// (critério 6).
+function questionBlocks(reply: string): { q: Question; start: number; end: number }[] {
+  const found: { q: Question; start: number; end: number }[] = []
+  let pos = 0
+  for (;;) {
+    const f = findFence(reply.slice(pos), QUESTION_FENCE)
+    if (!f) break
+    const end = pos + (f.endOfClose < 0 ? reply.length - pos : f.endOfClose + 1)
+    const q = parseQuestionBlock(reply.slice(pos + f.open, end))
+    if (q) found.push({ q, start: pos + f.open, end })
+    pos = end
+  }
+  return found
+}
+
+export function parseQuestions(reply: string): Question[] {
+  return questionBlocks(reply).map((b) => b.q)
+}
+
+function stripQuestions(reply: string): string {
+  let out = reply
+  for (const b of questionBlocks(reply).reverse()) out = out.slice(0, b.start) + out.slice(b.end)
+  return out.trim()
+}
+
 export function stripProposalFence(reply: string): string {
-  return stripFence(stripFence(stripFence(reply, PROPOSAL_FENCE), NOTE_FENCE), COMMAND_FENCE)
+  return stripQuestions(stripFence(stripFence(stripFence(reply, PROPOSAL_FENCE), NOTE_FENCE), COMMAND_FENCE))
 }
 
 // turnSourceHref (F-0436) leva à página da entidade pelo prefixo do id; um
