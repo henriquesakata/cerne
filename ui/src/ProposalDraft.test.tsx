@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import ProposalDraft from './ProposalDraft'
+import type { ProposalIssue } from './api'
 import type { ParsedProposal } from './BacklogChat'
 
 beforeEach(() => {
@@ -193,5 +194,34 @@ describe('ProposalDraft — alvo aprovado (F-0318)', () => {
   it('refino de candidata não avisa', () => {
     render(<ProposalDraft revisions={[rev()]} registering={false} refining onRegister={vi.fn()} onQuote={vi.fn()} />)
     expect(screen.queryByText(/vence a aprovação/i)).not.toBeInTheDocument()
+  })
+})
+
+describe('ProposalCard shows issues (F-0438)', () => {
+  const issues: ProposalIssue[] = [
+    { code: 'incomplete-spec', severity: 'error', detail: 'the spec is missing template sections: Verificação', missing: ['Verificação'] },
+    { code: 'bar-missing', severity: 'error', detail: 'no "Barra:" line' },
+    { code: 'open-clarification', severity: 'warning', detail: 'qual o limite?' },
+  ]
+
+  it('lists the issues and asks for the fix as a user turn', () => {
+    const onAskFix = vi.fn()
+    render(
+      <ProposalDraft revisions={[rev()]} registering={false} issues={issues} onAskFix={onAskFix} onRegister={vi.fn()} onQuote={vi.fn()} />,
+    )
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent('Verificação')
+    expect(alert).toHaveTextContent('no "Barra:" line')
+    expect(alert).toHaveTextContent('qual o limite?')
+    fireEvent.click(screen.getByRole('button', { name: /pedir correção/i }))
+    expect(onAskFix).toHaveBeenCalledTimes(1)
+    const text = onAskFix.mock.calls[0][0] as string
+    expect(text).toContain('Verificação')
+    expect(text).toContain('no "Barra:" line')
+  })
+
+  it('shows no issue list and no button without issues', () => {
+    render(<ProposalDraft revisions={[rev()]} registering={false} onRegister={vi.fn()} onQuote={vi.fn()} />)
+    expect(screen.queryByRole('button', { name: /pedir correção/i })).not.toBeInTheDocument()
   })
 })

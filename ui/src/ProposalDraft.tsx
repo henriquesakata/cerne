@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import type { ProposalIssue } from './api'
 import type { ParsedProposal } from './BacklogChat'
 import { lineDiff } from './lineDiff'
 import Markdown from './Markdown'
@@ -38,6 +39,11 @@ type Props = {
   // missing (F-0435): the sections the server refused the registration for —
   // shown in the card while the conversation stays open for a re-emit.
   missing?: string[]
+  // issues (F-0438): what the server's spec check found in this proposal;
+  // listed in the same block as `missing`, with a button that sends them back
+  // to the agent as the next user turn.
+  issues?: ProposalIssue[]
+  onAskFix?: (text: string) => void
   onRegister: (proposal: ParsedProposal) => void
   onQuote: (quote: string) => void
 }
@@ -48,6 +54,8 @@ export default function ProposalDraft({
   refining = false,
   approvedTarget = false,
   missing = [],
+  issues = [],
+  onAskFix,
   onRegister,
   onQuote,
 }: Props) {
@@ -163,14 +171,22 @@ export default function ProposalDraft({
           </QuoteComment>
 
           {stale && <p className="proposal-draft-stale">{t.proposalDraft.stale(revisions.length)}</p>}
-          {missing.length > 0 && (
+          {(missing.length > 0 || issues.length > 0) && (
             <div role="alert" className="form-error proposal-draft-missing">
-              <p>{t.proposalDraft.missingSections}</p>
+              <p>{missing.length > 0 ? t.proposalDraft.missingSections : t.proposalDraft.issuesHeading}</p>
               <ul>
-                {missing.map((m) => (
+                {[...missing, ...issues.flatMap((i) => (i.missing?.length ? i.missing : [i.detail]))].map((m) => (
                   <li key={m}>{m}</li>
                 ))}
               </ul>
+              {issues.length > 0 && onAskFix && (
+                <button
+                  type="button"
+                  onClick={() => onAskFix(t.proposalDraft.fixRequest(issues.map((i) => `- ${i.detail}`).join('\n')))}
+                >
+                  {t.proposalDraft.askFix}
+                </button>
+              )}
             </div>
           )}
           {refining && approvedTarget && <p className="form-error">{t.proposalDraft.approvedTarget}</p>}

@@ -960,7 +960,12 @@ export type ChatMsg = {
   // context (F-0436): as fontes injetadas no turno — só localStorage, nunca
   // reenviado ao servidor.
   context?: TurnSource[]
+  // proposalIssues (F-0438): o que a conferência do servidor achou na proposta.
+  proposalIssues?: ProposalIssue[]
 }
+
+// ProposalIssue espelha doccheck.Issue: um achado da conferência da spec.
+export type ProposalIssue = { code: string; severity: 'error' | 'warning'; detail: string; missing?: string[] }
 
 // TurnSource: o que o servidor injetou no turno, sem o texto do trecho.
 export type TurnSource = { id: string; title?: string; kind: 'decision' | 'convention' | 'retrieved'; state?: string }
@@ -978,6 +983,7 @@ export type ChatAnswer = {
   no_runs?: boolean
   truncated?: boolean
   context?: TurnSource[]
+  proposal_issues?: ProposalIssue[]
 }
 
 // ChatRunsError (F-0323 C6) é a falha de um turno que já executou algo: o
