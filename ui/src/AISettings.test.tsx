@@ -347,6 +347,8 @@ describe('AISettings (F-0414)', () => {
     expect(copilot).toHaveTextContent('assinatura do GitHub Copilot')
     expect(copilot).toHaveTextContent('nega todas as ferramentas')
     expect(copilot).toHaveTextContent('copilot login')
+    expect(copilot).toHaveTextContent('COPILOT_GITHUB_TOKEN')
+    expect(copilot).toHaveTextContent('COPILOT_HOME descartável')
     expect(within(copilot).getByText('npm install -g @github/copilot')).toBeInTheDocument()
   })
 

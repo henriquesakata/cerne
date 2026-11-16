@@ -19,6 +19,8 @@ const registerChatCandidate = vi.fn<
     capability?: string,
     parent?: string,
     featureId?: string,
+    model?: string,
+    provider?: string,
   ) => Promise<CreateOutcome & { warning?: string; unchanged?: boolean; missing?: string[] }>
 >()
 const registerChatNote = vi.fn<
@@ -69,7 +71,9 @@ vi.mock('./api', async (importOriginal) => ({
     capability?: string,
     parent?: string,
     featureId?: string,
-  ) => registerChatCandidate(title, specBody, facets, components, module, capability, parent, featureId),
+    model?: string,
+    provider?: string,
+  ) => (model ? registerChatCandidate(title, specBody, facets, components, module, capability, parent, featureId, model, provider) : registerChatCandidate(title, specBody, facets, components, module, capability, parent, featureId)),
   registerChatNote: (title: string, body: string, facets: string[], components: string[], informs?: string[]) =>
     registerChatNote(title, body, facets, components, informs),
   fetchLLMOptions: () => fetchLLMOptions(),
@@ -232,6 +236,43 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
       ),
     )
     await waitFor(() => expect(onRegistered).toHaveBeenCalledWith(feature('F-0099')))
+  })
+
+  it('F-0445: com o Copilot escolhido, nenhum chip de modelo/esforço aparece e nenhum é enviado', async () => {
+    streamChat.mockResolvedValue({ answered: true, reply: 'ok' })
+    fetchLLMOptions.mockResolvedValue(opts({ providers: ['anthropic', 'copilot'] }))
+    renderChat({ model: 'claude-opus-5-5', effort: 'medium' })
+    await screen.findByText('Claude Opus 5.5')
+    fireEvent.click(screen.getByLabelText(/provedor/i))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /GitHub Copilot/ }))
+    expect(screen.getByLabelText(/provedor/i)).toHaveTextContent('GitHub Copilot')
+    expect(screen.queryByLabelText(/modelo/i)).toBeNull()
+    expect(screen.queryByLabelText(/esfor/i)).toBeNull()
+    fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+    await waitFor(() => expect(streamChat).toHaveBeenCalled())
+    const sent = streamChat.mock.calls.at(-1)![1]
+    expect(sent).toMatchObject({ provider: 'copilot' })
+    expect(sent?.model).toBeUndefined()
+    expect(sent?.effort).toBeUndefined()
+  })
+
+  it('F-0445: ao registrar depois de um turno do Copilot, o modelo que respondeu vai como autor', async () => {
+    const proposal = '```cerne-proposta\n# Exportar CSV\n\n## Problema\nFalta.\n```\n'
+    streamChat.mockResolvedValue({ answered: true, reply: proposal, answered_by: { provider: 'copilot', model: 'mai-code-1.1-flash' } })
+    registerChatCandidate.mockResolvedValue({ ok: true, feature: feature('F-0099') })
+    fetchLLMOptions.mockResolvedValue(opts({ providers: ['anthropic', 'copilot'] }))
+    renderChat({ model: 'claude-opus-5-5', effort: 'medium' })
+    await screen.findByText('Claude Opus 5.5')
+    fireEvent.click(screen.getByLabelText(/provedor/i))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /GitHub Copilot/ }))
+    fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /registrar candidata/i }))
+    await waitFor(() => expect(registerChatCandidate).toHaveBeenCalled())
+    const args = registerChatCandidate.mock.calls.at(-1)!
+    expect(args[8]).toBe('mai-code-1.1-flash')
+    expect(args[9]).toBe('copilot')
   })
 
   it('F-0223: proposta com facet/components/capability/module mostra chips e registra as tags', async () => {
