@@ -891,7 +891,7 @@ func TestExecRunNamesTheMissingCLI(t *testing.T) {
 }
 
 func TestNewProviderSubscriptionCLIs(t *testing.T) {
-	for mode, kind := range map[string]string{ModeCodexCLI: ModeCodexCLI, ModeGeminiCLI: ModeGeminiCLI} {
+	for mode, kind := range map[string]string{ModeCodexCLI: ModeCodexCLI, ModeGeminiCLI: ModeGeminiCLI, ModeCursorCLI: ModeCursorCLI} {
 		for _, build := range []func() (Provider, error){
 			func() (Provider, error) { return NewProvider(project.LLMConfig{Mode: mode, Model: "m"}) },
 			func() (Provider, error) {
@@ -919,6 +919,15 @@ func TestNewProviderSubscriptionCLIs(t *testing.T) {
 	if got := ConfiguredProviders(project.LLMConfig{Mode: ModeGeminiCLI}); !reflect.DeepEqual(got, []string{"gemini"}) {
 		t.Fatalf("gemini providers = %v", got)
 	}
+	if got := ConfiguredProviders(project.LLMConfig{Mode: ModeCursorCLI}); !reflect.DeepEqual(got, []string{"cursor"}) {
+		t.Fatalf("cursor providers = %v", got)
+	}
+	if p, _ := NewProvider(project.LLMConfig{Mode: ModeCursorCLI}); p.(*cliProvider).bin != "cursor-agent" {
+		t.Fatalf("cursor bin = %q", p.(*cliProvider).bin)
+	}
+	if _, err := ListModels(context.Background(), project.LLMConfig{Mode: ModeCursorCLI}); !errors.Is(err, ErrNoListing) {
+		t.Fatalf("cursor ListModels err = %v", err)
+	}
 	if _, err := ListModels(context.Background(), project.LLMConfig{Mode: ModeGeminiCLI}); !errors.Is(err, ErrNoListing) {
 		t.Fatalf("ListModels err = %v", err)
 	}
@@ -927,7 +936,7 @@ func TestNewProviderSubscriptionCLIs(t *testing.T) {
 // F-0414: a call that ends on the context deadline is a timeout, not a missing
 // login; only a real non-zero exit keeps the login hint.
 func TestCLITimeoutIsNotALoginProblem(t *testing.T) {
-	for _, kind := range []string{ModeClaudeCLI, ModeCodexCLI, ModeGeminiCLI} {
+	for _, kind := range []string{ModeClaudeCLI, ModeCodexCLI, ModeGeminiCLI, ModeCursorCLI} {
 		p := &cliProvider{kind: kind, bin: "x", run: func(context.Context, string, string, []string, string) (string, string, error) {
 			return "", "", fmt.Errorf("run: %w", context.DeadlineExceeded)
 		}}

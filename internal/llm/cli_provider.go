@@ -24,11 +24,12 @@ const ModeClaudeCLI = "claude-cli"
 // found, non-zero exit, login missing). Callers detect it with errors.Is.
 var ErrClaudeCLI = errors.New("claude-cli invocation failed")
 
-// ErrCodexCLI and ErrGeminiCLI are ErrClaudeCLI's siblings for the other
-// subscription CLIs (F-0414).
+// ErrCodexCLI, ErrGeminiCLI and ErrCursorCLI are ErrClaudeCLI's siblings for
+// the other subscription CLIs (F-0414, F-0441).
 var (
 	ErrCodexCLI  = errors.New("codex-cli invocation failed")
 	ErrGeminiCLI = errors.New("gemini-cli invocation failed")
+	ErrCursorCLI = errors.New("cursor-cli invocation failed")
 )
 
 // AgentReadTools is the exact tool allowlist the agentic chat provider grants
@@ -210,6 +211,8 @@ func cliProduct(bin string) string {
 		return "Codex CLI"
 	case strings.Contains(b, "gemini"):
 		return "Gemini CLI"
+	case strings.Contains(b, "cursor"):
+		return "Cursor CLI"
 	}
 	return "Claude Code"
 }
@@ -222,7 +225,7 @@ func cliProduct(bin string) string {
 // answering; nil agentTools is the original one-shot text generator, byte-for-
 // byte, used by ask/compile/diagram.
 type cliProvider struct {
-	kind        string // ModeClaudeCLI (also ""), ModeCodexCLI or ModeGeminiCLI
+	kind        string // ModeClaudeCLI (also ""), ModeCodexCLI, ModeGeminiCLI or ModeCursorCLI
 	model       string // -m for codex/gemini; never forced on claude
 	effort      string // codex model_reasoning_effort for one chat turn (B-0006)
 	bin         string
@@ -294,6 +297,8 @@ func (p *cliProvider) Complete(ctx context.Context, prompt string) (string, erro
 		return p.completeCodex(ctx, prompt)
 	case ModeGeminiCLI:
 		return p.completeGemini(ctx, prompt)
+	case ModeCursorCLI:
+		return p.completeCursor(ctx, prompt)
 	}
 	base := []string{"-p", "--output-format", "text"}
 	args := base
@@ -398,6 +403,55 @@ var authErrorRE = regexp.MustCompile(`(?i)401|unauthori|log(ged)? ?in|sign(ed)? 
 var effortRE = regexp.MustCompile(`^[a-z]+$`)
 
 var exitStatusRE = regexp.MustCompile(`exit status (\d+)`)
+
+// cursorDenyAll is the workspace .cursor/cli.json of a one-shot Cursor call
+// (F-0441, R-0098). The Cursor CLI has no locked headless mode (R-0099), so
+// every tool is denied by permission: deny wins over allow and holds in print
+// mode. The CLI reads this file itself; the Read deny only binds its tools.
+const cursorDenyAll = `{"permissions":{"allow":[],"deny":["Shell(*)","Read(**)","Write(**)","WebFetch(*)","Mcp(*:*)"]}}`
+
+// completeCursor runs `cursor-agent -p` (F-0441): prompt on stdin, text output,
+// in an empty scratch dir that is also its trusted workspace. Isolation is
+// two layers, each verified alone against the real CLI: ask mode (read-only)
+// and the deny-all permissions file, with the sandbox on top. The user's own
+// Cursor rules, hooks and plugins still load: the CLI cannot switch them off.
+func (p *cliProvider) completeCursor(ctx context.Context, prompt string) (string, error) {
+	dir, cleanup, err := scratchDir()
+	if err != nil {
+		return "", fmt.Errorf("%w: %w", ErrCursorCLI, err)
+	}
+	defer cleanup()
+	if err := os.MkdirAll(filepath.Join(dir, ".cursor"), 0o700); err != nil {
+		return "", fmt.Errorf("%w: %w", ErrCursorCLI, err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "cli.json"), []byte(cursorDenyAll), 0o600); err != nil {
+		return "", fmt.Errorf("%w: %w", ErrCursorCLI, err)
+	}
+	args := []string{"-p", "--output-format", "text", "--trust", "--mode", "ask", "--sandbox", "enabled", "--workspace", dir}
+	if p.model != "" {
+		args = append(args, "--model", p.model)
+	}
+	start := time.Now()
+	out, _, err := p.run(ctx, dir, p.bin, args, prompt)
+	if err != nil {
+		if rejectedFlag(err) {
+			return "", fmt.Errorf("%w: this Cursor CLI does not know an isolation flag cerne needs — update it (cursor-agent update); cerne will not run it with less isolation: %w", ErrCursorCLI, err)
+		}
+		hint := "use another mode"
+		switch {
+		case strings.Contains(err.Error(), "install Cursor CLI"):
+			hint = "install Cursor CLI (curl https://cursor.com/install -fsS | bash) and ensure cursor-agent is on PATH"
+		case authErrorRE.MatchString(err.Error()):
+			hint = "run 'cursor-agent login' (subscription) or set CURSOR_API_KEY, or use another mode"
+		}
+		return "", cliFailure(ctx, start, ErrCursorCLI, "Cursor CLI (cursor-agent -p)", err, hint)
+	}
+	answer := strings.TrimSpace(out)
+	if answer == "" {
+		return "", fmt.Errorf("%w: cursor-agent returned no answer — run 'cursor-agent login' or check the Cursor CLI version", ErrCursorCLI)
+	}
+	return answer, nil
+}
 
 // geminiReply is the part of `gemini --output-format json` cerne reads.
 type geminiReply struct {

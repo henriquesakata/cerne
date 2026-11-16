@@ -64,6 +64,8 @@ func ConfiguredProviders(cfg project.LLMConfig) []string {
 		return []string{providerOpenAI}
 	case ModeGeminiCLI:
 		return []string{"gemini"}
+	case ModeCursorCLI:
+		return []string{"cursor"}
 	}
 	return []string{cfg.WithDefaults().Provider}
 }
@@ -99,6 +101,8 @@ func NewProvider(cfg project.LLMConfig) (Provider, error) {
 		return &cliProvider{kind: mode, bin: "codex", model: cliModel(raw), effort: raw.Effort, run: execRun}, nil
 	case ModeGeminiCLI:
 		return &cliProvider{kind: mode, bin: "gemini", model: cliModel(raw), run: execRun}, nil
+	case ModeCursorCLI:
+		return &cliProvider{kind: mode, bin: "cursor-agent", model: cliModel(raw), run: execRun}, nil
 	}
 	switch cfg.Provider {
 	case providerAnthropic, providerOpenAI, providerGemini, providerOpenRouter, providerCompatible:
@@ -287,7 +291,7 @@ type modelsListResponse struct {
 func ListModels(ctx context.Context, cfg project.LLMConfig) ([]models.Entry, error) {
 	raw := cfg
 	cfg = cfg.WithDefaults()
-	if mode := ResolveMode(cfg.Mode); mode == ModeDelegation || mode == ModeClaudeCLI || mode == ModeCodexCLI || mode == ModeGeminiCLI {
+	if mode := ResolveMode(cfg.Mode); mode == ModeDelegation || mode == ModeClaudeCLI || mode == ModeCodexCLI || mode == ModeGeminiCLI || mode == ModeCursorCLI {
 		return nil, fmt.Errorf("%w (mode %s)", ErrNoListing, mode)
 	}
 	if cfg.Provider != providerAnthropic {
