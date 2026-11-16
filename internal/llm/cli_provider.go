@@ -448,7 +448,7 @@ func (p *cliProvider) completeCursor(ctx context.Context, prompt string) (string
 	}
 	answer := strings.TrimSpace(out)
 	if answer == "" {
-		return "", fmt.Errorf("%w: cursor-agent returned no answer — run 'cursor-agent login' or check the Cursor CLI version", ErrCursorCLI)
+		return "", fmt.Errorf("%w: cursor-agent returned no answer — check 'cursor-agent status' (login), the model name and the Cursor CLI version", ErrCursorCLI)
 	}
 	return answer, nil
 }
