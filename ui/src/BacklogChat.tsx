@@ -159,6 +159,10 @@ function parseFenced(reply: string, fence: string): ParsedProposal | null {
 // repeti-la no scroll enterraria a condução da conversa. O bloco de nota
 // (F-0249) sai pelo mesmo motivo — ele é renderizado como card. Mensagem sem
 // bloco volta intacta.
+export function stripProposalFence(reply: string): string {
+  return stripFence(stripFence(stripFence(reply, PROPOSAL_FENCE), NOTE_FENCE), COMMAND_FENCE)
+}
+
 // turnSourceHref (F-0436) leva à página da entidade pelo prefixo do id; um
 // prefixo sem página própria fica como texto.
 function turnSourceHref(id: string): string | null {
@@ -177,10 +181,10 @@ export function TurnContextDisclosure({ sources }: { sources?: TurnSource[] }) {
     <details className="turn-context">
       <summary>{t.turnContext.label(sources.length)}</summary>
       <ul>
-        {sources.map((s) => {
+        {sources.map((s, i) => {
           const href = turnSourceHref(s.id)
           return (
-            <li key={`${s.kind}:${s.id}`}>
+            <li key={`${i}:${s.kind}:${s.id}`}>
               {href ? <a href={href}>{s.id}</a> : s.id}
               {s.title ? ` ${s.title}` : ''}
               {s.state ? <span className="muted"> [{s.state}]</span> : null}
@@ -190,10 +194,6 @@ export function TurnContextDisclosure({ sources }: { sources?: TurnSource[] }) {
       </ul>
     </details>
   )
-}
-
-export function stripProposalFence(reply: string): string {
-  return stripFence(stripFence(stripFence(reply, PROPOSAL_FENCE), NOTE_FENCE), COMMAND_FENCE)
 }
 
 function stripFence(reply: string, fence: string): string {
