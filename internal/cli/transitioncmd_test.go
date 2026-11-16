@@ -30,7 +30,6 @@ func newFeature(t *testing.T, projDir, title string, seq int) string {
 	return fmt.Sprintf("F-%04d", seq)
 }
 
-// writeDoc writes a feature lifecycle document straight into the backend clone.
 // completeSpec appends every template section the spec lacks (F-0435: the
 // approve refuses a spec without them), so fixtures keep testing their gate.
 func completeSpec(body string) string {
@@ -43,6 +42,8 @@ func completeSpec(body string) string {
 	return body
 }
 
+// writeDoc writes a feature lifecycle document straight into the backend clone
+// (a spec.md is completed first; writeDocRaw writes it as given).
 func writeDoc(t *testing.T, repoDir, id, filename, content string) {
 	t.Helper()
 	if filename == "spec.md" {
