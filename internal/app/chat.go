@@ -218,7 +218,7 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config, channel 
 		// implementation plans.
 		b.WriteString("Você também pode LER o código do projeto (ferramentas Read, Grep e Glob) para fundamentar as seções " + sections[secProblem] + " e " + sections[secDesign] + " em arquivos reais — assinaturas, contratos e nomes verificados, nunca supostos. ")
 		// F-0438: the analyst checks its own draft before emitting it.
-		b.WriteString("ANTES de emitir o bloco de proposta, grave o rascunho da spec num arquivo temporário e rode `cerne spec check --file <arquivo>` (só lê, não grava nada): ele lista seções do template faltando e a linha de barra ausente ou malformada. Corrija o que ele apontar e rode de novo até sair limpo; esclarecimentos abertos são avisos, não erros. ")
+		b.WriteString("ANTES de emitir o bloco de proposta, confira o rascunho passando o corpo da spec pela entrada padrão: `cerne spec check <<'SPEC'` + o corpo + uma linha `SPEC` (só lê, não grava nada; você não tem ferramenta de escrita, então nunca use arquivo). Ele lista seções do template faltando e a linha de barra ausente ou malformada. Corrija o que apontar e rode de novo até sair limpo; esclarecimentos abertos são avisos, não erros. O servidor confere de novo a proposta emitida: a sua checagem é um esforço, não a garantia. ")
 		b.WriteString("Ao final da resposta, cite os ids que consultou (ex.: \"Consultei: F-0132, D-0007\") e os arquivos que leu no formato caminho:linha (ex.: \"internal/app/chat.go:131\"); se não consultou nada, não invente citações. ")
 		// F-0267: this sentence used to deny writing outright — true under
 		// F-0224, false since F-0260/F-0265. The denial won over the contract

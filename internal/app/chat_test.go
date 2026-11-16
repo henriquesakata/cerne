@@ -911,5 +911,9 @@ func TestBuildChatSystemPrompt_DraftCheck(t *testing.T) {
 		if got := strings.Contains(prompt, "cerne spec check"); got != want {
 			t.Errorf("mode %q: prompt mentions spec check = %v, want %v", mode, got, want)
 		}
+		// The agent has no write tool: the body goes on stdin, never a temp file.
+		if want && (!strings.Contains(prompt, "<<'SPEC'") || strings.Contains(prompt, "arquivo temporário")) {
+			t.Errorf("claude-cli prompt must teach the stdin heredoc and no temp file")
+		}
 	}
 }
