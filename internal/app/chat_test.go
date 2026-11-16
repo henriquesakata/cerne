@@ -978,12 +978,19 @@ func TestBuildChatSystemPromptLiveQueryCodex(t *testing.T) {
 			t.Errorf("codex live-query block lacks %q:\n%s", want, ChatCodexLiveQuery)
 		}
 	}
-	// Gauntlet round 1: the agent gave up after a name search and asked the human.
-	for _, want := range []string{"search_files", "list the tree", "**", "stage", "backdrop", "enemy", "Never ask the user for a path or a keyword before", "relative to the project root", "never absolute paths", "temporary working directory", "Read every file you point to", "under the consulted sources with its lines", "what in it matters for the request", "Never present a file as the definition", "to adjust", "in the project's language", "which file is the decisive one", "do NOT define", "exactly as read_file or search_files numbered them", "quote that line's text next to its number", "cite the file without a line rather than guess"} {
+	// The exploration rules and the fixed three-section answer (Gauntlet rounds 1 to 5).
+	for _, want := range []string{"search_files", "list the tree", "**", "stage", "backdrop", "enemy",
+		"Never ask the user for a path or a keyword before", "relative to the project root", "never absolute paths", "temporary working directory",
+		"Read every file you point to", "never present a file as the definition", "exactly as read_file or search_files numbered them",
+		"cite the file without a line rather than guess", "in the project's language", "exactly three sections, in this order, every time",
+		`"Onde está", "Para ajustar", "Fontes consultadas"`, `"Where it is", "How to adjust", "Sources consulted"`,
+		"decisive file first", "that line's text quoted", "one bullet per file", "do NOT define", "mark the decisive one",
+		"no entry that was not read", "no generic source without an id"} {
 		if !strings.Contains(ChatCodexLiveQuery, want) {
-			t.Errorf("codex live-query block lacks the exploration cue %q:\n%s", want, ChatCodexLiveQuery)
+			t.Errorf("codex live-query block lacks %q:\n%s", want, ChatCodexLiveQuery)
 		}
 	}
+	t.Logf("block size: %d bytes", len(ChatCodexLiveQuery))
 	if strings.Contains(ChatCodexLiveQuery, "cerne search") || strings.Contains(ChatCodexLiveQuery, "Read, Grep") {
 		t.Errorf("block names a claude tool or shell command:\n%s", ChatCodexLiveQuery)
 	}
