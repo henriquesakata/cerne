@@ -43,6 +43,8 @@ type hookInput struct {
 	ToolName     string          `json:"tool_name"`
 	ToolInput    json.RawMessage `json:"tool_input"`
 	ToolResponse json.RawMessage `json:"tool_response"`
+	// ToolResult is Copilot's name for the tool response (F-0444).
+	ToolResult json.RawMessage `json:"tool_result"`
 	// AgentID is present only when the hook fires inside a subagent (whose
 	// session_id is still the parent's); TranscriptPath is the session's
 	// JSONL (F-0309).
@@ -84,6 +86,9 @@ func decodeHookInput(r io.Reader) (hookInput, error) {
 	var in hookInput
 	if err := json.Unmarshal(raw, &in); err != nil {
 		return in, err
+	}
+	if len(in.ToolResponse) == 0 {
+		in.ToolResponse = in.ToolResult
 	}
 	var c cursorInput
 	if json.Unmarshal(raw, &c) == nil && c.CursorVersion != "" {
@@ -409,24 +414,35 @@ func runHookWorkGate(cmd *cobra.Command, format string) {
 		return // F-0434
 	}
 	_ = app.TouchBinding(cacheDir, in.SessionID, in.AgentID) // F-0361: sign of life
-	var ti struct {
-		FilePath string `json:"file_path"`
-		Path     string `json:"path"` // Copilot's own tool arguments
+	paths := editedPaths(in.ToolInput)
+	for i, p := range paths { // Copilot's patch paths are relative to its cwd
+		if !filepath.IsAbs(p) && in.CWD != "" {
+			paths[i] = filepath.Join(in.CWD, p)
+		}
 	}
-	_ = json.Unmarshal(in.ToolInput, &ti)
-	if ti.FilePath == "" {
-		ti.FilePath = ti.Path
+	first := ""
+	if len(paths) > 0 {
+		first = paths[0]
 	}
-	if !cfg.Gates.WorkGateEnabled() || ti.FilePath == "" {
-		injectGateChannel(cmd, format, cacheDir, repoDir, projDir, in.SessionID, ti.FilePath)
+	if !cfg.Gates.WorkGateEnabled() || first == "" {
+		injectGateChannel(cmd, format, cacheDir, repoDir, projDir, in.SessionID, first)
 		return
 	}
-	allow, reason := app.WorkGateCheck(cacheDir, repoDir, projDir, in.SessionID, in.AgentID, ti.FilePath, cfg.Gates.WorkGateAllow)
+	allow, reason := true, ""
+	for _, p := range paths {
+		var r string
+		if allow, r = app.WorkGateCheck(cacheDir, repoDir, projDir, in.SessionID, in.AgentID, p, cfg.Gates.WorkGateAllow); !allow {
+			reason = r
+			break
+		} else if r != "" {
+			reason = r
+		}
+	}
 	if allow {
 		if reason != "" { // allowed by fail-open: say why on stderr (F-0376)
 			fmt.Fprintln(cmd.ErrOrStderr(), "warning: "+reason)
 		}
-		injectGateChannel(cmd, format, cacheDir, repoDir, projDir, in.SessionID, ti.FilePath)
+		injectGateChannel(cmd, format, cacheDir, repoDir, projDir, in.SessionID, first)
 		return
 	}
 	// F-0170: the deny message is also a teaching moment — append the
@@ -453,6 +469,37 @@ func runHookWorkGate(cmd *cobra.Command, format string) {
 	if err := enc.Encode(payload); err != nil {
 		fmt.Fprintln(cmd.ErrOrStderr(), err)
 	}
+}
+
+// patchFileRe matches the file lines of an apply_patch text.
+var patchFileRe = regexp.MustCompile(`(?m)^\*\*\* (?:Add|Update|Delete) File: (.+?)\s*$`)
+
+// editedPaths lists the files an edit tool call targets: file_path, or path
+// (Copilot's own arguments), or — when tool_input is the apply_patch text
+// Copilot sends for file edits (probed, F-0444) — the files the patch names.
+func editedPaths(toolInput json.RawMessage) []string {
+	var obj struct {
+		FilePath string `json:"file_path"`
+		Path     string `json:"path"`
+	}
+	if json.Unmarshal(toolInput, &obj) == nil {
+		if obj.FilePath != "" {
+			return []string{obj.FilePath}
+		}
+		if obj.Path != "" {
+			return []string{obj.Path}
+		}
+		return nil
+	}
+	var patch string
+	if json.Unmarshal(toolInput, &patch) != nil {
+		return nil
+	}
+	var out []string
+	for _, m := range patchFileRe.FindAllStringSubmatch(patch, -1) {
+		out = append(out, m[1])
+	}
+	return out
 }
 
 // injectGateChannel delivers, on an allowed edit, the session's pending channel

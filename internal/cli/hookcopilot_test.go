@@ -87,3 +87,50 @@ func TestHookProvenanceFormatCopilot(t *testing.T) {
 		t.Fatalf("reminder missing:\n%s", out)
 	}
 }
+
+// Payloads below are what Copilot CLI 1.0.112 sent in the F-0444 probe: file
+// creation is tool "Edit" whose tool_input is the apply_patch text itself, and
+// PostToolUse carries tool_result, not tool_response.
+func copilotPayload(sess, cwd, event, tool, toolInput, extra string) string {
+	return `{"hook_event_name":"` + event + `","session_id":"` + sess + `","timestamp":"2026-11-16T17:48:42.443Z","cwd":` + jsonString(cwd) +
+		`,"tool_use_id":"call_x","tool_name":"` + tool + `","tool_input":` + toolInput + extra + `}`
+}
+
+// TestHookWorkGateCopilotPatchPayload: a patch-text tool_input names its files
+// in "*** Add/Update File:" lines; the gate denies an unbound session for them.
+func TestHookWorkGateCopilotPatchPayload(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	enableWorkGate(t, projDir)
+	patch := jsonString("*** Begin Patch\n*** Add File: internal/a.go\n+hi\n*** End Patch\n")
+	out, err := execCerneStdin(t, copilotPayload("sess-p", projDir, "PreToolUse", "Edit", patch, ""), "hook", "work-gate", "--format", "copilot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := decodeTop(t, out); m["permissionDecision"] != "deny" {
+		t.Fatalf("patch edit of a project file not denied:\n%s", out)
+	}
+
+	// A patch touching only an allowed path passes.
+	docs := jsonString("*** Begin Patch\n*** Update File: .docs/n.md\n@@\n-a\n+b\n*** End Patch\n")
+	out, err = execCerneStdin(t, copilotPayload("sess-p", projDir, "PreToolUse", "Edit", docs, ""), "hook", "work-gate", "--format", "copilot")
+	if err != nil || strings.TrimSpace(out) != "" {
+		t.Fatalf(".docs patch must pass silently: %v\n%s", err, out)
+	}
+}
+
+// TestHookBindWorkCopilotToolResult: the minted W- id is read from
+// tool_result.text_result_for_llm.
+func TestHookBindWorkCopilotToolResult(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	if out, err := execCerne(t, "work", "start", "Investigar erro X", "--dir", projDir); err != nil {
+		t.Fatalf("work start: %v\n%s", err, out)
+	}
+	cmdJSON := `{"command":"cerne work start \"Investigar erro X\"","description":"x"}`
+	res := `,"tool_result":{"result_type":"success","text_result_for_llm":"W-0001 created (active) — Investigar erro X (actor: agent)\n<shellId: 0 completed with exit code 0>"}`
+	if out, err := execCerneStdin(t, copilotPayload("sess-cp-bind", projDir, "PostToolUse", "Bash", cmdJSON, res), "hook", "bind-work", "--format", "copilot"); err != nil {
+		t.Fatalf("bind-work: %v\n%s", err, out)
+	}
+	if id, ok, err := app.CurrentBinding(filepath.Dir(repoDir), repoDir, "sess-cp-bind", ""); err != nil || !ok || id != "W-0001" {
+		t.Fatalf("session not bound: (%q, %v, %v)", id, ok, err)
+	}
+}
