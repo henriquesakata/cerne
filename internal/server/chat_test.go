@@ -1207,7 +1207,7 @@ func TestCodexChatProjectFilesLocalOnly(t *testing.T) {
 		req = req.WithContext(context.WithValue(req.Context(), remoteKey{}, remote))
 		rec := httptest.NewRecorder()
 		handleChat(rec, req, repo, dir, "test")
-		if rec.Code != 200 || len(fake.Prompts) != 1 || strings.Contains(fake.Prompts[0], "find_files") == remote {
+		if rec.Code != 200 || len(fake.Prompts) != 1 || strings.Contains(fake.Prompts[0], app.ChatCodexLiveQuery) == remote {
 			t.Fatalf("remote=%v: %d %s", remote, rec.Code, rec.Body.String())
 		}
 	}

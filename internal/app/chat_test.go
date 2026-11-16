@@ -967,3 +967,18 @@ func TestBuildChatSystemPrompt_QuestionContract(t *testing.T) {
 		}
 	}
 }
+
+// TestBuildChatSystemPromptLiveQueryCodex (F-0439 criterion 3): the local codex
+// chat block tells the agent to consult the project files and cerne before
+// answering, names the tools it has, and asks to cite what it read. It names no
+// shell command the turn cannot run.
+func TestBuildChatSystemPromptLiveQueryCodex(t *testing.T) {
+	for _, want := range []string{"find_files", "read_file", "search", "show", "brief", "status", "Cite"} {
+		if !strings.Contains(ChatCodexLiveQuery, want) {
+			t.Errorf("codex live-query block lacks %q:\n%s", want, ChatCodexLiveQuery)
+		}
+	}
+	if strings.Contains(ChatCodexLiveQuery, "cerne search") || strings.Contains(ChatCodexLiveQuery, "Read, Grep") {
+		t.Errorf("block names a claude tool or shell command:\n%s", ChatCodexLiveQuery)
+	}
+}

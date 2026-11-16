@@ -120,7 +120,7 @@ func llmConfig(cfg project.LLMConfig, remote bool) llmConfigResponse {
 		}
 	}
 	resp := llmConfigResponse{
-		Mode: mode, Models: cat.Entries, DefaultModel: cat.DefaultModel, LiveQuery: mode == llm.ModeClaudeCLI,
+		Mode: mode, Models: cat.Entries, DefaultModel: cat.DefaultModel, LiveQuery: mode == llm.ModeClaudeCLI || (mode == llm.ModeCodexCLI && !remote),
 		Providers: reachableProviders(cfg, remote), PreferredProvider: cat.PreferredProvider,
 		Source: source, Provider: eff.Provider, Model: model, BaseURL: eff.BaseURL,
 	}

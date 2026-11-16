@@ -365,3 +365,15 @@ func TestLLMConfigCodexServesCLIModels(t *testing.T) {
 		}
 	}
 }
+
+// TestLLMConfigGetLiveQueryCodex (F-0439 criterion 3): the local codex-cli chat
+// consults live; the remote serve does not, in any mode.
+func TestLLMConfigGetLiveQueryCodex(t *testing.T) {
+	cfg := project.LLMConfig{Mode: "codex-cli"}
+	if !llmConfig(cfg, false).LiveQuery || llmConfig(cfg, true).LiveQuery {
+		t.Fatal("live_query must be true for local codex-cli and false for the remote serve")
+	}
+	if llmConfig(project.LLMConfig{Mode: "claude-cli"}, true).LiveQuery != true {
+		t.Fatal("claude-cli live_query is unchanged")
+	}
+}
