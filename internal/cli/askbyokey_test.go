@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -55,8 +56,15 @@ func TestAskOneShotPromptStatesNoTools(t *testing.T) {
 	projDir := askFallbackProject(t)
 	var gotPrompt string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		raw, _ := io.ReadAll(r.Body)
-		gotPrompt = string(raw)
+		var req struct {
+			Messages []struct {
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if len(req.Messages) > 0 {
+			gotPrompt = req.Messages[0].Content
+		}
 		_, _ = io.WriteString(w, `{"content":[{"type":"text","text":"ok"}]}`)
 	}))
 	defer srv.Close()
@@ -70,7 +78,8 @@ func TestAskOneShotPromptStatesNoTools(t *testing.T) {
 			t.Fatalf("one-shot prompt missing %q:\n%s", want, gotPrompt)
 		}
 	}
-	if i := strings.Index(gotPrompt, "NO tools"); i < 0 || i > strings.Index(gotPrompt, "Pergunta:") {
-		t.Fatalf("rule must come before the question:\n%s", gotPrompt)
+	q := strings.Index(gotPrompt, "Pergunta:")
+	if q < 0 || strings.Count(gotPrompt, "NO tools") != 1 || strings.Index(gotPrompt, "NO tools") > q {
+		t.Fatalf("rule must appear once, before the question (q=%d):\n%s", q, gotPrompt)
 	}
 }

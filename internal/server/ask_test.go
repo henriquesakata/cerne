@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -110,5 +111,46 @@ func TestAskEndpointEmptyQuery(t *testing.T) {
 	}
 	if got["error"] == "" {
 		t.Fatalf("body = %v, want pt-BR error message", got)
+	}
+}
+
+// B-0009: the one-shot server path opens the prompt with the no-tools rule,
+// exactly once, before the question and the sources.
+func TestAskEndpointPromptStatesNoTools(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
+	seedFeature(t, repoDir, "F-0001", "Boletos recorrentes", domain.StateImplemented)
+	writeDoc(t, repoDir, "F-0001", "spec.md", realDoc("F-0001", "Pagamento de boletos mensais no satélite."))
+
+	var gotPrompt string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Messages []struct {
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if len(req.Messages) > 0 {
+			gotPrompt = req.Messages[0].Content
+		}
+		_, _ = io.WriteString(w, `{"content":[{"type":"text","text":"ok"}]}`)
+	}))
+	defer srv.Close()
+	t.Setenv("TEST_ASK_KEY", "sk-x")
+	if err := project.SaveConfig(projDir, project.Config{
+		ProjectID: "proj-ask",
+		Backend:   "unused",
+		LLM:       project.LLMConfig{Mode: "byo-key", BaseURL: srv.URL, KeyEnv: "TEST_ASK_KEY"},
+	}); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	rec := doJSON(t, New(repoDir, projDir, "proj-ask"), http.MethodPost, "/api/ask",
+		`{"query":"o que é boletos?","history":false}`, &struct{}{})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d; body: %s", rec.Code, rec.Body.String())
+	}
+	r, q, src := strings.Index(gotPrompt, "NO tools"), strings.Index(gotPrompt, "Pergunta:"), strings.Index(gotPrompt, "## F-0001")
+	if q < 0 || src < 0 || r < 0 || r > q || q > src || strings.Count(gotPrompt, "NO tools") != 1 {
+		t.Fatalf("rule must appear once before question and sources (r=%d q=%d src=%d):\n%s", r, q, src, gotPrompt)
 	}
 }
