@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/lint"
@@ -383,7 +384,7 @@ func TestChatRegister(t *testing.T) {
 		Feature store.Feature `json:"feature"`
 	}
 	rec := doJSON(t, New(repoDir, projDir, "proj-chat-reg"), http.MethodPost, "/api/chat/register",
-		`{"title":"Exportar relatórios em CSV","spec_body":"# Exportar relatórios em CSV\n\n## Problema\nFalta exportação.\n"}`, &got)
+		`{"title":"Exportar relatórios em CSV","spec_body":"# Exportar relatórios em CSV\n\n## Problema\nFalta exportação.\n\n## Problema\n\nX.\n\n## Objetivo e critérios de aceitação\n\nX.\n\n## Decisões do design\n\nX.\n\n## Desenho\n\nX.\n\n## Verificação\n\nX.\n\n## Execução recomendada (agente)\n\nX.\n\n## Fora de escopo\n\nX.\n"}`, &got)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201; body: %s", rec.Code, rec.Body.String())
 	}
@@ -410,7 +411,7 @@ func TestChatRegisterCreateRefusesFrontmatter(t *testing.T) {
 		Error string `json:"error"`
 	}
 	rec := doJSON(t, New(repoDir, projDir, "proj-chat-reg-fm"), http.MethodPost, "/api/chat/register",
-		`{"title":"Exportar relatórios em CSV","spec_body":"---\ntitle: y\n---\n\n# Exportar\n\n## Problema\nFalta exportação.\n"}`, &got)
+		`{"title":"Exportar relatórios em CSV","spec_body":"---\ntitle: y\n---\n\n# Exportar\n\n## Problema\nFalta exportação.\n\n## Problema\n\nX.\n\n## Objetivo e critérios de aceitação\n\nX.\n\n## Decisões do design\n\nX.\n\n## Desenho\n\nX.\n\n## Verificação\n\nX.\n\n## Execução recomendada (agente)\n\nX.\n\n## Fora de escopo\n\nX.\n"}`, &got)
 	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(got.Error, "without cerne_id") || strings.Contains(got.Error, "cerne show") || strings.Contains(got.Error, "F-0002") {
 		t.Fatalf("status = %d, error %q — want 422 with no show hint and no unminted id", rec.Code, got.Error)
 	}
@@ -435,7 +436,7 @@ func TestChatRegisterExistingCapability(t *testing.T) {
 		Feature store.Feature `json:"feature"`
 	}
 	rec := doJSON(t, New(repoDir, projDir, "proj-chat-cap"), http.MethodPost, "/api/chat/register",
-		`{"title":"Exportar relatórios em CSV","spec_body":"# Exportar relatórios em CSV\n\n## Problema\nFalta exportação.\n","capability":"C-0001"}`, &got)
+		`{"title":"Exportar relatórios em CSV","spec_body":"# Exportar relatórios em CSV\n\n## Problema\nFalta exportação.\n\n## Problema\n\nX.\n\n## Objetivo e critérios de aceitação\n\nX.\n\n## Decisões do design\n\nX.\n\n## Desenho\n\nX.\n\n## Verificação\n\nX.\n\n## Execução recomendada (agente)\n\nX.\n\n## Fora de escopo\n\nX.\n","capability":"C-0001"}`, &got)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201; body: %s", rec.Code, rec.Body.String())
 	}
@@ -455,7 +456,7 @@ func TestChatRegisterUnknownCapability(t *testing.T) {
 
 	var got map[string]string
 	rec := doJSON(t, New(repoDir, projDir, "proj-chat-cap-bad"), http.MethodPost, "/api/chat/register",
-		`{"title":"Exportar relatórios em CSV","spec_body":"# Exportar relatórios em CSV\n\n## Problema\nFalta exportação.\n","capability":"C-9999"}`, &got)
+		`{"title":"Exportar relatórios em CSV","spec_body":"# Exportar relatórios em CSV\n\n## Problema\nFalta exportação.\n\n## Problema\n\nX.\n\n## Objetivo e critérios de aceitação\n\nX.\n\n## Decisões do design\n\nX.\n\n## Desenho\n\nX.\n\n## Verificação\n\nX.\n\n## Execução recomendada (agente)\n\nX.\n\n## Fora de escopo\n\nX.\n","capability":"C-9999"}`, &got)
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want 422; body: %s", rec.Code, rec.Body.String())
 	}
@@ -492,7 +493,7 @@ func TestChatRegisterModule(t *testing.T) {
 	// Without module the core refuses — the handler must surface that, not 500.
 	var refuse map[string]string
 	rec := doJSON(t, New(repoDir, projDir, "proj-chat-mod"), http.MethodPost, "/api/chat/register",
-		`{"title":"Exportar relatórios em CSV","spec_body":"# X\n\n## Problema\nY.\n"}`, &refuse)
+		`{"title":"Exportar relatórios em CSV","spec_body":"# X\n\n## Problema\nY.\n\n## Problema\n\nX.\n\n## Objetivo e critérios de aceitação\n\nX.\n\n## Decisões do design\n\nX.\n\n## Desenho\n\nX.\n\n## Verificação\n\nX.\n\n## Execução recomendada (agente)\n\nX.\n\n## Fora de escopo\n\nX.\n"}`, &refuse)
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status without module = %d, want 422; body: %s", rec.Code, rec.Body.String())
 	}
@@ -502,7 +503,7 @@ func TestChatRegisterModule(t *testing.T) {
 		Feature store.Feature `json:"feature"`
 	}
 	rec = doJSON(t, New(repoDir, projDir, "proj-chat-mod"), http.MethodPost, "/api/chat/register",
-		`{"title":"Exportar relatórios em CSV","spec_body":"# X\n\n## Problema\nY.\n","module":"commons"}`, &got)
+		`{"title":"Exportar relatórios em CSV","spec_body":"# X\n\n## Problema\nY.\n\n## Problema\n\nX.\n\n## Objetivo e critérios de aceitação\n\nX.\n\n## Decisões do design\n\nX.\n\n## Desenho\n\nX.\n\n## Verificação\n\nX.\n\n## Execução recomendada (agente)\n\nX.\n\n## Fora de escopo\n\nX.\n","module":"commons"}`, &got)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status with module = %d, want 201; body: %s", rec.Code, rec.Body.String())
 	}
@@ -520,7 +521,7 @@ func TestChatRegisterNewCapability(t *testing.T) {
 		Feature store.Feature `json:"feature"`
 	}
 	rec := doJSON(t, New(repoDir, projDir, "proj-chat-cap-new"), http.MethodPost, "/api/chat/register",
-		`{"title":"Exportar relatórios em CSV","spec_body":"# Exportar relatórios em CSV\n\n## Problema\nFalta exportação.\n","capability":"Exportação de dados"}`, &got)
+		`{"title":"Exportar relatórios em CSV","spec_body":"# Exportar relatórios em CSV\n\n## Problema\nFalta exportação.\n\n## Problema\n\nX.\n\n## Objetivo e critérios de aceitação\n\nX.\n\n## Decisões do design\n\nX.\n\n## Desenho\n\nX.\n\n## Verificação\n\nX.\n\n## Execução recomendada (agente)\n\nX.\n\n## Fora de escopo\n\nX.\n","capability":"Exportação de dados"}`, &got)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201; body: %s", rec.Code, rec.Body.String())
 	}
@@ -546,7 +547,7 @@ func TestChatRegisterThenLintClean(t *testing.T) {
 		Feature store.Feature `json:"feature"`
 	}
 	rec := doJSON(t, New(repoDir, projDir, "proj-chat-lint"), http.MethodPost, "/api/chat/register",
-		`{"title":"Exportar relatórios em CSV","spec_body":"# Exportar relatórios em CSV\n\n## Problema\nFalta exportação.\n","facets":["code"],"capability":"Exportação de dados"}`, &got)
+		`{"title":"Exportar relatórios em CSV","spec_body":"# Exportar relatórios em CSV\n\n## Problema\nFalta exportação.\n\n## Problema\n\nX.\n\n## Objetivo e critérios de aceitação\n\nX.\n\n## Decisões do design\n\nX.\n\n## Desenho\n\nX.\n\n## Verificação\n\nX.\n\n## Execução recomendada (agente)\n\nX.\n\n## Fora de escopo\n\nX.\n","facets":["code"],"capability":"Exportação de dados"}`, &got)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201; body: %s", rec.Code, rec.Body.String())
 	}
@@ -585,7 +586,7 @@ func TestChatRegisterDuplicate(t *testing.T) {
 
 	var got map[string]string
 	rec := doJSON(t, New(repoDir, projDir, "proj-chat-dup"), http.MethodPost, "/api/chat/register",
-		`{"title":"Exportar relatórios em CSV","spec_body":"# Exportar relatórios em CSV\n\nCorpo.\n"}`, &got)
+		`{"title":"Exportar relatórios em CSV","spec_body":"# Exportar relatórios em CSV\n\nCorpo.\n\n## Problema\n\nX.\n\n## Objetivo e critérios de aceitação\n\nX.\n\n## Decisões do design\n\nX.\n\n## Desenho\n\nX.\n\n## Verificação\n\nX.\n\n## Execução recomendada (agente)\n\nX.\n\n## Fora de escopo\n\nX.\n"}`, &got)
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want 422; body: %s", rec.Code, rec.Body.String())
 	}
@@ -620,7 +621,7 @@ func TestChatRegisterSimilarReturnsMatches(t *testing.T) {
 				} `json:"matches"`
 			}
 			rec := doJSON(t, New(repoDir, projDir, "proj-chat-sim"), http.MethodPost, "/api/chat/register",
-				`{"title":"Exportar relatórios em CSV agora","spec_body":"# X\n\nCorpo.\n"}`, &got)
+				`{"title":"Exportar relatórios em CSV agora","spec_body":"# X\n\nCorpo.\n\n## Problema\n\nX.\n\n## Objetivo e critérios de aceitação\n\nX.\n\n## Decisões do design\n\nX.\n\n## Desenho\n\nX.\n\n## Verificação\n\nX.\n\n## Execução recomendada (agente)\n\nX.\n\n## Fora de escopo\n\nX.\n"}`, &got)
 			if rec.Code != http.StatusConflict {
 				t.Fatalf("status = %d, want 409; body: %s", rec.Code, rec.Body.String())
 			}
@@ -704,7 +705,7 @@ func TestChatRegisterParent(t *testing.T) {
 		Warning string        `json:"warning"`
 	}
 	rec := doJSON(t, New(repoDir, projDir, "proj-chat-parent"), http.MethodPost, "/api/chat/register",
-		`{"title":"Exportar relatórios em CSV","spec_body":"# Exportar\n\n## Problema\nFalta exportação.\n","parent":"F-0001"}`, &got)
+		`{"title":"Exportar relatórios em CSV","spec_body":"# Exportar\n\n## Problema\nFalta exportação.\n\n## Problema\n\nX.\n\n## Objetivo e critérios de aceitação\n\nX.\n\n## Decisões do design\n\nX.\n\n## Desenho\n\nX.\n\n## Verificação\n\nX.\n\n## Execução recomendada (agente)\n\nX.\n\n## Fora de escopo\n\nX.\n","parent":"F-0001"}`, &got)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201; body: %s", rec.Code, rec.Body.String())
 	}
@@ -726,7 +727,7 @@ func TestChatRegisterBadParent(t *testing.T) {
 		Warning string        `json:"warning"`
 	}
 	rec := doJSON(t, New(repoDir, projDir, "proj-chat-parent-bad"), http.MethodPost, "/api/chat/register",
-		`{"title":"Exportar relatórios em CSV","spec_body":"# Exportar\n\n## Problema\nFalta exportação.\n","parent":"F-9999"}`, &got)
+		`{"title":"Exportar relatórios em CSV","spec_body":"# Exportar\n\n## Problema\nFalta exportação.\n\n## Problema\n\nX.\n\n## Objetivo e critérios de aceitação\n\nX.\n\n## Decisões do design\n\nX.\n\n## Desenho\n\nX.\n\n## Verificação\n\nX.\n\n## Execução recomendada (agente)\n\nX.\n\n## Fora de escopo\n\nX.\n","parent":"F-9999"}`, &got)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201; body: %s", rec.Code, rec.Body.String())
 	}
@@ -1182,5 +1183,36 @@ func TestCodexChatProjectFilesLocalOnly(t *testing.T) {
 		if rec.Code != 200 || len(fake.Prompts) != 1 || strings.Contains(fake.Prompts[0], "find_files") == remote {
 			t.Fatalf("remote=%v: %d %s", remote, rec.Code, rec.Body.String())
 		}
+
+// fullSpecBody is a spec carrying every template section (pt), the shape a
+// registration must have since F-0435.
+func fullSpecBody(title string) string {
+	var b strings.Builder
+	b.WriteString("# " + title + "\n\n")
+	for _, s := range doclang.Sections(doclang.Spec, doclang.PT) {
+		b.WriteString("## " + s + "\n\nTexto.\n\n")
+	}
+	return b.String()
+}
+
+// TestChatRegister_RefusesIncompleteSpec (F-0435 crit. 3): a proposal missing
+// template sections is 422 with the list, and the backend gains no commit.
+func TestChatRegister_RefusesIncompleteSpec(t *testing.T) {
+	repoDir, projDir, origin := newGitBackend(t)
+	head0, _ := gitback.HeadSHA(origin)
+	var got struct {
+		Error   string   `json:"error"`
+		Missing []string `json:"missing"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, "proj-chat-inc"), http.MethodPost, "/api/chat/register",
+		`{"title":"Truncada","spec_body":"# Truncada\n\n## Problema\n\nX.\n\n## Verificação\n\nY.\n"}`, &got)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422; body: %s", rec.Code, rec.Body.String())
+	}
+	if len(got.Missing) == 0 || got.Missing[len(got.Missing)-1] != "Fora de escopo" || got.Error == "" {
+		t.Fatalf("body = %+v, want missing list ending in Fora de escopo", got)
+	}
+	if head1, _ := gitback.HeadSHA(origin); head1 != head0 {
+		t.Fatalf("backend gained a commit on a refused registration")
 	}
 }

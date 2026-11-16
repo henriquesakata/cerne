@@ -64,7 +64,7 @@ func TestChatRegisterRecordsLLMConfig(t *testing.T) {
 	}
 	h := New(repoDir, projDir, "proj-chat-author")
 	rec := doJSON(t, h, http.MethodPost, "/api/chat/register",
-		`{"title":"Exportar CSV","model":"claude-chosen","spec_body":"# Exportar CSV\n\n## Problema\nFalta exportação.\n"}`, &map[string]any{})
+		`{"title":"Exportar CSV","model":"claude-chosen","spec_body":"# Exportar CSV\n\n## Problema\nFalta exportação.\n\n## Problema\n\nX.\n\n## Objetivo e critérios de aceitação\n\nX.\n\n## Decisões do design\n\nX.\n\n## Desenho\n\nX.\n\n## Verificação\n\nX.\n\n## Execução recomendada (agente)\n\nX.\n\n## Fora de escopo\n\nX.\n"}`, &map[string]any{})
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("register = %d %s", rec.Code, rec.Body.String())
 	}

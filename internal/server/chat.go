@@ -13,6 +13,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/doccheck"
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/llm"
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
@@ -470,6 +472,15 @@ func handleChatRegister(w http.ResponseWriter, r *http.Request, repoDir, projDir
 			return
 		}
 		writeJSON(w, http.StatusOK, chatRegisterResponse{Feature: f, Unchanged: !changed})
+		return
+	}
+	// F-0435: a proposal cut short (a code fence closed it early) must not land
+	// as a candidate with a half spec — refuse before anything is written.
+	if missing := doccheck.MissingSections([]byte(req.SpecBody), doclang.Spec, store.DocsLanguage(repoDir)); len(missing) > 0 {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+			"error":   "the proposal is missing template sections: " + strings.Join(missing, ", "),
+			"missing": missing,
+		})
 		return
 	}
 	capability := strings.TrimSpace(req.Capability)
