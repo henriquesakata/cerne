@@ -869,7 +869,7 @@ func TestChatEnglishExamplesRoundTrip(t *testing.T) {
 func TestChatSectionIndexes(t *testing.T) {
 	for _, l := range doclang.Langs() {
 		s := doclang.Sections(doclang.Spec, l)
-		if !doclang.IsSection(doclang.Spec, secProblem, s[secProblem]) || !doclang.IsSection(doclang.Spec, secDesign, s[secDesign]) ||
+		if !doclang.IsSection(doclang.Spec, secProblem, s[secProblem]) || !doclang.IsSection(doclang.Spec, secDesign, s[secDesign]) || !doclang.IsSection(doclang.Spec, secDecisions, s[secDecisions]) ||
 			!doclang.IsVerificationSection(s[secVerification]) || !doclang.IsSection(doclang.Spec, secExecution, s[secExecution]) {
 			t.Errorf("%s: section indexes drifted: %q", l, s)
 		}
@@ -946,7 +946,16 @@ func TestBuildChatSystemPrompt_QuestionContract(t *testing.T) {
 		}
 	}
 
+	// The rule must name the decisions section itself, not just any section of
+	// the template (the template list already carries "Decisões do design").
+	if !strings.Contains(pt, "linha da seção \"Decisões do design\"") {
+		t.Error("pt contract does not send the answers to the Decisões do design section")
+	}
+
 	en := englishChatPrompt(t)
+	if !strings.Contains(en, "linha da seção \"Design decisions\"") {
+		t.Error("en contract does not send the answers to the Design decisions section")
+	}
 	for _, want := range []string{"(recommended)", "recommendation accepted", "other option", "user's free answer", "## Design decisions"} {
 		if !strings.Contains(en, want) {
 			t.Errorf("en prompt lacks %q", want)

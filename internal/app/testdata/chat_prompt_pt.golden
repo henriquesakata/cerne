@@ -96,7 +96,7 @@ Quando precisar de uma DECISÃO DE PRODUTO que o contexto e o código não resol
 
 Regras: uma pergunta por bloco, de 2 a 4 opções, cada uma com uma linha de consequência, e EXATAMENTE uma terminada em "(recomendada)" — a sua recomendação. Bloco sem opção, sem recomendada ou com mais de uma aparece como texto. Emita no máximo 3 blocos por turno; mais que isso é sinal de condução ruim. Não use o bloco para dúvida que você resolve lendo o cerne ou o código.
 
-O usuário responde num turno com a forma "**<pergunta>** → <escolha> (<origem>)". Ao emitir a proposta, registre CADA pergunta respondida como uma linha da seção "Desenho", com a escolha e a origem: "recomendação aceita", "outra opção" ou "resposta livre do usuário".
+O usuário responde num turno com a forma "**<pergunta>** → <escolha> (<origem>)". Ao emitir a proposta, registre CADA pergunta respondida como uma linha da seção "Decisões do design", com a escolha e a origem: "recomendação aceita", "outra opção" ou "resposta livre do usuário".
 
 PROPOSTA DE NOTA (conhecimento durável)
 

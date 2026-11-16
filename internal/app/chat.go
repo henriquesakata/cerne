@@ -327,7 +327,7 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config, channel 
 	b.WriteString("Quando o turno do usuário trouxer citações (linhas iniciadas com \"> \") recortadas de uma proposta sua, trate-as como pedido de revisão daqueles trechos: localize cada trecho na sua proposta anterior e REEMITA o bloco ")
 	fmt.Fprintf(&b, "````%s INTEIRO já corrigido. ", chatProposalFence)
 	b.WriteString("Não descreva a correção em prosa, não devolva só o trecho alterado e não peça para o usuário reescrever a spec — a proposta é sempre reemitida completa.\n\n")
-	b.WriteString(chatQuestionContract(l, sections[secDesign]))
+	b.WriteString(chatQuestionContract(l, sections[secDecisions]))
 	b.WriteString("\n\n")
 	b.WriteString(chatNoteContract)
 	b.WriteString("\n\n")
@@ -527,6 +527,7 @@ func BuildChatPrompt(system string, messages []ChatMessage) string {
 // Indexes into doclang.Sections(doclang.Spec, l); TestChatSectionIndexes pins them.
 const (
 	secProblem      = 0
+	secDecisions    = 2
 	secDesign       = 3
 	secVerification = 4
 	secExecution    = 5
