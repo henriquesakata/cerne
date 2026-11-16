@@ -233,6 +233,7 @@ func ReadAllEvents(backendDir string) ([]domain.Event, error) {
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", de.Name(), err)
 			}
+			ev.Actor = domain.ActorLabel(ev.Actor) // F-0442: read only
 			events = append(events, ev)
 		}
 	}

@@ -55,7 +55,7 @@ func LoadHandoffs(repoDir, id string) ([]HandoffEntry, error) {
 	for _, l := range strings.Split(string(data), "\n") {
 		if m := handoffHeaderRe.FindStringSubmatch(strings.TrimRight(l, "\r")); m != nil {
 			flush()
-			out = append(out, HandoffEntry{Date: m[1], Author: strings.TrimSpace(m[2])})
+			out = append(out, HandoffEntry{Date: m[1], Author: domain.ActorLabel(strings.TrimSpace(m[2]))}) // F-0442
 			continue
 		}
 		body = append(body, l)
@@ -97,13 +97,19 @@ func SaveHandoff(backendDir string, h Handoff) error {
 
 // LoadHandoff reads one handoff by id; ErrNotFound when the file is missing.
 func LoadHandoff(backendDir, id string) (Handoff, error) {
-	return loadEntity[Handoff](backendDir, handoffsSubdir, id)
+	h, err := loadEntity[Handoff](backendDir, handoffsSubdir, id)
+	h.Actor = domain.ActorLabel(h.Actor) // F-0442: read only, the file is not rewritten
+	return h, err
 }
 
 // LoadAllHandoffs returns all handoffs sorted by ID ascending; empty (not an
 // error) on a backend that predates F-0368.
 func LoadAllHandoffs(backendDir string) ([]Handoff, error) {
-	return loadAllEntities[Handoff](backendDir, handoffsSubdir)
+	hs, err := loadAllEntities[Handoff](backendDir, handoffsSubdir)
+	for i := range hs {
+		hs[i].Actor = domain.ActorLabel(hs[i].Actor) // F-0442
+	}
+	return hs, err
 }
 
 func handoffContentPath(backendDir, id string) string {
