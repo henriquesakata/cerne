@@ -992,6 +992,8 @@ func TestBuildChatSystemPrompt_InterviewProtocol(t *testing.T) {
 		"propõe já",                                             // (g) human exit
 		"marcador de esclarecimento",                            // (g) open ones become markers
 		"confirmação numa linha",                                // (g) confirm before emitting
+		"Só proponha quando problema, objetivo e critérios de aceitação testáveis fecharem e não houver decisão aberta",
+		"marcador de esclarecimento (" + doclang.AmbiguityMarker(doclang.PT) + " pergunta])",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("prompt lacks interview rule %q", want)
@@ -1027,7 +1029,10 @@ func TestBuildChatSystemPrompt_NoFixedQuestionTarget(t *testing.T) {
 // and none of the Portuguese ones.
 func TestBuildChatSystemPrompt_EnglishInterviewForms(t *testing.T) {
 	prompt := englishChatPrompt(t)
-	for _, want := range []string{"Assumed:", "Tree: <n> resolved · <n> open · <n> assumptions", "propose now"} {
+	for _, want := range []string{"Assumed:", "Tree: <n> resolved · <n> open · <n> assumptions", "propose now",
+		"resuma as decisões tomadas e as suposições e peça a confirmação numa linha",                                    // summary + one-line confirmation
+		"Só proponha quando problema, objetivo e critérios de aceitação testáveis fecharem e não houver decisão aberta", // positive gate
+		"marcador de esclarecimento (" + doclang.AmbiguityMarker(doclang.EN) + " pergunta])"} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("English prompt lacks %q", want)
 		}
