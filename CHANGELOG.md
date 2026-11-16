@@ -14,9 +14,10 @@ While cerne is below 1.0.0, a minor version may change behavior: read the
 ### Highlights
 
 - **GitHub Copilot support, both ways.** Copilot can now work in a cerne project
-  with the same guardrails as the other agents (session board, edit gate,
-  authoring skill, read-only MCP), and cerne can use your Copilot subscription
-  for its own AI features through the new `copilot-cli` mode.
+  guided by cerne (session board, edit gate, authoring skill, read-only MCP —
+  the provider parity matrix lists what Copilot cannot host), and cerne can use
+  your Copilot subscription for its own AI features through the new
+  `copilot-cli` mode.
   ([#28](https://github.com/henriquesakata/cerne/pull/28),
   [#29](https://github.com/henriquesakata/cerne/pull/29))
 - **A Backlog chat that interviews before it proposes.** The analyst works
@@ -52,9 +53,9 @@ While cerne is below 1.0.0, a minor version may change behavior: read the
   provider parity matrix and the `cerne harness` inventory.
   ([#28](https://github.com/henriquesakata/cerne/pull/28))
 - `copilot-cli` subscription mode for `ask`, `compile`, the document drafts and
-  the Backlog chat, isolated like the other subscription modes: no tools, no
-  MCP, no custom instructions and no repository hooks, in an empty temporary
-  directory with a throwaway `COPILOT_HOME`.
+  the Backlog chat, isolated: no tools, no MCP, no custom instructions and no
+  repository hooks, in an empty temporary directory with a throwaway
+  `COPILOT_HOME`.
   ([#29](https://github.com/henriquesakata/cerne/pull/29))
 - `cursor-cli` subscription mode through the Cursor CLI (`cursor-agent`).
   ([#24](https://github.com/henriquesakata/cerne/pull/24))
@@ -75,18 +76,19 @@ While cerne is below 1.0.0, a minor version may change behavior: read the
   reply. ([#23](https://github.com/henriquesakata/cerne/pull/23))
 - Backlog chat: a new-conversation button and the conversation history in the
   toolbar. ([#15](https://github.com/henriquesakata/cerne/pull/15))
-- Codex chat (local `cerne ui`): reads committed project files, with content
-  search and path globs, plus cerne's read-only tools (status, brief, search,
-  show, ask); replies cite paths relative to the project and the lines they
-  read. Thanks to [@GuilhermeSk](https://github.com/GuilhermeSk) for the first
-  version. ([#20](https://github.com/henriquesakata/cerne/pull/20),
-  [#34](https://github.com/henriquesakata/cerne/pull/34))
+- Codex chat (local `cerne ui`): finds and reads the committed project files.
+  Thanks to [@GuilhermeSk](https://github.com/GuilhermeSk).
+  ([#20](https://github.com/henriquesakata/cerne/pull/20))
+- Codex chat (local `cerne ui`): content search and path globs over the
+  committed files, plus cerne's read-only tools (status, brief, search, show,
+  ask); replies cite paths relative to the project and the lines they read.
+  ([#34](https://github.com/henriquesakata/cerne/pull/34))
 - Codex chat offers the models of your account and passes the chosen effort.
   ([#21](https://github.com/henriquesakata/cerne/pull/21))
 - The session-start board shows the work in progress, read from the backend
   clone. ([#16](https://github.com/henriquesakata/cerne/pull/16))
-- `cerne pull` and session start refresh the canonical skills and flag managed
-  hooks that are out of date with the installed binary.
+- `cerne pull` (with `sync_skills` on) and session start refresh the canonical
+  skills and flag managed hooks that are out of date with the installed binary.
   ([#8](https://github.com/henriquesakata/cerne/pull/8))
 - `cerne search` shows works in their own group and how fresh the index is.
   ([#9](https://github.com/henriquesakata/cerne/pull/9))
@@ -97,17 +99,17 @@ While cerne is below 1.0.0, a minor version may change behavior: read the
   (`m-<8hex>`, or `agent:m-<8hex>`) everywhere: `cerne show`, `cerne work list`,
   search, the session board, `CONTEXT.md`, the UI and webhooks.
   ([#27](https://github.com/henriquesakata/cerne/pull/27))
-- Backlog chat in `claude-cli` mode runs with the project's Claude Code settings
-  only: your user-level hooks, plugins, `CLAUDE.md` and MCP servers no longer
-  reach cerne's analyst. ([#36](https://github.com/henriquesakata/cerne/pull/36))
+- Backlog chat in `claude-cli` mode runs with the project's and local Claude
+  Code settings only: your user-level hooks, plugins, `CLAUDE.md` and MCP
+  servers no longer reach cerne's analyst. ([#36](https://github.com/henriquesakata/cerne/pull/36))
 - Backlog chat in `claude-cli` mode honors the model and effort picked in the
   composer. ([#35](https://github.com/henriquesakata/cerne/pull/35))
 - A Backlog proposal is written in the project's documentation language.
   ([#22](https://github.com/henriquesakata/cerne/pull/22))
-- `cerne lint --staged` answers in under 30 seconds with a local edit.
+- `cerne lint --staged` is much faster when you have a local edit.
   ([#10](https://github.com/henriquesakata/cerne/pull/10))
-- `cerne feature learnings` lists, by default, only what was concluded since the
-  last triage, and counts the history apart.
+- `cerne feature learnings` lists, by default, only the features concluded since
+  2026-11-13 and counts the older ones on one line; `--since` shows more.
   ([#12](https://github.com/henriquesakata/cerne/pull/12))
 - The README was rewritten for first-time readers and checked against the code.
   ([#6](https://github.com/henriquesakata/cerne/pull/6),
@@ -118,9 +120,9 @@ While cerne is below 1.0.0, a minor version may change behavior: read the
 
 ### Fixed
 
-- `cerne ask` in an isolated mode no longer stops at "I will read the file"
-  when the question also asks to read one: it answers from the cerne sources
-  and declines the file in one line.
+- `cerne ask` through a subscription CLI no longer stops at "I will read the
+  file" when the question also asks to read one: every one-shot provider is
+  told it has no tools, answers from the cerne sources and declines the file.
   ([#38](https://github.com/henriquesakata/cerne/pull/38))
 - A cache clone that points to another project's backend is refused instead of
   being written to. ([#17](https://github.com/henriquesakata/cerne/pull/17))
@@ -135,8 +137,12 @@ While cerne is below 1.0.0, a minor version may change behavior: read the
   Brazilian time zones by name. ([#13](https://github.com/henriquesakata/cerne/pull/13))
 - `cerne cost backfill-roles` no longer attributes subagents that worked on
   another feature. ([#11](https://github.com/henriquesakata/cerne/pull/11))
+- `cerne mcp --help` lists every tool the server registers, and `cerne savings`
+  says what it measures. ([#33](https://github.com/henriquesakata/cerne/pull/33))
 
 ### Upgrading
+
+Everything not listed here needs no action.
 
 - **Refresh the installed hooks and skill.** After updating the binary, run
   `cerne hook install` and `cerne skill install` in each project (add
@@ -157,6 +163,15 @@ While cerne is below 1.0.0, a minor version may change behavior: read the
   the rest of your agent configuration.
 - **The Codex chat needs a commit.** A project without commits gets no
   project-file tools and no live query in the Codex chat.
+- **Specs are checked the same way everywhere.** `cerne feature approve` now
+  refuses a spec that is missing required sections, and the same check runs in
+  `cerne spec check`, `cerne lint` and the chat, so an old spec can show new
+  findings. Run `cerne feature approve <id> --check` on approved work you plan
+  to change.
+- **A cache clone of another project's backend is refused.** If two projects
+  share a `project_id` on one machine, cerne now stops with an error instead of
+  writing to the other backend: give each project its own `project_id`, or its
+  own `CERNE_CACHE_DIR`.
 
 ### Known limitations
 
@@ -167,10 +182,15 @@ While cerne is below 1.0.0, a minor version may change behavior: read the
 - When both the Claude Code and the Copilot integrations are installed, the
   Copilot CLI also runs the hooks in `.claude/settings.json`, so their side
   effects run twice.
+- `cursor-cli` mode cannot fully isolate the Cursor CLI: it runs in ask mode
+  with a deny-all permissions file, but your own Cursor rules, hooks and
+  plugins still load, because the CLI has no switch to turn them off.
 - `copilot-cli` mode keeps your Copilot login through a throwaway `COPILOT_HOME`
   on macOS. On Linux and Windows this is not verified: set
   `COPILOT_GITHUB_TOKEN`. The Copilot CLI has no model listing, so the chat
   offers no Copilot models and the model is only the one you configure.
+
+**Full changelog:** [v0.13.0...v0.14.0](https://github.com/henriquesakata/cerne/compare/v0.13.0...v0.14.0)
 
 ## [0.13.0] - 2026-11-15
 
