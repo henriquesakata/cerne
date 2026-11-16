@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/henriquesakata/cerne/internal/mcp"
 )
 
 // TestDetectCopilot (F-0444 crit. 1): Copilot is detected by its own .github
@@ -173,5 +176,107 @@ func TestInstallCopilotHooksTouchesOnlyItsFile(t *testing.T) {
 	}
 	if st := statuses(results)["copilot: hooks/cerne.json"]; st != StatusSkipped {
 		t.Fatalf("corrupt file status = %v", st)
+	}
+}
+
+func wantMCPServer() map[string]any {
+	var tools []any
+	for _, n := range mcp.ToolNames {
+		tools = append(tools, n)
+	}
+	return map[string]any{"type": "local", "command": "cerne", "args": []any{"mcp"}, "tools": tools}
+}
+
+func readMCP(t *testing.T, dir string) map[string]any {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(dir, ".mcp.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatalf("invalid .mcp.json: %v\n%s", err, raw)
+	}
+	return m
+}
+
+// TestInstallCopilotMCP (F-0444 crit. 3): the read-only server lands in the
+// root .mcp.json with the explicit tool list, beside the team's servers.
+func TestInstallCopilotMCP(t *testing.T) {
+	dir := t.TempDir()
+	team := `{"mcpServers":{"team":{"command":"x"}},"other":1}`
+	if err := os.WriteFile(filepath.Join(dir, ".mcp.json"), []byte(team), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	results, err := Install(dir, ProviderCopilot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := readMCP(t, dir)
+	servers := m["mcpServers"].(map[string]any)
+	if !reflect.DeepEqual(servers["cerne"], wantMCPServer()) {
+		t.Fatalf("cerne server = %v", servers["cerne"])
+	}
+	if servers["team"] == nil || m["other"] == nil {
+		t.Fatalf("team server or key lost: %v", m)
+	}
+	if st := statuses(results)["copilot: .mcp.json"]; st != StatusUpdated {
+		t.Fatalf("status = %v", st)
+	}
+	// The cloud agent does not read .mcp.json: the block to paste is printed.
+	var note string
+	for _, r := range results {
+		if r.Asset == "copilot: cloud agent MCP" {
+			note = r.Note
+			if r.Status != StatusSkipped {
+				t.Fatalf("cloud line status = %v", r.Status)
+			}
+		}
+	}
+	if !strings.Contains(note, `"cerne"`) || !strings.Contains(note, "copilot-setup-steps.yml") || !strings.Contains(note, `"tools"`) {
+		t.Fatalf("cloud note lacks the block or the setup-steps hint:\n%s", note)
+	}
+
+	results, _ = Install(dir, ProviderCopilot)
+	if st := statuses(results)["copilot: .mcp.json"]; st != StatusUnchanged {
+		t.Fatalf("second run = %v", st)
+	}
+}
+
+// TestInstallCopilotMCPCreates: no .mcp.json yet → created.
+func TestInstallCopilotMCPCreates(t *testing.T) {
+	dir := t.TempDir()
+	results, _ := Install(dir, ProviderCopilot)
+	if st := statuses(results)["copilot: .mcp.json"]; st != StatusCreated {
+		t.Fatalf("status = %v", st)
+	}
+	if !reflect.DeepEqual(readMCP(t, dir)["mcpServers"].(map[string]any)["cerne"], wantMCPServer()) {
+		t.Fatal("server not written")
+	}
+}
+
+// TestInstallCopilotMCPNeverClobbers (crit. 3/6): a different `cerne` entry and
+// a corrupt file stay as they are, reported skipped.
+func TestInstallCopilotMCPNeverClobbers(t *testing.T) {
+	for name, content := range map[string]string{
+		"divergent": `{"mcpServers":{"cerne":{"command":"/opt/mine"}}}`,
+		"corrupt":   `{"mcpServers":`,
+		"bad type":  `{"mcpServers":[]}`,
+	} {
+		dir := t.TempDir()
+		path := filepath.Join(dir, ".mcp.json")
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		results, err := Install(dir, ProviderCopilot)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if b, _ := os.ReadFile(path); string(b) != content {
+			t.Fatalf("%s: file rewritten: %s", name, b)
+		}
+		if st := statuses(results)["copilot: .mcp.json"]; st != StatusSkipped {
+			t.Fatalf("%s: status = %v", name, st)
+		}
 	}
 }
