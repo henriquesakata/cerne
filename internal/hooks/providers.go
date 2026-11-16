@@ -352,7 +352,7 @@ func copilotMCPServer() map[string]any {
 	for i, n := range mcp.ToolNames {
 		tools[i] = n
 	}
-	return map[string]any{"type": "local", "command": "cerne", "args": []any{"mcp"}, "tools": tools}
+	return map[string]any{"type": "stdio", "command": "cerne", "args": []any{"mcp"}, "tools": tools}
 }
 
 // copilotMCP merges the cerne server into the root .mcp.json, keeping every

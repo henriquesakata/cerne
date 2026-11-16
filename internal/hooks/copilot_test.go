@@ -184,7 +184,7 @@ func wantMCPServer() map[string]any {
 	for _, n := range mcp.ToolNames {
 		tools = append(tools, n)
 	}
-	return map[string]any{"type": "local", "command": "cerne", "args": []any{"mcp"}, "tools": tools}
+	return map[string]any{"type": "stdio", "command": "cerne", "args": []any{"mcp"}, "tools": tools}
 }
 
 func readMCP(t *testing.T, dir string) map[string]any {
