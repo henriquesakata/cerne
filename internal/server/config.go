@@ -80,6 +80,27 @@ func loadCatalog() models.Catalog {
 	return cat
 }
 
+// reachableProviders is the vendors a chat turn can run on (F-0440): the
+// configured mode's, then the one of every subscription CLI found on PATH —
+// local ui only, the remote serve offers just the configured one. No repeats.
+func reachableProviders(cfg project.LLMConfig, remote bool) []string {
+	out := llm.ConfiguredProviders(cfg)
+	if remote {
+		return out
+	}
+	for _, c := range cliStatuses() {
+		if !c.Found {
+			continue
+		}
+		for _, p := range llm.ConfiguredProviders(project.LLMConfig{Mode: c.Mode}) {
+			if !slices.Contains(out, p) {
+				out = append(out, p)
+			}
+		}
+	}
+	return out
+}
+
 // llmConfig builds the GET payload for the project's [llm] config.
 func llmConfig(cfg project.LLMConfig, remote bool) llmConfigResponse {
 	cat := loadCatalog()
@@ -98,7 +119,7 @@ func llmConfig(cfg project.LLMConfig, remote bool) llmConfigResponse {
 	}
 	resp := llmConfigResponse{
 		Mode: mode, Models: cat.Entries, DefaultModel: cat.DefaultModel, LiveQuery: mode == llm.ModeClaudeCLI,
-		Providers: llm.ConfiguredProviders(cfg), PreferredProvider: cat.PreferredProvider,
+		Providers: reachableProviders(cfg, remote), PreferredProvider: cat.PreferredProvider,
 		Source: source, Provider: eff.Provider, Model: model, BaseURL: eff.BaseURL,
 	}
 	// B-0006: the baseline knows no Codex model (each account sees its own);
@@ -131,7 +152,7 @@ func handlePreferredProviderPut(w http.ResponseWriter, r *http.Request, projDir 
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	if !slices.Contains(llm.ConfiguredProviders(cfg.LLM), req.Provider) {
+	if !slices.Contains(reachableProviders(cfg.LLM, servedRemotely(r)), req.Provider) {
 		writeJSON(w, http.StatusBadRequest, errorBody(fmt.Sprintf("provider %q is not configured for this project", req.Provider)))
 		return
 	}
