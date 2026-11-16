@@ -23,6 +23,7 @@ func listFixture(t *testing.T) (projDir, cacheDir string) {
 	projDir, _, repoDir := setupProject(t)
 	cacheDir = filepath.Dir(repoDir)
 	host, _ := os.Hostname()
+	t.Setenv("USER", "u") // the local pseudonym derives from USER@host
 	now := time.Now().UTC()
 	for _, w := range []store.Work{
 		{ID: "W-0001", Title: "Quente", Actor: "agent:u@" + host},
@@ -105,7 +106,7 @@ func TestWorkListSessionText(t *testing.T) {
 		"W-0001": "session: aaaaaaaa signal 2m ago",
 		"W-0002": "session: bbbbbbbb signal 3d ago",
 		"W-0003": "session: none on this machine",
-		"W-0004": "session: on another machine (other-box)",
+		"W-0004": "session: on another machine or user (" + domain.MachinePseudonym("u@other-box") + ")",
 	} {
 		if !strings.Contains(line[id], want) {
 			t.Errorf("%s line missing %q:\n%s", id, want, line[id])

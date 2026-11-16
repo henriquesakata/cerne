@@ -47,7 +47,7 @@ func workRowOf(repoDir string, w store.Work, logged map[string]bool) (workRow, e
 			return workRow{}, err
 		}
 	}
-	parts := []string{w.Note, handoff}
+	parts := []string{w.Note, store.LabelHandoffHeaders(handoff)}
 	for _, e := range log {
 		parts = append(parts, e.Text)
 	}

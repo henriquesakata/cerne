@@ -34,6 +34,19 @@ func AppendHandoff(repoDir, id, text, author string, at time.Time) error {
 	return appendEntry(handoffPath(repoDir, id), id, "handoff", text, author, at.UTC())
 }
 
+// LabelHandoffHeaders rewrites the author of each "## handoff <date> — <author>"
+// line of a handoff.md body through domain.ActorLabel (F-0442), for every reader
+// that shows or indexes the raw text. The file is not touched.
+func LabelHandoffHeaders(body string) string {
+	lines := strings.Split(body, "\n")
+	for i, l := range lines {
+		if m := handoffHeaderRe.FindStringSubmatch(strings.TrimRight(l, "\r")); m != nil {
+			lines[i] = "## handoff " + m[1] + " — " + domain.ActorLabel(strings.TrimSpace(m[2]))
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
 // LoadHandoffs reads work id's handoff entries, oldest first. A missing file is
 // "no handoffs", not an error.
 func LoadHandoffs(repoDir, id string) ([]HandoffEntry, error) {
@@ -55,7 +68,7 @@ func LoadHandoffs(repoDir, id string) ([]HandoffEntry, error) {
 	for _, l := range strings.Split(string(data), "\n") {
 		if m := handoffHeaderRe.FindStringSubmatch(strings.TrimRight(l, "\r")); m != nil {
 			flush()
-			out = append(out, HandoffEntry{Date: m[1], Author: strings.TrimSpace(m[2])})
+			out = append(out, HandoffEntry{Date: m[1], Author: domain.ActorLabel(strings.TrimSpace(m[2]))}) // F-0442
 			continue
 		}
 		body = append(body, l)
@@ -97,13 +110,19 @@ func SaveHandoff(backendDir string, h Handoff) error {
 
 // LoadHandoff reads one handoff by id; ErrNotFound when the file is missing.
 func LoadHandoff(backendDir, id string) (Handoff, error) {
-	return loadEntity[Handoff](backendDir, handoffsSubdir, id)
+	h, err := loadEntity[Handoff](backendDir, handoffsSubdir, id)
+	h.Actor, h.TakenBy = domain.ActorLabel(h.Actor), domain.ActorLabel(h.TakenBy) // F-0442: read only, the file is not rewritten
+	return h, err
 }
 
 // LoadAllHandoffs returns all handoffs sorted by ID ascending; empty (not an
 // error) on a backend that predates F-0368.
 func LoadAllHandoffs(backendDir string) ([]Handoff, error) {
-	return loadAllEntities[Handoff](backendDir, handoffsSubdir)
+	hs, err := loadAllEntities[Handoff](backendDir, handoffsSubdir)
+	for i := range hs {
+		hs[i].Actor, hs[i].TakenBy = domain.ActorLabel(hs[i].Actor), domain.ActorLabel(hs[i].TakenBy) // F-0442
+	}
+	return hs, err
 }
 
 func handoffContentPath(backendDir, id string) string {

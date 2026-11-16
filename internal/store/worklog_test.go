@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"github.com/henriquesakata/cerne/internal/domain"
 	"os"
 	"path/filepath"
 	"testing"
@@ -40,7 +41,7 @@ func TestWorkLogAppendReadInOrder(t *testing.T) {
 			t.Fatalf("entry %d has seq %d (numeric order, 9 before 10)", i, e.Seq)
 		}
 	}
-	if got[10].Corrects != 2 || got[0].Actor != "owner" || got[0].RecordedBy != "a@h" {
+	if got[10].Corrects != 2 || got[0].Actor != "owner" || got[0].RecordedBy != domain.MachinePseudonym("a@h") {
 		t.Fatalf("fields lost: %+v %+v", got[0], got[10])
 	}
 	if other, _ := LoadLog(dir, "W-0002"); len(other) != 0 {

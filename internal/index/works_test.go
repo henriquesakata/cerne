@@ -3,6 +3,7 @@ package index
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -65,7 +66,7 @@ func TestWorksFoundByEachField(t *testing.T) {
 		}
 	}
 	res, _, _ := SearchWorks(db, "orchard", 5)
-	if r := res[0]; r.State != "done" || r.Actor != "ana@laptop" || r.Title != "rotacao de credencial do orchard" {
+	if r := res[0]; r.State != "done" || r.Actor != domain.MachinePseudonym("ana@laptop") || r.Title != "rotacao de credencial do orchard" {
 		t.Errorf("result = %+v", r)
 	}
 	// The entity search never sees works.
@@ -229,5 +230,33 @@ func TestWorksShowOriginalTitle(t *testing.T) {
 	res, _, err := SearchWorks(db, "Newer", 5)
 	if err != nil || len(res) != 1 || res[0].Title != "upgradeIfNewer breaks pods" {
 		t.Fatalf("SearchWorks(Newer) = %+v, %v", res, err)
+	}
+}
+
+// F-0442 crit. 7: the legacy handoff.md header ("## handoff <date> — agent:ana@laptop")
+// is indexed as the pseudonym, so the login and the host are not searchable; the
+// handoff's own words still are, and the hit carries the pseudonym.
+func TestLegacyHandoffHeaderIndexedAsPseudonym(t *testing.T) {
+	repoDir := seedBackend(t)
+	seedWorks(t, repoDir)
+	body := "---\ncerne_id: W-0001\n---\n\n## handoff 2026-11-11 — agent:ana@laptop\n\nfalta o cutover do ledgerproxy\n"
+	if err := os.WriteFile(filepath.Join(repoDir, "content", "works", "W-0001", "handoff.md"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	db := filepath.Join(t.TempDir(), "index.db")
+	if err := Rebuild(repoDir, db, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := workIDs(t, db, "ledgerproxy"); len(got) != 1 {
+		t.Fatalf("handoff word not found: %v", got)
+	}
+	for _, q := range []string{"laptop", "ana"} {
+		if got := workIDs(t, db, q); len(got) != 0 {
+			t.Errorf("legacy login/host %q still searchable: %v", q, got)
+		}
+	}
+	pseudo := "agent:" + domain.MachinePseudonym("ana@laptop")
+	if got := workIDs(t, db, strings.TrimPrefix(pseudo, "agent:m-")); len(got) != 1 {
+		t.Errorf("pseudonym not searchable: %v", got)
 	}
 }

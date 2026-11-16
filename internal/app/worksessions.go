@@ -44,12 +44,6 @@ func WorkSessions(works []store.Work, signals []SessionSignal) map[string][]Sess
 	return out
 }
 
-// ActorHost is the host part of a work actor ("agent:u@h", "u@h"): what follows
-// the last '@', or "" when the actor carries none (F-0350).
-func ActorHost(actor string) string {
-	i := strings.LastIndex(actor, "@")
-	if i < 0 {
-		return ""
-	}
-	return actor[i+1:]
-}
+// MachineActor is this machine's actor pseudonym (F-0442), what a work started
+// here by the same user carries.
+func MachineActor() string { return defaultWorkActor() }

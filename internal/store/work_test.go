@@ -35,7 +35,7 @@ func TestWorkRoundTrip(t *testing.T) {
 		t.Fatalf("LoadWork: %v", err)
 	}
 	if got.ID != want.ID || got.Title != want.Title || got.State != want.State ||
-		got.Actor != want.Actor || got.Note != want.Note {
+		got.Actor != domain.MachinePseudonym(want.Actor) || got.Note != want.Note {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}
 	if len(got.Refs) != 2 || got.Refs[0] != "F-0001" || got.Refs[1] != "D-0002" {

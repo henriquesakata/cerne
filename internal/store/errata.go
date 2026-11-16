@@ -3,6 +3,7 @@ package store
 import (
 	"errors"
 	"fmt"
+	"github.com/henriquesakata/cerne/internal/domain"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -56,6 +57,7 @@ func appendEntry(path, id, kind, text, author string, at time.Time) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
+	author = domain.ActorLabel(author) // F-0442: no login@host in a stored author
 	var entry string
 	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
 		entry = "---\ncerne_id: " + id + "\n---\n"

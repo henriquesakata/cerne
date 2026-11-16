@@ -853,6 +853,24 @@ func TestEventsEndpoint(t *testing.T) {
 	}
 }
 
+// F-0442: a legacy work.started serves the pseudonym in payload.actor too.
+func TestEventsEndpointLabelsPayloadActor(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	ev := domain.NewEvent("W-0001", "work.started", map[string]string{"title": "t", "actor": "agent:alice@mac.local"}, "agent:alice@mac.local")
+	if err := store.AppendEvent(repoDir, ev); err != nil {
+		t.Fatal(err)
+	}
+	var sink map[string]any
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/events", "", &sink)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if body := rec.Body.String(); strings.Contains(body, "alice") || strings.Contains(body, "mac.local") ||
+		!strings.Contains(body, domain.MachinePseudonym("alice@mac.local")) {
+		t.Errorf("events body leaks the login or host (or lacks the pseudonym): %s", body)
+	}
+}
+
 func TestEventsEndpointEmpty(t *testing.T) {
 	repoDir, projDir := newBackend(t)
 	var got struct {
@@ -1182,8 +1200,9 @@ func TestStateIncludesActiveWork(t *testing.T) {
 	for _, it := range items {
 		actors[it.Actor] = true
 	}
-	if !actors["alice@host"] || !actors["bob@host"] {
-		t.Fatalf("active_work[F-0001] actors = %+v, want alice@host and bob@host", items)
+	// F-0442 crit. 7: the endpoint serves the pseudonym, never login@host.
+	if !actors[domain.MachinePseudonym("alice@host")] || !actors[domain.MachinePseudonym("bob@host")] || len(actors) != 2 {
+		t.Fatalf("active_work[F-0001] actors = %+v, want the pseudonyms of alice@host and bob@host", items)
 	}
 }
 

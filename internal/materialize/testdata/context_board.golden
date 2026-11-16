@@ -12,16 +12,16 @@
 
 ## Pending handoffs
 
-- HO-0001 pending 12h (since 2026-11-12 00:00 UTC) — W-0101 — from agent:a@b
-- HO-0002 pending 11h (since 2026-11-12 01:00 UTC) — W-0102 — from agent:a@b
-- HO-0003 pending 10h (since 2026-11-12 02:00 UTC) — W-0103 — from agent:a@b
-- HO-0004 pending 9h (since 2026-11-12 03:00 UTC) — W-0104 — from agent:a@b
-- HO-0005 pending 8h (since 2026-11-12 04:00 UTC) — W-0105 — from agent:a@b
-- HO-0006 pending 7h (since 2026-11-12 05:00 UTC) — W-0106 — from agent:a@b
-- HO-0007 pending 6h (since 2026-11-12 06:00 UTC) — W-0107 — from agent:a@b
-- HO-0008 pending 5h (since 2026-11-12 07:00 UTC) — W-0108 — from agent:a@b
-- HO-0009 pending 4h (since 2026-11-12 08:00 UTC) — W-0109 — from agent:a@b
-- HO-0010 pending 3h (since 2026-11-12 09:00 UTC) — W-0110 — from agent:a@b
+- HO-0001 pending 12h (since 2026-11-12 00:00 UTC) — W-0101 — from agent:m-7508d8b5
+- HO-0002 pending 11h (since 2026-11-12 01:00 UTC) — W-0102 — from agent:m-7508d8b5
+- HO-0003 pending 10h (since 2026-11-12 02:00 UTC) — W-0103 — from agent:m-7508d8b5
+- HO-0004 pending 9h (since 2026-11-12 03:00 UTC) — W-0104 — from agent:m-7508d8b5
+- HO-0005 pending 8h (since 2026-11-12 04:00 UTC) — W-0105 — from agent:m-7508d8b5
+- HO-0006 pending 7h (since 2026-11-12 05:00 UTC) — W-0106 — from agent:m-7508d8b5
+- HO-0007 pending 6h (since 2026-11-12 06:00 UTC) — W-0107 — from agent:m-7508d8b5
+- HO-0008 pending 5h (since 2026-11-12 07:00 UTC) — W-0108 — from agent:m-7508d8b5
+- HO-0009 pending 4h (since 2026-11-12 08:00 UTC) — W-0109 — from agent:m-7508d8b5
+- HO-0010 pending 3h (since 2026-11-12 09:00 UTC) — W-0110 — from agent:m-7508d8b5
 - 2 more: cerne handoff list
 
 ## Features

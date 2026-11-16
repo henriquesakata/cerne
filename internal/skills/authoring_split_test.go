@@ -139,6 +139,8 @@ var rewritten = []string{
 	"- **Drop:** `cerne idea drop I-NNNN",
 	"- **Promote:** `cerne idea promote I-NNNN",
 	"Prints both ids. A dropped or promoted idea is refused",
+	// F-0442: the default work actor is a machine pseudonym, not <user>@<hostname>.
+	"Actor defaults to `<user>@<hostname>`",
 }
 
 var sentenceEnd = regexp.MustCompile(`(?:[.!?])\s+`)

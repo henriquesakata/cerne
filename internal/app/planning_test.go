@@ -173,8 +173,8 @@ func TestPlanningClosedOnStart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("auto work: %v", err)
 	}
-	if auto.State != domain.WorkActive || !auto.Auto || auto.Actor != "agent:alice@m1" {
-		t.Fatalf("auto work = %+v, want active auto by agent:alice@m1", auto)
+	if auto.State != domain.WorkActive || !auto.Auto || auto.Actor != "agent:"+domain.MachinePseudonym("alice@m1") {
+		t.Fatalf("auto work = %+v, want active auto by the pseudonym of agent:alice@m1", auto)
 	}
 	assertOneCommit(t, repoDir, before, "entities/works/W-0001.json", "entities/works/W-0002.json", "entities/works/W-0003.json", "entities/features/F-0001.json")
 }

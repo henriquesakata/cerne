@@ -144,7 +144,7 @@ func TestHandoffCmdTakeAndCancel(t *testing.T) {
 		}
 	}
 	// F-0368 crit. 16: who took it and when, absolute UTC; crit. 17: next step once.
-	if !regexp.MustCompile(`(?m)^HO-0001 taken by u@\S+ at \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC — W-0002 created`).MatchString(out) {
+	if !regexp.MustCompile(`(?m)^HO-0001 taken by m-[0-9a-f]{8} at \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC — W-0002 created`).MatchString(out) {
 		t.Fatalf("take header (crit. 16):\n%s", out)
 	}
 	if n := strings.Count(out, "rodar a suíte"); n != 1 || strings.Contains(out, "next step:") {
@@ -224,9 +224,9 @@ func TestHandoffCmdList(t *testing.T) {
 	seedHandoffs(t, repoDir, now)
 
 	got := mustCerne(t, "handoff", "list", "--dir", projDir)
-	want := "HO-0006 pending 5h (since 2026-11-12 07:00 UTC) — W-1235 — from x@y\n" +
-		"HO-0001 pending 3h (since 2026-11-12 09:00 UTC) — W-1234 Migração — from agent:a@b\n" +
-		"HO-0002 taken 1d ago (2026-11-11 10:00 UTC) by u@h (W-1240) — from W-1230\n"
+	want := "HO-0006 pending 5h (since 2026-11-12 07:00 UTC) — W-1235 — from " + domain.MachinePseudonym("x@y") + "\n" +
+		"HO-0001 pending 3h (since 2026-11-12 09:00 UTC) — W-1234 Migração — from agent:" + domain.MachinePseudonym("a@b") + "\n" +
+		"HO-0002 taken 1d ago (2026-11-11 10:00 UTC) by " + domain.MachinePseudonym("u@h") + " (W-1240) — from W-1230\n"
 	// Exact: the 20-day-old taken HO-0003, the superseded HO-0004 and the
 	// cancelled HO-0005 are absent from the default view.
 	if got != want {

@@ -10,7 +10,7 @@ import (
 
 // TestShowAndLintWithAgentActors (F-0350 crit. 5): works and events whose
 // actor is the legacy bare "agent" or the new "agent:<user>@<host>" keep
-// `cerne show` working (the actor printed literally) and add no `cerne lint`
+// `cerne show` working (the actor printed without login or host, F-0442) and add no `cerne lint`
 // finding of their own.
 func TestShowAndLintWithAgentActors(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
@@ -25,7 +25,7 @@ func TestShowAndLintWithAgentActors(t *testing.T) {
 		}
 		wid := "W-000" + string(rune('1'+i))
 		out := mustCerne(t, "show", wid, "--dir", projDir)
-		if !strings.Contains(out, "actor: "+a+"\n") {
+		if !strings.Contains(out, "actor: "+domain.ActorLabel(a)+"\n") {
 			t.Fatalf("show %s lacks the literal actor %q:\n%s", wid, a, out)
 		}
 	}

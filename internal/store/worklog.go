@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/henriquesakata/cerne/internal/domain"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -90,6 +91,7 @@ func LoadLog(repoDir, work string) ([]LogEntry, error) {
 		if err := json.Unmarshal(data, &e); err != nil {
 			return nil, fmt.Errorf("work log %s/%s: %w", work, f.Name(), err)
 		}
+		e.Actor, e.RecordedBy = domain.ActorLabel(e.Actor), domain.ActorLabel(e.RecordedBy) // F-0442
 		out = append(out, e)
 	}
 	slices.SortFunc(out, func(a, b LogEntry) int { return a.Seq - b.Seq })

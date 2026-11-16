@@ -37,7 +37,8 @@ func TestContextWorkSectionListsActive(t *testing.T) {
 	if !strings.Contains(ctx, "## In progress") {
 		t.Fatalf("missing '## In progress' section:\n%s", ctx)
 	}
-	if !strings.Contains(ctx, "W-0001 — Investigar erro X (henrique@laptop, since 2026-07-01)") {
+	// F-0442: the board shows the pseudonym, never login@host.
+	if !strings.Contains(ctx, "W-0001 — Investigar erro X ("+domain.MachinePseudonym("henrique@laptop")+", since 2026-07-01)") || strings.Contains(ctx, "henrique@laptop") {
 		t.Fatalf("missing active work line:\n%s", ctx)
 	}
 	if strings.Contains(ctx, "W-0002") {

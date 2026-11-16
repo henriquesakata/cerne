@@ -80,7 +80,7 @@ func TestHandoffsEndpointOrder(t *testing.T) {
 	if rows[1].FromWorkTitle != "" {
 		t.Fatalf("HO-0003 from_work_title = %q, want empty (W-0099 is gone)", rows[1].FromWorkTitle)
 	}
-	if r := rows[3]; r.TakenBy != "c@d" || r.TakenWork != "W-0012" || r.TakenAt == nil || r.TakenNote != "entendi Y" {
+	if r := rows[3]; r.TakenBy != domain.MachinePseudonym("c@d") || r.TakenWork != "W-0012" || r.TakenAt == nil || r.TakenNote != "entendi Y" {
 		t.Fatalf("HO-0002 = %+v, want the taken fields", r)
 	}
 	// F-0421 crit. 7: each row carries its brief, as the detail does, so the

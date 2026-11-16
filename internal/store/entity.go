@@ -306,14 +306,20 @@ func SaveWork(backendDir string, w Work) error {
 
 // LoadWork reads one work by id; ErrNotFound when the file is missing.
 func LoadWork(backendDir, id string) (Work, error) {
-	return loadEntity[Work](backendDir, worksSubdir, id)
+	w, err := loadEntity[Work](backendDir, worksSubdir, id)
+	w.Actor = domain.ActorLabel(w.Actor) // F-0442: read only, the file is not rewritten
+	return w, err
 }
 
 // LoadAllWorks returns all works sorted by ID ascending; an empty slice (not
 // an error) when entities/works/ is absent — a legacy backend that predates
 // F-0130.
 func LoadAllWorks(backendDir string) ([]Work, error) {
-	return loadAllEntities[Work](backendDir, worksSubdir)
+	ws, err := loadAllEntities[Work](backendDir, worksSubdir)
+	for i := range ws {
+		ws[i].Actor = domain.ActorLabel(ws[i].Actor) // F-0442
+	}
+	return ws, err
 }
 
 // Pending is the persisted form of a pending (F-0322): a known delivery debt

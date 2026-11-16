@@ -15,6 +15,8 @@ func TestStartWorkDefaultActor(t *testing.T) {
 	// CI containers have no USER/USERNAME env — pin it so the expected actor
 	// is deterministic instead of re-deriving the fallback here.
 	t.Setenv("USER", "tester")
+	t.Setenv("CERNE_ACTOR", "")
+	t.Setenv("CURSOR_AGENT", "")
 	w, err := StartWork(repoDir, projDir, "Investigar erro X", nil, "", false, nil, "")
 	if err != nil {
 		t.Fatalf("StartWork: %v", err)
@@ -23,7 +25,7 @@ func TestStartWorkDefaultActor(t *testing.T) {
 		t.Fatalf("work = %+v, want W-0001 active 'Investigar erro X'", w)
 	}
 	host, _ := os.Hostname()
-	wantActor := "tester@" + host
+	wantActor := domain.MachinePseudonym("tester@" + host) // F-0442: no login or host recorded
 	if w.Actor != wantActor {
 		t.Fatalf("actor = %q, want %q", w.Actor, wantActor)
 	}

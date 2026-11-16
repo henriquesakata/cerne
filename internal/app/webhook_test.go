@@ -159,3 +159,29 @@ func TestFinishWorkFiresWebhook(t *testing.T) {
 		t.Fatalf("event = %+v, want complete active->done for %s", got, w.ID)
 	}
 }
+
+// TestWebhookPayloadActorIsPseudonym (F-0442 crit. 7): the webhook payload's
+// actor comes from the running process (EventActor), never from a stored
+// record, so a legacy login@host in the backend cannot reach the destination;
+// with a *.local host and the agent marker it carries agent:m-<8hex>.
+func TestWebhookPayloadActorIsPseudonym(t *testing.T) {
+	pinMachine(t, "alice", "mac.local")
+	t.Setenv("CERNE_ACTOR", "agent")
+	repoDir, projDir, _ := newFeatureBackend(t)
+	seedFeatureInState(t, repoDir, "F-0001", domain.StateCandidate, "spec.md")
+	if err := store.AppendEvent(repoDir, domain.NewEvent("F-0001", "feature.set", nil, "agent:alice@mac.local")); err != nil {
+		t.Fatal(err)
+	}
+	var got notify.Event
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&got)
+	}))
+	defer ts.Close()
+	withWebhook(t, projDir, ts.URL)
+	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionApprove, "", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if want := "agent:" + domain.MachinePseudonym("alice@mac.local"); got.Actor != want {
+		t.Errorf("webhook actor = %q, want %q", got.Actor, want)
+	}
+}

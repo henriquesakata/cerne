@@ -3,7 +3,6 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -41,7 +40,7 @@ func newWorkStartCmd(dir *string) *cobra.Command {
 		Short: "Register a new active agent activity (work-in-progress)",
 		Long: "Registers a transient activity (not a feature) — investigating an error, reviewing an MR — as " +
 			"active in the backend, so another agent (this machine, another, or a teammate) can see it's already " +
-			"being worked and not duplicate it. Actor defaults to '<user>@<hostname>'; --agent overrides it. " +
+			"being worked and not duplicate it. Actor defaults to this machine's pseudonym (m-<8hex>); --agent overrides it. " +
 			"--ref links the activity to existing features/decisions (F-/D- ids; unknown id aborts, nothing written). " +
 			"--paths declares the path globs the activity intends to touch (e.g. internal/server/**); an overlap " +
 			"with another active work prints a warning (F-0151) — the conflict check becomes part of registering.",
@@ -52,7 +51,7 @@ func newWorkStartCmd(dir *string) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&from, "from", "", "take over this active work: inherits its refs, prints its last handoff, takes its pending HO- and closes it as done (handed off)")
 	cmd.Flags().StringVar(&ref, "ref", "", "comma-separated F-/D- ids this activity relates to")
-	cmd.Flags().StringVar(&agent, "agent", "", "actor name (defaults to '<user>@<hostname>')")
+	cmd.Flags().StringVar(&agent, "agent", "", "actor name (defaults to this machine's pseudonym); a value with '@' is recorded as its pseudonym")
 	cmd.Flags().StringVar(&paths, "paths", "", "comma-separated path globs this activity intends to touch")
 	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard (F-0147) for a consciously distinct problem; with --from, also take over a work without handoff that another session is bound to")
 	return cmd
@@ -301,17 +300,14 @@ func runWorkList(cmd *cobra.Command, dir string, all, asJSON bool) error {
 	}
 
 	now := time.Now().UTC()
-	localHost, err := os.Hostname()
-	if err != nil {
-		localHost = "" // unknown host: never claim "another machine"
-	}
+	localActor := app.MachineActor()
 	for _, wk := range shown {
 		line := fmt.Sprintf("%s  [%s]  %s  actor: %s  age: %s", wk.ID, wk.State, wk.Title, wk.Actor, formatAge(now.Sub(wk.UpdatedAt)))
 		if len(wk.Refs) > 0 {
 			line += "  refs: " + joinRefs(wk.Refs)
 		}
 		if wk.State == domain.WorkActive {
-			line += "  " + sessionText(sessionsByWork[wk.ID], wk.Actor, localHost, now)
+			line += "  " + sessionText(sessionsByWork[wk.ID], wk.Actor, localActor, now)
 		}
 		fmt.Fprintln(w, line)
 	}
@@ -326,7 +322,7 @@ func runWorkList(cmd *cobra.Command, dir string, all, asJSON bool) error {
 }
 
 // sessionText is the "session:" column of a work list line (F-0361).
-func sessionText(sigs []app.SessionSignal, actor, localHost string, now time.Time) string {
+func sessionText(sigs []app.SessionSignal, actor, localActor string, now time.Time) string {
 	if len(sigs) > 0 {
 		parts := make([]string, len(sigs))
 		for i, s := range sigs {
@@ -338,8 +334,10 @@ func sessionText(sigs []app.SessionSignal, actor, localHost string, now time.Tim
 		}
 		return "session: " + strings.Join(parts, ", ")
 	}
-	if h := app.ActorHost(actor); h != "" && localHost != "" && !strings.EqualFold(h, localHost) {
-		return "session: on another machine (" + h + ")"
+	// F-0442: the author is a machine pseudonym; one that is not this machine's
+	// is another machine or another user on it.
+	if p := strings.TrimPrefix(actor, "agent:"); strings.HasPrefix(p, "m-") && p != localActor {
+		return "session: on another machine or user (" + p + ")"
 	}
 	return "session: none on this machine"
 }
