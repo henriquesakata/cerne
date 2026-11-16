@@ -2,7 +2,7 @@ import type { ProposalIssue } from './api'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
-import BacklogChat, { parseCommands, parseNote, TurnContextDisclosure } from './BacklogChat'
+import BacklogChat, { AnsweredByLine, parseCommands, parseNote, providerName, TurnContextDisclosure } from './BacklogChat'
 import { ChatRunsError, setApiProject, type ChatAnswer, type ChatOverride, type ChatTitle, type CreateOutcome, type Feature, type FeatureDetail, type LLMOptions, type ModelEntry, type Note } from './api'
 import { getConversation, useBacklogChats, writeChats, type Conversation } from './useBacklogChats'
 
@@ -523,7 +523,7 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
     await waitFor(() =>
       expect(streamChat).toHaveBeenCalledWith(
         [{ role: 'user', content: 'Oi' }],
-        { model: 'claude-sonnet-5-5', effort: 'low', conversationId: expect.any(String) },
+        { provider: 'anthropic', model: 'claude-sonnet-5-5', effort: 'low', conversationId: expect.any(String) },
         expect.any(Function),
       ),
     )
@@ -658,6 +658,47 @@ describe('BacklogChat — menu hierárquico de modelos (F-0311)', () => {
     expect(screen.getByLabelText(/esfor/i)).toHaveTextContent('fast')
     fireEvent.click(screen.getByLabelText(/modelo/i))
     expect(screen.getAllByRole('menuitemradio').map((el) => el.textContent)).toEqual([expect.stringMatching(/Vendor X 1/)])
+  })
+
+  it('F-0440: escolher OpenAI mostra os modelos do Codex e o turno leva o provedor escolhido', async () => {
+    streamChat.mockResolvedValue({ answered: true, reply: 'ok' })
+    const codex: ModelEntry = { id: 'gpt-x', label: 'GPT X', provider: 'openai', efforts: ['low', 'high'], default_effort: 'high', visibility: 'current' }
+    fetchLLMOptions.mockResolvedValue(opts({ providers: ['anthropic', 'openai'], models: [...CATALOG, codex] }))
+    renderChat()
+    await screen.findByText('Claude Opus 5.5')
+    fireEvent.click(screen.getByLabelText(/provedor/i))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /Openai/i }))
+    expect(screen.getByLabelText(/modelo/i)).toHaveTextContent('GPT X')
+
+    fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+    await waitFor(() => expect(streamChat).toHaveBeenCalled())
+    expect(streamChat.mock.calls[0][1]).toMatchObject({ provider: 'openai', model: 'gpt-x', effort: 'high' })
+  })
+
+  it('F-0440: um provedor sem modelos no catálogo (Cursor) mantém o seletor, esconde modelo/esforço e não manda nenhum', async () => {
+    streamChat.mockResolvedValue({ answered: true, reply: 'ok' })
+    fetchLLMOptions.mockResolvedValue(opts({ providers: ['anthropic', 'openai', 'cursor'] }))
+    renderChat({ model: 'claude-opus-5-5', effort: 'medium' })
+    await screen.findByText('Claude Opus 5.5')
+    fireEvent.click(screen.getByLabelText(/provedor/i))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /Cursor/ }))
+
+    expect(screen.getByLabelText(/provedor/i)).toHaveTextContent('Cursor')
+    expect(screen.queryByLabelText(/modelo/i)).toBeNull()
+    expect(screen.queryByLabelText(/esfor/i)).toBeNull()
+
+    fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+    await waitFor(() => expect(streamChat).toHaveBeenCalled())
+    const sent = streamChat.mock.calls.at(-1)![1]
+    expect(sent).toMatchObject({ provider: 'cursor' })
+    expect(sent?.model).toBeUndefined()
+    expect(sent?.effort).toBeUndefined()
+
+    fireEvent.click(screen.getByLabelText(/provedor/i))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /Anthropic/ }))
+    expect(screen.getByLabelText(/modelo/i)).toHaveTextContent('Claude Opus 5.5')
   })
 
   it('C4: sem rota de preferência (cerne serve), a escolha vale na sessão e nada quebra na tela', async () => {
@@ -1442,5 +1483,34 @@ describe('BacklogChat proposal issues (F-0438)', () => {
     await send('e agora?')
     await screen.findByText('Qual formato?')
     expect(screen.queryByRole('button', { name: /pedir correção/i })).not.toBeInTheDocument()
+  })
+})
+
+describe('quem respondeu (F-0440)', () => {
+  it('providerName usa o nome de marca, com fallback capitalizado', () => {
+    expect(['anthropic', 'openai', 'gemini', 'cursor', 'vendor'].map(providerName)).toEqual(['Anthropic', 'OpenAI', 'Gemini', 'Cursor', 'Vendor'])
+  })
+
+  it('AnsweredByLine mostra provedor, modelo (rótulo do catálogo) e esforço; sem dado, nada', () => {
+    const entry: ModelEntry = { id: 'gpt-x', label: 'GPT X', provider: 'openai', visibility: 'current' }
+    const { container, rerender } = render(<AnsweredByLine by={{ provider: 'openai', model: 'gpt-x', effort: 'medium' }} catalog={[entry]} />)
+    expect(container.textContent).toBe('OpenAI · GPT X · medium')
+    rerender(<AnsweredByLine by={{ provider: 'anthropic' }} catalog={[entry]} />)
+    expect(container.textContent).toBe('Anthropic')
+    rerender(<AnsweredByLine by={undefined} catalog={[entry]} />)
+    expect(container.textContent).toBe('')
+  })
+
+  it('a mensagem gravada mostra a linha ao reabrir; a antiga sem o dado não mostra', async () => {
+    const entry: ModelEntry = { id: 'gpt-x', label: 'GPT X', provider: 'openai', efforts: ['low'], default_effort: 'low', visibility: 'current' }
+    fetchLLMOptions.mockResolvedValue(opts({ providers: ['anthropic', 'openai'], models: [...CATALOG, entry] }))
+    renderChat({ messages: [
+      { role: 'user', content: 'a' },
+      { role: 'assistant', content: 'nova', answeredBy: { provider: 'openai', model: 'gpt-x', effort: 'low' } },
+      { role: 'user', content: 'b' },
+      { role: 'assistant', content: 'antiga' },
+    ] } as never)
+    expect(await screen.findByText('OpenAI · GPT X · low')).toBeInTheDocument()
+    expect(document.querySelectorAll('.answered-by')).toHaveLength(1)
   })
 })

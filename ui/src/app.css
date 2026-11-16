@@ -931,6 +931,7 @@ h2 {
 .turn-context { margin-top: 0.5rem; padding-top: 0.35rem; border-top: 1px solid var(--border-soft); font-size: 0.8rem; color: var(--muted); }
 .turn-context summary { cursor: pointer; width: fit-content; }
 .turn-context summary:hover { color: var(--fg); }
+.answered-by { margin: 0.35rem 0 0; font-size: 0.8rem; color: var(--muted); }
 .turn-context-body { max-height: 14rem; overflow-y: auto; }
 .turn-context-caption { margin: 0.3rem 0 0; }
 .turn-context-group { margin: 0.4rem 0 0; font-weight: 600; }

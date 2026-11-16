@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -65,6 +66,10 @@ type chatRequest struct {
 	Messages []chatMessage `json:"messages"`
 	Model    string        `json:"model,omitempty"`
 	Effort   string        `json:"effort,omitempty"`
+	// Provider (F-0440) is the vendor the human picked in the selector: empty
+	// or the configured one runs the turn as configured, an installed
+	// subscription CLI's runs it on that CLI; anything else is refused.
+	Provider string `json:"provider,omitempty"`
 	// FeatureID (F-0256) turns the turn into a refine of that candidate: its
 	// current spec joins the system prompt. Read from the backend on every
 	// call, so a resumed conversation never answers from a stale snapshot.
@@ -143,6 +148,44 @@ type chatResponse struct {
 	// ProposalIssues (F-0438) is what the cerne-proposta block of this reply
 	// still lacks, by the one spec-body check; the UI lists it on the card.
 	ProposalIssues []doccheck.Issue `json:"proposal_issues,omitempty"`
+	// AnsweredBy (F-0440) is what the turn really ran on, read from the turn's
+	// config, never echoed from the request.
+	AnsweredBy *answeredBy `json:"answered_by,omitempty"`
+}
+
+// answeredBy names the provider, model and effort that ran a turn. Model and
+// effort are empty where the vendor is never given one (claude-cli, or a
+// subscription CLI whose model is the CLI's own default).
+type answeredBy struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model,omitempty"`
+	Effort   string `json:"effort,omitempty"`
+}
+
+func turnAnsweredBy(cfg project.LLMConfig, prov llm.Provider) *answeredBy {
+	vendors := llm.ConfiguredProviders(cfg)
+	if len(vendors) == 0 {
+		return nil
+	}
+	by := &answeredBy{Provider: vendors[0]}
+	switch mode := llm.ResolveMode(cfg.Mode); mode {
+	case llm.ModeClaudeCLI:
+		// claude is never passed --model or an effort: only what the CLI itself
+		// reported it ran is named.
+		if r, ok := prov.(interface{ AnsweredModel() string }); ok {
+			by.Model = r.AnsweredModel()
+		}
+	case llm.ModeCodexCLI, llm.ModeGeminiCLI, llm.ModeCursorCLI:
+		if cfg.Provider == "" {
+			by.Model = cfg.Model
+		}
+		if mode == llm.ModeCodexCLI {
+			by.Effort = cfg.Effort
+		}
+	default:
+		by.Model = cfg.WithDefaults().Model
+	}
+	return by
 }
 
 // handleChat answers one turn of the Backlog domain-agent chat (F-0210): the
@@ -199,6 +242,14 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 		writeChatLine(w, http.StatusOK, chatResponse{Answered: false, NeedsProvider: true})
 		return
 	}
+	// F-0440: the turn's copy of the config only — ask, compile and drafts
+	// keep the project's mode, and nothing here writes .cernerc.
+	turnCfg, err := turnLLM(cfg.LLM, req.Provider, servedRemotely(r))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody(err.Error()))
+		return
+	}
+	cfg.LLM = turnCfg
 	if req.Model != "" {
 		cfg.LLM.Model = req.Model
 	}
@@ -268,7 +319,7 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 		var runs []chatRun
 		// C3: the confirmation covers the card's commands, nothing else.
 		env := verbs.Env{Bin: cerneBin(), ProjDir: projDir, RepoDir: repoDir, Confirmed: true,
-			Card: cardKeys(req.Messages[turn].Content), Conversation: req.ConversationID, Turn: turn, Model: cfg.LLM.Model}
+			Card: cardKeys(req.Messages[turn].Content), Conversation: req.ConversationID, Turn: turn, Provider: req.Provider, Model: cfg.LLM.Model}
 		reply, err := tc.CompleteTools(ctx, prompt, chatTools(CommandTree), toolRun(env, &runs))
 		truncated := errors.Is(err, llm.ErrTruncated)
 		if err != nil && !truncated {
@@ -279,7 +330,7 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 		}
 		// C5: a confirmed turn that executed nothing says so — never a silent
 		// success, whatever the reply claims.
-		writeChatLine(w, http.StatusOK, chatResponse{Answered: true, Reply: reply, Runs: runs, NoRuns: len(runs) == 0, Truncated: truncated, Context: injected, ProposalIssues: check(reply)})
+		writeChatLine(w, http.StatusOK, chatResponse{Answered: true, Reply: reply, Runs: runs, NoRuns: len(runs) == 0, Truncated: truncated, Context: injected, ProposalIssues: check(reply), AnsweredBy: turnAnsweredBy(cfg.LLM, prov)})
 		return
 	}
 
@@ -290,7 +341,7 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 	// client never needs to know which path ran.
 	if streamer, ok := prov.(llm.Streamer); ok {
 		if flusher, ok := w.(http.Flusher); ok {
-			streamChatReply(ctx, w, flusher, streamer, prompt, !channel, injected, check)
+			streamChatReply(ctx, w, flusher, streamer, prompt, !channel, injected, check, turnAnsweredBy(cfg.LLM, prov))
 			return
 		}
 	}
@@ -299,7 +350,7 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	writeChatLine(w, http.StatusOK, chatResponse{Answered: true, Reply: reply, NoExec: !channel, Context: injected, ProposalIssues: check(reply)})
+	writeChatLine(w, http.StatusOK, chatResponse{Answered: true, Reply: reply, NoExec: !channel, Context: injected, ProposalIssues: check(reply), AnsweredBy: turnAnsweredBy(cfg.LLM, prov)})
 }
 
 // lastUserMessage is the retrieval query for the turn (F-0253): the message
@@ -332,7 +383,7 @@ func writeChatLine(w http.ResponseWriter, status int, v any) {
 // {"error":...} when the stream broke after output already went out (the
 // partial the client holds stays valid; F-0240 criterion 8). An error before
 // any delta still becomes the plain 500 JSON of the single-shot path.
-func streamChatReply(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, streamer llm.Streamer, prompt string, noExec bool, injected []app.TurnSource, check func(string) []doccheck.Issue) {
+func streamChatReply(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, streamer llm.Streamer, prompt string, noExec bool, injected []app.TurnSource, check func(string) []doccheck.Issue, by *answeredBy) {
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	enc := json.NewEncoder(w)
 	wrote := false
@@ -353,7 +404,7 @@ func streamChatReply(ctx context.Context, w http.ResponseWriter, flusher http.Fl
 		flusher.Flush()
 		return
 	}
-	_ = enc.Encode(chatResponse{Answered: true, Reply: reply, NoExec: noExec, Context: injected, ProposalIssues: check(reply)})
+	_ = enc.Encode(chatResponse{Answered: true, Reply: reply, NoExec: noExec, Context: injected, ProposalIssues: check(reply), AnsweredBy: by})
 	flusher.Flush()
 }
 
@@ -385,15 +436,36 @@ type chatRegisterRequest struct {
 	// Model (F-0375) is the conversation's model selection, the same override
 	// chatRequest carries: the spec's writer is recorded with it.
 	Model string `json:"model,omitempty"`
+	// Provider (F-0440) is the vendor that answered, as the chat request had it.
+	Provider string `json:"provider,omitempty"`
+}
+
+// turnLLM is the [llm] config of one chat turn (F-0440): cfg as configured
+// when provider is empty or the configured vendor's, otherwise the mode of the
+// installed subscription CLI of that vendor, with the project's model dropped
+// (it names another vendor's model). The caller's copy only: nothing is saved.
+func turnLLM(cfg project.LLMConfig, provider string, remote bool) (project.LLMConfig, error) {
+	if provider == "" || slices.Contains(llm.ConfiguredProviders(cfg), provider) {
+		return cfg, nil
+	}
+	if !slices.Contains(reachableProviders(cfg, remote), provider) {
+		return cfg, fmt.Errorf("provider %q is not available on this machine", provider)
+	}
+	return llm.ForProvider(cfg, provider), nil
 }
 
 // chatAuthor is who wrote a spec the chat proposed (F-0375): the project's
 // [llm] config with the conversation's model; unknown when the config is
 // unreadable — never a default it did not call.
-func chatAuthor(projDir, model string) app.DocAuthor {
+func chatAuthor(projDir, model, provider string, remote bool) app.DocAuthor {
 	cfg, _, err := project.LoadConfig(projDir)
 	if err != nil {
 		return app.DocAuthor{Source: "unknown"}
+	}
+	// An unreachable provider keeps the project's own config (best effort: the
+	// registration was already confirmed).
+	if turn, err := turnLLM(cfg.LLM, provider, remote); err == nil {
+		cfg.LLM = turn
 	}
 	if model != "" {
 		cfg.LLM.Model = model
@@ -492,7 +564,7 @@ func handleChatRegister(w http.ResponseWriter, r *http.Request, repoDir, projDir
 	// candidate. Same gate as the creation (an explicit click got here), same
 	// backend write path, but nothing is minted and no state moves.
 	if fid := strings.TrimSpace(req.FeatureID); fid != "" {
-		f, changed, err := app.UpdateCandidateSpecBy(repoDir, projDir, fid, req.SpecBody, chatAuthor(projDir, req.Model))
+		f, changed, err := app.UpdateCandidateSpecBy(repoDir, projDir, fid, req.SpecBody, chatAuthor(projDir, req.Model, req.Provider, servedRemotely(r)))
 		if !writeRefineError(w, err) {
 			return
 		}
@@ -510,7 +582,7 @@ func handleChatRegister(w http.ResponseWriter, r *http.Request, repoDir, projDir
 	parent := strings.TrimSpace(req.Parent)
 	module := strings.TrimSpace(req.Module)
 	warning := ""
-	author := chatAuthor(projDir, req.Model)
+	author := chatAuthor(projDir, req.Model, req.Provider, servedRemotely(r))
 	f, err := app.CreateFeatureWithSpecBy(repoDir, projDir, req.Title, module, parent, req.Facets, req.Components, req.SpecBody, author)
 	// F-0254: a bad parent degrades to no parent instead of failing the
 	// registration — the refusal happens before anything is written, so the

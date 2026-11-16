@@ -80,6 +80,29 @@ func loadCatalog() models.Catalog {
 	return cat
 }
 
+// reachableProviders is the vendors a chat turn can run on (F-0440): the
+// configured mode's, then the one of every subscription CLI found on PATH —
+// local ui only, the remote serve offers just the configured one. No repeats.
+func reachableProviders(cfg project.LLMConfig, remote bool) []string {
+	out := llm.ConfiguredProviders(cfg)
+	if remote {
+		return out
+	}
+	for _, c := range cliStatuses() {
+		if !c.Found {
+			continue
+		}
+		for _, p := range llm.ConfiguredProviders(project.LLMConfig{Mode: c.Mode}) {
+			if !slices.Contains(out, p) {
+				out = append(out, p)
+			}
+		}
+	}
+	return out
+}
+
+func codexInstalled() bool { return slices.Contains(project.FoundSubscriptionCLIs(), "codex") }
+
 // llmConfig builds the GET payload for the project's [llm] config.
 func llmConfig(cfg project.LLMConfig, remote bool) llmConfigResponse {
 	cat := loadCatalog()
@@ -98,13 +121,19 @@ func llmConfig(cfg project.LLMConfig, remote bool) llmConfigResponse {
 	}
 	resp := llmConfigResponse{
 		Mode: mode, Models: cat.Entries, DefaultModel: cat.DefaultModel, LiveQuery: mode == llm.ModeClaudeCLI,
-		Providers: llm.ConfiguredProviders(cfg), PreferredProvider: cat.PreferredProvider,
+		Providers: reachableProviders(cfg, remote), PreferredProvider: cat.PreferredProvider,
 		Source: source, Provider: eff.Provider, Model: model, BaseURL: eff.BaseURL,
 	}
 	// B-0006: the baseline knows no Codex model (each account sees its own);
 	// the CLI's cache is what its picker offers.
-	if mode == llm.ModeCodexCLI {
-		resp.Models = append(resp.Models, llm.CodexModels()...)
+	// F-0440: an installed codex offers them too, so picking OpenAI in a project
+	// run on another CLI shows its models (local ui only).
+	if mode == llm.ModeCodexCLI || (!remote && codexInstalled()) {
+		for _, m := range llm.CodexModels() {
+			if !slices.ContainsFunc(resp.Models, func(e models.Entry) bool { return e.ID == m.ID }) {
+				resp.Models = append(resp.Models, m)
+			}
+		}
 	}
 	if !remote {
 		resp.CLIs = cliStatuses()
@@ -131,8 +160,8 @@ func handlePreferredProviderPut(w http.ResponseWriter, r *http.Request, projDir 
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	if !slices.Contains(llm.ConfiguredProviders(cfg.LLM), req.Provider) {
-		writeJSON(w, http.StatusBadRequest, errorBody(fmt.Sprintf("provider %q is not configured for this project", req.Provider)))
+	if !slices.Contains(reachableProviders(cfg.LLM, servedRemotely(r)), req.Provider) {
+		writeJSON(w, http.StatusBadRequest, errorBody(fmt.Sprintf("provider %q is neither configured for this project nor an installed subscription CLI", req.Provider)))
 		return
 	}
 	dir, err := project.ConfigDir()

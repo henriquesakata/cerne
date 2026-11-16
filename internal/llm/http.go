@@ -70,6 +70,17 @@ func ConfiguredProviders(cfg project.LLMConfig) []string {
 	return []string{cfg.WithDefaults().Provider}
 }
 
+// ModeForProvider is the inverse of ConfiguredProviders for the subscription
+// CLIs: the mode whose vendor is provider, "" when none (F-0440).
+func ModeForProvider(provider string) string {
+	for _, mode := range []string{ModeClaudeCLI, ModeCodexCLI, ModeGeminiCLI, ModeCursorCLI} {
+		if p := ConfiguredProviders(project.LLMConfig{Mode: mode}); len(p) == 1 && p[0] == provider {
+			return mode
+		}
+	}
+	return ""
+}
+
 // NewProvider builds the configured Provider. It applies LLMConfig defaults
 // first, then routes on the resolved mode:
 //   - delegation: ErrNoProviderForDelegation (no provider exists there);
@@ -488,4 +499,16 @@ func truncate(data []byte, n int) string {
 		return string(data)
 	}
 	return string(data[:n]) + "…"
+}
+
+// ForProvider is cfg as a turn on provider's subscription CLI sees it (F-0440).
+// The configured vendor, an empty or an unknown one leave it as it is; a switch
+// drops what belonged to the project's vendor (provider, model, effort).
+func ForProvider(cfg project.LLMConfig, provider string) project.LLMConfig {
+	mode := ModeForProvider(provider)
+	if provider == "" || mode == "" || slices.Contains(ConfiguredProviders(cfg), provider) {
+		return cfg
+	}
+	cfg.Mode, cfg.Provider, cfg.Model, cfg.Effort = mode, "", "", ""
+	return cfg
 }
