@@ -21,7 +21,7 @@ func TestConsumersFor(t *testing.T) {
 		{"skill is a claude surface", Item{Class: "skills", Name: "cerne-authoring", Origin: OriginProject}, []string{"claude"}},
 		{"settings layer is a claude surface", Item{Class: "config", Name: "settings.json", Origin: OriginProject}, []string{"claude"}},
 		{"marketplace plugin is claude-only", Item{Class: "plugins", Name: "caveman", Origin: OriginPlugin}, []string{"claude"}},
-		{"project .mcp.json is read by claude and copilot", Item{Class: "mcp", Name: "context-mode", Origin: OriginProject}, []string{"claude", "copilot"}},
+		{"project .mcp.json is claude's when the project has no Copilot", Item{Class: "mcp", Name: "context-mode", Origin: OriginProject}, []string{"claude"}},
 		{"user mcp declaration is claude's", Item{Class: "mcp", Name: "context-mode", Origin: OriginUser}, []string{"claude"}},
 		{"CLAUDE.md feeds claude", Item{Class: "context", Name: "CLAUDE.md"}, []string{"claude"}},
 		{"user CLAUDE.md feeds claude", Item{Class: "context", Name: "~/.claude/CLAUDE.md"}, []string{"claude"}},
@@ -32,10 +32,38 @@ func TestConsumersFor(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := consumersFor(tt.item); !reflect.DeepEqual(got, tt.want) {
+			if got := consumersFor(tt.item, false); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("consumersFor(%+v) = %v, want %v", tt.item, got, tt.want)
 			}
 		})
+	}
+}
+
+// TestConsumersForMCPWithCopilot (F-0444): the project .mcp.json is Copilot's
+// workspace file too, but only a project that uses Copilot counts it.
+func TestConsumersForMCPWithCopilot(t *testing.T) {
+	it := Item{Class: "mcp", Name: "context-mode", Origin: OriginProject}
+	if got := consumersFor(it, true); !reflect.DeepEqual(got, []string{"claude", "copilot"}) {
+		t.Errorf("with copilot: %v", got)
+	}
+	user := Item{Class: "mcp", Name: "x", Origin: OriginUser}
+	if got := consumersFor(user, true); !reflect.DeepEqual(got, []string{"claude"}) {
+		t.Errorf("user declaration with copilot: %v", got)
+	}
+}
+
+// TestInspectMCPConsumersFollowCopilotDetection: end to end through Inspect.
+func TestInspectMCPConsumersFollowCopilotDetection(t *testing.T) {
+	proj := t.TempDir()
+	writeFile(t, filepath.Join(proj, ".mcp.json"), `{"mcpServers":{"s":{"command":"/bin/sh"}}}`)
+	it, ok := findItem(Inspect(Options{ProjDir: proj}), "mcp", "s")
+	if !ok || reflect.DeepEqual(it.Consumers, []string{"claude", "copilot"}) {
+		t.Fatalf("non-Copilot project: %+v", it)
+	}
+	writeFile(t, filepath.Join(proj, ".github", "copilot-instructions.md"), "x")
+	it, _ = findItem(Inspect(Options{ProjDir: proj}), "mcp", "s")
+	if !reflect.DeepEqual(it.Consumers, []string{"claude", "copilot"}) {
+		t.Fatalf("Copilot project: %+v", it)
 	}
 }
 
