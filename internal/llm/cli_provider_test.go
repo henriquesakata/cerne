@@ -770,6 +770,35 @@ func TestCodexCLIProvider(t *testing.T) {
 	}
 }
 
+// B-0006: the effort chosen in the chat reaches codex exec as a config
+// override; a value that is not a bare word never reaches the argv.
+func TestCodexCLIPassesEffort(t *testing.T) {
+	var args []string
+	var stdin, dir string
+	p := &cliProvider{kind: ModeCodexCLI, bin: "codex", model: "gpt-5", effort: "high", run: codexFake("ok", &args, &stdin, &dir)}
+	if _, err := p.Complete(context.Background(), "q"); err != nil {
+		t.Fatal(err)
+	}
+	tail := args[len(args)-5:]
+	if want := []string{"-m", "gpt-5", "-c", `model_reasoning_effort="high"`, "-"}; !reflect.DeepEqual(tail, want) {
+		t.Fatalf("argv tail = %v, want %v", tail, want)
+	}
+	p.effort = "high\"\nsandbox_mode=\"danger-full-access"
+	if _, err := p.Complete(context.Background(), "q"); err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range args {
+		if strings.Contains(a, "model_reasoning_effort") {
+			t.Fatalf("a non-word effort reached the argv: %v", args)
+		}
+	}
+	// The per-call effort travels in LLMConfig, never read from a file.
+	np, _ := NewProvider(project.LLMConfig{Mode: ModeCodexCLI, Effort: "low"})
+	if e := np.(*cliProvider).effort; e != "low" {
+		t.Fatalf("NewProvider effort = %q, want low", e)
+	}
+}
+
 func TestCodexCLIErrorsNameTheFix(t *testing.T) {
 	for _, c := range []struct{ err, want string }{
 		{"could not run \"codex\" (install Codex CLI and ensure it is on PATH): x", "install Codex CLI"},

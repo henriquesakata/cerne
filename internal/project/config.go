@@ -352,6 +352,9 @@ type LLMConfig struct {
 	// TestKey is a key typed in the UI and used for one connection test, in
 	// memory only: never read from or written to a file (F-0414).
 	TestKey string `toml:"-"`
+	// Effort is the reasoning effort the chat selector chose for one turn, in
+	// memory only (B-0006): codex-cli applies it; never read from a file.
+	Effort string `toml:"-"`
 	// inherited marks a [llm] filled from the host settings: a read-time view
 	// that SaveConfig never writes into the versioned .cernerc.
 	inherited bool

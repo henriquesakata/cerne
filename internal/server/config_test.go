@@ -327,3 +327,41 @@ func TestAbsentCatalogLoggedOncePerProcess(t *testing.T) {
 		t.Fatalf("absent-file line logged %d times, want once:\n%s", n, logs.String())
 	}
 }
+
+// TestLLMConfigCodexServesCLIModels: B-0006 — in codex-cli mode the chat's
+// openai provider is offered the models the Codex CLI lists for the account;
+// another mode never sees them.
+func TestLLMConfigCodexServesCLIModels(t *testing.T) {
+	t.Setenv("CERNE_CONFIG_DIR", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("CODEX_HOME", home)
+	cache := `{"models":[{"slug":"gpt-x","display_name":"GPT X","visibility":"list","priority":1,
+		"default_reasoning_level":"medium","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"}]}]}`
+	if err := os.WriteFile(filepath.Join(home, "models_cache.json"), []byte(cache), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for mode, want := range map[string]bool{"codex-cli": true, "claude-cli": false} {
+		repoDir, projDir := newBackend(t)
+		if err := project.SaveConfig(projDir, project.Config{ProjectID: "p", Backend: "b",
+			LLM: project.LLMConfig{Mode: mode}}); err != nil {
+			t.Fatalf("SaveConfig: %v", err)
+		}
+		var got struct {
+			Models    []models.Entry `json:"models"`
+			Providers []string       `json:"providers"`
+		}
+		rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/config/llm", "", &got)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: status = %d; body: %s", mode, rec.Code, rec.Body.String())
+		}
+		found := false
+		for _, e := range got.Models {
+			if e.ID == "gpt-x" {
+				found = e.Provider == "openai" && e.Visibility == models.Current && len(e.Efforts) == 2 && e.DefaultEffort == "medium"
+			}
+		}
+		if found != want {
+			t.Fatalf("%s: codex model served = %v, want %v (%+v)", mode, found, want, got.Models)
+		}
+	}
+}

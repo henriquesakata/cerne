@@ -16,6 +16,8 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	os.Setenv("CERNE_CONFIG_DIR", dir)
+	// B-0006: never read the machine's Codex model cache (no models_cache.json here).
+	os.Setenv("CODEX_HOME", dir)
 	code := m.Run()
 	os.RemoveAll(dir)
 	os.Exit(code)

@@ -224,6 +224,7 @@ func cliProduct(bin string) string {
 type cliProvider struct {
 	kind        string // ModeClaudeCLI (also ""), ModeCodexCLI or ModeGeminiCLI
 	model       string // -m for codex/gemini; never forced on claude
+	effort      string // codex model_reasoning_effort for one chat turn (B-0006)
 	bin         string
 	run         runner
 	dir         string   // working directory for the CLI (project root in agentic mode)
@@ -363,6 +364,11 @@ func (p *cliProvider) completeCodex(ctx context.Context, prompt string) (string,
 	if p.model != "" {
 		args = append(args, "-m", p.model)
 	}
+	// The effort comes from the browser: only a bare word reaches the TOML
+	// override, so it can never close the string and set another key.
+	if effortRE.MatchString(p.effort) {
+		args = append(args, "-c", `model_reasoning_effort="`+p.effort+`"`)
+	}
 	args = append(args, "-")
 	start := time.Now()
 	if _, _, err := p.run(ctx, dir, p.bin, args, prompt); err != nil {
@@ -387,6 +393,9 @@ func (p *cliProvider) completeCodex(ctx context.Context, prompt string) (string,
 
 // authErrorRE recognizes a CLI error that a login fixes.
 var authErrorRE = regexp.MustCompile(`(?i)401|unauthori|log(ged)? ?in|sign(ed)? ?in|not authenticated|auth`)
+
+// effortRE is the shape of a reasoning effort level (low, medium, xhigh…).
+var effortRE = regexp.MustCompile(`^[a-z]+$`)
 
 var exitStatusRE = regexp.MustCompile(`exit status (\d+)`)
 

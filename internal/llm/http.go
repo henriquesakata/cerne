@@ -96,7 +96,7 @@ func NewProvider(cfg project.LLMConfig) (Provider, error) {
 	case ModeClaudeCLI:
 		return &cliProvider{bin: cfg.ClaudeBin, run: execRun}, nil
 	case ModeCodexCLI:
-		return &cliProvider{kind: mode, bin: "codex", model: cliModel(raw), run: execRun}, nil
+		return &cliProvider{kind: mode, bin: "codex", model: cliModel(raw), effort: raw.Effort, run: execRun}, nil
 	case ModeGeminiCLI:
 		return &cliProvider{kind: mode, bin: "gemini", model: cliModel(raw), run: execRun}, nil
 	}
