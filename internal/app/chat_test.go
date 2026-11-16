@@ -723,3 +723,19 @@ func TestBuildChatSystemPrompt_FourBacktickContract(t *testing.T) {
 		t.Error("prompt still shows a three-backtick proposal opening")
 	}
 }
+
+// TestBuildChatSystemPrompt_NoteFourBackticks (F-0435): the note block uses the
+// same four-backtick fence as the proposal, so its body may carry code blocks.
+func TestBuildChatSystemPrompt_NoteFourBackticks(t *testing.T) {
+	repoDir, projDir := chatFixture(t)
+	prompt, err := BuildChatSystemPrompt(repoDir, projDir, project.Config{}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(prompt, "\n````cerne-nota\n") || !strings.Contains(prompt, "\n````\n\nSem facet") {
+		t.Error("note block is not opened and closed with four backticks")
+	}
+	if strings.Contains(prompt, "\n```cerne-nota\n") {
+		t.Error("prompt still shows a three-backtick note opening")
+	}
+}

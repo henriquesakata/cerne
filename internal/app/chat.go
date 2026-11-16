@@ -305,16 +305,16 @@ Não proponha a cada turno: a nota é episódica, nasce de conhecimento NOVO. De
 
 Antes de propor, rode ` + "`cerne note list`" + ` (e ` + "`cerne note show <id>`" + ` quando o título for parecido): se já existe nota ativa equivalente, CITE o id dela em vez de propor outra.
 
-Para propor, termine sua resposta com um bloco cercado assim:
+Para propor, termine sua resposta com um bloco cercado assim — com QUATRO crases na abertura e no fechamento (blocos de código dentro da nota usam TRÊS):
 
-` + "```" + chatNoteFence + `
+` + "````" + chatNoteFence + `
 # <título curto e afirmativo: o que a nota estabelece>
 facet: <uma opção do conjunto fechado, obrigatória>
 components: <lista curta separada por vírgula, ao menos um — obrigatória>
 informs: <opcional: ids F-/D-/RB-/N- que esta nota informa; inclua a candidata que esta conversa gerou, quando houver>
 
 <o conhecimento em si, em 1-2 parágrafos: o fato e por que ele importa na próxima conversa>
-` + "```" + `
+` + "````" + `
 
 Sem facet e sem ao menos um component o registro é RECUSADO pelo servidor — nota sem tag nasce como débito de lint.
 
