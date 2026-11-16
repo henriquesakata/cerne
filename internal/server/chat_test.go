@@ -1164,7 +1164,7 @@ func TestChatNoChannelDegrades(t *testing.T) {
 // chat turns degrade exactly like a no_function_calling endpoint (F-0323 C7):
 // the terminal event is marked no_exec and the UI shows the commands to copy.
 func TestChatSubscriptionCLIsDegradeLikeNoFunctionCalling(t *testing.T) {
-	for _, mode := range []string{"codex-cli", "gemini-cli"} {
+	for _, mode := range []string{"codex-cli", "gemini-cli", "cursor-cli"} {
 		repoDir, projDir, _ := newGitBackend(t)
 		if err := project.SaveConfig(projDir, project.Config{ProjectID: "proj-chat", Backend: "unused", LLM: project.LLMConfig{Mode: mode}}); err != nil {
 			t.Fatal(err)

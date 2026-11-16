@@ -153,7 +153,7 @@ var settingsRegistry = []Setting{
 	},
 	{
 		ID: "llm.mode", Group: "ai", Title: "AI agent", Type: "string", Default: "delegation",
-		Enum:   []string{"claude-cli", "codex-cli", "gemini-cli", "byo-key", "delegation"},
+		Enum:   []string{"claude-cli", "codex-cli", "gemini-cli", "cursor-cli", "byo-key", "delegation"},
 		Scopes: []string{ScopeProject, ScopeHost},
 		DynamicDefault: func() string {
 			if cli := DetectSubscriptionCLI(); cli != "" {
@@ -161,7 +161,7 @@ var settingsRegistry = []Setting{
 			}
 			return ""
 		},
-		Description: "How cerne reaches a model for ask, compile and the chat. A subscription CLI (claude-cli, codex-cli, gemini-cli) uses the plan you already pay for; byo-key calls a provider's API with a key; delegation hands the prompt to the agent already running. Unset, it follows the subscription CLI found on PATH.",
+		Description: "How cerne reaches a model for ask, compile and the chat. A subscription CLI (claude-cli, codex-cli, gemini-cli, cursor-cli) uses the plan you already pay for; byo-key calls a provider's API with a key; delegation hands the prompt to the agent already running. Unset, it follows the subscription CLI found on PATH.",
 	},
 	{
 		ID: "llm.model", Group: "ai", Title: "Model", Type: "string", Default: "", MaxLen: 256,

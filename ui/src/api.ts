@@ -1197,7 +1197,7 @@ export async function fetchWikiPage(rel: string): Promise<WikiPage> {
 
 // ---- modo de IA do projeto (case 0019) ----
 
-export type LLMMode = 'delegation' | 'byo-key' | 'claude-cli' | 'codex-cli' | 'gemini-cli'
+export type LLMMode = 'delegation' | 'byo-key' | 'claude-cli' | 'codex-cli' | 'gemini-cli' | 'cursor-cli'
 
 export async function fetchLLMMode(): Promise<LLMMode> {
   const r = await fetch(`${base()}/config/llm`)

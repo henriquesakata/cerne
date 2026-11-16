@@ -33,7 +33,7 @@ func resolved(t *testing.T, dir, id string) ResolvedSetting {
 func TestLLMSettingsDeclared(t *testing.T) {
 	dir := llmProject(t, "")
 	for id, enum := range map[string][]string{
-		"llm.mode":     {"claude-cli", "codex-cli", "gemini-cli", "byo-key", "delegation"},
+		"llm.mode":     {"claude-cli", "codex-cli", "gemini-cli", "cursor-cli", "byo-key", "delegation"},
 		"llm.provider": {"anthropic", "openai", "gemini", "openrouter", "compatible"},
 		"llm.model":    nil,
 		"llm.base_url": nil,
