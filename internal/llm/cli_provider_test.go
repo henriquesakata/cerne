@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/henriquesakata/cerne/internal/project"
 )
@@ -196,6 +198,30 @@ func TestExecRunCapturesStdoutOnFailure(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("execRun error = %q, want substring %q", err, want)
 		}
+	}
+}
+
+// TestExecRunFeedsValidUTF8 (B-0005): every CLI provider prompt reaches the
+// child as valid UTF-8, whatever bytes the caller built it from — a source file
+// in Latin-1 or a byte-cut rune made codex exec refuse the whole prompt.
+func TestExecRunFeedsValidUTF8(t *testing.T) {
+	if os.Getenv("GO_WANT_HELPER_PROCESS") == "1" {
+		in, _ := io.ReadAll(os.Stdin)
+		if !utf8.Valid(in) {
+			fmt.Println("INVALID UTF-8 on stdin")
+			os.Exit(1)
+		}
+		fmt.Print("VALID")
+		os.Exit(0)
+	}
+	t.Setenv("GO_WANT_HELPER_PROCESS", "1")
+	out, _, err := execRun(context.Background(), "", os.Args[0],
+		[]string{"-test.run=TestExecRunFeedsValidUTF8$"}, "fonte em latin-1: a\xe7\xe3o, corte no meio: \xc3")
+	if err != nil {
+		t.Fatalf("execRun: %v", err)
+	}
+	if out != "VALID" {
+		t.Fatalf("child stdout = %q, want VALID", out)
 	}
 }
 

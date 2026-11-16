@@ -3,6 +3,7 @@ package importer
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestBuildPlanPromptContainsModelAndSchema(t *testing.T) {
@@ -41,6 +42,20 @@ func TestBuildPlanPromptTruncatesLargeSource(t *testing.T) {
 	prompt := BuildPlanPrompt([]Source{{RelPath: "big.md", Content: big}})
 	if strings.Contains(prompt, "TAILMARKER_SHOULD_BE_CUT") {
 		t.Error("prompt kept content past the cap")
+	}
+	if !strings.Contains(prompt, "[truncated]") {
+		t.Error("prompt missing truncation marker")
+	}
+}
+
+// TestBuildPlanPromptCapKeepsRuneBoundary (B-0005): a pt-BR source whose cap
+// falls inside a multi-byte rune must not leave half of it in the prompt — a
+// strict stdin reader (codex exec) rejects the whole prompt as invalid UTF-8.
+func TestBuildPlanPromptCapKeepsRuneBoundary(t *testing.T) {
+	big := strings.Repeat("a", sourceCap-1) + "ção"
+	prompt := BuildPlanPrompt([]Source{{RelPath: "pt.md", Content: big}})
+	if !utf8.ValidString(prompt) {
+		t.Fatal("prompt is not valid UTF-8: the cap split a rune")
 	}
 	if !strings.Contains(prompt, "[truncated]") {
 		t.Error("prompt missing truncation marker")

@@ -183,7 +183,9 @@ func execRunEnv(ctx context.Context, dir, name string, args []string, stdin stri
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
 	cmd.Env = env
-	cmd.Stdin = strings.NewReader(stdin)
+	// A prompt is built from project files of any encoding; a strict reader
+	// (codex exec) refuses one invalid byte, so coerce here, once, for every CLI (B-0005).
+	cmd.Stdin = strings.NewReader(strings.ToValidUTF8(stdin, "�"))
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

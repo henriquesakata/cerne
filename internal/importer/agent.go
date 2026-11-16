@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/store"
@@ -209,13 +210,19 @@ func BuildPlanPrompt(sources []Source) string {
 	return b.String()
 }
 
-// capContent returns content truncated to sourceCap bytes with a marker when it
-// overflows, so a single large file does not dominate the prompt.
+// capContent returns content truncated to at most sourceCap bytes with a marker
+// when it overflows, so a single large file does not dominate the prompt. The
+// cut backs off to a rune boundary (B-0005): half a multi-byte rune makes the
+// prompt invalid UTF-8, which a strict stdin reader (codex exec) rejects.
 func capContent(content string) string {
 	if len(content) <= sourceCap {
 		return content
 	}
-	return content[:sourceCap] + "\n… [truncated]"
+	cut := sourceCap
+	for cut > 0 && !utf8.RuneStart(content[cut]) {
+		cut--
+	}
+	return content[:cut] + "\n… [truncated]"
 }
 
 // ApplyPlan persists each validated plan item into the backend at repoDir: a
