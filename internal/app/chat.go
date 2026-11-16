@@ -52,7 +52,7 @@ Antes de começar, registre o trabalho: ` + "`cerne feature start <id>`" + ` —
 
 Se a demanda ainda não estiver registrada, recomende registrar antes (handoff sem id sai do board sem rastro) — mas não bloqueie quem insistir: emita o bloco com "não registrada". Para um handoff completo com o contexto já materializado, aponte ` + "`cerne prompt compose <id>`" + ` como rota canônica.
 
-Disciplina de perguntas: pergunte só o necessário, priorizado — alvo de ~3 perguntas por turno, mais quando a demanda genuinamente exigir, nunca interrogatório exaustivo. Nunca pergunte o que os comandos de leitura do cerne já respondem.`
+Disciplina de perguntas: pergunte pelo protocolo de entrevista acima. Nunca pergunte o que os comandos de leitura do cerne já respondem.`
 
 // ChatGauntletMarker heads the Gauntlet protocol block (F-0270). Exported so
 // tests can pin its presence and position the same way the role boundary is.
@@ -115,11 +115,47 @@ var englishGauntlet = strings.NewReplacer(
 	"seção \"Verificação\"", "section \"Verification\"",
 )
 
+// englishInterview swaps the protocol forms an author reads or writes in the
+// interview block; the prose around them stays Portuguese like the rest of
+// the prompt (N-0068 debt, N-0087).
+var englishInterview = strings.NewReplacer(
+	"Assumi:", "Assumed:",
+	"Árvore: <n> resolvidas · <n> abertas · <n> suposições", "Tree: <n> resolved · <n> open · <n> assumptions",
+	"propõe já", "propose now",
+	"[ESCLARECER:", "[CLARIFY:",
+)
+
+// chatInterviewProtocolIn returns the interview block with the forms in l.
+func chatInterviewProtocolIn(l doclang.Lang) string {
+	if l != doclang.EN {
+		return chatInterviewProtocol
+	}
+	return englishInterview.Replace(chatInterviewProtocol)
+}
+
 // chatProposalFence is the fenced-block info string the system prompt tells
 // the model to use when it is ready to propose a candidate — the UI (and any
 // future Go-side consumer) detects it the same way SanitizeMermaid/
 // extractFencedBlock detect a ```mermaid block in diagram.go.
 const chatProposalFence = "cerne-proposta"
+
+// ChatInterviewMarker heads the interview protocol (F-0443). Exported so the
+// tests can locate the block, like ChatGauntletMarker.
+const ChatInterviewMarker = "PROTOCOLO DE ENTREVISTA"
+
+// chatInterviewProtocol is the conduction block's decision-tree interview.
+const chatInterviewProtocol = ChatInterviewMarker + `
+- Situe a demanda no roster acima: se ela sobrepõe uma feature viva, aponte a sobreposição citando os ids e pergunte se é ajuste da existente ou feature nova.
+- Quando houver mais de um caminho viável, apresente 1–2 abordagens com trade-offs no nível de spec (nunca código) antes de emitir o bloco de proposta.
+- Mapeie as decisões que a spec precisa, e o mapa inclui sempre: (a) quem é afetado ou recebe e quem fica de fora; (b) o gatilho; (c) por caminho, as bordas: dado ausente, item concluído ou cancelado, repetição ou recorrência, dado que muda depois; (d) como a pessoa controla ou desliga; (e) o que fica FORA do escopo, perguntado ao humano, nunca suposto; (f) a barra.
+- Pergunte em rodadas só a fronteira: as decisões cujas dependências já estão resolvidas. Nunca ponha na mesma rodada uma pergunta que depende da resposta de outra ainda aberta.
+- Só vira pergunta a decisão cuja resposta muda um critério de aceitação, o escopo ou a barra. As de baixo impacto entram numa lista "Assumi:" no fim da rodada, um item por linha, que o humano derruba numa linha. Um fato que os comandos de leitura do cerne ou o código respondem nunca é pergunta.
+- Limite duro do "Assumi:": decisão que muda QUEM é afetado ou recebe, O QUE o usuário controla (aceitar ou recusar, preferências), um critério de aceitação, o escopo ou a barra NUNCA é suposição, mesmo que custe mais rodadas: é pergunta. "Assumi:" é só para detalhe de baixo impacto, de que nenhum critério depende. Exemplos que são pergunta: "só o responsável recebe o lembrete", "a preferência de canal existente vale aqui", "tarefas recorrentes ficam fora". Exemplos que podem ser "Assumi:": o formato do texto do lembrete, o nome interno de um campo, o horário padrão quando nenhum critério o fixa.
+- "0 abertas" só vale quando cada item (a) a (f) do mapa foi respondido pelo humano ou é um "Assumi:" de baixo impacto pelo limite acima; ramo não visitado é decisão aberta.
+- Cada rodada tem no máximo 3 perguntas, as de maior impacto da fronteira; o resto da fronteira fica para a rodada seguinte. Faça cada uma pelo bloco ` + chatQuestionFence + ` (contrato abaixo), com a sua recomendação numa das opções, redigida para que "sim" aceite a recomendação.
+- Termine cada rodada com a linha de progresso: "Árvore: <n> resolvidas · <n> abertas · <n> suposições".
+- Só proponha quando problema, objetivo e critérios de aceitação testáveis fecharem e não houver decisão aberta (salvo o "propõe já"): NÃO emita ` + chatProposalFence + ` antes disso. Se o humano pedir para propor já ("propõe já"), emita na hora, com as abertas como marcador de esclarecimento ([ESCLARECER: pergunta]). Quando a árvore esvaziar, resuma as decisões tomadas e as suposições e peça a confirmação numa linha: o turno TERMINA no resumo e na pergunta de confirmação numa linha, sem ` + chatProposalFence + `; o bloco só sai no turno seguinte, depois que o humano confirmar ou corrigir.
+- Nenhum item de "Assumi:" contradiz ou substitui o que o humano respondeu. Antes do resumo, confira que toda resposta do humano aparece no rascunho da spec (como critério, comportamento ou fora de escopo); uma resposta sem lugar na spec vira pergunta, não descarte silencioso.`
 
 // chatQuestionFence is the fourth fenced block (F-0437): a product question
 // the UI draws as an option card with one recommended option.
@@ -278,10 +314,8 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config, channel 
 	// situate it in the roster (conversational mirror of the F-0147 duplicate
 	// guard) and offer paths before proposing.
 	b.WriteString("Conduza a elaboração: entenda o problema real, não apenas a solução pedida.\n")
-	b.WriteString("- Situe a demanda no roster acima: se ela sobrepõe uma feature viva, aponte a sobreposição citando os ids e pergunte se é ajuste da existente ou feature nova.\n")
-	b.WriteString("- Quando houver mais de um caminho viável, apresente 1–2 abordagens com trade-offs no nível de spec (nunca código) antes de emitir o bloco de proposta.\n")
-	b.WriteString("- Faça suas perguntas de decisão de produto pelo bloco " + chatQuestionFence + " (contrato abaixo), com a sua recomendação em uma das opções.\n")
-	b.WriteString("- Quando problema, objetivo e critérios de aceitação testáveis fecharem — e SOMENTE então — proponha a candidata.\n\n")
+	b.WriteString(chatInterviewProtocolIn(l))
+	b.WriteString("\n\n")
 
 	// F-0270: the bar question is part of conduction, so it comes right after
 	// it — and before the role boundary, which keeps the last word on role.

@@ -1299,3 +1299,71 @@ func TestStripTurnDirLongestFirst(t *testing.T) {
 		}
 	}
 }
+
+// TestAgentClaudeGetsModelAndEffort (B-0007): the composer's model and effort
+// reach the agentic `claude -p` as --model/--effort; none chosen → no flag; a
+// value that is not a bare word never reaches the argv.
+func TestAgentClaudeGetsModelAndEffort(t *testing.T) {
+	for _, tc := range []struct {
+		name, provider, model, effort string
+		want, absent                  []string
+	}{
+		{"both", "anthropic", "claude-haiku-5-5", "high", []string{"--model", "claude-haiku-5-5", "--effort", "high"}, nil},
+		{"alias", "", "opus", "max", []string{"--model", "opus", "--effort", "max"}, nil},
+		{"none", "anthropic", "", "", nil, []string{"--model", "--effort"}},
+		{"dash model", "anthropic", "-x", "low", []string{"--effort", "low"}, []string{"--model", "-x"}},
+		{"dash effort", "anthropic", "claude-haiku-5-5", "--x", []string{"--model", "claude-haiku-5-5"}, []string{"--effort", "--x"}},
+		{"unknown effort", "anthropic", "", "turbo", nil, []string{"--effort", "turbo"}},
+		{"openai provider", "openai", "claude-haiku-5-5", "high", nil, []string{"--model", "--effort"}},
+		{"google provider", "google", "gemini-x", "low", nil, []string{"--model", "--effort"}},
+		{"leftover non-claude model", "", "gpt-4o", "", nil, []string{"--model", "gpt-4o"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var got []string
+			fake := func(_ context.Context, _, _ string, args []string, _ string) (string, string, error) {
+				got = args
+				return "ok", "", nil
+			}
+			prov, err := NewAgentProvider(project.LLMConfig{Mode: "claude-cli", Provider: tc.provider, Model: tc.model, Effort: tc.effort}, "/proj", false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			prov.(*cliProvider).run = fake
+			if _, err := prov.Complete(context.Background(), "q"); err != nil {
+				t.Fatal(err)
+			}
+			joined := " " + strings.Join(got, " ") + " "
+			for _, w := range tc.want {
+				if !strings.Contains(joined, " "+w+" ") {
+					t.Errorf("argv %v lacks %q", got, w)
+				}
+			}
+			for _, a := range tc.absent {
+				if strings.Contains(joined, " "+a+" ") {
+					t.Errorf("argv %v must not carry %q", got, a)
+				}
+			}
+		})
+	}
+}
+
+// TestOneShotClaudeNeverGetsModelOrEffort (B-0007): ask/compile/drafts keep the
+// isolated one-shot argv even when a model and effort are configured.
+func TestOneShotClaudeNeverGetsModelOrEffort(t *testing.T) {
+	var got []string
+	prov, err := NewProvider(project.LLMConfig{Mode: "claude-cli", Provider: "anthropic", Model: "claude-haiku-5-5", Effort: "high"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prov.(*cliProvider).run = func(_ context.Context, _, _ string, args []string, _ string) (string, string, error) {
+		got = args
+		return "ok", "", nil
+	}
+	if _, err := prov.Complete(context.Background(), "q"); err != nil {
+		t.Fatal(err)
+	}
+	joined := " " + strings.Join(got, " ") + " "
+	if strings.Contains(joined, " --model ") || strings.Contains(joined, " --effort ") || !strings.Contains(joined, " --safe-mode ") {
+		t.Fatalf("one-shot argv = %v", got)
+	}
+}

@@ -228,8 +228,8 @@ func cliProduct(bin string) string {
 // byte, used by ask/compile/diagram.
 type cliProvider struct {
 	kind        string // ModeClaudeCLI (also ""), ModeCodexCLI, ModeGeminiCLI or ModeCursorCLI
-	model       string // -m for codex/gemini; never forced on claude
-	effort      string // codex model_reasoning_effort for one chat turn (B-0006)
+	model       string // -m for codex/gemini; --model on the claude chat turn only (B-0007)
+	effort      string // codex model_reasoning_effort / claude --effort for one chat turn (B-0006, B-0007)
 	bin         string
 	run         runner
 	dir         string   // working directory for the CLI (project root in agentic mode)
@@ -241,6 +241,10 @@ type cliProvider struct {
 // AnsweredModel is the model the CLI itself reported for the last turn, "" when
 // it reported none (F-0440): what the chat shows as the model that really ran.
 func (p *cliProvider) AnsweredModel() string { return p.answered }
+
+// AnsweredEffort is the effort the CLI is given on its argv, "" when none was
+// valid (B-0007): what the chat may truthfully report.
+func (p *cliProvider) AnsweredEffort() string { return p.effort }
 
 // claudeJSON is the part of `claude -p --output-format json` cerne reads.
 type claudeJSON struct {
@@ -314,8 +318,8 @@ func isUnknownFlag(err error) bool {
 // them as an argument fails with "The filename or extension is too long".
 // `claude -p` reads the prompt from stdin when no positional prompt is given.
 // It deliberately omits --bare (which would ignore the subscription token and
-// require an API key) and --model (which would force a model possibly
-// unavailable on the plan). Any failure becomes an actionable ErrClaudeCLI.
+// require an API key). --model/--effort go only on the agentic chat turn, from
+// the composer (B-0007); the one-shot never forces a model. Any failure becomes an actionable ErrClaudeCLI.
 //
 // In agentic mode (agentTools set, F-0224) the allowlist travels as one
 // comma-joined --allowedTools argument; otherwise the call is isolated with
@@ -340,6 +344,12 @@ func (p *cliProvider) Complete(ctx context.Context, prompt string) (string, erro
 		args = append(args, "--allowedTools", strings.Join(p.agentTools, ","))
 		if len(p.deniedTools) > 0 {
 			args = append(args, "--disallowedTools", strings.Join(p.deniedTools, ","))
+		}
+		if p.model != "" {
+			args = append(args, "--model", p.model)
+		}
+		if p.effort != "" {
+			args = append(args, "--effort", p.effort)
 		}
 	} else {
 		args = append(args, oneShotIsolation...)
@@ -483,6 +493,14 @@ func stripTurnDir(reply string, dirs ...string) string {
 
 // authErrorRE recognizes a CLI error that a login fixes.
 var authErrorRE = regexp.MustCompile(`(?i)401|unauthori|log(ged)? ?in|sign(ed)? ?in|not authenticated|auth`)
+
+// claudeModelRE is a claude model id or alias (claude-<family>-<version>, opus,
+// sonnet[1m]): a leftover id of another vendor (<other-vendor-model>) or a leading dash never
+// reaches `--model` (B-0007).
+var claudeModelRE = regexp.MustCompile(`^(claude-[A-Za-z0-9._-]+|opus|sonnet|haiku)(\[[0-9a-z]+\])?$`)
+
+// claudeEfforts are the levels `claude --effort` accepts (claude --help).
+var claudeEfforts = []string{"low", "medium", "high", "xhigh", "max"}
 
 // effortRE is the shape of a reasoning effort level (low, medium, xhigh…).
 var effortRE = regexp.MustCompile(`^[a-z]+$`)

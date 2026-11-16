@@ -27,7 +27,8 @@ type KindStats struct {
 // Stats is the context-savings metric (F-0127): how much documentation the
 // backend holds vs how much the .docs/ projection makes an agent actually
 // read. Token figures are a bytes/4 estimate (~4 chars per token), not a real
-// tokenizer count.
+// tokenizer count. Only entity documents count: the generated CONTEXT.md is
+// outside both sides (F-0127), and it grows with the feature roster.
 type Stats struct {
 	Kinds            map[string]KindStats `json:"kinds"`
 	TotalCount       int                  `json:"total_count"`
