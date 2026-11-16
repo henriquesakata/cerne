@@ -2,8 +2,10 @@ package app
 
 import (
 	"errors"
+	"github.com/henriquesakata/cerne/internal/clarify"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -791,9 +793,12 @@ func TestBuildChatSystemPrompt_EnglishSections(t *testing.T) {
 			t.Errorf("prompt lacks the English section %q", s)
 		}
 	}
+	// The handoff block is another artifact (a brief for a code agent), with
+	// its own Portuguese labels: out of this feature's scope.
+	rest := regexp.MustCompile("(?s)```handoff.*?\n```").ReplaceAllString(prompt, "")
 	for _, s := range doclang.Sections(doclang.Spec, doclang.PT) {
-		if strings.Contains(prompt, "## "+s+"\n") {
-			t.Errorf("prompt still lists the Portuguese section %q", s)
+		if strings.Contains(rest, s) {
+			t.Errorf("prompt still names the Portuguese section %q", s)
 		}
 	}
 }
@@ -806,7 +811,7 @@ func TestBuildChatSystemPrompt_EnglishProtocolForms(t *testing.T) {
 			t.Errorf("prompt lacks %q", want)
 		}
 	}
-	for _, bad := range []string{"[ESCLARECER:", "Barra:", "Método:", "Saída:", "não aplicável", "dispensada por decisão humana", "Pergunta ao juiz"} {
+	for _, bad := range []string{"[ESCLARECER:", "Barra:", "Método:", "Saída:", "não aplicável", "dispensada por decisão humana", "Pergunta ao juiz", "padrão alternativo", "Barra de elite", "O SISTEMA DEVE", "pergunta específica"} {
 		if strings.Contains(prompt, bad) {
 			t.Errorf("prompt still carries the Portuguese form %q", bad)
 		}
@@ -815,7 +820,81 @@ func TestBuildChatSystemPrompt_EnglishProtocolForms(t *testing.T) {
 
 // TestBuildChatSystemPrompt_EnglishDirective (F-0433 crit. 4).
 func TestBuildChatSystemPrompt_EnglishDirective(t *testing.T) {
-	if !strings.Contains(englishChatPrompt(t), "this project's documentation is in English. Write the WHOLE document in English") {
+	if !strings.Contains(englishChatPrompt(t), chatEnglishDirective) {
 		t.Error("prompt lacks the English document directive")
+	}
+}
+
+// TestChatEnglishExamplesRoundTrip (F-0433 crit. 2): the English example lines
+// the prompt teaches are read by the real readers as what they claim to be.
+func TestChatEnglishExamplesRoundTrip(t *testing.T) {
+	prompt := englishChatPrompt(t)
+	fill := regexp.MustCompile(`<[^>]*>`)
+	var bars []string
+	for _, m := range regexp.MustCompile(`"(Bar: [^"\n]*)"`).FindAllStringSubmatch(prompt, -1) {
+		if m[1] == "Bar: not applicable" { // the bare label named in prose, not a line to write
+			continue
+		}
+		bars = append(bars, fill.ReplaceAllString(m[1], "something concrete"))
+	}
+	if len(bars) < 3 {
+		t.Fatalf("want the example bar and both exemptions quoted in the prompt, got %q", bars)
+	}
+	for _, bar := range bars {
+		body := []byte("# t\n\n## Verification\n\n" + bar + "\n")
+		got, err := doccheck.SpecBarIn(body, doclang.EN)
+		if err != nil || !strings.HasPrefix(got, "Bar:") {
+			t.Errorf("%q is not read as an English bar: %q, %v", bar, got, err)
+		}
+	}
+	if !strings.Contains(prompt, "Question for the judge: <") {
+		t.Fatal("prompt does not show the judge-question line")
+	}
+	jq := "Question for the judge: Which proposal would you ship?"
+	body := []byte("# t\n\n## Verification\n\nBar: Kiro spec mode — kiro.dev/docs/specs\n" + jq + "\n")
+	if q, err := doccheck.SpecJudgeQuestion(body); err != nil || q == "" {
+		t.Errorf("judge question not recognized: %q, %v", q, err)
+	}
+	marker := doclang.AmbiguityMarker(doclang.EN)
+	if !strings.Contains(prompt, "\""+marker+" specific question]\"") {
+		t.Errorf("prompt does not teach %q specific question]", marker)
+	}
+	if open := clarify.Open("x " + marker + " Which currency?] y"); len(open) != 1 {
+		t.Errorf("clarification marker not read: %v", open)
+	}
+}
+
+// TestChatSectionIndexes (F-0433): the named section indexes point at the
+// sections they claim in both languages.
+func TestChatSectionIndexes(t *testing.T) {
+	for _, l := range doclang.Langs() {
+		s := doclang.Sections(doclang.Spec, l)
+		if !doclang.IsSection(doclang.Spec, secProblem, s[secProblem]) || !doclang.IsSection(doclang.Spec, secDesign, s[secDesign]) ||
+			!doclang.IsVerificationSection(s[secVerification]) || !doclang.IsSection(doclang.Spec, secExecution, s[secExecution]) {
+			t.Errorf("%s: section indexes drifted: %q", l, s)
+		}
+	}
+}
+
+// TestBuildChatSystemPrompt_PortugueseNoChannelUnchanged (F-0433 crit. 3):
+// the no-channel pt-BR prompt, byte for byte.
+func TestBuildChatSystemPrompt_PortugueseNoChannelUnchanged(t *testing.T) {
+	repoDir, projDir := chatFixture(t)
+	prompt, err := BuildChatSystemPrompt(repoDir, projDir, project.Config{}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const golden = "testdata/chat_prompt_pt_nochannel.golden"
+	if os.Getenv("CHAT_GOLDEN_UPDATE") == "1" {
+		if err := os.WriteFile(golden, []byte(prompt), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want, err := os.ReadFile(golden)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prompt != string(want) {
+		t.Error("the pt-BR no-channel chat prompt differs from the golden")
 	}
 }

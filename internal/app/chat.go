@@ -216,7 +216,7 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config, channel 
 		// F-0258: reading code to specify is not implementing — the role
 		// boundary below still forbids emitting code, diffs or step-by-step
 		// implementation plans.
-		b.WriteString("Você também pode LER o código do projeto (ferramentas Read, Grep e Glob) para fundamentar as seções " + sections[0] + " e " + sections[3] + " em arquivos reais — assinaturas, contratos e nomes verificados, nunca supostos. ")
+		b.WriteString("Você também pode LER o código do projeto (ferramentas Read, Grep e Glob) para fundamentar as seções " + sections[secProblem] + " e " + sections[secDesign] + " em arquivos reais — assinaturas, contratos e nomes verificados, nunca supostos. ")
 		b.WriteString("Ao final da resposta, cite os ids que consultou (ex.: \"Consultei: F-0132, D-0007\") e os arquivos que leu no formato caminho:linha (ex.: \"internal/app/chat.go:131\"); se não consultou nada, não invente citações. ")
 		// F-0267: this sentence used to deny writing outright — true under
 		// F-0224, false since F-0260/F-0265. The denial won over the contract
@@ -275,13 +275,19 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config, channel 
 		b.WriteString("## " + s + "\n")
 	}
 	b.WriteString("````\n\n")
-	b.WriteString("Preencha de verdade a seção \"Execução recomendada (agente)\" (capacidade de modelo sugerida + tarefas a manter juntas/separáveis) — não deixe placeholder. ")
-	b.WriteString("Critérios de aceitação numerados e testáveis; para comportamento, use EARS: \"QUANDO <condição> O SISTEMA DEVE <comportamento>\". ")
-	b.WriteString("Marque qualquer incerteza com \"" + doclang.AmbiguityMarker(l) + " pergunta específica]\" em vez de supor. ")
+	if l == doclang.EN {
+		b.WriteString("Really fill in the \"" + sections[secExecution] + "\" section (suggested model capability + tasks to keep together/separable) — leave no placeholder. ")
+		b.WriteString("Numbered, testable acceptance criteria; for behaviour use EARS: \"WHEN <condition> THE SYSTEM SHALL <behaviour>\". ")
+		b.WriteString("Mark any uncertainty with \"" + doclang.AmbiguityMarker(l) + " specific question]\" instead of guessing. ")
+	} else {
+		b.WriteString("Preencha de verdade a seção \"Execução recomendada (agente)\" (capacidade de modelo sugerida + tarefas a manter juntas/separáveis) — não deixe placeholder. ")
+		b.WriteString("Critérios de aceitação numerados e testáveis; para comportamento, use EARS: \"QUANDO <condição> O SISTEMA DEVE <comportamento>\". ")
+		b.WriteString("Marque qualquer incerteza com \"" + doclang.AmbiguityMarker(l) + " pergunta específica]\" em vez de supor. ")
+	}
 	// F-0270: the fill instruction lives here, next to the template the model
 	// actually completes — the protocol block above explains, this line binds.
 	if l == doclang.EN {
-		b.WriteString("In the \"" + sections[4] + "\" section, include the lines of the " + ChatGauntletMarker + " — Bar/Method/Exit, or one of the two recorded exemptions; a proposal without them is incomplete. Optionally add a line \"Question for the judge: <the question the blind judge answers>\" under the bar. ")
+		b.WriteString("In the \"" + sections[secVerification] + "\" section, include the lines of the " + ChatGauntletMarker + " — Bar/Method/Exit, or one of the two recorded exemptions; a proposal without them is incomplete. Optionally add a line \"Question for the judge: <the question the blind judge answers>\" under the bar. ")
 	} else {
 		b.WriteString("Na seção \"Verificação\", inclua as linhas do " + ChatGauntletMarker + " — Barra/Método/Saída, ou uma das duas dispensas registradas; proposta sem isso está incompleta. ")
 	}
@@ -488,3 +494,11 @@ func BuildChatPrompt(system string, messages []ChatMessage) string {
 	b.WriteString("Agente:")
 	return b.String()
 }
+
+// Indexes into doclang.Sections(doclang.Spec, l); TestChatSectionIndexes pins them.
+const (
+	secProblem      = 0
+	secDesign       = 3
+	secVerification = 4
+	secExecution    = 5
+)
