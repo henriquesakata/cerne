@@ -58,7 +58,7 @@ func newHookInstallCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
-	cmd.Flags().StringSliceVar(&providers, "provider", nil, "providers to install (claude|cursor|codex|gemini); default: claude plus any auto-detected by config dir")
+	cmd.Flags().StringSliceVar(&providers, "provider", nil, "providers to install (claude|cursor|codex|gemini|copilot); default: claude plus any auto-detected by config dir")
 	return cmd
 }
 

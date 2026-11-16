@@ -272,3 +272,6 @@ func ensureLineFile(path, asset, marker, content string, appendable bool) Result
 	}
 	return Result{Asset: asset, Status: StatusCreated}
 }
+
+// installCopilot is filled in by the hooks file task (F-0444).
+func installCopilot(projDir string) []Result { return nil }

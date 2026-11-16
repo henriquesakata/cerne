@@ -95,10 +95,11 @@ type Result struct {
 type Provider string
 
 const (
-	ProviderClaude Provider = "claude"
-	ProviderCursor Provider = "cursor"
-	ProviderCodex  Provider = "codex"
-	ProviderGemini Provider = "gemini"
+	ProviderClaude  Provider = "claude"
+	ProviderCursor  Provider = "cursor"
+	ProviderCodex   Provider = "codex"
+	ProviderGemini  Provider = "gemini"
+	ProviderCopilot Provider = "copilot"
 )
 
 // providerDir maps a provider to the project directory whose presence
@@ -107,7 +108,13 @@ var providerDir = map[Provider]string{
 	ProviderCursor: ".cursor",
 	ProviderCodex:  ".codex",
 	ProviderGemini: ".gemini",
+	// Copilot lives in .github, which every repo has for Actions: detection
+	// goes by its own files instead (copilotMarkers).
+	ProviderCopilot: ".github",
 }
+
+// copilotMarkers are the .github entries that mean the project uses Copilot.
+var copilotMarkers = []string{"copilot-instructions.md", "hooks", "skills", "agents"}
 
 // ConfigDir is the project directory whose presence detects a non-Claude
 // provider ("" for Claude Code or an unknown name).
@@ -120,6 +127,12 @@ func DetectProviders(projDir string) []Provider {
 	for _, p := range []Provider{ProviderCursor, ProviderCodex, ProviderGemini} {
 		if fi, err := os.Stat(filepath.Join(projDir, providerDir[p])); err == nil && fi.IsDir() {
 			found = append(found, p)
+		}
+	}
+	for _, m := range copilotMarkers {
+		if _, err := os.Stat(filepath.Join(projDir, ".github", m)); err == nil {
+			found = append(found, ProviderCopilot)
+			break
 		}
 	}
 	return found
@@ -153,6 +166,8 @@ func Install(projDir string, providers ...Provider) ([]Result, error) {
 			rs = installCodex(projDir)
 		case ProviderGemini:
 			rs = installGemini(projDir)
+		case ProviderCopilot:
+			rs = installCopilot(projDir)
 		default:
 			return nil, fmt.Errorf("%w: %q", ErrUnknownProvider, p)
 		}
