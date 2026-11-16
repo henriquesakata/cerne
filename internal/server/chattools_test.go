@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/doccheck"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/llm"
 	"github.com/henriquesakata/cerne/internal/project"
@@ -784,5 +785,23 @@ func TestChatConfirmationIsSingleUse(t *testing.T) {
 	rec := doJSON(t, h, http.MethodPost, "/api/chat", confirmedBody, &got)
 	if rec.Code != http.StatusUnprocessableEntity || got.Code != "confirmation_required" || calls != 1 {
 		t.Fatalf("replay = %d %+v (calls %d), want 422 confirmation_required and one run", rec.Code, got, calls)
+	}
+}
+
+// TestChatToolTurn_ProposalIssues (F-0438 crit. 3): the confirmed tool-channel
+// turn checks a proposal block in its reply too.
+func TestChatToolTurn_ProposalIssues(t *testing.T) {
+	h, _, _, _ := toolTurnSetup(t, scripted(`{"verb":"reference new","args":["T","--url","https://example.com"]}`, proposalReply("## Problema\n\ntexto\n")))
+	setRunVerb(t, func(context.Context, *cobra.Command, verbs.Call, verbs.Env) verbs.Result {
+		return verbs.Result{OK: true, ID: "R-0099"}
+	})
+	var got struct {
+		ProposalIssues []doccheck.Issue `json:"proposal_issues"`
+	}
+	if rec := doJSON(t, h, http.MethodPost, "/api/chat", confirmedBody, &got); rec.Code != http.StatusOK {
+		t.Fatal(rec.Body.String())
+	}
+	if len(got.ProposalIssues) == 0 || got.ProposalIssues[0].Code != "incomplete-spec" {
+		t.Fatalf("issues = %+v", got.ProposalIssues)
 	}
 }

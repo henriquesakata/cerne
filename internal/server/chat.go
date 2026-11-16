@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -139,6 +140,9 @@ type chatResponse struct {
 	// Context (F-0436) lists the sources the server injected into this turn,
 	// without their text — what the UI shows under the reply.
 	Context []app.TurnSource `json:"context,omitempty"`
+	// ProposalIssues (F-0438) is what the cerne-proposta block of this reply
+	// still lacks, by the one spec-body check; the UI lists it on the card.
+	ProposalIssues []doccheck.Issue `json:"proposal_issues,omitempty"`
 }
 
 // handleChat answers one turn of the Backlog domain-agent chat (F-0210): the
@@ -251,6 +255,12 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 	defer cancel()
 	prompt := app.BuildChatPrompt(sysPrompt, msgs)
 
+	// F-0438: the proposal block, if any, is checked once the reply is whole —
+	// by the same check the approve and the lint run. Never corrected here.
+	check := func(reply string) []doccheck.Issue {
+		return proposalIssues(reply, store.DocsLanguage(repoDir), !cfg.Gates.GauntletEnabled())
+	}
+
 	// F-0323: the confirmed turn of a function-calling provider executes
 	// through the verb catalog — and only it is offered the tool. Single-shot
 	// (the turn is short, and its terminal line is a valid one-event stream).
@@ -269,7 +279,7 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 		}
 		// C5: a confirmed turn that executed nothing says so — never a silent
 		// success, whatever the reply claims.
-		writeChatLine(w, http.StatusOK, chatResponse{Answered: true, Reply: reply, Runs: runs, NoRuns: len(runs) == 0, Truncated: truncated, Context: injected})
+		writeChatLine(w, http.StatusOK, chatResponse{Answered: true, Reply: reply, Runs: runs, NoRuns: len(runs) == 0, Truncated: truncated, Context: injected, ProposalIssues: check(reply)})
 		return
 	}
 
@@ -280,7 +290,7 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 	// client never needs to know which path ran.
 	if streamer, ok := prov.(llm.Streamer); ok {
 		if flusher, ok := w.(http.Flusher); ok {
-			streamChatReply(ctx, w, flusher, streamer, prompt, !channel, injected)
+			streamChatReply(ctx, w, flusher, streamer, prompt, !channel, injected, check)
 			return
 		}
 	}
@@ -289,7 +299,7 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	writeChatLine(w, http.StatusOK, chatResponse{Answered: true, Reply: reply, NoExec: !channel, Context: injected})
+	writeChatLine(w, http.StatusOK, chatResponse{Answered: true, Reply: reply, NoExec: !channel, Context: injected, ProposalIssues: check(reply)})
 }
 
 // lastUserMessage is the retrieval query for the turn (F-0253): the message
@@ -322,7 +332,7 @@ func writeChatLine(w http.ResponseWriter, status int, v any) {
 // {"error":...} when the stream broke after output already went out (the
 // partial the client holds stays valid; F-0240 criterion 8). An error before
 // any delta still becomes the plain 500 JSON of the single-shot path.
-func streamChatReply(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, streamer llm.Streamer, prompt string, noExec bool, injected []app.TurnSource) {
+func streamChatReply(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, streamer llm.Streamer, prompt string, noExec bool, injected []app.TurnSource, check func(string) []doccheck.Issue) {
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	enc := json.NewEncoder(w)
 	wrote := false
@@ -343,7 +353,7 @@ func streamChatReply(ctx context.Context, w http.ResponseWriter, flusher http.Fl
 		flusher.Flush()
 		return
 	}
-	_ = enc.Encode(chatResponse{Answered: true, Reply: reply, NoExec: noExec, Context: injected})
+	_ = enc.Encode(chatResponse{Answered: true, Reply: reply, NoExec: noExec, Context: injected, ProposalIssues: check(reply)})
 	flusher.Flush()
 }
 
@@ -592,4 +602,33 @@ func handleChatNote(w http.ResponseWriter, r *http.Request, repoDir, projDir str
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]store.Note{"note": n})
+}
+
+var proposalOpenRe = regexp.MustCompile("(`{3,})cerne-proposta")
+
+// proposalIssues runs doccheck.CheckSpecBody on the spec body of the reply's
+// LAST cerne-proposta block — the UI shows the latest revision (F-0438); nil
+// when there is none. An unclosed block is an issue, not a clean pass. The
+// fence rule is F-0435's: the block closes on the first bare line of at least
+// as many backticks as opened it, so a three-backtick code block inside a
+// four-backtick proposal does not cut it short.
+func proposalIssues(reply string, lang doclang.Lang, light bool) []doccheck.Issue {
+	reply = strings.ReplaceAll(reply, "\r\n", "\n")
+	all := proposalOpenRe.FindAllStringSubmatchIndex(reply, -1)
+	if len(all) == 0 {
+		return nil
+	}
+	m := all[len(all)-1]
+	unclosed := []doccheck.Issue{{Code: doccheck.IssueUnclosed, Severity: doccheck.SeverityError, Detail: "the proposal block was never closed"}}
+	nl := strings.IndexByte(reply[m[0]:], '\n')
+	if nl < 0 {
+		return unclosed
+	}
+	rest := reply[m[0]+nl+1:]
+	closer := regexp.MustCompile("(?m)^ {0,3}`{" + strconv.Itoa(m[3]-m[2]) + ",}[ \\t]*$")
+	c := closer.FindStringIndex(rest)
+	if c == nil {
+		return unclosed
+	}
+	return doccheck.CheckSpecBody([]byte(doccheck.ProposalSpecBody(rest[:c[0]])), lang, light)
 }

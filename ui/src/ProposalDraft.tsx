@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import type { ProposalIssue } from './api'
 import type { ParsedProposal } from './BacklogChat'
 import { lineDiff } from './lineDiff'
 import Markdown from './Markdown'
@@ -38,6 +39,11 @@ type Props = {
   // missing (F-0435): the sections the server refused the registration for —
   // shown in the card while the conversation stays open for a re-emit.
   missing?: string[]
+  // issues (F-0438): what the server's spec check found in this proposal;
+  // listed in the same block as `missing`, with a button that sends them back
+  // to the agent as the next user turn.
+  issues?: ProposalIssue[]
+  onAskFix?: (text: string) => void
   onRegister: (proposal: ParsedProposal) => void
   onQuote: (quote: string) => void
 }
@@ -48,6 +54,8 @@ export default function ProposalDraft({
   refining = false,
   approvedTarget = false,
   missing = [],
+  issues = [],
+  onAskFix,
   onRegister,
   onQuote,
 }: Props) {
@@ -55,6 +63,10 @@ export default function ProposalDraft({
   const [showDiff, setShowDiff] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const { t } = useT()
+  const errors = issues.filter((i) => i.severity === 'error')
+  const warnings = issues.filter((i) => i.severity !== 'error')
+  // Section names and localized text by code; the raw detail stays for the agent turn.
+  const issueLines = (i: ProposalIssue) => (i.missing?.length ? i.missing : [t.proposalDraft.issueLabels[i.code] ?? i.detail])
 
   // Revisão nova chega selecionada: é ela que o usuário acabou de pedir. E
   // chega em DIFF quando há versão anterior — a spec repetida inteira a cada
@@ -163,12 +175,27 @@ export default function ProposalDraft({
           </QuoteComment>
 
           {stale && <p className="proposal-draft-stale">{t.proposalDraft.stale(revisions.length)}</p>}
-          {missing.length > 0 && (
+          {(missing.length > 0 || errors.length > 0) && (
             <div role="alert" className="form-error proposal-draft-missing">
-              <p>{t.proposalDraft.missingSections}</p>
+              <p>{missing.length > 0 ? t.proposalDraft.missingSections : t.proposalDraft.issuesHeading}</p>
               <ul>
-                {missing.map((m) => (
-                  <li key={m}>{m}</li>
+                {[...missing, ...errors.flatMap((i) => issueLines(i))].map((m, n) => (
+                  <li key={`${n}-${m}`}>{m}</li>
+                ))}
+              </ul>
+              {errors.length > 0 && onAskFix && (
+                <button type="button" onClick={() => onAskFix(t.proposalDraft.fixRequest(issues.map((i) => `- ${i.detail}`).join('\n')))}>
+                  {t.proposalDraft.askFix}
+                </button>
+              )}
+            </div>
+          )}
+          {warnings.length > 0 && (
+            <div className="proposal-draft-note">
+              <p>{t.proposalDraft.warningsNote}</p>
+              <ul>
+                {warnings.map((w, n) => (
+                  <li key={`${n}-${w.detail}`}>{w.detail}</li>
                 ))}
               </ul>
             </div>

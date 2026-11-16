@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/doccheck"
 	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/llm"
 	"github.com/henriquesakata/cerne/internal/spectmpl"
@@ -23,6 +25,7 @@ func newSpecCmd() *cobra.Command {
 	}
 	cmd.AddCommand(newSpecDraftCmd())
 	cmd.AddCommand(newSpecDiagramCmd())
+	cmd.AddCommand(newSpecCheckCmd())
 	return cmd
 }
 
@@ -155,4 +158,73 @@ func BuildSpecDraftPrompt(f store.Feature, currentContent string) string {
 	b.WriteString("Use o título e o módulo acima como contexto. Não inclua frontmatter (o cerne carimba o cerne_id). ")
 	b.WriteString(app.DraftOutputContract + "\n")
 	return b.String()
+}
+
+var errSpecCheckFailed = errors.New("the spec has errors")
+
+func newSpecCheckCmd() *cobra.Command {
+	var dir, file string
+	var asJSON bool
+	cmd := &cobra.Command{
+		Use:   "check",
+		Short: "Check a draft spec body without writing anything",
+		Long: "Reads a spec body (--file or stdin) and lists what the approve would flag: " +
+			"missing template sections, a missing or malformed Gauntlet bar line (skipped in light mode) " +
+			"and open clarifications (warnings). Exits 1 on an error, 0 otherwise.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			err := runSpecCheck(cmd, dir, file, asJSON)
+			if asJSON && err != nil && !errors.Is(err, errSpecCheckFailed) {
+				data, _ := json.Marshal(map[string]string{"error": err.Error()})
+				fmt.Fprintln(cmd.OutOrStdout(), string(data))
+			}
+			return err
+		},
+	}
+	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
+	_ = cmd.Flags().MarkHidden("dir")
+	cmd.Flags().StringVar(&file, "file", "", "file with the spec body (defaults to stdin)")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "print the issues as JSON")
+	return cmd
+}
+
+func runSpecCheck(cmd *cobra.Command, dir, file string, asJSON bool) error {
+	body, err := readOptionalBody(cmd, file)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(body) == "" {
+		return errors.New("no spec body: pass --file or pipe it on stdin")
+	}
+	ctx, err := resolvePaths(dir) // local only: nothing is fetched or written
+	if err != nil {
+		return err
+	}
+	issues := doccheck.CheckSpecBody([]byte(doccheck.ProposalSpecBody(body)), store.DocsLanguage(ctx.repoDir), !ctx.cfg.Gates.GauntletEnabled())
+	out := cmd.OutOrStdout()
+	failed := false
+	for _, is := range issues {
+		failed = failed || is.Severity == doccheck.SeverityError
+	}
+	if asJSON {
+		if issues == nil {
+			issues = []doccheck.Issue{}
+		}
+		data, err := json.Marshal(issues)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(out, string(data))
+	} else {
+		for _, is := range issues {
+			fmt.Fprintf(out, "%s: %s: %s\n", is.Severity, is.Code, is.Detail)
+		}
+		if len(issues) == 0 {
+			fmt.Fprintln(out, "No format issues found.")
+		}
+	}
+	if failed {
+		return errSpecCheckFailed
+	}
+	return nil
 }

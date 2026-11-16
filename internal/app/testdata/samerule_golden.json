@@ -1,0 +1,50 @@
+{
+  "bug no bar": [
+    "approve bar-missing hard=true no \"Barra:\" line",
+    "lint spec-missing-bar no \"Barra:\" line (Feature B-0001) — the approve refuses it; 'cerne feature approve B-0001 --check' lists the accepted forms"
+  ],
+  "bug truncated": [
+    "approve incomplete-spec hard=true the spec is missing template sections: Contexto, Como reproduzir, Esperado × obtido",
+    "approve bar-missing hard=true no \"Barra:\" line",
+    "lint incomplete-doc content/features/B-0001/spec.md: missing template sections: Contexto, Como reproduzir, Esperado × obtido",
+    "lint spec-missing-bar no \"Barra:\" line (Feature B-0001) — the approve refuses it; 'cerne feature approve B-0001 --check' lists the accepted forms"
+  ],
+  "feature inherited bar": [
+    "approve bar-malformed hard=true malformed \"Barra:\" line: \"herdada de\" is a form only a task (T-) declares — F-0001 needs a bar of its own"
+  ],
+  "feature light, no bar": [
+    "lint spec-missing-bar no \"Barra:\" line (Feature F-0001) — the approve refuses it; 'cerne feature approve F-0001 --check' lists the accepted forms"
+  ],
+  "feature light, truncated": [
+    "approve incomplete-spec hard=true the spec is missing template sections: Objetivo e critérios de aceitação, Decisões do design, Desenho, Verificação, Execução recomendada (agente), Fora de escopo",
+    "lint incomplete-doc content/features/F-0001/spec.md: missing template sections: Objetivo e critérios de aceitação, Decisões do design, Desenho, Verificação, Execução recomendada (agente), Fora de escopo",
+    "lint spec-missing-bar no \"Barra:\" line (Feature F-0001) — the approve refuses it; 'cerne feature approve F-0001 --check' lists the accepted forms"
+  ],
+  "feature malformed bar": [
+    "approve bar-malformed hard=true malformed \"Barra:\" line: no value after \"Barra:\"",
+    "lint spec-missing-bar malformed \"Barra:\" line: no value after \"Barra:\" (Feature F-0001) — the approve refuses it; 'cerne feature approve F-0001 --check' lists the accepted forms"
+  ],
+  "feature no bar": [
+    "approve bar-missing hard=true no \"Barra:\" line",
+    "lint spec-missing-bar no \"Barra:\" line (Feature F-0001) — the approve refuses it; 'cerne feature approve F-0001 --check' lists the accepted forms"
+  ],
+  "feature ok": null,
+  "feature truncated": [
+    "approve incomplete-spec hard=true the spec is missing template sections: Objetivo e critérios de aceitação, Decisões do design, Desenho, Verificação, Execução recomendada (agente), Fora de escopo",
+    "approve bar-missing hard=true no \"Barra:\" line",
+    "lint incomplete-doc content/features/F-0001/spec.md: missing template sections: Objetivo e critérios de aceitação, Decisões do design, Desenho, Verificação, Execução recomendada (agente), Fora de escopo",
+    "lint spec-missing-bar no \"Barra:\" line (Feature F-0001) — the approve refuses it; 'cerne feature approve F-0001 --check' lists the accepted forms"
+  ],
+  "task inherited bar": null,
+  "task inherited bar without id": [
+    "approve bar-malformed hard=true malformed \"Barra:\" line: \"herdada de\" needs the parent's id: \"Barra: herdada de \u003cid\u003e\"",
+    "lint spec-missing-bar malformed \"Barra:\" line: \"herdada de\" needs the parent's id: \"Barra: herdada de \u003cid\u003e\" (Feature T-0001) — the approve refuses it; 'cerne feature approve T-0001 --check' lists the accepted forms"
+  ],
+  "task own bar": null,
+  "task truncated": [
+    "approve incomplete-spec hard=true the spec is missing template sections: Objetivo e critérios de aceitação, Decisões do design, Desenho, Verificação, Execução recomendada (agente), Fora de escopo",
+    "approve bar-missing hard=true no \"Barra:\" line",
+    "lint incomplete-doc content/features/T-0001/spec.md: missing template sections: Objetivo e critérios de aceitação, Decisões do design, Desenho, Verificação, Execução recomendada (agente), Fora de escopo",
+    "lint spec-missing-bar no \"Barra:\" line (Feature T-0001) — the approve refuses it; 'cerne feature approve T-0001 --check' lists the accepted forms"
+  ]
+}

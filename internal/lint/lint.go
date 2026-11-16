@@ -551,7 +551,17 @@ func incompleteDocFindings(repoDir string, features []store.Feature, decisions [
 		if !doccheck.HasRealContent(data) {
 			return nil // still a stub — enforced by the lifecycle gates
 		}
-		if missing := doccheck.MissingSections(data, kind, docsLang); len(missing) > 0 {
+		var missing []string
+		if kind == doclang.Spec || kind == doclang.Bug { // the one body check, shared with approve and the chat (F-0438)
+			for _, is := range doccheck.CheckBody(data, kind, docsLang, true) {
+				if is.Code == doccheck.IssueIncompleteSpec {
+					missing = is.Missing
+				}
+			}
+		} else {
+			missing = doccheck.MissingSections(data, kind, docsLang)
+		}
+		if len(missing) > 0 {
 			findings = append(findings, Finding{
 				Rule:   RuleIncompleteDoc,
 				File:   rel,

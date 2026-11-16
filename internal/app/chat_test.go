@@ -898,3 +898,22 @@ func TestBuildChatSystemPrompt_PortugueseNoChannelUnchanged(t *testing.T) {
 		t.Error("the pt-BR no-channel chat prompt differs from the golden")
 	}
 }
+
+// TestBuildChatSystemPrompt_DraftCheck (F-0438 crit. 2): only the claude-cli
+// agent, which can run the command, is told to check its draft first.
+func TestBuildChatSystemPrompt_DraftCheck(t *testing.T) {
+	repoDir, projDir := chatFixture(t)
+	for mode, want := range map[string]bool{"claude-cli": true, "byo-key": false, "": false} {
+		prompt, err := BuildChatSystemPrompt(repoDir, projDir, project.Config{LLM: project.LLMConfig{Mode: mode}}, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := strings.Contains(prompt, "cerne spec check"); got != want {
+			t.Errorf("mode %q: prompt mentions spec check = %v, want %v", mode, got, want)
+		}
+		// The agent has no write tool: the body goes on stdin, never a temp file.
+		if want && (!strings.Contains(prompt, "<<'SPEC'") || strings.Contains(prompt, "arquivo temporário")) {
+			t.Errorf("claude-cli prompt must teach the stdin heredoc and no temp file")
+		}
+	}
+}

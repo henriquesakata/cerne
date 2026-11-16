@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/doccheck"
 	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gitback"
@@ -1436,5 +1437,95 @@ func TestHandleChat_ContextOrderAndNoText(t *testing.T) {
 		if strings.Contains(rec.Body.String(), leak) {
 			t.Fatalf("response leaks snippet text %q: %s", leak, rec.Body.String())
 		}
+	}
+}
+
+// proposalReply wraps spec in a cerne-proposta block the way the analyst emits
+// it (four-backtick fence, F-0435).
+func proposalReply(spec string) string {
+	return "Segue a proposta.\n\n````cerne-proposta\n# Exportar relatórios\nfacet: feature\n" + spec + "\n````\n"
+}
+
+// TestHandleChat_ProposalIssues (F-0438 crit. 3): with and without streaming, a
+// reply carrying a truncated cerne-proposta block reports what the spec still
+// lacks in proposal_issues; a complete one omits the field.
+func TestHandleChat_ProposalIssues(t *testing.T) {
+	var full strings.Builder
+	for _, h := range doclang.Sections(doclang.Spec, doclang.PT) {
+		full.WriteString("## " + h + "\n\ntexto\n\n")
+	}
+	full.WriteString("Barra: não aplicável (sem comparável) — padrão alternativo: testes\n")
+	// The real F-0252 shape: a bare inner fence closed a three-backtick proposal early.
+	truncated := "```cerne-proposta\n# Exportar relatórios\nfacet: feature\n## Problema\n\ntexto\n\n```\ncódigo\n```\n## Desenho\n\nnunca chega\n```\n"
+	type resp struct {
+		Reply          string           `json:"reply"`
+		ProposalIssues []doccheck.Issue `json:"proposal_issues"`
+	}
+	for _, mode := range []string{"stream", "single"} {
+		t.Run(mode, func(t *testing.T) {
+			run := func(reply string) (resp, string) {
+				repoDir, projDir, _ := newGitBackend(t)
+				var got resp
+				if mode == "stream" {
+					srv := fakeChatProvider(t, nil, reply)
+					configureChatByoKey(t, projDir, srv.URL)
+					_, rec := doChatStream(t, New(repoDir, projDir, "proj-chat"), `{"messages":[{"role":"user","content":"x"}]}`, &got)
+					return got, rec.Body.String()
+				}
+				configureChatByoKey(t, projDir, "http://unused.invalid")
+				orig := newAgentProvider
+				newAgentProvider = func(project.LLMConfig, string, bool) (llm.Provider, error) { return &llm.Fake{Reply: reply}, nil }
+				t.Cleanup(func() { newAgentProvider = orig })
+				rec := doJSON(t, New(repoDir, projDir, "proj-chat"), http.MethodPost, "/api/chat", `{"messages":[{"role":"user","content":"x"}]}`, &got)
+				return got, rec.Body.String()
+			}
+			got, _ := run(truncated)
+			if len(got.ProposalIssues) == 0 || got.ProposalIssues[0].Code != "incomplete-spec" || !slices.Contains(got.ProposalIssues[0].Missing, "Fora de escopo") {
+				t.Fatalf("truncated proposal issues = %+v", got.ProposalIssues)
+			}
+			_, body := run(proposalReply(full.String()))
+			if strings.Contains(body, "proposal_issues") {
+				t.Fatalf("complete proposal must omit proposal_issues: %s", body)
+			}
+			_, body = run("Qual o formato do relatório?")
+			if strings.Contains(body, "proposal_issues") {
+				t.Fatalf("a reply without a proposal must omit proposal_issues: %s", body)
+			}
+		})
+	}
+}
+
+// TestProposalIssues_Extractor (F-0438): the LAST block is checked (the UI
+// shows the latest revision), CRLF is tolerated, an unclosed block is an
+// issue and a reply with none is clean.
+func TestProposalIssues_Extractor(t *testing.T) {
+	var full strings.Builder
+	for _, h := range doclang.Sections(doclang.Spec, doclang.PT) {
+		full.WriteString("## " + h + "\n\ntexto\n\n")
+	}
+	full.WriteString("Barra: não aplicável (sem comparável) — padrão alternativo: testes\n")
+	bad := proposalReply("## Problema\n\ntexto\n")
+	good := proposalReply(full.String())
+	codes := func(reply string) string {
+		var c []string
+		for _, i := range proposalIssues(reply, doclang.PT, false) {
+			c = append(c, i.Code)
+		}
+		return strings.Join(c, ",")
+	}
+	if got := codes(bad + "\n" + good); got != "" {
+		t.Errorf("a good last block must win over a bad first one: %q", got)
+	}
+	if got := codes(good + "\n" + bad); got != "incomplete-spec,bar-missing" {
+		t.Errorf("a bad last block must win over a good first one: %q", got)
+	}
+	if got := codes(strings.ReplaceAll(good, "\n", "\r\n")); got != "" {
+		t.Errorf("CRLF reply: %q", got)
+	}
+	if got := codes("````cerne-proposta\n# T\n## Problema\n\ntexto\n"); got != "unclosed-proposal" {
+		t.Errorf("unclosed block: %q", got)
+	}
+	if got := codes("sem proposta"); got != "" {
+		t.Errorf("no block: %q", got)
 	}
 }

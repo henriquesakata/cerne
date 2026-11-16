@@ -981,6 +981,21 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
   // A new revision supersedes the refusal shown for the previous one.
   useEffect(() => setMissingSections([]), [revisions.length])
 
+  // F-0438: o cartão mostra os achados da conferência da última versão — a
+  // mensagem que a carrega é a do msgIndex da revisão mais nova.
+  const lastRevision = revisions[revisions.length - 1]
+  const lastAssistant = messages.map((m) => m.role).lastIndexOf('assistant')
+  // A later reply with no proposal makes the issues stale: the card hides them.
+  const latestIssues = lastRevision && lastRevision.msgIndex === lastAssistant ? (messages[lastRevision.msgIndex].proposalIssues ?? []) : []
+  // "Pedir correção" é um turno do usuário como outro qualquer.
+  const askFix = (content: string) => {
+    if (busy) return
+    const next = [...messages, { role: 'user' as const, content }]
+    setMessages(next)
+    sendMessages(next)
+    onUpdate({ messages: next })
+  }
+
   const versionByMessage = useMemo(
     () => new Map(revisions.map((r) => [r.msgIndex, r.version])),
     [revisions],
@@ -1276,6 +1291,8 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
           refining={refineId !== ''}
           approvedTarget={refineApproved}
           missing={missingSections}
+          issues={latestIssues}
+          onAskFix={askFix}
           onRegister={confirmRegister}
           onQuote={appendQuote}
         />

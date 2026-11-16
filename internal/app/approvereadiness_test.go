@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -10,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/henriquesakata/cerne/internal/doccheck"
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/lint"
@@ -374,5 +377,86 @@ func writeRawSpec(t *testing.T, repoDir, id, body string) {
 	}
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// sameRuleCases are spec shapes whose approve impediments and lint findings
+// were captured from main (testdata/samerule_golden.json) before F-0438 routed
+// them through doccheck.CheckSpecBody: the refactor must change none of them.
+var sameRuleCases = []struct {
+	name, id, spec string
+	gauntlet       bool
+}{
+	{"feature ok", "F-0001", completeSpec("# t\n\nProblema real.\n\n## Verificação\n\nBarra: não aplicável (sem comparável) — padrão alternativo: testes\n"), true},
+	{"feature truncated", "F-0001", "# t\n\n## Problema\n\nProblema real.\n", true},
+	{"feature no bar", "F-0001", completeSpec("# t\n\nProblema real.\n"), true},
+	{"feature malformed bar", "F-0001", completeSpec("# t\n\nProblema real.\n\nBarra:\n"), true},
+	{"feature light, no bar", "F-0001", completeSpec("# t\n\nProblema real.\n"), false},
+	{"feature light, truncated", "F-0001", "# t\n\n## Problema\n\nProblema real.\n", false},
+	{"feature inherited bar", "F-0001", completeSpec("# t\n\nProblema real.\n\nBarra: herdada de F-0002\n"), true},
+	{"task inherited bar", "T-0001", completeSpec("# t\n\nProblema real.\n\nBarra: herdada de F-0002\n"), true},
+	{"task inherited bar without id", "T-0001", completeSpec("# t\n\nProblema real.\n\nBarra: herdada de\n"), true},
+	{"task own bar", "T-0001", completeSpec("# t\n\nProblema real.\n\nBarra: não aplicável (sem comparável) — padrão alternativo: testes\n"), true},
+	{"task truncated", "T-0001", "# t\n\n## Problema\n\nProblema real.\n", true},
+	{"bug truncated", "B-0001", "# t\n\n## Problema\n\nProblema real.\n", true},
+	{"bug no bar", "B-0001", completeBug("# t\n\nProblema real.\n"), true},
+}
+
+func completeBug(body string) string {
+	for _, h := range doccheck.MissingSections([]byte(body), doclang.Bug, doclang.PT) {
+		body += "\n## " + h + "\n\nN/A.\n"
+	}
+	return body
+}
+
+// TestCheckSpecBody_SameRuleAsApproveAndLint (F-0438 crit. 5): approve readiness
+// and lint say, for every shape, exactly what main said before the shared check.
+func TestCheckSpecBody_SameRuleAsApproveAndLint(t *testing.T) {
+	got := map[string][]string{}
+	for _, tc := range sameRuleCases {
+		repoDir, _, _ := newFeatureBackend(t)
+		seedRawCandidateSpec(t, repoDir, tc.id, tc.spec)
+		var out []string
+		imps, err := approveReadiness(repoDir, tc.id, tc.gauntlet)
+		if err != nil {
+			out = append(out, "ERR "+err.Error())
+		}
+		for _, im := range imps {
+			if im.Code == ImpedimentUntagged || im.Code == ImpedimentCapabilityMissing {
+				continue
+			}
+			out = append(out, fmt.Sprintf("approve %s hard=%v %s", im.Code, im.Hard, im.Message))
+		}
+		findings, err := lint.Run(repoDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range findings {
+			if (f.Rule == lint.RuleIncompleteDoc || f.Rule == lint.RuleSpecMissingBar) && (f.Entity == tc.id || strings.Contains(f.File, tc.id)) {
+				out = append(out, fmt.Sprintf("lint %s %s", f.Rule, f.Detail))
+			}
+		}
+		got[tc.name] = out
+	}
+	path := filepath.Join("testdata", "samerule_golden.json")
+	if os.Getenv("CERNE_GOLDEN_OUT") != "" {
+		data, _ := json.MarshalIndent(got, "", "  ")
+		if err := os.WriteFile(os.Getenv("CERNE_GOLDEN_OUT"), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want map[string][]string
+	if err := json.Unmarshal(raw, &want); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		g, _ := json.MarshalIndent(got, "", "  ")
+		w, _ := json.MarshalIndent(want, "", "  ")
+		t.Fatalf("approve/lint output diverged from main.\ngot:\n%s\nwant:\n%s", g, w)
 	}
 }
