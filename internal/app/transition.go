@@ -252,6 +252,11 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 		// Gauntlet, and status says so.
 		gates := projectGates(projDir)
 		gauntletOn := gates.GauntletEnabled()
+		if action == domain.ActionApprove {
+			if err := CheckSpecSections(repoDir, id); err != nil {
+				return "", err
+			}
+		}
 		if action == domain.ActionApprove && gauntletOn {
 			if err := CheckSpecBar(repoDir, id); err != nil {
 				return "", err

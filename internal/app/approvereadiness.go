@@ -16,9 +16,11 @@ import (
 
 // Approve impediment codes (F-0308).
 const (
-	ImpedimentSpecMissing  = "spec-missing"
-	ImpedimentBarMissing   = "bar-missing"
-	ImpedimentBarMalformed = "bar-malformed"
+	ImpedimentSpecMissing = "spec-missing"
+	// The spec lacks template sections (F-0435): a truncated proposal.
+	ImpedimentIncompleteSpec = "incomplete-spec"
+	ImpedimentBarMissing     = "bar-missing"
+	ImpedimentBarMalformed   = "bar-malformed"
 	// The bar names a reference but the spec has no judge question (F-0381).
 	ImpedimentJudgeQuestionMissing = "judge-question-missing"
 	// The question exists but outside the Verificação section (F-0381).
@@ -74,6 +76,10 @@ func approveReadiness(repoDir, id string, gauntletOn bool) ([]ApproveImpediment,
 	var out []ApproveImpediment
 	if domain.CheckGate(id, domain.ActionApprove, docs) != nil {
 		out = append(out, ApproveImpediment{ImpedimentSpecMissing, "the spec is missing or still the template stub", true})
+	} else if missing, err := specSectionsMissing(repoDir, id); err != nil {
+		return nil, err
+	} else if len(missing) > 0 {
+		out = append(out, ApproveImpediment{ImpedimentIncompleteSpec, "the spec is missing template sections: " + strings.Join(missing, ", "), true})
 	} else if _, err := specBarFor(id, spec, store.DocsLanguage(repoDir)); gauntletOn && err != nil {
 		code := ImpedimentBarMissing
 		if errors.Is(err, doccheck.ErrBarMalformed) {

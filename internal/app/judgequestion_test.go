@@ -117,7 +117,7 @@ func TestStartAndCompleteIgnoreJudgeQuestion(t *testing.T) {
 		if err := os.MkdirAll(filepath.Dir(copyPath), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(copyPath, []byte(specBarOnly), 0o644); err != nil {
+		if err := os.WriteFile(copyPath, []byte(completeSpec(specBarOnly)), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.WriteFile(FeatureDocPath(repoDir, "F-0001", "plan.md"), []byte("# p\n\nPlano real.\n"), 0o644); err != nil {

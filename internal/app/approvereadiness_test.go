@@ -21,6 +21,12 @@ import (
 // pushed so a transition's critical section sees it.
 func seedCandidateSpec(t *testing.T, repoDir, id, body string) {
 	t.Helper()
+	seedRawCandidateSpec(t, repoDir, id, completeSpec(body))
+}
+
+// seedRawCandidateSpec seeds body exactly as given (no sections added).
+func seedRawCandidateSpec(t *testing.T, repoDir, id, body string) {
+	t.Helper()
 	if err := store.SaveFeature(repoDir, store.Feature{ID: id, Title: "Feature " + id, State: domain.StateCandidate}); err != nil {
 		t.Fatalf("SaveFeature: %v", err)
 	}
@@ -121,7 +127,7 @@ func TestApproveReadinessRefusesNonCandidate(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(copyPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(copyPath, []byte("# t\n\nProblema real.\n"), 0o644); err != nil {
+	if err := os.WriteFile(copyPath, []byte(completeSpec("# t\n\nProblema real.\n")), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := approveReadiness(repoDir, "F-0002", true); !errors.Is(err, domain.ErrInvalidTransition) {
@@ -311,5 +317,29 @@ func TestCardImpedimentsMatchLint(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestApproveCheck_IncompleteSpec (F-0435 crit. 4): a written spec missing a
+// template section is a hard impediment, and the shared core refuses it.
+func TestApproveCheck_IncompleteSpec(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	spec := "# t\n\nProblema real.\n\n## Verificação\n\nBarra: não aplicável — teste\nPergunta ao juiz: x?\n"
+	seedRawCandidateSpec(t, repoDir, "F-0001", spec)
+	imps, err := approveReadiness(repoDir, "F-0001", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found *ApproveImpediment
+	for i := range imps {
+		if imps[i].Code == ImpedimentIncompleteSpec {
+			found = &imps[i]
+		}
+	}
+	if found == nil || !found.Hard || !strings.Contains(found.Message, "Fora de escopo") {
+		t.Fatalf("impediments %+v, want a hard incomplete-spec naming Fora de escopo", imps)
+	}
+	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionApprove, "", "", nil); !errors.Is(err, ErrSpecIncomplete) {
+		t.Fatalf("approve err = %v, want ErrSpecIncomplete", err)
 	}
 }

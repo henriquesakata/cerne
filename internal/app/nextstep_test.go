@@ -28,6 +28,9 @@ func nextStepDoc(t *testing.T, repo, id, name, body string) {
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	if name == "spec.md" {
+		body = completeSpec(body)
+	}
 	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}

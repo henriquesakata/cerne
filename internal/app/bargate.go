@@ -6,11 +6,47 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/henriquesakata/cerne/internal/doccheck"
 	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/store"
 )
+
+// ErrSpecIncomplete is the sentinel for an approve attempted over a spec
+// missing template sections (F-0435). Like ErrSpecMissingBar it lives in the
+// shared core and --force does not cross it.
+var ErrSpecIncomplete = errors.New("spec is missing template sections")
+
+// specSectionsMissing lists the template sections a written spec lacks — the
+// predicate the lint, the readiness and the core share (F-0435). A missing or
+// stub spec returns none: the document gate refuses those first.
+func specSectionsMissing(repoDir, id string) ([]string, error) {
+	data, err := os.ReadFile(filepath.Join(repoDir, "content", "features", id, "spec.md"))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !doccheck.HasRealContent(data) {
+		return nil, nil
+	}
+	kind := doclang.Spec
+	if strings.HasPrefix(id, "B-") {
+		kind = doclang.Bug
+	}
+	return doccheck.MissingSections(data, kind, store.DocsLanguage(repoDir)), nil
+}
+
+// CheckSpecSections refuses an approve over a spec missing template sections.
+func CheckSpecSections(repoDir, id string) error {
+	missing, err := specSectionsMissing(repoDir, id)
+	if err != nil || len(missing) == 0 {
+		return err
+	}
+	return fmt.Errorf("%w: %s", ErrSpecIncomplete, strings.Join(missing, ", "))
+}
 
 // ErrSpecMissingBar is the sentinel for an approve attempted over a spec that
 // names no Gauntlet bar (F-0545). It is enforced in the shared transition core,

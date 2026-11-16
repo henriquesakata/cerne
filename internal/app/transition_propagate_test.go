@@ -15,8 +15,10 @@ import (
 const realDocBody = "---\ncerne_id: %s\n---\n\n# Doc real\n\nConteúdo real o bastante para o doccheck contar como preenchido.\n" + testBarTail
 
 // testBarTail satisfies the approve bar gate (F-0295: enforced in the
-// transition core) for fixtures that approve a real spec.
-const testBarTail = "\n## Verificação\n\nBarra: fixture de teste — referência nomeada\nPergunta ao juiz: qual versão é mais clara?\n"
+// transition core) for fixtures that approve a real spec; the sections after
+// the bar complete the template the approve also requires (F-0435).
+const testBarTail = "\n## Verificação\n\nBarra: fixture de teste — referência nomeada\nPergunta ao juiz: qual versão é mais clara?\n" +
+	"\n## Problema\n\nX.\n\n## Objetivo e critérios de aceitação\n\nX.\n\n## Decisões do design\n\nX.\n\n## Desenho\n\nX.\n\n## Execução recomendada (agente)\n\nX.\n\n## Fora de escopo\n\nX.\n"
 
 // testGauntletTail satisfies the complete result gate (F-0303) for fixtures
 // whose result.md is completed; fixtures with numbered spec criteria also cite
