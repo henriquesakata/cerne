@@ -739,3 +739,27 @@ func TestBuildChatSystemPrompt_NoteFourBackticks(t *testing.T) {
 		t.Error("prompt still shows a three-backtick note opening")
 	}
 }
+
+// TestBuildChatSystemPrompt_PortugueseUnchanged (F-0433 crit. 3): a backend
+// without docs_language gets the pt-BR prompt byte for byte. Regenerate the
+// golden only on a deliberate prompt change: CHAT_GOLDEN_UPDATE=1.
+func TestBuildChatSystemPrompt_PortugueseUnchanged(t *testing.T) {
+	repoDir, projDir := chatFixture(t)
+	prompt, err := BuildChatSystemPrompt(repoDir, projDir, project.Config{}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const golden = "testdata/chat_prompt_pt.golden"
+	if os.Getenv("CHAT_GOLDEN_UPDATE") == "1" {
+		if err := os.WriteFile(golden, []byte(prompt), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want, err := os.ReadFile(golden)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prompt != string(want) {
+		t.Error("the pt-BR chat prompt differs from the golden")
+	}
+}
