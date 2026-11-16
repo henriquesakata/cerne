@@ -188,3 +188,17 @@ func TestBuildTurnContextExcludesIdeas(t *testing.T) {
 		t.Fatalf("the priming carries an idea:\n%s", got)
 	}
 }
+
+// TestBuildTurnContext_PromptUnchanged pins the injected prompt byte for byte
+// (F-0436 criterion 5): reporting the sources must not touch what the model reads.
+func TestBuildTurnContext_PromptUnchanged(t *testing.T) {
+	repoDir, dbPath := turnContextFixture(t)
+	got, err := BuildTurnContext(repoDir, dbPath, "como funciona a conciliação do extrato OFX?", 600)
+	if err != nil {
+		t.Fatalf("BuildTurnContext: %v", err)
+	}
+	const want = "Contexto recuperado do projeto (injetado automaticamente pelo cerne; o estado ao lado de cada id é a verdade atual):\n\nDecisões ativas do projeto:\n- D-0001 Backend git é a fonte da verdade\n\nConvenções registradas (notas; consulte com cerne note show <id> quando precisar do texto):\n- N-0001 Specs usam EARS nos critérios\n\nTrechos recuperados do backend, relevantes à mensagem do usuário:\n- F-0001 [implemented]: ## Problema\nO «extrato» do banco chega em «OFX» e ninguém «concilia» os…\n\n"
+	if got != want {
+		t.Fatalf("prompt changed:\n%q", got)
+	}
+}
