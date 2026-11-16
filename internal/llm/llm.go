@@ -1,12 +1,14 @@
-// Package llm hosts the pluggable LLM provider seam for the optional v1.5
-// layer (compile/ask). The deterministic core never imports it: only the
-// compile and ask use-cases do, and only outside delegation mode.
+// Package llm hosts the pluggable LLM provider seam for the optional LLM
+// layer (ask, compile, the document drafts, the Backlog chat). The
+// deterministic core (domain, lint, materialize) never imports it.
 //
-// In delegation mode (the default and only runtime mode implemented now) the
-// host agent already running — Claude Code, Cursor — performs the synthesis,
-// so Provider.Complete is NOT called: the work travels through prompt files
-// (compile) or stdout (ask). Complete exists for the test Fake and for a
-// future BYO-key implementation behind the same interface.
+// ResolveMode picks the mode. A configured mode wins; an empty one resolves to
+// the first subscription CLI found on PATH (claude-cli, codex-cli, gemini-cli,
+// cursor-cli) and, with none, to delegation. The CLI modes shell to the agent's
+// CLI under the user's subscription; byo-key calls a provider's HTTP API with a
+// key from the environment. In delegation mode the host agent already running
+// performs the synthesis, so Provider.Complete is NOT called: the work travels
+// through prompt files (compile) or stdout (ask).
 package llm
 
 import (
@@ -15,8 +17,9 @@ import (
 	"github.com/henriquesakata/cerne/internal/project"
 )
 
-// ModeDelegation is the default provider mode: cerne emits prompts for the
-// host agent instead of calling an LLM itself. No API key, no HTTP.
+// ModeDelegation is the fallback provider mode, used when no mode is configured
+// and no subscription CLI is on PATH: cerne emits prompts for the host agent
+// instead of calling an LLM itself. No API key, no HTTP.
 const ModeDelegation = "delegation"
 
 // ModeByoKey is the bring-your-own-key mode: cerne calls the provider's HTTP
