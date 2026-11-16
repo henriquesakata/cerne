@@ -136,6 +136,9 @@ type chatResponse struct {
 	// Truncated one whose model output was cut by the token limit (C5).
 	NoRuns    bool `json:"no_runs,omitempty"`
 	Truncated bool `json:"truncated,omitempty"`
+	// Context (F-0436) lists the sources the server injected into this turn,
+	// without their text — what the UI shows under the reply.
+	Context []app.TurnSource `json:"context,omitempty"`
 }
 
 // handleChat answers one turn of the Backlog domain-agent chat (F-0210): the
@@ -235,10 +238,12 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 	// broken index must not cost the turn, so retrieval failure only means no
 	// injected block (the error is the index's problem, surfaced by
 	// search/ask).
+	var injected []app.TurnSource
 	if dbPath, err := ensureIndex(repoDir, projectID); err == nil {
 		turnCtx, err := app.BuildTurnContext(repoDir, dbPath, lastUserMessage(msgs), cfg.Agent.RetrievalBudgetOrDefault())
 		if err == nil && turnCtx.Prompt != "" {
 			sysPrompt += "\n" + turnCtx.Prompt
+			injected = turnCtx.Sources
 		}
 	}
 
@@ -264,7 +269,7 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 		}
 		// C5: a confirmed turn that executed nothing says so — never a silent
 		// success, whatever the reply claims.
-		writeChatLine(w, http.StatusOK, chatResponse{Answered: true, Reply: reply, Runs: runs, NoRuns: len(runs) == 0, Truncated: truncated})
+		writeChatLine(w, http.StatusOK, chatResponse{Answered: true, Reply: reply, Runs: runs, NoRuns: len(runs) == 0, Truncated: truncated, Context: injected})
 		return
 	}
 
@@ -275,7 +280,7 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 	// client never needs to know which path ran.
 	if streamer, ok := prov.(llm.Streamer); ok {
 		if flusher, ok := w.(http.Flusher); ok {
-			streamChatReply(ctx, w, flusher, streamer, prompt, !channel)
+			streamChatReply(ctx, w, flusher, streamer, prompt, !channel, injected)
 			return
 		}
 	}
@@ -284,7 +289,7 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	writeChatLine(w, http.StatusOK, chatResponse{Answered: true, Reply: reply, NoExec: !channel})
+	writeChatLine(w, http.StatusOK, chatResponse{Answered: true, Reply: reply, NoExec: !channel, Context: injected})
 }
 
 // lastUserMessage is the retrieval query for the turn (F-0253): the message
@@ -317,7 +322,7 @@ func writeChatLine(w http.ResponseWriter, status int, v any) {
 // {"error":...} when the stream broke after output already went out (the
 // partial the client holds stays valid; F-0240 criterion 8). An error before
 // any delta still becomes the plain 500 JSON of the single-shot path.
-func streamChatReply(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, streamer llm.Streamer, prompt string, noExec bool) {
+func streamChatReply(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, streamer llm.Streamer, prompt string, noExec bool, injected []app.TurnSource) {
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	enc := json.NewEncoder(w)
 	wrote := false
@@ -338,7 +343,7 @@ func streamChatReply(ctx context.Context, w http.ResponseWriter, flusher http.Fl
 		flusher.Flush()
 		return
 	}
-	_ = enc.Encode(chatResponse{Answered: true, Reply: reply, NoExec: noExec})
+	_ = enc.Encode(chatResponse{Answered: true, Reply: reply, NoExec: noExec, Context: injected})
 	flusher.Flush()
 }
 
