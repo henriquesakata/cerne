@@ -173,6 +173,14 @@ func stripFrontmatter(s string) string {
 	return s
 }
 
+// OneShotRule opens a prompt answered by a one-shot provider: every isolated
+// mode runs with NO tools, so the model must not announce or write one (B-0009).
+// Delegation prompts never carry it — the host agent does have tools.
+const OneShotRule = "This answer has NO tools: you cannot read files, run commands or browse. " +
+	"Answer only from the cerne sources below, citing their ids. " +
+	"If the question asks you to read a file, run something or fetch a URL, say so in one line (in the answer's language) and still answer the rest from the sources. " +
+	"Never write a tool call as text.\n\n"
+
 // BuildAskPrompt renders the question plus every state-tagged source. When
 // preamble is true it also emits the instruction to cite sources and respect
 // each source's state; callers that drive their own synthesis (the host agent

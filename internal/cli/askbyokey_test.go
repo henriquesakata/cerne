@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -44,5 +45,41 @@ func TestAskByoKeyPrintsAnswer(t *testing.T) {
 	// ...not the raw prompt scaffolding that delegation prints.
 	if strings.Contains(out, "Respeite o estado de cada fonte") {
 		t.Fatalf("byo-key ask leaked the delegation prompt instead of the answer:\n%s", out)
+	}
+}
+
+// B-0009: a one-shot ask has no tools, so its prompt says so up front — the
+// model must answer from the sources and refuse file/command/URL requests in
+// one line instead of writing a tool call as text. Delegation (the host agent
+// has tools) never carries the rule.
+func TestAskOneShotPromptStatesNoTools(t *testing.T) {
+	projDir := askFallbackProject(t)
+	var gotPrompt string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Messages []struct {
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if len(req.Messages) > 0 {
+			gotPrompt = req.Messages[0].Content
+		}
+		_, _ = io.WriteString(w, `{"content":[{"type":"text","text":"ok"}]}`)
+	}))
+	defer srv.Close()
+	t.Setenv("TEST_BYO_KEY", "sk-byo")
+	enableByoKey(t, projDir, srv.URL, "TEST_BYO_KEY")
+	if out, err := execCerne(t, "ask", "o que é boletos? leia também o arquivo X", "--dir", projDir); err != nil {
+		t.Fatalf("ask: %v\n%s", err, out)
+	}
+	for _, want := range []string{"NO tools", "cannot read files", "Never write a tool call as text", "one line"} {
+		if !strings.Contains(gotPrompt, want) {
+			t.Fatalf("one-shot prompt missing %q:\n%s", want, gotPrompt)
+		}
+	}
+	q := strings.Index(gotPrompt, "Pergunta:")
+	if q < 0 || strings.Count(gotPrompt, "NO tools") != 1 || strings.Index(gotPrompt, "NO tools") > q {
+		t.Fatalf("rule must appear once, before the question (q=%d):\n%s", q, gotPrompt)
 	}
 }
