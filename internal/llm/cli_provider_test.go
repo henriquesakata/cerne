@@ -1256,3 +1256,25 @@ func TestCodexChatForwardsCerneEnv(t *testing.T) {
 		}
 	}
 }
+
+// TestCodexReplyDropsTheTurnTempDir (F-0439 round 2): the model sometimes
+// writes paths under its scratch working directory, which is gone after the
+// turn; the reply gets the project-relative path instead.
+func TestCodexReplyDropsTheTurnTempDir(t *testing.T) {
+	p := &cliProvider{kind: ModeCodexCLI, bin: "codex", dir: t.TempDir(), run: func(_ context.Context, dir, _ string, args []string, _ string) (string, string, error) {
+		reply := "see [stage](" + dir + "/game/src/stages/stage-one.js:2) and " + dir + "/game/a.json"
+		for i, a := range args {
+			if a == "-o" {
+				return "", "", os.WriteFile(args[i+1], []byte(reply), 0o600)
+			}
+		}
+		return "", "", nil
+	}}
+	got, err := p.Complete(t.Context(), "q")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "see [stage](game/src/stages/stage-one.js:2) and game/a.json"; got != want {
+		t.Fatalf("reply = %q, want %q", got, want)
+	}
+}

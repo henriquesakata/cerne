@@ -153,3 +153,32 @@ func TestProjectFileToolDescriptions(t *testing.T) {
 		t.Errorf("search_files description: %q", d["search_files"])
 	}
 }
+
+// TestProjectFileToolsReturnRelativePaths (F-0439 round 2): the reply's links
+// must stay valid after the turn, so no tool returns or echoes an absolute or
+// temporary path — only paths relative to the project root.
+func TestProjectFileToolsReturnRelativePaths(t *testing.T) {
+	cs := gameFixture(t)
+	tmp := os.TempDir()
+	for tool, args := range map[string]map[string]any{
+		"find_files":   {"query": "**"},
+		"search_files": {"query": "forest-night"},
+		"read_file":    {"path": "game/src/stages/stage-one.js"},
+	} {
+		out, isErr := callFiles(t, cs, tool, args)
+		if isErr || out == "" {
+			t.Fatalf("%s: %q", tool, out)
+		}
+		if strings.Contains(out, tmp) || strings.Contains(out, "/private/") {
+			t.Errorf("%s leaked a temp path:\n%s", tool, out)
+		}
+		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+			if tool != "read_file" && strings.HasPrefix(line, "/") {
+				t.Errorf("%s returned an absolute path: %q", tool, line)
+			}
+		}
+	}
+	if out, isErr := callFiles(t, cs, "read_file", map[string]any{"path": "/etc/passwd"}); !isErr || strings.Contains(out, "root:") {
+		t.Errorf("absolute path accepted: %q", out)
+	}
+}

@@ -979,7 +979,7 @@ func TestBuildChatSystemPromptLiveQueryCodex(t *testing.T) {
 		}
 	}
 	// Gauntlet round 1: the agent gave up after a name search and asked the human.
-	for _, want := range []string{"search_files", "list the tree", "**", "stage", "backdrop", "enemy", "Never ask the user for a path or a keyword before"} {
+	for _, want := range []string{"search_files", "list the tree", "**", "stage", "backdrop", "enemy", "Never ask the user for a path or a keyword before", "relative to the project root", "never absolute paths", "temporary working directory", "Read every file you point to", "under the consulted sources with its lines", "what in it matters for the request", "Never present a file as the definition"} {
 		if !strings.Contains(ChatCodexLiveQuery, want) {
 			t.Errorf("codex live-query block lacks the exploration cue %q:\n%s", want, ChatCodexLiveQuery)
 		}

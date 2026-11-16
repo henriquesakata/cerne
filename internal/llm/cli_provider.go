@@ -459,7 +459,17 @@ func (p *cliProvider) completeCodex(ctx context.Context, prompt string) (string,
 	if err != nil || len(bytes.TrimSpace(b)) == 0 {
 		return "", fmt.Errorf("%w: codex exec returned no answer — run 'codex login' or check the Codex CLI version", ErrCodexCLI)
 	}
-	return strings.TrimSpace(string(b)), nil
+	// The scratch dir is gone after the turn: a path the model wrote under it
+	// becomes the project-relative path the files tools return (F-0439).
+	reply := string(b)
+	prefixes := []string{dir + "/"}
+	if real, err := filepath.EvalSymlinks(dir); err == nil && real != dir {
+		prefixes = append(prefixes, real+"/")
+	}
+	for _, pre := range prefixes {
+		reply = strings.ReplaceAll(reply, pre, "")
+	}
+	return strings.TrimSpace(reply), nil
 }
 
 // authErrorRE recognizes a CLI error that a login fixes.
