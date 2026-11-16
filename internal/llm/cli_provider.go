@@ -319,14 +319,16 @@ func isUnknownFlag(err error) bool {
 // `claude -p` reads the prompt from stdin when no positional prompt is given.
 // It deliberately omits --bare (which would ignore the subscription token and
 // require an API key). --model/--effort go only on the agentic chat turn, from
-// the composer (B-0007); the one-shot never forces a model. Any failure becomes an actionable ErrClaudeCLI.
+// the composer (B-0007); the one-shot never forces a model. Any failure becomes
+// an actionable ErrClaudeCLI.
 //
 // In agentic mode (agentTools set, F-0224) the allowlist travels as one
-// comma-joined --allowedTools argument; otherwise the call is isolated with
-// oneShotIsolation. A CLI too old to know the one-shot flags gets one retry in
-// plain headless form; the agentic turn fails instead (never less isolation). Whatever the CLI printed on stderr — the stream where
-// headless permission denials surface — is echoed to the server log, so an
-// attempt outside the allowlist is visible (criterion 4).
+// comma-joined --allowedTools argument, next to the isolation flags; otherwise
+// the call is isolated with oneShotIsolation. A CLI too old to know the
+// one-shot flags gets one retry in plain headless form; the agentic turn fails
+// instead (never less isolation). Whatever the CLI printed on stderr — the
+// stream where headless permission denials surface — is echoed to the server
+// log, so an attempt outside the allowlist is visible (criterion 4).
 func (p *cliProvider) Complete(ctx context.Context, prompt string) (string, error) {
 	switch p.kind {
 	case ModeCodexCLI:
@@ -342,8 +344,11 @@ func (p *cliProvider) Complete(ctx context.Context, prompt string) (string, erro
 	if agentic {
 		args[2] = "json" // F-0440: the result carries the model that ran (a copy; base stays text for the old-CLI retry)
 		// B-0008: keep the project's CLAUDE.md/skills/hooks, drop the user's
-		// (hooks, plugins, ~/.claude/CLAUDE.md) and user MCP servers. Not
-		// --safe-mode: the analyst relies on the project's own context.
+		// (hooks, plugins, ~/.claude/CLAUDE.md). --strict-mcp-config with no
+		// --mcp-config drops EVERY MCP server, user and project (.mcp.json)
+		// alike, on purpose: the chat reaches cerne through Bash, and its
+		// allowlist has no mcp__* entry. Not --safe-mode: the analyst relies on
+		// the project's own context.
 		args = append(args, "--setting-sources", "project,local", "--strict-mcp-config",
 			"--allowedTools", strings.Join(p.agentTools, ","))
 		if len(p.deniedTools) > 0 {
@@ -363,7 +368,7 @@ func (p *cliProvider) Complete(ctx context.Context, prompt string) (string, erro
 	if err != nil && isUnknownFlag(err) {
 		if agentic {
 			// Never retry with less isolation (B-0008, F-0414 rule).
-			return "", fmt.Errorf("%w: this Claude Code does not know an isolation flag cerne needs — update Claude Code (claude update); cerne will not run the chat with less isolation: %w", ErrClaudeCLI, err)
+			return "", fmt.Errorf("%w: this Claude Code does not know a flag cerne needs (isolation, model or effort) — update Claude Code (claude update); cerne will not run the chat with less isolation: %w", ErrClaudeCLI, err)
 		}
 		out, stderr, err = p.run(ctx, p.dir, p.bin, base, prompt)
 	}
