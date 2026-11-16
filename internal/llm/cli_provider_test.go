@@ -321,7 +321,7 @@ func TestAgentProviderAllowlistFlags(t *testing.T) {
 		"Bash(cerne note list:*),Bash(cerne note show:*),Bash(cerne reference list:*),Bash(cerne decision list:*)," +
 		"Bash(cerne idea list:*),Bash(cerne spec check:*)"
 	wantDenied := "Read(.env),Read(.env.*),Read(**/credentials*),Read(**/*.pem),Read(**/*.key)"
-	want := []string{"-p", "--output-format", "json", "--allowedTools", wantList, "--disallowedTools", wantDenied}
+	want := []string{"-p", "--output-format", "json", "--setting-sources", "project,local", "--strict-mcp-config", "--allowedTools", wantList, "--disallowedTools", wantDenied}
 	if !reflect.DeepEqual(gotArgs, want) {
 		t.Fatalf("runner args = %v, want %v", gotArgs, want)
 	}
