@@ -173,7 +173,12 @@ func newSpecCheckCmd() *cobra.Command {
 			"and open clarifications (warnings). Exits 1 on an error, 0 otherwise.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSpecCheck(cmd, dir, file, asJSON)
+			err := runSpecCheck(cmd, dir, file, asJSON)
+			if asJSON && err != nil && !errors.Is(err, errSpecCheckFailed) {
+				data, _ := json.Marshal(map[string]string{"error": err.Error()})
+				fmt.Fprintln(cmd.OutOrStdout(), string(data))
+			}
+			return err
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
@@ -195,7 +200,7 @@ func runSpecCheck(cmd *cobra.Command, dir, file string, asJSON bool) error {
 	if err != nil {
 		return err
 	}
-	issues := doccheck.CheckSpecBody([]byte(body), store.DocsLanguage(ctx.repoDir), !ctx.cfg.Gates.GauntletEnabled())
+	issues := doccheck.CheckSpecBody([]byte(doccheck.ProposalSpecBody(body)), store.DocsLanguage(ctx.repoDir), !ctx.cfg.Gates.GauntletEnabled())
 	out := cmd.OutOrStdout()
 	failed := false
 	for _, is := range issues {
