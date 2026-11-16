@@ -62,6 +62,11 @@ func TestLLMModeDefaultIsTheDetectedCLI(t *testing.T) {
 	if s := resolved(t, dir, "llm.mode"); s.Value != "codex-cli" || s.Origin != OriginDetected {
 		t.Fatalf("detected: %v from %q", s.Value, s.Origin)
 	}
+	// F-0441: the Cursor binary is cursor-agent; its mode is cursor-cli.
+	DetectSubscriptionCLI = func() string { return "cursor-agent" }
+	if s := resolved(t, dir, "llm.mode"); s.Value != "cursor-cli" || s.Origin != OriginDetected {
+		t.Fatalf("detected cursor: %v from %q", s.Value, s.Origin)
+	}
 	DetectSubscriptionCLI = func() string { return "" }
 	if s := resolved(t, dir, "llm.mode"); s.Value != "delegation" || s.Origin != OriginDefault {
 		t.Fatalf("none: %v from %q", s.Value, s.Origin)

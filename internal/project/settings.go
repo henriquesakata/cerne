@@ -157,7 +157,7 @@ var settingsRegistry = []Setting{
 		Scopes: []string{ScopeProject, ScopeHost},
 		DynamicDefault: func() string {
 			if cli := DetectSubscriptionCLI(); cli != "" {
-				return cli + "-cli"
+				return CLIMode(cli)
 			}
 			return ""
 		},
