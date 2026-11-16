@@ -323,8 +323,8 @@ func isUnknownFlag(err error) bool {
 //
 // In agentic mode (agentTools set, F-0224) the allowlist travels as one
 // comma-joined --allowedTools argument; otherwise the call is isolated with
-// oneShotIsolation. Either way a CLI too old to know the flags gets one retry
-// in plain headless form. Whatever the CLI printed on stderr — the stream where
+// oneShotIsolation. A CLI too old to know the one-shot flags gets one retry in
+// plain headless form; the agentic turn fails instead (never less isolation). Whatever the CLI printed on stderr — the stream where
 // headless permission denials surface — is echoed to the server log, so an
 // attempt outside the allowlist is visible (criterion 4).
 func (p *cliProvider) Complete(ctx context.Context, prompt string) (string, error) {
@@ -341,7 +341,11 @@ func (p *cliProvider) Complete(ctx context.Context, prompt string) (string, erro
 	agentic := len(p.agentTools) > 0
 	if agentic {
 		args[2] = "json" // F-0440: the result carries the model that ran (a copy; base stays text for the old-CLI retry)
-		args = append(args, "--allowedTools", strings.Join(p.agentTools, ","))
+		// B-0008: keep the project's CLAUDE.md/skills/hooks, drop the user's
+		// (hooks, plugins, ~/.claude/CLAUDE.md) and user MCP servers. Not
+		// --safe-mode: the analyst relies on the project's own context.
+		args = append(args, "--setting-sources", "project,local", "--strict-mcp-config",
+			"--allowedTools", strings.Join(p.agentTools, ","))
 		if len(p.deniedTools) > 0 {
 			args = append(args, "--disallowedTools", strings.Join(p.deniedTools, ","))
 		}
@@ -357,6 +361,10 @@ func (p *cliProvider) Complete(ctx context.Context, prompt string) (string, erro
 	start := time.Now()
 	out, stderr, err := p.run(ctx, p.dir, p.bin, args, prompt)
 	if err != nil && isUnknownFlag(err) {
+		if agentic {
+			// Never retry with less isolation (B-0008, F-0414 rule).
+			return "", fmt.Errorf("%w: this Claude Code does not know an isolation flag cerne needs — update Claude Code (claude update); cerne will not run the chat with less isolation: %w", ErrClaudeCLI, err)
+		}
 		out, stderr, err = p.run(ctx, p.dir, p.bin, base, prompt)
 	}
 	if err != nil {

@@ -270,6 +270,27 @@ func TestNewProviderClaudeCLIDefaultBin(t *testing.T) {
 // comma-joined --allowedTools argument, run in the project dir, and keep the
 // prompt on stdin. The exact-string assertion is the guard against a write
 // command ever sneaking into the boundary.
+func TestAgentProviderIsolatesUserConfig(t *testing.T) {
+	var got []string
+	fake := func(_ context.Context, _, _ string, args []string, _ string) (string, string, error) {
+		got = args
+		return "ok", "", nil
+	}
+	p := &cliProvider{bin: "claude", run: fake, dir: "/proj", agentTools: AgentReadTools}
+	if _, err := p.Complete(context.Background(), "q"); err != nil {
+		t.Fatal(err)
+	}
+	j := " " + strings.Join(got, " ") + " "
+	for _, w := range []string{" --setting-sources project,local ", " --strict-mcp-config "} {
+		if !strings.Contains(j, w) {
+			t.Fatalf("agentic argv %v lacks %q", got, w)
+		}
+	}
+	if strings.Contains(j, "--safe-mode") {
+		t.Fatalf("agentic argv %v must keep project config (no --safe-mode)", got)
+	}
+}
+
 func TestAgentProviderAllowlistFlags(t *testing.T) {
 	var gotDir string
 	var gotArgs []string
@@ -407,27 +428,17 @@ func TestAgentProviderFallbackOldBinary(t *testing.T) {
 	var calls [][]string
 	fake := func(_ context.Context, _, _ string, args []string, _ string) (string, string, error) {
 		calls = append(calls, args)
-		if len(calls) == 1 {
-			return "", "", errors.New("error: unknown option '--allowedTools'")
-		}
-		return "resposta one-shot", "", nil
+		return "", "", errors.New("error: unknown option '--setting-sources'")
 	}
 	p := &cliProvider{bin: "claude", run: fake, dir: "/proj", agentTools: AgentReadTools}
 
-	out, err := p.Complete(context.Background(), "pergunta")
-	if err != nil {
-		t.Fatalf("Complete after fallback: %v", err)
+	// B-0008: a rejected isolation flag must not retry with less isolation.
+	_, err := p.Complete(context.Background(), "pergunta")
+	if !errors.Is(err, ErrClaudeCLI) || !strings.Contains(err.Error(), "update Claude Code") {
+		t.Fatalf("err = %v, want ErrClaudeCLI asking to update Claude Code", err)
 	}
-	if out != "resposta one-shot" {
-		t.Fatalf("Complete = %q", out)
-	}
-	if len(calls) != 2 {
-		t.Fatalf("runner called %d times, want 2 (agentic then one-shot)", len(calls))
-	}
-	for _, a := range calls[1] {
-		if a == "--allowedTools" {
-			t.Fatalf("fallback args %v still carry --allowedTools", calls[1])
-		}
+	if len(calls) != 1 {
+		t.Fatalf("runner called %d times, want 1 (no less-isolated retry)", len(calls))
 	}
 	// A genuine failure (not an unknown flag) must NOT trigger the fallback.
 	calls = nil
