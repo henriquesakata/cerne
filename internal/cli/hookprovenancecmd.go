@@ -33,20 +33,22 @@ var (
 )
 
 func newHookProvenanceCmd() *cobra.Command {
+	var format string
 	cmd := &cobra.Command{
 		Use:    "provenance",
 		Short:  "PostToolUse plumbing: provenance reminder on push/decision gates (F-0103/F-0172)",
 		Hidden: true,
 		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			runHookProvenance(cmd)
+			runHookProvenance(cmd, format)
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&format, "format", "claude", "output envelope: claude|copilot")
 	return cmd
 }
 
-func runHookProvenance(cmd *cobra.Command) {
+func runHookProvenance(cmd *cobra.Command, format string) {
 	in, err := decodeHookInput(cmd.InOrStdin())
 	if err != nil {
 		return
@@ -72,7 +74,7 @@ func runHookProvenance(cmd *cobra.Command) {
 		return
 	}
 
-	if err := writeToolContext(cmd, in, msg); err != nil {
+	if err := writeToolContext(cmd, in, format, msg); err != nil {
 		fmt.Fprintln(cmd.ErrOrStderr(), err)
 	}
 }

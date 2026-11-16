@@ -137,11 +137,14 @@ func workspaceDir(cwd string, roots []string) string {
 }
 
 // writeToolContext answers a PostToolUse hook with msg as context, in the
-// envelope of the harness that sent in (F-0428).
-func writeToolContext(cmd *cobra.Command, in hookInput, msg string) error {
+// envelope of the harness that sent in (F-0428); Copilot reads it top-level.
+func writeToolContext(cmd *cobra.Command, in hookInput, format, msg string) error {
 	enc := json.NewEncoder(cmd.OutOrStdout())
 	if in.cursor() {
 		return enc.Encode(cursorContext{AdditionalContext: msg})
+	}
+	if format == "copilot" {
+		return enc.Encode(copilotContext{AdditionalContext: msg})
 	}
 	var out postToolContext
 	out.HookSpecificOutput.HookEventName = "PostToolUse"
@@ -161,7 +164,7 @@ func newHookBindWorkCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&format, "format", "claude", "input contract: claude|codex|cursor|gemini (F-0174)")
+	cmd.Flags().StringVar(&format, "format", "claude", "input contract: claude|codex|cursor|gemini|copilot (F-0174)")
 	return cmd
 }
 
@@ -222,8 +225,8 @@ const (
 
 // warnUnbound tells the agent, through the PostToolUse context channel, that
 // what it just registered could not be bound to this session (F-0876).
-func warnUnbound(cmd *cobra.Command, in hookInput, msg string) {
-	_ = writeToolContext(cmd, in, msg)
+func warnUnbound(cmd *cobra.Command, in hookInput, format, msg string) {
+	_ = writeToolContext(cmd, in, format, msg)
 }
 
 // runHookBindWork inspects a finished Bash call: when it was a successful
@@ -285,7 +288,7 @@ func runHookBindWork(cmd *cobra.Command, format string) {
 			// Only a real, un-helped, un-refused start: a Bash call that merely
 			// MENTIONS "work start" (grep, echo, a commit message) is not one.
 			if runsCerne(ti.Command, cerneStartRe) && !strings.Contains(string(in.ToolResponse), "Error") {
-				warnUnbound(cmd, in, unboundWorkStart)
+				warnUnbound(cmd, in, format, unboundWorkStart)
 			}
 		}
 	case handoffTakeRe.MatchString(ti.Command):
@@ -294,7 +297,7 @@ func runHookBindWork(cmd *cobra.Command, format string) {
 		if m := workCreatedRe.FindStringSubmatch(string(in.ToolResponse)); m != nil {
 			id = m[1]
 		} else if runsCerne(ti.Command, cerneTakeRe) && !strings.Contains(string(in.ToolResponse), "Error") {
-			warnUnbound(cmd, in, unboundTake)
+			warnUnbound(cmd, in, format, unboundTake)
 		}
 	case featureStartRe.MatchString(ti.Command):
 		// The F-/E-/T- id is the argument; bind only if the response confirms the
@@ -337,7 +340,7 @@ func newHookWorkGateCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&format, "format", "claude", "deny envelope: claude|codex|cursor|gemini (F-0174)")
+	cmd.Flags().StringVar(&format, "format", "claude", "deny envelope: claude|codex|cursor|gemini|copilot (F-0174)")
 	return cmd
 }
 
@@ -355,6 +358,13 @@ type gateDeny struct {
 type cursorGateDeny struct {
 	Permission   string `json:"permission"`
 	AgentMessage string `json:"agent_message"`
+}
+
+// copilotGateDeny is Copilot's PreToolUse decision: top-level fields, not the
+// nested hookSpecificOutput of Claude Code (F-0444).
+type copilotGateDeny struct {
+	PermissionDecision       string `json:"permissionDecision"`
+	PermissionDecisionReason string `json:"permissionDecisionReason"`
 }
 
 // geminiGateDeny is Gemini's BeforeTool decision envelope (R-0036).
@@ -401,8 +411,12 @@ func runHookWorkGate(cmd *cobra.Command, format string) {
 	_ = app.TouchBinding(cacheDir, in.SessionID, in.AgentID) // F-0361: sign of life
 	var ti struct {
 		FilePath string `json:"file_path"`
+		Path     string `json:"path"` // Copilot's own tool arguments
 	}
 	_ = json.Unmarshal(in.ToolInput, &ti)
+	if ti.FilePath == "" {
+		ti.FilePath = ti.Path
+	}
 	if !cfg.Gates.WorkGateEnabled() || ti.FilePath == "" {
 		injectGateChannel(cmd, format, cacheDir, repoDir, projDir, in.SessionID, ti.FilePath)
 		return
@@ -427,6 +441,8 @@ func runHookWorkGate(cmd *cobra.Command, format string) {
 		payload = cursorGateDeny{Permission: "deny", AgentMessage: reason}
 	case "gemini":
 		payload = geminiGateDeny{Decision: "deny", Reason: reason}
+	case "copilot":
+		payload = copilotGateDeny{PermissionDecision: "deny", PermissionDecisionReason: reason}
 	default: // claude and codex share the envelope (R-0035)
 		var d gateDeny
 		d.HookSpecificOutput.HookEventName = "PreToolUse"

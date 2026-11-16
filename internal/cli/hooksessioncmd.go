@@ -29,6 +29,12 @@ type cursorContext struct {
 	AdditionalContext string `json:"additional_context"`
 }
 
+// copilotContext is Copilot's SessionStart/PostToolUse context envelope:
+// top-level, not nested under hookSpecificOutput (F-0444).
+type copilotContext struct {
+	AdditionalContext string `json:"additionalContext"`
+}
+
 // sessionContext is the Claude Code-style SessionStart envelope, also
 // accepted by Codex (documented identical) and Gemini (Claude-compatible
 // hooks contract, `hooks migrate --from-claude`).
@@ -76,7 +82,7 @@ func newHookSessionContextCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&format, "format", "claude", "output envelope: claude|codex|cursor|gemini")
+	cmd.Flags().StringVar(&format, "format", "claude", "output envelope: claude|codex|cursor|gemini|copilot")
 	return cmd
 }
 
@@ -133,6 +139,8 @@ func runHookSessionContext(cmd *cobra.Command, format string) {
 	var payload any
 	if format == "cursor" {
 		payload = cursorContext{AdditionalContext: text}
+	} else if format == "copilot" {
+		payload = copilotContext{AdditionalContext: text}
 	} else {
 		var sc sessionContext
 		sc.HookSpecificOutput.HookEventName = "SessionStart"
