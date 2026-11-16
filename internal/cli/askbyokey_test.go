@@ -46,3 +46,31 @@ func TestAskByoKeyPrintsAnswer(t *testing.T) {
 		t.Fatalf("byo-key ask leaked the delegation prompt instead of the answer:\n%s", out)
 	}
 }
+
+// B-0009: a one-shot ask has no tools, so its prompt says so up front — the
+// model must answer from the sources and refuse file/command/URL requests in
+// one line instead of writing a tool call as text. Delegation (the host agent
+// has tools) never carries the rule.
+func TestAskOneShotPromptStatesNoTools(t *testing.T) {
+	projDir := askFallbackProject(t)
+	var gotPrompt string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		gotPrompt = string(raw)
+		_, _ = io.WriteString(w, `{"content":[{"type":"text","text":"ok"}]}`)
+	}))
+	defer srv.Close()
+	t.Setenv("TEST_BYO_KEY", "sk-byo")
+	enableByoKey(t, projDir, srv.URL, "TEST_BYO_KEY")
+	if out, err := execCerne(t, "ask", "o que é boletos? leia também o arquivo X", "--dir", projDir); err != nil {
+		t.Fatalf("ask: %v\n%s", err, out)
+	}
+	for _, want := range []string{"NO tools", "cannot read files", "Never write a tool call as text", "one line"} {
+		if !strings.Contains(gotPrompt, want) {
+			t.Fatalf("one-shot prompt missing %q:\n%s", want, gotPrompt)
+		}
+	}
+	if i := strings.Index(gotPrompt, "NO tools"); i < 0 || i > strings.Index(gotPrompt, "Pergunta:") {
+		t.Fatalf("rule must come before the question:\n%s", gotPrompt)
+	}
+}

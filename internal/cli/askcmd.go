@@ -110,7 +110,7 @@ func runAsk(cmd *cobra.Command, dir, query string, opts askOpts) error {
 		var answer string
 		prov, err := llm.NewProvider(ctx.cfg.LLM)
 		if err == nil {
-			answer, err = prov.Complete(cmd.Context(), prompt)
+			answer, err = prov.Complete(cmd.Context(), ask.OneShotRule+prompt)
 		}
 		if errors.Is(err, context.Canceled) {
 			return err // Ctrl-C is not a model failure: scripts must see it
