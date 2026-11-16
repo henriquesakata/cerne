@@ -35,6 +35,9 @@ type Props = {
   // approvedTarget (F-0318): a feature refinada já está aprovada — atualizar a
   // spec vence a aprovação, e o painel diz isso antes do clique.
   approvedTarget?: boolean
+  // missing (F-0435): the sections the server refused the registration for —
+  // shown in the card while the conversation stays open for a re-emit.
+  missing?: string[]
   onRegister: (proposal: ParsedProposal) => void
   onQuote: (quote: string) => void
 }
@@ -44,6 +47,7 @@ export default function ProposalDraft({
   registering,
   refining = false,
   approvedTarget = false,
+  missing = [],
   onRegister,
   onQuote,
 }: Props) {
@@ -159,6 +163,16 @@ export default function ProposalDraft({
           </QuoteComment>
 
           {stale && <p className="proposal-draft-stale">{t.proposalDraft.stale(revisions.length)}</p>}
+          {missing.length > 0 && (
+            <div role="alert" className="form-error proposal-draft-missing">
+              <p>{t.proposalDraft.missingSections}</p>
+              <ul>
+                {missing.map((m) => (
+                  <li key={m}>{m}</li>
+                ))}
+              </ul>
+            </div>
+          )}
           {refining && approvedTarget && <p className="form-error">{t.proposalDraft.approvedTarget}</p>}
           <button
             type="button"

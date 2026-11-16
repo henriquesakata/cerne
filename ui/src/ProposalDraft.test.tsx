@@ -24,6 +24,30 @@ function rev(patch: Partial<ParsedProposal> = {}): ParsedProposal {
   }
 }
 
+describe('ProposalDraft missing sections (F-0435)', () => {
+  it('lists the sections the server refused for, keeping the draft open', () => {
+    render(
+      <ProposalDraft
+        revisions={[rev()]}
+        registering={false}
+        missing={['Verificação', 'Fora de escopo']}
+        onRegister={vi.fn()}
+        onQuote={vi.fn()}
+      />,
+    )
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent('Verificação')
+    expect(alert).toHaveTextContent('Fora de escopo')
+    expect(screen.getByText('Exportar relatórios em CSV')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /registrar candidata/i })).toBeEnabled()
+  })
+
+  it('shows nothing when no section is missing', () => {
+    render(<ProposalDraft revisions={[rev()]} registering={false} onRegister={vi.fn()} onQuote={vi.fn()} />)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+})
+
 describe('ProposalDraft (F-0255)', () => {
   it('critério 1: uma revisão vira o painel com v1, sem seletor de versões', () => {
     render(<ProposalDraft revisions={[rev()]} registering={false} onRegister={vi.fn()} onQuote={vi.fn()} />)

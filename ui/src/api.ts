@@ -1109,7 +1109,7 @@ export async function registerChatCandidate(
   parent = '',
   featureId = '',
   model = '',
-): Promise<CreateOutcome & { warning?: string; unchanged?: boolean; matches?: DupMatch[] }> {
+): Promise<CreateOutcome & { warning?: string; unchanged?: boolean; matches?: DupMatch[]; missing?: string[] }> {
   const r = await fetch(`${base()}/chat/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1130,8 +1130,8 @@ export async function registerChatCandidate(
     // F-0264: o 409 do guard de duplicidade traz as colisões estruturadas — é
     // o id delas que permite à conversa órfã se vincular à candidata existente
     // em vez de ficar sem saída.
-    const body = (await r.json().catch(() => ({}))) as { error?: string; matches?: DupMatch[] }
-    return { ok: false, error: body.error ?? `HTTP ${r.status}`, matches: body.matches }
+    const body = (await r.json().catch(() => ({}))) as { error?: string; matches?: DupMatch[]; missing?: string[] }
+    return { ok: false, error: body.error ?? `HTTP ${r.status}`, matches: body.matches, missing: body.missing }
   }
   // F-0254: warning acompanha o 201 quando algo não-fatal foi descartado (um
   // parent inexistente ou fechado) — a candidata foi registrada mesmo assim.

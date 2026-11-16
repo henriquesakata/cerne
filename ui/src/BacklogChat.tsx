@@ -672,6 +672,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
   // A conversa órfã se vincula a uma delas por clique — nunca por inferência
   // (crit. 7): o guard casa por semelhança de título, não por identidade.
   const [dupCandidates, setDupCandidates] = useState<DupMatch[]>([])
+  const [missingSections, setMissingSections] = useState<string[]>([])
   // F-0249: qual nota já virou entidade, por índice da mensagem que a propôs —
   // o card vira recibo com o id em vez de sumir, e um segundo clique não grava
   // a mesma nota de novo. Efêmero de propósito: recarregar mostra o card outra
@@ -916,6 +917,8 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
     })
     return found
   }, [messages])
+  // A new revision supersedes the refusal shown for the previous one.
+  useEffect(() => setMissingSections([]), [revisions.length])
 
   const versionByMessage = useMemo(
     () => new Map(revisions.map((r) => [r.msgIndex, r.version])),
@@ -959,6 +962,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
     setError(null)
     setNotice(null)
     setDupCandidates([])
+    setMissingSections([])
     registerChatCandidate(
       proposal.title,
       proposal.body,
@@ -974,6 +978,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
         setRegistering(false)
         if (!res.ok) {
           setError(res.error)
+          setMissingSections(res.missing ?? [])
           // Só candidata: vincular uma proposta avulsa a uma feature aprovada
           // reescreveria a spec e venceria a aprovação (F-0318) num clique de
           // deduplicação. O chat só regrava aprovada numa conversa de refino.
@@ -1208,6 +1213,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
           registering={registering}
           refining={refineId !== ''}
           approvedTarget={refineApproved}
+          missing={missingSections}
           onRegister={confirmRegister}
           onQuote={appendQuote}
         />
