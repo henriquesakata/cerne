@@ -15,8 +15,6 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
-
-	"github.com/henriquesakata/cerne/internal/mcp"
 )
 
 // ModeClaudeCLI is the provider mode that shells to the Claude Code CLI
@@ -376,6 +374,13 @@ func scratchDir() (string, func(), error) {
 	return dir, func() { os.RemoveAll(dir) }, nil
 }
 
+// cerneReadTools are the read-only tools of `cerne mcp` the Codex chat turn
+// approves; a test keeps the list equal to mcp.ToolNames.
+var cerneReadTools = []string{"status", "brief", "next", "search", "show", "ask", "guide"}
+
+// cerneEnvVars are the locations a fixture or a user points cerne at.
+var cerneEnvVars = []string{"CERNE_CACHE_DIR", "CERNE_DATA_DIR", "CERNE_CONFIG_DIR"}
+
 // completeCodex runs `codex exec` (R-0093): prompt on stdin ("-"), the final
 // message written by the CLI to the -o file, read-only sandbox, no session
 // persisted, in an empty scratch dir.
@@ -410,8 +415,20 @@ func (p *cliProvider) completeCodex(ctx context.Context, prompt string) (string,
 		// files. Every name in mcp.ToolNames is a read command; none writes.
 		cerneArgv, _ := json.Marshal([]string{"mcp", "--dir", root})
 		args = append(args, "-c", "mcp_servers.cerne.command="+string(command), "-c", "mcp_servers.cerne.args="+string(cerneArgv))
-		for _, name := range mcp.ToolNames {
+		for _, name := range cerneReadTools {
 			args = append(args, "-c", "mcp_servers.cerne.tools."+name+`.approval_mode="approve"`)
+		}
+		// Codex starts a stdio server with a restricted environment: name the
+		// cerne locations that are set, so the children read this project's cache.
+		var set []string
+		for _, n := range cerneEnvVars {
+			if os.Getenv(n) != "" {
+				set = append(set, n)
+			}
+		}
+		if len(set) > 0 {
+			names, _ := json.Marshal(set)
+			args = append(args, "-c", "mcp_servers.cerne_project.env_vars="+string(names), "-c", "mcp_servers.cerne.env_vars="+string(names))
 		}
 	}
 	if p.model != "" {

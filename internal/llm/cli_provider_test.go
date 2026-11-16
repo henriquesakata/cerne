@@ -1185,7 +1185,7 @@ func TestCodexChatArgv(t *testing.T) {
 	if want := append(slices.Clone(iso), "-"); !reflect.DeepEqual(oneShot, want) {
 		t.Fatalf("one-shot argv = %v, want %v", oneShot, want)
 	}
-	root := filepath.Join(t.TempDir(), "proj")
+	root := t.TempDir() + "/a b\"c"
 	chat := codexArgv(t, root)
 	if !reflect.DeepEqual(chat[:len(iso)], iso) {
 		t.Fatalf("chat isolation changed: %v", chat)
@@ -1204,6 +1204,9 @@ func TestCodexChatArgv(t *testing.T) {
 	if !slices.Contains(chat, "mcp_servers.cerne.args="+string(cerne)) {
 		t.Fatalf("no cerne read-only server in %v", chat)
 	}
+	if !slices.Contains(chat, "mcp_servers.cerne.command="+string(cmd)) {
+		t.Fatalf("the cerne server must run the same executable as the files server: %v", chat)
+	}
 	for _, name := range mcp.ToolNames {
 		if !slices.Contains(chat, "mcp_servers.cerne.tools."+name+`.approval_mode="approve"`) {
 			t.Errorf("tool %s is not approved in %v", name, chat)
@@ -1212,6 +1215,43 @@ func TestCodexChatArgv(t *testing.T) {
 	for _, a := range chat {
 		if strings.Contains(a, "mcp_servers.cerne.tools.") && !strings.HasSuffix(a, `.approval_mode="approve"`) {
 			t.Errorf("unexpected tool setting %s", a)
+		}
+	}
+}
+
+// TestCerneReadToolsMatchMCP keeps llm's list of approved tool names equal to
+// what the MCP server announces, without llm importing mcp (F-0439).
+func TestCerneReadToolsMatchMCP(t *testing.T) {
+	if !slices.Equal(cerneReadTools, mcp.ToolNames) {
+		t.Fatalf("cerneReadTools = %v, mcp.ToolNames = %v", cerneReadTools, mcp.ToolNames)
+	}
+}
+
+// TestCodexChatForwardsCerneEnv (F-0439): Codex starts an MCP stdio server with
+// a restricted environment, so the cerne locations set for this process are
+// named in env_vars of both servers — names only, never values — and nothing is
+// declared when none is set.
+func TestCodexChatForwardsCerneEnv(t *testing.T) {
+	root := t.TempDir()
+	for _, n := range cerneEnvVars {
+		t.Setenv(n, "")
+		os.Unsetenv(n)
+	}
+	for _, a := range codexArgv(t, root) {
+		if strings.Contains(a, "env_vars") {
+			t.Fatalf("env_vars declared with nothing set: %s", a)
+		}
+	}
+	t.Setenv("CERNE_CACHE_DIR", "/secret/cache")
+	got := codexArgv(t, root)
+	for _, srv := range []string{"cerne_project", "cerne"} {
+		if !slices.Contains(got, "mcp_servers."+srv+`.env_vars=["CERNE_CACHE_DIR"]`) {
+			t.Errorf("%s does not get CERNE_CACHE_DIR: %v", srv, got)
+		}
+	}
+	for _, a := range got {
+		if strings.Contains(a, "/secret/cache") {
+			t.Fatalf("a value leaked into the argv: %s", a)
 		}
 	}
 }
