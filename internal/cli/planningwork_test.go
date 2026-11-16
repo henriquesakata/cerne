@@ -35,8 +35,8 @@ func TestPlanningWorkRealCase(t *testing.T) {
 		wantWork(t, repoDir, "W-0001", domain.WorkDone, "planning closed: feature start")
 		auto := wantWork(t, repoDir, "W-0002", domain.WorkActive, "")
 		host, _ := os.Hostname() // the agent identity carries user and machine (F-0350)
-		if !auto.Auto || auto.Actor != "agent:u@"+host {
-			t.Fatalf("W-0002 = %+v, want the auto work of agent:u@%s", auto, host)
+		if !auto.Auto || auto.Actor != "agent:"+domain.MachinePseudonym("u@"+host) {
+			t.Fatalf("W-0002 = %+v, want the auto work of the machine pseudonym of u@%s", auto, host)
 		}
 		// CONTEXT.md lists active works by id: only the auto one now.
 		if ctx := pulledContext(t, projDir); !strings.Contains(ctx, "W-0002") || strings.Contains(ctx, "W-0001") {

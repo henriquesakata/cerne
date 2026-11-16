@@ -98,7 +98,7 @@ func SaveHandoff(backendDir string, h Handoff) error {
 // LoadHandoff reads one handoff by id; ErrNotFound when the file is missing.
 func LoadHandoff(backendDir, id string) (Handoff, error) {
 	h, err := loadEntity[Handoff](backendDir, handoffsSubdir, id)
-	h.Actor = domain.ActorLabel(h.Actor) // F-0442: read only, the file is not rewritten
+	h.Actor, h.TakenBy = domain.ActorLabel(h.Actor), domain.ActorLabel(h.TakenBy) // F-0442: read only, the file is not rewritten
 	return h, err
 }
 
@@ -107,7 +107,7 @@ func LoadHandoff(backendDir, id string) (Handoff, error) {
 func LoadAllHandoffs(backendDir string) ([]Handoff, error) {
 	hs, err := loadAllEntities[Handoff](backendDir, handoffsSubdir)
 	for i := range hs {
-		hs[i].Actor = domain.ActorLabel(hs[i].Actor) // F-0442
+		hs[i].Actor, hs[i].TakenBy = domain.ActorLabel(hs[i].Actor), domain.ActorLabel(hs[i].TakenBy) // F-0442
 	}
 	return hs, err
 }

@@ -23,7 +23,7 @@ func TestLegacyActorsReadAsPseudonym(t *testing.T) {
 	if err := SaveWork(dir, Work{ID: "W-0001", State: domain.WorkActive, Actor: old, CreatedAt: at, UpdatedAt: at}); err != nil {
 		t.Fatal(err)
 	}
-	if err := SaveHandoff(dir, Handoff{ID: "HO-0001", State: domain.HandoffPending, Actor: "alice@mac.local", CreatedAt: at, UpdatedAt: at}); err != nil {
+	if err := SaveHandoff(dir, Handoff{ID: "HO-0001", State: domain.HandoffPending, Actor: "alice@mac.local", TakenBy: "bob@mac.local", CreatedAt: at, UpdatedAt: at}); err != nil {
 		t.Fatal(err)
 	}
 	if err := AppendEvent(dir, domain.NewEvent("W-0001", "work.started", nil, old)); err != nil {
@@ -49,6 +49,7 @@ func TestLegacyActorsReadAsPseudonym(t *testing.T) {
 		"LoadAllHandoffs": hs[0].Actor, "ReadAllEvents": evs[0].Actor,
 		"ReadEvents": revs[0].Actor, "LoadHandoffs": es[0].Author,
 	}
+	checks["LoadHandoff TakenBy"], checks["LoadAllHandoffs TakenBy"] = h.TakenBy, hs[0].TakenBy
 	for name, got := range checks {
 		if strings.Contains(got, "@") || !strings.HasPrefix(strings.TrimPrefix(got, "agent:"), "m-") {
 			t.Errorf("%s actor = %q, want a pseudonym", name, got)
