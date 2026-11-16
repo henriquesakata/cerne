@@ -18,7 +18,7 @@ const registerChatCandidate = vi.fn<
     capability?: string,
     parent?: string,
     featureId?: string,
-  ) => Promise<CreateOutcome & { warning?: string; unchanged?: boolean }>
+  ) => Promise<CreateOutcome & { warning?: string; unchanged?: boolean; missing?: string[] }>
 >()
 const registerChatNote = vi.fn<
   (
