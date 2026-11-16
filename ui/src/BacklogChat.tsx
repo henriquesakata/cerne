@@ -1272,7 +1272,9 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
         </div>
         {/* F-0241: sem rótulo e sem opção vazia — o valor corrente já nomeia o
             campo, e o padrão garante que nunca fica sem seleção. */}
-        {offered.length > 0 && (
+        {/* F-0440: o seletor de provedor não depende do catálogo de modelos — um
+            provedor sem modelos (Cursor, Gemini) ainda precisa do caminho de volta. */}
+        {(offered.length > 0 || providers.length > 1) && (
           <div className="backlog-chat-options">
             {/* F-0311: provedor (só os já configurados), modelo (submenu de
                 legados) e esforço (só os declarados do modelo). */}
@@ -1283,6 +1285,8 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
               label={t.backlogChat.providerLabel}
               format={providerName}
             />
+            {offered.length > 0 && (
+              <>
             <ModelMenu
               value={model}
               entries={offered}
@@ -1296,6 +1300,8 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
               onSelect={setEffort}
               label={t.backlogChat.effortLabel}
             />
+              </>
+            )}
           </div>
         )}
       </form>

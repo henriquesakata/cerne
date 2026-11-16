@@ -676,6 +676,31 @@ describe('BacklogChat — menu hierárquico de modelos (F-0311)', () => {
     expect(streamChat.mock.calls[0][1]).toMatchObject({ provider: 'openai', model: 'gpt-x', effort: 'high' })
   })
 
+  it('F-0440: um provedor sem modelos no catálogo (Cursor) mantém o seletor, esconde modelo/esforço e não manda nenhum', async () => {
+    streamChat.mockResolvedValue({ answered: true, reply: 'ok' })
+    fetchLLMOptions.mockResolvedValue(opts({ providers: ['anthropic', 'openai', 'cursor'] }))
+    renderChat({ model: 'claude-opus-5-5', effort: 'medium' })
+    await screen.findByText('Claude Opus 5.5')
+    fireEvent.click(screen.getByLabelText(/provedor/i))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /Cursor/ }))
+
+    expect(screen.getByLabelText(/provedor/i)).toHaveTextContent('Cursor')
+    expect(screen.queryByLabelText(/modelo/i)).toBeNull()
+    expect(screen.queryByLabelText(/esfor/i)).toBeNull()
+
+    fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+    await waitFor(() => expect(streamChat).toHaveBeenCalled())
+    const sent = streamChat.mock.calls.at(-1)![1]
+    expect(sent).toMatchObject({ provider: 'cursor' })
+    expect(sent?.model).toBeUndefined()
+    expect(sent?.effort).toBeUndefined()
+
+    fireEvent.click(screen.getByLabelText(/provedor/i))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /Anthropic/ }))
+    expect(screen.getByLabelText(/modelo/i)).toHaveTextContent('Claude Opus 5.5')
+  })
+
   it('C4: sem rota de preferência (cerne serve), a escolha vale na sessão e nada quebra na tela', async () => {
     fetchLLMOptions.mockResolvedValue(opts({ providers: ['anthropic', 'vendor'] }))
     setPreferredProvider.mockRejectedValue(new Error('route not found'))
