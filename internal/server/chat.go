@@ -185,6 +185,10 @@ func turnAnsweredBy(cfg project.LLMConfig, prov llm.Provider) *answeredBy {
 		if mode == llm.ModeCodexCLI {
 			by.Effort = cfg.Effort
 		}
+		// The Copilot CLI may pick its own model (auto): name what it reported.
+		if r, ok := prov.(interface{ AnsweredModel() string }); ok && mode == llm.ModeCopilotCLI && r.AnsweredModel() != "" {
+			by.Model = r.AnsweredModel()
+		}
 	default:
 		by.Model = cfg.WithDefaults().Model
 	}

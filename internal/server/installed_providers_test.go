@@ -424,3 +424,15 @@ func TestChatClaudeModeNonAnthropicProviderReportsNoEffort(t *testing.T) {
 		t.Fatalf("answered_by = %+v, want no effort", got.By)
 	}
 }
+
+// F-0445: a copilot-cli turn names the model the CLI reported (it may have
+// picked one itself); without a report it falls back to the one the call named.
+func TestTurnAnsweredByCopilotPrefersTheReportedModel(t *testing.T) {
+	cfg := project.LLMConfig{Mode: "copilot-cli", Model: "asked", Effort: "high"}
+	if by := turnAnsweredBy(cfg, &reportingFake{llm.Fake{}, "ran"}); by == nil || by.Provider != "copilot" || by.Model != "ran" {
+		t.Fatalf("reported = %+v", by)
+	}
+	if by := turnAnsweredBy(cfg, &llm.Fake{}); by == nil || by.Model != "asked" {
+		t.Fatalf("unreported = %+v", by)
+	}
+}
