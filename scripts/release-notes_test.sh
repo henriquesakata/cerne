@@ -72,4 +72,13 @@ case $out in "## [0.2.0]"*) bad "rc: notice not first" ;; *"## [0.2.0]"*"Thing t
 # no argument
 if run >/dev/null 2>&1; then bad "usage"; else ok "usage"; fi
 
+# the repository's own CHANGELOG: 0.14.0 runs to its last subsection and stops before 0.13.0
+repo="$here/../CHANGELOG.md"
+if [ -f "$repo" ]; then
+  out=$(CHANGELOG="$repo" sh "$here/release-notes.sh" v0.14.0) || bad "repo: exit"
+  case $out in "## [0.14.0]"*"### Highlights"*"### Known limitations"*) ok "repo section" ;; *) bad "repo section" ;; esac
+  case $out in *"## [0.13.0]"*) bad "repo: leaked 0.13.0" ;; *) ok "repo stops before 0.13.0" ;; esac
+  if CHANGELOG="$repo" sh "$here/release-notes.sh" v0.15.0 >/dev/null 2>&1; then bad "repo: v0.15.0 passed"; else ok "repo absent version"; fi
+fi
+
 exit $fail
