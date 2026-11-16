@@ -28,9 +28,10 @@ var ErrClaudeCLI = errors.New("claude-cli invocation failed")
 // ErrCodexCLI, ErrGeminiCLI and ErrCursorCLI are ErrClaudeCLI's siblings for
 // the other subscription CLIs (F-0414, F-0441).
 var (
-	ErrCodexCLI  = errors.New("codex-cli invocation failed")
-	ErrGeminiCLI = errors.New("gemini-cli invocation failed")
-	ErrCursorCLI = errors.New("cursor-cli invocation failed")
+	ErrCodexCLI   = errors.New("codex-cli invocation failed")
+	ErrGeminiCLI  = errors.New("gemini-cli invocation failed")
+	ErrCursorCLI  = errors.New("cursor-cli invocation failed")
+	ErrCopilotCLI = errors.New("copilot-cli invocation failed")
 )
 
 // AgentReadTools is the exact tool allowlist the agentic chat provider grants
@@ -151,6 +152,9 @@ func describeExit(name, state string, stdout, stderr []byte) string {
 		return fmt.Sprintf("%q exited with %s: %s", name, state, tail(stderr, maxOutputBytes))
 	}
 	if len(bytes.TrimSpace(stdout)) > 0 {
+		if msg := copilotSessionError(stdout); msg != "" {
+			return fmt.Sprintf("%q exited with %s: %s", name, state, msg)
+		}
 		return fmt.Sprintf("%q exited with %s (stdout): %s", name, state, tail(stdout, maxOutputBytes))
 	}
 	return fmt.Sprintf("%q exited with %s (no output)", name, state)
@@ -215,6 +219,8 @@ func cliProduct(bin string) string {
 		return "Gemini CLI"
 	case strings.Contains(b, "cursor"):
 		return "Cursor CLI"
+	case strings.Contains(b, "copilot"):
+		return "GitHub Copilot CLI"
 	}
 	return "Claude Code"
 }
@@ -227,7 +233,7 @@ func cliProduct(bin string) string {
 // answering; nil agentTools is the original one-shot text generator, byte-for-
 // byte, used by ask/compile/diagram.
 type cliProvider struct {
-	kind        string // ModeClaudeCLI (also ""), ModeCodexCLI, ModeGeminiCLI or ModeCursorCLI
+	kind        string // ModeClaudeCLI (also ""), ModeCodexCLI, ModeGeminiCLI, ModeCursorCLI or ModeCopilotCLI
 	model       string // -m for codex/gemini; --model on the claude chat turn only (B-0007)
 	effort      string // codex model_reasoning_effort / claude --effort for one chat turn (B-0006, B-0007)
 	bin         string
@@ -337,6 +343,8 @@ func (p *cliProvider) Complete(ctx context.Context, prompt string) (string, erro
 		return p.completeGemini(ctx, prompt)
 	case ModeCursorCLI:
 		return p.completeCursor(ctx, prompt)
+	case ModeCopilotCLI:
+		return p.completeCopilot(ctx, prompt)
 	}
 	base := []string{"-p", "--output-format", "text"}
 	args := slices.Clone(base)
@@ -568,6 +576,113 @@ func (p *cliProvider) completeCursor(ctx context.Context, prompt string) (string
 	}
 	return answer, nil
 }
+
+// copilotEvent is one line of `copilot --output-format json` (JSONL), the part
+// cerne reads (F-0445, probed on copilot 1.0.112).
+type copilotEvent struct {
+	Type string `json:"type"`
+	Data struct {
+		Model   string `json:"model"`
+		Phase   string `json:"phase"`
+		Content string `json:"content"`
+		Message string `json:"message"`
+	} `json:"data"`
+}
+
+func copilotEvents(out string) []copilotEvent {
+	var evs []copilotEvent
+	for _, line := range strings.Split(out, "\n") {
+		var ev copilotEvent
+		if strings.HasPrefix(line, "{") && json.Unmarshal([]byte(line), &ev) == nil {
+			evs = append(evs, ev)
+		}
+	}
+	return evs
+}
+
+// copilotSessionError is the message of a session.error event on a failed
+// call's stdout: in JSON mode the CLI reports a bad model there, ahead of
+// events that would push it out of the 512-byte tail describeExit keeps.
+func copilotSessionError(stdout []byte) string {
+	var msgs []string
+	for _, ev := range copilotEvents(string(stdout)) {
+		if ev.Type == "session.error" && ev.Data.Message != "" {
+			msgs = append(msgs, ev.Data.Message)
+		}
+	}
+	return strings.Join(msgs, "; ")
+}
+
+// copilotNoTools is an --available-tools name no tool has. An empty list does
+// not clear the tool list (probe, F-0445); a list of unknown names does.
+const copilotNoTools = "cerne-no-tools"
+
+// completeCopilot runs `copilot` non-interactively (F-0445): prompt on stdin
+// (`-p -` sends a literal "-"), JSON events so the answer and the model that
+// ran are read from the stream, in an empty scratch dir and with a throwaway
+// COPILOT_HOME so no skill, agent, hook or MCP server of the user loads (the
+// keychain login still does, probed). Isolation: every tool denied and hidden,
+// no built-in MCP, no custom instruction, the folder never trusted. Denying
+// alone leaked a canary through a subagent once the main tools were hidden, so
+// the tool list itself is emptied.
+func (p *cliProvider) completeCopilot(ctx context.Context, prompt string) (string, error) {
+	dir, cleanup, err := scratchDir()
+	if err != nil {
+		return "", fmt.Errorf("%w: %w", ErrCopilotCLI, err)
+	}
+	defer cleanup()
+	work, home := filepath.Join(dir, "work"), filepath.Join(dir, "home")
+	for _, d := range []string{work, home} {
+		if err := os.Mkdir(d, 0o700); err != nil {
+			return "", fmt.Errorf("%w: %w", ErrCopilotCLI, err)
+		}
+	}
+	ctx = context.WithValue(ctx, envKey{}, []string{"COPILOT_HOME=" + home})
+	args := []string{"-s", "--output-format", "json", "--no-ask-user", "--no-auto-update", "--no-custom-instructions", "--disable-builtin-mcps",
+		"--deny-tool", "shell", "--deny-tool", "write", "--deny-tool", "url", "--deny-tool", "read", "--deny-tool", "memory",
+		"--excluded-tools", "web_fetch", "--available-tools", copilotNoTools}
+	if p.model != "" {
+		args = append(args, "--model", p.model)
+	}
+	if effortRE.MatchString(p.effort) {
+		args = append(args, "--effort", p.effort)
+	}
+	start := time.Now()
+	out, _, err := p.run(ctx, work, p.bin, args, prompt)
+	if err != nil {
+		if rejectedFlag(err) {
+			return "", fmt.Errorf("%w: this GitHub Copilot CLI does not know an isolation flag cerne needs — update it (npm install -g @github/copilot); cerne will not run it with less isolation: %w", ErrCopilotCLI, err)
+		}
+		msg := err.Error()
+		hint := "use another mode"
+		switch {
+		case strings.Contains(msg, "install GitHub Copilot CLI"):
+			hint = "install GitHub Copilot CLI (npm install -g @github/copilot) and ensure copilot is on PATH"
+		case authErrorRE.MatchString(msg):
+			hint = "run 'copilot login' or set COPILOT_GITHUB_TOKEN, or use another mode"
+		case strings.Contains(msg, "is not available"):
+			hint = "choose another model — this one is not available to your Copilot plan or organization"
+		case copilotPolicyRE.MatchString(msg):
+			hint = "your organization's policy blocks it — ask your Copilot administrator, or use another mode"
+		}
+		return "", cliFailure(ctx, start, ErrCopilotCLI, "GitHub Copilot CLI (copilot)", err, hint)
+	}
+	answer, model := "", ""
+	for _, ev := range copilotEvents(out) {
+		if ev.Type == "assistant.message" && strings.TrimSpace(ev.Data.Content) != "" {
+			answer, model = ev.Data.Content, ev.Data.Model
+		}
+	}
+	if strings.TrimSpace(answer) == "" {
+		return "", fmt.Errorf("%w: copilot returned no answer — run 'copilot login', check --model (the model must be available to your plan) and the Copilot CLI version", ErrCopilotCLI)
+	}
+	p.answered = model
+	return strings.TrimSpace(answer), nil
+}
+
+// copilotPolicyRE recognizes a refusal by the organization's Copilot policy. The
+// wording is from GitHub's documentation: no probe could cause it.
+var copilotPolicyRE = regexp.MustCompile(`(?i)polic|organization|enterprise|administrator`)
 
 // geminiReply is the part of `gemini --output-format json` cerne reads.
 type geminiReply struct {
