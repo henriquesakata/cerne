@@ -978,6 +978,12 @@ func TestBuildChatSystemPromptLiveQueryCodex(t *testing.T) {
 			t.Errorf("codex live-query block lacks %q:\n%s", want, ChatCodexLiveQuery)
 		}
 	}
+	// Gauntlet round 1: the agent gave up after a name search and asked the human.
+	for _, want := range []string{"search_files", "list the tree", "**", "stage", "backdrop", "enemy", "Never ask the user for a path or a keyword before"} {
+		if !strings.Contains(ChatCodexLiveQuery, want) {
+			t.Errorf("codex live-query block lacks the exploration cue %q:\n%s", want, ChatCodexLiveQuery)
+		}
+	}
 	if strings.Contains(ChatCodexLiveQuery, "cerne search") || strings.Contains(ChatCodexLiveQuery, "Read, Grep") {
 		t.Errorf("block names a claude tool or shell command:\n%s", ChatCodexLiveQuery)
 	}
