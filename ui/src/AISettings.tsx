@@ -33,6 +33,7 @@ const INSTALL: Record<string, string> = {
   claude: 'npm i -g @anthropic-ai/claude-code',
   codex: 'npm i -g @openai/codex',
   gemini: 'npm i -g @google/gemini-cli',
+  'cursor-agent': 'curl https://cursor.com/install -fsS | bash',
 }
 const KEY_ENV: Record<string, string> = { gemini: 'GEMINI_API_KEY', openrouter: 'OPENROUTER_API_KEY' }
 // A subscription CLI uses its own default model and endpoint: choosing one (or

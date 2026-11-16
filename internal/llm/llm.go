@@ -36,11 +36,13 @@ type Streamer interface {
 	Stream(ctx context.Context, prompt string, onDelta func(string) error) (string, error)
 }
 
-// ModeCodexCLI and ModeGeminiCLI are the subscription modes that shell to the
-// Codex CLI and the Gemini CLI (F-0414), like ModeClaudeCLI does for Claude Code.
+// ModeCodexCLI, ModeGeminiCLI and ModeCursorCLI are the subscription modes that
+// shell to the Codex CLI, the Gemini CLI (F-0414) and the Cursor CLI (F-0441),
+// like ModeClaudeCLI does for Claude Code.
 const (
 	ModeCodexCLI  = "codex-cli"
 	ModeGeminiCLI = "gemini-cli"
+	ModeCursorCLI = "cursor-cli"
 )
 
 // detectCLI is the PATH probe behind the dynamic default; tests replace it.
@@ -55,7 +57,7 @@ const (
 
 // ResolveMode maps a configured [llm] mode to the effective mode. An empty
 // value resolves to the subscription CLI found on PATH (claude-cli, codex-cli,
-// gemini-cli) and to ModeDelegation when there is none.
+// gemini-cli, cursor-cli) and to ModeDelegation when there is none.
 func ResolveMode(mode string) string {
 	m, _ := ResolveModeSource(mode)
 	return m
@@ -68,7 +70,7 @@ func ResolveModeSource(mode string) (string, string) {
 		return mode, SourceConfigured
 	}
 	if cli := detectCLI(); cli != "" {
-		return cli + "-cli", SourceDetected
+		return project.CLIMode(cli), SourceDetected
 	}
 	return ModeDelegation, SourceDefault
 }

@@ -328,6 +328,17 @@ describe('AISettings (F-0414)', () => {
     expect(within(codex).getByText('npm i -g @openai/codex')).toBeInTheDocument()
   })
 
+  it('F-0441: o Cursor CLI aparece com o plano, o limite do isolamento, o login e a instalação', async () => {
+    fetchLLMConfig.mockResolvedValue(cfg({ clis: [...cfg().clis!, { name: 'cursor-agent', mode: 'cursor-cli', found: false }] }))
+    mount()
+    await screen.findByText(/Em uso:/)
+    const cursor = screen.getByText('Cursor CLI').closest('li')!
+    expect(cursor).toHaveTextContent('assinatura do Cursor')
+    expect(cursor).toHaveTextContent('regras, hooks e plugins da sua conta Cursor')
+    expect(cursor).toHaveTextContent('cursor-agent login')
+    expect(within(cursor).getByText('curl https://cursor.com/install -fsS | bash')).toBeInTheDocument()
+  })
+
   it('item 12: o campo da chave é new-password e uma chave recusada entra na descrição', async () => {
     fetchLLMConfig.mockResolvedValue(cfg({ key: { env: 'ANTHROPIC_API_KEY', set: false, problem: 'mode 0644' } }))
     mount()

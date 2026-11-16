@@ -33,7 +33,7 @@ func resolved(t *testing.T, dir, id string) ResolvedSetting {
 func TestLLMSettingsDeclared(t *testing.T) {
 	dir := llmProject(t, "")
 	for id, enum := range map[string][]string{
-		"llm.mode":     {"claude-cli", "codex-cli", "gemini-cli", "byo-key", "delegation"},
+		"llm.mode":     {"claude-cli", "codex-cli", "gemini-cli", "cursor-cli", "byo-key", "delegation"},
 		"llm.provider": {"anthropic", "openai", "gemini", "openrouter", "compatible"},
 		"llm.model":    nil,
 		"llm.base_url": nil,
@@ -61,6 +61,11 @@ func TestLLMModeDefaultIsTheDetectedCLI(t *testing.T) {
 	DetectSubscriptionCLI = func() string { return "codex" }
 	if s := resolved(t, dir, "llm.mode"); s.Value != "codex-cli" || s.Origin != OriginDetected {
 		t.Fatalf("detected: %v from %q", s.Value, s.Origin)
+	}
+	// F-0441: the Cursor binary is cursor-agent; its mode is cursor-cli.
+	DetectSubscriptionCLI = func() string { return "cursor-agent" }
+	if s := resolved(t, dir, "llm.mode"); s.Value != "cursor-cli" || s.Origin != OriginDetected {
+		t.Fatalf("detected cursor: %v from %q", s.Value, s.Origin)
 	}
 	DetectSubscriptionCLI = func() string { return "" }
 	if s := resolved(t, dir, "llm.mode"); s.Value != "delegation" || s.Origin != OriginDefault {
