@@ -993,6 +993,12 @@ func TestBuildChatSystemPrompt_InterviewProtocol(t *testing.T) {
 		"marcador de esclarecimento",                            // (g) open ones become markers
 		"confirmação numa linha",                                // (g) confirm before emitting
 		"Só proponha quando problema, objetivo e critérios de aceitação testáveis fecharem e não houver decisão aberta",
+		"o turno TERMINA no resumo e na pergunta de confirmação numa linha, sem " + chatProposalFence,
+		"só sai no turno seguinte, depois que o humano confirmar ou corrigir",
+		"emita na hora, com as abertas como marcador de esclarecimento",
+		"Nenhum item de \"Assumi:\" contradiz ou substitui o que o humano respondeu",
+		"toda resposta do humano aparece no rascunho da spec",
+		"uma resposta sem lugar na spec vira pergunta, não descarte silencioso",
 		"marcador de esclarecimento (" + doclang.AmbiguityMarker(doclang.PT) + " pergunta])",
 	} {
 		if !strings.Contains(prompt, want) {
@@ -1032,8 +1038,14 @@ func TestBuildChatSystemPrompt_EnglishInterviewForms(t *testing.T) {
 	for _, want := range []string{"Assumed:", "Tree: <n> resolved · <n> open · <n> assumptions", "propose now",
 		"resuma as decisões tomadas e as suposições e peça a confirmação numa linha",                                    // summary + one-line confirmation
 		"Só proponha quando problema, objetivo e critérios de aceitação testáveis fecharem e não houver decisão aberta", // positive gate
+		"o turno TERMINA no resumo e na pergunta de confirmação numa linha, sem " + chatProposalFence,
+		"só sai no turno seguinte, depois que o humano confirmar ou corrigir",
+		"emita na hora, com as abertas como marcador de esclarecimento",
+		"Nenhum item de \"Assumi:\" contradiz ou substitui o que o humano respondeu",
+		"toda resposta do humano aparece no rascunho da spec",
+		"uma resposta sem lugar na spec vira pergunta, não descarte silencioso",
 		"marcador de esclarecimento (" + doclang.AmbiguityMarker(doclang.EN) + " pergunta])"} {
-		if !strings.Contains(prompt, want) {
+		if !strings.Contains(prompt, englishInterview.Replace(want)) {
 			t.Errorf("English prompt lacks %q", want)
 		}
 	}
