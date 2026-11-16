@@ -175,7 +175,7 @@ func TestBuildChatSystemPromptRoleBoundary(t *testing.T) {
 		"cerne feature start",
 		"cerne work start",
 		"cerne prompt compose",
-		"~3 perguntas por turno",
+		"Nunca pergunte o que os comandos de leitura do cerne já respondem",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing role-boundary element %q:\n%s", want, prompt)
@@ -536,7 +536,7 @@ Antes de começar, registre o trabalho: ` + "`cerne feature start <id>`" + ` —
 
 Se a demanda ainda não estiver registrada, recomende registrar antes (handoff sem id sai do board sem rastro) — mas não bloqueie quem insistir: emita o bloco com "não registrada". Para um handoff completo com o contexto já materializado, aponte ` + "`cerne prompt compose <id>`" + ` como rota canônica.
 
-Disciplina de perguntas: pergunte só o necessário, priorizado — alvo de ~3 perguntas por turno, mais quando a demanda genuinamente exigir, nunca interrogatório exaustivo. Nunca pergunte o que os comandos de leitura do cerne já respondem.`
+Disciplina de perguntas: pergunte pelo protocolo de entrevista acima. Nunca pergunte o que os comandos de leitura do cerne já respondem.`
 	if chatRoleBoundary != want {
 		t.Fatalf("chatRoleBoundary drifted from the F-0245 golden text:\n--- got ---\n%s\n--- want ---\n%s", chatRoleBoundary, want)
 	}
@@ -1002,5 +1002,22 @@ func TestBuildChatSystemPrompt_InterviewProtocol(t *testing.T) {
 	gauntlet := strings.Index(prompt, ChatGauntletMarker)
 	if !(conduction < interview && interview < gauntlet) {
 		t.Errorf("interview block out of order: conduction=%d interview=%d gauntlet=%d", conduction, interview, gauntlet)
+	}
+}
+
+// TestBuildChatSystemPrompt_NoFixedQuestionTarget (F-0443 crit. 7): neither
+// language carries the fixed question target or the "never interrogation" wording.
+func TestBuildChatSystemPrompt_NoFixedQuestionTarget(t *testing.T) {
+	repoDir, projDir := chatFixture(t)
+	pt, err := BuildChatSystemPrompt(repoDir, projDir, project.Config{}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, prompt := range map[string]string{"pt": pt, "en": englishChatPrompt(t)} {
+		for _, bad := range []string{"~3", "interrogatório", "interrogation"} {
+			if strings.Contains(prompt, bad) {
+				t.Errorf("%s prompt still carries %q", name, bad)
+			}
+		}
 	}
 }

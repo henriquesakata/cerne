@@ -52,7 +52,7 @@ Antes de começar, registre o trabalho: ` + "`cerne feature start <id>`" + ` —
 
 Se a demanda ainda não estiver registrada, recomende registrar antes (handoff sem id sai do board sem rastro) — mas não bloqueie quem insistir: emita o bloco com "não registrada". Para um handoff completo com o contexto já materializado, aponte ` + "`cerne prompt compose <id>`" + ` como rota canônica.
 
-Disciplina de perguntas: pergunte só o necessário, priorizado — alvo de ~3 perguntas por turno, mais quando a demanda genuinamente exigir, nunca interrogatório exaustivo. Nunca pergunte o que os comandos de leitura do cerne já respondem.`
+Disciplina de perguntas: pergunte pelo protocolo de entrevista acima. Nunca pergunte o que os comandos de leitura do cerne já respondem.`
 
 // ChatGauntletMarker heads the Gauntlet protocol block (F-0270). Exported so
 // tests can pin its presence and position the same way the role boundary is.
