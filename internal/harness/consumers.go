@@ -13,6 +13,7 @@ func allProviders() []string {
 		string(hooks.ProviderCursor),
 		string(hooks.ProviderCodex),
 		string(hooks.ProviderGemini),
+		string(hooks.ProviderCopilot),
 	}
 }
 
@@ -32,9 +33,15 @@ func consumersFor(it Item) []string {
 	case "context":
 		// AGENTS.md: Codex reads it natively (R-0035), Cursor supports it at
 		// the root (R-0037); Gemini only via context.fileName, which the
-		// inventory does not inspect.
+		// inventory does not inspect; Copilot reads it in all three surfaces.
 		if strings.Contains(it.Name, "AGENTS.md") {
-			return []string{string(hooks.ProviderCodex), string(hooks.ProviderCursor)}
+			return []string{string(hooks.ProviderCodex), string(hooks.ProviderCursor), string(hooks.ProviderCopilot)}
+		}
+		return []string{string(hooks.ProviderClaude)}
+	case "mcp":
+		// The project .mcp.json is also Copilot's workspace MCP file (F-0444).
+		if it.Origin == OriginProject {
+			return []string{string(hooks.ProviderClaude), string(hooks.ProviderCopilot)}
 		}
 		return []string{string(hooks.ProviderClaude)}
 	default:

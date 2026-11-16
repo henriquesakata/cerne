@@ -197,7 +197,7 @@ func providerItems(opts Options) []Item {
 			it := Item{
 				Class:  "providers",
 				Name:   string(p) + ": " + row.Capability,
-				Path:   "." + string(p) + "/",
+				Path:   providerPath(p),
 				Origin: OriginProject,
 			}
 			if deg, reason := row.Degraded(p); deg {
@@ -211,6 +211,14 @@ func providerItems(opts Options) []Item {
 		}
 	}
 	return items
+}
+
+// providerPath is the project directory a provider's install lives in.
+func providerPath(p hooks.Provider) string {
+	if p == hooks.ProviderCopilot {
+		return ".github/"
+	}
+	return "." + string(p) + "/"
 }
 
 // configItems lists the settings layers as inventory lines, so the screen's

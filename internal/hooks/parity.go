@@ -18,6 +18,7 @@ type ParityRow struct {
 	Cursor     string
 	Codex      string
 	Gemini     string
+	Copilot    string
 }
 
 // For returns the row's value for one provider ("" for unknown).
@@ -31,6 +32,8 @@ func (r ParityRow) For(p Provider) string {
 		return r.Codex
 	case ProviderGemini:
 		return r.Gemini
+	case ProviderCopilot:
+		return r.Copilot
 	}
 	return ""
 }
@@ -59,6 +62,8 @@ func GuideCondition(p Provider) string {
 		return "Codex documents automatic detection of .agents/skills; no setting documented, restart Codex if the skill does not appear"
 	case ProviderGemini:
 		return "Gemini CLI discovers it at session start only while the skill is enabled (check /skills list, /skills enable cerne-authoring) and asks your consent when the agent activates it"
+	case ProviderCopilot:
+		return "Copilot documents project skills under .github/skills as available to its CLI, VS Code agent mode and cloud agent; the skill is invoked by the agent when its description matches"
 	}
 	return ""
 }
@@ -85,6 +90,7 @@ var parityTable = []ParityRow{
 		Cursor:     ".cursor/rules/cerne.mdc (alwaysApply)",
 		Codex:      "native AGENTS.md chain — no asset needed",
 		Gemini:     "GEMINI.md/context.fileName — plus SessionStart hook",
+		Copilot:    ".github/instructions/cerne.instructions.md (applyTo **) — own file, copilot-instructions.md untouched",
 	},
 	{
 		Capability: "Live board at session start",
@@ -92,6 +98,7 @@ var parityTable = []ParityRow{
 		Cursor:     "sessionStart hook → additional_context",
 		Codex:      "SessionStart hook → additionalContext",
 		Gemini:     "SessionStart hook → additionalContext",
+		Copilot:    "SessionStart hook → top-level additionalContext (.github/hooks/cerne.json)",
 	},
 	{
 		Capability: "Work gate (deny unregistered edits)",
@@ -99,6 +106,7 @@ var parityTable = []ParityRow{
 		Cursor:     ".claude PreToolUse deny, run by Cursor's third-party import (on by default; F-0428)",
 		Codex:      "PreToolUse deny, matcher Edit|Write",
 		Gemini:     "BeforeTool deny, matcher write_file|replace",
+		Copilot:    "PreToolUse deny, matcher Edit|Write → top-level permissionDecision (cloud agent reads bash only and treats ask as deny; the gate only denies)",
 	},
 	{
 		Capability: "Session→work binding",
@@ -106,6 +114,7 @@ var parityTable = []ParityRow{
 		Cursor:     ".claude PostToolUse/Bash, via the third-party import (tool_output, F-0428)",
 		Codex:      "PostToolUse, matcher Bash",
 		Gemini:     "AfterTool, matcher run_shell_command (--format gemini)",
+		Copilot:    "PostToolUse, matcher Bash (tool_result, --format copilot)",
 	},
 	{
 		// F-0426: the guidance rides the command's stdout, no hook needed.
@@ -114,6 +123,7 @@ var parityTable = []ParityRow{
 		Cursor:     EveryHarness,
 		Codex:      EveryHarness,
 		Gemini:     EveryHarness,
+		Copilot:    EveryHarness,
 	},
 	{
 		Capability: "Provenance reminder",
@@ -121,6 +131,7 @@ var parityTable = []ParityRow{
 		Cursor:     ".claude PostToolUse/Bash (provenance), via the third-party import → additional_context",
 		Codex:      "PostToolUse, matcher Bash",
 		Gemini:     degraded + ": AfterTool context envelope pending live validation",
+		Copilot:    "PostToolUse/Bash → top-level additionalContext",
 	},
 	{
 		Capability: "Stop closeout",
@@ -128,6 +139,7 @@ var parityTable = []ParityRow{
 		Cursor:     ".claude Stop hook via the third-party import → followup_message, completed turns only",
 		Codex:      "Stop hook",
 		Gemini:     degraded + ": AfterAgent forces a retry — deferred",
+		Copilot:    "Stop hook (decision/reason as Claude Code)",
 	},
 	{
 		Capability: "Handoff code through compaction",
@@ -135,6 +147,7 @@ var parityTable = []ParityRow{
 		Cursor:     degraded + ": PreCompact not wired yet",
 		Codex:      degraded + ": PreCompact not wired yet",
 		Gemini:     degraded + ": no compaction hook",
+		Copilot:    degraded + ": preCompact is notification-only",
 	},
 	{
 		Capability: "CERNE_ACTOR=agent (human gates)",
@@ -142,6 +155,7 @@ var parityTable = []ParityRow{
 		Cursor:     "CURSOR_AGENT=1 on Cursor's agent shells (seen in 3.25.6, undocumented) — no install",
 		Codex:      "shell_environment_policy.set in .codex/config.toml",
 		Gemini:     ".gemini/.env",
+		Copilot:    "env block on each hook + COPILOT_CLI=1 on the bash tool shell (probed on CLI 1.0.112) — no install",
 	},
 	{
 		Capability: "Document author (CERNE_PROVIDER, F-0375)",
@@ -149,6 +163,7 @@ var parityTable = []ParityRow{
 		Cursor:     degraded + ": no per-project session env surface — recorded as unknown",
 		Codex:      "CERNE_PROVIDER=openai in shell_environment_policy.set; no model exposed",
 		Gemini:     "CERNE_PROVIDER=google in .gemini/.env; no model exposed",
+		Copilot:    degraded + ": CERNE_PROVIDER=copilot reaches the hook processes only, not the bash tool shell — no model exposed",
 	},
 	{
 		Capability: "Subagents with live board",
@@ -156,6 +171,7 @@ var parityTable = []ParityRow{
 		Cursor:     degraded + ": subagentStart has no additional_context",
 		Codex:      degraded + ": SubagentStart envelope pending live validation",
 		Gemini:     degraded + ": subagents are a preview feature",
+		Copilot:    degraded + ": no subagent hook wired",
 	},
 	{
 		Capability: "Authoring guide",
@@ -163,6 +179,7 @@ var parityTable = []ParityRow{
 		Cursor:     "delivered to .cursor/skills/cerne-authoring/ — " + GuideCondition(ProviderCursor),
 		Codex:      "delivered to .agents/skills/cerne-authoring/ + one-line pointer in AGENTS.md — " + GuideCondition(ProviderCodex),
 		Gemini:     "delivered to .gemini/skills/cerne-authoring/ + one-line pointer in GEMINI.md — " + GuideCondition(ProviderGemini),
+		Copilot:    "delivered to .github/skills/cerne-authoring/ + .github/instructions/cerne.instructions.md — " + GuideCondition(ProviderCopilot),
 	},
 	{
 		Capability: "Trust prerequisite",
@@ -170,6 +187,7 @@ var parityTable = []ParityRow{
 		Cursor:     "trusted workspaces",
 		Codex:      "projects.<path>.trust_level + per-hook trust review",
 		Gemini:     "trusted folders",
+		Copilot:    "trusted folder: in prompt mode an untrusted folder skips the repository hooks (probed); the cloud agent needs none",
 	},
 }
 
@@ -186,13 +204,13 @@ What ` + "`cerne hook install`" + ` (and, for the authoring guide, ` + "`cerne s
 **degraded** are limitations of the provider's extension surface (or await
 live validation) and are reported as ` + "`skipped`" + ` lines, with the manual
 step, in the install output. Research provenance: R-0035 (Codex), R-0036
-(Gemini), R-0037 (Cursor); the authoring-guide paths: R-0064 (Codex), R-0065 (Gemini), R-0066 (Cursor), in the cerne backend.
+(Gemini), R-0037 (Cursor), R-0101 (Copilot hooks); the authoring-guide paths: R-0064 (Codex), R-0065 (Gemini), R-0066 (Cursor), in the cerne backend.
 
-| Capability | Claude Code | Cursor | Codex CLI | Gemini CLI |
-|---|---|---|---|---|
+| Capability | Claude Code | Cursor | Codex CLI | Gemini CLI | GitHub Copilot |
+|---|---|---|---|---|---|
 `)
 	for _, r := range parityTable {
-		b.WriteString("| " + r.Capability + " | " + r.Claude + " | " + r.Cursor + " | " + r.Codex + " | " + r.Gemini + " |\n")
+		b.WriteString("| " + r.Capability + " | " + r.Claude + " | " + r.Cursor + " | " + r.Codex + " | " + r.Gemini + " | " + r.Copilot + " |\n")
 	}
 	b.WriteString(`
 "Delivered" means the file is in place; cerne cannot verify that the agent loads it,
@@ -201,7 +219,7 @@ folder is absent gets a ` + "`not detected`" + ` line from ` + "`cerne skill ins
 step to run first.
 
 Install: ` + "`cerne hook install`" + ` (claude + auto-detected providers by
-config dir) or ` + "`cerne hook install --provider cursor,codex,gemini`" + `.
+config dir) or ` + "`cerne hook install --provider cursor,codex,gemini,copilot`" + `.
 `)
 	return b.String()
 }

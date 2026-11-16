@@ -33,8 +33,8 @@ func coverageOf(t *testing.T, inv Inventory, provider string) ProviderCoverage {
 // TestCoveragePerProvider: totals and gap classification (criterion 5).
 func TestCoveragePerProvider(t *testing.T) {
 	inv := coverageFixture(t)
-	if len(inv.Coverage) != 4 {
-		t.Fatalf("coverage entries = %d, want 4 (all known providers)", len(inv.Coverage))
+	if len(inv.Coverage) != 5 {
+		t.Fatalf("coverage entries = %d, want 5 (all known providers)", len(inv.Coverage))
 	}
 
 	claude := coverageOf(t, inv, "claude")

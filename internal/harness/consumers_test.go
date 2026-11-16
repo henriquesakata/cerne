@@ -9,7 +9,7 @@ import (
 // TestConsumersFor: deterministic attribution per class/origin (F-0259
 // criteria 1-2) — which AI providers can consume each inventory item.
 func TestConsumersFor(t *testing.T) {
-	all := []string{"claude", "cursor", "codex", "gemini"}
+	all := []string{"claude", "cursor", "codex", "gemini", "copilot"}
 	tests := []struct {
 		name string
 		item Item
@@ -21,11 +21,13 @@ func TestConsumersFor(t *testing.T) {
 		{"skill is a claude surface", Item{Class: "skills", Name: "cerne-authoring", Origin: OriginProject}, []string{"claude"}},
 		{"settings layer is a claude surface", Item{Class: "config", Name: "settings.json", Origin: OriginProject}, []string{"claude"}},
 		{"marketplace plugin is claude-only", Item{Class: "plugins", Name: "caveman", Origin: OriginPlugin}, []string{"claude"}},
-		{"mcp.json is claude's format", Item{Class: "mcp", Name: "context-mode", Origin: OriginProject}, []string{"claude"}},
+		{"project .mcp.json is read by claude and copilot", Item{Class: "mcp", Name: "context-mode", Origin: OriginProject}, []string{"claude", "copilot"}},
+		{"user mcp declaration is claude's", Item{Class: "mcp", Name: "context-mode", Origin: OriginUser}, []string{"claude"}},
 		{"CLAUDE.md feeds claude", Item{Class: "context", Name: "CLAUDE.md"}, []string{"claude"}},
 		{"user CLAUDE.md feeds claude", Item{Class: "context", Name: "~/.claude/CLAUDE.md"}, []string{"claude"}},
-		{"AGENTS.md feeds codex and cursor", Item{Class: "context", Name: "AGENTS.md"}, []string{"codex", "cursor"}},
+		{"AGENTS.md feeds codex, cursor and copilot", Item{Class: "context", Name: "AGENTS.md"}, []string{"codex", "cursor", "copilot"}},
 		{"parity row belongs to its provider", Item{Class: "providers", Name: "cursor: Stop closeout"}, []string{"cursor"}},
+		{"copilot parity row", Item{Class: "providers", Name: "copilot: Work gate"}, []string{"copilot"}},
 		{"gemini parity row", Item{Class: "providers", Name: "gemini: Trust prerequisite"}, []string{"gemini"}},
 	}
 	for _, tt := range tests {

@@ -118,8 +118,19 @@ func TestInstallCopilotHooksFile(t *testing.T) {
 		t.Fatalf("first run status = %v: %v", st, results)
 	}
 	// The handoff on compaction is not hosted: reported, not silent.
-	if st := statuses(results)["copilot: precompact"]; st != StatusSkipped {
-		t.Fatalf("precompact degradation not reported: %v", results)
+	// Every degraded parity row is a skipped line, matrix and install agree.
+	for _, r := range ParityRows() {
+		if d, _ := r.Degraded(ProviderCopilot); d {
+			found := false
+			for _, res := range results {
+				if res.Status == StatusSkipped && strings.HasPrefix(res.Asset, "copilot: ") && res.Note != "" && strings.Contains(strings.ToLower(res.Asset+res.Note), strings.ToLower(strings.Fields(r.Capability)[0])) {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("degraded row %q has no skipped line: %v", r.Capability, results)
+			}
+		}
 	}
 
 	results, err = Install(dir, ProviderCopilot)
