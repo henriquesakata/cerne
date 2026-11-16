@@ -1154,3 +1154,47 @@ func TestAgenticClaudeReportsTheModelThatRan(t *testing.T) {
 		t.Fatalf("plain = %q model %q", got, plain.AnsweredModel())
 	}
 }
+
+// codexIsolation is the isolation every Codex turn keeps (F-0414, PR #20):
+// the argv up to the -o file.
+var codexIsolation = []string{"exec", "--skip-git-repo-check", "--ephemeral", "--sandbox", "read-only",
+	"--ignore-user-config", "--ignore-rules", "--disable", "shell_tool", "--disable", "apps",
+	"-c", `web_search="disabled"`, "-c", "project_doc_max_bytes=0", "-o"}
+
+// codexArgv runs one Codex turn on a fake and returns the argv with the -o
+// path dropped.
+func codexArgv(t *testing.T, dir string) []string {
+	t.Helper()
+	var args []string
+	var stdin, cwd string
+	p := &cliProvider{kind: ModeCodexCLI, bin: "codex", dir: dir, run: codexFake("ok", &args, &stdin, &cwd)}
+	if _, err := p.Complete(t.Context(), "q"); err != nil {
+		t.Fatal(err)
+	}
+	return slices.Delete(args, len(codexIsolation)-1, len(codexIsolation)+1)
+}
+
+// TestCodexChatArgv (F-0439 criteria 1 and 2): the one-shot callers and the
+// remote serve (no dir) carry no MCP server; the local chat turn keeps the
+// PR #20 isolation and the project-files server.
+func TestCodexChatArgv(t *testing.T) {
+	iso := codexIsolation[:len(codexIsolation)-1] // without the dangling -o
+	oneShot := codexArgv(t, "")
+	if want := append(slices.Clone(iso), "-"); !reflect.DeepEqual(oneShot, want) {
+		t.Fatalf("one-shot argv = %v, want %v", oneShot, want)
+	}
+	root := filepath.Join(t.TempDir(), "proj")
+	chat := codexArgv(t, root)
+	if !reflect.DeepEqual(chat[:len(iso)], iso) {
+		t.Fatalf("chat isolation changed: %v", chat)
+	}
+	bin, _ := os.Executable()
+	cmd, _ := json.Marshal(bin)
+	files, _ := json.Marshal([]string{"mcp", "--project-files", "--dir", root})
+	want := []string{"-c", "mcp_servers.cerne_project.command=" + string(cmd), "-c", "mcp_servers.cerne_project.args=" + string(files),
+		"-c", `mcp_servers.cerne_project.tools.find_files.approval_mode="approve"`,
+		"-c", `mcp_servers.cerne_project.tools.read_file.approval_mode="approve"`}
+	if got := chat[len(iso) : len(iso)+len(want)]; !reflect.DeepEqual(got, want) {
+		t.Fatalf("project-files server = %v, want %v", got, want)
+	}
+}
