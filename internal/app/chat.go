@@ -115,6 +115,23 @@ var englishGauntlet = strings.NewReplacer(
 	"seção \"Verificação\"", "section \"Verification\"",
 )
 
+// englishInterview swaps the protocol forms an author reads or writes in the
+// interview block; the prose around them stays Portuguese like the rest of
+// the prompt (N-0068 debt, N-0087).
+var englishInterview = strings.NewReplacer(
+	"Assumi:", "Assumed:",
+	"Árvore: <n> resolvidas · <n> abertas · <n> suposições", "Tree: <n> resolved · <n> open · <n> assumptions",
+	"propõe já", "propose now",
+)
+
+// chatInterviewProtocolIn returns the interview block with the forms in l.
+func chatInterviewProtocolIn(l doclang.Lang) string {
+	if l != doclang.EN {
+		return chatInterviewProtocol
+	}
+	return englishInterview.Replace(chatInterviewProtocol)
+}
+
 // chatProposalFence is the fenced-block info string the system prompt tells
 // the model to use when it is ready to propose a candidate — the UI (and any
 // future Go-side consumer) detects it the same way SanitizeMermaid/
@@ -281,7 +298,7 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config, channel 
 	// situate it in the roster (conversational mirror of the F-0147 duplicate
 	// guard) and offer paths before proposing.
 	b.WriteString("Conduza a elaboração: entenda o problema real, não apenas a solução pedida.\n")
-	b.WriteString(chatInterviewProtocol)
+	b.WriteString(chatInterviewProtocolIn(l))
 	b.WriteString("\n\n")
 
 	// F-0270: the bar question is part of conduction, so it comes right after

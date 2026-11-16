@@ -1021,3 +1021,20 @@ func TestBuildChatSystemPrompt_NoFixedQuestionTarget(t *testing.T) {
 		}
 	}
 }
+
+// TestBuildChatSystemPrompt_EnglishInterviewForms (F-0443 crit. 7): the
+// English prompt carries the interview protocol with English protocol forms
+// and none of the Portuguese ones.
+func TestBuildChatSystemPrompt_EnglishInterviewForms(t *testing.T) {
+	prompt := englishChatPrompt(t)
+	for _, want := range []string{"Assumed:", "Tree: <n> resolved · <n> open · <n> assumptions", "propose now"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("English prompt lacks %q", want)
+		}
+	}
+	for _, bad := range []string{"Assumi:", "Árvore:", "propõe já", "<n> resolvidas", "<n> suposições"} {
+		if strings.Contains(prompt, bad) {
+			t.Errorf("English prompt still carries the Portuguese form %q", bad)
+		}
+	}
+}
