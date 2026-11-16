@@ -15,6 +15,9 @@ import (
 type target struct {
 	skillsDir string // project-relative, slash-separated
 	pointer   string // AGENTS.md / GEMINI.md, "" when the agent needs none
+	// instructions is cerne's own instructions file, written whole instead of a
+	// pointer block in a project doc ("" when the agent has none; F-0444).
+	instructions string
 }
 
 // targets are the project-level skills paths confirmed in each agent's
@@ -24,6 +27,9 @@ var targets = map[hooks.Provider]target{
 	hooks.ProviderCursor: {skillsDir: ".cursor/skills"},
 	hooks.ProviderCodex:  {skillsDir: ".agents/skills", pointer: "AGENTS.md"},
 	hooks.ProviderGemini: {skillsDir: ".gemini/skills", pointer: "GEMINI.md"},
+	// Copilot's three surfaces read .github/skills and .github/instructions
+	// (F-0444); the team's copilot-instructions.md is never touched.
+	hooks.ProviderCopilot: {skillsDir: ".github/skills", instructions: ".github/instructions/cerne.instructions.md"},
 }
 
 const (
@@ -56,7 +62,31 @@ func installProvider(projDir string, p hooks.Provider) []Result {
 		pr.Agent = p
 		out = append(out, pr)
 	}
+	if t.instructions != "" {
+		ir := writeInstructions(projDir, t.instructions, rel+"/SKILL.md")
+		ir.Agent = p
+		out = append(out, ir)
+	}
 	return out
+}
+
+// writeInstructions writes cerne's own always-applied instructions file: the
+// registration floor plus the pointer to the skill. Never through a symlink.
+func writeInstructions(projDir, rel, skillPath string) Result {
+	res := Result{Skill: guideName + " instructions", Path: rel}
+	if link := symlinkOnPath(projDir, rel); link != "" {
+		res.Status, res.Note = StatusSkipped, link+" is a symlink — not written through; copy the registration rules there by hand"
+		return res
+	}
+	content := "---\ndescription: cerne project rules — work registration discipline\napplyTo: \"**\"\n---\n\n" +
+		hooks.RegisterRules + "\n\ncerne authoring guide: before creating or managing cerne features, decisions or references, read `" + skillPath + "`.\n"
+	st, err := writeSkill(filepath.Join(projDir, filepath.FromSlash(rel)), content)
+	if err != nil {
+		res.Status, res.Note = StatusSkipped, "could not write "+rel+" ("+err.Error()+")"
+		return res
+	}
+	res.Status = st
+	return res
 }
 
 func authoringSkill() Skill {
@@ -231,10 +261,13 @@ func AgentLines(results []Result, detected []hooks.Provider) []string {
 		has[p] = true
 	}
 	lines := []string{"claude: guide delivered to .claude/skills/" + guideName + "/SKILL.md — " + hooks.GuideCondition(hooks.ProviderClaude)}
-	for _, p := range []hooks.Provider{hooks.ProviderCursor, hooks.ProviderCodex, hooks.ProviderGemini} {
+	for _, p := range []hooks.Provider{hooks.ProviderCursor, hooks.ProviderCodex, hooks.ProviderGemini, hooks.ProviderCopilot} {
 		t := targets[p]
 		dir := hooks.ConfigDir(p)
 		if !has[p] {
+			if p == hooks.ProviderCopilot {
+				dir = ".github/copilot-instructions.md, hooks/, skills/ or agents"
+			}
 			lines = append(lines, string(p)+": not detected (no "+dir+"/) — run 'cerne hook install --provider "+string(p)+"' first, then 'cerne skill install'")
 			continue
 		}
