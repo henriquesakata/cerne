@@ -170,7 +170,18 @@ func NewAgentProvider(cfg project.LLMConfig, dir string, write bool) (Provider, 
 			// an unconfirmed turn has no write to refuse.
 			denied = append(append([]string{}, AgentDeniedPaths...), AgentDeniedCommands...)
 		}
-		return &cliProvider{bin: cfg.ClaudeBin, run: agentRun, dir: dir, agentTools: tools, deniedTools: denied}, nil
+		p := &cliProvider{bin: cfg.ClaudeBin, run: agentRun, dir: dir, agentTools: tools, deniedTools: denied}
+		// B-0007: the composer's model and effort reach the turn, but only the
+		// Anthropic ones — another vendor's id would be rejected by claude.
+		if raw.Provider == "" || raw.Provider == providerAnthropic {
+			if claudeModelRE.MatchString(raw.Model) {
+				p.model = raw.Model
+			}
+			if slices.Contains(claudeEfforts, raw.Effort) {
+				p.effort = raw.Effort
+			}
+		}
+		return p, nil
 	}
 	return NewProvider(raw)
 }
