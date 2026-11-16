@@ -56,6 +56,7 @@ var AgentReadTools = []string{
 	"Bash(cerne reference list:*)",
 	"Bash(cerne decision list:*)",
 	"Bash(cerne idea list:*)",
+	"Bash(cerne spec check:*)", // lints a draft body; writes nothing (F-0438)
 }
 
 // AgentWriteTools is what a CONFIRMED turn adds on top of AgentReadTools

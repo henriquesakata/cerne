@@ -297,7 +297,7 @@ func TestAgentProviderAllowlistFlags(t *testing.T) {
 	wantList := "Read,Grep,Glob," +
 		"Bash(cerne search:*),Bash(cerne show:*),Bash(cerne brief:*),Bash(cerne status:*)," +
 		"Bash(cerne note list:*),Bash(cerne note show:*),Bash(cerne reference list:*),Bash(cerne decision list:*)," +
-		"Bash(cerne idea list:*)"
+		"Bash(cerne idea list:*),Bash(cerne spec check:*)"
 	wantDenied := "Read(.env),Read(.env.*),Read(**/credentials*),Read(**/*.pem),Read(**/*.key)"
 	want := []string{"-p", "--output-format", "text", "--allowedTools", wantList, "--disallowedTools", wantDenied}
 	if !reflect.DeepEqual(gotArgs, want) {
@@ -325,7 +325,7 @@ func TestAgentReadToolsIncludesNativeReaders(t *testing.T) {
 
 // TestAgentReadToolsDeniesWrites (F-0258 criterion 3): no rule may authorize a
 // mutating native tool, and every Bash(...) rule must stay inside the closed
-// set of the 9 cerne read commands — the allowlist grows only by scoped
+// set of the 10 cerne read commands — the allowlist grows only by scoped
 // native readers, never by shell surface.
 func TestAgentReadToolsDeniesWrites(t *testing.T) {
 	cerneBashRules := map[string]bool{
@@ -338,6 +338,7 @@ func TestAgentReadToolsDeniesWrites(t *testing.T) {
 		"Bash(cerne reference list:*)": true,
 		"Bash(cerne decision list:*)":  true,
 		"Bash(cerne idea list:*)":      true,
+		"Bash(cerne spec check:*)":     true,
 	}
 	for _, rule := range AgentReadTools {
 		for _, banned := range []string{"Write", "Edit", "NotebookEdit"} {
@@ -1088,5 +1089,18 @@ func TestCodexChatProjectFiles(t *testing.T) {
 	want, _ := json.Marshal([]string{"mcp", "--project-files", "--dir", root})
 	if cwd == root || !slices.Contains(args, "mcp_servers.cerne_project.args="+string(want)) || !slices.Contains(args, "shell_tool") {
 		t.Fatalf("unexpected Codex invocation in %q: %v", cwd, args)
+	}
+}
+
+// TestAgentReadTools_IncludesSpecCheck (F-0438 crit. 2): the chat agent may
+// check its draft, and only that one spec verb.
+func TestAgentReadTools_IncludesSpecCheck(t *testing.T) {
+	if !slices.Contains(AgentReadTools, "Bash(cerne spec check:*)") {
+		t.Fatalf("AgentReadTools lacks the spec check: %v", AgentReadTools)
+	}
+	for _, tool := range AgentReadTools {
+		if strings.HasPrefix(tool, "Bash(cerne spec ") && tool != "Bash(cerne spec check:*)" {
+			t.Errorf("a spec verb other than check in the read boundary: %s", tool)
+		}
 	}
 }
