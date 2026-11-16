@@ -143,4 +143,12 @@ func TestNamedAuthors(t *testing.T) {
 	if got := LLMAuthor(project.LLMConfig{Mode: "codex-cli", Model: "gpt-x"}); got != (DocAuthor{Provider: "codex-cli", Model: "gpt-x", Source: "llm-config"}) {
 		t.Fatalf("LLMAuthor codex-cli = %+v", got)
 	}
+	// F-0445: copilot-cli credits the provider and the model the call named,
+	// and only the provider when none was (the CLI picked one itself).
+	if got := LLMAuthor(project.LLMConfig{Mode: "copilot-cli", Model: "claude-sonnet-5.5"}); got != (DocAuthor{Provider: "copilot-cli", Model: "claude-sonnet-5.5", Source: "llm-config"}) {
+		t.Fatalf("LLMAuthor copilot-cli = %+v", got)
+	}
+	if got := LLMAuthor(project.LLMConfig{Mode: "copilot-cli"}); got != (DocAuthor{Provider: "copilot-cli", Source: "llm-config"}) {
+		t.Fatalf("LLMAuthor copilot-cli without a model = %+v", got)
+	}
 }
