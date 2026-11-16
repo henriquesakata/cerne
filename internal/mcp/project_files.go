@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"regexp"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -40,33 +41,140 @@ type readProjectFile struct {
 	Start int    `json:"start,omitempty" jsonschema:"first line to return (1-based)"`
 }
 
+type searchProjectFiles struct {
+	Query    string `json:"query" jsonschema:"case-insensitive text to look for inside files"`
+	PathGlob string `json:"path_glob,omitempty" jsonschema:"optional path glob limiting the files, e.g. game/**"`
+}
+
+// walkProjectFiles calls fn for every readable regular file of the commit (the
+// same exclusions as read_file) until fn returns false.
+func walkProjectFiles(ctx context.Context, tree *object.Tree, fn func(name string) bool) error {
+	w := object.NewTreeWalker(tree, true, nil)
+	defer w.Close()
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		name, entry, err := w.Next()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if (entry.Mode.IsRegular() || entry.Mode == filemode.Executable) && projectPath(name) && !fn(name) {
+			return nil
+		}
+	}
+}
+
+// globRegexp turns a path glob into a case-insensitive full-path regexp:
+// ** crosses directories, * and ? stay inside one.
+func globRegexp(glob string) (*regexp.Regexp, error) {
+	var b strings.Builder
+	b.WriteString("(?i)^")
+	for i := 0; i < len(glob); i++ {
+		switch {
+		case strings.HasPrefix(glob[i:], "**/"):
+			b.WriteString("(?:.*/)?")
+			i += 2
+		case strings.HasPrefix(glob[i:], "**"):
+			b.WriteString(".*")
+			i++
+		case glob[i] == '*':
+			b.WriteString("[^/]*")
+		case glob[i] == '?':
+			b.WriteString("[^/]")
+		default:
+			b.WriteString(regexp.QuoteMeta(string(glob[i])))
+		}
+	}
+	b.WriteString("$")
+	return regexp.Compile(b.String())
+}
+
 func NewProjectFileServer(version string, tree *object.Tree) *sdk.Server {
 	s := sdk.NewServer(&sdk.Implementation{Name: "cerne-project", Version: version}, nil)
 	var mu sync.Mutex
 	readOnly := &sdk.ToolAnnotations{ReadOnlyHint: true}
-	sdk.AddTool(s, &sdk.Tool{Annotations: readOnly, Name: "find_files", Description: "Find up to 100 matching file paths in the project's Git commit. Narrow the query for more specific results."}, func(ctx context.Context, _ *sdk.CallToolRequest, in findProjectFiles) (*sdk.CallToolResult, any, error) {
+	sdk.AddTool(s, &sdk.Tool{Annotations: readOnly, Name: "find_files", Description: "Find up to 100 file paths in the project's Git commit. The query is a case-insensitive path fragment, or a path glob when it has * or ? (e.g. **/*.js, game/**; ** alone lists the tree). Use it to explore the tree when names do not match your words; use search_files to look inside files."}, func(ctx context.Context, _ *sdk.CallToolRequest, in findProjectFiles) (*sdk.CallToolResult, any, error) {
 		mu.Lock()
 		defer mu.Unlock()
-		w := object.NewTreeWalker(tree, true, nil)
-		defer w.Close()
-		query := strings.ToLower(in.Query)
-		var matches []string
-		for len(matches) < 100 {
-			if err := ctx.Err(); err != nil {
-				return nil, nil, err
-			}
-			name, entry, err := w.Next()
-			if errors.Is(err, io.EOF) {
-				break
-			}
+		match := func(name string) bool { return strings.Contains(strings.ToLower(name), strings.ToLower(in.Query)) }
+		if strings.ContainsAny(in.Query, "*?") {
+			re, err := globRegexp(in.Query)
 			if err != nil {
 				return nil, nil, err
 			}
-			if (entry.Mode.IsRegular() || entry.Mode == filemode.Executable) && strings.Contains(strings.ToLower(name), query) && projectPath(name) {
+			match = re.MatchString
+		}
+		var matches []string
+		err := walkProjectFiles(ctx, tree, func(name string) bool {
+			if match(name) {
 				matches = append(matches, name)
 			}
+			return len(matches) < 100
+		})
+		if err != nil {
+			return nil, nil, err
 		}
 		return projectText(strings.Join(matches, "\n")), nil, nil
+	})
+	sdk.AddTool(s, &sdk.Tool{Annotations: readOnly, Name: "search_files", Description: "Search the contents of the project's committed text files for a case-insensitive substring; returns up to 50 path:line:text matches. path_glob (e.g. game/**) narrows the files. Search code terms (stage, scene, backdrop), not only the user's words."}, func(ctx context.Context, _ *sdk.CallToolRequest, in searchProjectFiles) (*sdk.CallToolResult, any, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if strings.TrimSpace(in.Query) == "" {
+			return nil, nil, errors.New("query is empty")
+		}
+		filter := func(string) bool { return true }
+		if in.PathGlob != "" {
+			if !projectPath(in.PathGlob) {
+				return nil, nil, errors.New("invalid path_glob")
+			}
+			re, err := globRegexp(in.PathGlob)
+			if err != nil {
+				return nil, nil, err
+			}
+			filter = re.MatchString
+		}
+		query := strings.ToLower(in.Query)
+		var out strings.Builder
+		n := 0
+		err := walkProjectFiles(ctx, tree, func(name string) bool {
+			if !filter(name) {
+				return true
+			}
+			if size, err := tree.Size(name); err != nil || size > 1<<20 {
+				return true
+			}
+			f, err := tree.File(name)
+			if err != nil {
+				return true
+			}
+			body, err := f.Contents()
+			if err != nil || !utf8.ValidString(body) || strings.ContainsRune(body, 0) {
+				return true
+			}
+			for i, line := range strings.Split(body, "\n") {
+				if !strings.Contains(strings.ToLower(line), query) {
+					continue
+				}
+				if n == 50 {
+					out.WriteString("(more matches; narrow the query or path_glob)\n")
+					return false
+				}
+				if len(line) > 300 {
+					line = strings.ToValidUTF8(line[:300], "") + "…"
+				}
+				fmt.Fprintf(&out, "%s:%d:%s\n", name, i+1, line)
+				n++
+			}
+			return true
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		return projectText(out.String()), nil, nil
 	})
 	sdk.AddTool(s, &sdk.Tool{Annotations: readOnly, Name: "read_file", Description: "Read up to 100 numbered lines from a committed UTF-8 project file (up to 4 MiB)."}, func(_ context.Context, _ *sdk.CallToolRequest, in readProjectFile) (*sdk.CallToolResult, any, error) {
 		mu.Lock()
