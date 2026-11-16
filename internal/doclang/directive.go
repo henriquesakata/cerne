@@ -18,3 +18,12 @@ section headings listed above. Wherever the instructions above name a Portuguese
 - evidence: cite "criterion N" for every numbered criterion; mark each MET or UNMET.
 Keep an execution map's "Etapa N: ID (title)" lines exactly in that format: it is parsed, not prose.
 `
+
+// AmbiguityMarker is the token an author leaves in place of a guess, in
+// language l.
+func AmbiguityMarker(l Lang) string {
+	if l == EN {
+		return "[CLARIFY:"
+	}
+	return "[ESCLARECER:"
+}

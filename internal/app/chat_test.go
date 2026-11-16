@@ -9,6 +9,7 @@ import (
 
 	"github.com/henriquesakata/cerne/internal/ask"
 	"github.com/henriquesakata/cerne/internal/doccheck"
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/spectmpl"
@@ -761,5 +762,60 @@ func TestBuildChatSystemPrompt_PortugueseUnchanged(t *testing.T) {
 	}
 	if prompt != string(want) {
 		t.Error("the pt-BR chat prompt differs from the golden")
+	}
+}
+
+func englishChatPrompt(t *testing.T) string {
+	t.Helper()
+	repoDir, projDir := chatFixture(t)
+	p, err := store.LoadProject(repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.DocsLanguage = "en"
+	if err := store.SaveProject(repoDir, p); err != nil {
+		t.Fatal(err)
+	}
+	prompt, err := BuildChatSystemPrompt(repoDir, projDir, project.Config{}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return prompt
+}
+
+// TestBuildChatSystemPrompt_EnglishSections (F-0433 crit. 1).
+func TestBuildChatSystemPrompt_EnglishSections(t *testing.T) {
+	prompt := englishChatPrompt(t)
+	for _, s := range doclang.Sections(doclang.Spec, doclang.EN) {
+		if !strings.Contains(prompt, "## "+s+"\n") {
+			t.Errorf("prompt lacks the English section %q", s)
+		}
+	}
+	for _, s := range doclang.Sections(doclang.Spec, doclang.PT) {
+		if strings.Contains(prompt, "## "+s+"\n") {
+			t.Errorf("prompt still lists the Portuguese section %q", s)
+		}
+	}
+}
+
+// TestBuildChatSystemPrompt_EnglishProtocolForms (F-0433 crit. 2).
+func TestBuildChatSystemPrompt_EnglishProtocolForms(t *testing.T) {
+	prompt := englishChatPrompt(t)
+	for _, want := range []string{"[CLARIFY:", "Bar:", "Method:", "Exit:", "Question for the judge:", "Bar: not applicable", "Bar: waived by human decision"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt lacks %q", want)
+		}
+	}
+	for _, bad := range []string{"[ESCLARECER:", "Barra:", "Método:", "Saída:", "não aplicável", "dispensada por decisão humana", "Pergunta ao juiz"} {
+		if strings.Contains(prompt, bad) {
+			t.Errorf("prompt still carries the Portuguese form %q", bad)
+		}
+	}
+}
+
+// TestBuildChatSystemPrompt_EnglishDirective (F-0433 crit. 4).
+func TestBuildChatSystemPrompt_EnglishDirective(t *testing.T) {
+	if !strings.Contains(englishChatPrompt(t), "this project's documentation is in English. Write the WHOLE document in English") {
+		t.Error("prompt lacks the English document directive")
 	}
 }
