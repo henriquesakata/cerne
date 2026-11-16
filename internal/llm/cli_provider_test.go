@@ -1195,7 +1195,8 @@ func TestCodexChatArgv(t *testing.T) {
 	files, _ := json.Marshal([]string{"mcp", "--project-files", "--dir", root})
 	want := []string{"-c", "mcp_servers.cerne_project.command=" + string(cmd), "-c", "mcp_servers.cerne_project.args=" + string(files),
 		"-c", `mcp_servers.cerne_project.tools.find_files.approval_mode="approve"`,
-		"-c", `mcp_servers.cerne_project.tools.read_file.approval_mode="approve"`}
+		"-c", `mcp_servers.cerne_project.tools.read_file.approval_mode="approve"`,
+		"-c", `mcp_servers.cerne_project.tools.search_files.approval_mode="approve"`}
 	if got := chat[len(iso) : len(iso)+len(want)]; !reflect.DeepEqual(got, want) {
 		t.Fatalf("project-files server = %v, want %v", got, want)
 	}

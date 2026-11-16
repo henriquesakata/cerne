@@ -410,7 +410,8 @@ func (p *cliProvider) completeCodex(ctx context.Context, prompt string) (string,
 		argv, _ := json.Marshal([]string{"mcp", "--project-files", "--dir", root})
 		args = append(args, "-c", "mcp_servers.cerne_project.command="+string(command), "-c", "mcp_servers.cerne_project.args="+string(argv),
 			"-c", `mcp_servers.cerne_project.tools.find_files.approval_mode="approve"`,
-			"-c", `mcp_servers.cerne_project.tools.read_file.approval_mode="approve"`)
+			"-c", `mcp_servers.cerne_project.tools.read_file.approval_mode="approve"`,
+			"-c", `mcp_servers.cerne_project.tools.search_files.approval_mode="approve"`)
 		// F-0439: cerne's own read tools (status, search, show…) beside the
 		// files. Every name in mcp.ToolNames is a read command; none writes.
 		cerneArgv, _ := json.Marshal([]string{"mcp", "--dir", root})
