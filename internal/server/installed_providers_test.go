@@ -128,3 +128,34 @@ func TestChatAuthorUsesTurnProvider(t *testing.T) {
 		t.Fatalf("author = %v, want codex-cli/gpt-x", p)
 	}
 }
+
+// TestLLMConfigServesCodexModelsWhenInstalled (criterion 3): picking OpenAI in a
+// claude-cli project needs the Codex catalog in the options; the remote serve
+// and a machine without codex do not get it.
+func TestLLMConfigServesCodexModelsWhenInstalled(t *testing.T) {
+	t.Setenv("CERNE_CONFIG_DIR", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("CODEX_HOME", home)
+	cache := `{"models":[{"slug":"gpt-x","display_name":"GPT X","visibility":"list","priority":1,
+		"default_reasoning_level":"medium","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"}]}]}`
+	if err := os.WriteFile(filepath.Join(home, "models_cache.json"), []byte(cache), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	has := func(r llmConfigResponse) bool {
+		for _, e := range r.Models {
+			if e.ID == "gpt-x" {
+				return true
+			}
+		}
+		return false
+	}
+	cfg := project.LLMConfig{Mode: "claude-cli"}
+	stubInstalledCLIs(t, "claude", "codex")
+	if !has(llmConfig(cfg, false)) || has(llmConfig(cfg, true)) {
+		t.Fatalf("codex installed: local must serve its models, remote must not")
+	}
+	stubInstalledCLIs(t, "claude")
+	if has(llmConfig(cfg, false)) {
+		t.Fatalf("codex not installed: its models must not be served")
+	}
+}

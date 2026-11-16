@@ -101,6 +101,8 @@ func reachableProviders(cfg project.LLMConfig, remote bool) []string {
 	return out
 }
 
+func codexInstalled() bool { return slices.Contains(project.FoundSubscriptionCLIs(), "codex") }
+
 // llmConfig builds the GET payload for the project's [llm] config.
 func llmConfig(cfg project.LLMConfig, remote bool) llmConfigResponse {
 	cat := loadCatalog()
@@ -124,7 +126,9 @@ func llmConfig(cfg project.LLMConfig, remote bool) llmConfigResponse {
 	}
 	// B-0006: the baseline knows no Codex model (each account sees its own);
 	// the CLI's cache is what its picker offers.
-	if mode == llm.ModeCodexCLI {
+	// F-0440: an installed codex offers them too, so picking OpenAI in a project
+	// run on another CLI shows its models (local ui only).
+	if mode == llm.ModeCodexCLI || (!remote && codexInstalled()) {
 		resp.Models = append(resp.Models, llm.CodexModels()...)
 	}
 	if !remote {
