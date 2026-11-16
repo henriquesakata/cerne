@@ -1102,5 +1102,27 @@ func TestAgentReadTools_IncludesSpecCheck(t *testing.T) {
 		if strings.HasPrefix(tool, "Bash(cerne spec ") && tool != "Bash(cerne spec check:*)" {
 			t.Errorf("a spec verb other than check in the read boundary: %s", tool)
 		}
+
+// TestSwitchedCodexTurnKeepsProjectFilesAndChoices (F-0440 criterion 3): a
+// claude-cli project's turn switched to openai builds the codex agent with the
+// project dir, so the project-files MCP is set up, and the chosen model and effort.
+func TestSwitchedCodexTurnKeepsProjectFilesAndChoices(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "proj")
+	cfg := ForProvider(project.LLMConfig{Mode: ModeClaudeCLI}, "openai")
+	cfg.Model, cfg.Effort = "gpt-x", "high"
+	prov, err := NewAgentProvider(cfg, root, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var args []string
+	var stdin, cwd string
+	cp := prov.(*cliProvider)
+	cp.run = codexFake("ok", &args, &stdin, &cwd)
+	if _, err := cp.Complete(t.Context(), "q"); err != nil {
+		t.Fatal(err)
+	}
+	want, _ := json.Marshal([]string{"mcp", "--project-files", "--dir", root})
+	if !slices.Contains(args, "mcp_servers.cerne_project.args="+string(want)) || !slices.Contains(args, "gpt-x") || !slices.Contains(args, `model_reasoning_effort="high"`) {
+		t.Fatalf("codex argv = %v", args)
 	}
 }

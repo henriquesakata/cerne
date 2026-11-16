@@ -2,7 +2,9 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -65,17 +67,24 @@ func TestPreferredProviderAcceptsInstalledCLI(t *testing.T) {
 // providerTurn posts one chat turn with the given provider and reports the
 // config the agent seam saw (nil when it was never called) and the response.
 func providerTurn(t *testing.T, projDir, repoDir, provider string) (*project.LLMConfig, int, string) {
+	cfg, _, code, body := providerTurnDir(t, projDir, repoDir, provider)
+	return cfg, code, body
+}
+
+// providerTurnDir is providerTurn plus the directory the agent seam was given.
+func providerTurnDir(t *testing.T, projDir, repoDir, provider string) (*project.LLMConfig, string, int, string) {
 	t.Helper()
 	var seen *project.LLMConfig
 	orig := newAgentProvider
 	t.Cleanup(func() { newAgentProvider = orig })
-	newAgentProvider = func(cfg project.LLMConfig, _ string, _ bool) (llm.Provider, error) {
-		seen = &cfg
+	var dir string
+	newAgentProvider = func(cfg project.LLMConfig, d string, _ bool) (llm.Provider, error) {
+		seen, dir = &cfg, d
 		return &llm.Fake{Reply: "ok"}, nil
 	}
 	body := `{"messages":[{"role":"user","content":"Oi"}],"model":"gpt-x","effort":"high","provider":"` + provider + `"}`
 	rec := doJSON(t, New(repoDir, projDir, "proj-chat"), http.MethodPost, "/api/chat", body, &struct{}{})
-	return seen, rec.Code, rec.Body.String()
+	return seen, dir, rec.Code, rec.Body.String()
 }
 
 // TestChatProviderSwitchesMode (F-0440 criteria 2, 3): the picked installed
@@ -157,5 +166,119 @@ func TestLLMConfigServesCodexModelsWhenInstalled(t *testing.T) {
 	stubInstalledCLIs(t, "claude")
 	if has(llmConfig(cfg, false)) {
 		t.Fatalf("codex not installed: its models must not be served")
+	}
+}
+
+func claudeProject(t *testing.T, mode string, extra string) (repoDir, projDir string) {
+	t.Helper()
+	repoDir, projDir, _ = newGitBackend(t)
+	if err := os.WriteFile(filepath.Join(projDir, ".cernerc"), []byte("backend = \"x\"\n\n[llm]\nmode = \""+mode+"\"\n"+extra), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return repoDir, projDir
+}
+
+// TestChatSwitchedTurnGetsProjectDirAndCodexMode (F-0440 criterion 3, PR #20):
+// a claude-cli project asked for openai hands the seam the project dir and the
+// codex mode — what sets the project-files MCP up — and a project effort never
+// leaks into the other vendor's turn.
+func TestChatSwitchedTurnGetsProjectDirAndCodexMode(t *testing.T) {
+	t.Setenv("CERNE_CONFIG_DIR", t.TempDir())
+	stubInstalledCLIs(t, "claude", "codex")
+	repoDir, projDir := claudeProject(t, "claude-cli", "effort = \"max\"\n")
+	body := `{"messages":[{"role":"user","content":"Oi"}],"provider":"openai"}`
+	var seen project.LLMConfig
+	var dir string
+	orig := newAgentProvider
+	t.Cleanup(func() { newAgentProvider = orig })
+	newAgentProvider = func(cfg project.LLMConfig, d string, _ bool) (llm.Provider, error) {
+		seen, dir = cfg, d
+		return &llm.Fake{Reply: "ok"}, nil
+	}
+	if rec := doJSON(t, New(repoDir, projDir, "p"), http.MethodPost, "/api/chat", body, &struct{}{}); rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	if dir != projDir || seen.Mode != "codex-cli" || seen.Effort != "" {
+		t.Fatalf("seam got dir=%q cfg=%+v, want the project dir, codex-cli, no effort", dir, seen)
+	}
+}
+
+// TestLLMConfigConfiguredFirstAndKeylessStaysOut (criterion 1): the configured
+// vendor leads whatever the PATH order says, and a byo-key vendor without a
+// key is never listed nor accepted because claude happens to be installed.
+func TestLLMConfigConfiguredFirstAndKeylessStaysOut(t *testing.T) {
+	t.Setenv("CERNE_CONFIG_DIR", t.TempDir())
+	stubInstalledCLIs(t, "claude", "codex")
+	if got := strings.Join(llmConfig(project.LLMConfig{Mode: "codex-cli"}, false).Providers, ","); got != "openai,anthropic" {
+		t.Fatalf("codex project providers = %q, want openai,anthropic", got)
+	}
+	stubInstalledCLIs(t, "claude")
+	cfg := project.LLMConfig{Mode: "claude-cli"}
+	if got := strings.Join(llmConfig(cfg, false).Providers, ","); got != "anthropic" {
+		t.Fatalf("providers = %q, want anthropic only", got)
+	}
+	repoDir, projDir := claudeProject(t, "claude-cli", "")
+	if c, code, body := providerTurn(t, projDir, repoDir, "openrouter"); code != http.StatusBadRequest || c != nil || !strings.Contains(body, "openrouter") {
+		t.Fatalf("keyless openrouter = %d, seam called=%v: %s", code, c != nil, body)
+	}
+}
+
+// TestChatRegisterRemoteNeverCreditsLocalOnlyProvider (criteria 2, 4): the
+// remote serve refuses /api/chat for an installed-CLI provider, so its register
+// never credits one either.
+func TestChatRegisterRemoteNeverCreditsLocalOnlyProvider(t *testing.T) {
+	agentServerEnv(t)
+	t.Setenv("CERNE_CONFIG_DIR", t.TempDir())
+	stubInstalledCLIs(t, "claude", "codex")
+	repoDir, projDir := claudeProject(t, "claude-cli", "")
+	spec := "# Exportar CSV\\n\\n## Problema\\nFalta.\\n\\n## Objetivo e critérios de aceitação\\n\\nX.\\n\\n## Decisões do design\\n\\nX.\\n\\n## Desenho\\n\\nX.\\n\\n## Verificação\\n\\nX.\\n\\n## Execução recomendada (agente)\\n\\nX.\\n\\n## Fora de escopo\\n\\nX.\\n"
+	req := httptest.NewRequest(http.MethodPost, "/api/chat/register", strings.NewReader(`{"title":"Exportar CSV","provider":"openai","model":"gpt-x","spec_body":"`+spec+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(context.WithValue(req.Context(), remoteKey{}, true))
+	rec := httptest.NewRecorder()
+	handleChatRegister(rec, req, repoDir, projDir)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("register = %d %s", rec.Code, rec.Body.String())
+	}
+	if p := lastDocEdited(t, repoDir, "F-0002"); p["provider"] != "claude-cli" {
+		t.Fatalf("remote author = %v, want the configured claude-cli", p)
+	}
+}
+
+// TestLLMConfigCodexModelsNotDuplicated (criterion 3): a byo-key openai project
+// whose catalog already lists a model the Codex cache also lists shows it once.
+func TestLLMConfigCodexModelsNotDuplicated(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CERNE_CONFIG_DIR", dir)
+	if err := os.WriteFile(filepath.Join(dir, "models.json"), []byte(`{"entries":[{"id":"gpt-x","label":"GPT X","provider":"openai","visibility":"current"}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	t.Setenv("CODEX_HOME", home)
+	cache := `{"models":[{"slug":"gpt-x","display_name":"GPT X","visibility":"list","priority":1}]}`
+	if err := os.WriteFile(filepath.Join(home, "models_cache.json"), []byte(cache), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stubInstalledCLIs(t, "codex")
+	n := 0
+	for _, e := range llmConfig(project.LLMConfig{Mode: "byo-key", Provider: "openai"}, false).Models {
+		if e.ID == "gpt-x" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("gpt-x listed %d times, want once", n)
+	}
+}
+
+// TestPreferredProviderRefusalNamesInstalledCLIs (criterion 5): the 400 says
+// what is accepted — configured or an installed subscription CLI's vendor.
+func TestPreferredProviderRefusalNamesInstalledCLIs(t *testing.T) {
+	t.Setenv("CERNE_CONFIG_DIR", t.TempDir())
+	stubInstalledCLIs(t, "claude")
+	repoDir, projDir := claudeProject(t, "claude-cli", "")
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPut, "/api/config/models/provider", `{"provider":"gemini"}`, new(map[string]any))
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "installed") {
+		t.Fatalf("refusal = %d %s, want a 400 naming installed CLIs", rec.Code, rec.Body.String())
 	}
 }

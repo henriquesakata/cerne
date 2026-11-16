@@ -76,6 +76,10 @@ func TestDocAuthor(t *testing.T) {
 		{"chat child: claude-cli ignores the call's model", map[string]string{"CERNE_ACTOR": "agent", "CERNE_ORIGIN": "chat", "CERNE_MODEL": "claude-sonnet-5"},
 			"[llm]\nmode = \"claude-cli\"\n", "",
 			DocAuthor{Provider: "claude-cli", Source: "llm-config"}},
+		// F-0440: a turn switched to another installed CLI writes as that CLI.
+		{"chat child: a switched turn names the CLI that answered", map[string]string{"CERNE_ACTOR": "agent", "CERNE_ORIGIN": "chat", "CERNE_PROVIDER": "openai", "CERNE_MODEL": "gpt-x"},
+			"[llm]\nmode = \"claude-cli\"\n", "",
+			DocAuthor{Provider: "codex-cli", Model: "gpt-x", Source: "llm-config"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

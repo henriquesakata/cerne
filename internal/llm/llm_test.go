@@ -95,3 +95,22 @@ func TestModeForProviderInvertsConfiguredProviders(t *testing.T) {
 		}
 	}
 }
+
+// TestForProviderSwitchesOnlyTheCopy (F-0440): a vendor switch swaps the mode
+// and drops what belonged to the project's vendor (provider, model, effort); the
+// configured vendor and an unknown one leave the config as it was.
+func TestForProviderSwitchesOnlyTheCopy(t *testing.T) {
+	cfg := project.LLMConfig{Mode: ModeClaudeCLI, Provider: "vendor", Model: "claude-x", Effort: "max"}
+	got := ForProvider(cfg, "openai")
+	if got.Mode != ModeCodexCLI || got.Provider != "" || got.Model != "" || got.Effort != "" {
+		t.Fatalf("switch = %+v", got)
+	}
+	if cfg.Mode != ModeClaudeCLI || cfg.Model != "claude-x" {
+		t.Fatalf("the original was mutated: %+v", cfg)
+	}
+	for _, p := range []string{"", "anthropic", "nope"} {
+		if got := ForProvider(cfg, p); got != cfg {
+			t.Fatalf("ForProvider(%q) = %+v, want unchanged", p, got)
+		}
+	}
+}

@@ -500,3 +500,15 @@ func truncate(data []byte, n int) string {
 	}
 	return string(data[:n]) + "…"
 }
+
+// ForProvider is cfg as a turn on provider's subscription CLI sees it (F-0440).
+// The configured vendor, an empty or an unknown one leave it as it is; a switch
+// drops what belonged to the project's vendor (provider, model, effort).
+func ForProvider(cfg project.LLMConfig, provider string) project.LLMConfig {
+	mode := ModeForProvider(provider)
+	if provider == "" || mode == "" || slices.Contains(ConfiguredProviders(cfg), provider) {
+		return cfg
+	}
+	cfg.Mode, cfg.Provider, cfg.Model, cfg.Effort = mode, "", "", ""
+	return cfg
+}

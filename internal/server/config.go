@@ -129,7 +129,11 @@ func llmConfig(cfg project.LLMConfig, remote bool) llmConfigResponse {
 	// F-0440: an installed codex offers them too, so picking OpenAI in a project
 	// run on another CLI shows its models (local ui only).
 	if mode == llm.ModeCodexCLI || (!remote && codexInstalled()) {
-		resp.Models = append(resp.Models, llm.CodexModels()...)
+		for _, m := range llm.CodexModels() {
+			if !slices.ContainsFunc(resp.Models, func(e models.Entry) bool { return e.ID == m.ID }) {
+				resp.Models = append(resp.Models, m)
+			}
+		}
 	}
 	if !remote {
 		resp.CLIs = cliStatuses()
@@ -157,7 +161,7 @@ func handlePreferredProviderPut(w http.ResponseWriter, r *http.Request, projDir 
 		return
 	}
 	if !slices.Contains(reachableProviders(cfg.LLM, servedRemotely(r)), req.Provider) {
-		writeJSON(w, http.StatusBadRequest, errorBody(fmt.Sprintf("provider %q is not configured for this project", req.Provider)))
+		writeJSON(w, http.StatusBadRequest, errorBody(fmt.Sprintf("provider %q is neither configured for this project nor an installed subscription CLI", req.Provider)))
 		return
 	}
 	dir, err := project.ConfigDir()

@@ -67,6 +67,7 @@ func docAuthor(projDir string) DocAuthor {
 		if err != nil {
 			return unknown
 		}
+		cfg.LLM = llm.ForProvider(cfg.LLM, strings.TrimSpace(os.Getenv("CERNE_PROVIDER"))) // F-0440
 		// The call's model replaces the config's, as chatAuthor does; LLMAuthor
 		// still drops it for claude-cli, which is never passed --model.
 		if m := strings.TrimSpace(os.Getenv("CERNE_MODEL")); m != "" {

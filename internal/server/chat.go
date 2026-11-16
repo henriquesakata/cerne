@@ -281,7 +281,7 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 		var runs []chatRun
 		// C3: the confirmation covers the card's commands, nothing else.
 		env := verbs.Env{Bin: cerneBin(), ProjDir: projDir, RepoDir: repoDir, Confirmed: true,
-			Card: cardKeys(req.Messages[turn].Content), Conversation: req.ConversationID, Turn: turn, Model: cfg.LLM.Model}
+			Card: cardKeys(req.Messages[turn].Content), Conversation: req.ConversationID, Turn: turn, Provider: req.Provider, Model: cfg.LLM.Model}
 		reply, err := tc.CompleteTools(ctx, prompt, chatTools(CommandTree), toolRun(env, &runs))
 		truncated := errors.Is(err, llm.ErrTruncated)
 		if err != nil && !truncated {
@@ -413,21 +413,20 @@ func turnLLM(cfg project.LLMConfig, provider string, remote bool) (project.LLMCo
 	if !slices.Contains(reachableProviders(cfg, remote), provider) {
 		return cfg, fmt.Errorf("provider %q is not available on this machine", provider)
 	}
-	cfg.Mode, cfg.Provider, cfg.Model = llm.ModeForProvider(provider), "", ""
-	return cfg, nil
+	return llm.ForProvider(cfg, provider), nil
 }
 
 // chatAuthor is who wrote a spec the chat proposed (F-0375): the project's
 // [llm] config with the conversation's model; unknown when the config is
 // unreadable — never a default it did not call.
-func chatAuthor(projDir, model, provider string) app.DocAuthor {
+func chatAuthor(projDir, model, provider string, remote bool) app.DocAuthor {
 	cfg, _, err := project.LoadConfig(projDir)
 	if err != nil {
 		return app.DocAuthor{Source: "unknown"}
 	}
 	// An unreachable provider keeps the project's own config (best effort: the
 	// registration was already confirmed).
-	if turn, err := turnLLM(cfg.LLM, provider, false); err == nil {
+	if turn, err := turnLLM(cfg.LLM, provider, remote); err == nil {
 		cfg.LLM = turn
 	}
 	if model != "" {
@@ -527,7 +526,7 @@ func handleChatRegister(w http.ResponseWriter, r *http.Request, repoDir, projDir
 	// candidate. Same gate as the creation (an explicit click got here), same
 	// backend write path, but nothing is minted and no state moves.
 	if fid := strings.TrimSpace(req.FeatureID); fid != "" {
-		f, changed, err := app.UpdateCandidateSpecBy(repoDir, projDir, fid, req.SpecBody, chatAuthor(projDir, req.Model, req.Provider))
+		f, changed, err := app.UpdateCandidateSpecBy(repoDir, projDir, fid, req.SpecBody, chatAuthor(projDir, req.Model, req.Provider, servedRemotely(r)))
 		if !writeRefineError(w, err) {
 			return
 		}
@@ -545,7 +544,7 @@ func handleChatRegister(w http.ResponseWriter, r *http.Request, repoDir, projDir
 	parent := strings.TrimSpace(req.Parent)
 	module := strings.TrimSpace(req.Module)
 	warning := ""
-	author := chatAuthor(projDir, req.Model, req.Provider)
+	author := chatAuthor(projDir, req.Model, req.Provider, servedRemotely(r))
 	f, err := app.CreateFeatureWithSpecBy(repoDir, projDir, req.Title, module, parent, req.Facets, req.Components, req.SpecBody, author)
 	// F-0254: a bad parent degrades to no parent instead of failing the
 	// registration — the refusal happens before anything is written, so the
