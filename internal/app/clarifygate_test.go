@@ -37,7 +37,7 @@ func clarifyGateSeed(t *testing.T, spec string) (repoDir string, err error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for name, body := range map[string]string{"spec.md": spec, "plan.md": "[ESCLARECER: do plano?]\n"} {
+	for name, body := range map[string]string{"spec.md": completeSpec(spec), "plan.md": "[ESCLARECER: do plano?]\n"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}

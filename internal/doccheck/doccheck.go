@@ -5,6 +5,8 @@ package doccheck
 import (
 	"bytes"
 	"strings"
+
+	"github.com/henriquesakata/cerne/internal/doclang"
 )
 
 // stubPrefixes are the placeholder lines cerne writes into freshly created
@@ -96,4 +98,47 @@ func isStubLine(trimmed string) bool {
 		}
 	}
 	return false
+}
+
+// MissingSections returns the canonical sections absent from data as level-2
+// (## ) headings, in canonical order. A heading present with "N/A" content still
+// counts as present (right-sizing): only the heading is checked, not its body.
+func MissingSections(data []byte, kind doclang.Kind, l doclang.Lang) []string {
+	present := map[string]bool{}
+	var fence string // the opening run of the fenced block we are inside, if any
+	for _, line := range strings.Split(string(data), "\n") {
+		if run := fenceRun(line); run != "" {
+			switch {
+			case fence == "":
+				fence = run
+			case run[0] == fence[0] && len(run) >= len(fence) && strings.TrimSpace(line) == run:
+				fence = ""
+			}
+			continue
+		}
+		if fence != "" {
+			continue // a "## " inside a code block is not a heading (CommonMark)
+		}
+		if h, ok := strings.CutPrefix(strings.TrimSpace(line), "## "); ok {
+			present[strings.TrimSpace(h)] = true
+		}
+	}
+	return doclang.Missing(kind, present, l)
+}
+
+// fenceRun returns the run of 3+ backticks or tildes that opens or closes a
+// fenced code block on line (up to 3 spaces of indent), or "".
+func fenceRun(line string) string {
+	t := strings.TrimLeft(line, " ")
+	if len(line)-len(t) > 3 || len(t) < 3 || (t[0] != '`' && t[0] != '~') {
+		return ""
+	}
+	n := 0
+	for n < len(t) && t[n] == t[0] {
+		n++
+	}
+	if n < 3 {
+		return ""
+	}
+	return t[:n]
 }

@@ -13,7 +13,7 @@ import (
 func writeSpecFile(t *testing.T, body string) string {
 	t.Helper()
 	p := filepath.Join(t.TempDir(), "spec.md")
-	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(p, []byte(completeSpec(body)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return p

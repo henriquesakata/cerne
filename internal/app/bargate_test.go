@@ -6,10 +6,26 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/henriquesakata/cerne/internal/doccheck"
+	"github.com/henriquesakata/cerne/internal/doclang"
 )
+
+// completeSpec appends every template section body lacks (F-0435: the approve
+// refuses a spec without them), so fixtures keep testing the gate they name.
+func completeSpec(body string) string {
+	if !doccheck.HasRealContent([]byte(body)) {
+		return body // a stub stays a stub: the document gate refuses it first
+	}
+	for _, h := range doccheck.MissingSections([]byte(body), doclang.Spec, doclang.PT) {
+		body += "\n## " + h + "\n\nN/A.\n"
+	}
+	return body
+}
 
 func writeSpecFixture(t *testing.T, repoDir, id, body string) {
 	t.Helper()
+	body = completeSpec(body)
 	dir := filepath.Join(repoDir, "content", "features", id)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)

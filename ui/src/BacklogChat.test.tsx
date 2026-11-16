@@ -18,7 +18,7 @@ const registerChatCandidate = vi.fn<
     capability?: string,
     parent?: string,
     featureId?: string,
-  ) => Promise<CreateOutcome & { warning?: string; unchanged?: boolean }>
+  ) => Promise<CreateOutcome & { warning?: string; unchanged?: boolean; missing?: string[] }>
 >()
 const registerChatNote = vi.fn<
   (
@@ -174,6 +174,26 @@ describe('BacklogChat (F-0218/F-0219: componente controlado)', () => {
 
     await waitFor(() => expect(screen.getByText('Me conta mais sobre o formato.')).toBeInTheDocument())
     expect(screen.queryByRole('button', { name: /registrar candidata/i })).not.toBeInTheDocument()
+  })
+
+  it('F-0435: a 422 with missing sections is listed in the card and the conversation stays open', async () => {
+    streamChat.mockResolvedValue({
+      answered: true,
+      reply: '````cerne-proposta\n# Exportar CSV\n\n## Problema\nFalta.\n````\n',
+    })
+    registerChatCandidate.mockResolvedValue({
+      ok: false,
+      error: 'the proposal is missing template sections: Verificação, Fora de escopo',
+      missing: ['Verificação', 'Fora de escopo'],
+    })
+    renderChat({}, { onRegistered: vi.fn() })
+    fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /registrar candidata/i }))
+    const alerts = await screen.findAllByRole('alert')
+    expect(alerts.some((a) => a.textContent?.includes('Fora de escopo') && a.tagName === 'DIV')).toBe(true)
+    expect(screen.getByRole('button', { name: /registrar candidata/i })).toBeEnabled()
+    expect(screen.getByPlaceholderText(/descreva/i)).toBeEnabled()
   })
 
   it('com bloco de proposta, mostra o rascunho no painel e só registra ao confirmar', async () => {

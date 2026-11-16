@@ -13,6 +13,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/doccheck"
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/llm"
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
@@ -460,6 +462,15 @@ func handleChatRegister(w http.ResponseWriter, r *http.Request, repoDir, projDir
 	}
 	if strings.TrimSpace(req.SpecBody) == "" {
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody("spec_body must not be empty"))
+		return
+	}
+	// F-0435: a proposal cut short (a code fence closed it early) must neither land
+	// as a candidate with a half spec nor overwrite a complete one (refine) — refuse before anything is written.
+	if missing := doccheck.MissingSections([]byte(req.SpecBody), doclang.Spec, store.DocsLanguage(repoDir)); len(missing) > 0 {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+			"error":   "the proposal is missing template sections: " + strings.Join(missing, ", "),
+			"missing": missing,
+		})
 		return
 	}
 	// F-0256: update mode — the confirmed revision of an already-registered

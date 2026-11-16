@@ -16,6 +16,9 @@ func writeDoc(t *testing.T, path, id, body string) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatalf("mkdir %s: %v", path, err)
 	}
+	if filepath.Base(path) == "spec.md" {
+		body = completeSpec(body)
+	}
 	content := "---\ncerne_id: " + id + "\n---\n\n" + body
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write %s: %v", path, err)

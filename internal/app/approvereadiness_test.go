@@ -21,6 +21,12 @@ import (
 // pushed so a transition's critical section sees it.
 func seedCandidateSpec(t *testing.T, repoDir, id, body string) {
 	t.Helper()
+	seedRawCandidateSpec(t, repoDir, id, completeSpec(body))
+}
+
+// seedRawCandidateSpec seeds body exactly as given (no sections added).
+func seedRawCandidateSpec(t *testing.T, repoDir, id, body string) {
+	t.Helper()
 	if err := store.SaveFeature(repoDir, store.Feature{ID: id, Title: "Feature " + id, State: domain.StateCandidate}); err != nil {
 		t.Fatalf("SaveFeature: %v", err)
 	}
@@ -121,7 +127,7 @@ func TestApproveReadinessRefusesNonCandidate(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(copyPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(copyPath, []byte("# t\n\nProblema real.\n"), 0o644); err != nil {
+	if err := os.WriteFile(copyPath, []byte(completeSpec("# t\n\nProblema real.\n")), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := approveReadiness(repoDir, "F-0002", true); !errors.Is(err, domain.ErrInvalidTransition) {
@@ -311,5 +317,62 @@ func TestCardImpedimentsMatchLint(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestApproveCheck_IncompleteSpec (F-0435 crit. 4): a written spec missing a
+// template section is a hard impediment, and the shared core refuses it.
+func TestApproveCheck_IncompleteSpec(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	spec := "# t\n\nProblema real.\n\n## Verificação\n\nBarra: não aplicável — teste\nPergunta ao juiz: x?\n"
+	seedRawCandidateSpec(t, repoDir, "F-0001", spec)
+	imps, err := approveReadiness(repoDir, "F-0001", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found *ApproveImpediment
+	for i := range imps {
+		if imps[i].Code == ImpedimentIncompleteSpec {
+			found = &imps[i]
+		}
+	}
+	if found == nil || !found.Hard || !strings.Contains(found.Message, "Fora de escopo") {
+		t.Fatalf("impediments %+v, want a hard incomplete-spec naming Fora de escopo", imps)
+	}
+	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionApprove, "", "", nil); !errors.Is(err, ErrSpecIncomplete) {
+		t.Fatalf("approve err = %v, want ErrSpecIncomplete", err)
+	}
+}
+
+// TestApproveReadiness_IncompleteSpecAndBar (F-0435): a spec lacking sections
+// AND a bar lists both hard impediments, not just the first.
+func TestApproveReadiness_IncompleteSpecAndBar(t *testing.T) {
+	repoDir := t.TempDir()
+	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0001", Title: "t", State: domain.StateCandidate, Components: []string{"cli"}}); err != nil {
+		t.Fatal(err)
+	}
+	writeRawSpec(t, repoDir, "F-0001", "# t\n\nProblema real.\n\n## Problema\n\nX.\n")
+	got, err := approveReadiness(repoDir, "F-0001", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var codes []string
+	for _, im := range got {
+		codes = append(codes, im.Code)
+	}
+	if !reflect.DeepEqual(codes, []string{ImpedimentIncompleteSpec, ImpedimentBarMissing}) {
+		t.Fatalf("codes = %v, want incomplete-spec and bar-missing together", codes)
+	}
+}
+
+// writeRawSpec writes body as the spec exactly as given (no sections added).
+func writeRawSpec(t *testing.T, repoDir, id, body string) {
+	t.Helper()
+	path := FeatureDocPath(repoDir, id, "spec.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/doccheck"
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/project"
@@ -28,8 +30,30 @@ func newFeature(t *testing.T, projDir, title string, seq int) string {
 	return fmt.Sprintf("F-%04d", seq)
 }
 
-// writeDoc writes a feature lifecycle document straight into the backend clone.
+// completeSpec appends every template section the spec lacks (F-0435: the
+// approve refuses a spec without them), so fixtures keep testing their gate.
+func completeSpec(body string) string {
+	if !doccheck.HasRealContent([]byte(body)) {
+		return body // a stub stays a stub: the document gate refuses it first
+	}
+	for _, h := range doccheck.MissingSections([]byte(body), doclang.Spec, doclang.PT) {
+		body += "\n## " + h + "\n\nN/A.\n"
+	}
+	return body
+}
+
+// writeDoc writes a feature lifecycle document straight into the backend clone
+// (a spec.md is completed first; writeDocRaw writes it as given).
 func writeDoc(t *testing.T, repoDir, id, filename, content string) {
+	t.Helper()
+	if filename == "spec.md" {
+		content = completeSpec(content)
+	}
+	writeDocRaw(t, repoDir, id, filename, content)
+}
+
+// writeDocRaw writes content exactly as given (no sections added).
+func writeDocRaw(t *testing.T, repoDir, id, filename, content string) {
 	t.Helper()
 	dir := filepath.Join(repoDir, "content", "features", id)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -431,7 +455,7 @@ func TestTransitionRevert(t *testing.T) {
 	// Nothing was deleted: the spec is intact and the plan stub scaffolded by
 	// the approve is still there for a future re-approval.
 	data, err := os.ReadFile(filepath.Join(repoDir, "content", "features", id, "spec.md"))
-	if err != nil || string(data) != spec {
+	if err != nil || string(data) != completeSpec(spec) {
 		t.Fatalf("spec.md after revert = (%v) %q, want the original spec intact", err, data)
 	}
 	if _, err := os.Stat(filepath.Join(repoDir, "content", "features", id, "plan.md")); err != nil {

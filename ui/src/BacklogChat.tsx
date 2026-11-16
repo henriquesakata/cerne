@@ -97,14 +97,32 @@ export function parseCommands(reply: string): string[] | null {
   return commands.length > 0 ? commands : null
 }
 
-function parseFenced(reply: string, fence: string): ParsedProposal | null {
-  const open = reply.indexOf('```' + fence)
-  if (open < 0) return null
+// findFence (F-0435) localiza o bloco cercado `fence` no formato CommonMark: a
+// abertura é uma corrida de 3+ crases seguida do nome, e o fechamento é a
+// primeira LINHA que começa com a mesma quantidade de crases ou mais. Assim a
+// proposta aberta com quatro crases carrega blocos de código de três por
+// dentro sem ser cortada; a de três crases (formato antigo) segue valendo.
+function findFence(
+  reply: string,
+  fence: string,
+): { open: number; afterFence: number; close: number; endOfClose: number } | null {
+  const m = new RegExp('(`{3,})' + fence).exec(reply)
+  if (!m) return null
+  const open = m.index
   const afterFence = reply.indexOf('\n', open)
   if (afterFence < 0) return null
-  const close = reply.indexOf('```', afterFence)
-  if (close < 0) return null
-  const inner = reply.slice(afterFence + 1, close).trim()
+  const closer = new RegExp('^ {0,3}`{' + m[1].length + ',}[ \\t]*$', 'm')
+  const c = closer.exec(reply.slice(afterFence + 1))
+  if (!c) return null
+  const close = afterFence + 1 + c.index
+  const nl = reply.indexOf('\n', close)
+  return { open, afterFence, close, endOfClose: nl }
+}
+
+function parseFenced(reply: string, fence: string): ParsedProposal | null {
+  const f = findFence(reply, fence)
+  if (!f) return null
+  const inner = reply.slice(f.afterFence + 1, f.close).trim()
   const titleMatch = /^#\s+(.+)\n+([\s\S]*)$/.exec(inner)
   const title = titleMatch ? titleMatch[1].trim() : ''
   const rest = titleMatch ? titleMatch[2] : inner
@@ -145,15 +163,10 @@ export function stripProposalFence(reply: string): string {
 }
 
 function stripFence(reply: string, fence: string): string {
-  const open = reply.indexOf('```' + fence)
-  if (open < 0) return reply
-  const afterFence = reply.indexOf('\n', open)
-  if (afterFence < 0) return reply
-  const close = reply.indexOf('```', afterFence)
-  if (close < 0) return reply
-  const endOfClose = reply.indexOf('\n', close)
-  const after = endOfClose < 0 ? '' : reply.slice(endOfClose + 1)
-  return (reply.slice(0, open) + after).trim()
+  const f = findFence(reply, fence)
+  if (!f) return reply
+  const after = f.endOfClose < 0 ? '' : reply.slice(f.endOfClose + 1)
+  return (reply.slice(0, f.open) + after).trim()
 }
 
 // MenuSelect (F-0241): popup no lugar do <select> nativo, que não renderiza
@@ -659,6 +672,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
   // A conversa órfã se vincula a uma delas por clique — nunca por inferência
   // (crit. 7): o guard casa por semelhança de título, não por identidade.
   const [dupCandidates, setDupCandidates] = useState<DupMatch[]>([])
+  const [missingSections, setMissingSections] = useState<string[]>([])
   // F-0249: qual nota já virou entidade, por índice da mensagem que a propôs —
   // o card vira recibo com o id em vez de sumir, e um segundo clique não grava
   // a mesma nota de novo. Efêmero de propósito: recarregar mostra o card outra
@@ -903,6 +917,8 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
     })
     return found
   }, [messages])
+  // A new revision supersedes the refusal shown for the previous one.
+  useEffect(() => setMissingSections([]), [revisions.length])
 
   const versionByMessage = useMemo(
     () => new Map(revisions.map((r) => [r.msgIndex, r.version])),
@@ -946,6 +962,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
     setError(null)
     setNotice(null)
     setDupCandidates([])
+    setMissingSections([])
     registerChatCandidate(
       proposal.title,
       proposal.body,
@@ -961,6 +978,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
         setRegistering(false)
         if (!res.ok) {
           setError(res.error)
+          setMissingSections(res.missing ?? [])
           // Só candidata: vincular uma proposta avulsa a uma feature aprovada
           // reescreveria a spec e venceria a aprovação (F-0318) num clique de
           // deduplicação. O chat só regrava aprovada numa conversa de refino.
@@ -1195,6 +1213,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
           registering={registering}
           refining={refineId !== ''}
           approvedTarget={refineApproved}
+          missing={missingSections}
           onRegister={confirmRegister}
           onQuote={appendQuote}
         />

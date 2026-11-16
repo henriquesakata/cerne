@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/henriquesakata/cerne/internal/doccheck"
 	"github.com/henriquesakata/cerne/internal/doclang"
 )
 
@@ -21,10 +22,10 @@ func doc(l doclang.Lang, k doclang.Kind) []byte {
 func TestIncompleteDoc_EnglishSections(t *testing.T) {
 	for _, k := range []doclang.Kind{doclang.Spec, doclang.Plan, doclang.Result, doclang.Decision, doclang.Runbook} {
 		for _, project := range []doclang.Lang{doclang.PT, doclang.EN} {
-			if missing := missingSections(doc(doclang.EN, k), k, project); missing != nil {
+			if missing := doccheck.MissingSections(doc(doclang.EN, k), k, project); missing != nil {
 				t.Errorf("kind %d, project %s: English document missing %v", k, project, missing)
 			}
-			if missing := missingSections(doc(doclang.PT, k), k, project); missing != nil {
+			if missing := doccheck.MissingSections(doc(doclang.PT, k), k, project); missing != nil {
 				t.Errorf("kind %d, project %s: Portuguese document missing %v", k, project, missing)
 			}
 		}
@@ -35,14 +36,14 @@ func TestIncompleteDoc_EnglishSections(t *testing.T) {
 // reported in the project's language.
 func TestIncompleteDoc_MixedLanguages(t *testing.T) {
 	mixed := []byte("## Contexto\n\n## Decision\n\n## Consequências\n\n## Alternatives considered\n\n## Implementation and relations\n")
-	if missing := missingSections(mixed, doclang.Decision, doclang.PT); missing != nil {
+	if missing := doccheck.MissingSections(mixed, doclang.Decision, doclang.PT); missing != nil {
 		t.Errorf("mixed document missing %v", missing)
 	}
 	partial := []byte("## Context\n\n## Decisão\n")
-	if got, want := missingSections(partial, doclang.Decision, doclang.EN), []string{"Consequences", "Alternatives considered", "Implementation and relations"}; !reflect.DeepEqual(got, want) {
+	if got, want := doccheck.MissingSections(partial, doclang.Decision, doclang.EN), []string{"Consequences", "Alternatives considered", "Implementation and relations"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("missing = %v, want %v", got, want)
 	}
-	if got := missingSections(partial, doclang.Decision, doclang.PT); len(got) != 3 || got[0] != "Consequências" {
+	if got := doccheck.MissingSections(partial, doclang.Decision, doclang.PT); len(got) != 3 || got[0] != "Consequências" {
 		t.Errorf("missing in pt = %v", got)
 	}
 }

@@ -126,10 +126,10 @@ func TestGoldenPath(t *testing.T) {
 	if !strings.HasPrefix(stub, frontmatter) {
 		t.Fatalf("spec stub no longer starts with the expected frontmatter:\n%s", stub)
 	}
-	realSpec := frontmatter +
+	realSpec := completeSpec(frontmatter +
 		"\n# Carrinho persistente\n\nO carrinho sobrevive a refresh e novo login.\n\n" +
 		"## Critérios de aceite\n\n- Itens persistem por 30 dias.\n\n" +
-		"## Verificação\n\nBarra: carrinho do satélite de referência — apps/finance/web\nPergunta ao juiz: qual é mais claro?\n"
+		"## Verificação\n\nBarra: carrinho do satélite de referência — apps/finance/web\nPergunta ao juiz: qual é mais claro?\n")
 	if err := os.WriteFile(specPath, []byte(realSpec), 0o644); err != nil {
 		t.Fatalf("write real spec: %v", err)
 	}

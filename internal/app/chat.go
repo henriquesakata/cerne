@@ -222,8 +222,8 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config, channel 
 	// it wins any conflict with the project persona at the top.
 	b.WriteString(chatRoleBoundary)
 	b.WriteString("\n\n")
-	b.WriteString("Para propor, termine sua resposta com um bloco cercado assim:\n\n")
-	fmt.Fprintf(&b, "```%s\n", chatProposalFence)
+	b.WriteString("Para propor, termine sua resposta com um bloco cercado assim — a cerca de abertura e a de fechamento têm QUATRO crases, e blocos de código dentro da spec usam TRÊS (uma cerca de três fecharia a proposta no meio):\n\n")
+	fmt.Fprintf(&b, "````%s\n", chatProposalFence)
 	b.WriteString("# <título curto da feature>\n")
 	b.WriteString("facet: <uma opção do conjunto fechado: " + strings.Join(domain.ValidFacets, ", ") + ">\n")
 	if len(proj.Modules) > 0 {
@@ -243,7 +243,7 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config, channel 
 		// so the list below already carries it (it used to be injected here).
 		b.WriteString("## " + s + "\n")
 	}
-	b.WriteString("```\n\n")
+	b.WriteString("````\n\n")
 	b.WriteString("Preencha de verdade a seção \"Execução recomendada (agente)\" (capacidade de modelo sugerida + tarefas a manter juntas/separáveis) — não deixe placeholder. ")
 	b.WriteString("Critérios de aceitação numerados e testáveis; para comportamento, use EARS: \"QUANDO <condição> O SISTEMA DEVE <comportamento>\". ")
 	b.WriteString("Marque qualquer incerteza com \"" + spectmpl.AmbiguityMarker + " pergunta específica]\" em vez de supor. ")
@@ -257,7 +257,7 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config, channel 
 	// inteiro corrigido, porque a UI deriva o card do bloco e não sabe aplicar
 	// patch parcial.
 	b.WriteString("Quando o turno do usuário trouxer citações (linhas iniciadas com \"> \") recortadas de uma proposta sua, trate-as como pedido de revisão daqueles trechos: localize cada trecho na sua proposta anterior e REEMITA o bloco ")
-	fmt.Fprintf(&b, "```%s INTEIRO já corrigido. ", chatProposalFence)
+	fmt.Fprintf(&b, "````%s INTEIRO já corrigido. ", chatProposalFence)
 	b.WriteString("Não descreva a correção em prosa, não devolva só o trecho alterado e não peça para o usuário reescrever a spec — a proposta é sempre reemitida completa.\n\n")
 	b.WriteString(chatNoteContract)
 	b.WriteString("\n\n")
@@ -305,16 +305,16 @@ Não proponha a cada turno: a nota é episódica, nasce de conhecimento NOVO. De
 
 Antes de propor, rode ` + "`cerne note list`" + ` (e ` + "`cerne note show <id>`" + ` quando o título for parecido): se já existe nota ativa equivalente, CITE o id dela em vez de propor outra.
 
-Para propor, termine sua resposta com um bloco cercado assim:
+Para propor, termine sua resposta com um bloco cercado assim — com QUATRO crases na abertura e no fechamento (blocos de código dentro da nota usam TRÊS):
 
-` + "```" + chatNoteFence + `
+` + "````" + chatNoteFence + `
 # <título curto e afirmativo: o que a nota estabelece>
 facet: <uma opção do conjunto fechado, obrigatória>
 components: <lista curta separada por vírgula, ao menos um — obrigatória>
 informs: <opcional: ids F-/D-/RB-/N- que esta nota informa; inclua a candidata que esta conversa gerou, quando houver>
 
 <o conhecimento em si, em 1-2 parágrafos: o fato e por que ele importa na próxima conversa>
-` + "```" + `
+` + "````" + `
 
 Sem facet e sem ao menos um component o registro é RECUSADO pelo servidor — nota sem tag nasce como débito de lint.
 
@@ -421,7 +421,7 @@ func BuildRefineBlock(repoDir, id string) (string, error) {
 	b.WriteString("\n--- fim da spec atual ---\n\n")
 
 	b.WriteString("Regras do refino:\n")
-	fmt.Fprintf(&b, "- Ao propor uma mudança, reemita o bloco ```%s INTEIRO com a spec completa já revisada — a UI substitui o documento, não aplica patch.\n", chatProposalFence)
+	fmt.Fprintf(&b, "- Ao propor uma mudança, reemita o bloco ````%s INTEIRO com a spec completa já revisada — a UI substitui o documento, não aplica patch.\n", chatProposalFence)
 	fmt.Fprintf(&b, "- Marque o bloco como revisão: inclua a linha \"feature: %s\" junto das demais linhas de metadado.\n", f.ID)
 	fmt.Fprintf(&b, "- A confirmação do usuário na UI grava a spec revisada em %s. O estado continua %s: refinar não aprova, não inicia e não renomeia nada.\n", f.ID, f.State)
 	if f.State == domain.StateApproved {

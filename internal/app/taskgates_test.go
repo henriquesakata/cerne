@@ -37,7 +37,7 @@ func seedWithSpec(t *testing.T, repoDir string, f store.Feature, spec string) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(spec), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(completeSpec(spec)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := gitback.CommitAndPush(repoDir, "seed "+f.ID); err != nil {

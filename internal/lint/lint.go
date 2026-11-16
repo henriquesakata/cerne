@@ -551,7 +551,7 @@ func incompleteDocFindings(repoDir string, features []store.Feature, decisions [
 		if !doccheck.HasRealContent(data) {
 			return nil // still a stub — enforced by the lifecycle gates
 		}
-		if missing := missingSections(data, kind, docsLang); len(missing) > 0 {
+		if missing := doccheck.MissingSections(data, kind, docsLang); len(missing) > 0 {
 			findings = append(findings, Finding{
 				Rule:   RuleIncompleteDoc,
 				File:   rel,
@@ -595,19 +595,6 @@ func incompleteDocFindings(repoDir string, features []store.Feature, decisions [
 		}
 	}
 	return findings, nil
-}
-
-// missingSections returns the canonical sections absent from data as level-2
-// (## ) headings, in canonical order. A heading present with "N/A" content still
-// counts as present (right-sizing): only the heading is checked, not its body.
-func missingSections(data []byte, kind doclang.Kind, l doclang.Lang) []string {
-	present := map[string]bool{}
-	for _, line := range strings.Split(string(data), "\n") {
-		if h, ok := strings.CutPrefix(strings.TrimSpace(line), "## "); ok {
-			present[strings.TrimSpace(h)] = true
-		}
-	}
-	return doclang.Missing(kind, present, l)
 }
 
 // parentFindings checks the epic (parent/child) invariants over the features,

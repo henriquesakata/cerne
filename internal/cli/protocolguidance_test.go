@@ -15,7 +15,7 @@ func guidanceSpec(lang, id, verification string) string {
 	if lang == "en" {
 		problem, verif = "Problem", "Verification"
 	}
-	return "---\ncerne_id: " + id + "\n---\n\n# Title\n\n## " + problem + "\n\nA real problem is described here.\n\n## " + verif + "\n\n" + verification + "\n"
+	return completeSpec("---\ncerne_id: " + id + "\n---\n\n# Title\n\n## " + problem + "\n\nA real problem is described here.\n\n## " + verif + "\n\n" + verification + "\n")
 }
 
 // guidanceBars are the three Verification bodies the bar gate refuses, per
