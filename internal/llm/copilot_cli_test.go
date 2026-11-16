@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -29,12 +30,14 @@ type copilotCall struct {
 	home       string
 	dirEntries int
 	homeIsDir  bool
+	env        []string
 }
 
 func copilotFake(reply string, calls *int, got *copilotCall) runner {
 	return func(ctx context.Context, dir, _ string, args []string, stdin string) (string, string, error) {
 		*calls++
-		env, _ := ctx.Value(envKey{}).([]string)
+		env, _ := ctx.Value(fullEnvKey{}).([]string)
+		got.env = env
 		got.args, got.stdin, got.dir, got.home = args, stdin, dir, ""
 		for _, e := range env {
 			if v, ok := strings.CutPrefix(e, "COPILOT_HOME="); ok {
@@ -194,5 +197,192 @@ func TestCopilotProviderWiring(t *testing.T) {
 	}
 	if _, err := ListModels(context.Background(), cfg); !errors.Is(err, ErrNoListing) {
 		t.Fatalf("ListModels err = %v, want ErrNoListing", err)
+	}
+}
+
+func envHas(env []string, entry string) bool {
+	for _, e := range env {
+		if e == entry {
+			return true
+		}
+	}
+	return false
+}
+
+func envKeyed(env []string, key string) bool {
+	for _, e := range env {
+		if strings.HasPrefix(e, key+"=") {
+			return true
+		}
+	}
+	return false
+}
+
+// A COPILOT_* variable of the user (allow-all, extra skill or agent dirs…)
+// never reaches the child: only the auth tokens survive, and COPILOT_HOME is
+// ours.
+func TestCopilotEnvDropsInheritedConfig(t *testing.T) {
+	parent := []string{"PATH=/bin", "COPILOT_ALLOW_ALL=true", "COPILOT_SKILLS_DIRS=/x", "COPILOT_GITHUB_TOKEN=t", "GH_TOKEN=g", "COPILOT_HOME=/user"}
+	got := copilotEnv(parent, "/h")
+	for _, want := range []string{"PATH=/bin", "COPILOT_GITHUB_TOKEN=t", "GH_TOKEN=g", "COPILOT_HOME=/h"} {
+		if !envHas(got, want) {
+			t.Fatalf("env %v lacks %q", got, want)
+		}
+	}
+	for _, bad := range []string{"COPILOT_ALLOW_ALL", "COPILOT_SKILLS_DIRS"} {
+		if envKeyed(got, bad) {
+			t.Fatalf("env %v still has %s", got, bad)
+		}
+	}
+	if envHas(got, "COPILOT_HOME=/user") {
+		t.Fatalf("the user's COPILOT_HOME survived: %v", got)
+	}
+}
+
+// The provider hands the filtered environment to the runner, and execRun uses
+// it as is.
+func TestCopilotChildEnvironmentIsFiltered(t *testing.T) {
+	t.Setenv("COPILOT_ALLOW_ALL", "true")
+	t.Setenv("COPILOT_EXTRA_DIRS", "/x")
+	var calls int
+	var got copilotCall
+	p := &cliProvider{kind: ModeCopilotCLI, bin: "copilot", run: copilotFake(copilotStream("x", "m"), &calls, &got)}
+	if _, err := p.Complete(context.Background(), "q"); err != nil {
+		t.Fatal(err)
+	}
+	if envKeyed(got.env, "COPILOT_ALLOW_ALL") || envKeyed(got.env, "COPILOT_EXTRA_DIRS") || !envKeyed(got.env, "COPILOT_HOME") {
+		t.Fatalf("child env = %v", got.env)
+	}
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	ctx := context.WithValue(context.Background(), fullEnvKey{}, []string{"ONLY=1"})
+	out, _, err := execRun(ctx, "", "sh", []string{"-c", "echo ${ONLY}-${HOME:-nohome}"}, "")
+	if err != nil || strings.TrimSpace(out) != "1-nohome" {
+		t.Fatalf("execRun with a full env = %q, %v", out, err)
+	}
+}
+
+// A --model that looks like a flag never reaches the argv.
+func TestCopilotModelIsABareWord(t *testing.T) {
+	var calls int
+	var got copilotCall
+	p := &cliProvider{kind: ModeCopilotCLI, bin: "copilot", model: "--allow-all-tools", run: copilotFake(copilotStream("x", "m"), &calls, &got)}
+	_, err := p.Complete(context.Background(), "q")
+	if !errors.Is(err, ErrCopilotCLI) || calls != 0 || strings.Contains(err.Error(), "update") {
+		t.Fatalf("err = %v after %d calls, want an invalid-model error and no run", err, calls)
+	}
+	p.model = "claude-sonnet-5.5"
+	if _, err := p.Complete(context.Background(), "q"); err != nil {
+		t.Fatalf("a real model id was refused: %v", err)
+	}
+}
+
+func failing(msg string) runner {
+	return func(context.Context, string, string, []string, string) (string, string, error) {
+		return "", "", errors.New(msg)
+	}
+}
+
+// Classification order: the model message is anchored, the policy is checked
+// before the login and before the generic cases. The policy texts are
+// provisional: no probe could cause one.
+func TestCopilotClassificationOrder(t *testing.T) {
+	for _, c := range []struct{ name, err, want, not string }{
+		{"policy wins over not available", `"copilot" exited with exit status 1: Copilot CLI is not available for your organization`, "administrator", "another model"},
+		{"policy wins over unauthorized", `"copilot" exited with exit status 1: unauthorized: blocked by your organization's policy`, "administrator", "copilot login"},
+		{"model anchored", `"copilot" exited with exit status 1: Execution failed: Model "gpt-x" is not available.`, "another model", "administrator"},
+		{"unrelated not available is generic", `"copilot" exited with exit status 1: the network is not available`, "use another mode", "another model"},
+	} {
+		p := &cliProvider{kind: ModeCopilotCLI, bin: "copilot", run: failing(c.err)}
+		_, err := p.Complete(context.Background(), "q")
+		if err == nil || !strings.Contains(err.Error(), c.want) || strings.Contains(err.Error(), c.not) {
+			t.Fatalf("%s: err = %v, want %q and not %q", c.name, err, c.want, c.not)
+		}
+	}
+}
+
+// F-0445 critic: on a platform where the throwaway COPILOT_HOME may hide the
+// stored login, a missing login names the token route.
+func TestCopilotLoginHintPerPlatform(t *testing.T) {
+	origOS, origEnv := copilotGOOS, copilotLookEnv
+	t.Cleanup(func() { copilotGOOS, copilotLookEnv = origOS, origEnv })
+	const noAuth = `"copilot" exited with exit status 1: Error: No authentication information found.`
+	for _, c := range []struct {
+		goos   string
+		tokens map[string]string
+		want   string
+		not    string
+	}{
+		{"linux", nil, "throwaway COPILOT_HOME", ""},
+		{"windows", nil, "hides the stored login", ""},
+		{"linux", map[string]string{"GH_TOKEN": "x"}, "copilot login", "throwaway"},
+		{"darwin", nil, "copilot login", "throwaway"},
+	} {
+		copilotGOOS = c.goos
+		copilotLookEnv = func(k string) (string, bool) { v, ok := c.tokens[k]; return v, ok }
+		p := &cliProvider{kind: ModeCopilotCLI, bin: "copilot", run: failing(noAuth)}
+		_, err := p.Complete(context.Background(), "q")
+		if err == nil || !strings.Contains(err.Error(), c.want) || (c.not != "" && strings.Contains(err.Error(), c.not)) || !strings.Contains(err.Error(), "COPILOT_GITHUB_TOKEN") {
+			t.Fatalf("%s %v: err = %v, want %q, not %q", c.goos, c.tokens, err, c.want, c.not)
+		}
+	}
+}
+
+// describeExit finds the session.error on stdout even when stderr has noise.
+func TestCopilotSessionErrorBeatsStderrNoise(t *testing.T) {
+	stdout := `{"type":"session.error","data":{"message":"Execution failed: Model \"zzz\" is not available."}}` + "\n"
+	got := describeExit("copilot", "exit status 1", []byte(stdout), []byte("A new version is available: 1.0.113\n"))
+	if !strings.Contains(got, `Model "zzz" is not available`) {
+		t.Fatalf("describeExit = %q", got)
+	}
+}
+
+// Exit 0, a session.error and no answer: the error carries the message, not
+// the generic login hint.
+func TestCopilotSessionErrorWithoutAnswer(t *testing.T) {
+	out := `{"type":"session.error","data":{"message":"Execution failed: Model \"zzz\" is not available."}}` + "\n" + `{"type":"result","exitCode":0}` + "\n"
+	var calls int
+	var got copilotCall
+	p := &cliProvider{kind: ModeCopilotCLI, bin: "copilot", run: copilotFake(out, &calls, &got)}
+	_, err := p.Complete(context.Background(), "q")
+	if !errors.Is(err, ErrCopilotCLI) || !strings.Contains(err.Error(), `Model "zzz" is not available`) || !strings.Contains(err.Error(), "another model") || strings.Contains(err.Error(), "no answer") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// Reply selection: the final answer beats later commentary; without one the
+// last non-empty message counts; noise and a cut last line are skipped.
+func TestCopilotReplySelection(t *testing.T) {
+	msg := func(phase, model, content string) string {
+		return `{"type":"assistant.message","data":{"model":"` + model + `","phase":"` + phase + `","content":"` + content + `"}}` + "\n"
+	}
+	for _, c := range []struct{ name, out, answer, model string }{
+		{"final beats later commentary", msg("final_answer", "m1", "the answer") + msg("commentary", "m2", "chatter"), "the answer", "m1"},
+		{"no final: last non-empty", msg("commentary", "m1", "first") + msg("commentary", "m2", "second") + msg("commentary", "m3", ""), "second", "m2"},
+		{"noise and a cut line", "A new version is available\n" + msg("final_answer", "m1", "ok") + `{"type":"assistant.message","data":{"model":"m9","pha`, "ok", "m1"},
+	} {
+		var calls int
+		var got copilotCall
+		p := &cliProvider{kind: ModeCopilotCLI, bin: "copilot", run: copilotFake(c.out, &calls, &got)}
+		out, err := p.Complete(context.Background(), "q")
+		if err != nil || out != c.answer || p.AnsweredModel() != c.model {
+			t.Fatalf("%s: %q / %q, %v; want %q / %q", c.name, out, p.AnsweredModel(), err, c.answer, c.model)
+		}
+	}
+}
+
+// Another clap wording of an unknown flag is still "update the CLI"; a value
+// the CLI refuses is not.
+func TestCopilotFlagWordings(t *testing.T) {
+	for _, c := range []struct{ err, want, not string }{
+		{`"copilot" exited with exit status 1: error: Found argument '--available-tools' which wasn't expected, or isn't valid in this context`, "update", ""},
+		{`"copilot" exited with exit status 1: error: invalid value 'turbo' for '--effort <EFFORT>'`, "effort", "update it"},
+	} {
+		p := &cliProvider{kind: ModeCopilotCLI, bin: "copilot", effort: "turbo", run: failing(c.err)}
+		_, err := p.Complete(context.Background(), "q")
+		if !errors.Is(err, ErrCopilotCLI) || !strings.Contains(err.Error(), c.want) || (c.not != "" && strings.Contains(err.Error(), c.not)) {
+			t.Fatalf("err = %v, want %q and not %q", err, c.want, c.not)
+		}
 	}
 }

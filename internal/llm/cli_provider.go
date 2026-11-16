@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -148,13 +149,15 @@ func cliFailure(ctx context.Context, start time.Time, sentinel error, what strin
 // on stdout with an empty stderr (F-0183); before the fallback, the error
 // ended in a dangling colon and hid the one line naming the cause.
 func describeExit(name, state string, stdout, stderr []byte) string {
+	// The Copilot CLI's JSON mode reports a failure as a session.error event on
+	// stdout; stderr noise (an update notice) must not hide it.
+	if msg := copilotSessionError(stdout); msg != "" {
+		return fmt.Sprintf("%q exited with %s: %s", name, state, msg)
+	}
 	if len(bytes.TrimSpace(stderr)) > 0 {
 		return fmt.Sprintf("%q exited with %s: %s", name, state, tail(stderr, maxOutputBytes))
 	}
 	if len(bytes.TrimSpace(stdout)) > 0 {
-		if msg := copilotSessionError(stdout); msg != "" {
-			return fmt.Sprintf("%q exited with %s: %s", name, state, msg)
-		}
 		return fmt.Sprintf("%q exited with %s (stdout): %s", name, state, tail(stdout, maxOutputBytes))
 	}
 	return fmt.Sprintf("%q exited with %s (no output)", name, state)
@@ -167,6 +170,9 @@ func describeExit(name, state string, stdout, stderr []byte) string {
 // is reported with an actionable message naming the binary.
 func execRun(ctx context.Context, dir, name string, args []string, stdin string) (string, string, error) {
 	var env []string
+	if full, ok := ctx.Value(fullEnvKey{}).([]string); ok {
+		return execRunEnv(ctx, dir, name, args, stdin, full)
+	}
 	if extra, _ := ctx.Value(envKey{}).([]string); len(extra) > 0 {
 		env = append(os.Environ(), extra...)
 	}
@@ -309,7 +315,7 @@ var oneShotIsolation = []string{"--safe-mode", "--tools", ""}
 // yargs word them differently from Claude Code's).
 func rejectedFlag(err error) bool {
 	msg := err.Error()
-	return isUnknownFlag(err) || strings.Contains(msg, "unexpected argument") || strings.Contains(msg, "unrecognized") || strings.Contains(msg, "Unknown argument")
+	return isUnknownFlag(err) || strings.Contains(msg, "unexpected argument") || strings.Contains(msg, "wasn't expected") || strings.Contains(msg, "unrecognized") || strings.Contains(msg, "Unknown argument")
 }
 
 func isUnknownFlag(err error) bool {
@@ -589,7 +595,7 @@ type copilotEvent struct {
 	} `json:"data"`
 }
 
-func copilotEvents(out string) []copilotEvent {
+func copilotEventsOf(out string) []copilotEvent {
 	var evs []copilotEvent
 	for _, line := range strings.Split(out, "\n") {
 		var ev copilotEvent
@@ -605,13 +611,42 @@ func copilotEvents(out string) []copilotEvent {
 // events that would push it out of the 512-byte tail describeExit keeps.
 func copilotSessionError(stdout []byte) string {
 	var msgs []string
-	for _, ev := range copilotEvents(string(stdout)) {
+	for _, ev := range copilotEventsOf(string(stdout)) {
 		if ev.Type == "session.error" && ev.Data.Message != "" {
 			msgs = append(msgs, ev.Data.Message)
 		}
 	}
 	return strings.Join(msgs, "; ")
 }
+
+// copilotGOOS and copilotLookEnv are the platform and the environment the
+// login hint reads; tests replace them.
+var (
+	copilotGOOS    = runtime.GOOS
+	copilotLookEnv = os.LookupEnv
+)
+
+// fullEnvKey carries the complete child environment: unlike envKey it replaces
+// the inherited one instead of adding to it.
+type fullEnvKey struct{}
+
+// copilotEnv is the child environment of a one-shot call: the parent's, minus
+// every COPILOT_* variable but the auth token (COPILOT_ALLOW_ALL, extra skill
+// or agent dirs, a user COPILOT_HOME…), plus the throwaway COPILOT_HOME.
+func copilotEnv(environ []string, home string) []string {
+	out := make([]string, 0, len(environ)+1)
+	for _, e := range environ {
+		if strings.HasPrefix(e, "COPILOT_") && !strings.HasPrefix(e, "COPILOT_GITHUB_TOKEN=") {
+			continue
+		}
+		out = append(out, e)
+	}
+	return append(out, "COPILOT_HOME="+home)
+}
+
+// copilotModelRE is the shape of a model id: it cannot start with a dash, so a
+// value from the browser never becomes another flag.
+var copilotModelRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]*$`)
 
 // copilotNoTools is an --available-tools name no tool has. An empty list does
 // not clear the tool list (probe, F-0445); a list of unknown names does.
@@ -637,11 +672,14 @@ func (p *cliProvider) completeCopilot(ctx context.Context, prompt string) (strin
 			return "", fmt.Errorf("%w: %w", ErrCopilotCLI, err)
 		}
 	}
-	ctx = context.WithValue(ctx, envKey{}, []string{"COPILOT_HOME=" + home})
+	ctx = context.WithValue(ctx, fullEnvKey{}, copilotEnv(os.Environ(), home))
 	args := []string{"-s", "--output-format", "json", "--no-ask-user", "--no-auto-update", "--no-custom-instructions", "--disable-builtin-mcps",
 		"--deny-tool", "shell", "--deny-tool", "write", "--deny-tool", "url", "--deny-tool", "read", "--deny-tool", "memory",
 		"--excluded-tools", "web_fetch", "--available-tools", copilotNoTools}
 	if p.model != "" {
+		if !copilotModelRE.MatchString(p.model) {
+			return "", fmt.Errorf("%w: %q is not a model id — choose a model from your Copilot plan", ErrCopilotCLI, p.model)
+		}
 		args = append(args, "--model", p.model)
 	}
 	if effortRE.MatchString(p.effort) {
@@ -650,39 +688,73 @@ func (p *cliProvider) completeCopilot(ctx context.Context, prompt string) (strin
 	start := time.Now()
 	out, _, err := p.run(ctx, work, p.bin, args, prompt)
 	if err != nil {
+		if strings.Contains(err.Error(), "invalid value") {
+			return "", fmt.Errorf("%w: the Copilot CLI refused a value cerne passed (check the model and effort in the AI settings): %w", ErrCopilotCLI, err)
+		}
 		if rejectedFlag(err) {
 			return "", fmt.Errorf("%w: this GitHub Copilot CLI does not know an isolation flag cerne needs — update it (npm install -g @github/copilot); cerne will not run it with less isolation: %w", ErrCopilotCLI, err)
 		}
-		msg := err.Error()
-		hint := "use another mode"
-		switch {
-		case strings.Contains(msg, "install GitHub Copilot CLI"):
-			hint = "install GitHub Copilot CLI (npm install -g @github/copilot) and ensure copilot is on PATH"
-		case authErrorRE.MatchString(msg):
-			hint = "run 'copilot login' or set COPILOT_GITHUB_TOKEN, or use another mode"
-		case strings.Contains(msg, "is not available"):
-			hint = "choose another model — this one is not available to your Copilot plan or organization"
-		case copilotPolicyRE.MatchString(msg):
-			hint = "your organization's policy blocks it — ask your Copilot administrator, or use another mode"
-		}
-		return "", cliFailure(ctx, start, ErrCopilotCLI, "GitHub Copilot CLI (copilot)", err, hint)
+		return "", cliFailure(ctx, start, ErrCopilotCLI, "GitHub Copilot CLI (copilot)", err, copilotHint(err.Error()))
 	}
-	answer, model := "", ""
-	for _, ev := range copilotEvents(out) {
-		if ev.Type == "assistant.message" && strings.TrimSpace(ev.Data.Content) != "" {
-			answer, model = ev.Data.Content, ev.Data.Model
+	// Prefer the last final_answer; without one, the last non-empty message.
+	answer, model, final := "", "", false
+	sessionErr := ""
+	for _, ev := range copilotEventsOf(out) {
+		switch {
+		case ev.Type == "session.error" && ev.Data.Message != "":
+			sessionErr = ev.Data.Message
+		case ev.Type == "assistant.message" && strings.TrimSpace(ev.Data.Content) != "":
+			isFinal := ev.Data.Phase == "final_answer"
+			if isFinal || !final {
+				answer, model, final = ev.Data.Content, ev.Data.Model, isFinal
+			}
 		}
 	}
 	if strings.TrimSpace(answer) == "" {
+		if sessionErr != "" {
+			return "", cliFailure(ctx, start, ErrCopilotCLI, "GitHub Copilot CLI (copilot)", errors.New(sessionErr), copilotHint(sessionErr))
+		}
 		return "", fmt.Errorf("%w: copilot returned no answer — run 'copilot login', check --model (the model must be available to your plan) and the Copilot CLI version", ErrCopilotCLI)
 	}
 	p.answered = model
 	return strings.TrimSpace(answer), nil
 }
 
+// copilotHint names the fix for a failed call, by cause. Order matters: a
+// policy refusal can mention being unauthorized or unavailable, so it comes
+// before the login and the model.
+func copilotHint(msg string) string {
+	switch {
+	case strings.Contains(msg, "install GitHub Copilot CLI"):
+		return "install GitHub Copilot CLI (npm install -g @github/copilot) and ensure copilot is on PATH"
+	case copilotPolicyRE.MatchString(msg):
+		return "your organization's policy blocks it — ask your Copilot administrator, or use another mode"
+	case authErrorRE.MatchString(msg):
+		if copilotGOOS != "darwin" && !copilotHasToken() {
+			return "set COPILOT_GITHUB_TOKEN (cerne runs Copilot with a throwaway COPILOT_HOME, which hides the stored login on this platform), or use another mode"
+		}
+		return "run 'copilot login' or set COPILOT_GITHUB_TOKEN, or use another mode"
+	case copilotModelRefusedRE.MatchString(msg):
+		return "choose another model — this one is not available to your Copilot plan or organization"
+	}
+	return "use another mode"
+}
+
+func copilotHasToken() bool {
+	for _, k := range []string{"COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"} {
+		if v, ok := copilotLookEnv(k); ok && v != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// copilotModelRefusedRE is the CLI's refusal of a model: Model "<id>" is not available.
+var copilotModelRefusedRE = regexp.MustCompile(`Model "[^"]*" is not available`)
+
 // copilotPolicyRE recognizes a refusal by the organization's Copilot policy. The
 // wording is from GitHub's documentation: no probe could cause it.
-var copilotPolicyRE = regexp.MustCompile(`(?i)polic|organization|enterprise|administrator`)
+var copilotPolicyRE = regexp.MustCompile(`(?i)polic(y|ies)|organi[sz]ation|administrator`)
 
 // geminiReply is the part of `gemini --output-format json` cerne reads.
 type geminiReply struct {

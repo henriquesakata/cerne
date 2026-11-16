@@ -2,10 +2,10 @@
 
 package llm
 
-// Live check of the copilot-cli isolation (F-0445 criterion 2)
-// The canary sits in the system temp dir, which the CLI may read by default. against the real
+// Live check of the copilot-cli isolation (F-0445 criterion 2) against the real
 // Copilot CLI: go test -tags copilotlive -run TestCopilotLive ./internal/llm/
-// Needs copilot on PATH and logged in; each subtest is one model call.
+// Needs copilot on PATH and logged in; each subtest is one model call. The
+// canary sits in the system temp dir, which the CLI may read by default.
 
 import (
 	"context"
