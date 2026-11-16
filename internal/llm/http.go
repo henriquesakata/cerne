@@ -177,7 +177,7 @@ func NewAgentProvider(cfg project.LLMConfig, dir string, write bool) (Provider, 
 			if claudeModelRE.MatchString(raw.Model) {
 				p.model = raw.Model
 			}
-			if effortRE.MatchString(raw.Effort) {
+			if slices.Contains(claudeEfforts, raw.Effort) {
 				p.effort = raw.Effort
 			}
 		}

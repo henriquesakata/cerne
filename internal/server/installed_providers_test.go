@@ -348,6 +348,9 @@ type reportingFake struct {
 
 func (r *reportingFake) AnsweredModel() string { return r.model }
 
+// AnsweredEffort stands for a provider that put the composer's effort on its argv.
+func (r *reportingFake) AnsweredEffort() string { return "medium" }
+
 // TestChatClaudeReplyNamesTheModelTheCLIReported (F-0440 criterion 4): a
 // claude-cli turn names the model the CLI reported it ran, not the composer's
 // chip, and the effort it was really passed (B-0007: the turn's cfg carries the
@@ -372,5 +375,47 @@ func TestChatClaudeReplyNamesTheModelTheCLIReported(t *testing.T) {
 	}
 	if sent.Model != "claude-sonnet-5-5" || sent.Effort != "medium" {
 		t.Fatalf("provider cfg model=%q effort=%q, want the composer's", sent.Model, sent.Effort)
+	}
+}
+
+// TestChatClaudeAnsweredByEffortIsWhatWasPassed (B-0007): answered_by reports
+// the effort the real provider put on the argv, so a malformed value the argv
+// drops never shows there.
+func TestChatClaudeAnsweredByEffortIsWhatWasPassed(t *testing.T) {
+	t.Setenv("CERNE_CONFIG_DIR", t.TempDir())
+	stubInstalledCLIs(t, "claude")
+	bin := filepath.Join(t.TempDir(), "claude")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\ncat >/dev/null\necho '{\"result\":\"ok\",\"modelUsage\":{\"claude-x\":{\"outputTokens\":1}}}'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	repoDir, projDir := claudeProject(t, "claude-cli", "claude_bin = \""+bin+"\"\n")
+	for effort, want := range map[string]string{"medium": "medium", "-x": "", "turbo": ""} {
+		var got struct {
+			By *struct{ Provider, Model, Effort string } `json:"answered_by"`
+		}
+		doJSON(t, New(repoDir, projDir, "p"), http.MethodPost, "/api/chat", `{"messages":[{"role":"user","content":"Oi"}],"effort":"`+effort+`"}`, &got)
+		if got.By == nil || got.By.Effort != want {
+			t.Fatalf("effort %q: answered_by = %+v, want effort %q", effort, got.By, want)
+		}
+	}
+}
+
+// TestChatClaudeModeNonAnthropicProviderReportsNoEffort (B-0007): a claude-cli
+// project whose [llm] provider is another vendor never puts the composer's
+// effort on the claude argv, so answered_by names none.
+func TestChatClaudeModeNonAnthropicProviderReportsNoEffort(t *testing.T) {
+	t.Setenv("CERNE_CONFIG_DIR", t.TempDir())
+	stubInstalledCLIs(t, "claude")
+	bin := filepath.Join(t.TempDir(), "claude")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\ncat >/dev/null\necho '{\"result\":\"ok\"}'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	repoDir, projDir := claudeProject(t, "claude-cli", "provider = \"openai\"\nclaude_bin = \""+bin+"\"\n")
+	var got struct {
+		By *struct{ Provider, Model, Effort string } `json:"answered_by"`
+	}
+	doJSON(t, New(repoDir, projDir, "p"), http.MethodPost, "/api/chat", `{"messages":[{"role":"user","content":"Oi"}],"effort":"high"}`, &got)
+	if got.By != nil && got.By.Effort != "" {
+		t.Fatalf("answered_by = %+v, want no effort", got.By)
 	}
 }

@@ -175,7 +175,9 @@ func turnAnsweredBy(cfg project.LLMConfig, prov llm.Provider) *answeredBy {
 		if r, ok := prov.(interface{ AnsweredModel() string }); ok {
 			by.Model = r.AnsweredModel()
 		}
-		by.Effort = cfg.Effort
+		if r, ok := prov.(interface{ AnsweredEffort() string }); ok {
+			by.Effort = r.AnsweredEffort()
+		}
 	case llm.ModeCodexCLI, llm.ModeGeminiCLI, llm.ModeCursorCLI:
 		if cfg.Provider == "" {
 			by.Model = cfg.Model
