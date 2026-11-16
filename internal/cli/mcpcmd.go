@@ -2,17 +2,20 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 
+	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/mcp"
 	"github.com/henriquesakata/cerne/internal/version"
 )
 
 func newMCPCmd() *cobra.Command {
 	var dir string
+	var files bool
 	cmd := &cobra.Command{
 		Use:   "mcp",
 		Short: "Serve the project's state, search and reading as read-only MCP tools over stdio",
@@ -24,6 +27,16 @@ func newMCPCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// Resolve before speaking MCP: outside a project this is the same
 			// refusal every other command gives (criterion 3).
+			if files {
+				if dir == "" {
+					return errors.New("--project-files requires --dir")
+				}
+				tree, err := gitback.ProjectTree(dir)
+				if err != nil {
+					return err
+				}
+				return mcp.NewProjectFileServer(version.Short(), tree).Run(cmd.Context(), &sdk.StdioTransport{})
+			}
 			ctx, err := resolvePaths(dir)
 			if err != nil {
 				return err
@@ -32,6 +45,7 @@ func newMCPCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory to serve (defaults to the current directory); use it in a global MCP client config")
+	cmd.Flags().BoolVar(&files, "project-files", false, "serve only committed project file lookup and reading")
 	return cmd
 }
 

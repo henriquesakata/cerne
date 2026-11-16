@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -1025,5 +1026,24 @@ func TestCodexFixHintOnlyForAuthErrors(t *testing.T) {
 		if err == nil || strings.Contains(err.Error(), "codex login") != wantHint {
 			t.Errorf("%q: err = %v, want hint=%v", msg, err, wantHint)
 		}
+	}
+}
+
+func TestCodexChatProjectFiles(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "project with spaces")
+	prov, err := NewAgentProvider(project.LLMConfig{Mode: ModeCodexCLI}, root, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var args []string
+	var stdin, cwd string
+	cp := prov.(*cliProvider)
+	cp.run = codexFake("ok", &args, &stdin, &cwd)
+	if _, err := cp.Complete(t.Context(), "find the stage"); err != nil {
+		t.Fatal(err)
+	}
+	want, _ := json.Marshal([]string{"mcp", "--project-files", "--dir", root})
+	if cwd == root || !slices.Contains(args, "mcp_servers.cerne_project.args="+string(want)) || !slices.Contains(args, "shell_tool") {
+		t.Fatalf("unexpected Codex invocation in %q: %v", cwd, args)
 	}
 }

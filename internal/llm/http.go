@@ -133,12 +133,7 @@ func NewProvider(cfg project.LLMConfig) (Provider, error) {
 	}, nil
 }
 
-// NewAgentProvider builds the provider for the Backlog chat (F-0224). Only
-// claude-cli differs from NewProvider: the CLI runs as an agent scoped by an
-// allowlist, working directory = dir (the project root, so the cerne commands
-// hit the right backend). Every other mode delegates to NewProvider unchanged:
-// byo-key stays the static one-shot HTTP call (no tool loop in v1, criterion 3)
-// and delegation keeps its sentinel.
+// NewAgentProvider builds the provider for the Backlog chat (F-0224).
 //
 // write (F-0260) is the caller's report that the USER confirmed this turn, and
 // it only widens the allowlist for that one call — the capability lives on the
@@ -147,6 +142,9 @@ func NewProvider(cfg project.LLMConfig) (Provider, error) {
 func NewAgentProvider(cfg project.LLMConfig, dir string, write bool) (Provider, error) {
 	raw := cfg
 	cfg = cfg.WithDefaults()
+	if ResolveMode(cfg.Mode) == ModeCodexCLI && dir != "" {
+		return &cliProvider{kind: ModeCodexCLI, bin: "codex", model: cliModel(raw), run: execRun, dir: dir}, nil
+	}
 	if ResolveMode(cfg.Mode) == ModeClaudeCLI {
 		tools := AgentReadTools
 		denied := AgentDeniedPaths

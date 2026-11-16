@@ -345,6 +345,21 @@ func (p *cliProvider) completeCodex(ctx context.Context, prompt string) (string,
 	args := []string{"exec", "--skip-git-repo-check", "--ephemeral", "--sandbox", "read-only",
 		"--ignore-user-config", "--ignore-rules", "--disable", "shell_tool", "--disable", "apps",
 		"-c", `web_search="disabled"`, "-c", "project_doc_max_bytes=0", "-o", outFile}
+	if p.dir != "" {
+		bin, err := os.Executable()
+		if err != nil {
+			return "", err
+		}
+		root, err := filepath.Abs(p.dir)
+		if err != nil {
+			return "", err
+		}
+		command, _ := json.Marshal(bin)
+		argv, _ := json.Marshal([]string{"mcp", "--project-files", "--dir", root})
+		args = append(args, "-c", "mcp_servers.cerne_project.command="+string(command), "-c", "mcp_servers.cerne_project.args="+string(argv),
+			"-c", `mcp_servers.cerne_project.tools.find_files.approval_mode="approve"`,
+			"-c", `mcp_servers.cerne_project.tools.read_file.approval_mode="approve"`)
+	}
 	if p.model != "" {
 		args = append(args, "-m", p.model)
 	}

@@ -56,7 +56,7 @@ func (t teeReadCloser) Close() error { return t.r.Close() }
 // (swapped for pipes), so a byte written to os.Stdout by anything — not just
 // the SDK — lands in raw. stop closes the client, waits for the command and
 // restores the process streams; it returns the command's error.
-func startMCP(t *testing.T, projDir string) (cs *sdk.ClientSession, raw *lockedBuf, stop func() error) {
+func startMCP(t *testing.T, projDir string, flags ...string) (cs *sdk.ClientSession, raw *lockedBuf, stop func() error) {
 	t.Helper()
 	inR, inW, err := os.Pipe()
 	if err != nil {
@@ -72,7 +72,7 @@ func startMCP(t *testing.T, projDir string) (cs *sdk.ClientSession, raw *lockedB
 
 	done := make(chan error, 1)
 	go func() {
-		out, err := execCerne(t, "mcp", "--dir", projDir)
+		out, err := execCerne(t, append([]string{"mcp", "--dir", projDir}, flags...)...)
 		_ = outW.Close() // EOF for the client, even when mcp refuses to start
 		if err != nil {
 			err = fmt.Errorf("%w\n%s", err, out)
@@ -359,5 +359,37 @@ func TestMCP_AskMakesNoModelCall(t *testing.T) {
 	}
 	if err := json.Unmarshal([]byte(text), &got); err != nil || len(got.Sources) == 0 {
 		t.Fatalf("ask tool = %q (err %v), want sources", text, err)
+	}
+}
+
+func TestMCPProjectFileSnapshot(t *testing.T) {
+	dir := t.TempDir()
+	gitRun(t, dir, "init", "-q")
+	write := func(name, text string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(text), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(".cernerc", "project_id = \"demo\"\nbackend = \"unused.git\"\n")
+	write("Stage.yaml", "sky:\n  sunrise\n")
+	write("credentials.json", "private")
+	write("scene.bin", "binary\x00data")
+	gitRun(t, dir, "add", ".")
+	gitRun(t, dir, "commit", "-qm", "fixture")
+	write("Stage.yaml", "uncommitted")
+	write("local.yaml", "untracked")
+	cs, _, _ := startMCP(t, dir, "--project-files")
+	if got := callTool(t, cs, "find_files", map[string]any{"query": "YAML"}); got != "Stage.yaml" {
+		t.Fatalf("paths = %q", got)
+	}
+	if got := callTool(t, cs, "read_file", map[string]any{"path": "Stage.yaml", "start": 2}); got != "2\t  sunrise\n" {
+		t.Fatalf("excerpt = %q", got)
+	}
+	for _, path := range []string{"local.yaml", "credentials.json", ".cernerc", "../Stage.yaml", "scene.bin"} {
+		res, err := cs.CallTool(t.Context(), &sdk.CallToolParams{Name: "read_file", Arguments: map[string]any{"path": path}})
+		if err != nil || !res.IsError {
+			t.Errorf("read %q: %v %v", path, res, err)
+		}
 	}
 }

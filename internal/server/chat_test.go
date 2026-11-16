@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -1154,6 +1155,32 @@ func TestChatSubscriptionCLIsDegradeLikeNoFunctionCalling(t *testing.T) {
 		rec := doJSON(t, New(repoDir, projDir, "proj-chat"), http.MethodPost, "/api/chat", `{"messages":[{"role":"user","content":"oi"}]}`, &got)
 		if rec.Code != http.StatusOK || !got.Answered || !got.NoExec {
 			t.Fatalf("%s: status=%d %+v, want answered no_exec", mode, rec.Code, got)
+		}
+	}
+}
+
+func TestCodexChatProjectFilesLocalOnly(t *testing.T) {
+	repo, dir, _ := newGitBackend(t)
+	if err := project.SaveConfig(dir, project.Config{ProjectID: "test", Backend: "unused", LLM: project.LLMConfig{Mode: llm.ModeCodexCLI}}); err != nil {
+		t.Fatal(err)
+	}
+	orig := newAgentProvider
+	t.Cleanup(func() { newAgentProvider = orig })
+	for _, remote := range []bool{false, true} {
+		fake := &llm.Fake{Reply: "ok"}
+		newAgentProvider = func(_ project.LLMConfig, root string, write bool) (llm.Provider, error) {
+			if (remote && root != "") || (!remote && root != dir) || write {
+				t.Fatalf("remote=%v root=%q write=%v", remote, root, write)
+			}
+			return fake, nil
+		}
+		req := httptest.NewRequest("POST", "/api/chat", strings.NewReader(`{"messages":[{"role":"user","content":"stage?"}]}`))
+		req.Header.Set("Content-Type", "application/json")
+		req = req.WithContext(context.WithValue(req.Context(), remoteKey{}, remote))
+		rec := httptest.NewRecorder()
+		handleChat(rec, req, repo, dir, "test")
+		if rec.Code != 200 || len(fake.Prompts) != 1 || strings.Contains(fake.Prompts[0], "find_files") == remote {
+			t.Fatalf("remote=%v: %d %s", remote, rec.Code, rec.Body.String())
 		}
 	}
 }
