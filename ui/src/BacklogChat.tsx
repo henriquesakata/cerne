@@ -27,6 +27,7 @@ import CommandProposal, { CopyCommands, ToolRuns } from './CommandProposal'
 import Markdown from './Markdown'
 import NoteProposal from './NoteProposal'
 import ProposalDraft from './ProposalDraft'
+import QuestionCard from './QuestionCard'
 import ConversationList from './ConversationList'
 import { useT } from './i18n'
 import type { Conversation } from './useBacklogChats'
@@ -205,6 +206,13 @@ function questionBlocks(reply: string): { q: Question; start: number; end: numbe
 
 export function parseQuestions(reply: string): Question[] {
   return questionBlocks(reply).map((b) => b.q)
+}
+
+// answerTo finds the user turn that answered `question` after message `from`:
+// the card is derived from the transcript, so nothing extra is stored.
+function answerTo(messages: ChatMsg[], from: number, question: string): string | undefined {
+  const prefix = `**${question}** →`
+  return messages.slice(from + 1).find((m) => m.role === 'user' && m.content.startsWith(prefix))?.content
 }
 
 function stripQuestions(reply: string): string {
@@ -984,6 +992,16 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
     })
   }
 
+  // answerQuestion (F-0437): the card's choice is a plain user turn — no new
+  // state, no new request; the composer text is left alone.
+  const answerQuestion = (content: string) => {
+    if (busy) return
+    const next = [...messages, { role: 'user' as const, content }]
+    setMessages(next)
+    sendMessages(next)
+    onUpdate({ messages: next })
+  }
+
   const submitMessage = () => {
     const content = input.trim()
     if (content === '' || busy) return
@@ -1234,6 +1252,15 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
                       onQuote={appendQuote}
                     />
                   )}
+                  {parseQuestions(m.content).map((q) => (
+                    <QuestionCard
+                      key={q.question}
+                      q={q}
+                      answer={answerTo(messages, i, q.question)}
+                      busy={busy}
+                      onAnswer={answerQuestion}
+                    />
+                  ))}
                   {commands && (
                     <CommandProposal commands={commands} busy={busy} bound={cardBound} onConfirm={confirmCommands} />
                   )}

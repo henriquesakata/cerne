@@ -1514,3 +1514,79 @@ describe('quem respondeu (F-0440)', () => {
     expect(document.querySelectorAll('.answered-by')).toHaveLength(1)
   })
 })
+
+describe('cartão de pergunta (F-0437)', () => {
+  const reply =
+    'Antes de seguir:\n\n````cerne-pergunta\n# Qual canal?\n- Email — chega a todos\n- Push — só quem instalou (recomendada)\n````\n'
+  const send = (text: string) => {
+    fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: text } })
+    fireEvent.click(screen.getByRole('button', { name: /^enviar$/i }))
+  }
+  const ask = async () => {
+    streamChat.mockResolvedValueOnce({ answered: true, reply })
+    renderChat()
+    send('Notificações')
+    await screen.findByRole('group', { name: 'Qual canal?' })
+  }
+  const lastTurn = () => {
+    const sent = streamChat.mock.calls[streamChat.mock.calls.length - 1][0] as { role: string; content: string }[]
+    return sent[sent.length - 1].content
+  }
+
+  it('draws one button per option, the recommended marked, and hides the raw block', async () => {
+    await ask()
+    expect(screen.getByRole('button', { name: /Email/ })).toBeInTheDocument()
+    const rec = screen.getByRole('button', { name: /Push/ })
+    expect(rec).toHaveClass('question-card-option-recommended')
+    expect(screen.getByText('só quem instalou')).toBeInTheDocument()
+    expect(screen.queryByText(/cerne-pergunta/)).not.toBeInTheDocument()
+  })
+
+  it('clicking the recommended sends the turn with "recomendação aceita" and disables the card', async () => {
+    await ask()
+    streamChat.mockResolvedValueOnce({ answered: true, reply: 'Anotado.' })
+    fireEvent.click(screen.getByRole('button', { name: /Push/ }))
+    await waitFor(() => expect(streamChat).toHaveBeenCalledTimes(2))
+    expect(lastTurn()).toBe('**Qual canal?** → Push (recomendação aceita)')
+    await screen.findByText('Anotado.')
+    expect(screen.getByRole('button', { name: /Email/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Push/ })).toBeDisabled()
+  })
+
+  it('another option is flagged "outra opção"', async () => {
+    await ask()
+    streamChat.mockResolvedValueOnce({ answered: true, reply: 'Ok.' })
+    fireEvent.click(screen.getByRole('button', { name: /Email/ }))
+    await waitFor(() => expect(streamChat).toHaveBeenCalledTimes(2))
+    expect(lastTurn()).toBe('**Qual canal?** → Email (outra opção)')
+  })
+
+  it('"Outra resposta" sends the free text as "resposta livre"', async () => {
+    await ask()
+    streamChat.mockResolvedValueOnce({ answered: true, reply: 'Ok.' })
+    fireEvent.change(screen.getByLabelText('Outra resposta'), { target: { value: 'SMS para quem não tem app' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Responder' }))
+    await waitFor(() => expect(streamChat).toHaveBeenCalledTimes(2))
+    expect(lastTurn()).toBe('**Qual canal?** → SMS para quem não tem app (resposta livre)')
+  })
+
+  it('QuestionCard stores nothing new: same storage keys, no request besides the turn', async () => {
+    await ask()
+    const keysBefore = Object.keys(localStorage).sort()
+    streamChat.mockResolvedValueOnce({ answered: true, reply: 'Ok.' })
+    fireEvent.click(screen.getByRole('button', { name: /Push/ }))
+    await screen.findByText('Ok.')
+    expect(Object.keys(localStorage).sort()).toEqual(keysBefore)
+    expect(streamChat).toHaveBeenCalledTimes(2)
+    expect(registerChatCandidate).not.toHaveBeenCalled()
+    expect(registerChatNote).not.toHaveBeenCalled()
+  })
+
+  it('a malformed block draws no card and stays as text', async () => {
+    streamChat.mockResolvedValueOnce({ answered: true, reply: '````cerne-pergunta\n# Sem opções\n````\n' })
+    renderChat()
+    send('Oi')
+    await screen.findByText(/Sem opções/)
+    expect(screen.queryByRole('group', { name: 'Sem opções' })).not.toBeInTheDocument()
+  })
+})

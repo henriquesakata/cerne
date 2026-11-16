@@ -3696,3 +3696,32 @@ button.clarify-chip { cursor: pointer; font: inherit; }
 .ai-result summary { cursor: pointer; }
 .ai-raw { margin: 0.3rem 0 0; max-width: 100%; overflow-x: auto; white-space: pre-wrap; word-break: break-word; font-size: 0.78rem; }
 .settings-text { box-sizing: border-box; }
+
+/* Cartão de pergunta do analista (F-0437): mesma moldura dos outros cards da
+   conversa; a opção recomendada ganha a borda de destaque. */
+.question-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+  padding: 0.7rem;
+  border: 1px solid var(--border-card);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.question-card-head h4 { margin: 0; font-size: 0.85rem; color: var(--muted); }
+.question-card-question { margin: 0; font-size: 0.95rem; }
+.question-card-options { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+.question-card-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  width: 100%;
+  text-align: left;
+}
+.question-card-option-recommended { border-color: var(--border-strong); }
+.question-card-label { display: flex; gap: 0.4rem; align-items: center; }
+.question-card-consequence { font-size: 0.8rem; color: var(--muted); }
+.question-card-free { display: flex; gap: 0.4rem; }
+.question-card-free input { flex: 1; }
