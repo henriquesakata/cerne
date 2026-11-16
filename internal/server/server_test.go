@@ -1182,8 +1182,9 @@ func TestStateIncludesActiveWork(t *testing.T) {
 	for _, it := range items {
 		actors[it.Actor] = true
 	}
-	if !actors["alice@host"] || !actors["bob@host"] {
-		t.Fatalf("active_work[F-0001] actors = %+v, want alice@host and bob@host", items)
+	// F-0442 crit. 7: the endpoint serves the pseudonym, never login@host.
+	if !actors[domain.MachinePseudonym("alice@host")] || !actors[domain.MachinePseudonym("bob@host")] || len(actors) != 2 {
+		t.Fatalf("active_work[F-0001] actors = %+v, want the pseudonyms of alice@host and bob@host", items)
 	}
 }
 

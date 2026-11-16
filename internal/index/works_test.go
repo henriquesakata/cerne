@@ -65,7 +65,7 @@ func TestWorksFoundByEachField(t *testing.T) {
 		}
 	}
 	res, _, _ := SearchWorks(db, "orchard", 5)
-	if r := res[0]; r.State != "done" || r.Actor != "ana@laptop" || r.Title != "rotacao de credencial do orchard" {
+	if r := res[0]; r.State != "done" || r.Actor != domain.MachinePseudonym("ana@laptop") || r.Title != "rotacao de credencial do orchard" {
 		t.Errorf("result = %+v", r)
 	}
 	// The entity search never sees works.
