@@ -22,7 +22,7 @@ func newMCPCmd() *cobra.Command {
 		Long: "Speaks MCP on stdin/stdout for an MCP client. Register it with command \"cerne\" and args [\"mcp\"] in a\n" +
 			"project-scoped config (the client starts it in the project root), or args [\"mcp\", \"--dir\", \"/path/to/project\"]\n" +
 			"in a global one.\n" +
-			"Tools: status, brief, next, search, show, ask. Each runs the command of the same name with --json and returns its output unchanged; none writes the backend.",
+			"Tools: status, brief, next, search, show, ask, guide. Each runs the command of the same name with --json and returns its output unchanged; none writes the backend.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// Resolve before speaking MCP: outside a project this is the same

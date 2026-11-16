@@ -17,6 +17,7 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/henriquesakata/cerne/internal/mcp"
 	"github.com/henriquesakata/cerne/internal/project"
 )
 
@@ -326,6 +327,45 @@ func TestMCP_DirFlagDocumented(t *testing.T) {
 	}
 	if !strings.Contains(out, "--dir") {
 		t.Fatalf("mcp --help does not document --dir:\n%s", out)
+	}
+}
+
+// TestMCP_HelpNamesEveryTool: the help's tool list is the one the server
+// registers, so a new tool cannot ship undocumented (guide did).
+func TestMCP_HelpNamesEveryTool(t *testing.T) {
+	out, err := execCerne(t, "mcp", "--help")
+	if err != nil {
+		t.Fatalf("mcp --help: %v", err)
+	}
+	ctx := context.Background()
+	st, ct := sdk.NewInMemoryTransports()
+	if _, err := mcp.NewServer("test", func([]string) ([]byte, error) { return nil, nil }).Connect(ctx, st, nil); err != nil {
+		t.Fatalf("server connect: %v", err)
+	}
+	cs, err := sdk.NewClient(&sdk.Implementation{Name: "test-client", Version: "v0"}, nil).Connect(ctx, ct, nil)
+	if err != nil {
+		t.Fatalf("client connect: %v", err)
+	}
+	defer cs.Close()
+	res, err := cs.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("tools/list: %v", err)
+	}
+	line := regexp.MustCompile(`Tools: ([a-z, ]+)\.`).FindStringSubmatch(out)
+	if line == nil {
+		t.Fatalf("mcp --help has no \"Tools: …\" line:\n%s", out)
+	}
+	listed := map[string]bool{}
+	for _, name := range strings.Split(line[1], ", ") {
+		listed[name] = true
+	}
+	for _, tool := range res.Tools {
+		if !listed[tool.Name] {
+			t.Errorf("mcp --help does not name the %q tool; its list: %s", tool.Name, line[1])
+		}
+	}
+	if len(listed) != len(res.Tools) {
+		t.Errorf("mcp --help names %d tools, the server registers %d", len(listed), len(res.Tools))
 	}
 }
 
