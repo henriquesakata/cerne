@@ -3697,20 +3697,27 @@ button.clarify-chip { cursor: pointer; font: inherit; }
 .ai-raw { margin: 0.3rem 0 0; max-width: 100%; overflow-x: auto; white-space: pre-wrap; word-break: break-word; font-size: 0.78rem; }
 .settings-text { box-sizing: border-box; }
 
-/* Cartão de pergunta do analista (F-0437): mesma moldura dos outros cards da
-   conversa; a opção recomendada ganha a borda de destaque. */
+/* Cartão de pergunta do analista (F-0437): vive dentro da bolha da resposta,
+   que já é superfície com borda — por isso só uma régua no topo, sem moldura.
+   Ênfase por tinta (borda cheia na recomendada, fundo cheio na escolhida),
+   nunca por matiz. */
 .question-card {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
   margin-top: 0.6rem;
-  padding: 0.7rem;
-  border: 1px solid var(--border-card);
-  border-radius: 8px;
-  background: var(--surface);
+  padding: 0.6rem 0 0;
+  border-top: 1px solid var(--border-soft);
 }
-.question-card-head h4 { margin: 0; font-size: 0.85rem; color: var(--muted); }
-.question-card-question { margin: 0; font-size: 0.95rem; }
+.question-card-head h4 {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.question-card-question { margin: 0; font-size: 1rem; font-weight: 600; line-height: 1.4; color: var(--fg); }
 .question-card-options { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
 .question-card-option {
   display: flex;
@@ -3718,10 +3725,64 @@ button.clarify-chip { cursor: pointer; font: inherit; }
   align-items: flex-start;
   gap: 0.15rem;
   width: 100%;
+  font: inherit;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border-card);
+  border-radius: 6px;
+  padding: 0.5rem 0.7rem;
   text-align: left;
+  cursor: pointer;
 }
-.question-card-option-recommended { border-color: var(--border-strong); }
-.question-card-label { display: flex; gap: 0.4rem; align-items: center; }
-.question-card-consequence { font-size: 0.8rem; color: var(--muted); }
+.question-card-option:hover:not(:disabled) { border-color: var(--border-strong); }
+.question-card-option:focus-visible,
+.question-card-free input:focus-visible,
+.question-card-free button:focus-visible { outline: 2px solid var(--fg); outline-offset: 1px; }
+.question-card-option:disabled { opacity: 0.5; cursor: default; }
+.question-card-option-recommended { border-color: var(--fg); }
+.question-card-option-chosen,
+.question-card-option-chosen:disabled { background: var(--fg); color: var(--bg); border-color: var(--fg); opacity: 1; }
+.question-card-option-chosen .question-card-consequence { color: var(--dim-inverse); }
+.question-card-label { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; width: 100%; }
+.question-card-badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--fg);
+  flex-shrink: 0;
+}
+.question-card-consequence { font-size: 0.85rem; line-height: 1.4; color: var(--muted); }
+.question-card-answer { margin: 0; display: flex; flex-direction: column; gap: 0.15rem; color: var(--fg); }
+.question-card-answer-label {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
 .question-card-free { display: flex; gap: 0.4rem; }
-.question-card-free input { flex: 1; }
+.question-card-free input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border-field);
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+}
+.question-card-free button {
+  font: inherit;
+  font-size: 0.9rem;
+  background: var(--fg);
+  color: var(--bg);
+  border: 1px solid var(--fg);
+  border-radius: 6px;
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+}
+.question-card-free button:disabled { opacity: 0.5; cursor: default; }

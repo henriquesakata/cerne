@@ -1582,6 +1582,58 @@ describe('cartão de pergunta (F-0437)', () => {
     expect(registerChatNote).not.toHaveBeenCalled()
   })
 
+  it('numbers the cards "Pergunta 1 de 2" and marks the answered one', async () => {
+    const two = reply + '\n````cerne-pergunta\n# Quando?\n- Hoje — já\n- Amanhã — depois (recomendada)\n````\n'
+    streamChat.mockResolvedValueOnce({ answered: true, reply: two })
+    renderChat()
+    send('Oi')
+    await screen.findByText('Pergunta 1 de 2')
+    expect(screen.getByText('Pergunta 2 de 2')).toBeInTheDocument()
+    streamChat.mockResolvedValueOnce({ answered: true, reply: 'Ok.' })
+    fireEvent.click(screen.getByRole('button', { name: /Push/ }))
+    await screen.findByText(/Pergunta 1 de 2 · Respondida/)
+  })
+
+  it('a spent card shows the chosen option pressed (also after a reload)', () => {
+    renderChat({
+      messages: [
+        { role: 'user', content: 'Notificações' },
+        { role: 'assistant', content: reply },
+        { role: 'user', content: '**Qual canal?** → Email (outra opção)' },
+      ],
+    })
+    expect(screen.getByRole('button', { name: /Email/ })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: /Email/ })).toHaveClass('question-card-option-chosen')
+    expect(screen.getByRole('button', { name: /Push/ })).not.toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByLabelText('Outra resposta')).not.toBeInTheDocument()
+  })
+
+  it('a spent card with a free answer shows the text and no form', () => {
+    renderChat({
+      messages: [
+        { role: 'user', content: 'x' },
+        { role: 'assistant', content: reply },
+        { role: 'user', content: '**Qual canal?** → SMS para todos (resposta livre)' },
+      ],
+    })
+    expect(screen.getByText('Sua resposta')).toBeInTheDocument()
+    expect(screen.getByText('SMS para todos')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Outra resposta')).not.toBeInTheDocument()
+  })
+
+  it('a duplicated question: an answer spends only the first unanswered card', () => {
+    const dup = reply + '\n' + reply
+    renderChat({
+      messages: [
+        { role: 'user', content: 'x' },
+        { role: 'assistant', content: dup },
+        { role: 'user', content: '**Qual canal?** → Push (recomendação aceita)' },
+      ],
+    })
+    expect(screen.getByText(/Pergunta 1 de 2 · Respondida/)).toBeInTheDocument()
+    expect(screen.getByText('Pergunta 2 de 2')).toBeInTheDocument()
+  })
+
   it('a malformed block draws no card and stays as text', async () => {
     streamChat.mockResolvedValueOnce({ answered: true, reply: '````cerne-pergunta\n# Sem opções\n````\n' })
     renderChat()

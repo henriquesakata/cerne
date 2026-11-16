@@ -183,22 +183,32 @@ function parseQuestionBlock(block: string): Question | null {
       const [label, ...rest] = l.replace(RECOMMENDED_MARK, '').split(' — ')
       return { label: label.trim(), consequence: rest.join(' — ').trim(), recommended }
     })
-  if (options.length === 0 || options.length > 4 || options.filter((o) => o.recommended).length !== 1) return null
+  if (options.length < 2 || options.length > 4 || options.filter((o) => o.recommended).length !== 1) return null
   return { question: p.title, options }
 }
 
 // questionBlocks percorre a resposta bloco a bloco: cada cerne-pergunta é uma
 // decisão. Os mal formados não entram — a prosa os mantém como texto
 // (critério 6).
-function questionBlocks(reply: string): { q: Question; start: number; end: number }[] {
+function questionBlocks(raw: string): { q: Question; start: number; end: number }[] {
+  // CRLF would hide the closing fence from findFence's line anchor; the
+  // normalized text is only ever displayed or parsed, never written back.
+  const reply = raw.replace(/\r\n/g, '\n')
+  // A question block inside a proposal/note is spec content, not a question.
+  const inside = [PROPOSAL_FENCE, NOTE_FENCE]
+    .map((fence) => findFence(reply, fence))
+    .filter((f): f is NonNullable<typeof f> => f !== null)
   const found: { q: Question; start: number; end: number }[] = []
   let pos = 0
   for (;;) {
     const f = findFence(reply.slice(pos), QUESTION_FENCE)
     if (!f) break
+    const start = pos + f.open
     const end = pos + (f.endOfClose < 0 ? reply.length - pos : f.endOfClose + 1)
-    const q = parseQuestionBlock(reply.slice(pos + f.open, end))
-    if (q) found.push({ q, start: pos + f.open, end })
+    const q = parseQuestionBlock(reply.slice(start, end))
+    if (q && !inside.some((s) => start >= s.open && start < (s.endOfClose < 0 ? reply.length : s.endOfClose))) {
+      found.push({ q, start, end })
+    }
     pos = end
   }
   return found
@@ -210,14 +220,19 @@ export function parseQuestions(reply: string): Question[] {
 
 // answerTo finds the user turn that answered `question` after message `from`:
 // the card is derived from the transcript, so nothing extra is stored.
-function answerTo(messages: ChatMsg[], from: number, question: string): string | undefined {
+function answerTo(messages: ChatMsg[], from: number, question: string, nth: number): string | undefined {
   const prefix = `**${question}** →`
-  return messages.slice(from + 1).find((m) => m.role === 'user' && m.content.startsWith(prefix))?.content
+  // The window ends at the next assistant turn: a later re-ask has its own answer.
+  const rest = messages.slice(from + 1)
+  const stop = rest.findIndex((m) => m.role === 'assistant')
+  return (stop < 0 ? rest : rest.slice(0, stop)).filter((m) => m.role === 'user' && m.content.startsWith(prefix))[nth]?.content
 }
 
-function stripQuestions(reply: string): string {
-  let out = reply
-  for (const b of questionBlocks(reply).reverse()) out = out.slice(0, b.start) + out.slice(b.end)
+function stripQuestions(raw: string): string {
+  const blocks = questionBlocks(raw)
+  if (blocks.length === 0) return raw
+  let out = raw.replace(/\r\n/g, '\n')
+  for (const b of blocks.reverse()) out = out.slice(0, b.start) + out.slice(b.end)
   return out.trim()
 }
 
@@ -1252,11 +1267,13 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
                       onQuote={appendQuote}
                     />
                   )}
-                  {parseQuestions(m.content).map((q) => (
+                  {parseQuestions(m.content).map((q, k, all) => (
                     <QuestionCard
-                      key={q.question}
+                      key={`${i}-${k}`}
                       q={q}
-                      answer={answerTo(messages, i, q.question)}
+                      index={k + 1}
+                      total={all.length}
+                      answer={answerTo(messages, i, q.question, all.slice(0, k).filter((x) => x.question === q.question).length)}
                       busy={busy}
                       onAnswer={answerQuestion}
                     />

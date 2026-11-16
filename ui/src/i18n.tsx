@@ -587,7 +587,9 @@ const ptBR = {
   // F-0437: cartão de pergunta do analista. As três origens vão no turno do
   // usuário que o analista lê — ficam na língua da interface.
   questionCard: {
-    title: 'Pergunta',
+    title: (n: number, total: number) => `Pergunta ${n} de ${total}`,
+    answered: ' · Respondida',
+    yourAnswer: 'Sua resposta',
     recommended: 'Recomendada',
     other: 'Outra resposta',
     send: 'Responder',
@@ -1931,7 +1933,9 @@ const en: Messages = {
   },
   // F-0437: the analyst's question card.
   questionCard: {
-    title: 'Question',
+    title: (n: number, total: number) => `Question ${n} of ${total}`,
+    answered: ' · Answered',
+    yourAnswer: 'Your answer',
     recommended: 'Recommended',
     other: 'Other answer',
     send: 'Answer',
