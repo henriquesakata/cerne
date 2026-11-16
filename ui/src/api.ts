@@ -957,7 +957,13 @@ export type ChatMsg = {
   noExec?: boolean
   noRuns?: boolean
   truncated?: boolean
+  // context (F-0436): as fontes injetadas no turno — só localStorage, nunca
+  // reenviado ao servidor.
+  context?: TurnSource[]
 }
+
+// TurnSource: o que o servidor injetou no turno, sem o texto do trecho.
+export type TurnSource = { id: string; title?: string; kind: 'decision' | 'convention' | 'retrieved'; state?: string }
 
 // ChatAnswer espelha o payload de POST /api/chat. answered é false quando o
 // projeto não tem um provider [llm] configurado (delegação): nenhuma
@@ -971,6 +977,7 @@ export type ChatAnswer = {
   no_exec?: boolean
   no_runs?: boolean
   truncated?: boolean
+  context?: TurnSource[]
 }
 
 // ChatRunsError (F-0323 C6) é a falha de um turno que já executou algo: o

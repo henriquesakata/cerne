@@ -360,4 +360,17 @@ describe('chatRequest (F-0310): resumo do primeiro par', () => {
     expect(result.current.active.title).toBe('Meu nome')
     unmount()
   })
+
+  // F-0436 critério 4: a lista do contexto fica na mensagem do agente, só no
+  // storage local — e o transcript enviado não a carrega.
+  it('useBacklogChats keeps message context: o contexto do terminal fica gravado na mensagem', async () => {
+    seedConversation('c9')
+    const context = [{ id: 'D-0001', title: 'Fonte da verdade', kind: 'decision', state: 'active' }]
+    streamChat.mockResolvedValue({ answered: true, reply: 'Ok.', context } as never)
+
+    send('c9', [{ role: 'user', content: 'Oi' }], {})
+    await vi.waitFor(() => expect(status('c9').pending).toBe(false))
+
+    expect(readChats().chats.find((c) => c.id === 'c9')?.messages.at(-1)).toEqual({ role: 'assistant', content: 'Ok.', context })
+  })
 })

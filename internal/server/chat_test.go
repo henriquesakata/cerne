@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -1277,5 +1279,162 @@ func TestChatRegister_RefineRefusesIncompleteSpec(t *testing.T) {
 	}
 	if l, _ := gitback.HeadSHA(repoDir); l != local0 {
 		t.Fatalf("local clone gained a commit")
+	}
+}
+
+// TestHandleChat_ReturnsContext (F-0436): the reply reports the sources the
+// turn injected (id, title, kind, state), streaming or not; a disabled
+// budget omits the field.
+func TestHandleChat_ReturnsContext(t *testing.T) {
+	type reply struct {
+		Answered bool                `json:"answered"`
+		Context  []map[string]string `json:"context"`
+	}
+	seed := func(t *testing.T) (repoDir, projDir string) {
+		repoDir, projDir, _ = newGitBackend(t)
+		t.Setenv("CERNE_CACHE_DIR", t.TempDir())
+		if err := store.SaveDecision(repoDir, store.Decision{ID: "D-0001", Title: "Backend git é a fonte da verdade", State: domain.DecisionActive}); err != nil {
+			t.Fatalf("SaveDecision: %v", err)
+		}
+		return repoDir, projDir
+	}
+	wantDecision := map[string]string{"id": "D-0001", "title": "Backend git é a fonte da verdade", "kind": "decision", "state": "active"}
+	hasDecision := func(c []map[string]string) bool {
+		for _, s := range c {
+			if maps.Equal(s, wantDecision) {
+				return true
+			}
+		}
+		return false
+	}
+	body := `{"messages":[{"role":"user","content":"qual a fonte da verdade?"}]}`
+
+	t.Run("single-shot", func(t *testing.T) {
+		repoDir, projDir := seed(t)
+		configureChatByoKey(t, projDir, "http://unused.invalid")
+		orig := newAgentProvider
+		newAgentProvider = func(project.LLMConfig, string, bool) (llm.Provider, error) { return &llm.Fake{Reply: "ok"}, nil }
+		t.Cleanup(func() { newAgentProvider = orig })
+		var got reply
+		doJSON(t, New(repoDir, projDir, "proj-chat"), http.MethodPost, "/api/chat", body, &got)
+		if !hasDecision(got.Context) {
+			t.Fatalf("context = %+v, want the decision", got.Context)
+		}
+	})
+	t.Run("streaming", func(t *testing.T) {
+		repoDir, projDir := seed(t)
+		srv := fakeChatProvider(t, nil, "resposta em dois pedaços")
+		configureChatByoKey(t, projDir, srv.URL)
+		var got reply
+		doChatStream(t, New(repoDir, projDir, "proj-chat"), body, &got)
+		if !hasDecision(got.Context) {
+			t.Fatalf("terminal context = %+v, want the decision", got.Context)
+		}
+	})
+	t.Run("zero budget omits", func(t *testing.T) {
+		repoDir, projDir := seed(t)
+		srv := fakeChatProvider(t, nil, "resposta em dois pedaços")
+		configureChatByoKey(t, projDir, srv.URL)
+		cfg, _, err := project.LoadConfig(projDir)
+		if err != nil {
+			t.Fatalf("LoadConfig: %v", err)
+		}
+		cfg.Agent.RetrievalBudget = -1
+		if err := project.SaveConfig(projDir, cfg); err != nil {
+			t.Fatalf("SaveConfig: %v", err)
+		}
+		deltas, rec := doChatStream(t, New(repoDir, projDir, "proj-chat"), body, &struct{}{})
+		_ = deltas
+		if strings.Contains(rec.Body.String(), `"context"`) {
+			t.Fatalf("zero budget must omit context: %s", rec.Body.String())
+		}
+	})
+}
+
+// toolFake is a provider with the function-calling capability: the confirmed
+// turn takes the tool path (F-0323), whose reply must carry the context too.
+type toolFake struct{ llm.Fake }
+
+func (toolFake) CompleteTools(context.Context, string, []llm.Tool, func(context.Context, llm.ToolCall) (string, bool)) (string, error) {
+	return "feito", nil
+}
+
+// TestHandleChat_ToolTurnReturnsContext (F-0436 criterion 1): the tool-calling
+// turn reports the injected sources like the others.
+func TestHandleChat_ToolTurnReturnsContext(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
+	configureChatByoKey(t, projDir, "http://unused.invalid")
+	setTree(t, fixtureTree)
+	if err := store.SaveDecision(repoDir, store.Decision{ID: "D-0001", Title: "Backend git é a fonte da verdade", State: domain.DecisionActive}); err != nil {
+		t.Fatalf("SaveDecision: %v", err)
+	}
+	orig := newAgentProvider
+	newAgentProvider = func(project.LLMConfig, string, bool) (llm.Provider, error) { return &toolFake{}, nil }
+	t.Cleanup(func() { newAgentProvider = orig })
+
+	var got struct {
+		Reply   string              `json:"reply"`
+		Context []map[string]string `json:"context"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, "proj-chat"), http.MethodPost, "/api/chat",
+		`{"messages":[`+confirmedTranscript+`],"conversation_id":"c1","confirm_turn":1,"confirm":true}`, &got)
+	if rec.Code != http.StatusOK || got.Reply != "feito" {
+		t.Fatalf("status = %d reply = %q; body: %s", rec.Code, got.Reply, rec.Body.String())
+	}
+	if len(got.Context) == 0 || got.Context[0]["id"] != "D-0001" {
+		t.Fatalf("tool turn context = %+v, want the decision", got.Context)
+	}
+}
+
+// TestHandleChat_ContextOrderAndNoText (F-0436 criterion 1): sources come in
+// prompt order (decision, then retrieved) and carry no snippet text — what the
+// budget trims from the prompt never reaches the response.
+func TestHandleChat_ContextOrderAndNoText(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
+	configureChatByoKey(t, projDir, "http://unused.invalid")
+	if err := store.SaveDecision(repoDir, store.Decision{ID: "D-0001", Title: "Backend git é a fonte da verdade", State: domain.DecisionActive}); err != nil {
+		t.Fatalf("SaveDecision: %v", err)
+	}
+	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0002", Title: "Conciliação bancária", State: domain.StateImplemented}); err != nil {
+		t.Fatalf("SaveFeature: %v", err)
+	}
+	specDir := filepath.Join(repoDir, "content", "features", "F-0002")
+	if err := os.MkdirAll(specDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	spec := "## Problema\nA conciliação do extrato OFX falha.\n" + strings.Repeat("Texto longo sobre conciliação zebra. ", 80)
+	if err := os.WriteFile(filepath.Join(specDir, "spec.md"), []byte(spec), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	cfg, _, err := project.LoadConfig(projDir)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	cfg.Agent.RetrievalBudget = 120 // trims the snippet hard
+	if err := project.SaveConfig(projDir, cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	orig := newAgentProvider
+	newAgentProvider = func(project.LLMConfig, string, bool) (llm.Provider, error) { return &llm.Fake{Reply: "ok"}, nil }
+	t.Cleanup(func() { newAgentProvider = orig })
+
+	var got struct {
+		Context []map[string]string `json:"context"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, "proj-chat"), http.MethodPost, "/api/chat",
+		`{"messages":[{"role":"user","content":"conciliação do extrato OFX"}]}`, &got)
+	var ids []string
+	for _, c := range got.Context {
+		ids = append(ids, c["id"])
+	}
+	if !slices.Equal(ids, []string{"D-0001", "F-0002"}) {
+		t.Fatalf("context ids = %v, want [D-0001 F-0002]; body: %s", ids, rec.Body.String())
+	}
+	for _, leak := range []string{"zebra", "OFX falha"} {
+		if strings.Contains(rec.Body.String(), leak) {
+			t.Fatalf("response leaks snippet text %q: %s", leak, rec.Body.String())
+		}
 	}
 }

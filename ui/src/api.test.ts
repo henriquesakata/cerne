@@ -226,3 +226,32 @@ describe('registerChatCandidate (F-0375 crit. 6)', () => {
     expect(body.model).toBe('claude-opus-5-5')
   })
 })
+
+describe('streamChat (F-0436 critério 4): o contexto do turno', () => {
+  const context = [{ id: 'D-0001', title: 'Fonte da verdade', kind: 'decision', state: 'active' }]
+
+  it('o context da linha terminal chega na resposta (stream e linha única)', async () => {
+    setApiProject('proj-x')
+    const terminal = `{"answered":true,"reply":"ok","context":${JSON.stringify(context)}}\n`
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(streamResponse([`{"delta":"o"}\n`, terminal])))
+    expect((await streamChat([{ role: 'user', content: 'oi' }], undefined, () => {})).context).toEqual(context)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(streamResponse([terminal])))
+    expect((await streamChat([{ role: 'user', content: 'oi' }], undefined, () => {})).context).toEqual(context)
+  })
+
+  it('o context nunca volta ao servidor: o corpo da requisição só leva role/content', async () => {
+    setApiProject('proj-x')
+    const fetch = vi.fn().mockResolvedValue(streamResponse([`{"answered":true,"reply":"ok"}\n`]))
+    vi.stubGlobal('fetch', fetch)
+    await streamChat(
+      [
+        { role: 'user', content: 'oi' },
+        { role: 'assistant', content: 'olá', context: context as never },
+        { role: 'user', content: 'e agora?' },
+      ],
+      undefined,
+      () => {},
+    )
+    expect(fetch.mock.calls[0][1].body).not.toContain('context')
+  })
+})

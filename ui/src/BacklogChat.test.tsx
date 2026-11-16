@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
-import BacklogChat, { parseCommands, parseNote } from './BacklogChat'
+import BacklogChat, { parseCommands, parseNote, TurnContextDisclosure } from './BacklogChat'
 import { ChatRunsError, setApiProject, type ChatAnswer, type ChatOverride, type ChatTitle, type CreateOutcome, type Feature, type FeatureDetail, type LLMOptions, type ModelEntry, type Note } from './api'
 import { getConversation, useBacklogChats, writeChats, type Conversation } from './useBacklogChats'
 
@@ -1316,5 +1316,85 @@ describe('BacklogChat — confirmação de comandos (F-0260)', () => {
     await sendAndGetReply('Me conta mais sobre o formato.')
     await waitFor(() => expect(screen.getByText('Me conta mais sobre o formato.')).toBeInTheDocument())
     expect(screen.queryByRole('button', { name: /executar/i })).not.toBeInTheDocument()
+  })
+})
+
+describe('TurnContextDisclosure (F-0436)', () => {
+  const sources = [
+    { id: 'D-0001', title: 'Backend git é a fonte da verdade', kind: 'decision' as const, state: 'active' },
+    { id: 'F-0001', title: 'Conciliação', kind: 'retrieved' as const, state: 'implemented' },
+  ]
+
+  it('critério 2: <details> recolhido com a contagem e um link por fonte', () => {
+    cleanup()
+    const { container } = render(<TurnContextDisclosure sources={sources} />)
+    const details = container.querySelector('details')
+    expect(details).not.toHaveAttribute('open')
+    expect(screen.getByText('Contexto deste turno (2)')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'D-0001' })).toHaveAttribute('href', '#/d/D-0001')
+    expect(screen.getByRole('link', { name: 'F-0001' })).toHaveAttribute('href', '#/f/F-0001')
+    expect(container.textContent).toContain('· Pronta')
+    expect(container.textContent).not.toContain('Ativa')
+  })
+
+  it('critério 2: grupos por tipo na ordem recuperadas, decisões, convenções, com contagem e legenda', () => {
+    cleanup()
+    const { container } = render(
+      <TurnContextDisclosure
+        sources={[
+          { id: 'D-0001', title: 'D', kind: 'decision' as const, state: 'active' },
+          { id: 'N-0001', title: 'N', kind: 'convention' as const, state: 'active' },
+          { id: 'F-0001', title: 'A', kind: 'retrieved' as const, state: 'implemented' },
+          { id: 'F-0002', title: 'B', kind: 'retrieved' as const, state: 'implemented' },
+        ]}
+      />,
+    )
+    expect(screen.getByText('Injetado pelo cerne neste turno')).toBeInTheDocument()
+    const labels = [...container.querySelectorAll('.turn-context-group, .turn-context-group-details > summary')].map((e) => e.textContent)
+    expect(labels).toEqual(['Recuperado para esta mensagem (2)', 'Decisões ativas (1)', 'Convenções (1)'])
+    const ids = [...container.querySelectorAll('.turn-context a')].map((e) => e.textContent)
+    expect(ids).toEqual(['F-0001', 'F-0002', 'D-0001', 'N-0001'])
+    expect(container.querySelectorAll('.turn-context-group-details[open]')).toHaveLength(0)
+  })
+
+  it('critério 2: cada prefixo vai à rota do roteador; tipo desconhecido vira texto', () => {
+    cleanup()
+    const mixed = [
+      { id: 'N-0007', kind: 'convention' as const },
+      { id: 'R-0003', kind: 'retrieved' as const },
+      { id: 'wiki:guia/um.md', kind: 'retrieved' as const },
+      { id: 'X-0001', kind: 'retrieved' as const },
+    ]
+    render(<TurnContextDisclosure sources={mixed} />)
+    expect(screen.getByRole('link', { name: 'N-0007' })).toHaveAttribute('href', '#/n/N-0007')
+    expect(screen.getByRole('link', { name: 'R-0003' })).toHaveAttribute('href', '#/r/R-0003')
+    expect(screen.getByRole('link', { name: 'wiki:guia/um.md' })).toHaveAttribute('href', '#/wiki/guia%2Fum.md')
+    expect(screen.getByText(/X-0001/)).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'X-0001' })).not.toBeInTheDocument()
+  })
+
+  it('critério 2: dois trechos da mesma entidade não duplicam chave do React', () => {
+    cleanup()
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const twice = [
+      { id: 'F-0001', title: 'A', kind: 'retrieved' as const, state: 'implemented' },
+      { id: 'F-0001', title: 'A', kind: 'retrieved' as const, state: 'implemented' },
+    ]
+    render(<TurnContextDisclosure sources={twice} />)
+    expect(err).not.toHaveBeenCalled()
+    err.mockRestore()
+  })
+
+  it('critério 3: sem fontes não desenha nada', () => {
+    cleanup()
+    const { container } = render(<TurnContextDisclosure sources={[]} />)
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it('critério 4: conversa gravada no formato antigo (sem context) abre sem o bloco', () => {
+    cleanup()
+    renderChat({ messages: [{ role: 'user', content: 'oi' }, { role: 'assistant', content: 'olá' }] })
+    expect(screen.getByText('olá')).toBeInTheDocument()
+    expect(document.querySelector('details.turn-context')).toBeNull()
   })
 })

@@ -927,6 +927,21 @@ h2 {
 .tool-run-failed span { color: var(--danger); }
 .tool-runs-warning { margin: 0 0 0.4rem; font-size: 0.8rem; color: var(--danger); }
 
+/* Contexto injetado no turno (F-0436). */
+.turn-context { margin-top: 0.5rem; padding-top: 0.35rem; border-top: 1px solid var(--border-soft); font-size: 0.8rem; color: var(--muted); }
+.turn-context summary { cursor: pointer; width: fit-content; }
+.turn-context summary:hover { color: var(--fg); }
+.turn-context-body { max-height: 14rem; overflow-y: auto; }
+.turn-context-caption { margin: 0.3rem 0 0; }
+.turn-context-group { margin: 0.4rem 0 0; font-weight: 600; }
+.turn-context-group-details { margin-top: 0.4rem; }
+.turn-context ul { margin: 0.2rem 0 0; padding-left: 1.2rem; }
+.turn-context-state { color: var(--muted); }
+.turn-context a { color: var(--link); text-decoration: none; font-family: ui-monospace, monospace; font-size: 0.78rem; }
+.turn-context a:hover { text-decoration: underline; }
+.turn-context summary:focus-visible,
+.turn-context a:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; border-radius: 6px; }
+
 /* Referência ao painel na transcrição (F-0255 critério 1). */
 .backlog-chat-proposal-ref {
   margin: 0.4rem 0 0;

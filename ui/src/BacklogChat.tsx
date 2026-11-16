@@ -19,6 +19,7 @@ import {
   type DupMatch,
   type Feature,
   type ModelEntry,
+  type TurnSource,
 } from './api'
 import * as chatRequest from './chatRequest'
 import CommandProposal, { CopyCommands, ToolRuns } from './CommandProposal'
@@ -160,6 +161,66 @@ function parseFenced(reply: string, fence: string): ParsedProposal | null {
 // bloco volta intacta.
 export function stripProposalFence(reply: string): string {
   return stripFence(stripFence(stripFence(reply, PROPOSAL_FENCE), NOTE_FENCE), COMMAND_FENCE)
+}
+
+// turnSourceHref (F-0436) leva à página da entidade pelo prefixo do id; um
+// prefixo sem página própria fica como texto.
+function turnSourceHref(id: string): string | null {
+  const route = { 'F-': 'f', 'D-': 'd', 'N-': 'n', 'R-': 'r' }[id.slice(0, 2)]
+  if (route) return `#/${route}/${encodeURIComponent(id)}`
+  return id.startsWith('wiki:') ? `#/wiki/${encodeURIComponent(id.slice(5))}` : null
+}
+
+// turnStateLabel localiza o estado de uma fonte recuperada pelo prefixo do id.
+function turnStateLabel(t: ReturnType<typeof useT>['t'], id: string, state: string): string {
+  const labels: Record<string, string> =
+    id.startsWith('F-') ? t.state : id.startsWith('D-') ? t.decisions.stateLabels : id.startsWith('N-') ? t.notes.stateLabels : {}
+  return labels[state] ?? state
+}
+
+// TurnContextDisclosure (F-0436) mostra ao humano o que o servidor injetou no
+// turno: id, título, tipo e estado — nunca o trecho. Recolhido; lista vazia
+// não desenha nada. Agrupado por tipo (recuperadas primeiro, o sinal do
+// turno); decisões e convenções, sempre ativas, ficam em grupos recolhidos.
+export function TurnContextDisclosure({ sources }: { sources?: TurnSource[] }) {
+  const { t } = useT()
+  if (!sources?.length) return null
+  const row = (s: TurnSource, i: number) => {
+    const href = turnSourceHref(s.id)
+    return (
+      <li key={`${i}:${s.kind}:${s.id}`}>
+        {href ? <a href={href}>{s.id}</a> : s.id}
+        {s.title ? ` ${s.title}` : ''}
+        {s.kind === 'retrieved' && s.state ? <span className="turn-context-state"> · {turnStateLabel(t, s.id, s.state)}</span> : null}
+      </li>
+    )
+  }
+  const group = (kind: TurnSource['kind']) => {
+    const rows = sources.map((s, i) => [s, i] as const).filter(([s]) => s.kind === kind)
+    if (rows.length === 0) return null
+    const label = t.turnContext[kind](rows.length)
+    const list = <ul>{rows.map(([s, i]) => row(s, i))}</ul>
+    return kind === 'retrieved' ? (
+      <section key={kind}>
+        <p className="turn-context-group">{label}</p>
+        {list}
+      </section>
+    ) : (
+      <details key={kind} className="turn-context-group-details">
+        <summary>{label}</summary>
+        {list}
+      </details>
+    )
+  }
+  return (
+    <details className="turn-context">
+      <summary>{t.turnContext.label(sources.length)}</summary>
+      <div className="turn-context-body">
+        <p className="turn-context-caption">{t.turnContext.caption}</p>
+        {(['retrieved', 'decision', 'convention'] as const).map(group)}
+      </div>
+    </details>
+  )
 }
 
 function stripFence(reply: string, fence: string): string {
@@ -1097,6 +1158,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
                   {(m.runs || m.noRuns || m.truncated) && (
                     <ToolRuns runs={m.runs ?? []} noRuns={m.noRuns} truncated={m.truncated} />
                   )}
+                  <TurnContextDisclosure sources={m.context} />
                 </>
               )}
             </div>
