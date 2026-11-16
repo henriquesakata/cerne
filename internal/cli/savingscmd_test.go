@@ -70,6 +70,7 @@ func TestSavings(t *testing.T) {
 		"feature", "decision",
 		"TOTAL", "1000", "250",
 		"Saved: 750 bytes", "~187 tokens", "75.0%",
+		"CONTEXT.md is not counted",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("stats output missing %q:\n%s", want, out)
