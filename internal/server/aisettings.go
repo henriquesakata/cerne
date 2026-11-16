@@ -20,12 +20,12 @@ type cliStatus struct {
 	Found bool   `json:"found"`
 }
 
-// cliStatuses lists the three subscription CLIs in detection order.
+// cliStatuses lists the subscription CLIs in detection order.
 func cliStatuses() []cliStatus {
 	found := project.FoundSubscriptionCLIs()
 	var out []cliStatus
-	for _, name := range []string{"claude", "codex", "gemini"} {
-		out = append(out, cliStatus{Name: name, Mode: name + "-cli", Found: slices.Contains(found, name)})
+	for _, name := range []string{"claude", "codex", "gemini", "cursor-agent"} {
+		out = append(out, cliStatus{Name: name, Mode: project.CLIMode(name), Found: slices.Contains(found, name)})
 	}
 	return out
 }
