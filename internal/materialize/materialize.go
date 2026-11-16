@@ -52,7 +52,7 @@ var materializedStates = map[domain.FeatureState]bool{
 // The *IsCurrent predicates below are the single source of truth for "does the
 // materializer project this entity into .docs/". Materialize and ComputeStats
 // (F-0127) both use them, so the context-savings metric can never diverge from
-// what the projection actually delivers.
+// the entity documents the projection delivers (CONTEXT.md is not counted).
 
 func featureIsCurrent(f store.Feature) bool     { return materializedStates[f.State] }
 func decisionIsCurrent(d store.Decision) bool   { return d.State == domain.DecisionActive }
