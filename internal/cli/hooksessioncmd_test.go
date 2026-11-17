@@ -60,6 +60,7 @@ func TestHookSessionCompactWithoutHandoff(t *testing.T) {
 // plain session context, nothing added.
 func TestHookSessionCompactUnbound(t *testing.T) {
 	projDir, _, _ := boundWork(t, "sess-other")
+	withProjection(t, projDir)
 	plain, err := execCerneStdin(t, sessionPayload("sess-free", projDir, "startup"), "hook", "session-context")
 	if err != nil {
 		t.Fatal(err)
@@ -75,6 +76,7 @@ func TestHookSessionCompactUnbound(t *testing.T) {
 // (golden captured then), even for a bound session whose W- has an HO.
 func TestHookSessionOtherSourcesGolden(t *testing.T) {
 	projDir, _, repoDir := boundWork(t, "sess-g")
+	withProjection(t, projDir)
 	saveHO(t, repoDir, "HO-0004", "W-0001", "rodar a suíte", time.Now().UTC().Add(-3*time.Hour))
 	w, err := store.LoadWork(repoDir, "W-0001")
 	if err != nil {

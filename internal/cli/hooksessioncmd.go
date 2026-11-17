@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,7 +13,9 @@ import (
 
 	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/hooks"
+	"github.com/henriquesakata/cerne/internal/materialize"
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/skills"
 	"github.com/henriquesakata/cerne/internal/store"
@@ -22,7 +25,8 @@ import (
 // plus the LIVE work list in the envelope of the requested provider — the
 // SessionStart injection every provider gets, so an agent on Cursor, Codex or
 // Gemini starts a session as informed as one on Claude Code. Local-only (the
-// work list comes from the backend clone) and fail-open: outside a cerne
+// work list comes from the backend clone; a missing projection is built from
+// that clone too, B-0017) and fail-open: outside a cerne
 // project, or on any error loading works, it degrades gracefully.
 
 // cursorContext is Cursor's native sessionStart output envelope.
@@ -87,6 +91,132 @@ func newHookSessionContextCmd() *cobra.Command {
 	return cmd
 }
 
+// sessionLockWait bounds the wait for the backend lock when SessionStart
+// materializes a missing projection (B-0017). The hook never touches the
+// network, so this is the only wait it can have.
+var sessionLockWait = 3 * time.Second
+
+// materializeHook runs after the projection is built and before it is
+// installed; tests use it to move the clone mid-build.
+var materializeHook = func(repoDir string) {}
+
+const (
+	docsFromCacheNotice = "cerne: .docs/ was missing and was just materialized from the local cache without contacting the backend, so it may be stale — `cerne pull` refreshes it."
+	docsMissingNotice   = "cerne: .docs/ is missing and could not be materialized from the local cache — run `cerne pull` before reading .docs/CONTEXT.md."
+)
+
+// materializeIfMissing builds .docs/ from the local backend clone AS IT IS —
+// no fetch, no reset, so unpushed local state is never discarded — when projDir
+// has no .docs/CONTEXT.md (a fresh git worktree: .docs/ is gitignored). It
+// returns the one-line notice to inject, "" when nothing is wrong (B-0017).
+//
+// It builds only when .docs/ does not exist at all: an existing one without
+// CONTEXT.md is left alone (unpushed edits, .conflicts/) and only noticed. It
+// runs under the backend lock and, for writers that do not take it, discards
+// the build if the clone HEAD moved meanwhile. It builds in a git-invisible
+// staging directory renamed into place only when complete: an interrupted run
+// leaves no .docs/ at all, never one that passes the CONTEXT.md check without
+// its manifest. Unlike `cerne pull` it does not touch docs.lock, the search
+// index or the merge driver.
+func materializeIfMissing(cfg project.Config, projDir string) string {
+	docs := filepath.Join(projDir, ".docs")
+	present := func() bool {
+		_, err := os.Stat(filepath.Join(docs, "CONTEXT.md"))
+		return err == nil
+	}
+	if present() {
+		return ""
+	}
+	if _, err := os.Lstat(docs); err == nil {
+		return docsMissingNotice // exists without CONTEXT.md: may hold unpushed edits, never touched
+	}
+	cacheDir, err := project.CacheDir(cfg.ProjectID)
+	if err != nil {
+		return docsMissingNotice
+	}
+	repoDir := filepath.Join(cacheDir, "repo")
+	if _, err := os.Stat(filepath.Join(repoDir, ".git")); err != nil || !cloneIsOurs(cfg, projDir) {
+		return docsMissingNotice
+	}
+	err = gitback.WithLockWait(gitback.LockPath(repoDir), sessionLockWait, func() error {
+		if present() { // another session finished while we waited
+			return nil
+		}
+		return stageDocs(cfg, projDir, repoDir)
+	})
+	switch {
+	case err == nil:
+		if present() {
+			return docsFromCacheNotice
+		}
+		return docsMissingNotice
+	case errors.Is(err, gitback.ErrLockTimeout) && present():
+		return ""
+	default:
+		return docsMissingNotice
+	}
+}
+
+// errCloneMoved reports the clone HEAD changing under a build.
+var errCloneMoved = errors.New("the backend clone moved while the projection was built")
+
+// stageDocs materializes the clone into <projDir>/.docs-staging-*/.docs with
+// the manifest and session snapshot `cerne pull` writes after its reset (both
+// land in <stage>/.docs: the helpers take the parent of .docs), then renames it
+// to .docs/. Stale staging dirs from killed runs are swept first (the caller
+// holds the lock). The staging dir starts with a `.gitignore` of `*`, which
+// hides the dir and the file itself, so a `git add -A` never picks it up.
+func stageDocs(cfg project.Config, projDir, repoDir string) error {
+	if old, _ := filepath.Glob(filepath.Join(projDir, ".docs-staging-*")); len(old) > 0 {
+		for _, d := range old {
+			_ = os.RemoveAll(d)
+		}
+	}
+	stage, err := os.MkdirTemp(projDir, ".docs-staging-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(stage)
+	if err := os.WriteFile(filepath.Join(stage, ".gitignore"), []byte("*\n"), 0o644); err != nil {
+		return err
+	}
+	headBefore, err := gitback.HeadSHA(repoDir)
+	if errors.Is(err, gitback.ErrNoCommits) {
+		headBefore = ""
+	} else if err != nil {
+		return err
+	}
+	manifest, err := materialize.MaterializeAt(repoDir, filepath.Join(stage, ".docs"), cfg.DefaultScope, cfg.OKF, cfg.RecentWorkWindowDays(), time.Now())
+	if err != nil {
+		return err
+	}
+	materializeHook(repoDir)
+	head, err := gitback.HeadSHA(repoDir)
+	if errors.Is(err, gitback.ErrNoCommits) {
+		head = ""
+	} else if err != nil {
+		return err
+	}
+	if head != headBefore {
+		return errCloneMoved
+	}
+	if err := project.SaveSessionSnapshot(stage, head); err != nil {
+		return err
+	}
+	if err := project.SaveManifest(stage, manifest); err != nil {
+		return err
+	}
+	docs := filepath.Join(projDir, ".docs")
+	if _, err := os.Lstat(docs); err == nil {
+		return fmt.Errorf(".docs/ appeared while the projection was built")
+	}
+	if err := os.Rename(filepath.Join(stage, ".docs"), docs); err != nil {
+		return err
+	}
+	_ = app.RecordProjectHead(projDir) // drift baseline, as pull records it
+	return nil
+}
+
 func runHookSessionContext(cmd *cobra.Command, format string) {
 	in, _ := decodeHookInput(cmd.InOrStdin()) // best effort: some providers send no payload
 	if in.cursor() {
@@ -119,6 +249,8 @@ func runHookSessionContext(cmd *cobra.Command, format string) {
 		}
 	}
 
+	missingDocs := materializeIfMissing(cfg, projDir) // B-0017
+
 	stale := ""
 	if format == "copilot" {
 		stale = copilotStaleNotice(projDir)
@@ -131,6 +263,9 @@ func runHookSessionContext(cmd *cobra.Command, format string) {
 	text := hooks.SessionRules(cfg.Gates.GauntletEnabled()) + "\n\nACTIVE WORK RIGHT NOW (cerne work list):\n" + work
 	if stale != "" {
 		text += "\n\n" + stale
+	}
+	if missingDocs != "" {
+		text += "\n\n" + missingDocs
 	}
 	if in.Source == "compact" && ours {
 		if block := compactBlock(dir, in.SessionID); block != "" {

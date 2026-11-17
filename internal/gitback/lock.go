@@ -37,7 +37,14 @@ func LockPath(repoDir string) string {
 // lockStaleAfter) is stolen. lockPath must live OUTSIDE the git worktree so it
 // is never swept into a commit.
 func WithLock(lockPath string, fn func() error) error {
-	release, err := acquireLock(lockPath)
+	return WithLockWait(lockPath, lockAcquireTimeout, fn)
+}
+
+// WithLockWait is WithLock that gives up with ErrLockTimeout after wait. The
+// lock is a lockfile, not an OS lock: it is NOT released when the process dies
+// (only stolen once older than lockStaleAfter), so callers must not abandon fn.
+func WithLockWait(lockPath string, wait time.Duration, fn func() error) error {
+	release, err := acquireLock(lockPath, wait)
 	if err != nil {
 		return err
 	}
@@ -48,8 +55,8 @@ func WithLock(lockPath string, fn func() error) error {
 // acquireLock blocks until it creates lockPath exclusively (or steals a stale
 // one), returning a release func that removes it. ErrLockTimeout when a live
 // holder keeps it past lockAcquireTimeout.
-func acquireLock(lockPath string) (func(), error) {
-	deadline := time.Now().Add(lockAcquireTimeout)
+func acquireLock(lockPath string, wait time.Duration) (func(), error) {
+	deadline := time.Now().Add(wait)
 	for {
 		f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 		if err == nil {

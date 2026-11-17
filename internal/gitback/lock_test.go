@@ -98,3 +98,19 @@ func swapLockTiming(t *testing.T, stale, acquire, poll time.Duration) func() {
 	lockStaleAfter, lockAcquireTimeout, lockPollInterval = stale, acquire, poll
 	return func() { lockStaleAfter, lockAcquireTimeout, lockPollInterval = s0, a0, p0 }
 }
+
+// B-0017: WithLockWait gives up after its own wait, not the package default.
+func TestWithLockWaitTimesOut(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "repo.lock")
+	err := WithLock(path, func() error {
+		start := time.Now()
+		werr := WithLockWait(path, 50*time.Millisecond, func() error { t.Error("ran under a held lock"); return nil })
+		if !errors.Is(werr, ErrLockTimeout) || time.Since(start) > 5*time.Second {
+			t.Errorf("want ErrLockTimeout quickly, got %v after %v", werr, time.Since(start))
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
