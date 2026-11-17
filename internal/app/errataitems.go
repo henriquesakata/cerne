@@ -70,7 +70,7 @@ func DecideErrata(repoDir, projDir, id, itemID, by, quote string) error {
 		if err := store.AppendEvent(repoDir, ev); err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("cerne: errata %s %s decidida", id, itemID), nil
+		return fmt.Sprintf("cerne: errata %s %s decided", id, itemID), nil
 	})
 }
 
