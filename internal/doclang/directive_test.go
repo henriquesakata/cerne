@@ -140,13 +140,13 @@ func TestDisplay_ChatForms(t *testing.T) {
 // F-0447: the free text a prompt has the model copy is in the language of the
 // project: no English word inside the pt-BR examples, and every field set.
 func TestExamples_AreInTheirOwnLanguage(t *testing.T) {
-	english := regexp.MustCompile(`(?i)\b(the|of|by|and|or|with|win|tie|loss|same|class|guide|human|comparison|critic|fresh|context|covered|uncovered|task|relevant|findings|where|adjust|sources|parallel|high|medium|low|test|until|opens|stopping|only|recorded)\b`)
+	english := regexp.MustCompile(`(?i)\b(the|of|by|and|or|with|win|will|should|see|report|fails|use|tie|loss|same|class|guide|human|comparison|critic|fresh|context|covered|uncovered|task|relevant|findings|where|adjust|sources|parallel|high|medium|low|test|until|opens|stopping|only|recorded)\b`)
 	for _, l := range Langs() {
 		p := Examples(l)
 		fields := map[string]string{
 			"Method": p.Method, "Exit": p.Exit, "BarExample": p.BarExample, "Alternative": p.Alternative,
 			"Parallel": p.Parallel, "Severities": p.Severities, "NoFindings": p.NoFindings,
-			"Covered": p.Covered, "Uncovered": p.Uncovered, "WhereIs": p.WhereIs, "HowToAdjust": p.HowToAdjust, "SourcesRead": p.SourcesRead,
+			"Covered": p.Covered, "Uncovered": p.Uncovered, "LevelLine": p.LevelLine, "OriginExample": p.OriginExample, "DecisionVoice": p.DecisionVoice, "DecisionTitle": p.DecisionTitle, "ExpectedOutput": p.ExpectedOutput, "Consulted": p.Consulted, "WhereIs": p.WhereIs, "HowToAdjust": p.HowToAdjust, "SourcesRead": p.SourcesRead,
 		}
 		for name, v := range fields {
 			if v == "" {

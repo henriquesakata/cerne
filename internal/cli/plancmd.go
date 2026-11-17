@@ -159,7 +159,7 @@ func BuildPlanDraftPrompt(l doclang.Lang, f store.Feature, specContent, currentC
 	writeSections(&b, doclang.Plan, l)
 	b.WriteString("\nAuthoring rules:\n")
 	b.WriteString("- Do not repeat the spec; reference it. The plan describes HOW to build.\n")
-	b.WriteString("- Break the work into small, ORDERED tasks; each task leaves the repository green. Per task: real files (create/edit/remove), test first (TDD), verification (command → expected output) citing the number of the spec criterion, and the exact Conventional Commit message. Mark " + doclang.Examples(l).Parallel + " when a task is independent.\n")
+	b.WriteString("- Break the work into small, ORDERED tasks; each task leaves the repository green. Per task: real files (create/edit/remove), test first (TDD), verification (command → expected output) citing the number of the spec criterion, and the exact Conventional Commit message. Never commit a red state: the failing test is written and run first, but the commit of a task holds the test and the code that makes it pass. Mark " + doclang.Examples(l).Parallel + " when a task is independent.\n")
 	b.WriteString("- Size by the work: a trivial change (<=3 files) fits in a single task; sections that do not apply become one line (\"N/A\"). Do not inflate the plan.\n")
 	b.WriteString("- Mark any uncertainty with the ambiguity marker instead of guessing.\n")
 	b.WriteString("- " + heading(doclang.Plan, l, "Definition of done") + " is a binary checklist (met/unmet marks of the language note) with file:line evidence: each spec criterion with an implementation and a test that proves it.\n\n")

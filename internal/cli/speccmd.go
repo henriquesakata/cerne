@@ -142,9 +142,9 @@ func BuildSpecDraftPrompt(l doclang.Lang, f store.Feature, currentContent string
 	b.WriteString("- Numbered, testable acceptance criteria; for behaviour use EARS, in the form given in the language note at the end. Structural invariants as a direct assertion.\n")
 	b.WriteString("- Mark any uncertainty with the ambiguity marker instead of guessing.\n")
 	b.WriteString("- In " + heading(doclang.Spec, l, "Design") + ", anchor in real files/packages with explicit contracts (signatures, schemas); do not omit the \"how\".\n")
-	b.WriteString("- Include in the metadata lines the Level, with a one-sentence justification, judging the complexity of the implementation; do not name LLM models or vendors.\n")
+	b.WriteString("- Include in the metadata lines \"" + doclang.Examples(l).LevelLine + "\", judging the complexity of the implementation; do not name LLM models or vendors.\n")
 	b.WriteString("- Do not include a status metadata line (Draft, Done, ...): the lifecycle is card data (cerne status), never prose that ages.\n")
-	b.WriteString("- Include the Origin line: what triggered it (who reported it or where it came from, what happened, and the date), in one line.\n")
+	b.WriteString("- Include the Origin line: what triggered it, with whom/where and the date, in the shape of this example line: " + doclang.Examples(l).OriginExample + ".\n")
 	b.WriteString("- A metadata field whose value you do not know: write the unknown value in it — never guess; knowing only part, write the part and the unknown value for the rest. Type and Level are closed vocabularies: choose one of the values.\n")
 	b.WriteString("- In " + heading(doclang.Spec, l, "Recommended execution (agent)") + ": the suggested model capability (generic vocabulary, consistent with the Level) and effort; which tasks to keep in the same agent (shared context) and why; which are separable.\n\n")
 	// F-0273: same Gauntlet contract the Backlog chat prompt uses (app.GauntletContract),

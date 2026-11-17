@@ -350,7 +350,7 @@ func BuildRunbookDraftPrompt(l doclang.Lang, rb store.Runbook, currentContent st
 	writeSections(&b, doclang.Runbook, l)
 	b.WriteString("\nAuthoring rules:\n")
 	b.WriteString("- In " + heading(doclang.Runbook, l, "When to use") + ", make the trigger/symptoms clear so the reader confirms in seconds that this is the right runbook.\n")
-	b.WriteString("- In " + heading(doclang.Runbook, l, "Procedure") + ", numbered steps, action first, copyable commands, each with its EXPECTED OUTPUT (\"you should see: X\").\n")
+	b.WriteString("- In " + heading(doclang.Runbook, l, "Procedure") + ", numbered steps, action first, copyable commands, each with its EXPECTED OUTPUT (" + doclang.Examples(l).ExpectedOutput + ").\n")
 	b.WriteString("- Include " + heading(doclang.Runbook, l, "Prerequisites") + " (access/tools/state), " + heading(doclang.Runbook, l, "Verification") + " (how to confirm success) and " + heading(doclang.Runbook, l, "Rollback and troubleshooting") + " (how to undo + whom to escalate to).\n")
 	b.WriteString("- Mark any uncertainty with the ambiguity marker instead of guessing.\n")
 	b.WriteString("- Size by the task: a simple runbook has short sections; \"N/A\" where it does not apply. Do not inflate.\n\n")

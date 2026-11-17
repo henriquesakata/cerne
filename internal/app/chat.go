@@ -264,7 +264,7 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config, channel 
 		b.WriteString("You may also READ the project's code (Read, Grep and Glob tools) to ground the " + doclang.Section(doclang.Spec, "Problem", l) + " and " + doclang.Section(doclang.Spec, "Design", l) + " sections in real files — signatures, contracts and names verified, never assumed. ")
 		// F-0438: the analyst checks its own draft before emitting it.
 		b.WriteString("BEFORE emitting the proposal block, check the draft by passing the spec body on standard input: `cerne spec check <<'SPEC'` + the body + a line `SPEC` (it only reads, writes nothing; you have no write tool, so never use a file). It lists missing template sections and a missing or malformed bar line. Fix what it points out and run it again until it comes out clean; open clarifications are warnings, not errors. The server checks the emitted proposal again: your check is an effort, not the guarantee. ")
-		b.WriteString("At the end of the reply, cite the ids you consulted (e.g. \"Consulted: F-0132, D-0007\") and the files you read as path:line (e.g. \"internal/app/chat.go:131\"); if you consulted nothing, do not invent citations. ")
+		b.WriteString("At the end of the reply, cite the ids you consulted (e.g. \"" + doclang.Examples(l).Consulted + ": F-0132, D-0007\") and the files you read as path:line (e.g. \"internal/app/chat.go:131\"); if you consulted nothing, do not invent citations. ")
 		// F-0267: this sentence used to deny writing outright — true under
 		// F-0224, false since F-0260/F-0265. The denial won over the contract
 		// at the end of the prompt (the agent answered "I can't update" while

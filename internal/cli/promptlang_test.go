@@ -97,7 +97,8 @@ func projectProse(l doclang.Lang, prompt string) string {
 	// roast words) is the document's language, not the prompt's.
 	ex := doclang.Examples(l)
 	forms = append(forms, ex.Method, ex.Exit, ex.BarExample, ex.Alternative, ex.Parallel, ex.Severities, ex.NoFindings,
-		ex.Covered, ex.Uncovered, ex.WhereIs, ex.HowToAdjust, ex.SourcesRead)
+		ex.Covered, ex.Uncovered, ex.WhereIs, ex.HowToAdjust, ex.SourcesRead,
+		ex.LevelLine, ex.OriginExample, ex.DecisionVoice, ex.DecisionTitle, ex.ExpectedOutput, ex.Consulted)
 	// Longest first: a heading is stripped whole before the words inside it.
 	sort.Slice(forms, func(i, j int) bool { return len(forms[i]) > len(forms[j]) })
 	for _, f := range forms {

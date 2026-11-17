@@ -20,7 +20,7 @@ Write a COMPLETE, actionable runbook, in Markdown, with exactly these sections i
 
 Authoring rules:
 - In "Quando usar", make the trigger/symptoms clear so the reader confirms in seconds that this is the right runbook.
-- In "Procedimento", numbered steps, action first, copyable commands, each with its EXPECTED OUTPUT ("you should see: X").
+- In "Procedimento", numbered steps, action first, copyable commands, each with its EXPECTED OUTPUT ("você deve ver: X").
 - Include "Pré-requisitos" (access/tools/state), "Verificação" (how to confirm success) and "Rollback e troubleshooting" (how to undo + whom to escalate to).
 - Mark any uncertainty with the ambiguity marker instead of guessing.
 - Size by the task: a simple runbook has short sections; "N/A" where it does not apply. Do not inflate.

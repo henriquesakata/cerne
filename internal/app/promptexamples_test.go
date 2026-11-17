@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/doclang"
+	"github.com/henriquesakata/cerne/internal/project"
 )
 
 // englishWord is a function word or a domain word of the English examples the
@@ -91,4 +92,27 @@ func TestChatCodexLiveQueryHeadingsFollowTheProjectLanguage(t *testing.T) {
 			t.Errorf("%s: the block names the other language's headings", l)
 		}
 	}
+}
+
+// F-0447 round 2: the label of the consulted-sources line the chat reply ends
+// with is the project's language's ("Consultei:" in pt-BR).
+func TestChatConsultedLabelFollowsTheProjectLanguage(t *testing.T) {
+	repoDir, projDir := chatFixture(t)
+	p, err := BuildChatSystemPrompt(repoDir, projDir, claudeCLIConfig(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ex, other := doclang.Examples(doclang.PT), doclang.Examples(doclang.EN)
+	if !strings.Contains(p, `"`+ex.Consulted+`: F-0132, D-0007"`) {
+		t.Errorf("the pt chat prompt does not dictate the %q label", ex.Consulted)
+	}
+	if strings.Contains(p, other.Consulted+": F-") {
+		t.Errorf("the pt chat prompt dictates the English consulted label")
+	}
+}
+
+func claudeCLIConfig() project.Config {
+	var cfg project.Config
+	cfg.LLM.Mode = "claude-cli"
+	return cfg
 }

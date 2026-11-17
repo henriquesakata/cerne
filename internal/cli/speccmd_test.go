@@ -226,7 +226,7 @@ func TestBuildSpecDraftPromptMetadataRules(t *testing.T) {
 		if strings.Contains(prompt, "**Status:**") {
 			t.Fatalf("prompt must not ask for a **Status:** metadata line:\n%s", prompt)
 		}
-		for _, want := range []string{"cerne status", "Origin line", "who reported it or where it came from", "never guess"} {
+		for _, want := range []string{"cerne status", "Origin line", "in the shape of this example line", "never guess"} {
 			if !strings.Contains(prompt, want) {
 				t.Fatalf("%s: prompt missing metadata rule %q:\n%s", l, want, prompt)
 			}
