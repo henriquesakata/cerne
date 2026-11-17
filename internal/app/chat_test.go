@@ -293,7 +293,7 @@ func TestRoleBoundaryIsChatOnly(t *testing.T) {
 		t.Fatalf("CapabilityBootstrapPrompt: %v", err)
 	}
 	other := map[string]string{
-		"diagram":              BuildSequenceDiagramPrompt(store.Feature{ID: "F-0001", Title: "T"}, "spec", "tree"),
+		"diagram":              BuildSequenceDiagramPrompt(doclang.PT, store.Feature{ID: "F-0001", Title: "T"}, "spec", "tree"),
 		"ask":                  ask.BuildAskPrompt(doclang.PT, "q", nil, true),
 		"capability-bootstrap": capPrompt,
 	}
@@ -983,25 +983,25 @@ func TestBuildChatSystemPrompt_QuestionContract(t *testing.T) {
 // shell command the turn cannot run.
 func TestBuildChatSystemPromptLiveQueryCodex(t *testing.T) {
 	for _, want := range []string{"find_files", "read_file", "search", "show", "brief", "status", "Cite"} {
-		if !strings.Contains(ChatCodexLiveQuery, want) {
-			t.Errorf("codex live-query block lacks %q:\n%s", want, ChatCodexLiveQuery)
+		if !strings.Contains(ChatCodexLiveQuery(doclang.PT), want) {
+			t.Errorf("codex live-query block lacks %q:\n%s", want, ChatCodexLiveQuery(doclang.PT))
 		}
 	}
 	// The exploration rules and the fixed three-section answer (Gauntlet rounds 1 to 5).
-	for _, want := range []string{"search_files", "list the tree", "**", "stage", "backdrop", "enemy",
+	for _, want := range []string{"search_files", "list the tree", "**", "stage", "backdrop",
 		"Never ask the user for a path or a keyword before", "relative to the project root", "never absolute paths", "temporary working directory",
 		"Read every file you point to", "never present a file as the definition", "exactly as read_file or search_files numbered them",
-		"cite the file without a line rather than guess", "in the project's language", "exactly three sections, in this order, every time",
-		`"Onde está", "Para ajustar", "Fontes consultadas"`, `"Where it is", "How to adjust", "Sources consulted"`,
+		"cite the file without a line rather than guess", "in this language", "exactly three sections, in this order, every time",
+		`"Onde está", "Para ajustar", "Fontes consultadas"`,
 		"decisive file first", "that line's text quoted", "one bullet per file", "do NOT define", "mark the decisive one",
 		"no entry that was not read", "no generic source without an id"} {
-		if !strings.Contains(ChatCodexLiveQuery, want) {
-			t.Errorf("codex live-query block lacks %q:\n%s", want, ChatCodexLiveQuery)
+		if !strings.Contains(ChatCodexLiveQuery(doclang.PT), want) {
+			t.Errorf("codex live-query block lacks %q:\n%s", want, ChatCodexLiveQuery(doclang.PT))
 		}
 	}
-	t.Logf("block size: %d bytes", len(ChatCodexLiveQuery))
-	if strings.Contains(ChatCodexLiveQuery, "cerne search") || strings.Contains(ChatCodexLiveQuery, "Read, Grep") {
-		t.Errorf("block names a claude tool or shell command:\n%s", ChatCodexLiveQuery)
+	t.Logf("block size: %d bytes", len(ChatCodexLiveQuery(doclang.PT)))
+	if strings.Contains(ChatCodexLiveQuery(doclang.PT), "cerne search") || strings.Contains(ChatCodexLiveQuery(doclang.PT), "Read, Grep") {
+		t.Errorf("block names a claude tool or shell command:\n%s", ChatCodexLiveQuery(doclang.PT))
 	}
 }
 

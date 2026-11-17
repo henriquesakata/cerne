@@ -48,7 +48,7 @@ func runSpecDiagram(cmd *cobra.Command, dir, id, rawName string) error {
 	// Project structure grounds the diagram in real components (best-effort:
 	// a read failure just omits the structure, never aborts generation).
 	structure, _ := app.ProjectStructure(ctx.projDir)
-	prompt := app.BuildSequenceDiagramPrompt(f, spec, structure)
+	prompt := app.BuildSequenceDiagramPrompt(store.DocsLanguage(ctx.repoDir), f, spec, structure)
 	out := cmd.OutOrStdout()
 
 	// delegation (default): print the prompt for the host agent to draft inline.

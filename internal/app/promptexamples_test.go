@@ -77,3 +77,18 @@ func TestRoastPromptOutputTokensFollowTheProjectLanguage(t *testing.T) {
 		}
 	}
 }
+
+// F-0447: the codex live-query block names the answer headings of the project's
+// language only, never the other's.
+func TestChatCodexLiveQueryHeadingsFollowTheProjectLanguage(t *testing.T) {
+	for _, l := range doclang.Langs() {
+		ex, other := doclang.Examples(l), doclang.Examples(map[doclang.Lang]doclang.Lang{doclang.PT: doclang.EN, doclang.EN: doclang.PT}[l])
+		q := ChatCodexLiveQuery(l)
+		if !strings.Contains(q, `"`+ex.WhereIs+`", "`+ex.HowToAdjust+`", "`+ex.SourcesRead+`"`) {
+			t.Errorf("%s: the block lacks its headings", l)
+		}
+		if strings.Contains(q, other.WhereIs) || strings.Contains(q, other.SourcesRead) {
+			t.Errorf("%s: the block names the other language's headings", l)
+		}
+	}
+}

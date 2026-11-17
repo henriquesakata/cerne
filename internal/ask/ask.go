@@ -210,9 +210,9 @@ func BuildAskPrompt(l doclang.Lang, query string, snippets []Snippet, preamble b
 		b.WriteString(header + ")\n")
 		b.WriteString(strings.TrimSpace(s.Text) + "\n\n")
 	}
-	if preamble {
-		b.WriteString(doclang.Reply(l))
-	}
+	// The language line stays without the preamble: it is not scaffolding, it
+	// is what the host agent's answer is written in.
+	b.WriteString(doclang.Reply(l))
 	return b.String()
 }
 
