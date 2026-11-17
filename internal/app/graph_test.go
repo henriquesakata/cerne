@@ -271,7 +271,8 @@ func TestBuildGraphLinksToNotesAndRunbooks(t *testing.T) {
 		}
 	}
 	writeDoc(t, repo, "content/features/F-0001/spec.md", "[n](../../notes/N-0001.md) [rb](../../runbooks/RB-0001.md)")
-	writeDoc(t, repo, "content/notes/N-0001.md", "volta para [f](../features/F-0001/spec.md) e [rb](./../runbooks/RB-0001.md)")
+	writeDoc(t, repo, "content/notes/N-0001.md", "volta para [f](../features/F-0001/spec.md) e [rb](./../runbooks/RB-0001.md); a si mesma [self](N-0001.md) e [[N-0001]]")
+	writeDoc(t, repo, "content/runbooks/RB-0001.md", "a si mesmo [self](RB-0001.md) e [[rb-0001]]")
 	g, err := BuildGraph(repo)
 	if err != nil {
 		t.Fatal(err)

@@ -28,7 +28,7 @@ func TestWikiLinkResolvesEveryEntityKind(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeDoc(t, dir, "content/features/F-0001/spec.md",
-		"---\ncerne_id: F-0001\n---\n\n# Dono\n\nVeja [[W-0007]], [[C-0003]] e [[HO-0005]]; e os que não existem [[W-0999]], [[C-0999]], [[HO-0999]].\n")
+		"---\ncerne_id: F-0001\n---\n\n# Dono\n\nVeja [[W-0007]], [[C-0003]] e [[HO-0005]]; o alias [[W-0007|a investigação]] e [[W-0998|alias fantasma]]; e os que não existem [[W-0999]], [[C-0999]], [[HO-0999]].\n")
 	got, err := RunConfig(dir, 14, 8, 0)
 	if err != nil {
 		t.Fatalf("RunConfig: %v", err)
@@ -36,7 +36,7 @@ func TestWikiLinkResolvesEveryEntityKind(t *testing.T) {
 	broken := map[string]bool{}
 	for _, f := range got {
 		if f.Rule == RuleBrokenLink {
-			for _, id := range []string{"W-0007", "C-0003", "HO-0005", "W-0999", "C-0999", "HO-0999"} {
+			for _, id := range []string{"W-0007", "C-0003", "HO-0005", "W-0999", "C-0999", "HO-0999", "W-0998"} {
 				if strings.Contains(f.Detail, "[["+id+"]]") {
 					broken[id] = true
 				}
@@ -48,7 +48,7 @@ func TestWikiLinkResolvesEveryEntityKind(t *testing.T) {
 			t.Errorf("[[%s]] exists but is a broken-link", id)
 		}
 	}
-	for _, id := range []string{"W-0999", "C-0999", "HO-0999"} {
+	for _, id := range []string{"W-0999", "C-0999", "HO-0999", "W-0998"} {
 		if !broken[id] {
 			t.Errorf("[[%s]] does not exist and must stay a broken-link: %+v", id, got)
 		}

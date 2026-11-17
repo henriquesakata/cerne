@@ -312,12 +312,15 @@ export function ReferenceDetail({ id }: { id: string }) {
         {ref.informs && ref.informs.length > 0 && (
           <p className="feature-note">
             {t.references.informsLabel}{' '}
-            {ref.informs.map((iid, i) => (
-              <span key={iid}>
-                {i > 0 && ', '}
-                {entityHref(iid) ? <a href={entityHref(iid) ?? undefined}>{iid}</a> : iid}
-              </span>
-            ))}
+            {ref.informs.map((iid, i) => {
+              const href = entityHref(iid)
+              return (
+                <span key={iid}>
+                  {i > 0 && ', '}
+                  {href ? <a href={href}>{iid}</a> : iid}
+                </span>
+              )
+            })}
           </p>
         )}
       </header>

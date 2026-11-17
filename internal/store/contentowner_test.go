@@ -1,6 +1,7 @@
 package store
 
 import (
+	"path/filepath"
 	"slices"
 	"testing"
 )
@@ -54,4 +55,48 @@ func idPrefix(id string) string {
 		}
 	}
 	return id
+}
+
+// TestEntityIDFromContentPathEveryKind (B-0022): for every kind in the layout
+// table, the content dir that really holds its docs maps back to its id. The
+// dirs are the ones the writers use (DocPath helpers in app, the handoff and
+// worklog paths in store); a kind that has no content dir says so here, so a
+// new kind in idSubdirs fails this test until someone decides which it is.
+func TestEntityIDFromContentPathEveryKind(t *testing.T) {
+	// prefix -> a real content doc path of that kind, relative to the backend.
+	holds := map[string]string{
+		"F":  "content/features/F-0001/spec.md",
+		"E":  "content/features/E-0001/spec.md",
+		"T":  "content/features/T-0001/spec.md",
+		"B":  "content/features/B-0001/spec.md",
+		"D":  "content/decisions/D-0001.md",
+		"R":  "content/references/R-0001.md",
+		"RB": "content/runbooks/RB-0001.md",
+		"N":  "content/notes/N-0001.md",
+		"HO": "content/handoffs/HO-0001.md",
+		"W":  "content/works/W-0001/handoff.md",
+	}
+	// Kinds whose docs live in no content dir: entity JSON only.
+	noContent := map[string]string{"H": "historical", "C": "capability", "P": "pending", "I": "idea"}
+	for prefix := range idSubdirs {
+		rel, ok := holds[prefix]
+		if !ok {
+			if _, none := noContent[prefix]; !none {
+				t.Errorf("kind %s is in idSubdirs but in neither table: say where its content docs live", prefix)
+			}
+			continue
+		}
+		wantID := prefix + "-0001"
+		if got := EntityIDFromContentPath(rel); got != wantID {
+			t.Errorf("%s: EntityIDFromContentPath(%q) = %q, want %q", prefix, rel, got, wantID)
+		}
+	}
+	// The writers' own paths agree with the table.
+	dir := "/b"
+	if rel, _ := filepath.Rel(dir, handoffContentPath(dir, "HO-0001")); filepath.ToSlash(rel) != holds["HO"] {
+		t.Errorf("handoff writer path %q != table %q", rel, holds["HO"])
+	}
+	if rel, _ := filepath.Rel(dir, handoffPath(dir, "W-0001")); filepath.ToSlash(rel) != holds["W"] {
+		t.Errorf("worklog path %q != table %q", rel, holds["W"])
+	}
 }
