@@ -1,13 +1,14 @@
 <!--
-The title of this pull request becomes a line in the release notes, which are
-generated from merged pull requests. Write it as a Conventional Commit a user
-can read: "fix(cli): pull no longer drops local edits on a conflict", not
-"fix stuff" or "address review".
+Write the title as a Conventional Commit a reader can follow:
+"fix(cli): pull no longer drops local edits on a conflict", not "fix stuff"
+or "address review". Release notes are not generated from pull request titles:
+they come from the version's section in CHANGELOG.md, curated before each tag.
 -->
 
 ## What and why
 
-<!-- What changes for a user of cerne, and why. Link the issue it closes: "Closes #123". -->
+<!-- What changes for a user of cerne, and why. Link the issue it closes: "Closes #123".
+If someone upgrading needs to know about it or do something, say so here: it feeds the CHANGELOG. -->
 
 ## How it was tested
 
