@@ -74,7 +74,7 @@ class Cerne < Formula
   end
 
   test do
-    # cerne --version prints MAJOR.MINOR ("cerne 0.10").
+    # cerne --version prints the full version; the MAJOR.MINOR match also accepts binaries before 0.14.1 (exact check: release.yml brew-check).
     assert_match "cerne #{version.major_minor}", shell_output("#{bin}/cerne --version")
   end
 end

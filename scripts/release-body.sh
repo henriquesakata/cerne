@@ -34,7 +34,7 @@ On Windows, run the install script again in PowerShell:
 irm https://raw.githubusercontent.com/henriquesakata/cerne/main/install.ps1 | iex
 \`\`\`
 
-Then run \`cerne --version\` (it prints MAJOR.MINOR) and follow this version's Upgrading section above. Details: [INSTALL.md](https://github.com/$repo/blob/$tag/INSTALL.md#updating).
+Then run \`cerne --version\` (it prints the version, without the leading v) and follow this version's Upgrading section above. Details: [INSTALL.md](https://github.com/$repo/blob/$tag/INSTALL.md#updating).
 
 ## Install
 
