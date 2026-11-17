@@ -77,6 +77,11 @@ func projectProse(l doclang.Lang, prompt string) string {
 		forms = append(forms, doclang.Sections(k, l)...)
 	}
 	forms = append(forms, doclang.AmbiguityMarker(l))
+	// The free text doclang hands the model to copy (the Gauntlet examples, the
+	// roast words) is the document's language, not the prompt's.
+	ex := doclang.Examples(l)
+	forms = append(forms, ex.Method, ex.Exit, ex.BarExample, ex.Alternative, ex.Parallel, ex.Severities, ex.NoFindings,
+		ex.Covered, ex.Uncovered, ex.WhereIs, ex.HowToAdjust, ex.SourcesRead)
 	// Longest first: a heading is stripped whole before the words inside it.
 	sort.Slice(forms, func(i, j int) bool { return len(forms[i]) > len(forms[j]) })
 	for _, f := range forms {
