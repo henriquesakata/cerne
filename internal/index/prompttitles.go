@@ -27,6 +27,16 @@ var promptStopwords = map[string]bool{
 	"after": true, "before": true, "but": true, "its": true, "it": true, "me": true, "we": true,
 }
 
+const (
+	// promptWindow is how much of a prompt is read, in runes: the question
+	// sits in the first lines, and what follows is usually a pasted log or
+	// code whose every word would otherwise match some title by chance.
+	promptWindow = 500
+	// pasteTerms is the number of significant terms above which the prompt
+	// is a paste, not a question: a title must then be (almost) all there.
+	pasteTerms = 15
+)
+
 // stemSet is the folded, stemmed significant terms of text.
 func stemSet(text string) map[string]bool {
 	set := map[string]bool{}
@@ -47,6 +57,9 @@ func stemSet(text string) map[string]bool {
 // short busy timeout; a missing index yields nil, nil. Nothing is written or
 // rebuilt.
 func PromptTitles(ctx context.Context, dbPath, prompt string, limit int) ([]TitleHit, error) {
+	if r := []rune(prompt); len(r) > promptWindow {
+		prompt = string(r[:promptWindow])
+	}
 	want := stemSet(prompt)
 	if len(want) < 2 || limit <= 0 {
 		return nil, nil
@@ -64,7 +77,7 @@ func PromptTitles(ctx context.Context, dbPath, prompt string, limit int) ([]Titl
 	}
 	defer db.Close()
 	rows, err := db.QueryContext(ctx,
-		`SELECT DISTINCT entity_id, kind, title FROM docs WHERE kind IN ('note','runbook') AND state = 'active' LIMIT 5000`)
+		`SELECT DISTINCT entity_id, kind, title FROM docs WHERE kind IN ('note','runbook') AND state = 'active' ORDER BY entity_id LIMIT 5000`)
 	if err != nil {
 		return nil, wrapBusy(err)
 	}
@@ -74,11 +87,16 @@ func PromptTitles(ctx context.Context, dbPath, prompt string, limit int) ([]Titl
 		matched, all int
 	}
 	var found []scored
+	listed := map[string]bool{}
 	for rows.Next() {
 		var id, kind, title string
 		if err := rows.Scan(&id, &kind, &title); err != nil {
 			return nil, wrapBusy(err)
 		}
+		if listed[id] {
+			continue
+		}
+		listed[id] = true
 		terms := stemSet(title)
 		matched := 0
 		for t := range terms {
@@ -86,7 +104,11 @@ func PromptTitles(ctx context.Context, dbPath, prompt string, limit int) ([]Titl
 				matched++
 			}
 		}
-		if len(terms) >= 2 && matched >= 2 && matched*2 >= len(terms) {
+		enough := matched*2 >= len(terms)
+		if len(want) > pasteTerms {
+			enough = matched >= 3 && matched*4 >= len(terms)*3
+		}
+		if len(terms) >= 2 && matched >= 2 && enough {
 			found = append(found, scored{TitleHit{id, title}, matched, len(terms)})
 		}
 	}
