@@ -43,11 +43,7 @@ jobs:
             printf '## Install\n\nCross-compiled binaries (linux and darwin amd64/arm64, windows amd64) and `SHA256SUMS`. See [INSTALL.md](https://github.com/%s/blob/%s/INSTALL.md).\n\n' "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME"
             printf '## Verify\n\nEvery file carries a signed provenance attestation:\n\n```sh\ngh attestation verify <file> --repo %s\n```\n' "$GITHUB_REPOSITORY"
           } >"$notes"
-          pre=
-          case "$GITHUB_REF_NAME" in *-*) pre=--prerelease ;; esac
-          gh release create "$GITHUB_REF_NAME" dist/* \
-            --title "cerne $GITHUB_REF_NAME" \
-            --notes-file "$notes" $pre
+          sh scripts/release-publish.sh "$GITHUB_REF_NAME" "$notes" dist/*
       # The workflow token cannot write to another repository: HOMEBREW_TAP_TOKEN
       # is a fine-grained token with contents:write on henriquesakata/homebrew-tap
       # only. Without it the job fails, so a stale tap never passes in silence.
