@@ -37,7 +37,7 @@ func AmbiguityMarker(l Lang) string {
 // a Term of the bar protocol: the names the prompt cannot say in its own
 // language. Everything the Term vocabulary has comes from Display.
 var directiveForms = map[Lang]struct {
-	name, question, ears, labels, met, unknown string
+	name, question, ears, labels, met, unknown, effort, human string
 }{
 	PT: {
 		name:     "Brazilian Portuguese (pt-BR)",
@@ -47,6 +47,8 @@ var directiveForms = map[Lang]struct {
 			"**Spec:**, **Branch:**, **Saída (Gauntlet):**, **Data:**, **Agente:**, **Dono:**",
 		met:     "ATENDIDO",
 		unknown: "desconhecido",
+		effort:  "esforço",
+		human:   "humano",
 	},
 	EN: {
 		name:     "English",
@@ -56,6 +58,8 @@ var directiveForms = map[Lang]struct {
 			"**Spec:**, **Branch:**, **Exit (Gauntlet):**, **Date:**, **Agent:**, **Owner:**",
 		met:     "MET",
 		unknown: "unknown",
+		effort:  "effort",
+		human:   "human",
 	},
 }
 
@@ -77,7 +81,7 @@ func Directive(l Lang) string {
 	b.WriteString("and write every protocol form below exactly as shown, never translated into another language:\n")
 	fmt.Fprintf(&b, "- ambiguity marker: %s %s]\n", AmbiguityMarker(l), f.question)
 	fmt.Fprintf(&b, "- behaviour criteria (EARS): %s;\n", f.ears)
-	fmt.Fprintf(&b, "- metadata labels: %s; an unknown value is %q;\n", f.labels, f.unknown)
+	fmt.Fprintf(&b, "- metadata labels: %s; an unknown value is %q; the agent line reads \"<model id> · %s <level>\" or %q;\n", f.labels, f.unknown, f.effort, f.human)
 	fmt.Fprintf(&b, "- Gauntlet: \"%s:\", \"%s:\", \"%s:\"; the exemptions \"%s: %s (<justification>)\" and \"%s: %s (<quote>)\"; ",
 		d(BarLabel), d(MethodLabel), d(ExitLabel), d(BarLabel), d(NotApplicable), d(BarLabel), d(Waived))
 	fmt.Fprintf(&b, "a round line of the form: %s N — %s|%s|%s: \"<quote of the judge>\"; \"%s:\";\n",

@@ -23,6 +23,9 @@ func TestDirective_QuotesTheFormsOfItsLanguage(t *testing.T) {
 				t.Errorf("Directive(%s) does not quote %q", l, w)
 			}
 		}
+		if w := map[Lang]string{PT: "esforço", EN: "effort"}[l]; !strings.Contains(d, "· "+w+" <level>") {
+			t.Errorf("Directive(%s) does not quote the agent line with %q", l, w)
+		}
 		if !strings.Contains(d, AmbiguityMarker(l)) {
 			t.Errorf("Directive(%s) does not quote the ambiguity marker", l)
 		}
@@ -93,6 +96,19 @@ func TestReply_NamesTheLanguage(t *testing.T) {
 		}
 		if strings.Contains(r, "SYSTEM SHALL") || strings.Contains(r, AmbiguityMarker(l)) {
 			t.Errorf("Reply(%s) carries document forms: %q", l, r)
+		}
+	}
+}
+
+// The alternative stop standard that follows a "not applicable" bar is a form
+// of the document too: the contract quotes it in the project's language.
+func TestDisplay_AlternativeStandard(t *testing.T) {
+	for l, want := range map[Lang]string{PT: "padrão alternativo", EN: "alternative standard"} {
+		if got := Display(AlternativeStandard, l); got != want {
+			t.Errorf("Display(AlternativeStandard, %s) = %q want %q", l, got, want)
+		}
+		if !Is(AlternativeStandard, want) {
+			t.Errorf("Is(AlternativeStandard, %q) = false", want)
 		}
 	}
 }
