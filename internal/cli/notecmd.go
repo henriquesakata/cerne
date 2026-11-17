@@ -277,6 +277,14 @@ func runNoteShow(cmd *cobra.Command, dir, id string) error {
 		return fmt.Errorf("note %s body: %w", id, err)
 	}
 	fmt.Fprintf(w, "\n%s\n", strings.TrimRight(body, "\n"))
+	// B-0012: the same errata block the generic show prints.
+	er, err := store.LoadErrata(ctx.repoDir, id)
+	if err != nil {
+		return fmt.Errorf("note %s errata: %w", id, err)
+	}
+	if eb := strings.TrimSpace(string(stripLeadingFrontmatter([]byte(er)))); eb != "" {
+		fmt.Fprintf(w, "\n## errata\n%s\n", eb)
+	}
 	return nil
 }
 

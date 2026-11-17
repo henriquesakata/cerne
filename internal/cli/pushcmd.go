@@ -341,7 +341,7 @@ func collectChangedDocs(repoDir, docsDir string, manifest map[string]string) ([]
 				return nil
 			}
 		}
-		docs = append(docs, pushedDoc{rel: rel, backendRel: backendRel, body: body, sum: sum})
+		docs = append(docs, pushedDoc{rel: rel, backendRel: backendRel, body: store.StripErrataBlock(body), sum: sum})
 		return nil
 	})
 	if err != nil {
@@ -473,9 +473,10 @@ func parseCerneID(data []byte) string {
 }
 
 // sha256Hex returns the sha256 hex digest of body, matching the manifest
-// hashes written by materialize.
+// hashes written by materialize. The generated errata block (B-0012) is not
+// part of the body: it is derived, never a local edit.
 func sha256Hex(body []byte) string {
-	sum := sha256.Sum256(body)
+	sum := sha256.Sum256(store.StripErrataBlock(body))
 	return hex.EncodeToString(sum[:])
 }
 

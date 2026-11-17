@@ -534,7 +534,12 @@ func copyFeatureDocs(repoDir, docsDir string, f store.Feature, okf bool, manifes
 			body = okfFrontmatter(okfMeta{Type: docType, Title: f.Title, Timestamp: okfTime(f.UpdatedAt)}, body)
 		}
 		rel := "current/features/" + dirName + "/" + filename
-		sum, err := writeFile(docsDir, rel, body)
+		var sum string
+		if filename == "spec.md" {
+			sum, err = writeWithErrata(repoDir, docsDir, rel, f.ID, false, body)
+		} else {
+			sum, err = writeFile(docsDir, rel, body)
+		}
 		if err != nil {
 			return "", err
 		}
@@ -622,7 +627,7 @@ func copyEntry(repoDir, docsDir, kind, id, title string, manifest map[string]str
 		body = okfFrontmatter(meta, body)
 	}
 	rel := "current/" + kind + "/" + entryName(id, title) + ".md"
-	sum, err := writeFile(docsDir, rel, body)
+	sum, err := writeWithErrata(repoDir, docsDir, rel, id, kind == "runbooks", body)
 	if err != nil {
 		return "", err
 	}
@@ -731,6 +736,38 @@ func writeFile(docsDir, rel string, body []byte) (string, error) {
 		return "", err
 	}
 	if err := os.WriteFile(path, body, 0o644); err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(body)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+// writeWithErrata writes body with the entity's errata appended as a generated
+// block (B-0012) and returns the manifest hash of the body ALONE: the block is
+// derived from the backend, so it is never a local edit, and push strips it.
+// Runbook items already folded into the body show as one line (F-0351).
+func writeWithErrata(repoDir, docsDir, rel, id string, runbook bool, body []byte) (string, error) {
+	er, err := store.LoadErrata(repoDir, id)
+	if err != nil {
+		return "", err
+	}
+	var merged func(store.ErrataItem) string
+	if runbook {
+		merged = func(it store.ErrataItem) string {
+			l := it.ID + " merged"
+			var rev int
+			if _, err := fmt.Sscanf(it.Merged, "revisão %d", &rev); err == nil && rev > 0 {
+				l += fmt.Sprintf(" into revision %d", rev)
+			}
+			l += " — shown in the body"
+			if it.Target != "" {
+				l += " under " + it.Target
+			}
+			return l
+		}
+	}
+	block := store.ErrataBlock(string(stripFrontmatter([]byte(er))), merged)
+	if _, err := writeFile(docsDir, rel, append(append([]byte{}, body...), block...)); err != nil {
 		return "", err
 	}
 	sum := sha256.Sum256(body)

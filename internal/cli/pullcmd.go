@@ -161,14 +161,22 @@ func runPull(cmd *cobra.Command, dir, scope string, okfFlag, force, syncSkillsFl
 	if err := index.Rebuild(ctx.repoDir, dbPath, time.Now()); err != nil {
 		return err
 	}
-	nFeatures, nDecisions, nReferences := countManifest(manifest)
+	nFeatures, nDecisions, nReferences, nNotes, nRunbooks := countManifest(manifest)
+	// notes and runbooks join the line only when there are some (B-0012)
+	extra := ""
+	if nNotes > 0 {
+		extra += fmt.Sprintf(", %d note(s)", nNotes)
+	}
+	if nRunbooks > 0 {
+		extra += fmt.Sprintf(", %d runbook(s)", nRunbooks)
+	}
 	snap := head
 	if len(snap) > 8 {
 		snap = snap[:8]
 	}
 	fmt.Fprintf(cmd.OutOrStdout(),
-		"Materialized: %d feature(s), %d decision(s), %d reference(s) into .docs/ (snapshot %s).\n",
-		nFeatures, nDecisions, nReferences, snap)
+		"Materialized: %d feature(s), %d decision(s), %d reference(s)%s into .docs/ (snapshot %s).\n",
+		nFeatures, nDecisions, nReferences, extra, snap)
 	// Explain a known no-op instead of a mute "0 feature(s)": a scoped pull that
 	// materializes nothing usually means the module's features are implemented
 	// (concluded entities don't materialize — they are history).
@@ -263,7 +271,13 @@ func reapplyUnsent(docsDir string, prev, fresh map[string]string, mine map[strin
 		case theirsHash == mineHash:
 			// Coincidentally identical to the remote: leave theirs in place.
 		case theirsHash == baseHash:
-			// Remote did not touch this doc: keep my unsent edit.
+			// Remote did not touch this doc: keep my unsent edit, under the
+			// freshly generated errata block (B-0012).
+			theirs, err := os.ReadFile(filepath.Join(docsDir, filepath.FromSlash(rel)))
+			if err != nil {
+				return nil, err
+			}
+			body = append(append([]byte{}, store.StripErrataBlock(body)...), theirs[len(store.StripErrataBlock(theirs)):]...)
 			if err := writeDocsFile(docsDir, rel, body); err != nil {
 				return nil, err
 			}
@@ -320,9 +334,9 @@ func reportPullConflicts(cmd *cobra.Command, conflicts []string) error {
 }
 
 // countManifest derives the summary counts from the manifest paths:
-// features count distinct current/features/<dir>/ entries, decisions and
-// references count one file each.
-func countManifest(manifest map[string]string) (features, decisions, references int) {
+// features count distinct current/features/<dir>/ entries, the other kinds
+// count one file each.
+func countManifest(manifest map[string]string) (features, decisions, references, notes, runbooks int) {
 	featureDirs := map[string]bool{}
 	for rel := range manifest {
 		switch {
@@ -335,9 +349,13 @@ func countManifest(manifest map[string]string) (features, decisions, references 
 			decisions++
 		case strings.HasPrefix(rel, "current/references/"):
 			references++
+		case strings.HasPrefix(rel, "current/notes/"):
+			notes++
+		case strings.HasPrefix(rel, "current/runbooks/"):
+			runbooks++
 		}
 	}
-	return len(featureDirs), decisions, references
+	return len(featureDirs), decisions, references, notes, runbooks
 }
 
 // unpushedDocs returns the .docs/current/**.md paths whose content diverges from
