@@ -112,3 +112,26 @@ func TestDisplay_AlternativeStandard(t *testing.T) {
 		}
 	}
 }
+
+// The forms of the Backlog chat are quoted from the catalog in both languages.
+func TestDisplay_ChatForms(t *testing.T) {
+	for _, c := range []struct {
+		t      Term
+		pt, en string
+	}{
+		{Recommended, "recomendada", "recommended"},
+		{OriginAccepted, "recomendação aceita", "recommendation accepted"},
+		{OriginOther, "outra opção", "other option"},
+		{OriginFree, "resposta livre do usuário", "user's free answer"},
+		{Assumed, "Assumi:", "Assumed:"},
+		{TreeProgress, "Árvore: <n> resolvidas · <n> abertas · <n> suposições", "Tree: <n> resolved · <n> open · <n> assumptions"},
+		{ProposeNow, "propõe já", "propose now"},
+	} {
+		if got := Display(c.t, PT); got != c.pt {
+			t.Errorf("Display(%d, PT) = %q want %q", c.t, got, c.pt)
+		}
+		if got := Display(c.t, EN); got != c.en {
+			t.Errorf("Display(%d, EN) = %q want %q", c.t, got, c.en)
+		}
+	}
+}

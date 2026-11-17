@@ -278,6 +278,17 @@ const (
 	JudgeQuestionLabel
 	// AlternativeStandard follows a "not applicable" bar: "— padrão alternativo: <test>".
 	AlternativeStandard
+	// The forms of the Backlog chat (F-0447): the mark that closes the
+	// recommended option of a question card, the three origins a decision
+	// recorded in the spec carries, and the lines the interview protocol has
+	// the analyst write or the user say.
+	Recommended
+	OriginAccepted
+	OriginOther
+	OriginFree
+	Assumed
+	TreeProgress
+	ProposeNow
 	numTerms
 )
 
@@ -316,6 +327,13 @@ var terms = map[Term]map[Lang]form{
 	NextStepLabel:       {PT: {`Pr(?:ó|o\x{0301}|o)ximo passo`, "Próximo passo"}, EN: {`Next step`, "Next step"}},
 	LogLabel:            {PT: {`Di(?:á|a\x{0301}|a)rio de decis(?:õ|o\x{0303}|o)es`, "Diário de decisões"}, EN: {`Decision log`, "Decision log"}},
 	JudgeQuestionLabel:  {PT: {`Pergunta ao juiz`, "Pergunta ao juiz"}, EN: {`Question for the judge`, "Question for the judge"}},
+	Recommended:         {PT: {`recomendada`, "recomendada"}, EN: {`recommended`, "recommended"}},
+	OriginAccepted:      {PT: {`recomenda(?:ç|c)(?:ã|a)o aceita`, "recomendação aceita"}, EN: {`recommendation accepted`, "recommendation accepted"}},
+	OriginOther:         {PT: {`outra op(?:ç|c)(?:ã|a)o`, "outra opção"}, EN: {`other option`, "other option"}},
+	OriginFree:          {PT: {`resposta livre do usu(?:á|a)rio`, "resposta livre do usuário"}, EN: {`user's free answer`, "user's free answer"}},
+	Assumed:             {PT: {`Assumi`, "Assumi:"}, EN: {`Assumed`, "Assumed:"}},
+	TreeProgress:        {PT: {`[ÁA]rvore`, "Árvore: <n> resolvidas · <n> abertas · <n> suposições"}, EN: {`Tree`, "Tree: <n> resolved · <n> open · <n> assumptions"}},
+	ProposeNow:          {PT: {`prop(?:õ|o)e j(?:á|a)`, "propõe já"}, EN: {`propose now`, "propose now"}},
 	AlternativeStandard: {PT: {`padr(?:ã|a\x{0303}|a)o alternativo`, "padrão alternativo"}, EN: {`alternative standard`, "alternative standard"}},
 }
 
