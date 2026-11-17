@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -663,12 +664,18 @@ func findConfigDir(startDir string) (string, error) {
 		return rootFromEnv(startDir)
 	}
 	if os.Getenv("CERNE_ROOT") == "" {
+		if crossed.sameRepo() {
+			return crossed.ProjectDir, nil
+		}
 		return "", err
 	}
 	// A CERNE_ROOT without .cernerc keeps the boundary refusal, which names
 	// the git root and the project above.
 	root, envErr := rootFromEnv(startDir)
 	if errors.Is(envErr, ErrNoProject) {
+		if crossed.sameRepo() {
+			return crossed.ProjectDir, nil
+		}
 		return "", err
 	}
 	return root, envErr
@@ -680,6 +687,52 @@ func findConfigDir(startDir string) (string, error) {
 func FoundByWalk(startDir string) bool {
 	_, err := walkToConfigDir(startDir)
 	return err == nil
+}
+
+// LinkedWorktreeProject is the project the walk from startDir resolved by
+// leaving a linked worktree of the same repository for the checkout that holds
+// the .cernerc (B-0016); "" otherwise. The CLI announces it on stderr.
+func LinkedWorktreeProject(startDir string) string {
+	_, err := walkToConfigDir(startDir)
+	var crossed *crossedGitRootError
+	if errors.As(err, &crossed) && crossed.sameRepo() {
+		return crossed.ProjectDir
+	}
+	return ""
+}
+
+// sameRepo reports whether the crossed git root is a linked worktree of the
+// repository holding the .cernerc (B-0016): same git common dir, compared
+// absolute and symlink-free. Clones and submodules have their own common dir.
+// Only runs on the path that would refuse; no git or any failure means no.
+func (e *crossedGitRootError) sameRepo() bool {
+	a, b := gitCommonDir(e.GitRoot), gitCommonDir(e.ProjectDir)
+	return a != "" && a == b
+}
+
+func gitCommonDir(dir string) string {
+	cmd := exec.Command("git", "-C", dir, "rev-parse", "--git-common-dir")
+	// Inside a git hook these point at the outer repository and override -C,
+	// which would make every repository look like the same one.
+	for _, kv := range os.Environ() {
+		switch name, _, _ := strings.Cut(kv, "="); name {
+		case "GIT_DIR", "GIT_COMMON_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_NAMESPACE":
+		default:
+			cmd.Env = append(cmd.Env, kv)
+		}
+	}
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	p := strings.TrimSpace(string(out))
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(dir, p)
+	}
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+	return ""
 }
 
 // walkToConfigDir walks up from startDir to the nearest .cernerc. It records
