@@ -663,16 +663,19 @@ func findConfigDir(startDir string) (string, error) {
 	if !errors.As(err, &crossed) {
 		return rootFromEnv(startDir)
 	}
-	if crossed.sameRepo() {
-		return crossed.ProjectDir, nil
-	}
 	if os.Getenv("CERNE_ROOT") == "" {
+		if crossed.sameRepo() {
+			return crossed.ProjectDir, nil
+		}
 		return "", err
 	}
 	// A CERNE_ROOT without .cernerc keeps the boundary refusal, which names
 	// the git root and the project above.
 	root, envErr := rootFromEnv(startDir)
 	if errors.Is(envErr, ErrNoProject) {
+		if crossed.sameRepo() {
+			return crossed.ProjectDir, nil
+		}
 		return "", err
 	}
 	return root, envErr
@@ -683,8 +686,7 @@ func findConfigDir(startDir string) (string, error) {
 // CERNE_ROOT, including one at a git boundary inside the project (F-0372).
 func FoundByWalk(startDir string) bool {
 	_, err := walkToConfigDir(startDir)
-	var crossed *crossedGitRootError
-	return err == nil || (errors.As(err, &crossed) && crossed.sameRepo())
+	return err == nil
 }
 
 // LinkedWorktreeProject is the project the walk from startDir resolved by
@@ -709,7 +711,17 @@ func (e *crossedGitRootError) sameRepo() bool {
 }
 
 func gitCommonDir(dir string) string {
-	out, err := exec.Command("git", "-C", dir, "rev-parse", "--git-common-dir").Output()
+	cmd := exec.Command("git", "-C", dir, "rev-parse", "--git-common-dir")
+	// Inside a git hook these point at the outer repository and override -C,
+	// which would make every repository look like the same one.
+	for _, kv := range os.Environ() {
+		switch name, _, _ := strings.Cut(kv, "="); name {
+		case "GIT_DIR", "GIT_COMMON_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_NAMESPACE":
+		default:
+			cmd.Env = append(cmd.Env, kv)
+		}
+	}
+	out, err := cmd.Output()
 	if err != nil {
 		return ""
 	}

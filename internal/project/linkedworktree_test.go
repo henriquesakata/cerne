@@ -59,9 +59,6 @@ func TestFindConfig_LinkedWorktreeBeforeInit(t *testing.T) {
 		if p := LinkedWorktreeProject(from); p != repo {
 			t.Fatalf("LinkedWorktreeProject(%s) = %q, want %q", from, p, repo)
 		}
-		if !FoundByWalk(from) {
-			t.Fatalf("FoundByWalk(%s) = false", from)
-		}
 	}
 	if p := LinkedWorktreeProject(repo); p != "" {
 		t.Fatalf("main checkout reported as linked worktree: %q", p)
@@ -97,5 +94,80 @@ func TestFindConfig_CloneAndSubmoduleStillRefused(t *testing.T) {
 	}
 	if p := LinkedWorktreeProject(sub); p != "" {
 		t.Fatalf("submodule reported as linked worktree: %q", p)
+	}
+}
+
+// B-0016 critic 1: inside a git hook GIT_DIR points at the outer repository
+// and overrides -C; a clone must still be refused.
+func TestFindConfig_GitDirEnvDoesNotBypassGuard(t *testing.T) {
+	isolateLookup(t)
+	repo, _ := repoWithLateCerncerc(t)
+	clone := filepath.Join(repo, "examples", "clone")
+	mkdirs(t, clone)
+	git(t, clone, "init", "-q")
+	t.Setenv("GIT_DIR", filepath.Join(repo, ".git"))
+	t.Setenv("GIT_WORK_TREE", repo)
+	if _, err := findConfigDir(clone); !errors.Is(err, ErrNoProject) {
+		t.Fatalf("want ErrNoProject under GIT_DIR, got %v", err)
+	}
+}
+
+// B-0016 critic 2: CERNE_ROOT is an explicit request and wins over the
+// worktree resolution.
+func TestFindConfig_CerneRootBeatsLinkedWorktree(t *testing.T) {
+	isolateLookup(t)
+	repo, old := repoWithLateCerncerc(t)
+	wt := filepath.Join(repo, ".claude", "worktrees", "wt1")
+	git(t, repo, "worktree", "add", "-q", "-b", "wt1", wt, old)
+	other := filepath.Join(t.TempDir(), "other")
+	mkProject(t, other, "o")
+	t.Setenv("CERNE_ROOT", other)
+	got, err := findConfigDir(wt)
+	if err != nil || got != other {
+		t.Fatalf("got (%q, %v), want %q", got, err, other)
+	}
+	// A CERNE_ROOT without .cernerc does not hide the worktree's project.
+	t.Setenv("CERNE_ROOT", t.TempDir())
+	if got, err := findConfigDir(wt); err != nil || got != repo {
+		t.Fatalf("invalid CERNE_ROOT: got (%q, %v), want %q", got, err, repo)
+	}
+}
+
+// B-0016 critic 3: a project in a subdirectory of the repository (monorepo)
+// is the same repository for a worktree made inside that subdirectory.
+func TestFindConfig_MonorepoSubdirProject(t *testing.T) {
+	isolateLookup(t)
+	repo := t.TempDir()
+	if r, err := filepath.EvalSymlinks(repo); err == nil {
+		repo = r
+	}
+	git(t, repo, "init", "-q")
+	if err := os.WriteFile(filepath.Join(repo, "a"), []byte("a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, repo, "add", "a")
+	git(t, repo, "commit", "-q", "-m", "old")
+	proj := filepath.Join(repo, "sub")
+	mkProject(t, proj, "p")
+	git(t, repo, "add", "sub/.cernerc")
+	git(t, repo, "commit", "-q", "-m", "init")
+	wt := filepath.Join(proj, "wt")
+	git(t, repo, "worktree", "add", "-q", "-b", "wt", wt, "HEAD~1")
+	if got, err := findConfigDir(wt); err != nil || got != proj {
+		t.Fatalf("got (%q, %v), want %q", got, err, proj)
+	}
+}
+
+// B-0016 critic 3: a bare main repository with a linked worktree has no
+// .cernerc anywhere: plain refusal.
+func TestFindConfig_BareRepoWorktreeRefused(t *testing.T) {
+	isolateLookup(t)
+	src, _ := repoWithLateCerncerc(t)
+	bare := filepath.Join(t.TempDir(), "bare.git")
+	git(t, src, "clone", "-q", "--bare", src, bare)
+	wt := filepath.Join(t.TempDir(), "wt")
+	git(t, bare, "worktree", "add", "-q", wt, "HEAD~1")
+	if _, err := findConfigDir(wt); !errors.Is(err, ErrNoProject) {
+		t.Fatalf("want ErrNoProject, got %v", err)
 	}
 }

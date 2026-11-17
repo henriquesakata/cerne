@@ -134,7 +134,7 @@ func refuseProjectlessDir(cmd *cobra.Command) error {
 // and not by walking up from startDir (F-0876), so adopting the variable is
 // never silent — also inside projDir, past a nested git root (F-0372).
 func noteCerneRoot(startDir, projDir string) {
-	if p := project.LinkedWorktreeProject(startDir); p != "" {
+	if p := project.LinkedWorktreeProject(startDir); p != "" && p == projDir {
 		if abs, err := filepath.Abs(startDir); err == nil {
 			fmt.Fprintf(os.Stderr, "cerne: no .cernerc in this worktree (%s); using the project of its main checkout at %s\n", abs, p)
 		}
