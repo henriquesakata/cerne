@@ -337,13 +337,6 @@ func readRunbookCurrent(repoDir, id string) string {
 // verification, rollback and escalation, the ambiguity marker, and
 // right-sizing.
 func BuildRunbookDraftPrompt(l doclang.Lang, rb store.Runbook, currentContent string) string {
-	const (
-		secWhen      = 0
-		secPrereq    = 1
-		secProcedure = 2
-		secVerify    = 3
-		secRollback  = 4
-	)
 	var b strings.Builder
 	b.WriteString("You are writing a software runbook (an actionable operational procedure).\n\n")
 	b.WriteString("Runbook:\n")
@@ -356,9 +349,9 @@ func BuildRunbookDraftPrompt(l doclang.Lang, rb store.Runbook, currentContent st
 	b.WriteString("Write a COMPLETE, actionable runbook, in Markdown, with exactly these sections in this order:\n")
 	writeSections(&b, doclang.Runbook, l)
 	b.WriteString("\nAuthoring rules:\n")
-	b.WriteString("- In " + heading(doclang.Runbook, l, secWhen) + ", make the trigger/symptoms clear so the reader confirms in seconds that this is the right runbook.\n")
-	b.WriteString("- In " + heading(doclang.Runbook, l, secProcedure) + ", numbered steps, action first, copyable commands, each with its EXPECTED OUTPUT (\"you should see: X\").\n")
-	b.WriteString("- Include " + heading(doclang.Runbook, l, secPrereq) + " (access/tools/state), " + heading(doclang.Runbook, l, secVerify) + " (how to confirm success) and " + heading(doclang.Runbook, l, secRollback) + " (how to undo + whom to escalate to).\n")
+	b.WriteString("- In " + heading(doclang.Runbook, l, "When to use") + ", make the trigger/symptoms clear so the reader confirms in seconds that this is the right runbook.\n")
+	b.WriteString("- In " + heading(doclang.Runbook, l, "Procedure") + ", numbered steps, action first, copyable commands, each with its EXPECTED OUTPUT (\"you should see: X\").\n")
+	b.WriteString("- Include " + heading(doclang.Runbook, l, "Prerequisites") + " (access/tools/state), " + heading(doclang.Runbook, l, "Verification") + " (how to confirm success) and " + heading(doclang.Runbook, l, "Rollback and troubleshooting") + " (how to undo + whom to escalate to).\n")
 	b.WriteString("- Mark any uncertainty with the ambiguity marker instead of guessing.\n")
 	b.WriteString("- Size by the task: a simple runbook has short sections; \"N/A\" where it does not apply. Do not inflate.\n\n")
 	b.WriteString("Do not include frontmatter (cerne stamps the cerne_id). " + app.DraftOutputContract + "\n")

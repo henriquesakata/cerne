@@ -131,10 +131,6 @@ func BuildPlanDraftPrompt(l doclang.Lang, f store.Feature, specContent, currentC
 	if module == "" {
 		module = "(no module)"
 	}
-	const (
-		secDeps = 2
-		secDone = 5
-	)
 	var b strings.Builder
 	b.WriteString("You are writing the EXECUTION PLAN of a software feature (the spec is already approved).\n\n")
 	b.WriteString("Feature:\n")
@@ -154,7 +150,7 @@ func BuildPlanDraftPrompt(l doclang.Lang, f store.Feature, specContent, currentC
 		for _, c := range children {
 			fmt.Fprintf(&b, "- %s (%s) — state: %s\n", c.ID, c.Title, c.State)
 		}
-		b.WriteString("In the " + heading(doclang.Plan, l, secDeps) + " section, include an execution map in the canonical format — one line " +
+		b.WriteString("In the " + heading(doclang.Plan, l, "Dependencies and order") + " section, include an execution map in the canonical format — one line " +
 			"per stage, children of the same stage are parallel (the words Etapa and paralelas are parsed, keep them exactly):\n")
 		b.WriteString("  Etapa 1: T-0001 (title)\n  Etapa 2 (paralelas): T-0002 (title) · T-0003 (title)\n")
 		b.WriteString("Justify the chosen order and parallelism.\n\n")
@@ -166,7 +162,7 @@ func BuildPlanDraftPrompt(l doclang.Lang, f store.Feature, specContent, currentC
 	b.WriteString("- Break the work into small, ORDERED tasks; each task leaves the repository green. Per task: real files (create/edit/remove), test first (TDD), verification (command → expected output) citing the number of the spec criterion, and the exact Conventional Commit message. Mark " + doclang.Examples(l).Parallel + " when a task is independent.\n")
 	b.WriteString("- Size by the work: a trivial change (<=3 files) fits in a single task; sections that do not apply become one line (\"N/A\"). Do not inflate the plan.\n")
 	b.WriteString("- Mark any uncertainty with the ambiguity marker instead of guessing.\n")
-	b.WriteString("- " + heading(doclang.Plan, l, secDone) + " is a binary checklist (met/unmet marks of the language note) with file:line evidence: each spec criterion with an implementation and a test that proves it.\n\n")
+	b.WriteString("- " + heading(doclang.Plan, l, "Definition of done") + " is a binary checklist (met/unmet marks of the language note) with file:line evidence: each spec criterion with an implementation and a test that proves it.\n\n")
 	b.WriteString("Use the title, module and spec above as context. Do not include frontmatter (cerne stamps the cerne_id). ")
 	b.WriteString(app.DraftOutputContract + "\n")
 	b.WriteString(doclang.Directive(l))

@@ -887,18 +887,6 @@ func TestChatEnglishExamplesRoundTrip(t *testing.T) {
 	}
 }
 
-// TestChatSectionIndexes (F-0433): the named section indexes point at the
-// sections they claim in both languages.
-func TestChatSectionIndexes(t *testing.T) {
-	for _, l := range doclang.Langs() {
-		s := doclang.Sections(doclang.Spec, l)
-		if !doclang.IsSection(doclang.Spec, secProblem, s[secProblem]) || !doclang.IsSection(doclang.Spec, secDesign, s[secDesign]) || !doclang.IsSection(doclang.Spec, secDecisions, s[secDecisions]) ||
-			!doclang.IsVerificationSection(s[secVerification]) || !doclang.IsSection(doclang.Spec, secExecution, s[secExecution]) {
-			t.Errorf("%s: section indexes drifted: %q", l, s)
-		}
-	}
-}
-
 // TestBuildChatSystemPrompt_PortugueseNoChannelUnchanged (F-0433 crit. 3):
 // the no-channel pt-BR prompt, byte for byte.
 func TestBuildChatSystemPrompt_PortugueseNoChannelUnchanged(t *testing.T) {
@@ -950,7 +938,7 @@ func TestBuildChatSystemPrompt_QuestionContract(t *testing.T) {
 	for _, l := range doclang.Langs() {
 		prompt := chatPromptIn(t, l)
 		d := func(t doclang.Term) string { return doclang.Display(t, l) }
-		design := doclang.Sections(doclang.Spec, l)[secDecisions]
+		design := doclang.Section(doclang.Spec, "Design decisions", l)
 		for _, want := range []string{
 			"\n````" + chatQuestionFence + "\n",
 			"# <question>",
@@ -983,7 +971,7 @@ func TestBuildChatSystemPrompt_QuestionContract(t *testing.T) {
 				t.Errorf("%s prompt carries the %s form %q", l, other, w)
 			}
 		}
-		if bad := doclang.Sections(doclang.Spec, other)[secDecisions]; bad != design && strings.Contains(prompt, bad) {
+		if bad := doclang.Section(doclang.Spec, "Design decisions", other); bad != design && strings.Contains(prompt, bad) {
 			t.Errorf("%s prompt carries the %s section %q", l, other, bad)
 		}
 	}
@@ -1123,7 +1111,7 @@ func TestGauntletContractFormsRoundTrip(t *testing.T) {
 		if len(bars) < 3 {
 			t.Fatalf("%s: want the example bar and both exemptions quoted, got %q", l, bars)
 		}
-		verification := doclang.Sections(doclang.Spec, l)[secVerification]
+		verification := doclang.Section(doclang.Spec, "Verification", l)
 		for _, bar := range bars {
 			body := []byte("# t\n\n## " + verification + "\n\n" + bar + "\n")
 			if got, err := doccheck.SpecBarIn(body, l); err != nil || !strings.HasPrefix(got, label+":") {

@@ -53,7 +53,7 @@ func TestBuildResultDraftPrompt(t *testing.T) {
 			// never invented — no record means an open clarification marker, which the
 			// complete gate then refuses (no bar line). The forms are the language's.
 			for _, want := range []string{
-				"never invent a round", "Gauntlet record",
+				"never invent a round", "a question naming what is missing",
 				"`" + doclang.Display(doclang.BarLabel, l) + ":`",
 				doclang.Display(doclang.Round, l) + " N",
 				"`" + doclang.Display(doclang.CriticFindings, l) + ":`",

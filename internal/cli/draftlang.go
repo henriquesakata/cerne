@@ -20,6 +20,6 @@ func writeSections(b *strings.Builder, k doclang.Kind, l doclang.Lang) {
 }
 
 // heading is section i of kind k in language l, quoted for an authoring rule.
-func heading(k doclang.Kind, l doclang.Lang, i int) string {
-	return `"` + doclang.Sections(k, l)[i] + `"`
+func heading(k doclang.Kind, l doclang.Lang, name string) string {
+	return `"` + doclang.Section(k, name, l) + `"`
 }

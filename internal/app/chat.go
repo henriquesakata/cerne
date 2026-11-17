@@ -73,7 +73,7 @@ const ChatGauntletMarker = "STOP STANDARD (Gauntlet protocol)"
 func GauntletContract(l doclang.Lang) string {
 	d := func(t doclang.Term) string { return doclang.Display(t, l) }
 	bar, method, exit := d(doclang.BarLabel)+":", d(doclang.MethodLabel)+":", d(doclang.ExitLabel)+":"
-	verification := doclang.Sections(doclang.Spec, l)[secVerification]
+	verification := doclang.Section(doclang.Spec, "Verification", l)
 	ex := doclang.Examples(l)
 	return ChatGauntletMarker + `
 
@@ -258,7 +258,7 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config, channel 
 		// F-0258: reading code to specify is not implementing — the role
 		// boundary below still forbids emitting code, diffs or step-by-step
 		// implementation plans.
-		b.WriteString("You may also READ the project's code (Read, Grep and Glob tools) to ground the " + sections[secProblem] + " and " + sections[secDesign] + " sections in real files — signatures, contracts and names verified, never assumed. ")
+		b.WriteString("You may also READ the project's code (Read, Grep and Glob tools) to ground the " + doclang.Section(doclang.Spec, "Problem", l) + " and " + doclang.Section(doclang.Spec, "Design", l) + " sections in real files — signatures, contracts and names verified, never assumed. ")
 		// F-0438: the analyst checks its own draft before emitting it.
 		b.WriteString("BEFORE emitting the proposal block, check the draft by passing the spec body on standard input: `cerne spec check <<'SPEC'` + the body + a line `SPEC` (it only reads, writes nothing; you have no write tool, so never use a file). It lists missing template sections and a missing or malformed bar line. Fix what it points out and run it again until it comes out clean; open clarifications are warnings, not errors. The server checks the emitted proposal again: your check is an effort, not the guarantee. ")
 		b.WriteString("At the end of the reply, cite the ids you consulted (e.g. \"Consulted: F-0132, D-0007\") and the files you read as path:line (e.g. \"internal/app/chat.go:131\"); if you consulted nothing, do not invent citations. ")
@@ -318,12 +318,12 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config, channel 
 		b.WriteString("## " + s + "\n")
 	}
 	b.WriteString("````\n\n")
-	b.WriteString("Really fill in the \"" + sections[secExecution] + "\" section (suggested model capability + tasks to keep together/separable) — leave no placeholder. ")
+	b.WriteString("Really fill in the \"" + doclang.Section(doclang.Spec, "Recommended execution (agent)", l) + "\" section (suggested model capability + tasks to keep together/separable) — leave no placeholder. ")
 	b.WriteString("Numbered, testable acceptance criteria; for behaviour use EARS, in the form given in the language note at the end. ")
 	b.WriteString("Mark any uncertainty with the ambiguity marker instead of guessing. ")
 	// F-0270: the fill instruction lives here, next to the template the model
 	// actually completes — the protocol block above explains, this line binds.
-	b.WriteString("In the \"" + sections[secVerification] + "\" section, include the lines of the " + ChatGauntletMarker + " — " + doclang.Display(doclang.BarLabel, l) + "/" + doclang.Display(doclang.MethodLabel, l) + "/" + doclang.Display(doclang.ExitLabel, l) + ", or one of the two recorded exemptions; a proposal without them is incomplete. ")
+	b.WriteString("In the \"" + doclang.Section(doclang.Spec, "Verification", l) + "\" section, include the lines of the " + ChatGauntletMarker + " — " + doclang.Display(doclang.BarLabel, l) + "/" + doclang.Display(doclang.MethodLabel, l) + "/" + doclang.Display(doclang.ExitLabel, l) + ", or one of the two recorded exemptions; a proposal without them is incomplete. ")
 	b.WriteString("Optionally add a line \"" + doclang.Display(doclang.JudgeQuestionLabel, l) + ": <the question the blind judge answers>\" under the bar. ")
 	b.WriteString("Outside this block, just talk — only produce it when ready for the user to confirm the registration.\n\n")
 	// F-0250 criteria 4/7: per-passage feedback comes back as a normal turn —
@@ -334,7 +334,7 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config, channel 
 	b.WriteString("When the user's turn brings quotations (lines starting with \"> \") cut from a proposal of yours, treat them as a request to revise those passages: locate each passage in your previous proposal and RE-EMIT the ")
 	fmt.Fprintf(&b, "````%s block IN FULL, already corrected. ", chatProposalFence)
 	b.WriteString("Do not describe the fix in prose, do not return only the changed passage and do not ask the user to rewrite the spec — the proposal is always re-emitted complete.\n\n")
-	b.WriteString(chatQuestionContract(l, sections[secDecisions]))
+	b.WriteString(chatQuestionContract(l, doclang.Section(doclang.Spec, "Design decisions", l)))
 	b.WriteString("\n\n")
 	b.WriteString(chatNoteContract)
 	b.WriteString("\n\n")
@@ -528,12 +528,3 @@ func BuildChatPrompt(system string, messages []ChatMessage) string {
 	b.WriteString("Agent:")
 	return b.String()
 }
-
-// Indexes into doclang.Sections(doclang.Spec, l); TestChatSectionIndexes pins them.
-const (
-	secProblem      = 0
-	secDecisions    = 2
-	secDesign       = 3
-	secVerification = 4
-	secExecution    = 5
-)

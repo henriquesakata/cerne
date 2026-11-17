@@ -185,6 +185,19 @@ func Sections(k Kind, l Lang) []string {
 	return append([]string(nil), list...)
 }
 
+// Section returns the heading of kind k in language l that is called name in
+// English — the key a prompt builder uses, so no code depends on a position in
+// the template. An English name the catalog does not have is a programmer
+// error: it panics, and every builder runs under the prompt guard.
+func Section(k Kind, name string, l Lang) string {
+	for i, en := range sections[k][EN] {
+		if en == name {
+			return Sections(k, l)[i]
+		}
+	}
+	panic("doclang: no " + name + " section in the template")
+}
+
 // Missing returns the sections of kind k that appear under none of their
 // headings in present, named in language l. A section counts as present under
 // any language's heading, so a document mixing languages is complete. Case

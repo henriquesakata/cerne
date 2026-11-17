@@ -109,10 +109,6 @@ func BuildResultDraftPrompt(l doclang.Lang, f store.Feature, specContent, planCo
 	if module == "" {
 		module = "(no module)"
 	}
-	const (
-		secAcceptance = 1
-		secGauntlet   = 5
-	)
 	d := func(t doclang.Term) string { return doclang.Display(t, l) }
 	var b strings.Builder
 	b.WriteString("You are writing the RESULT (delivery record) of a software feature.\n\n")
@@ -136,11 +132,11 @@ func BuildResultDraftPrompt(l doclang.Lang, f store.Feature, specContent, planCo
 	writeSections(&b, doclang.Result, l)
 	b.WriteString("\nAuthoring rules:\n")
 	b.WriteString("- Record what was DELIVERED, not what was planned.\n")
-	b.WriteString("- In " + heading(doclang.Result, l, secAcceptance) + ", verify each numbered spec criterion as met/unmet (the marks of the language note) with EVIDENCE (test name, file:line, numbers) — binary, 1:1, no \"looks done\".\n")
+	b.WriteString("- In " + heading(doclang.Result, l, "Acceptance") + ", verify each numbered spec criterion as met/unmet (the marks of the language note) with EVIDENCE (test name, file:line, numbers) — binary, 1:1, no \"looks done\".\n")
 	b.WriteString("- Show evidence, not assertion. Debts and deferred items become concrete follow-ups (a new feature/case), not an orphan TODO.\n")
 	b.WriteString("- Mark any uncertainty with the ambiguity marker instead of guessing.\n")
-	b.WriteString("- Size by the work: a small delivery has short sections; \"N/A\" where it does not apply (never in the " + heading(doclang.Result, l, secGauntlet) + " section). Do not inflate.\n")
-	b.WriteString("- In the " + heading(doclang.Result, l, secGauntlet) + " section, transcribe only the real record of the loop found in the current content or in the plan: the `" + d(doclang.BarLabel) + ":` line, one line `" + d(doclang.Round) + " N — <verdict>: \"<quote of the judge>\"` per round and the `" + d(doclang.CriticFindings) + ":` line. " +
+	b.WriteString("- Size by the work: a small delivery has short sections; \"N/A\" where it does not apply (never in the " + heading(doclang.Result, l, "Gauntlet") + " section). Do not inflate.\n")
+	b.WriteString("- In the " + heading(doclang.Result, l, "Gauntlet") + " section, transcribe only the real record of the loop found in the current content or in the plan: the `" + d(doclang.BarLabel) + ":` line, one line `" + d(doclang.Round) + " N — <verdict>: \"<quote of the judge>\"` per round and the `" + d(doclang.CriticFindings) + ":` line. " +
 		"cerne feature complete checks this record: never invent a round, a verdict, a judge quote or a waiver. Without the record, write in the section only the ambiguity marker followed by a question naming what is missing (the bar, the rounds with the judge's quoted verdict, the disposition of the findings) and a closing bracket.\n")
 	b.WriteString("- In the METADATA, emit the Agent line with the CONCRETE id of the model and the effort YOU are running with — the level on your harness's scale (e.g. low/medium/high) — or the human form; if you do not know one of the two, write the unknown value only in it (e.g. the id \"" + project.LLMConfig{}.WithDefaults().Model + "\" with the effort unknown), never a guess nor a generic category.\n\n")
 	b.WriteString("Use the spec, the plan and the title above as context. Do not include frontmatter (cerne stamps the cerne_id). ")

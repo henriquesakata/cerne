@@ -125,12 +125,6 @@ func BuildSpecDraftPrompt(l doclang.Lang, f store.Feature, currentContent string
 	if module == "" {
 		module = "(no module)"
 	}
-	const (
-		secProblem      = 0
-		secDesign       = 3
-		secVerification = 4
-		secExecution    = 5
-	)
 	var b strings.Builder
 	b.WriteString("You are writing the specification (spec) of a software feature.\n\n")
 	b.WriteString("Feature:\n")
@@ -144,15 +138,15 @@ func BuildSpecDraftPrompt(l doclang.Lang, f store.Feature, currentContent string
 	b.WriteString("Write a COMPLETE, coherent spec for this feature, in Markdown, with exactly these sections in this order:\n")
 	writeSections(&b, doclang.Spec, l)
 	b.WriteString("\nAuthoring rules:\n")
-	b.WriteString("- Open with " + heading(doclang.Spec, l, secProblem) + ", anchored in real code (file.go:line) when possible; leave " + heading(doclang.Spec, l, secVerification) + " last.\n")
+	b.WriteString("- Open with " + heading(doclang.Spec, l, "Problem") + ", anchored in real code (file.go:line) when possible; leave " + heading(doclang.Spec, l, "Verification") + " last.\n")
 	b.WriteString("- Numbered, testable acceptance criteria; for behaviour use EARS, in the form given in the language note at the end. Structural invariants as a direct assertion.\n")
 	b.WriteString("- Mark any uncertainty with the ambiguity marker instead of guessing.\n")
-	b.WriteString("- In " + heading(doclang.Spec, l, secDesign) + ", anchor in real files/packages with explicit contracts (signatures, schemas); do not omit the \"how\".\n")
+	b.WriteString("- In " + heading(doclang.Spec, l, "Design") + ", anchor in real files/packages with explicit contracts (signatures, schemas); do not omit the \"how\".\n")
 	b.WriteString("- Include in the metadata lines the Level, with a one-sentence justification, judging the complexity of the implementation; do not name LLM models or vendors.\n")
 	b.WriteString("- Do not include a status metadata line (Draft, Done, ...): the lifecycle is card data (cerne status), never prose that ages.\n")
 	b.WriteString("- Include the Origin line: what triggered it (who reported it or where it came from, what happened, and the date), in one line.\n")
 	b.WriteString("- A metadata field whose value you do not know: write the unknown value in it — never guess; knowing only part, write the part and the unknown value for the rest. Type and Level are closed vocabularies: choose one of the values.\n")
-	b.WriteString("- In " + heading(doclang.Spec, l, secExecution) + ": the suggested model capability (generic vocabulary, consistent with the Level) and effort; which tasks to keep in the same agent (shared context) and why; which are separable.\n\n")
+	b.WriteString("- In " + heading(doclang.Spec, l, "Recommended execution (agent)") + ": the suggested model capability (generic vocabulary, consistent with the Level) and effort; which tasks to keep in the same agent (shared context) and why; which are separable.\n\n")
 	// F-0273: same Gauntlet contract the Backlog chat prompt uses (app.GauntletContract),
 	// reused — never copied — so a spec authored via CLI carries the
 	// same quality-bar protocol as one elaborated through chat.

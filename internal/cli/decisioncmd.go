@@ -380,13 +380,6 @@ func readDecisionCurrent(repoDir, id string) string {
 // always listed, alternatives with why-rejected, the ambiguity
 // marker, and right-sizing (status is cerne data, never a prose section).
 func BuildDecisionDraftPrompt(l doclang.Lang, d store.Decision, currentContent string) string {
-	const (
-		secContext      = 0
-		secDecision     = 1
-		secConsequences = 2
-		secAlternatives = 3
-		secImpl         = 4
-	)
 	var b strings.Builder
 	b.WriteString("You are writing a software architecture decision record (ADR).\n\n")
 	b.WriteString("Decision:\n")
@@ -399,12 +392,12 @@ func BuildDecisionDraftPrompt(l doclang.Lang, d store.Decision, currentContent s
 	b.WriteString("Write a COMPLETE, coherent ADR, in Markdown, with exactly these sections in this order:\n")
 	writeSections(&b, doclang.Decision, l)
 	b.WriteString("\nAuthoring rules:\n")
-	b.WriteString("- In " + heading(doclang.Decision, l, secContext) + ", name the forces and constraints in tension and the trigger (why now); anchor in the real (code, case).\n")
-	b.WriteString("- State the " + heading(doclang.Decision, l, secDecision) + " in the imperative (\"We will X\" / \"We use X\") with the 2-3 reasons that made it win.\n")
-	b.WriteString("- In " + heading(doclang.Decision, l, secConsequences) + ", ALWAYS list the negatives/trade-offs and the constraints/invariants, not only the benefits.\n")
-	b.WriteString("- In " + heading(doclang.Decision, l, secAlternatives) + ", give 2+ options with pros/cons and why they were rejected.\n")
+	b.WriteString("- In " + heading(doclang.Decision, l, "Context") + ", name the forces and constraints in tension and the trigger (why now); anchor in the real (code, case).\n")
+	b.WriteString("- State the " + heading(doclang.Decision, l, "Decision") + " in the imperative (\"We will X\" / \"We use X\") with the 2-3 reasons that made it win.\n")
+	b.WriteString("- In " + heading(doclang.Decision, l, "Consequences") + ", ALWAYS list the negatives/trade-offs and the constraints/invariants, not only the benefits.\n")
+	b.WriteString("- In " + heading(doclang.Decision, l, "Alternatives considered") + ", give 2+ options with pros/cons and why they were rejected.\n")
 	b.WriteString("- Mark any uncertainty with the ambiguity marker instead of guessing.\n")
-	b.WriteString("- Size by the decision: if trivial, " + heading(doclang.Decision, l, secAlternatives) + "/" + heading(doclang.Decision, l, secImpl) + " may be \"N/A\". Do not write a status section (cerne manages active/superseded).\n")
+	b.WriteString("- Size by the decision: if trivial, " + heading(doclang.Decision, l, "Alternatives considered") + "/" + heading(doclang.Decision, l, "Implementation and relations") + " may be \"N/A\". Do not write a status section (cerne manages active/superseded).\n")
 	b.WriteString("- The title records the decision taken, not the question (\"Use X\", not \"Should we use X?\"). An accepted ADR is a historical record — to change course, supersede it; do not rewrite it.\n\n")
 	b.WriteString("Do not include frontmatter (cerne stamps the cerne_id). " + app.DraftOutputContract + "\n")
 	b.WriteString(doclang.Directive(l))
