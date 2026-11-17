@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,8 +22,9 @@ import (
 // Session context plumbing (F-0174). Emits the canonical registration rules
 // plus the LIVE work list in the envelope of the requested provider — the
 // SessionStart injection every provider gets, so an agent on Cursor, Codex or
-// Gemini starts a session as informed as one on Claude Code. Local-only (the
-// work list comes from the backend clone) and fail-open: outside a cerne
+// Gemini starts a session as informed as one on Claude Code. Local-only except for the
+// bounded pull of a missing projection (B-0017; the work list comes from the
+// backend clone) and fail-open: outside a cerne
 // project, or on any error loading works, it degrades gracefully.
 
 // cursorContext is Cursor's native sessionStart output envelope.
@@ -87,6 +89,52 @@ func newHookSessionContextCmd() *cobra.Command {
 	return cmd
 }
 
+// sessionPullBudget bounds the SessionStart materialization (B-0017). The
+// installed hooks carry no timeout of their own, so the host's default applies;
+// this stays far below it so a slow or offline backend never stalls a session.
+var sessionPullBudget = 10 * time.Second
+
+// sessionPull materializes the projection of projDir, all output discarded so
+// it cannot reach the hook's envelope. It is the normal `cerne pull`, so it
+// takes the same backend lock as an interactive one.
+var sessionPull func(projDir string) error
+
+func init() { // assigned here: Root refers back to this file (initialization cycle)
+	sessionPull = func(projDir string) error {
+		root := Root()
+		root.SetOut(io.Discard)
+		root.SetErr(io.Discard)
+		root.SetArgs([]string{"pull", "--dir", projDir})
+		return root.Execute()
+	}
+}
+
+// materializeIfMissing runs the pull when projDir has no .docs/CONTEXT.md (a
+// fresh git worktree: .docs/ is gitignored) and returns the one-line notice to
+// inject when it fails or runs out of budget; "" otherwise (B-0017).
+func materializeIfMissing(projDir string) string {
+	if _, err := os.Stat(filepath.Join(projDir, ".docs", "CONTEXT.md")); err == nil {
+		return ""
+	}
+	done := make(chan error, 1)
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				done <- fmt.Errorf("pull panicked: %v", r)
+			}
+		}()
+		done <- sessionPull(projDir)
+	}()
+	select {
+	case err := <-done:
+		if err == nil {
+			return ""
+		}
+	case <-time.After(sessionPullBudget):
+	}
+	return "cerne: .docs/ is not materialized in this checkout and the automatic pull did not finish — run `cerne pull` before reading .docs/CONTEXT.md."
+}
+
 func runHookSessionContext(cmd *cobra.Command, format string) {
 	in, _ := decodeHookInput(cmd.InOrStdin()) // best effort: some providers send no payload
 	if in.cursor() {
@@ -119,6 +167,8 @@ func runHookSessionContext(cmd *cobra.Command, format string) {
 		}
 	}
 
+	missingDocs := materializeIfMissing(projDir) // B-0017
+
 	stale := ""
 	if format == "copilot" {
 		stale = copilotStaleNotice(projDir)
@@ -131,6 +181,9 @@ func runHookSessionContext(cmd *cobra.Command, format string) {
 	text := hooks.SessionRules(cfg.Gates.GauntletEnabled()) + "\n\nACTIVE WORK RIGHT NOW (cerne work list):\n" + work
 	if stale != "" {
 		text += "\n\n" + stale
+	}
+	if missingDocs != "" {
+		text += "\n\n" + missingDocs
 	}
 	if in.Source == "compact" && ours {
 		if block := compactBlock(dir, in.SessionID); block != "" {
