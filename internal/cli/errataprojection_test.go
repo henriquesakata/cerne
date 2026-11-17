@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -13,7 +14,13 @@ import (
 // clone and the materialized file's path.
 func notePulledWithErrata(t *testing.T) (projDir, repoDir, file string) {
 	t.Helper()
-	projDir, _, repoDir = setupProject(t)
+	projDir, _, repoDir, file = notePulledWithErrataAt(t)
+	return
+}
+
+func notePulledWithErrataAt(t *testing.T) (projDir, origin, repoDir, file string) {
+	t.Helper()
+	projDir, origin, repoDir = setupProject(t)
 	body := filepath.Join(t.TempDir(), "n.md")
 	mustWrite(t, body, "A causa do OOM era o decode por GPU.\n")
 	rb(t, projDir, "note", "new", "Causa do OOM", "--file", body)
@@ -23,7 +30,7 @@ func notePulledWithErrata(t *testing.T) (projDir, repoDir, file string) {
 	if len(m) != 1 {
 		t.Fatalf("materialized note not found: %v", m)
 	}
-	return projDir, repoDir, m[0]
+	return projDir, origin, repoDir, m[0]
 }
 
 // crit 1: the projection carries the erratum text.
@@ -102,5 +109,65 @@ func TestPullRefreshesErrataUnderUnsentEdit(t *testing.T) {
 	got, _ = os.ReadFile(file)
 	if !strings.Contains(string(got), "decode editado") || !strings.Contains(string(got), "Segunda correcao") || strings.Count(string(got), "cerne:errata:begin") != 1 {
 		t.Fatalf("edit kept and new erratum shown, one block:\n%s", got)
+	}
+}
+
+// Review round: text typed after the block must neither reach the backend as
+// body nor duplicate the block on the next pull.
+func TestPullKeepsTextAfterBlockWithoutDuplicating(t *testing.T) {
+	projDir, repoDir, file := notePulledWithErrata(t)
+	got, _ := os.ReadFile(file)
+	mustWrite(t, file, string(got)+"\nanotacao final\n")
+	rb(t, projDir, "note", "errata", "N-0001", "Outra correcao.")
+	rb(t, projDir, "pull")
+	got, _ = os.ReadFile(file)
+	if strings.Count(string(got), "cerne:errata:begin") != 1 || !strings.Contains(string(got), "anotacao final") || !strings.Contains(string(got), "Outra correcao.") {
+		t.Fatalf("one fresh block, trailing text kept:\n%s", got)
+	}
+	rb(t, projDir, "push")
+	stored, _ := store.LoadNoteContent(repoDir, "N-0001")
+	if strings.Contains(stored, "cerne:errata") || strings.Contains(stored, "DTS do RTSP") {
+		t.Fatalf("backend body carries the block:\n%s", stored)
+	}
+}
+
+// A block left open is refused by push, never sent.
+func TestPushRefusesBrokenErrataBlock(t *testing.T) {
+	projDir, repoDir, file := notePulledWithErrata(t)
+	got, _ := os.ReadFile(file)
+	i := strings.Index(string(got), "<!-- cerne:errata:end -->")
+	mustWrite(t, file, string(got)[:i])
+	out, err := execCerne(t, "push", "--dir", projDir)
+	if err == nil || !strings.Contains(err.Error(), "errata block") {
+		t.Fatalf("push must refuse a broken block: err=%v\n%s", err, out)
+	}
+	if stored, _ := store.LoadNoteContent(repoDir, "N-0001"); strings.Contains(stored, "cerne:errata") {
+		t.Fatalf("broken block reached the backend:\n%s", stored)
+	}
+}
+
+// A same-document conflict keeps MINE (stale block and all): push strips it.
+func TestConflictMineStaleBlockStripsOnPush(t *testing.T) {
+	projDir, origin, repoDir, file := notePulledWithErrataAt(t)
+	got, _ := os.ReadFile(file)
+	mustWrite(t, file, strings.Replace(string(got), "decode por GPU", "meu corpo", 1))
+	clone2 := filepath.Join(t.TempDir(), "clone2")
+	if err := gitback.Clone(origin, clone2); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(clone2, "content", "notes", "N-0001.md"), "---\ncerne_id: N-0001\n---\n\ncorpo remoto\n")
+	if _, err := gitback.CommitAndPush(clone2, "remote body edit"); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := execCerne(t, "pull", "--dir", projDir); err == nil || !strings.Contains(out, "Conflict in 1") {
+		t.Fatalf("expected a conflict: %v\n%s", err, out)
+	}
+	if kept, _ := os.ReadFile(file); !strings.Contains(string(kept), "meu corpo") {
+		t.Fatalf("mine must stay in .docs/:\n%s", kept)
+	}
+	rb(t, projDir, "push")
+	stored, _ := store.LoadNoteContent(repoDir, "N-0001")
+	if !strings.Contains(stored, "meu corpo") || strings.Contains(stored, "cerne:errata") {
+		t.Fatalf("pushed mine must be body only:\n%s", stored)
 	}
 }

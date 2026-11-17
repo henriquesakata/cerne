@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -742,6 +743,8 @@ func writeFile(docsDir, rel string, body []byte) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
+var mergedRevRe = regexp.MustCompile(`\d+`)
+
 // writeWithErrata writes body with the entity's errata appended as a generated
 // block (B-0012) and returns the manifest hash of the body ALONE: the block is
 // derived from the backend, so it is never a local edit, and push strips it.
@@ -755,9 +758,9 @@ func writeWithErrata(repoDir, docsDir, rel, id string, runbook bool, body []byte
 	if runbook {
 		merged = func(it store.ErrataItem) string {
 			l := it.ID + " merged"
-			var rev int
-			if _, err := fmt.Sscanf(it.Merged, "revisão %d", &rev); err == nil && rev > 0 {
-				l += fmt.Sprintf(" into revision %d", rev)
+			// the stored label is localized ("revisão N"): take its number
+			if rev := mergedRevRe.FindString(it.Merged); rev != "" {
+				l += " into revision " + rev
 			}
 			l += " — shown in the body"
 			if it.Target != "" {

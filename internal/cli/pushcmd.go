@@ -309,7 +309,7 @@ func collectChangedDocs(repoDir, docsDir string, manifest map[string]string) ([]
 			return err
 		}
 		want, tracked := manifest[rel]
-		sum := sha256Hex(body)
+		sum := docHash(body)
 		switch {
 		case tracked && sum == want:
 			return nil // tracked and unchanged
@@ -319,6 +319,10 @@ func collectChangedDocs(repoDir, docsDir string, manifest map[string]string) ([]
 				return nil
 			}
 			return fmt.Errorf("untracked file: %s — run 'cerne pull' to resync", rel)
+		}
+		stripped, err := store.StripErrataBlock(body)
+		if err != nil {
+			return fmt.Errorf("%s: %w — remove the generated errata block (or run 'cerne pull --force' to regenerate it)", rel, err)
 		}
 		id := parseCerneID(body)
 		if id == "" {
@@ -341,7 +345,7 @@ func collectChangedDocs(repoDir, docsDir string, manifest map[string]string) ([]
 				return nil
 			}
 		}
-		docs = append(docs, pushedDoc{rel: rel, backendRel: backendRel, body: store.StripErrataBlock(body), sum: sum})
+		docs = append(docs, pushedDoc{rel: rel, backendRel: backendRel, body: stripped, sum: sum})
 		return nil
 	})
 	if err != nil {
@@ -473,11 +477,20 @@ func parseCerneID(data []byte) string {
 }
 
 // sha256Hex returns the sha256 hex digest of body, matching the manifest
-// hashes written by materialize. The generated errata block (B-0012) is not
-// part of the body: it is derived, never a local edit.
+// hashes written by materialize.
 func sha256Hex(body []byte) string {
-	sum := sha256.Sum256(store.StripErrataBlock(body))
+	sum := sha256.Sum256(body)
 	return hex.EncodeToString(sum[:])
+}
+
+// docHash is sha256Hex of a materialized document's body: the generated errata
+// block (B-0012) is derived, never a local edit. A broken block hashes the raw
+// file, so it reads as an edit and push then refuses it.
+func docHash(body []byte) string {
+	if b, err := store.StripErrataBlock(body); err == nil {
+		body = b
+	}
+	return sha256Hex(body)
 }
 
 // shortSHA returns the first 8 chars of sha (sha itself when shorter).

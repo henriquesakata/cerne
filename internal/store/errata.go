@@ -108,17 +108,54 @@ func ErrataBlock(errata string, merged func(ErrataItem) string) string {
 	if merged != nil {
 		errata = ReplaceMerged(errata, merged)
 	}
+	// a quoted marker must not read as ours: defang it, as headings are
+	errata = strings.ReplaceAll(errata, "cerne:errata:", "cerne-errata:")
 	return "\n\n" + errataBlockBegin + " — generated from content/errata, read-only: edits here are dropped on push -->\n" +
 		"## Errata\n\n" + errata + "\n" + errataBlockEnd + "\n"
 }
 
-// StripErrataBlock removes the block ErrataBlock appended, if body ends with
-// one; anything else is returned untouched. Push, the unsent-edit check and the
-// pull merge read the body through it, so errata never reach the entity body.
-func StripErrataBlock(body []byte) []byte {
-	i := bytes.LastIndex(body, []byte("\n\n"+errataBlockBegin))
-	if i < 0 || !bytes.HasSuffix(body, []byte(errataBlockEnd+"\n")) {
-		return body
+// ErrBrokenErrataBlock: a file carries the errata begin marker but no block
+// that closes it — push refuses it rather than send generated text as body.
+var ErrBrokenErrataBlock = errors.New("errata block opened but not closed")
+
+// StripErrataBlock removes the last generated block from body: from the begin
+// marker (at the start of a line) through the end marker's line, plus the blank
+// line ErrataBlock put before it. Text before and after is kept, so a trailing
+// note, CRLF line ends or a missing final newline do not defeat it. A body with
+// no begin marker is returned untouched; a begin marker with no end marker
+// after it is ErrBrokenErrataBlock (fail closed).
+func StripErrataBlock(body []byte) ([]byte, error) {
+	begin := -1
+	for from := 0; ; {
+		j := bytes.Index(body[from:], []byte(errataBlockBegin))
+		if j < 0 {
+			break
+		}
+		at := from + j
+		if at == 0 || body[at-1] == '\n' {
+			begin = at
+		}
+		from = at + len(errataBlockBegin)
 	}
-	return body[:i]
+	if begin < 0 {
+		return body, nil
+	}
+	e := bytes.Index(body[begin:], []byte(errataBlockEnd))
+	if e < 0 {
+		return nil, fmt.Errorf("%w", ErrBrokenErrataBlock)
+	}
+	after := begin + e + len(errataBlockEnd)
+	if k := bytes.IndexByte(body[after:], '\n'); k >= 0 {
+		after += k + 1
+	} else {
+		after = len(body)
+	}
+	before := body[:begin]
+	for _, sep := range []string{"\r\n\r\n", "\n\n"} {
+		if bytes.HasSuffix(before, []byte(sep)) {
+			before = before[:len(before)-len(sep)]
+			break
+		}
+	}
+	return append(append([]byte{}, before...), body[after:]...), nil
 }

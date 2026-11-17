@@ -260,7 +260,7 @@ func reapplyUnsent(docsDir string, prev, fresh map[string]string, mine map[strin
 	for rel, body := range mine {
 		baseHash := prev[rel]
 		theirsHash, theirsTracked := fresh[rel]
-		mineHash := sha256Hex(body)
+		mineHash := docHash(body)
 		switch {
 		case !theirsTracked:
 			// Net-new local doc (e.g. result.md before first push), or removed
@@ -277,7 +277,11 @@ func reapplyUnsent(docsDir string, prev, fresh map[string]string, mine map[strin
 			if err != nil {
 				return nil, err
 			}
-			body = append(append([]byte{}, store.StripErrataBlock(body)...), theirs[len(store.StripErrataBlock(theirs)):]...)
+			// a broken block in mine is kept as is: push refuses it
+			if m, merr := store.StripErrataBlock(body); merr == nil {
+				t, _ := store.StripErrataBlock(theirs)
+				body = append(append([]byte{}, m...), theirs[len(t):]...)
+			}
 			if err := writeDocsFile(docsDir, rel, body); err != nil {
 				return nil, err
 			}
@@ -360,7 +364,7 @@ func countManifest(manifest map[string]string) (features, decisions, references,
 
 // unpushedDocs returns the .docs/current/**.md paths whose content diverges from
 // the manifest (edited or net-new) — local authoring a pull's RemoveAll would
-// discard. Rels are slash-separated and sorted. Reuses sha256Hex (pushcmd.go).
+// discard. Rels are slash-separated and sorted. Reuses docHash (pushcmd.go).
 func unpushedDocs(docsDir string, manifest map[string]string) ([]string, error) {
 	currentDir := filepath.Join(docsDir, "current")
 	if _, err := os.Stat(currentDir); errors.Is(err, os.ErrNotExist) {
@@ -385,7 +389,7 @@ func unpushedDocs(docsDir string, manifest map[string]string) ([]string, error) 
 		if err != nil {
 			return err
 		}
-		if want, ok := manifest[rel]; !ok || sha256Hex(body) != want {
+		if want, ok := manifest[rel]; !ok || docHash(body) != want {
 			changed = append(changed, rel)
 		}
 		return nil
