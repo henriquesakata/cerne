@@ -17,7 +17,7 @@ import (
 
 // RuleStaleDecision flags an active decision that shows a sign of abandonment
 // (F-0385). Advisory: it never fails the lint and never moves a state — the
-// human answers with keep, retire or substituir.
+// human answers with keep, retire or supersede.
 const RuleStaleDecision = "stale-decision"
 
 // defaultStaleDecisionDays is N, the review window of signal 1, when the
@@ -173,7 +173,7 @@ func staleDecisionFindings(repoDir string, features []store.Feature, decisions [
 		findings = append(findings, Finding{
 			Rule:   RuleStaleDecision,
 			Entity: d.ID,
-			Detail: fmt.Sprintf("%s — confirm it with 'cerne decision keep %[2]s', retire it with 'cerne decision retire %[2]s --reason \"…\"' or supersede it with 'cerne decision substituir %[2]s --by %[3]s --reason \"…\"'", strings.Join(reasons, "; "), d.ID, by),
+			Detail: fmt.Sprintf("%s — confirm it with 'cerne decision keep %[2]s', retire it with 'cerne decision retire %[2]s --reason \"…\"' or supersede it with 'cerne decision supersede %[2]s --by %[3]s --reason \"…\"'", strings.Join(reasons, "; "), d.ID, by),
 		})
 	}
 	return findings, nil

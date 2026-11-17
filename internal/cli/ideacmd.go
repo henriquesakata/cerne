@@ -26,7 +26,7 @@ func newIdeaCmd() *cobra.Command {
 			"is a demand already judged worth evaluating, an idea is not. Like a pending it has a lifecycle: resolve " +
 			"it when something else already took care of it, drop it (kept, with an optional reason), or promote or " +
 			"link it to a feature — from then on it follows that feature (its accept resolves the idea, a reject " +
-			"reopens it, a 'substituir' moves it to the successor).",
+			"reopens it, a 'supersede' moves it to the successor).",
 	}
 	cmd.PersistentFlags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.PersistentFlags().MarkHidden("dir")
@@ -210,7 +210,7 @@ func newIdeaLinkCmd(dir *string) *cobra.Command {
 		Short: "Point an active idea at a live feature that carries it (active -> promoted)",
 		Long: "Links an active idea to a feature still live (candidate, approved or in_development), as promote " +
 			"links the one it creates; an implemented, done, rejected or superseded feature is refused. From then " +
-			"on the idea follows the feature: its accept resolves it, a reject reopens it, a 'substituir' moves " +
+			"on the idea follows the feature: its accept resolves it, a reject reopens it, a 'supersede' moves " +
 			"it to the successor. 'cerne idea unlink' undoes the link.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {

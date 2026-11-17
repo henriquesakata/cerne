@@ -26,8 +26,13 @@ func newErrataCmd(dir *string) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&file, "file", "", "read the erratum text from a file (or stdin)")
-	cmd.Flags().StringVar(&altera, "altera", "", "the step this erratum changes (e.g. S6.6), declared: 'show --consolidado' places the item next to it; a runbook takes a comma-separated list and writes one item per step")
-	cmd.Flags().BoolVar(&semPasso, "sem-passo", false, "runbook only: the erratum changes no step (a general note); without it a runbook erratum must declare --altera")
+	cmd.Flags().StringVar(&altera, "step", "", "the step this erratum changes (e.g. S6.6), declared: 'show --consolidated' places the item next to it; a runbook takes a comma-separated list and writes one item per step")
+	cmd.Flags().BoolVar(&semPasso, "no-step", false, "runbook only: the erratum changes no step (a general note); without it a runbook erratum must declare --step")
+	// pt-BR names stay accepted, hidden, for hooks and scripts already installed (B-0015).
+	cmd.Flags().StringVar(&altera, "altera", "", "")
+	cmd.Flags().BoolVar(&semPasso, "sem-passo", false, "")
+	_ = cmd.Flags().MarkHidden("altera")
+	_ = cmd.Flags().MarkHidden("sem-passo")
 	return cmd
 }
 
@@ -57,7 +62,7 @@ func runErrata(cmd *cobra.Command, dir string, args []string, file, altera strin
 			}
 		}
 		if len(steps) == 0 && !semPasso {
-			return fmt.Errorf("a runbook erratum declares the step it changes: pass --altera <step> (a comma-separated list covers several), or %s for an erratum that changes no step", app.NoStepFlag)
+			return fmt.Errorf("a runbook erratum declares the step it changes: pass --step <step> (a comma-separated list covers several), or %s for an erratum that changes no step", app.NoStepFlag)
 		}
 	} else if strings.TrimSpace(altera) != "" {
 		steps = []string{altera}
@@ -72,4 +77,13 @@ func runErrata(cmd *cobra.Command, dir string, args []string, file, altera strin
 		fmt.Fprintf(cmd.OutOrStdout(), "item %s\n", item)
 	}
 	return nil
+}
+
+// legacyName turns a freshly built command into a hidden twin under its old
+// pt-BR name, so scripts and hooks installed before B-0015 keep working while
+// --help lists only the English verb.
+func legacyName(c *cobra.Command, old string) *cobra.Command {
+	c.Use = old + strings.TrimPrefix(c.Use, c.Name())
+	c.Hidden = true
+	return c
 }

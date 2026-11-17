@@ -104,7 +104,7 @@ func newRunbookReportCmd(dir *string) *cobra.Command {
 		Short: "List the deviations of a run (PARE, out of order, other word); --errata drafts them as errata items",
 		Long: "Lists the entries of a run that stopped (PARE), came out of order, or carried a word other than the " +
 			"expected one. With --errata each one not yet reported becomes a proposed erratum on the runbook, with " +
-			"'Altera: <step>' (read it with 'cerne show <RB> --consolidado'); a second report adds nothing already drafted.",
+			"'Altera: <step>' (read it with 'cerne show <RB> --consolidated'); a second report adds nothing already drafted.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := resolveProject(*dir)

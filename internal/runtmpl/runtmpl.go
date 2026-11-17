@@ -33,7 +33,7 @@ const Body = `<!-- COMO USAR: este é um runbook — um procedimento operacional
 migração, setup). Cada passo é um comando, não um parágrafo; mostre a SAÍDA ESPERADA ("você deve ver: X").
 Preencha cada seção e remova estas linhas-guia. Marque qualquer incerteza com [ESCLARECER: pergunta específica].
 Dimensione pela tarefa: runbook simples tem seções curtas — não infle. O status (active/superseded) é dado
-gerido pelo cerne (cerne runbook substituir), não prosa. -->
+gerido pelo cerne (cerne runbook supersede), não prosa. -->
 
 <!-- METADADOS (preencha como linhas **Data:** / **Dono:**):
 Data: AAAA-MM-DD — última revisão/validação.
@@ -64,7 +64,7 @@ const BodyEN = `<!-- HOW TO USE: this is a runbook — an ACTIONABLE operational
 migration, setup). Every step is a command, not a paragraph; show the EXPECTED OUTPUT ("you should see: X").
 Fill in every section and remove these guide lines. Mark any uncertainty with [CLARIFY: specific question].
 Size it by the task: a simple runbook has short sections — do not inflate. The status (active/superseded) is data
-managed by cerne (cerne runbook substituir), not prose. -->
+managed by cerne (cerne runbook supersede), not prose. -->
 
 <!-- METADATA (fill in as lines **Date:** / **Owner:**):
 Date: YYYY-MM-DD — last review/validation.
