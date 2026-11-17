@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -465,5 +466,49 @@ func TestNestedGitHookInstallStaysLocal(t *testing.T) {
 	}
 	if after := originHead(t, origin); after != before {
 		t.Fatalf("backend gained a commit: %s -> %s", before, after)
+	}
+}
+
+// B-0016: from a linked worktree based before .cernerc existed, a command
+// resolves to the main checkout, says so on stderr once, and writes no
+// .cernerc/docs.lock into the worktree.
+func TestLinkedWorktreeBeforeInitResolvesToMainCheckout(t *testing.T) {
+	t.Setenv("CERNE_ROOT", "")
+	projDir, _, _ := setupProject(t)
+	if r, err := filepath.EvalSymlinks(projDir); err == nil {
+		projDir = r
+	}
+	gitRun(t, projDir, "init", "-q")
+	if err := os.WriteFile(filepath.Join(projDir, "a.txt"), []byte("a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, projDir, "add", "a.txt")
+	gitRun(t, projDir, "commit", "-q", "-m", "before cerne")
+	gitRun(t, projDir, "add", ".cernerc")
+	gitRun(t, projDir, "commit", "-q", "-m", "cerne init")
+	wt := filepath.Join(projDir, ".claude", "worktrees", "wt1")
+	gitRun(t, projDir, "worktree", "add", "-q", "-b", "wt1", wt, "HEAD~1")
+	t.Chdir(wt)
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stderr
+	os.Stderr = w
+	out, runErr := execCerne(t, "status")
+	os.Stderr = old
+	w.Close()
+	stderr, _ := io.ReadAll(r)
+	if runErr != nil {
+		t.Fatalf("status from the linked worktree: %v\n%s", runErr, out)
+	}
+	if n := strings.Count(string(stderr), "using the project of its main checkout at "+projDir); n != 1 {
+		t.Fatalf("want one announcement naming %s, got %d in %q", projDir, n, stderr)
+	}
+	for _, f := range []string{".cernerc", "docs.lock"} {
+		if _, err := os.Stat(filepath.Join(wt, f)); err == nil {
+			t.Fatalf("%s written into the worktree", f)
+		}
 	}
 }
