@@ -1060,3 +1060,14 @@ func TestChannelSendSkipsSubagentBindings(t *testing.T) {
 		t.Fatalf("recipients = %v, want [W-0002 W-0003]: subagent bindings are not recipients", to)
 	}
 }
+
+// TestChannelDirectedToFeatureFamily (B-0021): a message naming a bug, an epic
+// or a task ref of the session's work is addressed to it, like an F- ref.
+func TestChannelDirectedToFeatureFamily(t *testing.T) {
+	for _, id := range []string{"B-0012", "E-0012", "T-0012"} {
+		me := channelIdentity{Work: "W-0290", Refs: []string{id}}
+		if !directedTo(room.Message{Nick: "W-0291", Body: "corrigi " + id + " agora"}, me) {
+			t.Errorf("a mention of %s does not reach the work that refs it", id)
+		}
+	}
+}

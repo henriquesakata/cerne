@@ -21,7 +21,31 @@ var (
 // All four share the
 // feature FSM, store and documents (F-0203).
 func IsFeatureID(id string) bool {
-	return strings.HasPrefix(id, "F-") || strings.HasPrefix(id, "E-") || strings.HasPrefix(id, "T-") || strings.HasPrefix(id, "B-")
+	for _, p := range featurePrefixes {
+		if strings.HasPrefix(id, p+"-") {
+			return true
+		}
+	}
+	return false
+}
+
+// featurePrefixes is the one list of the feature family's id prefixes (B-0021).
+// Every other place that recognizes feature ids asks IsFeatureID or builds its
+// pattern from FeatureIDPrefix; a test fails on a hand-written copy.
+var featurePrefixes = []string{"F", "E", "T", "B"}
+
+// FeatureIDPrefix is a regexp group matching one feature-family prefix letter
+// ("(?:F|E|T|B)"), derived from the same list as IsFeatureID. Callers add the
+// dash, digits and boundaries (and (?i) when they need case-insensitivity).
+func FeatureIDPrefix() string {
+	return "(?:" + strings.Join(featurePrefixes, "|") + ")"
+}
+
+// IsEpicID reports whether id names an epic (E-): a container of features, not
+// a unit of work, so cost attribution does not take a mention of one as other
+// work.
+func IsEpicID(id string) bool {
+	return strings.HasPrefix(id, "E-")
 }
 
 // CheckGate verifies the document required by action exists in docs.

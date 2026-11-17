@@ -148,3 +148,87 @@ func TestUpdateConcurrentWithSearch(t *testing.T) {
 		t.Fatalf("a search during Update saw a broken index: %v", searchErr)
 	}
 }
+
+// TestUpdateKeepsFeatureFamilyIDs (B-0021): an incremental Update of a bug, an
+// epic or a task re-inserts its rows (Update deletes every changed id first), so
+// the card stays searchable like an F- one.
+func TestUpdateKeepsFeatureFamilyIDs(t *testing.T) {
+	repoDir, db := builtIndex(t)
+	now := time.Now().UTC()
+	for id, title := range map[string]string{"F-0900": "ornitorrinco", "B-0900": "capivara", "E-0900": "jaguatirica", "T-0900": "tamandua"} {
+		if err := store.SaveFeature(repoDir, store.Feature{ID: id, Title: title, State: domain.StateCandidate, CreatedAt: now, UpdatedAt: now}); err != nil {
+			t.Fatal(err)
+		}
+		if err := Update(repoDir, db, []string{id}, time.Time{}); err != nil {
+			t.Fatal(err)
+		}
+		if got := hits(t, db, title); !reflect.DeepEqual(got, []string{id}) {
+			t.Errorf("%s: hits for %q = %v", id, title, got)
+		}
+	}
+	// A second write to the same card (the start of B-0021's repro) keeps it too.
+	if err := Update(repoDir, db, []string{"B-0900", "E-0900", "T-0900"}, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range []string{"capivara", "jaguatirica", "tamandua"} {
+		if got := hits(t, db, w); len(got) != 1 {
+			t.Errorf("after a second update, hits for %q = %v", w, got)
+		}
+	}
+}
+
+// TestUpdateRowsEqualRebuildForFeatureFamily (B-0021): an incremental Update of
+// a bug, an epic and a task leaves exactly the rows a full rebuild builds
+// (kind, state, title and body), not just a hit.
+func TestUpdateRowsEqualRebuildForFeatureFamily(t *testing.T) {
+	repoDir := seedBackend(t)
+	now := time.Now().UTC()
+	ids := []string{"B-0901", "E-0901", "T-0901"}
+	for _, id := range ids {
+		if err := store.SaveFeature(repoDir, store.Feature{ID: id, Title: "titulo " + id, State: domain.StateApproved, CreatedAt: now, UpdatedAt: now}); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(repoDir, "content", "features", id), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(repoDir, "content", "features", id, "spec.md"), []byte("corpo do spec de "+id), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	full := filepath.Join(t.TempDir(), "full.db")
+	if err := Rebuild(repoDir, full, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	inc := filepath.Join(t.TempDir(), "inc.db")
+	if err := Rebuild(repoDir, inc, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Update(repoDir, inc, ids, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	rows := func(db string) []string {
+		d, err := openDB(db)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer d.Close()
+		r, err := d.Query(`SELECT entity_id, kind, doc, state, title, body FROM docs WHERE entity_id IN ('B-0901','E-0901','T-0901') ORDER BY entity_id, doc`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer r.Close()
+		var out []string
+		for r.Next() {
+			var a, b, c, e, f, g string
+			if err := r.Scan(&a, &b, &c, &e, &f, &g); err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, a+"|"+b+"|"+c+"|"+e+"|"+f+"|"+g)
+		}
+		return out
+	}
+	want, got := rows(full), rows(inc)
+	if len(want) != 3 || !reflect.DeepEqual(got, want) {
+		t.Fatalf("incremental rows differ from a full rebuild\nfull: %q\ninc:  %q", want, got)
+	}
+}

@@ -473,9 +473,10 @@ func kindForID(id string) (string, bool) {
 	if i <= 0 {
 		return "", false
 	}
-	switch id[:i] {
-	case "F", "T", "E", "B":
+	if domain.IsFeatureID(id) {
 		return "feature", true
+	}
+	switch id[:i] {
 	case "D":
 		return "decision", true
 	case "R":

@@ -45,7 +45,7 @@ func newPendingNewCmd(dir *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "new <title>",
 		Short: "Register an open pending against the delivery that left it (--from required)",
-		Long: "Registers a known debt as an open pending. --from (the F-/T-/E- id that left it) is mandatory and " +
+		Long: "Registers a known debt as an open pending. --from (the F-/E-/T-/B- id that left it) is mandatory and " +
 			"must exist. The optional body (context) comes from --file or piped stdin. Without --facet/--component " +
 			"the pending inherits the origin's tags, per axis. An open pending of the same origin with a similar " +
 			"title refuses the creation (F-0147 guard); --force overrides it.",
@@ -67,7 +67,7 @@ func newPendingNewCmd(dir *string) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&from, "from", "", "the F-/T-/E- id whose delivery left this debt (required)")
+	cmd.Flags().StringVar(&from, "from", "", "the F-/E-/T-/B- id whose delivery left this debt (required)")
 	cmd.Flags().StringVar(&file, "file", "", "file with the pending's context (defaults to piped stdin)")
 	cmd.Flags().StringVar(&facet, "facet", "", "facets (CSV; closed set: infra,code,data,process,auth); default: the origin's")
 	cmd.Flags().StringVar(&component, "component", "", "components (CSV); default: the origin's")

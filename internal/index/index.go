@@ -19,6 +19,7 @@ import (
 
 	_ "modernc.org/sqlite" // database/sql driver "sqlite" (pure Go, no cgo)
 
+	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/store"
 )
@@ -413,7 +414,12 @@ func collectRowsFor(repoDir string, ids []string) ([]row, error) {
 	// Same kind order as collectRows.
 	for _, prefix := range []string{"F", "D", "R", "RB", "N", "H"} {
 		for _, id := range sorted {
-			if p, _, _ := strings.Cut(id, "-"); p != prefix {
+			p, _, _ := strings.Cut(id, "-")
+			// E-, T- and B- share the feature store and documents (F-0203).
+			if prefix == "F" && domain.IsFeatureID(id) {
+				p = "F"
+			}
+			if p != prefix {
 				continue
 			}
 			var r []row

@@ -163,3 +163,36 @@ func initGitRepo(t *testing.T, dir, branch string) {
 		}
 	}
 }
+
+// TestGuardCommitMsg_FeatureFamily (B-0021): B-, E- and T- ids behave as F-:
+// a rejected one in the message blocks, and the branch forms with or without
+// the dash (claude/f-0001-x, fix/b0012-x, feature/f0432-x) are read.
+func TestGuardCommitMsg_FeatureFamily(t *testing.T) {
+	for _, id := range []string{"B-0012", "E-0012", "T-0012"} {
+		t.Run("message "+id, func(t *testing.T) {
+			projDir, _, repoDir := setupProject(t)
+			putFeature(t, repoDir, id, domain.StateRejected)
+			p := writeMsgFile(t, projDir, "fix: coisa ("+id+")\n")
+			if out, err := execCerneStdin(t, "", "guard", "commit-msg", p); err == nil {
+				t.Fatalf("rejected %s in the message must block\noutput: %s", id, out)
+			}
+		})
+	}
+	for _, tc := range []struct{ id, branch string }{
+		{"B-0012", "fix/b0012-prompt"}, {"B-0012", "claude/b-0012-x"},
+		{"F-0432", "feature/f0432-help-groups"}, {"E-0012", "epic/E0012"}, {"T-0012", "t-0012"},
+	} {
+		t.Run("branch "+tc.branch, func(t *testing.T) {
+			projDir, _, repoDir := setupProject(t)
+			putFeature(t, repoDir, tc.id, domain.StateRejected)
+			initGitRepo(t, projDir, tc.branch)
+			p := writeMsgFile(t, projDir, "fix: coisa\n")
+			if out, err := execCerneStdin(t, "", "guard", "commit-msg", p); err == nil {
+				t.Fatalf("branch %s must be read as %s\noutput: %s", tc.branch, tc.id, out)
+			}
+		})
+	}
+	if got := guardCitedIDs("chore: x", "release-2026/e2e-run-12345"); len(got) != 0 {
+		t.Errorf("a branch that merely contains letters and digits cited %v", got)
+	}
+}

@@ -156,14 +156,14 @@ func TestDevSubagentStaysBuilder(t *testing.T) {
 	}
 }
 
-// TestRoleScanCited (F-0411): the scan keeps the F-/T- ids the first prompt
+// TestRoleScanCited (F-0411): the scan keeps the F-/T-/B-/E- ids the first prompt
 // cites — sorted, once each — and none from a later message or a tool result.
 func TestRoleScanCited(t *testing.T) {
 	var s roleScan
-	s.feed([]byte(ask("s", "x", at(1), "Review F-0002 and T-0003, then F-0002 again; E-0004 is no feature here. F-00012 and XF-0005 no match; F-0006.md yes.\n```diff\n+ // F-0099\n```\nand F-0007 after the fence.")))
+	s.feed([]byte(ask("s", "x", at(1), "Review F-0002 and T-0003, then F-0002 again; B-0004 and E-0005 count. F-00012 and XF-0005 no match; F-0006.md yes.\n```diff\n+ // F-0099\n```\nand F-0007 after the fence.")))
 	s.feed([]byte(ask("s", "x", at(2), "also F-0009")))
 	s.feed([]byte(toolResult("s", "x", at(3), "F-0010")))
-	if want := []string{"F-0002", "F-0006", "F-0007", "T-0003"}; !reflect.DeepEqual(s.citedIDs(), want) {
+	if want := []string{"B-0004", "E-0005", "F-0002", "F-0006", "F-0007", "T-0003"}; !reflect.DeepEqual(s.citedIDs(), want) {
 		t.Errorf("cited = %v, want %v", s.citedIDs(), want)
 	}
 }
