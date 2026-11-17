@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/store"
 	"github.com/henriquesakata/cerne/internal/wiki"
@@ -82,8 +83,8 @@ func TestPagesModuledSplitsDecisionsReferences(t *testing.T) {
 	dir := seedBackend(t, "finance", "core")
 	addFeature(t, dir, "F-0001", "finance", domain.StateApproved, "# F-0001\n\nspec.\n")
 	addFeature(t, dir, "F-0002", "core", domain.StateCandidate, "# F-0002\n\nspec.\n")
-	addFeature(t, dir, "F-0003", "finance", domain.StateSuperseded, "# F-0003\n\nold.\n") // not live
-	addFeature(t, dir, "F-0099", "", domain.StateImplemented, "# F-0099\n\nsem módulo.\n")  // module-less
+	addFeature(t, dir, "F-0003", "finance", domain.StateSuperseded, "# F-0003\n\nold.\n")  // not live
+	addFeature(t, dir, "F-0099", "", domain.StateImplemented, "# F-0099\n\nsem módulo.\n") // module-less
 	if err := store.SaveDecision(dir, store.Decision{ID: "D-0001", Title: "ADR um", State: domain.DecisionActive, CreatedAt: time.Unix(0, 0).UTC(), UpdatedAt: time.Unix(0, 0).UTC()}); err != nil {
 		t.Fatalf("SaveDecision: %v", err)
 	}
@@ -214,11 +215,11 @@ func TestModulelessSkipped(t *testing.T) {
 	// Moduled project: live features without a declared module are counted;
 	// superseded ones (not wiki sources) and moduled ones are not.
 	dir := seedBackend(t, "finance")
-	addFeature(t, dir, "F-0001", "finance", domain.StateApproved, "# F-0001\n")        // moduled
-	addFeature(t, dir, "F-0002", "", domain.StateImplemented, "# F-0002\n")            // module-less, counted
-	addFeature(t, dir, "F-0003", "", domain.StateCandidate, "# F-0003\n")              // module-less, counted
-	addFeature(t, dir, "F-0004", "", domain.StateSuperseded, "# F-0004\n")             // not a wiki source
-	addFeature(t, dir, "F-0005", "ghost", domain.StateApproved, "# F-0005\n")          // module not declared, counted
+	addFeature(t, dir, "F-0001", "finance", domain.StateApproved, "# F-0001\n") // moduled
+	addFeature(t, dir, "F-0002", "", domain.StateImplemented, "# F-0002\n")     // module-less, counted
+	addFeature(t, dir, "F-0003", "", domain.StateCandidate, "# F-0003\n")       // module-less, counted
+	addFeature(t, dir, "F-0004", "", domain.StateSuperseded, "# F-0004\n")      // not a wiki source
+	addFeature(t, dir, "F-0005", "ghost", domain.StateApproved, "# F-0005\n")   // module not declared, counted
 	n, err := ModulelessSkipped(dir)
 	if err != nil {
 		t.Fatalf("ModulelessSkipped: %v", err)
@@ -317,11 +318,11 @@ func TestBuildPagePromptResolvesSuperseded(t *testing.T) {
 	if !ok {
 		t.Fatalf("no finance page in %v", pageRels(pages))
 	}
-	prompt := BuildPagePrompt(p)
-	if !strings.Contains(prompt, "D-0002 (antes D-0003)") {
+	prompt := BuildPagePrompt(doclang.PT, p)
+	if !strings.Contains(prompt, "D-0002 (formerly D-0003)") {
 		t.Errorf("prompt should resolve the superseded id to its successor, got:\n%s", prompt)
 	}
-	if strings.Contains(strings.ReplaceAll(prompt, "(antes D-0003)", ""), "D-0003") {
+	if strings.Contains(strings.ReplaceAll(prompt, "(formerly D-0003)", ""), "D-0003") {
 		t.Errorf("prompt still presents D-0003 as a current reference:\n%s", prompt)
 	}
 	// The hash-feeding Content stays ORIGINAL (the rewrite is prompt-only), so
@@ -348,8 +349,8 @@ func TestPageSourceIncludesErrata(t *testing.T) {
 	if !strings.Contains(p.Sources[0].Content, "usar D-0002") {
 		t.Errorf("source Content missing the errata text:\n%s", p.Sources[0].Content)
 	}
-	if !strings.Contains(BuildPagePrompt(p), "usar D-0002") {
-		t.Errorf("prompt missing the errata text:\n%s", BuildPagePrompt(p))
+	if !strings.Contains(BuildPagePrompt(doclang.PT, p), "usar D-0002") {
+		t.Errorf("prompt missing the errata text:\n%s", BuildPagePrompt(doclang.PT, p))
 	}
 }
 
@@ -374,7 +375,7 @@ func TestBuildPagePrompt(t *testing.T) {
 	p := Page{Name: "finance", Rel: "modules/finance", Sources: []EntitySource{
 		{ID: "F-0001", Kind: "feature", State: "approved", Title: "Boletos", Content: "# Boletos\n\nGera boletos.\n"},
 	}}
-	prompt := BuildPagePrompt(p)
+	prompt := BuildPagePrompt(doclang.PT, p)
 	for _, want := range []string{"finance", "F-0001", "approved", "Boletos", "Gera boletos"} {
 		if !contains(prompt, want) {
 			t.Fatalf("prompt missing %q:\n%s", want, prompt)
@@ -432,8 +433,8 @@ func TestBuildPagePromptDemandsPageOnStdout(t *testing.T) {
 	p := Page{Name: "finance", Rel: "modules/finance", Sources: []EntitySource{
 		{ID: "F-0001", Kind: "feature", State: "approved", Title: "Boletos", Content: "# Boletos\n"},
 	}}
-	prompt := BuildPagePrompt(p)
-	for _, want := range []string{"saída padrão", "# ", "Não escreva arquivos", "não relate"} {
+	prompt := BuildPagePrompt(doclang.PT, p)
+	for _, want := range []string{"standard output", "# ", "Do not write files", "do not report"} {
 		if !contains(prompt, want) {
 			t.Fatalf("prompt missing the output contract %q:\n%s", want, prompt)
 		}
@@ -447,9 +448,9 @@ func TestBuildPagePromptBoundsLongSource(t *testing.T) {
 		{ID: "F-0001", Kind: "feature", State: "implemented", Title: "Longo", Content: long},
 		{ID: "F-0002", Kind: "feature", State: "approved", Title: "Curto", Content: short},
 	}}
-	prompt := BuildPagePrompt(p)
+	prompt := BuildPagePrompt(doclang.PT, p)
 
-	if !contains(prompt, "…(conteúdo truncado)") {
+	if !contains(prompt, "…(content truncated)") {
 		t.Fatalf("long source not truncated:\n%s", prompt)
 	}
 	// The whole long content (4000 chars) must not be embedded verbatim.
@@ -479,16 +480,18 @@ func TestExcerptShortIsWhole(t *testing.T) {
 	}
 	long := strings.Repeat("x", maxSourceExcerptChars+50)
 	got := excerpt(long)
-	if !strings.HasSuffix(got, "\n…(conteúdo truncado)") {
+	if !strings.HasSuffix(got, "\n…(content truncated)") {
 		t.Fatalf("excerpt(long) missing marker: %q", got)
 	}
-	body := strings.TrimSuffix(got, "\n…(conteúdo truncado)")
+	body := strings.TrimSuffix(got, "\n…(content truncated)")
 	if len([]rune(body)) > maxSourceExcerptChars {
 		t.Fatalf("excerpt body = %d runes, want <= %d", len([]rune(body)), maxSourceExcerptChars)
 	}
 }
 
-func contains(s, sub string) bool { return len(sub) == 0 || (len(s) >= len(sub) && indexOf(s, sub) >= 0) }
+func contains(s, sub string) bool {
+	return len(sub) == 0 || (len(s) >= len(sub) && indexOf(s, sub) >= 0)
+}
 func indexOf(s, sub string) int {
 	for i := 0; i+len(sub) <= len(s); i++ {
 		if s[i:i+len(sub)] == sub {
@@ -551,5 +554,30 @@ func TestRunning(t *testing.T) {
 	}
 	if Running(repoDir) {
 		t.Fatal("stale lock: Running = true")
+	}
+}
+
+// TestBuildPagePromptGoldens (F-0447 crit. 1, 2): the page-synthesis prompt in
+// both languages, closed by the reply-language line. Regenerate only on a
+// deliberate prompt change: PROMPT_GOLDEN_UPDATE=1.
+func TestBuildPagePromptGoldens(t *testing.T) {
+	p := Page{Name: "finance", Rel: "modules/finance", Sources: []EntitySource{
+		{ID: "F-0001", Kind: "feature", State: "approved", Title: "Invoices", Content: "# Invoices\n\nIssue an invoice.\n"},
+	}}
+	for _, l := range []doclang.Lang{doclang.PT, doclang.EN} {
+		got := BuildPagePrompt(l, p)
+		golden := filepath.Join("testdata", "page_"+string(l)+".golden")
+		if os.Getenv("PROMPT_GOLDEN_UPDATE") == "1" {
+			if err := os.WriteFile(golden, []byte(got), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		want, err := os.ReadFile(golden)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != string(want) {
+			t.Errorf("the %s page prompt differs from %s", l, golden)
+		}
 	}
 }

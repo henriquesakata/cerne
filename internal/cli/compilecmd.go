@@ -20,6 +20,7 @@ import (
 	"github.com/henriquesakata/cerne/internal/doccheck"
 	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/llm"
+	"github.com/henriquesakata/cerne/internal/store"
 	"github.com/henriquesakata/cerne/internal/telemetry"
 	"github.com/henriquesakata/cerne/internal/wiki"
 )
@@ -201,7 +202,7 @@ func compileDirtyPages(goCtx context.Context, ctx projCtx, pages []compile.Page,
 	var done []compile.Page
 	var rejected []string
 	for _, p := range dirty {
-		body, err := prov.Complete(goCtx, compile.BuildPagePrompt(p))
+		body, err := prov.Complete(goCtx, compile.BuildPagePrompt(store.DocsLanguage(ctx.repoDir), p))
 		if err != nil {
 			return nil, fmt.Errorf("synthesizing page %s: %w", p.Name, err)
 		}
@@ -274,7 +275,7 @@ func preparePrompts(cmd *cobra.Command, ctx projCtx, dirty []compile.Page, scope
 			return err
 		}
 		header := fmt.Sprintf("<!-- cerne-run-id: %s — echo it as 'run_id:' in the response frontmatter at %s -->\n\n", runID, responseRel)
-		if err := os.WriteFile(promptPath, []byte(header+compile.BuildPagePrompt(p)), 0o644); err != nil {
+		if err := os.WriteFile(promptPath, []byte(header+compile.BuildPagePrompt(store.DocsLanguage(ctx.repoDir), p)), 0o644); err != nil {
 			return err
 		}
 		manifest.Entries = append(manifest.Entries, compile.ManifestEntry{

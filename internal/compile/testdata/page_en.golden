@@ -1,0 +1,13 @@
+Synthesize the project's wiki page "finance" from the current sources below.
+Write markdown: an overview + how the parts relate today. Respect the state of each source and do not invent what is not in the sources.
+Return ONLY the page's markdown on standard output, starting with a "# " title. Do not write files, do not use tools and do not report what you did.
+
+## F-0001 — Invoices (feature, approved)
+
+# Invoices
+
+Issue an invoice.
+
+
+
+LANGUAGE — write your whole reply in English (identifiers, commands, file paths and quoted code stay as they are).

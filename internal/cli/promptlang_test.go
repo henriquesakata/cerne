@@ -61,7 +61,6 @@ var promptExceptions = []struct{ re, why string }{
 // promptsPending lists the surfaces not converted yet; each is removed by the
 // commit that converts it, and the list is empty when F-0447 is done.
 var promptsPending = map[string]string{
-	"compile page":         "converted with the other prompts",
 }
 
 // promptWords extends doccheck.PTReason with the function words the B-0015
@@ -157,8 +156,8 @@ func promptCases() []promptCase {
 		{name: "ask", closes: closesReply, render: func(_ *testing.T, l doclang.Lang) string {
 			return ask.BuildAskPrompt(l, "what is X?", []ask.Snippet{{Source: "F-0001", Kind: "feature", State: "implemented", Historical: true, URL: "https://example.org", Text: "t"}}, true)
 		}},
-		{name: "compile page", closes: closesReply, render: func(_ *testing.T, _ doclang.Lang) string {
-			return compile.BuildPagePrompt(compile.Page{Name: "overview", Sources: []compile.EntitySource{{ID: "F-0001", Title: "Sign in", Kind: "feature", State: "implemented", Content: "c"}}})
+		{name: "compile page", closes: closesReply, render: func(_ *testing.T, l doclang.Lang) string {
+			return compile.BuildPagePrompt(l, compile.Page{Name: "overview", Sources: []compile.EntitySource{{ID: "F-0001", Title: "Sign in", Kind: "feature", State: "implemented", Content: "c"}}})
 		}},
 		{name: "capability bootstrap", closes: closesReply, render: func(t *testing.T, l doclang.Lang) string {
 			_, _, repoDir := setupProjectIn(t, string(l))

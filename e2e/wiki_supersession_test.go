@@ -70,10 +70,10 @@ func TestCompileResolvesSupersessionThenLintClean(t *testing.T) {
 	// compile --force resolves the superseded reference in the emitted prompt.
 	mustCerne(t, "compile", "--force", "--scope", "finance", "--dir", proj)
 	prompt := mustRead(t, filepath.Join(docs, "wiki", ".pending", "modules", "finance.prompt.md"))
-	if !strings.Contains(prompt, "D-0002 (antes D-0001)") {
+	if !strings.Contains(prompt, "D-0002 (formerly D-0001)") {
 		t.Fatalf("compile prompt did not resolve the superseded id to its successor:\n%s", prompt)
 	}
-	if strings.Contains(strings.ReplaceAll(prompt, "(antes D-0001)", ""), "D-0001") {
+	if strings.Contains(strings.ReplaceAll(prompt, "(formerly D-0001)", ""), "D-0001") {
 		t.Fatalf("compile prompt still presents D-0001 as a current reference:\n%s", prompt)
 	}
 
