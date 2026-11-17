@@ -58,11 +58,6 @@ var promptExceptions = []struct{ re, why string }{
 	{`fase means stage or level, cenário means scene, backdrop or background, inimigo means enemy`, "a word-translation example inside an English instruction: the words are the data"},
 }
 
-// promptsPending lists the surfaces not converted yet; each is removed by the
-// commit that converts it, and the list is empty when F-0447 is done.
-var promptsPending = map[string]string{
-}
-
 // promptWords extends doccheck.PTReason with the function words the B-0015
 // guard also refuses in agent-facing text.
 var promptWords = regexp.MustCompile(`(?i)\b(janela|passos?|palavra|por|evidencia|proposta|decidida|altera|consolidado|substituir|sem|nota|esperada|fundida|vincule|corrija|acrescente|execução|para|com|não|você|escreva|responda|sua|seu|uma)\b`)
@@ -174,10 +169,6 @@ func promptCases() []promptCase {
 
 func TestPromptsAreEnglish(t *testing.T) {
 	for _, c := range promptCases() {
-		if why, ok := promptsPending[c.name]; ok {
-			t.Run(c.name, func(t *testing.T) { t.Skip("pending: " + why) })
-			continue
-		}
 		for _, l := range doclang.Langs() {
 			t.Run(c.name+"/"+string(l), func(t *testing.T) {
 				prompt := c.render(t, l)
