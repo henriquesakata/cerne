@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/llm"
 )
 
@@ -18,7 +19,7 @@ import (
 type RoastPersona struct {
 	Key   string // stable identifier ("ambiguidade", "escopo", "risco")
 	Title string // pt-BR heading shown in the report
-	Lens  string // the single attack angle, verbatim in the prompt
+	Lens  string // the single attack angle, in English, verbatim in the prompt
 	// Matrix is an exhaustive block the persona must emit before its
 	// findings, outside the five-finding cap (F-0275): a per-criterion
 	// coverage verdict is a matrix, not a finding, and capping it would make
@@ -31,17 +32,17 @@ var RoastPersonas = []RoastPersona{
 	{
 		Key:   "ambiguidade",
 		Title: "Ambiguidade e testabilidade",
-		Lens:  "AMBIGUIDADE E TESTABILIDADE: critérios não-verificáveis, termos vagos sem definição operacional, QUANDO/DEVE mal formados, condições sem observável mensurável, verificação que não cobre os critérios.",
+		Lens:  "AMBIGUITY AND TESTABILITY: unverifiable criteria, vague terms with no operational definition, malformed WHEN/SHALL phrasing, conditions with no measurable observable, a verification that does not cover the criteria.",
 	},
 	{
 		Key:   "escopo",
 		Title: "Escopo e YAGNI",
-		Lens:  "ESCOPO E YAGNI: escopo inflado, requisito especulativo sem caso de uso, fora-de-escopo furado (o que vai vazar pra dentro), feature que deveria ser menor ou maior, sobreposição interna na própria spec.",
+		Lens:  "SCOPE AND YAGNI: inflated scope, a speculative requirement with no use case, a leaky out-of-scope (what will spill in), a feature that should be smaller or bigger, internal overlap within the spec itself.",
 	},
 	{
 		Key:   "risco",
 		Title: "Risco técnico e viabilidade",
-		Lens:  "RISCO TÉCNICO E VIABILIDADE: dependências escondidas, efeitos colaterais no sistema existente, custo/latência de runtime, suposições técnicas não validadas, plano de verificação tecnicamente irrealizável.",
+		Lens:  "TECHNICAL RISK AND FEASIBILITY: hidden dependencies, side effects on the existing system, runtime cost/latency, unvalidated technical assumptions, a verification plan that is technically unachievable.",
 	},
 }
 
@@ -52,23 +53,23 @@ var PlanRoastPersonas = []RoastPersona{
 	{
 		Key:    "conformidade",
 		Title:  "Conformidade spec→plano",
-		Lens:   "CONFORMIDADE SPEC→PLANO: cobertura de cada critério de aceitação numerado da spec pelo plano. Ataque: critério sem tarefa que o cubra, tarefa que não serve critério nenhum (escopo que o plano inventou), verificação declarada que não prova o critério que diz provar, e critério cuja cobertura depende de trabalho que o plano deixa implícito.",
-		Matrix: "Antes dos achados, emita a MATRIZ DE COBERTURA: uma linha por critério numerado da spec, no formato exato \"critério N: coberto pela tarefa X\" ou \"critério N: descoberto\". A matriz é obrigatória, cobre TODOS os critérios (não tem teto e não conta como achado) e sai mesmo quando você não tiver nenhum achado.",
+		Lens:   "SPEC→PLAN CONFORMITY: coverage of each numbered acceptance criterion of the spec by the plan. Attack: a criterion with no task covering it, a task that serves no criterion (scope the plan invented), a declared verification that does not prove the criterion it claims to prove, and a criterion whose coverage depends on work the plan leaves implicit.",
+		Matrix: "Before the findings, emit the COVERAGE MATRIX: one line per numbered criterion of the spec, in the exact format \"{criterion} N: covered by task X\" or \"{criterion} N: uncovered\". The matrix is mandatory, covers ALL the criteria (it has no cap and does not count as a finding) and comes out even when you have no findings.",
 	},
 	{
 		Key:   "sequencia",
 		Title: "Sequência e dependências",
-		Lens:  "SEQUÊNCIA E DEPENDÊNCIAS: ordem que força retrabalho, dependência escondida entre tarefas (a tarefa N precisa de algo que só a N+2 cria), tarefa que não deixa o repositório verde ao terminar, paralelismo perdido (tarefas independentes serializadas sem razão) ou paralelismo falso (marcadas [paralela] mas tocam o mesmo arquivo), e granularidade errada — tarefa grande demais para um commit, ou fatiada a ponto de nenhuma entregar comportamento.",
+		Lens:  "SEQUENCE AND DEPENDENCIES: an order that forces rework, a hidden dependency between tasks (task N needs something only N+2 creates), a task that does not leave the repository green when it ends, lost parallelism (independent tasks serialized for no reason) or false parallelism (marked [parallel] but touching the same file), and wrong granularity — a task too big for one commit, or sliced so thin that none delivers behaviour.",
 	},
 	{
 		Key:   "rollback",
 		Title: "Riscos e rollback",
-		Lens:  "RISCOS E ROLLBACK: risco declarado sem forma de DETECTAR que aconteceu, rollback que não funciona na prática (migração de dados, artefato já publicado, estado externo mutado), passo destrutivo ou irreversível não sinalizado, e risco material que o plano não enxergou dado o que ele mesmo se propõe a mexer. Não avalie cobertura de critério da spec — essa lente é de outro crítico.",
+		Lens:  "RISKS AND ROLLBACK: a declared risk with no way to DETECT that it happened, a rollback that does not work in practice (data migration, an already published artifact, mutated external state), a destructive or irreversible step not flagged, and a material risk the plan did not see given what it itself proposes to touch. Do not assess spec criterion coverage — that lens belongs to another critic.",
 	},
 }
 
 // RoastDoc is one delimited document handed to a critic. The label names the
-// fence (=== SPEC (início) === …), so a multi-document roast keeps each source
+// fence (=== SPEC (start) === …), so a multi-document roast keeps each source
 // unambiguous instead of concatenating prose.
 type RoastDoc struct {
 	Label string // "SPEC", "PLANO"
@@ -79,59 +80,60 @@ type RoastDoc struct {
 // Kept separate from the personas so the same lens machinery serves both
 // targets (F-0275).
 const (
-	SpecRoastIntro = "Você é um crítico adversarial de specs de software, contexto fresco: você recebeu APENAS a spec final abaixo — nada da conversa que a elaborou, nada do esforço gasto."
-	PlanRoastIntro = "Você é um crítico adversarial de planos de implementação, contexto fresco: você recebeu APENAS a spec aprovada e o plano abaixo — nada da conversa que os elaborou, nada do esforço gasto. O plano se julga CONTRA a spec: a spec é o contrato, o plano é a promessa de como cumpri-lo."
+	SpecRoastIntro = "You are an adversarial critic of software specs, fresh context: you received ONLY the final spec below — nothing of the conversation that elaborated it, nothing of the effort spent."
+	PlanRoastIntro = "You are an adversarial critic of implementation plans, fresh context: you received ONLY the approved spec and the plan below — nothing of the conversation that elaborated them, nothing of the effort spent. The plan is judged AGAINST the spec: the spec is the contract, the plan is the promise of how to fulfil it."
 )
 
 // BuildRoastPrompt renders one critic's prompt over a single spec (F-0271).
-func BuildRoastPrompt(p RoastPersona, featureID, title, spec string) string {
-	return BuildRoastPromptFor(p, featureID, title, SpecRoastIntro, []RoastDoc{{Label: "SPEC", Body: spec}})
+func BuildRoastPrompt(l doclang.Lang, p RoastPersona, featureID, title, spec string) string {
+	return BuildRoastPromptFor(l, p, featureID, title, SpecRoastIntro, []RoastDoc{{Label: "SPEC", Body: spec}})
 }
 
 // BuildRoastPromptFor renders one critic's prompt over any document bundle.
 // The contract mirrors what the F-0270/W-0181 dry runs proved out: exact quote
 // or the finding is invalid, no verdict, hard cap, and every document
 // explicitly delimited so instructions never bleed into the judged artifact.
-func BuildRoastPromptFor(p RoastPersona, featureID, title, intro string, docs []RoastDoc) string {
+func BuildRoastPromptFor(l doclang.Lang, p RoastPersona, featureID, title, intro string, docs []RoastDoc) string {
 	var b strings.Builder
 	b.WriteString(intro + "\n\n")
-	b.WriteString("SUA LENTE (única — ignore problemas de outras lentes): " + p.Lens + "\n\n")
-	b.WriteString("Regras do contrato:\n")
+	b.WriteString("YOUR LENS (the only one — ignore problems of other lenses): " + p.Lens + "\n\n")
+	b.WriteString("Contract rules:\n")
 	if len(docs) > 1 {
 		// With more than one document in the prompt, an unsourced quote is
 		// ambiguous — and the staleness stamp cannot tell which document the
 		// finding is anchored to.
-		b.WriteString("- Cada achado cita o trecho EXATO entre aspas E o documento de onde veio; achado sem trecho citado, ou sem o documento, é inválido e será descartado.\n")
+		b.WriteString("- Each finding quotes the EXACT passage in quotation marks AND the document it came from; a finding with no quoted passage, or with no document, is invalid and will be discarded.\n")
 	} else {
-		b.WriteString("- Cada achado cita o trecho EXATO entre aspas; achado sem trecho citado é inválido e será descartado.\n")
+		b.WriteString("- Each finding quotes the EXACT passage in quotation marks; a finding with no quoted passage is invalid and will be discarded.\n")
 	}
-	b.WriteString("- Você nunca aprove nem reprove — a decisão é do gate humano; você só entrega achados.\n")
-	b.WriteString("- Sem elogios, sem resumo; no máximo 5 achados, ordenados por severidade [alta|média|baixa].\n")
+	b.WriteString("- You never approve or reject — the decision belongs to the human gate; you only deliver findings.\n")
+	b.WriteString("- No praise, no summary; at most 5 findings, ordered by severity [high|medium|low].\n")
 	if p.Matrix == "" {
-		b.WriteString("- Nada relevante pela sua lente → responda exatamente \"sem achados relevantes\".\n")
+		b.WriteString("- Nothing relevant through your lens → answer exactly \"no relevant findings\".\n")
 	} else {
-		b.WriteString("- Sem achados além da matriz → escreva a matriz e depois exatamente \"sem achados relevantes\".\n")
+		b.WriteString("- No findings beyond the matrix → write the matrix and then exactly \"no relevant findings\".\n")
 	}
 	if len(docs) > 1 {
 		labels := make([]string, len(docs))
 		for i, d := range docs {
 			labels[i] = strings.ToUpper(d.Label)
 		}
-		b.WriteString("- Formato de cada linha: - [sev] achado em 1-2 frases — trecho (" + strings.Join(labels, "|") + "): \"…\"\n")
+		b.WriteString("- Format of each line: - [sev] finding in 1-2 sentences — passage (" + strings.Join(labels, "|") + "): \"…\"\n")
 	} else {
-		b.WriteString("- Formato de cada linha: - [sev] achado em 1-2 frases — trecho: \"…\"\n")
+		b.WriteString("- Format of each line: - [sev] finding in 1-2 sentences — passage: \"…\"\n")
 	}
 	if p.Matrix != "" {
-		b.WriteString("\n" + p.Matrix + "\n")
+		b.WriteString("\n" + strings.ReplaceAll(p.Matrix, "{criterion}", doclang.Display(doclang.Criterion, l)) + "\n")
 	}
 	b.WriteString("\n")
 	for i, d := range docs {
 		if i == 0 {
-			fmt.Fprintf(&b, "=== %s (início) ===\n(%s) %s\n\n%s\n=== %s (fim) ===\n\n", d.Label, featureID, title, d.Body, d.Label)
+			fmt.Fprintf(&b, "=== %s (start) ===\n(%s) %s\n\n%s\n=== %s (end) ===\n\n", d.Label, featureID, title, d.Body, d.Label)
 			continue
 		}
-		fmt.Fprintf(&b, "=== %s (início) ===\n%s\n=== %s (fim) ===\n\n", d.Label, d.Body, d.Label)
+		fmt.Fprintf(&b, "=== %s (start) ===\n%s\n=== %s (end) ===\n\n", d.Label, d.Body, d.Label)
 	}
+	b.WriteString(doclang.Reply(l))
 	return b.String()
 }
 
@@ -193,8 +195,8 @@ func (r RoastReport) FirstErr() string {
 }
 
 // RunRoast runs the spec personas in parallel over the spec (F-0271).
-func RunRoast(ctx context.Context, prov llm.Provider, featureID, title, spec string, perCritic time.Duration) RoastReport {
-	return RunRoastWith(ctx, prov, RoastPersonas, featureID, title, SpecRoastIntro, []RoastDoc{{Label: "SPEC", Body: spec}}, perCritic)
+func RunRoast(ctx context.Context, prov llm.Provider, l doclang.Lang, featureID, title, spec string, perCritic time.Duration) RoastReport {
+	return RunRoastWith(ctx, prov, l, RoastPersonas, featureID, title, SpecRoastIntro, []RoastDoc{{Label: "SPEC", Body: spec}}, perCritic)
 }
 
 // RunRoastWith runs any persona set in parallel over any document bundle,
@@ -203,7 +205,7 @@ func RunRoast(ctx context.Context, prov llm.Provider, featureID, title, spec str
 // Every document in the bundle is fingerprinted: a plan roast asserts
 // plan-against-spec conformity, so editing either one invalidates the
 // verdicts and the staleness check has to see both.
-func RunRoastWith(ctx context.Context, prov llm.Provider, personas []RoastPersona, featureID, title, intro string, docs []RoastDoc, perCritic time.Duration) RoastReport {
+func RunRoastWith(ctx context.Context, prov llm.Provider, l doclang.Lang, personas []RoastPersona, featureID, title, intro string, docs []RoastDoc, perCritic time.Duration) RoastReport {
 	rep := RoastReport{
 		FeatureID: featureID,
 		Title:     title,
@@ -223,7 +225,7 @@ func RunRoastWith(ctx context.Context, prov llm.Provider, personas []RoastPerson
 			defer wg.Done()
 			cctx, cancel := context.WithTimeout(ctx, perCritic)
 			defer cancel()
-			out, err := prov.Complete(cctx, BuildRoastPromptFor(p, featureID, title, intro, docs))
+			out, err := prov.Complete(cctx, BuildRoastPromptFor(l, p, featureID, title, intro, docs))
 			if err != nil {
 				rep.Results[i] = RoastResult{Persona: p, Err: err.Error()}
 				return

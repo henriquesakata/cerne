@@ -62,8 +62,6 @@ var promptExceptions = []struct{ re, why string }{
 // commit that converts it, and the list is empty when F-0447 is done.
 var promptsPending = map[string]string{
 	"turn context":         "converted with the other prompts",
-	"roast spec":           "converted with the other prompts",
-	"roast plan":           "converted with the other prompts",
 	"ask":                  "converted with the other prompts",
 	"compile page":         "converted with the other prompts",
 	"capability bootstrap": "converted with the other prompts",
@@ -153,11 +151,11 @@ func promptCases() []promptCase {
 			}
 			return tc.Prompt
 		}},
-		{name: "roast spec", closes: closesReply, render: func(_ *testing.T, _ doclang.Lang) string {
-			return app.BuildRoastPrompt(app.RoastPersonas[0], "F-0001", "Sign in", "the spec")
+		{name: "roast spec", closes: closesReply, render: func(_ *testing.T, l doclang.Lang) string {
+			return app.BuildRoastPrompt(l, app.RoastPersonas[0], "F-0001", "Sign in", "the spec")
 		}},
-		{name: "roast plan", closes: closesReply, render: func(_ *testing.T, _ doclang.Lang) string {
-			return app.BuildRoastPromptFor(app.PlanRoastPersonas[0], "F-0001", "Sign in", app.PlanRoastIntro, []app.RoastDoc{{Label: "SPEC", Body: "s"}, {Label: "PLAN", Body: "p"}})
+		{name: "roast plan", closes: closesReply, render: func(_ *testing.T, l doclang.Lang) string {
+			return app.BuildRoastPromptFor(l, app.PlanRoastPersonas[0], "F-0001", "Sign in", app.PlanRoastIntro, []app.RoastDoc{{Label: "SPEC", Body: "s"}, {Label: "PLAN", Body: "p"}})
 		}},
 		{name: "ask", closes: closesReply, render: func(_ *testing.T, _ doclang.Lang) string {
 			return ask.BuildAskPrompt("what is X?", []ask.Snippet{{Source: "F-0001", Kind: "feature", State: "implemented", Historical: true, URL: "https://example.com", Text: "t"}}, true)

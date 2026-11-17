@@ -126,7 +126,7 @@ func handleRoast(w http.ResponseWriter, r *http.Request, repoDir, projDir, id st
 		return
 	}
 
-	rep := app.RunRoastWith(r.Context(), prov, personas, id, f.Title, intro, docs, perCritic)
+	rep := app.RunRoastWith(r.Context(), prov, store.DocsLanguage(repoDir), personas, id, f.Title, intro, docs, perCritic)
 	// A round where no critic finished is a cancelled request or a dead
 	// provider, not a judgment — persisting it would overwrite a good report
 	// with committed garbage.
