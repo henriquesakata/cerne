@@ -146,7 +146,7 @@ func runRunbookMigrate(cmd *cobra.Command, dir string, yes bool) error {
 func newRunbookNewCmd(dir *string) *cobra.Command {
 	var file string
 	cmd := &cobra.Command{
-		Use:   "new <title>",
+		Use:   "new [title]",
 		Short: "Create a runbook (active); one-shot with a --file/stdin body",
 		Long: "Creates an active runbook. With a body (--file or piped stdin) it is one-shot: born with real " +
 			"content, already committed and pushed — no draft+push cycle. Without a body, it is born as a stub of the " +

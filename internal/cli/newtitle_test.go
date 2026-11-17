@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 var newTitleIDRe = regexp.MustCompile(`\b(?:F|B|N|D|RB|R)-\d{4}\b`)
@@ -114,5 +115,89 @@ func TestNewTitleFromBodyH1FeedsDuplicateGuard(t *testing.T) {
 	out, err := execCerneStdin(t, body, "note", "new", "--dir", projDir)
 	if err == nil || !strings.Contains(out, "similar registration already exists") {
 		t.Fatalf("second note with the same H1 must hit the duplicate guard: err=%v\n%s", err, out)
+	}
+}
+
+// B-0018: with stdin a terminal (a character device) and no --file, a `new`
+// command never waits for a body: readOptionalBody returns "" on the
+// ModeCharDevice check (stdinbody.go), so the title error comes at once.
+func TestNewTitleTerminalStdinDoesNotBlock(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	dev, err := os.Open(os.DevNull) // a character device, like a tty
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dev.Close()
+	old := stdinBody
+	stdinBody = dev
+	t.Cleanup(func() { stdinBody = old })
+	done := make(chan error, 1)
+	go func() {
+		_, err := execCerne(t, "note", "new", "--dir", projDir)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if !errors.Is(err, errNewTitleRequired) {
+			t.Fatalf("want errNewTitleRequired, got %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("note new blocked on a terminal stdin")
+	}
+}
+
+// B-0018: the argument is trimmed for every command; a blank one is no title.
+func TestNewTitleArgumentTrimmedAndBlankRefused(t *testing.T) {
+	for _, c := range newTitleCmds {
+		t.Run(c.name, func(t *testing.T) {
+			projDir, _, _ := setupProject(t)
+			extra := []string{"--dir", projDir}
+			if c.name == "feature" || c.name == "bug" {
+				extra = append(extra, "--context", "ctx")
+			}
+			out, err := execCerne(t, append(append(append([]string{}, c.args...), "   "), extra...)...)
+			if !errors.Is(err, errNewTitleRequired) {
+				t.Fatalf("blank argument: want errNewTitleRequired, got err=%v out=%s", err, out)
+			}
+			out, err = execCerne(t, append(append(append([]string{}, c.args...), "  Padded "+c.name+"  "), extra...)...)
+			if err != nil {
+				t.Fatalf("padded argument: %v\n%s", err, out)
+			}
+			if got := shownTitle(t, projDir, out); !strings.HasSuffix(got, "]  Padded "+c.name) {
+				t.Fatalf("title not trimmed: %q", got)
+			}
+		})
+	}
+}
+
+// B-0018: the H1 that became the title stays in the stored body, and the
+// shown/materialized document carries it once.
+func TestNewTitleHeadingRendersOnce(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	out, err := execCerneStdin(t, "# Heading rendered once\n\nbody text\n", "note", "new", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	id := newTitleIDRe.FindString(out)
+	shown, err := execCerne(t, "show", id, "--dir", projDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(shown, "Heading rendered once"); n < 1 {
+		t.Fatalf("show lost the title:\n%s", shown)
+	}
+	if n := strings.Count(shown, "# Heading rendered once"); n != 1 {
+		t.Fatalf("show renders the heading %d times:\n%s", n, shown)
+	}
+	if out, err := execCerne(t, "pull", "--dir", projDir); err != nil {
+		t.Fatalf("pull: %v\n%s", err, out)
+	}
+	files, _ := filepath.Glob(filepath.Join(projDir, ".docs", "current", "notes", id+"-*.md"))
+	if len(files) != 1 {
+		t.Fatalf("materialized note files = %v", files)
+	}
+	raw, _ := os.ReadFile(files[0])
+	if n := strings.Count(string(raw), "# Heading rendered once"); n != 1 {
+		t.Fatalf("materialized doc renders the heading %d times:\n%s", n, raw)
 	}
 }

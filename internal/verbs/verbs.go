@@ -129,14 +129,31 @@ var positional = regexp.MustCompile(`^(<([a-z0-9_-]+)>|\[([a-z0-9_-]+)\])$`)
 // Positionals are the argument names of the verb's Use, in order: each must be
 // a single <x> or [x] (a variadic "..." has no typed-tool shape).
 func (v Verb) Positionals() ([]string, error) {
+	names, _, err := v.positionalSpecs()
+	return names, err
+}
+
+// OptionalPositional reports whether name is written [name] in the verb's Use:
+// the typed tool schema then leaves it out of "required" (B-0018: a title the
+// body's first heading can supply).
+func (v Verb) OptionalPositional(name string) bool {
+	_, optional, err := v.positionalSpecs()
+	return err == nil && optional[name]
+}
+
+func (v Verb) positionalSpecs() ([]string, map[string]bool, error) {
 	fields := strings.Fields(v.Use)
 	var out []string
+	optional := map[string]bool{}
 	for _, f := range fields[min(1, len(fields)):] {
 		m := positional.FindStringSubmatch(f)
 		if m == nil {
-			return nil, fmt.Errorf("use %q: %q is not a single <arg> or [arg]", v.Use, f)
+			return nil, nil, fmt.Errorf("use %q: %q is not a single <arg> or [arg]", v.Use, f)
 		}
 		out = append(out, m[2]+m[3])
+		if m[3] != "" {
+			optional[m[3]] = true
+		}
 	}
-	return out, nil
+	return out, optional, nil
 }

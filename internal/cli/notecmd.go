@@ -292,7 +292,7 @@ func newNoteNewCmd(dir *string) *cobra.Command {
 	var informs, file, facet, component string
 	var force bool
 	cmd := &cobra.Command{
-		Use:   "new <title>",
+		Use:   "new [title]",
 		Short: "Register durable team knowledge as a note (active)",
 		Long: "Registers durable project knowledge (gotchas, invariants, tacit conventions) as an active " +
 			"note. The body is free text, from --file or standard input (when piped); without a body the note " +

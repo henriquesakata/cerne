@@ -49,7 +49,7 @@ func newFeatureNewCmd(dir *string) *cobra.Command {
 	var module, parent, fixes, facet, component, file, context, owner, priority, onBehalf string
 	var force bool
 	cmd := &cobra.Command{
-		Use:   "new <title>",
+		Use:   "new [title]",
 		Short: "Create a feature in candidate state",
 		Long: "Creates the candidate with its context already captured: --file/stdin brings the full spec (one-shot, " +
 			"nothing to fill in later) and --context seeds the draft's Problem section with why it was created. " +

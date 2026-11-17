@@ -33,7 +33,7 @@ func newBugNewCmd(dir *string) *cobra.Command {
 	var module, fixes, facet, component, file, context, steps, expected, owner, priority, onBehalf string
 	var force bool
 	cmd := &cobra.Command{
-		Use:   "new <title>",
+		Use:   "new [title]",
 		Short: "Report a bug; born approved when a human asked for it",
 		Long: "Creates a bug report (B-): a lightweight correction card with a three-section spec (Context, " +
 			"Steps to reproduce, Expected × actual) and the regression-test bar already filled. When the origin " +

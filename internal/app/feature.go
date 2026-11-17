@@ -8,7 +8,6 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -996,31 +995,6 @@ type frontmatterRefusal string
 func (e frontmatterRefusal) Error() string        { return string(e) }
 func (e frontmatterRefusal) Is(target error) bool { return target == ErrBodyFrontmatter }
 
-// frontmatterKeyLine is a top-level "key: value" line — with blank lines, the
-// only line a frontmatter block may hold before its closing '---'.
-var frontmatterKeyLine = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]*:(\s|$)`)
-
-// leadingBlock reads the '---' frontmatter block lines open with: its inner
-// lines and the lines after its closing '---'. opens is false when the first
-// line is not '---'. closed is false when that '---' opens no block — a line
-// that is neither blank nor "key: value" comes before any closing '---' (prose,
-// a heading, a code fence), or no '---' follows at all — so a later rule or
-// fence never closes it and swallows the document (F-0328 critic C2).
-func leadingBlock(lines []string) (inner, rest []string, opens, closed bool) {
-	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
-		return nil, lines, false, false
-	}
-	for i := 1; i < len(lines); i++ {
-		switch l := lines[i]; {
-		case strings.TrimSpace(l) == "---":
-			return lines[1:i], lines[i+1:], true, true
-		case strings.TrimSpace(l) != "" && !frontmatterKeyLine.MatchString(l):
-			return nil, lines, true, false
-		}
-	}
-	return nil, lines, true, false
-}
-
 // dropBlank drops the blank lines lines open with.
 func dropBlank(lines []string) []string {
 	for len(lines) > 0 && strings.TrimSpace(lines[0]) == "" {
@@ -1043,7 +1017,7 @@ func dropBlank(lines []string) []string {
 func stampedDoc(id, doc, body string, fresh bool) (string, error) {
 	body = strings.ReplaceAll(body, "\r\n", "\n")
 	body = strings.TrimSpace(strings.TrimLeft(body, "\ufeff \t\r\n"))
-	inner, rest, opens, closed := leadingBlock(strings.Split(body, "\n"))
+	inner, rest, opens, closed := doccheck.LeadingBlock(strings.Split(body, "\n"))
 	empty := fmt.Errorf("%w: the %s has no content besides its frontmatter", ErrEmptyBody, doc)
 	if !opens && body == "" {
 		return "", empty
@@ -1074,7 +1048,7 @@ func stampedDoc(id, doc, body string, fresh bool) (string, error) {
 	// refused. A '---' that opens no block there is a rule, and stays (C1).
 	for {
 		rest = dropBlank(rest)
-		next, after, opens, closed := leadingBlock(rest)
+		next, after, opens, closed := doccheck.LeadingBlock(rest)
 		if !opens || !closed {
 			break
 		}

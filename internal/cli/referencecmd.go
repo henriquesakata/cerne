@@ -105,7 +105,7 @@ func newReferenceNewCmd(dir *string) *cobra.Command {
 	var url, informs, file, facet, component string
 	var force bool
 	cmd := &cobra.Command{
-		Use:   "new <title>",
+		Use:   "new [title]",
 		Short: "Register an external source (article/doc) as a reference",
 		Long: "Registers an external article/document as a reference (marked external + URL). " +
 			"The content (text/summary) comes from --file or standard input and enters the index, " +

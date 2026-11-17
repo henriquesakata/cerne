@@ -165,7 +165,7 @@ func newDecisionNewCmd(dir *string) *cobra.Command {
 	var file, facet, component string
 	var force bool
 	cmd := &cobra.Command{
-		Use:   "new <title>",
+		Use:   "new [title]",
 		Short: "Create a decision (active); one-shot with a --file/stdin body",
 		Long: "Creates an active decision. With a body (--file or piped stdin) it is one-shot: the ADR is born with " +
 			"real content, already committed and pushed — no draft+push cycle. Without a body, it is born as a stub of the " +

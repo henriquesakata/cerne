@@ -276,6 +276,11 @@ func TestRunHelpOnlyAfterFullValidation(t *testing.T) {
 	if !res.OK || !strings.Contains(res.Output, "Usage:") || res.ID != "" {
 		t.Fatalf("Run(reference new T --url u --help) = %+v, want OK with the usage", res)
 	}
+	// B-0018: the title is optional now, so a bare --help is a valid call and
+	// returns the usage without creating anything.
+	if res := run(t, env, "note new", "", "--help"); !res.OK || !strings.Contains(res.Output, "Usage:") || res.ID != "" {
+		t.Fatalf("Run(note new --help) = %+v, want OK with the usage", res)
+	}
 	for _, args := range [][]string{
 		{"Nota vazada", "--facet", "process", "--component", "chat", "--help=false", "--file", "/etc/hosts"},
 		{"Nota vazada", "--facet", "process", "--component", "chat", "--help=false"},

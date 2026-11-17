@@ -15,6 +15,17 @@ func TestBodyTitle(t *testing.T) {
 		{"no space", "#NoSpace\n", ""},
 		{"empty", "", ""},
 		{"unterminated frontmatter is content", "---\n# Title\n", ""},
+		{"horizontal rule is not frontmatter", "---\ntext\n---\n# T\n", ""},
+		{"rule then heading", "---\n\n# T\n", ""},
+		{"BOM before frontmatter", "\xef\xbb\xbf---\nk: v\n---\n# After BOM\n", "After BOM"},
+		{"CRLF", "---\r\nk: v\r\n---\r\n# Crlf\r\n", "Crlf"},
+		{"closing hashes", "# Title #\n", "Title"},
+		{"closing hashes many", "# Title ###   \n", "Title"},
+		{"hash glued to text stays", "# C#\n", "C#"},
+		{"tab after hash", "#\tTabbed\n", "Tabbed"},
+		{"hash alone", "# \nbody\n", ""},
+		{"only closing hashes", "# ##\n", ""},
+		{"inline markdown verbatim", "# The `go` *tool* [x](y)\n", "The `go` *tool* [x](y)"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := BodyTitle([]byte(tc.body)); got != tc.want {
