@@ -9,6 +9,7 @@ import {
 } from 'react'
 import { fetchEvents, fetchEventsFor, type LifecycleEvent, type ModelsChange } from './api'
 import { useProjects } from './live'
+import { entityHref } from './entityRoute'
 import { useT } from './i18n'
 
 // Sininho de notificações (F-0160): o núcleo puro (janela, dedupe, não-lidos)
@@ -106,14 +107,7 @@ export function buildNativePayload(
 
 // entityHref roteia cada tipo de entidade para sua página; sem rota, sem link.
 // (Vive aqui porque o banner nativo também navega — o sino importa daqui.)
-export function entityHref(id: string): string | null {
-  if (id.startsWith('F-')) return `#/f/${encodeURIComponent(id)}`
-  if (id.startsWith('D-')) return `#/d/${encodeURIComponent(id)}`
-  if (id.startsWith('RB-')) return `#/rb/${encodeURIComponent(id)}`
-  if (id.startsWith('R-')) return `#/r/${encodeURIComponent(id)}`
-  if (id.startsWith('N-')) return `#/n/${encodeURIComponent(id)}`
-  return null
-}
+export { entityHref }
 
 // modelsNotice (F-0311 critério 22) leva o refresh do catálogo de modelos —
 // global, fora do log de eventos do projeto — para o formato de uma entrada do

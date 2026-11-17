@@ -29,6 +29,7 @@ import NoteProposal from './NoteProposal'
 import ProposalDraft from './ProposalDraft'
 import QuestionCard from './QuestionCard'
 import ConversationList from './ConversationList'
+import { entityHref, isFeatureFamily } from './entityRoute'
 import { useT } from './i18n'
 import type { Conversation } from './useBacklogChats'
 
@@ -260,15 +261,15 @@ export function stripProposalFence(reply: string): string {
 // turnSourceHref (F-0436) leva à página da entidade pelo prefixo do id; um
 // prefixo sem página própria fica como texto.
 function turnSourceHref(id: string): string | null {
-  const route = { 'F-': 'f', 'D-': 'd', 'N-': 'n', 'R-': 'r' }[id.slice(0, 2)]
-  if (route) return `#/${route}/${encodeURIComponent(id)}`
+  const href = entityHref(id)
+  if (href) return href
   return id.startsWith('wiki:') ? `#/wiki/${encodeURIComponent(id.slice(5))}` : null
 }
 
 // turnStateLabel localiza o estado de uma fonte recuperada pelo prefixo do id.
 function turnStateLabel(t: ReturnType<typeof useT>['t'], id: string, state: string): string {
   const labels: Record<string, string> =
-    id.startsWith('F-') ? t.state : id.startsWith('D-') ? t.decisions.stateLabels : id.startsWith('N-') ? t.notes.stateLabels : {}
+    isFeatureFamily(id) ? t.state : id.startsWith('D-') ? t.decisions.stateLabels : id.startsWith('N-') ? t.notes.stateLabels : {}
   return labels[state] ?? state
 }
 

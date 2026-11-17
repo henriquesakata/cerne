@@ -1,5 +1,6 @@
 import { fetchHandoffs, fetchWork, type Handoff, type Work } from './api'
 import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
+import { entityHref } from './entityRoute'
 import { useT } from './i18n'
 
 // Aba Atividade (F-0130): o work-in-progress compartilhado dos agentes,
@@ -15,13 +16,6 @@ function relTime(iso: string, lang: string): string {
   if (mins < 60) return rtf.format(-mins, 'minute')
   if (mins < 60 * 24) return rtf.format(-Math.round(mins / 60), 'hour')
   return rtf.format(-Math.round(mins / (60 * 24)), 'day')
-}
-
-// refHref aponta um id referenciado para a sua rota de detalhe.
-function refHref(id: string): string {
-  if (id.startsWith('F-')) return `#/f/${encodeURIComponent(id)}`
-  if (id.startsWith('D-')) return `#/d/${encodeURIComponent(id)}`
-  return '#/'
 }
 
 // loadActivity traz os W- e as passagens (F-0386) para o selo. Sem a rota de
@@ -112,11 +106,19 @@ function WorkRow({ w, lang, handoff }: { w: Work; lang: string; handoff?: Handof
           </a>
         )}
         <span className="work-refs">
-          {(w.refs ?? []).map((r) => (
-            <a key={r} className="work-ref" href={refHref(r)}>
-              {r}
-            </a>
-          ))}
+          {(w.refs ?? []).map((r) => {
+            // A kind with no page of its own (a W-, say) is text, not a dead link.
+            const href = entityHref(r)
+            return href ? (
+              <a key={r} className="work-ref" href={href}>
+                {r}
+              </a>
+            ) : (
+              <span key={r} className="work-ref">
+                {r}
+              </span>
+            )
+          })}
         </span>
         <span className="work-actor" title={w.created_at}>
           {w.actor} · {relTime(w.state === 'active' ? w.created_at : w.updated_at, lang)}
