@@ -125,16 +125,24 @@ var ErrBrokenErrataBlock = errors.New("errata block altered")
 const errataBlocksFile = ".errata-blocks.json"
 
 // SaveErrataBlocks records the blocks of a materialization (rel -> exact text).
-// Nothing is written when no document carries one.
+// An empty record removes the sidecar, so a stale one never outlives its pull.
 func SaveErrataBlocks(docsDir string, blocks map[string]string) error {
+	path := filepath.Join(docsDir, errataBlocksFile)
 	if len(blocks) == 0 {
+		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
 		return nil
 	}
 	data, err := json.MarshalIndent(blocks, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(docsDir, errataBlocksFile), append(data, '\n'), 0o644)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, append(data, '\n'), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 // LoadErrataBlocks reads the sidecar; a missing one is "no block recorded".
@@ -167,7 +175,7 @@ func StripErrataBlock(body []byte, block string) ([]byte, error) {
 	}
 	cut := func(b []byte) ([]byte, bool) {
 		for _, cand := range []string{block, strings.TrimSuffix(block, "\n")} {
-			i := bytes.Index(b, []byte(cand))
+			i := occurrence(b, []byte(cand))
 			if i < 0 || (cand != block && !bytes.HasSuffix(b, []byte(cand))) {
 				continue
 			}
@@ -188,4 +196,35 @@ func StripErrataBlock(body []byte, block string) ([]byte, error) {
 		}
 	}
 	return body, nil
+}
+
+// CheckNoNewErrataMarker is push's invariant, independent of the sidecar: the
+// outgoing body may not hold more errata begin markers than the backend's
+// current body of the same document. Errata text is defanged, so every marker
+// is authored or generated; authored ones already in the backend stay
+// pushable, nothing generated can be added.
+func CheckNoNewErrataMarker(outgoing, current []byte) error {
+	marker := []byte("cerne:errata:begin")
+	if bytes.Count(outgoing, marker) > bytes.Count(current, marker) {
+		return ErrBrokenErrataBlock
+	}
+	return nil
+}
+
+// occurrence is where the generated copy of block sits: the projection appends
+// it last, so the occurrence followed only by whitespace wins over a copy the
+// user pasted earlier; otherwise the first one. -1 when absent.
+func occurrence(b, block []byte) int {
+	first := bytes.Index(b, block)
+	for i := first; i >= 0; {
+		if len(bytes.TrimSpace(b[i+len(block):])) == 0 {
+			return i
+		}
+		j := bytes.Index(b[i+1:], block)
+		if j < 0 {
+			break
+		}
+		i += 1 + j
+	}
+	return first
 }

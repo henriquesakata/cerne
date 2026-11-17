@@ -194,16 +194,21 @@ func TestPushRefusesBlockWithBeginLineRemoved(t *testing.T) {
 	}
 }
 
-// A complete example block the user quotes AFTER the generated one is body.
-func TestPushKeepsUserExampleBlockAfterGeneratedOne(t *testing.T) {
+// A complete example block the user quotes AFTER the generated one: the strip
+// keeps it (TestStripErrataBlockExact), but the push-time marker invariant
+// cannot tell it from a generated block, so adding a NEW marker is refused —
+// with the way out in the message — and nothing reaches the backend.
+func TestPushRefusesNewMarkerEvenAsUserExample(t *testing.T) {
 	projDir, repoDir, file := notePulledWithErrata(t)
 	got, _ := os.ReadFile(file)
 	example := "```\n<!-- cerne:errata:begin -->\n## Errata\n\nexemplo do usuario\n<!-- cerne:errata:end -->\n```\n"
 	mustWrite(t, file, string(got)+"\n"+example)
-	rb(t, projDir, "push")
-	stored, _ := store.LoadNoteContent(repoDir, "N-0001")
-	if !strings.Contains(stored, "exemplo do usuario") || strings.Contains(stored, "DTS do RTSP") {
-		t.Fatalf("example kept, generated block gone:\n%s", stored)
+	out, err := execCerne(t, "push", "--dir", projDir)
+	if err == nil || !strings.Contains(err.Error(), "errata block") {
+		t.Fatalf("push must refuse a new marker: err=%v\n%s", err, out)
+	}
+	if stored, _ := store.LoadNoteContent(repoDir, "N-0001"); strings.Contains(stored, "exemplo do usuario") || strings.Contains(stored, "DTS") {
+		t.Fatalf("nothing may reach the backend:\n%s", stored)
 	}
 }
 
@@ -266,5 +271,61 @@ func TestErrataRoundTripOKF(t *testing.T) {
 	stored, _ := store.LoadNoteContent(repoDir, "N-0001")
 	if !strings.Contains(stored, "Corpo okf editado.") || strings.Contains(stored, "DTS") || strings.Contains(stored, "cerne:errata") {
 		t.Fatalf("backend body must hold the edit and no errata:\n%s", stored)
+	}
+}
+
+// Round 4: a push-time invariant, independent of the sidecar and the strip.
+
+// The sidecar is gone: the generated block would be sent as body.
+func TestPushRefusesWhenSidecarIsMissing(t *testing.T) {
+	projDir, repoDir, _ := notePulledWithErrata(t)
+	if err := os.Remove(filepath.Join(projDir, ".docs", ".errata-blocks.json")); err != nil {
+		t.Fatal(err)
+	}
+	out, err := execCerne(t, "push", "--dir", projDir)
+	if err == nil || !strings.Contains(err.Error(), "errata block") || !strings.Contains(err.Error(), "delete the whole generated block") {
+		t.Fatalf("push must refuse with the escape hatch: err=%v\n%s", err, out)
+	}
+	if stored, _ := store.LoadNoteContent(repoDir, "N-0001"); strings.Contains(stored, "DTS do RTSP") {
+		t.Fatalf("block reached the backend:\n%s", stored)
+	}
+}
+
+// A blockquoted copy with edited text fails the verbatim match and has no
+// line-start marker: the marker count still catches it.
+func TestPushRefusesBlockquotedEditedBlock(t *testing.T) {
+	projDir, repoDir, file := notePulledWithErrata(t)
+	got, _ := os.ReadFile(file)
+	i := strings.Index(string(got), "\n\n<!-- cerne:errata:begin")
+	var q []string
+	for _, l := range strings.Split(strings.TrimSpace(string(got)[i:]), "\n") {
+		q = append(q, "> "+strings.Replace(l, "DTS do RTSP", "DTS editado", 1))
+	}
+	mustWrite(t, file, string(got)[:i]+"\n\n"+strings.Join(q, "\n")+"\n")
+	out, err := execCerne(t, "push", "--dir", projDir)
+	if err == nil || !strings.Contains(err.Error(), "errata block") {
+		t.Fatalf("push must refuse: err=%v\n%s", err, out)
+	}
+	if stored, _ := store.LoadNoteContent(repoDir, "N-0001"); strings.Contains(stored, "DTS") {
+		t.Fatalf("fragment reached the backend:\n%s", stored)
+	}
+}
+
+// The backend body has its own authored block: an unrelated edit still pushes.
+func TestPushAllowsAuthoredBlockAlreadyInBackend(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	authored := "Corpo.\n\n<!-- cerne:errata:begin — meu -->\n## Errata\n\nescrito por mim\n<!-- cerne:errata:end -->\n"
+	body := filepath.Join(t.TempDir(), "n.md")
+	mustWrite(t, body, authored)
+	rb(t, projDir, "note", "new", "Autoral", "--file", body)
+	rb(t, projDir, "note", "errata", "N-0001", "Uma correcao de verdade.")
+	rb(t, projDir, "pull")
+	m, _ := filepath.Glob(filepath.Join(projDir, ".docs", "current", "notes", "N-0001-*.md"))
+	got, _ := os.ReadFile(m[0])
+	mustWrite(t, m[0], strings.Replace(string(got), "Corpo.", "Corpo editado.", 1))
+	rb(t, projDir, "push")
+	stored, _ := store.LoadNoteContent(repoDir, "N-0001")
+	if !strings.Contains(stored, "Corpo editado.") || !strings.Contains(stored, "escrito por mim") || strings.Contains(stored, "correcao de verdade") {
+		t.Fatalf("authored block kept, generated one absent:\n%s", stored)
 	}
 }

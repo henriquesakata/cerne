@@ -68,3 +68,44 @@ func TestErrataBlockDefangsMarkers(t *testing.T) {
 		t.Fatalf("a quoted marker leaked: %q", got)
 	}
 }
+
+func TestCheckNoNewErrataMarker(t *testing.T) {
+	blk := "x\n" + errataBlockBegin + " -->\ny\n"
+	for name, c := range map[string]struct {
+		out, cur string
+		bad      bool
+	}{
+		"more markers than the backend": {"a\n> " + errataBlockBegin, "a\n", true},
+		"same count (authored)":         {blk + "edit", blk, false},
+		"none":                          {"a", "a", false},
+	} {
+		err := CheckNoNewErrataMarker([]byte(c.out), []byte(c.cur))
+		if c.bad != errors.Is(err, ErrBrokenErrataBlock) {
+			t.Errorf("%s: err = %v", name, err)
+		}
+	}
+}
+
+// The generated block is appended last: a verbatim copy the user pasted before
+// it stays, the trailing one goes.
+func TestStripErrataBlockPrefersTheTrailingOccurrence(t *testing.T) {
+	block := ErrataBlock("corrigido", nil)
+	in := "corpo\n" + block + "\ntexto\n" + block
+	want := "corpo\n" + block + "\ntexto\n"
+	if got := strip(t, in, block); got != want {
+		t.Fatalf("strip = %q, want %q", got, want)
+	}
+}
+
+func TestSaveErrataBlocksReplacesAndRemoves(t *testing.T) {
+	dir := t.TempDir()
+	if err := SaveErrataBlocks(dir, map[string]string{"a.md": "B"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveErrataBlocks(dir, map[string]string{}); err != nil {
+		t.Fatal(err)
+	}
+	if m, err := LoadErrataBlocks(dir); err != nil || len(m) != 0 {
+		t.Fatalf("stale sidecar survived an empty save: %v %v", m, err)
+	}
+}

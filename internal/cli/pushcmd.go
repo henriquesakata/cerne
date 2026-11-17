@@ -326,7 +326,7 @@ func collectChangedDocs(repoDir, docsDir string, manifest map[string]string) ([]
 		}
 		stripped, err := store.StripErrataBlock(body, blocks[rel])
 		if err != nil {
-			return fmt.Errorf("%s: %w — restore the generated errata block verbatim, or run 'cerne pull --force' to regenerate it (it discards unsent edits: save yours first)", rel, err)
+			return fmt.Errorf("%s: %w — %s", rel, err, errataBlockFix)
 		}
 		id := parseCerneID(body)
 		if id == "" {
@@ -335,6 +335,13 @@ func collectChangedDocs(repoDir, docsDir string, manifest map[string]string) ([]
 		backendRel, err := backendRelPath(rel, id)
 		if err != nil {
 			return err
+		}
+		current, err := os.ReadFile(filepath.Join(repoDir, filepath.FromSlash(backendRel)))
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		if err := store.CheckNoNewErrataMarker(stripped, current); err != nil {
+			return fmt.Errorf("%s: %w — %s", rel, err, errataBlockFix)
 		}
 		if strings.HasPrefix(rel, "current/features/") {
 			// ponytail: state read in the local cache clone before the push; its reconcile
@@ -360,6 +367,9 @@ func collectChangedDocs(repoDir, docsDir string, manifest map[string]string) ([]
 	}
 	return docs, nil
 }
+
+// errataBlockFix is the way out of a refused errata block.
+const errataBlockFix = "delete the whole generated block, markers included (push then sends the rest), restore it verbatim, or run 'cerne pull --force' to regenerate it (it discards unsent edits: save yours first)"
 
 // frozenDirIDRe takes the feature id off the front of a materialized folder name.
 var frozenDirIDRe = regexp.MustCompile(`^([A-Z]+-\d+)(?:-|$)`)
