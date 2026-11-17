@@ -256,13 +256,24 @@ func TestInstall_MinimalDiff_AppendsToExistingPostToolUse(t *testing.T) {
         ]
       }
     ]`
+	// The UserPromptSubmit block (B-0020), appended after PreCompact.
+	upBlock := `    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-prompt-notes.sh\""
+          }
+        ]
+      }
+    ]`
 	// Minimal diff: the Write entry's closing brace gains a comma; the Bash
 	// blocks (provenance + work-bind) are inserted before PostToolUse's closing
 	// bracket; the SessionStart, SubagentStart and PreToolUse members are
 	// appended to the hooks object; the CERNE_ACTOR key is appended inside the
 	// existing inline env object. Nothing else moves.
 	want := strings.Replace(pre, "\n      }\n    ]", "\n      },\n"+bashBlock+",\n"+bindBlock+"\n    ]", 1)
-	want = strings.Replace(want, "\n    ]\n  }\n}", "\n    ],\n"+ssBlock+",\n"+sbBlock+",\n"+preBlock+",\n"+stopBlock+",\n"+pcBlock+"\n  }\n}", 1)
+	want = strings.Replace(want, "\n    ]\n  }\n}", "\n    ],\n"+ssBlock+",\n"+sbBlock+",\n"+preBlock+",\n"+stopBlock+",\n"+pcBlock+",\n"+upBlock+"\n  }\n}", 1)
 	want = strings.Replace(want, `"env": {"GREETING": "Olá & tchau"},`,
 		"\"env\": {\"GREETING\": \"Olá & tchau\",\n    \"CERNE_ACTOR\": \"agent\"},", 1)
 
@@ -387,6 +398,16 @@ func TestInstall_MinimalDiff_ScenarioB(t *testing.T) {
           }
         ]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-prompt-notes.sh\""
+          }
+        ]
+      }
     ]
   },
   "env": {
@@ -496,6 +517,16 @@ func TestInstall_MinimalDiff_ScenarioC(t *testing.T) {
           {
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-precompact.sh\""
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-prompt-notes.sh\""
           }
         ]
       }
@@ -1041,5 +1072,56 @@ func TestInstall_WiresPrecompact(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("Assets() does not list the PreCompact hook")
+	}
+}
+
+// TestInstall_WiresPromptNotes (B-0020): the UserPromptSubmit script is
+// installed and wired under UserPromptSubmit (no matcher), idempotently, and
+// the asset table (the harness inventory) lists it.
+func TestInstall_WiresPromptNotes(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Install(dir); err != nil {
+		t.Fatal(err)
+	}
+	script, err := os.ReadFile(filepath.Join(dir, ".claude", "hooks", "cerne-prompt-notes.sh"))
+	if err != nil {
+		t.Fatalf("prompt-notes script not installed: %v", err)
+	}
+	for _, want := range []string{"cerne hook prompt-notes", "exit 0", "CERNE_NO_AGENT_HOOKS"} {
+		if !strings.Contains(string(script), want) {
+			t.Fatalf("script missing %q:\n%s", want, script)
+		}
+	}
+	b, err := os.ReadFile(filepath.Join(dir, ".claude", "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var s struct {
+		Hooks map[string][]struct {
+			Matcher string `json:"matcher"`
+			Hooks   []struct {
+				Command string `json:"command"`
+			} `json:"hooks"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal(b, &s); err != nil {
+		t.Fatal(err)
+	}
+	up := s.Hooks["UserPromptSubmit"]
+	if len(up) != 1 || up[0].Matcher != "" || !strings.Contains(up[0].Hooks[0].Command, "cerne-prompt-notes.sh") {
+		t.Fatalf("UserPromptSubmit wiring = %+v\n%s", up, b)
+	}
+	if _, err := Install(dir); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := os.ReadFile(filepath.Join(dir, ".claude", "settings.json")); string(again) != string(b) {
+		t.Fatalf("second install changed settings.json:\n%s", again)
+	}
+	found := false
+	for _, a := range Assets() {
+		found = found || (a.Script == "cerne-prompt-notes.sh" && a.Event == "UserPromptSubmit" && a.Matcher == "")
+	}
+	if !found {
+		t.Fatal("Assets() does not list the UserPromptSubmit hook")
 	}
 }

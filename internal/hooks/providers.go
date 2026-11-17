@@ -167,6 +167,7 @@ func installCursor(projDir string) []Result {
 		Result{Asset: "cursor: CERNE_ACTOR", Status: StatusSkipped, Note: "nothing to install: Cursor marks its agent shells with CURSOR_AGENT=1 (seen in Cursor 3.25.6, undocumented), which cerne's human gates read as an agent (F-0428)"},
 		Result{Asset: "cursor: CERNE_PROVIDER", Status: StatusSkipped, Note: "no documented per-project session env — documents written from Cursor record their author as unknown unless CERNE_PROVIDER/CERNE_MODEL are exported in its shell"},
 		Result{Asset: "cursor: subagent-context", Status: StatusSkipped, Note: "subagentStart output has no additional_context — subagents start without the live board"},
+		Result{Asset: "cursor: prompt-notes", Status: StatusSkipped, Note: "notes matching the prompt are only injected on Claude Code (UserPromptSubmit); no verified equivalent prompt-submit event that adds context is wired here (B-0020)"},
 	)
 	return results
 }
@@ -213,6 +214,7 @@ func installCodex(projDir string) []Result {
 	results = append(results, ensureLineFile(envDst, "codex: config.toml (CERNE_ACTOR, CERNE_PROVIDER)", "CERNE_PROVIDER", codexEnvFragment, false))
 
 	results = append(results, Result{Asset: "codex: subagent-context", Status: StatusSkipped, Note: "SubagentStart wiring pending live validation of its context envelope"})
+	results = append(results, Result{Asset: "codex: prompt-notes", Status: StatusSkipped, Note: "notes matching the prompt are only injected on Claude Code (UserPromptSubmit); no verified equivalent prompt-submit event that adds context is wired here (B-0020)"})
 	return results
 }
 
@@ -243,6 +245,7 @@ func installGemini(projDir string) []Result {
 		Result{Asset: "gemini: stop-closeout", Status: StatusSkipped, Note: "AfterAgent deny+reason forces a retry (stronger than advisory) — deferred pending live validation"},
 		Result{Asset: "gemini: lifecycle/provenance reminders", Status: StatusSkipped, Note: "AfterTool context envelope pending live validation"},
 		Result{Asset: "gemini: subagent-context", Status: StatusSkipped, Note: "subagents are a preview feature — hook reach unvalidated"},
+		Result{Asset: "gemini: prompt-notes", Status: StatusSkipped, Note: "notes matching the prompt are only injected on Claude Code (UserPromptSubmit); no verified equivalent prompt-submit event that adds context is wired here (B-0020)"},
 	)
 	return results
 }
@@ -346,6 +349,7 @@ func installCopilot(projDir string) []Result {
 		{Asset: "copilot: stop closeout", Status: StatusSkipped, Note: "the Stop block decision was never exercised live (only the payload was captured) — treat the closeout reminder as unverified"},
 		{Asset: "copilot: precompact", Status: StatusSkipped, Note: "Copilot's preCompact hook is notification-only — the handoff code is not kept through compaction"},
 		{Asset: "copilot: CERNE_PROVIDER", Status: StatusSkipped, Note: "CERNE_PROVIDER=copilot reaches the hook processes only, not the bash tool shell — documents written from the shell record their author as unknown unless it is exported there"},
+		{Asset: "copilot: prompt-notes", Status: StatusSkipped, Note: "notes matching the prompt are only injected on Claude Code (UserPromptSubmit); no verified equivalent prompt-submit event that adds context is wired here (B-0020)"},
 		{Asset: "copilot: subagent-context", Status: StatusSkipped, Note: "no subagent hook is wired — subagents start without the live board"},
 	}
 }
