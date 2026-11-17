@@ -9,6 +9,56 @@ While cerne is below 1.0.0, a minor version may change behavior: read the
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-11-17
+
+### Fixed
+
+- An entity's errata now reach everyone who reads it. `cerne pull` appends
+  them to the entity's file in `.docs/` as a generated block, and
+  `cerne note show` prints them as `cerne show` does. Before, only
+  `cerne show` printed them, so an agent reading `.docs/` saw a corrected note
+  without its correction. `cerne push` never sends the block back as body
+  text. ([#44](https://github.com/henriquesakata/cerne/pull/44))
+- `cerne hook install` run inside a git worktree or a submodule installs the
+  `prepare-commit-msg` and `commit-msg` hooks where git runs them, instead of
+  skipping them as "not a git repository". A `core.hooksPath` set for the
+  repository is still honored from a worktree.
+  ([#43](https://github.com/henriquesakata/cerne/pull/43))
+- `cerne --version`, the UI, `cerne harness` and the MCP server show the full
+  release version (`0.14.1`), so two releases of the same minor no longer look
+  the same. Local builds still show `dev`.
+  ([#45](https://github.com/henriquesakata/cerne/pull/45))
+- The `cerne pull` summary counts notes and runbooks.
+  ([#44](https://github.com/henriquesakata/cerne/pull/44))
+
+### Changed
+
+- Release pages open with an Update section: the command to update for each
+  install method. A release whose publishing failed halfway can be run again.
+  ([#40](https://github.com/henriquesakata/cerne/pull/40),
+  [#41](https://github.com/henriquesakata/cerne/pull/41))
+
+### Upgrading
+
+Everything not listed here needs no action.
+
+- **Update the binary on every machine that pushes to the project.**
+  `brew upgrade henriquesakata/tap/cerne`, or run the install script again, or
+  `go install github.com/henriquesakata/cerne/cmd/cerne@v0.14.1` (details in
+  INSTALL.md, *Updating*). `cerne --version` then prints `cerne 0.14.1`. A
+  0.14.0 binary pushing from a `.docs/` written by 0.14.1 would send the errata
+  blocks as body text.
+- **Run `cerne pull` in each project** so the files in `.docs/` get their
+  errata.
+- **Leave the errata block alone.** It is generated from the errata and
+  rewritten on every pull. To correct an erratum, add another with
+  `cerne <kind> errata`. If you edit inside the block, `cerne push` refuses
+  that file: delete the whole block, markers included, or restore it.
+- **Installed cerne only from inside a git worktree?** Run
+  `cerne hook install` once more to get the two commit hooks.
+
+**Full changelog:** [v0.14.0...v0.14.1](https://github.com/henriquesakata/cerne/compare/v0.14.0...v0.14.1)
+
 ## [0.14.0] - 2026-11-16
 
 ### Highlights
@@ -200,6 +250,7 @@ Everything not listed here needs no action.
 First release published on GitHub. Versions 0.1.0 to 0.12.0 were released
 before the move and have no public release notes.
 
-[Unreleased]: https://github.com/henriquesakata/cerne/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/henriquesakata/cerne/compare/v0.14.1...HEAD
+[0.14.1]: https://github.com/henriquesakata/cerne/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/henriquesakata/cerne/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/henriquesakata/cerne/releases/tag/v0.13.0
