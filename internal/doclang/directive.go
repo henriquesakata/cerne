@@ -86,3 +86,14 @@ func Directive(l Lang) string {
 	b.WriteString("Keep an execution map's \"Etapa N: ID (title)\" lines exactly in that format: it is parsed, not prose.\n")
 	return b.String()
 }
+
+// Reply closes a prompt whose output is an answer, a title or a page rather
+// than a spec-family document: it names the project's language and carries no
+// protocol form.
+func Reply(l Lang) string {
+	f, ok := directiveForms[l]
+	if !ok {
+		f = directiveForms[PT]
+	}
+	return "\n\nLANGUAGE — write your whole reply in " + f.name + " (identifiers, commands, file paths and quoted code stay as they are).\n"
+}

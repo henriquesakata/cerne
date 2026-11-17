@@ -82,3 +82,17 @@ func TestDirective_StartsWithLanguageLine(t *testing.T) {
 		}
 	}
 }
+
+// Reply closes a prompt whose output is a short answer, not a document: it
+// names the language and nothing else.
+func TestReply_NamesTheLanguage(t *testing.T) {
+	for l, name := range map[Lang]string{PT: "Brazilian Portuguese", EN: "English"} {
+		r := Reply(l)
+		if !strings.HasPrefix(r, "\n\nLANGUAGE") || !strings.Contains(r, name) {
+			t.Errorf("Reply(%s) = %q", l, r)
+		}
+		if strings.Contains(r, "SYSTEM SHALL") || strings.Contains(r, AmbiguityMarker(l)) {
+			t.Errorf("Reply(%s) carries document forms: %q", l, r)
+		}
+	}
+}
