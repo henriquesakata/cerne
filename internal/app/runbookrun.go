@@ -60,18 +60,18 @@ type RunStepInput struct {
 // is production log. Anything that is not a path (multi-line, NUL) is refused.
 func HashEvidence(path string) (store.RunEvidence, error) {
 	if strings.ContainsAny(path, "\r\n\x00") {
-		return store.RunEvidence{}, fmt.Errorf("--evidencia takes the path of a file, not its content; the content is never stored")
+		return store.RunEvidence{}, fmt.Errorf("--evidence takes the path of a file, not its content; the content is never stored")
 	}
 	// A UUID in a path (pod dirs, dumps) is legitimate; an e-mail in it is not.
 	if emailRe.MatchString(path) {
-		return store.RunEvidence{}, fmt.Errorf("--evidencia: no e-mail in the record: cite a nickname only")
+		return store.RunEvidence{}, fmt.Errorf("--evidence: no e-mail in the record: cite a nickname only")
 	}
 	st, err := os.Stat(path)
 	if err != nil {
-		return store.RunEvidence{}, fmt.Errorf("--evidencia must be the path of an existing file (%v); the content is never stored", err)
+		return store.RunEvidence{}, fmt.Errorf("--evidence must be the path of an existing file (%v); the content is never stored", err)
 	}
 	if !st.Mode().IsRegular() {
-		return store.RunEvidence{}, fmt.Errorf("--evidencia %q is not a regular file", path)
+		return store.RunEvidence{}, fmt.Errorf("--evidence %q is not a regular file", path)
 	}
 	f, err := os.Open(path)
 	if err != nil {
@@ -92,9 +92,9 @@ func HashEvidence(path string) (store.RunEvidence, error) {
 func StartRun(repoDir, projDir, rbID, window string, steps []string, expected, agent string) (store.Work, store.Run, error) {
 	window = strings.TrimSpace(window)
 	if window == "" {
-		return store.Work{}, store.Run{}, fmt.Errorf("--janela is required: the label of the window (e.g. J3)")
+		return store.Work{}, store.Run{}, fmt.Errorf("--window is required: the label of the window (e.g. J3)")
 	}
-	for flag, v := range map[string]string{"--janela": window, "--palavra": expected, "--passos": strings.Join(steps, ",")} {
+	for flag, v := range map[string]string{"--window": window, "--word": expected, "--steps": strings.Join(steps, ",")} {
 		if err := refusePersonal(flag, v); err != nil {
 			return store.Work{}, store.Run{}, err
 		}
@@ -102,10 +102,10 @@ func StartRun(repoDir, projDir, rbID, window string, steps []string, expected, a
 	seen := map[string]bool{}
 	for _, s := range steps {
 		if !stepIDRe.MatchString(s) {
-			return store.Work{}, store.Run{}, fmt.Errorf("--passos: %q is not a step id (S<n>, e.g. S3, S6.6)", s)
+			return store.Work{}, store.Run{}, fmt.Errorf("--steps: %q is not a step id (S<n>, e.g. S3, S6.6)", s)
 		}
 		if seen[s] {
-			return store.Work{}, store.Run{}, fmt.Errorf("--passos: step %s is listed twice", s)
+			return store.Work{}, store.Run{}, fmt.Errorf("--steps: step %s is listed twice", s)
 		}
 		seen[s] = true
 	}
@@ -136,7 +136,7 @@ func StartRun(repoDir, projDir, rbID, window string, steps []string, expected, a
 			list = store.RunbookSteps(body)
 		}
 		if len(list) == 0 {
-			return "", fmt.Errorf("%s names no step (S<n> tokens): pass --passos S1,S2,...", rbID)
+			return "", fmt.Errorf("%s names no step (S<n> tokens): pass --steps S1,S2,...", rbID)
 		}
 		works, err := store.LoadAllWorks(repoDir)
 		if err != nil {
@@ -186,18 +186,18 @@ func RecordRunStep(repoDir, projDir, runID string, in RunStepInput, now time.Tim
 	if in.Pare {
 		in.Output = strings.TrimSpace(in.Output)
 		if in.Output == "" {
-			return store.RunEntry{}, fmt.Errorf("--pare needs the exit that stopped the run")
+			return store.RunEntry{}, fmt.Errorf("--stop needs the exit that stopped the run")
 		}
 	} else if strings.TrimSpace(in.Word) == "" {
 		return store.RunEntry{}, fmt.Errorf("--ok needs the owner's literal word, quoted")
 	}
-	for flag, v := range map[string]string{"--por": in.By, "--ok": in.Word, "--pare": in.Output, "--esperada": in.Expected} {
+	for flag, v := range map[string]string{"--by": in.By, "--ok": in.Word, "--stop": in.Output, "--expected": in.Expected} {
 		if err := refusePersonal(flag, v); err != nil {
 			return store.RunEntry{}, err
 		}
 	}
 	if strings.Contains(in.By, "@") {
-		return store.RunEntry{}, fmt.Errorf("--por takes a nickname, not an e-mail or id")
+		return store.RunEntry{}, fmt.Errorf("--by takes a nickname, not an e-mail or id")
 	}
 	var ev *store.RunEvidence
 	if strings.TrimSpace(in.Evidence) != "" {

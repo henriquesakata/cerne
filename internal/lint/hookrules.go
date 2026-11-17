@@ -152,13 +152,13 @@ func CheckHookCitations(repoDir string, hooks []HookText) ([]Finding, error) {
 			var problem string
 			switch {
 			case !ok:
-				problem = fmt.Sprintf("o hook cita a %s, que não existe no backend", c.Note)
+				problem = fmt.Sprintf("the hook cites %s, which does not exist in the backend", c.Note)
 			case nt.State != domain.NoteActive:
-				problem = fmt.Sprintf("o hook cita a %s, que está %s e não ativa", c.Note, nt.State)
+				problem = fmt.Sprintf("the hook cites %s, which is %s, not active", c.Note, nt.State)
 			}
 			if problem != "" {
 				emit(0, Finding{Rule: RuleHookCitesMissingRule, Entity: c.Note, File: where,
-					Detail: problem + ": cite uma nota ativa ou corrija o hook"})
+					Detail: problem + ": cite an active note or fix the hook"})
 				continue
 			}
 			if len(c.Rules) == 0 {
@@ -176,7 +176,7 @@ func CheckHookCitations(repoDir string, hooks []HookText) ([]Finding, error) {
 			for _, k := range c.Rules {
 				if k > t {
 					emit(k, Finding{Rule: RuleHookCitesMissingRule, Entity: c.Note, File: where,
-						Detail: fmt.Sprintf("o hook cita a regra %d da %s, que tem %d regras numeradas: acrescente a regra à nota (cerne push) ou corrija o hook", k, c.Note, t)})
+						Detail: fmt.Sprintf("the hook cites rule %d of %s, which has %d numbered rules: add the rule to the note (cerne push) or fix the hook", k, c.Note, t)})
 				}
 			}
 		}

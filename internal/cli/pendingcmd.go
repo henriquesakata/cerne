@@ -24,7 +24,7 @@ func newPendingCmd() *cobra.Command {
 			"result.md would otherwise bury in prose. Open pendings reappear in 'cerne next' and age into the " +
 			"advisory lint finding stale-pending. An open pending never blocks a lifecycle transition. A pending " +
 			"promoted to (or linked with) a feature follows it (F-0885): the accept resolves it, a reject reopens " +
-			"it, a 'substituir' moves it to the successor, and the complete refuses a result that does not cite it.",
+			"it, a 'supersede' moves it to the successor, and the complete refuses a result that does not cite it.",
 	}
 	cmd.PersistentFlags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.PersistentFlags().MarkHidden("dir")
@@ -211,7 +211,7 @@ func newPendingPromoteCmd(dir *string) *cobra.Command {
 			"title, tags and context. Several (--title required, feature only when the origins differ): one " +
 			"entity with a section per pending, the union of their tags and the origins' common module (or " +
 			"--module). Every pending is checked before anything is created. From then on each follows the " +
-			"entity: its accept resolves them, a reject reopens them, a 'substituir' moves them to the successor, " +
+			"entity: its accept resolves them, a reject reopens them, a 'supersede' moves them to the successor, " +
 			"and its complete refuses a result that does not cite them. The new entity enters the regular funnel " +
 			"with its own human gates.",
 		Args: cobra.MinimumNArgs(1),
@@ -243,7 +243,7 @@ func newPendingLinkCmd(dir *string) *cobra.Command {
 		Short: "Point an open pending at a live feature that pays it (open -> promoted)",
 		Long: "Links an open pending to a feature still live (candidate, approved or in_development), as promote " +
 			"links the one it creates; an implemented, done, rejected or superseded feature is refused. From then " +
-			"on the pending follows the feature: its accept resolves it, a reject reopens it, a 'substituir' moves " +
+			"on the pending follows the feature: its accept resolves it, a reject reopens it, a 'supersede' moves " +
 			"it to the successor, and its complete refuses a result that does not cite it. " +
 			"'cerne pending unlink' undoes the link.",
 		Args: cobra.ExactArgs(2),
@@ -289,7 +289,7 @@ func newPendingUnlinkCmd(dir *string) *cobra.Command {
 
 // printMovedPendings reports the pendings a feature transition carried along
 // with it (F-0885): resolved on accept, reopened on reject, moved on
-// 'substituir'.
+// 'supersede'.
 func printMovedPendings(w io.Writer, lines []string) {
 	for _, l := range lines {
 		fmt.Fprintln(w, "  ↳ "+l)

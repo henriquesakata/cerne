@@ -354,7 +354,7 @@ func runDemo(w io.Writer, dest string) (err error) {
 	cookies := d.id("D")
 	d.run(d.content("decisions/jwt-tokens.md"), "decision", "new", "Use JWT access tokens with rotating refresh tokens", "--facet", "auth", "--component", "tokens")
 	jwt := d.id("D")
-	d.run("", "decision", "substituir", cookies, "--by", jwt, "--reason", "The public API and the mobile client cannot use cookies.")
+	d.run("", "decision", "supersede", cookies, "--by", jwt, "--reason", "The public API and the mobile client cannot use cookies.")
 	d.say("  %s  superseded by %s", cookies, jwt)
 	d.run(d.content("decisions/postgres.md"), "decision", "new", "Use Postgres as the primary store", "--facet", "data", "--component", "postgres")
 	d.say("  %s  active decision", d.id("D"))

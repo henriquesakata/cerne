@@ -30,7 +30,7 @@ func newRunbookCmd() *cobra.Command {
 	cmd.AddCommand(verbs.MarkChat(newRunbookNewCmd(&dir)))
 	cmd.AddCommand(verbs.MarkLocal(newRunbookDraftCmd(&dir)))
 	cmd.AddCommand(verbs.MarkChat(newRunbookRetagCmd(&dir)))
-	cmd.AddCommand(newRunbookSubstituirCmd(&dir))
+	cmd.AddCommand(newRunbookSupersedeCmd(&dir), legacyName(newRunbookSupersedeCmd(&dir), "substituir"))
 	cmd.AddCommand(newRunbookRetireCmd(&dir))
 	cmd.AddCommand(verbs.MarkLocal(newRunbookMigrateCmd(&dir)))
 	cmd.AddCommand(verbs.MarkChat(newErrataCmd(&dir)))
@@ -188,14 +188,14 @@ func runRunbookNew(cmd *cobra.Command, dir, title, file string) error {
 	return nil
 }
 
-func newRunbookSubstituirCmd(dir *string) *cobra.Command {
+func newRunbookSupersedeCmd(dir *string) *cobra.Command {
 	var by, reason string
 	cmd := &cobra.Command{
-		Use:   "substituir <id>",
+		Use:   "supersede <id>",
 		Short: "Supersede one runbook with another (requires --by and --reason)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runRunbookSubstituir(cmd, *dir, args[0], by, reason)
+			return runRunbookSupersede(cmd, *dir, args[0], by, reason)
 		},
 	}
 	cmd.Flags().StringVar(&by, "by", "", "id of the runbook that supersedes")
@@ -203,7 +203,7 @@ func newRunbookSubstituirCmd(dir *string) *cobra.Command {
 	return verbs.MarkLifecycle(cmd)
 }
 
-func runRunbookSubstituir(cmd *cobra.Command, dir, id, by, reason string) error {
+func runRunbookSupersede(cmd *cobra.Command, dir, id, by, reason string) error {
 	// Validate flags before resolveProject so bad invocations fail fast
 	// without touching origin.
 	if err := app.ValidateTransitionFlags(domain.ActionSupersede, by, reason); err != nil {
@@ -229,7 +229,7 @@ func newRunbookRetireCmd(dir *string) *cobra.Command {
 		Long: "Moves a runbook from active to superseded WITHOUT a successor — for a procedure that no longer holds " +
 			"(e.g. it became an explanation/note, or the flow was discontinued). The runbook leaves the current state " +
 			"(.docs/CONTEXT.md) and becomes searchable history ('cerne search'/'ask'). To swap it for another " +
-			"runbook, use 'cerne runbook substituir --by'.",
+			"runbook, use 'cerne runbook supersede --by'.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runRunbookRetire(cmd, *dir, args[0], reason)
@@ -241,7 +241,7 @@ func newRunbookRetireCmd(dir *string) *cobra.Command {
 
 func runRunbookRetire(cmd *cobra.Command, dir, id, reason string) error {
 	// Validate the required reason before resolveProject so bad invocations
-	// fail fast without touching origin. retire is substituir with no successor.
+	// fail fast without touching origin. retire is supersede with no successor.
 	if strings.TrimSpace(reason) == "" {
 		return fmt.Errorf("--reason is required")
 	}
