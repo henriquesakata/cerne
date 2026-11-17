@@ -16,14 +16,10 @@ import {
   type Reference,
 } from './api'
 import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
+import { entityHref } from './entityRoute'
 import { useT } from './i18n'
 
 const ORDER = ['current', 'obsolete']
-
-// entityHref links an informs target to its detail page (D- → decision, else feature).
-function entityHref(id: string): string {
-  return id.startsWith('D-') ? `#/d/${encodeURIComponent(id)}` : `#/f/${encodeURIComponent(id)}`
-}
 
 // toggleIn returns a handler that adds/removes a value from a Set state,
 // always producing a fresh Set so React sees the change (mirrors Notes).
@@ -316,12 +312,15 @@ export function ReferenceDetail({ id }: { id: string }) {
         {ref.informs && ref.informs.length > 0 && (
           <p className="feature-note">
             {t.references.informsLabel}{' '}
-            {ref.informs.map((iid, i) => (
-              <span key={iid}>
-                {i > 0 && ', '}
-                <a href={entityHref(iid)}>{iid}</a>
-              </span>
-            ))}
+            {ref.informs.map((iid, i) => {
+              const href = entityHref(iid)
+              return (
+                <span key={iid}>
+                  {i > 0 && ', '}
+                  {href ? <a href={href}>{iid}</a> : iid}
+                </span>
+              )
+            })}
           </p>
         )}
       </header>

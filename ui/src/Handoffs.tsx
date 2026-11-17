@@ -1,6 +1,7 @@
 import { useEffect, useId } from 'react'
 import { fetchHandoff, fetchHandoffs, type Handoff, type HandoffState } from './api'
 import { Chevron, ExpandAll, useExpanded } from './Expand'
+import { entityHref } from './entityRoute'
 import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
 import Markdown from './Markdown'
 import { useT } from './i18n'
@@ -240,17 +241,18 @@ function HandoffDetailBody({ h }: { h: Handoff }) {
       )}
       {(h.refs ?? []).length > 0 && (
         <p className="handoff-fact">
-          {h.refs?.map((r) =>
-            r.startsWith('F-') ? (
-              <a key={r} className="work-ref" href={`#/f/${encodeURIComponent(r)}`}>
+          {h.refs?.map((r) => {
+            const href = entityHref(r)
+            return href ? (
+              <a key={r} className="work-ref" href={href}>
                 {r}
               </a>
             ) : (
               <span key={r} className="work-ref">
                 {r}
               </span>
-            ),
-          )}
+            )
+          })}
         </p>
       )}
       {h.brief && (

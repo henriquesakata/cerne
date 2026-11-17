@@ -114,7 +114,7 @@ func newShowCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show <cerne_id>",
 		Short: "Show any entity (feature, decision, reference, note, runbook, historical, pending, idea, work, handoff) by id",
-		Long: "Resolves a cerne_id by its prefix (F-/D-/R-/N-/RB-/H-/P-/I-/W-/HO-) and prints the metadata plus the entity's " +
+		Long: "Resolves a cerne_id by its prefix (F-/E-/T-/B-/D-/R-/N-/RB-/H-/C-/P-/I-/W-/HO-) and prints the metadata plus the entity's " +
 			"markdown body, read straight from the backend (store) — works for any entity, including " +
 			"already-implemented features that are not materialized in '.docs/'. A feature prints the document " +
 			"of its stage (spec; plan in development; result once implemented) and names the others: --doc " +
