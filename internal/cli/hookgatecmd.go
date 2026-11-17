@@ -53,6 +53,8 @@ type hookInput struct {
 	// StopHookActive is set on a Stop payload when the stop is itself the
 	// continuation of a Stop hook (F-0294).
 	StopHookActive bool `json:"stop_hook_active"`
+	// Prompt is the user's text on a UserPromptSubmit payload (B-0020).
+	Prompt string `json:"prompt"`
 	// Source is the SessionStart origin; "compact" after a compaction (F-0368).
 	Source string `json:"source"`
 
