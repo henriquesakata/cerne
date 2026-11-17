@@ -41,7 +41,7 @@ func newWorkStartCmd(dir *string) *cobra.Command {
 		Long: "Registers a transient activity (not a feature) — investigating an error, reviewing an MR — as " +
 			"active in the backend, so another agent (this machine, another, or a teammate) can see it's already " +
 			"being worked and not duplicate it. Actor defaults to this machine's pseudonym (m-<8hex>); --agent overrides it. " +
-			"--ref links the activity to existing features/decisions (F-/D- ids; unknown id aborts, nothing written). " +
+			"--ref links the activity to existing features, decisions, works, notes or runbooks (F-/E-/T-/B-/D-/W-/N-/RB- ids; unknown id aborts, nothing written). " +
 			"--paths declares the path globs the activity intends to touch (e.g. internal/server/**); an overlap " +
 			"with another active work prints a warning (F-0151) — the conflict check becomes part of registering.",
 		Args: cobra.ExactArgs(1),
@@ -50,7 +50,7 @@ func newWorkStartCmd(dir *string) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&from, "from", "", "take over this active work: inherits its refs, prints its last handoff, takes its pending HO- and closes it as done (handed off)")
-	cmd.Flags().StringVar(&ref, "ref", "", "comma-separated F-/D- ids this activity relates to")
+	cmd.Flags().StringVar(&ref, "ref", "", "comma-separated F-/E-/T-/B-/D-/W-/N-/RB- ids this activity relates to")
 	cmd.Flags().StringVar(&agent, "agent", "", "actor name (defaults to this machine's pseudonym); a value with '@' is recorded as its pseudonym")
 	cmd.Flags().StringVar(&paths, "paths", "", "comma-separated path globs this activity intends to touch")
 	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard (F-0147) for a consciously distinct problem; with --from, also take over a work without handoff that another session is bound to")
