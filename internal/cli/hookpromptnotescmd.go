@@ -22,7 +22,10 @@ import (
 // only — it never pulls or reindexes — and fail-open: any error is silence.
 
 // promptNotesBudget is the hard deadline of the lookup: a prompt is never held.
-const promptNotesBudget = 300 * time.Millisecond
+const promptNotesBudget = 200 * time.Millisecond
+
+// promptTitleMax caps a title in the block, in runes.
+const promptTitleMax = 100
 
 // promptNotesMax is the most lines one prompt gets.
 const promptNotesMax = 3
@@ -35,7 +38,9 @@ func newHookPromptNotesCmd() *cobra.Command {
 		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			in, err := decodeHookInput(cmd.InOrStdin())
-			if err != nil || in.SessionID == "" || strings.TrimSpace(in.Prompt) == "" {
+			// Cursor runs the .claude hooks but discards their context: nothing to
+			// print, and no id may be marked as shown (B-0020).
+			if err != nil || in.cursor() || in.SessionID == "" || strings.TrimSpace(in.Prompt) == "" {
 				return nil
 			}
 			block := promptNotesBlock(in.CWD, in.SessionID, in.Prompt)
@@ -67,7 +72,13 @@ func promptNotesBlock(dir, sess, prompt string) string {
 	if err != nil || ctx.Err() != nil {
 		return ""
 	}
+	// Read both lists (what the edit block showed is not repeated), write only
+	// the prompt's own: a reminder the agent may ignore must never silence the
+	// more specific on-edit warning.
 	seen := app.SeenNotes(cacheDir, sess)
+	for id := range app.SeenPromptNotes(cacheDir, sess) {
+		seen[id] = true
+	}
 	var fresh []index.TitleHit
 	for _, h := range hits {
 		if !seen[h.ID] && len(fresh) < promptNotesMax {
@@ -83,13 +94,22 @@ func promptNotesBlock(dir, sess, prompt string) string {
 	}
 	// No usable session id: dedup is impossible, and the same lines on every
 	// prompt are worse than silence.
-	if app.MarkNotesSeen(cacheDir, sess, ids) != nil {
+	if app.MarkPromptNotesSeen(cacheDir, sess, ids) != nil {
 		return ""
 	}
 	var b strings.Builder
 	b.WriteString("cerne: notes that may apply to this prompt (run `cerne show <id>` to read one):")
 	for _, h := range fresh {
-		fmt.Fprintf(&b, "\n- %s — %s", h.ID, flatTitle(h.Title))
+		fmt.Fprintf(&b, "\n- %s — %s", h.ID, capRunes(flatTitle(h.Title), promptTitleMax))
 	}
 	return b.String()
+}
+
+// capRunes cuts s to n runes, with an ellipsis when it was longer.
+func capRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n-1]) + "…"
 }

@@ -19,11 +19,15 @@ const notesSeenSubdir = "notes-seen"
 // SeenNotes returns the note ids already shown in session sess. An unsafe
 // session id or an unreadable file reads as nothing seen.
 func SeenNotes(cacheDir, sess string) map[string]bool {
+	return seenIn(cacheDir, notesSeenSubdir, sess)
+}
+
+func seenIn(cacheDir, subdir, sess string) map[string]bool {
 	seen := map[string]bool{}
 	if safeSessionID(sess) != nil {
 		return seen
 	}
-	f, err := os.Open(filepath.Join(cacheDir, notesSeenSubdir, sess))
+	f, err := os.Open(filepath.Join(cacheDir, subdir, sess))
 	if err != nil {
 		return seen
 	}
@@ -39,10 +43,14 @@ func SeenNotes(cacheDir, sess string) map[string]bool {
 
 // MarkNotesSeen appends ids to session sess's shown list.
 func MarkNotesSeen(cacheDir, sess string, ids []string) error {
+	return markSeenIn(cacheDir, notesSeenSubdir, sess, ids)
+}
+
+func markSeenIn(cacheDir, subdir, sess string, ids []string) error {
 	if err := safeSessionID(sess); err != nil {
 		return err
 	}
-	dir := filepath.Join(cacheDir, notesSeenSubdir)
+	dir := filepath.Join(cacheDir, subdir)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
@@ -98,4 +106,19 @@ func pruneSeen(dir string) {
 			_ = os.Remove(filepath.Join(dir, e.Name()))
 		}
 	}
+}
+
+// promptSeenSubdir is the prompt reminder's own list (B-0020): ids injected at
+// prompt time never count as shown to the on-edit block, which is the more
+// specific warning.
+const promptSeenSubdir = "prompt-notes-seen"
+
+// SeenPromptNotes returns the ids the prompt reminder showed in session sess.
+func SeenPromptNotes(cacheDir, sess string) map[string]bool {
+	return seenIn(cacheDir, promptSeenSubdir, sess)
+}
+
+// MarkPromptNotesSeen appends ids to session sess's prompt-reminder list.
+func MarkPromptNotesSeen(cacheDir, sess string, ids []string) error {
+	return markSeenIn(cacheDir, promptSeenSubdir, sess, ids)
 }
