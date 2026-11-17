@@ -29,7 +29,7 @@ func runStalledFindings(repoDir string, works []store.Work) ([]Finding, error) {
 		}
 		why := ""
 		if r.Status() == store.RunStopped {
-			why = fmt.Sprintf("stopped at step %s (PARE)", r.Entries[len(r.Entries)-1].Step)
+			why = fmt.Sprintf("stopped at step %s (stop marker `pare`)", r.Entries[len(r.Entries)-1].Step)
 		} else if len(r.Steps) > 0 && allStepsOK(r) {
 			why = "has every step ok"
 		}

@@ -88,7 +88,10 @@ func legacyName(c *cobra.Command, old string) *cobra.Command {
 }
 
 // legacyFlag registers a hidden pt-BR twin of the flag name: the same Value
-// (so the same variable, type and default), absent from --help.
+// (so the same variable, type and default), absent from --help. It copies the
+// flag struct, so anything set on the English flag (MarkFlagRequired, a
+// shorthand) must be set BEFORE calling legacyFlag or the twin will not carry
+// it; TestLegacyTwinsMirrorTheirEnglishSibling fails on that drift.
 func legacyFlag(fs *pflag.FlagSet, name, legacy string) {
 	twin := *fs.Lookup(name)
 	twin.Name, twin.Hidden = legacy, true

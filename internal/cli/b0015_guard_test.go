@@ -20,12 +20,30 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// ptSurfaceAllowed lists visible cobra text that may carry pt-BR on purpose,
-// keyed by "<command path>|<field>". Each entry needs a reason.
-var ptSurfaceAllowed = map[string]string{
-	"cerne feature complete|Example": "quotes the pt-BR protocol form \"critério N\" a docs_language=pt-BR result must carry (F-0359/F-0418)",
-	"cerne runbook merge|Long":       "quotes the stored 'Altera:' label written inside a runbook errata document",
-	"cerne runbook report|Long":      "quotes the stored 'Altera:' label written inside a runbook errata document",
+// ptSurfaceAllowed lists whole visible cobra fields that may carry pt-BR on
+// purpose, keyed by "<command path>|<field>". Empty: quoted forms are stripped
+// by ptSurfacePhrases instead, so new pt-BR prose in a field still fails.
+var ptSurfaceAllowed = map[string]string{}
+
+// ptSurfacePhrases are the pt-BR forms visible cobra text may quote, stripped
+// before the check.
+var ptSurfacePhrases = map[string]string{
+	"critério N": "the protocol form a docs_language=pt-BR result must carry (F-0359/F-0418)",
+	"Altera:":    "the stored label written inside a runbook errata document",
+	"`pare`":     "the stored stop marker of a runbook run entry",
+}
+
+// ptFindingPhrases are the same for lint/hook/harness message texts.
+var ptFindingPhrases = map[string]string{
+	"`pare`": "the stored stop marker of a runbook run entry",
+}
+
+// stripQuotedForms removes each allowed phrase from text.
+func stripQuotedForms(text string, phrases map[string]string) string {
+	for p := range phrases {
+		text = strings.ReplaceAll(text, p, " ")
+	}
+	return text
 }
 
 // TestCommandSurfaceIsEnglish (B-0015) walks the whole visible cobra tree —
@@ -40,6 +58,7 @@ func TestCommandSurfaceIsEnglish(t *testing.T) {
 		if _, ok := ptSurfaceAllowed[path+"|"+field]; ok {
 			return
 		}
+		text = stripQuotedForms(text, ptSurfacePhrases)
 		why := doccheck.PTReason(text)
 		if m := ptStopWords.FindString(text); m != "" {
 			why = "pt-BR word " + strconv.Quote(m)
@@ -104,7 +123,8 @@ func TestLegacyTwinsMirrorTheirEnglishSibling(t *testing.T) {
 				return
 			}
 			e := c.LocalFlags().Lookup(eng)
-			if e == nil || e.Hidden || e.Value.Type() != f.Value.Type() || e.DefValue != f.DefValue || e.NoOptDefVal != f.NoOptDefVal {
+			if e == nil || e.Hidden || e.Value.Type() != f.Value.Type() || e.DefValue != f.DefValue || e.NoOptDefVal != f.NoOptDefVal ||
+				e.Shorthand != f.Shorthand || !reflect.DeepEqual(e.Annotations, f.Annotations) {
 				t.Errorf("%s: --%s does not mirror the visible --%s", c.CommandPath(), f.Name, eng)
 			}
 		})
@@ -144,13 +164,33 @@ func TestChatCatalogHasNoPortugueseAliases(t *testing.T) {
 }
 
 // TestFindingTextsAreEnglish (B-0015) closes the gap TestRuntimeOutputIsEnglish
-// leaves: a lint finding's Detail/Fix (and any message a hook or harness item
-// carries) is built with fmt.Sprintf into a struct field, which the output-call
-// guard never sees. Every string literal under a Detail:/Fix: field in
-// internal/lint, internal/harness and internal/hooks must read as English.
-// There is no allowlist: none of these texts needs to quote a pt-BR form.
+// leaves: a lint finding, hook or harness message is built with fmt.Sprintf
+// and often assigned to a variable first (problem = ..., why = ...), which the
+// output-call guard never sees. In the non-test files of internal/lint,
+// internal/harness and internal/hooks it checks every string literal that is
+// a fmt.Sprintf/Errorf/errors.New argument, the right side of an assignment,
+// or a value of a Detail/Fix/Message/Title/Summary/Hint field. Phrases a text
+// quotes on purpose are stripped first (ptFindingPhrases, each with its reason).
 func TestFindingTextsAreEnglish(t *testing.T) {
-	ptWords := regexp.MustCompile(`(?i)\b(janela|passos?|palavra|por|evidencia|proposta|decidida|altera|consolidado|substituir|sem|nota|esperada|fundida|vincule|corrija|acrescente|execução)\b`)
+	ptWords := regexp.MustCompile(`(?i)\b(janela|passos?|palavra|por|evidencia|proposta|decidida|altera|consolidado|substituir|sem|nota|esperada|fundida|vincule|corrija|acrescente|execução|para|com|não)\b`)
+	fields := map[string]bool{"Detail": true, "Fix": true, "Message": true, "Title": true, "Summary": true, "Hint": true}
+	check := func(fset *token.FileSet, lit *ast.BasicLit) {
+		if lit.Kind != token.STRING {
+			return
+		}
+		s, err := strconv.Unquote(lit.Value)
+		if err != nil {
+			return
+		}
+		s = stripQuotedForms(s, ptFindingPhrases)
+		why := doccheck.PTReason(s)
+		if w := ptWords.FindString(s); w != "" {
+			why = "pt-BR word " + strconv.Quote(w)
+		}
+		if why != "" {
+			t.Errorf("%s: message text reads as pt-BR (%s): %q", fset.Position(lit.Pos()), why, s)
+		}
+	}
 	fset := token.NewFileSet()
 	for _, root := range []string{"lint", "harness", "hooks"} {
 		_ = filepath.WalkDir(filepath.Join("..", root), func(path string, d os.DirEntry, err error) error {
@@ -162,28 +202,34 @@ func TestFindingTextsAreEnglish(t *testing.T) {
 				t.Fatal(perr)
 			}
 			ast.Inspect(f, func(n ast.Node) bool {
-				kv, ok := n.(*ast.KeyValueExpr)
-				if !ok {
-					return true
-				}
-				if k, ok := kv.Key.(*ast.Ident); !ok || (k.Name != "Detail" && k.Name != "Fix") {
-					return true
-				}
-				ast.Inspect(kv.Value, func(m ast.Node) bool {
-					lit, ok := m.(*ast.BasicLit)
-					if !ok || lit.Kind != token.STRING {
+				switch x := n.(type) {
+				case *ast.CallExpr:
+					sel, ok := x.Fun.(*ast.SelectorExpr)
+					if !ok {
 						return true
 					}
-					s, _ := strconv.Unquote(lit.Value)
-					why := doccheck.PTReason(s)
-					if w := ptWords.FindString(s); w != "" {
-						why = "pt-BR word " + strconv.Quote(w)
+					pkg, ok2 := sel.X.(*ast.Ident)
+					if ok2 && ((pkg.Name == "fmt" && (sel.Sel.Name == "Sprintf" || sel.Sel.Name == "Errorf")) || (pkg.Name == "errors" && sel.Sel.Name == "New")) && len(x.Args) > 0 {
+						for _, l := range stringLits(x.Args[0]) {
+							check(fset, l)
+						}
 					}
-					if why != "" {
-						t.Errorf("%s: finding text reads as pt-BR (%s): %q", fset.Position(lit.Pos()), why, s)
+				case *ast.AssignStmt:
+					for _, r := range x.Rhs {
+						for _, l := range stringLits(r) {
+							check(fset, l)
+						}
 					}
-					return true
-				})
+				case *ast.KeyValueExpr:
+					if k, ok := x.Key.(*ast.Ident); ok && fields[k.Name] {
+						ast.Inspect(x.Value, func(m ast.Node) bool {
+							if l, ok := m.(*ast.BasicLit); ok {
+								check(fset, l)
+							}
+							return true
+						})
+					}
+				}
 				return true
 			})
 			return nil
