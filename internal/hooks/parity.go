@@ -154,6 +154,14 @@ var parityTable = []ParityRow{
 		Copilot:    degraded + ": preCompact is notification-only",
 	},
 	{
+		Capability: "Notes matching the prompt (B-0020)",
+		Claude:     "UserPromptSubmit hook (cerne-prompt-notes.sh) → additionalContext",
+		Cursor:     degraded + ": no verified prompt-submit hook that adds context",
+		Codex:      degraded + ": prompt-submit event not verified here — not wired",
+		Gemini:     degraded + ": prompt-submit event not verified here — not wired",
+		Copilot:    degraded + ": prompt-submit event not verified here — not wired",
+	},
+	{
 		Capability: "CERNE_ACTOR=agent (human gates)",
 		Claude:     "settings.json env block",
 		Cursor:     "CURSOR_AGENT=1 on Cursor's agent shells (seen in 3.25.6, undocumented) — no install",

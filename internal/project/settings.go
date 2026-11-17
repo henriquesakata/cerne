@@ -189,6 +189,11 @@ var settingsRegistry = []Setting{
 		Scopes:      []string{ScopeProject, ScopeHost},
 		Description: "On shows the agent the notes that cite a file when it is about to edit that file, through the work-gate hook. Off stops showing them.",
 	},
+	{
+		ID: "hooks.prompt_notes", Group: "integrations", Title: "Notes on prompt", Type: "bool", Default: true,
+		Scopes:      []string{ScopeProject, ScopeHost},
+		Description: "On shows the agent up to 3 active notes or runbooks whose titles match the words of the user's prompt, once per session, through the prompt hook. Off stops showing them.",
+	},
 }
 
 // WikiEnabled is wiki.enabled for the project at (or above) projDir (F-0316):
@@ -215,6 +220,17 @@ func WikiEnabled(projDir string) (on bool, warning string) {
 		return s.Value != false, warning
 	}
 	return true, ""
+}
+
+// PromptNotes is hooks.prompt_notes for the project at (or above) projDir
+// (B-0020): false only when it resolves to false.
+func PromptNotes(projDir string) bool {
+	for _, s := range ResolveSettings(projDir).Settings {
+		if s.ID == "hooks.prompt_notes" {
+			return s.Value != false
+		}
+	}
+	return true
 }
 
 // NotesOnEdit is hooks.notes_on_edit for the project at (or above) projDir

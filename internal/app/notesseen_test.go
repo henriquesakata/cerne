@@ -135,3 +135,26 @@ func TestNotesSeenPrunesOldSessions(t *testing.T) {
 		t.Fatal("new session lost")
 	}
 }
+
+// TestSeenNotesRejectsUnsafeSessionID (B-0020, critic 6): a session id that
+// could climb out of the cache dir reads as nothing seen and is never written.
+func TestSeenNotesRejectsUnsafeSessionID(t *testing.T) {
+	cache := t.TempDir()
+	for _, sess := range []string{"../x", "a/b", `a\b`, "..", ".", "", "x.y"} {
+		if err := MarkNotesSeen(cache, sess, []string{"N-0001"}); err == nil {
+			t.Errorf("MarkNotesSeen(%q) accepted", sess)
+		}
+		if err := MarkPromptNotesSeen(cache, sess, []string{"N-0001"}); err == nil {
+			t.Errorf("MarkPromptNotesSeen(%q) accepted", sess)
+		}
+		if len(SeenNotes(cache, sess)) != 0 || len(SeenPromptNotes(cache, sess)) != 0 {
+			t.Errorf("%q reads as seen", sess)
+		}
+	}
+	if err := MarkPromptNotesSeen(cache, "ok-1", []string{"N-0007"}); err != nil {
+		t.Fatal(err)
+	}
+	if SeenNotes(cache, "ok-1")["N-0007"] || !SeenPromptNotes(cache, "ok-1")["N-0007"] {
+		t.Fatal("the prompt list must be its own namespace")
+	}
+}

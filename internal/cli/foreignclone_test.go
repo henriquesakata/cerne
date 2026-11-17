@@ -164,6 +164,7 @@ func TestHooks_FailOpenOnForeignClone(t *testing.T) {
 				{"work-gate", hookJSON(t, "s1", proj, "Edit", map[string]any{"file_path": filepath.Join(proj, "a.go")}, nil), []string{"hook", "work-gate"}},
 				{"stop-check", stopPayload(t, "s1", proj), []string{"hook", "stop-check"}},
 				{"precompact", stopPayload(t, "s1", proj), []string{"hook", "precompact"}},
+				{"prompt-notes", promptJSON(t, "s1", proj, "Leak work leak note"), []string{"hook", "prompt-notes"}},
 				{"session-context", sessionPayload("s1", proj, "compact"), []string{"hook", "session-context"}},
 				{"channel", sessionStartJSON(t, "s1", proj), []string{"hook", "channel", "--point", "session-start"}},
 				{"provenance", hookJSON(t, "s1", proj, "Bash", map[string]any{"command": "git push"}, nil), []string{"hook", "provenance"}},

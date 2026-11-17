@@ -1373,6 +1373,9 @@ const ptBR = {
       'Notes on edit': 'Notas ao editar',
       'On shows the agent the notes that cite a file when it is about to edit that file, through the work-gate hook. Off stops showing them.':
         'Ligado, o gancho work-gate mostra ao agente as notas que citam um arquivo quando ele vai editá-lo. Desligado, deixa de mostrá-las.',
+      'Notes on prompt': 'Notas ao enviar o prompt',
+      "On shows the agent up to 3 active notes or runbooks whose titles match the words of the user's prompt, once per session, through the prompt hook. Off stops showing them.":
+        'Ligado, o gancho do prompt mostra ao agente até 3 notas ou runbooks ativos cujos títulos casam com as palavras do prompt do usuário, uma vez por sessão. Desligado, deixa de mostrá-los.',
     } as Record<string, string>,
     // Rótulos dos valores de uma chave de texto com valores declarados.
     options: { on: 'ligado', off: 'desligado' } as Record<string, string>,
