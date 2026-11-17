@@ -51,6 +51,9 @@ var promptExceptions = []struct{ re, why string }{
 	{`Etapa N: ID \(t[ií]tulo\)`, "the execution-map line is parsed by the plan readers (N-0087)"},
 	{`(?m)^\s*Etapa \d.*$`, "the execution-map example lines are parsed by the plan readers (N-0087)"},
 	{`the words Etapa and paralelas are parsed, keep them exactly`, "names the two parsed words of the execution map"},
+	{`cerne-(proposta|pergunta|nota|comando)`, "fence info strings the UI parses to draw the cards; renaming one breaks the UI"},
+	{`\bsubstituir\b`, "a cerne verb name (feature substituir) the chat lists among the lifecycle verbs the harness refuses"},
+	{`with the entity "não registrada"`, "the literal value of the handoff's Entidade line, named in the instruction that teaches the handoff"},
 	{`"Onde está", "Para ajustar", "Fontes consultadas"`, "headings the codex live-query block asks for in a Portuguese project, quoted as data"},
 	{`fase means stage or level, cenário means scene, backdrop or background, inimigo means enemy`, "a word-translation example inside an English instruction: the words are the data"},
 }
@@ -58,10 +61,6 @@ var promptExceptions = []struct{ re, why string }{
 // promptsPending lists the surfaces not converted yet; each is removed by the
 // commit that converts it, and the list is empty when F-0447 is done.
 var promptsPending = map[string]string{
-	"chat with channel":    "converted with the chat prompt",
-	"chat without channel": "converted with the chat prompt",
-	"chat refine block":    "converted with the chat prompt",
-	"chat transcript":      "converted with the chat prompt",
 	"turn context":         "converted with the other prompts",
 	"roast spec":           "converted with the other prompts",
 	"roast plan":           "converted with the other prompts",
