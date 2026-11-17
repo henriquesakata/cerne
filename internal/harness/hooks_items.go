@@ -80,7 +80,7 @@ func hookItems(opts Options, ls layerSet) []Item {
 	}
 
 	// Managed .git/hooks slots — only meaningful inside a git repository.
-	if fi, err := os.Stat(filepath.Join(opts.ProjDir, ".git")); err == nil && fi.IsDir() {
+	if _, isRepo := hooks.GitHooksDir(opts.ProjDir); isRepo {
 		for _, s := range hooks.GitHookStates(opts.ProjDir) {
 			it := Item{
 				Class:  "hooks",
