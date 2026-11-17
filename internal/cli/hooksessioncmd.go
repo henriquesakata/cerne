@@ -2,8 +2,8 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,7 +13,9 @@ import (
 
 	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/hooks"
+	"github.com/henriquesakata/cerne/internal/materialize"
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/skills"
 	"github.com/henriquesakata/cerne/internal/store"
@@ -22,9 +24,9 @@ import (
 // Session context plumbing (F-0174). Emits the canonical registration rules
 // plus the LIVE work list in the envelope of the requested provider — the
 // SessionStart injection every provider gets, so an agent on Cursor, Codex or
-// Gemini starts a session as informed as one on Claude Code. Local-only except for the
-// bounded pull of a missing projection (B-0017; the work list comes from the
-// backend clone) and fail-open: outside a cerne
+// Gemini starts a session as informed as one on Claude Code. Local-only (the
+// work list comes from the backend clone; a missing projection is built from
+// that clone too, B-0017) and fail-open: outside a cerne
 // project, or on any error loading works, it degrades gracefully.
 
 // cursorContext is Cursor's native sessionStart output envelope.
@@ -89,50 +91,96 @@ func newHookSessionContextCmd() *cobra.Command {
 	return cmd
 }
 
-// sessionPullBudget bounds the SessionStart materialization (B-0017). The
-// installed hooks carry no timeout of their own, so the host's default applies;
-// this stays far below it so a slow or offline backend never stalls a session.
-var sessionPullBudget = 10 * time.Second
+// sessionLockWait bounds the wait for the backend lock when SessionStart
+// materializes a missing projection (B-0017). The hook never touches the
+// network, so this is the only wait it can have.
+var sessionLockWait = 3 * time.Second
 
-// sessionPull materializes the projection of projDir, all output discarded so
-// it cannot reach the hook's envelope. It is the normal `cerne pull`, so it
-// takes the same backend lock as an interactive one.
-var sessionPull func(projDir string) error
+const (
+	docsFromCacheNotice = "cerne: .docs/ was missing and was just materialized from the local cache without contacting the backend, so it may be stale — `cerne pull` refreshes it."
+	docsMissingNotice   = "cerne: .docs/ is missing and could not be materialized from the local cache — run `cerne pull` before reading .docs/CONTEXT.md."
+)
 
-func init() { // assigned here: Root refers back to this file (initialization cycle)
-	sessionPull = func(projDir string) error {
-		root := Root()
-		root.SetOut(io.Discard)
-		root.SetErr(io.Discard)
-		root.SetArgs([]string{"pull", "--dir", projDir})
-		return root.Execute()
+// materializeIfMissing builds .docs/ from the local backend clone AS IT IS —
+// no fetch, no reset, so unpushed local state is never discarded — when projDir
+// has no .docs/CONTEXT.md (a fresh git worktree: .docs/ is gitignored). It
+// returns the one-line notice to inject, "" when nothing is wrong (B-0017).
+//
+// It runs under the backend lock so it cannot interleave with a pull or push
+// reset, and builds in a staging directory renamed into place only when
+// complete: an interrupted run leaves no .docs/ at all, never one that passes
+// the CONTEXT.md check without its manifest. Unlike `cerne pull` it does not
+// touch docs.lock, the search index or the merge driver.
+func materializeIfMissing(cfg project.Config, projDir string) string {
+	docs := filepath.Join(projDir, ".docs")
+	present := func() bool {
+		_, err := os.Stat(filepath.Join(docs, "CONTEXT.md"))
+		return err == nil
+	}
+	if present() {
+		return ""
+	}
+	cacheDir, err := project.CacheDir(cfg.ProjectID)
+	if err != nil {
+		return docsMissingNotice
+	}
+	repoDir := filepath.Join(cacheDir, "repo")
+	if _, err := os.Stat(filepath.Join(repoDir, ".git")); err != nil || !cloneIsOurs(cfg, projDir) {
+		return docsMissingNotice
+	}
+	err = gitback.WithLockWait(gitback.LockPath(repoDir), sessionLockWait, func() error {
+		if present() { // another session finished while we waited
+			return nil
+		}
+		return stageDocs(cfg, projDir, repoDir)
+	})
+	switch {
+	case err == nil:
+		if present() {
+			return docsFromCacheNotice
+		}
+		return docsMissingNotice
+	case errors.Is(err, gitback.ErrLockTimeout) && present():
+		return ""
+	default:
+		return docsMissingNotice
 	}
 }
 
-// materializeIfMissing runs the pull when projDir has no .docs/CONTEXT.md (a
-// fresh git worktree: .docs/ is gitignored) and returns the one-line notice to
-// inject when it fails or runs out of budget; "" otherwise (B-0017).
-func materializeIfMissing(projDir string) string {
-	if _, err := os.Stat(filepath.Join(projDir, ".docs", "CONTEXT.md")); err == nil {
-		return ""
+// stageDocs materializes the clone into <projDir>/.docs-staging-*/.docs with
+// the manifest and session snapshot `cerne pull` writes after its reset, then
+// renames it over a missing or CONTEXT.md-less .docs/.
+func stageDocs(cfg project.Config, projDir, repoDir string) error {
+	stage, err := os.MkdirTemp(projDir, ".docs-staging-")
+	if err != nil {
+		return err
 	}
-	done := make(chan error, 1)
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				done <- fmt.Errorf("pull panicked: %v", r)
-			}
-		}()
-		done <- sessionPull(projDir)
-	}()
-	select {
-	case err := <-done:
-		if err == nil {
-			return ""
-		}
-	case <-time.After(sessionPullBudget):
+	defer os.RemoveAll(stage)
+	manifest, err := materialize.MaterializeAt(repoDir, filepath.Join(stage, ".docs"), cfg.DefaultScope, cfg.OKF, cfg.RecentWorkWindowDays(), time.Now())
+	if err != nil {
+		return err
 	}
-	return "cerne: .docs/ is not materialized in this checkout and the automatic pull did not finish — run `cerne pull` before reading .docs/CONTEXT.md."
+	head, err := gitback.HeadSHA(repoDir)
+	if errors.Is(err, gitback.ErrNoCommits) {
+		head = ""
+	} else if err != nil {
+		return err
+	}
+	if err := project.SaveSessionSnapshot(stage, head); err != nil {
+		return err
+	}
+	if err := project.SaveManifest(stage, manifest); err != nil {
+		return err
+	}
+	docs := filepath.Join(projDir, ".docs")
+	if err := os.RemoveAll(docs); err != nil { // no CONTEXT.md: nothing worth keeping
+		return err
+	}
+	if err := os.Rename(filepath.Join(stage, ".docs"), docs); err != nil {
+		return err
+	}
+	_ = app.RecordProjectHead(projDir) // drift baseline, as pull records it
+	return nil
 }
 
 func runHookSessionContext(cmd *cobra.Command, format string) {
@@ -167,7 +215,7 @@ func runHookSessionContext(cmd *cobra.Command, format string) {
 		}
 	}
 
-	missingDocs := materializeIfMissing(projDir) // B-0017
+	missingDocs := materializeIfMissing(cfg, projDir) // B-0017
 
 	stale := ""
 	if format == "copilot" {

@@ -33,13 +33,6 @@ func failingNetTools(t *testing.T) func() bool {
 func boundWork(t *testing.T, sess string) (projDir, cacheDir, repoDir string) {
 	t.Helper()
 	projDir, _, repoDir = setupProject(t)
-	// A project in use has its projection: SessionStart must not pull (B-0017).
-	if err := os.MkdirAll(filepath.Join(projDir, ".docs"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(projDir, ".docs", "CONTEXT.md"), []byte("x"), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	if out, err := execCerne(t, "work", "start", "Investigar erro X", "--dir", projDir); err != nil {
 		t.Fatalf("work start: %v\noutput: %s", err, out)
 	}
