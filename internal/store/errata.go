@@ -2,6 +2,7 @@ package store
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/henriquesakata/cerne/internal/domain"
@@ -98,8 +99,8 @@ const (
 // .docs/ projection appends to its file (B-0012). errata is the document body
 // without its frontmatter; merged, when non-nil, replaces each already folded
 // item by one line (F-0351). It returns "" when there is nothing to show. The
-// block is set off by a blank line and ends the file, so StripErrataBlock can
-// give the entity body back byte for byte.
+// block is set off by a blank line and ends the file; the projection records its
+// exact text (SaveErrataBlocks) so StripErrataBlock removes that and nothing else.
 func ErrataBlock(errata string, merged func(ErrataItem) string) string {
 	errata = strings.TrimSpace(errata)
 	if errata == "" {
@@ -114,48 +115,77 @@ func ErrataBlock(errata string, merged func(ErrataItem) string) string {
 		"## Errata\n\n" + errata + "\n" + errataBlockEnd + "\n"
 }
 
-// ErrBrokenErrataBlock: a file carries the errata begin marker but no block
-// that closes it — push refuses it rather than send generated text as body.
-var ErrBrokenErrataBlock = errors.New("errata block opened but not closed")
+// ErrBrokenErrataBlock: a document that was projected with an errata block no
+// longer holds it verbatim but still carries an errata marker — push refuses it
+// rather than send generated text as body.
+var ErrBrokenErrataBlock = errors.New("errata block altered")
 
-// StripErrataBlock removes the last generated block from body: from the begin
-// marker (at the start of a line) through the end marker's line, plus the blank
-// line ErrataBlock put before it. Text before and after is kept, so a trailing
-// note, CRLF line ends or a missing final newline do not defeat it. A body with
-// no begin marker is returned untouched; a begin marker with no end marker
-// after it is ErrBrokenErrataBlock (fail closed).
-func StripErrataBlock(body []byte) ([]byte, error) {
-	begin := -1
-	for from := 0; ; {
-		j := bytes.Index(body[from:], []byte(errataBlockBegin))
-		if j < 0 {
-			break
-		}
-		at := from + j
-		if at == 0 || body[at-1] == '\n' {
-			begin = at
-		}
-		from = at + len(errataBlockBegin)
+// errataBlocksFile is the sidecar under .docs/ that records, per materialized
+// document, the exact block the pull appended to it (absent: none recorded).
+const errataBlocksFile = ".errata-blocks.json"
+
+// SaveErrataBlocks records the blocks of a materialization (rel -> exact text).
+// Nothing is written when no document carries one.
+func SaveErrataBlocks(docsDir string, blocks map[string]string) error {
+	if len(blocks) == 0 {
+		return nil
 	}
-	if begin < 0 {
+	data, err := json.MarshalIndent(blocks, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(docsDir, errataBlocksFile), append(data, '\n'), 0o644)
+}
+
+// LoadErrataBlocks reads the sidecar; a missing one is "no block recorded".
+func LoadErrataBlocks(docsDir string) (map[string]string, error) {
+	data, err := os.ReadFile(filepath.Join(docsDir, errataBlocksFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return map[string]string{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	m := map[string]string{}
+	if err := json.Unmarshal(data, &m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+// StripErrataBlock gives back body without the block the projection appended,
+// matched by its recorded text — never guessed. With no block recorded the body
+// is returned untouched (an authored marker is the author's). Otherwise one
+// verbatim occurrence is cut (CRLF-converted files are matched after LF
+// normalization; a block whose final newline an editor dropped at end of file
+// still matches) and everything else is kept. A block not found verbatim while a
+// line-start errata marker remains is ErrBrokenErrataBlock (fail closed); one
+// removed entirely leaves nothing to strip.
+func StripErrataBlock(body []byte, block string) ([]byte, error) {
+	if block == "" {
 		return body, nil
 	}
-	e := bytes.Index(body[begin:], []byte(errataBlockEnd))
-	if e < 0 {
-		return nil, fmt.Errorf("%w", ErrBrokenErrataBlock)
+	cut := func(b []byte) ([]byte, bool) {
+		for _, cand := range []string{block, strings.TrimSuffix(block, "\n")} {
+			i := bytes.Index(b, []byte(cand))
+			if i < 0 || (cand != block && !bytes.HasSuffix(b, []byte(cand))) {
+				continue
+			}
+			return append(append([]byte{}, b[:i]...), b[i+len(cand):]...), true
+		}
+		return nil, false
 	}
-	after := begin + e + len(errataBlockEnd)
-	if k := bytes.IndexByte(body[after:], '\n'); k >= 0 {
-		after += k + 1
-	} else {
-		after = len(body)
+	if out, ok := cut(body); ok {
+		return out, nil
 	}
-	before := body[:begin]
-	for _, sep := range []string{"\r\n\r\n", "\n\n"} {
-		if bytes.HasSuffix(before, []byte(sep)) {
-			before = before[:len(before)-len(sep)]
-			break
+	norm := bytes.ReplaceAll(body, []byte("\r\n"), []byte("\n"))
+	if out, ok := cut(norm); ok {
+		return out, nil
+	}
+	for _, l := range bytes.Split(norm, []byte("\n")) {
+		if bytes.HasPrefix(l, []byte("<!-- cerne:errata:")) {
+			return nil, ErrBrokenErrataBlock
 		}
 	}
-	return append(append([]byte{}, before...), body[after:]...), nil
+	return body, nil
 }

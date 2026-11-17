@@ -290,9 +290,13 @@ func collectChangedDocs(repoDir, docsDir string, manifest map[string]string) ([]
 	} else if err != nil {
 		return nil, err
 	}
+	blocks, err := store.LoadErrataBlocks(docsDir)
+	if err != nil {
+		return nil, err
+	}
 	var docs []pushedDoc
 	var frozen []string // every frozen document's block: one refusal names them all
-	err := filepath.WalkDir(currentDir, func(p string, d fs.DirEntry, walkErr error) error {
+	err = filepath.WalkDir(currentDir, func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -309,7 +313,7 @@ func collectChangedDocs(repoDir, docsDir string, manifest map[string]string) ([]
 			return err
 		}
 		want, tracked := manifest[rel]
-		sum := docHash(body)
+		sum := docHash(blocks, rel, body)
 		switch {
 		case tracked && sum == want:
 			return nil // tracked and unchanged
@@ -320,9 +324,9 @@ func collectChangedDocs(repoDir, docsDir string, manifest map[string]string) ([]
 			}
 			return fmt.Errorf("untracked file: %s — run 'cerne pull' to resync", rel)
 		}
-		stripped, err := store.StripErrataBlock(body)
+		stripped, err := store.StripErrataBlock(body, blocks[rel])
 		if err != nil {
-			return fmt.Errorf("%s: %w — remove the generated errata block (or run 'cerne pull --force' to regenerate it)", rel, err)
+			return fmt.Errorf("%s: %w — restore the generated errata block verbatim, or run 'cerne pull --force' to regenerate it (it discards unsent edits: save yours first)", rel, err)
 		}
 		id := parseCerneID(body)
 		if id == "" {
@@ -483,11 +487,12 @@ func sha256Hex(body []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// docHash is sha256Hex of a materialized document's body: the generated errata
-// block (B-0012) is derived, never a local edit. A broken block hashes the raw
-// file, so it reads as an edit and push then refuses it.
-func docHash(body []byte) string {
-	if b, err := store.StripErrataBlock(body); err == nil {
+// docHash is sha256Hex of a materialized document's body: the errata block the
+// pull recorded for rel (B-0012) is derived, never a local edit. An altered block
+// hashes the raw file, so it reads as an edit and push then refuses it. Every
+// manifest-vs-disk comparison of a document goes through it.
+func docHash(blocks map[string]string, rel string, body []byte) string {
+	if b, err := store.StripErrataBlock(body, blocks[rel]); err == nil {
 		body = b
 	}
 	return sha256Hex(body)

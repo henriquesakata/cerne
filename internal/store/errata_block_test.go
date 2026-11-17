@@ -6,59 +6,65 @@ import (
 	"testing"
 )
 
-func TestErrataBlockRoundTrip(t *testing.T) {
-	for _, body := range []string{"# T\n\ncorpo\n", "sem newline final", ""} {
-		block := ErrataBlock("## errata 2026-01-01 — a\n\ncorrigido", nil)
-		if !strings.Contains(block, "corrigido") {
-			t.Fatalf("block lost the text: %q", block)
-		}
-		if got := string(mustStrip(t, body+block)); got != body {
-			t.Fatalf("strip(body+block) = %q, want %q", got, body)
-		}
-	}
-	if ErrataBlock(" \n", nil) != "" {
-		t.Fatal("blank errata must render nothing")
-	}
-	if got := mustStrip(t, "no block\n"); string(got) != "no block\n" {
-		t.Fatalf("body without block changed: %q", got)
-	}
-}
-
-func mustStrip(t *testing.T, s string) []byte {
+func strip(t *testing.T, in, block string) string {
 	t.Helper()
-	got, err := StripErrataBlock([]byte(s))
+	got, err := StripErrataBlock([]byte(in), block)
 	if err != nil {
 		t.Fatalf("strip: %v", err)
 	}
-	return got
+	return string(got)
 }
 
-func TestStripErrataBlockTolerance(t *testing.T) {
+func TestErrataBlockRoundTrip(t *testing.T) {
 	block := ErrataBlock("## errata 2026-01-01 — a\n\ncorrigido", nil)
-	crlf := strings.ReplaceAll("corpo\n"+block, "\n", "\r\n")
-	cases := []struct{ name, in, want string }{
-		{"text after the block is kept", "corpo\n" + block + "\nnota do usuario\n", "corpo\n\nnota do usuario\n"},
-		{"no trailing newline", "corpo\n" + strings.TrimSuffix(block, "\n"), "corpo\n"},
-		{"crlf", crlf, "corpo\r\n"},
-		{"a body that already ends with a block", "corpo\n" + ErrataBlock("antiga", nil) + block, "corpo\n" + ErrataBlock("antiga", nil)},
+	if !strings.Contains(block, "corrigido") || ErrataBlock(" \n", nil) != "" {
+		t.Fatalf("render: %q", block)
+	}
+	for _, body := range []string{"# T\n\ncorpo\n", "sem newline final", ""} {
+		if got := strip(t, body+block, block); got != body {
+			t.Fatalf("strip(body+block) = %q, want %q", got, body)
+		}
+	}
+}
+
+func TestStripErrataBlockExact(t *testing.T) {
+	block := ErrataBlock("corrigido", nil)
+	example := "```\n" + errataBlockBegin + " — x -->\n## Errata\n\nexemplo\n" + errataBlockEnd + "\n```\n"
+	cases := []struct{ name, in, blk, want string }{
+		{"no block recorded: authored markers are the author's", "corpo\n" + block, "", "corpo\n" + block},
+		{"text after the block is kept", "corpo\n" + block + "\nnota\n", block, "corpo\n\nnota\n"},
+		{"final newline dropped at EOF", "corpo\n" + strings.TrimSuffix(block, "\n"), block, "corpo\n"},
+		{"crlf file", strings.ReplaceAll("corpo\n"+block, "\n", "\r\n"), block, "corpo\n"},
+		{"a user example after the generated block stays", "corpo\n" + block + "\n" + example, block, "corpo\n\n" + example},
+		{"block removed entirely: nothing to strip", "corpo\n", block, "corpo\n"},
 	}
 	for _, c := range cases {
-		if got := string(mustStrip(t, c.in)); got != c.want {
+		if got := strip(t, c.in, c.blk); got != c.want {
 			t.Errorf("%s: strip = %q, want %q", c.name, got, c.want)
 		}
 	}
 }
 
-func TestErrataBlockDefangsMarkers(t *testing.T) {
-	block := ErrataBlock("cita <!-- cerne:errata:begin x --> e <!-- cerne:errata:end --> no meio", nil)
-	if got := string(mustStrip(t, "corpo\n"+block)); got != "corpo\n" {
-		t.Fatalf("a quoted marker leaked into the body: %q", got)
+// Fail closed: the recorded block is not there verbatim but a marker is.
+func TestStripErrataBlockAlteredFailsClosed(t *testing.T) {
+	block := ErrataBlock("corrigido", nil)
+	i := strings.Index(block, "<!-- cerne:errata:begin")
+	j := strings.Index(block, "## Errata")
+	for name, in := range map[string]string{
+		"begin line removed":  "corpo\n" + block[:i] + block[j:],
+		"end marker removed":  "corpo\n" + strings.Replace(block, errataBlockEnd+"\n", "", 1),
+		"text inside edited":  "corpo\n" + strings.Replace(block, "corrigido", "mexido", 1),
+		"begin line reindent": "corpo\n" + strings.Replace(block, "\n<!-- cerne:errata:begin", "\n  <!-- cerne:errata:begin", 1),
+	} {
+		if _, err := StripErrataBlock([]byte(in), block); !errors.Is(err, ErrBrokenErrataBlock) {
+			t.Errorf("%s: err = %v, want ErrBrokenErrataBlock", name, err)
+		}
 	}
 }
 
-func TestStripErrataBlockBrokenFailsClosed(t *testing.T) {
-	_, err := StripErrataBlock([]byte("corpo\n\n" + errataBlockBegin + " — x -->\n## Errata\n"))
-	if !errors.Is(err, ErrBrokenErrataBlock) {
-		t.Fatalf("err = %v, want ErrBrokenErrataBlock", err)
+func TestErrataBlockDefangsMarkers(t *testing.T) {
+	block := ErrataBlock("cita\n<!-- cerne:errata:begin x -->\n<!-- cerne:errata:end -->\nfim", nil)
+	if got := strip(t, "corpo\n"+block, block); got != "corpo\n" {
+		t.Fatalf("a quoted marker leaked: %q", got)
 	}
 }

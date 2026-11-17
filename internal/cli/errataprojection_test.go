@@ -171,3 +171,100 @@ func TestConflictMineStaleBlockStripsOnPush(t *testing.T) {
 		t.Fatalf("pushed mine must be body only:\n%s", stored)
 	}
 }
+
+// Second review round: the exact block recorded at pull is what push removes.
+
+// The begin line deleted: the rest of the block must not reach the backend.
+func TestPushRefusesBlockWithBeginLineRemoved(t *testing.T) {
+	projDir, repoDir, file := notePulledWithErrata(t)
+	got, _ := os.ReadFile(file)
+	var kept []string
+	for _, l := range strings.Split(string(got), "\n") {
+		if !strings.HasPrefix(l, "<!-- cerne:errata:begin") {
+			kept = append(kept, l)
+		}
+	}
+	mustWrite(t, file, strings.Join(kept, "\n"))
+	out, err := execCerne(t, "push", "--dir", projDir)
+	if err == nil || !strings.Contains(err.Error(), "errata block") {
+		t.Fatalf("push must refuse: err=%v\n%s", err, out)
+	}
+	if stored, _ := store.LoadNoteContent(repoDir, "N-0001"); strings.Contains(stored, "DTS do RTSP") {
+		t.Fatalf("errata text reached the backend:\n%s", stored)
+	}
+}
+
+// A complete example block the user quotes AFTER the generated one is body.
+func TestPushKeepsUserExampleBlockAfterGeneratedOne(t *testing.T) {
+	projDir, repoDir, file := notePulledWithErrata(t)
+	got, _ := os.ReadFile(file)
+	example := "```\n<!-- cerne:errata:begin -->\n## Errata\n\nexemplo do usuario\n<!-- cerne:errata:end -->\n```\n"
+	mustWrite(t, file, string(got)+"\n"+example)
+	rb(t, projDir, "push")
+	stored, _ := store.LoadNoteContent(repoDir, "N-0001")
+	if !strings.Contains(stored, "exemplo do usuario") || strings.Contains(stored, "DTS do RTSP") {
+		t.Fatalf("example kept, generated block gone:\n%s", stored)
+	}
+}
+
+// A body that carries its own marker block, with NO errata: nothing is stripped
+// at pull (no false edit) and nothing is lost at push.
+func TestAuthoredMarkerBlockWithoutErrataSurvives(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	authored := "Corpo.\n\n<!-- cerne:errata:begin — meu -->\n## Errata\n\nescrito por mim\n<!-- cerne:errata:end -->\n"
+	body := filepath.Join(t.TempDir(), "n.md")
+	mustWrite(t, body, authored)
+	rb(t, projDir, "note", "new", "Autoral", "--file", body)
+	rb(t, projDir, "pull")
+	if out := rb(t, projDir, "pull"); strings.Contains(out, "onflict") {
+		t.Fatalf("second pull: %s", out)
+	}
+	if out := rb(t, projDir, "push"); strings.Contains(out, "Sent: 1") {
+		t.Fatalf("authored block must not look like an edit:\n%s", out)
+	}
+	m, _ := filepath.Glob(filepath.Join(projDir, ".docs", "current", "notes", "N-0001-*.md"))
+	got, _ := os.ReadFile(m[0])
+	mustWrite(t, m[0], strings.Replace(string(got), "Corpo.", "Corpo editado.", 1))
+	rb(t, projDir, "push")
+	stored, _ := store.LoadNoteContent(repoDir, "N-0001")
+	if !strings.Contains(stored, "escrito por mim") || !strings.Contains(stored, "Corpo editado.") {
+		t.Fatalf("authored block lost:\n%s", stored)
+	}
+}
+
+// pull → CRLF edit (autocrlf) → push: body only, no errata.
+func TestErrataRoundTripCRLF(t *testing.T) {
+	projDir, repoDir, file := notePulledWithErrata(t)
+	got, _ := os.ReadFile(file)
+	edited := strings.Replace(string(got), "decode por GPU", "decode editado", 1)
+	mustWrite(t, file, strings.ReplaceAll(edited, "\n", "\r\n"))
+	rb(t, projDir, "push")
+	stored, _ := store.LoadNoteContent(repoDir, "N-0001")
+	if !strings.Contains(stored, "decode editado") || strings.Contains(stored, "cerne:errata") || strings.Contains(stored, "DTS do RTSP") {
+		t.Fatalf("CRLF edit must push the body only:\n%s", stored)
+	}
+}
+
+// OKF: the projection carries the block, the body that reaches the backend does not.
+func TestErrataRoundTripOKF(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	body := filepath.Join(t.TempDir(), "n.md")
+	mustWrite(t, body, "Corpo original.\n")
+	rb(t, projDir, "note", "new", "Causa", "--file", body)
+	rb(t, projDir, "note", "errata", "N-0001", "A causa real era o DTS.")
+	rb(t, projDir, "pull", "--okf")
+	m, _ := filepath.Glob(filepath.Join(projDir, ".docs", "current", "notes", "N-0001-*.md"))
+	got, _ := os.ReadFile(m[0])
+	if !strings.Contains(string(got), "A causa real era o DTS.") {
+		t.Fatalf("okf projection misses the erratum:\n%s", got)
+	}
+	if out := rb(t, projDir, "push"); strings.Contains(out, "Sent: 1") {
+		t.Fatalf("untouched okf projection must not push:\n%s", out)
+	}
+	mustWrite(t, m[0], strings.Replace(string(got), "Corpo original.", "Corpo okf editado.", 1))
+	rb(t, projDir, "push")
+	stored, _ := store.LoadNoteContent(repoDir, "N-0001")
+	if !strings.Contains(stored, "Corpo okf editado.") || strings.Contains(stored, "DTS") || strings.Contains(stored, "cerne:errata") {
+		t.Fatalf("backend body must hold the edit and no errata:\n%s", stored)
+	}
+}

@@ -92,6 +92,10 @@ func runPull(cmd *cobra.Command, dir, scope string, okfFlag, force, syncSkillsFl
 			return err
 		}
 		var mine map[string][]byte
+		prevBlocks, err := store.LoadErrataBlocks(docsDir) // before the wipe
+		if err != nil {
+			return err
+		}
 		if !force && len(prevManifest) > 0 {
 			unsent, err := unpushedDocs(docsDir, prevManifest)
 			if err != nil {
@@ -108,7 +112,7 @@ func runPull(cmd *cobra.Command, dir, scope string, okfFlag, force, syncSkillsFl
 			return err
 		}
 		if len(mine) > 0 {
-			conflicts, err = reapplyUnsent(docsDir, prevManifest, manifest, mine)
+			conflicts, err = reapplyUnsent(docsDir, prevManifest, manifest, mine, prevBlocks)
 			if err != nil {
 				return err
 			}
@@ -255,34 +259,38 @@ func readBodies(docsDir string, rels []string) (map[string][]byte, error) {
 // place (non-destructive), stashes THEIRS under .docs/.conflicts/, and is left
 // flagged unsent (fresh[rel] reset to base) so it is not lost. It mutates fresh
 // for conflicts and returns the conflicting paths, sorted.
-func reapplyUnsent(docsDir string, prev, fresh map[string]string, mine map[string][]byte) ([]string, error) {
+func reapplyUnsent(docsDir string, prev, fresh map[string]string, mine map[string][]byte, prevBlocks map[string]string) ([]string, error) {
+	newBlocks, err := store.LoadErrataBlocks(docsDir)
+	if err != nil {
+		return nil, err
+	}
 	var conflicts []string
-	for rel, body := range mine {
+	for rel, raw := range mine {
 		baseHash := prev[rel]
 		theirsHash, theirsTracked := fresh[rel]
-		mineHash := docHash(body)
+		// B-0012: mine without the block the last pull recorded for it, then under
+		// the block this pull generated. A block I altered (serr) stays as I left
+		// it: push refuses it with the reason.
+		body, serr := store.StripErrataBlock(raw, prevBlocks[rel])
+		grafted := raw
+		if serr == nil {
+			grafted = append(append([]byte{}, body...), newBlocks[rel]...)
+		} else {
+			body = raw
+		}
+		mineHash := sha256Hex(body)
 		switch {
 		case !theirsTracked:
 			// Net-new local doc (e.g. result.md before first push), or removed
 			// remotely: restore mine. Absent from fresh, so it stays unsent.
-			if err := writeDocsFile(docsDir, rel, body); err != nil {
+			if err := writeDocsFile(docsDir, rel, grafted); err != nil {
 				return nil, err
 			}
 		case theirsHash == mineHash:
 			// Coincidentally identical to the remote: leave theirs in place.
 		case theirsHash == baseHash:
-			// Remote did not touch this doc: keep my unsent edit, under the
-			// freshly generated errata block (B-0012).
-			theirs, err := os.ReadFile(filepath.Join(docsDir, filepath.FromSlash(rel)))
-			if err != nil {
-				return nil, err
-			}
-			// a broken block in mine is kept as is: push refuses it
-			if m, merr := store.StripErrataBlock(body); merr == nil {
-				t, _ := store.StripErrataBlock(theirs)
-				body = append(append([]byte{}, m...), theirs[len(t):]...)
-			}
-			if err := writeDocsFile(docsDir, rel, body); err != nil {
+			// Remote did not touch this doc: keep my unsent edit.
+			if err := writeDocsFile(docsDir, rel, grafted); err != nil {
 				return nil, err
 			}
 		default:
@@ -295,7 +303,7 @@ func reapplyUnsent(docsDir string, prev, fresh map[string]string, mine map[strin
 			if err := saveConflictCopy(docsDir, rel, theirs); err != nil {
 				return nil, err
 			}
-			if err := writeDocsFile(docsDir, rel, body); err != nil {
+			if err := writeDocsFile(docsDir, rel, grafted); err != nil {
 				return nil, err
 			}
 			fresh[rel] = baseHash
@@ -372,8 +380,12 @@ func unpushedDocs(docsDir string, manifest map[string]string) ([]string, error) 
 	} else if err != nil {
 		return nil, err
 	}
+	blocks, err := store.LoadErrataBlocks(docsDir)
+	if err != nil {
+		return nil, err
+	}
 	var changed []string
-	err := filepath.WalkDir(currentDir, func(p string, d fs.DirEntry, walkErr error) error {
+	err = filepath.WalkDir(currentDir, func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -389,7 +401,7 @@ func unpushedDocs(docsDir string, manifest map[string]string) ([]string, error) 
 		if err != nil {
 			return err
 		}
-		if want, ok := manifest[rel]; !ok || docHash(body) != want {
+		if want, ok := manifest[rel]; !ok || docHash(blocks, rel, body) != want {
 			changed = append(changed, rel)
 		}
 		return nil
