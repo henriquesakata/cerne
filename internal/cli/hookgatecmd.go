@@ -186,10 +186,9 @@ var (
 	// `\n`, so an id on a later line follows a word character.
 	workIDRe      = regexp.MustCompile(`\bW-\d{4,}\b`)
 	workCreatedRe = regexp.MustCompile(`(W-\d{4,}) [^\s()]+ \(active\)`)
-	featureIDRe   = regexp.MustCompile(`\bF-\d{4,}\b`)
-	// startedIDRe is the id a confirmed `feature start` binds: F-, E- or T-,
+	// startedIDRe is the id a confirmed `feature start` binds: a feature-family id,
 	// the same kinds bindingLive accepts (F-0309).
-	startedIDRe = regexp.MustCompile(`\b[FETB]-\d{4,}\b`)
+	startedIDRe = regexp.MustCompile(`\b` + domain.FeatureIDPrefix + `-\d{4,}\b`)
 )
 
 var (

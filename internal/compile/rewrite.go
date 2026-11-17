@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/henriquesakata/cerne/internal/domain"
 )
 
 // entityIDRx matches a cerne entity id as a whole token: a known prefix plus a
 // 4-digit number, bounded so "D-00031" is not matched as "D-0003".
-var entityIDRx = regexp.MustCompile(`\b(?:RB|F|D|N|H)-\d{4}\b`)
+var entityIDRx = regexp.MustCompile(`\b(?:RB|` + domain.FeatureIDPrefix + `|D|N|H)-\d{4}\b`)
 
 // inlineCodeRx matches a single- or double-backtick inline code span on one line
 // (double-backtick alternative first so it is preferred at a given position).

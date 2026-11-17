@@ -62,7 +62,7 @@ func sessionWork(cacheDir, repoDir, sess string) (channelIdentity, bool) {
 }
 
 var (
-	channelRefRe  = regexp.MustCompile(`\b[WFTE]-\d{4,}\b`)
+	channelRefRe  = regexp.MustCompile(`\b(?:W|` + domain.FeatureIDPrefix + `)-\d{4,}\b`)
 	channelLineRe = regexp.MustCompile(`(:\d+)+$`)
 )
 

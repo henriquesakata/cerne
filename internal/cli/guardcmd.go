@@ -21,10 +21,15 @@ import (
 // where the "approved but never started" blind spot (the F-0222 dogfood
 // incident) gets caught instead of surfacing only at `feature complete`.
 
-// guardIDRe matches an F-/T-/E- entity id (the family that shares the feature
-// FSM and store — see domain.IsFeatureID), case-insensitively: branch names
-// (e.g. claude/f-0225-implementation) commonly lowercase the prefix.
-var guardIDRe = regexp.MustCompile(`(?i)\b[fte]-\d{4,}\b`)
+// guardIDRe matches a feature-family entity id (F-, E-, T-, B-: they share the
+// feature FSM and store — see domain.IsFeatureID), case-insensitively: branch
+// names (e.g. claude/f-0225-implementation) commonly lowercase the prefix.
+var guardIDRe = regexp.MustCompile(`(?i)\b` + domain.FeatureIDPrefix + `-\d{4,}\b`)
+
+// guardBranchIDRe is guardIDRe for a branch name, where the dash is often
+// dropped (fix/b0012-prompt, feature/f0432-help-groups): the id sits between
+// separators, so a word that merely holds letters and digits is not one.
+var guardBranchIDRe = regexp.MustCompile(`(?i)(?:^|[^a-z0-9])(` + domain.FeatureIDPrefix + `)-?(\d{4,})\b`)
 
 func newGuardCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -38,7 +43,7 @@ func newGuardCmd() *cobra.Command {
 func newGuardCommitMsgCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:    "commit-msg <msg-file>",
-		Short:  "commit-msg plumbing: block a commit citing an F-/T-/E- id still candidate/approved/closed (F-0225)",
+		Short:  "commit-msg plumbing: block a commit citing an F-/E-/T-/B- id still candidate/approved/closed (F-0225)",
 		Hidden: true,
 		Args:   cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -90,12 +95,16 @@ func runGuardCommitMsg(cmd *cobra.Command, msgPath string) error {
 	return fmt.Errorf("%s", msg)
 }
 
-// guardCitedIDs extracts the deduplicated F-/T-/E- ids cited in the commit
+// guardCitedIDs extracts the deduplicated feature-family ids cited in the commit
 // message or the current branch name, in first-seen order.
 func guardCitedIDs(msg, branch string) []string {
 	seen := map[string]bool{}
 	var ids []string
-	for _, raw := range append(guardIDRe.FindAllString(msg, -1), guardIDRe.FindAllString(branch, -1)...) {
+	raws := guardIDRe.FindAllString(msg, -1)
+	for _, m := range guardBranchIDRe.FindAllStringSubmatch(branch, -1) {
+		raws = append(raws, m[1]+"-"+m[2])
+	}
+	for _, raw := range raws {
 		id := strings.ToUpper(raw)
 		if !seen[id] {
 			seen[id] = true

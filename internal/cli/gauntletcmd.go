@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gauntlet"
 	"github.com/henriquesakata/cerne/internal/store"
 )
@@ -176,7 +177,7 @@ func newGauntletRecordCmd() *cobra.Command {
 	return cmd
 }
 
-var gauntletIDRe = regexp.MustCompile(`^[FETB]-\d+$`)
+var gauntletIDRe = regexp.MustCompile(`^` + domain.FeatureIDPrefix + `-\d+$`)
 
 func runGauntletRecord(cmd *cobra.Command, dir, id, verdictPath, ours, quote, critic string) error {
 	if !gauntletIDRe.MatchString(id) {

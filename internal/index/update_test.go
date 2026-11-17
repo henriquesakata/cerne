@@ -148,3 +148,31 @@ func TestUpdateConcurrentWithSearch(t *testing.T) {
 		t.Fatalf("a search during Update saw a broken index: %v", searchErr)
 	}
 }
+
+// TestUpdateKeepsFeatureFamilyIDs (B-0021): an incremental Update of a bug, an
+// epic or a task re-inserts its rows (Update deletes every changed id first), so
+// the card stays searchable like an F- one.
+func TestUpdateKeepsFeatureFamilyIDs(t *testing.T) {
+	repoDir, db := builtIndex(t)
+	now := time.Now().UTC()
+	for id, title := range map[string]string{"F-0900": "ornitorrinco", "B-0900": "capivara", "E-0900": "jaguatirica", "T-0900": "tamandua"} {
+		if err := store.SaveFeature(repoDir, store.Feature{ID: id, Title: title, State: domain.StateCandidate, CreatedAt: now, UpdatedAt: now}); err != nil {
+			t.Fatal(err)
+		}
+		if err := Update(repoDir, db, []string{id}, time.Time{}); err != nil {
+			t.Fatal(err)
+		}
+		if got := hits(t, db, title); !reflect.DeepEqual(got, []string{id}) {
+			t.Errorf("%s: hits for %q = %v", id, title, got)
+		}
+	}
+	// A second write to the same card (the start of B-0021's repro) keeps it too.
+	if err := Update(repoDir, db, []string{"B-0900", "E-0900", "T-0900"}, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range []string{"capivara", "jaguatirica", "tamandua"} {
+		if got := hits(t, db, w); len(got) != 1 {
+			t.Errorf("after a second update, hits for %q = %v", w, got)
+		}
+	}
+}

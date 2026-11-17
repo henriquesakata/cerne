@@ -288,3 +288,20 @@ func TestFeatureCommitsSubjectOwnership(t *testing.T) {
 		t.Errorf("F-0002: commits=%v skipped=%v err=%v", commits2, skipped2, err)
 	}
 }
+
+// TestOtherFeatureIDFamily (B-0021): a subject naming another B-, E- or T- is
+// "another feature" like an F- one; the id itself and non-ids are not.
+func TestOtherFeatureIDFamily(t *testing.T) {
+	for _, tc := range []struct{ subject, id, want string }{
+		{"fix(x): other (B-0002)", "F-0001", "B-0002"},
+		{"feat: part of E-0003", "B-0001", "E-0003"},
+		{"chore: T-0004 follow-up", "F-0001", "T-0004"},
+		{"fix: B-0001 itself", "B-0001", ""},
+		{"fix: RB-0005 is a runbook", "F-0001", ""},
+		{"fix: XB-0005 glued", "F-0001", ""},
+	} {
+		if got := otherFeatureID(tc.subject, tc.id); got != tc.want {
+			t.Errorf("otherFeatureID(%q, %s) = %q, want %q", tc.subject, tc.id, got, tc.want)
+		}
+	}
+}

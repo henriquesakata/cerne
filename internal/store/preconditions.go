@@ -3,6 +3,8 @@ package store
 import (
 	"regexp"
 	"strings"
+
+	"github.com/henriquesakata/cerne/internal/domain"
 )
 
 // F-0874: the verifiable preconditions a runbook declares per step. The parser
@@ -21,7 +23,7 @@ type Precondition struct {
 
 var (
 	preLineRe   = regexp.MustCompile(`(?i)^\s*(?:[-*+>]\s*)*(?:\*\*)?pr[eé]-?condi[cç][aã]o(?:\*\*)?\s*(?:\(?\s*((?-i:S\d+[a-z]?(?:\.\d+)*))\s*\)?)?\s*:\s*(?:\*\*)?\s*(.+?)\s*$`)
-	featureIDRe = regexp.MustCompile(`^[FETB]-\d{4,}$`)
+	featureIDRe = regexp.MustCompile(`^` + domain.FeatureIDPrefix + `-\d{4,}$`)
 	entityIDRe  = regexp.MustCompile(`^[A-Z]+-\d{4,}$`)
 	mrProjectRe = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]*(?:/[A-Za-z0-9_][A-Za-z0-9_.-]*)+$`)
 	mrIIDRe     = regexp.MustCompile(`^[0-9]+$`)

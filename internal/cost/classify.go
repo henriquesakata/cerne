@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gauntlet"
 )
 
@@ -28,11 +29,11 @@ var (
 	askedA = regexp.MustCompile("(?:VEREDITO|VERDICT):[ \\t]*[*_`]*A(?:[^|\\w]|$)")
 	askedB = regexp.MustCompile("(?:VEREDITO|VERDICT):[ \\t]*[*_`]*B(?:[^|\\w]|$)")
 
-	// idRe is a feature or task id cited in prose (F-0411).
+	// idRe is a feature-family id (F-, E-, T-, B-) cited in prose (F-0411, B-0021).
 	// fenceBlockRe is a ``` block, to its end when never closed: a diff or
 	// bundle the prompt embeds names features that are no citation.
 	fenceBlockRe = regexp.MustCompile("(?s)```.*?(?:```|$)")
-	idRe         = regexp.MustCompile(`\b[FT]-\d{4}\b`)
+	idRe         = regexp.MustCompile(`\b` + domain.FeatureIDPrefix + `-\d{4}\b`)
 
 	userKey = []byte(`"type":"user"`)
 	textKey = []byte(`"type":"text"`)
