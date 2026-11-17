@@ -50,7 +50,14 @@ func TestLegacyActorsNeverSurface(t *testing.T) {
 	if !strings.Contains(out, "agent:"+pseudo) {
 		t.Errorf("work list lacks agent:%s:\n%s", pseudo, out)
 	}
-	// the session-start board reads the stored legacy work
+	// the session-start board reads the stored legacy work; the project has its
+	// projection, so SessionStart does not pull over the local clone (B-0017)
+	if err := os.MkdirAll(filepath.Join(projDir, ".docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projDir, ".docs", "CONTEXT.md"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	board, err := execCerneStdin(t, sessionPayload("sess-x", projDir, "startup"), "hook", "session-context")
 	if err != nil {
 		t.Fatalf("session-context: %v\n%s", err, board)
