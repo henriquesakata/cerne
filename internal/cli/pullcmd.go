@@ -92,6 +92,10 @@ func runPull(cmd *cobra.Command, dir, scope string, okfFlag, force, syncSkillsFl
 			return err
 		}
 		var mine map[string][]byte
+		prevBlocks, err := store.LoadErrataBlocks(docsDir) // before the wipe
+		if err != nil {
+			return err
+		}
 		if !force && len(prevManifest) > 0 {
 			unsent, err := unpushedDocs(docsDir, prevManifest)
 			if err != nil {
@@ -108,7 +112,7 @@ func runPull(cmd *cobra.Command, dir, scope string, okfFlag, force, syncSkillsFl
 			return err
 		}
 		if len(mine) > 0 {
-			conflicts, err = reapplyUnsent(docsDir, prevManifest, manifest, mine)
+			conflicts, err = reapplyUnsent(docsDir, prevManifest, manifest, mine, prevBlocks)
 			if err != nil {
 				return err
 			}
@@ -161,14 +165,22 @@ func runPull(cmd *cobra.Command, dir, scope string, okfFlag, force, syncSkillsFl
 	if err := index.Rebuild(ctx.repoDir, dbPath, time.Now()); err != nil {
 		return err
 	}
-	nFeatures, nDecisions, nReferences := countManifest(manifest)
+	nFeatures, nDecisions, nReferences, nNotes, nRunbooks := countManifest(manifest)
+	// notes and runbooks join the line only when there are some (B-0012)
+	extra := ""
+	if nNotes > 0 {
+		extra += fmt.Sprintf(", %d note(s)", nNotes)
+	}
+	if nRunbooks > 0 {
+		extra += fmt.Sprintf(", %d runbook(s)", nRunbooks)
+	}
 	snap := head
 	if len(snap) > 8 {
 		snap = snap[:8]
 	}
 	fmt.Fprintf(cmd.OutOrStdout(),
-		"Materialized: %d feature(s), %d decision(s), %d reference(s) into .docs/ (snapshot %s).\n",
-		nFeatures, nDecisions, nReferences, snap)
+		"Materialized: %d feature(s), %d decision(s), %d reference(s)%s into .docs/ (snapshot %s).\n",
+		nFeatures, nDecisions, nReferences, extra, snap)
 	// Explain a known no-op instead of a mute "0 feature(s)": a scoped pull that
 	// materializes nothing usually means the module's features are implemented
 	// (concluded entities don't materialize — they are history).
@@ -247,24 +259,38 @@ func readBodies(docsDir string, rels []string) (map[string][]byte, error) {
 // place (non-destructive), stashes THEIRS under .docs/.conflicts/, and is left
 // flagged unsent (fresh[rel] reset to base) so it is not lost. It mutates fresh
 // for conflicts and returns the conflicting paths, sorted.
-func reapplyUnsent(docsDir string, prev, fresh map[string]string, mine map[string][]byte) ([]string, error) {
+func reapplyUnsent(docsDir string, prev, fresh map[string]string, mine map[string][]byte, prevBlocks map[string]string) ([]string, error) {
+	newBlocks, err := store.LoadErrataBlocks(docsDir)
+	if err != nil {
+		return nil, err
+	}
 	var conflicts []string
-	for rel, body := range mine {
+	for rel, raw := range mine {
 		baseHash := prev[rel]
 		theirsHash, theirsTracked := fresh[rel]
+		// B-0012: mine without the block the last pull recorded for it, then under
+		// the block this pull generated. A block I altered (serr) stays as I left
+		// it: push refuses it with the reason.
+		body, serr := store.StripErrataBlock(raw, prevBlocks[rel])
+		grafted := raw
+		if serr == nil {
+			grafted = append(append([]byte{}, body...), newBlocks[rel]...)
+		} else {
+			body = raw
+		}
 		mineHash := sha256Hex(body)
 		switch {
 		case !theirsTracked:
 			// Net-new local doc (e.g. result.md before first push), or removed
 			// remotely: restore mine. Absent from fresh, so it stays unsent.
-			if err := writeDocsFile(docsDir, rel, body); err != nil {
+			if err := writeDocsFile(docsDir, rel, grafted); err != nil {
 				return nil, err
 			}
 		case theirsHash == mineHash:
 			// Coincidentally identical to the remote: leave theirs in place.
 		case theirsHash == baseHash:
 			// Remote did not touch this doc: keep my unsent edit.
-			if err := writeDocsFile(docsDir, rel, body); err != nil {
+			if err := writeDocsFile(docsDir, rel, grafted); err != nil {
 				return nil, err
 			}
 		default:
@@ -277,7 +303,7 @@ func reapplyUnsent(docsDir string, prev, fresh map[string]string, mine map[strin
 			if err := saveConflictCopy(docsDir, rel, theirs); err != nil {
 				return nil, err
 			}
-			if err := writeDocsFile(docsDir, rel, body); err != nil {
+			if err := writeDocsFile(docsDir, rel, grafted); err != nil {
 				return nil, err
 			}
 			fresh[rel] = baseHash
@@ -320,9 +346,9 @@ func reportPullConflicts(cmd *cobra.Command, conflicts []string) error {
 }
 
 // countManifest derives the summary counts from the manifest paths:
-// features count distinct current/features/<dir>/ entries, decisions and
-// references count one file each.
-func countManifest(manifest map[string]string) (features, decisions, references int) {
+// features count distinct current/features/<dir>/ entries, the other kinds
+// count one file each.
+func countManifest(manifest map[string]string) (features, decisions, references, notes, runbooks int) {
 	featureDirs := map[string]bool{}
 	for rel := range manifest {
 		switch {
@@ -335,14 +361,18 @@ func countManifest(manifest map[string]string) (features, decisions, references 
 			decisions++
 		case strings.HasPrefix(rel, "current/references/"):
 			references++
+		case strings.HasPrefix(rel, "current/notes/"):
+			notes++
+		case strings.HasPrefix(rel, "current/runbooks/"):
+			runbooks++
 		}
 	}
-	return len(featureDirs), decisions, references
+	return len(featureDirs), decisions, references, notes, runbooks
 }
 
 // unpushedDocs returns the .docs/current/**.md paths whose content diverges from
 // the manifest (edited or net-new) — local authoring a pull's RemoveAll would
-// discard. Rels are slash-separated and sorted. Reuses sha256Hex (pushcmd.go).
+// discard. Rels are slash-separated and sorted. Reuses docHash (pushcmd.go).
 func unpushedDocs(docsDir string, manifest map[string]string) ([]string, error) {
 	currentDir := filepath.Join(docsDir, "current")
 	if _, err := os.Stat(currentDir); errors.Is(err, os.ErrNotExist) {
@@ -350,8 +380,12 @@ func unpushedDocs(docsDir string, manifest map[string]string) ([]string, error) 
 	} else if err != nil {
 		return nil, err
 	}
+	blocks, err := store.LoadErrataBlocks(docsDir)
+	if err != nil {
+		return nil, err
+	}
 	var changed []string
-	err := filepath.WalkDir(currentDir, func(p string, d fs.DirEntry, walkErr error) error {
+	err = filepath.WalkDir(currentDir, func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -367,7 +401,7 @@ func unpushedDocs(docsDir string, manifest map[string]string) ([]string, error) 
 		if err != nil {
 			return err
 		}
-		if want, ok := manifest[rel]; !ok || sha256Hex(body) != want {
+		if want, ok := manifest[rel]; !ok || docHash(blocks, rel, body) != want {
 			changed = append(changed, rel)
 		}
 		return nil

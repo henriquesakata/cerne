@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -259,6 +260,7 @@ func MaterializeAt(repoDir, docsDir, scope string, okf bool, recentDays int, now
 	}
 
 	manifest := map[string]string{}
+	blocks := map[string]string{}
 	descs := map[string]string{} // entity id -> derived OKF description (okf only)
 	data := contextData{ProjectName: proj.Name}
 	data.boardData = boardDataOf(works, events, handoffs, now, recentDays)
@@ -274,7 +276,7 @@ func MaterializeAt(repoDir, docsDir, scope string, okf bool, recentDays int, now
 			}
 			row := featureRow{ID: f.ID, State: string(f.State), Parent: f.Parent, Module: f.Module, Title: ownerPrioritySuffix(f)}
 			if featureIsCurrent(f) {
-				docs, err := copyFeatureDocs(repoDir, docsDir, f, okf, manifest, descs)
+				docs, err := copyFeatureDocs(repoDir, docsDir, f, okf, manifest, blocks, descs)
 				if err != nil {
 					return nil, err
 				}
@@ -299,7 +301,7 @@ func MaterializeAt(repoDir, docsDir, scope string, okf bool, recentDays int, now
 			continue
 		}
 		meta := okfMeta{Type: "decision", Title: d.Title, Timestamp: okfTime(d.UpdatedAt)}
-		line, err := copyEntry(repoDir, docsDir, "decisions", d.ID, d.Title, manifest, okf, meta, descs)
+		line, err := copyEntry(repoDir, docsDir, "decisions", d.ID, d.Title, manifest, blocks, okf, meta, descs)
 		if err != nil {
 			return nil, err
 		}
@@ -317,7 +319,7 @@ func MaterializeAt(repoDir, docsDir, scope string, okf bool, recentDays int, now
 			continue
 		}
 		meta := okfMeta{Type: "runbook", Title: rb.Title, Timestamp: okfTime(rb.UpdatedAt)}
-		line, err := copyEntry(repoDir, docsDir, "runbooks", rb.ID, rb.Title, manifest, okf, meta, descs)
+		line, err := copyEntry(repoDir, docsDir, "runbooks", rb.ID, rb.Title, manifest, blocks, okf, meta, descs)
 		if err != nil {
 			return nil, err
 		}
@@ -329,7 +331,7 @@ func MaterializeAt(repoDir, docsDir, scope string, okf bool, recentDays int, now
 			continue
 		}
 		meta := okfMeta{Type: "note", Title: n.Title, Timestamp: okfTime(n.UpdatedAt), Informs: n.Informs}
-		line, err := copyEntry(repoDir, docsDir, "notes", n.ID, n.Title, manifest, okf, meta, descs)
+		line, err := copyEntry(repoDir, docsDir, "notes", n.ID, n.Title, manifest, blocks, okf, meta, descs)
 		if err != nil {
 			return nil, err
 		}
@@ -347,7 +349,7 @@ func MaterializeAt(repoDir, docsDir, scope string, okf bool, recentDays int, now
 			continue
 		}
 		meta := okfMeta{Type: "reference", Title: r.Title, Timestamp: okfTime(r.UpdatedAt), Resource: r.URL, External: r.External, Informs: r.Informs}
-		line, err := copyEntry(repoDir, docsDir, "references", r.ID, r.Title, manifest, okf, meta, descs)
+		line, err := copyEntry(repoDir, docsDir, "references", r.ID, r.Title, manifest, blocks, okf, meta, descs)
 		if err != nil {
 			return nil, err
 		}
@@ -355,6 +357,10 @@ func MaterializeAt(repoDir, docsDir, scope string, okf bool, recentDays int, now
 	}
 
 	if err := copyWiki(repoDir, docsDir, manifest); err != nil {
+		return nil, err
+	}
+
+	if err := store.SaveErrataBlocks(docsDir, blocks); err != nil {
 		return nil, err
 	}
 
@@ -511,7 +517,7 @@ func copyWiki(repoDir, docsDir string, manifest map[string]string) error {
 // "[spec](path), [plan](path)" for the docs that exist. Under okf, each doc is
 // wrapped in OKF frontmatter (type: spec|plan|result) and a generated index.md
 // (type: feature) is emitted carrying the feature's lifecycle fields.
-func copyFeatureDocs(repoDir, docsDir string, f store.Feature, okf bool, manifest, descs map[string]string) (string, error) {
+func copyFeatureDocs(repoDir, docsDir string, f store.Feature, okf bool, manifest, blocks, descs map[string]string) (string, error) {
 	dirName := entryName(f.ID, f.Title)
 	var links, written []string
 	var description string
@@ -534,7 +540,12 @@ func copyFeatureDocs(repoDir, docsDir string, f store.Feature, okf bool, manifes
 			body = okfFrontmatter(okfMeta{Type: docType, Title: f.Title, Timestamp: okfTime(f.UpdatedAt)}, body)
 		}
 		rel := "current/features/" + dirName + "/" + filename
-		sum, err := writeFile(docsDir, rel, body)
+		var sum string
+		if filename == "spec.md" {
+			sum, err = writeWithErrata(repoDir, docsDir, rel, f.ID, false, body, blocks)
+		} else {
+			sum, err = writeFile(docsDir, rel, body)
+		}
 		if err != nil {
 			return "", err
 		}
@@ -606,7 +617,7 @@ func writeFeatureIndex(docsDir, dirName string, f store.Feature, description str
 // copyEntry copies content/<kind>/<ID>.md into current/<kind>/<ID>-<slug>.md
 // and returns the CONTEXT.md bullet text: a markdown link when the content
 // document exists, the plain "<ID> — <title>" otherwise.
-func copyEntry(repoDir, docsDir, kind, id, title string, manifest map[string]string, okf bool, meta okfMeta, descs map[string]string) (string, error) {
+func copyEntry(repoDir, docsDir, kind, id, title string, manifest, blocks map[string]string, okf bool, meta okfMeta, descs map[string]string) (string, error) {
 	label := fmt.Sprintf("%s — %s", id, title)
 	body, err := os.ReadFile(filepath.Join(repoDir, "content", kind, id+".md"))
 	if errors.Is(err, os.ErrNotExist) {
@@ -622,7 +633,7 @@ func copyEntry(repoDir, docsDir, kind, id, title string, manifest map[string]str
 		body = okfFrontmatter(meta, body)
 	}
 	rel := "current/" + kind + "/" + entryName(id, title) + ".md"
-	sum, err := writeFile(docsDir, rel, body)
+	sum, err := writeWithErrata(repoDir, docsDir, rel, id, kind == "runbooks", body, blocks)
 	if err != nil {
 		return "", err
 	}
@@ -732,6 +743,43 @@ func writeFile(docsDir, rel string, body []byte) (string, error) {
 	}
 	if err := os.WriteFile(path, body, 0o644); err != nil {
 		return "", err
+	}
+	sum := sha256.Sum256(body)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+var mergedRevRe = regexp.MustCompile(`^\D*(\d+)\D*$`)
+
+// writeWithErrata writes body with the entity's errata appended as a generated
+// block (B-0012) and returns the manifest hash of the body ALONE: the block is
+// derived from the backend, so it is never a local edit, and push strips it.
+// Runbook items already folded into the body show as one line (F-0351).
+func writeWithErrata(repoDir, docsDir, rel, id string, runbook bool, body []byte, blocks map[string]string) (string, error) {
+	er, err := store.LoadErrata(repoDir, id)
+	if err != nil {
+		return "", err
+	}
+	var merged func(store.ErrataItem) string
+	if runbook {
+		merged = func(it store.ErrataItem) string {
+			l := it.ID + " merged"
+			// the stored label is localized ("revisão N"): take its number
+			if m := mergedRevRe.FindStringSubmatch(it.Merged); m != nil {
+				l += " into revision " + m[1]
+			}
+			l += " — shown in the body"
+			if it.Target != "" {
+				l += " under " + it.Target
+			}
+			return l
+		}
+	}
+	block := store.ErrataBlock(string(stripFrontmatter([]byte(er))), merged)
+	if _, err := writeFile(docsDir, rel, append(append([]byte{}, body...), block...)); err != nil {
+		return "", err
+	}
+	if block != "" {
+		blocks[rel] = block // the exact text, so push strips it and nothing else
 	}
 	sum := sha256.Sum256(body)
 	return hex.EncodeToString(sum[:]), nil

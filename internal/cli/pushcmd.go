@@ -290,9 +290,13 @@ func collectChangedDocs(repoDir, docsDir string, manifest map[string]string) ([]
 	} else if err != nil {
 		return nil, err
 	}
+	blocks, err := store.LoadErrataBlocks(docsDir)
+	if err != nil {
+		return nil, err
+	}
 	var docs []pushedDoc
 	var frozen []string // every frozen document's block: one refusal names them all
-	err := filepath.WalkDir(currentDir, func(p string, d fs.DirEntry, walkErr error) error {
+	err = filepath.WalkDir(currentDir, func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -309,7 +313,7 @@ func collectChangedDocs(repoDir, docsDir string, manifest map[string]string) ([]
 			return err
 		}
 		want, tracked := manifest[rel]
-		sum := sha256Hex(body)
+		sum := docHash(blocks, rel, body)
 		switch {
 		case tracked && sum == want:
 			return nil // tracked and unchanged
@@ -320,6 +324,10 @@ func collectChangedDocs(repoDir, docsDir string, manifest map[string]string) ([]
 			}
 			return fmt.Errorf("untracked file: %s — run 'cerne pull' to resync", rel)
 		}
+		stripped, err := store.StripErrataBlock(body, blocks[rel])
+		if err != nil {
+			return fmt.Errorf("%s: %w — %s", rel, err, errataBlockFix)
+		}
 		id := parseCerneID(body)
 		if id == "" {
 			return fmt.Errorf("document without cerne_id in frontmatter: %s — new documents are born from 'cerne feature new'", rel)
@@ -327,6 +335,13 @@ func collectChangedDocs(repoDir, docsDir string, manifest map[string]string) ([]
 		backendRel, err := backendRelPath(rel, id)
 		if err != nil {
 			return err
+		}
+		current, err := os.ReadFile(filepath.Join(repoDir, filepath.FromSlash(backendRel)))
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		if err := store.CheckNoNewErrataMarker(stripped, current); err != nil {
+			return fmt.Errorf("%s: %w — %s", rel, err, errataBlockFix)
 		}
 		if strings.HasPrefix(rel, "current/features/") {
 			// ponytail: state read in the local cache clone before the push; its reconcile
@@ -341,7 +356,7 @@ func collectChangedDocs(repoDir, docsDir string, manifest map[string]string) ([]
 				return nil
 			}
 		}
-		docs = append(docs, pushedDoc{rel: rel, backendRel: backendRel, body: body, sum: sum})
+		docs = append(docs, pushedDoc{rel: rel, backendRel: backendRel, body: stripped, sum: sum})
 		return nil
 	})
 	if err != nil {
@@ -352,6 +367,9 @@ func collectChangedDocs(repoDir, docsDir string, manifest map[string]string) ([]
 	}
 	return docs, nil
 }
+
+// errataBlockFix is the way out of a refused errata block.
+const errataBlockFix = "delete the whole generated block, markers included (push then sends the rest), restore it verbatim, or run 'cerne pull --force' to regenerate it (it discards unsent edits: save yours first)"
 
 // frozenDirIDRe takes the feature id off the front of a materialized folder name.
 var frozenDirIDRe = regexp.MustCompile(`^([A-Z]+-\d+)(?:-|$)`)
@@ -477,6 +495,17 @@ func parseCerneID(data []byte) string {
 func sha256Hex(body []byte) string {
 	sum := sha256.Sum256(body)
 	return hex.EncodeToString(sum[:])
+}
+
+// docHash is sha256Hex of a materialized document's body: the errata block the
+// pull recorded for rel (B-0012) is derived, never a local edit. An altered block
+// hashes the raw file, so it reads as an edit and push then refuses it. Every
+// manifest-vs-disk comparison of a document goes through it.
+func docHash(blocks map[string]string, rel string, body []byte) string {
+	if b, err := store.StripErrataBlock(body, blocks[rel]); err == nil {
+		body = b
+	}
+	return sha256Hex(body)
 }
 
 // shortSHA returns the first 8 chars of sha (sha itself when shorter).

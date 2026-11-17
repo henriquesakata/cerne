@@ -1,6 +1,8 @@
 package store
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/henriquesakata/cerne/internal/domain"
@@ -86,4 +88,143 @@ func defangHeadings(text string) string {
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+const (
+	errataBlockBegin = "<!-- cerne:errata:begin"
+	errataBlockEnd   = "<!-- cerne:errata:end -->"
+)
+
+// ErrataBlock renders an entity's errata as the generated, read-only block the
+// .docs/ projection appends to its file (B-0012). errata is the document body
+// without its frontmatter; merged, when non-nil, replaces each already folded
+// item by one line (F-0351). It returns "" when there is nothing to show. The
+// block is set off by a blank line and ends the file; the projection records its
+// exact text (SaveErrataBlocks) so StripErrataBlock removes that and nothing else.
+func ErrataBlock(errata string, merged func(ErrataItem) string) string {
+	errata = strings.TrimSpace(errata)
+	if errata == "" {
+		return ""
+	}
+	if merged != nil {
+		errata = ReplaceMerged(errata, merged)
+	}
+	// a quoted marker must not read as ours: defang it, as headings are
+	errata = strings.ReplaceAll(errata, "cerne:errata:", "cerne-errata:")
+	return "\n\n" + errataBlockBegin + " — generated from content/errata, read-only: edits here are dropped on push -->\n" +
+		"## Errata\n\n" + errata + "\n" + errataBlockEnd + "\n"
+}
+
+// ErrBrokenErrataBlock: a document that was projected with an errata block no
+// longer holds it verbatim but still carries an errata marker — push refuses it
+// rather than send generated text as body.
+var ErrBrokenErrataBlock = errors.New("errata block altered")
+
+// errataBlocksFile is the sidecar under .docs/ that records, per materialized
+// document, the exact block the pull appended to it (absent: none recorded).
+const errataBlocksFile = ".errata-blocks.json"
+
+// SaveErrataBlocks records the blocks of a materialization (rel -> exact text).
+// An empty record removes the sidecar, so a stale one never outlives its pull.
+func SaveErrataBlocks(docsDir string, blocks map[string]string) error {
+	path := filepath.Join(docsDir, errataBlocksFile)
+	if len(blocks) == 0 {
+		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+	data, err := json.MarshalIndent(blocks, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, append(data, '\n'), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
+// LoadErrataBlocks reads the sidecar; a missing one is "no block recorded".
+func LoadErrataBlocks(docsDir string) (map[string]string, error) {
+	data, err := os.ReadFile(filepath.Join(docsDir, errataBlocksFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return map[string]string{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	m := map[string]string{}
+	if err := json.Unmarshal(data, &m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+// StripErrataBlock gives back body without the block the projection appended,
+// matched by its recorded text — never guessed. With no block recorded the body
+// is returned untouched (an authored marker is the author's). Otherwise one
+// verbatim occurrence is cut (CRLF-converted files are matched after LF
+// normalization; a block whose final newline an editor dropped at end of file
+// still matches) and everything else is kept. A block not found verbatim while a
+// line-start errata marker remains is ErrBrokenErrataBlock (fail closed); one
+// removed entirely leaves nothing to strip.
+func StripErrataBlock(body []byte, block string) ([]byte, error) {
+	if block == "" {
+		return body, nil
+	}
+	cut := func(b []byte) ([]byte, bool) {
+		for _, cand := range []string{block, strings.TrimSuffix(block, "\n")} {
+			i := occurrence(b, []byte(cand))
+			if i < 0 || (cand != block && !bytes.HasSuffix(b, []byte(cand))) {
+				continue
+			}
+			return append(append([]byte{}, b[:i]...), b[i+len(cand):]...), true
+		}
+		return nil, false
+	}
+	if out, ok := cut(body); ok {
+		return out, nil
+	}
+	norm := bytes.ReplaceAll(body, []byte("\r\n"), []byte("\n"))
+	if out, ok := cut(norm); ok {
+		return out, nil
+	}
+	for _, l := range bytes.Split(norm, []byte("\n")) {
+		if bytes.HasPrefix(l, []byte("<!-- cerne:errata:")) {
+			return nil, ErrBrokenErrataBlock
+		}
+	}
+	return body, nil
+}
+
+// CheckNoNewErrataMarker is push's invariant, independent of the sidecar: the
+// outgoing body may not hold more errata begin markers than the backend's
+// current body of the same document. Errata text is defanged, so every marker
+// is authored or generated; authored ones already in the backend stay
+// pushable, nothing generated can be added.
+func CheckNoNewErrataMarker(outgoing, current []byte) error {
+	marker := []byte("cerne:errata:begin")
+	if bytes.Count(outgoing, marker) > bytes.Count(current, marker) {
+		return ErrBrokenErrataBlock
+	}
+	return nil
+}
+
+// occurrence is where the generated copy of block sits: the projection appends
+// it last, so the occurrence followed only by whitespace wins over a copy the
+// user pasted earlier; otherwise the first one. -1 when absent.
+func occurrence(b, block []byte) int {
+	first := bytes.Index(b, block)
+	for i := first; i >= 0; {
+		if len(bytes.TrimSpace(b[i+len(block):])) == 0 {
+			return i
+		}
+		j := bytes.Index(b[i+1:], block)
+		if j < 0 {
+			break
+		}
+		i += 1 + j
+	}
+	return first
 }
