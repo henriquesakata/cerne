@@ -53,9 +53,10 @@ var (
 // tag shows in full without the "v" ("v0.14.1" → "0.14.1", "v0.14.0-rc.1" →
 // "0.14.0-rc.1"); a `git describe` string (commits after a tag, -dirty) is cut
 // to MAJOR.MINOR ("v0.3.0-12-gd7ed7433" → "0.3"); anything else ("dev", a bare
-// hash) is returned unchanged (F-0144, B-0014).
+// hash) is returned unchanged; a Go pseudo-version is cut like a describe
+// string (F-0144, B-0014).
 func Short() string {
-	if m := fullRe.FindStringSubmatch(Version); m != nil && !describeRe.MatchString(Version) {
+	if m := fullRe.FindStringSubmatch(Version); m != nil && !describeRe.MatchString(Version) && !pseudoRe.MatchString(Version) {
 		return m[1]
 	}
 	if m := shortRe.FindStringSubmatch(Version); m != nil {
