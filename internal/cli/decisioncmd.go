@@ -33,7 +33,7 @@ func newDecisionCmd() *cobra.Command {
 	cmd.AddCommand(verbs.MarkChat(newDecisionListCmd(&dir)))
 	cmd.AddCommand(verbs.MarkLocal(newDecisionDraftCmd(&dir)))
 	cmd.AddCommand(verbs.MarkChat(newDecisionRetagCmd(&dir)))
-	cmd.AddCommand(newDecisionSubstituirCmd(&dir))
+	cmd.AddCommand(newDecisionSupersedeCmd(&dir), legacyName(newDecisionSupersedeCmd(&dir), "substituir"))
 	cmd.AddCommand(verbs.MarkChat(newDecisionKeepCmd(&dir)))
 	cmd.AddCommand(newDecisionRetireCmd(&dir))
 	cmd.AddCommand(verbs.MarkChat(newErrataCmd(&dir)))
@@ -216,14 +216,14 @@ func runDecisionNew(cmd *cobra.Command, dir string, args []string, file, facet, 
 	return nil
 }
 
-func newDecisionSubstituirCmd(dir *string) *cobra.Command {
+func newDecisionSupersedeCmd(dir *string) *cobra.Command {
 	var by, reason string
 	cmd := &cobra.Command{
-		Use:   "substituir <id>",
+		Use:   "supersede <id>",
 		Short: "Supersede one decision with another (requires --by and --reason)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runDecisionSubstituir(cmd, *dir, args[0], by, reason)
+			return runDecisionSupersede(cmd, *dir, args[0], by, reason)
 		},
 	}
 	cmd.Flags().StringVar(&by, "by", "", "id of the decision that supersedes")
@@ -231,7 +231,7 @@ func newDecisionSubstituirCmd(dir *string) *cobra.Command {
 	return verbs.MarkLifecycle(cmd)
 }
 
-func runDecisionSubstituir(cmd *cobra.Command, dir, id, by, reason string) error {
+func runDecisionSupersede(cmd *cobra.Command, dir, id, by, reason string) error {
 	// Validate flags before resolveProject so bad invocations fail fast
 	// without touching origin.
 	if err := app.ValidateTransitionFlags(domain.ActionSupersede, by, reason); err != nil {
@@ -256,7 +256,7 @@ func newDecisionKeepCmd(dir *string) *cobra.Command {
 		Long: "Stamps the review date (and the actor, on the decision.kept event) of an active decision: the human " +
 			"verdict that it still holds. 'cerne lint' (stale-decision) counts from the review, so the decision is " +
 			"flagged again only on a new signal — N more days with no live citation, or a newer active decision " +
-			"carrying all its components. To take it out of the current state, use 'cerne decision retire' or 'substituir'.",
+			"carrying all its components. To take it out of the current state, use 'cerne decision retire' or 'supersede'.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := resolveProject(*dir)
@@ -281,7 +281,7 @@ func newDecisionRetireCmd(dir *string) *cobra.Command {
 		Long: "Moves an active decision to retired WITHOUT a successor — for a decision that stopped applying and " +
 			"has nothing to point --by at. It leaves the current state (.docs/) on the next 'cerne pull' and stays " +
 			"searchable history; the reason goes on the decision.retired event. To replace it with a newer decision, " +
-			"use 'cerne decision substituir --by'.",
+			"use 'cerne decision supersede --by'.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Refuse before resolveProject: a bad invocation never touches origin.

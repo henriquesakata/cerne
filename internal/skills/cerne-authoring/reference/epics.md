@@ -2,7 +2,7 @@
 
 An **epic is just a feature that has children** — the role is inferred from the parent link, there is no separate entity, so the epic gets the full feature lifecycle/spec/plan/result for free. Use one when a body of work is too large for a single spec and naturally splits into sub-features.
 
-- Create a child under an epic: `cerne feature new "<title>" --context "<porquê>" --parent F-NNNN`.
+- Create a child under an epic: `cerne feature new "<title>" --context "<why>" --parent F-NNNN`.
 - Link, move, or detach an existing feature later: `cerne feature reparent F-NNNN F-MMMM` (or `--clear`).
 - **Epic ≠ module.** A module is the subsystem; an epic is decomposed work that may span modules. A feature can have both.
 - **Read the breakdown, don't hand-maintain it:** `cerne status` shows an `ÉPICOS` section with `n/m` progress, and `.docs/CONTEXT.md` carries an *Épico* column plus a `## Épicos` section.

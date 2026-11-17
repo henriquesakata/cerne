@@ -4,7 +4,7 @@
 # register the external sources that SHAPED a doc at the hot moments — a
 # successful `cerne push` whose authored docs cite an unbacked external URL
 # (same detector as the unregistered-source lint rule), and the decision gates
-# (`feature complete`, `decision new/substituir`). This wrapper only degrades
+# (`feature complete`, `decision new/supersede`). This wrapper only degrades
 # silently (exit 0) when the cerne binary is absent, so a broken install never
 # breaks a tool call. Tool-managed — do not edit; fix it upstream in
 # internal/hooks/assets/ and re-run `cerne hook install`.

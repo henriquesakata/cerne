@@ -35,7 +35,7 @@ func preconditionFindings(repoDir string, runbooks []store.Runbook) ([]Finding, 
 					Rule:   RulePreconditionMalformed,
 					Entity: rb.ID,
 					File:   rel,
-					Detail: fmt.Sprintf("%s: pré-condição '%s' — %s; o preflight a trata como manual", rel, p.Text, p.Problem),
+					Detail: fmt.Sprintf("%s: precondition '%s' — %s; the preflight treats it as manual", rel, p.Text, p.Problem),
 				})
 			}
 		}

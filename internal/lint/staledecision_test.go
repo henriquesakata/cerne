@@ -201,7 +201,7 @@ func TestStaleDecisionFindings(t *testing.T) {
 				if i := strings.Index(f.Detail, "--by "); i >= 0 {
 					by = strings.Fields(f.Detail[i+5:])[0]
 				}
-				exits := fmt.Sprintf("confirm it with 'cerne decision keep %[1]s', retire it with 'cerne decision retire %[1]s --reason \"…\"' or supersede it with 'cerne decision substituir %[1]s --by %[2]s --reason \"…\"'", f.Entity, by)
+				exits := fmt.Sprintf("confirm it with 'cerne decision keep %[1]s', retire it with 'cerne decision retire %[1]s --reason \"…\"' or supersede it with 'cerne decision supersede %[1]s --by %[2]s --reason \"…\"'", f.Entity, by)
 				if !strings.HasSuffix(f.Detail, exits) {
 					t.Errorf("%s detail does not end with the exits %q: %s", f.Entity, exits, f.Detail)
 				}

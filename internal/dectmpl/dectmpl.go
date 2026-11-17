@@ -11,7 +11,7 @@
 // Contexto and Decisão sit at the top (the most decision-bearing content, where
 // long-context models attend best — primacy), and Implementação e relações last
 // (lookup material — recency is fine). Lifecycle status (active/superseded) is
-// cerne data managed by `cerne decision substituir`, not prose, so the template
+// cerne data managed by `cerne decision supersede`, not prose, so the template
 // carries no Status section. The rationale and its sources are registered in the
 // cerne backend as references.
 package dectmpl
@@ -39,7 +39,7 @@ implementação (isso é o plano). O título registra a DECISÃO, não a pergunt
 primário", não "Qual banco usar?"). Preencha cada seção e remova estas linhas-guia. Marque qualquer incerteza
 com [ESCLARECER: pergunta específica] e resolva antes de tratar a decisão como aceita. Dimensione pela decisão:
 uma escolha pequena pode ter Alternativas e Implementação em uma linha ("N/A") — não infle. Um ADR aceito é
-registro histórico: para mudar de rumo, supersede (cerne decision substituir), não reescreva. O status
+registro histórico: para mudar de rumo, supersede (cerne decision supersede), não reescreva. O status
 (active/superseded) é dado gerido pelo cerne, não prosa. -->
 
 <!-- METADADOS (preencha como linha **Data:**):
@@ -73,7 +73,7 @@ the implementation (that is the plan). The title records the DECISION, not the q
 primary store", not "Which database?"). Fill in every section and remove these guide lines. Mark any uncertainty
 with [CLARIFY: specific question] and resolve it before treating the decision as accepted. Size it by the decision:
 a small choice can have Alternatives and Implementation in one line ("N/A") — do not inflate. An accepted ADR is a
-historical record: to change course, supersede it (cerne decision substituir), do not rewrite it. The status
+historical record: to change course, supersede it (cerne decision supersede), do not rewrite it. The status
 (active/superseded) is data managed by cerne, not prose. -->
 
 <!-- METADATA (fill in as a line **Date:**):

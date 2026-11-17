@@ -132,9 +132,9 @@ func blockingGuardIDs(repoDir string, ids []string) []string {
 		}
 		switch f.State {
 		case domain.StateRejected, domain.StateSuperseded:
-			blocks = append(blocks, fmt.Sprintf("%s está %s — trabalho sobre entidade encerrada, confira o id", id, f.State))
+			blocks = append(blocks, fmt.Sprintf("%s is %s — work on a closed entity, check the id", id, f.State))
 		case domain.StateCandidate, domain.StateApproved:
-			blocks = append(blocks, fmt.Sprintf("%s está %s — rode `cerne feature start %s` antes de commitar", id, f.State, id))
+			blocks = append(blocks, fmt.Sprintf("%s is %s — run `cerne feature start %s` before committing", id, f.State, id))
 		}
 	}
 	sort.Strings(blocks)

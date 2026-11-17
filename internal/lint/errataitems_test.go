@@ -75,13 +75,13 @@ func TestLintFlagsStepLessErratum(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("want E1 (no step) and E2 (proposal) only: %+v", got)
 	}
-	if want := "erratum E1 de RB-0001 não declara passo: o --consolidado não o põe no lugar e o merge não o funde"; got[0].Detail != want {
+	if want := "erratum E1 of RB-0001 declares no step: --consolidated cannot place it and merge cannot fold it"; got[0].Detail != want {
 		t.Fatalf("detail = %q, want %q", got[0].Detail, want)
 	}
-	if !strings.Contains(got[0].Fix, "cerne runbook errata RB-0001 --altera <passo>") || !strings.Contains(got[0].Fix, "cerne runbook decide RB-0001 E1") {
-		t.Fatalf("fix must rewrite with --altera and then decide the old item: %q", got[0].Fix)
+	if !strings.Contains(got[0].Fix, "cerne runbook errata RB-0001 --step <step>") || !strings.Contains(got[0].Fix, "cerne runbook decide RB-0001 E1") {
+		t.Fatalf("fix must rewrite with --step and then decide the old item: %q", got[0].Fix)
 	}
-	if !strings.Contains(got[1].Detail, "E2") || !strings.Contains(got[1].Detail, "proposta") {
+	if !strings.Contains(got[1].Detail, "E2") || !strings.Contains(got[1].Detail, "proposal") {
 		t.Fatalf("a deliberate step-less item keeps the proposal finding: %+v", got[1])
 	}
 }

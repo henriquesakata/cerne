@@ -38,8 +38,8 @@ func TestGuardCommitMsg_StateTable(t *testing.T) {
 		{domain.StateInDevelopment, false, ""},
 		{domain.StateImplemented, false, ""},
 		{domain.StateDone, false, ""},
-		{domain.StateRejected, true, "encerrad"},
-		{domain.StateSuperseded, true, "encerrad"},
+		{domain.StateRejected, true, "closed entity"},
+		{domain.StateSuperseded, true, "closed entity"},
 	}
 	for _, tc := range cases {
 		t.Run(string(tc.state), func(t *testing.T) {

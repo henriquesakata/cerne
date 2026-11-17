@@ -32,7 +32,7 @@ func AddErrata(repoDir, projDir, id, text, author string) (string, error) {
 
 // NoStepFlag is the CLI flag of a runbook erratum that changes no step. A name,
 // not a literal, so error text can cite it without tripping the English guard.
-const NoStepFlag = "--sem-passo"
+const NoStepFlag = "--no-step"
 
 // AddErrataSteps is AddErrata with the steps the erratum changes declared
 // (F-0872, F-0345): each step is written as the `Altera:` line of its own item,
@@ -48,16 +48,16 @@ func AddErrataSteps(repoDir, projDir, id, text, author string, steps []string, s
 	}
 	isRB := strings.HasPrefix(id, "RB-")
 	if stepless && (!isRB || len(steps) > 0) {
-		return nil, fmt.Errorf("%s only applies to a runbook erratum that declares no --altera", NoStepFlag)
+		return nil, fmt.Errorf("%s only applies to a runbook erratum that declares no --step", NoStepFlag)
 	}
 	var uniq []string // a repeated step is one item, order kept
 	for _, st := range steps {
 		st = strings.TrimSpace(st)
 		if st == "" || strings.ContainsAny(st, "\r\n") {
-			return nil, fmt.Errorf("--altera takes step references (e.g. S6.6), got %q", st)
+			return nil, fmt.Errorf("--step takes step references (e.g. S6.6), got %q", st)
 		}
 		if st == store.NoStep {
-			return nil, fmt.Errorf("--altera %q is the no-step marker, not a step: name a step, or use %s", st, NoStepFlag)
+			return nil, fmt.Errorf("--step %q is the no-step marker, not a step: name a step, or use %s", st, NoStepFlag)
 		}
 		if !slices.Contains(uniq, st) {
 			uniq = append(uniq, st)
@@ -82,7 +82,7 @@ func AddErrataSteps(repoDir, projDir, id, text, author string, steps []string, s
 			}
 			for _, st := range steps {
 				if !store.StepExists(body, st) {
-					return "", fmt.Errorf("step %s not found in the body of %s: --altera takes a step the runbook names", st, id)
+					return "", fmt.Errorf("step %s not found in the body of %s: --step takes a step the runbook names", st, id)
 				}
 			}
 		}

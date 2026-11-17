@@ -11,7 +11,7 @@ import (
 
 // hookCitesFixture reproduces the shape of the acme-hub hook fcbc8a5a0: a note
 // of 14 numbered rules and a script OUTSIDE .claude/hooks/ that settings.json
-// runs with node, citing "regra 15" in a string and in a comment.
+// runs with node, citing "rule 15" in a string and in a comment.
 func hookCitesFixture(t *testing.T) (projDir, repoDir string) {
 	t.Helper()
 	projDir, _, repoDir = setupProject(t)
@@ -52,7 +52,7 @@ func TestLintHookCitesMissingRule(t *testing.T) {
 		t.Fatalf("lint passed with a hook citing a missing rule\n%s", out)
 	}
 	if !strings.Contains(out, "HOOK-CITES-MISSING-RULE (2)") ||
-		!strings.Contains(out, "scripts/hooks/x.mjs:1 — o hook cita a regra 15 da N-0001, que tem 14 regras numeradas") ||
+		!strings.Contains(out, "scripts/hooks/x.mjs:1 — the hook cites rule 15 of N-0001, which has 14 numbered rules") ||
 		!strings.Contains(out, "scripts/hooks/x.mjs:2 — ") {
 		t.Fatalf("output missing the two findings:\n%s", out)
 	}
@@ -97,7 +97,7 @@ func TestLintJSONCarriesHookFinding(t *testing.T) {
 		t.Fatalf("not JSON: %v\n%s", err, out)
 	}
 	if len(got) != 2 || got[0].Rule != "hook-cites-missing-rule" || got[0].Entity != "N-0001" ||
-		got[0].File != "scripts/hooks/x.mjs:1" || !strings.Contains(got[0].Detail, "regra 15") {
+		got[0].File != "scripts/hooks/x.mjs:1" || !strings.Contains(got[0].Detail, "rule 15") {
 		t.Errorf("findings = %+v", got)
 	}
 }

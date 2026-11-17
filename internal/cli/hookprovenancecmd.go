@@ -28,7 +28,7 @@ import (
 var (
 	pushRe             = regexp.MustCompile(`\bpush\b`)
 	featureCompleteRe  = regexp.MustCompile(`\bfeature\s+complete\b`)
-	decisionRecordRe   = regexp.MustCompile(`\bdecision\s+(new|substituir)\b`)
+	decisionRecordRe   = regexp.MustCompile(`\bdecision\s+(new|supersede|substituir)\b`)
 	frontmatterCerneID = regexp.MustCompile(`(?m)^cerne_id:\s*(\S+)`)
 )
 

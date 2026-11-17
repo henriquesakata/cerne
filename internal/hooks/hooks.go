@@ -567,7 +567,7 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	if hasEnv {
 		m, ok := envVal.(map[string]any)
 		if !ok {
-			return nil, false, errors.New(`hooks: settings.json tem "env" com tipo inesperado`)
+			return nil, false, errors.New(`hooks: settings.json has an "env" of an unexpected type`)
 		}
 		envMap = m
 	}

@@ -482,7 +482,7 @@ func capabilityOrphanFindings(features []store.Feature, capabilities []store.Cap
 		out = append(out, Finding{
 			Rule:   RuleCapabilityOrphan,
 			Entity: f.ID,
-			Detail: fmt.Sprintf("feature viva sem capacidade (%s) — vincule com 'cerne feature capability %s C-…'", f.Title, f.ID),
+			Detail: fmt.Sprintf("live feature with no capability (%s) — link it with 'cerne feature capability %s C-…'", f.Title, f.ID),
 		})
 	}
 	return out

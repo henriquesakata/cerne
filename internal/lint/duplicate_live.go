@@ -63,7 +63,7 @@ func duplicateLiveFindings(notes []store.Note, decisions []store.Decision, refer
 		return fmt.Sprintf(`cerne note retire %s --reason "duplicate of %s"`, id, kept)
 	}, ns, dupmatch.SimilarTitles)
 	report("decision", func(id, kept string) string {
-		return fmt.Sprintf(`cerne decision substituir %s --by %s --reason "duplicate of %s"`, id, kept, kept)
+		return fmt.Sprintf(`cerne decision supersede %s --by %s --reason "duplicate of %s"`, id, kept, kept)
 	}, ds, dupmatch.SimilarTitles)
 	report("reference", func(id, kept string) string {
 		return fmt.Sprintf(`cerne reference retire %s --reason "duplicate of %s"`, id, kept)

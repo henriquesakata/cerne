@@ -32,7 +32,7 @@ func newNoteCmd() *cobra.Command {
 	cmd.AddCommand(verbs.MarkChat(newNoteRetagCmd(&dir)))
 	cmd.AddCommand(verbs.MarkChat(newNoteKeepCmd(&dir)))
 	cmd.AddCommand(newNoteRetireCmd(&dir))
-	cmd.AddCommand(newNoteSubstituirCmd(&dir))
+	cmd.AddCommand(newNoteSupersedeCmd(&dir), legacyName(newNoteSupersedeCmd(&dir), "substituir"))
 	cmd.AddCommand(verbs.MarkChat(newErrataCmd(&dir)))
 	return cmd
 }
@@ -355,7 +355,7 @@ func newNoteRetireCmd(dir *string) *cobra.Command {
 		Long: "Moves a note from active to superseded WITHOUT a successor — for knowledge that no longer holds " +
 			"(e.g. the feature the note informed already shipped). The note leaves the current state (.docs/CONTEXT.md) and " +
 			"becomes searchable history ('cerne search'/'ask'). To swap it for a corrected version, use " +
-			"'cerne note substituir --by'. 'cerne lint' flags (stale-note) notes whose --informs already closed.",
+			"'cerne note supersede --by'. 'cerne lint' flags (stale-note) notes whose --informs already closed.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runNoteRetire(cmd, *dir, args[0], reason)
@@ -367,7 +367,7 @@ func newNoteRetireCmd(dir *string) *cobra.Command {
 
 func runNoteRetire(cmd *cobra.Command, dir, id, reason string) error {
 	// Validate the required reason before resolveProject so bad invocations
-	// fail fast without touching origin. retire is substituir with no successor.
+	// fail fast without touching origin. retire is supersede with no successor.
 	if strings.TrimSpace(reason) == "" {
 		return fmt.Errorf("--reason is required")
 	}
@@ -448,17 +448,17 @@ func runNoteRetag(cmd *cobra.Command, dir, id, facet, component string, setFacet
 	return nil
 }
 
-func newNoteSubstituirCmd(dir *string) *cobra.Command {
+func newNoteSupersedeCmd(dir *string) *cobra.Command {
 	var by, reason string
 	cmd := &cobra.Command{
-		Use:   "substituir <id>",
+		Use:   "supersede <id>",
 		Short: "Supersede or retire a note (--by optional; --reason required)",
 		Long: "Moves a note from active to superseded. With --by, the successor note supersedes it (the corrected " +
 			"knowledge materializes in its place); without --by, the note is simply retired. The old note becomes " +
 			"searchable history ('cerne search'/'ask').",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runNoteSubstituir(cmd, *dir, args[0], by, reason)
+			return runNoteSupersede(cmd, *dir, args[0], by, reason)
 		},
 	}
 	cmd.Flags().StringVar(&by, "by", "", "id of the note that supersedes (optional; empty = just retire)")
@@ -466,7 +466,7 @@ func newNoteSubstituirCmd(dir *string) *cobra.Command {
 	return verbs.MarkLifecycle(cmd)
 }
 
-func runNoteSubstituir(cmd *cobra.Command, dir, id, by, reason string) error {
+func runNoteSupersede(cmd *cobra.Command, dir, id, by, reason string) error {
 	// Validate the required reason before resolveProject so bad invocations
 	// fail fast without touching origin.
 	if strings.TrimSpace(reason) == "" {

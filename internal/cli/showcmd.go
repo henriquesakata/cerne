@@ -128,16 +128,16 @@ func newShowCmd() *cobra.Command {
 					return errors.New("--rev prints one document revision: --all does not apply")
 				}
 				if consolidated || asJSON {
-					return errors.New("--rev prints a feature document revision as text: --consolidado and --json do not apply")
+					return errors.New("--rev prints a feature document revision as text: --consolidated and --json do not apply")
 				}
 				return runShowDocRevision(cmd, dir, args[0], doc, rev)
 			}
 			if consolidated || rev != 0 {
 				if consolidated && rev != 0 {
-					return errors.New("--consolidado and --rev are alternatives: pick one")
+					return errors.New("--consolidated and --rev are alternatives: pick one")
 				}
 				if asJSON || doc != "" {
-					return errors.New("--consolidado and --rev print the runbook body as text: --json and --doc do not apply")
+					return errors.New("--consolidated and --rev print the runbook body as text: --json and --doc do not apply")
 				}
 				return runShowRunbookView(cmd, dir, args[0], consolidated, rev)
 			}
@@ -145,7 +145,8 @@ func newShowCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&all, "all", false, "feature only: print every document (spec, plan, result), not just the one of its stage")
-	cmd.Flags().BoolVar(&consolidated, "consolidado", false, "runbook only: the body with each erratum placed at the step it changes (read-only)")
+	cmd.Flags().BoolVar(&consolidated, "consolidated", false, "runbook only: the body with each erratum placed at the step it changes (read-only)")
+	legacyFlag(cmd.Flags(), "consolidated", "consolidado") // pt-BR alias, hidden (B-0015)
 	cmd.Flags().IntVar(&rev, "rev", 0, "print revision N: of a runbook's body (the one before each errata merge stays readable), or with --doc spec|plan of a feature document (the one before each amend)")
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
@@ -401,7 +402,7 @@ func runShow(cmd *cobra.Command, dir, id, doc string, asJSON, all bool) error {
 		res.stageView(f.State, id)
 	}
 	if openErrata != nil { // say where the version that applies is
-		fmt.Fprintf(w, "%d open errata item(s) (%d without a step). What applies now: cerne show %s --consolidado\n", *openErrata, *steplessErrata, id)
+		fmt.Fprintf(w, "%d open errata item(s) (%d without a step). What applies now: cerne show %s --consolidated\n", *openErrata, *steplessErrata, id)
 	}
 	res.renderText(w)
 	return nil

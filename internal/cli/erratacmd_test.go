@@ -55,7 +55,7 @@ func TestErrataFromFile(t *testing.T) {
 	}
 }
 
-// F-0345 crit. 1: a runbook erratum with neither --altera nor --sem-passo is
+// F-0345 crit. 1: a runbook erratum with neither --step nor --no-step is
 // refused, naming both flags, and writes nothing.
 func TestRunbookErrataRefusesNoStep(t *testing.T) {
 	projDir, repoDir := runbookFixture(t)
@@ -63,7 +63,7 @@ func TestRunbookErrataRefusesNoStep(t *testing.T) {
 	if err == nil {
 		t.Fatalf("want a refusal, got:\n%s", out)
 	}
-	for _, want := range []string{"--altera <step>", "--sem-passo"} {
+	for _, want := range []string{"--step <step>", "--no-step"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("refusal must name %q: %v", want, err)
 		}

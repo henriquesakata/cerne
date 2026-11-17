@@ -74,8 +74,8 @@ func TestDuplicateLiveDecisionGroup(t *testing.T) {
 		{ID: "D-0002", Title: "Usar Keycloak para OIDC", State: domain.DecisionActive},
 	}
 	got := duplicateLiveFindings(nil, ds, nil, nil)
-	if len(got) != 1 || !strings.Contains(got[0].Detail, `cerne decision substituir D-0002 --by D-0001 --reason "duplicate of D-0001"`) {
-		t.Fatalf("findings = %+v, want 1 with the substituir remedy", got)
+	if len(got) != 1 || !strings.Contains(got[0].Detail, `cerne decision supersede D-0002 --by D-0001 --reason "duplicate of D-0001"`) {
+		t.Fatalf("findings = %+v, want 1 with the supersede remedy", got)
 	}
 }
 

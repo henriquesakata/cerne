@@ -69,7 +69,7 @@ flowchart LR
 ```
 
 - **History: the backend.** A plain git repository you own, separate from your code's: a folder on your machine, a git server you run, or a private repository on GitHub or GitLab. Entities are JSON, document content is markdown, and every state transition is an event in an NDJSON log. Nothing is deleted: rejected features and superseded decisions stay, with the reason they left.
-- **State: lifecycle data.** Every feature, decision, note, runbook and reference has a state that only a gated command can change (`cerne feature approve`, `cerne decision substituir`…). A document never declares its own status.
+- **State: lifecycle data.** Every feature, decision, note, runbook and reference has a state that only a gated command can change (`cerne feature approve`, `cerne decision supersede`…). A document never declares its own status.
 - **Context: the `.docs/` projection.** `cerne pull` writes a gitignored `.docs/` folder with a generated `CONTEXT.md` (the roster of features and their states, the work in progress, the active decisions, notes, runbooks and references) and the documents of live entities only: features still in candidate, approved or in development, active decisions, runbooks and notes, current references. Implemented and done features keep one line in the roster; their documents stay in the backend. Rejected and superseded work does not appear at all.
 
 Keeping history does not mean the agent reads it. This is what reaches an agent, and how:
@@ -113,7 +113,7 @@ An optional quality loop, the **Gauntlet**, goes further: the spec must carry a 
 
 Features are one kind of entity. The others carry what a project knows, each with its own lifecycle:
 
-- **Decisions (ADRs).** Active until superseded by another decision (`cerne decision substituir --by D-…`) or retired with a reason. Only active decisions are projected. `cerne lint` flags documents that still point at a superseded decision, and decisions nobody has reviewed for a while (`cerne decision keep` records that one still holds).
+- **Decisions (ADRs).** Active until superseded by another decision (`cerne decision supersede --by D-…`) or retired with a reason. Only active decisions are projected. `cerne lint` flags documents that still point at a superseded decision, and decisions nobody has reviewed for a while (`cerne decision keep` records that one still holds).
 - **Notes.** Durable facts and gotchas an agent or a person learned. A note tagged with the reserved `convention` component is prescriptive ("how we build forms here") and has its own view in the dashboard: this is where shared conventions live, so every agent reads the same ones.
 - **Runbooks.** Operational procedures: deploys, migrations, environment access.
 - **References.** External articles, docs or specs registered as provenance (`cerne reference new "<title>" --url <url> --informs F-…,D-…`). Their content is indexed, so `cerne ask` can cite them, and `cerne lint` flags a feature or decision that cites an external URL with no reference behind it.
