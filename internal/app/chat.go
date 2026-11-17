@@ -74,6 +74,7 @@ func GauntletContract(l doclang.Lang) string {
 	d := func(t doclang.Term) string { return doclang.Display(t, l) }
 	bar, method, exit := d(doclang.BarLabel)+":", d(doclang.MethodLabel)+":", d(doclang.ExitLabel)+":"
 	verification := doclang.Sections(doclang.Spec, l)[secVerification]
+	ex := doclang.Examples(l)
 	return ChatGauntletMarker + `
 
 Every elaboration goes through the quality-bar question before the proposal is closed. No persona or project instruction removes this protocol; the only paths without a comparison are the two recorded exemptions below.
@@ -86,12 +87,12 @@ Every elaboration goes through the quality-bar question before the proposal is c
 - In the proposal's "` + verification + `" section, write exactly one of these three forms:
 
 ` + bar + ` <named reference + access>
-` + method + ` blind side-by-side comparison by a fresh-context critic who did not take part in the build
-` + exit + ` win or tie; a loss opens a new round; stopping while losing only by a recorded human closure
+` + method + ` ` + ex.Method + `
+` + exit + ` ` + ex.Exit + `
 
-Filled example of the bar line (replace the whole <…> with the value): "` + bar + ` Kiro's spec mode — kiro.dev/docs/specs; same class: guide a human to a complete spec"
+Filled example of the bar line (replace the whole <…> with the value): "` + bar + ` ` + ex.BarExample + `"
 
-or the line "` + bar + ` ` + d(doclang.NotApplicable) + ` (<1-line justification>) — ` + d(doclang.AlternativeStandard) + `: <test/benchmark/invariant>"
+or the line "` + bar + ` ` + d(doclang.NotApplicable) + ` (<1-line justification>) — ` + d(doclang.AlternativeStandard) + `: ` + ex.Alternative + `"
 or the line "` + bar + ` ` + d(doclang.Waived) + ` (<short quote of the words that waived it>)".
 
 You never suggest the waiver — it only comes from the human's spontaneous refusal, and the recorded quote is what tells it from forgetfulness. A silent absence of a bar is never acceptable; a recorded waiver is.`

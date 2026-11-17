@@ -36,12 +36,12 @@ Every elaboration goes through the quality-bar question before the proposal is c
 - In the proposal's "Verificação" section, write exactly one of these three forms:
 
 Barra: <named reference + access>
-Método: blind side-by-side comparison by a fresh-context critic who did not take part in the build
-Saída: win or tie; a loss opens a new round; stopping while losing only by a recorded human closure
+Método: comparação cega, lado a lado, por crítico de contexto fresco que não participou da construção
+Saída: vencer ou empatar; derrota abre nova rodada; parar perdendo só por encerramento humano registrado
 
-Filled example of the bar line (replace the whole <…> with the value): "Barra: Kiro's spec mode — kiro.dev/docs/specs; same class: guide a human to a complete spec"
+Filled example of the bar line (replace the whole <…> with the value): "Barra: modo spec do Kiro — kiro.dev/docs/specs; mesma classe: conduzir humano até spec completa"
 
-or the line "Barra: não aplicável (<1-line justification>) — padrão alternativo: <test/benchmark/invariant>"
+or the line "Barra: não aplicável (<1-line justification>) — padrão alternativo: <teste/benchmark/invariante>"
 or the line "Barra: dispensada por decisão humana (<short quote of the words that waived it>)".
 
 You never suggest the waiver — it only comes from the human's spontaneous refusal, and the recorded quote is what tells it from forgetfulness. A silent absence of a bar is never acceptable; a recorded waiver is.

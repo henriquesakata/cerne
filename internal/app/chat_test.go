@@ -50,19 +50,19 @@ func TestBuildChatSystemPromptGauntlet(t *testing.T) {
 	}
 	for _, want := range []string{
 		ChatGauntletMarker,
-		"NAMED",                         // bar must be a named real thing
-		"vague bar",                     // vague bar is refused
-		"blind side-by-side comparison", // blind side-by-side is the method
-		"win or tie",                    // exit = win/tie, never a fixed round count
+		"NAMED",                             // bar must be a named real thing
+		"vague bar",                         // vague bar is refused
+		doclang.Examples(doclang.PT).Method, // blind side-by-side is the method, in the project's language
+		doclang.Examples(doclang.PT).Exit,   // exit = win/tie, never a fixed round count
 		"cerne reference new",
-		"Barra: dispensada por decisão humana",           // the opt-out marker (F-0270 criterion 1)
-		"never suggest the waiver",                       // opt-out is human-initiated, never agent-solicited
-		"Kiro's spec mode",                               // one filled-in positive example anchors the format
-		"Barra: não aplicável",                           // the confirmed-classification marker (criterion 4)
-		"the human approve is its acceptance",            // the agent's bar is a proposal; approve accepts it (F-0308)
-		"feature approve <id> --check",                   // readiness is checked before asking for the approve
-		"padrão alternativo: <test/benchmark/invariant>", // no comparable artifact → alternative standard, in the project's form
-		"a proposal without them is incomplete",          // the binding line next to the proposal template
+		"Barra: dispensada por decisão humana",             // the opt-out marker (F-0270 criterion 1)
+		"never suggest the waiver",                         // opt-out is human-initiated, never agent-solicited
+		doclang.Examples(doclang.PT).BarExample,            // one filled-in positive example anchors the format
+		"Barra: não aplicável",                             // the confirmed-classification marker (criterion 4)
+		"the human approve is its acceptance",              // the agent's bar is a proposal; approve accepts it (F-0308)
+		"feature approve <id> --check",                     // readiness is checked before asking for the approve
+		"padrão alternativo: <teste/benchmark/invariante>", // no comparable artifact → alternative standard, in the project's form
+		"a proposal without them is incomplete",            // the binding line next to the proposal template
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing gauntlet instruction %q:\n%s", want, prompt)
