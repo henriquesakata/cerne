@@ -146,7 +146,7 @@ type Work struct {
 	Title     string           `json:"title"` // the activity description
 	State     domain.WorkState `json:"state"`
 	Actor     string           `json:"actor"`                // who is doing it: "<agent>" or "<user>@<hostname>"
-	Refs      []string         `json:"refs,omitempty"`       // F-/D- ids this activity relates to
+	Refs      []string         `json:"refs,omitempty"`       // ids (F-/E-/T-/B-/D-/W-/N-/RB-) this activity relates to
 	Note      string           `json:"note,omitempty"`       // closing note (done) or reason (abandoned)
 	Auto      bool             `json:"auto,omitempty"`       // opened by a feature transition (F-0146), not by `cerne work start`
 	Paths     []string         `json:"paths,omitempty"`      // path globs this activity intends to touch (F-0151)

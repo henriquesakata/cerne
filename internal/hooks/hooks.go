@@ -19,7 +19,7 @@ import (
 	"strings"
 )
 
-//go:embed assets/register-reference-reminder.sh assets/cerne-register-reminder.sh assets/cerne-subagent-context.sh assets/cerne-work-bind.sh assets/cerne-work-gate.sh assets/cerne-stop-closeout.sh assets/cerne-precompact.sh
+//go:embed assets/register-reference-reminder.sh assets/cerne-register-reminder.sh assets/cerne-subagent-context.sh assets/cerne-work-bind.sh assets/cerne-work-gate.sh assets/cerne-stop-closeout.sh assets/cerne-precompact.sh assets/cerne-prompt-notes.sh
 var files embed.FS
 
 const (
@@ -64,6 +64,14 @@ const (
 	precompactCommand = `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-precompact.sh"`
 	// precompactMatcher covers both compaction triggers.
 	precompactMatcher = "manual|auto"
+	// promptNotesScript is the UserPromptSubmit notes reminder (B-0020): the
+	// active notes/runbooks whose titles the prompt matches, once per session.
+	promptNotesScript = "cerne-prompt-notes.sh"
+	// promptNotesCommand is the settings.json command that runs promptNotesScript.
+	promptNotesCommand = `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-prompt-notes.sh"`
+	// promptNotesTimeout bounds the whole hook (process start included) at the
+	// host, in seconds; the lookup's own budget is far smaller.
+	promptNotesTimeout = 5
 )
 
 // Status is the outcome of installing one asset.
@@ -205,7 +213,7 @@ func installClaude(projDir string) ([]Result, error) {
 	}
 	results = append(results, Result{Asset: subagentScript, Status: st})
 
-	for _, script := range []string{bindScript, gateScript, stopScript, precompactScript} {
+	for _, script := range []string{bindScript, gateScript, stopScript, precompactScript, promptNotesScript} {
 		dst := filepath.Join(projDir, ".claude", "hooks", script)
 		st, err = writeIfChanged(dst, []byte(mustRead("assets/"+script)))
 		if err != nil {
@@ -540,6 +548,20 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	}
 	needPC := !scriptWired(pcArr, precompactScript)
 
+	var upArr []any
+	hasUP := false
+	if hooksMap != nil {
+		if sv, ok := hooksMap["UserPromptSubmit"]; ok {
+			arr, ok := sv.([]any)
+			if !ok {
+				return nil, false, errors.New(`hooks: settings.json has "UserPromptSubmit" with an unexpected type`)
+			}
+			upArr = arr
+			hasUP = true
+		}
+	}
+	needPN := !scriptWired(upArr, promptNotesScript)
+
 	envVal, hasEnv := root["env"]
 	var envMap map[string]any
 	if hasEnv {
@@ -551,7 +573,7 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	}
 	needActor := !actorPresent(envMap)
 
-	if !needHook && !needBind && !needGate && !needRegister && !needSubagent && !needStop && !needPC && !needActor {
+	if !needHook && !needBind && !needGate && !needRegister && !needSubagent && !needStop && !needPC && !needPN && !needActor {
 		return nil, false, nil
 	}
 
@@ -580,6 +602,9 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 		}
 		if needPC {
 			fresh = withMatcherEntry(fresh, "PreCompact", precompactMatcher, precompactCommand)
+		}
+		if needPN {
+			fresh = withTimedEventEntry(fresh, "UserPromptSubmit", promptNotesCommand, promptNotesTimeout)
 		}
 		if needActor {
 			fresh = withActorEntry(fresh)
@@ -619,6 +644,9 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	}
 	if needPC {
 		expected = withMatcherEntry(expected, "PreCompact", precompactMatcher, precompactCommand)
+	}
+	if needPN {
+		expected = withTimedEventEntry(expected, "UserPromptSubmit", promptNotesCommand, promptNotesTimeout)
 	}
 	if needActor {
 		expected = withActorEntry(expected)
@@ -690,6 +718,15 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 			cur = spliced
 		}
 	}
+	if ok && needPN {
+		curHasHooks, curHasUP := reDetectEvent(cur, "UserPromptSubmit", hasHooks, hasUP)
+		spliced, spliceOK := spliceEventEntry(cur, "UserPromptSubmit", newTimedEventEntry(promptNotesCommand, promptNotesTimeout), curHasHooks, curHasUP, detectNewline(cur), unit)
+		if !spliceOK {
+			ok = false
+		} else {
+			cur = spliced
+		}
+	}
 	if ok && needActor {
 		spliced, spliceOK := spliceActor(cur, hasEnv, detectNewline(cur), unit)
 		if !spliceOK {
@@ -743,14 +780,22 @@ func withMatcherEntry(root map[string]any, event, matcher, command string) map[s
 // subagent context injector F-0150), creating the hooks object and the event
 // array as needed. Canonical merge — seed, fallback render and splice oracle.
 func withEventEntry(root map[string]any, event, command string) map[string]any {
+	return withTimedEventEntry(root, event, command, 0)
+}
+
+// withTimedEventEntry is withEventEntry with a host-side timeout in seconds
+// (0 = none).
+func withTimedEventEntry(root map[string]any, event, command string, timeout int) map[string]any {
 	hooksMap, _ := root["hooks"].(map[string]any)
 	if hooksMap == nil {
 		hooksMap = map[string]any{}
 	}
 	arr, _ := hooksMap[event].([]any)
-	arr = append(arr, map[string]any{
-		"hooks": []any{map[string]any{"type": "command", "command": command}},
-	})
+	h := map[string]any{"type": "command", "command": command}
+	if timeout > 0 {
+		h["timeout"] = float64(timeout) // as json.Unmarshal reads it: the splice is verified with DeepEqual
+	}
+	arr = append(arr, map[string]any{"hooks": []any{h}})
 	hooksMap[event] = arr
 	root["hooks"] = hooksMap
 	return root
@@ -763,7 +808,11 @@ type sessionEntry struct {
 }
 
 func newEventEntry(command string) sessionEntry {
-	return sessionEntry{Hooks: []hookCmd{{Type: "command", Command: command}}}
+	return newTimedEventEntry(command, 0)
+}
+
+func newTimedEventEntry(command string, timeout int) sessionEntry {
+	return sessionEntry{Hooks: []hookCmd{{Type: "command", Command: command, Timeout: timeout}}}
 }
 
 // reDetectEvent re-parses cur (the output of a previous splice) and reports
@@ -917,6 +966,8 @@ func spliceObjectAppendRaw(raw []byte, start, end int, empty bool, member, nl, u
 type hookCmd struct {
 	Type    string `json:"type"`
 	Command string `json:"command"`
+	// Timeout is the seconds the host lets the hook run; 0 leaves its default.
+	Timeout int `json:"timeout,omitempty"`
 }
 
 type matcherEntry struct {

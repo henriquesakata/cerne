@@ -394,8 +394,9 @@ func cleanWorkPaths(paths []string) []string {
 }
 
 // validateWorkRefs trims, dedupes (preserving order) and checks each ref
-// target: it must be a feature (F-) or decision (D-) that exists in the
-// backend, so no dangling ref is stored. Returns the cleaned list (nil when
+// target: it must be a feature-shaped (F-, E-, T-, B-), decision (D-), work
+// (W-), note (N-) or runbook (RB-) id that exists in the backend, so no
+// dangling ref is stored. Returns the cleaned list (nil when
 // empty).
 func validateWorkRefs(repoDir string, refs []string) ([]string, error) {
 	var out []string
@@ -419,8 +420,12 @@ func validateWorkRefs(repoDir string, refs []string) ([]string, error) {
 			} else if err != nil {
 				return nil, err
 			}
+		case strings.HasPrefix(id, "W-"), strings.HasPrefix(id, "N-"), strings.HasPrefix(id, "RB-"):
+			if !store.EntityExists(repoDir, id) {
+				return nil, fmt.Errorf("--ref: %s %s not found in the backend", map[string]string{"W": "work", "N": "note", "RB": "runbook"}[id[:strings.Index(id, "-")]], id)
+			}
 		default:
-			return nil, fmt.Errorf("--ref: %q must be a feature (F-) or decision (D-)", id)
+			return nil, fmt.Errorf("--ref: %q must be a feature (F-, E-, T-, B-), decision (D-), work (W-), note (N-) or runbook (RB-) id", id)
 		}
 		out = append(out, id)
 	}

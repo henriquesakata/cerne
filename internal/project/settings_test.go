@@ -795,6 +795,27 @@ func TestNotesOnEdit(t *testing.T) {
 	}
 }
 
+// TestPromptNotes (B-0020): hooks.prompt_notes defaults on and the project
+// scope wins over the host.
+func TestPromptNotes(t *testing.T) {
+	for _, tc := range []struct {
+		name, project, host string
+		want                bool
+	}{
+		{"default", "", "", true},
+		{"project off", "[hooks]\nprompt_notes = false\n", "", false},
+		{"host off", "", "[hooks]\nprompt_notes = false\n", false},
+		{"project on over host off", "[hooks]\nprompt_notes = true\n", "[hooks]\nprompt_notes = false\n", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			projDir, _ := settingsFixture(t, tc.project, tc.host, false)
+			if got := PromptNotes(projDir); got != tc.want {
+				t.Errorf("PromptNotes = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestSettingsRegistryGroups(t *testing.T) {
 	want := map[string]string{
 		"channel.human_name":       "general",
@@ -805,6 +826,7 @@ func TestSettingsRegistryGroups(t *testing.T) {
 		"mindmap.enabled":          "interface",
 		"wiki.enabled":             "interface",
 		"hooks.notes_on_edit":      "integrations",
+		"hooks.prompt_notes":       "integrations",
 	}
 	for _, s := range settingsRegistry {
 		if !slices.Contains(settingGroups, s.Group) {
