@@ -19,11 +19,11 @@ import (
 func newRunbookRunCmd(dir *string) *cobra.Command {
 	var window, steps, word string
 	cmd := &cobra.Command{
-		Use:   "run <RB-id> --janela <label>",
+		Use:   "run <RB-id> --window <label>",
 		Short: "Open the execution record of a runbook window (a work, with the runbook's steps)",
 		Long: "Opens an active work that records one execution of a runbook for a window (e.g. J3), with the runbook's " +
 			"steps. Steps are the S<n> tokens named in the body, outside code fences, with \"S3 a S7\" expanded; when " +
-			"that list has noise, pass --passos (order is only judged on an explicit --passos). Record steps with 'cerne runbook step'; close with 'cerne work done'. " +
+			"that list has noise, pass --steps (order is only judged on an explicit --steps). Record steps with 'cerne runbook step'; close with 'cerne work done'. " +
 			"The record keeps metadata and hashes only, never evidence content.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -42,30 +42,33 @@ func newRunbookRunCmd(dir *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s started: %s window %s, %d step(s): %s\nRecord with: cerne runbook step %s <step> --ok \"<word>\" | --pare \"<exit>\" [--evidencia <file>]\n",
+			fmt.Fprintf(cmd.OutOrStdout(), "%s started: %s window %s, %d step(s): %s\nRecord with: cerne runbook step %s <step> --ok \"<word>\" | --stop \"<exit>\" [--evidence <file>]\n",
 				w.ID, id, run.Window, len(run.Steps), strings.Join(run.Steps, " "), w.ID)
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&window, "janela", "", "label of the window (required, e.g. J3)")
-	cmd.Flags().StringVar(&steps, "passos", "", "steps (CSV) instead of the ones found in the runbook body")
-	cmd.Flags().StringVar(&word, "palavra", "", "the word expected at each step; an ok with another word is reported as a deviation")
+	cmd.Flags().StringVar(&window, "window", "", "label of the window (required, e.g. J3)")
+	cmd.Flags().StringVar(&steps, "steps", "", "steps (CSV) instead of the ones found in the runbook body")
+	cmd.Flags().StringVar(&word, "word", "", "the word expected at each step; an ok with another word is reported as a deviation")
+	legacyFlag(cmd.Flags(), "window", "janela")
+	legacyFlag(cmd.Flags(), "steps", "passos")
+	legacyFlag(cmd.Flags(), "word", "palavra")
 	return cmd
 }
 
 func newRunbookStepCmd(dir *string) *cobra.Command {
 	var ok, pare, evidence, by, expected string
 	cmd := &cobra.Command{
-		Use:   "step <run> <step> --ok \"<word>\" | --pare \"<exit>\"",
+		Use:   "step <run> <step> --ok \"<word>\" | --stop \"<exit>\"",
 		Short: "Record a step of a run: the owner's literal word, or the exit that stopped it",
-		Long: "Records a step with UTC and BRT times. --ok quotes the owner's literal word; --pare says why the run " +
-			"stopped. --evidencia takes the PATH of a local file: only the path and its sha256 are kept, the content is " +
-			"never read into the record (a value that is not a path of an existing file is refused). --por is a nickname, " +
+		Long: "Records a step with UTC and BRT times. --ok quotes the owner's literal word; --stop says why the run " +
+			"stopped. --evidence takes the PATH of a local file: only the path and its sha256 are kept, the content is " +
+			"never read into the record (a value that is not a path of an existing file is refused). --by is a nickname, " +
 			"never an e-mail or id. A step recorded while an earlier one has no ok is flagged as out of order.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if (ok == "") == (pare == "") {
-				return fmt.Errorf("pass exactly one of --ok \"<word>\" or --pare \"<exit>\"")
+				return fmt.Errorf("pass exactly one of --ok \"<word>\" or --stop \"<exit>\"")
 			}
 			ctx, err := resolveProject(*dir)
 			if err != nil {
@@ -90,10 +93,14 @@ func newRunbookStepCmd(dir *string) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&ok, "ok", "", "the owner's literal word, quoted as said")
-	cmd.Flags().StringVar(&pare, "pare", "", "the exit that stopped the run")
-	cmd.Flags().StringVar(&evidence, "evidencia", "", "path of a local file; only path and sha256 are kept")
-	cmd.Flags().StringVar(&by, "por", "", "who said it (a nickname only)")
-	cmd.Flags().StringVar(&expected, "esperada", "", "the word expected at this step (overrides the run's)")
+	cmd.Flags().StringVar(&pare, "stop", "", "the exit that stopped the run")
+	cmd.Flags().StringVar(&evidence, "evidence", "", "path of a local file; only path and sha256 are kept")
+	cmd.Flags().StringVar(&by, "by", "", "who said it (a nickname only)")
+	cmd.Flags().StringVar(&expected, "expected", "", "the word expected at this step (overrides the run's)")
+	legacyFlag(cmd.Flags(), "stop", "pare")
+	legacyFlag(cmd.Flags(), "evidence", "evidencia")
+	legacyFlag(cmd.Flags(), "by", "por")
+	legacyFlag(cmd.Flags(), "expected", "esperada")
 	return cmd
 }
 
@@ -101,10 +108,10 @@ func newRunbookReportCmd(dir *string) *cobra.Command {
 	var errata bool
 	cmd := &cobra.Command{
 		Use:   "report <run>",
-		Short: "List the deviations of a run (PARE, out of order, other word); --errata drafts them as errata items",
-		Long: "Lists the entries of a run that stopped (PARE), came out of order, or carried a word other than the " +
+		Short: "List the deviations of a run (stopped, out of order, other word); --errata drafts them as errata items",
+		Long: "Lists the entries of a run that stopped (stop marker `pare`), came out of order, or carried a word other than the " +
 			"expected one. With --errata each one not yet reported becomes a proposed erratum on the runbook, with " +
-			"'Altera: <step>' (read it with 'cerne show <RB> --consolidado'); a second report adds nothing already drafted.",
+			"'Altera: <step>' (read it with 'cerne show <RB> --consolidated'); a second report adds nothing already drafted.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := resolveProject(*dir)

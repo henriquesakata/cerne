@@ -44,7 +44,7 @@ var transitionSpecs = []transitionSpec{
 			"  # \"criterion N\" (pt-BR: \"critério N\") for each numbered spec criterion,\n" +
 			"  # and carry a \"## Gauntlet\" record (cited verdict, or the literal exemption)\n" +
 			"  cerne push && cerne feature complete <id>\n" + lifecycleSeq},
-	{"substituir", "Supersede a feature with another (requires --by and --reason)", domain.ActionSupersede, ""},
+	{"supersede", "Supersede a feature with another (requires --by and --reason)", domain.ActionSupersede, ""},
 	{"revert", "Send an approved feature back to candidate (requires --reason)", domain.ActionRevert,
 		"  # undo of an approval: state moves back, the event keeps the why,\n" +
 			"  # spec and plan stay intact\n" +
@@ -54,29 +54,36 @@ var transitionSpecs = []transitionSpec{
 func newTransitionCmds(dir *string) []*cobra.Command {
 	cmds := make([]*cobra.Command, 0, len(transitionSpecs))
 	for _, ts := range transitionSpecs {
-		var by, reason, commit, mr string
-		var force, check, noStamp bool
-		cmd := &cobra.Command{
-			Use:     ts.use + " <id>",
-			Short:   ts.short,
-			Example: ts.example,
-			Args:    cobra.ExactArgs(1),
-			RunE: func(cmd *cobra.Command, args []string) error {
-				return runTransition(cmd, *dir, ts.action, args[0], by, reason, commit, mr, force, check, noStamp)
-			},
+		uses := []string{ts.use}
+		if ts.action == domain.ActionSupersede {
+			uses = append(uses, "substituir") // hidden pt-BR alias for installed scripts (B-0015)
 		}
-		cmd.Flags().StringVar(&by, "by", "", "id of the superseding feature (substituir only)")
-		cmd.Flags().StringVar(&reason, "reason", "", "reason for the transition (reject, substituir and revert)")
-		cmd.Flags().StringVar(&commit, "commit", "", "delivery commit: full URL, or bare SHA resolved via [delivery] commit_url (complete only)")
-		cmd.Flags().StringVar(&mr, "mr", "", "delivery MR/PR: full URL, or #<n>/!<n> via [delivery] pr_url (complete only)")
-		cmd.Flags().BoolVar(&force, "force", false, "approve with open [CLARIFY]/[ESCLARECER] clarifications (approve), or start despite another session's active work (start)")
-		if ts.action == domain.ActionComplete {
-			cmd.Flags().BoolVar(&noStamp, "no-stamp", false, "complete without stamping the cost; run 'cerne cost <id> --stamp' later (F-0402)")
+		for _, use := range uses {
+			var by, reason, commit, mr string
+			var force, check, noStamp bool
+			cmd := &cobra.Command{
+				Use:     use + " <id>",
+				Short:   ts.short,
+				Example: ts.example,
+				Args:    cobra.ExactArgs(1),
+				RunE: func(cmd *cobra.Command, args []string) error {
+					return runTransition(cmd, *dir, ts.action, args[0], by, reason, commit, mr, force, check, noStamp)
+				},
+			}
+			cmd.Flags().StringVar(&by, "by", "", "id of the superseding feature (supersede only)")
+			cmd.Flags().StringVar(&reason, "reason", "", "reason for the transition (reject, supersede and revert)")
+			cmd.Flags().StringVar(&commit, "commit", "", "delivery commit: full URL, or bare SHA resolved via [delivery] commit_url (complete only)")
+			cmd.Flags().StringVar(&mr, "mr", "", "delivery MR/PR: full URL, or #<n>/!<n> via [delivery] pr_url (complete only)")
+			cmd.Flags().BoolVar(&force, "force", false, "approve with open [CLARIFY]/[ESCLARECER] clarifications (approve), or start despite another session's active work (start)")
+			if ts.action == domain.ActionComplete {
+				cmd.Flags().BoolVar(&noStamp, "no-stamp", false, "complete without stamping the cost; run 'cerne cost <id> --stamp' later (F-0402)")
+			}
+			if ts.action == domain.ActionApprove {
+				cmd.Flags().BoolVar(&check, "check", false, "list every impediment to approving without approving — no human gate, nothing written (F-0308)")
+			}
+			cmd.Hidden = use != ts.use
+			cmds = append(cmds, verbs.MarkLifecycle(cmd)) // every transition is lifecycle (F-0323)
 		}
-		if ts.action == domain.ActionApprove {
-			cmd.Flags().BoolVar(&check, "check", false, "list every impediment to approving without approving — no human gate, nothing written (F-0308)")
-		}
-		cmds = append(cmds, verbs.MarkLifecycle(cmd)) // every transition is lifecycle (F-0323)
 	}
 	return cmds
 }

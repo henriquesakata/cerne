@@ -14,7 +14,7 @@ import (
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
-const genericNoteLine = `complements or replaces an existing note? find it with 'cerne note list --path <file>' or 'cerne search "<terms>"', then 'cerne note errata N-x ...' or record the new note and 'cerne note substituir N-x --by <new id> --reason "..."'`
+const genericNoteLine = `complements or replaces an existing note? find it with 'cerne note list --path <file>' or 'cerne search "<terms>"', then 'cerne note errata N-x ...' or record the new note and 'cerne note supersede N-x --by <new id> --reason "..."'`
 
 const learnBody = "## Aprendizados e desvios\n\n- the gate in internal/cli/hookgatecmd.go reads the clone\n- second learning\n"
 

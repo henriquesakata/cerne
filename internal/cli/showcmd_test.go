@@ -23,7 +23,7 @@ func TestShowRunbookOpensWithOpenErrataLine(t *testing.T) {
 	rb(t, projDir, "runbook", "errata", "RB-0001", "Geral.", "--sem-passo")
 	out := rb(t, projDir, "show", "RB-0001")
 	first, _, _ := strings.Cut(out, "\n")
-	if want := "2 open errata item(s) (1 without a step). What applies now: cerne show RB-0001 --consolidado"; first != want {
+	if want := "2 open errata item(s) (1 without a step). What applies now: cerne show RB-0001 --consolidated"; first != want {
 		t.Fatalf("first line = %q, want %q", first, want)
 	}
 	var js struct {

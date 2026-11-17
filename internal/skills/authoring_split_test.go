@@ -143,6 +143,17 @@ var rewritten = []string{
 	"Actor defaults to `<user>@<hostname>`",
 }
 
+// b0015Renames maps the pt-BR names and placeholders the 2026-11-13 snapshot
+// teaches to the English ones B-0015 put in the skill, so the snapshot stays
+// a historical golden while the comparison follows the rename.
+var b0015Renames = strings.NewReplacer(
+	"substituir", "supersede", "--altera", "--step", "--sem-passo", "--no-step",
+	"--consolidado", "--consolidated", "--janela", "--window", "--passos", "--steps",
+	"--palavra", "--word", "--pare ", "--stop ", "--por ", "--by ", "--evidencia", "--evidence",
+	"--esperada", "--expected", "<1-3 frases do porquê>", "<1-3 sentences on why>",
+	"<porquê>", "<why>", "já sincronizada", "already synced", "<apelido>", "<nick>",
+)
+
 var sentenceEnd = regexp.MustCompile(`(?:[.!?])\s+`)
 
 // TestNoSentenceOfTheOldSkillIsLost pins that the split moved text, never
@@ -155,7 +166,7 @@ func TestNoSentenceOfTheOldSkillIsLost(t *testing.T) {
 	}
 	now := fullAuthoring(t)
 	lost := 0
-	for _, line := range strings.Split(string(old), "\n") {
+	for _, line := range strings.Split(b0015Renames.Replace(string(old)), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "---") {
 			continue

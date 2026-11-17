@@ -6,8 +6,8 @@ import (
 )
 
 // TestSkillRunbookSectionTeachesDeclaredStepErrata pins F-0345 crit. 8: the
-// runbook section teaches --altera (with a two-step example), --sem-passo,
-// show --consolidado and runbook merge.
+// runbook section teaches --step (with a two-step example), --no-step,
+// show --consolidated and runbook merge.
 func TestSkillRunbookSectionTeachesDeclaredStepErrata(t *testing.T) {
 	_, sec, ok := strings.Cut(fullAuthoring(t), "## Runbooks (operational procedures)")
 	if !ok {
@@ -15,9 +15,9 @@ func TestSkillRunbookSectionTeachesDeclaredStepErrata(t *testing.T) {
 	}
 	sec, _, _ = strings.Cut(sec, "\n## Runbook structure")
 	for _, sub := range []string{
-		"cerne runbook errata RB-NNNN --altera S6.6,S6.7",
-		"--sem-passo",
-		"cerne show RB-NNNN --consolidado",
+		"cerne runbook errata RB-NNNN --step S6.6,S6.7",
+		"--no-step",
+		"cerne show RB-NNNN --consolidated",
 		"cerne runbook merge RB-NNNN",
 	} {
 		if !strings.Contains(sec, sub) {

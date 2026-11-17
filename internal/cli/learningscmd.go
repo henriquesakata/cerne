@@ -43,7 +43,7 @@ func newFeatureLearningsCmd(dir *string) *cobra.Command {
 			"is triaged by an active note that informs it and is newer than its conclusion, or by --skip. " +
 			"Epics, rejected and superseded features are left out. For each durable item record a note " +
 			"('cerne note new --informs F-NNNN'); find the existing note it may complement (cerne note list --path <file>, cerne search) " +
-			"and use 'cerne note errata', or replace it with 'cerne note substituir'. --skip F-NNNN [--reason \"...\"] records that nothing in " +
+			"and use 'cerne note errata', or replace it with 'cerne note supersede'. --skip F-NNNN [--reason \"...\"] records that nothing in " +
 			"that feature's learnings is durable. " +
 			"Without --since or --feature only features concluded since " + learningsTriageSince.Format(learningsDay) + " are listed and the older ones are counted; --since " + learningsHistoryHint.Format(learningsDay) + " lists them.",
 		Example: "  cerne feature learnings                       # the 10 newest pending features\n" +
@@ -151,7 +151,7 @@ func cutRunes(s string, n int) string {
 // finds it (F-0401).
 func learningsTail(id string) string {
 	return fmt.Sprintf("durable for the next agent? record it: cerne note new \"<title>\" --informs %s --component <topic> (add golden-path for a procedure); nothing durable: cerne feature learnings --skip %s\n", id, id) +
-		"complements or replaces an existing note? find it with 'cerne note list --path <file>' or 'cerne search \"<terms>\"', then 'cerne note errata N-x ...' or record the new note and 'cerne note substituir N-x --by <new id> --reason \"...\"'"
+		"complements or replaces an existing note? find it with 'cerne note list --path <file>' or 'cerne search \"<terms>\"', then 'cerne note errata N-x ...' or record the new note and 'cerne note supersede N-x --by <new id> --reason \"...\"'"
 }
 
 // printCompleteLearnings is the read-only prompt after a complete (F-0401):

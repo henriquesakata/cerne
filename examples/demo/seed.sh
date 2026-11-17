@@ -177,7 +177,7 @@ run decision new "Use server-side session cookies for auth" --file "$content/dec
 cookies=$(id_of D)
 run decision new "Use JWT access tokens with rotating refresh tokens" --file "$content/decisions/jwt-tokens.md" --facet auth --component tokens
 jwt=$(id_of D)
-run decision substituir "$cookies" --by "$jwt" --reason "The public API and the mobile client cannot use cookies."
+run decision supersede "$cookies" --by "$jwt" --reason "The public API and the mobile client cannot use cookies."
 echo "  $cookies  superseded by $jwt"
 run decision new "Use Postgres as the primary store" --file "$content/decisions/postgres.md" --facet data --component postgres
 echo "  $(id_of D)  active decision"

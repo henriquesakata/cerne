@@ -44,7 +44,7 @@ cerne feature accept F-0005   # accepting a delivery is a human act: try it
 
 ## How it was built
 
-`cerne demo` runs the same public commands a user types, in the order [`seed.sh`](seed.sh) lists them, so the script doubles as a tour of the commands: `feature new`, `approve`, `pull`, `push`, `start`, `complete`, `reject`, `decision new`, `decision substituir`, `note new`, `runbook new`, `reference new`. The documents it feeds them are under [`content/`](content).
+`cerne demo` runs the same public commands a user types, in the order [`seed.sh`](seed.sh) lists them, so the script doubles as a tour of the commands: `feature new`, `approve`, `pull`, `push`, `start`, `complete`, `reject`, `decision new`, `decision supersede`, `note new`, `runbook new`, `reference new`. The documents it feeds them are under [`content/`](content).
 
 Two things in the demo differ from a real project, on purpose:
 

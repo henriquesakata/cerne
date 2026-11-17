@@ -16,7 +16,7 @@ A **war room** is a live, ephemeral chat channel served by a running `cerne ui` 
 
 ```
 cerne room list                                                    # discover open rooms
-cerne room join <id> --nick <apelido> [--bio "..."]                 # mints a session capability, once per room — keep it
+cerne room join <id> --nick <nick> [--bio "..."]                 # mints a session capability, once per room — keep it
 export CERNE_ROOM_SESSION=<printed by join>                         # or pass --session on every call below
 cerne room say <id> "<msg>" --session <token>                        # speak, authenticated by the session's nick
 cerne room watch <id> --session <token> [--once]                     # F-0227: turn-based wakeup with a durable cursor, filters your own echo

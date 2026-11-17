@@ -77,7 +77,7 @@ func typedTool(v verbs.Verb) (llm.Tool, bool) {
 	if err != nil {
 		return llm.Tool{}, false // TestChatToolMarksAreSafe keeps marked verbs parseable
 	}
-	props := map[string]any{"stdin": map[string]any{"type": "string", "description": "conteúdo que o comando leria da entrada padrão"}}
+	props := map[string]any{"stdin": map[string]any{"type": "string", "description": "content the command would read from standard input"}}
 	for _, p := range pos {
 		props[p] = map[string]any{"type": "string"}
 	}
@@ -88,7 +88,7 @@ func typedTool(v verbs.Verb) (llm.Tool, bool) {
 	}
 	return llm.Tool{
 		Name:        typedName(v.Path),
-		Description: fmt.Sprintf("Executa `cerne %s` (%s) no turno confirmado. Mesmo resultado da ferramenta cerne: relate o id do campo id.", v.Path, v.Short),
+		Description: fmt.Sprintf("Runs `cerne %s` (%s) in the confirmed turn. Same result as the cerne tool: report the id from the id field.", v.Path, v.Short),
 		Schema:      map[string]any{"type": "object", "properties": props, "required": append([]string{}, pos...)},
 	}, true
 }
@@ -110,18 +110,18 @@ func jsonType(pflagType string) map[string]any {
 func genericTool(enum, lifecycle []string) llm.Tool {
 	return llm.Tool{
 		Name: chatToolName,
-		Description: "Executa um comando do cerne neste projeto, no turno que o usuário confirmou no card. " +
-			"O resultado é JSON: ok, id (a entidade criada ou alterada, quando houver), output (a saída do cerne) " +
-			"ou error {code, message}. Relate SEMPRE o id do campo id, nunca um id suposto; em erro, relate o code e a mensagem. " +
-			"Verbos de ciclo de vida (" + strings.Join(lifecycle, ", ") + ") e os operacionais não são oferecidos e " +
-			"são recusados: devolva o comando para o usuário rodar no terminal.",
+		Description: "Runs a cerne command in this project, in the turn the user confirmed on the card. " +
+			"The result is JSON: ok, id (the entity created or changed, when there is one), output (cerne's output) " +
+			"or error {code, message}. ALWAYS report the id from the id field, never a guessed id; on error, report the code and message. " +
+			"Lifecycle verbs (" + strings.Join(lifecycle, ", ") + ") and the operational ones are not offered and " +
+			"are refused: hand the command back for the user to run in the terminal.",
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"verb": map[string]any{"type": "string", "enum": enum, "description": "o verbo do cerne, sem o prefixo cerne (ex.: reference new)"},
+				"verb": map[string]any{"type": "string", "enum": enum, "description": "the cerne verb, without the cerne prefix (e.g. reference new)"},
 				"args": map[string]any{"type": "array", "items": map[string]any{"type": "string"},
-					"description": "argumentos e flags na ordem da linha de comando (ex.: [\"Título\", \"--url\", \"https://…\"]); sem --dir e sem --file"},
-				"stdin": map[string]any{"type": "string", "description": "conteúdo que o comando leria da entrada padrão (o corpo de uma spec, nota ou referência)"},
+					"description": "arguments and flags in command-line order (e.g. [\"Title\", \"--url\", \"https://…\"]); no --dir and no --file"},
+				"stdin": map[string]any{"type": "string", "description": "content the command would read from standard input (the body of a spec, note or reference)"},
 			},
 			"required": []string{"verb"},
 		},

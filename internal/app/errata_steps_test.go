@@ -136,7 +136,7 @@ func TestAddErrataStepsDedupesSteps(t *testing.T) {
 	}
 }
 
-// F-0345: `--altera -` is the no-step marker, not a step: refused.
+// F-0345: `--step -` is the no-step marker, not a step: refused.
 func TestAddErrataStepsRefusesNoStepMarker(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	rb, err := CreateRunbook(repoDir, projDir, "Rb", stepsBody)
@@ -144,11 +144,11 @@ func TestAddErrataStepsRefusesNoStepMarker(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := AddErrataSteps(repoDir, projDir, rb.ID, "x", "ator", []string{store.NoStep}, false); err == nil || !strings.Contains(err.Error(), "not a step") {
-		t.Fatal("--altera - must be refused")
+		t.Fatal("--step - must be refused")
 	}
 }
 
-// F-0345: --sem-passo writes the deliberate marker.
+// F-0345: --no-step writes the deliberate marker.
 func TestAddErrataStepsStepless(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	rb, err := CreateRunbook(repoDir, projDir, "Rb", stepsBody)
