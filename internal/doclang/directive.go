@@ -82,3 +82,56 @@ func Reply(l Lang) string {
 	}
 	return "\n\nLANGUAGE — write your whole reply in " + f.name + " (identifiers, commands, file paths and quoted code stay as they are).\n"
 }
+
+// Prose is the free text a prompt has the model copy into its output, per
+// language (F-0447): the example sentences of the Gauntlet lines, the mark of a
+// parallel task, and the words of a roast report. A prompt written in English
+// never spells such a sentence itself, or a pt-BR project would get English
+// prose inside a form it was told to copy exactly.
+type Prose struct {
+	Method, Exit, BarExample, Alternative string // the Gauntlet header values and the filled bar example
+	Parallel                              string // the mark of a task that does not depend on the previous ones
+	Severities, NoFindings                string // the roast severity set and the empty-report sentence
+	Covered, Uncovered                    string // the two coverage-matrix verdicts of the plan roast
+	WhereIs, HowToAdjust, SourcesRead     string // the three headings of a codex live-query answer
+}
+
+var proseForms = map[Lang]Prose{
+	PT: {
+		Method:      "comparação cega, lado a lado, por crítico de contexto fresco que não participou da construção",
+		Exit:        "vencer ou empatar; derrota abre nova rodada; parar perdendo só por encerramento humano registrado",
+		BarExample:  "modo spec do Kiro — kiro.dev/docs/specs; mesma classe: conduzir humano até spec completa",
+		Alternative: "<teste/benchmark/invariante>",
+		Parallel:    "[paralela]",
+		Severities:  "[alta|média|baixa]",
+		NoFindings:  "sem achados relevantes",
+		Covered:     "coberto pela tarefa X",
+		Uncovered:   "descoberto",
+		WhereIs:     "Onde está",
+		HowToAdjust: "Para ajustar",
+		SourcesRead: "Fontes consultadas",
+	},
+	EN: {
+		Method:      "blind side-by-side comparison by a fresh-context critic who did not take part in the build",
+		Exit:        "win or tie; a loss opens a new round; stopping while losing only by a recorded human closure",
+		BarExample:  "Kiro's spec mode — kiro.dev/docs/specs; same class: guide a human to a complete spec",
+		Alternative: "<test/benchmark/invariant>",
+		Parallel:    "[parallel]",
+		Severities:  "[high|medium|low]",
+		NoFindings:  "no relevant findings",
+		Covered:     "covered by task X",
+		Uncovered:   "uncovered",
+		WhereIs:     "Where it is",
+		HowToAdjust: "How to adjust",
+		SourcesRead: "Sources consulted",
+	},
+}
+
+// Examples returns the free text of language l; a language outside the catalog
+// reads as PT, like Sections.
+func Examples(l Lang) Prose {
+	if p, ok := proseForms[l]; ok {
+		return p
+	}
+	return proseForms[PT]
+}

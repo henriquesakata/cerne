@@ -1,6 +1,7 @@
 package doclang
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -132,6 +133,28 @@ func TestDisplay_ChatForms(t *testing.T) {
 		}
 		if got := Display(c.t, EN); got != c.en {
 			t.Errorf("Display(%d, EN) = %q want %q", c.t, got, c.en)
+		}
+	}
+}
+
+// F-0447: the free text a prompt has the model copy is in the language of the
+// project: no English word inside the pt-BR examples, and every field set.
+func TestExamples_AreInTheirOwnLanguage(t *testing.T) {
+	english := regexp.MustCompile(`(?i)\b(the|of|by|and|or|with|win|tie|loss|same|class|guide|human|comparison|critic|fresh|context|covered|uncovered|task|relevant|findings|where|adjust|sources|parallel|high|medium|low|test|until|opens|stopping|only|recorded)\b`)
+	for _, l := range Langs() {
+		p := Examples(l)
+		fields := map[string]string{
+			"Method": p.Method, "Exit": p.Exit, "BarExample": p.BarExample, "Alternative": p.Alternative,
+			"Parallel": p.Parallel, "Severities": p.Severities, "NoFindings": p.NoFindings,
+			"Covered": p.Covered, "Uncovered": p.Uncovered, "WhereIs": p.WhereIs, "HowToAdjust": p.HowToAdjust, "SourcesRead": p.SourcesRead,
+		}
+		for name, v := range fields {
+			if v == "" {
+				t.Errorf("%s: %s is empty", l, name)
+			}
+			if l == PT && english.MatchString(strings.ReplaceAll(v, "Kiro", "")) {
+				t.Errorf("pt: %s %q carries an English word %q", name, v, english.FindString(v))
+			}
 		}
 	}
 }
