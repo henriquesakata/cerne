@@ -16,12 +16,31 @@ import (
 
 // worktreeWithCerncerc returns a project whose .cernerc is committed and a
 // linked worktree of it: .docs/ is gitignored, so the worktree has none.
+// docsIgnore is the project's .gitignore rule for the projection; a test sets
+// the anchored form, which does not cover a nested staging/.docs.
+var docsIgnore = ".docs/\n"
+
 func worktreeWithCerncerc(t *testing.T) (projDir, wt string) {
+	t.Helper()
+	return worktreeFixture(t, "")
+}
+
+// worktreeFixture is worktreeWithCerncerc with extra top-level .cernerc lines.
+func worktreeFixture(t *testing.T, cernercPrefix string) (projDir, wt string) {
 	t.Helper()
 	t.Setenv("CERNE_ROOT", "")
 	projDir, _, _ = setupProject(t)
+	if cernercPrefix != "" {
+		raw, err := os.ReadFile(filepath.Join(projDir, ".cernerc"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(projDir, ".cernerc"), append([]byte(cernercPrefix), raw...), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	gitRun(t, projDir, "init", "-q")
-	if err := os.WriteFile(filepath.Join(projDir, ".gitignore"), []byte(".docs/\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(projDir, ".gitignore"), []byte(docsIgnore), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	gitRun(t, projDir, "add", "-A")
@@ -126,9 +145,11 @@ func TestSessionContextRealFdsStayClean(t *testing.T) {
 	rOut, wOut, _ := os.Pipe()
 	rErr, wErr, _ := os.Pipe()
 	oldOut, oldErr := os.Stdout, os.Stderr
+	restore := func() { os.Stdout, os.Stderr = oldOut, oldErr }
+	defer restore()
 	os.Stdout, os.Stderr = wOut, wErr
 	out := sessionOut(t, wt, "cursor")
-	os.Stdout, os.Stderr = oldOut, oldErr
+	restore()
 	wOut.Close()
 	wErr.Close()
 	gotOut, _ := io.ReadAll(rOut)
@@ -235,5 +256,123 @@ func withProjection(t *testing.T, projDir string) {
 	}
 	if err := os.WriteFile(filepath.Join(docs, "CONTEXT.md"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func porcelain(t *testing.T, dir string) string { return gitOut(t, dir, "status", "--porcelain") }
+
+// B-0017 (critic 2, blocker): the staging directory is invisible to git while
+// it exists — also when a killed run left one behind — and after the build.
+func TestSessionContextStagingInvisibleToGit(t *testing.T) {
+	oldIgnore := docsIgnore
+	t.Cleanup(func() { docsIgnore = oldIgnore })
+	docsIgnore = "/.docs/\n" // does not cover <stage>/.docs
+	_, wt := worktreeWithCerncerc(t)
+	stale := filepath.Join(wt, ".docs-staging-dead")
+	if err := os.MkdirAll(filepath.Join(stale, ".docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stale, ".gitignore"), []byte("*\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stale, ".docs", "CONTEXT.md"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := porcelain(t, wt); got != "" {
+		t.Fatalf("a leftover staging dir is visible to git:\n%s", got)
+	}
+
+	var midBuild string
+	hookRan := false
+	old := materializeHook
+	t.Cleanup(func() { materializeHook = old })
+	materializeHook = func(repoDir string) { hookRan = true; midBuild = porcelain(t, wt) }
+	sessionOut(t, wt, "claude")
+	if !hookRan {
+		t.Fatal("the hook did not build")
+	}
+	if midBuild != "" {
+		t.Fatalf("the staging dir is visible to git mid-build:\n%s", midBuild)
+	}
+	if got := porcelain(t, wt); got != "" {
+		t.Fatalf("git sees changes after the hook:\n%s", got)
+	}
+	if m, _ := filepath.Glob(filepath.Join(wt, ".docs-staging-*")); len(m) > 0 {
+		t.Fatalf("stale staging not swept: %v", m)
+	}
+}
+
+// B-0017 (critic 2): a .docs/ that exists without CONTEXT.md is never wiped
+// (it may hold unpushed edits or .conflicts/): notice, nothing touched.
+func TestSessionContextKeepsExistingDocsDir(t *testing.T) {
+	_, wt := worktreeWithCerncerc(t)
+	edit := filepath.Join(wt, ".docs", "current", "features", "F-0001-x", "spec.md")
+	if err := os.MkdirAll(filepath.Dir(edit), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(edit, []byte("unpushed"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := sessionOut(t, wt, "claude")
+	if b, err := os.ReadFile(edit); err != nil || string(b) != "unpushed" {
+		t.Fatalf("unpushed edit lost: %v %q", err, b)
+	}
+	if strings.Count(out, "run `cerne pull`") != 1 {
+		t.Fatalf("want the cerne pull notice:\n%s", out)
+	}
+	if _, err := os.Stat(filepath.Join(wt, ".docs", "CONTEXT.md")); err == nil {
+		t.Fatal("CONTEXT.md written into an existing .docs/")
+	}
+}
+
+// B-0017 (critic 3): the clone moving under the build (a writer that did not
+// take the lock) discards the build and emits the notice.
+func TestSessionContextDiscardsBuildWhenCloneMoves(t *testing.T) {
+	projDir, wt := worktreeWithCerncerc(t)
+	repo := repoOf(t, projDir)
+	old := materializeHook
+	t.Cleanup(func() { materializeHook = old })
+	materializeHook = func(repoDir string) {
+		if err := os.WriteFile(filepath.Join(repoDir, "moved.txt"), []byte("m"), 0o644); err != nil {
+			t.Error(err)
+		}
+		gitRun(t, repoDir, "add", "moved.txt")
+		gitRun(t, repoDir, "commit", "-q", "-m", "concurrent writer")
+	}
+	out := sessionOut(t, wt, "claude")
+	_ = repo
+	if strings.Count(out, "run `cerne pull`") != 1 {
+		t.Fatalf("want the cerne pull notice:\n%s", out)
+	}
+	if _, err := os.Stat(filepath.Join(wt, ".docs")); err == nil {
+		t.Fatal(".docs/ installed although the clone moved mid-build")
+	}
+	if m, _ := filepath.Glob(filepath.Join(wt, ".docs-staging-*")); len(m) > 0 {
+		t.Fatalf("staging left behind: %v", m)
+	}
+}
+
+// B-0017 (critic 4): the sidecars land in .docs/ where pull writes them, so a
+// following push has nothing to send and a pull neither conflicts nor drifts —
+// with pin_branch set, on a branch that is not the pin branch.
+func TestSessionContextSidecarsMatchPull(t *testing.T) {
+	_, wt := worktreeFixture(t, "pin_branch = \"main\"\n")
+	lockBefore, _ := os.ReadFile(filepath.Join(wt, "docs.lock"))
+	sessionOut(t, wt, "claude")
+	for _, f := range []string{".manifest.json", ".snapshot"} {
+		if _, err := os.Stat(filepath.Join(wt, ".docs", f)); err != nil {
+			t.Fatalf("%s missing: %v", f, err)
+		}
+	}
+	out, err := execCerne(t, "push", "--dry-run", "--dir", wt)
+	if err != nil || !strings.Contains(out, "Nothing to send") {
+		t.Fatalf("push --dry-run after the hook: %v\n%s", err, out)
+	}
+	out, err = execCerne(t, "pull", "--dir", wt)
+	if err != nil || strings.Contains(strings.ToLower(out), "conflict") || strings.Contains(strings.ToLower(out), "local edit") {
+		t.Fatalf("pull after the hook: %v\n%s", err, out)
+	}
+	if lockAfter, _ := os.ReadFile(filepath.Join(wt, "docs.lock")); string(lockAfter) != string(lockBefore) {
+		t.Fatalf("docs.lock moved off the pin branch:\n%s\n->\n%s", lockBefore, lockAfter)
 	}
 }
