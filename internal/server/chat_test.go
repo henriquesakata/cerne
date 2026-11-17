@@ -715,7 +715,7 @@ func TestChatInjectsProjectContext(t *testing.T) {
 	if len(fake.Prompts) != 1 {
 		t.Fatalf("provider calls = %d, want 1", len(fake.Prompts))
 	}
-	for _, want := range []string{"Contexto recuperado do projeto", "D-0001"} {
+	for _, want := range []string{"Project context retrieved", "D-0001"} {
 		if !strings.Contains(fake.Prompts[0], want) {
 			t.Fatalf("prompt missing %q:\n%s", want, fake.Prompts[0])
 		}

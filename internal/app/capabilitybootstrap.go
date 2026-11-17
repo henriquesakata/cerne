@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/llm"
 	"github.com/henriquesakata/cerne/internal/slug"
@@ -54,17 +55,18 @@ func proposalDir(projDir string) string {
 // features (a large client project: 465) with full specs would blow the context for nothing.
 const specExcerptLimit = 300
 
-// CapabilityBootstrapPrompt builds the pt-BR prompt (doc-authoring convention)
-// asking the provider to propose the product-capability tree from the live +
-// delivered features (terminal ones carry no product surface).
+// CapabilityBootstrapPrompt builds the English prompt asking the provider to
+// propose the product-capability tree from the live + delivered features
+// (terminal ones carry no product surface). The titles come back in the
+// project's documentation language (F-0447).
 func CapabilityBootstrapPrompt(repoDir string) (string, error) {
 	features, err := store.LoadAllFeatures(repoDir)
 	if err != nil {
 		return "", err
 	}
 	var b strings.Builder
-	b.WriteString("Você é o curador da documentação viva de um produto. A partir das features abaixo (id, título e trecho da spec), proponha a ÁRVORE FUNCIONAL do produto — as capacidades como o usuário as navega (ex.: Studio → Projetos → Issues → Relatar bugs), NÃO a organização dos registros de trabalho.\n\n")
-	b.WriteString("Regras:\n- Responda APENAS com JSON válido, sem cercas de código e sem preâmbulo.\n- Schema: {\"tree\": [{\"title\": string, \"children\": [...], \"features\": [\"F-…\"]}]}.\n- Cada feature aparece nos nós (folhas de preferência) a que contribui; uma feature pode aparecer em mais de um nó.\n- Títulos curtos, em pt-BR, orientados a capacidade (verbo/substantivo do produto).\n- 2 a 4 níveis de profundidade; agrupe com parcimônia.\n\nFeatures:\n")
+	b.WriteString("You are the curator of a product's living documentation. From the features below (id, title and spec excerpt), propose the product's FUNCTIONAL TREE — the capabilities as the user navigates them (e.g. Studio → Projects → Issues → Report bugs), NOT the organization of the work records.\n\n")
+	b.WriteString("Rules:\n- Reply with ONLY valid JSON, with no code fences and no preamble.\n- Schema: {\"tree\": [{\"title\": string, \"children\": [...], \"features\": [\"F-…\"]}]}.\n- Each feature appears in the nodes (leaves preferably) it contributes to; a feature may appear in more than one node.\n- Short titles, oriented to capability (a verb/noun of the product).\n- 2 to 4 levels deep; group sparingly.\n\nFeatures:\n")
 	for _, f := range features {
 		if f.State == domain.StateRejected || f.State == domain.StateSuperseded {
 			continue
@@ -74,6 +76,7 @@ func CapabilityBootstrapPrompt(repoDir string) (string, error) {
 			b.WriteString("  spec: " + excerpt + "\n")
 		}
 	}
+	b.WriteString(doclang.Reply(store.DocsLanguage(repoDir)))
 	return b.String(), nil
 }
 

@@ -61,10 +61,8 @@ var promptExceptions = []struct{ re, why string }{
 // promptsPending lists the surfaces not converted yet; each is removed by the
 // commit that converts it, and the list is empty when F-0447 is done.
 var promptsPending = map[string]string{
-	"turn context":         "converted with the other prompts",
 	"ask":                  "converted with the other prompts",
 	"compile page":         "converted with the other prompts",
-	"capability bootstrap": "converted with the other prompts",
 }
 
 // promptWords extends doccheck.PTReason with the function words the B-0015

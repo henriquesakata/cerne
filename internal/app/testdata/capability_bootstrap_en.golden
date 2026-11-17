@@ -1,0 +1,14 @@
+You are the curator of a product's living documentation. From the features below (id, title and spec excerpt), propose the product's FUNCTIONAL TREE — the capabilities as the user navigates them (e.g. Studio → Projects → Issues → Report bugs), NOT the organization of the work records.
+
+Rules:
+- Reply with ONLY valid JSON, with no code fences and no preamble.
+- Schema: {"tree": [{"title": string, "children": [...], "features": ["F-…"]}]}.
+- Each feature appears in the nodes (leaves preferably) it contributes to; a feature may appear in more than one node.
+- Short titles, oriented to capability (a verb/noun of the product).
+- 2 to 4 levels deep; group sparingly.
+
+Features:
+- F-0001 [implemented] Sign in
+
+
+LANGUAGE — write your whole reply in English (identifiers, commands, file paths and quoted code stay as they are).

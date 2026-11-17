@@ -206,7 +206,7 @@ func TestBuildTurnContext_PromptUnchanged(t *testing.T) {
 		t.Fatalf("BuildTurnContext: %v", err)
 	}
 	got := tc.Prompt
-	const want = "Contexto recuperado do projeto (injetado automaticamente pelo cerne; o estado ao lado de cada id é a verdade atual):\n\nDecisões ativas do projeto:\n- D-0001 Backend git é a fonte da verdade\n\nConvenções registradas (notas; consulte com cerne note show <id> quando precisar do texto):\n- N-0001 Specs usam EARS nos critérios\n\nTrechos recuperados do backend, relevantes à mensagem do usuário:\n- F-0001 [implemented]: ## Problema\nO «extrato» do banco chega em «OFX» e ninguém «concilia» os…\n\n"
+	const want = "Project context retrieved (injected automatically by cerne; the state next to each id is the current truth):\n\nActive project decisions:\n- D-0001 Backend git é a fonte da verdade\n\nRegistered conventions (notes; consult with cerne note show <id> when you need the text):\n- N-0001 Specs usam EARS nos critérios\n\nPassages retrieved from the backend, relevant to the user's message:\n- F-0001 [implemented]: ## Problema\nO «extrato» do banco chega em «OFX» e ninguém «concilia» os…\n\n"
 	if got != want {
 		t.Fatalf("prompt changed:\n%q", got)
 	}
