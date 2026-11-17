@@ -105,11 +105,11 @@ func TestEveryVerbIsClassified(t *testing.T) {
 
 // TestLifecycleMarksMatchDomainActions pins the lifecycle marks to the FSM in
 // both directions (F-0323 criterion 4): every feature transition (plus accept
-// and deliver, which succeed an approval) and every retire/substituir at any
+// and deliver, which succeed an approval) and every retire/supersede at any
 // depth is marked, and nothing else is.
 func TestLifecycleMarksMatchDomainActions(t *testing.T) {
 	cat := catalogByPath(Root())
-	verbOf := map[domain.Action]string{domain.ActionSupersede: "substituir"}
+	verbOf := map[domain.Action]string{domain.ActionSupersede: "supersede"}
 	featureVerbs := map[string]bool{"feature accept": true, "feature deliver": true}
 	// import mints entities straight into any state (implemented, superseded),
 	// past every human gate — lifecycle in every mode (F-0323 crit. 4).
@@ -128,7 +128,7 @@ func TestLifecycleMarksMatchDomainActions(t *testing.T) {
 	}
 	for path, v := range cat {
 		name := path[strings.LastIndex(path, " ")+1:]
-		byName := name == "retire" || name == "substituir"
+		byName := name == "retire" || name == "supersede"
 		if byName && !v.Lifecycle {
 			t.Errorf("(b) %q is a %s and is not marked lifecycle", path, name)
 		}
@@ -136,7 +136,7 @@ func TestLifecycleMarksMatchDomainActions(t *testing.T) {
 			t.Errorf("(d) %q bypasses the gates and is not marked lifecycle", path)
 		}
 		if v.Lifecycle && !byName && !featureVerbs[path] && !gateBypass[path] {
-			t.Errorf("(c) %q is marked lifecycle but is neither a feature transition, a retire/substituir nor a gate bypass", path)
+			t.Errorf("(c) %q is marked lifecycle but is neither a feature transition, a retire/supersede nor a gate bypass", path)
 		}
 	}
 }
