@@ -109,6 +109,17 @@
           }
         ]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-prompt-notes.sh\"",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   },
   "env": {
