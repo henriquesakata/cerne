@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"github.com/henriquesakata/cerne/internal/domain"
@@ -86,4 +87,38 @@ func defangHeadings(text string) string {
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+const (
+	errataBlockBegin = "<!-- cerne:errata:begin"
+	errataBlockEnd   = "<!-- cerne:errata:end -->"
+)
+
+// ErrataBlock renders an entity's errata as the generated, read-only block the
+// .docs/ projection appends to its file (B-0012). errata is the document body
+// without its frontmatter; merged, when non-nil, replaces each already folded
+// item by one line (F-0351). It returns "" when there is nothing to show. The
+// block is set off by a blank line and ends the file, so StripErrataBlock can
+// give the entity body back byte for byte.
+func ErrataBlock(errata string, merged func(ErrataItem) string) string {
+	errata = strings.TrimSpace(errata)
+	if errata == "" {
+		return ""
+	}
+	if merged != nil {
+		errata = ReplaceMerged(errata, merged)
+	}
+	return "\n\n" + errataBlockBegin + " — generated from content/errata, read-only: edits here are dropped on push -->\n" +
+		"## Errata\n\n" + errata + "\n" + errataBlockEnd + "\n"
+}
+
+// StripErrataBlock removes the block ErrataBlock appended, if body ends with
+// one; anything else is returned untouched. Push, the unsent-edit check and the
+// pull merge read the body through it, so errata never reach the entity body.
+func StripErrataBlock(body []byte) []byte {
+	i := bytes.LastIndex(body, []byte("\n\n"+errataBlockBegin))
+	if i < 0 || !bytes.HasSuffix(body, []byte(errataBlockEnd+"\n")) {
+		return body
+	}
+	return body[:i]
 }
