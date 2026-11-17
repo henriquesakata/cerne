@@ -47,3 +47,33 @@ func TestGauntletContractCopyLinesAreInTheProjectLanguage(t *testing.T) {
 		}
 	}
 }
+
+// F-0447: the tokens a roast reply carries — the severity set, the empty-report
+// sentence and the coverage-matrix verdicts — are the project's language's, so
+// a pt-BR report reads as it did before the prompts went English. No code
+// parses them (the report is shown as text); the reply the prompt asks for is
+// what the report prints.
+func TestRoastPromptOutputTokensFollowTheProjectLanguage(t *testing.T) {
+	for _, l := range doclang.Langs() {
+		ex := doclang.Examples(l)
+		for _, p := range append(append([]RoastPersona{}, RoastPersonas...), PlanRoastPersonas...) {
+			prompt := BuildRoastPromptFor(l, p, "F-0001", "T", SpecRoastIntro, []RoastDoc{{Label: "SPEC", Body: "b"}})
+			for _, want := range []string{ex.Severities, `"` + ex.NoFindings + `"`} {
+				if !strings.Contains(prompt, want) {
+					t.Errorf("%s/%s: the prompt lacks %q", l, p.Key, want)
+				}
+			}
+			if p.Matrix != "" {
+				c := doclang.Display(doclang.Criterion, l)
+				for _, want := range []string{c + " N: " + ex.Covered, c + " N: " + ex.Uncovered} {
+					if !strings.Contains(prompt, want) {
+						t.Errorf("%s/%s: the matrix lacks %q", l, p.Key, want)
+					}
+				}
+			}
+			if l == doclang.PT && strings.Contains(prompt, "[parallel]") {
+				t.Errorf("%s/%s: the pt prompt names the English parallel mark", l, p.Key)
+			}
+		}
+	}
+}

@@ -53,7 +53,7 @@ func TestPlanRoastPersonasContract(t *testing.T) {
 	// cap. Capping it would make the contract unsatisfiable on a spec with
 	// six criteria: the critic would have to break one rule or the other.
 	conf := PlanRoastPersonas[0]
-	for _, want := range []string{"{criterion} N", "covered by task", "uncovered"} {
+	for _, want := range []string{"{criterion} N", "{covered}", "{uncovered}"} {
 		if !strings.Contains(conf.Matrix, want) {
 			t.Errorf("conformity matrix missing %q: %s", want, conf.Matrix)
 		}
@@ -64,7 +64,7 @@ func TestPlanRoastPersonasContract(t *testing.T) {
 		}
 	}
 	confPrompt := BuildRoastPromptFor(doclang.PT, conf, "F-0001", "T", PlanRoastIntro, docs)
-	if !strings.Contains(confPrompt, strings.ReplaceAll(conf.Matrix, "{criterion}", "critério")) {
+	if !strings.Contains(confPrompt, strings.NewReplacer("{criterion}", "critério", "{covered}", doclang.Examples(doclang.PT).Covered, "{uncovered}", doclang.Examples(doclang.PT).Uncovered).Replace(conf.Matrix)) {
 		t.Errorf("conformity prompt does not carry the matrix instruction:\n%s", confPrompt)
 	}
 	// The escape hatch must not delete the matrix on a clean plan.

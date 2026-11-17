@@ -54,12 +54,12 @@ var PlanRoastPersonas = []RoastPersona{
 		Key:    "conformidade",
 		Title:  "Conformidade spec→plano",
 		Lens:   "SPEC→PLAN CONFORMITY: coverage of each numbered acceptance criterion of the spec by the plan. Attack: a criterion with no task covering it, a task that serves no criterion (scope the plan invented), a declared verification that does not prove the criterion it claims to prove, and a criterion whose coverage depends on work the plan leaves implicit.",
-		Matrix: "Before the findings, emit the COVERAGE MATRIX: one line per numbered criterion of the spec, in the exact format \"{criterion} N: covered by task X\" or \"{criterion} N: uncovered\". The matrix is mandatory, covers ALL the criteria (it has no cap and does not count as a finding) and comes out even when you have no findings.",
+		Matrix: "Before the findings, emit the COVERAGE MATRIX: one line per numbered criterion of the spec, in the exact format \"{criterion} N: {covered}\" or \"{criterion} N: {uncovered}\". The matrix is mandatory, covers ALL the criteria (it has no cap and does not count as a finding) and comes out even when you have no findings.",
 	},
 	{
 		Key:   "sequencia",
 		Title: "Sequência e dependências",
-		Lens:  "SEQUENCE AND DEPENDENCIES: an order that forces rework, a hidden dependency between tasks (task N needs something only N+2 creates), a task that does not leave the repository green when it ends, lost parallelism (independent tasks serialized for no reason) or false parallelism (marked [parallel] but touching the same file), and wrong granularity — a task too big for one commit, or sliced so thin that none delivers behaviour.",
+		Lens:  "SEQUENCE AND DEPENDENCIES: an order that forces rework, a hidden dependency between tasks (task N needs something only N+2 creates), a task that does not leave the repository green when it ends, lost parallelism (independent tasks serialized for no reason) or false parallelism (marked as parallel but touching the same file), and wrong granularity — a task too big for one commit, or sliced so thin that none delivers behaviour.",
 	},
 	{
 		Key:   "rollback",
@@ -94,6 +94,7 @@ func BuildRoastPrompt(l doclang.Lang, p RoastPersona, featureID, title, spec str
 // or the finding is invalid, no verdict, hard cap, and every document
 // explicitly delimited so instructions never bleed into the judged artifact.
 func BuildRoastPromptFor(l doclang.Lang, p RoastPersona, featureID, title, intro string, docs []RoastDoc) string {
+	ex := doclang.Examples(l)
 	var b strings.Builder
 	b.WriteString(intro + "\n\n")
 	b.WriteString("YOUR LENS (the only one — ignore problems of other lenses): " + p.Lens + "\n\n")
@@ -107,11 +108,11 @@ func BuildRoastPromptFor(l doclang.Lang, p RoastPersona, featureID, title, intro
 		b.WriteString("- Each finding quotes the EXACT passage in quotation marks; a finding with no quoted passage is invalid and will be discarded.\n")
 	}
 	b.WriteString("- You never approve or reject — the decision belongs to the human gate; you only deliver findings.\n")
-	b.WriteString("- No praise, no summary; at most 5 findings, ordered by severity [high|medium|low].\n")
+	b.WriteString("- No praise, no summary; at most 5 findings, ordered by severity " + ex.Severities + ".\n")
 	if p.Matrix == "" {
-		b.WriteString("- Nothing relevant through your lens → answer exactly \"no relevant findings\".\n")
+		b.WriteString("- Nothing relevant through your lens → answer exactly \"" + ex.NoFindings + "\".\n")
 	} else {
-		b.WriteString("- No findings beyond the matrix → write the matrix and then exactly \"no relevant findings\".\n")
+		b.WriteString("- No findings beyond the matrix → write the matrix and then exactly \"" + ex.NoFindings + "\".\n")
 	}
 	if len(docs) > 1 {
 		labels := make([]string, len(docs))
@@ -123,7 +124,7 @@ func BuildRoastPromptFor(l doclang.Lang, p RoastPersona, featureID, title, intro
 		b.WriteString("- Format of each line: - [sev] finding in 1-2 sentences — passage: \"…\"\n")
 	}
 	if p.Matrix != "" {
-		b.WriteString("\n" + strings.ReplaceAll(p.Matrix, "{criterion}", doclang.Display(doclang.Criterion, l)) + "\n")
+		b.WriteString("\n" + strings.NewReplacer("{criterion}", doclang.Display(doclang.Criterion, l), "{covered}", ex.Covered, "{uncovered}", ex.Uncovered).Replace(p.Matrix) + "\n")
 	}
 	b.WriteString("\n")
 	for i, d := range docs {
