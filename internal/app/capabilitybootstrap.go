@@ -66,7 +66,7 @@ func CapabilityBootstrapPrompt(repoDir string) (string, error) {
 	}
 	var b strings.Builder
 	b.WriteString("You are the curator of a product's living documentation. From the features below (id, title and spec excerpt), propose the product's FUNCTIONAL TREE — the capabilities as the user navigates them (e.g. Studio → Projects → Issues → Report bugs), NOT the organization of the work records.\n\n")
-	b.WriteString("Rules:\n- Reply with ONLY valid JSON, with no code fences and no preamble.\n- Schema: {\"tree\": [{\"title\": string, \"children\": [...], \"features\": [\"F-…\"]}]}.\n- Each feature appears in the nodes (leaves preferably) it contributes to; a feature may appear in more than one node.\n- Short titles, oriented to capability (a verb/noun of the product).\n- 2 to 4 levels deep; group sparingly.\n\nFeatures:\n")
+	b.WriteString("Rules:\n- Reply with ONLY valid JSON, with no code fences and no preamble.\n- Schema: {\"tree\": [{\"title\": string, \"children\": [...], \"features\": [\"F-…\"]}]}. Always keep the JSON keys (tree, title, children, features) exactly as written, in English: only the title VALUES follow the reply language.\n- Each feature appears in the nodes (leaves preferably) it contributes to; a feature may appear in more than one node.\n- Short titles, oriented to capability (a verb/noun of the product).\n- 2 to 4 levels deep; group sparingly.\n\nFeatures:\n")
 	for _, f := range features {
 		if f.State == domain.StateRejected || f.State == domain.StateSuperseded {
 			continue

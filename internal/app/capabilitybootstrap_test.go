@@ -142,3 +142,21 @@ func TestCapabilityBootstrapApplyWithoutProposal(t *testing.T) {
 		t.Fatalf("err = %v, want ErrNoProposal", err)
 	}
 }
+
+// F-0447: the reply language is pt-BR for a pt-BR project, so the prompt must
+// say the JSON keys are not translated — and a Portuguese reply that obeys it
+// parses. A reply whose keys were translated ("árvore") yields no tree.
+func TestCapabilityBootstrapKeepsJSONKeysUntranslated(t *testing.T) {
+	repoDir, projDir := bootstrapFixture(t)
+	fake := &llm.Fake{Reply: `{"tree": [{"title": "Estúdio", "children": [{"title": "Questões", "features": ["F-0001"]}]}]}`}
+	prop, err := GenerateCapabilityProposal(context.Background(), repoDir, projDir, fake)
+	if err != nil {
+		t.Fatalf("a Portuguese reply with the schema's keys must parse: %v", err)
+	}
+	if len(prop.Tree) != 1 || prop.Tree[0].Title != "Estúdio" || prop.Tree[0].Children[0].Title != "Questões" {
+		t.Fatalf("proposal = %+v", prop)
+	}
+	if !strings.Contains(fake.Prompts[0], "keep the JSON keys") {
+		t.Errorf("the prompt does not say the keys stay in English:\n%s", fake.Prompts[0])
+	}
+}
