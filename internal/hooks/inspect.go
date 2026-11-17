@@ -81,7 +81,10 @@ func GitHookStates(projDir string) []GitHookState {
 		}
 	}
 	out := make([]GitHookState, 0, 2)
-	hooksDir, _ := GitHooksDir(projDir)
+	hooksDir, isRepo := GitHooksDir(projDir)
+	if !isRepo {
+		return nil
+	}
 	if rel, err := filepath.Rel(projDir, hooksDir); err == nil && !strings.HasPrefix(rel, "..") {
 		hooksDir = rel // inside the project: report relative (F-0360)
 	}

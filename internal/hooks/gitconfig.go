@@ -15,6 +15,12 @@ import (
 func GitHooksPath(projDir string) (string, bool) {
 	raw, err := os.ReadFile(filepath.Join(projDir, ".git", "config"))
 	if err != nil {
+		// .git is a file (worktree/submodule): git reads the common config.
+		if fi, serr := os.Stat(filepath.Join(projDir, ".git")); serr == nil && !fi.IsDir() {
+			out, _ := exec.Command("git", "-C", projDir, "config", "--get", "core.hooksPath").Output()
+			v := strings.TrimSpace(string(out))
+			return v, v != ""
+		}
 		return "", false
 	}
 	var value string
