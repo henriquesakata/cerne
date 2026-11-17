@@ -33,7 +33,7 @@ var (
 	// fenceBlockRe is a ``` block, to its end when never closed: a diff or
 	// bundle the prompt embeds names features that are no citation.
 	fenceBlockRe = regexp.MustCompile("(?s)```.*?(?:```|$)")
-	idRe         = regexp.MustCompile(`\b` + domain.FeatureIDPrefix + `-\d{4}\b`)
+	idRe         = regexp.MustCompile(`\b` + domain.FeatureIDPrefix() + `-\d{4}\b`)
 
 	userKey = []byte(`"type":"user"`)
 	textKey = []byte(`"type":"text"`)

@@ -5,8 +5,11 @@ import "testing"
 func TestRewriteSupersededRefs(t *testing.T) {
 	// Resolver maps only D-0003 to a terminal successor.
 	resolve := func(id string) (string, bool) {
-		if id == "D-0003" {
+		switch id {
+		case "D-0003":
 			return "D-0002", true
+		case "E-0003", "T-0003", "B-0003":
+			return "F-0100", true
 		}
 		return "", false
 	}
@@ -39,6 +42,11 @@ func TestRewriteSupersededRefs(t *testing.T) {
 			name: "rewrites outside but not inside inline code on the same line",
 			in:   "D-0003 e `D-0003`",
 			want: "D-0002 (antes D-0003) e `D-0003`",
+		},
+		{
+			name: "rewrites a superseded epic, task and bug (B-0021)",
+			in:   "ver E-0003, T-0003 e B-0003",
+			want: "ver F-0100 (antes E-0003), F-0100 (antes T-0003) e F-0100 (antes B-0003)",
 		},
 		{
 			name: "does not match a longer token",

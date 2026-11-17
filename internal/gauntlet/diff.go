@@ -119,7 +119,7 @@ func isIDChar(c byte) bool {
 	return c == '-' || c == '/' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
 }
 
-var featureIDRe = regexp.MustCompile(domain.FeatureIDPrefix + `-\d+`)
+var featureIDRe = regexp.MustCompile(domain.FeatureIDPrefix() + `-\d+`)
 
 // otherFeatureID returns the first feature id in subject, as a whole word,
 // that is not id; "" when there is none.

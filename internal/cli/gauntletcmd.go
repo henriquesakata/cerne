@@ -177,7 +177,7 @@ func newGauntletRecordCmd() *cobra.Command {
 	return cmd
 }
 
-var gauntletIDRe = regexp.MustCompile(`^` + domain.FeatureIDPrefix + `-\d+$`)
+var gauntletIDRe = regexp.MustCompile(`^` + domain.FeatureIDPrefix() + `-\d+$`)
 
 func runGauntletRecord(cmd *cobra.Command, dir, id, verdictPath, ours, quote, critic string) error {
 	if !gauntletIDRe.MatchString(id) {

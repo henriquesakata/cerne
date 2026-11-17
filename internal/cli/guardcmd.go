@@ -24,12 +24,12 @@ import (
 // guardIDRe matches a feature-family entity id (F-, E-, T-, B-: they share the
 // feature FSM and store — see domain.IsFeatureID), case-insensitively: branch
 // names (e.g. claude/f-0225-implementation) commonly lowercase the prefix.
-var guardIDRe = regexp.MustCompile(`(?i)\b` + domain.FeatureIDPrefix + `-\d{4,}\b`)
+var guardIDRe = regexp.MustCompile(`(?i)\b` + domain.FeatureIDPrefix() + `-\d{4,}\b`)
 
 // guardBranchIDRe is guardIDRe for a branch name, where the dash is often
 // dropped (fix/b0012-prompt, feature/f0432-help-groups): the id sits between
 // separators, so a word that merely holds letters and digits is not one.
-var guardBranchIDRe = regexp.MustCompile(`(?i)(?:^|[^a-z0-9])(` + domain.FeatureIDPrefix + `)-?(\d{4,})\b`)
+var guardBranchIDRe = regexp.MustCompile(`(?i)(?:^|[^a-z0-9])(` + domain.FeatureIDPrefix() + `)-?(\d{4,})\b`)
 
 func newGuardCmd() *cobra.Command {
 	cmd := &cobra.Command{

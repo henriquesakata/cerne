@@ -37,7 +37,16 @@ var featurePrefixes = []string{"F", "E", "T", "B"}
 // FeatureIDPrefix is a regexp group matching one feature-family prefix letter
 // ("(?:F|E|T|B)"), derived from the same list as IsFeatureID. Callers add the
 // dash, digits and boundaries (and (?i) when they need case-insensitivity).
-var FeatureIDPrefix = "(?:" + strings.Join(featurePrefixes, "|") + ")"
+func FeatureIDPrefix() string {
+	return "(?:" + strings.Join(featurePrefixes, "|") + ")"
+}
+
+// IsEpicID reports whether id names an epic (E-): a container of features, not
+// a unit of work, so cost attribution does not take a mention of one as other
+// work.
+func IsEpicID(id string) bool {
+	return strings.HasPrefix(id, "E-")
+}
 
 // CheckGate verifies the document required by action exists in docs.
 //

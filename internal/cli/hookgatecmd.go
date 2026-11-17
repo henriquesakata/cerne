@@ -188,7 +188,7 @@ var (
 	workCreatedRe = regexp.MustCompile(`(W-\d{4,}) [^\s()]+ \(active\)`)
 	// startedIDRe is the id a confirmed `feature start` binds: a feature-family id,
 	// the same kinds bindingLive accepts (F-0309).
-	startedIDRe = regexp.MustCompile(`\b` + domain.FeatureIDPrefix + `-\d{4,}\b`)
+	startedIDRe = regexp.MustCompile(`\b` + domain.FeatureIDPrefix() + `-\d{4,}\b`)
 )
 
 var (

@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-git/v5"
 
@@ -872,6 +873,25 @@ func TestPromotePendingsTaskFromOneOrigin(t *testing.T) {
 	for _, p := range got {
 		if p.State != domain.PendingPromoted || p.PromotedTo != task.ID {
 			t.Fatalf("%s = %+v, want promoted to %s", p.ID, p, task.ID)
+		}
+	}
+}
+
+// TestCreatePendingFromFeatureFamily (B-0021): --from takes any feature-family
+// id that exists (a bug, an epic, a task), not only F-.
+func TestCreatePendingFromFeatureFamily(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	now := time.Now().UTC()
+	for _, id := range []string{"B-0001", "E-0001", "T-0001"} {
+		if err := store.SaveFeature(repoDir, store.Feature{ID: id, Title: "origem " + id, State: domain.StateInDevelopment, CreatedAt: now, UpdatedAt: now}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := gitback.CommitAndPush(repoDir, "seed "+id); err != nil {
+			t.Fatal(err)
+		}
+		p, err := CreatePending(repoDir, projDir, "Débito de "+id, "", strings.ToLower(id), nil, nil, false)
+		if err != nil || p.From != id {
+			t.Fatalf("--from %s: %+v, %v", id, p, err)
 		}
 	}
 }

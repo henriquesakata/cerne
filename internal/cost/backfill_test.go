@@ -379,3 +379,42 @@ func TestBackfillRolesLeavesOutWhatThePromptShowsElsewhere(t *testing.T) {
 		t.Errorf("Ambiguous = %+v\nwant %+v", r.Ambiguous, want)
 	}
 }
+
+// TestBackfillRolesEpicCitationIsNotOtherWork (B-0021): an epic is a container,
+// not a unit of work: a prompt naming only the parent epic of the bound
+// feature is the normal path, while one naming another bug or task is another
+// piece of work.
+func TestBackfillRolesEpicCitationIsNotOtherWork(t *testing.T) {
+	in := fixture(t)
+	big := cc(1000, 1000, 1000, 1000)
+	one := cc(1, 0, 0, 1)
+	for _, id := range []string{"F-0801", "F-0811", "F-0821"} {
+		anchored(t, in, id, domain.StateImplemented, big, nil)
+	}
+	mainMsg(t, in, "u1")
+	bindAt(t, in.CacheDir, "u1", "", "F-0801", at(1))
+	subagent(t, in, "u1", "c", "Review the work of epic E-0012\n"+diffFence, "", 3, one) // only the parent epic
+	mainMsg(t, in, "u2")
+	bindAt(t, in.CacheDir, "u2", "", "F-0811", at(1))
+	subagent(t, in, "u2", "c", "Review B-0012\n"+diffFence, "", 3, one) // another bug
+	mainMsg(t, in, "u3")
+	bindAt(t, in.CacheDir, "u3", "", "F-0821", at(1))
+	subagent(t, in, "u3", "c", "Review F-0821 under E-0012\n"+diffFence, "", 3, one)
+
+	r, err := BackfillRoles(in, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string][]AgentRole{}
+	for _, f := range r.Features {
+		got[f.ID] = f.Agents
+	}
+	for id, sess := range map[string]string{"F-0801": "u1", "F-0821": "u3"} {
+		if want := []AgentRole{{Session: sess, Agent: "c", Role: "critic"}}; !reflect.DeepEqual(got[id], want) {
+			t.Errorf("%s agents = %+v, want %+v", id, got[id], want)
+		}
+	}
+	if want := []Ambiguity{{Session: "u2", Agent: "c", Role: "critic", Entities: []string{"B-0012", "F-0811"}, Reason: reasonCites}}; !reflect.DeepEqual(r.Ambiguous, want) {
+		t.Errorf("Ambiguous = %+v\nwant %+v", r.Ambiguous, want)
+	}
+}

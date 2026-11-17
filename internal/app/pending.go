@@ -24,7 +24,7 @@ var ErrPendingFromRequired = errors.New("--from is required (the F-/E-/T-/B- id 
 // never reaches the filesystem.
 var ErrPendingFromInvalid = errors.New("--from must be an F-/E-/T-/B-NNNN id")
 
-var pendingOriginRx = regexp.MustCompile(`^` + domain.FeatureIDPrefix + `-\d{4}$`)
+var pendingOriginRx = regexp.MustCompile(`^` + domain.FeatureIDPrefix() + `-\d{4}$`)
 
 // ErrPendingReasonRequired is returned by DropPending with a blank reason: a
 // discarded debt keeps why it was discarded.

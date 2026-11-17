@@ -125,7 +125,7 @@ func BackfillRoles(in Inputs, since time.Time) (Backfill, error) {
 			seen[m.key] = m.key != ""
 			g := groups[agentKey{sess, m.agent}]
 			if g == nil {
-				g = &agentGroup{class: m.class, cited: m.cited, entities: map[string]bool{}, first: m.ts}
+				g = &agentGroup{class: m.class, cited: workIDs(m.cited), entities: map[string]bool{}, first: m.ts}
 				groups[agentKey{sess, m.agent}] = g
 			}
 			if !m.ts.IsZero() && (g.first.IsZero() || m.ts.Before(g.first)) {
@@ -183,7 +183,7 @@ func BackfillRoles(in Inputs, since time.Time) (Backfill, error) {
 		ents := slices.Sorted(maps.Keys(g.entities))
 		ar := AgentRole{Session: k.sess, Agent: k.agent, Role: g.class, Bound: g.bound}
 		reason, listed := reasonBinding, ents
-		if len(ents) == 1 && !g.bound && domain.IsFeatureID(ents[0]) && !strings.HasPrefix(ents[0], "E-") { // an epic binding keeps its critic (F-0411)
+		if len(ents) == 1 && !g.bound && domain.IsFeatureID(ents[0]) && !domain.IsEpicID(ents[0]) { // an epic binding keeps its critic (F-0411)
 			all := cites[bindKey{k.sess, ents[0]}]
 			switch {
 			case len(g.cited) > 0 && !slices.Contains(g.cited, ents[0]):
@@ -343,3 +343,15 @@ var (
 	rolesLineRe = regexp.MustCompile(`(?m)^Por papel: .*\n`)
 	modelLineRe = regexp.MustCompile(`(?m)^Por modelo: .*\n`)
 )
+
+// workIDs drops the epics from cited ids: naming the parent epic is not
+// citing other work (B-0021); another bug, task or feature is.
+func workIDs(cited []string) []string {
+	var out []string
+	for _, id := range cited {
+		if !domain.IsEpicID(id) {
+			out = append(out, id)
+		}
+	}
+	return out
+}

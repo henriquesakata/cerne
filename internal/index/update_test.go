@@ -176,3 +176,59 @@ func TestUpdateKeepsFeatureFamilyIDs(t *testing.T) {
 		}
 	}
 }
+
+// TestUpdateRowsEqualRebuildForFeatureFamily (B-0021): an incremental Update of
+// a bug, an epic and a task leaves exactly the rows a full rebuild builds
+// (kind, state, title and body), not just a hit.
+func TestUpdateRowsEqualRebuildForFeatureFamily(t *testing.T) {
+	repoDir := seedBackend(t)
+	now := time.Now().UTC()
+	ids := []string{"B-0901", "E-0901", "T-0901"}
+	for _, id := range ids {
+		if err := store.SaveFeature(repoDir, store.Feature{ID: id, Title: "titulo " + id, State: domain.StateApproved, CreatedAt: now, UpdatedAt: now}); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(repoDir, "content", "features", id), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(repoDir, "content", "features", id, "spec.md"), []byte("corpo do spec de "+id), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	full := filepath.Join(t.TempDir(), "full.db")
+	if err := Rebuild(repoDir, full, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	inc := filepath.Join(t.TempDir(), "inc.db")
+	if err := Rebuild(repoDir, inc, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Update(repoDir, inc, ids, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	rows := func(db string) []string {
+		d, err := openDB(db)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer d.Close()
+		r, err := d.Query(`SELECT entity_id, kind, doc, state, title, body FROM docs WHERE entity_id IN ('B-0901','E-0901','T-0901') ORDER BY entity_id, doc`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer r.Close()
+		var out []string
+		for r.Next() {
+			var a, b, c, e, f, g string
+			if err := r.Scan(&a, &b, &c, &e, &f, &g); err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, a+"|"+b+"|"+c+"|"+e+"|"+f+"|"+g)
+		}
+		return out
+	}
+	want, got := rows(full), rows(inc)
+	if len(want) != 3 || !reflect.DeepEqual(got, want) {
+		t.Fatalf("incremental rows differ from a full rebuild\nfull: %q\ninc:  %q", want, got)
+	}
+}
