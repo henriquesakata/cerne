@@ -38,7 +38,7 @@ func TestPreconditionFindings(t *testing.T) {
 		t.Fatalf("want 3 findings (RB-0002 is superseded, the valid line is fine): %+v", got)
 	}
 	for _, f := range got {
-		if f.Rule != RulePreconditionMalformed || f.Entity != "RB-0001" || !strings.Contains(f.Detail, "pré-condição") {
+		if f.Rule != RulePreconditionMalformed || f.Entity != "RB-0001" || !strings.Contains(f.Detail, "precondition") {
 			t.Errorf("bad finding %+v", f)
 		}
 	}

@@ -133,8 +133,8 @@ func TestCheckHookCitations(t *testing.T) {
 			t.Errorf("achado %d File = %q, want %q", i, rows[i].file, w)
 		}
 	}
-	if !strings.Contains(rows[0].detail, "regra 15 da N-0600, que tem 14 regras numeradas") ||
-		!strings.Contains(rows[0].detail, "acrescente") {
+	if !strings.Contains(rows[0].detail, "rule 15 of N-0600, which has 14 numbered rules") ||
+		!strings.Contains(rows[0].detail, "add the rule") {
 		t.Errorf("detalhe sem a regra/total/correção: %q", rows[0].detail)
 	}
 	if rows[0].entity != "N-0600" {
@@ -143,10 +143,10 @@ func TestCheckHookCitations(t *testing.T) {
 	if !strings.Contains(rows[2].detail, "superseded") {
 		t.Errorf("nota não ativa deve nomear o estado: %q", rows[2].detail)
 	}
-	if !strings.Contains(rows[3].detail, "não existe") {
+	if !strings.Contains(rows[3].detail, "does not exist") {
 		t.Errorf("nota ausente deve dizer que não existe: %q", rows[3].detail)
 	}
-	if !strings.Contains(rows[4].detail, "0 regras") {
+	if !strings.Contains(rows[4].detail, "0 numbered rules") {
 		t.Errorf("nota sem lista tem zero regras: %q", rows[4].detail)
 	}
 }

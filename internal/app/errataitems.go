@@ -145,7 +145,7 @@ func MergeErrata(repoDir, projDir, id, actor string) (MergeResult, error) {
 		if err := store.AppendEvent(repoDir, ev); err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("cerne: errata %s fundidas na revisão %d", id, res.Revision), nil
+		return fmt.Sprintf("cerne: errata %s merged into revision %d", id, res.Revision), nil
 	})
 	return res, err
 }

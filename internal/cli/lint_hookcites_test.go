@@ -52,7 +52,7 @@ func TestLintHookCitesMissingRule(t *testing.T) {
 		t.Fatalf("lint passed with a hook citing a missing rule\n%s", out)
 	}
 	if !strings.Contains(out, "HOOK-CITES-MISSING-RULE (2)") ||
-		!strings.Contains(out, "scripts/hooks/x.mjs:1 — o hook cita a regra 15 da N-0001, que tem 14 regras numeradas") ||
+		!strings.Contains(out, "scripts/hooks/x.mjs:1 — the hook cites rule 15 of N-0001, which has 14 numbered rules") ||
 		!strings.Contains(out, "scripts/hooks/x.mjs:2 — ") {
 		t.Fatalf("output missing the two findings:\n%s", out)
 	}

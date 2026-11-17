@@ -29,13 +29,13 @@ func runStalledFindings(repoDir string, works []store.Work) ([]Finding, error) {
 		}
 		why := ""
 		if r.Status() == store.RunStopped {
-			why = fmt.Sprintf("parada no passo %s (PARE)", r.Entries[len(r.Entries)-1].Step)
+			why = fmt.Sprintf("stopped at step %s (PARE)", r.Entries[len(r.Entries)-1].Step)
 		} else if len(r.Steps) > 0 && allStepsOK(r) {
-			why = "todos os passos com ok"
+			why = "has every step ok"
 		}
 		if why != "" {
 			out = append(out, Finding{Rule: RuleRunStalled, Entity: w.ID,
-				Detail: fmt.Sprintf("execução de %s (janela %s) %s e ainda ativa — 'cerne runbook report %s' e 'cerne work done %s' (ou 'cerne work abandon %s')", r.Runbook, r.Window, why, w.ID, w.ID, w.ID)})
+				Detail: fmt.Sprintf("run of %s (window %s) %s and is still active — 'cerne runbook report %s' and 'cerne work done %s' (or 'cerne work abandon %s')", r.Runbook, r.Window, why, w.ID, w.ID, w.ID)})
 		}
 	}
 	return out, nil
