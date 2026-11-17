@@ -147,7 +147,9 @@ func TestRunNamedErrors(t *testing.T) {
 		{"unknown verb", "feature fly", nil, nil, verbs.ErrUnknownVerb, "unknown_verb"},
 		{"group verb", "room minutes", nil, nil, verbs.ErrUnknownVerb, "unknown_verb"},
 		{"group with subverb in args", "room", []string{"minutes", "template"}, nil, verbs.ErrUnknownVerb, "unknown_verb"},
-		{"missing title", "reference new", []string{"--url", "u"}, nil, verbs.ErrInvalidArguments, "invalid_arguments"},
+		// B-0018: the title may come from the stdin body's H1, so the gate lets a
+		// title-less call through and the command itself refuses it.
+		{"missing title", "reference new", []string{"--url", "u"}, nil, verbs.ErrCommandFailed, "command_failed"},
 		{"unknown flag", "reference new", []string{"T", "--url", "u", "--nope"}, nil, verbs.ErrInvalidArguments, "invalid_arguments"},
 		{"dir flag", "reference new", []string{"T", "--url", "u", "--dir", "/tmp"}, nil, verbs.ErrInvalidArguments, "invalid_arguments"},
 		{"file flag", "reference new", []string{"T", "--url", "u", "--file", "x"}, nil, verbs.ErrInvalidArguments, "invalid_arguments"},
@@ -184,7 +186,7 @@ func TestRunNamedErrors(t *testing.T) {
 			if tc.want == verbs.ErrTimeout && !strings.Contains(res.Error.Message, "lock") {
 				t.Fatalf("timeout message = %q, want the backend-lock warning", res.Error.Message)
 			}
-			if tc.want == verbs.ErrCommandFailed && !strings.Contains(res.Error.Message, "url cannot be empty") {
+			if tc.want == verbs.ErrCommandFailed && !strings.Contains(res.Error.Message, "url cannot be empty") && !strings.Contains(res.Error.Message, "give a title") {
 				t.Fatalf("message = %q, want the core's own refusal", res.Error.Message)
 			}
 		})
@@ -275,7 +277,6 @@ func TestRunHelpOnlyAfterFullValidation(t *testing.T) {
 		t.Fatalf("Run(reference new T --url u --help) = %+v, want OK with the usage", res)
 	}
 	for _, args := range [][]string{
-		{"--help"}, // no title: validation comes first
 		{"Nota vazada", "--facet", "process", "--component", "chat", "--help=false", "--file", "/etc/hosts"},
 		{"Nota vazada", "--facet", "process", "--component", "chat", "--help=false"},
 		{"Nota vazada", "-h=x"},
@@ -315,5 +316,19 @@ func TestRunRecordsTheCallsModel(t *testing.T) {
 	}
 	if p["source"] != "llm-config" || p["model"] != "claude-chosen" || p["doc"] != "spec" {
 		t.Fatalf("doc_edited = %v, want llm-config with the call's model claude-chosen", p)
+	}
+}
+
+// B-0018: through the chat gate a title-less call takes the title from the
+// stdin body's first H1.
+func TestRunTitleFromStdinH1(t *testing.T) {
+	env := newProject(t)
+	res := run(t, env, "note new", "# Title from the chat body\n\ntext\n")
+	if !res.OK {
+		t.Fatalf("Run(note new, H1 on stdin) = %+v, want OK", res)
+	}
+	notes, err := store.LoadAllNotes(env.RepoDir)
+	if err != nil || len(notes) != 1 || notes[0].Title != "Title from the chat body" {
+		t.Fatalf("notes = %+v (%v)", notes, err)
 	}
 }

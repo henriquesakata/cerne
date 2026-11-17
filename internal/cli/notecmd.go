@@ -300,10 +300,10 @@ func newNoteNewCmd(dir *string) *cobra.Command {
 			"informs. Use --facet (closed axis: infra,code,data,process,auth) and --component (subsystem/tool, " +
 			"e.g. gitea,kpack) to organize — both multi-valued, comma-separated. " +
 			"A live note with a similar title refuses the creation (F-0324); --force overrides it. " +
-			"Personal/machine knowledge (paths, preferences) does NOT go here — it stays in local memory.",
-		Args: cobra.ExactArgs(1),
+			"Personal/machine knowledge (paths, preferences) does NOT go here — it stays in local memory. The title argument may be omitted when the body (--file or stdin) opens with a `# ` heading: that heading becomes the title.",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runNoteNew(cmd, *dir, args[0], informs, file, facet, component, force)
+			return runNoteNew(cmd, *dir, args, informs, file, facet, component, force)
 		},
 	}
 	cmd.Flags().StringVar(&informs, "informs", "", "comma-separated F-/D-/RB-/N- ids this note informs")
@@ -314,8 +314,12 @@ func newNoteNewCmd(dir *string) *cobra.Command {
 	return verbs.MarkChatTool(cmd)
 }
 
-func runNoteNew(cmd *cobra.Command, dir, title, informs, file, facet, component string, force bool) error {
+func runNoteNew(cmd *cobra.Command, dir string, args []string, informs, file, facet, component string, force bool) error {
 	body, err := readOptionalBody(cmd, file)
+	if err != nil {
+		return err
+	}
+	title, err := newTitle(args, body)
 	if err != nil {
 		return err
 	}

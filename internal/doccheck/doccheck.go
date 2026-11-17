@@ -142,3 +142,34 @@ func fenceRun(line string) string {
 	}
 	return t[:n]
 }
+
+// BodyTitle returns the text of the body's first heading when that heading is
+// an H1 ("# ") opening the body — after the leading frontmatter block, blank
+// lines and a UTF-8 BOM — trimmed; "" otherwise. "## " is not an H1, and a
+// "# " after other content or inside a fenced block (which another line opens)
+// is not the first heading of the body.
+func BodyTitle(data []byte) string {
+	data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))
+	lines := strings.Split(string(data), "\n")
+	i := 0
+	if len(lines) > 0 && strings.TrimSpace(lines[0]) == "---" {
+		for j := 1; j < len(lines); j++ {
+			if strings.TrimSpace(lines[j]) == "---" {
+				i = j + 1
+				break
+			}
+		}
+	}
+	for ; i < len(lines); i++ {
+		t := strings.TrimSpace(lines[i])
+		if t == "" {
+			continue
+		}
+		title, ok := strings.CutPrefix(t, "# ")
+		if !ok {
+			return ""
+		}
+		return strings.TrimSpace(title)
+	}
+	return ""
+}
