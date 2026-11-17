@@ -422,7 +422,7 @@ func validateWorkRefs(repoDir string, refs []string) ([]string, error) {
 			}
 		case strings.HasPrefix(id, "W-"), strings.HasPrefix(id, "N-"), strings.HasPrefix(id, "RB-"):
 			if !store.EntityExists(repoDir, id) {
-				return nil, fmt.Errorf("--ref: %s not found in the backend", id)
+				return nil, fmt.Errorf("--ref: %s %s not found in the backend", map[string]string{"W": "work", "N": "note", "RB": "runbook"}[id[:strings.Index(id, "-")]], id)
 			}
 		default:
 			return nil, fmt.Errorf("--ref: %q must be a feature (F-, E-, T-, B-), decision (D-), work (W-), note (N-) or runbook (RB-) id", id)
