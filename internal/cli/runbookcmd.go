@@ -13,8 +13,6 @@ import (
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/llm"
-	"github.com/henriquesakata/cerne/internal/runtmpl"
-	"github.com/henriquesakata/cerne/internal/spectmpl"
 	"github.com/henriquesakata/cerne/internal/store"
 	"github.com/henriquesakata/cerne/internal/verbs"
 )
@@ -288,7 +286,7 @@ func runRunbookDraft(cmd *cobra.Command, dir, id string) error {
 		return err
 	}
 	current := readRunbookCurrent(ctx.repoDir, id)
-	prompt := draftPromptIn(store.DocsLanguage(ctx.repoDir), doclang.Runbook, BuildRunbookDraftPrompt(rb, current))
+	prompt := BuildRunbookDraftPrompt(store.DocsLanguage(ctx.repoDir), rb, current)
 	out := cmd.OutOrStdout()
 
 	// delegation (default): print the prompt for the host agent to draft inline.
@@ -332,32 +330,31 @@ func readRunbookCurrent(repoDir, id string) string {
 	return string(data)
 }
 
-// BuildRunbookDraftPrompt assembles the pt-BR prompt instructing the LLM to write
+// BuildRunbookDraftPrompt assembles the English prompt instructing the LLM to write
 // a COMPLETE runbook from the runbook's id/title and the current stub or content.
 // It requests the canonical runtmpl.Sections in order and the authoring rules:
 // a clear trigger, numbered actionable steps with expected output, prerequisites,
-// verification, rollback and escalation, the [ESCLARECER] ambiguity marker, and
+// verification, rollback and escalation, the ambiguity marker, and
 // right-sizing.
-func BuildRunbookDraftPrompt(rb store.Runbook, currentContent string) string {
+func BuildRunbookDraftPrompt(l doclang.Lang, rb store.Runbook, currentContent string) string {
 	var b strings.Builder
-	b.WriteString("Você está escrevendo um runbook (procedimento operacional acionável) de software, em português do Brasil.\n\n")
+	b.WriteString("You are writing a software runbook (an actionable operational procedure).\n\n")
 	b.WriteString("Runbook:\n")
 	fmt.Fprintf(&b, "- id: %s\n", rb.ID)
-	fmt.Fprintf(&b, "- título: %s\n\n", rb.Title)
-	b.WriteString("Conteúdo atual do runbook (stub ou rascunho parcial; pode estar vazio):\n")
+	fmt.Fprintf(&b, "- title: %s\n\n", rb.Title)
+	b.WriteString("Current runbook content (stub or partial draft; may be empty):\n")
 	b.WriteString("---\n")
 	b.WriteString(strings.TrimSpace(currentContent))
 	b.WriteString("\n---\n\n")
-	b.WriteString("Escreva um runbook COMPLETO e acionável, em Markdown, com exatamente estas seções nesta ordem:\n")
-	for _, s := range runtmpl.Sections {
-		b.WriteString("## " + s + "\n")
-	}
-	b.WriteString("\nRegras de autoria:\n")
-	b.WriteString("- Em Quando usar, deixe claro o gatilho/sintomas para o leitor confirmar em segundos que é o runbook certo.\n")
-	b.WriteString("- No Procedimento, passos numerados, ação primeiro, comandos copiáveis, cada um com a SAÍDA ESPERADA (\"você deve ver: X\").\n")
-	b.WriteString("- Inclua Pré-requisitos (acessos/ferramentas/estado), Verificação (como confirmar sucesso) e Rollback e troubleshooting (como desfazer + a quem escalar).\n")
-	b.WriteString("- Marque qualquer incerteza com \"" + spectmpl.AmbiguityMarker + " pergunta específica]\" em vez de supor.\n")
-	b.WriteString("- Dimensione pela tarefa: runbook simples tem seções curtas; \"N/A\" onde não se aplica. Não infle.\n\n")
-	b.WriteString("Não inclua frontmatter (o cerne carimba o cerne_id). " + app.DraftOutputContract + "\n")
+	b.WriteString("Write a COMPLETE, actionable runbook, in Markdown, with exactly these sections in this order:\n")
+	writeSections(&b, doclang.Runbook, l)
+	b.WriteString("\nAuthoring rules:\n")
+	b.WriteString("- In " + heading(doclang.Runbook, l, "When to use") + ", make the trigger/symptoms clear so the reader confirms in seconds that this is the right runbook.\n")
+	b.WriteString("- In " + heading(doclang.Runbook, l, "Procedure") + ", numbered steps, action first, copyable commands, each with its EXPECTED OUTPUT (" + doclang.Examples(l).ExpectedOutput + ").\n")
+	b.WriteString("- Include " + heading(doclang.Runbook, l, "Prerequisites") + " (access/tools/state), " + heading(doclang.Runbook, l, "Verification") + " (how to confirm success) and " + heading(doclang.Runbook, l, "Rollback and troubleshooting") + " (how to undo + whom to escalate to).\n")
+	b.WriteString("- Mark any uncertainty with the ambiguity marker instead of guessing.\n")
+	b.WriteString("- Size by the task: a simple runbook has short sections; \"N/A\" where it does not apply. Do not inflate.\n\n")
+	b.WriteString("Do not include frontmatter (cerne stamps the cerne_id). " + app.DraftOutputContract + "\n")
+	b.WriteString(doclang.Directive(l))
 	return b.String()
 }

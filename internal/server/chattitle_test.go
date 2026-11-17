@@ -5,10 +5,13 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/henriquesakata/cerne/internal/doccheck"
 )
 
 const titlePairBody = `{"messages":[{"role":"user","content":"Oi"},{"role":"assistant","content":"Olá"}]}`
@@ -71,11 +74,11 @@ func TestChatTitleByoKey(t *testing.T) {
 	if !strings.Contains(gotPrompt, "Quero exportar relatórios") {
 		t.Fatalf("prompt lacks the user text: %s", gotPrompt)
 	}
-	if !strings.Contains(gotPrompt, "no máximo 40 caracteres") {
+	if !strings.Contains(gotPrompt, "at most 40 characters") {
 		t.Fatalf("prompt lacks the 40-char rule: %s", gotPrompt)
 	}
 	// C10: the title follows the conversation's language, never a forced one.
-	if !strings.Contains(gotPrompt, "no mesmo idioma da conversa") || strings.Contains(gotPrompt, "em português") {
+	if !strings.Contains(gotPrompt, "in the same language as the conversation") || strings.Contains(gotPrompt, "in Portuguese") {
 		t.Fatalf("prompt must ask for the conversation's language, not force Portuguese: %s", gotPrompt)
 	}
 	if strings.Contains(gotPrompt, strings.Repeat("z", titleInputRunes)) {
@@ -265,5 +268,32 @@ func TestCleanTitle(t *testing.T) {
 		if got := cleanTitle(tc.in); got != tc.want {
 			t.Errorf("cleanTitle(%q) = %q, want %q", tc.in, got, tc.want)
 		}
+	}
+}
+
+// TestChatTitlePromptIsEnglishGolden (F-0447 crit. 1): the prompt is English
+// whatever the project's language — the title follows the conversation's, so
+// it has no language directive and one golden. Regenerate only on a deliberate
+// prompt change: PROMPT_GOLDEN_UPDATE=1.
+func TestChatTitlePromptIsEnglishGolden(t *testing.T) {
+	prompt := chatTitlePrompt([]chatMessage{{Role: "user", Content: "I want to export reports"}, {Role: "assistant", Content: "Which format?"}})
+	if why := doccheck.PTReason(prompt); why != "" {
+		t.Errorf("the chat title prompt reads as pt-BR (%s)", why)
+	}
+	const golden = "testdata/chat_title_prompt.golden"
+	if os.Getenv("PROMPT_GOLDEN_UPDATE") == "1" {
+		if err := os.MkdirAll("testdata", 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(golden, []byte(prompt), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want, err := os.ReadFile(golden)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prompt != string(want) {
+		t.Errorf("the chat title prompt differs from %s", golden)
 	}
 }

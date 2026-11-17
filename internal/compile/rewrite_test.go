@@ -21,7 +21,7 @@ func TestRewriteSupersededRefs(t *testing.T) {
 		{
 			name: "rewrites a live mention to the successor",
 			in:   "ver D-0003 para detalhes",
-			want: "ver D-0002 (antes D-0003) para detalhes",
+			want: "ver D-0002 (formerly D-0003) para detalhes",
 		},
 		{
 			name: "leaves an id with no successor intact",
@@ -41,17 +41,17 @@ func TestRewriteSupersededRefs(t *testing.T) {
 		{
 			name: "rewrites outside but not inside inline code on the same line",
 			in:   "D-0003 e `D-0003`",
-			want: "D-0002 (antes D-0003) e `D-0003`",
+			want: "D-0002 (formerly D-0003) e `D-0003`",
 		},
 		{
 			name: "rewrites a superseded epic, task and bug (B-0021)",
 			in:   "ver E-0003, T-0003 e B-0003",
-			want: "ver F-0100 (antes E-0003), F-0100 (antes T-0003) e F-0100 (antes B-0003)",
+			want: "ver F-0100 (formerly E-0003), F-0100 (formerly T-0003) e F-0100 (formerly B-0003)",
 		},
 		{
 			name: "does not match a longer token",
 			in:   "D-00031 e D-0003",
-			want: "D-00031 e D-0002 (antes D-0003)",
+			want: "D-00031 e D-0002 (formerly D-0003)",
 		},
 	}
 	for _, tt := range tests {

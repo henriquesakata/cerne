@@ -41,7 +41,7 @@ func TestCompileRefusesToStampAnAgentReport(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
 		body := realPage
-		if strings.Contains(string(raw), `de wiki \"finance\"`) {
+		if strings.Contains(string(raw), `wiki page \"finance\"`) {
 			body = agentReport
 		}
 		text, _ := json.Marshal(body)

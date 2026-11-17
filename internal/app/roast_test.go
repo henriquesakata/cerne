@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/henriquesakata/cerne/internal/doclang"
 )
 
 // stubRoastProvider lets each test script the model per prompt and observe
@@ -48,14 +50,14 @@ func TestBuildRoastPromptContract(t *testing.T) {
 		t.Fatalf("RoastPersonas = %d, want exactly 3", len(RoastPersonas))
 	}
 	for _, p := range RoastPersonas {
-		prompt := BuildRoastPrompt(p, "F-0001", "Login social", "## Problema\n\nSenha fraca.")
+		prompt := BuildRoastPrompt(doclang.PT, p, "F-0001", "Login social", "## Problema\n\nSenha fraca.")
 		for _, want := range []string{
-			"trecho EXATO",
-			"nunca aprove nem reprove",
-			"contexto fresco",
-			"no máximo 5",
-			"=== SPEC (início) ===",
-			"=== SPEC (fim) ===",
+			"EXACT passage",
+			"never approve or reject",
+			"fresh context",
+			"at most 5",
+			"=== SPEC (start) ===",
+			"=== SPEC (end) ===",
 			"Login social",
 			"Senha fraca.",
 			p.Lens,
@@ -78,7 +80,7 @@ func TestRunRoastParallel(t *testing.T) {
 		delay: 50 * time.Millisecond,
 		reply: func(context.Context, string) (string, error) { return "- [alta] achado — trecho: \"x\"", nil },
 	}
-	rep := RunRoast(context.Background(), stub, "F-0001", "t", "spec", time.Second)
+	rep := RunRoast(context.Background(), stub, doclang.PT, "F-0001", "t", "spec", time.Second)
 	if rep.Partial {
 		t.Fatalf("Partial = true on a clean round: %+v", rep)
 	}
@@ -112,7 +114,7 @@ func TestRunRoastPartial(t *testing.T) {
 			return "- [média] ok — trecho: \"y\"", nil
 		},
 	}
-	rep := RunRoast(context.Background(), stub, "F-0001", "t", "spec", 50*time.Millisecond)
+	rep := RunRoast(context.Background(), stub, doclang.PT, "F-0001", "t", "spec", 50*time.Millisecond)
 	if !rep.Partial {
 		t.Fatalf("Partial = false, want true: %+v", rep)
 	}

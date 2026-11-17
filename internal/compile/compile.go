@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/store"
 	"github.com/henriquesakata/cerne/internal/wiki"
@@ -30,7 +31,7 @@ type EntitySource struct {
 	Title   string
 	Content string // ORIGINAL source content — what InputHash hashes (dirty-tracking)
 	// promptContent is Content with references to superseded entities resolved to
-	// their terminal successor ("D-0002 (antes D-0003)"); it feeds the prompt only,
+	// their terminal successor ("D-0002 (formerly D-0003)"); it feeds the prompt only,
 	// so the rewrite never changes InputHash. Empty means "use Content unchanged".
 	promptContent string
 }
@@ -280,24 +281,25 @@ func excerpt(content string) string {
 	if nl := strings.LastIndexByte(head, '\n'); nl > 0 {
 		head = head[:nl]
 	}
-	return head + "\n…(conteúdo truncado)"
+	return head + "\n…(content truncated)"
 }
 
-// BuildPagePrompt renders the deterministic synthesis prompt for a page: the
+// BuildPagePrompt renders the deterministic synthesis prompt for a page, in
+// English, closed by the reply-language line of the project (F-0447): the
 // instruction plus every source with its state and a bounded excerpt of its
 // content. The text the LLM returns is the page body; cerne stamps the
 // provenance frontmatter on ingest. The instruction states the output contract
 // ValidatePageBody enforces on the way back in (F-0287).
-func BuildPagePrompt(p Page) string {
+func BuildPagePrompt(l doclang.Lang, p Page) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Sintetize a página de wiki \"%s\" do projeto a partir das fontes vigentes abaixo.\n", p.Name)
-	b.WriteString("Escreva markdown em pt-BR: visão geral + como as partes se relacionam hoje. ")
-	b.WriteString("Respeite o estado de cada fonte e não invente o que não está nas fontes.\n")
+	fmt.Fprintf(&b, "Synthesize the project's wiki page \"%s\" from the current sources below.\n", p.Name)
+	b.WriteString("Write markdown: an overview + how the parts relate today. ")
+	b.WriteString("Respect the state of each source and do not invent what is not in the sources.\n")
 	// F-0287: this prompt is answered by a Claude Code session, not by a bare
 	// completion endpoint. Say what the answer IS, or it may answer with a
 	// report about having produced it elsewhere.
-	b.WriteString("Devolva SOMENTE o markdown da página na saída padrão, começando por um título \"# \". ")
-	b.WriteString("Não escreva arquivos, não use ferramentas e não relate o que você fez.\n\n")
+	b.WriteString("Return ONLY the page's markdown on standard output, starting with a \"# \" title. ")
+	b.WriteString("Do not write files, do not use tools and do not report what you did.\n\n")
 	for _, s := range p.Sources {
 		content := s.Content
 		if s.promptContent != "" {
@@ -305,6 +307,7 @@ func BuildPagePrompt(p Page) string {
 		}
 		fmt.Fprintf(&b, "## %s — %s (%s, %s)\n\n%s\n\n", s.ID, s.Title, s.Kind, s.State, excerpt(strings.TrimSpace(content)))
 	}
+	b.WriteString(doclang.Reply(l))
 	return b.String()
 }
 

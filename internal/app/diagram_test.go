@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/store"
 )
@@ -19,7 +20,7 @@ import (
 func TestBuildSequenceDiagramPrompt(t *testing.T) {
 	f := store.Feature{ID: "F-0007", Title: "Conciliação bancária", Module: "finance", State: domain.StateCandidate}
 	structure := "internal/finance/ledger.go\ninternal/finance/recon.go"
-	prompt := BuildSequenceDiagramPrompt(f, "## Problema\n\nFalta conciliar.", structure)
+	prompt := BuildSequenceDiagramPrompt(doclang.PT, f, "## Problema\n\nFalta conciliar.", structure)
 	for _, want := range []string{
 		"F-0007", "Conciliação bancária", "finance", "sequenceDiagram",
 		"internal/finance/recon.go",    // the structure is embedded
@@ -40,7 +41,7 @@ func TestBuildSequenceDiagramPrompt(t *testing.T) {
 // structure section but still produces a valid Mermaid-asking prompt.
 func TestBuildSequenceDiagramPromptNoStructure(t *testing.T) {
 	f := store.Feature{ID: "F-0001", Title: "Login", State: domain.StateCandidate}
-	prompt := BuildSequenceDiagramPrompt(f, "", "")
+	prompt := BuildSequenceDiagramPrompt(doclang.PT, f, "", "")
 	if strings.Contains(prompt, "Project structure") {
 		t.Fatalf("empty structure should omit the structure section:\n%s", prompt)
 	}

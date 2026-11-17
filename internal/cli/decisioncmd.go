@@ -11,12 +11,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/henriquesakata/cerne/internal/app"
-	"github.com/henriquesakata/cerne/internal/dectmpl"
 	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/llm"
 	"github.com/henriquesakata/cerne/internal/slug"
-	"github.com/henriquesakata/cerne/internal/spectmpl"
 	"github.com/henriquesakata/cerne/internal/store"
 	"github.com/henriquesakata/cerne/internal/verbs"
 )
@@ -331,7 +329,7 @@ func runDecisionDraft(cmd *cobra.Command, dir, id string) error {
 		return err
 	}
 	current := readDecisionCurrent(ctx.repoDir, id)
-	prompt := draftPromptIn(store.DocsLanguage(ctx.repoDir), doclang.Decision, BuildDecisionDraftPrompt(d, current))
+	prompt := BuildDecisionDraftPrompt(store.DocsLanguage(ctx.repoDir), d, current)
 	out := cmd.OutOrStdout()
 
 	// delegation (default): print the prompt for the host agent to draft inline.
@@ -375,34 +373,33 @@ func readDecisionCurrent(repoDir, id string) string {
 	return string(data)
 }
 
-// BuildDecisionDraftPrompt assembles the pt-BR prompt instructing the LLM to write
+// BuildDecisionDraftPrompt assembles the English prompt instructing the LLM to write
 // a COMPLETE ADR from the decision's id/title and the current stub or content. It
 // requests the canonical dectmpl.Sections in order and the authoring rules: named
 // forces in the context, the decision stated imperatively, negative consequences
-// always listed, alternatives with why-rejected, the [ESCLARECER] ambiguity
+// always listed, alternatives with why-rejected, the ambiguity
 // marker, and right-sizing (status is cerne data, never a prose section).
-func BuildDecisionDraftPrompt(d store.Decision, currentContent string) string {
+func BuildDecisionDraftPrompt(l doclang.Lang, d store.Decision, currentContent string) string {
 	var b strings.Builder
-	b.WriteString("Você está escrevendo um registro de decisão de arquitetura (ADR) de software, em português do Brasil.\n\n")
-	b.WriteString("Decisão:\n")
+	b.WriteString("You are writing a software architecture decision record (ADR).\n\n")
+	b.WriteString("Decision:\n")
 	fmt.Fprintf(&b, "- id: %s\n", d.ID)
-	fmt.Fprintf(&b, "- título: %s\n\n", d.Title)
-	b.WriteString("Conteúdo atual do ADR (stub ou rascunho parcial; pode estar vazio):\n")
+	fmt.Fprintf(&b, "- title: %s\n\n", d.Title)
+	b.WriteString("Current ADR content (stub or partial draft; may be empty):\n")
 	b.WriteString("---\n")
 	b.WriteString(strings.TrimSpace(currentContent))
 	b.WriteString("\n---\n\n")
-	b.WriteString("Escreva um ADR COMPLETO e coerente, em Markdown, com exatamente estas seções nesta ordem:\n")
-	for _, s := range dectmpl.Sections {
-		b.WriteString("## " + s + "\n")
-	}
-	b.WriteString("\nRegras de autoria:\n")
-	b.WriteString("- No Contexto, nomeie as forças e restrições em tensão e o gatilho (por que agora); ancore no real (código, caso).\n")
-	b.WriteString("- Enuncie a Decisão no imperativo (\"Vamos X\" / \"Usaremos X\") com as 2-3 razões que a fizeram vencer.\n")
-	b.WriteString("- Em Consequências, liste SEMPRE as negativas/trade-offs e as restrições/invariantes, não só os benefícios.\n")
-	b.WriteString("- Em Alternativas consideradas, dê 2+ opções com prós/contras e por que foram rejeitadas.\n")
-	b.WriteString("- Marque qualquer incerteza com \"" + spectmpl.AmbiguityMarker + " pergunta específica]\" em vez de supor.\n")
-	b.WriteString("- Dimensione pela decisão: se trivial, Alternativas/Implementação podem ser \"N/A\". Não escreva seção de status (o cerne gerencia active/superseded).\n")
-	b.WriteString("- O título registra a decisão tomada, não a pergunta (\"Usar X\", não \"Devemos usar X?\"). Um ADR aceito é registro histórico — para mudar de rumo, supersede; não reescreva.\n\n")
-	b.WriteString("Não inclua frontmatter (o cerne carimba o cerne_id). " + app.DraftOutputContract + "\n")
+	b.WriteString("Write a COMPLETE, coherent ADR, in Markdown, with exactly these sections in this order:\n")
+	writeSections(&b, doclang.Decision, l)
+	b.WriteString("\nAuthoring rules:\n")
+	b.WriteString("- In " + heading(doclang.Decision, l, "Context") + ", name the forces and constraints in tension and the trigger (why now); anchor in the real (code, case).\n")
+	b.WriteString("- State the " + heading(doclang.Decision, l, "Decision") + " in the imperative (" + doclang.Examples(l).DecisionVoice + ") with the 2-3 reasons that made it win.\n")
+	b.WriteString("- In " + heading(doclang.Decision, l, "Consequences") + ", ALWAYS list the negatives/trade-offs and the constraints/invariants, not only the benefits.\n")
+	b.WriteString("- In " + heading(doclang.Decision, l, "Alternatives considered") + ", give 2+ options with pros/cons and why they were rejected.\n")
+	b.WriteString("- Mark any uncertainty with the ambiguity marker instead of guessing.\n")
+	b.WriteString("- Size by the decision: if trivial, " + heading(doclang.Decision, l, "Alternatives considered") + "/" + heading(doclang.Decision, l, "Implementation and relations") + " may be \"N/A\". Do not write a status section (cerne manages active/superseded).\n")
+	b.WriteString("- The title records the decision taken, not the question (" + doclang.Examples(l).DecisionTitle + "). An accepted ADR is a historical record — to change course, supersede it; do not rewrite it.\n\n")
+	b.WriteString("Do not include frontmatter (cerne stamps the cerne_id). " + app.DraftOutputContract + "\n")
+	b.WriteString(doclang.Directive(l))
 	return b.String()
 }

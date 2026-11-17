@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/index"
 	"github.com/henriquesakata/cerne/internal/store"
@@ -403,7 +404,7 @@ func TestRetrieveNaturalLanguageQuestion(t *testing.T) {
 }
 
 func TestBuildAskPrompt(t *testing.T) {
-	prompt := BuildAskPrompt("por que abandonamos boletos?", []Snippet{
+	prompt := BuildAskPrompt(doclang.PT, "por que abandonamos boletos?", []Snippet{
 		{Source: "F-0002", Kind: "feature", State: "superseded", Text: "boletos antigos"},
 	}, true)
 	for _, want := range []string{"por que abandonamos boletos?", "F-0002", "superseded", "boletos antigos"} {
@@ -416,10 +417,10 @@ func TestBuildAskPrompt(t *testing.T) {
 // TestBuildAskPromptAnnotatesExternalURL: a snippet carrying a URL (external
 // reference) surfaces that URL in the prompt so the answer can cite the source.
 func TestBuildAskPromptAnnotatesExternalURL(t *testing.T) {
-	prompt := BuildAskPrompt("como configurar PKCE?", []Snippet{
+	prompt := BuildAskPrompt(doclang.PT, "como configurar PKCE?", []Snippet{
 		{Source: "R-0042", Kind: "reference", State: "current", URL: "https://example.com/pkce", Text: "use S256"},
 	}, true)
-	for _, want := range []string{"R-0042", "referência externa", "https://example.com/pkce"} {
+	for _, want := range []string{"R-0042", "external reference", "https://example.com/pkce"} {
 		if !contains(prompt, want) {
 			t.Fatalf("prompt missing %q:\n%s", want, prompt)
 		}
@@ -429,10 +430,10 @@ func TestBuildAskPromptAnnotatesExternalURL(t *testing.T) {
 // TestBuildAskPromptNoPreamble: with preamble=false the instruction scaffold is
 // dropped, but the question and the sources stay.
 func TestBuildAskPromptNoPreamble(t *testing.T) {
-	prompt := BuildAskPrompt("por que abandonamos boletos?", []Snippet{
+	prompt := BuildAskPrompt(doclang.PT, "por que abandonamos boletos?", []Snippet{
 		{Source: "F-0002", Kind: "feature", State: "superseded", Text: "boletos antigos"},
 	}, false)
-	if contains(prompt, "Responda em pt-BR") || contains(prompt, "Respeite o estado") {
+	if contains(prompt, "Answer using only") || contains(prompt, "Respect the state") {
 		t.Fatalf("preamble=false must omit the instruction:\n%s", prompt)
 	}
 	for _, want := range []string{"por que abandonamos boletos?", "F-0002", "boletos antigos"} {
@@ -449,23 +450,23 @@ func TestBuildAskPromptHistoricalLabel(t *testing.T) {
 		{Source: "F-0344", Kind: "feature", State: "implemented", Historical: true, Text: "era compose"},
 		{Source: "D-0047", Kind: "decision", State: "active", Text: "plataforma k8s"},
 	}
-	got := BuildAskPrompt("ambiente?", snips, false)
-	if !strings.Contains(got, "## F-0344 (feature, implemented — registro histórico)") {
+	got := BuildAskPrompt(doclang.PT, "ambiente?", snips, false)
+	if !strings.Contains(got, "## F-0344 (feature, implemented — historical record)") {
 		t.Fatalf("historical header missing label:\n%s", got)
 	}
-	if strings.Contains(got, "## D-0047 (decision, active — registro histórico)") {
+	if strings.Contains(got, "## D-0047 (decision, active — historical record)") {
 		t.Fatalf("live source wrongly labeled historical:\n%s", got)
 	}
 }
 
 func TestBuildAskPromptPreamblePrecedence(t *testing.T) {
 	snips := []Snippet{{Source: "D-0001", Kind: "decision", State: "active", Text: "x"}}
-	withPre := BuildAskPrompt("q", snips, true)
-	if !strings.Contains(withPre, "registro histórico") || !strings.Contains(withPre, "precedência") {
+	withPre := BuildAskPrompt(doclang.PT, "q", snips, true)
+	if !strings.Contains(withPre, "historical record") || !strings.Contains(withPre, "take precedence") {
 		t.Fatalf("preamble missing precedence instruction:\n%s", withPre)
 	}
-	noPre := BuildAskPrompt("q", snips, false)
-	if strings.Contains(noPre, "precedência") {
+	noPre := BuildAskPrompt(doclang.PT, "q", snips, false)
+	if strings.Contains(noPre, "take precedence") {
 		t.Fatalf("precedence instruction leaked without preamble:\n%s", noPre)
 	}
 }
@@ -538,13 +539,13 @@ func TestRetrieveOneSourcePerEntity(t *testing.T) {
 // TestBuildAskPromptCarriesTitle (B-0004): the header names the source's title
 // after its id; with URL/historical suffixes they keep working.
 func TestBuildAskPromptCarriesTitle(t *testing.T) {
-	prompt := BuildAskPrompt("q", []Snippet{
+	prompt := BuildAskPrompt(doclang.PT, "q", []Snippet{
 		{Source: "F-0004", Kind: "feature", State: "in_development", Title: "Notifications", Text: "x"},
 		{Source: "R-0042", Kind: "reference", State: "current", Title: "PKCE", URL: "https://example.com/p", Historical: true, Text: "y"},
 	}, false)
 	for _, want := range []string{
 		"## F-0004 — Notifications (feature, in_development)\n",
-		"## R-0042 — PKCE (reference, current — registro histórico, referência externa: https://example.com/p)\n",
+		"## R-0042 — PKCE (reference, current — historical record, external reference: https://example.com/p)\n",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing %q:\n%s", want, prompt)
@@ -580,4 +581,30 @@ func TestRetrieveCarriesTitle(t *testing.T) {
 		}
 	}
 	t.Fatalf("F-0009 missing: %+v", snips)
+}
+
+// TestBuildAskPromptGoldens (F-0447 crit. 1, 2): the answering prompt in both
+// languages, closed by the reply-language line. Regenerate only on a deliberate
+// prompt change: PROMPT_GOLDEN_UPDATE=1.
+func TestBuildAskPromptGoldens(t *testing.T) {
+	snips := []Snippet{
+		{Source: "F-0344", Kind: "feature", State: "implemented", Title: "Compose", Historical: true, Text: "it was compose"},
+		{Source: "R-0042", Kind: "reference", State: "current", Title: "PKCE", URL: "https://example.org/p", Text: "use S256"},
+	}
+	for _, l := range []doclang.Lang{doclang.PT, doclang.EN} {
+		got := BuildAskPrompt(l, "which environment?", snips, true)
+		golden := filepath.Join("testdata", "ask_"+string(l)+".golden")
+		if os.Getenv("PROMPT_GOLDEN_UPDATE") == "1" {
+			if err := os.WriteFile(golden, []byte(got), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		want, err := os.ReadFile(golden)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != string(want) {
+			t.Errorf("the %s ask prompt differs from %s", l, golden)
+		}
+	}
 }

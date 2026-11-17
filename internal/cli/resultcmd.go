@@ -11,8 +11,6 @@ import (
 	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/llm"
 	"github.com/henriquesakata/cerne/internal/project"
-	"github.com/henriquesakata/cerne/internal/restmpl"
-	"github.com/henriquesakata/cerne/internal/spectmpl"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -59,7 +57,7 @@ func runResultDraft(cmd *cobra.Command, dir, id string) error {
 	spec := readFeatureDoc(ctx.repoDir, id, "spec.md")
 	plan := readFeatureDoc(ctx.repoDir, id, "plan.md")
 	current := readFeatureDoc(ctx.repoDir, id, "result.md")
-	prompt := draftPromptIn(store.DocsLanguage(ctx.repoDir), doclang.Result, BuildResultDraftPrompt(f, spec, plan, current))
+	prompt := BuildResultDraftPrompt(store.DocsLanguage(ctx.repoDir), f, spec, plan, current)
 	out := cmd.OutOrStdout()
 
 	// delegation (default): print the prompt for the host agent to draft inline.
@@ -99,49 +97,50 @@ func runResultDraft(cmd *cobra.Command, dir, id string) error {
 	return nil
 }
 
-// BuildResultDraftPrompt assembles the pt-BR prompt instructing the LLM to write a
+// BuildResultDraftPrompt assembles the English prompt instructing the LLM to write a
 // COMPLETE result (closeout) for a feature, feeding the spec (the acceptance
 // criteria to verify) and the plan (what "done" was) as context. It requests the
 // canonical restmpl.Sections in order and the authoring rules: what shipped (not
 // planned), binary acceptance 1:1 with the numbered spec criteria backed by
-// evidence, honest debts as concrete follow-ups, the [ESCLARECER] ambiguity
+// evidence, honest debts as concrete follow-ups, the ambiguity
 // marker, and right-sizing.
-func BuildResultDraftPrompt(f store.Feature, specContent, planContent, currentContent string) string {
+func BuildResultDraftPrompt(l doclang.Lang, f store.Feature, specContent, planContent, currentContent string) string {
 	module := f.Module
 	if module == "" {
-		module = "(sem módulo)"
+		module = "(no module)"
 	}
+	d := func(t doclang.Term) string { return doclang.Display(t, l) }
 	var b strings.Builder
-	b.WriteString("Você está escrevendo o RESULTADO (registro de entrega) de uma feature de software, em português do Brasil.\n\n")
+	b.WriteString("You are writing the RESULT (delivery record) of a software feature.\n\n")
 	b.WriteString("Feature:\n")
 	fmt.Fprintf(&b, "- id: %s\n", f.ID)
-	fmt.Fprintf(&b, "- título: %s\n", f.Title)
-	fmt.Fprintf(&b, "- módulo: %s\n\n", module)
-	b.WriteString("Spec (CONTEXTO — os critérios de aceitação numerados a verificar):\n")
+	fmt.Fprintf(&b, "- title: %s\n", f.Title)
+	fmt.Fprintf(&b, "- module: %s\n\n", module)
+	b.WriteString("Spec (CONTEXT — the numbered acceptance criteria to verify):\n")
 	b.WriteString("---\n")
 	b.WriteString(strings.TrimSpace(specContent))
 	b.WriteString("\n---\n\n")
-	b.WriteString("Plano (CONTEXTO — o que era \"pronto\"):\n")
+	b.WriteString("Plan (CONTEXT — what \"done\" was):\n")
 	b.WriteString("---\n")
 	b.WriteString(strings.TrimSpace(planContent))
 	b.WriteString("\n---\n\n")
-	b.WriteString("Conteúdo atual do resultado (stub ou rascunho parcial; pode estar vazio):\n")
+	b.WriteString("Current result content (stub or partial draft; may be empty):\n")
 	b.WriteString("---\n")
 	b.WriteString(strings.TrimSpace(currentContent))
 	b.WriteString("\n---\n\n")
-	b.WriteString("Escreva um resultado COMPLETO e honesto, em Markdown, com exatamente estas seções nesta ordem:\n")
-	for _, s := range restmpl.Sections {
-		b.WriteString("## " + s + "\n")
-	}
-	b.WriteString("\nRegras de autoria:\n")
-	b.WriteString("- Registre o que foi ENTREGUE, não o que se planejou.\n")
-	b.WriteString("- Na Aceitação, verifique cada critério numerado da spec como ATENDIDO/PENDENTE com EVIDÊNCIA (nome do teste, arquivo:linha, números) — binário, 1:1, nada de \"parece pronto\".\n")
-	b.WriteString("- Mostre evidência, não afirmação. Débitos e itens adiados viram follow-ups concretos (feature/caso novo), não TODO órfão.\n")
-	b.WriteString("- Marque qualquer incerteza com \"" + spectmpl.AmbiguityMarker + " pergunta específica]\" em vez de supor.\n")
-	b.WriteString("- Dimensione pelo trabalho: entrega pequena tem seções curtas; \"N/A\" onde não se aplica (nunca na seção Gauntlet). Não infle.\n")
-	b.WriteString("- Na seção Gauntlet, transcreva só o registro real do loop que estiver no conteúdo atual ou no plano: a linha Barra:, uma linha Rodada N — <veredito>: \"<citação do juiz>\" por rodada e a linha Achados do crítico. O cerne feature complete confere esse registro: nunca invente rodada, veredito, citação do juiz ou dispensa. Sem o registro, escreva na seção só \"" + spectmpl.AmbiguityMarker + " registro do Gauntlet: barra, rodadas com o veredito citado do juiz e disposição dos achados]\".\n")
-	b.WriteString("- Nos METADADOS, emita \"**Agente:** <id do modelo> · esforço <nível>\" com o id CONCRETO do modelo e o esforço com que VOCÊ está rodando — o nível na escala do seu harness (ex.: low/medium/high) — ou \"**Agente:** humano\"; se não souber um dos dois, escreva \"desconhecido\" só nele (ex.: \"" + project.LLMConfig{}.WithDefaults().Model + " · esforço desconhecido\"), nunca um palpite nem uma categoria genérica.\n\n")
-	b.WriteString("Use a spec, o plano e o título acima como contexto. Não inclua frontmatter (o cerne carimba o cerne_id). ")
+	b.WriteString("Write a COMPLETE, honest result, in Markdown, with exactly these sections in this order:\n")
+	writeSections(&b, doclang.Result, l)
+	b.WriteString("\nAuthoring rules:\n")
+	b.WriteString("- Record what was DELIVERED, not what was planned.\n")
+	b.WriteString("- In " + heading(doclang.Result, l, "Acceptance") + ", verify each numbered spec criterion as met/unmet (the marks of the language note) with EVIDENCE (test name, file:line, numbers) — binary, 1:1, no \"looks done\".\n")
+	b.WriteString("- Show evidence, not assertion. Debts and deferred items become concrete follow-ups (a new feature/case), not an orphan TODO.\n")
+	b.WriteString("- Mark any uncertainty with the ambiguity marker instead of guessing.\n")
+	b.WriteString("- Size by the work: a small delivery has short sections; \"N/A\" where it does not apply (never in the " + heading(doclang.Result, l, "Gauntlet") + " section). Do not inflate.\n")
+	b.WriteString("- In the " + heading(doclang.Result, l, "Gauntlet") + " section, transcribe only the real record of the loop found in the current content or in the plan: the `" + d(doclang.BarLabel) + ":` line, one line `" + d(doclang.Round) + " N — <verdict>: \"<quote of the judge>\"` per round and the `" + d(doclang.CriticFindings) + ":` line. " +
+		"cerne feature complete checks this record: never invent a round, a verdict, a judge quote or a waiver. Without the record, write in the section only the ambiguity marker followed by a question naming what is missing (the bar, the rounds with the judge's quoted verdict, the disposition of the findings) and a closing bracket.\n")
+	b.WriteString("- In the METADATA, emit the Agent line with the CONCRETE id of the model and the effort YOU are running with — the level on your harness's scale (e.g. low/medium/high) — or the human form; if you do not know one of the two, write the unknown value only in it (e.g. the id \"" + project.LLMConfig{}.WithDefaults().Model + "\" with the effort unknown), never a guess nor a generic category.\n\n")
+	b.WriteString("Use the spec, the plan and the title above as context. Do not include frontmatter (cerne stamps the cerne_id). ")
 	b.WriteString(app.DraftOutputContract + "\n")
+	b.WriteString(doclang.Directive(l))
 	return b.String()
 }

@@ -64,16 +64,16 @@ func BuildTurnContext(repoDir, dbPath, userMsg string, budget int) (TurnContext,
 	var sources []TurnSource
 	if lines, src := activeDecisionLines(decisions); len(lines) > 0 {
 		sources = append(sources, src...)
-		body.WriteString("Decisões ativas do projeto:\n")
+		body.WriteString("Active project decisions:\n")
 		body.WriteString(strings.Join(lines, "\n") + "\n\n")
 	}
 	if lines, src := conventionNoteLines(notes); len(lines) > 0 {
 		sources = append(sources, src...)
-		body.WriteString("Convenções registradas (notas; consulte com cerne note show <id> quando precisar do texto):\n")
+		body.WriteString("Registered conventions (notes; consult with cerne note show <id> when you need the text):\n")
 		body.WriteString(strings.Join(lines, "\n") + "\n\n")
 	}
 	if len(snips) > 0 {
-		body.WriteString("Trechos recuperados do backend, relevantes à mensagem do usuário:\n")
+		body.WriteString("Passages retrieved from the backend, relevant to the user's message:\n")
 		for _, s := range snips {
 			sources = append(sources, TurnSource{ID: s.Source, Title: s.Title, Kind: "retrieved", State: s.State})
 			fmt.Fprintf(&body, "- %s [%s]: %s\n", s.Source, s.State, strings.TrimSpace(s.Text))
@@ -83,7 +83,7 @@ func BuildTurnContext(repoDir, dbPath, userMsg string, budget int) (TurnContext,
 	if body.Len() == 0 {
 		return TurnContext{}, nil
 	}
-	return TurnContext{Prompt: "Contexto recuperado do projeto (injetado automaticamente pelo cerne; o estado ao lado de cada id é a verdade atual):\n\n" + body.String(), Sources: sources}, nil
+	return TurnContext{Prompt: "Project context retrieved (injected automatically by cerne; the state next to each id is the current truth):\n\n" + body.String(), Sources: sources}, nil
 }
 
 // perSourceBudget splits the character budget evenly across the sources, so a

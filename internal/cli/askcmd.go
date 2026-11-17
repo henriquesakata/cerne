@@ -14,6 +14,7 @@ import (
 	"github.com/henriquesakata/cerne/internal/index"
 	"github.com/henriquesakata/cerne/internal/llm"
 	"github.com/henriquesakata/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // askOpts groups the ask flags that shape retrieval and output, so runAsk keeps
@@ -100,7 +101,7 @@ func runAsk(cmd *cobra.Command, dir, query string, opts askOpts) error {
 		}{snippets, syncedAtJSON(synced)})
 	}
 
-	prompt := ask.BuildAskPrompt(query, snippets, !opts.noPreamble)
+	prompt := ask.BuildAskPrompt(store.DocsLanguage(ctx.repoDir), query, snippets, !opts.noPreamble)
 
 	// byo-key: call the Provider and print the answer. Delegation (default)
 	// prints the assembled prompt for the host agent to answer inline.

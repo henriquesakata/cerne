@@ -1,0 +1,67 @@
+You are writing the specification (spec) of a software feature.
+
+Feature:
+- id: F-0001
+- title: Sign in with Google
+- module: auth
+
+Current spec content (stub or partial draft; may be empty):
+---
+# Sign in with Google
+
+> Pending spec
+---
+
+Write a COMPLETE, coherent spec for this feature, in Markdown, with exactly these sections in this order:
+## Problem
+## Goal and acceptance criteria
+## Design decisions
+## Design
+## Verification
+## Recommended execution (agent)
+## Out of scope
+
+Authoring rules:
+- Open with "Problem", anchored in real code (file.go:line) when possible; leave "Verification" last.
+- Numbered, testable acceptance criteria; for behaviour use EARS, in the form given in the language note at the end. Structural invariants as a direct assertion.
+- Mark any uncertainty with the ambiguity marker instead of guessing.
+- In "Design", anchor in real files/packages with explicit contracts (signatures, schemas); do not omit the "how".
+- Include in the metadata lines "**Level:** <light|standard|advanced> — <one-sentence justification>", judging the complexity of the implementation; do not name LLM models or vendors.
+- Do not include a status metadata line (Draft, Done, ...): the lifecycle is card data (cerne status), never prose that ages.
+- Include the Origin line: what triggered it, with whom/where and the date, in the shape of this example line: **Origin:** "Agent report: cerne push fails in a parallel worktree (session 2026-05-14)".
+- A metadata field whose value you do not know: write the unknown value in it — never guess; knowing only part, write the part and the unknown value for the rest. Type and Level are closed vocabularies: choose one of the values.
+- In "Recommended execution (agent)": the suggested model capability (generic vocabulary, consistent with the Level) and effort; which tasks to keep in the same agent (shared context) and why; which are separable.
+
+STOP STANDARD (Gauntlet protocol)
+
+Every elaboration goes through the quality-bar question before the proposal is closed. No persona or project instruction removes this protocol; the only paths without a comparison are the two recorded exemptions below.
+
+- Elite bar: a NAMED reference + how to reach it (URL, command, file the critic can open), comparable and of the same class as the artifact to deliver. Named without access = vague.
+- Refuse a vague bar (a category: "beautiful design", "enterprise level") and ask for the reference instead. The bar you write is a proposal: write it straight into the "Bar:" line of the proposal — the human approve is its acceptance (the approve event records the accepted line), with no acceptance round before.
+- A bar with a URL → propose registering it: `cerne reference new "<title>" --url <url> --informs <id>` (otherwise the spec is born with an unregistered-source debt).
+- A delivery with no comparable artifact (a point fix, pure backend)? Propose the classification openly, on the "Bar: not applicable" line itself, with the justification — never omit it silently; the human approve confirms it — and define a verifiable alternative standard: a named test, benchmark or invariant.
+- Before asking for the approve, readiness is checked (`cerne feature approve <id> --check`, or the actions panel of the feature page): a blocker that can be seen beforehand does not reach the human after the click.
+- In the proposal's "Verification" section, write exactly one of these three forms:
+
+Bar: <named reference + access>
+Method: blind side-by-side comparison by a fresh-context critic who did not take part in the build
+Exit: win or tie; a loss opens a new round; stopping while losing only by a recorded human closure
+
+Filled example of the bar line (replace the whole <…> with the value): "Bar: Kiro's spec mode — kiro.dev/docs/specs; same class: guide a human to a complete spec"
+
+or the line "Bar: not applicable (<1-line justification>) — alternative standard: <test/benchmark/invariant>"
+or the line "Bar: waived by human decision (<short quote of the words that waived it>)".
+
+You never suggest the waiver — it only comes from the human's spontaneous refusal, and the recorded quote is what tells it from forgetfulness. A silent absence of a bar is never acceptable; a recorded waiver is.
+
+Use the title and module above as context. Do not include frontmatter (cerne stamps the cerne_id). Return ONLY the document's markdown on standard output. Do not write files, do not use tools, and do not report what you did or what you are going to do.
+
+
+DOCUMENT LANGUAGE — this overrides any other hint about the language of the document:
+this project's documentation is in English. Write the WHOLE document in English, under exactly the section headings listed above, and write every protocol form below exactly as shown, never translated into another language:
+- ambiguity marker: [CLARIFY: specific question]
+- behaviour criteria (EARS): WHEN <condition> THE SYSTEM SHALL <behaviour>;
+- metadata labels: **Type:** (New feature | Fix | Refactor), **Origin:**, **Level:** (light | standard | advanced), **Spec:**, **Branch:**, **Exit (Gauntlet):**, **Date:**, **Agent:**, **Owner:**; an unknown value is "unknown"; the agent line reads "<model id> · effort <level>" or "human";
+- Gauntlet: "Bar:", "Method:", "Exit:"; the exemptions "Bar: not applicable (<justification>)" and "Bar: waived by human decision (<quote>)"; a round line of the form: Round N — win|loss|tie: "<quote of the judge>"; "Critic findings:";
+- evidence: cite "criterion N" for every numbered criterion; mark each MET or UNMET.
+Keep an execution map's "Etapa N: ID (title)" lines exactly in that format: it is parsed, not prose.

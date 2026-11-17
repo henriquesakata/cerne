@@ -288,7 +288,7 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 		return
 	}
 	if liveCodex {
-		sysPrompt += app.ChatCodexLiveQuery
+		sysPrompt += app.ChatCodexLiveQuery(store.DocsLanguage(repoDir))
 	}
 
 	sysPrompt += refine

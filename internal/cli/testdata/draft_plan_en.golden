@@ -1,0 +1,52 @@
+You are writing the EXECUTION PLAN of a software feature (the spec is already approved).
+
+Feature:
+- id: F-0001
+- title: Sign in with Google
+- module: auth
+
+Approved spec (CONTEXT — reference it and satisfy its numbered criteria; do NOT repeat it):
+---
+the approved spec
+---
+
+Current plan content (stub or partial draft; may be empty):
+---
+# Sign in with Google
+
+> Pending plan
+---
+
+This feature is an EPIC — it already has these tasks/children minted:
+- T-0001 (Token exchange) — state: approved
+In the "Dependencies and order" section, include an execution map in the canonical format — one line per stage, children of the same stage are parallel (the words Etapa and paralelas are parsed, keep them exactly):
+  Etapa 1: T-0001 (title)
+  Etapa 2 (paralelas): T-0002 (title) · T-0003 (title)
+Justify the chosen order and parallelism.
+
+Write a COMPLETE, executable plan, in Markdown, with exactly these sections in this order:
+## Strategy
+## Task sequence
+## Dependencies and order
+## Risks and rollback
+## Constraints for the agent
+## Definition of done
+
+Authoring rules:
+- Do not repeat the spec; reference it. The plan describes HOW to build.
+- Break the work into small, ORDERED tasks; each task leaves the repository green. Per task: real files (create/edit/remove), test first (TDD), verification (command → expected output) citing the number of the spec criterion, and the exact Conventional Commit message. Never commit a red state: the failing test is written and run first, but the commit of a task holds the test and the code that makes it pass. Mark [parallel] when a task is independent.
+- Size by the work: a trivial change (<=3 files) fits in a single task; sections that do not apply become one line ("N/A"). Do not inflate the plan.
+- Mark any uncertainty with the ambiguity marker instead of guessing.
+- "Definition of done" is a binary checklist (met/unmet marks of the language note) with file:line evidence: each spec criterion with an implementation and a test that proves it.
+
+Use the title, module and spec above as context. Do not include frontmatter (cerne stamps the cerne_id). Return ONLY the document's markdown on standard output. Do not write files, do not use tools, and do not report what you did or what you are going to do.
+
+
+DOCUMENT LANGUAGE — this overrides any other hint about the language of the document:
+this project's documentation is in English. Write the WHOLE document in English, under exactly the section headings listed above, and write every protocol form below exactly as shown, never translated into another language:
+- ambiguity marker: [CLARIFY: specific question]
+- behaviour criteria (EARS): WHEN <condition> THE SYSTEM SHALL <behaviour>;
+- metadata labels: **Type:** (New feature | Fix | Refactor), **Origin:**, **Level:** (light | standard | advanced), **Spec:**, **Branch:**, **Exit (Gauntlet):**, **Date:**, **Agent:**, **Owner:**; an unknown value is "unknown"; the agent line reads "<model id> · effort <level>" or "human";
+- Gauntlet: "Bar:", "Method:", "Exit:"; the exemptions "Bar: not applicable (<justification>)" and "Bar: waived by human decision (<quote>)"; a round line of the form: Round N — win|loss|tie: "<quote of the judge>"; "Critic findings:";
+- evidence: cite "criterion N" for every numbered criterion; mark each MET or UNMET.
+Keep an execution map's "Etapa N: ID (title)" lines exactly in that format: it is parsed, not prose.

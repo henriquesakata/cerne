@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/henriquesakata/cerne/internal/doclang"
 )
 
 // TestPlanRoastPersonasContract pins F-0275 criteria 1/2: three plan critics
@@ -21,16 +23,16 @@ func TestPlanRoastPersonasContract(t *testing.T) {
 		{Label: "PLANO", Body: "## Sequência de tarefas\n\n1. Fazer y"},
 	}
 	for _, p := range PlanRoastPersonas {
-		prompt := BuildRoastPromptFor(p, "F-0001", "Login social", PlanRoastIntro, docs)
+		prompt := BuildRoastPromptFor(doclang.PT, p, "F-0001", "Login social", PlanRoastIntro, docs)
 		for _, want := range []string{
-			"trecho EXATO",
-			"nunca aprove nem reprove",
-			"contexto fresco",
-			"no máximo 5",
-			"=== SPEC (início) ===",
-			"=== SPEC (fim) ===",
-			"=== PLANO (início) ===",
-			"=== PLANO (fim) ===",
+			"EXACT passage",
+			"never approve or reject",
+			"fresh context",
+			"at most 5",
+			"=== SPEC (start) ===",
+			"=== SPEC (end) ===",
+			"=== PLANO (start) ===",
+			"=== PLANO (end) ===",
 			"Login social",
 			"QUANDO x O SISTEMA DEVE y",
 			"1. Fazer y",
@@ -51,36 +53,36 @@ func TestPlanRoastPersonasContract(t *testing.T) {
 	// cap. Capping it would make the contract unsatisfiable on a spec with
 	// six criteria: the critic would have to break one rule or the other.
 	conf := PlanRoastPersonas[0]
-	for _, want := range []string{"critério N", "coberto pela tarefa", "descoberto"} {
+	for _, want := range []string{"{criterion} N", "{covered}", "{uncovered}"} {
 		if !strings.Contains(conf.Matrix, want) {
 			t.Errorf("conformity matrix missing %q: %s", want, conf.Matrix)
 		}
 	}
-	for _, want := range []string{"não tem teto", "não conta como achado"} {
+	for _, want := range []string{"no cap", "does not count as a finding"} {
 		if !strings.Contains(conf.Matrix, want) {
 			t.Errorf("matrix must be exempt from the finding cap, missing %q: %s", want, conf.Matrix)
 		}
 	}
-	confPrompt := BuildRoastPromptFor(conf, "F-0001", "T", PlanRoastIntro, docs)
-	if !strings.Contains(confPrompt, conf.Matrix) {
+	confPrompt := BuildRoastPromptFor(doclang.PT, conf, "F-0001", "T", PlanRoastIntro, docs)
+	if !strings.Contains(confPrompt, strings.NewReplacer("{criterion}", "critério", "{covered}", doclang.Examples(doclang.PT).Covered, "{uncovered}", doclang.Examples(doclang.PT).Uncovered).Replace(conf.Matrix)) {
 		t.Errorf("conformity prompt does not carry the matrix instruction:\n%s", confPrompt)
 	}
 	// The escape hatch must not delete the matrix on a clean plan.
-	if strings.Contains(confPrompt, "Nada relevante pela sua lente → responda exatamente") {
+	if strings.Contains(confPrompt, "Nothing relevant through your lens → answer exactly") {
 		t.Errorf("conformity prompt offers the bare no-findings escape, which erases the matrix:\n%s", confPrompt)
 	}
 	// Two documents in the prompt: an unsourced quote is ambiguous.
-	if !strings.Contains(confPrompt, "E o documento de onde veio") {
+	if !strings.Contains(confPrompt, "AND the document it came from") {
 		t.Errorf("multi-document prompt must demand the source of each quote:\n%s", confPrompt)
 	}
 	// Criterion 1(c): coverage of verification belongs to the conformity lens.
 	// The risk persona must not do that job (no per-criterion verdict) and
 	// must hand it off explicitly, so the two reports don't say the same thing.
 	risk := PlanRoastPersonas[2]
-	if strings.Contains(risk.Lens, "coberto pela tarefa") {
+	if strings.Contains(risk.Lens, "covered by task") {
 		t.Errorf("risk lens duplicates the conformity verdict: %s", risk.Lens)
 	}
-	if !strings.Contains(risk.Lens, "outro crítico") {
+	if !strings.Contains(risk.Lens, "another critic") {
 		t.Errorf("risk lens must hand criterion coverage off explicitly: %s", risk.Lens)
 	}
 }
@@ -89,8 +91,8 @@ func TestPlanRoastPersonasContract(t *testing.T) {
 // unchanged by the parametrization: same single delimited spec, no PLANO
 // fence leaking into a spec roast.
 func TestBuildRoastPromptBackCompat(t *testing.T) {
-	prompt := BuildRoastPrompt(RoastPersonas[0], "F-0002", "Título", "corpo da spec")
-	if !strings.Contains(prompt, "=== SPEC (início) ===") || !strings.Contains(prompt, "corpo da spec") {
+	prompt := BuildRoastPrompt(doclang.PT, RoastPersonas[0], "F-0002", "Título", "corpo da spec")
+	if !strings.Contains(prompt, "=== SPEC (start) ===") || !strings.Contains(prompt, "corpo da spec") {
 		t.Fatalf("spec prompt lost its document:\n%s", prompt)
 	}
 	if strings.Contains(prompt, "PLANO") {
@@ -112,7 +114,7 @@ func TestRunRoastWithPersonaSet(t *testing.T) {
 			return "- [alta] achado — trecho: \"p\"", nil
 		},
 	}
-	rep := RunRoastWith(context.Background(), prov, PlanRoastPersonas, "F-0003", "T", PlanRoastIntro, docs, time.Second)
+	rep := RunRoastWith(context.Background(), prov, doclang.PT, PlanRoastPersonas, "F-0003", "T", PlanRoastIntro, docs, time.Second)
 	if len(rep.Results) != 3 {
 		t.Fatalf("results = %d, want 3", len(rep.Results))
 	}
@@ -144,7 +146,7 @@ func TestRunRoastWithEmptyAnswer(t *testing.T) {
 	prov := &stubRoastProvider{reply: func(_ context.Context, _ string) (string, error) {
 		return "   \n", nil
 	}}
-	rep := RunRoastWith(context.Background(), prov, PlanRoastPersonas, "F-0003", "T", PlanRoastIntro, docs, time.Second)
+	rep := RunRoastWith(context.Background(), prov, doclang.PT, PlanRoastPersonas, "F-0003", "T", PlanRoastIntro, docs, time.Second)
 	if !rep.Partial || !rep.AllFailed() {
 		t.Fatalf("all-empty round: partial=%v allFailed=%v, want true/true", rep.Partial, rep.AllFailed())
 	}

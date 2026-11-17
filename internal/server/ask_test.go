@@ -149,7 +149,7 @@ func TestAskEndpointPromptStatesNoTools(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d; body: %s", rec.Code, rec.Body.String())
 	}
-	r, q, src := strings.Index(gotPrompt, "NO tools"), strings.Index(gotPrompt, "Pergunta:"), strings.Index(gotPrompt, "## F-0001")
+	r, q, src := strings.Index(gotPrompt, "NO tools"), strings.Index(gotPrompt, "Question:"), strings.Index(gotPrompt, "## F-0001")
 	if q < 0 || src < 0 || r < 0 || r > q || q > src || strings.Count(gotPrompt, "NO tools") != 1 {
 		t.Fatalf("rule must appear once before question and sources (r=%d q=%d src=%d):\n%s", r, q, src, gotPrompt)
 	}

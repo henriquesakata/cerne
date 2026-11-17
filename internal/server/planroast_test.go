@@ -58,7 +58,7 @@ func TestPlanRoast(t *testing.T) {
 		}
 	}
 	// Criterion 2: the critic saw both documents, each fenced.
-	for _, want := range []string{"=== SPEC (início) ===", "=== PLANO (início) ===", "QUANDO x O SISTEMA DEVE y", "1. Implementar y"} {
+	for _, want := range []string{"=== SPEC (start) ===", "=== PLANO (start) ===", "QUANDO x O SISTEMA DEVE y", "1. Implementar y"} {
 		if !strings.Contains(gotPrompt, want) {
 			t.Fatalf("prompt missing %q:\n%s", want, gotPrompt)
 		}

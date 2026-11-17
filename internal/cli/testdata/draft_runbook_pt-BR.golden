@@ -1,0 +1,38 @@
+You are writing a software runbook (an actionable operational procedure).
+
+Runbook:
+- id: RB-0001
+- title: Rotate the key
+
+Current runbook content (stub or partial draft; may be empty):
+---
+# Rotate the key
+
+> Pending runbook
+---
+
+Write a COMPLETE, actionable runbook, in Markdown, with exactly these sections in this order:
+## Quando usar
+## Pré-requisitos
+## Procedimento
+## Verificação
+## Rollback e troubleshooting
+
+Authoring rules:
+- In "Quando usar", make the trigger/symptoms clear so the reader confirms in seconds that this is the right runbook.
+- In "Procedimento", numbered steps, action first, copyable commands, each with its EXPECTED OUTPUT ("você deve ver: X").
+- Include "Pré-requisitos" (access/tools/state), "Verificação" (how to confirm success) and "Rollback e troubleshooting" (how to undo + whom to escalate to).
+- Mark any uncertainty with the ambiguity marker instead of guessing.
+- Size by the task: a simple runbook has short sections; "N/A" where it does not apply. Do not inflate.
+
+Do not include frontmatter (cerne stamps the cerne_id). Return ONLY the document's markdown on standard output. Do not write files, do not use tools, and do not report what you did or what you are going to do.
+
+
+DOCUMENT LANGUAGE — this overrides any other hint about the language of the document:
+this project's documentation is in Brazilian Portuguese (pt-BR). Write the WHOLE document in Brazilian Portuguese (pt-BR), under exactly the section headings listed above, and write every protocol form below exactly as shown, never translated into another language:
+- ambiguity marker: [ESCLARECER: pergunta específica]
+- behaviour criteria (EARS): QUANDO <condição> O SISTEMA DEVE <comportamento>;
+- metadata labels: **Tipo:** (Novo recurso | Corretivo | Refactor), **Origem:**, **Nível:** (leve | padrão | avançado), **Spec:**, **Branch:**, **Saída (Gauntlet):**, **Data:**, **Agente:**, **Dono:**; an unknown value is "desconhecido"; the agent line reads "<model id> · esforço <level>" or "humano";
+- Gauntlet: "Barra:", "Método:", "Saída:"; the exemptions "Barra: não aplicável (<justification>)" and "Barra: dispensada por decisão humana (<quote>)"; a round line of the form: Rodada N — vitória|derrota|empate: "<quote of the judge>"; "Achados do crítico:";
+- evidence: cite "critério N" for every numbered criterion; mark each ATENDIDO or PENDENTE.
+Keep an execution map's "Etapa N: ID (title)" lines exactly in that format: it is parsed, not prose.

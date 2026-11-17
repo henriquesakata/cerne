@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/project"
@@ -18,65 +19,66 @@ import (
 )
 
 // TestBuildSpecDraftPrompt asserts the assembled prompt carries the feature's
-// id, title and module so the model has the context it needs.
+// id, title and module, lists the template sections of the project's language
+// in order, and closes with that language's directive (F-0447).
 func TestBuildSpecDraftPrompt(t *testing.T) {
-	f := store.Feature{ID: "F-0007", Title: "Conciliação bancária", Module: "finance", State: domain.StateCandidate}
-	prompt := BuildSpecDraftPrompt(f, "# Conciliação bancária\n\n> Spec pendente")
-	for _, want := range []string{"F-0007", "Conciliação bancária", "finance"} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("prompt missing %q:\n%s", want, prompt)
-		}
+	f := store.Feature{ID: "F-0007", Title: "Bank reconciliation", Module: "finance", State: domain.StateCandidate}
+	for _, l := range doclang.Langs() {
+		t.Run(string(l), func(t *testing.T) {
+			prompt := BuildSpecDraftPrompt(l, f, "# Bank reconciliation\n\n> Pending spec")
+			for _, want := range []string{"F-0007", "Bank reconciliation", "finance"} {
+				if !strings.Contains(prompt, want) {
+					t.Fatalf("prompt missing %q:\n%s", want, prompt)
+				}
+			}
+			sections := doclang.Sections(doclang.Spec, l)
+			for _, want := range sections {
+				if !strings.Contains(prompt, "## "+want+"\n") {
+					t.Fatalf("prompt missing required section %q:\n%s", want, prompt)
+				}
+			}
+			// F-0207 criterion 3: the agent-execution section right after the
+			// verification one (mirrors spectmpl.Body's placement).
+			if i, j := strings.Index(prompt, "## "+sections[4]+"\n"), strings.Index(prompt, "## "+sections[5]+"\n"); i < 0 || j < i {
+				t.Fatalf("prompt lacks %q after %q", sections[5], sections[4])
+			}
+			if !strings.HasSuffix(prompt, doclang.Directive(l)) {
+				t.Fatalf("prompt does not end with the %s directive", l)
+			}
+			// F-0194: the prompt asks for the Level and forbids vendor model names.
+			for _, want := range []string{"the Level", "do not name LLM models or vendors", "same agent"} {
+				if !strings.Contains(prompt, want) {
+					t.Fatalf("prompt missing guidance %q:\n%s", want, prompt)
+				}
+			}
+		})
 	}
-	// All canonical template sections must be requested, in spectmpl order.
-	for _, want := range spectmpl.Sections {
-		if !strings.Contains(prompt, "## "+want) {
-			t.Fatalf("prompt missing required section %q:\n%s", want, prompt)
-		}
+	// The Portuguese level vocabulary the directive quotes is the one spectmpl owns.
+	if !strings.Contains(doclang.Directive(doclang.PT), strings.Join(spectmpl.Levels, " | ")) {
+		t.Errorf("the pt-BR directive does not quote spectmpl.Levels %q", spectmpl.Levels)
 	}
-	// The prompt must teach the ambiguity marker and the EARS phrasing.
-	for _, want := range []string{spectmpl.AmbiguityMarker, "O SISTEMA DEVE"} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("prompt missing authoring guidance %q:\n%s", want, prompt)
-		}
-	}
-	// F-0194: the prompt asks for the suggested capability level, derived from
-	// spectmpl.Levels (no duplicated literal), and forbids vendor model names.
-	for _, want := range []string{
-		"**Nível:**",
-		"<" + strings.Join(spectmpl.Levels, "|") + ">",
-		"não cite nomes de modelos",
-	} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("prompt missing capability-level guidance %q:\n%s", want, prompt)
-		}
-	}
-	// F-0207 criterion 3: the prompt asks for the agent-execution section too,
-	// right after Verificação (mirrors spectmpl.Body's placement).
-	if i, j := strings.Index(prompt, "## Verificação"), strings.Index(prompt, "## Execução recomendada (agente)"); i < 0 || j < 0 || j < i {
-		t.Fatalf("prompt missing '## Execução recomendada (agente)' after Verificação:\n%s", prompt)
-	}
-	if !strings.Contains(prompt, "mesmo agente") {
-		t.Fatalf("prompt missing same-agent-grouping guidance:\n%s", prompt)
+	if !strings.Contains(doclang.Directive(doclang.PT), spectmpl.AmbiguityMarker) {
+		t.Errorf("the pt-BR directive does not quote spectmpl.AmbiguityMarker")
 	}
 }
 
 // TestBuildSpecDraftPromptIncludesGauntletContract asserts the spec draft
 // prompt carries the Gauntlet protocol block (F-0270's marker + the three
-// literal Verificação forms), so a spec authored via CLI gets the same
-// quality-bar contract as one elaborated through the Backlog chat (F-0273).
+// literal Verification forms in the project's language), so a spec authored
+// via CLI gets the same quality-bar contract as one elaborated through the
+// Backlog chat (F-0273).
 func TestBuildSpecDraftPromptIncludesGauntletContract(t *testing.T) {
-	f := store.Feature{ID: "F-0007", Title: "Conciliação bancária", Module: "finance", State: domain.StateCandidate}
-	prompt := BuildSpecDraftPrompt(f, "")
-	for _, want := range []string{
-		app.ChatGauntletMarker,
-		"Barra:",
-		"Método:",
-		"Saída:",
-		"não aplicável",
-		"dispensada por decisão humana",
-	} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("prompt missing Gauntlet contract piece %q:\n%s", want, prompt)
+	f := store.Feature{ID: "F-0007", Title: "Bank reconciliation", Module: "finance", State: domain.StateCandidate}
+	for _, l := range doclang.Langs() {
+		prompt := BuildSpecDraftPrompt(l, f, "")
+		wants := []string{app.ChatGauntletMarker}
+		for _, term := range []doclang.Term{doclang.BarLabel, doclang.MethodLabel, doclang.ExitLabel, doclang.NotApplicable, doclang.Waived} {
+			wants = append(wants, doclang.Display(term, l))
+		}
+		for _, want := range wants {
+			if !strings.Contains(prompt, want) {
+				t.Fatalf("%s: prompt missing Gauntlet contract piece %q:\n%s", l, want, prompt)
+			}
 		}
 	}
 }
@@ -84,13 +86,14 @@ func TestBuildSpecDraftPromptIncludesGauntletContract(t *testing.T) {
 // TestSpecDraftPromptGauntletSharesSourceWithChat pins the single-source
 // requirement (F-0273 criterion 2): the Gauntlet block embedded in the spec
 // draft prompt must be byte-identical to app.GauntletContract — the same
-// constant the Backlog chat prompt uses — never a parallel copy that could
+// function the Backlog chat prompt uses — never a parallel copy that could
 // drift silently.
 func TestSpecDraftPromptGauntletSharesSourceWithChat(t *testing.T) {
-	f := store.Feature{ID: "F-0007", Title: "Conciliação bancária", Module: "finance", State: domain.StateCandidate}
-	prompt := BuildSpecDraftPrompt(f, "")
-	if !strings.Contains(prompt, app.GauntletContract) {
-		t.Fatalf("prompt does not contain app.GauntletContract verbatim:\n%s", prompt)
+	f := store.Feature{ID: "F-0007", Title: "Bank reconciliation", Module: "finance", State: domain.StateCandidate}
+	for _, l := range doclang.Langs() {
+		if !strings.Contains(BuildSpecDraftPrompt(l, f, ""), app.GauntletContract(l)) {
+			t.Fatalf("%s: prompt does not contain app.GauntletContract verbatim", l)
+		}
 	}
 }
 
@@ -212,26 +215,27 @@ func TestSpecDraftUnknownFeature(t *testing.T) {
 }
 
 // TestBuildSpecDraftPromptMetadataRules pins F-0280 criterion 4: the draft
-// prompt asks the model for the SAME three METADADOS rules the template teaches
-// — no **Status:** line, an Origem: in the shape of the shared example, and the
-// unknown-field escape hatch instead of a guess. The example and the marker come
-// from spectmpl, never restated here, so template and prompt cannot drift (the
-// drift between the two was the critic's finding in F-0279).
+// prompt asks the model for the SAME three metadata rules the template teaches
+// — no status line, an Origin in the shape of the example, and the
+// unknown-field escape hatch instead of a guess; the unknown value itself and
+// the labels come from the directive, in the project's language (F-0447).
 func TestBuildSpecDraftPromptMetadataRules(t *testing.T) {
-	f := store.Feature{ID: "F-0007", Title: "Conciliação bancária", Module: "finance", State: domain.StateCandidate}
-	prompt := BuildSpecDraftPrompt(f, "")
-	if strings.Contains(prompt, "**Status:**") {
-		t.Fatalf("prompt must not ask for a **Status:** metadata line:\n%s", prompt)
-	}
-	for _, want := range []string{
-		"cerne status",
-		"**Origem:**",
-		spectmpl.OrigemExample,
-		spectmpl.UnknownMarker,
-		"palpite",
-	} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("prompt missing METADADOS rule %q:\n%s", want, prompt)
+	f := store.Feature{ID: "F-0007", Title: "Bank reconciliation", Module: "finance", State: domain.StateCandidate}
+	for _, l := range doclang.Langs() {
+		prompt := BuildSpecDraftPrompt(l, f, "")
+		if strings.Contains(prompt, "**Status:**") {
+			t.Fatalf("prompt must not ask for a **Status:** metadata line:\n%s", prompt)
 		}
+		for _, want := range []string{"cerne status", "Origin line", "in the shape of this example line", "never guess"} {
+			if !strings.Contains(prompt, want) {
+				t.Fatalf("%s: prompt missing metadata rule %q:\n%s", l, want, prompt)
+			}
+		}
+	}
+	if !strings.Contains(doclang.Directive(doclang.PT), `"`+spectmpl.UnknownMarker+`"`) {
+		t.Errorf("the pt-BR directive does not quote spectmpl.UnknownMarker")
+	}
+	if !strings.Contains(doclang.Directive(doclang.PT), "**Origem:**") {
+		t.Errorf("the pt-BR directive does not quote the Origem label")
 	}
 }

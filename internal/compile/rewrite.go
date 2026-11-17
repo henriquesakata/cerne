@@ -17,7 +17,7 @@ var entityIDRx = regexp.MustCompile(`\b(?:RB|` + domain.FeatureIDPrefix() + `|D|
 var inlineCodeRx = regexp.MustCompile("``[^`\n]*``|`[^`\n]*`")
 
 // rewriteSupersededRefs rewrites, in content, each entity id that resolve maps to
-// a terminal successor — turning "D-0003" into "D-0002 (antes D-0003)" — so the
+// a terminal successor — turning "D-0003" into "D-0002 (formerly D-0003)" — so the
 // wiki synthesis never presents a superseded id as the current reference. Ids
 // inside fenced code blocks or inline code spans are left untouched (they are not
 // live references), and the surrounding prose is preserved verbatim. The function
@@ -53,11 +53,11 @@ func rewriteOutsideInlineCode(line string, resolve func(id string) (string, bool
 	return b.String()
 }
 
-// rewriteIDs replaces every resolvable id token in s with "<successor> (antes <id>)".
+// rewriteIDs replaces every resolvable id token in s with "<successor> (formerly <id>)".
 func rewriteIDs(s string, resolve func(id string) (string, bool)) string {
 	return entityIDRx.ReplaceAllStringFunc(s, func(id string) string {
 		if succ, ok := resolve(id); ok {
-			return fmt.Sprintf("%s (antes %s)", succ, id)
+			return fmt.Sprintf("%s (formerly %s)", succ, id)
 		}
 		return id
 	})

@@ -801,7 +801,7 @@ func handleAsk(w http.ResponseWriter, r *http.Request, repoDir, projDir, project
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	answer, err := prov.Complete(r.Context(), ask.OneShotRule+ask.BuildAskPrompt(query, snips, true))
+	answer, err := prov.Complete(r.Context(), ask.OneShotRule+ask.BuildAskPrompt(store.DocsLanguage(repoDir), query, snips, true))
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
@@ -893,7 +893,7 @@ func handleGenerateDiagram(w http.ResponseWriter, r *http.Request, repoDir, proj
 	// request forever.
 	ctx, cancel := context.WithTimeout(r.Context(), cfg.Agent.ChatTimeoutOrDefault())
 	defer cancel()
-	body, err := prov.Complete(ctx, app.BuildSequenceDiagramPrompt(f, string(specBytes), structure))
+	body, err := prov.Complete(ctx, app.BuildSequenceDiagramPrompt(store.DocsLanguage(repoDir), f, string(specBytes), structure))
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return

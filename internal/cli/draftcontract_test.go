@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -15,11 +16,11 @@ import (
 func TestDraftPromptsStateTheOutputContract(t *testing.T) {
 	f := store.Feature{ID: "F-0001", Title: "Boletos", Module: "finance"}
 	for name, prompt := range map[string]string{
-		"spec":     BuildSpecDraftPrompt(f, ""),
-		"plan":     BuildPlanDraftPrompt(f, "spec", "", nil),
-		"result":   BuildResultDraftPrompt(f, "spec", "plan", ""),
-		"decision": BuildDecisionDraftPrompt(store.Decision{ID: "D-0001", Title: "Postgres"}, ""),
-		"runbook":  BuildRunbookDraftPrompt(store.Runbook{ID: "RB-0001", Title: "Rotacionar chave"}, ""),
+		"spec":     BuildSpecDraftPrompt(doclang.PT, f, ""),
+		"plan":     BuildPlanDraftPrompt(doclang.PT, f, "spec", "", nil),
+		"result":   BuildResultDraftPrompt(doclang.PT, f, "spec", "plan", ""),
+		"decision": BuildDecisionDraftPrompt(doclang.PT, store.Decision{ID: "D-0001", Title: "Postgres"}, ""),
+		"runbook":  BuildRunbookDraftPrompt(doclang.PT, store.Runbook{ID: "RB-0001", Title: "Rotacionar chave"}, ""),
 	} {
 		if !strings.Contains(prompt, app.DraftOutputContract) {
 			t.Errorf("%s draft prompt does not state app.DraftOutputContract:\n%s", name, prompt)

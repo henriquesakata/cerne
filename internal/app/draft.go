@@ -6,6 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/henriquesakata/cerne/internal/doclang"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // ErrNoEntityDoc is returned by DriftDraftPrompt when the entity has neither a
@@ -45,6 +48,7 @@ func DriftDraftPrompt(repoDir, entityID, baseline string, changed []string) (str
 	b.WriteString("Task: write a concise errata — what the code changed, what the doc said, what now holds. ")
 	b.WriteString("Do not rewrite the document; the errata is a dated addendum.\n\n")
 	fmt.Fprintf(&b, "To apply after review:\ncerne feature errata %s --file .docs/.drift-proposals/%s.md\n", entityID, entityID)
+	b.WriteString(doclang.Reply(store.DocsLanguage(repoDir)))
 	return b.String(), nil
 }
 

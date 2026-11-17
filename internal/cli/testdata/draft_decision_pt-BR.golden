@@ -1,0 +1,40 @@
+You are writing a software architecture decision record (ADR).
+
+Decision:
+- id: D-0001
+- title: Use Postgres
+
+Current ADR content (stub or partial draft; may be empty):
+---
+# Use Postgres
+
+> Pending decision
+---
+
+Write a COMPLETE, coherent ADR, in Markdown, with exactly these sections in this order:
+## Contexto
+## Decisão
+## Consequências
+## Alternativas consideradas
+## Implementação e relações
+
+Authoring rules:
+- In "Contexto", name the forces and constraints in tension and the trigger (why now); anchor in the real (code, case).
+- State the "Decisão" in the imperative ("Vamos X" / "Usaremos X") with the 2-3 reasons that made it win.
+- In "Consequências", ALWAYS list the negatives/trade-offs and the constraints/invariants, not only the benefits.
+- In "Alternativas consideradas", give 2+ options with pros/cons and why they were rejected.
+- Mark any uncertainty with the ambiguity marker instead of guessing.
+- Size by the decision: if trivial, "Alternativas consideradas"/"Implementação e relações" may be "N/A". Do not write a status section (cerne manages active/superseded).
+- The title records the decision taken, not the question ("Usar X", não "Devemos usar X?"). An accepted ADR is a historical record — to change course, supersede it; do not rewrite it.
+
+Do not include frontmatter (cerne stamps the cerne_id). Return ONLY the document's markdown on standard output. Do not write files, do not use tools, and do not report what you did or what you are going to do.
+
+
+DOCUMENT LANGUAGE — this overrides any other hint about the language of the document:
+this project's documentation is in Brazilian Portuguese (pt-BR). Write the WHOLE document in Brazilian Portuguese (pt-BR), under exactly the section headings listed above, and write every protocol form below exactly as shown, never translated into another language:
+- ambiguity marker: [ESCLARECER: pergunta específica]
+- behaviour criteria (EARS): QUANDO <condição> O SISTEMA DEVE <comportamento>;
+- metadata labels: **Tipo:** (Novo recurso | Corretivo | Refactor), **Origem:**, **Nível:** (leve | padrão | avançado), **Spec:**, **Branch:**, **Saída (Gauntlet):**, **Data:**, **Agente:**, **Dono:**; an unknown value is "desconhecido"; the agent line reads "<model id> · esforço <level>" or "humano";
+- Gauntlet: "Barra:", "Método:", "Saída:"; the exemptions "Barra: não aplicável (<justification>)" and "Barra: dispensada por decisão humana (<quote>)"; a round line of the form: Rodada N — vitória|derrota|empate: "<quote of the judge>"; "Achados do crítico:";
+- evidence: cite "critério N" for every numbered criterion; mark each ATENDIDO or PENDENTE.
+Keep an execution map's "Etapa N: ID (title)" lines exactly in that format: it is parsed, not prose.

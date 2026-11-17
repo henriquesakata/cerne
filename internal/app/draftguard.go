@@ -21,12 +21,12 @@ var ErrNotADocument = errors.New("draft response is not a document")
 const minDraftBodyRunes = 200
 
 // DraftOutputContract is the output contract every document-draft prompt states,
-// the same one BuildPagePrompt carries (F-0287). It is pt-BR on purpose: these
-// prompts set the language of the generated document, not of the CLI chrome.
-// Exported and reused verbatim — never copied — so the five draft prompts never
-// drift, exactly like GauntletContract.
-const DraftOutputContract = "Devolva SOMENTE o markdown do documento na saída padrão. " +
-	"Não escreva arquivos, não use ferramentas e não relate o que você fez nem o que vai fazer."
+// the same one BuildPagePrompt carries (F-0287). It is English like the prompts
+// around it: the language of the generated document is the directive's job
+// (doclang.Directive, F-0447). Exported and reused verbatim — never copied — so
+// the five draft prompts never drift, exactly like GauntletContract.
+const DraftOutputContract = "Return ONLY the document's markdown on standard output. " +
+	"Do not write files, do not use tools, and do not report what you did or what you are going to do."
 
 // ValidateDraftBody reports whether body may be stamped as an authored document,
 // per the contract DraftOutputContract states. It exists because the response

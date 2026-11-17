@@ -148,3 +148,23 @@ func TestTerms(t *testing.T) {
 		t.Errorf("alt(Round) = %q", got)
 	}
 }
+
+// F-0447: a prompt looks a heading up by its English name; the same name finds
+// the same section in every language, and an unknown name is refused loudly.
+func TestSection_LooksUpByEnglishName(t *testing.T) {
+	for k, byLang := range sections {
+		for i, en := range byLang[EN] {
+			for _, l := range Langs() {
+				if got, want := Section(k, en, l), byLang[l][i]; got != want {
+					t.Errorf("Section(%v, %q, %s) = %q, want %q", k, en, l, got, want)
+				}
+			}
+		}
+	}
+	defer func() {
+		if recover() == nil {
+			t.Error("Section with an unknown name did not panic")
+		}
+	}()
+	Section(Spec, "No such section", EN)
+}

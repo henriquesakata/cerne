@@ -715,7 +715,7 @@ func TestChatInjectsProjectContext(t *testing.T) {
 	if len(fake.Prompts) != 1 {
 		t.Fatalf("provider calls = %d, want 1", len(fake.Prompts))
 	}
-	for _, want := range []string{"Contexto recuperado do projeto", "D-0001"} {
+	for _, want := range []string{"Project context retrieved", "D-0001"} {
 		if !strings.Contains(fake.Prompts[0], want) {
 			t.Fatalf("prompt missing %q:\n%s", want, fake.Prompts[0])
 		}
@@ -1215,7 +1215,7 @@ func TestCodexChatProjectFilesLocalOnly(t *testing.T) {
 		if remote {
 			wantRoot = ""
 		}
-		if rec.Code != 200 || len(fake.Prompts) != 1 || gotRoot != wantRoot || strings.Contains(fake.Prompts[0], app.ChatCodexLiveQuery) == remote {
+		if rec.Code != 200 || len(fake.Prompts) != 1 || gotRoot != wantRoot || strings.Contains(fake.Prompts[0], app.ChatCodexLiveQuery(doclang.PT)) == remote {
 			t.Fatalf("remote=%v: %d root=%q %s", remote, rec.Code, gotRoot, rec.Body.String())
 		}
 	}
@@ -1241,7 +1241,7 @@ func TestCodexChatWithoutCommitHasNoLiveQuery(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	handleChat(rec, req, repo, dir, "test")
-	if rec.Code != 200 || len(fake.Prompts) != 1 || gotRoot != "" || strings.Contains(fake.Prompts[0], app.ChatCodexLiveQuery) {
+	if rec.Code != 200 || len(fake.Prompts) != 1 || gotRoot != "" || strings.Contains(fake.Prompts[0], app.ChatCodexLiveQuery(doclang.PT)) {
 		t.Fatalf("%d root=%q %s", rec.Code, gotRoot, rec.Body.String())
 	}
 }

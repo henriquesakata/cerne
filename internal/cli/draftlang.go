@@ -6,16 +6,20 @@ import (
 	"github.com/henriquesakata/cerne/internal/doclang"
 )
 
-// draftPromptIn adapts a draft prompt for kind k to the documentation
-// language l: Portuguese is returned untouched; English gets the English
-// section headings in place of the Portuguese ones and the directive above.
-func draftPromptIn(l doclang.Lang, k doclang.Kind, prompt string) string {
-	if l != doclang.EN {
-		return prompt
+// The draft prompts are written once, in English (N-0068); the document comes
+// out in the project's documentation language l (F-0447). What a prompt may not
+// do is spell a protocol form by hand: section headings come from
+// doclang.Sections and everything else from doclang.Directive, which closes the
+// prompt in l.
+
+// writeSections lists the headings of kind k in l, in template order.
+func writeSections(b *strings.Builder, k doclang.Kind, l doclang.Lang) {
+	for _, s := range doclang.Sections(k, l) {
+		b.WriteString("## " + s + "\n")
 	}
-	pt, en := doclang.Sections(k, doclang.PT), doclang.Sections(k, doclang.EN)
-	for i := range pt {
-		prompt = strings.ReplaceAll(prompt, "## "+pt[i]+"\n", "## "+en[i]+"\n")
-	}
-	return prompt + doclang.EnglishDirective
+}
+
+// heading is section i of kind k in language l, quoted for an authoring rule.
+func heading(k doclang.Kind, l doclang.Lang, name string) string {
+	return `"` + doclang.Section(k, name, l) + `"`
 }

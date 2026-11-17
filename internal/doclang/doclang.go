@@ -185,6 +185,19 @@ func Sections(k Kind, l Lang) []string {
 	return append([]string(nil), list...)
 }
 
+// Section returns the heading of kind k in language l that is called name in
+// English — the key a prompt builder uses, so no code depends on a position in
+// the template. An English name the catalog does not have is a programmer
+// error: it panics, and every builder runs under the prompt guard.
+func Section(k Kind, name string, l Lang) string {
+	for i, en := range sections[k][EN] {
+		if en == name {
+			return Sections(k, l)[i]
+		}
+	}
+	panic("doclang: no " + name + " section in the template")
+}
+
 // Missing returns the sections of kind k that appear under none of their
 // headings in present, named in language l. A section counts as present under
 // any language's heading, so a document mixing languages is complete. Case
@@ -276,6 +289,19 @@ const (
 	// JudgeQuestionLabel opens the line under the bar that holds the question
 	// the blind judge answers (F-0381).
 	JudgeQuestionLabel
+	// AlternativeStandard follows a "not applicable" bar: "— padrão alternativo: <test>".
+	AlternativeStandard
+	// The forms of the Backlog chat (F-0447): the mark that closes the
+	// recommended option of a question card, the three origins a decision
+	// recorded in the spec carries, and the lines the interview protocol has
+	// the analyst write or the user say.
+	Recommended
+	OriginAccepted
+	OriginOther
+	OriginFree
+	Assumed
+	TreeProgress
+	ProposeNow
 	numTerms
 )
 
@@ -288,32 +314,40 @@ type form struct{ re, text string }
 // decomposed accents (a paste from macOS arrives decomposed) and the
 // unaccented spelling.
 var terms = map[Term]map[Lang]form{
-	BarLabel:           {PT: {`Barra`, "Barra"}, EN: {`Bar`, "Bar"}},
-	NotApplicable:      {PT: {`n(?:ã|a\x{0303}|a)o[\s-]+aplic(?:á|a\x{0301}|a)vel`, "não aplicável"}, EN: {`not[\s-]+applicable`, "not applicable"}},
-	Waived:             {PT: {`dispensada\s+por\s+decis(?:ã|a\x{0303}|a)o\s+humana`, "dispensada por decisão humana"}, EN: {`waived\s+by\s+human\s+decision`, "waived by human decision"}},
-	WaivedOpen:         {PT: {re: `dispensada`}, EN: {re: `waived\s+by\b`}},
-	Inherited:          {PT: {`herdad[ao]\s+de`, "herdada de"}, EN: {`inherited\s+from`, "inherited from"}},
-	MethodLabel:        {PT: {re: `M(?:é|e\x{0301}|e)todo`}, EN: {re: `Method`}},
-	ExitLabel:          {PT: {re: `Sa(?:í|i\x{0301}|i)da`}, EN: {re: `Exit`}},
-	Round:              {PT: {`Rodada`, "Rodada"}, EN: {`Round`, "Round"}},
-	CriticFindings:     {PT: {`Achados? do cr(?:í|i\x{0301}|i)tico`, "Achados do crítico"}, EN: {`Critic(?:['’]s)? findings?`, "Critic findings"}},
-	Win:                {PT: {`vit(?:ó|o\x{0301}|o)ria`, "vitória"}, EN: {`win`, "win"}},
-	Loss:               {PT: {`derrota`, "derrota"}, EN: {`loss`, "loss"}},
-	Tie:                {PT: {`empate`, "empate"}, EN: {`tie`, "tie"}},
-	VerdictLabel:       {PT: {re: `veredito`}, EN: {re: `verdict`}},
-	TieLetter:          {PT: {re: `EMPATE`}, EN: {re: `TIE`}},
-	OutcomeLabel:       {PT: {re: `veredito|resultado`}, EN: {re: `verdict|result|outcome`}},
-	Criterion:          {PT: {`crit(?:é|e\x{0301}|e)rio`, "critério"}, EN: {`criterion`, "criterion"}},
-	Criteria:           {PT: {re: `crit(?:é|e\x{0301}|e)rios`}, EN: {re: `criteria`}},
-	RangeTo:            {PT: {re: `a`}, EN: {re: `to`}},
-	ListAnd:            {PT: {re: `e`}, EN: {re: `and`}},
-	ListOr:             {PT: {re: `ou`}, EN: {re: `or`}},
-	Unmet:              {PT: {re: `PENDENTE`}, EN: {re: `UNMET`}},
-	EvidenceLabel:      {PT: {`Evid(?:ê|e\x{0302}|e)ncia`, "Evidência"}, EN: {`Evidence`, "Evidence"}},
-	IfLabel:            {PT: {`Se`, "Se"}, EN: {`If`, "If"}},
-	NextStepLabel:      {PT: {`Pr(?:ó|o\x{0301}|o)ximo passo`, "Próximo passo"}, EN: {`Next step`, "Next step"}},
-	LogLabel:           {PT: {`Di(?:á|a\x{0301}|a)rio de decis(?:õ|o\x{0303}|o)es`, "Diário de decisões"}, EN: {`Decision log`, "Decision log"}},
-	JudgeQuestionLabel: {PT: {`Pergunta ao juiz`, "Pergunta ao juiz"}, EN: {`Question for the judge`, "Question for the judge"}},
+	BarLabel:            {PT: {`Barra`, "Barra"}, EN: {`Bar`, "Bar"}},
+	NotApplicable:       {PT: {`n(?:ã|a\x{0303}|a)o[\s-]+aplic(?:á|a\x{0301}|a)vel`, "não aplicável"}, EN: {`not[\s-]+applicable`, "not applicable"}},
+	Waived:              {PT: {`dispensada\s+por\s+decis(?:ã|a\x{0303}|a)o\s+humana`, "dispensada por decisão humana"}, EN: {`waived\s+by\s+human\s+decision`, "waived by human decision"}},
+	WaivedOpen:          {PT: {re: `dispensada`}, EN: {re: `waived\s+by\b`}},
+	Inherited:           {PT: {`herdad[ao]\s+de`, "herdada de"}, EN: {`inherited\s+from`, "inherited from"}},
+	MethodLabel:         {PT: {`M(?:é|e\x{0301}|e)todo`, "Método"}, EN: {`Method`, "Method"}},
+	ExitLabel:           {PT: {`Sa(?:í|i\x{0301}|i)da`, "Saída"}, EN: {`Exit`, "Exit"}},
+	Round:               {PT: {`Rodada`, "Rodada"}, EN: {`Round`, "Round"}},
+	CriticFindings:      {PT: {`Achados? do cr(?:í|i\x{0301}|i)tico`, "Achados do crítico"}, EN: {`Critic(?:['’]s)? findings?`, "Critic findings"}},
+	Win:                 {PT: {`vit(?:ó|o\x{0301}|o)ria`, "vitória"}, EN: {`win`, "win"}},
+	Loss:                {PT: {`derrota`, "derrota"}, EN: {`loss`, "loss"}},
+	Tie:                 {PT: {`empate`, "empate"}, EN: {`tie`, "tie"}},
+	VerdictLabel:        {PT: {re: `veredito`}, EN: {re: `verdict`}},
+	TieLetter:           {PT: {re: `EMPATE`}, EN: {re: `TIE`}},
+	OutcomeLabel:        {PT: {re: `veredito|resultado`}, EN: {re: `verdict|result|outcome`}},
+	Criterion:           {PT: {`crit(?:é|e\x{0301}|e)rio`, "critério"}, EN: {`criterion`, "criterion"}},
+	Criteria:            {PT: {re: `crit(?:é|e\x{0301}|e)rios`}, EN: {re: `criteria`}},
+	RangeTo:             {PT: {re: `a`}, EN: {re: `to`}},
+	ListAnd:             {PT: {re: `e`}, EN: {re: `and`}},
+	ListOr:              {PT: {re: `ou`}, EN: {re: `or`}},
+	Unmet:               {PT: {`PENDENTE`, "PENDENTE"}, EN: {`UNMET`, "UNMET"}},
+	EvidenceLabel:       {PT: {`Evid(?:ê|e\x{0302}|e)ncia`, "Evidência"}, EN: {`Evidence`, "Evidence"}},
+	IfLabel:             {PT: {`Se`, "Se"}, EN: {`If`, "If"}},
+	NextStepLabel:       {PT: {`Pr(?:ó|o\x{0301}|o)ximo passo`, "Próximo passo"}, EN: {`Next step`, "Next step"}},
+	LogLabel:            {PT: {`Di(?:á|a\x{0301}|a)rio de decis(?:õ|o\x{0303}|o)es`, "Diário de decisões"}, EN: {`Decision log`, "Decision log"}},
+	JudgeQuestionLabel:  {PT: {`Pergunta ao juiz`, "Pergunta ao juiz"}, EN: {`Question for the judge`, "Question for the judge"}},
+	Recommended:         {PT: {`recomendada`, "recomendada"}, EN: {`recommended`, "recommended"}},
+	OriginAccepted:      {PT: {`recomenda(?:ç|c)(?:ã|a)o aceita`, "recomendação aceita"}, EN: {`recommendation accepted`, "recommendation accepted"}},
+	OriginOther:         {PT: {`outra op(?:ç|c)(?:ã|a)o`, "outra opção"}, EN: {`other option`, "other option"}},
+	OriginFree:          {PT: {`resposta livre do usu(?:á|a)rio`, "resposta livre do usuário"}, EN: {`user's free answer`, "user's free answer"}},
+	Assumed:             {PT: {`Assumi`, "Assumi:"}, EN: {`Assumed`, "Assumed:"}},
+	TreeProgress:        {PT: {`[ÁA]rvore`, "Árvore: <n> resolvidas · <n> abertas · <n> suposições"}, EN: {`Tree`, "Tree: <n> resolved · <n> open · <n> assumptions"}},
+	ProposeNow:          {PT: {`prop(?:õ|o)e j(?:á|a)`, "propõe já"}, EN: {`propose now`, "propose now"}},
+	AlternativeStandard: {PT: {`padr(?:ã|a\x{0303}|a)o alternativo`, "padrão alternativo"}, EN: {`alternative standard`, "alternative standard"}},
 }
 
 // in is term t as a regular-expression fragment in language l.

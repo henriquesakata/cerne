@@ -270,7 +270,7 @@ func TestChatUpdatesApprovedSpec(t *testing.T) {
 	if err != nil {
 		t.Fatalf("refine turn on approved: %v", err)
 	}
-	if !strings.Contains(block, "reaprovar") {
+	if !strings.Contains(block, "re-approves") {
 		t.Errorf("refine block does not warn that a new spec stales the approval:\n%s", block)
 	}
 

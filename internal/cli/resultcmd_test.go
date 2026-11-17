@@ -9,58 +9,67 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gitback"
-	"github.com/henriquesakata/cerne/internal/restmpl"
-	"github.com/henriquesakata/cerne/internal/spectmpl"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // TestBuildResultDraftPrompt asserts the assembled prompt carries the feature's
 // id/title/module, embeds the spec and plan as context, requests every canonical
-// result section in order, and teaches the result authoring rules.
+// result section of the project's language in order, and teaches the result
+// authoring rules (F-0447).
 func TestBuildResultDraftPrompt(t *testing.T) {
-	f := store.Feature{ID: "F-0007", Title: "Conciliação bancária", Module: "finance", State: domain.StateInDevelopment}
-	spec := "## Objetivo e critérios de aceitação\n\n1. QUANDO o extrato chega O SISTEMA DEVE conciliar."
-	plan := "## Definição de pronto\n\nsuíte verde; critério 1 com teste."
-	prompt := BuildResultDraftPrompt(f, spec, plan, "# Conciliação bancária\n\n> Resultado pendente")
-
-	for _, want := range []string{"F-0007", "Conciliação bancária", "finance"} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("prompt missing %q:\n%s", want, prompt)
-		}
-	}
-	// The spec (criteria) and plan (done) are fed in as context to verify against.
-	if !strings.Contains(prompt, "O SISTEMA DEVE conciliar") || !strings.Contains(prompt, "Definição de pronto") {
-		t.Fatalf("prompt should embed the spec and plan as context:\n%s", prompt)
-	}
-	// All canonical result sections must be requested, in restmpl order.
-	for _, want := range restmpl.Sections {
-		if !strings.Contains(prompt, "## "+want) {
-			t.Fatalf("prompt missing required section %q:\n%s", want, prompt)
-		}
-	}
-	// Teaches the shared ambiguity marker and the result rules: evidence, binary
-	// 1:1 acceptance.
-	for _, want := range []string{spectmpl.AmbiguityMarker, "EVIDÊNCIA", "ATENDIDO/PENDENTE", "1:1"} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("prompt missing authoring guidance %q:\n%s", want, prompt)
-		}
-	}
-	// F-0303: the Gauntlet section is transcribed from the real loop record,
-	// never invented — no record means an open clarification marker, which the
-	// complete gate then refuses (no Barra line).
-	for _, want := range []string{"Gauntlet", "nunca invente", "veredito", "dispensa", spectmpl.AmbiguityMarker + " registro do Gauntlet"} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("prompt missing the Gauntlet rule %q:\n%s", want, prompt)
-		}
-	}
-	// F-0279: the drafting agent stamps which model and effort implemented the
-	// feature, and writes "desconhecido" instead of guessing.
-	for _, want := range []string{"**Agente:**", "·", "esforço", "humano", "desconhecido"} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("prompt missing the agent stamp rule %q:\n%s", want, prompt)
-		}
+	f := store.Feature{ID: "F-0007", Title: "Bank reconciliation", Module: "finance", State: domain.StateInDevelopment}
+	spec := "## Goal\n\n1. WHEN the statement arrives THE SYSTEM SHALL reconcile."
+	plan := "## Definition of done\n\ngreen suite; criterion 1 with a test."
+	for _, l := range doclang.Langs() {
+		t.Run(string(l), func(t *testing.T) {
+			prompt := BuildResultDraftPrompt(l, f, spec, plan, "# Bank reconciliation\n\n> Pending result")
+			for _, want := range []string{"F-0007", "Bank reconciliation", "finance"} {
+				if !strings.Contains(prompt, want) {
+					t.Fatalf("prompt missing %q:\n%s", want, prompt)
+				}
+			}
+			// The spec (criteria) and plan (done) are fed in as context to verify against.
+			if !strings.Contains(prompt, "THE SYSTEM SHALL reconcile") || !strings.Contains(prompt, "Definition of done") {
+				t.Fatalf("prompt should embed the spec and plan as context:\n%s", prompt)
+			}
+			for _, want := range doclang.Sections(doclang.Result, l) {
+				if !strings.Contains(prompt, "## "+want+"\n") {
+					t.Fatalf("prompt missing required section %q:\n%s", want, prompt)
+				}
+			}
+			if !strings.HasSuffix(prompt, doclang.Directive(l)) {
+				t.Fatalf("prompt does not end with the %s directive", l)
+			}
+			// Evidence, binary 1:1 acceptance.
+			for _, want := range []string{"EVIDENCE", "met/unmet", "1:1"} {
+				if !strings.Contains(prompt, want) {
+					t.Fatalf("prompt missing authoring guidance %q:\n%s", want, prompt)
+				}
+			}
+			// F-0303: the Gauntlet section is transcribed from the real loop record,
+			// never invented — no record means an open clarification marker, which the
+			// complete gate then refuses (no bar line). The forms are the language's.
+			for _, want := range []string{
+				"never invent a round", "a question naming what is missing",
+				"`" + doclang.Display(doclang.BarLabel, l) + ":`",
+				doclang.Display(doclang.Round, l) + " N",
+				"`" + doclang.Display(doclang.CriticFindings, l) + ":`",
+			} {
+				if !strings.Contains(prompt, want) {
+					t.Fatalf("prompt missing the Gauntlet rule %q:\n%s", want, prompt)
+				}
+			}
+			// F-0279: the drafting agent stamps which model and effort implemented the
+			// feature, and writes the unknown value instead of guessing.
+			for _, want := range []string{"Agent line", "the unknown value", "never a guess"} {
+				if !strings.Contains(prompt, want) {
+					t.Fatalf("prompt missing the agent stamp rule %q:\n%s", want, prompt)
+				}
+			}
+		})
 	}
 }
 

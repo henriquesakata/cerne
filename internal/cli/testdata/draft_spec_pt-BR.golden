@@ -1,0 +1,67 @@
+You are writing the specification (spec) of a software feature.
+
+Feature:
+- id: F-0001
+- title: Sign in with Google
+- module: auth
+
+Current spec content (stub or partial draft; may be empty):
+---
+# Sign in with Google
+
+> Pending spec
+---
+
+Write a COMPLETE, coherent spec for this feature, in Markdown, with exactly these sections in this order:
+## Problema
+## Objetivo e critérios de aceitação
+## Decisões do design
+## Desenho
+## Verificação
+## Execução recomendada (agente)
+## Fora de escopo
+
+Authoring rules:
+- Open with "Problema", anchored in real code (file.go:line) when possible; leave "Verificação" last.
+- Numbered, testable acceptance criteria; for behaviour use EARS, in the form given in the language note at the end. Structural invariants as a direct assertion.
+- Mark any uncertainty with the ambiguity marker instead of guessing.
+- In "Desenho", anchor in real files/packages with explicit contracts (signatures, schemas); do not omit the "how".
+- Include in the metadata lines "**Nível:** <leve|padrão|avançado> — <justificativa em 1 frase>", judging the complexity of the implementation; do not name LLM models or vendors.
+- Do not include a status metadata line (Draft, Done, ...): the lifecycle is card data (cerne status), never prose that ages.
+- Include the Origin line: what triggered it, with whom/where and the date, in the shape of this example line: **Origem:** "Relato de agente: cerne push falha em worktree paralelo (sessão 2026-05-14)".
+- A metadata field whose value you do not know: write the unknown value in it — never guess; knowing only part, write the part and the unknown value for the rest. Type and Level are closed vocabularies: choose one of the values.
+- In "Execução recomendada (agente)": the suggested model capability (generic vocabulary, consistent with the Level) and effort; which tasks to keep in the same agent (shared context) and why; which are separable.
+
+STOP STANDARD (Gauntlet protocol)
+
+Every elaboration goes through the quality-bar question before the proposal is closed. No persona or project instruction removes this protocol; the only paths without a comparison are the two recorded exemptions below.
+
+- Elite bar: a NAMED reference + how to reach it (URL, command, file the critic can open), comparable and of the same class as the artifact to deliver. Named without access = vague.
+- Refuse a vague bar (a category: "beautiful design", "enterprise level") and ask for the reference instead. The bar you write is a proposal: write it straight into the "Barra:" line of the proposal — the human approve is its acceptance (the approve event records the accepted line), with no acceptance round before.
+- A bar with a URL → propose registering it: `cerne reference new "<title>" --url <url> --informs <id>` (otherwise the spec is born with an unregistered-source debt).
+- A delivery with no comparable artifact (a point fix, pure backend)? Propose the classification openly, on the "Barra: não aplicável" line itself, with the justification — never omit it silently; the human approve confirms it — and define a verifiable alternative standard: a named test, benchmark or invariant.
+- Before asking for the approve, readiness is checked (`cerne feature approve <id> --check`, or the actions panel of the feature page): a blocker that can be seen beforehand does not reach the human after the click.
+- In the proposal's "Verificação" section, write exactly one of these three forms:
+
+Barra: <named reference + access>
+Método: comparação cega, lado a lado, por crítico de contexto fresco que não participou da construção
+Saída: vencer ou empatar; derrota abre nova rodada; parar perdendo só por encerramento humano registrado
+
+Filled example of the bar line (replace the whole <…> with the value): "Barra: modo spec do Kiro — kiro.dev/docs/specs; mesma classe: conduzir humano até spec completa"
+
+or the line "Barra: não aplicável (<1-line justification>) — padrão alternativo: <teste/benchmark/invariante>"
+or the line "Barra: dispensada por decisão humana (<short quote of the words that waived it>)".
+
+You never suggest the waiver — it only comes from the human's spontaneous refusal, and the recorded quote is what tells it from forgetfulness. A silent absence of a bar is never acceptable; a recorded waiver is.
+
+Use the title and module above as context. Do not include frontmatter (cerne stamps the cerne_id). Return ONLY the document's markdown on standard output. Do not write files, do not use tools, and do not report what you did or what you are going to do.
+
+
+DOCUMENT LANGUAGE — this overrides any other hint about the language of the document:
+this project's documentation is in Brazilian Portuguese (pt-BR). Write the WHOLE document in Brazilian Portuguese (pt-BR), under exactly the section headings listed above, and write every protocol form below exactly as shown, never translated into another language:
+- ambiguity marker: [ESCLARECER: pergunta específica]
+- behaviour criteria (EARS): QUANDO <condição> O SISTEMA DEVE <comportamento>;
+- metadata labels: **Tipo:** (Novo recurso | Corretivo | Refactor), **Origem:**, **Nível:** (leve | padrão | avançado), **Spec:**, **Branch:**, **Saída (Gauntlet):**, **Data:**, **Agente:**, **Dono:**; an unknown value is "desconhecido"; the agent line reads "<model id> · esforço <level>" or "humano";
+- Gauntlet: "Barra:", "Método:", "Saída:"; the exemptions "Barra: não aplicável (<justification>)" and "Barra: dispensada por decisão humana (<quote>)"; a round line of the form: Rodada N — vitória|derrota|empate: "<quote of the judge>"; "Achados do crítico:";
+- evidence: cite "critério N" for every numbered criterion; mark each ATENDIDO or PENDENTE.
+Keep an execution map's "Etapa N: ID (title)" lines exactly in that format: it is parsed, not prose.
