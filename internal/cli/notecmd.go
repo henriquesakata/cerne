@@ -46,7 +46,7 @@ func newNoteListCmd(dir *string) *cobra.Command {
 		Long: "Lists notes read straight from the backend (store), not from the '.docs/' projection — so it sees the " +
 			"knowledge even when '.docs/' is stale (no 'cerne pull'). By default shows only the " +
 			"active ones; --all includes the superseded (history). Each line carries id, state, title and markers " +
-			"(durable, informs F-/D-/RB-/N-, facet/component, successor). Filter by --facet and/or --component (logical AND). " +
+			"(durable, informs F-/E-/T-/B-/D-/RB-/N-/I-, facet/component, successor). Filter by --facet and/or --component (logical AND). " +
 			"--path <file> lists the active notes that cite that file (full path, then dir suffix, then a unique bare name; newest first), the same rule as the edit hook, without its cap of 3. " +
 			"--json for structured output.",
 		Args: cobra.NoArgs,
@@ -296,7 +296,7 @@ func newNoteNewCmd(dir *string) *cobra.Command {
 		Short: "Register durable team knowledge as a note (active)",
 		Long: "Registers durable project knowledge (gotchas, invariants, tacit conventions) as an active " +
 			"note. The body is free text, from --file or standard input (when piped); without a body the note " +
-			"is born as a stub for you to fill in. Use --informs to link the note to the entities (F-/D-/RB-/N-) it " +
+			"is born as a stub for you to fill in. Use --informs to link the note to the entities (F-/E-/T-/B-/D-/RB-/N-/I-) it " +
 			"informs. Use --facet (closed axis: infra,code,data,process,auth) and --component (subsystem/tool, " +
 			"e.g. gitea,kpack) to organize — both multi-valued, comma-separated. " +
 			"A live note with a similar title refuses the creation (F-0324); --force overrides it. " +
@@ -306,7 +306,7 @@ func newNoteNewCmd(dir *string) *cobra.Command {
 			return runNoteNew(cmd, *dir, args[0], informs, file, facet, component, force)
 		},
 	}
-	cmd.Flags().StringVar(&informs, "informs", "", "comma-separated F-/D-/RB-/N- ids this note informs")
+	cmd.Flags().StringVar(&informs, "informs", "", "comma-separated F-/E-/T-/B-/D-/RB-/N-/I- ids this note informs")
 	cmd.Flags().StringVar(&file, "file", "", "file with the note body (defaults to piped stdin)")
 	cmd.Flags().StringVar(&facet, "facet", "", "facets (comma-separated; closed set: infra,code,data,process,auth)")
 	cmd.Flags().StringVar(&component, "component", "", "components (comma-separated subsystem/tool tags, e.g. gitea,kpack)")

@@ -147,7 +147,7 @@ func RetagReference(repoDir, projDir, id string, facets, components []string, se
 }
 
 // validateInforms trims, dedupes (preserving order) and checks each backlink
-// target: it must be a feature (F-), decision (D-), runbook (RB-), note (N-) or idea (I-)
+// target: it must be a feature (F-/E-/T-/B-), decision (D-), runbook (RB-), note (N-) or idea (I-)
 // that exists in the backend, so no dangling backlink is stored (F-0108 added
 // runbooks/notes — a source may inform an operational procedure or a piece of
 // tacit knowledge, not only features/decisions). Returns the cleaned list (nil
@@ -197,7 +197,7 @@ func validateInforms(repoDir string, informs []string) ([]string, error) {
 				return nil, err
 			}
 		default:
-			return nil, fmt.Errorf("--informs: %q must be a feature (F-), decision (D-), runbook (RB-), note (N-) or idea (I-)", id)
+			return nil, fmt.Errorf("--informs: %q must be a feature (F-/E-/T-/B-), decision (D-), runbook (RB-), note (N-) or idea (I-)", id)
 		}
 		out = append(out, id)
 	}
