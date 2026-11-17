@@ -69,6 +69,9 @@ const (
 	promptNotesScript = "cerne-prompt-notes.sh"
 	// promptNotesCommand is the settings.json command that runs promptNotesScript.
 	promptNotesCommand = `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-prompt-notes.sh"`
+	// promptNotesTimeout bounds the whole hook (process start included) at the
+	// host, in seconds; the lookup's own budget is far smaller.
+	promptNotesTimeout = 5
 )
 
 // Status is the outcome of installing one asset.
@@ -601,7 +604,7 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 			fresh = withMatcherEntry(fresh, "PreCompact", precompactMatcher, precompactCommand)
 		}
 		if needPN {
-			fresh = withEventEntry(fresh, "UserPromptSubmit", promptNotesCommand)
+			fresh = withTimedEventEntry(fresh, "UserPromptSubmit", promptNotesCommand, promptNotesTimeout)
 		}
 		if needActor {
 			fresh = withActorEntry(fresh)
@@ -643,7 +646,7 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 		expected = withMatcherEntry(expected, "PreCompact", precompactMatcher, precompactCommand)
 	}
 	if needPN {
-		expected = withEventEntry(expected, "UserPromptSubmit", promptNotesCommand)
+		expected = withTimedEventEntry(expected, "UserPromptSubmit", promptNotesCommand, promptNotesTimeout)
 	}
 	if needActor {
 		expected = withActorEntry(expected)
@@ -717,7 +720,7 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	}
 	if ok && needPN {
 		curHasHooks, curHasUP := reDetectEvent(cur, "UserPromptSubmit", hasHooks, hasUP)
-		spliced, spliceOK := spliceEventEntry(cur, "UserPromptSubmit", newEventEntry(promptNotesCommand), curHasHooks, curHasUP, detectNewline(cur), unit)
+		spliced, spliceOK := spliceEventEntry(cur, "UserPromptSubmit", newTimedEventEntry(promptNotesCommand, promptNotesTimeout), curHasHooks, curHasUP, detectNewline(cur), unit)
 		if !spliceOK {
 			ok = false
 		} else {
@@ -777,14 +780,22 @@ func withMatcherEntry(root map[string]any, event, matcher, command string) map[s
 // subagent context injector F-0150), creating the hooks object and the event
 // array as needed. Canonical merge — seed, fallback render and splice oracle.
 func withEventEntry(root map[string]any, event, command string) map[string]any {
+	return withTimedEventEntry(root, event, command, 0)
+}
+
+// withTimedEventEntry is withEventEntry with a host-side timeout in seconds
+// (0 = none).
+func withTimedEventEntry(root map[string]any, event, command string, timeout int) map[string]any {
 	hooksMap, _ := root["hooks"].(map[string]any)
 	if hooksMap == nil {
 		hooksMap = map[string]any{}
 	}
 	arr, _ := hooksMap[event].([]any)
-	arr = append(arr, map[string]any{
-		"hooks": []any{map[string]any{"type": "command", "command": command}},
-	})
+	h := map[string]any{"type": "command", "command": command}
+	if timeout > 0 {
+		h["timeout"] = float64(timeout) // as json.Unmarshal reads it: the splice is verified with DeepEqual
+	}
+	arr = append(arr, map[string]any{"hooks": []any{h}})
 	hooksMap[event] = arr
 	root["hooks"] = hooksMap
 	return root
@@ -797,7 +808,11 @@ type sessionEntry struct {
 }
 
 func newEventEntry(command string) sessionEntry {
-	return sessionEntry{Hooks: []hookCmd{{Type: "command", Command: command}}}
+	return newTimedEventEntry(command, 0)
+}
+
+func newTimedEventEntry(command string, timeout int) sessionEntry {
+	return sessionEntry{Hooks: []hookCmd{{Type: "command", Command: command, Timeout: timeout}}}
 }
 
 // reDetectEvent re-parses cur (the output of a previous splice) and reports
@@ -951,6 +966,8 @@ func spliceObjectAppendRaw(raw []byte, start, end int, empty bool, member, nl, u
 type hookCmd struct {
 	Type    string `json:"type"`
 	Command string `json:"command"`
+	// Timeout is the seconds the host lets the hook run; 0 leaves its default.
+	Timeout int `json:"timeout,omitempty"`
 }
 
 type matcherEntry struct {

@@ -262,7 +262,8 @@ func TestInstall_MinimalDiff_AppendsToExistingPostToolUse(t *testing.T) {
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-prompt-notes.sh\""
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-prompt-notes.sh\"",
+            "timeout": 5
           }
         ]
       }
@@ -404,7 +405,8 @@ func TestInstall_MinimalDiff_ScenarioB(t *testing.T) {
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-prompt-notes.sh\""
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-prompt-notes.sh\"",
+            "timeout": 5
           }
         ]
       }
@@ -526,7 +528,8 @@ func TestInstall_MinimalDiff_ScenarioC(t *testing.T) {
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-prompt-notes.sh\""
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-prompt-notes.sh\"",
+            "timeout": 5
           }
         ]
       }
@@ -1123,5 +1126,72 @@ func TestInstall_WiresPromptNotes(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("Assets() does not list the UserPromptSubmit hook")
+	}
+}
+
+// TestInstall_PromptNotesSplice (B-0020): an existing user UserPromptSubmit
+// array keeps its entry and gets ours appended once (a reinstall adds no
+// duplicate); the wrong type is refused, not overwritten.
+func TestInstall_PromptNotesSplice(t *testing.T) {
+	dir := t.TempDir()
+	settings := filepath.Join(dir, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settings), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	user := `{
+  "hooks": {
+    "UserPromptSubmit": [
+      {"hooks": [{"type": "command", "command": "echo mine"}]}
+    ]
+  }
+}
+`
+	if err := os.WriteFile(settings, []byte(user), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Install(dir); err != nil {
+		t.Fatal(err)
+	}
+	first, _ := os.ReadFile(settings)
+	var s struct {
+		Hooks map[string][]struct {
+			Hooks []struct {
+				Command string `json:"command"`
+				Timeout int    `json:"timeout"`
+			} `json:"hooks"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal(first, &s); err != nil {
+		t.Fatalf("%v\n%s", err, first)
+	}
+	up := s.Hooks["UserPromptSubmit"]
+	if len(up) != 2 || up[0].Hooks[0].Command != "echo mine" || !strings.Contains(up[1].Hooks[0].Command, "cerne-prompt-notes.sh") || up[1].Hooks[0].Timeout != 5 {
+		t.Fatalf("UserPromptSubmit = %+v\n%s", up, first)
+	}
+	if _, err := Install(dir); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := os.ReadFile(settings); string(again) != string(first) {
+		t.Fatalf("reinstall changed settings.json:\n%s", again)
+	}
+
+	bad := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(bad, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	wrong := `{"hooks": {"UserPromptSubmit": "oops"}}`
+	if err := os.WriteFile(filepath.Join(bad, ".claude", "settings.json"), []byte(wrong), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err := Install(bad)
+	if err == nil {
+		for _, r := range res {
+			if r.Asset == "settings.json" && r.Status != StatusSkipped {
+				t.Fatalf("wrong-type settings.json was %s", r.Status)
+			}
+		}
+	}
+	if b, _ := os.ReadFile(filepath.Join(bad, ".claude", "settings.json")); string(b) != wrong {
+		t.Fatalf("wrong-type settings.json rewritten: %s", b)
 	}
 }
