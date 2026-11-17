@@ -10,10 +10,12 @@ repo=${GITHUB_REPOSITORY:-henriquesakata/cerne}
 
 cat "$section"
 printf '\n---\n\n'
+printf '## Update\n\n'
+case $tag in
+  *-*) printf 'This is a pre-release: Homebrew and the install script track stable releases only. To get exactly this version, use `go install` below or the files attached to this release.\n\nAlready installed? Update the way you installed it:\n' ;;
+  *) printf 'Already installed? Update the way you installed it:\n' ;;
+esac
 cat <<EOT
-## Update
-
-Already installed? Update the way you installed it:
 
 \`\`\`sh
 # Homebrew
