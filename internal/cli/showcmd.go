@@ -146,8 +146,7 @@ func newShowCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&all, "all", false, "feature only: print every document (spec, plan, result), not just the one of its stage")
 	cmd.Flags().BoolVar(&consolidated, "consolidated", false, "runbook only: the body with each erratum placed at the step it changes (read-only)")
-	cmd.Flags().BoolVar(&consolidated, "consolidado", false, "") // pt-BR alias, hidden (B-0015)
-	_ = cmd.Flags().MarkHidden("consolidado")
+	legacyFlag(cmd.Flags(), "consolidated", "consolidado") // pt-BR alias, hidden (B-0015)
 	cmd.Flags().IntVar(&rev, "rev", 0, "print revision N: of a runbook's body (the one before each errata merge stays readable), or with --doc spec|plan of a feature document (the one before each amend)")
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")

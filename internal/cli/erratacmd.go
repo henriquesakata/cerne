@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/domain"
@@ -29,10 +30,8 @@ func newErrataCmd(dir *string) *cobra.Command {
 	cmd.Flags().StringVar(&altera, "step", "", "the step this erratum changes (e.g. S6.6), declared: 'show --consolidated' places the item next to it; a runbook takes a comma-separated list and writes one item per step")
 	cmd.Flags().BoolVar(&semPasso, "no-step", false, "runbook only: the erratum changes no step (a general note); without it a runbook erratum must declare --step")
 	// pt-BR names stay accepted, hidden, for hooks and scripts already installed (B-0015).
-	cmd.Flags().StringVar(&altera, "altera", "", "")
-	cmd.Flags().BoolVar(&semPasso, "sem-passo", false, "")
-	_ = cmd.Flags().MarkHidden("altera")
-	_ = cmd.Flags().MarkHidden("sem-passo")
+	legacyFlag(cmd.Flags(), "step", "altera")
+	legacyFlag(cmd.Flags(), "no-step", "sem-passo")
 	return cmd
 }
 
@@ -86,4 +85,12 @@ func legacyName(c *cobra.Command, old string) *cobra.Command {
 	c.Use = old + strings.TrimPrefix(c.Use, c.Name())
 	c.Hidden = true
 	return c
+}
+
+// legacyFlag registers a hidden pt-BR twin of the flag name: the same Value
+// (so the same variable, type and default), absent from --help.
+func legacyFlag(fs *pflag.FlagSet, name, legacy string) {
+	twin := *fs.Lookup(name)
+	twin.Name, twin.Hidden = legacy, true
+	fs.AddFlag(&twin)
 }

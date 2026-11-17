@@ -21,7 +21,7 @@ func newRunbookDecideCmd(dir *string) *cobra.Command {
 		Use:   "decide <RB-id> <item> --by <nickname> --quote \"<decision>\"",
 		Short: "Decide an errata item of a runbook, in place (the item changes state; no new erratum)",
 		Long: "Moves an errata item (E1, E2, … as printed by 'cerne errata' and 'cerne show <RB> --consolidated') from " +
-			"proposta to decidida, quoting the decision as said and who said it (a nickname only). The item is edited " +
+			"proposed to decided, quoting the decision as said and who said it (a nickname only). The item is edited " +
 			"in place; the runbook body is untouched until 'cerne runbook merge'.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
