@@ -2,6 +2,7 @@ package hooks
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -14,6 +15,12 @@ import (
 func GitHooksPath(projDir string) (string, bool) {
 	raw, err := os.ReadFile(filepath.Join(projDir, ".git", "config"))
 	if err != nil {
+		// .git is a file (worktree/submodule): git reads the common config.
+		if fi, serr := os.Stat(filepath.Join(projDir, ".git")); serr == nil && !fi.IsDir() {
+			out, _ := exec.Command("git", "-C", projDir, "config", "--get", "core.hooksPath").Output()
+			v := strings.TrimSpace(string(out))
+			return v, v != ""
+		}
 		return "", false
 	}
 	var value string
@@ -41,4 +48,28 @@ func GitHooksPath(projDir string) (string, bool) {
 		value = val
 	}
 	return value, value != ""
+}
+
+// GitHooksDir returns the directory git runs hooks from for the repository at
+// projDir (B-0013). A plain repo (.git is a directory) is answered without
+// spawning git; a linked worktree or submodule (.git is a file) is resolved
+// by `git rev-parse --git-path hooks`, which points at the common dir. The
+// second result is false when projDir is not a git repository.
+func GitHooksDir(projDir string) (string, bool) {
+	fi, err := os.Stat(filepath.Join(projDir, ".git"))
+	switch {
+	case err != nil:
+		return "", false
+	case fi.IsDir():
+		return filepath.Join(projDir, ".git", "hooks"), true
+	}
+	out, err := exec.Command("git", "-C", projDir, "rev-parse", "--git-path", "hooks").Output()
+	dir := strings.TrimSpace(string(out))
+	if err != nil || dir == "" {
+		return "", false
+	}
+	if !filepath.IsAbs(dir) {
+		dir = filepath.Join(projDir, dir)
+	}
+	return dir, true
 }

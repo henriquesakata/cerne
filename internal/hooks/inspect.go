@@ -81,9 +81,16 @@ func GitHookStates(projDir string) []GitHookState {
 		}
 	}
 	out := make([]GitHookState, 0, 2)
+	hooksDir, isRepo := GitHooksDir(projDir)
+	if !isRepo {
+		return nil
+	}
+	if rel, err := filepath.Rel(projDir, hooksDir); err == nil && !strings.HasPrefix(rel, "..") {
+		hooksDir = rel // inside the project: report relative (F-0360)
+	}
 
-	trailerRel := filepath.Join(".git", "hooks", trailerHookName)
-	if raw, err := os.ReadFile(filepath.Join(projDir, trailerRel)); err != nil {
+	trailerRel := filepath.Join(hooksDir, trailerHookName)
+	if raw, err := os.ReadFile(absIn(projDir, trailerRel)); err != nil {
 		out = append(out, GitHookState{Name: trailerHookName, State: FileMissing, Path: trailerRel})
 	} else if string(raw) == trailerHookContent {
 		out = append(out, GitHookState{Name: trailerHookName, State: FileOK, Path: trailerRel})
@@ -91,8 +98,8 @@ func GitHookStates(projDir string) []GitHookState {
 		out = append(out, GitHookState{Name: trailerHookName, State: FileDivergent, Path: trailerRel, Detail: "foreign hook in slot — integrate manually: " + trailerSnippet})
 	}
 
-	guardRel := filepath.Join(".git", "hooks", guardHookName)
-	if raw, err := os.ReadFile(filepath.Join(projDir, guardRel)); err != nil {
+	guardRel := filepath.Join(hooksDir, guardHookName)
+	if raw, err := os.ReadFile(absIn(projDir, guardRel)); err != nil {
 		out = append(out, GitHookState{Name: guardHookName, State: FileMissing, Path: guardRel})
 	} else if strings.Contains(string(raw), guardMarker) {
 		out = append(out, GitHookState{Name: guardHookName, State: FileOK, Path: guardRel})
@@ -195,4 +202,11 @@ func Stale(projDir string) []string {
 		out = append(out, "copilot: "+copilotHooksFile)
 	}
 	return out
+}
+
+func absIn(projDir, p string) string {
+	if filepath.IsAbs(p) {
+		return p
+	}
+	return filepath.Join(projDir, p)
 }

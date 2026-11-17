@@ -265,14 +265,14 @@ func installGuardCommitMsgGitHook(projDir string) Result {
 	skipped := func(note string) Result {
 		return Result{Asset: guardHookName, Status: StatusSkipped, Note: note}
 	}
-	gitDir := filepath.Join(projDir, ".git")
-	if fi, err := os.Stat(gitDir); err != nil || !fi.IsDir() {
+	hooksDir, isRepo := GitHooksDir(projDir)
+	if !isRepo {
 		return skipped("not a git repository — integrate manually: " + guardSnippet)
 	}
 	if _, set := GitHooksPath(projDir); set {
 		return skipped("custom core.hooksPath — add to your hook manager: " + guardSnippet)
 	}
-	dst := filepath.Join(gitDir, "hooks", guardHookName)
+	dst := filepath.Join(hooksDir, guardHookName)
 	existing, err := os.ReadFile(dst)
 	switch {
 	case err != nil:
@@ -329,14 +329,14 @@ func installCommitTrailerGitHook(projDir string) Result {
 	skipped := func(note string) Result {
 		return Result{Asset: trailerHookName, Status: StatusSkipped, Note: note}
 	}
-	gitDir := filepath.Join(projDir, ".git")
-	if fi, err := os.Stat(gitDir); err != nil || !fi.IsDir() {
+	hooksDir, isRepo := GitHooksDir(projDir)
+	if !isRepo {
 		return skipped("not a git repository — integrate manually: " + trailerSnippet)
 	}
 	if _, set := GitHooksPath(projDir); set {
 		return skipped("custom core.hooksPath — add to your hook manager: " + trailerSnippet)
 	}
-	dst := filepath.Join(gitDir, "hooks", trailerHookName)
+	dst := filepath.Join(hooksDir, trailerHookName)
 	existing, err := os.ReadFile(dst)
 	switch {
 	case err == nil && string(existing) == trailerHookContent:
