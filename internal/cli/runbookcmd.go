@@ -146,28 +146,32 @@ func runRunbookMigrate(cmd *cobra.Command, dir string, yes bool) error {
 func newRunbookNewCmd(dir *string) *cobra.Command {
 	var file string
 	cmd := &cobra.Command{
-		Use:   "new <title>",
+		Use:   "new [title]",
 		Short: "Create a runbook (active); one-shot with a --file/stdin body",
 		Long: "Creates an active runbook. With a body (--file or piped stdin) it is one-shot: born with real " +
 			"content, already committed and pushed — no draft+push cycle. Without a body, it is born as a stub of the " +
-			"template to fill in.",
-		Args: cobra.ExactArgs(1),
+			"template to fill in. The title argument may be omitted when the body (--file or stdin) opens with a `# ` heading: that heading becomes the title.",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runRunbookNew(cmd, *dir, args[0], file)
+			return runRunbookNew(cmd, *dir, args, file)
 		},
 	}
 	cmd.Flags().StringVar(&file, "file", "", "file with the runbook body (defaults to piped stdin); one-shot, skips draft+push")
 	return cmd
 }
 
-func runRunbookNew(cmd *cobra.Command, dir, title, file string) error {
-	title = strings.TrimSpace(title)
-	if title == "" {
-		return fmt.Errorf("the runbook title cannot be empty")
-	}
+func runRunbookNew(cmd *cobra.Command, dir string, args []string, file string) error {
 	body, err := readOptionalBody(cmd, file)
 	if err != nil {
 		return err
+	}
+	title, err := newTitle(args, body)
+	if err != nil {
+		return err
+	}
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return fmt.Errorf("the runbook title cannot be empty")
 	}
 	ctx, err := resolveProject(dir)
 	if err != nil {

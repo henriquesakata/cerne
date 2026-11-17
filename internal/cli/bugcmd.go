@@ -33,20 +33,20 @@ func newBugNewCmd(dir *string) *cobra.Command {
 	var module, fixes, facet, component, file, context, steps, expected, owner, priority, onBehalf string
 	var force bool
 	cmd := &cobra.Command{
-		Use:   "new <title>",
+		Use:   "new [title]",
 		Short: "Report a bug; born approved when a human asked for it",
 		Long: "Creates a bug report (B-): a lightweight correction card with a three-section spec (Context, " +
 			"Steps to reproduce, Expected × actual) and the regression-test bar already filled. When the origin " +
 			"is a human — you at a terminal, or an agent relaying their words with --on-behalf — the card is " +
 			"born approved: start it right away. A bug an agent found by itself (no --on-behalf) is born " +
 			"candidate and waits for a human approve. Completing needs a real result.md; accept stays human. " +
-			"--fixes links the delivered feature and inherits its facets, components and capabilities.",
+			"--fixes links the delivered feature and inherits its facets, components and capabilities. The title argument may be omitted when the body (--file or stdin) opens with a `# ` heading: that heading becomes the title.",
 		Example: "  cerne bug new \"<what breaks>\" --context \"<what happens, where>\" --steps \"<numbered steps>\" --expected \"<should happen × happened>\" --on-behalf \"<the human's words>\"\n" +
 			"  cerne bug new \"<what breaks>\" --file report.md --fixes F-NNNN\n" +
 			"  cerne feature start B-NNNN     # no plan gate, no approve when the report is human",
-		Args: cobra.ExactArgs(1),
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runBugNew(cmd, *dir, args[0], module, fixes, facet, component, file, context, steps, expected, force, owner, priority, onBehalf)
+			return runBugNew(cmd, *dir, args, module, fixes, facet, component, file, context, steps, expected, force, owner, priority, onBehalf)
 		},
 	}
 	cmd.Flags().StringVar(&module, "module", "", "module the bug belongs to")
@@ -64,11 +64,15 @@ func newBugNewCmd(dir *string) *cobra.Command {
 	return cmd
 }
 
-func runBugNew(cmd *cobra.Command, dir, title, module, fixes, facet, component, file, context, steps, expected string, force bool, owner, priority, onBehalf string) error {
+func runBugNew(cmd *cobra.Command, dir string, args []string, module, fixes, facet, component, file, context, steps, expected string, force bool, owner, priority, onBehalf string) error {
 	if cmd.Flags().Changed("on-behalf") && strings.TrimSpace(onBehalf) == "" {
 		return app.ErrOnBehalfEmpty
 	}
 	body, err := readOptionalBody(cmd, file)
+	if err != nil {
+		return err
+	}
+	title, err := newTitle(args, body)
 	if err != nil {
 		return err
 	}

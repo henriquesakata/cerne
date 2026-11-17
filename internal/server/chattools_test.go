@@ -805,3 +805,29 @@ func TestChatToolTurn_ProposalIssues(t *testing.T) {
 		t.Fatalf("issues = %+v", got.ProposalIssues)
 	}
 }
+
+// B-0018: a verb whose Use writes the title as [title] gets a typed tool that
+// leaves it out of "required" and decodes a call without it.
+func TestTypedToolOptionalTitle(t *testing.T) {
+	tree := func() *cobra.Command {
+		root := typedTree()
+		ref, _, _ := root.Find([]string{"reference", "new"})
+		ref.Use = "new [title]"
+		return root
+	}
+	tool := toolByName(chatTools(tree), "cerne_reference_new")
+	if tool == nil {
+		t.Fatal("no typed tool")
+	}
+	if req := tool.Schema["required"].([]string); len(req) != 0 {
+		t.Fatalf("required = %v, want none", req)
+	}
+	call, err := decodeToolCall(tree(), llm.ToolCall{Name: "cerne_reference_new",
+		Input: json.RawMessage(`{"url":"u","stdin":"# From the body\n"}`)})
+	if err != nil {
+		t.Fatalf("decode without a title: %v", err)
+	}
+	if strings.Contains(strings.Join(call.Args, " "), "\n") || call.Stdin != "# From the body\n" {
+		t.Fatalf("call = %+v", call)
+	}
+}
