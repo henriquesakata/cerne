@@ -9,8 +9,8 @@ import (
 	"github.com/henriquesakata/cerne/internal/version"
 )
 
-// TestVersionEndpoint: GET /api/version returns the shortened MAJOR.MINOR
-// version (F-0144) — the same string `cerne --version` reports ("dev" outside
+// TestVersionEndpoint: GET /api/version returns the user-facing
+// version (F-0144, B-0014) — the same string `cerne --version` reports ("dev" outside
 // a release build, "0.3" for a stamped "v0.3.0-12-g…").
 func TestVersionEndpoint(t *testing.T) {
 	repoDir, projDir := newBackend(t)
@@ -18,6 +18,7 @@ func TestVersionEndpoint(t *testing.T) {
 	for _, tt := range []struct{ stamped, want string }{
 		{"dev", "dev"},
 		{"v0.3.0-12-gd7ed7433", "0.3"},
+		{"v0.14.1", "0.14.1"},
 	} {
 		orig := version.Version
 		version.Version = tt.stamped

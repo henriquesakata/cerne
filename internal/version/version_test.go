@@ -10,8 +10,12 @@ func TestShort(t *testing.T) {
 		name, in, want string
 	}{
 		{"git describe", "v0.3.0-12-gd7ed7433", "0.3"},
-		{"clean tag", "v0.3.0", "0.3"},
-		{"no v prefix", "0.14.2", "0.14"},
+		{"describe dirty", "v0.3.0-12-gd7ed7433-dirty", "0.3"},
+		{"tag dirty", "v0.3.0-dirty", "0.3"},
+		{"clean tag", "v0.3.0", "0.3.0"},
+		{"patch release", "v0.14.1", "0.14.1"},
+		{"prerelease", "v0.14.0-rc.1", "0.14.0-rc.1"},
+		{"no v prefix", "0.14.2", "0.14.2"},
 		{"two-digit minor describe", "v1.23.4-5-gabc1234", "1.23"},
 		{"dev build", "dev", "dev"},
 		{"bare hash", "d7ed7433", "d7ed7433"},

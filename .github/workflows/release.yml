@@ -73,7 +73,7 @@ jobs:
           git push -q origin HEAD
 
   # Install from the tap just updated, the way INSTALL.md says, and check the
-  # binary reports the tag (cerne --version prints MAJOR.MINOR).
+  # binary reports the tag (cerne --version prints the full version).
   brew-check:
     needs: release
     if: ${{ !contains(github.ref_name, '-') }}
@@ -92,7 +92,7 @@ jobs:
           if ! command -v brew >/dev/null; then eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"; fi
           brew install henriquesakata/tap/cerne
           brew test henriquesakata/tap/cerne
-          want="cerne $(echo "${GITHUB_REF_NAME#v}" | cut -d. -f1,2)"
+          want="cerne ${GITHUB_REF_NAME#v}"
           got=$("$(brew --prefix)/bin/cerne" --version)
           echo "$got"
           if [ "$got" != "$want" ]; then

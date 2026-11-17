@@ -70,7 +70,7 @@ func newMux(repoDir, projDir, projectID string) http.Handler {
 }
 
 // handleVersion returns the binary's build version (F-0129) — the same
-// MAJOR.MINOR string `cerne --version` reports (F-0144), so the UI can show
+// string `cerne --version` reports (F-0144, B-0014: a release tag in full), so the UI can show
 // which build is serving it.
 func handleVersion(w http.ResponseWriter) {
 	writeJSON(w, http.StatusOK, map[string]string{"version": version.Short()})

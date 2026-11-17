@@ -43,12 +43,21 @@ func fromBuildInfo(bi *debug.BuildInfo, ok bool) string {
 	return v
 }
 
-var shortRe = regexp.MustCompile(`^v?(\d+\.\d+)`)
+var (
+	shortRe    = regexp.MustCompile(`^v?(\d+\.\d+)`)
+	fullRe     = regexp.MustCompile(`^v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$`)
+	describeRe = regexp.MustCompile(`-\d+-g[0-9a-f]+(-dirty)?$|-dirty$`)
+)
 
-// Short derives the user-facing MAJOR.MINOR from the stamped Version
-// ("v0.3.0-12-gd7ed7433" → "0.3"); a string without two numeric components
-// ("dev", a bare hash) is returned unchanged (F-0144).
+// Short derives the user-facing version from the stamped Version: a release
+// tag shows in full without the "v" ("v0.14.1" → "0.14.1", "v0.14.0-rc.1" →
+// "0.14.0-rc.1"); a `git describe` string (commits after a tag, -dirty) is cut
+// to MAJOR.MINOR ("v0.3.0-12-gd7ed7433" → "0.3"); anything else ("dev", a bare
+// hash) is returned unchanged (F-0144, B-0014).
 func Short() string {
+	if m := fullRe.FindStringSubmatch(Version); m != nil && !describeRe.MatchString(Version) {
+		return m[1]
+	}
 	if m := shortRe.FindStringSubmatch(Version); m != nil {
 		return m[1]
 	}

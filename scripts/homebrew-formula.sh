@@ -74,8 +74,8 @@ class Cerne < Formula
   end
 
   test do
-    # cerne --version prints MAJOR.MINOR ("cerne 0.10").
-    assert_match "cerne #{version.major_minor}", shell_output("#{bin}/cerne --version")
+    # cerne --version prints the full version ("cerne 0.14.1").
+    assert_match "cerne #{version}", shell_output("#{bin}/cerne --version")
   end
 end
 EOF
