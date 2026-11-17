@@ -19,6 +19,8 @@ jobs:
           go-version-file: go.mod
       - name: release notes extractor
         run: sh scripts/release-notes_test.sh
+      - name: release body script
+        run: sh scripts/release-body_test.sh
       - name: release publish script
         run: sh scripts/release-publish_test.sh
       - run: go vet ./...
