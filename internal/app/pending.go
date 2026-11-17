@@ -17,12 +17,12 @@ import (
 // ErrPendingFromRequired is returned by CreatePending without an origin: a
 // pending is always a debt of a concrete delivery (F-0322), which is what
 // keeps it apart from a speculative idea.
-var ErrPendingFromRequired = errors.New("--from is required (the F-/T-/E- id the pending was left by)")
+var ErrPendingFromRequired = errors.New("--from is required (the F-/E-/T-/B- id the pending was left by)")
 
 // ErrPendingFromInvalid is returned by CreatePending for an origin that is not
-// an F-/T-/E-NNNN id — refused before the store is read, so a path-like value
+// an F-/E-/T-/B-NNNN id — refused before the store is read, so a path-like value
 // never reaches the filesystem.
-var ErrPendingFromInvalid = errors.New("--from must be an F-/T-/E-NNNN id")
+var ErrPendingFromInvalid = errors.New("--from must be an F-/E-/T-/B-NNNN id")
 
 var pendingOriginRx = regexp.MustCompile(`^` + domain.FeatureIDPrefix + `-\d{4}$`)
 
@@ -442,7 +442,7 @@ func LinkPending(repoDir, projDir, id, featureID string) (store.Pending, error) 
 	}
 	featureID = strings.ToUpper(strings.TrimSpace(featureID))
 	if !pendingOriginRx.MatchString(featureID) {
-		return store.Pending{}, fmt.Errorf("%q is not an F-/T-/E-NNNN id", featureID)
+		return store.Pending{}, fmt.Errorf("%q is not an F-/E-/T-/B-NNNN id", featureID)
 	}
 	var p store.Pending
 	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
