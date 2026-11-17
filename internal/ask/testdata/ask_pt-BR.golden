@@ -1,0 +1,13 @@
+Question: which environment?
+
+Answer using only the sources below and cite them (IDs/pages). Respect the state of each source: do not treat something superseded/rejected/obsolete as current. Sources marked as a historical record describe the state at the time they were written; for the current state, active decisions/runbooks/notes and the wiki pages take precedence.
+
+## F-0344 — Compose (feature, implemented — historical record)
+it was compose
+
+## R-0042 — PKCE (reference, current, external reference: https://example.org/p)
+use S256
+
+
+
+LANGUAGE — write your whole reply in Brazilian Portuguese (pt-BR) (identifiers, commands, file paths and quoted code stay as they are).

@@ -294,7 +294,7 @@ func TestRoleBoundaryIsChatOnly(t *testing.T) {
 	}
 	other := map[string]string{
 		"diagram":              BuildSequenceDiagramPrompt(store.Feature{ID: "F-0001", Title: "T"}, "spec", "tree"),
-		"ask":                  ask.BuildAskPrompt("q", nil, true),
+		"ask":                  ask.BuildAskPrompt(doclang.PT, "q", nil, true),
 		"capability-bootstrap": capPrompt,
 	}
 	for name, prompt := range other {

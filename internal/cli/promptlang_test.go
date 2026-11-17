@@ -61,7 +61,6 @@ var promptExceptions = []struct{ re, why string }{
 // promptsPending lists the surfaces not converted yet; each is removed by the
 // commit that converts it, and the list is empty when F-0447 is done.
 var promptsPending = map[string]string{
-	"ask":                  "converted with the other prompts",
 	"compile page":         "converted with the other prompts",
 }
 
@@ -155,8 +154,8 @@ func promptCases() []promptCase {
 		{name: "roast plan", closes: closesReply, render: func(_ *testing.T, l doclang.Lang) string {
 			return app.BuildRoastPromptFor(l, app.PlanRoastPersonas[0], "F-0001", "Sign in", app.PlanRoastIntro, []app.RoastDoc{{Label: "SPEC", Body: "s"}, {Label: "PLAN", Body: "p"}})
 		}},
-		{name: "ask", closes: closesReply, render: func(_ *testing.T, _ doclang.Lang) string {
-			return ask.BuildAskPrompt("what is X?", []ask.Snippet{{Source: "F-0001", Kind: "feature", State: "implemented", Historical: true, URL: "https://example.com", Text: "t"}}, true)
+		{name: "ask", closes: closesReply, render: func(_ *testing.T, l doclang.Lang) string {
+			return ask.BuildAskPrompt(l, "what is X?", []ask.Snippet{{Source: "F-0001", Kind: "feature", State: "implemented", Historical: true, URL: "https://example.org", Text: "t"}}, true)
 		}},
 		{name: "compile page", closes: closesReply, render: func(_ *testing.T, _ doclang.Lang) string {
 			return compile.BuildPagePrompt(compile.Page{Name: "overview", Sources: []compile.EntitySource{{ID: "F-0001", Title: "Sign in", Kind: "feature", State: "implemented", Content: "c"}}})

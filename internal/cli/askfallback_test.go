@@ -65,7 +65,7 @@ func TestAskProviderUnavailableFallsBackAndCutsByRunes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ask must exit 0 when the provider is unavailable: %v\n%s", err, stderr)
 	}
-	if !strings.Contains(stdout, "Pergunta: o que é boletos?") {
+	if !strings.Contains(stdout, "Question: o que é boletos?") {
 		t.Fatalf("stdout missing the prompt:\n%s", stdout)
 	}
 	const pre, suf = "cerne ask: the model failed (", "); here are the sources to answer from\n"
@@ -100,7 +100,7 @@ func TestAskCancelledContextIsNotFallback(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled\nstdout: %s\nstderr: %s", err, o, e)
 	}
-	if strings.Contains(o.String(), "Pergunta:") || strings.Contains(e.String(), "the model failed") {
+	if strings.Contains(o.String(), "Question:") || strings.Contains(e.String(), "the model failed") {
 		t.Fatalf("cancellation fell back to sources:\n%s\n%s", o, e)
 	}
 }
@@ -145,7 +145,7 @@ func TestAskModelFailureNoPreamble(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ask: %v", err)
 	}
-	if !strings.Contains(stdout, "Pergunta: o que é boletos?") || strings.Contains(stdout, "Respeite o estado") {
+	if !strings.Contains(stdout, "Question: o que é boletos?") || strings.Contains(stdout, "Respect the state") {
 		t.Fatalf("fallback ignored --no-preamble:\n%s", stdout)
 	}
 }

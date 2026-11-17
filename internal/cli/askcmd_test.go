@@ -19,10 +19,10 @@ func TestAskDelegationPrintsPrompt(t *testing.T) {
 		t.Fatalf("ask: %v\n%s", err, out)
 	}
 	// Delegation prints the assembled prompt for the host agent, not an answer.
-	if !strings.Contains(out, "Pergunta: o que é boletos?") {
+	if !strings.Contains(out, "Question: o que é boletos?") {
 		t.Fatalf("ask output missing the assembled question:\n%s", out)
 	}
-	if !strings.Contains(out, "Respeite o estado de cada fonte") {
+	if !strings.Contains(out, "Respect the state of each source") {
 		t.Fatalf("ask output missing the state-respect instruction:\n%s", out)
 	}
 }
@@ -45,10 +45,10 @@ func TestAskNoPreamble(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ask --no-preamble: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "Pergunta: o que é boletos?") {
+	if !strings.Contains(out, "Question: o que é boletos?") {
 		t.Fatalf("ask --no-preamble dropped the question:\n%s", out)
 	}
-	if strings.Contains(out, "Responda em pt-BR") || strings.Contains(out, "Respeite o estado") {
+	if strings.Contains(out, "Answer using only") || strings.Contains(out, "Respect the state") {
 		t.Fatalf("ask --no-preamble must omit the instruction preamble:\n%s", out)
 	}
 }

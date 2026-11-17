@@ -43,7 +43,7 @@ func TestAskByoKeyPrintsAnswer(t *testing.T) {
 		t.Fatalf("ask output missing the synthesized answer:\n%s", out)
 	}
 	// ...not the raw prompt scaffolding that delegation prints.
-	if strings.Contains(out, "Respeite o estado de cada fonte") {
+	if strings.Contains(out, "Respect the state of each source") {
 		t.Fatalf("byo-key ask leaked the delegation prompt instead of the answer:\n%s", out)
 	}
 }
@@ -78,7 +78,7 @@ func TestAskOneShotPromptStatesNoTools(t *testing.T) {
 			t.Fatalf("one-shot prompt missing %q:\n%s", want, gotPrompt)
 		}
 	}
-	q := strings.Index(gotPrompt, "Pergunta:")
+	q := strings.Index(gotPrompt, "Question:")
 	if q < 0 || strings.Count(gotPrompt, "NO tools") != 1 || strings.Index(gotPrompt, "NO tools") > q {
 		t.Fatalf("rule must appear once, before the question (q=%d):\n%s", q, gotPrompt)
 	}

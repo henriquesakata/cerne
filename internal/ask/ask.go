@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/index"
 	"github.com/henriquesakata/cerne/internal/store"
 )
@@ -185,14 +186,14 @@ const OneShotRule = "This answer has NO tools: you cannot read files, run comman
 // preamble is true it also emits the instruction to cite sources and respect
 // each source's state; callers that drive their own synthesis (the host agent
 // via `ask --no-preamble`) can drop it to save tokens.
-func BuildAskPrompt(query string, snippets []Snippet, preamble bool) string {
+func BuildAskPrompt(l doclang.Lang, query string, snippets []Snippet, preamble bool) string {
 	var b strings.Builder
-	b.WriteString("Pergunta: " + query + "\n\n")
+	b.WriteString("Question: " + query + "\n\n")
 	if preamble {
-		b.WriteString("Responda em pt-BR usando apenas as fontes abaixo e cite-as (IDs/páginas). ")
-		b.WriteString("Respeite o estado de cada fonte: não trate algo superseded/rejected/obsolete como vigente. ")
-		b.WriteString("Fontes marcadas como registro histórico descrevem o estado na época em que foram escritas; ")
-		b.WriteString("para o estado atual, decisions/runbooks/notes vigentes e as páginas wiki têm precedência.\n\n")
+		b.WriteString("Answer using only the sources below and cite them (IDs/pages). ")
+		b.WriteString("Respect the state of each source: do not treat something superseded/rejected/obsolete as current. ")
+		b.WriteString("Sources marked as a historical record describe the state at the time they were written; ")
+		b.WriteString("for the current state, active decisions/runbooks/notes and the wiki pages take precedence.\n\n")
 	}
 	for _, s := range snippets {
 		header := "## " + s.Source
@@ -201,13 +202,16 @@ func BuildAskPrompt(query string, snippets []Snippet, preamble bool) string {
 		}
 		header += " (" + s.Kind + ", " + s.State
 		if s.Historical {
-			header += " — registro histórico"
+			header += " — historical record"
 		}
 		if s.URL != "" {
-			header += ", referência externa: " + s.URL
+			header += ", external reference: " + s.URL
 		}
 		b.WriteString(header + ")\n")
 		b.WriteString(strings.TrimSpace(s.Text) + "\n\n")
+	}
+	if preamble {
+		b.WriteString(doclang.Reply(l))
 	}
 	return b.String()
 }
