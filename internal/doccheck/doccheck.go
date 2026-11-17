@@ -4,6 +4,7 @@ package doccheck
 
 import (
 	"bytes"
+	"regexp"
 	"strings"
 
 	"github.com/henriquesakata/cerne/internal/doclang"
@@ -141,4 +142,62 @@ func fenceRun(line string) string {
 		return ""
 	}
 	return t[:n]
+}
+
+// frontmatterKeyLine is a top-level "key: value" line — with blank lines, the
+// only line a frontmatter block may hold before its closing '---'.
+var frontmatterKeyLine = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]*:(\s|$)`)
+
+// LeadingBlock reads the '---' frontmatter block lines open with: its inner
+// lines and the lines after its closing '---'. opens is false when the first
+// line is not '---'. closed is false when that '---' opens no block — a line
+// that is neither blank nor "key: value" comes before any closing '---' (prose,
+// a heading, a code fence), or no '---' follows at all — so a later rule or
+// fence never closes it and swallows the document (F-0328 critic C2). One rule
+// for the stored-body path (app) and the title of a `new` command (cli).
+func LeadingBlock(lines []string) (inner, rest []string, opens, closed bool) {
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
+		return nil, lines, false, false
+	}
+	for i := 1; i < len(lines); i++ {
+		switch l := lines[i]; {
+		case strings.TrimSpace(l) == "---":
+			return lines[1:i], lines[i+1:], true, true
+		case strings.TrimSpace(l) != "" && !frontmatterKeyLine.MatchString(l):
+			return nil, lines, true, false
+		}
+	}
+	return nil, lines, true, false
+}
+
+// BodyTitle returns the text of the body's first heading when that heading is
+// an H1 ("# ", or "#" and a tab) opening the body — after the leading
+// frontmatter block (LeadingBlock), blank lines and a UTF-8 BOM — with the
+// optional closing "#"s of CommonMark removed and the text trimmed; "" when
+// there is none or it is empty. "## " is not an H1; a "# " after other content,
+// inside a fenced block or after a '---' that opens no block (a rule) is not the
+// first heading. Inline markdown is kept verbatim, like a title argument.
+func BodyTitle(data []byte) string {
+	s := strings.ReplaceAll(string(data), "\r\n", "\n")
+	lines := strings.Split(strings.TrimLeft(s, "\ufeff \t\r\n"), "\n")
+	if _, rest, opens, closed := LeadingBlock(lines); opens && closed {
+		lines = rest
+	}
+	for _, l := range lines {
+		t := strings.TrimSpace(l)
+		if t == "" {
+			continue
+		}
+		text, ok := strings.CutPrefix(t, "#")
+		if !ok || (!strings.HasPrefix(text, " ") && !strings.HasPrefix(text, "\t")) {
+			return ""
+		}
+		text = strings.TrimSpace(text)
+		// closing sequence: trailing #s preceded by a space or tab (or the whole text)
+		if trimmed := strings.TrimRight(text, "#"); trimmed != text && (trimmed == "" || strings.HasSuffix(trimmed, " ") || strings.HasSuffix(trimmed, "\t")) {
+			text = strings.TrimSpace(trimmed)
+		}
+		return text
+	}
+	return ""
 }

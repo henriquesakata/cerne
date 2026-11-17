@@ -105,17 +105,17 @@ func newReferenceNewCmd(dir *string) *cobra.Command {
 	var url, informs, file, facet, component string
 	var force bool
 	cmd := &cobra.Command{
-		Use:   "new <title>",
+		Use:   "new [title]",
 		Short: "Register an external source (article/doc) as a reference",
 		Long: "Registers an external article/document as a reference (marked external + URL). " +
 			"The content (text/summary) comes from --file or standard input and enters the index, " +
 			"so 'ask' starts citing it. Use --informs to link the source to the entities " +
 			"(F-/D-/RB-/N-/I-) it motivated. Use --facet (closed axis: infra,code,data,process,auth) and " +
 			"--component (subsystem/tool, e.g. gitea,kpack) to categorize — both multi-valued, " +
-			"comma-separated. A live reference with the same normalized URL refuses the creation (F-0324); --force overrides it.",
-		Args: cobra.ExactArgs(1),
+			"comma-separated. A live reference with the same normalized URL refuses the creation (F-0324); --force overrides it. The title argument may be omitted when the body (--file or stdin) opens with a `# ` heading: that heading becomes the title.",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runReferenceNew(cmd, *dir, args[0], url, informs, file, facet, component, force)
+			return runReferenceNew(cmd, *dir, args, url, informs, file, facet, component, force)
 		},
 	}
 	cmd.Flags().StringVar(&url, "url", "", "source URL (required)")
@@ -128,8 +128,12 @@ func newReferenceNewCmd(dir *string) *cobra.Command {
 	return verbs.MarkChatTool(cmd)
 }
 
-func runReferenceNew(cmd *cobra.Command, dir, title, url, informs, file, facet, component string, force bool) error {
+func runReferenceNew(cmd *cobra.Command, dir string, args []string, url, informs, file, facet, component string, force bool) error {
 	content, err := readReferenceContent(cmd, file)
+	if err != nil {
+		return err
+	}
+	title, err := newTitle(args, content)
 	if err != nil {
 		return err
 	}

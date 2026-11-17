@@ -46,7 +46,7 @@ func newEpicNewCmd(dir *string) *cobra.Command {
 			"  cerne pull\n" + lifecycleSeq,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runFeatureLikeNew(cmd, *dir, args[0], module, parent, facet, component, file, context, force, owner, priority, onBehalf,
+			return runFeatureLikeNew(cmd, *dir, args, module, parent, facet, component, file, context, force, owner, priority, onBehalf,
 				app.CreateEpicWithSpec)
 		},
 	}
@@ -90,7 +90,7 @@ func newTaskNewCmd(dir *string) *cobra.Command {
 			"  cerne feature complete T-NNNN  # result.md still required",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runFeatureLikeNew(cmd, *dir, args[0], module, parent, facet, component, file, context, force, owner, priority, onBehalf,
+			return runFeatureLikeNew(cmd, *dir, args, module, parent, facet, component, file, context, force, owner, priority, onBehalf,
 				app.CreateTaskWithSpec)
 		},
 	}
@@ -109,7 +109,7 @@ func newTaskNewCmd(dir *string) *cobra.Command {
 
 // runFeatureLikeNew is runFeatureNew generalized over the creation core
 // (F-0203): the same context gate, spec seeding and messages for F-/E-/T-.
-func runFeatureLikeNew(cmd *cobra.Command, dir, title, module, parent, facet, component, file, context string, force bool, owner, priority, onBehalf string,
+func runFeatureLikeNew(cmd *cobra.Command, dir string, args []string, module, parent, facet, component, file, context string, force bool, owner, priority, onBehalf string,
 	create func(repoDir, projDir, title, module, parent string, facets, components []string, specBody string, force bool, owner, priority, onBehalf string) (store.Feature, error),
 ) error {
 	// An explicit blank --on-behalf must not read as "flag not passed" (T-0005).
@@ -117,6 +117,10 @@ func runFeatureLikeNew(cmd *cobra.Command, dir, title, module, parent, facet, co
 		return app.ErrOnBehalfEmpty
 	}
 	body, err := readOptionalBody(cmd, file)
+	if err != nil {
+		return err
+	}
+	title, err := newTitle(args, body)
 	if err != nil {
 		return err
 	}

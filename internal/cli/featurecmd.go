@@ -49,19 +49,19 @@ func newFeatureNewCmd(dir *string) *cobra.Command {
 	var module, parent, fixes, facet, component, file, context, owner, priority, onBehalf string
 	var force bool
 	cmd := &cobra.Command{
-		Use:   "new <title>",
+		Use:   "new [title]",
 		Short: "Create a feature in candidate state",
 		Long: "Creates the candidate with its context already captured: --file/stdin brings the full spec (one-shot, " +
 			"nothing to fill in later) and --context seeds the draft's Problem section with why it was created. " +
-			"Without one of the two, creation is refused — the title alone does not survive the session that minted it.",
+			"Without one of the two, creation is refused — the title alone does not survive the session that minted it. The title argument may be omitted when the body (--file or stdin) opens with a `# ` heading: that heading becomes the title.",
 		Example: "  # register the candidate with the why captured (minimum)\n" +
 			"  cerne feature new \"<title>\" --context \"<1-3 sentences on why>\" [--module <m>] [--parent F-NNNN]\n" +
 			"  # or with the full spec already (one-shot)\n" +
 			"  cerne feature new \"<title>\" --file spec.md\n" +
 			"  cerne pull\n" + lifecycleSeq,
-		Args: cobra.ExactArgs(1),
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runFeatureNew(cmd, *dir, args[0], module, parent, fixes, facet, component, file, context, force, owner, priority, onBehalf)
+			return runFeatureNew(cmd, *dir, args, module, parent, fixes, facet, component, file, context, force, owner, priority, onBehalf)
 		},
 	}
 	cmd.Flags().StringVar(&module, "module", "", "module the feature belongs to")
@@ -81,8 +81,8 @@ func newFeatureNewCmd(dir *string) *cobra.Command {
 // onBehalfHelp is the --on-behalf flag text shared by feature/epic/task new (T-0005).
 const onBehalfHelp = "quote of the human's request when an agent creates this for them: records origin human and the quote on the creation event"
 
-func runFeatureNew(cmd *cobra.Command, dir, title, module, parent, fixes, facet, component, file, context string, force bool, owner, priority, onBehalf string) error {
-	return runFeatureLikeNew(cmd, dir, title, module, parent, facet, component, file, context, force, owner, priority, onBehalf,
+func runFeatureNew(cmd *cobra.Command, dir string, args []string, module, parent, fixes, facet, component, file, context string, force bool, owner, priority, onBehalf string) error {
+	return runFeatureLikeNew(cmd, dir, args, module, parent, facet, component, file, context, force, owner, priority, onBehalf,
 		func(repoDir, projDir, title, module, parent string, facets, components []string, specBody string, force bool, owner, priority, onBehalf string) (store.Feature, error) {
 			return app.CreateFeatureFixes(repoDir, projDir, title, module, parent, fixes, facets, components, specBody, force, owner, priority, onBehalf)
 		})

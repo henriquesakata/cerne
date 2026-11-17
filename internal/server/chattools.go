@@ -78,8 +78,12 @@ func typedTool(v verbs.Verb) (llm.Tool, bool) {
 		return llm.Tool{}, false // TestChatToolMarksAreSafe keeps marked verbs parseable
 	}
 	props := map[string]any{"stdin": map[string]any{"type": "string", "description": "content the command would read from standard input"}}
+	var required []string
 	for _, p := range pos {
 		props[p] = map[string]any{"type": "string"}
+		if !v.OptionalPositional(p) {
+			required = append(required, p)
+		}
 	}
 	for name, typ := range v.Flags {
 		if name != "file" {
@@ -89,7 +93,7 @@ func typedTool(v verbs.Verb) (llm.Tool, bool) {
 	return llm.Tool{
 		Name:        typedName(v.Path),
 		Description: fmt.Sprintf("Runs `cerne %s` (%s) in the confirmed turn. Same result as the cerne tool: report the id from the id field.", v.Path, v.Short),
-		Schema:      map[string]any{"type": "object", "properties": props, "required": append([]string{}, pos...)},
+		Schema:      map[string]any{"type": "object", "properties": props, "required": append([]string{}, required...)},
 	}, true
 }
 
@@ -176,6 +180,9 @@ func decodeTyped(v verbs.Verb, input json.RawMessage) (verbs.Call, error) {
 	for _, p := range pos {
 		s, ok := in[p].(string)
 		if !ok {
+			if _, given := in[p]; !given && v.OptionalPositional(p) {
+				continue
+			}
 			return bad("%s is required (string)", p)
 		}
 		positionals = append(positionals, s)

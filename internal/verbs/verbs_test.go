@@ -44,6 +44,13 @@ func TestFromSkipsGroupsAndHidden(t *testing.T) {
 	}
 }
 
+func TestOptionalPositional(t *testing.T) {
+	v := Verb{Use: "new [title] <kind>"}
+	if names, err := v.Positionals(); err != nil || len(names) != 2 || !v.OptionalPositional("title") || v.OptionalPositional("kind") {
+		t.Fatalf("Positionals = %v, %v; optional title=%v kind=%v", names, err, v.OptionalPositional("title"), v.OptionalPositional("kind"))
+	}
+}
+
 func TestPositionals(t *testing.T) {
 	v := Verb{Use: "new <title> [kind]"}
 	if got, err := v.Positionals(); err != nil || len(got) != 2 || got[0] != "title" || got[1] != "kind" {
