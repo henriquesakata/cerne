@@ -30,19 +30,14 @@ jobs:
       - uses: actions/attest-build-provenance@v2
         with:
           subject-path: 'dist/*'
-      # Body = the CHANGELOG section, then a fixed install and verify block.
+      # Body = the CHANGELOG section, then the fixed Update, Install and Verify blocks.
       # A tag with a hyphen (v1.0.0-rc.1) is published as a pre-release.
       - name: publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           notes="$RUNNER_TEMP/notes.md"
-          {
-            cat "$RUNNER_TEMP/changelog-section.md"
-            printf '\n---\n\n'
-            printf '## Install\n\nCross-compiled binaries (linux and darwin amd64/arm64, windows amd64) and `SHA256SUMS`. See [INSTALL.md](https://github.com/%s/blob/%s/INSTALL.md).\n\n' "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME"
-            printf '## Verify\n\nEvery file carries a signed provenance attestation:\n\n```sh\ngh attestation verify <file> --repo %s\n```\n' "$GITHUB_REPOSITORY"
-          } >"$notes"
+          sh scripts/release-body.sh "$GITHUB_REF_NAME" "$RUNNER_TEMP/changelog-section.md" >"$notes"
           sh scripts/release-publish.sh "$GITHUB_REF_NAME" "$notes" dist/*
       # The workflow token cannot write to another repository: HOMEBREW_TAP_TOKEN
       # is a fine-grained token with contents:write on henriquesakata/homebrew-tap

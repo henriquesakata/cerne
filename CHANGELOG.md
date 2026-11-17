@@ -144,6 +144,9 @@ While cerne is below 1.0.0, a minor version may change behavior: read the
 
 Everything not listed here needs no action.
 
+- **Update the binary.** `brew upgrade henriquesakata/tap/cerne`, or run the
+  install script again, or `go install github.com/henriquesakata/cerne/cmd/cerne@v0.14.0`
+  (details in INSTALL.md, *Updating*). `cerne --version` then prints 0.14.
 - **Refresh the installed hooks and skill.** After updating the binary, run
   `cerne hook install` and `cerne skill install` in each project (add
   `--provider copilot` for Copilot). `cerne pull` and the session start warn
