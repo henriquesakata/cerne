@@ -172,7 +172,7 @@ func BuildGraph(repoDir string) (Graph, error) {
 		}
 		docDir := path.Dir(cd.rel)
 		resolved, _ := mdlink.ContentLinks(string(data), func(clean string) (string, bool) {
-			id := entityIDFromContentPath(path.Join(docDir, clean))
+			id := store.EntityIDFromContentPath(path.Join(docDir, clean))
 			if id != "" && nodeSet[id] {
 				return id, true
 			}
@@ -265,27 +265,4 @@ func contentDocs(repoDir string, features []store.Feature, decisions []store.Dec
 		}
 	}
 	return docs, nil
-}
-
-// entityIDFromContentPath maps a backend-relative slash path of a content doc
-// to the entity ID that owns it: content/features/<ID>/..., content/decisions/
-// <ID>.md, content/references/<ID>.md. Returns "" when the path is not under a
-// known content kind.
-func entityIDFromContentPath(rel string) string {
-	switch {
-	case strings.HasPrefix(rel, "content/features/"):
-		rest := rel[len("content/features/"):]
-		if i := strings.IndexByte(rest, '/'); i > 0 {
-			return rest[:i]
-		}
-	case strings.HasPrefix(rel, "content/decisions/") && strings.HasSuffix(rel, ".md"):
-		if id := strings.TrimSuffix(rel[len("content/decisions/"):], ".md"); !strings.Contains(id, "/") {
-			return id
-		}
-	case strings.HasPrefix(rel, "content/references/") && strings.HasSuffix(rel, ".md"):
-		if id := strings.TrimSuffix(rel[len("content/references/"):], ".md"); !strings.Contains(id, "/") {
-			return id
-		}
-	}
-	return ""
 }

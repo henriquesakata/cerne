@@ -255,3 +255,40 @@ func TestBuildGraphPartOfLegacyParent(t *testing.T) {
 		t.Fatalf("part_of edges = %+v, want %+v", parts, want)
 	}
 }
+
+// TestBuildGraphLinksToNotesAndRunbooks (B-0022): a relative markdown link from
+// a feature doc to a note or a runbook is a links edge, like one to a decision.
+func TestBuildGraphLinksToNotesAndRunbooks(t *testing.T) {
+	repo := t.TempDir()
+	now := time.Now()
+	for _, err := range []error{
+		store.SaveFeature(repo, store.Feature{ID: "F-0001", Title: "A", State: domain.StateApproved, CreatedAt: now, UpdatedAt: now}),
+		store.SaveNote(repo, store.Note{ID: "N-0001", Title: "Nota", State: domain.NoteActive, CreatedAt: now, UpdatedAt: now}),
+		store.SaveRunbook(repo, store.Runbook{ID: "RB-0001", Title: "Runbook", State: domain.RunbookActive, CreatedAt: now, UpdatedAt: now}),
+	} {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeDoc(t, repo, "content/features/F-0001/spec.md", "[n](../../notes/N-0001.md) [rb](../../runbooks/RB-0001.md)")
+	writeDoc(t, repo, "content/notes/N-0001.md", "volta para [f](../features/F-0001/spec.md) e [rb](./../runbooks/RB-0001.md)")
+	g, err := BuildGraph(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var links []Edge
+	for _, e := range g.Edges {
+		if e.Type == EdgeLinks {
+			links = append(links, e)
+		}
+	}
+	want := []Edge{
+		{From: "F-0001", To: "N-0001", Type: EdgeLinks},
+		{From: "F-0001", To: "RB-0001", Type: EdgeLinks},
+		{From: "N-0001", To: "F-0001", Type: EdgeLinks},
+		{From: "N-0001", To: "RB-0001", Type: EdgeLinks},
+	}
+	if !reflect.DeepEqual(links, want) {
+		t.Fatalf("link edges = %+v, want %+v", links, want)
+	}
+}
