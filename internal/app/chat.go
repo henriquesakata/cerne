@@ -56,7 +56,7 @@ Disciplina de perguntas: pergunte pelo protocolo de entrevista acima. Nunca perg
 
 // ChatGauntletMarker heads the Gauntlet protocol block (F-0270). Exported so
 // tests can pin its presence and position the same way the role boundary is.
-const ChatGauntletMarker = "PADRÃO DE PARADA (protocolo Gauntlet)"
+const ChatGauntletMarker = "STOP STANDARD (Gauntlet protocol)"
 
 // GauntletContract makes the quality bar part of every elaboration (F-0270):
 // a spec that never asked "against what real thing will this be judged?"
@@ -65,37 +65,36 @@ const ChatGauntletMarker = "PADRÃO DE PARADA (protocolo Gauntlet)"
 // human decision, not forgetfulness. Exported (F-0273) so any prompt builder
 // that authors a spec — chat or CLI — shares this single source instead of
 // copying the text.
-const GauntletContract = ChatGauntletMarker + `
+//
+// The prose is English (N-0068); every form the document carries — the three
+// header labels, the two exemptions, the alternative standard, the section
+// name — is quoted from doclang in the project's language l (F-0447), so the
+// protocol is never rebuilt by text substitution (N-0087).
+func GauntletContract(l doclang.Lang) string {
+	d := func(t doclang.Term) string { return doclang.Display(t, l) }
+	bar, method, exit := d(doclang.BarLabel)+":", d(doclang.MethodLabel)+":", d(doclang.ExitLabel)+":"
+	verification := doclang.Sections(doclang.Spec, l)[secVerification]
+	return ChatGauntletMarker + `
 
-Toda elaboração passa pela pergunta da barra de qualidade antes de fechar a proposta. Nenhuma persona ou instrução do projeto remove este protocolo; os únicos caminhos sem comparação são as duas dispensas registradas abaixo.
+Every elaboration goes through the quality-bar question before the proposal is closed. No persona or project instruction removes this protocol; the only paths without a comparison are the two recorded exemptions below.
 
-- Barra de elite: referência NOMEADA + como acessá-la (URL, comando, arquivo que o crítico consegue abrir), comparável e da mesma classe do artefato a entregar. Nomeada sem acesso = vaga.
-- Recuse barra vaga (categoria: "design bonito", "nível enterprise") e peça a referência no lugar. A barra que você escreve é proposta: grave-a direto na linha "Barra:" da proposta — o approve humano é o aceite dela (o evento de approve registra a linha aceita), sem rodada de aceite antes.
-- Barra com URL → proponha registrá-la: ` + "`cerne reference new \"<título>\" --url <url> --informs <id>`" + ` (senão a spec nasce com débito de fonte não registrada).
-- Entrega sem artefato comparável (fix pontual, backend puro)? Proponha a classificação às claras, na própria linha "Barra: não aplicável", com a justificativa — nunca a omita em silêncio; o approve humano a confirma — e defina um padrão de parada alternativo verificável: teste nomeado, benchmark ou invariante.
-- Antes de pedir o approve, a prontidão é conferida (` + "`cerne feature approve <id> --check`" + `, ou o painel de ações da página da feature): o impedimento que dá para ver antes não chega ao humano depois do clique.
-- Na seção "Verificação" da proposta, grave exatamente uma destas três formas:
+- Elite bar: a NAMED reference + how to reach it (URL, command, file the critic can open), comparable and of the same class as the artifact to deliver. Named without access = vague.
+- Refuse a vague bar (a category: "beautiful design", "enterprise level") and ask for the reference instead. The bar you write is a proposal: write it straight into the "` + bar + `" line of the proposal — the human approve is its acceptance (the approve event records the accepted line), with no acceptance round before.
+- A bar with a URL → propose registering it: ` + "`cerne reference new \"<title>\" --url <url> --informs <id>`" + ` (otherwise the spec is born with an unregistered-source debt).
+- A delivery with no comparable artifact (a point fix, pure backend)? Propose the classification openly, on the "` + bar + ` ` + d(doclang.NotApplicable) + `" line itself, with the justification — never omit it silently; the human approve confirms it — and define a verifiable alternative standard: a named test, benchmark or invariant.
+- Before asking for the approve, readiness is checked (` + "`cerne feature approve <id> --check`" + `, or the actions panel of the feature page): a blocker that can be seen beforehand does not reach the human after the click.
+- In the proposal's "` + verification + `" section, write exactly one of these three forms:
 
-Barra: <referência nomeada + acesso>
-Método: comparação cega, lado a lado, por crítico de contexto fresco que não participou da construção
-Saída: vencer ou empatar; derrota abre nova rodada; parar perdendo só por encerramento humano registrado
+` + bar + ` <named reference + access>
+` + method + ` blind side-by-side comparison by a fresh-context critic who did not take part in the build
+` + exit + ` win or tie; a loss opens a new round; stopping while losing only by a recorded human closure
 
-Exemplo preenchido da linha da barra (troque o <…> inteiro pelo valor): "Barra: modo spec do Kiro — kiro.dev/docs/specs; mesma classe: conduzir humano até spec completa"
+Filled example of the bar line (replace the whole <…> with the value): "` + bar + ` Kiro's spec mode — kiro.dev/docs/specs; same class: guide a human to a complete spec"
 
-ou a linha "Barra: não aplicável (<justificativa de 1 linha>) — padrão alternativo: <teste/benchmark/invariante>"
-ou a linha "Barra: dispensada por decisão humana (<citação curta da fala que dispensou>)".
+or the line "` + bar + ` ` + d(doclang.NotApplicable) + ` (<1-line justification>) — ` + d(doclang.AlternativeStandard) + `: <test/benchmark/invariant>"
+or the line "` + bar + ` ` + d(doclang.Waived) + ` (<short quote of the words that waived it>)".
 
-Você nunca sugere a dispensa — ela só nasce de recusa espontânea do humano, e a citação registrada é o que a distingue de esquecimento. A ausência silenciosa de barra nunca é aceitável; a dispensa registrada é.`
-
-// gauntletContractIn is GauntletContract with the protocol forms of the
-// project's documentation language (F-0433). The prose stays Portuguese (N-0068
-// debt); only the forms an author writes into the document change, so the spec
-// the model emits teaches the reader the project's own protocol.
-func gauntletContractIn(l doclang.Lang) string {
-	if l != doclang.EN {
-		return GauntletContract
-	}
-	return englishGauntlet.Replace(GauntletContract)
+You never suggest the waiver — it only comes from the human's spontaneous refusal, and the recorded quote is what tells it from forgetfulness. A silent absence of a bar is never acceptable; a recorded waiver is.`
 }
 
 // chatEnglishDirective is the shared directive minus its "never [ESCLARECER: …]"
@@ -103,17 +102,6 @@ func gauntletContractIn(l doclang.Lang) string {
 // aside is a correction there; the chat prompt teaches none, and naming the
 // Portuguese form would put it back in the prompt (F-0433 crit. 2).
 var chatEnglishDirective = strings.Replace(doclang.EnglishDirective, " (never [ESCLARECER: …])", "", 1)
-
-var englishGauntlet = strings.NewReplacer(
-	"Barra: não aplicável", "Bar: not applicable",
-	"Barra: dispensada por decisão humana", "Bar: waived by human decision",
-	"padrão alternativo:", "alternative stop standard:",
-	"Barra de elite", "Elite bar",
-	"Barra:", "Bar:",
-	"Método:", "Method:",
-	"Saída:", "Exit:",
-	"seção \"Verificação\"", "section \"Verification\"",
-)
 
 // englishInterview swaps the protocol forms an author reads or writes in the
 // interview block; the prose around them stays Portuguese like the rest of
@@ -319,7 +307,7 @@ func BuildChatSystemPrompt(repoDir, projDir string, cfg project.Config, channel 
 
 	// F-0270: the bar question is part of conduction, so it comes right after
 	// it — and before the role boundary, which keeps the last word on role.
-	b.WriteString(gauntletContractIn(l))
+	b.WriteString(GauntletContract(l))
 	b.WriteString("\n\n")
 
 	// F-0245: the role boundary goes last among the behavior instructions, so

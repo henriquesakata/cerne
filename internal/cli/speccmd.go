@@ -60,7 +60,8 @@ func runSpecDraft(cmd *cobra.Command, dir, id string) error {
 		return err
 	}
 	current := readSpecCurrent(ctx.repoDir, id)
-	prompt := draftPromptIn(store.DocsLanguage(ctx.repoDir), doclang.Spec, BuildSpecDraftPrompt(f, current))
+	l := store.DocsLanguage(ctx.repoDir)
+	prompt := draftPromptIn(l, doclang.Spec, BuildSpecDraftPrompt(l, f, current))
 	out := cmd.OutOrStdout()
 
 	// delegation (default): print the prompt for the host agent to draft inline.
@@ -120,7 +121,7 @@ func readSpecCurrent(repoDir, id string) string {
 // or spec content. It requests the canonical spectmpl.Sections in order and the
 // authoring rules (problem-first ordering, EARS-testable criteria, the
 // [ESCLARECER] ambiguity marker, code-grounded design).
-func BuildSpecDraftPrompt(f store.Feature, currentContent string) string {
+func BuildSpecDraftPrompt(l doclang.Lang, f store.Feature, currentContent string) string {
 	module := f.Module
 	if module == "" {
 		module = "(sem módulo)"
@@ -153,7 +154,7 @@ func BuildSpecDraftPrompt(f store.Feature, currentContent string) string {
 	// F-0273: same Gauntlet contract the Backlog chat prompt uses (app.GauntletContract),
 	// reused verbatim — never copied — so a spec authored via CLI carries the
 	// same quality-bar protocol as one elaborated through chat.
-	b.WriteString(app.GauntletContract)
+	b.WriteString(app.GauntletContract(l))
 	b.WriteString("\n\n")
 	b.WriteString("Use o título e o módulo acima como contexto. Não inclua frontmatter (o cerne carimba o cerne_id). ")
 	b.WriteString(app.DraftOutputContract + "\n")

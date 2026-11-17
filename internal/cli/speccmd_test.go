@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/project"
@@ -21,7 +22,7 @@ import (
 // id, title and module so the model has the context it needs.
 func TestBuildSpecDraftPrompt(t *testing.T) {
 	f := store.Feature{ID: "F-0007", Title: "Conciliação bancária", Module: "finance", State: domain.StateCandidate}
-	prompt := BuildSpecDraftPrompt(f, "# Conciliação bancária\n\n> Spec pendente")
+	prompt := BuildSpecDraftPrompt(doclang.PT, f, "# Conciliação bancária\n\n> Spec pendente")
 	for _, want := range []string{"F-0007", "Conciliação bancária", "finance"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing %q:\n%s", want, prompt)
@@ -66,7 +67,7 @@ func TestBuildSpecDraftPrompt(t *testing.T) {
 // quality-bar contract as one elaborated through the Backlog chat (F-0273).
 func TestBuildSpecDraftPromptIncludesGauntletContract(t *testing.T) {
 	f := store.Feature{ID: "F-0007", Title: "Conciliação bancária", Module: "finance", State: domain.StateCandidate}
-	prompt := BuildSpecDraftPrompt(f, "")
+	prompt := BuildSpecDraftPrompt(doclang.PT, f, "")
 	for _, want := range []string{
 		app.ChatGauntletMarker,
 		"Barra:",
@@ -88,8 +89,8 @@ func TestBuildSpecDraftPromptIncludesGauntletContract(t *testing.T) {
 // drift silently.
 func TestSpecDraftPromptGauntletSharesSourceWithChat(t *testing.T) {
 	f := store.Feature{ID: "F-0007", Title: "Conciliação bancária", Module: "finance", State: domain.StateCandidate}
-	prompt := BuildSpecDraftPrompt(f, "")
-	if !strings.Contains(prompt, app.GauntletContract) {
+	prompt := BuildSpecDraftPrompt(doclang.PT, f, "")
+	if !strings.Contains(prompt, app.GauntletContract(doclang.PT)) {
 		t.Fatalf("prompt does not contain app.GauntletContract verbatim:\n%s", prompt)
 	}
 }
@@ -219,7 +220,7 @@ func TestSpecDraftUnknownFeature(t *testing.T) {
 // drift between the two was the critic's finding in F-0279).
 func TestBuildSpecDraftPromptMetadataRules(t *testing.T) {
 	f := store.Feature{ID: "F-0007", Title: "Conciliação bancária", Module: "finance", State: domain.StateCandidate}
-	prompt := BuildSpecDraftPrompt(f, "")
+	prompt := BuildSpecDraftPrompt(doclang.PT, f, "")
 	if strings.Contains(prompt, "**Status:**") {
 		t.Fatalf("prompt must not ask for a **Status:** metadata line:\n%s", prompt)
 	}

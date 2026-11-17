@@ -16,7 +16,7 @@ func TestDraftPrompt_FollowsDocsLanguage(t *testing.T) {
 		kind   doclang.Kind
 		prompt string
 	}{
-		{"spec", doclang.Spec, BuildSpecDraftPrompt(f, "")},
+		{"spec", doclang.Spec, BuildSpecDraftPrompt(doclang.PT, f, "")},
 		{"plan", doclang.Plan, BuildPlanDraftPrompt(f, "spec", "", nil)},
 		{"result", doclang.Result, BuildResultDraftPrompt(f, "spec", "plan", "")},
 		{"decision", doclang.Decision, BuildDecisionDraftPrompt(store.Decision{ID: "D-0001", Title: "Use Postgres"}, "")},

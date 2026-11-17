@@ -50,19 +50,19 @@ func TestBuildChatSystemPromptGauntlet(t *testing.T) {
 	}
 	for _, want := range []string{
 		ChatGauntletMarker,
-		"nomeada",           // bar must be a named real thing
-		"barra vaga",        // vague bar is refused
-		"comparação cega",   // blind side-by-side is the method
-		"vencer ou empatar", // exit = win/tie, never a fixed round count
+		"NAMED",                         // bar must be a named real thing
+		"vague bar",                     // vague bar is refused
+		"blind side-by-side comparison", // blind side-by-side is the method
+		"win or tie",                    // exit = win/tie, never a fixed round count
 		"cerne reference new",
-		"Barra: dispensada por decisão humana", // the opt-out marker (F-0270 criterion 1)
-		"nunca sugere a dispensa",              // opt-out is human-initiated, never agent-solicited
-		"modo spec do Kiro",                    // one filled-in positive example anchors the format
-		"Barra: não aplicável",                 // the confirmed-classification marker (criterion 4)
-		"o approve humano é o aceite",          // the agent's bar is a proposal; approve accepts it (F-0308)
-		"feature approve <id> --check",         // readiness is checked before asking for the approve
-		"padrão de parada alternativo",         // no comparable artifact → alternative stop standard
-		"proposta sem isso está incompleta",    // the binding line next to the proposal template
+		"Barra: dispensada por decisão humana",           // the opt-out marker (F-0270 criterion 1)
+		"never suggest the waiver",                       // opt-out is human-initiated, never agent-solicited
+		"Kiro's spec mode",                               // one filled-in positive example anchors the format
+		"Barra: não aplicável",                           // the confirmed-classification marker (criterion 4)
+		"the human approve is its acceptance",            // the agent's bar is a proposal; approve accepts it (F-0308)
+		"feature approve <id> --check",                   // readiness is checked before asking for the approve
+		"padrão alternativo: <test/benchmark/invariant>", // no comparable artifact → alternative standard, in the project's form
+		"proposta sem isso está incompleta",              // the binding line next to the proposal template
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing gauntlet instruction %q:\n%s", want, prompt)
@@ -1100,6 +1100,43 @@ func TestBuildChatSystemPrompt_EnglishInterviewForms(t *testing.T) {
 	for _, bad := range []string{"Assumi:", "Árvore:", "propõe já", "<n> resolvidas", "<n> suposições"} {
 		if strings.Contains(prompt, bad) {
 			t.Errorf("English prompt still carries the Portuguese form %q", bad)
+		}
+	}
+}
+
+// TestGauntletContractFormsRoundTrip (F-0447 crit. 2): the example bar lines the
+// contract teaches, in either language, are read by the real bar reader as
+// what they claim to be — and carry no form of the other language.
+func TestGauntletContractFormsRoundTrip(t *testing.T) {
+	fill := regexp.MustCompile(`<[^>]*>`)
+	for _, l := range doclang.Langs() {
+		contract := GauntletContract(l)
+		label := doclang.Display(doclang.BarLabel, l)
+		var bars []string
+		for _, m := range regexp.MustCompile(`"(`+label+`: [^"\n]*)"`).FindAllStringSubmatch(contract, -1) {
+			if m[1] == label+": "+doclang.Display(doclang.NotApplicable, l) { // the bare label named in prose
+				continue
+			}
+			bars = append(bars, fill.ReplaceAllString(m[1], "something concrete"))
+		}
+		if len(bars) < 3 {
+			t.Fatalf("%s: want the example bar and both exemptions quoted, got %q", l, bars)
+		}
+		verification := doclang.Sections(doclang.Spec, l)[secVerification]
+		for _, bar := range bars {
+			body := []byte("# t\n\n## " + verification + "\n\n" + bar + "\n")
+			if got, err := doccheck.SpecBarIn(body, l); err != nil || !strings.HasPrefix(got, label+":") {
+				t.Errorf("%s: %q is not read as a bar: %q, %v", l, bar, got, err)
+			}
+		}
+		other := doclang.PT
+		if l == doclang.PT {
+			other = doclang.EN
+		}
+		for _, term := range []doclang.Term{doclang.BarLabel, doclang.MethodLabel, doclang.ExitLabel, doclang.NotApplicable, doclang.Waived} {
+			if w := doclang.Display(term, other); strings.Contains(contract, w+" ") || strings.Contains(contract, w+":") || strings.Contains(contract, " "+w) {
+				t.Errorf("%s: the contract carries the %s form %q", l, other, w)
+			}
 		}
 	}
 }

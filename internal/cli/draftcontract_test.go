@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -15,7 +16,7 @@ import (
 func TestDraftPromptsStateTheOutputContract(t *testing.T) {
 	f := store.Feature{ID: "F-0001", Title: "Boletos", Module: "finance"}
 	for name, prompt := range map[string]string{
-		"spec":     BuildSpecDraftPrompt(f, ""),
+		"spec":     BuildSpecDraftPrompt(doclang.PT, f, ""),
 		"plan":     BuildPlanDraftPrompt(f, "spec", "", nil),
 		"result":   BuildResultDraftPrompt(f, "spec", "plan", ""),
 		"decision": BuildDecisionDraftPrompt(store.Decision{ID: "D-0001", Title: "Postgres"}, ""),
