@@ -9,6 +9,72 @@ While cerne is below 1.0.0, a minor version may change behavior: read the
 
 ## [Unreleased]
 
+## [0.14.2] - 2026-11-17
+
+### Added
+
+- A prompt reminder for Claude Code: when your message shares words with the
+  title of an active note or runbook, the agent sees up to three of their ids
+  and titles, once per session, so a recorded fix is found even when the code
+  isn't in the repository. Turn it off with the `hooks.prompt_notes` setting.
+  ([#57](https://github.com/henriquesakata/cerne/pull/57))
+- `note`, `decision`, `runbook`, `reference`, `feature` and `bug new` take the
+  title from the body's first `# ` heading when you don't pass one, from
+  `--file` or stdin. ([#59](https://github.com/henriquesakata/cerne/pull/59))
+- `work start --ref` accepts other works (W-), notes (N-) and runbooks (RB-),
+  and `cerne show` lists them. ([#54](https://github.com/henriquesakata/cerne/pull/54))
+
+### Changed
+
+- The CLI speaks English throughout: `supersede` replaces `substituir`, and
+  `--step`, `--no-step`, `--consolidated`, `--window`, `--steps`, `--word`,
+  `--stop`, `--by`, `--evidence` and `--expected` replace their Portuguese
+  names, which keep working but are no longer shown in help. Lint findings
+  and hook messages are English too.
+  ([#55](https://github.com/henriquesakata/cerne/pull/55))
+- cerne's own AI prompts (drafts, the Backlog chat, roast, `ask`, `compile`)
+  are written in English and ask for the document in your project's
+  documentation language, with the section titles and protocol forms that
+  language uses. ([#61](https://github.com/henriquesakata/cerne/pull/61))
+- A session started in a git worktree that has no `.docs/` gets it built from
+  the local backend clone, with no network and no reset, and is told to run
+  `cerne pull` when that isn't possible.
+  ([#56](https://github.com/henriquesakata/cerne/pull/56))
+
+### Fixed
+
+- Bugs, epics and tasks no longer drop out of `cerne search` and `cerne ask`
+  after they change, and the commit-message guard, cost attribution and the
+  Gauntlet now recognize B-, E- and T- ids.
+  ([#58](https://github.com/henriquesakata/cerne/pull/58))
+- A git worktree of the same repository, created from a commit older than
+  `cerne init`, resolves to the project of its main checkout instead of being
+  refused. Clones, fixtures and submodules are still refused.
+  ([#53](https://github.com/henriquesakata/cerne/pull/53))
+- Ids of every kind link to the right page in the UI, and `[[W-…]]`, `[[C-…]]`
+  and `[[HO-…]]` links no longer show as broken in `cerne lint`; notes and
+  runbooks get their links in the graph.
+  ([#60](https://github.com/henriquesakata/cerne/pull/60))
+
+### Upgrading
+
+Everything not listed here needs no action.
+
+- **Update the binary on every machine that pushes to the project.**
+  `brew upgrade henriquesakata/tap/cerne`, or run the install script again, or
+  `go install github.com/henriquesakata/cerne/cmd/cerne@v0.14.2` (details in
+  INSTALL.md, *Updating*). `cerne --version` then prints `cerne 0.14.2`.
+- **Run `cerne hook install` and `cerne skill install` in each project.** This
+  adds the prompt reminder hook and teaches the skills the English command
+  names.
+- **Scripts that read cerne's output may need the new names.** The Portuguese
+  commands and flags still work as input, but help text and printed hints now
+  show only the English names (`supersede`, `--consolidated`, `--stop`…).
+- **`cerne ask` in delegation mode** prints a prompt that starts with
+  `Question:` instead of `Pergunta:`.
+
+**Full changelog:** [v0.14.1...v0.14.2](https://github.com/henriquesakata/cerne/compare/v0.14.1...v0.14.2)
+
 ## [0.14.1] - 2026-11-17
 
 ### Fixed
@@ -250,7 +316,8 @@ Everything not listed here needs no action.
 First release published on GitHub. Versions 0.1.0 to 0.12.0 were released
 before the move and have no public release notes.
 
-[Unreleased]: https://github.com/henriquesakata/cerne/compare/v0.14.1...HEAD
+[Unreleased]: https://github.com/henriquesakata/cerne/compare/v0.14.2...HEAD
+[0.14.2]: https://github.com/henriquesakata/cerne/compare/v0.14.1...v0.14.2
 [0.14.1]: https://github.com/henriquesakata/cerne/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/henriquesakata/cerne/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/henriquesakata/cerne/releases/tag/v0.13.0
