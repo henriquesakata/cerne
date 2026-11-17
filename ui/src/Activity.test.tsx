@@ -115,3 +115,17 @@ describe('Activity — selo de passagem (F-0386 crit. 5)', () => {
     expect(screen.queryByRole('status')).toBeNull()
   })
 })
+
+// B-0022: cada ref leva à página do seu tipo; o que não tem página é texto.
+describe('Activity — refs por tipo (B-0022)', () => {
+  it('liga B-/D-/N-/RB- à própria página e deixa W- como texto', async () => {
+    api.fetchWork.mockResolvedValue([{ ...works[0], refs: ['B-0019', 'D-0002', 'N-0003', 'RB-0004', 'W-0007'] }])
+    render(<Activity />)
+    await waitFor(() => expect(screen.getByText('B-0019')).toBeInTheDocument())
+    expect(screen.getByText('B-0019').closest('a')).toHaveAttribute('href', '#/f/B-0019')
+    expect(screen.getByText('D-0002').closest('a')).toHaveAttribute('href', '#/d/D-0002')
+    expect(screen.getByText('N-0003').closest('a')).toHaveAttribute('href', '#/n/N-0003')
+    expect(screen.getByText('RB-0004').closest('a')).toHaveAttribute('href', '#/rb/RB-0004')
+    expect(screen.getByText('W-0007').closest('a')).toBeNull()
+  })
+})

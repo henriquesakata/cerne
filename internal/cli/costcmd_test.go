@@ -527,7 +527,7 @@ func TestCostAttributeRefusals(t *testing.T) {
 		{[]string{"nobody", "F-0001", "--session", "sess-1"}, cost.ErrAgentNotFound, filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), "projects", "*", "sess-1", "subagents")},
 		{[]string{"x", "F-0001", "--session", "sess-1", "--role", "reviewer"}, cost.ErrUnknownRole, "critic, judge, builder, other"},
 		{[]string{"x", "F-0001"}, nil, "no session: pass --session or set CERNE_SESSION"},
-		{[]string{"x", "W-0001", "--session", "sess-1"}, nil, "takes a feature, epic or task id"},
+		{[]string{"x", "W-0001", "--session", "sess-1"}, nil, "takes a feature, epic, task or bug id"},
 	} {
 		out, err := execCerne(t, append(append([]string{"cost", "attribute"}, c.args...), "--dir", projDir)...)
 		if err == nil || (c.is != nil && !errors.Is(err, c.is)) || !strings.Contains(err.Error(), c.want) {

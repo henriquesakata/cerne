@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import Markdown from './Markdown'
 import { ask, fetchLLMConfig, type AskAnswer, type AskSource } from './api'
 import { describeLLM, FailureView } from './AISettings'
+import { entityHref } from './entityRoute'
 import { useT } from './i18n'
 
 // AILine is the read-only answer to "which AI answers me": the path, the CLI or
@@ -31,13 +32,11 @@ function AILine() {
   )
 }
 
-// sourceHref leva ao detalhe da fonte: páginas de wiki (#/wiki/<rel>) ou
-// entidades (#/f, #/d, #/r) conforme o prefixo do ID.
-function sourceHref(source: string): string {
+// sourceHref leva ao detalhe da fonte: páginas de wiki (#/wiki/<rel>) ou a
+// página da entidade pela tabela de prefixos; sem página, sem link.
+function sourceHref(source: string): string | null {
   if (source.startsWith('wiki:')) return `#/wiki/${source.slice('wiki:'.length)}`
-  if (source.startsWith('D-')) return `#/d/${encodeURIComponent(source)}`
-  if (source.startsWith('R-')) return `#/r/${encodeURIComponent(source)}`
-  return `#/f/${encodeURIComponent(source)}`
+  return entityHref(source)
 }
 
 function Sources({ sources }: { sources: AskSource[] }) {
@@ -45,17 +44,29 @@ function Sources({ sources }: { sources: AskSource[] }) {
   if (sources.length === 0) return <p className="muted">{t.ask.noSources}</p>
   return (
     <ul className="entity-list">
-      {sources.map((s, i) => (
-        <li key={`${s.source}-${i}`}>
-          <a className="entity-row" href={sourceHref(s.source)}>
+      {sources.map((s, i) => {
+        const href = sourceHref(s.source)
+        const row = (
+          <>
             <span className="card-id">{s.source}</span>
             <span className="badge">
               {(t.ask.kindLabels as Record<string, string>)[s.kind] ?? s.kind}
             </span>
             <span className="entity-title">{s.state}</span>
-          </a>
-        </li>
-      ))}
+          </>
+        )
+        return (
+          <li key={`${s.source}-${i}`}>
+            {href ? (
+              <a className="entity-row" href={href}>
+                {row}
+              </a>
+            ) : (
+              <div className="entity-row">{row}</div>
+            )}
+          </li>
+        )
+      })}
     </ul>
   )
 }

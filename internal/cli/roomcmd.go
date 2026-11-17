@@ -536,7 +536,7 @@ func newRoomMinutesRegisterCmd() *cobra.Command {
 			return runRoomMinutesRegister(cmd, dir, port, args[0], informs, facet, component, force)
 		},
 	}
-	cmd.Flags().StringVar(&informs, "informs", "", "comma-separated F-/D-/RB-/N- ids this meeting informed")
+	cmd.Flags().StringVar(&informs, "informs", "", "comma-separated F-/E-/T-/B-/D-/RB-/N-/I- ids this meeting informed")
 	cmd.Flags().StringVar(&facet, "facet", "", "facets (comma-separated; closed set: infra,code,data,process,auth)")
 	cmd.Flags().StringVar(&component, "component", "", "extra components (comma-separated) — 'ata' is always added")
 	cmd.Flags().BoolVar(&force, "force", false, "re-register even if the room's minutes are already linked to a note")

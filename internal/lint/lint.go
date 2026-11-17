@@ -334,6 +334,11 @@ func RunConfig(repoDir string, staleReadyDays, staleWorkHours, staleDecisionDays
 	for _, i := range ideas {
 		ids[mdlink.CanonicalID(i.ID)] = true
 	}
+	// Every other kind the store holds (W-, C-, HO-, ...) resolves too, from the
+	// same layout table EntityExists reads (B-0022).
+	for _, id := range store.EntityIDs(repoDir) {
+		ids[mdlink.CanonicalID(id)] = true
+	}
 	var findings []Finding
 	var fileNames map[string][]string
 	names := func() map[string][]string {

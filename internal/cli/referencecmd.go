@@ -110,7 +110,7 @@ func newReferenceNewCmd(dir *string) *cobra.Command {
 		Long: "Registers an external article/document as a reference (marked external + URL). " +
 			"The content (text/summary) comes from --file or standard input and enters the index, " +
 			"so 'ask' starts citing it. Use --informs to link the source to the entities " +
-			"(F-/D-/RB-/N-/I-) it motivated. Use --facet (closed axis: infra,code,data,process,auth) and " +
+			"(F-/E-/T-/B-/D-/RB-/N-/I-) it motivated. Use --facet (closed axis: infra,code,data,process,auth) and " +
 			"--component (subsystem/tool, e.g. gitea,kpack) to categorize — both multi-valued, " +
 			"comma-separated. A live reference with the same normalized URL refuses the creation (F-0324); --force overrides it. The title argument may be omitted when the body (--file or stdin) opens with a `# ` heading: that heading becomes the title.",
 		Args: cobra.MaximumNArgs(1),
@@ -119,7 +119,7 @@ func newReferenceNewCmd(dir *string) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&url, "url", "", "source URL (required)")
-	cmd.Flags().StringVar(&informs, "informs", "", "comma-separated F-/D-/RB-/N-/I- ids this source motivated")
+	cmd.Flags().StringVar(&informs, "informs", "", "comma-separated F-/E-/T-/B-/D-/RB-/N-/I- ids this source motivated")
 	cmd.Flags().StringVar(&file, "file", "", "file with the source content (defaults to stdin)")
 	cmd.Flags().StringVar(&facet, "facet", "", "facets (comma-separated; closed set: infra,code,data,process,auth)")
 	cmd.Flags().StringVar(&component, "component", "", "components (comma-separated subsystem/tool tags, e.g. gitea,kpack)")
@@ -157,7 +157,7 @@ func newReferenceListCmd(dir *string) *cobra.Command {
 		Short: "List references — current by default; --all includes obsolete",
 		Long: "Lists references read straight from the backend (store). By default shows only the " +
 			"current ones; --all includes the obsolete. Each line carries id, state, title and markers " +
-			"(external, facet/component, informs F-/D-, URL). Filter by --facet and/or --component " +
+			"(external, facet/component, informs F-/E-/T-/B-/D-/RB-/N-/I-, URL). Filter by --facet and/or --component " +
 			"(logical AND). --json for structured output.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -267,7 +267,7 @@ func newReferenceLinkCmd(dir *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "link <id>",
 		Short: "Add or remove the entities a current reference informs",
-		Long: "Adds (--informs) or removes (--unlink) F-/D-/RB-/N-/I- targets of a current reference, without " +
+		Long: "Adds (--informs) or removes (--unlink) F-/E-/T-/B-/D-/RB-/N-/I- targets of a current reference, without " +
 			"duplicating the ones already there. The path source -> idea -> feature: register the source with " +
 			"--informs I-…, then 'idea promote' carries the link to the new feature; or link later with " +
 			"'cerne reference link R-… --informs F-…'. Prints the final list.",
@@ -295,7 +295,7 @@ func newReferenceLinkCmd(dir *string) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&informs, "informs", "", "comma-separated F-/D-/RB-/N-/I- ids to add")
+	cmd.Flags().StringVar(&informs, "informs", "", "comma-separated F-/E-/T-/B-/D-/RB-/N-/I- ids to add")
 	cmd.Flags().StringVar(&unlink, "unlink", "", "comma-separated ids to remove")
 	return verbs.MarkChat(cmd)
 }

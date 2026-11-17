@@ -94,7 +94,7 @@ func runCostAttribute(cmd *cobra.Command, dir, sess, agent, id, role string) err
 		return errors.New("no session: pass --session or set CERNE_SESSION (the SessionStart hook exports it — re-run `cerne hook install` if it is missing)")
 	}
 	if !domain.IsFeatureID(id) {
-		return fmt.Errorf("cost attribute takes a feature, epic or task id (F-/E-/T-), got %q", id)
+		return fmt.Errorf("cost attribute takes a feature, epic, task or bug id (F-/E-/T-/B-), got %q", id)
 	}
 	ctx, err := resolveProject(dir)
 	if err != nil {
@@ -191,7 +191,7 @@ func runCost(cmd *cobra.Command, dir, id string, asJSON bool) error {
 	}
 	if id != "" {
 		if !domain.IsFeatureID(id) {
-			return fmt.Errorf("cost takes a feature, epic or task id (F-/E-/T-), got %q", id)
+			return fmt.Errorf("cost takes a feature, epic, task or bug id (F-/E-/T-/B-), got %q", id)
 		}
 		if _, err := store.LoadFeature(ctx.repoDir, id); err != nil {
 			return err
