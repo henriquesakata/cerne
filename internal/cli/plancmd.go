@@ -12,8 +12,6 @@ import (
 	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/llm"
-	"github.com/henriquesakata/cerne/internal/plantmpl"
-	"github.com/henriquesakata/cerne/internal/spectmpl"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -64,7 +62,7 @@ func runPlanDraft(cmd *cobra.Command, dir, id string) error {
 		return err
 	}
 	children := store.ChildrenByParent(feats)[id]
-	prompt := draftPromptIn(store.DocsLanguage(ctx.repoDir), doclang.Plan, BuildPlanDraftPrompt(f, spec, current, children))
+	prompt := BuildPlanDraftPrompt(store.DocsLanguage(ctx.repoDir), f, spec, current, children)
 	out := cmd.OutOrStdout()
 
 	// delegation (default): print the prompt for the host agent to draft inline.
@@ -118,56 +116,59 @@ func readFeatureDoc(repoDir, id, file string) string {
 	return string(data)
 }
 
-// BuildPlanDraftPrompt assembles the pt-BR prompt instructing the LLM to write a
+// BuildPlanDraftPrompt assembles the English prompt instructing the LLM to write a
 // COMPLETE execution plan for a feature whose spec is already approved. It feeds
 // the feature id/title/module, the approved spec (as context to reference, not
 // repeat) and the current plan stub or draft, then requests the canonical
 // plantmpl.Sections in order plus the authoring rules: small ordered test-first
 // tasks, verification tied to a numbered spec criterion, exact commit messages,
-// the [ESCLARECER] ambiguity marker, right-sizing, and a binary definition of done.
+// the ambiguity marker, right-sizing, and a binary definition of done.
 // children, when non-empty, makes the prompt list the roster (id, title,
-// state) and ask for the canonical "Etapa N: ID (título)" execution map
-// (F-0213 criterion 3) — mesma etapa = paralelas, ordem/paralelismo justificados.
-func BuildPlanDraftPrompt(f store.Feature, specContent, currentContent string, children []store.Feature) string {
+// state) and ask for the canonical "Etapa N: ID (title)" execution map
+// (F-0213 criterion 3) — same stage = parallel, order/parallelism justified.
+func BuildPlanDraftPrompt(l doclang.Lang, f store.Feature, specContent, currentContent string, children []store.Feature) string {
 	module := f.Module
 	if module == "" {
-		module = "(sem módulo)"
+		module = "(no module)"
 	}
+	const (
+		secDeps = 2
+		secDone = 5
+	)
 	var b strings.Builder
-	b.WriteString("Você está escrevendo o PLANO DE EXECUÇÃO de uma feature de software (a spec já foi aprovada), em português do Brasil.\n\n")
+	b.WriteString("You are writing the EXECUTION PLAN of a software feature (the spec is already approved).\n\n")
 	b.WriteString("Feature:\n")
 	fmt.Fprintf(&b, "- id: %s\n", f.ID)
-	fmt.Fprintf(&b, "- título: %s\n", f.Title)
-	fmt.Fprintf(&b, "- módulo: %s\n\n", module)
-	b.WriteString("Spec aprovada (CONTEXTO — referencie e satisfaça seus critérios numerados; NÃO a repita):\n")
+	fmt.Fprintf(&b, "- title: %s\n", f.Title)
+	fmt.Fprintf(&b, "- module: %s\n\n", module)
+	b.WriteString("Approved spec (CONTEXT — reference it and satisfy its numbered criteria; do NOT repeat it):\n")
 	b.WriteString("---\n")
 	b.WriteString(strings.TrimSpace(specContent))
 	b.WriteString("\n---\n\n")
-	b.WriteString("Conteúdo atual do plano (stub ou rascunho parcial; pode estar vazio):\n")
+	b.WriteString("Current plan content (stub or partial draft; may be empty):\n")
 	b.WriteString("---\n")
 	b.WriteString(strings.TrimSpace(currentContent))
 	b.WriteString("\n---\n\n")
 	if len(children) > 0 {
-		b.WriteString("Esta feature é um ÉPICO — já tem estas tasks/filhas mintadas:\n")
+		b.WriteString("This feature is an EPIC — it already has these tasks/children minted:\n")
 		for _, c := range children {
-			fmt.Fprintf(&b, "- %s (%s) — estado: %s\n", c.ID, c.Title, c.State)
+			fmt.Fprintf(&b, "- %s (%s) — state: %s\n", c.ID, c.Title, c.State)
 		}
-		b.WriteString("Na seção \"Dependências e ordem\", inclua um Mapa de execução no formato canônico — uma linha " +
-			"por etapa, filhos da mesma etapa são paralelos:\n")
-		b.WriteString("  Etapa 1: T-0001 (título)\n  Etapa 2 (paralelas): T-0002 (título) · T-0003 (título)\n")
-		b.WriteString("Justifique a ordem/paralelismo escolhido.\n\n")
+		b.WriteString("In the " + heading(doclang.Plan, l, secDeps) + " section, include an execution map in the canonical format — one line " +
+			"per stage, children of the same stage are parallel (the words Etapa and paralelas are parsed, keep them exactly):\n")
+		b.WriteString("  Etapa 1: T-0001 (title)\n  Etapa 2 (paralelas): T-0002 (title) · T-0003 (title)\n")
+		b.WriteString("Justify the chosen order and parallelism.\n\n")
 	}
-	b.WriteString("Escreva um plano COMPLETO e executável, em Markdown, com exatamente estas seções nesta ordem:\n")
-	for _, s := range plantmpl.Sections {
-		b.WriteString("## " + s + "\n")
-	}
-	b.WriteString("\nRegras de autoria:\n")
-	b.WriteString("- Não repita a spec; referencie-a. O plano descreve COMO construir.\n")
-	b.WriteString("- Quebre em tarefas pequenas e ORDENADAS; cada tarefa deixa o repositório verde. Por tarefa: arquivos reais (criar/editar/remover), teste primeiro (TDD), verificação (comando → saída esperada) citando o número do critério da spec, e a mensagem de commit Conventional exata. Marque [paralela] quando a tarefa for independente.\n")
-	b.WriteString("- Dimensione pelo trabalho: mudança trivial (≤3 arquivos) cabe em uma única tarefa; seções que não se aplicam viram uma linha (\"N/A\"). Não infle o plano.\n")
-	b.WriteString("- Marque qualquer incerteza com \"" + spectmpl.AmbiguityMarker + " pergunta específica]\" em vez de supor.\n")
-	b.WriteString("- A Definição de pronto é um checklist binário (ATENDIDO/PENDENTE) com evidência arquivo:linha: cada critério da spec com implementação e um teste que o prova.\n\n")
-	b.WriteString("Use o título, o módulo e a spec acima como contexto. Não inclua frontmatter (o cerne carimba o cerne_id). ")
+	b.WriteString("Write a COMPLETE, executable plan, in Markdown, with exactly these sections in this order:\n")
+	writeSections(&b, doclang.Plan, l)
+	b.WriteString("\nAuthoring rules:\n")
+	b.WriteString("- Do not repeat the spec; reference it. The plan describes HOW to build.\n")
+	b.WriteString("- Break the work into small, ORDERED tasks; each task leaves the repository green. Per task: real files (create/edit/remove), test first (TDD), verification (command → expected output) citing the number of the spec criterion, and the exact Conventional Commit message. Mark [parallel] when a task is independent.\n")
+	b.WriteString("- Size by the work: a trivial change (<=3 files) fits in a single task; sections that do not apply become one line (\"N/A\"). Do not inflate the plan.\n")
+	b.WriteString("- Mark any uncertainty with the ambiguity marker instead of guessing.\n")
+	b.WriteString("- " + heading(doclang.Plan, l, secDone) + " is a binary checklist (met/unmet marks of the language note) with file:line evidence: each spec criterion with an implementation and a test that proves it.\n\n")
+	b.WriteString("Use the title, module and spec above as context. Do not include frontmatter (cerne stamps the cerne_id). ")
 	b.WriteString(app.DraftOutputContract + "\n")
+	b.WriteString(doclang.Directive(l))
 	return b.String()
 }

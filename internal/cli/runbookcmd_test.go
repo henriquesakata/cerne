@@ -11,11 +11,10 @@ import (
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/doccheck"
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/project"
-	"github.com/henriquesakata/cerne/internal/runtmpl"
-	"github.com/henriquesakata/cerne/internal/spectmpl"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -222,25 +221,30 @@ func TestRunbookRetire(t *testing.T) {
 }
 
 func TestBuildRunbookDraftPrompt(t *testing.T) {
-	rb := store.Runbook{ID: "RB-0007", Title: "Rotacionar chave", State: domain.RunbookActive}
-	prompt := BuildRunbookDraftPrompt(rb, "# Rotacionar chave\n\n> Runbook pendente")
-
-	for _, want := range []string{"RB-0007", "Rotacionar chave"} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("prompt missing %q:\n%s", want, prompt)
-		}
-	}
-	for _, want := range runtmpl.Sections {
-		if !strings.Contains(prompt, "## "+want) {
-			t.Fatalf("prompt missing required section %q:\n%s", want, prompt)
-		}
-	}
-	// Teaches the shared ambiguity marker and the runbook rules: expected
-	// output per step, escalation.
-	for _, want := range []string{spectmpl.AmbiguityMarker, "SAÍDA ESPERADA", "escalar"} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("prompt missing authoring guidance %q:\n%s", want, prompt)
-		}
+	rb := store.Runbook{ID: "RB-0007", Title: "Rotate the key", State: domain.RunbookActive}
+	for _, l := range doclang.Langs() {
+		t.Run(string(l), func(t *testing.T) {
+			prompt := BuildRunbookDraftPrompt(l, rb, "# Rotate the key\n\n> Pending runbook")
+			for _, want := range []string{"RB-0007", "Rotate the key"} {
+				if !strings.Contains(prompt, want) {
+					t.Fatalf("prompt missing %q:\n%s", want, prompt)
+				}
+			}
+			for _, want := range doclang.Sections(doclang.Runbook, l) {
+				if !strings.Contains(prompt, "## "+want+"\n") {
+					t.Fatalf("prompt missing required section %q:\n%s", want, prompt)
+				}
+			}
+			if !strings.HasSuffix(prompt, doclang.Directive(l)) {
+				t.Fatalf("prompt does not end with the %s directive", l)
+			}
+			// The runbook rules: expected output per step, escalation.
+			for _, want := range []string{"EXPECTED OUTPUT", "escalate"} {
+				if !strings.Contains(prompt, want) {
+					t.Fatalf("prompt missing authoring guidance %q:\n%s", want, prompt)
+				}
+			}
+		})
 	}
 }
 

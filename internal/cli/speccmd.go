@@ -14,7 +14,6 @@ import (
 	"github.com/henriquesakata/cerne/internal/doccheck"
 	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/llm"
-	"github.com/henriquesakata/cerne/internal/spectmpl"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -61,7 +60,7 @@ func runSpecDraft(cmd *cobra.Command, dir, id string) error {
 	}
 	current := readSpecCurrent(ctx.repoDir, id)
 	l := store.DocsLanguage(ctx.repoDir)
-	prompt := draftPromptIn(l, doclang.Spec, BuildSpecDraftPrompt(l, f, current))
+	prompt := BuildSpecDraftPrompt(l, f, current)
 	out := cmd.OutOrStdout()
 
 	// delegation (default): print the prompt for the host agent to draft inline.
@@ -116,48 +115,52 @@ func readSpecCurrent(repoDir, id string) string {
 	return string(data)
 }
 
-// BuildSpecDraftPrompt assembles the pt-BR prompt instructing the LLM to write a
+// BuildSpecDraftPrompt assembles the English prompt instructing the LLM to write a
 // COMPLETE feature spec from the feature's id/title/module and the current stub
 // or spec content. It requests the canonical spectmpl.Sections in order and the
 // authoring rules (problem-first ordering, EARS-testable criteria, the
-// [ESCLARECER] ambiguity marker, code-grounded design).
+// ambiguity marker, code-grounded design).
 func BuildSpecDraftPrompt(l doclang.Lang, f store.Feature, currentContent string) string {
 	module := f.Module
 	if module == "" {
-		module = "(sem módulo)"
+		module = "(no module)"
 	}
+	const (
+		secProblem      = 0
+		secDesign       = 3
+		secVerification = 4
+		secExecution    = 5
+	)
 	var b strings.Builder
-	b.WriteString("Você está escrevendo a especificação (spec) de uma feature de software, em português do Brasil.\n\n")
+	b.WriteString("You are writing the specification (spec) of a software feature.\n\n")
 	b.WriteString("Feature:\n")
 	fmt.Fprintf(&b, "- id: %s\n", f.ID)
-	fmt.Fprintf(&b, "- título: %s\n", f.Title)
-	fmt.Fprintf(&b, "- módulo: %s\n\n", module)
-	b.WriteString("Conteúdo atual da spec (stub ou rascunho parcial; pode estar vazio):\n")
+	fmt.Fprintf(&b, "- title: %s\n", f.Title)
+	fmt.Fprintf(&b, "- module: %s\n\n", module)
+	b.WriteString("Current spec content (stub or partial draft; may be empty):\n")
 	b.WriteString("---\n")
 	b.WriteString(strings.TrimSpace(currentContent))
 	b.WriteString("\n---\n\n")
-	b.WriteString("Escreva uma spec COMPLETA e coerente para esta feature, em Markdown, com exatamente estas seções nesta ordem:\n")
-	for _, s := range spectmpl.Sections {
-		// F-0266: the agent-execution section is part of spectmpl.Sections now.
-		b.WriteString("## " + s + "\n")
-	}
-	b.WriteString("\nRegras de autoria:\n")
-	b.WriteString("- Abra pela Problema, ancorada em código real (arquivo.go:linha) quando possível; deixe a Verificação por último.\n")
-	b.WriteString("- Critérios de aceitação numerados e testáveis; para comportamento, use EARS: \"QUANDO <condição> O SISTEMA DEVE <comportamento>\". Invariantes estruturais como asserção direta.\n")
-	b.WriteString("- Marque qualquer incerteza com \"" + spectmpl.AmbiguityMarker + " pergunta específica]\" em vez de supor.\n")
-	b.WriteString("- No Desenho, ancore em arquivos/pacotes reais com contratos explícitos (assinaturas, schemas); não omita o \"como\".\n")
-	b.WriteString("- Inclua nas linhas de metadados \"**Nível:** <" + strings.Join(spectmpl.Levels, "|") + "> — <justificativa em 1 frase>\", avaliando a complexidade da implementação; não cite nomes de modelos ou fornecedores de LLM.\n")
-	b.WriteString("- Não inclua linha de metadado de estado (Rascunho, Done, …): o ciclo de vida é dado do card (cerne status), nunca prosa que envelhece.\n")
-	b.WriteString("- Inclua \"**Origem:** <o que disparou, com quem/onde e a data>\", no formato do exemplo: " + spectmpl.OrigemExample + ".\n")
-	b.WriteString("- Campo de metadado cujo valor você não sabe: escreva \"" + spectmpl.UnknownMarker + "\" nele — nunca palpite; sabendo só parte, escreva a parte e \"" + spectmpl.UnknownMarker + "\" no resto. Tipo e Nível são vocabulários fechados: escolha um dos valores.\n")
-	b.WriteString("- Na Execução recomendada (agente): capacidade de modelo sugerida (vocabulário genérico, coerente com o Nível) e esforço; quais tarefas manter no mesmo agente (contexto compartilhado) e por quê; quais são separáveis.\n\n")
+	b.WriteString("Write a COMPLETE, coherent spec for this feature, in Markdown, with exactly these sections in this order:\n")
+	writeSections(&b, doclang.Spec, l)
+	b.WriteString("\nAuthoring rules:\n")
+	b.WriteString("- Open with " + heading(doclang.Spec, l, secProblem) + ", anchored in real code (file.go:line) when possible; leave " + heading(doclang.Spec, l, secVerification) + " last.\n")
+	b.WriteString("- Numbered, testable acceptance criteria; for behaviour use EARS, in the form given in the language note at the end. Structural invariants as a direct assertion.\n")
+	b.WriteString("- Mark any uncertainty with the ambiguity marker instead of guessing.\n")
+	b.WriteString("- In " + heading(doclang.Spec, l, secDesign) + ", anchor in real files/packages with explicit contracts (signatures, schemas); do not omit the \"how\".\n")
+	b.WriteString("- Include in the metadata lines the Level, with a one-sentence justification, judging the complexity of the implementation; do not name LLM models or vendors.\n")
+	b.WriteString("- Do not include a status metadata line (Draft, Done, ...): the lifecycle is card data (cerne status), never prose that ages.\n")
+	b.WriteString("- Include the Origin line: what triggered it, with whom/where and the date, in the shape of this example: \"Agent report: cerne push fails in a parallel worktree (session 2026-05-14)\".\n")
+	b.WriteString("- A metadata field whose value you do not know: write the unknown value in it — never guess; knowing only part, write the part and the unknown value for the rest. Type and Level are closed vocabularies: choose one of the values.\n")
+	b.WriteString("- In " + heading(doclang.Spec, l, secExecution) + ": the suggested model capability (generic vocabulary, consistent with the Level) and effort; which tasks to keep in the same agent (shared context) and why; which are separable.\n\n")
 	// F-0273: same Gauntlet contract the Backlog chat prompt uses (app.GauntletContract),
-	// reused verbatim — never copied — so a spec authored via CLI carries the
+	// reused — never copied — so a spec authored via CLI carries the
 	// same quality-bar protocol as one elaborated through chat.
 	b.WriteString(app.GauntletContract(l))
 	b.WriteString("\n\n")
-	b.WriteString("Use o título e o módulo acima como contexto. Não inclua frontmatter (o cerne carimba o cerne_id). ")
+	b.WriteString("Use the title and module above as context. Do not include frontmatter (cerne stamps the cerne_id). ")
 	b.WriteString(app.DraftOutputContract + "\n")
+	b.WriteString(doclang.Directive(l))
 	return b.String()
 }
 

@@ -9,60 +9,69 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gitback"
-	"github.com/henriquesakata/cerne/internal/plantmpl"
 	"github.com/henriquesakata/cerne/internal/project"
-	"github.com/henriquesakata/cerne/internal/spectmpl"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // TestBuildPlanDraftPrompt asserts the assembled prompt carries the feature's
 // id/title/module, embeds the approved spec as context, requests every canonical
-// plan section in order, and teaches the plan authoring rules.
+// plan section of the project's language in order, teaches the plan authoring
+// rules and closes with the directive (F-0447).
 func TestBuildPlanDraftPrompt(t *testing.T) {
-	f := store.Feature{ID: "F-0007", Title: "Conciliação bancária", Module: "finance", State: domain.StateApproved}
-	spec := "## Objetivo e critérios de aceitação\n\n1. QUANDO o extrato chega O SISTEMA DEVE conciliar."
-	prompt := BuildPlanDraftPrompt(f, spec, "# Conciliação bancária\n\n> Plano pendente", nil)
-
-	for _, want := range []string{"F-0007", "Conciliação bancária", "finance"} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("prompt missing %q:\n%s", want, prompt)
-		}
-	}
-	// The approved spec is fed in as context the plan must reference, not repeat.
-	if !strings.Contains(prompt, "O SISTEMA DEVE conciliar") {
-		t.Fatalf("prompt should embed the approved spec as context:\n%s", prompt)
-	}
-	// All canonical plan sections must be requested, in plantmpl order.
-	for _, want := range plantmpl.Sections {
-		if !strings.Contains(prompt, "## "+want) {
-			t.Fatalf("prompt missing required section %q:\n%s", want, prompt)
-		}
-	}
-	// The prompt teaches the shared ambiguity marker and the plan rules:
-	// test-first, criterion traceability, right-sizing, binary done-check.
-	for _, want := range []string{spectmpl.AmbiguityMarker, "teste primeiro", "número do critério", "Dimensione pelo trabalho", "ATENDIDO/PENDENTE"} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("prompt missing authoring guidance %q:\n%s", want, prompt)
-		}
+	f := store.Feature{ID: "F-0007", Title: "Bank reconciliation", Module: "finance", State: domain.StateApproved}
+	spec := "## Goal\n\n1. WHEN the statement arrives THE SYSTEM SHALL reconcile."
+	for _, l := range doclang.Langs() {
+		t.Run(string(l), func(t *testing.T) {
+			prompt := BuildPlanDraftPrompt(l, f, spec, "# Bank reconciliation\n\n> Pending plan", nil)
+			for _, want := range []string{"F-0007", "Bank reconciliation", "finance"} {
+				if !strings.Contains(prompt, want) {
+					t.Fatalf("prompt missing %q:\n%s", want, prompt)
+				}
+			}
+			// The approved spec is fed in as context the plan must reference, not repeat.
+			if !strings.Contains(prompt, "THE SYSTEM SHALL reconcile") {
+				t.Fatalf("prompt should embed the approved spec as context:\n%s", prompt)
+			}
+			prev := -1
+			for _, want := range doclang.Sections(doclang.Plan, l) {
+				i := strings.Index(prompt, "## "+want+"\n")
+				if i < 0 || i < prev {
+					t.Fatalf("prompt lacks section %q in order:\n%s", want, prompt)
+				}
+				prev = i
+			}
+			if !strings.HasSuffix(prompt, doclang.Directive(l)) {
+				t.Fatalf("prompt does not end with the %s directive", l)
+			}
+			// The plan rules: test-first, criterion traceability, right-sizing, binary done-check.
+			for _, want := range []string{"test first", "number of the spec criterion", "Size by the work", "binary checklist"} {
+				if !strings.Contains(prompt, want) {
+					t.Fatalf("prompt missing authoring guidance %q:\n%s", want, prompt)
+				}
+			}
+		})
 	}
 }
 
 // TestBuildPlanDraftPromptListsChildren (F-0213 crit.3): when the feature is an
 // epic (has children), the prompt lists the roster (id, title, state) and asks
-// for the canonical execution-map format.
+// for the canonical execution-map format, whose "Etapa" lines stay as the
+// parser reads them in every language (N-0087).
 func TestBuildPlanDraftPromptListsChildren(t *testing.T) {
-	f := store.Feature{ID: "F-0211", Title: "Épico", State: domain.StateApproved}
+	f := store.Feature{ID: "F-0211", Title: "Epic", State: domain.StateApproved}
 	children := []store.Feature{
-		{ID: "T-0001", Title: "room manager no server", State: domain.StateImplemented},
-		{ID: "T-0003", Title: "UI WarRoom", State: domain.StateApproved},
+		{ID: "T-0001", Title: "room manager on the server", State: domain.StateImplemented},
+		{ID: "T-0003", Title: "WarRoom UI", State: domain.StateApproved},
 	}
-	prompt := BuildPlanDraftPrompt(f, "", "", children)
-
-	for _, want := range []string{"T-0001", "room manager no server", "implemented", "T-0003", "UI WarRoom", "approved", "Mapa de execução", "Etapa 1"} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("prompt missing %q:\n%s", want, prompt)
+	for _, l := range doclang.Langs() {
+		prompt := BuildPlanDraftPrompt(l, f, "", "", children)
+		for _, want := range []string{"T-0001", "room manager on the server", "implemented", "T-0003", "WarRoom UI", "approved", "execution map", "Etapa 1: T-0001", "Etapa 2 (paralelas): T-0002"} {
+			if !strings.Contains(prompt, want) {
+				t.Fatalf("%s: prompt missing %q:\n%s", l, want, prompt)
+			}
 		}
 	}
 }

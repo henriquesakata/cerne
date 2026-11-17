@@ -11,12 +11,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/henriquesakata/cerne/internal/dectmpl"
 	"github.com/henriquesakata/cerne/internal/doccheck"
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/project"
-	"github.com/henriquesakata/cerne/internal/spectmpl"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -195,28 +194,33 @@ func TestDecisionSubstituirFlagRules(t *testing.T) {
 }
 
 // TestBuildDecisionDraftPrompt asserts the assembled prompt carries the decision
-// id/title, requests every canonical ADR section in order, and teaches the ADR
-// authoring rules.
+// id/title, requests every canonical ADR section of the project's language in
+// order, and teaches the ADR authoring rules (F-0447).
 func TestBuildDecisionDraftPrompt(t *testing.T) {
-	d := store.Decision{ID: "D-0007", Title: "Adotar micro-frontends", State: domain.DecisionActive}
-	prompt := BuildDecisionDraftPrompt(d, "# Adotar micro-frontends\n\n> Decisão pendente")
-
-	for _, want := range []string{"D-0007", "Adotar micro-frontends"} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("prompt missing %q:\n%s", want, prompt)
-		}
-	}
-	for _, want := range dectmpl.Sections {
-		if !strings.Contains(prompt, "## "+want) {
-			t.Fatalf("prompt missing required section %q:\n%s", want, prompt)
-		}
-	}
-	// The prompt teaches the shared ambiguity marker and the ADR rules:
-	// imperative decision, mandatory negatives, why-rejected alternatives.
-	for _, want := range []string{spectmpl.AmbiguityMarker, "imperativo", "negativas", "rejeitadas", "registro histórico"} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("prompt missing authoring guidance %q:\n%s", want, prompt)
-		}
+	d := store.Decision{ID: "D-0007", Title: "Adopt micro-frontends", State: domain.DecisionActive}
+	for _, l := range doclang.Langs() {
+		t.Run(string(l), func(t *testing.T) {
+			prompt := BuildDecisionDraftPrompt(l, d, "# Adopt micro-frontends\n\n> Pending decision")
+			for _, want := range []string{"D-0007", "Adopt micro-frontends"} {
+				if !strings.Contains(prompt, want) {
+					t.Fatalf("prompt missing %q:\n%s", want, prompt)
+				}
+			}
+			for _, want := range doclang.Sections(doclang.Decision, l) {
+				if !strings.Contains(prompt, "## "+want+"\n") {
+					t.Fatalf("prompt missing required section %q:\n%s", want, prompt)
+				}
+			}
+			if !strings.HasSuffix(prompt, doclang.Directive(l)) {
+				t.Fatalf("prompt does not end with the %s directive", l)
+			}
+			// The ADR rules: imperative decision, mandatory negatives, why-rejected alternatives.
+			for _, want := range []string{"imperative", "negatives", "why they were rejected", "historical record"} {
+				if !strings.Contains(prompt, want) {
+					t.Fatalf("prompt missing authoring guidance %q:\n%s", want, prompt)
+				}
+			}
+		})
 	}
 }
 

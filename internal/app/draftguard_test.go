@@ -115,7 +115,7 @@ func TestWriteStampedDraftKeepsOneFrontmatter(t *testing.T) {
 // states, in the same shape BuildPagePrompt uses — say what the answer IS, or a
 // Claude Code session may answer with a report about having produced it.
 func TestDraftOutputContract(t *testing.T) {
-	for _, want := range []string{"SOMENTE", "saída padrão", "Não escreva arquivos", "não relate o que você fez"} {
+	for _, want := range []string{"ONLY", "standard output", "Do not write files", "do not report what you did"} {
 		if !strings.Contains(DraftOutputContract, want) {
 			t.Errorf("DraftOutputContract missing %q:\n%s", want, DraftOutputContract)
 		}

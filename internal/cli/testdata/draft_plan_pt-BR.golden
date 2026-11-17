@@ -1,0 +1,52 @@
+You are writing the EXECUTION PLAN of a software feature (the spec is already approved).
+
+Feature:
+- id: F-0001
+- title: Sign in with Google
+- module: auth
+
+Approved spec (CONTEXT — reference it and satisfy its numbered criteria; do NOT repeat it):
+---
+the approved spec
+---
+
+Current plan content (stub or partial draft; may be empty):
+---
+# Sign in with Google
+
+> Pending plan
+---
+
+This feature is an EPIC — it already has these tasks/children minted:
+- T-0001 (Token exchange) — state: approved
+In the "Dependências e ordem" section, include an execution map in the canonical format — one line per stage, children of the same stage are parallel (the words Etapa and paralelas are parsed, keep them exactly):
+  Etapa 1: T-0001 (title)
+  Etapa 2 (paralelas): T-0002 (title) · T-0003 (title)
+Justify the chosen order and parallelism.
+
+Write a COMPLETE, executable plan, in Markdown, with exactly these sections in this order:
+## Estratégia
+## Sequência de tarefas
+## Dependências e ordem
+## Riscos e rollback
+## Restrições para o agente
+## Definição de pronto
+
+Authoring rules:
+- Do not repeat the spec; reference it. The plan describes HOW to build.
+- Break the work into small, ORDERED tasks; each task leaves the repository green. Per task: real files (create/edit/remove), test first (TDD), verification (command → expected output) citing the number of the spec criterion, and the exact Conventional Commit message. Mark [parallel] when a task is independent.
+- Size by the work: a trivial change (<=3 files) fits in a single task; sections that do not apply become one line ("N/A"). Do not inflate the plan.
+- Mark any uncertainty with the ambiguity marker instead of guessing.
+- "Definição de pronto" is a binary checklist (met/unmet marks of the language note) with file:line evidence: each spec criterion with an implementation and a test that proves it.
+
+Use the title, module and spec above as context. Do not include frontmatter (cerne stamps the cerne_id). Return ONLY the document's markdown on standard output. Do not write files, do not use tools, and do not report what you did or what you are going to do.
+
+
+DOCUMENT LANGUAGE — this overrides any other hint about the language of the document:
+this project's documentation is in Brazilian Portuguese (pt-BR). Write the WHOLE document in Brazilian Portuguese (pt-BR), under exactly the section headings listed above, and write every protocol form below exactly as shown, never translated into another language:
+- ambiguity marker: [ESCLARECER: pergunta específica]
+- behaviour criteria (EARS): QUANDO <condição> O SISTEMA DEVE <comportamento>;
+- metadata labels: **Tipo:** (Novo recurso | Corretivo | Refactor), **Origem:**, **Nível:** (leve | padrão | avançado), **Spec:**, **Branch:**, **Saída (Gauntlet):**, **Data:**, **Agente:**, **Dono:**; an unknown value is "desconhecido"; the agent line reads "<model id> · esforço <level>" or "humano";
+- Gauntlet: "Barra:", "Método:", "Saída:"; the exemptions "Barra: não aplicável (<justification>)" and "Barra: dispensada por decisão humana (<quote>)"; a round line of the form: Rodada N — vitória|derrota|empate: "<quote of the judge>"; "Achados do crítico:";
+- evidence: cite "critério N" for every numbered criterion; mark each ATENDIDO or PENDENTE.
+Keep an execution map's "Etapa N: ID (title)" lines exactly in that format: it is parsed, not prose.
