@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushSync } from 'react-dom'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import Settings from './Settings'
@@ -1535,5 +1536,23 @@ describe('Settings — achados do crítico (F-0413)', () => {
       await waitFor(() => expect(putSetting).toHaveBeenCalled())
       expect(within(r).getByRole('checkbox', { name: 'Gauntlet' })).toHaveFocus()
     })
+  })
+})
+
+// B-0025: a browser dispatching a real click runs a microtask checkpoint
+// between React's capture-phase and bubble-phase root listeners. A row state
+// update in the capture phase re-renders there, the controlled control snaps
+// back to its old value, and onChange (bubble) never sees the new one.
+// fireEvent dispatches from JS and has no checkpoint; flushSync at the target
+// stands in for it.
+describe('Settings — a real click reaches the write (B-0025)', () => {
+  const checkpointAt = (el: Element, type: string) => el.addEventListener(type, () => flushSync(() => {}))
+
+  it('a toggle writes when a re-render runs between capture and bubble', async () => {
+    render(<Settings />)
+    const box = within(await screen.findByRole('listitem', { name: 'Mapa mental' })).getByRole('checkbox')
+    checkpointAt(box, 'click')
+    fireEvent.click(box)
+    await waitFor(() => expect(putSetting).toHaveBeenCalledWith('mindmap.enabled', 'project', false))
   })
 })

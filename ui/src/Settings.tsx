@@ -737,8 +737,12 @@ function SettingRow({
       className={modified ? 'settings-row modified' : 'settings-row'}
       aria-labelledby={titleId}
       aria-busy={lock}
-      onChangeCapture={onTouch}
-      onClickCapture={onTouch}
+      // Bubble, never capture (B-0025): a real click runs a microtask between
+      // React's capture and bubble phases, so a capture-phase state update
+      // re-renders there and snaps the controlled checkbox back before its
+      // onChange can see the change.
+      onChange={onTouch}
+      onClick={onTouch}
     >
       <div className="settings-row-text">
         <h3 className="settings-title">
