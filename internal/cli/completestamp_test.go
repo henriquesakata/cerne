@@ -190,7 +190,7 @@ func TestCompleteEndsWithOneNextStepBlock(t *testing.T) {
 			t.Fatal(err)
 		}
 		block := nextStepBlock(t, out)
-		if len(block) != 2 || !strings.HasPrefix(block[1], "  - delivery: commit abc1234 · PR o/r#12") || !strings.HasSuffix(block[1], "— mark it ready for review when CI is green") {
+		if len(block) != 2 || !strings.HasPrefix(block[1], "  - delivery: commit abc1234 · PR o/r#12") || !strings.HasSuffix(block[1], "— mark it ready for review now: human review starts on Ready, not after CI") {
 			t.Errorf("block = %q", block)
 		}
 		if strings.Count(out, "delivery:") != 1 {
