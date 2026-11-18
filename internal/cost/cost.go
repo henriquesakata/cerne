@@ -60,8 +60,9 @@ type Report struct {
 	Counters                  Counters            `json:"counters"`
 	Sidechain                 Counters            `json:"sidechain"`
 	ByModel                   map[string]Counters `json:"by_model"`
-	ByRole                    map[string]Counters `json:"by_role,omitempty"`   // main, builder, critic, judge, other (F-0384)
-	ByEffort                  map[string]Counters `json:"by_effort,omitempty"` // the efforts the transcripts record (B-0024)
+	ByRole                    map[string]Counters `json:"by_role,omitempty"`       // main, builder, critic, judge, other (F-0384)
+	ByEffort                  map[string]Counters `json:"by_effort,omitempty"`     // the efforts the transcripts record (B-0024)
+	ModelEfforts              map[string][]string `json:"model_efforts,omitempty"` // model → the efforts it ran at, sorted (B-0024)
 	Messages                  int                 `json:"messages"`
 	Sessions                  int                 `json:"sessions"`
 	SessionsWithoutTranscript int                 `json:"sessions_without_transcript"`
@@ -476,12 +477,27 @@ func shares(agg map[aggKey]*fileAgg) map[string]*share {
 					s.ByEffort = map[string]Counters{}
 				}
 				s.ByEffort[b.Effort] = s.ByEffort[b.Effort].add(b.Counters)
+				s.ModelEfforts = addEfforts(s.ModelEfforts, b.Model, b.Effort)
 			}
 			s.Messages += b.Messages
 			s.widen(b.First.UTC().Format(time.RFC3339), b.Last.UTC().Format(time.RFC3339))
 		}
 	}
 	return out
+}
+
+// addEfforts records that model ran at efforts, keeping each model's list
+// sorted and unique; a nil m is allocated.
+func addEfforts(m map[string][]string, model string, efforts ...string) map[string][]string {
+	if m == nil {
+		m = map[string][]string{}
+	}
+	for _, e := range efforts {
+		if i, found := slices.BinarySearch(m[model], e); !found {
+			m[model] = slices.Insert(m[model], i, e)
+		}
+	}
+	return m
 }
 
 // widen stretches the [First, Last] window (same-format RFC3339 UTC strings
@@ -513,6 +529,9 @@ func (r *Report) addShare(s *share) {
 			r.ByEffort = map[string]Counters{}
 		}
 		r.ByEffort[e] = r.ByEffort[e].add(c)
+	}
+	for m, es := range s.ModelEfforts {
+		r.ModelEfforts = addEfforts(r.ModelEfforts, m, es...)
 	}
 	r.Messages += s.Messages
 	w := share{First: r.First, Last: r.Last}

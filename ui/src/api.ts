@@ -431,6 +431,7 @@ export type CostFeature = {
   rounds: number
   defeats: number
   efforts: string[] // medidos, o mais pesado primeiro; sem medida, o declarado no result
+  model_efforts: Record<string, string[]> | null // medido: modelo → os esforços em que rodou
   effort_source: 'measured' | 'declared' | 'unknown'
   vendors: string[]
 }

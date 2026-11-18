@@ -41,6 +41,7 @@ const feat = (id: string, weighted: number, extra: Partial<CostFeature> = {}): C
   rounds: 1,
   defeats: 0,
   efforts: [],
+  model_efforts: null,
   effort_source: 'unknown',
   vendors: ['anthropic'],
   ...extra,
@@ -452,12 +453,17 @@ describe('Custos — detalhe da feature (crit. 5)', () => {
     api.fetchCostDetail.mockResolvedValue({
       ...detail,
       efforts: ['xhigh', 'medium'],
+      model_efforts: { 'claude-sonnet-5-5': ['medium'], 'claude-opus-5-5': ['high', 'xhigh'] },
       effort_source: 'measured',
+      weighted_by_model: { 'claude-sonnet-5-5': 20, 'claude-opus-5-5': 80 },
       by_effort: { xhigh: { ...zero, input: 30, output: 10 }, medium: { ...zero, input: 20 } },
       weighted_by_effort: { xhigh: 80, medium: 20 },
     })
     render(<CostDetailPage id="F-0001" />)
-    expect(await screen.findByText(/Esforço do modelo: xhigh, medium \(medido\)/)).toBeInTheDocument()
+    // Each model with the efforts it ran at, the heaviest model first.
+    expect(
+      await screen.findByText(/Esforço do modelo: claude-opus-5-5 high\/xhigh, claude-sonnet-5-5 medium \(medido\)/),
+    ).toBeInTheDocument()
     const efforts = screen.getByRole('table', { name: 'Por esforço' })
     expect(within(efforts).getByRole('row', { name: /^xhigh/ })).toHaveTextContent(/xhigh.*30.*0.*0.*10.*80.*80%/)
     expect(within(efforts).getByRole('row', { name: /^medium/ })).toHaveTextContent(/medium.*20.*0.*0.*0.*20.*20%/)

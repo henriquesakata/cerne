@@ -53,9 +53,10 @@ type CostFeature struct {
 	Defeats          int                      `json:"defeats"`
 	// Efforts: the measured efforts, heaviest first; with none measured, the
 	// one the result's Agente line declares (F-0279); else empty.
-	Efforts      []string `json:"efforts"`
-	EffortSource string   `json:"effort_source"` // measured | declared | unknown
-	Vendors      []string `json:"vendors"`
+	Efforts      []string            `json:"efforts"`
+	ModelEfforts map[string][]string `json:"model_efforts"` // measured: model → its efforts; empty otherwise
+	EffortSource string              `json:"effort_source"` // measured | declared | unknown
+	Vendors      []string            `json:"vendors"`
 }
 
 // CostWeek is one ISO week (UTC) of the filtered features.
@@ -259,7 +260,7 @@ func readCost(repoDir string, f store.Feature, at time.Time) (CostDetail, bool, 
 	d.CostFeature = CostFeature{ID: f.ID, Title: f.Title, Level: level, State: f.State, CompletedAt: at,
 		Weighted: weigh(r.Counters), Tokens: r.Counters, ByRole: r.ByRole, ByModel: r.ByModel, ByEffort: r.ByEffort,
 		WeightedByRole: map[string]float64{}, WeightedByModel: map[string]float64{}, WeightedByEffort: map[string]float64{},
-		HasGauntlet: has, Rounds: len(d.RoundList), Defeats: defeats, Efforts: []string{}, EffortSource: "unknown"}
+		HasGauntlet: has, Rounds: len(d.RoundList), Defeats: defeats, Efforts: []string{}, ModelEfforts: r.ModelEfforts, EffortSource: "unknown"}
 	for e, c := range r.ByEffort {
 		d.WeightedByEffort[e] = weigh(c)
 		if e != "unknown" {

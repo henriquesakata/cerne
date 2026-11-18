@@ -99,7 +99,8 @@ func seedCostsFixture(t *testing.T, repoDir string) {
 				ByModel: map[string]cost.Counters{sonnet: {CacheRead: 2000}},
 				ByRole:  map[string]cost.Counters{"main": {CacheRead: 1000}, "builder": {CacheRead: 1000}},
 				// B-0024: measured in the transcripts, it beats the declared "desconhecido".
-				ByEffort: map[string]cost.Counters{"medium": {CacheRead: 600}, "xhigh": {CacheRead: 1200}}}},
+				ByEffort:     map[string]cost.Counters{"medium": {CacheRead: 600}, "xhigh": {CacheRead: 1200}},
+				ModelEfforts: map[string][]string{sonnet: {"medium", "xhigh"}}}},
 		{id: "F-0003", completed: costDay(10, 1), level: "avançado",
 			report: &cost.Report{ID: "F-0003", Counters: cost.Counters{CacheCreation: 480}, Messages: 1, Sessions: 1,
 				ByModel: map[string]cost.Counters{"gpt-5": {CacheCreation: 480}}}},
@@ -201,7 +202,7 @@ func TestCostsRows(t *testing.T) {
 		t.Errorf("F-0001 = %+v", f1)
 	}
 	if !slices.Equal(f2.Efforts, []string{"xhigh", "medium"}) || f2.EffortSource != "measured" ||
-		f2.WeightedByEffort["xhigh"] != 120 || f2.WeightedByEffort["unknown"] != 20 || f2.ByEffort["medium"].CacheRead != 600 ||
+		f2.WeightedByEffort["xhigh"] != 120 || !slices.Equal(f2.ModelEfforts["claude-sonnet-5-5"], []string{"medium", "xhigh"}) || f2.WeightedByEffort["unknown"] != 20 || f2.ByEffort["medium"].CacheRead != 600 ||
 		f2.GauntletShare == nil || *f2.GauntletShare != 0 || !slices.Equal(f2.Vendors, []string{"anthropic"}) {
 		t.Errorf("F-0002 = %+v, want measured efforts xhigh then medium (heaviest first), 20 unknown, Gauntlet share 0, vendor anthropic only", f2)
 	}

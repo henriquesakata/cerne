@@ -610,6 +610,11 @@ func TestComputeByEffort(t *testing.T) {
 	if !reflect.DeepEqual(r.ByEffort, want) {
 		t.Fatalf("ByEffort = %+v, want %+v", r.ByEffort, want)
 	}
+	// Which model ran at which effort: the pairing the flat breakdown loses.
+	pairs := map[string][]string{"claude-opus-5-5": {"xhigh"}, "claude-sonnet-5-5": {"medium"}}
+	if !reflect.DeepEqual(r.ModelEfforts, pairs) {
+		t.Fatalf("ModelEfforts = %+v, want %+v", r.ModelEfforts, pairs)
+	}
 }
 
 // TestComputeNoEffortRecordedHasNoEffortView: transcripts from before Claude

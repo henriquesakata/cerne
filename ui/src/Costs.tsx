@@ -447,6 +447,17 @@ function Stacked({
 type SortKey = 'id' | 'title' | 'level' | 'weighted' | 'gauntlet' | 'models' | 'rounds' | 'defeats'
 
 const modelList = (f: CostFeature) => Object.keys(f.by_model ?? {}).sort()
+
+// B-0024: each model with the efforts it ran at, the heaviest model first —
+// "claude-opus-5-5 xhigh, claude-sonnet-5-5 medium"; the flat list when the
+// anchor has no pairing.
+const modelEfforts = (f: CostFeature) => {
+  const pairs = f.model_efforts ?? {}
+  const models = Object.keys(pairs).sort(
+    (a, b) => (f.weighted_by_model[b] ?? 0) - (f.weighted_by_model[a] ?? 0) || a.localeCompare(b),
+  )
+  return models.length ? models.map((m) => `${m} ${pairs[m].join('/')}`).join(', ') : f.efforts.join(', ')
+}
 const models = (f: CostFeature) => modelList(f).join(', ')
 const NUM_COLS = new Set<SortKey>(['weighted', 'gauntlet', 'rounds'])
 
@@ -662,7 +673,7 @@ export function CostDetailPage({ id }: { id: string }) {
           {`${t.costs.filterNames.level}: ${d.level ? (t.costs.levels[d.level] ?? d.level) : t.costs.unknownValue}`}
           {' · '}
           {d.effort_source === 'measured'
-            ? t.costs.effortMeasured(d.efforts.join(', '))
+            ? t.costs.effortMeasured(modelEfforts(d))
             : d.effort_source === 'declared'
               ? t.costs.effortDeclared(d.efforts[0])
               : t.costs.effortUnknown}

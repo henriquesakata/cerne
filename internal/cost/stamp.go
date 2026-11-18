@@ -47,8 +47,9 @@ type share struct {
 	Counters     Counters            `json:"counters"`
 	Sidechain    Counters            `json:"sidechain"`
 	ByModel      map[string]Counters `json:"by_model"`
-	ByRole       map[string]Counters `json:"by_role,omitempty"`   // additive (F-0384): absent from older anchors
-	ByEffort     map[string]Counters `json:"by_effort,omitempty"` // additive (B-0024): absent from older anchors
+	ByRole       map[string]Counters `json:"by_role,omitempty"`       // additive (F-0384): absent from older anchors
+	ByEffort     map[string]Counters `json:"by_effort,omitempty"`     // additive (B-0024): absent from older anchors
+	ModelEfforts map[string][]string `json:"model_efforts,omitempty"` // additive (B-0024): which model ran at which effort
 	Messages     int                 `json:"messages"`
 	Sessions     int                 `json:"sessions"`
 	First        string              `json:"first"`
@@ -57,7 +58,7 @@ type share struct {
 }
 
 func shareOf(r Report) share {
-	return share{ID: r.ID, Counters: r.Counters, Sidechain: r.Sidechain, ByModel: r.ByModel, ByRole: r.ByRole, ByEffort: r.ByEffort, Messages: r.Messages,
+	return share{ID: r.ID, Counters: r.Counters, Sidechain: r.Sidechain, ByModel: r.ByModel, ByRole: r.ByRole, ByEffort: r.ByEffort, ModelEfforts: r.ModelEfforts, Messages: r.Messages,
 		Sessions: r.Sessions, First: r.First, Last: r.Last, Unattributed: r.Unattributed}
 }
 
