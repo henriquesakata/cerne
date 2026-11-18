@@ -532,6 +532,19 @@ func TestEffortEdit(t *testing.T) {
 		t.Error("the edit of a done feature touched its result")
 	}
 
+	// An implemented feature whose newest anchor already sits in an erratum
+	// gets an erratum too: the result's older block is not the one to edit.
+	effortFixture(t, in, "s3", "F-0003", domain.StateImplemented, true)
+	stampBeforeEffort(t, in, "F-0003", Counters{})
+	erratumCusto(t, repo, "F-0003", full.Counters, nil, 12)
+	result, _ = os.ReadFile(filepath.Join(repo, "content", "features", "F-0003", "result.md"))
+	if text, asResult, err = EffortEdit(repo, "F-0003", false, full.ByEffort, full.ModelEfforts); err != nil || asResult || !strings.Contains(text, `"by_effort":`) {
+		t.Errorf("implemented with an erratum anchor: %v, asResult %v\n%s", err, asResult, text)
+	}
+	if after, _ := os.ReadFile(filepath.Join(repo, "content", "features", "F-0003", "result.md")); string(after) != string(result) {
+		t.Error("the edit of an erratum anchor touched the result")
+	}
+
 	if _, _, err := EffortEdit(repo, "F-0001", false, map[string]Counters{"xhigh": cc(1, 0, 0, 0)}, nil); !errors.Is(err, ErrBackfillEffortMismatch) {
 		t.Errorf("efforts off the total: %v, want ErrBackfillEffortMismatch", err)
 	}
