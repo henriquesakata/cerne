@@ -102,7 +102,7 @@ When you need a PRODUCT DECISION that the context and the code do not settle, do
 
 Rules: one question per block, 2 to 4 options, each with a consequence line, and EXACTLY one ending in "(recomendada)" — your recommendation. A block with no option, no recommended one or more than one shows up as text. Emit at most 3 blocks per turn; more than that is a sign of poor conduction. Do not use the block for a doubt you settle by reading cerne or the code.
 
-The user answers in a turn with the form "**<question>** → <choice> (<origin>)". When emitting the proposal, record EACH answered question as a line of the "Decisões do design" section, with the choice and the origin: "recomendação aceita", "outra opção" or "resposta livre do usuário".
+The user answers in a turn with one line per answered question, in the form "**<question>** → <choice> (<origin>)" (a round of several cards comes back as one turn with all its lines). When emitting the proposal, record EACH answered question as a line of the "Decisões do design" section, with the choice and the origin: "recomendação aceita", "outra opção" or "resposta livre do usuário".
 
 NOTE PROPOSAL (durable knowledge)
 

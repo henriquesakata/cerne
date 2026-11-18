@@ -3786,3 +3786,17 @@ button.clarify-chip { cursor: pointer; font: inherit; }
   cursor: pointer;
 }
 .question-card-free button:disabled { opacity: 0.5; cursor: default; }
+/* B-0023: one send for a round of several question cards. */
+.question-round-send {
+  align-self: flex-start;
+  font: inherit;
+  font-size: 0.9rem;
+  background: var(--fg);
+  color: var(--bg);
+  border: 1px solid var(--fg);
+  border-radius: 6px;
+  padding: 0.45rem 1rem;
+  cursor: pointer;
+}
+.question-round-send:disabled { opacity: 0.5; cursor: default; }
+.question-round-send:focus-visible { outline: 2px solid var(--fg); outline-offset: 1px; }

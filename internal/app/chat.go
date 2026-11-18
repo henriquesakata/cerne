@@ -148,7 +148,7 @@ func chatQuestionContract(l doclang.Lang, designSection string) string {
 		"- <option> — <consequence in one line> (" + marker + ")\n" +
 		"````\n\n" +
 		"Rules: one question per block, 2 to 4 options, each with a consequence line, and EXACTLY one ending in \"(" + marker + ")\" — your recommendation. A block with no option, no recommended one or more than one shows up as text. Emit at most 3 blocks per turn; more than that is a sign of poor conduction. Do not use the block for a doubt you settle by reading cerne or the code.\n\n" +
-		"The user answers in a turn with the form \"**<question>** → <choice> (<origin>)\". When emitting the proposal, record EACH answered question as a line of the \"" + designSection + "\" section, with the choice and the origin: \"" + d(doclang.OriginAccepted) + "\", \"" + d(doclang.OriginOther) + "\" or \"" + d(doclang.OriginFree) + "\"."
+		"The user answers in a turn with one line per answered question, in the form \"**<question>** → <choice> (<origin>)\" (a round of several cards comes back as one turn with all its lines). When emitting the proposal, record EACH answered question as a line of the \"" + designSection + "\" section, with the choice and the origin: \"" + d(doclang.OriginAccepted) + "\", \"" + d(doclang.OriginOther) + "\" or \"" + d(doclang.OriginFree) + "\"."
 }
 
 // ChatMessage is one turn of the Backlog chat transcript (F-0210). The

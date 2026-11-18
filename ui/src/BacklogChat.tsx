@@ -27,7 +27,7 @@ import CommandProposal, { CopyCommands, ToolRuns } from './CommandProposal'
 import Markdown from './Markdown'
 import NoteProposal from './NoteProposal'
 import ProposalDraft from './ProposalDraft'
-import QuestionCard from './QuestionCard'
+import { QuestionRound } from './QuestionCard'
 import ConversationList from './ConversationList'
 import { entityHref, isFeatureFamily } from './entityRoute'
 import { useT } from './i18n'
@@ -219,30 +219,39 @@ export function parseQuestions(reply: string): Question[] {
   return questionBlocks(reply).map((b) => b.q)
 }
 
-// answerTo finds the user turn that answered `question` after message `from`:
-// the card is derived from the transcript, so nothing extra is stored.
+// answerTo finds the user turn line that answered `question` after message
+// `from`: the card is derived from the transcript, so nothing extra is stored.
+// A round goes out as one turn with one line per question (B-0023).
 function answerTo(messages: ChatMsg[], from: number, question: string, nth: number): string | undefined {
   const prefix = `**${question}** →`
   // The window ends at the next assistant turn: a later re-ask has its own answer.
   const rest = messages.slice(from + 1)
   const stop = rest.findIndex((m) => m.role === 'assistant')
-  return (stop < 0 ? rest : rest.slice(0, stop)).filter((m) => m.role === 'user' && m.content.startsWith(prefix))[nth]?.content
+  return (stop < 0 ? rest : rest.slice(0, stop))
+    .filter((m) => m.role === 'user')
+    .flatMap((m) => m.content.split('\n'))
+    .filter((l) => l.startsWith(prefix))[nth]
 }
 
-// UserTurn renders a user bubble as plain text — except the card's answer turn
-// "**<question>** → <rest>", whose question shows in weight 600 without the
-// asterisks (the stored text is unchanged: answerTo reads it).
-const ANSWER_TURN = /^\*\*(.+?)\*\* → (.+)$/s
+// UserTurn renders a user bubble as plain text — except the card's answer turn,
+// one "**<question>** → <rest>" line per question, whose question shows in
+// weight 600 without the asterisks (the stored text is unchanged: answerTo
+// reads it).
+const ANSWER_LINE = /^\*\*(.+?)\*\* → (.+)$/
 
 function UserTurn({ text }: { text: string }) {
-  const m = ANSWER_TURN.exec(text)
-  if (!m) return <p>{text}</p>
+  const lines = text.split('\n').map((l) => ANSWER_LINE.exec(l))
+  if (!lines.every((m) => m !== null)) return <p>{text}</p>
   return (
-    <p>
-      <strong>{m[1]}</strong>
-      {' → '}
-      {m[2]}
-    </p>
+    <>
+      {lines.map((m, i) => (
+        <p key={i}>
+          <strong>{m![1]}</strong>
+          {' → '}
+          {m![2]}
+        </p>
+      ))}
+    </>
   )
 }
 
@@ -1267,6 +1276,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
           // viram card — viram bloco para copiar, em qualquer mensagem.
           const fenced = m.role === 'assistant' ? parseCommands(m.content) : null
           const commands = fenced && !m.noExec && i === messages.length - 1 ? fenced : null
+          const questions = m.role === 'assistant' ? parseQuestions(m.content) : []
           return (
             <div key={i} className={`backlog-chat-msg backlog-chat-msg-${m.role}`}>
               {m.role !== 'assistant' && <UserTurn text={m.content} />}
@@ -1288,18 +1298,17 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
                       onQuote={appendQuote}
                     />
                   )}
-                  {parseQuestions(m.content).map((q, k, all) => (
-                    <QuestionCard
-                      key={`${i}-${k}`}
-                      q={q}
-                      index={k + 1}
-                      total={all.length}
-                      answer={answerTo(messages, i, q.question, all.slice(0, k).filter((x) => x.question === q.question).length)}
+                  {questions.length > 0 && (
+                    <QuestionRound
+                      questions={questions}
+                      answers={questions.map((q, k) =>
+                        answerTo(messages, i, q.question, questions.slice(0, k).filter((x) => x.question === q.question).length),
+                      )}
                       busy={busy}
                       stale={i !== lastAssistant}
                       onAnswer={answerQuestion}
                     />
-                  ))}
+                  )}
                   {commands && (
                     <CommandProposal commands={commands} busy={busy} bound={cardBound} onConfirm={confirmCommands} />
                   )}

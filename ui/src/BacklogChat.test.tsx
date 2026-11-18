@@ -1636,16 +1636,70 @@ describe('cartão de pergunta (F-0437)', () => {
     expect(registerChatNote).not.toHaveBeenCalled()
   })
 
-  it('numbers the cards "Pergunta 1 de 2" and marks the answered one', async () => {
-    const two = reply + '\n````cerne-pergunta\n# Quando?\n- Hoje — já\n- Amanhã — depois (recomendada)\n````\n'
+  const two = reply + '\n````cerne-pergunta\n# Quando?\n- Hoje — já\n- Amanhã — depois (recomendada)\n````\n'
+  const askTwo = async () => {
     streamChat.mockResolvedValueOnce({ answered: true, reply: two })
     renderChat()
     send('Oi')
     await screen.findByText('Pergunta 1 de 2')
+  }
+
+  it('numbers the cards "Pergunta 1 de 2" and marks the answered ones after the round is sent', async () => {
+    await askTwo()
     expect(screen.getByText('Pergunta 2 de 2')).toBeInTheDocument()
     streamChat.mockResolvedValueOnce({ answered: true, reply: 'Ok.' })
     fireEvent.click(screen.getByRole('button', { name: /Push/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Amanhã/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar respostas (2/2)' }))
     await screen.findByText(/Pergunta 1 de 2 · Respondida/)
+    expect(screen.getByText(/Pergunta 2 de 2 · Respondida/)).toBeInTheDocument()
+  })
+
+  // B-0023: a round of several cards (F-0443) is answered as a whole — the
+  // first click used to send the turn and leave the other cards dead.
+  it('in a round, a click only picks: nothing is sent and the other card stays live', async () => {
+    await askTwo()
+    fireEvent.click(screen.getByRole('button', { name: /Push/ }))
+    expect(streamChat).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: /Push/ })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: /Hoje/ })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /Amanhã/ })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Enviar respostas (1/2)' })).toBeDisabled()
+  })
+
+  it('the round goes out as one turn, one line per question, and a pick can change before sending', async () => {
+    await askTwo()
+    fireEvent.click(screen.getByRole('button', { name: /Email/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Push/ }))
+    fireEvent.change(within(screen.getByRole('group', { name: 'Quando?' })).getByLabelText('Outra resposta'), {
+      target: { value: 'Sexta' },
+    })
+    fireEvent.click(within(screen.getByRole('group', { name: 'Quando?' })).getByRole('button', { name: 'Responder' }))
+    expect(streamChat).toHaveBeenCalledTimes(1)
+    streamChat.mockResolvedValueOnce({ answered: true, reply: 'Anotado.' })
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar respostas (2/2)' }))
+    await waitFor(() => expect(streamChat).toHaveBeenCalledTimes(2))
+    expect(lastTurn()).toBe('**Qual canal?** → Push (recomendação aceita)\n**Quando?** → Sexta (resposta livre)')
+    await screen.findByText('Anotado.')
+    expect(screen.getByRole('button', { name: /Push/ })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: /Email/ })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: /Enviar respostas/ })).not.toBeInTheDocument()
+  })
+
+  it('a combined answer turn spends every card of the round (also after a reload) and renders one line per question', () => {
+    renderChat({
+      messages: [
+        { role: 'user', content: 'x' },
+        { role: 'assistant', content: two },
+        { role: 'user', content: '**Qual canal?** → Email (outra opção)\n**Quando?** → Amanhã (recomendação aceita)' },
+      ],
+    })
+    expect(screen.getByText(/Pergunta 1 de 2 · Respondida/)).toBeInTheDocument()
+    expect(screen.getByText(/Pergunta 2 de 2 · Respondida/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Email/ })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: /Amanhã/ })).toHaveAttribute('aria-pressed', 'true')
+    const strongs = document.querySelectorAll('.backlog-chat-msg-user strong')
+    expect([...strongs].map((s) => s.textContent)).toEqual(['Qual canal?', 'Quando?'])
   })
 
   it('a spent card shows the chosen option pressed (also after a reload)', () => {
