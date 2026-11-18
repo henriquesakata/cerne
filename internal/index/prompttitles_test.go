@@ -212,10 +212,20 @@ func TestPromptTitlesCamelCase(t *testing.T) {
 	repoDir := t.TempDir()
 	seedNote(t, repoDir, "N-0001", "JsonDateSerializer próprio: porte para a versão 3 incompleto", "corpo", domain.NoteActive)
 	seedNote(t, repoDir, "N-0002", "InvoiceExportJob trava na virada do mês", "corpo", domain.NoteActive)
+	seedNote(t, repoDir, "N-0003", "getData vazio no dragover do kanban", "corpo", domain.NoteActive)
+	// A real-sized corpus where "job", a part of N-0002's identifier, is common.
+	for i := range 20 {
+		title := fmt.Sprintf("Assunto avulso %03d", i)
+		if i < 8 {
+			title = fmt.Sprintf("Rotina avulsa %03d do job noturno", i)
+		}
+		seedNote(t, repoDir, fmt.Sprintf("N-%04d", 100+i), title, "corpo", domain.NoteActive)
+	}
 	db := filepath.Join(t.TempDir(), "index.db")
 	if err := Rebuild(repoDir, db, time.Time{}); err != nil {
 		t.Fatal(err)
 	}
+	logLine := "2026-11-17 12:00:01 INFO worker pool handler request id=abc dispatch queue size=10 latency ok\n"
 	for _, tc := range []struct {
 		name, prompt, want string // want "" = nothing injected
 	}{
@@ -225,6 +235,9 @@ func TestPromptTitlesCamelCase(t *testing.T) {
 		{"d4 parts only", "o job de export trava?", "N-0002"},
 		{"d5 literal title", "JsonDateSerializer próprio: porte para a versão 3 incompleto", "N-0001"},
 		{"whole identifier", "o JsonDateSerializer quebrou na versão nova", "N-0001"},
+		{"one part each, common words beside", "o JsonParser do job noturno", ""},
+		{"accessor prefix is no subject", "o getUserName retorna vazio", ""},
+		{"paste holding the whole title", "segue o log\n" + logLine + "InvoiceExportJob trava na virada do mês\n", "N-0002"},
 		{"unrelated", "pode revisar meu texto de apresentação?", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

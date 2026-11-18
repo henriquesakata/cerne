@@ -28,6 +28,9 @@ var promptStopwords = map[string]bool{
 	"you": true, "can": true, "this": true, "that": true, "my": true, "not": true, "please": true,
 	"help": true, "need": true, "does": true, "doing": true, "has": true, "have": true, "from": true,
 	"but": true, "its": true, "it": true, "me": true, "we": true,
+	// Accessor prefixes a split identifier leaves behind (getUserName ->
+	// "get"): they name no subject (B-0028).
+	"get": true, "set": true,
 }
 
 const (
@@ -108,7 +111,8 @@ func PromptTitles(ctx context.Context, dbPath, prompt string, limit int) ([]Titl
 	defer rows.Close()
 	type titled struct {
 		hit   TitleHit
-		terms map[string]bool
+		terms map[string]bool // identifiers split (B-0028)
+		whole map[string]bool // identifiers whole, as a paste is read
 	}
 	var titles []titled
 	df := map[string]int{} // titles holding each term
@@ -126,7 +130,7 @@ func PromptTitles(ctx context.Context, dbPath, prompt string, limit int) ([]Titl
 		for t := range terms {
 			df[t]++
 		}
-		titles = append(titles, titled{TitleHit{id, title}, terms})
+		titles = append(titles, titled{TitleHit{id, title}, terms, stemSet(title)})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, wrapBusy(err)
@@ -155,8 +159,11 @@ func PromptTitles(ctx context.Context, dbPath, prompt string, limit int) ([]Titl
 		n, rarity := shared(ti.terms, want)
 		ok := n >= 2 && rarity >= 1
 		if paste {
+			// The whole-title share counts unsplit titles against the
+			// unsplit paste: split parts would only inflate the title.
+			n, _ = shared(ti.whole, want)
 			hn, hr := shared(ti.terms, head)
-			ok = n >= 3 && n*4 >= len(ti.terms)*3 || hn >= 2 && hr >= 1
+			ok = n >= 3 && n*4 >= len(ti.whole)*3 || hn >= 2 && hr >= 1
 		}
 		if ok {
 			found = append(found, scored{ti.hit, rarity})
