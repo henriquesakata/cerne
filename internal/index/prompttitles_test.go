@@ -204,3 +204,41 @@ func TestPromptTitlesCommonWords(t *testing.T) {
 		}
 	}
 }
+
+// TestPromptTitlesCamelCase (B-0028): a title naming a class holds the
+// class's parts too, so a prompt naming the parts fires it; the whole
+// identifier still does, and a paste still needs (almost) the whole title.
+func TestPromptTitlesCamelCase(t *testing.T) {
+	repoDir := t.TempDir()
+	seedNote(t, repoDir, "N-0001", "JsonDateSerializer próprio: porte para a versão 3 incompleto", "corpo", domain.NoteActive)
+	seedNote(t, repoDir, "N-0002", "InvoiceExportJob trava na virada do mês", "corpo", domain.NoteActive)
+	db := filepath.Join(t.TempDir(), "index.db")
+	if err := Rebuild(repoDir, db, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, prompt, want string // want "" = nothing injected
+	}{
+		{"d1 parts in prose", "o serializer de datas está incompleto?", "N-0001"},
+		{"d2 parts in order", "o date serializer ficou incompleto?", "N-0001"},
+		{"d3 words beside the identifier", "o export job das faturas trava no fim do mês?", "N-0002"},
+		{"d4 parts only", "o job de export trava?", "N-0002"},
+		{"d5 literal title", "JsonDateSerializer próprio: porte para a versão 3 incompleto", "N-0001"},
+		{"whole identifier", "o JsonDateSerializer quebrou na versão nova", "N-0001"},
+		{"unrelated", "pode revisar meu texto de apresentação?", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			hits, err := PromptTitles(context.Background(), db, tc.prompt, 3)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			for _, h := range hits {
+				got = append(got, h.ID)
+			}
+			if tc.want == "" && got != nil || tc.want != "" && !slices.Equal(got, []string{tc.want}) {
+				t.Fatalf("hits = %v, want %q", got, tc.want)
+			}
+		})
+	}
+}

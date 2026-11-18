@@ -69,16 +69,23 @@ func PromptTitles(ctx context.Context, dbPath, prompt string, limit int) ([]Titl
 	if r := []rune(prompt); len(r) > promptWindow {
 		prompt = string(r[:promptWindow])
 	}
+	// A question naming a class's parts ("the date serializer") must meet the
+	// title's JsonDateSerializer, so questions and titles split identifiers
+	// (B-0028). A paste keeps them whole: code split into words matches some
+	// title by chance (context.WithTimeout -> "timeout").
 	want := stemSet(prompt)
+	paste := len(want) > pasteTerms
+	if !paste {
+		want = stemSet(foldIdentifiers(prompt))
+	}
 	if len(want) < 2 || limit <= 0 {
 		return nil, nil
 	}
-	paste := len(want) > pasteTerms
 	var head map[string]bool
 	if paste {
 		first, _, _ := strings.Cut(strings.TrimSpace(prompt), "\n")
-		if head = stemSet(first); len(head) > pasteTerms {
-			head = nil
+		if len(stemSet(first)) <= pasteTerms {
+			head = stemSet(foldIdentifiers(first))
 		}
 	}
 	if _, err := os.Stat(dbPath); err != nil {
@@ -115,7 +122,7 @@ func PromptTitles(ctx context.Context, dbPath, prompt string, limit int) ([]Titl
 			continue
 		}
 		listed[id] = true
-		terms := stemSet(title)
+		terms := stemSet(foldIdentifiers(title))
 		for t := range terms {
 			df[t]++
 		}
