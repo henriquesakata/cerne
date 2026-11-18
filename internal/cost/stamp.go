@@ -259,12 +259,13 @@ func Stamped(repoDir, id string) bool {
 	return ok
 }
 
-// StampedReport reads result's v1 cost anchor as the Report `cerne cost <id>
+// StampedReport reads id's newest v1 cost anchor — the last erratum carrying
+// one, else the result's (newestCusto, F-0448) — as the Report `cerne cost <id>
 // --json` shows when it reads from the stamp (Source "stamp"), the share no
 // role covers named "unknown" — the costs screen's reader (F-0391): the
 // durable record, never the transcripts. false with no real anchor.
-func StampedReport(result string) (Report, bool) {
-	a, ok := anchor(result)
+func StampedReport(repoDir, id string) (Report, bool) {
+	a, ok := readAnchor(repoDir, id)
 	if !ok {
 		return Report{}, false
 	}

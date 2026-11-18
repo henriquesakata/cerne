@@ -16,11 +16,13 @@ func TestStampedReport(t *testing.T) {
 		ByEffort:     map[string]Counters{"xhigh": {Input: 70, Output: 10}},
 		ModelEfforts: map[string][]string{"claude-opus-5-5": {"high", "xhigh"}},
 		Messages:     5, Sessions: 2, First: "2026-11-01T10:00:00Z", Last: "2026-11-02T10:00:00Z", Unattributed: Counters{Input: 7}}
+	repo := t.TempDir()
 	body, err := Stamp("# F-0007\n", r)
 	if err != nil {
 		t.Fatalf("Stamp: %v", err)
 	}
-	got, ok := StampedReport(body)
+	writeResult(t, repo, "F-0007", body)
+	got, ok := StampedReport(repo, "F-0007")
 	if !ok {
 		t.Fatal("StampedReport: no anchor read")
 	}
@@ -37,13 +39,15 @@ func TestStampedReport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stamp: %v", err)
 	}
-	if got, ok := StampedReport(old); !ok || got.ByRole != nil || got.ByEffort != nil {
+	writeResult(t, repo, "F-0008", old)
+	if got, ok := StampedReport(repo, "F-0008"); !ok || got.ByRole != nil || got.ByEffort != nil {
 		t.Errorf("pre-F-0384 anchor: ByRole = %v, ByEffort = %v, ok = %v; want nil, nil, true", got.ByRole, got.ByEffort, ok)
 	}
 	if !strings.Contains(body, "Por esforço: xhigh (") {
 		t.Errorf("the block names no effort line:\n%s", body)
 	}
-	if _, ok := StampedReport("# F-0009\n\n## Resultado\n"); ok {
+	writeResult(t, repo, "F-0009", "# F-0009\n\n## Resultado\n")
+	if _, ok := StampedReport(repo, "F-0009"); ok {
 		t.Error("a result with no anchor read as stamped")
 	}
 }
