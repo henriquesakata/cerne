@@ -262,7 +262,7 @@ func printCompleteNextStep(w io.Writer, repoDir, id string, noStamp bool) {
 	if err == nil {
 		if line := app.DeliveryLine(f, true); line != "" {
 			if f.DeliveryMRURL != "" {
-				line += " — mark it ready for review when CI is green"
+				line += " — mark it ready for review now: human review starts on Ready, not after CI"
 			}
 			fmt.Fprintf(w, "  - %s\n", line)
 		}
