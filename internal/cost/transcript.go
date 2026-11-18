@@ -132,6 +132,7 @@ type msg struct {
 	session   string
 	agent     string // subagent id; "" on the main thread
 	model     string
+	effort    string // the line's recorded effort; "" when none
 	file      string // tfile.rel
 	sidechain bool
 	kind      string   // the subagent's agentType (its .meta.json); "" when none
@@ -149,6 +150,7 @@ type rawLine struct {
 	SessionID   string `json:"sessionId"`
 	IsSidechain bool   `json:"isSidechain"`
 	AgentID     string `json:"agentId"`
+	Effort      string `json:"effort"` // the reasoning effort Claude Code ran the turn at (B-0024); "" on older lines
 	Message     struct {
 		ID    string `json:"id"`
 		Model string `json:"model"`
@@ -195,7 +197,7 @@ func readSession(sess string, files []tfile) ([]msg, error) {
 				return
 			}
 			u := l.Message.Usage
-			m := msg{session: sess, agent: l.AgentID, model: l.Message.Model, file: f.rel, sidechain: l.IsSidechain, kind: kind,
+			m := msg{session: sess, agent: l.AgentID, model: l.Message.Model, effort: l.Effort, file: f.rel, sidechain: l.IsSidechain, kind: kind,
 				c: Counters{Input: u.Input, CacheCreation: u.CacheCreation, CacheRead: u.CacheRead, Output: u.Output}}
 			m.ts, _ = time.Parse(time.RFC3339Nano, l.Timestamp)
 			if l.Message.ID != "" && l.RequestID != "" {

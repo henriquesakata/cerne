@@ -29,6 +29,7 @@ type tmsg struct {
 	ts      time.Time
 	id, req string
 	model   string
+	effort  string // the top-level "effort" Claude Code records beside the message (B-0024)
 	agent   string
 	from    string // sessionId stamped on the line when not the file's (a resume copy)
 	bare    bool   // no sessionId on the line at all
@@ -55,6 +56,9 @@ func (m tmsg) line(sess string) string {
 	}
 	if m.bare {
 		delete(o, "sessionId")
+	}
+	if m.effort != "" {
+		o["effort"] = m.effort
 	}
 	if m.agent != "" {
 		o["isSidechain"], o["agentId"] = true, m.agent
@@ -585,6 +589,39 @@ func TestComputeByRole(t *testing.T) {
 	}
 	if got := r.Roles(); !reflect.DeepEqual(got, []string{"builder", "critic", "judge", "main", "other"}) {
 		t.Fatalf("Roles() = %v", got)
+	}
+}
+
+// TestComputeByEffort (B-0024): the effort Claude Code records on each
+// assistant line is a measured breakdown like the model — the main thread's
+// and each subagent's own — and the share no line names is "unknown".
+func TestComputeByEffort(t *testing.T) {
+	in := fixture(t)
+	saveFeature(t, in.RepoDir, "F-0001", domain.StateInDevelopment)
+	tl, dev, old := cc(1, 0, 0, 0), cc(0, 2, 0, 0), cc(0, 0, 4, 0)
+	writeSession(t, in.Roots[0], "s",
+		tmsg{ts: at(2), id: "m", req: "r", effort: "xhigh", c: tl},
+		tmsg{ts: at(3), id: "d", req: "r", agent: "d", model: "claude-sonnet-5-5", effort: "medium", c: dev},
+		tmsg{ts: at(4), id: "o", req: "r", c: old})
+	bindAt(t, in.CacheDir, "s", "", "F-0001", at(1))
+
+	r := compute(t, in, "F-0001")
+	want := map[string]Counters{"xhigh": tl, "medium": dev, "unknown": old}
+	if !reflect.DeepEqual(r.ByEffort, want) {
+		t.Fatalf("ByEffort = %+v, want %+v", r.ByEffort, want)
+	}
+}
+
+// TestComputeNoEffortRecordedHasNoEffortView: transcripts from before Claude
+// Code recorded the effort leave the breakdown empty, never all "unknown".
+func TestComputeNoEffortRecordedHasNoEffortView(t *testing.T) {
+	in := fixture(t)
+	saveFeature(t, in.RepoDir, "F-0001", domain.StateInDevelopment)
+	writeSession(t, in.Roots[0], "s", tmsg{ts: at(2), id: "m", req: "r", c: cc(1, 1, 1, 1)})
+	bindAt(t, in.CacheDir, "s", "", "F-0001", at(1))
+
+	if r := compute(t, in, "F-0001"); r.ByEffort != nil {
+		t.Fatalf("ByEffort = %+v, want nil", r.ByEffort)
 	}
 }
 

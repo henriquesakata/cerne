@@ -661,7 +661,11 @@ export function CostDetailPage({ id }: { id: string }) {
           {' · '}
           {`${t.costs.filterNames.level}: ${d.level ? (t.costs.levels[d.level] ?? d.level) : t.costs.unknownValue}`}
           {' · '}
-          {d.effort_source === 'declared' ? t.costs.effortDeclared(d.effort) : t.costs.effortUnknown}
+          {d.effort_source === 'measured'
+            ? t.costs.effortMeasured(d.efforts.join(', '))
+            : d.effort_source === 'declared'
+              ? t.costs.effortDeclared(d.efforts[0])
+              : t.costs.effortUnknown}
           {' · '}
           {t.costs.filterNames.vendor}: {d.vendors.length ? d.vendors.map((v) => t.costs.vendors[v] ?? v).join(', ') : t.costs.unknownValue}
         </p>
@@ -681,6 +685,7 @@ export function CostDetailPage({ id }: { id: string }) {
       </dl>
       {breakdown(t.costs.byRole, d.by_role, d.weighted_by_role, (k) => t.costs.roles[k] ?? k)}
       {breakdown(t.costs.byModel, d.by_model, d.weighted_by_model, (k) => (k === 'unknown' ? t.costs.unknownValue : k))}
+      {breakdown(t.costs.byEffort, d.by_effort, d.weighted_by_effort, (k) => (k === 'unknown' ? t.costs.unknownValue : k))}
       <dl className="costs-raw">
         <div>
           <dt>{t.costs.sidechain}</dt>
