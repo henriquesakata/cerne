@@ -237,16 +237,17 @@ func FeatureCost(repoDir, id string) (CostDetail, error) {
 	return d, nil
 }
 
-// readCost reads feature f's stamped cost and what the screen shows beside it:
-// the spec's level, the effort (measured, else declared), the Gauntlet record
-// and the vendors its models name.
+// readCost reads feature f's stamped cost — its newest anchor, errata included
+// (F-0448) — and what the screen shows beside it: the spec's level, the effort
+// (measured, else the result's declared one), the result's Gauntlet record and
+// the vendors its models name.
 // false with no anchor or an all-zero one (the process panel's no_cost).
 func readCost(repoDir string, f store.Feature, at time.Time) (CostDetail, bool, error) {
 	body, err := os.ReadFile(FeatureDocPath(repoDir, f.ID, "result.md"))
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return CostDetail{}, false, fmt.Errorf("costs: read the result of %s: %w", f.ID, err)
 	}
-	r, ok := cost.StampedReport(string(body))
+	r, ok := cost.StampedReport(repoDir, f.ID)
 	if !ok || r.Counters == (cost.Counters{}) {
 		return CostDetail{}, false, nil
 	}

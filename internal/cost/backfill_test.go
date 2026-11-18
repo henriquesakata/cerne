@@ -418,3 +418,179 @@ func TestBackfillRolesEpicCitationIsNotOtherWork(t *testing.T) {
 		t.Errorf("Ambiguous = %+v\nwant %+v", r.Ambiguous, want)
 	}
 }
+
+// effortFixture binds session sess to id at minute n and writes a main-thread
+// message at xhigh and a builder subagent at medium (no effort with !effort),
+// then saves id in state.
+func effortFixture(t *testing.T, in Inputs, sess, id string, state domain.FeatureState, effort bool) {
+	t.Helper()
+	main, sub := "xhigh", "medium"
+	if !effort {
+		main, sub = "", ""
+	}
+	saveFeature(t, in.RepoDir, id, state)
+	writeSession(t, in.Roots[0], sess,
+		tmsg{ts: at(2), id: sess + "m", req: "r", effort: main, c: cc(1, 0, 10, 2)},
+		tmsg{ts: at(3), id: sess + "d", req: "r", agent: "d" + sess, model: "claude-sonnet-5-5", effort: sub, c: cc(3, 0, 20, 4)})
+	bindAt(t, in.CacheDir, sess, "", id, at(1))
+}
+
+// stampBeforeEffort stamps id's result as a stamp from before B-0024 did:
+// the computed report without the effort fields. It returns the full report.
+func stampBeforeEffort(t *testing.T, in Inputs, id string, bump Counters) Report {
+	t.Helper()
+	r := compute(t, in, id)
+	old := r
+	old.ByEffort, old.ModelEfforts = nil, nil
+	old.Counters = old.Counters.add(bump)
+	writeResult(t, in.RepoDir, id, mustStamp(t, resultDoc(id), old))
+	return r
+}
+
+// TestBackfillEffortReports (F-0448 crit. 1-3): every implemented or done
+// feature whose newest anchor lacks by_effort is recomputed from the
+// transcripts; it is reported with the measured effort only when the
+// recomputed counters equal the anchor's, else named by why it is left out.
+// Nothing is written.
+func TestBackfillEffortReports(t *testing.T) {
+	in := fixture(t)
+	effortFixture(t, in, "s1", "F-0001", domain.StateImplemented, true)
+	full := stampBeforeEffort(t, in, "F-0001", Counters{})
+	effortFixture(t, in, "s2", "F-0002", domain.StateDone, true)
+	stampBeforeEffort(t, in, "F-0002", Counters{})
+	effortFixture(t, in, "s3", "F-0003", domain.StateImplemented, true)
+	stampBeforeEffort(t, in, "F-0003", cc(1, 0, 0, 0)) // attribution drifted since the stamp
+	saveFeature(t, in.RepoDir, "F-0004", domain.StateImplemented)
+	writeResult(t, in.RepoDir, "F-0004", mustStamp(t, resultDoc("F-0004"), stampReport("F-0004", cc(5, 0, 0, 5), 3)))
+	effortFixture(t, in, "s5", "F-0005", domain.StateImplemented, false)
+	stampBeforeEffort(t, in, "F-0005", Counters{})
+	effortFixture(t, in, "s6", "F-0006", domain.StateImplemented, true)
+	writeResult(t, in.RepoDir, "F-0006", mustStamp(t, resultDoc("F-0006"), compute(t, in, "F-0006")))
+	effortFixture(t, in, "s7", "F-0007", domain.StateInDevelopment, true)
+	stampBeforeEffort(t, in, "F-0007", Counters{})
+	before := snapshotTree(t, in)
+
+	got, err := BackfillEffort(in)
+	if err != nil {
+		t.Fatalf("BackfillEffort: %v", err)
+	}
+	if len(full.ByEffort) != 2 || len(full.ModelEfforts) != 2 {
+		t.Fatalf("fixture: the recomputed report has no effort pairing: %+v", full)
+	}
+	want := EffortBackfill{
+		Features: []FeatureEffort{
+			{ID: "F-0001", State: domain.StateImplemented, ByEffort: full.ByEffort, ModelEfforts: full.ModelEfforts},
+			{ID: "F-0002", State: domain.StateDone, ByEffort: full.ByEffort, ModelEfforts: full.ModelEfforts},
+		},
+		HasEffort: []string{"F-0006"}, Drifted: []string{"F-0003"}, NoTranscript: []string{"F-0004"}, Unmeasured: []string{"F-0005"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("BackfillEffort =\n%+v\nwant\n%+v", got, want)
+	}
+	if !reflect.DeepEqual(snapshotTree(t, in), before) {
+		t.Error("the report wrote to the cache or the backend")
+	}
+}
+
+// TestEffortEdit (F-0448 crit. 4, 5): the backfilled result is byte-identical
+// to what `cerne cost --stamp` writes from the same transcripts — the effort
+// fields and the "Por esforço:" line join the anchor, everything else stays;
+// a done feature gets the same block as an erratum text and its result is
+// left alone; efforts that do not sum to the anchor's total refuse.
+func TestEffortEdit(t *testing.T) {
+	in := fixture(t)
+	repo := in.RepoDir
+	effortFixture(t, in, "s1", "F-0001", domain.StateImplemented, true)
+	full := stampBeforeEffort(t, in, "F-0001", Counters{})
+	if full.Roles() == nil {
+		t.Fatalf("fixture: no role breakdown to keep: %+v", full.ByRole)
+	}
+
+	text, asResult, err := EffortEdit(repo, "F-0001", false, full.ByEffort, full.ModelEfforts)
+	if err != nil || !asResult {
+		t.Fatalf("implemented: %v, asResult %v", err, asResult)
+	}
+	if want := mustStamp(t, resultDoc("F-0001"), full); text != want {
+		t.Errorf("backfilled result differs from a fresh stamp:\n%s\nwant\n%s", text, want)
+	}
+
+	effortFixture(t, in, "s2", "F-0002", domain.StateDone, true)
+	stampBeforeEffort(t, in, "F-0002", Counters{})
+	result, _ := os.ReadFile(filepath.Join(repo, "content", "features", "F-0002", "result.md"))
+	text, asResult, err = EffortEdit(repo, "F-0002", true, full.ByEffort, full.ModelEfforts)
+	if err != nil || asResult {
+		t.Fatalf("done: %v, asResult %v", err, asResult)
+	}
+	a, ok := anchor(text)
+	if !ok || !reflect.DeepEqual(a.ByEffort, full.ByEffort) || !reflect.DeepEqual(a.ModelEfforts, full.ModelEfforts) || a.Counters != full.Counters {
+		t.Errorf("erratum anchor = %+v (ok %v)", a, ok)
+	}
+	if !strings.Contains(text, "cerne cost backfill-effort") || !strings.Contains(text, "Por esforço: medium (") {
+		t.Errorf("erratum text does not say where it came from or lacks the line:\n%s", text)
+	}
+	if after, _ := os.ReadFile(filepath.Join(repo, "content", "features", "F-0002", "result.md")); string(after) != string(result) {
+		t.Error("the edit of a done feature touched its result")
+	}
+
+	// An implemented feature whose newest anchor already sits in an erratum
+	// gets an erratum too: the result's older block is not the one to edit.
+	effortFixture(t, in, "s3", "F-0003", domain.StateImplemented, true)
+	stampBeforeEffort(t, in, "F-0003", Counters{})
+	erratumCusto(t, repo, "F-0003", full.Counters, nil, 12)
+	result, _ = os.ReadFile(filepath.Join(repo, "content", "features", "F-0003", "result.md"))
+	if text, asResult, err = EffortEdit(repo, "F-0003", false, full.ByEffort, full.ModelEfforts); err != nil || asResult || !strings.Contains(text, `"by_effort":`) {
+		t.Errorf("implemented with an erratum anchor: %v, asResult %v\n%s", err, asResult, text)
+	}
+	if after, _ := os.ReadFile(filepath.Join(repo, "content", "features", "F-0003", "result.md")); string(after) != string(result) {
+		t.Error("the edit of an erratum anchor touched the result")
+	}
+
+	if _, _, err := EffortEdit(repo, "F-0001", false, map[string]Counters{"xhigh": cc(1, 0, 0, 0)}, nil); !errors.Is(err, ErrBackfillEffortMismatch) {
+		t.Errorf("efforts off the total: %v, want ErrBackfillEffortMismatch", err)
+	}
+	saveFeature(t, repo, "F-0009", domain.StateImplemented)
+	if _, _, err := EffortEdit(repo, "F-0009", false, full.ByEffort, full.ModelEfforts); !errors.Is(err, ErrBackfillNoAnchor) {
+		t.Errorf("no anchor: %v, want ErrBackfillNoAnchor", err)
+	}
+}
+
+// TestBackfillEffortEdges (F-0448 crit. 2, 3): a transcript pruned since the
+// stamp leaves the anchor as the only record (no transcript); a session bound
+// under another harness neither aborts the run nor counts; lines from before
+// Claude Code recorded the effort land in "unknown", so the efforts still sum
+// to the anchor's total.
+func TestBackfillEffortEdges(t *testing.T) {
+	in := fixture(t)
+	effortFixture(t, in, "s1", "F-0001", domain.StateDone, true)
+	stampBeforeEffort(t, in, "F-0001", Counters{})
+	writeSession(t, in.Roots[0], "s1", tmsg{ts: at(2), id: "s1m", req: "r", effort: "xhigh", c: cc(1, 0, 10, 2)}) // the subagent file is gone
+	if err := os.RemoveAll(filepath.Join(in.Roots[0], "projects", "-tmp-p", "s1")); err != nil {
+		t.Fatal(err)
+	}
+	saveFeature(t, in.RepoDir, "F-0002", domain.StateDone)
+	writeResult(t, in.RepoDir, "F-0002", mustStamp(t, resultDoc("F-0002"), stampReport("F-0002", cc(5, 0, 0, 5), 3)))
+	if err := AppendBind(in.CacheDir, Bind{Session: "x1", Entity: "F-0002", Harness: "codex", TS: at(1)}); err != nil {
+		t.Fatal(err)
+	}
+	saveFeature(t, in.RepoDir, "F-0003", domain.StateDone)
+	writeSession(t, in.Roots[0], "s3",
+		tmsg{ts: at(2), id: "s3m", req: "r", effort: "xhigh", c: cc(1, 0, 0, 0)},
+		tmsg{ts: at(3), id: "s3o", req: "r", c: cc(0, 0, 0, 4)})
+	bindAt(t, in.CacheDir, "s3", "", "F-0003", at(1))
+	stampBeforeEffort(t, in, "F-0003", Counters{})
+
+	got, err := BackfillEffort(in)
+	if err != nil {
+		t.Fatalf("BackfillEffort: %v", err)
+	}
+	if !slices.Equal(got.NoTranscript, []string{"F-0001", "F-0002"}) {
+		t.Errorf("no transcript = %v, want F-0001 (pruned) and F-0002 (another harness)", got.NoTranscript)
+	}
+	want := map[string]Counters{"xhigh": cc(1, 0, 0, 0), "unknown": cc(0, 0, 0, 4)}
+	if len(got.Features) != 1 || got.Features[0].ID != "F-0003" || !reflect.DeepEqual(got.Features[0].ByEffort, want) {
+		t.Fatalf("features = %+v, want F-0003 with %v", got.Features, want)
+	}
+	if _, _, err := EffortEdit(in.RepoDir, "F-0003", true, got.Features[0].ByEffort, got.Features[0].ModelEfforts); err != nil {
+		t.Errorf("EffortEdit with an unknown share: %v", err)
+	}
+}

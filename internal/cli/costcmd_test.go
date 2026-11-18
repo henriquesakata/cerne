@@ -820,3 +820,166 @@ func TestCostBackfillRolesApplyJSON(t *testing.T) {
 		t.Fatalf("--apply --json: %v\n%s", err, out)
 	}
 }
+
+// withEffort is line as Claude Code writes it since it records the effort.
+func withEffort(line, effort string) string {
+	return strings.Replace(line, `{"type":"assistant",`, `{"type":"assistant","effort":"`+effort+`",`, 1)
+}
+
+// effortSessions rewrites costSessions' transcripts with the effort on every
+// line — the same messages and counters, so a stamp made before is still
+// consistent with them.
+func effortSessions(t *testing.T) {
+	t.Helper()
+	root := os.Getenv("CLAUDE_CONFIG_DIR")
+	writeTranscript(t, root, "sess-1.jsonl",
+		withEffort(costLine("2026-11-01T10:00:30Z", "m0", "claude-opus-5-5", "", 5, 0, 0, 5), "xhigh"),
+		withEffort(costLine("2026-11-01T10:02:00Z", "m1", "claude-opus-5-5", "", 1, 10, 100, 1000), "xhigh"))
+	writeTranscript(t, root, "sess-1/subagents/agent-x.jsonl",
+		withEffort(costLine("2026-11-01T10:03:00Z", "m2", "claude-sonnet-5", "x", 2, 20, 200, 2000), "medium"))
+}
+
+// effortProject is F-0001 stamped before its transcripts recorded the effort
+// (a stamp from before B-0024), then moved to state.
+func effortProject(t *testing.T, state domain.FeatureState) (projDir, repoDir string) {
+	t.Helper()
+	projDir, _, repoDir = setupProject(t)
+	seedResultFeatures(t, repoDir, domain.StateImplemented)
+	costSessions(t, repoDir)
+	if out, err := execCerne(t, "cost", "F-0001", "--stamp", "--dir", projDir); err != nil {
+		t.Fatalf("stamp: %v\n%s", err, out)
+	}
+	if strings.Contains(readResult(t, repoDir, "F-0001"), "by_effort") {
+		t.Fatal("fixture: the stamp already has the effort")
+	}
+	effortSessions(t)
+	if state != domain.StateImplemented {
+		now := time.Now().UTC()
+		if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0001", Title: "Feature F-0001", State: state, CreatedAt: now, UpdatedAt: now}); err != nil {
+			t.Fatal(err)
+		}
+		commitBackend(t, repoDir)
+	}
+	return projDir, repoDir
+}
+
+// TestCostBackfillEffortReportsWithoutWriting (F-0448 crit. 1): without
+// --apply one line per feature with each model's measured effort, then the
+// counts left out — and no write.
+func TestCostBackfillEffortReportsWithoutWriting(t *testing.T) {
+	projDir, repoDir := effortProject(t, domain.StateImplemented)
+	result := readResult(t, repoDir, "F-0001")
+	out, err := execCerne(t, "cost", "backfill-effort", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("backfill-effort: %v\n%s", err, out)
+	}
+	for _, want := range []string{
+		"F-0001  implemented  claude-opus-5-5 xhigh · claude-sonnet-5 medium\n",
+		"Left out: already with effort 0 · drifted 0 · no transcript 0 · unmeasured 0\n",
+		"--apply",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+	if readResult(t, repoDir, "F-0001") != result {
+		t.Error("the report wrote")
+	}
+	js, err := execCerne(t, "cost", "backfill-effort", "--json", "--dir", projDir)
+	var rep struct {
+		Features []struct {
+			ID       string                   `json:"id"`
+			ByEffort map[string]cost.Counters `json:"by_effort"`
+		} `json:"features"`
+	}
+	if err != nil || json.Unmarshal([]byte(js), &rep) != nil || len(rep.Features) != 1 || rep.Features[0].ID != "F-0001" || len(rep.Features[0].ByEffort) != 2 {
+		t.Errorf("--json: %v\n%s", err, js)
+	}
+}
+
+// TestCostBackfillEffortApplyImplemented (F-0448 crit. 4-6): --apply writes
+// the effort into the result's anchor so that a fresh stamp from the same
+// transcripts finds nothing to change; a second run writes nothing.
+func TestCostBackfillEffortApplyImplemented(t *testing.T) {
+	projDir, repoDir := effortProject(t, domain.StateImplemented)
+	out, err := execCerne(t, "cost", "backfill-effort", "--apply", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "✓ F-0001: effort written in the result") {
+		t.Fatalf("apply: %v\n%s", err, out)
+	}
+	result := readResult(t, repoDir, "F-0001")
+	if !strings.Contains(result, `"by_effort":{"medium":`) || !strings.Contains(result, "Por esforço: medium (") || strings.Count(result, "## Custo") != 1 {
+		t.Errorf("result lacks the effort:\n%s", result)
+	}
+	if out, err := execCerne(t, "cost", "F-0001", "--stamp", "--dir", projDir); err != nil || !strings.Contains(out, "unchanged") {
+		t.Errorf("a fresh stamp differs from the backfill: %v\n%s", err, out)
+	}
+	out, err = execCerne(t, "cost", "backfill-effort", "--apply", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "nothing to backfill") || readResult(t, repoDir, "F-0001") != result {
+		t.Fatalf("second apply: %v\n%s", err, out)
+	}
+}
+
+// TestCostBackfillEffortApplyDone (F-0448 crit. 4, 6): a done feature keeps
+// its result byte for byte; the anchor with the effort goes into an erratum,
+// which the next run reads as the newest anchor.
+func TestCostBackfillEffortApplyDone(t *testing.T) {
+	projDir, repoDir := effortProject(t, domain.StateDone)
+	before := readResult(t, repoDir, "F-0001")
+	out, err := execCerne(t, "cost", "backfill-effort", "--apply", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "✓ F-0001: effort written in an erratum") {
+		t.Fatalf("apply: %v\n%s", err, out)
+	}
+	if readResult(t, repoDir, "F-0001") != before {
+		t.Error("the result of a done feature changed")
+	}
+	errata, err := store.LoadErrata(repoDir, "F-0001")
+	if err != nil || strings.Count(errata, "## Custo") != 1 || !strings.Contains(errata, `"by_effort":{"medium":`) {
+		t.Fatalf("errata (%v):\n%s", err, errata)
+	}
+	out, err = execCerne(t, "cost", "backfill-effort", "--apply", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "nothing to backfill") {
+		t.Fatalf("second apply: %v\n%s", err, out)
+	}
+	if again, _ := store.LoadErrata(repoDir, "F-0001"); again != errata {
+		t.Error("the second apply wrote an erratum")
+	}
+}
+
+// TestCostBackfillEffortApplyCollectsFailures (F-0448 crit. 6): a failure on
+// one feature does not stop the next, exits non-zero, and --apply --json
+// prints the applied list and the errors.
+func TestCostBackfillEffortApplyCollectsFailures(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	seedResultFeatures(t, repoDir, domain.StateImplemented, domain.StateImplemented)
+	costSessions(t, repoDir)
+	root := os.Getenv("CLAUDE_CONFIG_DIR")
+	writeTranscript(t, root, "sess-3.jsonl", costLine("2026-11-01T10:02:00Z", "n1", "claude-opus-5-5", "", 1, 10, 100, 1000))
+	costBind(t, filepath.Dir(repoDir), "sess-3", "F-0002", "2026-11-01T10:01:00Z")
+	for _, id := range []string{"F-0001", "F-0002"} {
+		if out, err := execCerne(t, "cost", id, "--stamp", "--dir", projDir); err != nil {
+			t.Fatalf("stamp %s: %v\n%s", id, err, out)
+		}
+	}
+	effortSessions(t)
+	writeTranscript(t, root, "sess-3.jsonl", withEffort(costLine("2026-11-01T10:02:00Z", "n1", "claude-opus-5-5", "", 1, 10, 100, 1000), "high"))
+	real := effortEdit
+	effortEdit = func(repoDir, id string, done bool, byEffort map[string]cost.Counters, pairs map[string][]string) (string, bool, error) {
+		if id == "F-0001" {
+			return "", false, errors.New("disk full")
+		}
+		return real(repoDir, id, done, byEffort, pairs)
+	}
+	out, err := execCerne(t, "cost", "backfill-effort", "--apply", "--json", "--dir", projDir)
+	effortEdit = real
+	var got struct {
+		Applied []struct{ ID, Wrote string }
+		Errors  []string
+	}
+	if err == nil || json.NewDecoder(strings.NewReader(out)).Decode(&got) != nil || len(got.Applied) != 1 || got.Applied[0].ID != "F-0002" ||
+		got.Applied[0].Wrote != "result" || len(got.Errors) != 1 || !strings.Contains(got.Errors[0], "F-0001: disk full") {
+		t.Fatalf("apply with a failing edit: err %v\n%s", err, out)
+	}
+	if out, err := execCerne(t, "cost", "backfill-effort", "--apply", "--dir", projDir); err != nil || !strings.Contains(out, "✓ F-0001") {
+		t.Fatalf("re-run: %v\n%s", err, out)
+	}
+}

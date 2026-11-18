@@ -404,11 +404,7 @@ func TestCostDetailReportIsTheStamp(t *testing.T) {
 	repoDir, projDir := newBackend(t)
 	seedCostsFixture(t, repoDir)
 	for _, id := range []string{"F-0001", "F-0003", "F-0006"} {
-		body, err := os.ReadFile(filepath.Join(repoDir, "content", "features", id, "result.md"))
-		if err != nil {
-			t.Fatalf("ReadFile: %v", err)
-		}
-		stamped, ok := cost.StampedReport(string(body))
+		stamped, ok := cost.StampedReport(repoDir, id)
 		if !ok {
 			t.Fatalf("%s: no anchor in the seeded result", id)
 		}
@@ -445,5 +441,39 @@ func TestCostDetailWithoutCompletion(t *testing.T) {
 	New(repoDir, projDir, "proj").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/costs/F-0001", nil))
 	if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), "completed_at") {
 		t.Errorf("status %d, body %s; want 200 without completed_at", rec.Code, rec.Body.String())
+	}
+}
+
+// F-0448 crit. 7: an anchor carried by an erratum (the backfill's path for a
+// done feature) is the one the screen reads — list and detail — over the
+// older one in the result.
+func TestCostsReadTheErratumAnchor(t *testing.T) {
+	repoDir, projDir := newBackend(t)
+	opus, sonnet := "claude-opus-5-5", "claude-sonnet-5-5"
+	tl, dev := cost.Counters{Input: 30}, cost.Counters{Input: 10}
+	seedCosts(t, repoDir, []costSeed{{id: "F-0001", completed: costDay(10, 1),
+		report: &cost.Report{ID: "F-0001", Counters: cost.Counters{Input: 40}, Messages: 2, Sessions: 1,
+			ByModel: map[string]cost.Counters{opus: tl, sonnet: dev}}}})
+	text, asResult, err := cost.EffortEdit(repoDir, "F-0001", true,
+		map[string]cost.Counters{"xhigh": tl, "medium": dev}, map[string][]string{opus: {"xhigh"}, sonnet: {"medium"}})
+	if err != nil || asResult {
+		t.Fatalf("EffortEdit: %v, asResult %v", err, asResult)
+	}
+	if err := store.AppendErrata(repoDir, "F-0001", text, "agent", costDay(10, 2)); err != nil {
+		t.Fatalf("AppendErrata: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	New(repoDir, projDir, "proj").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/costs/F-0001", nil))
+	var d app.CostDetail
+	if err := json.Unmarshal(rec.Body.Bytes(), &d); err != nil {
+		t.Fatalf("decode %d: %v", rec.Code, err)
+	}
+	if d.EffortSource != "measured" || !slices.Equal(d.Efforts, []string{"xhigh", "medium"}) || len(d.ModelEfforts) != 2 || d.Report.ByEffort["xhigh"] != tl {
+		t.Errorf("detail effort = %v %v %v, report %+v; want the erratum's measured effort", d.EffortSource, d.Efforts, d.ModelEfforts, d.Report.ByEffort)
+	}
+	r := getCosts(t, repoDir, projDir, "?since=2026-09-28&until=2026-10-18")
+	if len(r.Features) != 1 || r.Features[0].EffortSource != "measured" {
+		t.Errorf("list = %+v, want F-0001 with the measured effort", r.Features)
 	}
 }
