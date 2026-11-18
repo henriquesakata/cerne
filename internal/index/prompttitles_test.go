@@ -2,6 +2,7 @@ package index
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -48,7 +49,9 @@ func TestPromptTitles(t *testing.T) {
 		{"one shared word is not enough", "preciso fazer o deploy de uma versão nova", nil},
 		{"unrelated", "como configuro o editor para formatar o código ao salvar?", nil},
 		{"only stop words", "o que é isso para os que como", nil},
-		{"superseded title alone", "webhook antigo com timeout", nil},
+		// The superseded N-0003 never; the active note on the same subject,
+		// webhook and timeout, does (B-0026: 2 rare shared terms suffice).
+		{"superseded title: only the active note on its subject", "webhook antigo com timeout", []string{"N-0001"}},
 		{"empty", "", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -110,5 +113,94 @@ func TestPromptTitlesLongPaste(t *testing.T) {
 				t.Fatalf("hits = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestPromptTitlesNaturalPrompts (B-0026): a natural prompt names 2 to 4 terms
+// of a descriptive title, never half of it. The table is the bug report's
+// reproduction: each prompt must surface its note within the 3 lines.
+func TestPromptTitlesNaturalPrompts(t *testing.T) {
+	repoDir := t.TempDir()
+	for id, title := range map[string]string{
+		"N-0001": "Google OAuth callback must stay on the apex domain",
+		"N-0002": "Driver do banco local extrai a biblioteca nativa para a pasta temporária e deixa arquivos órfãos após encerramento abrupto",
+		"N-0003": "Menu raiz do cliente Alfa: empate de prioridade resolvido com um UPDATE de uma linha; desempate por id",
+		"N-0004": "Servidor roda em processo de 32 bits: aumentar a memória máxima quebra a subida por falta de espaço de endereçamento",
+		"N-0005": "Limite de 3 tentativas ignorado depois do upgrade: o id fixo do botão ganhou o prefixo do contêiner",
+	} {
+		seedNote(t, repoDir, id, title, "corpo", domain.NoteActive)
+	}
+	// A real-sized corpus where "depois", s4's second word, is common.
+	for i := range 16 {
+		title := fmt.Sprintf("Assunto avulso %03d", i)
+		if i < 4 {
+			title += " depois do deploy"
+		}
+		seedNote(t, repoDir, fmt.Sprintf("N-%04d", 100+i), title, "corpo", domain.NoteActive)
+	}
+	db := filepath.Join(t.TempDir(), "index.db")
+	if err := Rebuild(repoDir, db, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	log := strings.Repeat("2026-11-17 12:00:01 INFO worker pool handler request id=abc dispatch queue size=10 latency ok\n", 10)
+	for _, tc := range []struct {
+		name, prompt, want string // want "" = nothing injected
+	}{
+		{"s1", "o driver ainda gera aquela biblioteca na pasta temporária?", "N-0002"},
+		{"s2", "o menu do cliente Alfa voltou a sair fora de ordem", "N-0003"},
+		{"s3", "aumentei a memória máxima e o servidor não sobe mais", "N-0004"},
+		{"s4", "a tela de tentativas não bloqueia depois de 3 erros", "N-0005"},
+		{"s5", "can I move the OAuth callback to the www subdomain?", "N-0001"},
+		{"s6", "pode revisar meu texto de apresentação?", ""},
+		{"literal title", "Driver do banco local extrai a biblioteca nativa para a pasta temporária e deixa arquivos órfãos após encerramento abrupto", "N-0002"},
+		{"question first, long log after", "o menu do cliente Alfa voltou a sair fora de ordem, segue o log\n" + log, "N-0003"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			hits, err := PromptTitles(context.Background(), db, tc.prompt, 3)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			for _, h := range hits {
+				got = append(got, h.ID)
+			}
+			if tc.want == "" && got != nil || tc.want != "" && !slices.Contains(got, tc.want) {
+				t.Fatalf("hits = %v, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestPromptTitlesCommonWords (B-0026): two words a third of the titles share
+// never fire alone, however many titles hold both; one rare word with them
+// does.
+func TestPromptTitlesCommonWords(t *testing.T) {
+	repoDir := t.TempDir()
+	for i := range 24 {
+		title := fmt.Sprintf("Assunto avulso %03d", i)
+		if i < 8 {
+			title = fmt.Sprintf("Agente do cerne e o assunto %03d", i)
+		}
+		seedNote(t, repoDir, fmt.Sprintf("N-%04d", i+1), title, "b", domain.NoteActive)
+	}
+	db := filepath.Join(t.TempDir(), "index.db")
+	if err := Rebuild(repoDir, db, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	for prompt, want := range map[string][]string{
+		"como o agente usa o cerne?":      nil,
+		"o agente do cerne travou no 003": {"N-0004"},
+	} {
+		hits, err := PromptTitles(context.Background(), db, prompt, 3)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for _, h := range hits {
+			got = append(got, h.ID)
+		}
+		if !slices.Equal(got, want) {
+			t.Errorf("%q: hits = %v, want %v", prompt, got, want)
+		}
 	}
 }
