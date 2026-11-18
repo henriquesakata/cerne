@@ -41,6 +41,12 @@ func FeatureIDPrefix() string {
 	return "(?:" + strings.Join(featurePrefixes, "|") + ")"
 }
 
+// FeaturePrefixesText lists the feature-family prefixes — every kind of card
+// the board shows — for a message or help text: "F-, E-, T-, B-".
+func FeaturePrefixesText() string {
+	return strings.Join(featurePrefixes, "-, ") + "-"
+}
+
 // IsEpicID reports whether id names an epic (E-): a container of features, not
 // a unit of work, so cost attribution does not take a mention of one as other
 // work.

@@ -206,9 +206,10 @@ func newIdeaResolveCmd(dir *string) *cobra.Command {
 
 func newIdeaLinkCmd(dir *string) *cobra.Command {
 	return &cobra.Command{
-		Use:   "link <I-id> <F-id>",
+		Use:   "link <I-id> <card-id>",
 		Short: "Point an active idea at a live feature that carries it (active -> promoted)",
-		Long: "Links an active idea to a feature still live (candidate, approved or in_development), as promote " +
+		Long: "Links an active idea to a card still live — any kind the board shows (" + domain.FeaturePrefixesText() +
+			"), candidate, approved or in_development — as promote " +
 			"links the one it creates; an implemented, done, rejected or superseded feature is refused. From then " +
 			"on the idea follows the feature: its accept resolves it, a reject reopens it, a 'supersede' moves " +
 			"it to the successor. 'cerne idea unlink' undoes the link.",

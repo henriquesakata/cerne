@@ -113,6 +113,36 @@ func TestLinkIdeaOnlyToLiveFeature(t *testing.T) {
 	}
 }
 
+// B-0029: link takes every kind of card the board shows (F-0203), read from
+// the one prefix list, so a kind added there is covered here; a non-card id
+// still refuses.
+func TestLinkIdeaToEveryCardPrefix(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	prefixes := strings.Split(domain.FeaturePrefixesText(), ", ")
+	if len(prefixes) < 4 {
+		t.Fatalf("prefixes = %v, want at least F-, E-, T-, B-", prefixes)
+	}
+	for k, p := range prefixes {
+		id := fmt.Sprintf("%s%04d", p, 30+k)
+		seedFeatureInState(t, repoDir, id, domain.StateCandidate)
+		q, _ := CreateIdea(repoDir, projDir, "ideia para "+id, "", nil, nil, "")
+		got, err := LinkIdea(repoDir, projDir, q.ID, strings.ToLower(id))
+		if err != nil {
+			t.Fatalf("link to %s: %v", id, err)
+		}
+		if got.State != domain.IdeaPromoted || got.PromotedTo != id {
+			t.Fatalf("linked = %+v, want promoted to %s", got, id)
+		}
+		if f, _ := store.LoadFeature(repoDir, id); f.FromIdea != q.ID {
+			t.Fatalf("%s.from_idea = %q, want %s", id, f.FromIdea, q.ID)
+		}
+	}
+	q, _ := CreateIdea(repoDir, projDir, "ideia sem card", "", nil, nil, "")
+	if _, err := LinkIdea(repoDir, projDir, q.ID, "N-0001"); err == nil {
+		t.Fatal("link to a note id was accepted")
+	}
+}
+
 // F-0419 crit. 4: unlink hands a promoted idea back to active, clears
 // promoted_to and the feature's back reference; an idea whose feature is
 // implemented refuses, and a manual resolve/drop of a linked idea is refused.

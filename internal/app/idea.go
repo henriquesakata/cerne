@@ -476,8 +476,6 @@ var ErrIdeaTargetClosed = errors.New("the feature is not live (candidate, approv
 // accept resolved it and a reject reopens it.
 var ErrIdeaLinked = errors.New("the idea is carried by an implemented feature")
 
-var ideaFeatureRx = regexp.MustCompile(`^F-\d{4,}$`)
-
 // LinkIdea points an active idea at the live feature that carries it: active
 // -> promoted with promoted_to = featureID, the event carrying via=link, and
 // the feature's from_idea set when it has none. From then on the idea follows
@@ -489,8 +487,8 @@ func LinkIdea(repoDir, projDir, id, featureID string) (store.Idea, error) {
 		return store.Idea{}, err
 	}
 	featureID = strings.ToUpper(strings.TrimSpace(featureID))
-	if !ideaFeatureRx.MatchString(featureID) {
-		return store.Idea{}, fmt.Errorf("%q is not an F-NNNN id", featureID)
+	if !store.ValidFeatureID(featureID) { // every card kind on the board (F-0203), not only F- (B-0029)
+		return store.Idea{}, fmt.Errorf("%q is not a card id (%s)", featureID, domain.FeaturePrefixesText())
 	}
 	var i store.Idea
 	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
