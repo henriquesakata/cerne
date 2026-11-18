@@ -34,11 +34,14 @@ const feat = (id: string, weighted: number, extra: Partial<CostFeature> = {}): C
   by_model: { 'claude-opus-5-5': { ...zero, input: weighted } },
   weighted_by_role: { builder: weighted },
   weighted_by_model: { 'claude-opus-5-5': weighted },
+  by_effort: {},
+  weighted_by_effort: { unknown: weighted },
   gauntlet_share: 0,
   has_gauntlet: true,
   rounds: 1,
   defeats: 0,
-  effort: '',
+  efforts: [],
+  model_efforts: null,
   effort_source: 'unknown',
   vendors: ['anthropic'],
   ...extra,
@@ -87,7 +90,7 @@ const report = (extra: Partial<CostsReport> = {}): CostsReport => ({
       gauntlet_share: 0.5,
       rounds: 2,
       defeats: 1,
-      effort: 'high',
+      efforts: ['high'],
       effort_source: 'declared',
       weighted_by_role: { builder: 50, critic: 30, judge: 20 },
     }),
@@ -309,7 +312,9 @@ describe('Custos — filtros (crit. 7)', () => {
     expect(screen.getByLabelText('Nível da feature')).toBeInTheDocument()
     expect(screen.getByText('vendor conhecido em 3 de 4, pelos modelos do custo (claude-* → Anthropic)')).toBeInTheDocument()
     // F-0427: level and effort name their owner and source, so they stop reading as synonyms.
-    expect(screen.getByText('esforço de raciocínio do modelo, declarado no result, em 2 de 4; nunca medido')).toBeInTheDocument()
+    expect(
+      screen.getByText('esforço de raciocínio do modelo, medido nos transcripts ou declarado no result, em 2 de 4'),
+    ).toBeInTheDocument()
     expect(screen.getByText('porte da feature, declarado na spec, em 3 de 4')).toBeInTheDocument()
     expect(screen.getByText(/modelo registrado em 4 de 4/)).toBeInTheDocument()
   })
@@ -379,7 +384,9 @@ describe('Custos — inglês (crit. 9)', () => {
     ])
     expect(screen.getByLabelText('Model effort')).toBeInTheDocument()
     expect(screen.getByText("the feature's size, declared in the spec, in 3 of 4")).toBeInTheDocument()
-    expect(screen.getByText("the model's reasoning effort, declared in the result, in 2 of 4; never measured")).toBeInTheDocument()
+    expect(
+      screen.getByText("the model's reasoning effort, measured in the transcripts or declared in the result, in 2 of 4"),
+    ).toBeInTheDocument()
   })
 })
 
@@ -390,7 +397,7 @@ const detail: CostDetail = {
     gauntlet_share: 0.5,
     rounds: 2,
     defeats: 1,
-    effort: 'high',
+    efforts: ['high'],
     effort_source: 'declared',
     by_role: { builder: { ...zero, input: 50 }, critic: { ...zero, output: 6 }, judge: { ...zero, output: 4 } },
     weighted_by_role: { builder: 50, critic: 30, judge: 20 },
@@ -440,8 +447,30 @@ describe('Custos — detalhe da feature (crit. 5)', () => {
     expect(within(models).getByRole('row', { name: /^desconhecido/ })).toHaveTextContent(/desconhecido.*50.*0.*0.*10.*100.*100%/)
   })
 
+  // B-0024: the transcripts record the effort of every message; measured, it
+  // is the model's effort, heaviest first, with its own breakdown.
+  it('esforço medido nos transcripts: metadados e divisão por esforço', async () => {
+    api.fetchCostDetail.mockResolvedValue({
+      ...detail,
+      efforts: ['xhigh', 'medium'],
+      model_efforts: { 'claude-sonnet-5-5': ['medium'], 'claude-opus-5-5': ['high', 'xhigh'] },
+      effort_source: 'measured',
+      weighted_by_model: { 'claude-sonnet-5-5': 20, 'claude-opus-5-5': 80 },
+      by_effort: { xhigh: { ...zero, input: 30, output: 10 }, medium: { ...zero, input: 20 } },
+      weighted_by_effort: { xhigh: 80, medium: 20 },
+    })
+    render(<CostDetailPage id="F-0001" />)
+    // Each model with the efforts it ran at, the heaviest model first.
+    expect(
+      await screen.findByText(/Esforço do modelo: claude-opus-5-5 high\/xhigh, claude-sonnet-5-5 medium \(medido\)/),
+    ).toBeInTheDocument()
+    const efforts = screen.getByRole('table', { name: 'Por esforço' })
+    expect(within(efforts).getByRole('row', { name: /^xhigh/ })).toHaveTextContent(/xhigh.*30.*0.*0.*10.*80.*80%/)
+    expect(within(efforts).getByRole('row', { name: /^medium/ })).toHaveTextContent(/medium.*20.*0.*0.*0.*20.*20%/)
+  })
+
   it('sem esforço declarado, a linha de metadados diz desconhecido, nos dois idiomas', async () => {
-    api.fetchCostDetail.mockResolvedValue({ ...detail, effort: '', effort_source: 'unknown' })
+    api.fetchCostDetail.mockResolvedValue({ ...detail, efforts: [], effort_source: 'unknown' })
     const { unmount } = render(<CostDetailPage id="F-0001" />)
     expect(await screen.findByText(/Nível da feature: leve · Esforço do modelo: desconhecido ·/)).toBeInTheDocument()
     unmount()

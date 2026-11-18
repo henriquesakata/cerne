@@ -247,7 +247,8 @@ const ptBR = {
       level: (n: number, of: number) => `porte da feature, declarado na spec, em ${n} de ${of}`,
       model: (n: number, of: number) => `modelo registrado em ${n} de ${of}`,
       vendor: (n: number, of: number) => `vendor conhecido em ${n} de ${of}, pelos modelos do custo (claude-* → Anthropic)`,
-      effort: (n: number, of: number) => `esforço de raciocínio do modelo, declarado no result, em ${n} de ${of}; nunca medido`,
+      effort: (n: number, of: number) =>
+        `esforço de raciocínio do modelo, medido nos transcripts ou declarado no result, em ${n} de ${of}`,
     },
     levels: { leve: 'leve', padrão: 'padrão', avançado: 'avançado' } as Record<string, string>,
     vendors: { anthropic: 'Anthropic', openai: 'OpenAI' } as Record<string, string>,
@@ -291,6 +292,7 @@ const ptBR = {
     openFeature: 'Abrir a feature',
     byRole: 'Por papel',
     byModel: 'Por modelo',
+    byEffort: 'Por esforço',
     rawCols: { name: 'Parte', weighted: 'Ponderado', share: 'Fração' },
     total: 'Total',
     sidechain: 'Subagentes (já incluídos)',
@@ -301,6 +303,7 @@ const ptBR = {
     noRounds: 'Sem rodada registrada na seção Gauntlet.',
     round: (n: number) => (n === 0 ? 'Rodada única' : `Rodada ${n}`),
     outcomes: { win: 'vitória', loss: 'derrota', tie: 'empate', '': 'resultado ilegível' },
+    effortMeasured: (e: string) => `Esforço do modelo: ${e} (medido)`,
     effortDeclared: (e: string) => `Esforço do modelo: ${e} (declarado)`,
     effortUnknown: 'Esforço do modelo: desconhecido',
     meta: (completed: string, sessions: number, messages: number) =>
@@ -1610,7 +1613,8 @@ const en: Messages = {
       level: (n: number, of: number) => `the feature's size, declared in the spec, in ${n} of ${of}`,
       model: (n: number, of: number) => `model recorded in ${n} of ${of}`,
       vendor: (n: number, of: number) => `vendor known in ${n} of ${of}, from the cost's models (claude-* → Anthropic)`,
-      effort: (n: number, of: number) => `the model's reasoning effort, declared in the result, in ${n} of ${of}; never measured`,
+      effort: (n: number, of: number) =>
+        `the model's reasoning effort, measured in the transcripts or declared in the result, in ${n} of ${of}`,
     },
     levels: { leve: 'light', padrão: 'standard', avançado: 'advanced' } as Record<string, string>,
     vendors: { anthropic: 'Anthropic', openai: 'OpenAI' } as Record<string, string>,
@@ -1654,6 +1658,7 @@ const en: Messages = {
     openFeature: 'Open the feature',
     byRole: 'By role',
     byModel: 'By model',
+    byEffort: 'By effort',
     rawCols: { name: 'Part', weighted: 'Weighted', share: 'Share' },
     total: 'Total',
     sidechain: 'Subagents (already included)',
@@ -1664,6 +1669,7 @@ const en: Messages = {
     noRounds: 'No round recorded in the Gauntlet section.',
     round: (n: number) => (n === 0 ? 'Single round' : `Round ${n}`),
     outcomes: { win: 'win', loss: 'loss', tie: 'tie', '': 'unreadable outcome' },
+    effortMeasured: (e: string) => `Model effort: ${e} (measured)`,
     effortDeclared: (e: string) => `Model effort: ${e} (declared)`,
     effortUnknown: 'Model effort: unknown',
     meta: (completed: string, sessions: number, messages: number) =>

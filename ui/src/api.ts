@@ -424,12 +424,15 @@ export type CostFeature = {
   by_model: Record<string, CostCounters> | null
   weighted_by_role: Record<string, number>
   weighted_by_model: Record<string, number>
+  by_effort: Record<string, CostCounters> | null // medido nos transcripts (B-0024); vazio em âncoras antigas
+  weighted_by_effort: Record<string, number>
   gauntlet_share: number | null // null sem divisão por papel
   has_gauntlet: boolean
   rounds: number
   defeats: number
-  effort: string
-  effort_source: 'declared' | 'unknown'
+  efforts: string[] // medidos, o mais pesado primeiro; sem medida, o declarado no result
+  model_efforts: Record<string, string[]> | null // medido: modelo → os esforços em que rodou
+  effort_source: 'measured' | 'declared' | 'unknown'
   vendors: string[]
 }
 

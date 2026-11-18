@@ -60,7 +60,9 @@ type Report struct {
 	Counters                  Counters            `json:"counters"`
 	Sidechain                 Counters            `json:"sidechain"`
 	ByModel                   map[string]Counters `json:"by_model"`
-	ByRole                    map[string]Counters `json:"by_role,omitempty"` // main, builder, critic, judge, other (F-0384)
+	ByRole                    map[string]Counters `json:"by_role,omitempty"`       // main, builder, critic, judge, other (F-0384)
+	ByEffort                  map[string]Counters `json:"by_effort,omitempty"`     // the efforts the transcripts record (B-0024)
+	ModelEfforts              map[string][]string `json:"model_efforts,omitempty"` // model → the efforts it ran at, sorted (B-0024)
 	Messages                  int                 `json:"messages"`
 	Sessions                  int                 `json:"sessions"`
 	SessionsWithoutTranscript int                 `json:"sessions_without_transcript"`
@@ -82,10 +84,11 @@ type Inputs struct {
 	Roots    []string // Claude Code config dirs (ClaudeRoots)
 }
 
-// bucket is the per (model, sidechain, role) aggregate of one transcript file's
-// messages for one entity.
+// bucket is the per (model, effort, sidechain, role) aggregate of one
+// transcript file's messages for one entity.
 type bucket struct {
 	Model     string    `json:"model"`
+	Effort    string    `json:"effort,omitempty"` // "" when the lines record none, or in a snapshot from before B-0024
 	Sidechain bool      `json:"sidechain"`
 	Role      string    `json:"role,omitempty"` // "" in a snapshot from before F-0384
 	Messages  int       `json:"messages"`
@@ -104,7 +107,7 @@ func (f *fileAgg) add(m msg) {
 	f.Messages++
 	for i := range f.Buckets {
 		b := &f.Buckets[i]
-		if b.Model == m.model && b.Sidechain == m.sidechain && b.Role == m.role {
+		if b.Model == m.model && b.Effort == m.effort && b.Sidechain == m.sidechain && b.Role == m.role {
 			b.Messages++
 			b.Counters = b.Counters.add(m.c)
 			if m.ts.Before(b.First) {
@@ -116,7 +119,7 @@ func (f *fileAgg) add(m msg) {
 			return
 		}
 	}
-	f.Buckets = append(f.Buckets, bucket{Model: m.model, Sidechain: m.sidechain, Role: m.role, Messages: 1, First: m.ts, Last: m.ts, Counters: m.c})
+	f.Buckets = append(f.Buckets, bucket{Model: m.model, Effort: m.effort, Sidechain: m.sidechain, Role: m.role, Messages: 1, First: m.ts, Last: m.ts, Counters: m.c})
 }
 
 // aggKey addresses one (entity, session, transcript file) share.
@@ -361,16 +364,25 @@ func own(in Inputs, id string) (Report, error) {
 // harvested, or anchors stamped, before F-0384 — as the "unknown" role, so a
 // breakdown never reads as complete when it is not. A cost with no role at
 // all has no breakdown to complete.
+// The effort breakdown (B-0024) gets the same "unknown" share: lines from
+// before Claude Code recorded the effort.
 func (r *Report) unknownRole() {
-	if len(r.ByRole) == 0 {
+	unknownShare(r.ByRole, r.Counters)
+	unknownShare(r.ByEffort, r.Counters)
+}
+
+// unknownShare names the part of total that breakdown m does not cover as its
+// "unknown" key; an empty breakdown stays empty.
+func unknownShare(m map[string]Counters, total Counters) {
+	if len(m) == 0 {
 		return
 	}
 	var sum Counters
-	for _, c := range r.ByRole {
+	for _, c := range m {
 		sum = sum.add(c)
 	}
-	if gap := r.Counters.sub(sum); gap != (Counters{}) {
-		r.ByRole["unknown"] = gap
+	if gap := total.sub(sum); gap != (Counters{}) {
+		m["unknown"] = gap
 	}
 }
 
@@ -460,11 +472,32 @@ func shares(agg map[aggKey]*fileAgg) map[string]*share {
 				}
 				s.ByRole[b.Role] = s.ByRole[b.Role].add(b.Counters)
 			}
+			if b.Effort != "" {
+				if s.ByEffort == nil {
+					s.ByEffort = map[string]Counters{}
+				}
+				s.ByEffort[b.Effort] = s.ByEffort[b.Effort].add(b.Counters)
+				s.ModelEfforts = addEfforts(s.ModelEfforts, b.Model, b.Effort)
+			}
 			s.Messages += b.Messages
 			s.widen(b.First.UTC().Format(time.RFC3339), b.Last.UTC().Format(time.RFC3339))
 		}
 	}
 	return out
+}
+
+// addEfforts records that model ran at efforts, keeping each model's list
+// sorted and unique; a nil m is allocated.
+func addEfforts(m map[string][]string, model string, efforts ...string) map[string][]string {
+	if m == nil {
+		m = map[string][]string{}
+	}
+	for _, e := range efforts {
+		if i, found := slices.BinarySearch(m[model], e); !found {
+			m[model] = slices.Insert(m[model], i, e)
+		}
+	}
+	return m
 }
 
 // widen stretches the [First, Last] window (same-format RFC3339 UTC strings
@@ -490,6 +523,15 @@ func (r *Report) addShare(s *share) {
 			r.ByRole = map[string]Counters{}
 		}
 		r.ByRole[role] = r.ByRole[role].add(c)
+	}
+	for e, c := range s.ByEffort {
+		if r.ByEffort == nil {
+			r.ByEffort = map[string]Counters{}
+		}
+		r.ByEffort[e] = r.ByEffort[e].add(c)
+	}
+	for m, es := range s.ModelEfforts {
+		r.ModelEfforts = addEfforts(r.ModelEfforts, m, es...)
 	}
 	r.Messages += s.Messages
 	w := share{First: r.First, Last: r.Last}

@@ -447,6 +447,17 @@ function Stacked({
 type SortKey = 'id' | 'title' | 'level' | 'weighted' | 'gauntlet' | 'models' | 'rounds' | 'defeats'
 
 const modelList = (f: CostFeature) => Object.keys(f.by_model ?? {}).sort()
+
+// B-0024: each model with the efforts it ran at, the heaviest model first —
+// "<model> xhigh, <other model> medium"; the flat list when the anchor has no
+// pairing.
+const modelEfforts = (f: CostFeature) => {
+  const pairs = f.model_efforts ?? {}
+  const models = Object.keys(pairs).sort(
+    (a, b) => (f.weighted_by_model[b] ?? 0) - (f.weighted_by_model[a] ?? 0) || a.localeCompare(b),
+  )
+  return models.length ? models.map((m) => `${m} ${pairs[m].join('/')}`).join(', ') : f.efforts.join(', ')
+}
 const models = (f: CostFeature) => modelList(f).join(', ')
 const NUM_COLS = new Set<SortKey>(['weighted', 'gauntlet', 'rounds'])
 
@@ -661,7 +672,11 @@ export function CostDetailPage({ id }: { id: string }) {
           {' · '}
           {`${t.costs.filterNames.level}: ${d.level ? (t.costs.levels[d.level] ?? d.level) : t.costs.unknownValue}`}
           {' · '}
-          {d.effort_source === 'declared' ? t.costs.effortDeclared(d.effort) : t.costs.effortUnknown}
+          {d.effort_source === 'measured'
+            ? t.costs.effortMeasured(modelEfforts(d))
+            : d.effort_source === 'declared'
+              ? t.costs.effortDeclared(d.efforts[0])
+              : t.costs.effortUnknown}
           {' · '}
           {t.costs.filterNames.vendor}: {d.vendors.length ? d.vendors.map((v) => t.costs.vendors[v] ?? v).join(', ') : t.costs.unknownValue}
         </p>
@@ -681,6 +696,7 @@ export function CostDetailPage({ id }: { id: string }) {
       </dl>
       {breakdown(t.costs.byRole, d.by_role, d.weighted_by_role, (k) => t.costs.roles[k] ?? k)}
       {breakdown(t.costs.byModel, d.by_model, d.weighted_by_model, (k) => (k === 'unknown' ? t.costs.unknownValue : k))}
+      {breakdown(t.costs.byEffort, d.by_effort, d.weighted_by_effort, (k) => (k === 'unknown' ? t.costs.unknownValue : k))}
       <dl className="costs-raw">
         <div>
           <dt>{t.costs.sidechain}</dt>

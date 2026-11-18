@@ -2,6 +2,7 @@ package cost
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -10,9 +11,11 @@ import (
 // "unknown" — without reading a transcript.
 func TestStampedReport(t *testing.T) {
 	r := Report{ID: "F-0007", Counters: Counters{Input: 100, Output: 10}, Sidechain: Counters{Input: 40},
-		ByModel:  map[string]Counters{"claude-opus-5-5": {Input: 100, Output: 10}},
-		ByRole:   map[string]Counters{"builder": {Input: 60, Output: 10}, "critic": {Input: 30}},
-		Messages: 5, Sessions: 2, First: "2026-11-01T10:00:00Z", Last: "2026-11-02T10:00:00Z", Unattributed: Counters{Input: 7}}
+		ByModel:      map[string]Counters{"claude-opus-5-5": {Input: 100, Output: 10}},
+		ByRole:       map[string]Counters{"builder": {Input: 60, Output: 10}, "critic": {Input: 30}},
+		ByEffort:     map[string]Counters{"xhigh": {Input: 70, Output: 10}},
+		ModelEfforts: map[string][]string{"claude-opus-5-5": {"high", "xhigh"}},
+		Messages:     5, Sessions: 2, First: "2026-11-01T10:00:00Z", Last: "2026-11-02T10:00:00Z", Unattributed: Counters{Input: 7}}
 	body, err := Stamp("# F-0007\n", r)
 	if err != nil {
 		t.Fatalf("Stamp: %v", err)
@@ -22,8 +25,10 @@ func TestStampedReport(t *testing.T) {
 		t.Fatal("StampedReport: no anchor read")
 	}
 	want := Report{ID: "F-0007", Source: "stamp", Counters: r.Counters, Sidechain: r.Sidechain, ByModel: r.ByModel,
-		ByRole:   map[string]Counters{"builder": {Input: 60, Output: 10}, "critic": {Input: 30}, "unknown": {Input: 10}},
-		Messages: 5, Sessions: 2, First: r.First, Last: r.Last, Unattributed: r.Unattributed}
+		ByRole:       map[string]Counters{"builder": {Input: 60, Output: 10}, "critic": {Input: 30}, "unknown": {Input: 10}},
+		ByEffort:     map[string]Counters{"xhigh": {Input: 70, Output: 10}, "unknown": {Input: 30}},
+		ModelEfforts: r.ModelEfforts,
+		Messages:     5, Sessions: 2, First: r.First, Last: r.Last, Unattributed: r.Unattributed}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("StampedReport =\n%+v\nwant\n%+v", got, want)
 	}
@@ -32,8 +37,11 @@ func TestStampedReport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stamp: %v", err)
 	}
-	if got, ok := StampedReport(old); !ok || got.ByRole != nil {
-		t.Errorf("pre-F-0384 anchor: ByRole = %v, ok = %v; want nil, true", got.ByRole, ok)
+	if got, ok := StampedReport(old); !ok || got.ByRole != nil || got.ByEffort != nil {
+		t.Errorf("pre-F-0384 anchor: ByRole = %v, ByEffort = %v, ok = %v; want nil, nil, true", got.ByRole, got.ByEffort, ok)
+	}
+	if !strings.Contains(body, "Por esforço: xhigh (") {
+		t.Errorf("the block names no effort line:\n%s", body)
 	}
 	if _, ok := StampedReport("# F-0009\n\n## Resultado\n"); ok {
 		t.Error("a result with no anchor read as stamped")

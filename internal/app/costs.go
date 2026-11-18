@@ -1,6 +1,7 @@
 package app
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -25,7 +26,7 @@ var ErrNoCostStamped = errors.New("no cost stamped")
 
 // CostsQuery is the costs screen's period — [Since, Until], whole UTC days —
 // and its filters; "" keeps every value, "unknown" picks the features with no
-// level or no declared effort.
+// level or no effort, measured or declared.
 type CostsQuery struct {
 	Since, Until                 time.Time
 	Level, Model, Vendor, Effort string
@@ -33,24 +34,29 @@ type CostsQuery struct {
 
 // CostFeature is one delivered feature with a stamped cost (F-0391).
 type CostFeature struct {
-	ID              string                   `json:"id"`
-	Title           string                   `json:"title"`
-	Level           string                   `json:"level"` // leve | padrão | avançado; "" with no level line
-	State           domain.FeatureState      `json:"state"`
-	CompletedAt     time.Time                `json:"completed_at,omitzero"` // the first feature.completed; omitted with none
-	Weighted        float64                  `json:"weighted"`
-	Tokens          cost.Counters            `json:"tokens"`
-	ByRole          map[string]cost.Counters `json:"by_role"`
-	ByModel         map[string]cost.Counters `json:"by_model"`
-	WeightedByRole  map[string]float64       `json:"weighted_by_role"`  // no role breakdown: all of it "unknown"
-	WeightedByModel map[string]float64       `json:"weighted_by_model"` // no model breakdown: all of it "unknown"
-	GauntletShare   *float64                 `json:"gauntlet_share"`    // critic + judge over the whole; null with no role breakdown
-	HasGauntlet     bool                     `json:"has_gauntlet"`
-	Rounds          int                      `json:"rounds"`
-	Defeats         int                      `json:"defeats"`
-	Effort          string                   `json:"effort"`
-	EffortSource    string                   `json:"effort_source"` // declared | unknown
-	Vendors         []string                 `json:"vendors"`
+	ID               string                   `json:"id"`
+	Title            string                   `json:"title"`
+	Level            string                   `json:"level"` // leve | padrão | avançado; "" with no level line
+	State            domain.FeatureState      `json:"state"`
+	CompletedAt      time.Time                `json:"completed_at,omitzero"` // the first feature.completed; omitted with none
+	Weighted         float64                  `json:"weighted"`
+	Tokens           cost.Counters            `json:"tokens"`
+	ByRole           map[string]cost.Counters `json:"by_role"`
+	ByModel          map[string]cost.Counters `json:"by_model"`
+	ByEffort         map[string]cost.Counters `json:"by_effort"`          // measured in the transcripts (B-0024); empty in older anchors
+	WeightedByRole   map[string]float64       `json:"weighted_by_role"`   // no role breakdown: all of it "unknown"
+	WeightedByModel  map[string]float64       `json:"weighted_by_model"`  // no model breakdown: all of it "unknown"
+	WeightedByEffort map[string]float64       `json:"weighted_by_effort"` // no effort breakdown: all of it "unknown"
+	GauntletShare    *float64                 `json:"gauntlet_share"`     // critic + judge over the whole; null with no role breakdown
+	HasGauntlet      bool                     `json:"has_gauntlet"`
+	Rounds           int                      `json:"rounds"`
+	Defeats          int                      `json:"defeats"`
+	// Efforts: the measured efforts, heaviest first; with none measured, the
+	// one the result's Agente line declares (F-0279); else empty.
+	Efforts      []string            `json:"efforts"`
+	ModelEfforts map[string][]string `json:"model_efforts"` // measured: model → its efforts; empty otherwise
+	EffortSource string              `json:"effort_source"` // measured | declared | unknown
+	Vendors      []string            `json:"vendors"`
 }
 
 // CostWeek is one ISO week (UTC) of the filtered features.
@@ -176,7 +182,7 @@ func Costs(repoDir string, q CostsQuery, now time.Time) (CostsReport, error) {
 	for _, f := range all {
 		rep.Coverage.Level += count(f.Level != "")
 		rep.Coverage.Model += count(len(f.ByModel) > 0)
-		rep.Coverage.Effort += count(f.EffortSource == "declared")
+		rep.Coverage.Effort += count(f.EffortSource != "unknown")
 		rep.Coverage.Vendor += count(len(f.Vendors) > 0)
 		rep.Coverage.Roles += count(len(f.ByRole) > 0)
 		if q.matches(f) {
@@ -232,8 +238,8 @@ func FeatureCost(repoDir, id string) (CostDetail, error) {
 }
 
 // readCost reads feature f's stamped cost and what the screen shows beside it:
-// the spec's level, the declared effort, the Gauntlet record and the vendors
-// its models name.
+// the spec's level, the effort (measured, else declared), the Gauntlet record
+// and the vendors its models name.
 // false with no anchor or an all-zero one (the process panel's no_cost).
 func readCost(repoDir string, f store.Feature, at time.Time) (CostDetail, bool, error) {
 	body, err := os.ReadFile(FeatureDocPath(repoDir, f.ID, "result.md"))
@@ -252,11 +258,28 @@ func readCost(repoDir string, f store.Feature, at time.Time) (CostDetail, bool, 
 	has, defeats := lint.GauntletRounds(body)
 	d := CostDetail{Report: r, RoundList: lint.GauntletRoundList(body)}
 	d.CostFeature = CostFeature{ID: f.ID, Title: f.Title, Level: level, State: f.State, CompletedAt: at,
-		Weighted: weigh(r.Counters), Tokens: r.Counters, ByRole: r.ByRole, ByModel: r.ByModel,
-		WeightedByRole: map[string]float64{}, WeightedByModel: map[string]float64{},
-		HasGauntlet: has, Rounds: len(d.RoundList), Defeats: defeats, Effort: restmpl.DeclaredEffort(body), EffortSource: "declared"}
-	if d.Effort == "" {
-		d.EffortSource = "unknown"
+		Weighted: weigh(r.Counters), Tokens: r.Counters, ByRole: r.ByRole, ByModel: r.ByModel, ByEffort: r.ByEffort,
+		WeightedByRole: map[string]float64{}, WeightedByModel: map[string]float64{}, WeightedByEffort: map[string]float64{},
+		HasGauntlet: has, Rounds: len(d.RoundList), Defeats: defeats, Efforts: []string{}, ModelEfforts: r.ModelEfforts, EffortSource: "unknown"}
+	for e, c := range r.ByEffort {
+		d.WeightedByEffort[e] = weigh(c)
+		if e != "unknown" {
+			d.Efforts = append(d.Efforts, e)
+		}
+	}
+	if len(r.ByEffort) == 0 {
+		d.WeightedByEffort["unknown"] = d.Weighted
+	}
+	slices.SortFunc(d.Efforts, func(a, b string) int {
+		if c := cmp.Compare(d.WeightedByEffort[b], d.WeightedByEffort[a]); c != 0 {
+			return c
+		}
+		return strings.Compare(a, b)
+	})
+	if len(d.Efforts) > 0 {
+		d.EffortSource = "measured"
+	} else if e := restmpl.DeclaredEffort(body); e != "" {
+		d.Efforts, d.EffortSource = []string{e}, "declared"
 	}
 	for role, c := range r.ByRole {
 		d.WeightedByRole[role] = weigh(c)
@@ -287,7 +310,8 @@ func (q CostsQuery) matches(f CostFeature) bool {
 		return want == "" || want == have || want == "unknown" && have == ""
 	}
 	_, model := f.ByModel[q.Model]
-	return pick(q.Level, f.Level) && pick(q.Effort, f.Effort) &&
+	effort := q.Effort == "" || slices.Contains(f.Efforts, q.Effort) || q.Effort == "unknown" && len(f.Efforts) == 0
+	return pick(q.Level, f.Level) && effort &&
 		(q.Model == "" || model) && (q.Vendor == "" || slices.Contains(f.Vendors, q.Vendor))
 }
 
@@ -297,7 +321,12 @@ func costOptions(fs []CostFeature) CostOptions {
 	levels, models, vendors, efforts := map[string]int{}, map[string]int{}, map[string]int{}, map[string]int{}
 	for _, f := range fs {
 		levels[cmpOr(f.Level, "unknown")]++
-		efforts[cmpOr(f.Effort, "unknown")]++
+		for _, e := range f.Efforts {
+			efforts[e]++
+		}
+		if len(f.Efforts) == 0 {
+			efforts["unknown"]++
+		}
 		for m := range f.ByModel {
 			models[m]++
 		}

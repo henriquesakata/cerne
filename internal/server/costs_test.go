@@ -97,7 +97,10 @@ func seedCostsFixture(t *testing.T, repoDir string) {
 			gauntlet: "Barra: x\nRodada 1 — vitória: \"a\"",
 			report: &cost.Report{ID: "F-0002", Counters: cost.Counters{CacheRead: 2000}, Messages: 2, Sessions: 1,
 				ByModel: map[string]cost.Counters{sonnet: {CacheRead: 2000}},
-				ByRole:  map[string]cost.Counters{"main": {CacheRead: 1000}, "builder": {CacheRead: 1000}}}},
+				ByRole:  map[string]cost.Counters{"main": {CacheRead: 1000}, "builder": {CacheRead: 1000}},
+				// B-0024: measured in the transcripts, it beats the declared "desconhecido".
+				ByEffort:     map[string]cost.Counters{"medium": {CacheRead: 600}, "xhigh": {CacheRead: 1200}},
+				ModelEfforts: map[string][]string{sonnet: {"medium", "xhigh"}}}},
 		{id: "F-0003", completed: costDay(10, 1), level: "avançado",
 			report: &cost.Report{ID: "F-0003", Counters: cost.Counters{CacheCreation: 480}, Messages: 1, Sessions: 1,
 				ByModel: map[string]cost.Counters{"gpt-5": {CacheCreation: 480}}}},
@@ -173,7 +176,7 @@ func TestCostsAggregates(t *testing.T) {
 	if want := map[string]float64{"builder": 850, "critic": 30, "judge": 20, "main": 100, "other": 200, "unknown": 700}; !mapsEqual(r.Roles, want) {
 		t.Errorf("roles = %v, want %v", r.Roles, want)
 	}
-	want := app.CostCoverage{Delivered: 6, Stamped: 4, Epics: 1, Level: 3, Model: 4, Effort: 2, Vendor: 3, Roles: 3, Matched: 4}
+	want := app.CostCoverage{Delivered: 6, Stamped: 4, Epics: 1, Level: 3, Model: 4, Effort: 3, Vendor: 3, Roles: 3, Matched: 4}
 	if r.Coverage != want {
 		t.Errorf("coverage = %+v, want %+v", r.Coverage, want)
 	}
@@ -183,7 +186,8 @@ func TestCostsAggregates(t *testing.T) {
 }
 
 // Crit. 4, 7: each row carries its level, weighted cost, Gauntlet share,
-// rounds, defeats, declared effort and the vendors its data names.
+// rounds, defeats, effort (measured, else declared — B-0024) and the vendors
+// its data names.
 func TestCostsRows(t *testing.T) {
 	repoDir, projDir := newBackend(t)
 	seedCostsFixture(t, repoDir)
@@ -193,15 +197,16 @@ func TestCostsRows(t *testing.T) {
 	}
 	f1, f2, f3, f6 := r.Features[0], r.Features[1], r.Features[2], r.Features[3]
 	if f1.Level != "leve" || f1.Weighted != 100 || f1.Rounds != 2 || f1.Defeats != 1 || !f1.HasGauntlet ||
-		f1.GauntletShare == nil || *f1.GauntletShare != 0.5 || f1.Effort != "high" || f1.EffortSource != "declared" ||
+		f1.GauntletShare == nil || *f1.GauntletShare != 0.5 || !slices.Equal(f1.Efforts, []string{"high"}) || f1.EffortSource != "declared" ||
 		f1.ByRole["critic"].Output != 6 || f1.WeightedByModel["claude-opus-5-5"] != 100 || !slices.Equal(f1.Vendors, []string{"anthropic"}) {
 		t.Errorf("F-0001 = %+v", f1)
 	}
-	if f2.Effort != "" || f2.EffortSource != "unknown" || f2.GauntletShare == nil || *f2.GauntletShare != 0 ||
-		!slices.Equal(f2.Vendors, []string{"anthropic"}) {
-		t.Errorf("F-0002 = %+v, want effort unknown, Gauntlet share 0, vendor anthropic only", f2)
+	if !slices.Equal(f2.Efforts, []string{"xhigh", "medium"}) || f2.EffortSource != "measured" ||
+		f2.WeightedByEffort["xhigh"] != 120 || !slices.Equal(f2.ModelEfforts["claude-sonnet-5-5"], []string{"medium", "xhigh"}) || f2.WeightedByEffort["unknown"] != 20 || f2.ByEffort["medium"].CacheRead != 600 ||
+		f2.GauntletShare == nil || *f2.GauntletShare != 0 || !slices.Equal(f2.Vendors, []string{"anthropic"}) {
+		t.Errorf("F-0002 = %+v, want measured efforts xhigh then medium (heaviest first), 20 unknown, Gauntlet share 0, vendor anthropic only", f2)
 	}
-	if f3.EffortSource != "unknown" || f3.GauntletShare != nil || f3.WeightedByRole["unknown"] != 600 || len(f3.Vendors) != 0 || f3.HasGauntlet {
+	if f3.EffortSource != "unknown" || len(f3.Efforts) != 0 || f3.WeightedByEffort["unknown"] != 600 || f3.GauntletShare != nil || f3.WeightedByRole["unknown"] != 600 || len(f3.Vendors) != 0 || f3.HasGauntlet {
 		t.Errorf("F-0003 = %+v, want no Gauntlet share, all of it unknown role, no vendor, no Gauntlet", f3)
 	}
 	if f6.Level != "" || f6.WeightedByRole["unknown"] != 100 || f6.HasGauntlet || f6.Rounds != 0 {
@@ -227,8 +232,10 @@ func TestCostsFilters(t *testing.T) {
 		{"&vendor=openai", nil},
 		{"&vendor=anthropic", []string{"F-0001", "F-0002", "F-0006"}},
 		{"&effort=high", []string{"F-0001"}},
-		{"&effort=unknown", []string{"F-0002", "F-0003"}},
-		{"&vendor=anthropic&effort=unknown", []string{"F-0002"}},
+		{"&effort=xhigh", []string{"F-0002"}},
+		{"&effort=medium", []string{"F-0002", "F-0006"}},
+		{"&effort=unknown", []string{"F-0003"}},
+		{"&vendor=anthropic&effort=unknown", nil},
 	} {
 		r := getCosts(t, repoDir, projDir, costsPeriod+c.query)
 		if got := costIDs(r); !slices.Equal(got, c.want) {
@@ -252,7 +259,7 @@ func TestCostsFilters(t *testing.T) {
 	if r.Mean != 100 || r.Roles["critic"] != 30 || r.Roles["main"] != 0 {
 		t.Errorf("effort=high: mean %v, roles %v — the aggregates must follow the filter", r.Mean, r.Roles)
 	}
-	wantEfforts := []app.CostOption{{Value: "high", N: 1}, {Value: "medium", N: 1}, {Value: "unknown", N: 2}}
+	wantEfforts := []app.CostOption{{Value: "high", N: 1}, {Value: "medium", N: 2}, {Value: "xhigh", N: 1}, {Value: "unknown", N: 1}}
 	if !slices.Equal(r.Options.Efforts, wantEfforts) {
 		t.Errorf("effort options = %+v, want %+v", r.Options.Efforts, wantEfforts)
 	}
@@ -326,7 +333,7 @@ func TestCostDetail(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 	if d.ID != "F-0001" || d.Report.Source != "stamp" || d.Report.Messages != 3 || d.Report.ByRole["judge"].Output != 4 ||
-		d.Effort != "high" || d.Weighted != 100 {
+		!slices.Equal(d.Efforts, []string{"high"}) || d.Weighted != 100 {
 		t.Errorf("detail = %+v", d)
 	}
 	if len(d.RoundList) != 2 || d.RoundList[0].Outcome != "loss" || d.RoundList[1].Outcome != "win" {
