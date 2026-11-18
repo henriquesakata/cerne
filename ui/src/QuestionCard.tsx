@@ -18,6 +18,9 @@ type Props = {
   total: number
   // answer: the user turn that answered this question, when one exists.
   answer?: string
+  // picked: the choice marked in a round not sent yet (B-0023) — shown as
+  // chosen, still changeable.
+  picked?: string
   busy: boolean
   // stale: the question sits in an earlier assistant turn and was never
   // answered — the analyst moved on, so the card is locked.
@@ -31,13 +34,14 @@ function chosenOf(answer: string, question: string): string {
   return rest.replace(/\s*\([^()]*\)$/, '')
 }
 
-export default function QuestionCard({ q, index, total, answer, busy, stale, onAnswer }: Props) {
+export default function QuestionCard({ q, index, total, answer, picked, busy, stale, onAnswer }: Props) {
   const { t } = useT()
   const [free, setFree] = useState('')
   const answered = answer !== undefined
   const dead = stale && !answered
   const locked = answered || busy || !!dead
-  const chosen = answered ? chosenOf(answer, q.question) : ''
+  const shown = answer ?? picked
+  const chosen = shown !== undefined ? chosenOf(shown, q.question) : ''
   const matched = q.options.some((o) => o.label === chosen)
   const reply = (choice: string, origin: string) => onAnswer(`**${q.question}** → ${choice} (${origin})`)
 
@@ -53,7 +57,7 @@ export default function QuestionCard({ q, index, total, answer, busy, stale, onA
       <p className="question-card-question">{q.question}</p>
       <ul className="question-card-options">
         {q.options.map((o) => {
-          const isChosen = answered && o.label === chosen
+          const isChosen = shown !== undefined && o.label === chosen
           return (
             <li key={o.label}>
               <button
@@ -64,7 +68,7 @@ export default function QuestionCard({ q, index, total, answer, busy, stale, onA
                   (isChosen ? ' question-card-option-chosen' : '')
                 }
                 disabled={locked}
-                aria-pressed={answered ? isChosen : undefined}
+                aria-pressed={shown !== undefined ? isChosen : undefined}
                 onClick={() => reply(o.label, o.recommended ? t.questionCard.accepted : t.questionCard.otherOption)}
               >
                 <span className="question-card-label">
@@ -77,7 +81,7 @@ export default function QuestionCard({ q, index, total, answer, busy, stale, onA
           )
         })}
       </ul>
-      {answered && !matched && (
+      {shown !== undefined && !matched && (
         <p className="question-card-answer">
           <span className="question-card-answer-label">{t.questionCard.yourAnswer}</span>
           {chosen}
@@ -106,5 +110,54 @@ export default function QuestionCard({ q, index, total, answer, busy, stale, onA
         </form>
       )}
     </section>
+  )
+}
+
+type RoundProps = {
+  questions: Question[]
+  // answers[k]: the user turn line that answered card k, when one exists.
+  answers: (string | undefined)[]
+  busy: boolean
+  stale: boolean
+  onAnswer: (turn: string) => void
+}
+
+// QuestionRound (B-0023) draws the cards of one assistant turn. A round of
+// several open cards (F-0443 asks up to 3 per turn) is answered as a whole: a
+// click only picks, and "Send answers" sends one turn with one line per
+// question once every open card has a pick. A single open card keeps sending
+// on click (F-0437).
+export function QuestionRound({ questions, answers, busy, stale, onAnswer }: RoundProps) {
+  const { t } = useT()
+  const [picks, setPicks] = useState<Record<number, string>>({})
+  const open = questions.map((_, k) => k).filter((k) => answers[k] === undefined)
+  const batch = !stale && open.length > 1
+  const count = open.filter((k) => picks[k] !== undefined).length
+  return (
+    <>
+      {questions.map((q, k) => (
+        <QuestionCard
+          key={k}
+          q={q}
+          index={k + 1}
+          total={questions.length}
+          answer={answers[k]}
+          picked={batch ? picks[k] : undefined}
+          busy={busy}
+          stale={stale}
+          onAnswer={batch ? (line) => setPicks((p) => ({ ...p, [k]: line })) : onAnswer}
+        />
+      ))}
+      {batch && (
+        <button
+          type="button"
+          className="question-round-send"
+          disabled={busy || count < open.length}
+          onClick={() => onAnswer(open.map((k) => picks[k]).join('\n'))}
+        >
+          {t.questionCard.sendAll(count, open.length)}
+        </button>
+      )}
+    </>
   )
 }
