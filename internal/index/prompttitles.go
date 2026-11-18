@@ -28,6 +28,9 @@ var promptStopwords = map[string]bool{
 	"you": true, "can": true, "this": true, "that": true, "my": true, "not": true, "please": true,
 	"help": true, "need": true, "does": true, "doing": true, "has": true, "have": true, "from": true,
 	"but": true, "its": true, "it": true, "me": true, "we": true,
+	// Accessor prefixes a split identifier leaves behind (getUserName ->
+	// "get"): they name no subject (B-0028).
+	"get": true, "set": true,
 }
 
 const (
@@ -69,16 +72,23 @@ func PromptTitles(ctx context.Context, dbPath, prompt string, limit int) ([]Titl
 	if r := []rune(prompt); len(r) > promptWindow {
 		prompt = string(r[:promptWindow])
 	}
+	// A question naming a class's parts ("the date serializer") must meet the
+	// title's JsonDateSerializer, so questions and titles split identifiers
+	// (B-0028). A paste keeps them whole: code split into words matches some
+	// title by chance (context.WithTimeout -> "timeout").
 	want := stemSet(prompt)
+	paste := len(want) > pasteTerms
+	if !paste {
+		want = stemSet(foldIdentifiers(prompt))
+	}
 	if len(want) < 2 || limit <= 0 {
 		return nil, nil
 	}
-	paste := len(want) > pasteTerms
 	var head map[string]bool
 	if paste {
 		first, _, _ := strings.Cut(strings.TrimSpace(prompt), "\n")
-		if head = stemSet(first); len(head) > pasteTerms {
-			head = nil
+		if len(stemSet(first)) <= pasteTerms {
+			head = stemSet(foldIdentifiers(first))
 		}
 	}
 	if _, err := os.Stat(dbPath); err != nil {
@@ -101,7 +111,8 @@ func PromptTitles(ctx context.Context, dbPath, prompt string, limit int) ([]Titl
 	defer rows.Close()
 	type titled struct {
 		hit   TitleHit
-		terms map[string]bool
+		terms map[string]bool // identifiers split (B-0028)
+		whole map[string]bool // identifiers whole, as a paste is read
 	}
 	var titles []titled
 	df := map[string]int{} // titles holding each term
@@ -115,11 +126,11 @@ func PromptTitles(ctx context.Context, dbPath, prompt string, limit int) ([]Titl
 			continue
 		}
 		listed[id] = true
-		terms := stemSet(title)
+		terms := stemSet(foldIdentifiers(title))
 		for t := range terms {
 			df[t]++
 		}
-		titles = append(titles, titled{TitleHit{id, title}, terms})
+		titles = append(titles, titled{TitleHit{id, title}, terms, stemSet(title)})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, wrapBusy(err)
@@ -148,8 +159,11 @@ func PromptTitles(ctx context.Context, dbPath, prompt string, limit int) ([]Titl
 		n, rarity := shared(ti.terms, want)
 		ok := n >= 2 && rarity >= 1
 		if paste {
+			// The whole-title share counts unsplit titles against the
+			// unsplit paste: split parts would only inflate the title.
+			n, _ = shared(ti.whole, want)
 			hn, hr := shared(ti.terms, head)
-			ok = n >= 3 && n*4 >= len(ti.terms)*3 || hn >= 2 && hr >= 1
+			ok = n >= 3 && n*4 >= len(ti.whole)*3 || hn >= 2 && hr >= 1
 		}
 		if ok {
 			found = append(found, scored{ti.hit, rarity})
