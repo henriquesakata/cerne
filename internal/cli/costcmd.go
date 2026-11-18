@@ -483,8 +483,8 @@ func newCostBackfillEffortCmd() *cobra.Command {
 			"'cerne cost <id> --stamp' does. A feature counts only when the recomputed counters equal the " +
 			"anchor's: the effort is a partition of the stamped tokens. Without --apply it only reports: one line " +
 			"per feature with each model's measured effort, then what was left out (already with effort, drifted " +
-			"counters, no transcript, no effort recorded). --apply adds by_effort, model_efforts and the 'Por " +
-			"esforço:' line to the anchor, keeping everything else: an implemented feature's '## Custo' in its " +
+			"counters, no transcript, no effort recorded). --apply adds by_effort, model_efforts and the per-effort " +
+			"line to the anchor, keeping everything else: an implemented feature's '## Custo' in its " +
 			"result, a done feature's as an erratum carrying the same block. A second run writes nothing; --apply " +
 			"--json prints the applied list and the errors.",
 		Args: cobra.NoArgs,
