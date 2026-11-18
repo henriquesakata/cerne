@@ -26,7 +26,7 @@ cerne is the **guardian and source of truth** for this project's documentation. 
 ## Build / test / run
 
 ```bash
-go build -ldflags="-s -w" -o cerne ./cmd/cerne # build the binary (UI is embedded via go:embed); cerne.exe on Windows
+go build -ldflags="-s -w" -o bin/cerne ./cmd/cerne # build the binary (UI is embedded via go:embed); bin/cerne.exe on Windows
 go vet ./... && go test ./... -count=1 -timeout 30m # full suite — must stay green
 go test ./internal/<pkg>/ -run TestX -v # focused
 cd ui && npm ci && npm run build       # rebuild the React UI; commit ui/dist (embedded). npm ci (not install) = exact lockfile → reproducible dist
@@ -44,9 +44,9 @@ cd ui && npm ci && npm run build       # rebuild the React UI; commit ui/dist (e
 - **`ui/dist` is `go:embed`-ed → the committed dist is what ships.** A UI change lands only if `ui/dist` is rebuilt *and* committed (F-0136 — F-0125/F-0126 shipped stale because only `ui/src` was merged). **Canonical build platform = CI Linux (`node:24`).** Do **not** commit a dist built on darwin/Windows — the vite output is not bit-identical across toolchains (hash-churn on locale chunks), so a foreign dist fails the drift gate. Build the baseline in a `node:24` Linux container (`docker run --platform linux/amd64 -v "$PWD":/app -w /app/ui node:24 sh -c "npm ci && npm run build"`) and commit that.
 - CI (GitHub Actions, `.github/workflows/`): `ci.yml` runs `go vet` + the full suite and `gitleaks` over the history (`.gitleaks.toml` allowlists only the public Firebase key Excalidraw bundles into `ui/dist`); **`ui-dist-drift.yml`** (`node:24`, on `ui/**` changes) rebuilds the UI and fails if the committed `ui/dist` differs from a fresh build — the guard against stale embedded UI; `docs-lock-immutable.yml` refuses a PR touching `docs.lock`; `pin.yml` is its only writer on `main`; `release.yml` turns a `v*` tag into a GitHub Release.
 - **`-ldflags="-s -w"` on every binary build.** Linking the 48 MB binary (9.6 MB of it the embedded `ui/dist`) dominates the build: stripping the symbol table + DWARF takes the link from **11.1 s → 3.5 s** and the binary from **48 MB → 35 MB**, and `go build ./...` (what the pre-commit hook runs) from **17.4 s → 5.3 s**. Panic tracebacks stay symbolized — Go's runtime reads its own pclntab, not the symtab. The only loss is `delve`: drop the flags for a debugging build.
-- `go install -ldflags="-s -w" ./cmd/cerne` installs `cerne` to `$(go env GOPATH)/bin` (keep it on PATH).
-- **RULE — reinstall the dogfood binary after changing cerne.** This repo runs its *own* `cerne` (the binary on PATH), so a behavior change (new command/entity/flag/lifecycle) is **invisible until you reinstall**: `go install -ldflags="-s -w" ./cmd/cerne`. Otherwise `cerne …` silently runs the previous build — e.g. `cerne note` does not exist until the F-0044 build is installed. Always reinstall before dogfooding the change you just made.
-- Try the UI: `cerne ui` (serves `localhost:7717`).
+- **RULE — the `cerne` on PATH is the latest release; dogfood a change with the worktree build.** This repo runs cerne on its own docs through the released binary, installed as a user would (INSTALL.md): `brew install henriquesakata/tap/cerne` on macOS/Linux, the `install.ps1` script on Windows. After each `v*` release, update it: `brew upgrade henriquesakata/tap/cerne`, or run the script again. A behavior change you just made (new command/entity/flag/lifecycle) is **not in that binary until it ships**: build it in the worktree, `go build -ldflags="-s -w" -o bin/cerne ./cmd/cerne` (`bin/cerne.exe` on Windows; `/bin/` is gitignored), and run `./bin/cerne …` for everything that needs it, docs commands included.
+- **Never `go install ./cmd/cerne` on a dev box.** It writes `$(go env GOPATH)/bin/cerne`, which usually comes first on PATH, so every session and hook silently runs whatever branch you last built instead of the release. If `which -a cerne` lists more than one, delete the `GOPATH/bin` one.
+- Try the UI: `cerne ui` (serves `localhost:7717`). To see a UI change, run `./bin/cerne ui --port 7718` from the worktree build; a `cerne ui` already running keeps serving the UI of the binary it started with.
 
 ## Architecture (one binary, four layers)
 
