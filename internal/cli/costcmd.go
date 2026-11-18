@@ -62,6 +62,7 @@ func newCostCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&stamp, "stamp", false, "write the cost into the implemented feature's result (## Custo)")
 	cmd.AddCommand(newCostAttributeCmd())
 	cmd.AddCommand(newCostBackfillCmd())
+	cmd.AddCommand(newCostBackfillEffortCmd())
 	return cmd
 }
 
@@ -457,6 +458,120 @@ func runCostBackfill(cmd *cobra.Command, dir string, since time.Time, apply, asJ
 		}
 		outcome.Applied = append(outcome.Applied, ap)
 		fmt.Fprintf(text, "✓ %s: %s bound%s\n", f.ID, plural(ap.Bound, "agent"), map[bool]string{true: ", anchor completed in the " + ap.Wrote, false: ""}[ap.Wrote != ""])
+	}
+	if asJSON {
+		enc := json.NewEncoder(out)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(outcome); err != nil {
+			return err
+		}
+	}
+	if len(outcome.Errors) > 0 {
+		return fmt.Errorf("%d of %d feature(s) failed; re-run --apply to finish them", len(outcome.Errors), len(r.Features))
+	}
+	return nil
+}
+
+func newCostBackfillEffortCmd() *cobra.Command {
+	var dir string
+	var apply, asJSON bool
+	cmd := &cobra.Command{
+		Use:   "backfill-effort",
+		Short: "Recover the measured model effort of anchors stamped before B-0024 (F-0448)",
+		Long: "For every implemented or done feature whose newest cost anchor (the last erratum carrying one, else " +
+			"the result's) has no by_effort, recomputes the cost from the transcripts still on disk, as " +
+			"'cerne cost <id> --stamp' does. A feature counts only when the recomputed counters equal the " +
+			"anchor's: the effort is a partition of the stamped tokens. Without --apply it only reports: one line " +
+			"per feature with each model's measured effort, then what was left out (already with effort, drifted " +
+			"counters, no transcript, no effort recorded). --apply adds by_effort, model_efforts and the 'Por " +
+			"esforço:' line to the anchor, keeping everything else: an implemented feature's '## Custo' in its " +
+			"result, a done feature's as an erratum carrying the same block. A second run writes nothing; --apply " +
+			"--json prints the applied list and the errors.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runCostBackfillEffort(cmd, dir, apply, asJSON)
+		},
+	}
+	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
+	_ = cmd.Flags().MarkHidden("dir")
+	cmd.Flags().BoolVar(&apply, "apply", false, "write the measured effort into the anchors; without it, only report")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output")
+	return cmd
+}
+
+// effortEdit is the anchor edit of the effort backfill; a test swaps it to make one fail.
+var effortEdit = cost.EffortEdit
+
+// effortOutcome is what `backfill-effort --apply --json` prints.
+type effortOutcome struct {
+	Applied []effortApplied `json:"applied"`
+	Errors  []string        `json:"errors"`
+}
+
+type effortApplied struct {
+	ID    string `json:"id"`
+	Wrote string `json:"wrote"` // "result" or "erratum"
+}
+
+func runCostBackfillEffort(cmd *cobra.Command, dir string, apply, asJSON bool) error {
+	ctx, err := resolveProject(dir)
+	if err != nil {
+		return err
+	}
+	r, err := cost.BackfillEffort(cost.Inputs{CacheDir: filepath.Dir(ctx.repoDir), RepoDir: ctx.repoDir, Roots: claudeRoots()})
+	if err != nil {
+		return err
+	}
+	out := cmd.OutOrStdout()
+	if asJSON && !apply {
+		enc := json.NewEncoder(out)
+		enc.SetIndent("", "  ")
+		return enc.Encode(r)
+	}
+	text := out
+	if asJSON {
+		text = io.Discard
+	}
+	for _, f := range r.Features {
+		pairs := make([]string, 0, len(f.ModelEfforts))
+		for _, m := range slices.Sorted(maps.Keys(f.ModelEfforts)) {
+			pairs = append(pairs, m+" "+strings.Join(f.ModelEfforts[m], "/"))
+		}
+		fmt.Fprintf(text, "%s  %s  %s\n", f.ID, f.State, strings.Join(pairs, " · "))
+	}
+	if len(r.Drifted) > 0 {
+		fmt.Fprintf(text, "drifted: %s\n", strings.Join(r.Drifted, ", "))
+	}
+	fmt.Fprintf(text, "Left out: already with effort %d · drifted %d · no transcript %d · unmeasured %d\n",
+		len(r.HasEffort), len(r.Drifted), len(r.NoTranscript), len(r.Unmeasured))
+	if len(r.Features) == 0 && !asJSON {
+		fmt.Fprintln(out, "nothing to backfill")
+		return nil
+	}
+	if !apply {
+		fmt.Fprintln(out, "Nothing written. Run with --apply to write the measured effort into these anchors.")
+		return nil
+	}
+	outcome := effortOutcome{Applied: []effortApplied{}, Errors: []string{}}
+	for _, f := range r.Features {
+		ap := effortApplied{ID: f.ID, Wrote: "erratum"}
+		body, asResult, failed := effortEdit(ctx.repoDir, f.ID, f.State == domain.StateDone, f.ByEffort, f.ModelEfforts)
+		switch {
+		case failed != nil:
+		case asResult:
+			ap.Wrote = "result"
+			_, _, failed = app.AmendFeatureResult(ctx.repoDir, ctx.projDir, f.ID, body, "cost effort backfill (F-0448)")
+		default:
+			_, failed = app.AddErrata(ctx.repoDir, ctx.projDir, f.ID, body, app.EventActor())
+		}
+		if failed != nil {
+			outcome.Errors = append(outcome.Errors, fmt.Sprintf("%s: %v", f.ID, failed))
+			fmt.Fprintf(text, "✗ %s: %v\n", f.ID, failed)
+			continue
+		}
+		outcome.Applied = append(outcome.Applied, ap)
+		where := map[bool]string{true: "the result", false: "an erratum"}[ap.Wrote == "result"]
+		fmt.Fprintf(text, "✓ %s: effort written in %s\n", f.ID, where)
 	}
 	if asJSON {
 		enc := json.NewEncoder(out)
