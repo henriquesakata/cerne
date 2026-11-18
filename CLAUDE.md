@@ -87,7 +87,7 @@ Distilled from usage-insights friction (2026-07). Concrete contracts for recurri
 
 - **Observer / memory sessions**: every turn emit **exactly one** correctly-tagged output (`observation` vs `summary`, as asked) — visible, never empty, no meta-commentary about the tag format. Skip a checkpoint when nothing new happened since the last summary (no near-duplicate progress dumps).
 - **Wiki / doc synthesis**: use the `/wiki-synth` skill — gather every cited cerne source, **verify each one's current state** via `cerne brief --json` / `cerne status --active` (never trust stale prose), then write **pt-BR** markdown to the session scratchpad. Split large `cerne ask` queries per-source to dodge the 30s timeout.
-- **Feature delivery gate**: before `cerne feature complete` or opening an MR, `go vet ./... && go test ./... -count=1 -timeout 30m` must be green (the flag is mandatory — see *Build / test / run*, F-0289); if `ui/**` changed, rebuild + commit `ui/dist` (F-0136). A `git commit` PreToolUse hook (`.claude/hooks/go-precommit-build.sh`) runs `go build ./...` as an early tripwire — `git commit --no-verify` bypasses it.
+- **Feature delivery gate**: before opening an MR, `go vet ./... && go test ./... -count=1 -timeout 30m` must be green (the flag is mandatory — see *Build / test / run*, F-0289); if `ui/**` changed, rebuild + commit `ui/dist` (F-0136). Run `cerne feature complete` right after opening the PR (B-0027): the card goes to Ready, where the human review and validation start — never wait for CI or the merge to complete. A `git commit` PreToolUse hook (`.claude/hooks/go-precommit-build.sh`) runs `go build ./...` as an early tripwire — `git commit --no-verify` bypasses it.
 
 ## Roadmap and open work
 
