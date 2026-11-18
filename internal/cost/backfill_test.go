@@ -553,3 +553,44 @@ func TestEffortEdit(t *testing.T) {
 		t.Errorf("no anchor: %v, want ErrBackfillNoAnchor", err)
 	}
 }
+
+// TestBackfillEffortEdges (F-0448 crit. 2, 3): a transcript pruned since the
+// stamp leaves the anchor as the only record (no transcript); a session bound
+// under another harness neither aborts the run nor counts; lines from before
+// Claude Code recorded the effort land in "unknown", so the efforts still sum
+// to the anchor's total.
+func TestBackfillEffortEdges(t *testing.T) {
+	in := fixture(t)
+	effortFixture(t, in, "s1", "F-0001", domain.StateDone, true)
+	stampBeforeEffort(t, in, "F-0001", Counters{})
+	writeSession(t, in.Roots[0], "s1", tmsg{ts: at(2), id: "s1m", req: "r", effort: "xhigh", c: cc(1, 0, 10, 2)}) // the subagent file is gone
+	if err := os.RemoveAll(filepath.Join(in.Roots[0], "projects", "-tmp-p", "s1")); err != nil {
+		t.Fatal(err)
+	}
+	saveFeature(t, in.RepoDir, "F-0002", domain.StateDone)
+	writeResult(t, in.RepoDir, "F-0002", mustStamp(t, resultDoc("F-0002"), stampReport("F-0002", cc(5, 0, 0, 5), 3)))
+	if err := AppendBind(in.CacheDir, Bind{Session: "x1", Entity: "F-0002", Harness: "codex", TS: at(1)}); err != nil {
+		t.Fatal(err)
+	}
+	saveFeature(t, in.RepoDir, "F-0003", domain.StateDone)
+	writeSession(t, in.Roots[0], "s3",
+		tmsg{ts: at(2), id: "s3m", req: "r", effort: "xhigh", c: cc(1, 0, 0, 0)},
+		tmsg{ts: at(3), id: "s3o", req: "r", c: cc(0, 0, 0, 4)})
+	bindAt(t, in.CacheDir, "s3", "", "F-0003", at(1))
+	stampBeforeEffort(t, in, "F-0003", Counters{})
+
+	got, err := BackfillEffort(in)
+	if err != nil {
+		t.Fatalf("BackfillEffort: %v", err)
+	}
+	if !slices.Equal(got.NoTranscript, []string{"F-0001", "F-0002"}) {
+		t.Errorf("no transcript = %v, want F-0001 (pruned) and F-0002 (another harness)", got.NoTranscript)
+	}
+	want := map[string]Counters{"xhigh": cc(1, 0, 0, 0), "unknown": cc(0, 0, 0, 4)}
+	if len(got.Features) != 1 || got.Features[0].ID != "F-0003" || !reflect.DeepEqual(got.Features[0].ByEffort, want) {
+		t.Fatalf("features = %+v, want F-0003 with %v", got.Features, want)
+	}
+	if _, _, err := EffortEdit(in.RepoDir, "F-0003", true, got.Features[0].ByEffort, got.Features[0].ModelEfforts); err != nil {
+		t.Errorf("EffortEdit with an unknown share: %v", err)
+	}
+}

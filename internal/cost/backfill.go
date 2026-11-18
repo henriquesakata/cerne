@@ -332,14 +332,18 @@ type EffortBackfill struct {
 }
 
 // BackfillEffort reports, per implemented or done feature whose newest anchor
-// lacks by_effort (stamped before B-0024), the measured effort Compute reads
-// from the transcripts still on disk (F-0448). A feature counts only when the
-// recomputed counters equal the anchor's — the effort is a partition of the
+// lacks by_effort (stamped before B-0024), the measured effort the
+// transcripts still on disk hold (F-0448), read in one pass of the project
+// view — the attribution Compute makes per feature. A feature counts only when
+// the recomputed counters equal the anchor's: the effort is a partition of the
 // stamped tokens; else it is named by why it is left out. It writes nothing.
-// ponytail: one Compute per feature (re-reads the ledger each time); fine for a one-off backfill.
 func BackfillEffort(in Inputs) (EffortBackfill, error) {
 	var out EffortBackfill
 	feats, err := store.LoadAllFeatures(in.RepoDir)
+	if err != nil {
+		return out, err
+	}
+	proj, err := own(in, "")
 	if err != nil {
 		return out, err
 	}
@@ -349,25 +353,23 @@ func BackfillEffort(in Inputs) (EffortBackfill, error) {
 			continue
 		}
 		a, ok := readAnchor(in.RepoDir, f.ID)
-		switch {
-		case !ok:
-			continue
-		case a.ByEffort != nil:
-			out.HasEffort = append(out.HasEffort, f.ID)
+		if !ok {
 			continue
 		}
-		r, err := Compute(in, f.ID)
+		s := proj.perEntity[f.ID]
 		switch {
-		case err != nil:
-			return out, err
-		case r.Messages == 0:
+		case a.ByEffort != nil:
+			out.HasEffort = append(out.HasEffort, f.ID)
+		case s == nil || s.Messages == 0 || slices.Contains(proj.FromStamp, f.ID): // pruned since the stamp: the anchor is all there is
 			out.NoTranscript = append(out.NoTranscript, f.ID)
-		case r.Counters != a.Counters:
+		case s.Counters != a.Counters:
 			out.Drifted = append(out.Drifted, f.ID)
-		case len(r.ByEffort) == 0:
+		case len(s.ByEffort) == 0:
 			out.Unmeasured = append(out.Unmeasured, f.ID)
 		default:
-			out.Features = append(out.Features, FeatureEffort{ID: f.ID, State: f.State, ByEffort: r.ByEffort, ModelEfforts: r.ModelEfforts})
+			byEffort := maps.Clone(s.ByEffort)
+			unknownShare(byEffort, s.Counters) // lines from before Claude Code recorded the effort
+			out.Features = append(out.Features, FeatureEffort{ID: f.ID, State: f.State, ByEffort: byEffort, ModelEfforts: s.ModelEfforts})
 		}
 	}
 	return out, nil

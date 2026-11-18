@@ -75,6 +75,7 @@ type Report struct {
 	FromStamp                 []string            `json:"from_stamp,omitempty"`    // project view: entities read from their anchor
 	Children                  *Rollup             `json:"children,omitempty"`      // epic: its descendants' anchors
 	Total                     *Counters           `json:"total,omitempty"`         // epic: own + children
+	perEntity                 map[string]*share   // project view: each entity's share, for BackfillEffort's single pass
 }
 
 // Inputs locate what Compute reads.
@@ -345,6 +346,7 @@ func own(in Inputs, id string) (Report, error) {
 		r.unknownRole()
 		return r, nil
 	}
+	r.perEntity = byEntity
 	for e, s := range byEntity {
 		r.addShare(s)
 		if r.Entities == nil {
