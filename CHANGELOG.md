@@ -9,6 +9,66 @@ While cerne is below 1.0.0, a minor version may change behavior: read the
 
 ## [Unreleased]
 
+## [0.14.3] - 2026-11-18
+
+### Added
+
+- `cerne cost backfill-effort` adds the measured model effort to cost stamps
+  written before this release, reading it from the Claude Code transcripts. It
+  writes only when the recomputed tokens equal the stamp's, adds an erratum to
+  done features and is a dry run unless you pass `--apply`.
+  ([#66](https://github.com/henriquesakata/cerne/pull/66))
+
+### Changed
+
+- The session rules, the `cerne-authoring` skill and `cerne guide` tell agents
+  to run `cerne feature complete` as soon as the PR is open, not after CI or
+  the merge, and `complete` ends by saying to mark the PR ready for review now:
+  human review starts when the card reaches Ready.
+  ([#69](https://github.com/henriquesakata/cerne/pull/69))
+
+### Fixed
+
+- The costs screen no longer shows the model effort as unknown when the result
+  has no `**Agente:**` line. The effort now comes from the Claude Code
+  transcripts, which record it on every turn: the detail pairs each model with
+  its efforts (`claude-opus-5-5 xhigh, claude-sonnet-5-5 medium (measured)`)
+  and adds a *By effort* breakdown, the `## Custo` block gains a
+  `Por esforço:` line, and the effort filter matches every effort a feature
+  spent tokens at. ([#65](https://github.com/henriquesakata/cerne/pull/65))
+- Boolean settings on the Settings screen (Graph, Mindmap, Wiki, notes on edit
+  and on prompt, Gauntlet) save on a real mouse click. Before, the checkbox
+  snapped back and nothing was written.
+  ([#67](https://github.com/henriquesakata/cerne/pull/67))
+- The prompt reminder fires when your message shares two or more rare words
+  with the title of a note or runbook, instead of needing half of the title.
+  A long paste still needs most of the title.
+  ([#68](https://github.com/henriquesakata/cerne/pull/68))
+- In the Backlog chat, a round of two or more question cards is answered as
+  one turn: a click picks an option and *Send answers* sends them all, so no
+  card is left unanswered.
+  ([#64](https://github.com/henriquesakata/cerne/pull/64))
+
+### Upgrading
+
+Everything not listed here needs no action.
+
+- **Update the binary on every machine that pushes to the project.**
+  `brew upgrade henriquesakata/tap/cerne`, or run the install script again, or
+  `go install github.com/henriquesakata/cerne/cmd/cerne@v0.14.3` (details in
+  INSTALL.md, *Updating*). `cerne --version` then prints `cerne 0.14.3`.
+- **Run `cerne hook install` and `cerne skill install` in each project.** This
+  brings the new session rule and the skill text on when to complete.
+- **To fill the effort into older stamps, run `cerne cost backfill-effort`,
+  then again with `--apply`,** on a machine that still has the Claude Code
+  transcripts of those sessions. Without it, features stamped before 0.14.3
+  keep the effort declared in their result, or show it as unknown.
+- **Scripts that read the UI's costs API** (`/api/costs`, `/api/costs/{id}`)
+  get `efforts`, a list with the heaviest effort first, instead of `effort`,
+  and `effort_source` can now be `measured`.
+
+**Full changelog:** [v0.14.2...v0.14.3](https://github.com/henriquesakata/cerne/compare/v0.14.2...v0.14.3)
+
 ## [0.14.2] - 2026-11-17
 
 ### Added
@@ -316,7 +376,8 @@ Everything not listed here needs no action.
 First release published on GitHub. Versions 0.1.0 to 0.12.0 were released
 before the move and have no public release notes.
 
-[Unreleased]: https://github.com/henriquesakata/cerne/compare/v0.14.2...HEAD
+[Unreleased]: https://github.com/henriquesakata/cerne/compare/v0.14.3...HEAD
+[0.14.3]: https://github.com/henriquesakata/cerne/compare/v0.14.2...v0.14.3
 [0.14.2]: https://github.com/henriquesakata/cerne/compare/v0.14.1...v0.14.2
 [0.14.1]: https://github.com/henriquesakata/cerne/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/henriquesakata/cerne/compare/v0.13.0...v0.14.0
