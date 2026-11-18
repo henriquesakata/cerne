@@ -449,8 +449,8 @@ type SortKey = 'id' | 'title' | 'level' | 'weighted' | 'gauntlet' | 'models' | '
 const modelList = (f: CostFeature) => Object.keys(f.by_model ?? {}).sort()
 
 // B-0024: each model with the efforts it ran at, the heaviest model first —
-// "claude-opus-5-5 xhigh, claude-sonnet-5-5 medium"; the flat list when the
-// anchor has no pairing.
+// "<model> xhigh, <other model> medium"; the flat list when the anchor has no
+// pairing.
 const modelEfforts = (f: CostFeature) => {
   const pairs = f.model_efforts ?? {}
   const models = Object.keys(pairs).sort(
