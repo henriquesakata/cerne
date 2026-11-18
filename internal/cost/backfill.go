@@ -10,7 +10,6 @@ import (
 	"regexp"
 	"slices"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/henriquesakata/cerne/internal/domain"
@@ -310,6 +309,100 @@ func RolesEdit(repoDir, id string, done bool, critic, judge Counters) (text stri
 		return "", false, fmt.Errorf("%w: %s", ErrBackfillInconsistent, id)
 	}
 	a.ByRole = roles
+	section = putLine(section, rolesLineRe, breakdownLine("Por papel", roles), afterRolesRe)
+	return custoEdit(repoDir, id, done, inResult, section, a,
+		"Custo por papel recuperado das transcrições (`cerne cost backfill-roles`, F-0396): o anchor vigente, com o by_role.")
+}
+
+// FeatureEffort is what the effort backfill would add to one feature's anchor.
+type FeatureEffort struct {
+	ID           string              `json:"id"`
+	State        domain.FeatureState `json:"state"`
+	ByEffort     map[string]Counters `json:"by_effort"`
+	ModelEfforts map[string][]string `json:"model_efforts"`
+}
+
+// EffortBackfill is the report of BackfillEffort.
+type EffortBackfill struct {
+	Features     []FeatureEffort `json:"features"`
+	HasEffort    []string        `json:"has_effort"`
+	Drifted      []string        `json:"drifted"`       // recomputed counters differ from the anchor's
+	NoTranscript []string        `json:"no_transcript"` // nothing left to recompute from
+	Unmeasured   []string        `json:"unmeasured"`    // same counters, but no line records an effort
+}
+
+// BackfillEffort reports, per implemented or done feature whose newest anchor
+// lacks by_effort (stamped before B-0024), the measured effort Compute reads
+// from the transcripts still on disk (F-0448). A feature counts only when the
+// recomputed counters equal the anchor's — the effort is a partition of the
+// stamped tokens; else it is named by why it is left out. It writes nothing.
+// ponytail: one Compute per feature (re-reads the ledger each time); fine for a one-off backfill.
+func BackfillEffort(in Inputs) (EffortBackfill, error) {
+	var out EffortBackfill
+	feats, err := store.LoadAllFeatures(in.RepoDir)
+	if err != nil {
+		return out, err
+	}
+	sort.Slice(feats, func(i, j int) bool { return feats[i].ID < feats[j].ID })
+	for _, f := range feats {
+		if f.State != domain.StateImplemented && f.State != domain.StateDone {
+			continue
+		}
+		a, ok := readAnchor(in.RepoDir, f.ID)
+		switch {
+		case !ok:
+			continue
+		case a.ByEffort != nil:
+			out.HasEffort = append(out.HasEffort, f.ID)
+			continue
+		}
+		r, err := Compute(in, f.ID)
+		switch {
+		case err != nil:
+			return out, err
+		case r.Messages == 0:
+			out.NoTranscript = append(out.NoTranscript, f.ID)
+		case r.Counters != a.Counters:
+			out.Drifted = append(out.Drifted, f.ID)
+		case len(r.ByEffort) == 0:
+			out.Unmeasured = append(out.Unmeasured, f.ID)
+		default:
+			out.Features = append(out.Features, FeatureEffort{ID: f.ID, State: f.State, ByEffort: r.ByEffort, ModelEfforts: r.ModelEfforts})
+		}
+	}
+	return out, nil
+}
+
+// ErrBackfillEffortMismatch: the efforts do not partition the anchor's total.
+var ErrBackfillEffortMismatch = errors.New("the efforts do not sum to the anchor's total")
+
+// EffortEdit adds the measured effort (by_effort, model_efforts and the "Por
+// esforço:" line) to id's newest cost anchor (F-0448), keeping everything
+// else; where it goes is RolesEdit's rule. byEffort must sum to the anchor's
+// counters: the efforts are a partition of the same tokens.
+func EffortEdit(repoDir, id string, done bool, byEffort map[string]Counters, modelEfforts map[string][]string) (text string, asResult bool, err error) {
+	section, a, inResult, ok := newestCusto(repoDir, id)
+	if !ok {
+		return "", false, fmt.Errorf("%w: %s", ErrBackfillNoAnchor, id)
+	}
+	var sum Counters
+	for _, c := range byEffort {
+		sum = sum.add(c)
+	}
+	if sum != a.Counters {
+		return "", false, fmt.Errorf("%w: %s", ErrBackfillEffortMismatch, id)
+	}
+	a.ByEffort, a.ModelEfforts = byEffort, modelEfforts
+	section = putLine(section, effortLineRe, breakdownLine("Por esforço", byEffort), modelLineRe)
+	return custoEdit(repoDir, id, done, inResult, section, a,
+		"Esforço do modelo recuperado das transcrições (`cerne cost backfill-effort`, F-0448): o anchor vigente, com o by_effort.")
+}
+
+// custoEdit writes anchor a over the last anchor line of section, then places
+// the section: the whole new result for an implemented feature whose newest
+// anchor is in its result (asResult), else an erratum text — intro, then the
+// block; the result of a done feature is immutable.
+func custoEdit(repoDir, id string, done, inResult bool, section string, a share, intro string) (string, bool, error) {
 	anchorJSON, err := json.Marshal(a)
 	if err != nil {
 		return "", false, err
@@ -317,16 +410,6 @@ func RolesEdit(repoDir, id string, done bool, critic, judge Counters) (text stri
 	if m := anchorRe.FindAllStringIndex(section, -1); len(m) > 0 {
 		last := m[len(m)-1]
 		section = section[:last[0]] + "<!-- cerne:cost v1 " + string(anchorJSON) + " -->" + section[last[1]:]
-	}
-	var parts []string
-	for _, role := range slices.Sorted(maps.Keys(roles)) {
-		parts = append(parts, role+" ("+countersLine(roles[role])+")")
-	}
-	line := "Por papel: " + strings.Join(parts, "; ") + ".\n"
-	if rolesLineRe.MatchString(section) {
-		section = rolesLineRe.ReplaceAllLiteralString(section, line)
-	} else if i := modelLineRe.FindStringIndex(section); i != nil {
-		section = section[:i[1]] + line + section[i[1]:]
 	}
 	if inResult && !done {
 		raw, err := os.ReadFile(filepath.Join(repoDir, "content", "features", id, "result.md"))
@@ -336,12 +419,27 @@ func RolesEdit(repoDir, id string, done bool, critic, judge Counters) (text stri
 		start, end, _, _ := custoSection(string(raw))
 		return string(raw[:start]) + section + string(raw[end:]), true, nil
 	}
-	return "Custo por papel recuperado das transcrições (`cerne cost backfill-roles`, F-0396): o anchor vigente, com o by_role.\n\n" + section, false, nil
+	return intro + "\n\n" + section, false, nil
+}
+
+// putLine replaces section's line matching re with line, else inserts line
+// after the last line matching after.
+func putLine(section string, re *regexp.Regexp, line string, after *regexp.Regexp) string {
+	if re.MatchString(section) {
+		return re.ReplaceAllLiteralString(section, line)
+	}
+	if m := after.FindAllStringIndex(section, -1); len(m) > 0 {
+		i := m[len(m)-1][1]
+		return section[:i] + line + section[i:]
+	}
+	return section
 }
 
 var (
-	rolesLineRe = regexp.MustCompile(`(?m)^Por papel: .*\n`)
-	modelLineRe = regexp.MustCompile(`(?m)^Por modelo: .*\n`)
+	rolesLineRe  = regexp.MustCompile(`(?m)^Por papel: .*\n`)
+	effortLineRe = regexp.MustCompile(`(?m)^Por esforço: .*\n`)
+	modelLineRe  = regexp.MustCompile(`(?m)^Por modelo: .*\n`)
+	afterRolesRe = regexp.MustCompile(`(?m)^Por (?:modelo|esforço): .*\n`) // the block's order: model, effort, role
 )
 
 // workIDs drops the epics from cited ids: naming the parent epic is not

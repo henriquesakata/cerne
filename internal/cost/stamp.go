@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -169,21 +171,10 @@ func block(r Report) (string, error) {
 	}
 	fmt.Fprintf(&b, "Por modelo: %s.\n", strings.Join(models, "; "))
 	if len(r.ByEffort) > 0 {
-		efforts := make([]string, 0, len(r.ByEffort))
-		for e := range r.ByEffort {
-			efforts = append(efforts, e)
-		}
-		sort.Strings(efforts)
-		for i, e := range efforts {
-			efforts[i] = e + " (" + countersLine(r.ByEffort[e]) + ")"
-		}
-		fmt.Fprintf(&b, "Por esforço: %s.\n", strings.Join(efforts, "; "))
+		b.WriteString(breakdownLine("Por esforço", r.ByEffort))
 	}
-	if roles := r.Roles(); roles != nil {
-		for i, role := range roles {
-			roles[i] = role + " (" + countersLine(r.ByRole[role]) + ")"
-		}
-		fmt.Fprintf(&b, "Por papel: %s.\n", strings.Join(roles, "; "))
+	if r.Roles() != nil {
+		b.WriteString(breakdownLine("Por papel", r.ByRole))
 	}
 	window := "—"
 	if r.First != "" {
@@ -202,6 +193,16 @@ func block(r Report) (string, error) {
 	}
 	fmt.Fprintf(&b, "\n<!-- cerne:cost v1 %s -->\n", anchorJSON)
 	return b.String(), nil
+}
+
+// breakdownLine is one "<label>: key (counters); …." line of the block, keys
+// sorted — the stamp and the backfills write it alike.
+func breakdownLine(label string, m map[string]Counters) string {
+	parts := make([]string, 0, len(m))
+	for _, k := range slices.Sorted(maps.Keys(m)) {
+		parts = append(parts, k+" ("+countersLine(m[k])+")")
+	}
+	return label + ": " + strings.Join(parts, "; ") + ".\n"
 }
 
 func listOrNone(ids []string) string {
