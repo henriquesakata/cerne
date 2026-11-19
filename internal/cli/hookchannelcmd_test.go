@@ -671,10 +671,10 @@ func TestHookChannelPluginMode(t *testing.T) {
 
 	env := filepath.Join(t.TempDir(), "env.sh")
 	t.Setenv("CLAUDE_ENV_FILE", env)
-	if out, err := execCerneStdin(t, sessionStartJSON(t, "s1", projDir), "hook", "channel", "--point", "session-start"); err != nil {
+	if out, err := execCerneStdin(t, sessionStartJSON(t, "f9cf13e4-914f-48fb-adfa-0cdced7a210e", projDir), "hook", "channel", "--point", "session-start"); err != nil {
 		t.Fatalf("hook channel: %v\n%s", err, out)
 	}
-	if got, _ := os.ReadFile(env); string(got) != "export CERNE_SESSION=s1\nexport CERNE_ACTOR=agent\n" {
+	if got, _ := os.ReadFile(env); string(got) != "export CERNE_SESSION=f9cf13e4-914f-48fb-adfa-0cdced7a210e\nexport CERNE_ACTOR=agent\n" {
 		t.Fatalf("env file = %q, want the session and the agent actor", got)
 	}
 	t.Setenv("CERNE_PLUGIN", "")

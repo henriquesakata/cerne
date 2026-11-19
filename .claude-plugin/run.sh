@@ -25,5 +25,5 @@ proj=${CLAUDE_PROJECT_DIR:-$PWD}
 asset="${CLAUDE_PLUGIN_ROOT:-$(dirname "$0")/..}/internal/hooks/assets/${2##*/}"
 [ -f "$proj/.cernerc" ] && [ -f "$asset" ] || exit 0
 [ -f "$proj/.claude/hooks/${2##*/}" ] && exit 0
-export CERNE_PLUGIN=1 CERNE_ACTOR="${CERNE_ACTOR:-agent}"
+export CERNE_PLUGIN=1 CERNE_ACTOR=agent
 exec bash "$asset"

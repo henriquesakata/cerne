@@ -137,7 +137,9 @@ func entryRun(t *testing.T, home, proj string, args ...string) (stdout string, c
 		t.Fatal(err)
 	}
 	cmd := exec.Command("bash", append([]string{filepath.Join(root, ".claude-plugin", "run.sh")}, args...)...)
-	cmd.Env = []string{"PATH=/usr/bin:/bin", "HOME=" + home, "CLAUDE_PLUGIN_ROOT=" + root, "CLAUDE_PROJECT_DIR=" + proj}
+	// A human CERNE_ACTOR inherited from the launching shell must not leak into
+	// the hooks: settings.json's env overrides it to agent, and so does the plugin.
+	cmd.Env = []string{"PATH=/usr/bin:/bin", "HOME=" + home, "CLAUDE_PLUGIN_ROOT=" + root, "CLAUDE_PROJECT_DIR=" + proj, "CERNE_ACTOR=human"}
 	cmd.Stdin = strings.NewReader("{}")
 	var out, errOut strings.Builder
 	cmd.Stdout, cmd.Stderr = &out, &errOut
