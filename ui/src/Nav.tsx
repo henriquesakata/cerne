@@ -96,6 +96,7 @@ export default function Nav({ hash }: { hash: string }) {
   return (
     <nav className="nav">
       <span className="nav-brand">
+        <span className="nav-mark" aria-hidden="true" />
         cerne
         <NavVersion />
       </span>

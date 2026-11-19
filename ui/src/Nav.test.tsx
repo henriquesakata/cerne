@@ -359,3 +359,19 @@ describe('Nav: nome do projeto em exibição', () => {
     expect(document.querySelector('.nav select.nav-project-select')).toHaveDisplayValue('Meu Projeto')
   })
 })
+
+// F-0462: the mark sits next to the name. It is decorative, so the wordmark a
+// screen reader announces is still the name.
+describe('Mark in the wordmark (F-0462)', () => {
+  it('criteria 1 and 4: the mark comes before the name and is hidden from assistive tech', () => {
+    const { container } = render(<Nav hash="#/" />)
+    const brand = container.querySelector('.nav-brand')
+    expect(brand).not.toBeNull()
+    const mark = brand!.querySelector('.nav-mark')
+    expect(mark).not.toBeNull()
+    expect(mark).toHaveAttribute('aria-hidden', 'true')
+    expect(brand!.firstElementChild).toBe(mark)
+    // The text right after the mark is the name itself; the version tag is a separate element.
+    expect((mark!.nextSibling?.textContent ?? '').trim()).toBe('cerne')
+  })
+})

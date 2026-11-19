@@ -1730,6 +1730,23 @@ h2 {
 
 .nav-brand { font-weight: 700; font-family: ui-monospace, monospace; }
 
+/* The mark next to the name (F-0462): a mask over the tab icon, painted in the
+   ink of the name, so it follows the dashboard's theme and there is one drawing.
+   Without mask support the span draws nothing instead of a solid square. */
+.nav-mark { display: none; }
+@supports (mask-image: none) or (-webkit-mask-image: none) {
+  .nav-mark {
+    display: inline-block;
+    width: 1.15em;
+    height: 1.15em;
+    margin-right: 0.45em;
+    vertical-align: -0.2em;
+    background: currentColor;
+    -webkit-mask: url(/favicon.svg) center / contain no-repeat;
+    mask: url(/favicon.svg) center / contain no-repeat;
+  }
+}
+
 /* nav agrupada (F-0332): Dashboard + um menu por grupo; em tela estreita quebra linha. */
 .nav-links {
   display: flex;
