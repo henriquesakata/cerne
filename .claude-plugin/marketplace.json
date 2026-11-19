@@ -1,0 +1,17 @@
+{
+  "name": "cerne",
+  "owner": {
+    "name": "Henrique Sakata",
+    "url": "https://github.com/henriquesakata"
+  },
+  "description": "cerne: living documentation for AI-assisted projects, kept as structured data in git.",
+  "plugins": [
+    {
+      "name": "cerne",
+      "source": "./",
+      "description": "Living documentation for AI-assisted projects: features, decisions and their lifecycle kept as structured data in git, with the authoring skill, session hooks and a read-only MCP server for your agent. Needs the cerne CLI (brew install henriquesakata/tap/cerne).",
+      "category": "documentation",
+      "tags": ["documentation", "living-documentation", "spec-driven-development", "adr", "feature-lifecycle", "knowledge-base", "kanban", "mcp"]
+    }
+  ]
+}

@@ -294,6 +294,22 @@ cerne skill install                                 # the authoring guide, for a
 
 "Delivered" means the file is in place: cerne cannot verify that an agent loads it. What each agent receives, its load condition and what degrades are in the [provider parity matrix](docs/provider-parity.md), generated from the installer's own table.
 
+### Claude Code plugin
+
+This repository is also a Claude Code plugin marketplace. The plugin brings the same skills, hooks and MCP server that `init` installs, read from the files the binary embeds. It does not bring the binary: [install the `cerne` CLI](INSTALL.md) first. Inside Claude Code:
+
+```text
+/plugin marketplace add henriquesakata/cerne
+/plugin install cerne@cerne
+```
+
+On Claude Code 2.1.275 or later, one line does both: `/plugin install cerne --marketplace henriquesakata/cerne`. From a shell, run `claude plugin marketplace add henriquesakata/cerne`, then `claude plugin install cerne@cerne --scope project`.
+
+- **Only in cerne projects.** The plugin's hooks run only where the project root has a `.cernerc`; elsewhere they stay silent. When the CLI is missing, the session start prints how to install it.
+- **No double hooks.** Where `init` or `cerne hook install` already put a hook script in `.claude/hooks/`, the project's copy runs and the plugin's steps aside. In those projects the authoring skill can be listed twice, as `cerne-authoring` and `cerne:cerne-authoring`, with the same text.
+- **Prefer project scope.** `cerne mcp` needs a cerne project, so a user-scope install shows the MCP server as failed in every other project. `--scope project` enables the plugin only where you ask for it.
+- **Git hooks stay with the CLI.** A plugin cannot install git hooks: the commit trailer and the commit guard still come from `cerne hook install`.
+
 Separately, some commands call a model themselves (see [Where your data goes](#where-your-data-goes)). They can use the subscription CLI of Claude Code, Codex CLI or Gemini CLI, and, from v0.14.0, the Cursor CLI and the GitHub Copilot CLI. Of these, Claude Code is the one in daily use here.
 
 ## Architecture
