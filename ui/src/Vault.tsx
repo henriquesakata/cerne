@@ -292,7 +292,7 @@ export default function Vault({ hash }: { hash: string }) {
       <article className="vault-doc" ref={docRef}>
         {!sel.id ? (
           <p className="status">{t.vault.empty}</p>
-        ) : docLoad.error !== null ? (
+        ) : docLoad.error !== null && !isEditing ? (
           <Notice message={t.vault.docLoadError(docLoad.error)} onRetry={docLoad.retry} busy={docLoad.retrying} />
         ) : !doc ? (
           <p className="status">{t.vault.loading}</p>
@@ -325,6 +325,11 @@ export default function Vault({ hash }: { hash: string }) {
                 </nav>
               )}
             </header>
+            {/* Editing, a failed reload is a notice over the editor: unmounting
+                it would drop the draft without a question (audit A3). */}
+            {isEditing && docLoad.error !== null && (
+              <Notice message={t.vault.docLoadError(docLoad.error)} onRetry={docLoad.retry} busy={docLoad.retrying} />
+            )}
             {isEditing ? (
               <VaultEditor
                 key={docKey}

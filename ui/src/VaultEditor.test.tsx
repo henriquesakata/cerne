@@ -32,9 +32,10 @@ vi.mock('./vault-doc', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./vault-doc')>()),
   loadVaultDoc: (id: string) => loadVaultDoc(id),
 }))
+let liveVersion = 0 // a bump re-runs the vault's live loads, as an SSE tick does
 vi.mock('./live', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./live')>()),
-  useLiveVersion: () => 0,
+  useLiveVersion: () => liveVersion,
 }))
 vi.mock('./Backlinks', () => ({ default: () => null }))
 
@@ -75,6 +76,7 @@ const type = (value: string) => fireEvent.change(source(), { target: { value } }
 
 beforeEach(() => {
   window.location.hash = ''
+  liveVersion = 0
   vi.clearAllMocks()
   Element.prototype.scrollIntoView = vi.fn()
 })
@@ -191,6 +193,23 @@ describe('Vault while editing (F-0464 I-1)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
     expect(container.querySelector('.vault-side')).not.toBeNull()
     expect(container.querySelector('main')).not.toHaveClass('vault-editing')
+  })
+})
+
+describe('Vault reload while editing (F-0464 audit A3)', () => {
+  it('reload error: a failed live reload keeps the editor, the draft and the guard, with a notice', async () => {
+    docs = { 'N-0001': note() }
+    const { rerender } = render(<Vault hash="#/vault/N-0001" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar' }))
+    type('rascunho em curso')
+    loadVaultDoc.mockRejectedValueOnce(new Error('backend fora do ar'))
+    liveVersion = 1
+    rerender(<Vault hash="#/vault/N-0001" />)
+    expect(await screen.findByText(/backend fora do ar/)).toBeInTheDocument()
+    expect(source().value).toBe('rascunho em curso')
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    expect(navAllowed()).toBe(false)
+    expect(confirm).toHaveBeenCalled()
   })
 })
 
