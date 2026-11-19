@@ -572,6 +572,7 @@ export type MirrorIdea = {
   title: string
   state: Idea['state']
   tracker: string
+  issueId: string
   url: string
 }
 

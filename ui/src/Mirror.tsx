@@ -246,7 +246,7 @@ function Group(p: {
               <span className="card-id">{i.id}</span>
               <span>{i.title}</span>
               {i.state !== 'active' && <span className={`chip ${IDEA_CHIP[i.state]}`}>{t.ideas.stateChip[i.state]}</span>}
-              <ExtLink url={i.url}>{t.mirror.ideaOrigin(issueLabel(i.url.split('/').pop() ?? i.url))}</ExtLink>
+              <ExtLink url={i.url}>{t.mirror.ideaOrigin(issueLabel(i.issueId))}</ExtLink>
             </li>
           ))}
         </ul>

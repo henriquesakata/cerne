@@ -95,6 +95,7 @@ type MirrorIdea struct {
 	Title   string           `json:"title"`
 	State   domain.IdeaState `json:"state"`
 	Tracker string           `json:"tracker"`
+	IssueID string           `json:"issueId"`
 	URL     string           `json:"url"`
 }
 
@@ -155,7 +156,7 @@ func MirrorOverview(repoDir, projDir string) (MirrorView, error) {
 	}
 	for _, i := range ideas {
 		if i.Mirror != nil {
-			v.Ideas = append(v.Ideas, MirrorIdea{ID: i.ID, Title: i.Title, State: i.State, Tracker: i.Mirror.Tracker, URL: i.Mirror.URL})
+			v.Ideas = append(v.Ideas, MirrorIdea{ID: i.ID, Title: i.Title, State: i.State, Tracker: i.Mirror.Tracker, IssueID: i.Mirror.ID, URL: i.Mirror.URL})
 		}
 	}
 	v.LastSync = LastMirrorSync(repoDir)

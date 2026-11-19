@@ -31,8 +31,8 @@ const overview: MirrorOverview = {
     { id: 'F-0002', title: 'Card two', state: 'done', tracker: 'beta', ref: { id: 'PROJ-7', url: 'https://beta.atlassian.net/browse/PROJ-7' } },
   ],
   ideas: [
-    { id: 'I-0001', title: 'Crash on start', state: 'active', tracker: 'alpha', url: 'https://github.com/o/alpha/issues/9' },
-    { id: 'I-0002', title: 'Old request', state: 'dropped', tracker: 'beta', url: 'https://beta.atlassian.net/browse/PROJ-3' },
+    { id: 'I-0001', title: 'Crash on start', state: 'active', tracker: 'alpha', issueId: '13', url: 'https://github.com/o/alpha/issues/13/?x=1' },
+    { id: 'I-0002', title: 'Old request', state: 'dropped', tracker: 'beta', issueId: 'PROJ-3', url: 'https://beta.atlassian.net/browse/PROJ-3' },
   ],
   lastSync: {
     at: new Date(Date.now() - 3 * 3600_000).toISOString(),
@@ -92,7 +92,8 @@ describe('Mirror — the list (F-0465 crit. 1)', () => {
     expect(alpha.queryByText('Card two')).toBeNull()
     expect(alpha.getByText('2 mirrored cards')).toBeInTheDocument()
     expect(alpha.getByText('Crash on start')).toBeInTheDocument()
-    expect(alpha.getByRole('link', { name: 'from #9' })).toHaveAttribute('href', 'https://github.com/o/alpha/issues/9')
+    expect(alpha.getByRole('link', { name: 'from #13' })).toHaveAttribute('href', 'https://github.com/o/alpha/issues/13/?x=1')
+    expect(within(section('beta')).getByRole('link', { name: 'from PROJ-3' })).toBeInTheDocument()
     // an active idea carries no chip; a closed one does
     const beta = within(section('beta'))
     expect(beta.getByText('Card two')).toBeInTheDocument()

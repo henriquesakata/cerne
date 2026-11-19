@@ -227,7 +227,7 @@ func TestMirrorOverviewNoNetwork(t *testing.T) {
 	if c := v.Cards[1]; c.ID != "F-0002" || c.Tracker != "b" || c.State != domain.StateDone || c.Title == "" || c.Ref.URL == "" {
 		t.Errorf("card = %+v", c)
 	}
-	if i := v.Ideas[0]; i.Tracker != "b" || i.URL != outside.URL || i.Title != "Crash on start" {
+	if i := v.Ideas[0]; i.Tracker != "b" || i.URL != outside.URL || i.Title != "Crash on start" || i.IssueID != outside.ID {
 		t.Errorf("idea = %+v", i)
 	}
 }

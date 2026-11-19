@@ -101,7 +101,7 @@ func TestMirrorOverviewRoute(t *testing.T) {
 			ID, Title, State, Tracker string
 			Ref                       struct{ ID, URL string }
 		}
-		Ideas []struct{ ID, Title, State, Tracker, URL string }
+		Ideas []struct{ ID, Title, State, Tracker, URL, IssueID string }
 		Last  *json.RawMessage `json:"lastSync"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &v); err != nil {
@@ -113,7 +113,7 @@ func TestMirrorOverviewRoute(t *testing.T) {
 	if c := v.Cards[1]; c.ID != "F-0002" || c.Tracker != "b" || c.State != "done" || c.Ref.URL == "" {
 		t.Errorf("card = %+v", c)
 	}
-	if i := v.Ideas[0]; i.Tracker != "b" || i.State != "active" || i.URL == "" {
+	if i := v.Ideas[0]; i.Tracker != "b" || i.State != "active" || i.URL == "" || i.IssueID != "9" {
 		t.Errorf("idea = %+v", i)
 	}
 	if len(fakes[0].Calls)+len(fakes[1].Calls) != 0 {
