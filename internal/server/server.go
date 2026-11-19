@@ -1384,6 +1384,8 @@ func handleFeatureDocPut(w http.ResponseWriter, r *http.Request, repoDir, projDi
 	switch {
 	case errors.Is(err, app.ErrUnknownDoc):
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid document (use spec, plan or result)"))
+	case errors.Is(err, app.ErrCerneIDMismatch):
+		writeJSON(w, http.StatusBadRequest, errorBody(err.Error()))
 	case errors.Is(err, store.ErrNotFound):
 		writeJSON(w, http.StatusNotFound, errorBody("feature not found"))
 	case errors.Is(err, app.ErrFeatureFrozen):
@@ -1397,8 +1399,9 @@ func handleFeatureDocPut(w http.ResponseWriter, r *http.Request, repoDir, projDi
 
 // handleEntityContentPut writes a decision, note or runbook's content from the
 // vault editor (F-0464), as a human (F-0375): 404 for an id that is not of
-// kind's shape or does not exist, 422 past active — history takes an errata —
-// and 409 on a stale If-Match.
+// kind's shape or does not exist, 400 for content naming another entity in
+// its cerne_id, 422 past active — history takes an errata — and 409 on a
+// stale If-Match.
 func handleEntityContentPut(w http.ResponseWriter, r *http.Request, repoDir, projDir, kind, id string) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -1412,6 +1415,8 @@ func handleEntityContentPut(w http.ResponseWriter, r *http.Request, repoDir, pro
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		writeJSON(w, http.StatusNotFound, errorBody(kind+" not found"))
+	case errors.Is(err, app.ErrCerneIDMismatch):
+		writeJSON(w, http.StatusBadRequest, errorBody(err.Error()))
 	case errors.Is(err, app.ErrEntityNotLive):
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody("entity is not live — append an errata instead"))
 	case err != nil:

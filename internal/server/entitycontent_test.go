@@ -272,3 +272,21 @@ func TestPutFeatureDocWithoutIfMatch(t *testing.T) {
 		}
 	}
 }
+
+// TestPutContentForeignCerneID (F-0464 audit A9): content whose frontmatter
+// names another entity is a 400 on the content routes and the feature docs,
+// with nothing written.
+func TestPutContentForeignCerneID(t *testing.T) {
+	repoDir, projDir := contentFixture(t)
+	h := New(repoDir, projDir, "")
+	tree := cloneTree(t, repoDir)
+	for _, url := range []string{"/api/notes/N-0001/content", "/api/decisions/D-0001/content", "/api/runbooks/RB-0001/content", "/api/features/F-0001/docs/spec"} {
+		rec, got := putContent(t, h, url, "---\ncerne_id: N-0999\n---\n\ncorpo\n", nil)
+		if msg, _ := got["error"].(string); rec.Code != http.StatusBadRequest || !strings.Contains(msg, "cerne_id") {
+			t.Errorf("PUT %s = %d %v, want 400 naming cerne_id", url, rec.Code, got)
+		}
+	}
+	if !maps.Equal(cloneTree(t, repoDir), tree) {
+		t.Fatalf("a refused PUT changed the clone")
+	}
+}
