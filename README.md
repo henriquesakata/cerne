@@ -24,6 +24,7 @@
   <a href="#capabilities">Capabilities</a> ·
   <a href="#agent-integrations">Agents</a> ·
   <a href="#where-your-data-goes">Your data</a> ·
+  <a href="#what-cerne-does-not-do">What it does not do</a> ·
   <a href="#status-and-limitations">Status</a> ·
   <a href="INSTALL.md">Install guide</a>
 </p>
@@ -253,7 +254,9 @@ In a global client config, name the project with `--dir`:
 }
 ```
 
-Outside a cerne project the server refuses to start.
+Outside a cerne project the server still starts, with only the `guide` tool, and tells the agent that `cerne init` starts a project.
+
+Clients that install MCP Bundles (MCPB) can take the server straight from a release: every release after 0.14.3 ships `cerne_<tag>.mcpb`, with the binaries for every platform. The client asks for the project folder and starts `cerne mcp --dir` on it; the folder must already be a cerne project. The bundle is also what the [official MCP Registry](https://registry.modelcontextprotocol.io) entry `io.github.henriquesakata/cerne` points to.
 
 ## Capabilities
 
@@ -291,6 +294,22 @@ cerne skill install                                 # the authoring guide, for a
 
 "Delivered" means the file is in place: cerne cannot verify that an agent loads it. What each agent receives, its load condition and what degrades are in the [provider parity matrix](docs/provider-parity.md), generated from the installer's own table.
 
+### Claude Code plugin
+
+This repository is also a Claude Code plugin marketplace. The plugin brings the same skills, hooks and MCP server that `init` installs, read from the files the binary embeds. It does not bring the binary: [install the `cerne` CLI](INSTALL.md) first. Inside Claude Code:
+
+```text
+/plugin marketplace add henriquesakata/cerne
+/plugin install cerne@cerne
+```
+
+On Claude Code 2.1.275 or later, one line does both: `/plugin install cerne --marketplace henriquesakata/cerne`. From a shell, run `claude plugin marketplace add henriquesakata/cerne`, then `claude plugin install cerne@cerne --scope project`.
+
+- **Only in cerne projects.** The plugin's hooks run only where the project root has a `.cernerc`; elsewhere they stay silent. When the CLI is missing, the session start prints how to install it.
+- **No double hooks.** Where `init` or `cerne hook install` already put a hook script in `.claude/hooks/`, the project's copy runs and the plugin's steps aside. In those projects the authoring skill can be listed twice, as `cerne-authoring` and `cerne:cerne-authoring`, with the same text.
+- **User or project scope.** In a project without cerne the MCP server still connects, with only the `guide` tool, so the agent can look up what cerne is and learns that `cerne init` starts a project. `--scope project` enables the plugin only where you ask for it.
+- **Git hooks stay with the CLI.** A plugin cannot install git hooks: the commit trailer and the commit guard still come from `cerne hook install`.
+
 Separately, some commands call a model themselves (see [Where your data goes](#where-your-data-goes)). They can use the subscription CLI of Claude Code, Codex CLI or Gemini CLI, and, from v0.14.0, the Cursor CLI and the GitHub Copilot CLI. Of these, Claude Code is the one in daily use here.
 
 ## Architecture
@@ -322,6 +341,25 @@ cerne has no hosted service. There is no account to create, and no usage telemet
 Two things cerne does not change. Your AI agent still sends what it reads to its model provider, and a backend hosted on GitHub or GitLab lives on GitHub or GitLab. If nothing may leave your network, point cerne at a git server you host, set `llm.mode` to `delegation` (`cerne settings set llm.mode delegation --scope host`) or to a local model through Settings › AI, and use an agent whose model runs where you allow: cerne itself adds no third party.
 
 **Dependencies.** None at runtime. `git` is recommended for speed. Optional: an agent CLI or an API key for the LLM layer, and `gh`/`glab` for delivery lookups. Building from source needs Go (the version in `go.mod`) and, for the UI, Node 24.
+
+## What cerne does not do
+
+A tool is often easier to judge by what it leaves out. The first list is by design; the second is gaps.
+
+**By design**
+
+- **It does not store your conversations with the agent.** What lasts becomes a document with a state: a spec, a decision, a note. `cerne cost` reads the agent's transcripts where the agent leaves them and keeps only which feature each session worked on and its token counts, never the text.
+- **It does not run in the cloud.** No account, no hosted service, no telemetry: see [Where your data goes](#where-your-data-goes).
+- **It does not approve or accept on the agent's behalf.** Both are human acts by default (see [the lifecycle](#the-lifecycle-and-where-the-human-decides)); a project can opt into `auto`.
+- **It does not rewrite history.** A wrong conclusion gets an erratum appended. Superseded and rejected documents leave the agent's path and stay searchable.
+- **It does not replace `CLAUDE.md` or `AGENTS.md`.** Fixed rules still belong there. cerne handles what has a lifecycle: work, decisions, and knowledge that can go stale.
+- **It does not shrink the conversation.** Most of an agent's tokens are the conversation re-read at every step, with or without cerne; on one feature measured from its transcripts, cerne accounted for about 5% of what the agent re-read. What it saves is the documentation it keeps out of reach, which `cerne savings` measures.
+- **It does not check your code against your decisions.** Lint checks the documentation. The closest it comes is `drift-suspect`: with module or component paths configured, it flags a shipped feature whose code changed since, so its spec may be stale.
+
+**Not yet**
+
+- **Semantic search.** Search is full-text (SQLite FTS5), with no embeddings.
+- **Agents beyond the [five supported](#agent-integrations).** OpenCode, for example, has no integration: it can read `.docs/` and run the CLI, without the hooks.
 
 ## Status and limitations
 

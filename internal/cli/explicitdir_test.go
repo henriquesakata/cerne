@@ -111,8 +111,9 @@ func TestExplicitDirWithCernercWorks(t *testing.T) {
 	}
 }
 
-// F-0354 crit. 5: every command declaring --dir (the top-level init excepted,
-// by identity: it creates the .cernerc) refuses a folder without .cernerc.
+// F-0354 crit. 5: every command declaring --dir (the top-level init and mcp
+// excepted, by identity: init creates the .cernerc, mcp checks it itself —
+// F-0456) refuses a folder without .cernerc.
 // cobra runs only the nearest persistent pre-run, so the guard checks both
 // halves: that hook is the root's (no command in between overrides it) and the
 // root's hook refuses. DisableFlagParsing would hide the flag from the gate.
@@ -123,9 +124,13 @@ func TestEveryDirFlagCommandRefusesProjectless(t *testing.T) {
 		t.Fatal(err)
 	}
 	root := Root()
-	initCmd, _, err := root.Find([]string{"init"})
-	if err != nil || initCmd.Parent() != root {
-		t.Fatalf("top-level init not found: %v", err)
+	exempt := map[*cobra.Command]bool{}
+	for _, name := range []string{"init", "mcp"} {
+		c, _, err := root.Find([]string{name})
+		if err != nil || c.Parent() != root {
+			t.Fatalf("top-level %s not found: %v", name, err)
+		}
+		exempt[c] = true
 	}
 	checked := 0
 	var walk func(c *cobra.Command)
@@ -151,9 +156,9 @@ func TestEveryDirFlagCommandRefusesProjectless(t *testing.T) {
 		}
 		f.Changed = true
 		err := root.PersistentPreRunE(c, nil)
-		if c == initCmd {
+		if exempt[c] {
 			if err != nil {
-				t.Errorf("init must be exempt, got %v", err)
+				t.Errorf("%s must be exempt, got %v", c.CommandPath(), err)
 			}
 			return
 		}
@@ -168,29 +173,29 @@ func TestEveryDirFlagCommandRefusesProjectless(t *testing.T) {
 	}
 }
 
-// F-0354: the init exemption is the top-level command, not any command named
-// "init".
-func TestGateExemptsOnlyTopLevelInit(t *testing.T) {
-	root := &cobra.Command{Use: "cerne"}
-	topInit := &cobra.Command{Use: "init"}
-	group := &cobra.Command{Use: "group"}
-	nested := &cobra.Command{Use: "init"}
-	for _, c := range []*cobra.Command{topInit, nested} {
-		c.Flags().String("dir", "", "")
-	}
-	root.AddCommand(topInit, group)
-	group.AddCommand(nested)
+// F-0354/F-0456: the init and mcp exemptions are the top-level commands, not
+// any command so named.
+func TestGateExemptsOnlyTopLevelInitAndMCP(t *testing.T) {
 	sub := t.TempDir()
-	for _, c := range []*cobra.Command{topInit, nested} {
-		f := c.Flag("dir")
-		_ = f.Value.Set(sub)
-		f.Changed = true
-	}
-	if err := refuseProjectlessDir(topInit); err != nil {
-		t.Fatalf("top-level init must be exempt, got %v", err)
-	}
-	if err := refuseProjectlessDir(nested); !errors.Is(err, project.ErrNoProject) {
-		t.Fatalf("nested init must not be exempt, got %v", err)
+	for _, name := range []string{"init", "mcp"} {
+		root := &cobra.Command{Use: "cerne"}
+		top := &cobra.Command{Use: name}
+		group := &cobra.Command{Use: "group"}
+		nested := &cobra.Command{Use: name}
+		root.AddCommand(top, group)
+		group.AddCommand(nested)
+		for _, c := range []*cobra.Command{top, nested} {
+			c.Flags().String("dir", "", "")
+			f := c.Flag("dir")
+			_ = f.Value.Set(sub)
+			f.Changed = true
+		}
+		if err := refuseProjectlessDir(top); err != nil {
+			t.Fatalf("top-level %s must be exempt, got %v", name, err)
+		}
+		if err := refuseProjectlessDir(nested); !errors.Is(err, project.ErrNoProject) {
+			t.Fatalf("nested %s must not be exempt, got %v", name, err)
+		}
 	}
 }
 

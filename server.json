@@ -1,0 +1,22 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.henriquesakata/cerne",
+  "title": "cerne",
+  "description": "Living docs for AI-agent projects: feature state, decisions and search as read-only MCP tools.",
+  "repository": {
+    "url": "https://github.com/henriquesakata/cerne",
+    "source": "github"
+  },
+  "websiteUrl": "https://github.com/henriquesakata/cerne#agents-without-a-shell-mcp",
+  "version": "${VERSION}",
+  "packages": [
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/henriquesakata/cerne/releases/download/${TAG}/cerne_${TAG}.mcpb",
+      "fileSha256": "${SHA256}",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

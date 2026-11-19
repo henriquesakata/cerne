@@ -180,6 +180,27 @@ func NewServer(version string, exec Exec) *sdk.Server {
 			}
 			return []string{"ask", in.Question, "--json"}, nil
 		})
+	addGuide(s, g, exec)
+	return s
+}
+
+// noProjectInstructions reach the model at initialize when cerne mcp runs
+// outside a cerne project (F-0456).
+const noProjectInstructions = "cerne keeps a project's living documentation (features and their lifecycle, decisions, notes) " +
+	"as structured data for AI coding agents. This folder is not a cerne project (no .cernerc), so only the guide tool " +
+	"is served: ask it how to use cerne. Running `cerne init` in the project root starts a cerne project; " +
+	"restart this MCP server afterwards to get the project tools."
+
+// NewGuideServer is the server for a folder that is not a cerne project
+// (F-0456): only the offline guide tool, plus instructions saying how to start
+// a project. It runs where the project tools could only fail.
+func NewGuideServer(version string, exec Exec) *sdk.Server {
+	s := sdk.NewServer(&sdk.Implementation{Name: "cerne", Version: version}, &sdk.ServerOptions{Instructions: noProjectInstructions})
+	addGuide(s, &gate{sem: make(chan struct{}, 1)}, exec)
+	return s
+}
+
+func addGuide(s *sdk.Server, g *gate, exec Exec) {
 	add(s, g, exec, "guide", "Ask how to use cerne itself: returns up to 3 sections (title, source, text) from the skill, the command help and a FAQ, with the exact command. Offline, no LLM call.",
 		func(p map[string]*jsonschema.Schema) { p["query"].MinLength = jsonschema.Ptr(1) },
 		func(in guideArgs) ([]string, error) {
@@ -188,7 +209,6 @@ func NewServer(version string, exec Exec) *sdk.Server {
 			}
 			return []string{"guide", "--json", in.Query}, nil
 		})
-	return s
 }
 
 // plainText refuses a blank value or one that cobra would parse as a flag.
