@@ -4,6 +4,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/gitback"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // ErrContentConflict is a write whose base — the hash of the content the
@@ -34,4 +42,85 @@ func checkBase(cur []byte, base string) error {
 		return &ContentConflictError{Current: string(cur)}
 	}
 	return nil
+}
+
+// SaveEntityContentBy writes the markdown content of a decision, note or
+// runbook (kind ∈ decision|note|runbook) to content/<kind>s/<id>.md by by,
+// then commits, pushes and refreshes the snapshot (F-0464). store.ErrNotFound
+// (wrapped) for an id that is not of kind's shape or does not exist;
+// ErrEntityNotLive (wrapped) past active; *ContentConflictError when base is
+// not empty and the backend's content hashes otherwise. A byte-identical write
+// is a successful no-op.
+func SaveEntityContentBy(repoDir, projDir, kind, id, content, base string, by DocAuthor) error {
+	path, state, ok := entityContent(repoDir, kind, id)
+	if !ok {
+		return fmt.Errorf("%w: %s %q", store.ErrNotFound, kind, id)
+	}
+	err := mutateAndSnapshot(repoDir, projDir, base != "", func() (string, error) {
+		st, err := state()
+		if err != nil {
+			return "", err
+		}
+		if st != "active" {
+			return "", fmt.Errorf("%w: %s (%s)", ErrEntityNotLive, id, st)
+		}
+		cur, readErr := os.ReadFile(path)
+		if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+			return "", readErr
+		}
+		if err := checkBase(cur, base); err != nil {
+			return "", err
+		}
+		// Detected here, not by captureChanges: the event below is itself a change.
+		if readErr == nil && string(cur) == content {
+			return "", fmt.Errorf("%w: %s", gitback.ErrNothingToCommit, path)
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return "", err
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			return "", err
+		}
+		payload := map[string]string{"state": st, "provider": by.Provider, "model": by.Model, "source": by.Source}
+		if err := store.AppendEvent(repoDir, domain.NewEvent(id, kind+".content_edited", payload, EventActor())); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: update %s content", id), nil
+	})
+	if errors.Is(err, gitback.ErrNothingToCommit) {
+		return nil // backend already had exactly this content
+	}
+	return err
+}
+
+// contentIDShape is the id of a decision, note or runbook — nothing else
+// reaches a path: an id decoded from a URL may carry "../" (B-0034).
+var contentIDShape = regexp.MustCompile(`^(D|N|RB)-\d+$`)
+
+// entityContent is the content path of kind's id and the loader of its state
+// (read inside the lock); ok is false for an unknown kind or an id that is not
+// of kind's shape.
+func entityContent(repoDir, kind, id string) (path string, state func() (string, error), ok bool) {
+	m := contentIDShape.FindStringSubmatch(id)
+	if m == nil {
+		return "", nil, false
+	}
+	switch {
+	case kind == "decision" && m[1] == "D":
+		return DecisionDocPath(repoDir, id), func() (string, error) {
+			d, err := store.LoadDecision(repoDir, id)
+			return string(d.State), err
+		}, true
+	case kind == "note" && m[1] == "N":
+		return NoteDocPath(repoDir, id), func() (string, error) {
+			n, err := store.LoadNote(repoDir, id)
+			return string(n.State), err
+		}, true
+	case kind == "runbook" && m[1] == "RB":
+		return RunbookDocPath(repoDir, id), func() (string, error) {
+			rb, err := store.LoadRunbook(repoDir, id)
+			return string(rb.State), err
+		}, true
+	}
+	return "", nil, false
 }
