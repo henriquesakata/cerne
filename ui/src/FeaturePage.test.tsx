@@ -779,3 +779,26 @@ describe('FeaturePage doc authors: mesmo autor e UTC (F-0375)', () => {
     }
   })
 })
+
+// F-0449 crit. 4: a mirrored card links to its issue, next to the delivery links.
+describe('FeaturePage issue link (F-0449)', () => {
+  const issue = 'https://github.com/o/r/issues/12'
+  const mirrored = (): FeatureDetail => {
+    const d = detail('in_development')
+    return { ...d, feature: { ...d.feature, mirror: { tracker: 'pub', kind: 'github', id: '12', url: issue } } as Feature }
+  }
+
+  it('mirror link: o card espelhado mostra o link da issue', async () => {
+    payload = mirrored()
+    render(<FeaturePage id="F-0221" />)
+    await waitFor(() => expect(screen.getByText('F-0221')).toBeInTheDocument())
+    expect(screen.getAllByRole('link').filter((a) => a.getAttribute('href') === issue)).toHaveLength(1)
+  })
+
+  it('mirror link: sem espelho, nenhum link de issue', async () => {
+    payload = detail('in_development')
+    render(<FeaturePage id="F-0221" />)
+    await waitFor(() => expect(screen.getByText('F-0221')).toBeInTheDocument())
+    expect(screen.queryAllByRole('link').filter((a) => (a.getAttribute('href') ?? '').includes('/issues/'))).toHaveLength(0)
+  })
+})

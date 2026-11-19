@@ -1556,3 +1556,131 @@ describe('Settings — a real click reaches the write (B-0025)', () => {
     await waitFor(() => expect(putSetting).toHaveBeenCalledWith('mindmap.enabled', 'project', false))
   })
 })
+
+// F-0449: the integration keys as the registry serves them (criteria 1 to 3).
+// Titles are fixture-only, outside the pt-BR catalog, so they render as given.
+describe('Settings — integration keys (F-0449)', () => {
+  const field = (id: string, title: string, over: Record<string, unknown> = {}) =>
+    ({ id, title, type: 'string', default: '', scopes: ['project'], description: '', ...over }) as NonNullable<
+      ResolvedSetting['fields']
+    >[number]
+  const gh = { name: 'gh', kind: 'github', url: 'https://github.com/o/issues' }
+  const other = { name: 'other', kind: 'github', url: 'https://github.com/o/other' }
+  const integration = (over: Partial<ResolvedSetting> & Pick<ResolvedSetting, 'id'>) =>
+    key({ scopes: ['project'], group: 'integrations', description: `What ${over.id} does.`, ...over })
+  const trackers = (rows: Record<string, string>[]) =>
+    integration({
+      id: 'mirror.trackers',
+      title: 'Issue trackers (fixture)',
+      type: 'records',
+      default: [],
+      human_only: true,
+      fields: [field('name', 'Tracker name'), field('kind', 'Tracker kind', { enum: ['github'] }), field('url', 'Issues URL'), field('label', 'Import label')],
+      value: rows,
+      origin: 'project',
+      stored: { project: rows },
+    })
+  const view = (rows: Record<string, string>[] = [gh]): SettingsView => ({
+    files: { project: '/repo/.cernerc', host: '/home/u/.config/cerne/settings.toml' },
+    settings: [
+      key({ id: 'graph.enabled', title: 'Graph', group: 'interface', description: 'Shows the Graph tab in the UI. Off hides it.' }),
+      integration({ id: 'delivery.commit_url', title: 'Commit URL (fixture)', type: 'string', default: '', value: 'https://github.com/o/r/commit/{sha}', origin: 'project', stored: { project: 'https://github.com/o/r/commit/{sha}' } }),
+      integration({ id: 'delivery.forge', title: 'Delivery forge (fixture)', type: 'string', default: '', enum: ['github', 'gitlab', 'gitea'], value: 'github', origin: 'project', stored: { project: 'github' } }),
+      integration({ id: 'delivery.pr_url', title: 'PR URL (fixture)', type: 'string', default: '', value: '' }),
+      integration({ id: 'mirror.close_on', title: 'Close issues on (fixture)', type: 'string', default: 'accept', enum: ['accept', 'merge'], value: 'accept' }),
+      integration({ id: 'mirror.enabled', title: 'Mirror (fixture)', type: 'bool', default: false, value: false, human_only: true }),
+      trackers(rows),
+    ],
+  })
+  const titles = ['Commit URL (fixture)', 'Delivery forge (fixture)', 'PR URL (fixture)', 'Close issues on (fixture)', 'Mirror (fixture)', 'Issue trackers (fixture)']
+  const trackerRow = () => row('Issue trackers (fixture)')
+  // The table's data rows: the ones with a field to type in.
+  const dataRows = () =>
+    within(within(trackerRow()).getByRole('table'))
+      .getAllByRole('row')
+      .filter((tr) => within(tr).queryAllByRole('textbox').length > 0)
+  const text = (tr: HTMLElement, name: RegExp) => within(tr).getByRole('textbox', { name }) as HTMLInputElement
+  const kind = (tr: HTMLElement) => within(tr).getByRole('combobox', { name: /Tracker kind/ }) as HTMLSelectElement
+  const save = () => fireEvent.click(within(trackerRow()).getByRole('button', { name: /salvar|save/i }))
+  // An omitted label and an empty one are the same record.
+  const sent = () => {
+    const call = putSetting.mock.calls.at(-1)
+    if (!call) throw new Error('putSetting was not called')
+    const [id, scope, value] = call
+    const rows = (value as Record<string, string>[]).map((r) => Object.fromEntries(Object.entries(r).filter(([, v]) => v !== '')))
+    return { id, scope, rows }
+  }
+
+  beforeEach(() => {
+    fetchSettings.mockResolvedValue(view())
+    putSetting.mockResolvedValue(view())
+  })
+
+  it('integrations: as seis chaves aparecem no grupo, com o forge num select e os trackers numa tabela', async () => {
+    render(<Settings group="integrations" />)
+    for (const title of titles) expect(await screen.findByRole('listitem', { name: title })).toBeInTheDocument()
+    expect(screen.queryByRole('listitem', { name: 'Grafo' })).toBeNull()
+    const forge = within(row('Delivery forge (fixture)')).getByRole('combobox') as HTMLSelectElement
+    expect([...forge.options].map((o) => o.value)).toEqual(expect.arrayContaining(['github', 'gitlab', 'gitea']))
+    expect(forge.value).toBe('github')
+    expect(within(trackerRow()).getByRole('table')).toBeInTheDocument()
+  })
+
+  it('human-only: o selo aparece em mirror.enabled e mirror.trackers, e só nelas', async () => {
+    render(<Settings group="integrations" />)
+    await screen.findByRole('listitem', { name: 'Issue trackers (fixture)' })
+    for (const title of titles) {
+      const human = title === 'Mirror (fixture)' || title === 'Issue trackers (fixture)'
+      expect(within(row(title)).queryByText('Só humano') !== null).toBe(human)
+    }
+  })
+
+  it('records: cada registro é uma linha da tabela, com um campo por coluna e o tipo num select', async () => {
+    render(<Settings group="integrations" />)
+    await screen.findByRole('listitem', { name: 'Issue trackers (fixture)' })
+    const rows = dataRows()
+    expect(rows).toHaveLength(1)
+    expect(text(rows[0], /Tracker name/).value).toBe('gh')
+    expect(text(rows[0], /Issues URL/).value).toBe('https://github.com/o/issues')
+    expect(text(rows[0], /Import label/).value).toBe('')
+    expect(kind(rows[0]).value).toBe('github')
+  })
+
+  it('records: incluir e editar linhas envia a lista inteira', async () => {
+    render(<Settings group="integrations" />)
+    await screen.findByRole('listitem', { name: 'Issue trackers (fixture)' })
+    fireEvent.change(text(dataRows()[0], /Import label/), { target: { value: 'public' } })
+    fireEvent.click(within(trackerRow()).getByRole('button', { name: /incluir|adicionar|add/i }))
+    const rows = dataRows()
+    expect(rows).toHaveLength(2)
+    fireEvent.change(text(rows[1], /Tracker name/), { target: { value: 'other' } })
+    fireEvent.change(kind(rows[1]), { target: { value: 'github' } })
+    fireEvent.change(text(rows[1], /Issues URL/), { target: { value: 'https://github.com/o/other' } })
+    save()
+    await waitFor(() => expect(putSetting).toHaveBeenCalled())
+    expect(sent()).toEqual({ id: 'mirror.trackers', scope: 'project', rows: [{ ...gh, label: 'public' }, other] })
+  })
+
+  it('records: remover uma linha envia a lista sem ela', async () => {
+    fetchSettings.mockResolvedValue(view([gh, other]))
+    render(<Settings group="integrations" />)
+    await screen.findByRole('listitem', { name: 'Issue trackers (fixture)' })
+    expect(dataRows()).toHaveLength(2)
+    fireEvent.click(within(dataRows()[0]).getByRole('button', { name: /remover|excluir|remove|delete/i }))
+    expect(dataRows()).toHaveLength(1)
+    save()
+    await waitFor(() => expect(putSetting).toHaveBeenCalled())
+    expect(sent()).toEqual({ id: 'mirror.trackers', scope: 'project', rows: [other] })
+  })
+
+  it('records: a recusa do servidor aparece na linha dos trackers', async () => {
+    putSetting.mockRejectedValue(new HTTPError('mirror.trackers: invalid setting value: unknown tracker kind "jira" (supported: github)', 400))
+    render(<Settings group="integrations" />)
+    await screen.findByRole('listitem', { name: 'Issue trackers (fixture)' })
+    fireEvent.change(text(dataRows()[0], /Import label/), { target: { value: 'public' } })
+    save()
+    expect(
+      await within(trackerRow()).findByText('Não foi possível gravar: O servidor recusou o valor ou o escopo desta configuração.'),
+    ).toBeInTheDocument()
+  })
+})
