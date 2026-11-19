@@ -258,3 +258,28 @@ func TestHookToolNotesAfterSilent(t *testing.T) {
 		t.Errorf("notes_on_edit off: err %v, out %q", err, out)
 	}
 }
+
+// TestNotesOnEditSilentUnderCopilotCLI (F-0457 criterion 10, seen live): the
+// Copilot CLI also runs the .claude work gate; there its notes block must not
+// mark the note as seen, or Copilot's own post-edit hook — the channel it
+// documents — stays silent for it.
+func TestNotesOnEditSilentUnderCopilotCLI(t *testing.T) {
+	projDir, repoDir := afterProject(t)
+	t.Setenv("COPILOT_CLI", "1")
+	in := editJSON(t, "sess-cop2", projDir, "ui/dist/index.html")
+	if out, err := execCerneStdin(t, in, "hook", "work-gate"); err != nil || strings.Contains(out, "cerne notes") {
+		t.Fatalf("work gate under Copilot CLI: err %v, out %q", err, out)
+	}
+	if len(app.SeenNotes(filepath.Dir(repoDir), "sess-cop2")) != 0 {
+		t.Fatal("the .claude work gate marked notes as seen under Copilot CLI")
+	}
+	patch := jsonString("*** Begin Patch\n*** Update File: ui/dist/index.html\n@@\n-a\n+b\n*** End Patch\n")
+	res := `,"tool_result":{"result_type":"success","text_result_for_llm":"ok"}`
+	out, err := execCerneStdin(t, copilotPayload("sess-cop2", projDir, "PostToolUse", "Edit", patch, res), "hook", "tool-notes", "--after", "--format", "copilot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := decodeTop(t, out); m["additionalContext"] != afterEditHeader {
+		t.Fatalf("copilot after edit:\n%s", out)
+	}
+}

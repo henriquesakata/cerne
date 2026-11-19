@@ -549,6 +549,12 @@ func injectGateChannel(cmd *cobra.Command, format, cacheDir, repoDir, projDir, s
 	if err != nil {
 		block = ""
 	}
+	// The Copilot CLI also runs these .claude hooks (COPILOT_CLI=1): marking the
+	// notes seen here would silence its own post-edit hook, the channel it
+	// documents (F-0457).
+	if os.Getenv("COPILOT_CLI") == "1" {
+		filePath = ""
+	}
 	if nb := notesOnEditBlock(cacheDir, repoDir, projDir, sess, filePath, ""); nb != "" {
 		if block != "" {
 			block += "\n\n"
