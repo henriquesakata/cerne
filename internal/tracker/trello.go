@@ -2,16 +2,18 @@ package tracker
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 
+	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/forge"
 	"github.com/henriquesakata/cerne/internal/version"
 )
@@ -41,10 +43,12 @@ func newTrello(c Config) (IssueTracker, error) {
 	return nil, fmt.Errorf("%w %q: want https://trello.com/b/<boardId>/<slug>", ErrTrackerURL, redactURL(c.URL))
 }
 
-// trelloCall is one public call: the login is read once.
+// trelloCall is one public call: the login is read once, and the lists live
+// only until the call returns.
 type trelloCall struct {
-	t    trello
-	auth string // the Authorization header
+	t     trello
+	auth  string                         // the Authorization header
+	lists map[domain.FeatureState]string // state -> list id; nil until resolved
 }
 
 func (t trello) call(ctx context.Context) (*trelloCall, error) {
@@ -96,23 +100,146 @@ func (c *trelloCall) do(ctx context.Context, method, path string, in, out any) e
 	return nil
 }
 
+// trelloLists are the board's lifecycle lists, in board order. Their names
+// are the English state labels of the cerne UI (ui/src/i18n.tsx, state.*),
+// copied because the Go core cannot import the UI: the board is the client's,
+// and the CLI speaks English (N-0068). rejected and superseded have no list:
+// their card is archived where it is.
+var trelloLists = []struct {
+	state domain.FeatureState
+	name  string
+}{
+	{domain.StateCandidate, "Candidate"},
+	{domain.StateApproved, "Approved"},
+	{domain.StateInDevelopment, "In development"},
+	{domain.StateImplemented, "Ready"},
+	{domain.StateDone, "Done"},
+}
+
+// trelloList is the part of a Trello list the adapter reads.
+type trelloList struct {
+	ID   string  `json:"id"`
+	Name string  `json:"name"`
+	Pos  float64 `json:"pos"`
+}
+
+// trelloKey is a list name with its case and spaces dropped: the form two
+// names are compared in.
+func trelloKey(name string) string { return strings.ToLower(strings.Join(strings.Fields(name), "")) }
+
+// openLists reads the board's open lists, in board order.
+func (c *trelloCall) openLists(ctx context.Context) ([]trelloList, error) {
+	var ls []trelloList
+	if err := c.do(ctx, http.MethodGet, "/boards/"+c.t.board+"/lists?filter=open&fields=name,pos", nil, &ls); err != nil {
+		return nil, err
+	}
+	slices.SortStableFunc(ls, func(a, b trelloList) int { return cmp.Compare(a.Pos, b.Pos) })
+	return ls, nil
+}
+
+// resolve finds the list of each lifecycle state: the first open list, in
+// board order, whose name matches. A list the board lacks (or that a third
+// party renamed or archived) is created, at the end of the board, in
+// lifecycle order; a duplicate never is.
+func (c *trelloCall) resolve(ctx context.Context) error {
+	ls, err := c.openLists(ctx)
+	if err != nil {
+		return err
+	}
+	byKey := map[string]trelloList{}
+	for _, l := range ls {
+		if _, dup := byKey[trelloKey(l.Name)]; !dup {
+			byKey[trelloKey(l.Name)] = l
+		}
+	}
+	c.lists = map[domain.FeatureState]string{}
+	for _, want := range trelloLists {
+		l, ok := byKey[trelloKey(want.name)]
+		if !ok {
+			if err := c.do(ctx, http.MethodPost, "/boards/"+c.t.board+"/lists", map[string]string{"name": want.name, "pos": "bottom"}, &l); err != nil {
+				return err
+			}
+		}
+		c.lists[want.state] = l.ID
+	}
+	return nil
+}
+
 // trelloCard is the part of a Trello card the adapter reads.
 type trelloCard struct {
 	ShortLink string `json:"shortLink"`
 	Name      string `json:"name"`
 	Desc      string `json:"desc"`
+	IDList    string `json:"idList"`
 }
+
+// trelloCardFields is the ?fields= of every card read.
+const trelloCardFields = "fields=name,desc,idList,shortLink"
+
+// trelloShortLink is a card's shortLink: the Ref.ID, checked before it goes
+// in a path.
+var trelloShortLink = regexp.MustCompile(`^[A-Za-z0-9]{8}$`)
 
 func (t trello) ref(c trelloCard) Ref {
 	return Ref{Tracker: t.name, ID: c.ShortLink, URL: "https://trello.com/c/" + c.ShortLink}
 }
 
-func (t trello) Create(context.Context, Item) (Ref, error) {
-	return Ref{}, errors.New("trello: create not implemented")
+// Create adds the card at the bottom of its state's list.
+func (t trello) Create(ctx context.Context, it Item) (Ref, error) {
+	c, err := t.call(ctx)
+	if err != nil {
+		return Ref{}, err
+	}
+	if err := c.resolve(ctx); err != nil {
+		return Ref{}, err
+	}
+	var card trelloCard
+	in := map[string]string{"idList": c.lists[it.State], "name": it.Title, "desc": it.Body(), "pos": "bottom"}
+	if err := c.do(ctx, http.MethodPost, "/cards?"+trelloCardFields, in, &card); err != nil {
+		return Ref{}, err
+	}
+	if !trelloShortLink.MatchString(card.ShortLink) {
+		return Ref{}, fmt.Errorf("trello %s: unreadable answer", trelloAPI)
+	}
+	return t.ref(card), c.apply(ctx, card, it) // a Ref with an error: the card exists, its state did not land
 }
 
-func (t trello) Update(context.Context, Ref, Item) error {
-	return errors.New("trello: update not implemented")
+// Update reads the card and writes only what differs from it.
+func (t trello) Update(ctx context.Context, r Ref, it Item) error {
+	if !trelloShortLink.MatchString(r.ID) {
+		return fmt.Errorf("%w: card shortLink %q", errBadRef, r.ID)
+	}
+	c, err := t.call(ctx)
+	if err != nil {
+		return err
+	}
+	var card trelloCard
+	if err := c.do(ctx, http.MethodGet, "/cards/"+r.ID+"?"+trelloCardFields, nil, &card); err != nil {
+		return err
+	}
+	if err := c.resolve(ctx); err != nil {
+		return err
+	}
+	card.ShortLink = r.ID
+	return c.apply(ctx, card, it)
+}
+
+// apply moves cur toward it in one PUT, or none.
+func (c *trelloCall) apply(ctx context.Context, cur trelloCard, it Item) error {
+	edit := map[string]any{}
+	if it.Title != "" && cur.Name != it.Title {
+		edit["name"] = it.Title
+	}
+	if it.Title != "" && cur.Desc != it.Body() {
+		edit["desc"] = it.Body()
+	}
+	if l := c.lists[it.State]; l != "" && cur.IDList != l {
+		edit["idList"] = l
+	}
+	if len(edit) == 0 {
+		return nil
+	}
+	return c.do(ctx, http.MethodPut, "/cards/"+cur.ShortLink, edit, nil)
 }
 
 // ListOpen lists the board's open cards.
@@ -134,4 +261,19 @@ func (t trello) ListOpen(ctx context.Context, _ string) ([]Remote, error) {
 
 func (t trello) CommitRef(Ref, string, bool) string { return "" }
 
-func (t trello) Owns(Ref) bool { return false }
+// trelloCardPath is the escaped path of a card URL, /c/<shortLink>[/<slug>].
+var trelloCardPath = regexp.MustCompile(`^/c/([A-Za-z0-9]{8})(?:/[A-Za-z0-9._~-]+)?$`)
+
+// Owns reports whether r has the form of a Trello card URL whose shortLink is
+// r.ID: only the plain URL counts, no query or fragment, and the path as
+// written, so an escaped %2F never becomes a separator. A card URL does not
+// name its board, and Owns is pure: Update, which reads the card, refuses
+// one on another board.
+func (t trello) Owns(r Ref) bool {
+	u, err := url.Parse(r.URL)
+	if err != nil || u.Scheme != "https" || u.User != nil || strings.ContainsAny(r.URL, "?#") || !strings.EqualFold(u.Host, "trello.com") {
+		return false
+	}
+	m := trelloCardPath.FindStringSubmatch(u.EscapedPath())
+	return m != nil && m[1] == r.ID
+}
