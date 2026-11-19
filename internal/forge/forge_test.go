@@ -63,10 +63,10 @@ func TestGitHubPRForCommit(t *testing.T) {
 	if err != nil || n != 12 || url != "https://github.com/henriquesakata/cerne/pull/12" {
 		t.Fatalf("got %q %d %v", url, n, err)
 	}
-	if got, want := strings.Join(f.calls[0], " "), "gh api repos/henriquesakata/cerne/commits/d2f4a4d8c/pulls"; got != want {
+	if got, want := strings.Join(f.calls[0], " "), "gh api --hostname github.com repos/henriquesakata/cerne/commits/d2f4a4d8c/pulls"; got != want {
 		t.Fatalf("argv = %q, want %q", got, want)
 	}
-	// A GitHub Enterprise host is named, github.com is not.
+	// Every host is named, the CLI default included (B-0031).
 	f.calls = nil
 	g, _ = New("github", "https://ghe.example/o/r/commit/{sha}")
 	_, _, _ = g.PRForCommit(context.Background(), "abc1234")
@@ -151,7 +151,7 @@ func TestGitLabPRForCommit(t *testing.T) {
 	if err != nil || n != 7 || !strings.HasSuffix(url, "/merge_requests/7") {
 		t.Fatalf("got %q %d %v", url, n, err)
 	}
-	if got, want := strings.Join(f.calls[0], " "), "glab api projects/acme%2Fcerne/repository/commits/abc1234/merge_requests"; got != want {
+	if got, want := strings.Join(f.calls[0], " "), "glab api --hostname gitlab.com projects/acme%2Fcerne/repository/commits/abc1234/merge_requests"; got != want {
 		t.Fatalf("argv = %q, want %q", got, want)
 	}
 	f.calls = nil
@@ -336,5 +336,33 @@ func TestGiteaBasicFallback(t *testing.T) {
 	_, _, err = g.PRForCommit(context.Background(), "abc1234")
 	if err == nil || err.Error() != "gitea: HTTP 401" {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// B-0031: the default host is named too, so glab does not fall back to the
+// GitLab host of the current directory nor gh/glab to GH_HOST/GITLAB_HOST.
+func TestHostArgsAlwaysNamesTheHost(t *testing.T) {
+	for _, host := range []string{"github.com", "gitlab.com", "ghe.example"} {
+		got := HostArgs(host)
+		if len(got) != 2 || got[0] != "--hostname" || got[1] != host {
+			t.Errorf("HostArgs(%q) = %q, want [--hostname %s]", host, got, host)
+		}
+	}
+}
+
+func TestDeliveryLookupNamesDefaultHostDespiteEnv(t *testing.T) {
+	t.Setenv("GITLAB_HOST", "gitlab.acme.example")
+	t.Setenv("GH_HOST", "ghe.example.com")
+	for _, tc := range []struct{ kind, url, want string }{
+		{"gitlab", "https://gitlab.com/acme/cerne/-/commit/{sha}", "glab api --hostname gitlab.com "},
+		{"github", "https://github.com/o/r/commit/{sha}", "gh api --hostname github.com "},
+	} {
+		f := &fakeCLI{reply: func([]string) (string, error) { return `[]`, nil }}
+		f.install(t)
+		g, _ := New(tc.kind, tc.url)
+		_, _, _ = g.PRForCommit(context.Background(), "abc1234")
+		if got := strings.Join(f.calls[0], " "); !strings.HasPrefix(got, tc.want) {
+			t.Errorf("%s argv = %q, want prefix %q", tc.kind, got, tc.want)
+		}
 	}
 }

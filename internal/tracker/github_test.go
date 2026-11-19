@@ -361,7 +361,7 @@ func TestNewRefusesHTTP(t *testing.T) {
 }
 
 // F-0449 crit. 2 and 5: host and owner/repo come from the record's URL —
-// github.com goes without --hostname, another host is named — and a URL with
+// every host is named, github.com included (B-0031) — and a URL with
 // no owner/repo is refused at New, without calling gh.
 func TestGitHubURL(t *testing.T) {
 	for _, c := range []struct{ url, host, repo string }{
@@ -377,11 +377,7 @@ func TestGitHubURL(t *testing.T) {
 			if want := g.ref(1); r != want {
 				t.Fatalf("Create returned %+v, want %+v", r, want)
 			}
-			named := slices.Contains(g.calls[0], "--hostname")
-			if named != (c.host != "github.com") {
-				t.Fatalf("argv %q: --hostname present = %v, want %v", g.calls[0], named, c.host != "github.com")
-			}
-			if named && !slices.Contains(g.calls[0], c.host) {
+			if i := slices.Index(g.calls[0], "--hostname"); i < 0 || g.calls[0][i+1] != c.host {
 				t.Fatalf("argv %q does not name host %s", g.calls[0], c.host)
 			}
 		})
