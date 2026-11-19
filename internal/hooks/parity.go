@@ -172,7 +172,7 @@ var parityTable = []ParityRow{
 	},
 	{
 		Capability: "CERNE_ACTOR=agent (human gates)",
-		Claude:     "settings.json env block",
+		Claude:     "settings.json env block + CLAUDECODE=1 on every shell Claude Code runs (B-0030) — no install",
 		Cursor:     "CURSOR_AGENT=1 on Cursor's agent shells (seen in 3.25.6, undocumented) — no install",
 		Codex:      "shell_environment_policy.set in .codex/config.toml",
 		Gemini:     ".gemini/.env",
