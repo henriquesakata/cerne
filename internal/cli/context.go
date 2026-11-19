@@ -121,10 +121,12 @@ func resolvePaths(startDir string) (projCtx, error) {
 // passed names the project directory, so a folder without .cernerc is refused
 // before the command reads or writes anything, whether the command resolves
 // the project through resolvePaths or on its own (msg, room, hook, settings…).
-// init is exempt: it creates the .cernerc. A default value is not "passed".
+// Two top-level commands are exempt, by identity: init creates the .cernerc,
+// and mcp checks it itself to serve the guide outside a project (F-0456). A
+// default value is not "passed".
 func refuseProjectlessDir(cmd *cobra.Command) error {
 	f := cmd.Flag("dir")
-	if f == nil || !f.Changed || (cmd.Parent() == cmd.Root() && cmd.Name() == "init") {
+	if f == nil || !f.Changed || (cmd.Parent() == cmd.Root() && (cmd.Name() == "init" || cmd.Name() == "mcp")) {
 		return nil
 	}
 	return project.RequireConfigAt(f.Value.String())
