@@ -57,11 +57,11 @@ func SaveEntityContentBy(repoDir, projDir, kind, id, content, base string, by Do
 		return fmt.Errorf("%w: %s %q", store.ErrNotFound, kind, id)
 	}
 	err := mutateAndSnapshot(repoDir, projDir, base != "", func() (string, error) {
-		st, err := state()
+		st, live, err := state()
 		if err != nil {
 			return "", err
 		}
-		if st != "active" {
+		if !live {
 			return "", fmt.Errorf("%w: %s (%s)", ErrEntityNotLive, id, st)
 		}
 		cur, readErr := os.ReadFile(path)
@@ -98,28 +98,28 @@ func SaveEntityContentBy(repoDir, projDir, kind, id, content, base string, by Do
 var contentIDShape = regexp.MustCompile(`^(D|N|RB)-\d+$`)
 
 // entityContent is the content path of kind's id and the loader of its state
-// (read inside the lock); ok is false for an unknown kind or an id that is not
-// of kind's shape.
-func entityContent(repoDir, kind, id string) (path string, state func() (string, error), ok bool) {
+// and whether that state is live (active), read inside the lock; ok is false
+// for an unknown kind or an id that is not of kind's shape.
+func entityContent(repoDir, kind, id string) (path string, state func() (string, bool, error), ok bool) {
 	m := contentIDShape.FindStringSubmatch(id)
 	if m == nil {
 		return "", nil, false
 	}
 	switch {
 	case kind == "decision" && m[1] == "D":
-		return DecisionDocPath(repoDir, id), func() (string, error) {
+		return DecisionDocPath(repoDir, id), func() (string, bool, error) {
 			d, err := store.LoadDecision(repoDir, id)
-			return string(d.State), err
+			return string(d.State), d.State == domain.DecisionActive, err
 		}, true
 	case kind == "note" && m[1] == "N":
-		return NoteDocPath(repoDir, id), func() (string, error) {
+		return NoteDocPath(repoDir, id), func() (string, bool, error) {
 			n, err := store.LoadNote(repoDir, id)
-			return string(n.State), err
+			return string(n.State), n.State == domain.NoteActive, err
 		}, true
 	case kind == "runbook" && m[1] == "RB":
-		return RunbookDocPath(repoDir, id), func() (string, error) {
+		return RunbookDocPath(repoDir, id), func() (string, bool, error) {
 			rb, err := store.LoadRunbook(repoDir, id)
-			return string(rb.State), err
+			return string(rb.State), rb.State == domain.RunbookActive, err
 		}, true
 	}
 	return "", nil, false
