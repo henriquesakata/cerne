@@ -20,6 +20,7 @@ import (
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/forge"
 	"github.com/henriquesakata/cerne/internal/tracker"
+	"github.com/henriquesakata/cerne/internal/tracker/trackertest"
 	"github.com/henriquesakata/cerne/internal/version"
 )
 
@@ -505,6 +506,89 @@ func TestGiteaCreatesMissingLabel(t *testing.T) {
 		}
 		if got := g.names(1); !slices.Equal(got, []string{"cerne:superseded"}) || g.issues[1].State != "closed" {
 			t.Fatalf("issue labels %v, state %s; want [cerne:superseded], closed", got, g.issues[1].State)
+		}
+	})
+}
+
+// F-0452 crit. 2 and 3: the Gitea adapter passes the contract suite the fake
+// passes, against the emulator; then what the suite leaves to each kind.
+func TestGiteaContract(t *testing.T) {
+	ctx := context.Background()
+	var g *fakeGitea
+	trackertest.RunContract(t, trackertest.Harness{
+		New: func(t *testing.T) tracker.IssueTracker {
+			g = newFakeGitea(t)
+			return newGiteaTracker(t, "https://git.example/o/r")
+		},
+		Open: func(_ *testing.T, title, body, label string) tracker.Ref {
+			var labels []string
+			if label != "" {
+				labels = []string{label}
+			}
+			return g.seed(&gtIssue{Title: title, Body: body}, labels...)
+		},
+		ClosesOnMerge: true,
+	})
+
+	// Gitea has no close reason: rejected and superseded close with their
+	// cerne:* label, the successor comment goes once, with the closing call,
+	// and an update with nothing new writes nothing.
+	t.Run("superseded closes with its label and comments once", func(t *testing.T) {
+		g = newFakeGitea(t)
+		tr := newGiteaTracker(t, "https://git.example/o/r")
+		it := tracker.Item{CardID: "F-0001", State: domain.StateApproved, Title: "Public", Summary: "Summary"}
+		r, err := tr.Create(ctx, it)
+		if err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		it.State, it.Successor = domain.StateSuperseded, &tracker.Ref{Tracker: "gt", ID: "9", URL: g.url(9)}
+		for range 2 {
+			if err := tr.Update(ctx, r, it); err != nil {
+				t.Fatalf("Update(superseded): %v", err)
+			}
+		}
+		iss := g.issues[1]
+		if got := g.names(1); !slices.Equal(got, []string{"cerne:superseded"}) || iss.State != "closed" {
+			t.Fatalf("labels %v, state %s; want [cerne:superseded], closed", got, iss.State)
+		}
+		if want := []string{"Superseded by " + g.url(9)}; !slices.Equal(iss.Comments, want) {
+			t.Fatalf("comments %q, want %q", iss.Comments, want)
+		}
+		before := len(*g.reqs)
+		if err := tr.Update(ctx, r, it); err != nil {
+			t.Fatalf("Update(unchanged): %v", err)
+		}
+		for _, req := range (*g.reqs)[before:] {
+			if req.method != http.MethodGet {
+				t.Fatalf("an unchanged update sent %s %s", req.method, req.url)
+			}
+		}
+	})
+
+	t.Run("lists at most 100 open issues across pages, never PRs", func(t *testing.T) {
+		g = newFakeGitea(t)
+		g.seed(&gtIssue{Title: "PR", PR: true})
+		g.seed(&gtIssue{Title: "Closed", State: "closed"})
+		for i := range 120 {
+			g.seed(&gtIssue{Title: fmt.Sprint("Open ", i)})
+		}
+		list, err := newGiteaTracker(t, "https://git.example/o/r").ListOpen(ctx, "")
+		if err != nil {
+			t.Fatalf("ListOpen: %v", err)
+		}
+		if len(list) != 100 || list[0].Title != "Open 0" || list[99].Title != "Open 99" {
+			t.Fatalf("ListOpen listed %d issues, first %+v; want Open 0 to Open 99", len(list), list[0])
+		}
+	})
+
+	// Gitea drops a label name the repository lacks from its filter and then
+	// lists every issue: the import label must not pull in the whole tracker.
+	t.Run("a label the repository lacks lists nothing", func(t *testing.T) {
+		g = newFakeGitea(t)
+		g.seed(&gtIssue{Title: "Outside"}, "bug")
+		list, err := newGiteaTracker(t, "https://git.example/o/r").ListOpen(ctx, "public")
+		if err != nil || len(list) != 0 {
+			t.Fatalf("ListOpen(public) = %+v, %v; want none", list, err)
 		}
 	})
 }

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -14,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/forge"
 	"github.com/henriquesakata/cerne/internal/version"
 )
@@ -144,9 +144,23 @@ func (g gitea) ref(iss giteaIssue) Ref {
 	return Ref{Tracker: g.name, ID: strconv.FormatInt(iss.Number, 10), URL: iss.HTMLURL}
 }
 
-var errGiteaTodo = errors.New("gitea: not implemented yet")
-
-func (g gitea) Create(context.Context, Item) (Ref, error) { return Ref{}, errGiteaTodo }
+// Create opens the issue with its state label, then moves it to it.State when
+// that is a closed one.
+func (g gitea) Create(ctx context.Context, it Item) (Ref, error) {
+	c, err := g.call(ctx)
+	if err != nil {
+		return Ref{}, err
+	}
+	id, err := c.labelID(ctx, stateLabel(it.State))
+	if err != nil {
+		return Ref{}, err
+	}
+	var iss giteaIssue
+	if err := c.do(ctx, http.MethodPost, "/issues", map[string]any{"title": it.Title, "body": it.Body(), "labels": []int64{id}}, &iss); err != nil {
+		return Ref{}, err
+	}
+	return g.ref(iss), c.apply(ctx, iss, it) // a Ref with an error: the issue exists, its closed state did not land
+}
 
 // Update reads the issue and writes only what differs from it.
 func (g gitea) Update(ctx context.Context, r Ref, it Item) error {
@@ -173,6 +187,12 @@ func (c *giteaCall) apply(ctx context.Context, cur giteaIssue, it Item) error {
 		return err
 	}
 	edit := map[string]string{}
+	if it.Title != "" && cur.Title != it.Title {
+		edit["title"] = it.Title
+	}
+	if it.Title != "" && cur.Body != it.Body() {
+		edit["body"] = it.Body()
+	}
 	shut, closed := closeReason(it.State) != "", cur.State == "closed"
 	switch {
 	case closed && it.NoReopen: // the merge closed it: only the labels move
@@ -181,10 +201,17 @@ func (c *giteaCall) apply(ctx context.Context, cur giteaIssue, it Item) error {
 	case !closed && shut:
 		edit["state"] = "closed"
 	}
-	if len(edit) == 0 {
-		return nil
+	if len(edit) > 0 {
+		if err := c.do(ctx, http.MethodPatch, issue, edit, nil); err != nil {
+			return err
+		}
 	}
-	return c.do(ctx, http.MethodPatch, issue, edit, nil)
+	// The superseded comment goes only with the call that closes the issue,
+	// so a sync never repeats it.
+	if edit["state"] == "closed" && it.State == domain.StateSuperseded && it.Successor != nil {
+		return c.do(ctx, http.MethodPost, issue+"/comments", map[string]string{"body": "Superseded by " + it.Successor.URL}, nil)
+	}
+	return nil
 }
 
 // setStateLabel leaves want as the issue's only cerne:* label and keeps every
@@ -242,7 +269,10 @@ func (c *giteaCall) labelID(ctx context.Context, name string) (int64, error) {
 	return l.ID, nil
 }
 
-// ListOpen lists the open issues.
+// ListOpen lists up to 100 open issues carrying label, never PRs. Gitea drops
+// a label name the repository lacks from its filter and then lists every
+// issue, so the label is checked here too. Pages are read until an empty one:
+// the server may cap a page below the limit asked.
 func (g gitea) ListOpen(ctx context.Context, label string) ([]Remote, error) {
 	c, err := g.call(ctx)
 	if err != nil {
@@ -252,17 +282,34 @@ func (g gitea) ListOpen(ctx context.Context, label string) ([]Remote, error) {
 	if label != "" {
 		q += "&labels=" + url.QueryEscape(label)
 	}
-	var list []giteaIssue
-	if err := c.do(ctx, http.MethodGet, q, nil, &list); err != nil {
-		return nil, err
-	}
 	var out []Remote
-	for _, iss := range list {
-		out = append(out, Remote{Ref: g.ref(iss), Title: iss.Title, Body: iss.Body})
+	for page, seen := 1, 0; seen < 100; page++ {
+		var list []giteaIssue
+		if err := c.do(ctx, http.MethodGet, q+"&page="+strconv.Itoa(page), nil, &list); err != nil {
+			return nil, err
+		}
+		if len(list) == 0 {
+			break
+		}
+		list = list[:min(len(list), 100-seen)]
+		seen += len(list)
+		for _, iss := range list {
+			if label == "" || slices.ContainsFunc(iss.Labels, func(l giteaLabel) bool { return l.Name == label }) {
+				out = append(out, Remote{Ref: g.ref(iss), Title: iss.Title, Body: iss.Body})
+			}
+		}
 	}
 	return out, nil
 }
 
-func (g gitea) CommitRef(Ref, string, bool) string { return "" }
+// CommitRef cites the issue by its URL.
+func (g gitea) CommitRef(r Ref, _ string, closing bool) string {
+	if closing {
+		return "Closes: " + r.URL
+	}
+	return "Refs: " + r.URL
+}
 
-func (g gitea) Owns(Ref) bool { return false }
+// Owns reports whether r is an issue of this repository on this host. A
+// Gitea issue URL has GitHub's shape, https://<host>/<owner>/<repo>/issues/<n>.
+func (g gitea) Owns(r Ref) bool { return github{repo: g.repo}.Owns(r) }
