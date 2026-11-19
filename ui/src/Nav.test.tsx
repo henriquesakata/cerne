@@ -82,7 +82,7 @@ describe('Nav agrupada (F-0332)', () => {
 
   it.each([
     ['Trabalho', ['Kanban', 'Backlog', 'Pendências', 'Ideias', 'Gestão', 'War Room', 'Atividade', 'Passagens']],
-    ['Conhecimento', ['Decisões', 'Referências', 'Runbooks', 'Notas', 'Convenções']],
+    ['Conhecimento', ['Cofre', 'Decisões', 'Referências', 'Runbooks', 'Notas', 'Convenções']],
     ['Explorar', ['Wiki', 'Perguntar', 'Busca', 'Grafo', 'Mapa mental']],
     ['Saúde', ['Lint', 'Harness', 'Histórico', 'Economia', 'Custos']],
   ])('critério 2: o grupo %s contém exatamente seus itens, na ordem', (group, want) => {
@@ -197,6 +197,8 @@ describe('Nav agrupada (F-0332)', () => {
     ['#/handoffs', 'Trabalho', 'Passagens'],
     ['#/handoffs?f=closed', 'Trabalho', 'Passagens'],
     ['#/handoffs/HO-0001', 'Trabalho', 'Passagens'],
+    ['#/vault', 'Conhecimento', 'Cofre'],
+    ['#/vault/D-0001/spec', 'Conhecimento', 'Cofre'],
     ['#/decisions', 'Conhecimento', 'Decisões'],
     ['#/d/D-0001', 'Conhecimento', 'Decisões'],
     ['#/references', 'Conhecimento', 'Referências'],

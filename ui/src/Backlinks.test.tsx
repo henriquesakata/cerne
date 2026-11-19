@@ -42,4 +42,10 @@ describe('Backlinks', () => {
     const { container } = render(<Backlinks id="R-0001" />)
     await waitFor(() => expect(container).toBeEmptyDOMElement())
   })
+
+  // F-0463 B5: o cofre troca o destino do link para ficar dentro dele.
+  it('href opcional redireciona os links de origem', async () => {
+    render(<Backlinks id="F-0001" href={(_k, i) => `#/vault/${i}`} />)
+    expect((await screen.findByText('N-0001')).closest('a')).toHaveAttribute('href', '#/vault/N-0001')
+  })
 })

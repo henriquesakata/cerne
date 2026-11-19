@@ -31,7 +31,15 @@ function entityHref(kind: GraphKind, id: string): string {
   return seg ? `#/${seg}/${encodeURIComponent(id)}` : ''
 }
 
-export default function Backlinks({ id }: { id: string }) {
+// href overrides where a backlink points (the vault keeps readers inside it);
+// the default is the entity's own page.
+export default function Backlinks({
+  id,
+  href: hrefOf = entityHref,
+}: {
+  id: string
+  href?: (kind: GraphKind, id: string) => string
+}) {
   const [links, setLinks] = useState<Backlink[]>([])
   const version = useLiveVersion()
   const { t } = useT()
@@ -64,7 +72,7 @@ export default function Backlinks({ id }: { id: string }) {
       <h2 className="backlinks-title">{t.backlinks.title}</h2>
       <ul className="backlinks-list">
         {links.map((b) => {
-          const href = entityHref(b.from.kind, b.from.id)
+          const href = hrefOf(b.from.kind, b.from.id)
           const label = (
             <>
               <span className="card-id">{b.from.id}</span>{' '}
