@@ -50,13 +50,17 @@ func checkBase(cur []byte, base string) error {
 // (wrapped) for an id that is not of kind's shape or does not exist;
 // ErrEntityNotLive (wrapped) past active; *ContentConflictError when base is
 // not empty and the backend's content hashes otherwise. A byte-identical write
-// is a successful no-op.
+// is a successful no-op. The clone is brought to origin first, so state and
+// base are judged against the backend.
 func SaveEntityContentBy(repoDir, projDir, kind, id, content, base string, by DocAuthor) error {
 	path, state, ok := entityContent(repoDir, kind, id)
 	if !ok {
 		return fmt.Errorf("%w: %s %q", store.ErrNotFound, kind, id)
 	}
-	err := mutateAndSnapshot(repoDir, projDir, base != "", func() (string, error) {
+	// Always on origin (audit A1): the state, not only the base, decides the
+	// write, and a clone may trail a supersede pushed from elsewhere. These
+	// routes have no legacy caller to keep on the cheaper path.
+	err := mutateAndSnapshotLatest(repoDir, projDir, func() (string, error) {
 		st, live, err := state()
 		if err != nil {
 			return "", err

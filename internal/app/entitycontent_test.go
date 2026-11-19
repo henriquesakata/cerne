@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"maps"
@@ -289,5 +290,41 @@ func TestSaveEntityContentConflict(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// TestSaveEntityContentStaleClone (F-0464 audit A1): the state is judged on
+// origin even without a base — an entity superseded or retired from another
+// clone refuses the save, and origin keeps its content.
+func TestSaveEntityContentStaleClone(t *testing.T) {
+	for _, c := range []struct {
+		kind, id string
+		entity   any
+	}{
+		{"note", "N-0001", store.Note{ID: "N-0001", Title: "Nota N-0001", State: domain.NoteSuperseded}},
+		{"decision", "D-0001", store.Decision{ID: "D-0001", Title: "Decisão D-0001", State: domain.DecisionRetired}},
+		{"runbook", "RB-0001", store.Runbook{ID: "RB-0001", Title: "Runbook RB-0001", State: domain.RunbookSuperseded}},
+	} {
+		t.Run(c.kind, func(t *testing.T) {
+			repoDir, projDir, origin := newFeatureBackend(t)
+			seed := seedContentEntity(t, repoDir, c.kind, c.id, "active")
+			b, err := json.MarshalIndent(c.entity, "", "  ")
+			if err != nil {
+				t.Fatal(err)
+			}
+			advanceRemote(t, origin, "entities/"+c.kind+"s/"+c.id+".json", string(b)+"\n")
+			head0, _ := gitback.HeadSHA(origin)
+
+			err = SaveEntityContentBy(repoDir, projDir, c.kind, c.id, "# Reescrito\n", "", HumanAuthor())
+			if !errors.Is(err, ErrEntityNotLive) {
+				t.Fatalf("err = %v, want ErrEntityNotLive (state read on origin)", err)
+			}
+			if h, _ := gitback.HeadSHA(origin); h != head0 {
+				t.Fatalf("origin moved on a refused write")
+			}
+			if got, _ := originHas(t, origin, contentRel(c.kind, c.id)); got != seed {
+				t.Fatalf("origin content = %q, want the seed", got)
+			}
+		})
 	}
 }
