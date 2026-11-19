@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/llm"
 	"github.com/henriquesakata/cerne/internal/telemetry"
 	"github.com/henriquesakata/cerne/internal/verbs"
 	"github.com/henriquesakata/cerne/internal/version"
@@ -25,6 +26,9 @@ func Root() *cobra.Command {
 		Args:          cobra.ArbitraryArgs, // non-nil: cobra's own legacy check would answer first, without the guide hint
 		RunE:          rootRunE,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			if err := refuseAgentLifecycle(cmd); err != nil {
+				return err
+			}
 			startWriteNotice()
 			app.RemintNotice = func(oldID, newID string) { // F-0356
 				fmt.Fprintf(cmd.ErrOrStderr(), "cerne: %s was taken upstream; registered as %s\n", oldID, newID)
@@ -181,4 +185,18 @@ func groupRunE(cmd *cobra.Command, args []string) error {
 		msg += "\n\nDid you mean this?\n\t" + strings.Join(sug, "\n\t")
 	}
 	return fmt.Errorf("%s%s", msg, guideHint)
+}
+
+// refuseAgentLifecycle is the binary's own lifecycle refusal for the Backlog
+// agent (B-0040): agentRun stamps llm.DenyLifecycleEnv on every command the
+// agent runs, and this check runs on the command cobra resolved, so a flag
+// before the verb, or any other spelling the harness prefix rules miss, is
+// refused all the same. Presence, not value: an empty `CERNE_DENY_LIFECYCLE=`
+// assignment still refuses. It holds only while the root's PersistentPreRunE
+// is the one cobra runs, which TestLifecycleRefusedUnderAgentHarnessStamp pins.
+func refuseAgentLifecycle(cmd *cobra.Command) error {
+	if _, stamped := os.LookupEnv(llm.DenyLifecycleEnv); stamped && verbs.IsLifecycle(cmd) {
+		return fmt.Errorf("%w: %s", verbs.ErrLifecycleDenied, cmd.CommandPath())
+	}
+	return nil
 }

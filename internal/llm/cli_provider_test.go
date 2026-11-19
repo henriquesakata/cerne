@@ -529,10 +529,12 @@ func TestNewAgentProviderModes(t *testing.T) {
 func TestAgentRunStampsActor(t *testing.T) {
 	if os.Getenv("GO_WANT_ACTOR_CHILD") == "1" {
 		fmt.Println("ACTOR:" + os.Getenv("CERNE_ACTOR"))
+		fmt.Println("DENY:" + os.Getenv(DenyLifecycleEnv))
 		os.Exit(0)
 	}
 	t.Setenv("GO_WANT_ACTOR_CHILD", "1")
 	t.Setenv("CERNE_ACTOR", "")
+	t.Setenv(DenyLifecycleEnv, "")
 	out, _, err := agentRun(context.Background(), "", os.Args[0],
 		[]string{"-test.run=TestAgentRunStampsActor$"}, "")
 	if err != nil {
@@ -540,6 +542,10 @@ func TestAgentRunStampsActor(t *testing.T) {
 	}
 	if !strings.Contains(out, "ACTOR:agent") {
 		t.Fatalf("child CERNE_ACTOR from %q, want the agent stamp", out)
+	}
+	// B-0040: the stamp the binary refuses every lifecycle verb under.
+	if !strings.Contains(out, "DENY:1") {
+		t.Fatalf("child %s from %q, want 1", DenyLifecycleEnv, out)
 	}
 }
 

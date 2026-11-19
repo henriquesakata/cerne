@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -234,5 +236,72 @@ func TestChatToolMarksAreSafe(t *testing.T) {
 	}
 	if t.Failed() {
 		t.Logf("typed chat tools: %v", marked)
+	}
+}
+
+// TestLifecycleRefusedUnderAgentHarnessStamp (B-0040): the harness rules match
+// by prefix, so `cerne --verbose feature supersede` or `cerne feature --dir .
+// supersede` reach the verb without matching any of them. The binary itself
+// refuses a lifecycle verb when the agentic runner's stamp is in the
+// environment, whatever the spelling: the check sits on the resolved command.
+//
+// Safety: the commands below really run when the check regresses. They start
+// in a temp dir with no .cernerc above it and CERNE_ROOT unset, so project
+// discovery finds nothing and a regression ends at "no cerne project", never
+// at a write.
+func TestLifecycleRefusedUnderAgentHarnessStamp(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
+	t.Setenv("CERNE_ROOT", "")
+	execute := func(args ...string) error {
+		root := Root()
+		root.SetOut(&bytes.Buffer{})
+		root.SetErr(&bytes.Buffer{})
+		root.SetArgs(args)
+		return root.Execute()
+	}
+	tail := []string{"F-9998", "--by", "F-9999", "--reason", "x"}
+	for _, stamp := range []string{"1", ""} { // "": an empty assignment still refuses
+		t.Setenv(llm.DenyLifecycleEnv, stamp)
+		for _, spelling := range [][]string{
+			{"feature", "supersede"},
+			{"--verbose", "feature", "supersede"},
+			{"feature", "--dir", ".", "supersede"},
+			{"feature", "substituir"},
+			{"decision", "--dir", ".", "supersede"},
+		} {
+			if err := execute(append(slices.Clone(spelling), tail...)...); !errors.Is(err, verbs.ErrLifecycleDenied) {
+				t.Errorf("stamp %q: cerne %s … = %v, want ErrLifecycleDenied", stamp, strings.Join(spelling, " "), err)
+			}
+		}
+		// The agent's own writes stay open: a candidate is revisable (F-0269).
+		if err := execute("--verbose", "feature", "new", "x", "--context", "y"); errors.Is(err, verbs.ErrLifecycleDenied) {
+			t.Errorf("stamp %q: feature new refused: %v", stamp, err)
+		}
+	}
+	root := Root()
+	var walk func(*cobra.Command)
+	walk = func(c *cobra.Command) {
+		for _, sub := range c.Commands() {
+			if sub.PersistentPreRun != nil || sub.PersistentPreRunE != nil {
+				t.Errorf("%s defines its own persistent pre-run: cobra then skips the root's, and with it the lifecycle refusal", sub.CommandPath())
+			}
+			if err := refuseAgentLifecycle(sub); verbs.IsLifecycle(sub) != errors.Is(err, verbs.ErrLifecycleDenied) {
+				t.Errorf("%s: refusal = %v, lifecycle = %v", sub.CommandPath(), err, verbs.IsLifecycle(sub))
+			}
+			walk(sub)
+		}
+	}
+	walk(root)
+	// Without the stamp nothing changes: a coding agent in a terminal is
+	// CERNE_ACTOR=agent too, and it runs start/complete/supersede.
+	os.Unsetenv(llm.DenyLifecycleEnv)
+	t.Setenv("CERNE_ACTOR", "agent")
+	sup, _, err := root.Find([]string{"feature", "supersede"})
+	if err != nil || !verbs.IsLifecycle(sup) {
+		t.Fatalf("feature supersede = %v, %v", sup, err)
+	}
+	if err := refuseAgentLifecycle(sup); err != nil {
+		t.Errorf("unstamped agent refused: %v", err)
 	}
 }
