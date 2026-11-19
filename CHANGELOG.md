@@ -37,6 +37,14 @@ While cerne is below 1.0.0, a minor version may change behavior: read the
   `Cerne:` trailer cites it, from the local git. `cerne mirror sync` now keeps
   the time and per-tracker counts of its last run in the local cache, shown as
   "last sync on this computer".
+- GitLab issue mirror (F-0450). `kind = "gitlab"` in `mirror.trackers` mirrors
+  cards into the issues of a GitLab project, on gitlab.com or self-hosted, with
+  subgroups in the `url` (`https://<host>/<group>/<subgroup>/<project>`). It
+  talks through `glab` and its `glab auth login`; no token goes into
+  `.cernerc`. GitLab has no "not planned" close reason, so a rejected or
+  superseded card closes its issue with the `cerne:rejected` or
+  `cerne:superseded` label. Needs GitLab 12.3 or newer (`add_labels` and
+  `remove_labels`).
 - Settings › Integrations shows `delivery.forge`, `delivery.commit_url`,
   `delivery.pr_url`, `mirror.enabled`, `mirror.trackers` and
   `mirror.close_on`. The existing `[delivery]` block is read and written as it

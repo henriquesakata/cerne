@@ -342,14 +342,14 @@ cerne has no hosted service. There is no account to create, and no usage telemet
 | The dashboard | Served by the binary on `127.0.0.1:7717`, with every asset embedded | While `cerne ui` runs |
 | Prompts for `cerne ask`, the authoring helpers, `compile`, `import --agent` and the Backlog chat | With no `llm.mode` set, the first subscription CLI cerne finds on your `PATH` (`claude`, `codex`, `gemini`, then `cursor-agent` on `main`), so the prompt goes to that vendor under your subscription. With an API key or a gateway set in Settings › AI, to that provider (Anthropic, OpenAI, Gemini, OpenRouter or any OpenAI-compatible endpoint, including a local one). With `llm.mode` set to `delegation`, nowhere: the agent you already run answers | Only when you use those features. Settings › AI shows which mode is in use and where that choice came from |
 | PR/MR lookups for a feature's delivery commit | Your forge, through `gh` or `glab`, or the Gitea API | Only when `[delivery]` is configured in `.cernerc` |
-| The public title and summary, id and state of a card a human mirrored | The issue tracker named in `mirror.trackers`, through `gh` | Only after `cerne feature mirror`, with `mirror.enabled` on. Off by default |
-| The list of open issues of each tracker in `mirror.trackers`, read only | The same tracker, through `gh` | Only when you press **Check now** in the Mirror tab of `cerne ui`, a read-only view of the mirrored cards, their imported ideas and the commits citing each card, plus the last `cerne mirror sync` on this computer. Opening the tab calls nothing |
+| The public title and summary, id and state of a card a human mirrored | The issue tracker named in `mirror.trackers`: GitHub through `gh`, GitLab (gitlab.com or self-hosted) through `glab` | Only after `cerne feature mirror`, with `mirror.enabled` on. Off by default |
+| The list of open issues of each tracker in `mirror.trackers`, read only | The same tracker, through `gh` or `glab` | Only when you press **Check now** in the Mirror tab of `cerne ui`, a read-only view of the mirrored cards, their imported ideas and the commits citing each card, plus the last `cerne mirror sync` on this computer. Opening the tab calls nothing |
 | Traces | An OTLP endpoint you set (`[telemetry] otlp_endpoint` or `OTEL_EXPORTER_OTLP_ENDPOINT`) | Off by default. Prometheus metrics are exposed on the local server and sent nowhere |
 | Webhook notifications on state transitions | A URL you set | Off by default |
 
 Two things cerne does not change. Your AI agent still sends what it reads to its model provider, and a backend hosted on GitHub or GitLab lives on GitHub or GitLab. If nothing may leave your network, point cerne at a git server you host, set `llm.mode` to `delegation` (`cerne settings set llm.mode delegation --scope host`) or to a local model through Settings › AI, and use an agent whose model runs where you allow: cerne itself adds no third party.
 
-**Dependencies.** None at runtime. `git` is recommended for speed. Optional: an agent CLI or an API key for the LLM layer, and `gh`/`glab` for delivery lookups. Building from source needs Go (the version in `go.mod`) and, for the UI, Node 24.
+**Dependencies.** None at runtime. `git` is recommended for speed. Optional: an agent CLI or an API key for the LLM layer, and `gh`/`glab` for delivery lookups and the issue mirror. Building from source needs Go (the version in `go.mod`) and, for the UI, Node 24.
 
 ## What cerne does not do
 

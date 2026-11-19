@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"maps"
 	"net/url"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -565,4 +566,49 @@ func TestGitLabCommitRefForms(t *testing.T) {
 			}
 		})
 	}
+}
+
+// liveRunCLI is the real forge.RunCLI: package variables are initialized
+// before TestMain swaps in the guard, so the live test can put it back.
+var liveRunCLI = forge.RunCLI
+
+// F-0450 crit. 2, live: the contract suite against a real, throwaway GitLab
+// project, https://<host>/<group>/<project> in CERNE_LIVE_GITLAB, with the
+// user's glab login. It creates, labels, closes and reopens issues there.
+func TestGitLabContractLive(t *testing.T) {
+	project := os.Getenv("CERNE_LIVE_GITLAB")
+	if project == "" {
+		t.Skip("CERNE_LIVE_GITLAB is not set: no real GitLab project to run against")
+	}
+	u, err := url.Parse(project)
+	if err != nil {
+		t.Fatalf("CERNE_LIVE_GITLAB %q: %v", project, err)
+	}
+	old := forge.RunCLI
+	forge.RunCLI = liveRunCLI
+	t.Cleanup(func() { forge.RunCLI = old })
+	trackertest.RunContract(t, trackertest.Harness{
+		New: func(t *testing.T) tracker.IssueTracker {
+			tr, err := tracker.New(tracker.Config{Name: "live", Kind: "gitlab", URL: project})
+			if err != nil {
+				t.Fatalf("New(gitlab, %s): %v", project, err)
+			}
+			return tr
+		},
+		// Open writes a third-party issue straight through glab, not the adapter.
+		Open: func(t *testing.T, title, body, label string) tracker.Ref {
+			var iss struct {
+				IID    int    `json:"iid"`
+				WebURL string `json:"web_url"`
+			}
+			path := "projects/" + url.PathEscape(strings.Trim(u.Path, "/")) + "/issues"
+			if err := forge.CallJSON(context.Background(), &iss, "glab", "api", "--hostname", u.Host, "-X", "POST", path,
+				"-f", "title="+title, "-f", "description="+body, "-f", "labels="+label); err != nil {
+				t.Fatalf("open an outside issue: %v", err)
+			}
+			t.Logf("outside issue %s (label %q)", iss.WebURL, label)
+			return tracker.Ref{Tracker: "live", ID: strconv.Itoa(iss.IID), URL: iss.WebURL}
+		},
+		ClosesOnMerge: true,
+	})
 }
