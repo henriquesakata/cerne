@@ -3,7 +3,9 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
+	"strings"
 
 	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/gitback"
@@ -76,6 +78,9 @@ func handleSettingsGet(w http.ResponseWriter, projDir string) {
 // new view. value is typed JSON checked against the key's type: a bool key
 // takes `false`, never the JSON string "false"; a string key takes a string.
 func handleSettingsPut(w http.ResponseWriter, r *http.Request, projDir, id string) {
+	if !localWrite(w, r) {
+		return
+	}
 	var req struct {
 		Scope string `json:"scope"`
 		Value any    `json:"value"`
@@ -95,6 +100,9 @@ func handleSettingsPut(w http.ResponseWriter, r *http.Request, projDir, id strin
 // handleSettingsDelete removes key id from ?scope= and answers with the new
 // view.
 func handleSettingsDelete(w http.ResponseWriter, r *http.Request, projDir, id string) {
+	if !localWrite(w, r) {
+		return
+	}
 	// A key the scope does not hold is a no-op here (the CLI says so and
 	// exits 1): the UI's unset is idempotent.
 	if err := project.UnsetSetting(projDir, id, r.URL.Query().Get("scope")); err != nil && !errors.Is(err, project.ErrSettingNotSet) {
@@ -103,6 +111,29 @@ func handleSettingsDelete(w http.ResponseWriter, r *http.Request, projDir, id st
 	}
 	settingsBroadcast()
 	handleSettingsGet(w, projDir)
+}
+
+// localWrite refuses, with 403, a settings write that does not come from the
+// local ui (F-0449): the Host must name the loopback, so a page served from a
+// name rebound to 127.0.0.1 cannot reach it, and the request must be a
+// same-origin JSON one, so a cross-site form or fetch cannot either. Settings
+// hold mirror.enabled and mirror.trackers: where cerne publishes.
+func localWrite(w http.ResponseWriter, r *http.Request) bool {
+	if !loopbackHost(r.Host) || !sameOriginJSON(r) {
+		writeJSON(w, http.StatusForbidden, errorBody("settings are written only from cerne ui on this machine: loopback host, same-origin JSON request"))
+		return false
+	}
+	return true
+}
+
+// loopbackHost reports a Host header naming this machine's loopback
+// (localhost, 127.0.0.1 or [::1]), with any port.
+func loopbackHost(host string) bool {
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")
+	return strings.EqualFold(host, "localhost") || host == "127.0.0.1" || host == "::1"
 }
 
 // writeConfigError answers a refused config write (/settings, /config/llm)
