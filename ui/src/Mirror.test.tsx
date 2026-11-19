@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
@@ -341,5 +342,18 @@ describe('Mirror — both languages (F-0465 crit. 6)', () => {
     renderMirror('pt-BR')
     expect(await screen.findByText('O espelho está desligado.')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Abrir Integrações' })).toBeInTheDocument()
+  })
+})
+
+// The generic .queue-btn hover (0,3,0) would repaint the primary button's
+// background while its text stays the page colour: the label vanishes. The
+// primary keeps its full ink on hover.
+describe('Mirror — the primary queue button on hover', () => {
+  it('has its own hover rule that keeps the ink', () => {
+    const css = readFileSync('src/app.css', 'utf8')
+    const m = /(^|\n)\.queue-btn-primary:hover:not\(:disabled\) \{([^}]*)\}/.exec(css)
+    expect(m).not.toBeNull()
+    expect(m![2]).toContain('background: var(--fg)')
+    expect(m![2]).toContain('border-color: var(--fg)')
   })
 })

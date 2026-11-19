@@ -2541,6 +2541,7 @@ h2 {
 }
 .queue-btn:hover:not(:disabled) { background: var(--surface-2); border-color: var(--border-strong); }
 .queue-btn-primary { font-size: 0.95rem; padding: 0.4rem 1.1rem; background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.queue-btn-primary:hover:not(:disabled) { background: var(--fg); border-color: var(--fg); }
 .queue-btn-danger { color: var(--danger); border-color: var(--danger); }
 .queue-btn:disabled,
 .queue-btn-primary:disabled { opacity: 0.5; cursor: default; }
