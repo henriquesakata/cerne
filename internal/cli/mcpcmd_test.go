@@ -53,9 +53,9 @@ func (t teeReadCloser) Read(p []byte) (int, error) {
 
 func (t teeReadCloser) Close() error { return t.r.Close() }
 
-// startMCP runs `cerne mcp --dir projDir` on the REAL process stdin/stdout
-// (swapped for pipes), so a byte written to os.Stdout by anything — not just
-// the SDK — lands in raw. stop closes the client, waits for the command and
+// startMCP runs `cerne mcp --dir projDir` (no --dir when projDir is "") on the
+// REAL process stdin/stdout (swapped for pipes), so a byte written to os.Stdout
+// by anything — not just the SDK — lands in raw. stop closes the client, waits for the command and
 // restores the process streams; it returns the command's error.
 func startMCP(t *testing.T, projDir string, flags ...string) (cs *sdk.ClientSession, raw *lockedBuf, stop func() error) {
 	t.Helper()
@@ -73,7 +73,11 @@ func startMCP(t *testing.T, projDir string, flags ...string) (cs *sdk.ClientSess
 
 	done := make(chan error, 1)
 	go func() {
-		out, err := execCerne(t, append([]string{"mcp", "--dir", projDir}, flags...)...)
+		args := []string{"mcp"}
+		if projDir != "" {
+			args = append(args, "--dir", projDir)
+		}
+		out, err := execCerne(t, append(args, flags...)...)
 		_ = outW.Close() // EOF for the client, even when mcp refuses to start
 		if err != nil {
 			err = fmt.Errorf("%w\n%s", err, out)
@@ -199,6 +203,13 @@ func TestMCP_StdoutOnlyProtocol(t *testing.T) {
 	if err := stop(); err != nil {
 		t.Fatalf("cerne mcp: %v", err)
 	}
+	assertOnlyFrames(t, raw, len(allCalls)+1) // initialize + one response per call
+}
+
+// assertOnlyFrames fails unless every stdout line is a JSON-RPC 2.0 frame and
+// there are at least min of them.
+func assertOnlyFrames(t *testing.T, raw *lockedBuf, min int) {
+	t.Helper()
 	frames := 0
 	sc := bufio.NewScanner(strings.NewReader(raw.String()))
 	sc.Buffer(make([]byte, 1<<20), 16<<20)
@@ -211,7 +222,7 @@ func TestMCP_StdoutOnlyProtocol(t *testing.T) {
 		}
 		frames++
 	}
-	if frames < len(allCalls)+1 { // initialize + one response per call
+	if frames < min {
 		t.Fatalf("only %d frames on stdout:\n%s", frames, raw.String())
 	}
 }
@@ -241,22 +252,89 @@ func TestMCP_CommandErrorIsToolError(t *testing.T) {
 	}
 }
 
-// TestMCP_OutsideProject: criterion 3 — outside a project `cerne mcp` refuses
-// before speaking MCP, with the same error and stderr as `cerne status`.
+// TestMCP_OutsideProject: F-0456 criteria 1 and 2 (they replace F-0363's
+// criterion 3, which refused here) — outside a cerne project `cerne mcp` still
+// speaks MCP, serves only the offline guide tool with the bytes of
+// `cerne guide --json`, and its initialize instructions say the folder is not a
+// cerne project and that `cerne init` starts one. Both ways in: --dir naming a
+// folder without .cernerc, and no --dir from such a cwd.
 func TestMCP_OutsideProject(t *testing.T) {
 	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
 	t.Setenv("CERNE_ROOT", "")
-	t.Chdir(t.TempDir())
-	sOut, sErr, statusErr := execCerneSplit(t, "status")
-	mOut, mErr, mcpErr := execCerneSplit(t, "mcp")
-	if !errors.Is(statusErr, project.ErrNoProject) || !errors.Is(mcpErr, project.ErrNoProject) {
-		t.Fatalf("want ErrNoProject from both: status=%v mcp=%v", statusErr, mcpErr)
+	plain := t.TempDir()
+	t.Chdir(plain)
+	want, _, err := execCerneSplit(t, "guide", "settings", "--json")
+	if err != nil {
+		t.Fatalf("cerne guide: %v", err)
 	}
-	if mcpErr.Error() != statusErr.Error() || mErr != sErr {
-		t.Fatalf("mcp refusal differs from status:\nstatus: %v | %q\nmcp:    %v | %q", statusErr, sErr, mcpErr, mErr)
+	for _, dir := range []string{plain, ""} {
+		cs, raw, stop := startMCP(t, dir)
+		ins := cs.InitializeResult().Instructions
+		for _, w := range []string{"living documentation", "not a cerne project", "guide", "cerne init"} {
+			if !strings.Contains(ins, w) {
+				t.Errorf("--dir %q: instructions lack %q: %q", dir, w, ins)
+			}
+		}
+		res, err := cs.ListTools(context.Background(), nil)
+		if err != nil {
+			t.Fatalf("tools/list: %v", err)
+		}
+		if len(res.Tools) != 1 || res.Tools[0].Name != "guide" {
+			t.Fatalf("--dir %q: tools = %+v, want only guide", dir, res.Tools)
+		}
+		if got := callTool(t, cs, "guide", map[string]any{"query": "settings"}); got != want {
+			t.Errorf("--dir %q: guide differs from cerne guide --json:\n--- tool\n%s\n--- cli\n%s", dir, got, want)
+		}
+		if err := stop(); err != nil {
+			t.Fatalf("--dir %q: cerne mcp: %v", dir, err)
+		}
+		assertOnlyFrames(t, raw, 3) // initialize, tools/list, tools/call
 	}
-	if mOut != "" || sOut != "" {
-		t.Fatalf("stdout must stay empty: status=%q mcp=%q", sOut, mOut)
+}
+
+// TestMCP_DirSubfolderIsNotTheProject: F-0456 criterion 5 — mcp skips the
+// root --dir gate but keeps its rule: a --dir naming a subfolder of a project
+// gets the guide-only server, never the project above it.
+func TestMCP_DirSubfolderIsNotTheProject(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	sub := filepath.Join(projDir, "sub")
+	if err := os.Mkdir(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cs, _, stop := startMCP(t, sub)
+	res, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("tools/list: %v", err)
+	}
+	if len(res.Tools) != 1 || res.Tools[0].Name != "guide" {
+		t.Fatalf("tools = %+v, want only guide (the parent project must not be served)", res.Tools)
+	}
+	if err := stop(); err != nil {
+		t.Fatalf("cerne mcp: %v", err)
+	}
+}
+
+// TestMCP_RefusalsKept: F-0456 criterion 4 — only a missing project falls back
+// to the guide: a .cernerc that does not load refuses with the error `cerne
+// status` gives, and --project-files still refuses a folder without .cernerc.
+func TestMCP_RefusalsKept(t *testing.T) {
+	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
+	t.Setenv("CERNE_ROOT", "")
+	broken := t.TempDir()
+	if err := os.WriteFile(filepath.Join(broken, ".cernerc"), []byte("project_id = [\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, _, statusErr := execCerneSplit(t, "status", "--dir", broken)
+	mOut, _, mcpErr := execCerneSplit(t, "mcp", "--dir", broken)
+	if statusErr == nil || mcpErr == nil || mcpErr.Error() != statusErr.Error() {
+		t.Fatalf("broken .cernerc: mcp = %v, want the status refusal %v", mcpErr, statusErr)
+	}
+	if mOut != "" {
+		t.Fatalf("broken .cernerc: stdout must stay empty, got %q", mOut)
+	}
+	fOut, _, filesErr := execCerneSplit(t, "mcp", "--project-files", "--dir", t.TempDir())
+	if !errors.Is(filesErr, project.ErrNoProject) || fOut != "" {
+		t.Fatalf("--project-files outside a project: err = %v, stdout = %q; want ErrNoProject and no output", filesErr, fOut)
 	}
 }
 
@@ -267,6 +345,9 @@ func TestMCP_NoWriteTools(t *testing.T) {
 	projDir, origin, repoDir := mcpFixture(t)
 	headBefore, cloneBefore, originBefore := gitHead(t, repoDir), treeDigest(t, repoDir), gitHead(t, origin)
 	cs, _, stop := startMCP(t, projDir)
+	if ins := cs.InitializeResult().Instructions; ins != "" { // F-0456 criterion 3
+		t.Errorf("inside a project the server sends no instructions, got %q", ins)
+	}
 	res, err := cs.ListTools(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("tools/list: %v", err)
