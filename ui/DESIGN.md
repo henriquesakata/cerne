@@ -571,7 +571,7 @@ Sticky top bar on `surface-sunk` with a `1px solid rule-soft` bottom edge,
 `0.6rem 1.5rem` padding, `z-index: 10`. The wordmark is the mark followed by the
 name in mono, weight 700.
 
-- **Mark:** the reduced tree-ring drawing of the tab icon (one ring and the
+- **Mark:** the reduced tree-ring drawing of the tab icon (two rings and the
   heartwood), `1.15em` square, `0.45em` before the name. It is a decorative span
   (`aria-hidden`) masked by `/favicon.svg` and filled with `currentColor`, so it
   takes the ink of the name in either theme and the drawing exists once. It must
