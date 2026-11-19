@@ -113,8 +113,11 @@ var trelloLists = []struct {
 	{domain.StateApproved, "Approved"},
 	{domain.StateInDevelopment, "In development"},
 	{domain.StateImplemented, "Ready"},
-	{domain.StateDone, "Done"},
+	{domain.StateDone, trelloDone},
 }
+
+// trelloDone is the list of finished cards, which ListOpen leaves out.
+const trelloDone = "Done"
 
 // trelloList is the part of a Trello list the adapter reads.
 type trelloList struct {
@@ -167,15 +170,20 @@ func (c *trelloCall) resolve(ctx context.Context) error {
 
 // trelloCard is the part of a Trello card the adapter reads.
 type trelloCard struct {
-	ShortLink string `json:"shortLink"`
-	Name      string `json:"name"`
-	Desc      string `json:"desc"`
-	IDList    string `json:"idList"`
-	Closed    bool   `json:"closed"` // archived
+	ShortLink string        `json:"shortLink"`
+	Name      string        `json:"name"`
+	Desc      string        `json:"desc"`
+	IDList    string        `json:"idList"`
+	Closed    bool          `json:"closed"` // archived
+	Labels    []trelloLabel `json:"labels"`
+}
+
+type trelloLabel struct {
+	Name string `json:"name"`
 }
 
 // trelloCardFields is the ?fields= of every card read.
-const trelloCardFields = "fields=name,desc,idList,closed,shortLink"
+const trelloCardFields = "fields=name,desc,idList,closed,shortLink,labels"
 
 // trelloShortLink is a card's shortLink: the Ref.ID, checked before it goes
 // in a path.
@@ -275,19 +283,37 @@ func trelloReason(it Item) string {
 	return ""
 }
 
-// ListOpen lists the board's open cards.
-func (t trello) ListOpen(ctx context.Context, _ string) ([]Remote, error) {
+// ListOpen lists up to 100 open cards of the board carrying label ("" = any),
+// matched here by name, in the order the board answers them. A card in a Done
+// list is finished work, and one on an archived list is out of sight: neither
+// is listed. Listing creates no list. ponytail: one read of every open card;
+// page by ?before= when a board outgrows the 8 MiB answer.
+func (t trello) ListOpen(ctx context.Context, label string) ([]Remote, error) {
 	c, err := t.call(ctx)
 	if err != nil {
 		return nil, err
 	}
+	ls, err := c.openLists(ctx)
+	if err != nil {
+		return nil, err
+	}
+	shown := map[string]bool{}
+	for _, l := range ls {
+		shown[l.ID] = trelloKey(l.Name) != trelloKey(trelloDone)
+	}
 	var cards []trelloCard
-	if err := c.do(ctx, http.MethodGet, "/boards/"+t.board+"/cards?filter=open&fields=name,desc,shortLink", nil, &cards); err != nil {
+	if err := c.do(ctx, http.MethodGet, "/boards/"+t.board+"/cards?filter=open&"+trelloCardFields, nil, &cards); err != nil {
 		return nil, err
 	}
 	var out []Remote
 	for _, cd := range cards {
-		out = append(out, Remote{Ref: t.ref(cd), Title: cd.Name, Body: cd.Desc})
+		if len(out) == 100 {
+			break
+		}
+		labeled := label == "" || slices.ContainsFunc(cd.Labels, func(l trelloLabel) bool { return l.Name == label })
+		if shown[cd.IDList] && !cd.Closed && labeled {
+			out = append(out, Remote{Ref: t.ref(cd), Title: cd.Name, Body: cd.Desc})
+		}
 	}
 	return out, nil
 }

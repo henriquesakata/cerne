@@ -786,3 +786,83 @@ func TestTrelloSupersededCommentNamesSuccessor(t *testing.T) {
 		}
 	}
 }
+
+// seedTrello puts a third-party card on list l of the board, in no lifecycle
+// list unless l is one, and returns the ref the adapter answers for it.
+func (f *trelloFake) seed(l *trelloFakeList, name, desc string, labels ...string) tracker.Ref {
+	c := f.addCardOn(l, name, desc, labels...)
+	return tracker.Ref{Tracker: "tt", ID: c.ShortLink, URL: "https://trello.com/c/" + c.ShortLink}
+}
+
+func trelloListOpen(t *testing.T, tr tracker.IssueTracker, label string) []tracker.Remote {
+	t.Helper()
+	list, err := tr.ListOpen(context.Background(), label)
+	if err != nil {
+		t.Fatalf("ListOpen(%q): %v", label, err)
+	}
+	return list
+}
+
+// F-0451 crit. 4: what `cerne mirror sync` turns into ideas is every open card
+// of the board, or only those carrying the record's label, each with its
+// title, description and the ref Create answers for a card. Archived cards
+// and other boards' cards are not listed, and listing creates no list.
+func TestTrelloSyncImportsIdeas(t *testing.T) {
+	fk := newTrelloFake(t)
+	inbox := fk.addOpenList(fk.boards[trelloBoard], "Inbox")
+	bug := fk.seed(inbox, "Crash on start", "Steps: run it twice", "public", "bug")
+	plain := fk.seed(inbox, "Docs typo", "")
+	gone := fk.seed(inbox, "Old request", "", "public")
+	fk.card(gone.ID).Closed = true
+	fk.seed(fk.addOpenList(fk.boards[trelloOther], "Inbox"), "Elsewhere", "", "public")
+	tr := newTrelloTracker(t, trelloBoardURL)
+
+	for _, c := range []struct {
+		label string
+		want  []tracker.Remote
+	}{
+		{"", []tracker.Remote{{Ref: bug, Title: "Crash on start", Body: "Steps: run it twice"}, {Ref: plain, Title: "Docs typo"}}},
+		{"public", []tracker.Remote{{Ref: bug, Title: "Crash on start", Body: "Steps: run it twice"}}},
+		{"Public", nil},
+	} {
+		if got := trelloListOpen(t, tr, c.label); !slices.Equal(got, c.want) {
+			t.Errorf("ListOpen(%q) = %+v, want %+v", c.label, got, c.want)
+		}
+	}
+	if n := fk.count(http.MethodPost, "/lists"); n != 0 {
+		t.Fatalf("listing created %d lists, want none", n)
+	}
+}
+
+// F-0451 crit. 4: a card in a Done list, whatever its case, is finished work
+// and not an idea, and neither is a card on an archived list, out of sight.
+func TestTrelloSyncSkipsDoneList(t *testing.T) {
+	fk := newTrelloFake(t)
+	b := fk.boards[trelloBoard]
+	open := fk.seed(fk.addOpenList(b, "Doing"), "Open work", "")
+	fk.seed(fk.addOpenList(b, "Done"), "Finished", "")
+	fk.seed(fk.addOpenList(b, " DONE "), "Finished too", "")
+	shelved := fk.addOpenList(b, "Someday")
+	fk.seed(shelved, "Shelved", "")
+	shelved.Closed = true
+	tr := newTrelloTracker(t, trelloBoardURL)
+	done := trelloCreate(t, tr, publicItem("F-0001", domain.StateDone))
+
+	got := trelloListOpen(t, tr, "")
+	if want := []tracker.Remote{{Ref: open, Title: "Open work"}}; !slices.Equal(got, want) {
+		t.Fatalf("ListOpen = %+v, want only %+v; the done card %s must not be listed", got, want, done.ID)
+	}
+}
+
+// F-0451 crit. 4: at most 100 cards, the first ones the board answers.
+func TestTrelloListOpenCapsAt100(t *testing.T) {
+	fk := newTrelloFake(t)
+	inbox := fk.addOpenList(fk.boards[trelloBoard], "Inbox")
+	for i := range 120 {
+		fk.seed(inbox, fmt.Sprint("Open ", i), "")
+	}
+	list := trelloListOpen(t, newTrelloTracker(t, trelloBoardURL), "")
+	if len(list) != 100 || list[0].Title != "Open 0" || list[99].Title != "Open 99" {
+		t.Fatalf("ListOpen listed %d cards, want Open 0 to Open 99", len(list))
+	}
+}
