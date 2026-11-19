@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo/cerne-mark-dark.svg">
+    <img alt="cerne's mark: the cross-section of a tree trunk, with the heartwood filled in" src="docs/assets/logo/cerne-mark-light.svg" width="96" height="96">
+  </picture>
+</p>
+
 <h1 align="center">cerne</h1>
 
 <p align="center">

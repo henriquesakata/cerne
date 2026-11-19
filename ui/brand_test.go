@@ -197,3 +197,20 @@ func TestFaviconReadsAt16px(t *testing.T) {
 		t.Errorf("the gap between the ring and the heartwood is %.2f px at 16 px, want at least 1", gap*px)
 	}
 }
+
+func TestReadmeShowsMarkInBothThemes(t *testing.T) {
+	readme := readRepoFile(t, "README.md")
+	picture, heading := strings.Index(readme, "<picture>"), strings.Index(readme, "<h1")
+	if picture < 0 || heading < 0 || picture > heading {
+		t.Fatalf("the README does not show the mark above the name (picture at %d, h1 at %d)", picture, heading)
+	}
+	top := readme[:heading]
+	for theme, want := range map[string]string{
+		"dark":  `<source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo/cerne-mark-dark.svg">`,
+		"light": `src="docs/assets/logo/cerne-mark-light.svg"`,
+	} {
+		if !strings.Contains(top, want) {
+			t.Errorf("no mark for the %s theme above the name: missing %s", theme, want)
+		}
+	}
+}
