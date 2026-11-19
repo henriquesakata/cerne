@@ -1,0 +1,55 @@
+{
+  "manifest_version": "0.3",
+  "name": "cerne",
+  "display_name": "cerne",
+  "version": "${VERSION}",
+  "description": "Living docs for AI-agent projects: feature state, decisions and search as read-only MCP tools.",
+  "long_description": "cerne keeps a project's living documentation as structured data: which features exist and in which lifecycle state, the decisions (ADRs), notes, runbooks and references, with full-text search over their history. This bundle serves one cerne project to the client over stdio, read-only: no tool writes anything, and nothing is sent anywhere but the client. The project folder must already be a cerne project (`cerne init`); see the repository for installing the CLI.",
+  "author": {
+    "name": "henriquesakata",
+    "url": "https://github.com/henriquesakata"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/henriquesakata/cerne"
+  },
+  "homepage": "https://github.com/henriquesakata/cerne",
+  "documentation": "https://github.com/henriquesakata/cerne#agents-without-a-shell-mcp",
+  "support": "https://github.com/henriquesakata/cerne/issues",
+  "license": "Apache-2.0",
+  "keywords": ["documentation", "living-docs", "adr", "features", "agents", "knowledge-base", "search"],
+  "server": {
+    "type": "binary",
+    "entry_point": "server/cerne.sh",
+    "mcp_config": {
+      "command": "/bin/sh",
+      "args": ["${__dirname}/server/cerne.sh", "mcp", "--dir", "${user_config.project_dir}"],
+      "platform_overrides": {
+        "win32": {
+          "command": "${__dirname}/server/cerne_windows_amd64.exe",
+          "args": ["mcp", "--dir", "${user_config.project_dir}"]
+        }
+      }
+    }
+  },
+  "tools": [
+    { "name": "status", "description": "Feature states and the epics rollup: what exists and in which lifecycle state." },
+    { "name": "brief", "description": "The whole project roster as id, state and title per entity, no paths." },
+    { "name": "next", "description": "Active features grouped by their next action, plus the documentation debts lint finds." },
+    { "name": "search", "description": "Find entities and documents by subject (full-text, history included)." },
+    { "name": "show", "description": "Read one entity by id: its metadata and its documents." },
+    { "name": "ask", "description": "The sources that answer a question, ranked, with snippets. Makes no LLM call." },
+    { "name": "guide", "description": "How to use cerne itself: the matching sections of its skill, command help and FAQ." }
+  ],
+  "user_config": {
+    "project_dir": {
+      "type": "directory",
+      "title": "Project folder",
+      "description": "The root of a cerne project (the folder with its .cernerc).",
+      "required": true
+    }
+  },
+  "compatibility": {
+    "platforms": ["darwin", "linux", "win32"]
+  }
+}

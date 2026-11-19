@@ -3,6 +3,7 @@
 package e2e_test
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"regexp"
@@ -11,6 +12,9 @@ import (
 	"testing"
 
 	"github.com/google/jsonschema-go/jsonschema"
+	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/henriquesakata/cerne/internal/mcp"
 )
 
 // Black-box tests of the MCP Registry listing (F-0455): the committed
@@ -107,5 +111,109 @@ func TestMCPB_ServerJSONTemplate(t *testing.T) {
 	sort.Strings(markers)
 	if strings.Join(markers, ",") != "SHA256,TAG,VERSION" {
 		t.Errorf("markers = %v, want exactly SHA256, TAG, VERSION", markers)
+	}
+}
+
+type mcpbManifest struct {
+	ManifestVersion string `json:"manifest_version"`
+	Version         string `json:"version"`
+	Server          struct {
+		Type       string `json:"type"`
+		EntryPoint string `json:"entry_point"`
+		MCPConfig  struct {
+			Command           string   `json:"command"`
+			Args              []string `json:"args"`
+			PlatformOverrides map[string]struct {
+				Command string   `json:"command"`
+				Args    []string `json:"args"`
+			} `json:"platform_overrides"`
+		} `json:"mcp_config"`
+	} `json:"server"`
+	Tools []struct {
+		Name string `json:"name"`
+	} `json:"tools"`
+	UserConfig map[string]struct {
+		Type     string `json:"type"`
+		Required bool   `json:"required"`
+	} `json:"user_config"`
+}
+
+func readManifest(t *testing.T, raw []byte) mcpbManifest {
+	t.Helper()
+	var m mcpbManifest
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatalf("manifest.json: %v", err)
+	}
+	return m
+}
+
+// committedManifest is packaging/mcpb/manifest.json with its version marker
+// filled in, as the bundle script does.
+func committedManifest(t *testing.T) []byte {
+	t.Helper()
+	raw, err := os.ReadFile("../packaging/mcpb/manifest.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return []byte(strings.ReplaceAll(string(raw), "${VERSION}", "9.9.9"))
+}
+
+// F-0455 criterion 4: the client asks for the project folder and starts
+// `mcp --dir <folder>`: through /bin/sh and the launcher on darwin/linux,
+// straight through the amd64 .exe on Windows.
+func TestMCPB_ManifestLaunch(t *testing.T) {
+	raw := committedManifest(t)
+	validate(t, "mcpb-manifest-v0.3.schema.json", raw)
+	m := readManifest(t, raw)
+	dir, ok := m.UserConfig["project_dir"]
+	if !ok || dir.Type != "directory" || !dir.Required {
+		t.Errorf("user_config.project_dir = %+v (present %v), want a required directory", dir, ok)
+	}
+	tail := []string{"mcp", "--dir", "${user_config.project_dir}"}
+	mc := m.Server.MCPConfig
+	if m.Server.Type != "binary" || m.Server.EntryPoint != "server/cerne.sh" {
+		t.Errorf("server type %q entry_point %q", m.Server.Type, m.Server.EntryPoint)
+	}
+	if mc.Command != "/bin/sh" || strings.Join(mc.Args, " ") != strings.Join(append([]string{"${__dirname}/server/cerne.sh"}, tail...), " ") {
+		t.Errorf("posix launch = %q %q", mc.Command, mc.Args)
+	}
+	win, ok := mc.PlatformOverrides["win32"]
+	if !ok || win.Command != "${__dirname}/server/cerne_windows_amd64.exe" || strings.Join(win.Args, " ") != strings.Join(tail, " ") {
+		t.Errorf("win32 launch = %+v (present %v)", win, ok)
+	}
+	if len(mc.PlatformOverrides) != 1 {
+		t.Errorf("platform_overrides = %v, want win32 only", mc.PlatformOverrides)
+	}
+}
+
+// F-0455 criterion 6: the manifest lists exactly the tools the server
+// registers, so a tool added or removed on one side fails here.
+func TestMCPB_ToolsMatchServer(t *testing.T) {
+	ctx := context.Background()
+	st, ct := sdk.NewInMemoryTransports()
+	exec := func([]string) ([]byte, error) { return []byte("{}"), nil }
+	if _, err := mcp.NewServer("test", exec).Connect(ctx, st, nil); err != nil {
+		t.Fatal(err)
+	}
+	cs, err := sdk.NewClient(&sdk.Implementation{Name: "test", Version: "v0"}, nil).Connect(ctx, ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close()
+	res, err := cs.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var served, listed []string
+	for _, tool := range res.Tools {
+		served = append(served, tool.Name)
+	}
+	for _, tool := range readManifest(t, committedManifest(t)).Tools {
+		listed = append(listed, tool.Name)
+	}
+	sort.Strings(served)
+	sort.Strings(listed)
+	if strings.Join(served, ",") != strings.Join(listed, ",") {
+		t.Errorf("manifest tools %v, server tools %v", listed, served)
 	}
 }
