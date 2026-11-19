@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -248,7 +249,7 @@ type MirrorCommit struct {
 }
 
 // MirrorCommits lists, newest first, up to 20 commits of the project's git
-// repository whose own "Cerne: <id>" line cites card id.
+// repository whose Cerne: trailer cites card id (CitedCardIDs).
 func MirrorCommits(projDir, id string) ([]MirrorCommit, error) {
 	if !store.ValidEntityID(id) {
 		return nil, fmt.Errorf("%w: %q", ErrBadCardID, id)
@@ -258,9 +259,10 @@ func MirrorCommits(projDir, id string) ([]MirrorCommit, error) {
 	if err := exec.CommandContext(ctx, "git", "-C", projDir, "rev-parse", "--git-dir").Run(); err != nil {
 		return nil, ErrNoGitRepo
 	}
-	// The id is validated: it holds no regexp metacharacter but the dash.
-	out, err := exec.CommandContext(ctx, "git", "-C", projDir, "log", "-n", "20", "-E",
-		"--grep=^Cerne: "+id+"$", "--format=%H%x00%h%x00%s%x1e").Output()
+	// git narrows by a case-insensitive Cerne: line and the id; the grammar
+	// (CitedCardIDs) decides, so F-00010 is not F-0001 and a subject is no trailer.
+	out, err := exec.CommandContext(ctx, "git", "-C", projDir, "log", "-i", "-E", "--all-match",
+		"--grep=^cerne:", "--grep="+id, "--format=%H%x00%h%x00%s%x00%B%x1e").Output()
 	if err != nil {
 		return nil, fmt.Errorf("git log: %w", err)
 	}
@@ -269,7 +271,7 @@ func MirrorCommits(projDir, id string) ([]MirrorCommit, error) {
 	commits := []MirrorCommit{}
 	for _, rec := range strings.Split(string(out), "\x1e") {
 		f := strings.Split(strings.TrimLeft(rec, "\n"), "\x00")
-		if len(f) != 3 {
+		if len(f) != 4 || !slices.Contains(CitedCardIDs(f[3]), id) {
 			continue
 		}
 		c := MirrorCommit{SHA: f[1], Subject: f[2]}
@@ -277,6 +279,9 @@ func MirrorCommits(projDir, id string) ([]MirrorCommit, error) {
 			c.URL = commitURL[:strings.LastIndex(commitURL, "/")+1] + f[0]
 		}
 		commits = append(commits, c)
+		if len(commits) == 20 {
+			break
+		}
 	}
 	return commits, nil
 }

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -369,6 +370,59 @@ func TestMirrorCommitsURL(t *testing.T) {
 	if err := project.SetSettingValue(projDir, "delivery.commit_url", project.ScopeProject, "not a url"); err == nil {
 		if got, _ := MirrorCommits(projDir, "F-0465"); len(got) != 1 || got[0].URL != "" {
 			t.Fatalf("unparseable template: %+v, want a commit with no link", got)
+		}
+	}
+}
+
+// F-0465 critic: the list follows the grammar the commit hook writes and reads
+// (internal/app CitedCardIDs): any case, several ids on a line, CRLF.
+func TestMirrorCommitsTrailerGrammar(t *testing.T) {
+	dir := gitProject(t)
+	commitMsg(t, dir, "feat: lower\n\ncerne: F-0001")
+	commitMsg(t, dir, "feat: several\n\nCerne: F-0001, F-0002")
+	commitMsg(t, dir, "feat: spaces\n\nCERNE: F-0002 F-0001 B-0003")
+	gitOut(t, dir, "commit", "-q", "--allow-empty", "--cleanup=verbatim", "-m", "feat: crlf\r\n\r\nCerne: F-0001\r\nRefs: #1\r\n")
+	commitMsg(t, dir, "feat: longer\n\nCerne: F-00010")
+	commitMsg(t, dir, "docs: only the subject, F-0001\n\nCerne: F-0009")
+	commitMsg(t, dir, "docs: prose\n\nThis Cerne: F-0001 is prose")
+
+	subjects := func(id string) []string {
+		t.Helper()
+		got, err := MirrorCommits(dir, id)
+		if err != nil {
+			t.Fatalf("MirrorCommits(%s): %v", id, err)
+		}
+		var out []string
+		for _, c := range got {
+			out = append(out, c.Subject)
+		}
+		return out
+	}
+	if got, want := subjects("F-0001"), []string{"feat: crlf", "feat: spaces", "feat: several", "feat: lower"}; !slices.Equal(got, want) {
+		t.Errorf("F-0001 = %q, want %q", got, want)
+	}
+	if got, want := subjects("F-0002"), []string{"feat: spaces", "feat: several"}; !slices.Equal(got, want) {
+		t.Errorf("F-0002 = %q, want %q", got, want)
+	}
+	if got := subjects("F-0010"); len(got) != 0 {
+		t.Errorf("F-0010 = %q, want none (F-00010 is another card)", got)
+	}
+}
+
+func TestCitedCardIDs(t *testing.T) {
+	for _, tc := range []struct {
+		msg  string
+		want []string
+	}{
+		{"feat: x\n\nCerne: F-0001", []string{"F-0001"}},
+		{"fix: y\n\nCerne:\tF-0001\n", []string{"F-0001"}},
+		{"x\n\ncerne: F-0001, F-0002", []string{"F-0001", "F-0002"}},
+		{"x\n\nCERNE: F-0002 F-0001\nCerne: B-0003\r\n", []string{"F-0002", "F-0001", "B-0003"}},
+		{"x\n\nCerne:\nF-0001", nil},
+		{"x F-0001\n\nno trailer", nil},
+	} {
+		if got := CitedCardIDs(tc.msg); !slices.Equal(got, tc.want) {
+			t.Errorf("CitedCardIDs(%q) = %q, want %q", tc.msg, got, tc.want)
 		}
 	}
 }

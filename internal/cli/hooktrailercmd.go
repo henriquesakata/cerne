@@ -31,11 +31,6 @@ import (
 // it would close the wrong issue at the merge. The Cerne: stamp stays under
 // the commit_trailer gate; the Refs: line depends only on mirror.enabled.
 
-// cerneTrailerRe is a Cerne: trailer and the rest of its own line: one or more
-// ids, separated by commas or spaces. [ \t] and not \s, so an empty trailer
-// never borrows the next line.
-var cerneTrailerRe = regexp.MustCompile(`(?mi)^Cerne:[ \t]*([^\r\n]*\S)`)
-
 // gitTrailerRe is one "Token: value" git trailer line.
 var gitTrailerRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]*:\s`)
 
@@ -75,7 +70,7 @@ func runHookCommitTrailer(msgPath string) {
 	if err != nil {
 		return
 	}
-	cited := citedIDs(msg)
+	cited := app.CitedCardIDs(msg)
 	var add []string
 	cards := cited
 	if ids, err := app.LiveBindings(cacheDir, repoDir); err == nil && len(ids) == 1 {
@@ -103,15 +98,6 @@ func runHookCommitTrailer(msgPath string) {
 		return
 	}
 	_ = os.WriteFile(msgPath, []byte(stamped), 0o644)
-}
-
-// citedIDs is every card a Cerne: trailer of msg names.
-func citedIDs(msg string) []string {
-	var ids []string
-	for _, m := range cerneTrailerRe.FindAllStringSubmatch(msg, -1) {
-		ids = append(ids, strings.FieldsFunc(m[1], func(r rune) bool { return r == ',' || r == ' ' || r == '\t' })...)
-	}
-	return ids
 }
 
 // hasLine reports whether msg already holds line, surrounding space aside.
