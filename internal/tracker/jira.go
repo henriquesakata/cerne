@@ -206,19 +206,33 @@ type jiraIssue struct {
 		Status      struct {
 			StatusCategory jiraCategoryRef `json:"statusCategory"`
 		} `json:"status"`
+		Resolution *jiraValue `json:"resolution"`
 	} `json:"fields"`
+}
+
+// jiraValue is one value of a select field, such as a resolution.
+type jiraValue struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 type jiraCategoryRef struct {
 	Key string `json:"key"` // new | indeterminate | done
 }
 
-// jiraTransition is one transition the issue offers.
+// jiraTransition is one transition the issue offers, with the resolution
+// field of its screen (nil: the screen has none).
 type jiraTransition struct {
 	ID string `json:"id"`
 	To struct {
 		StatusCategory jiraCategoryRef `json:"statusCategory"`
 	} `json:"to"`
+	Fields struct {
+		Resolution *struct {
+			Required      bool        `json:"required"`
+			AllowedValues []jiraValue `json:"allowedValues"`
+		} `json:"resolution"`
+	} `json:"fields"`
 }
 
 // errJiraNoTransition is an issue the workflow cannot take to the card
@@ -398,16 +412,21 @@ func (j jira) Update(ctx context.Context, r Ref, it Item) error {
 
 func (c *jiraCall) issue(ctx context.Context, key string) (jiraIssue, error) {
 	var iss jiraIssue
-	err := c.do(ctx, http.MethodGet, c.api("/issue/"+key+"?fields=summary,description,status,labels"), nil, &iss)
+	err := c.do(ctx, http.MethodGet, c.api("/issue/"+key+"?fields=summary,description,status,labels,resolution"), nil, &iss)
 	return iss, err
 }
 
-// apply moves cur, issue key, to the status category of it.State by the
-// first transition the issue offers into it; an issue already there is not
-// moved. With no such transition the issue keeps its status, is labeled
-// cerne:<state>, and apply returns errJiraNoTransition. Any other cerne:*
-// label goes in the same edit. The edit goes while the issue is out of the
-// Done category: a workflow may lock editing in a closed status.
+// apply writes to cur, issue key, only what differs from it: the summary and
+// description, and the status category of it.State, reached by the first
+// transition the issue offers into it; an issue already there is not moved.
+// Going to Done, a rejected or superseded card's issue resolves as Won't Do
+// when the screen offers it; otherwise it carries the cerne:<state> label
+// that tells it from a delivered one. With no transition into the category
+// the issue keeps its status, is labeled cerne:<state>, and apply returns
+// errJiraNoTransition. Any other cerne:* label goes in the same edit, which
+// is sent while the issue is out of Done: a workflow may lock editing in a
+// closed status. The superseded comment goes only with the call that takes
+// the issue to Done, so a sync never repeats it.
 func (c *jiraCall) apply(ctx context.Context, key string, cur jiraIssue, it Item) error {
 	path := c.api("/issue/" + key)
 	want := jiraCategory(it.State)
@@ -424,16 +443,38 @@ func (c *jiraCall) apply(ctx context.Context, key string, cur jiraIssue, it Item
 		}
 	}
 	stuck := move == nil && cur.Fields.Status.StatusCategory.Key != want
+	body := map[string]any{}
+	resolution := ""
+	if cur.Fields.Resolution != nil {
+		resolution = cur.Fields.Resolution.Name
+	}
+	if move != nil && want == "done" {
+		resolution = ""
+		if res := jiraResolution(it.State, move); res != nil {
+			body["fields"] = map[string]any{"resolution": map[string]string{"id": res.ID}}
+			resolution = res.Name
+		}
+	}
 	label := ""
-	if stuck {
+	if stuck || (want == "done" && it.State != domain.StateDone && !strings.EqualFold(resolution, "Won't Do")) {
 		label = stateLabel(it.State)
 	}
-	edit := map[string]any{}
+	edit, fields := map[string]any{}, map[string]any{}
+	if it.Title != "" && cur.Fields.Summary != it.Title {
+		fields["summary"] = it.Title
+	}
+	if it.Title != "" && c.text(cur.Fields.Description) != it.Body() {
+		fields["description"] = c.doc(it.Body())
+	}
+	if len(fields) > 0 {
+		edit["fields"] = fields
+	}
 	if ops := jiraLabelOps(cur.Fields.Labels, label); len(ops) > 0 {
 		edit["update"] = map[string]any{"labels": ops}
 	}
 	transition := func() error {
-		return c.do(ctx, http.MethodPost, path+"/transitions", map[string]any{"transition": map[string]string{"id": move.ID}}, nil)
+		body["transition"] = map[string]string{"id": move.ID}
+		return c.do(ctx, http.MethodPost, path+"/transitions", body, nil)
 	}
 	if move != nil && want != "done" {
 		if err := transition(); err != nil {
@@ -449,9 +490,37 @@ func (c *jiraCall) apply(ctx context.Context, key string, cur jiraIssue, it Item
 		if err := transition(); err != nil {
 			return err
 		}
+		if it.State == domain.StateSuperseded && it.Successor != nil {
+			return c.do(ctx, http.MethodPost, path+"/comment", map[string]any{"body": c.doc("Superseded by " + it.Successor.URL)}, nil)
+		}
 	}
 	if stuck {
 		return fmt.Errorf("jira %s: %s: %w %s; labeled it %s", c.j.host, key, errJiraNoTransition, want, label)
+	}
+	return nil
+}
+
+// jiraResolution is the resolution move to Done sets: Won't Do for a
+// rejected or superseded card, Done for a done one or when Won't Do is not
+// offered, and the first value when the field is required and offers
+// neither. nil: the screen has no resolution field, or an optional one
+// offering neither.
+func jiraResolution(s domain.FeatureState, move *jiraTransition) *jiraValue {
+	f := move.Fields.Resolution
+	if f == nil {
+		return nil
+	}
+	names := []string{"Done"}
+	if s != domain.StateDone {
+		names = []string{"Won't Do", "Done"}
+	}
+	for _, n := range names {
+		if i := slices.IndexFunc(f.AllowedValues, func(v jiraValue) bool { return strings.EqualFold(v.Name, n) }); i >= 0 {
+			return &f.AllowedValues[i]
+		}
+	}
+	if f.Required && len(f.AllowedValues) > 0 {
+		return &f.AllowedValues[0]
 	}
 	return nil
 }

@@ -184,6 +184,17 @@ func (f *jiraFake) handler() http.Handler {
 	mux.HandleFunc("PUT "+api+"/issue/{key}", f.issue(f.edit))
 	mux.HandleFunc("GET "+api+"/issue/{key}/transitions", f.issue(f.transitions))
 	mux.HandleFunc("POST "+api+"/issue/{key}/transitions", f.issue(f.transition))
+	mux.HandleFunc("POST "+api+"/issue/{key}/comment", f.issue(func(w http.ResponseWriter, r *http.Request, iss *jiraFakeIssue) {
+		var in struct {
+			Body json.RawMessage `json:"body"`
+		}
+		if json.NewDecoder(r.Body).Decode(&in) != nil || f.badDesc(in.Body) {
+			jiraReply(w, http.StatusBadRequest, map[string]any{"errors": map[string]string{"body": "Comment body is not valid"}})
+			return
+		}
+		iss.comments = append(iss.comments, in.Body)
+		jiraReply(w, http.StatusCreated, map[string]string{"id": strconv.Itoa(len(iss.comments))})
+	}))
 	if f.cloud {
 		mux.HandleFunc("GET "+api+"/search/jql", f.search)
 		mux.HandleFunc("GET "+api+"/search", func(w http.ResponseWriter, _ *http.Request) {
@@ -1009,4 +1020,158 @@ func TestJiraNoMatchingTransitionWarns(t *testing.T) {
 			t.Fatalf("issue in %s with labels %v, want In Progress with [keep]", iss.status, iss.labels)
 		}
 	})
+}
+
+// F-0453 crit. 3: a rejected or superseded card's issue goes to Done with
+// the resolution Won't Do where the transition's screen offers it, and
+// otherwise with Done (or, when the field is required and has neither, its
+// first value) plus the cerne:<state> label that tells it from a delivered
+// issue; a screen with no resolution field gets the label too. A done card
+// resolves as Done, with no label. A second update writes nothing, and
+// reopening drops the label.
+func TestJiraRejectResolution(t *testing.T) {
+	ctx := context.Background()
+	for _, c := range []struct {
+		name      string
+		res       []string
+		required  bool
+		state     domain.FeatureState
+		wantRes   string
+		wantLabel []string
+	}{
+		{"rejected with Won't Do", []string{"Done", "Won't Do", "Duplicate"}, false, domain.StateRejected, "Won't Do", nil},
+		{"superseded with Won't Do", []string{"Done", "Won't Do"}, false, domain.StateSuperseded, "Won't Do", nil},
+		{"rejected without Won't Do", []string{"Done", "Duplicate"}, false, domain.StateRejected, "Done", []string{"cerne:rejected"}},
+		{"superseded without Won't Do", []string{"Done", "Duplicate"}, false, domain.StateSuperseded, "Done", []string{"cerne:superseded"}},
+		{"rejected, screen without resolution", nil, false, domain.StateRejected, "", []string{"cerne:rejected"}},
+		{"rejected, required resolution with neither", []string{"Fixed", "Duplicate"}, true, domain.StateRejected, "Fixed", []string{"cerne:rejected"}},
+		{"done resolves Done", []string{"Won't Do", "Done"}, false, domain.StateDone, "Done", nil},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			jiraFlavors(t, func(t *testing.T, f *jiraFake, tr tracker.IssueTracker) {
+				f.moves[2].res, f.moves[2].required = c.res, c.required
+				it := tracker.Item{CardID: "F-0001", State: domain.StateApproved, Title: "Public", Summary: "Summary"}
+				r, err := tr.Create(ctx, it)
+				if err != nil {
+					t.Fatalf("Create: %v", err)
+				}
+				it.State = c.state
+				if err := tr.Update(ctx, r, it); err != nil {
+					t.Fatalf("Update(%s): %v", c.state, err)
+				}
+				iss := f.issues[r.ID]
+				if iss.status != "Done" || iss.resolution != c.wantRes || !slices.Equal(iss.labels, c.wantLabel) {
+					t.Fatalf("issue %s, resolution %q, labels %v; want Done, %q, %v", iss.status, iss.resolution, iss.labels, c.wantRes, c.wantLabel)
+				}
+				before := len(*f.reqs)
+				if err := tr.Update(ctx, r, it); err != nil {
+					t.Fatalf("Update(%s) again: %v", c.state, err)
+				}
+				if w := jiraWrites(*f.reqs, before); len(w) != 0 {
+					t.Fatalf("a second Update(%s) wrote %v", c.state, w)
+				}
+				it.State = domain.StateInDevelopment
+				if err := tr.Update(ctx, r, it); err != nil {
+					t.Fatalf("Update(in_development): %v", err)
+				}
+				if iss.status != "In Progress" || iss.resolution != "" || len(iss.labels) != 0 {
+					t.Fatalf("reopened issue %s, resolution %q, labels %v; want In Progress, none, none", iss.status, iss.resolution, iss.labels)
+				}
+			})
+		})
+	}
+}
+
+// F-0453: Update reads the issue and writes only what differs: nothing for
+// an unchanged card, the summary alone for a new title, the description
+// alone for a new summary, and nothing of an outside issue's text.
+func TestJiraUpdateWritesOnlyDiffs(t *testing.T) {
+	ctx := context.Background()
+	jiraFlavors(t, func(t *testing.T, f *jiraFake, tr tracker.IssueTracker) {
+		it := tracker.Item{CardID: "F-0001", State: domain.StateApproved, Title: "Public", Summary: "Summary"}
+		r, err := tr.Create(ctx, it)
+		if err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		edits := func(it tracker.Item) []string {
+			t.Helper()
+			before := len(*f.reqs)
+			if err := tr.Update(ctx, r, it); err != nil {
+				t.Fatalf("Update: %v", err)
+			}
+			var keys []string
+			for _, req := range (*f.reqs)[before:] {
+				if req.method != http.MethodGet {
+					var body struct {
+						Fields map[string]json.RawMessage `json:"fields"`
+						Update map[string]json.RawMessage `json:"update"`
+					}
+					_ = json.Unmarshal([]byte(req.body), &body)
+					for k := range body.Fields {
+						keys = append(keys, req.method+" fields."+k)
+					}
+					for k := range body.Update {
+						keys = append(keys, req.method+" update."+k)
+					}
+				}
+			}
+			return keys
+		}
+		if got := edits(it); len(got) != 0 {
+			t.Fatalf("an unchanged update wrote %v", got)
+		}
+		it.Title = "New title"
+		if got := edits(it); !slices.Equal(got, []string{"PUT fields.summary"}) || f.issues[r.ID].summary != "New title" {
+			t.Fatalf("a new title wrote %v, want only the summary", got)
+		}
+		it.Summary = "New summary"
+		if got := edits(it); !slices.Equal(got, []string{"PUT fields.description"}) {
+			t.Fatalf("a new summary wrote %v, want only the description", got)
+		}
+		list, err := tr.ListOpen(ctx, "")
+		if err != nil || len(list) != 1 || list[0].Body != it.Body() {
+			t.Fatalf("ListOpen = %+v, %v; want the body %q", list, err, it.Body())
+		}
+		outside := f.seed("Outside title", "Outside body")
+		before := len(*f.reqs)
+		if err := tr.Update(ctx, outside, tracker.Item{CardID: "F-0002", State: domain.StateCandidate}); err != nil {
+			t.Fatalf("Update(outside): %v", err)
+		}
+		if w := jiraWrites(*f.reqs, before); len(w) != 0 || f.issues[outside.ID].summary != "Outside title" {
+			t.Fatalf("an outside issue's update wrote %v", w)
+		}
+	})
+}
+
+// F-0453: the superseded card's issue gets "Superseded by <successor>" once,
+// from the call that takes it to Done; a later sync does not repeat it.
+func TestJiraSupersededCommentOnce(t *testing.T) {
+	ctx := context.Background()
+	jiraFlavors(t, func(t *testing.T, f *jiraFake, tr tracker.IssueTracker) {
+		it := tracker.Item{CardID: "F-0001", State: domain.StateInDevelopment, Title: "Public", Summary: "Summary"}
+		r, err := tr.Create(ctx, it)
+		if err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		next := f.ref("PROJ-9")
+		it.State, it.Successor = domain.StateSuperseded, &next
+		for range 2 {
+			if err := tr.Update(ctx, r, it); err != nil {
+				t.Fatalf("Update(superseded): %v", err)
+			}
+		}
+		want := jiraTextJSON("Superseded by " + next.URL)
+		if f.cloud {
+			want = jiraDocJSON("Superseded by " + next.URL)
+		}
+		iss := f.issues[r.ID]
+		if len(iss.comments) != 1 || !jiraSameJSON(iss.comments[0], want) {
+			t.Fatalf("comments %s, want once %s", iss.comments, want)
+		}
+	})
+}
+
+func jiraSameJSON(a, b json.RawMessage) bool {
+	var x, y any
+	return json.Unmarshal(a, &x) == nil && json.Unmarshal(b, &y) == nil && reflect.DeepEqual(x, y)
 }
