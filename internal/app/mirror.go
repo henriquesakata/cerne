@@ -214,7 +214,10 @@ func transitionIDs(id string, propagated []string, moved []store.Feature) []stri
 // MirrorSyncReport is what one sync did: the ideas it imported (ids), the
 // cards whose issue it brought to their state (ids), and one warning line per
 // tracker or card that failed.
-type MirrorSyncReport struct{ Ideas, Applied, Warnings []string }
+type MirrorSyncReport struct {
+	Ideas, Applied, Warnings []string
+	Trackers                 []MirrorTrackerRun // one per configured tracker, in order
+}
 
 // SyncMirror imports, as active ideas, the open issues of every tracker that
 // no card or idea is linked to (filtered by the tracker's label), all in one
@@ -234,15 +237,23 @@ func SyncMirror(repoDir, projDir string) (MirrorSyncReport, error) {
 		return rep, err
 	}
 	var fresh []store.Idea
+	rep.Trackers = make([]MirrorTrackerRun, len(cfg.Trackers))
+	runs := map[string]*MirrorTrackerRun{}
+	for i, tc := range cfg.Trackers {
+		rep.Trackers[i] = MirrorTrackerRun{Name: tc.Name, Errors: []string{}}
+		runs[tc.Name] = &rep.Trackers[i]
+	}
 	for _, tc := range cfg.Trackers {
 		remotes, err := listOpen(tc)
 		if err != nil {
 			rep.Warnings = append(rep.Warnings, fmt.Sprintf("cerne: mirror sync <- %s: %v", tc.Name, err))
+			runs[tc.Name].Errors = append(runs[tc.Name].Errors, err.Error())
 			continue
 		}
 		for _, r := range remotes {
 			if !linked[r.URL] {
 				linked[r.URL] = true
+				runs[tc.Name].Imported++
 				m := store.MirrorRef{Tracker: tc.Name, Kind: tc.Kind, ID: r.ID, URL: r.URL}
 				fresh = append(fresh, store.Idea{Title: ideaTitle(r), Body: ideaBody(r.Body), Mirror: &m})
 			}
@@ -266,9 +277,18 @@ func SyncMirror(repoDir, projDir string) (MirrorSyncReport, error) {
 		cancel()
 		if err != nil {
 			rep.Warnings = append(rep.Warnings, fmt.Sprintf("cerne: mirror %s -> %s: %v", f.ID, f.Mirror.Tracker, err))
+			if run := runs[f.Mirror.Tracker]; run != nil {
+				run.Errors = append(run.Errors, fmt.Sprintf("%s: %v", f.ID, err))
+			}
 			continue
 		}
 		rep.Applied = append(rep.Applied, f.ID)
+		if run := runs[f.Mirror.Tracker]; run != nil {
+			run.Synced++
+		}
+	}
+	if err := recordLastSync(repoDir, rep); err != nil {
+		rep.Warnings = append(rep.Warnings, fmt.Sprintf("cerne: mirror sync: last sync not recorded: %v", err))
 	}
 	return rep, nil
 }

@@ -33,7 +33,7 @@ func SaveManifest(projDir string, m map[string]string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	return writeFileAtomic(dir, manifestFilename, append(data, '\n'))
+	return WriteFileAtomic(dir, manifestFilename, append(data, '\n'))
 }
 
 // LoadManifest reads <projDir>/.docs/.manifest.json. When the sidecar is
