@@ -327,3 +327,23 @@ func TestContentWritesRefuseForeignHostOrOrigin(t *testing.T) {
 		})
 	}
 }
+
+// TestPutContentBodyLimit (F-0464 audit A7): a body past maxContentBody is a
+// 413 with nothing written; one at the limit is read.
+func TestPutContentBodyLimit(t *testing.T) {
+	repoDir, projDir := contentFixture(t)
+	h := New(repoDir, projDir, "")
+	tree := cloneTree(t, repoDir)
+	big := strings.Repeat("x", maxContentBody+1)
+	for _, url := range []string{"/api/notes/N-0001/content", "/api/decisions/D-0001/content", "/api/runbooks/RB-0001/content", "/api/features/F-0001/docs/spec"} {
+		if rec, got := putContent(t, h, url, big, nil); rec.Code != http.StatusRequestEntityTooLarge {
+			t.Errorf("PUT %s with %d bytes = %d %v, want 413", url, len(big), rec.Code, got)
+		}
+	}
+	if !maps.Equal(cloneTree(t, repoDir), tree) {
+		t.Fatalf("a refused PUT changed the clone")
+	}
+	if rec, got := putContent(t, h, "/api/notes/N-0001/content", big[:maxContentBody], nil); rec.Code != http.StatusOK {
+		t.Fatalf("PUT at the limit = %d %v, want 200", rec.Code, got)
+	}
+}

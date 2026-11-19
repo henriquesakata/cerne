@@ -1378,13 +1378,12 @@ func handleFeatureDocPut(w http.ResponseWriter, r *http.Request, repoDir, projDi
 	if !localWriteOf(w, r, "text/markdown") { // audit A4: the vault writes through it
 		return
 	}
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
+	body, ok := readContentBody(w, r)
+	if !ok {
 		return
 	}
 	// F-0375: the page's editor is a human's, whoever started the server.
-	err = app.SaveFeatureDocBy(repoDir, projDir, id, doc, string(body), ifMatch(r), app.HumanAuthor())
+	err := app.SaveFeatureDocBy(repoDir, projDir, id, doc, string(body), ifMatch(r), app.HumanAuthor())
 	if writeContentConflict(w, err) {
 		return
 	}
@@ -1413,12 +1412,11 @@ func handleEntityContentPut(w http.ResponseWriter, r *http.Request, repoDir, pro
 	if !localWriteOf(w, r, "text/markdown") { // audit A4: no rebound name, no cross-site write
 		return
 	}
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
+	body, ok := readContentBody(w, r)
+	if !ok {
 		return
 	}
-	err = app.SaveEntityContentBy(repoDir, projDir, kind, id, string(body), ifMatch(r), app.HumanAuthor())
+	err := app.SaveEntityContentBy(repoDir, projDir, kind, id, string(body), ifMatch(r), app.HumanAuthor())
 	if writeContentConflict(w, err) {
 		return
 	}
@@ -1434,6 +1432,26 @@ func handleEntityContentPut(w http.ResponseWriter, r *http.Request, repoDir, pro
 	default:
 		writeJSON(w, http.StatusOK, map[string]bool{"saved": true})
 	}
+}
+
+// maxContentBody caps the markdown body of a content write (audit A7): far
+// above any document, short of letting a request hold the server's memory.
+const maxContentBody = 4 << 20
+
+// readContentBody reads a content write's body up to maxContentBody: 413 past
+// it, 400 when unreadable; false once it has answered.
+func readContentBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxContentBody))
+	var tooBig *http.MaxBytesError
+	switch {
+	case errors.As(err, &tooBig):
+		writeJSON(w, http.StatusRequestEntityTooLarge, errorBody(fmt.Sprintf("the document is larger than %d bytes", maxContentBody)))
+		return nil, false
+	case err != nil:
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
+		return nil, false
+	}
+	return body, true
 }
 
 // ifMatch is the base hash a write carries (F-0464): the raw content_hash the
