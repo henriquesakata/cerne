@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/project"
@@ -243,7 +244,7 @@ func SyncMirror(repoDir, projDir string) (MirrorSyncReport, error) {
 			if !linked[r.URL] {
 				linked[r.URL] = true
 				m := store.MirrorRef{Tracker: tc.Name, Kind: tc.Kind, ID: r.ID, URL: r.URL}
-				fresh = append(fresh, store.Idea{Title: ideaTitle(r), Body: strings.TrimSpace(r.Body), Mirror: &m})
+				fresh = append(fresh, store.Idea{Title: ideaTitle(r), Body: ideaBody(r.Body), Mirror: &m})
 			}
 		}
 	}
@@ -307,12 +308,47 @@ func listOpen(tc tracker.Config) ([]tracker.Remote, error) {
 	return tr.ListOpen(ctx, tc.Label)
 }
 
-// ideaTitle is an outside issue's title on one line; its URL when it has none.
+// Bounds of an outside issue's text at import (F-0449).
+const (
+	maxIdeaTitle = 256     // characters
+	maxIdeaBody  = 8 << 10 // bytes
+)
+
+// ideaTitle is an outside issue's title on one printable line of at most
+// maxIdeaTitle characters; its URL when it has none.
 func ideaTitle(r tracker.Remote) string {
-	if t := strings.Join(strings.Fields(r.Title), " "); t != "" {
-		return t
+	t := strings.Map(func(c rune) rune {
+		if unicode.IsControl(c) {
+			return ' '
+		}
+		return c
+	}, r.Title)
+	if t = strings.Join(strings.Fields(t), " "); t == "" {
+		return r.URL
 	}
-	return r.URL
+	if rs := []rune(t); len(rs) > maxIdeaTitle {
+		t = string(rs[:maxIdeaTitle])
+	}
+	return t
+}
+
+// ideaBody is an outside issue's body with no control character but its line
+// breaks and tabs, cut at maxIdeaBody bytes on a character boundary.
+func ideaBody(b string) string {
+	b = strings.TrimSpace(strings.Map(func(c rune) rune {
+		if c != '\n' && c != '\t' && unicode.IsControl(c) {
+			return -1
+		}
+		return c
+	}, b))
+	if len(b) <= maxIdeaBody {
+		return b
+	}
+	n := maxIdeaBody
+	for n > 0 && !utf8.RuneStart(b[n]) {
+		n--
+	}
+	return b[:n]
 }
 
 // MirrorTrailers is the commit trailer ("Refs: …", or "Closes: …" with
