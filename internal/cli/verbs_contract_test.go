@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"slices"
@@ -235,4 +236,43 @@ func TestChatToolMarksAreSafe(t *testing.T) {
 	if t.Failed() {
 		t.Logf("typed chat tools: %v", marked)
 	}
+}
+
+// TestLifecycleRefusedUnderAgentHarnessStamp (B-0040): the harness rules match
+// by prefix, so `cerne --verbose feature supersede` or `cerne feature --dir .
+// supersede` reach the verb without matching any of them. The binary itself
+// refuses a lifecycle verb when the agentic runner's stamp is in the
+// environment, whatever the spelling: the check sits on the resolved command.
+func TestLifecycleRefusedUnderAgentHarnessStamp(t *testing.T) {
+	t.Chdir(t.TempDir()) // never a real project, whatever the verb would do
+	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
+	t.Setenv("CERNE_ROOT", "")
+	t.Setenv(llm.DenyLifecycleEnv, "1")
+	tail := []string{"F-9998", "--by", "F-9999", "--reason", "x"}
+	for _, spelling := range [][]string{
+		{"feature", "supersede"},
+		{"--verbose", "feature", "supersede"},
+		{"feature", "--dir", ".", "supersede"},
+		{"feature", "substituir"},
+		{"decision", "--dir", ".", "supersede"},
+	} {
+		root := Root()
+		root.SetOut(&bytes.Buffer{})
+		root.SetErr(&bytes.Buffer{})
+		root.SetArgs(append(slices.Clone(spelling), tail...))
+		if err := root.Execute(); !errors.Is(err, verbs.ErrLifecycleDenied) {
+			t.Errorf("cerne %s … = %v, want ErrLifecycleDenied", strings.Join(spelling, " "), err)
+		}
+	}
+	root := Root()
+	var walk func(*cobra.Command)
+	walk = func(c *cobra.Command) {
+		for _, sub := range c.Commands() {
+			if err := root.PersistentPreRunE(sub, nil); verbs.IsLifecycle(sub) != errors.Is(err, verbs.ErrLifecycleDenied) {
+				t.Errorf("%s: pre-run err = %v, lifecycle = %v", sub.CommandPath(), err, verbs.IsLifecycle(sub))
+			}
+			walk(sub)
+		}
+	}
+	walk(root)
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/llm"
 	"github.com/henriquesakata/cerne/internal/telemetry"
 	"github.com/henriquesakata/cerne/internal/verbs"
 	"github.com/henriquesakata/cerne/internal/version"
@@ -25,6 +26,11 @@ func Root() *cobra.Command {
 		Args:          cobra.ArbitraryArgs, // non-nil: cobra's own legacy check would answer first, without the guide hint
 		RunE:          rootRunE,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			// B-0040: the Backlog agent's commands carry this stamp; the check
+			// sits on the resolved command, so no spelling reaches the verb.
+			if os.Getenv(llm.DenyLifecycleEnv) != "" && verbs.IsLifecycle(cmd) {
+				return fmt.Errorf("%w: %s", verbs.ErrLifecycleDenied, cmd.CommandPath())
+			}
 			startWriteNotice()
 			app.RemintNotice = func(oldID, newID string) { // F-0356
 				fmt.Fprintf(cmd.ErrOrStderr(), "cerne: %s was taken upstream; registered as %s\n", oldID, newID)

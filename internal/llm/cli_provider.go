@@ -89,10 +89,11 @@ var AgentWriteTools = []string{"Bash(cerne:*)"}
 // no write.
 //
 // It is the FIRST layer, not the only one: these rules match by prefix, and a
-// prefix rule is brittle (command chaining, spacing). app.CheckHumanGate refuses
-// approve/accept/revert for CERNE_ACTOR=agent — the stamp agentRun puts on every
-// command the agent runs — so the human gates of F-0131 survive a harness rule
-// that fails to match.
+// prefix rule is brittle (a flag before the verb, command chaining, spacing).
+// The binary refuses every lifecycle verb under DenyLifecycleEnv, the stamp
+// agentRun puts on every command the agent runs (B-0040), and app.CheckHumanGate
+// still refuses approve/accept/revert for its CERNE_ACTOR=agent, so the
+// lifecycle survives a harness rule that fails to match.
 var AgentDeniedCommands []string
 
 // AgentDeniedPaths are the --disallowedTools rules that keep an authorized
@@ -187,8 +188,15 @@ func execRun(ctx context.Context, dir, name string, args []string, stdin string)
 // the agent gaining write tools. os.Environ() comes first so the stamp wins
 // over an inherited value (exec keeps the last of a duplicated key).
 func agentRun(ctx context.Context, dir, name string, args []string, stdin string) (string, string, error) {
-	return execRunEnv(ctx, dir, name, args, stdin, append(os.Environ(), "CERNE_ACTOR=agent"))
+	return execRunEnv(ctx, dir, name, args, stdin, append(os.Environ(), "CERNE_ACTOR=agent", DenyLifecycleEnv+"=1"))
 }
+
+// DenyLifecycleEnv is the second stamp of agentRun: the cerne binary refuses
+// every lifecycle verb while it is set (B-0040), on the resolved command, so a
+// spelling the harness prefix rules miss (`cerne --verbose feature supersede`)
+// is refused all the same. CERNE_ACTOR=agent cannot carry this: a coding agent
+// in a terminal is an agent too, and it does run start/complete/supersede.
+const DenyLifecycleEnv = "CERNE_DENY_LIFECYCLE"
 
 // execRunEnv is execRun with an explicit child environment; nil means inherit
 // the server's own, which is what every non-agentic path wants (N-0011: an API
