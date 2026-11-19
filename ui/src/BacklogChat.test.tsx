@@ -1510,7 +1510,7 @@ describe('BacklogChat proposal issues (F-0438)', () => {
       answered: true,
       reply: '````cerne-proposta\n# Exportar CSV\n\n## Problema\nFalta.\n````\n',
       proposal_issues: issues,
-    })
+    }).mockResolvedValueOnce({ answered: true, reply: 'Corrigido.' })
     const { onUpdate } = renderChat()
     await send('Oi')
     fireEvent.click(await screen.findByRole('button', { name: /pedir correção/i }))
@@ -1518,6 +1518,8 @@ describe('BacklogChat proposal issues (F-0438)', () => {
     const sent = streamChat.mock.calls[1][0] as { role: string; content: string }[]
     expect(sent[sent.length - 1].role).toBe('user')
     expect(sent[sent.length - 1].content).toContain('no "Barra:" line')
+    // B-0035: the fix turn gets its own reply; without one the mock returned undefined
+    expect(await screen.findByText('Corrigido.')).toBeInTheDocument()
     // the stored message carries them (a reload shows the card with its issues)
     const stored = JSON.stringify(window.localStorage)
     expect(stored).toContain('proposalIssues')
