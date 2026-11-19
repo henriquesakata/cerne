@@ -123,7 +123,7 @@ func verbOf(c *cobra.Command) Verb {
 		Short:     c.Short,
 		Flags:     flags,
 		Class:     class,
-		Lifecycle: class == ClassLifecycle,
+		Lifecycle: IsLifecycle(c), // one predicate for both modes (F-0323 crit. 4)
 		ChatTool:  c.Annotations[chatToolKey] == "true",
 	}
 }

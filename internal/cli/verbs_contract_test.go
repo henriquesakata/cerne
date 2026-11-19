@@ -147,13 +147,25 @@ func TestLifecycleMarksMatchDomainActions(t *testing.T) {
 // subscription mode, whose write policy (F-0260/F-0267/F-0269) is unchanged.
 // Hidden verbs count (B-0039): the pt-BR twin `substituir` runs like
 // `supersede`, so a list built from the visible catalog let it through. The
-// rules match by name, so a cobra alias on a lifecycle path would escape them
-// the same way; none may exist.
+// rules match by name, so a cobra alias on a lifecycle path, or cobra's prefix
+// or case-insensitive matching, would escape them the same way; none may exist.
+// A hidden twin is tied to its visible sibling by their shared Short, so a twin
+// built without the lifecycle mark fails here instead of leaving both lists.
 func TestAgentDeniedCommandsCoverLifecycleMarks(t *testing.T) {
+	if cobra.EnablePrefixMatching || cobra.EnableCaseInsensitive {
+		t.Error("cobra prefix/case-insensitive matching runs names the refusals never list")
+	}
 	var want []string
 	var walk func(*cobra.Command)
 	walk = func(c *cobra.Command) {
 		for _, sub := range c.Commands() {
+			if sub.Hidden && verbs.IsVerb(sub) {
+				for _, twin := range c.Commands() {
+					if !twin.Hidden && twin.Short == sub.Short && verbs.IsLifecycle(twin) != verbs.IsLifecycle(sub) {
+						t.Errorf("hidden %q and its visible twin %q differ in the lifecycle mark", sub.CommandPath(), twin.CommandPath())
+					}
+				}
+			}
 			if verbs.IsLifecycle(sub) {
 				want = append(want, "Bash("+sub.CommandPath()+":*)")
 				for p := sub; p != nil; p = p.Parent() {
