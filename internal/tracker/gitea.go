@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"slices"
@@ -34,8 +33,8 @@ func newGitea(c Config) (IssueTracker, error) {
 		// The login is sent to the host the record names: never an IP literal
 		// or localhost, which name a service on this machine or network
 		// rather than a Gitea.
-		if h := u.Hostname(); net.ParseIP(h) != nil || strings.EqualFold(h, "localhost") {
-			return nil, fmt.Errorf("%w: gitea tracker host %q is an IP address or localhost; use the Gitea host name", ErrTrackerURL, h)
+		if h := u.Hostname(); localHost(h) {
+			return nil, fmt.Errorf("%w: gitea tracker host %q is an IP address, localhost or a numeric form; use the Gitea host name", ErrTrackerURL, h)
 		}
 	}
 	if err == nil && u.Scheme == "https" && u.RawQuery == "" && u.Fragment == "" { // tracker.New already refused a user and password

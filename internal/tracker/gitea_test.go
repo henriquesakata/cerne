@@ -763,3 +763,16 @@ func TestGiteaContractLive(t *testing.T) {
 	}
 	t.Logf("closing trailer: %s", tr.CommitRef(r, "https://"+u.Host+u.Path+"/commit/{sha}", true))
 }
+
+// F-0452: the login goes to the record's host, so numeric and local spellings
+// are refused (the core's shared check); a normal DNS host is accepted.
+func TestGiteaRefusesNumericAndLocalHostForms(t *testing.T) {
+	for _, raw := range []string{"https://127.1/o/r", "https://localhost./o/r", "https://[fe80::1%25en0]/o/r", "https://a.localhost/o/r", "https://2130706433/o/r"} {
+		if _, err := tracker.New(tracker.Config{Name: "gt", Kind: "gitea", URL: raw}); !errors.Is(err, tracker.ErrTrackerURL) {
+			t.Errorf("New(gitea, %s) = %v, want ErrTrackerURL", raw, err)
+		}
+	}
+	if _, err := tracker.New(tracker.Config{Name: "gt", Kind: "gitea", URL: "https://git.example.com/o/r"}); err != nil {
+		t.Errorf("New(gitea, DNS host) = %v, want nil", err)
+	}
+}
