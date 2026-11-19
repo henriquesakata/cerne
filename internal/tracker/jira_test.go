@@ -692,3 +692,64 @@ func TestJiraErrorNamesOnlyTheField(t *testing.T) {
 		t.Fatalf("Create = %v, want %q", err, want)
 	}
 }
+
+// F-0453 crit. 4: the sync lists by the spec's JQL, project = <KEY> AND
+// statusCategory != Done, plus AND labels = "<label>" when the record has
+// one, quoted with its quote and backslash escaped; on Cloud through
+// /rest/api/3/search/jql, on Data Center through /rest/api/2/search. A label
+// with a control character is refused before any request.
+func TestJiraSyncJQL(t *testing.T) {
+	ctx := context.Background()
+	const base = "project = PROJ AND statusCategory != Done"
+	for _, c := range []struct {
+		name   string
+		cloud  bool
+		label  string
+		jql    string
+		search string
+	}{
+		{"cloud, no label", true, "", base, "https://acme.atlassian.net/rest/api/3/search/jql"},
+		{"cloud, label", true, "public", base + ` AND labels = "public"`, "https://acme.atlassian.net/rest/api/3/search/jql"},
+		{"data center, no label", false, "", base, "https://jira.example/jira/rest/api/2/search"},
+		{"data center, label with quote and backslash", false, `a"b\c`, base + ` AND labels = "a\"b\\c"`, "https://jira.example/jira/rest/api/2/search"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f, raw := newJiraDCFake(t), jiraDC
+			if c.cloud {
+				f, raw = newJiraCloudFake(t), jiraCloud
+			}
+			labeled := f.seed("Labeled", "Body", "public", `a"b\c`)
+			plain := f.seed("Plain", "Body")
+			f.issues[f.seed("Finished", "Body", "public", `a"b\c`).ID].status = "Done"
+			list, err := newJiraTracker(t, raw).ListOpen(ctx, c.label)
+			if err != nil {
+				t.Fatalf("ListOpen(%q): %v", c.label, err)
+			}
+			if !slices.Equal(f.jql, []string{c.jql}) {
+				t.Fatalf("JQL %q, want %q", f.jql, c.jql)
+			}
+			want := []string{labeled.ID, plain.ID}
+			if c.label != "" {
+				want = want[:1]
+			}
+			var got []string
+			for _, rm := range list {
+				got = append(got, rm.ID)
+			}
+			if !slices.Equal(got, want) {
+				t.Fatalf("listed %v, want %v", got, want)
+			}
+			last := (*f.reqs)[len(*f.reqs)-1]
+			u, _ := url.Parse(last.url)
+			if s := u.Scheme + "://" + u.Host + u.Path; s != c.search || u.Query().Get("maxResults") != "100" {
+				t.Fatalf("searched %s, want %s with maxResults=100", last.url, c.search)
+			}
+		})
+	}
+	t.Run("a label with a control character is refused before any request", func(t *testing.T) {
+		f := newJiraCloudFake(t)
+		if _, err := newJiraTracker(t, jiraCloud).ListOpen(ctx, "public\nOR project = OTHER"); err == nil || len(*f.reqs) != 0 {
+			t.Fatalf("ListOpen(control label) = %v after %d requests, want an error and none", err, len(*f.reqs))
+		}
+	})
+}

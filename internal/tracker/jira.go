@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/henriquesakata/cerne/internal/forge"
 	"github.com/henriquesakata/cerne/internal/version"
@@ -343,10 +344,21 @@ func (j jira) Update(context.Context, Ref, Item) error {
 	return errors.New("jira: update not implemented")
 }
 
+// jiraQuote is the JQL string escape: a backslash and a double quote.
+var jiraQuote = strings.NewReplacer(`\`, `\\`, `"`, `\"`)
+
 // ListOpen lists up to 100 issues of the project whose status is not in the
-// Done category. Cloud removed /search for /search/jql.
-// ponytail: one page; paginate when a project outgrows it.
-func (j jira) ListOpen(ctx context.Context, _ string) ([]Remote, error) {
+// Done category, carrying label when it is not "". Cloud removed /search for
+// /search/jql. A label with a control character is refused: JQL has no
+// escape for one. ponytail: one page; paginate when a project outgrows it.
+func (j jira) ListOpen(ctx context.Context, label string) ([]Remote, error) {
+	jql := "project = " + j.project + " AND statusCategory != Done"
+	if strings.ContainsFunc(label, unicode.IsControl) {
+		return nil, fmt.Errorf("jira %s: label %q has a control character", j.host, label)
+	}
+	if label != "" {
+		jql += ` AND labels = "` + jiraQuote.Replace(label) + `"`
+	}
 	c, err := j.call(ctx)
 	if err != nil {
 		return nil, err
@@ -355,7 +367,7 @@ func (j jira) ListOpen(ctx context.Context, _ string) ([]Remote, error) {
 	if c.cloud {
 		search = "/search/jql"
 	}
-	q := url.Values{"jql": {"project = " + j.project + " AND statusCategory != Done"}, "fields": {"summary,description"}, "maxResults": {"100"}}
+	q := url.Values{"jql": {jql}, "fields": {"summary,description"}, "maxResults": {"100"}}
 	var res struct {
 		Issues []jiraIssue `json:"issues"`
 	}
