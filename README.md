@@ -24,6 +24,7 @@
   <a href="#capabilities">Capabilities</a> ·
   <a href="#agent-integrations">Agents</a> ·
   <a href="#where-your-data-goes">Your data</a> ·
+  <a href="#what-cerne-does-not-do">What it does not do</a> ·
   <a href="#status-and-limitations">Status</a> ·
   <a href="INSTALL.md">Install guide</a>
 </p>
@@ -322,6 +323,25 @@ cerne has no hosted service. There is no account to create, and no usage telemet
 Two things cerne does not change. Your AI agent still sends what it reads to its model provider, and a backend hosted on GitHub or GitLab lives on GitHub or GitLab. If nothing may leave your network, point cerne at a git server you host, set `llm.mode` to `delegation` (`cerne settings set llm.mode delegation --scope host`) or to a local model through Settings › AI, and use an agent whose model runs where you allow: cerne itself adds no third party.
 
 **Dependencies.** None at runtime. `git` is recommended for speed. Optional: an agent CLI or an API key for the LLM layer, and `gh`/`glab` for delivery lookups. Building from source needs Go (the version in `go.mod`) and, for the UI, Node 24.
+
+## What cerne does not do
+
+A tool is often easier to judge by what it leaves out. The first list is by design; the second is gaps.
+
+**By design**
+
+- **It does not store your conversations with the agent.** What lasts becomes a document with a state: a spec, a decision, a note. `cerne cost` reads the agent's transcripts where the agent leaves them and keeps only which feature each session worked on and its token counts, never the text.
+- **It does not run in the cloud.** No account, no hosted service, no telemetry: see [Where your data goes](#where-your-data-goes).
+- **It does not approve or accept on the agent's behalf.** Both are human acts by default (see [the lifecycle](#the-lifecycle-and-where-the-human-decides)); a project can opt into `auto`.
+- **It does not rewrite history.** A wrong conclusion gets an erratum appended. Superseded and rejected documents leave the agent's path and stay searchable.
+- **It does not replace `CLAUDE.md` or `AGENTS.md`.** Fixed rules still belong there. cerne handles what has a lifecycle: work, decisions, and knowledge that can go stale.
+- **It does not shrink the conversation.** Most of an agent's tokens are the conversation re-read at every step, with or without cerne; on one feature measured from its transcripts, cerne accounted for about 5% of what the agent re-read. What it saves is the documentation it keeps out of reach, which `cerne savings` measures.
+- **It does not check your code against your decisions.** Lint checks the documentation. The closest it comes is `drift-suspect`: with module or component paths configured, it flags a shipped feature whose code changed since, so its spec may be stale.
+
+**Not yet**
+
+- **Semantic search.** Search is full-text (SQLite FTS5), with no embeddings.
+- **Agents beyond the [five supported](#agent-integrations).** OpenCode, for example, has no integration: it can read `.docs/` and run the CLI, without the hooks.
 
 ## Status and limitations
 
