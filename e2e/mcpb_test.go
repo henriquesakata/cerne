@@ -6,6 +6,8 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -191,8 +193,8 @@ func TestMCPB_ManifestLaunch(t *testing.T) {
 func TestMCPB_ToolsMatchServer(t *testing.T) {
 	ctx := context.Background()
 	st, ct := sdk.NewInMemoryTransports()
-	exec := func([]string) ([]byte, error) { return []byte("{}"), nil }
-	if _, err := mcp.NewServer("test", exec).Connect(ctx, st, nil); err != nil {
+	noop := func([]string) ([]byte, error) { return []byte("{}"), nil }
+	if _, err := mcp.NewServer("test", noop).Connect(ctx, st, nil); err != nil {
 		t.Fatal(err)
 	}
 	cs, err := sdk.NewClient(&sdk.Implementation{Name: "test", Version: "v0"}, nil).Connect(ctx, ct, nil)
@@ -215,5 +217,81 @@ func TestMCPB_ToolsMatchServer(t *testing.T) {
 	sort.Strings(listed)
 	if strings.Join(served, ",") != strings.Join(listed, ",") {
 		t.Errorf("manifest tools %v, server tools %v", listed, served)
+	}
+}
+
+// runLauncher runs packaging/mcpb/cerne.sh as the manifest does (/bin/sh
+// <launcher> args) from a bundle-like server/ folder holding fake binaries
+// for the given pairs, with a fake uname answering osName and machine.
+func runLauncher(t *testing.T, osName, machine string, pairs map[string]os.FileMode, args ...string) (stdout, stderr string, err error) {
+	t.Helper()
+	dir := t.TempDir()
+	server := filepath.Join(dir, "server")
+	fakeBin := filepath.Join(dir, "bin")
+	for _, d := range []string{server, fakeBin} {
+		if err := os.Mkdir(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	launcher, err := os.ReadFile("../packaging/mcpb/cerne.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 0644: the client runs it through /bin/sh, so it needs no execute bit.
+	if err := os.WriteFile(filepath.Join(server, "cerne.sh"), launcher, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for pair, mode := range pairs {
+		name := "cerne_" + pair
+		if err := os.WriteFile(filepath.Join(server, name), []byte("#!/bin/sh\necho "+name+" \"$@\"\n"), mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	uname := "#!/bin/sh\ncase $1 in -s) echo " + osName + " ;; -m) echo " + machine + " ;; *) exit 2 ;; esac\n"
+	if err := os.WriteFile(filepath.Join(fakeBin, "uname"), []byte(uname), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("/bin/sh", append([]string{filepath.Join(server, "cerne.sh")}, args...)...)
+	cmd.Env = append(os.Environ(), "PATH="+fakeBin+":/usr/bin:/bin")
+	var out, errOut strings.Builder
+	cmd.Stdout, cmd.Stderr = &out, &errOut
+	err = cmd.Run()
+	return out.String(), errOut.String(), err
+}
+
+// F-0455 criterion 5: each darwin/linux × amd64/arm64 machine runs its own
+// binary with the arguments, a binary that lost its execute bit runs anyway,
+// and a pair the bundle lacks fails naming the OS and the architecture.
+func TestMCPB_Launcher(t *testing.T) {
+	all := map[string]os.FileMode{"darwin_amd64": 0o755, "darwin_arm64": 0o755, "linux_amd64": 0o755, "linux_arm64": 0o755}
+	for _, c := range []struct{ os, machine, want string }{
+		{"Darwin", "x86_64", "darwin_amd64"},
+		{"Darwin", "arm64", "darwin_arm64"},
+		{"Linux", "x86_64", "linux_amd64"},
+		{"Linux", "amd64", "linux_amd64"},
+		{"Linux", "aarch64", "linux_arm64"},
+		{"Linux", "arm64", "linux_arm64"},
+	} {
+		out, stderr, err := runLauncher(t, c.os, c.machine, all, "mcp", "--dir", "/some project")
+		if err != nil {
+			t.Errorf("%s/%s: %v\n%s", c.os, c.machine, err, stderr)
+			continue
+		}
+		if want := "cerne_" + c.want + " mcp --dir /some project\n"; out != want {
+			t.Errorf("%s/%s ran %q, want %q", c.os, c.machine, out, want)
+		}
+	}
+
+	out, stderr, err := runLauncher(t, "Linux", "x86_64", map[string]os.FileMode{"linux_amd64": 0o644}, "mcp")
+	if err != nil || out != "cerne_linux_amd64 mcp\n" {
+		t.Errorf("binary without execute bit: out %q err %v\n%s", out, err, stderr)
+	}
+
+	_, stderr, err = runLauncher(t, "Linux", "riscv64", all, "mcp")
+	if err == nil {
+		t.Error("linux/riscv64 succeeded with no binary for it")
+	}
+	if !strings.Contains(stderr, "linux/riscv64") {
+		t.Errorf("stderr does not name the pair: %q", stderr)
 	}
 }
