@@ -120,3 +120,29 @@ func TestGuideWhatCanCerneDoPointsToTheCatalog(t *testing.T) {
 		t.Fatalf("first section is not the catalog answer:\n%s", out)
 	}
 }
+
+// TestGuideDefinesCerneFirst: an agent in a project without cerne has only the
+// guide (F-0456), and its first question is what cerne is. The FAQ entry that
+// defines cerne and names `cerne init` comes first, in the JSON the MCP guide
+// tool returns (F-0458). For "what is cerne" and "what does cerne do" every FAQ
+// with cerne (and does) in its title ties on coverage, so bm25 length
+// normalization decides, by about 1%: when a new entry overtakes it, keep this
+// entry's text short rather than longer.
+func TestGuideDefinesCerneFirst(t *testing.T) {
+	const want = "What is cerne? What does cerne do? How do I start using cerne?"
+	for _, q := range []string{"what is cerne", "what does cerne do", "how do I start using cerne", "o que é o cerne"} {
+		out, err := execGuide(t, "--json", "--limit", "1", q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got struct {
+			Sections []struct{ Title, Source, Text string } `json:"sections"`
+		}
+		if err := json.Unmarshal([]byte(out), &got); err != nil {
+			t.Fatalf("%q: %v\n%s", q, err, out)
+		}
+		if len(got.Sections) != 1 || got.Sections[0].Title != want || got.Sections[0].Source != "faq" || !strings.Contains(got.Sections[0].Text, "`cerne init`") {
+			t.Errorf("%q: first section = %+v, want the FAQ %q naming `cerne init`", q, got.Sections, want)
+		}
+	}
+}

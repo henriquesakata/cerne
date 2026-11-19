@@ -1,3 +1,6 @@
+## Q: What is cerne? What does cerne do? How do I start using cerne?
+cerne is an engineering workflow for software built with AI agents, in one local binary: a CLI and a web UI (`cerne ui`). What it does: keep the living documentation, separating the current state from history. The lifecycle of features, decisions and references is structured data in a git backend; `cerne pull` writes only the current state to a gitignored `.docs/` folder that agents read. It does not run in the cloud. Start with `cerne init` at the project root, or try a sample with `cerne demo`; `cerne guide` lists every command.
+
 ## Q: A command fails with "cache clone belongs to another backend". What now?
 Two projects on this machine share one `project_id`, and the local cache is keyed by that id alone, so the clone in the cache is the other project's. cerne refuses to read or write through it, and never deletes it (the cache also holds rooms and messages). Give this project its own cache with `CERNE_CACHE_DIR=<dir>`, or a distinct `project_id` in its `.cernerc`. `cerne demo` already picks `taskflow-2`, `taskflow-3`… when `taskflow` is taken.
 
