@@ -16,11 +16,12 @@ const state = {
   references: [],
 } as unknown as StateResponse
 let docs: Record<string, VaultDoc> = {}
-const loadVaultDoc = vi.fn(async (id: string) => {
+const fromDocs = async (id: string, _doc?: string): Promise<VaultDoc> => {
   const d = docs[id]
   if (!d) throw new Error(`no doc ${id}`)
   return d
-})
+}
+const loadVaultDoc = vi.fn(fromDocs)
 
 vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api')>()),
@@ -30,7 +31,7 @@ vi.mock('./api', async (importOriginal) => ({
 }))
 vi.mock('./vault-doc', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./vault-doc')>()),
-  loadVaultDoc: (id: string) => loadVaultDoc(id),
+  loadVaultDoc: (id: string, doc?: string) => loadVaultDoc(id, doc),
 }))
 let liveVersion = 0 // a bump re-runs the vault's live loads, as an SSE tick does
 vi.mock('./live', async (importOriginal) => ({
@@ -78,6 +79,7 @@ beforeEach(() => {
   window.location.hash = ''
   liveVersion = 0
   vi.clearAllMocks()
+  loadVaultDoc.mockImplementation(fromDocs) // a test may swap the loader
   Element.prototype.scrollIntoView = vi.fn()
 })
 afterEach(() => {
@@ -193,6 +195,33 @@ describe('Vault while editing (F-0464 I-1)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
     expect(container.querySelector('.vault-side')).not.toBeNull()
     expect(container.querySelector('main')).not.toHaveClass('vault-editing')
+  })
+})
+
+describe('Vault keeps the document being edited (F-0464 critic C-1, C-9)', () => {
+  // the real loader picks a feature's document by its stage when the URL names none
+  const byStage = (st: { state: string }) => async (id: string, d?: string) => {
+    const stage = st.state === 'candidate' ? 'spec' : 'plan'
+    return feature({ id, state: st.state, doc: (d ?? stage) as VaultDoc['doc'], content: `# Primeira\n\n${d ?? stage} body` })
+  }
+
+  it('stage change: a reload moving the feature to another stage keeps the editor, the draft and the guard', async () => {
+    const st = { state: 'candidate' }
+    loadVaultDoc.mockImplementation(byStage(st))
+    const { rerender } = render(<Vault hash="#/vault/F-0001" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar' }))
+    expect(window.location.hash).toBe('#/vault/F-0001/spec') // Edit pins the document, with no new history entry
+    type('rascunho da spec')
+    st.state = 'in_development' // an agent ran feature start meanwhile
+    liveVersion = 1
+    rerender(<Vault hash="#/vault/F-0001" />) // even before the router hands the pinned hash on
+    await waitFor(() => expect(loadVaultDoc).toHaveBeenCalledTimes(2))
+    rerender(<Vault hash="#/vault/F-0001/spec" />)
+    await waitFor(() => expect(loadVaultDoc).toHaveBeenLastCalledWith('F-0001', 'spec'))
+    expect(source().value).toBe('rascunho da spec')
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    expect(navAllowed()).toBe(false)
+    expect(confirm).toHaveBeenCalled()
   })
 })
 

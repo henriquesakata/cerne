@@ -6,7 +6,7 @@ import Markdown from './Markdown'
 import { LoadPending, Notice, useLiveLoad } from './liveLoad'
 import { useT, type Messages } from './i18n'
 import { entriesFrom } from './Palette'
-import { loadVaultDoc, stripLeadingTitle } from './vault-doc'
+import { loadVaultDoc, stripLeadingTitle, type VaultDoc } from './vault-doc'
 import VaultEditor, { canEdit } from './VaultEditor'
 import { buildVaultTree, filterVaultTree, isHistorical, type VaultKind, type VaultNode } from './vault-tree'
 
@@ -178,10 +178,20 @@ export default function Vault({ hash }: { hash: string }) {
     [sel.id, sel.doc],
   )
   const doc = docLoad.data
-  // The document being edited, by id/doc: another document leaves the editor.
-  const docKey = doc ? `${doc.id}/${doc.doc ?? ''}` : ''
-  const [editing, setEditing] = useState<string | null>(null)
-  const isEditing = doc !== null && editing === docKey
+  // The document being edited, as it was when Edit was pressed (critic C-1):
+  // the editor stays on it while the selection names it, whatever a reload
+  // brings meanwhile — a feature that moves stage under an agent, a load
+  // still in flight. A selection with no doc (a feature by its stage) still
+  // names it until the pinned hash arrives.
+  const [editing, setEditing] = useState<VaultDoc | null>(null)
+  const isEditing = editing !== null && editing.id === sel.id && (sel.doc === undefined || sel.doc === editing.doc)
+  const viewed = isEditing ? editing : doc
+  const startEditing = (d: VaultDoc) => {
+    // A feature opened by its stage is pinned to the document being edited,
+    // replacing the history entry, so the next reloads load that one.
+    if (d.kind === 'feature' && d.doc && sel.doc === undefined) window.location.replace(vaultHref(d.id, d.doc))
+    setEditing(d)
+  }
   // The outline is read off the rendered ##/### headings, so code blocks and
   // the markdown parser's own rules decide what counts as a heading.
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -249,8 +259,8 @@ export default function Vault({ hash }: { hash: string }) {
 
   if (!st) return <LoadPending load={stateLoad} message={t.vault.loadError} />
 
-  const wikiPage = doc?.kind === 'wiki' ? wiki.pages.find((p) => `wiki:${p.rel}` === doc.id) : undefined
-  const title = wikiPage ? wikiLabel(t, wikiPage.name) : doc?.title
+  const wikiPage = viewed?.kind === 'wiki' ? wiki.pages.find((p) => `wiki:${p.rel}` === viewed.id) : undefined
+  const title = wikiPage ? wikiLabel(t, wikiPage.name) : viewed?.title
 
   return (
     // Editing, the editor takes the rail's column too (the outline is the
@@ -294,31 +304,31 @@ export default function Vault({ hash }: { hash: string }) {
           <p className="status">{t.vault.empty}</p>
         ) : docLoad.error !== null && !isEditing ? (
           <Notice message={t.vault.docLoadError(docLoad.error)} onRetry={docLoad.retry} busy={docLoad.retrying} />
-        ) : !doc ? (
+        ) : !viewed ? (
           <p className="status">{t.vault.loading}</p>
         ) : (
           <>
             <header className="vault-doc-header">
               <h1>
-                {doc.kind !== 'wiki' && (
+                {viewed.kind !== 'wiki' && (
                   <>
-                    <span className="card-id">{doc.id}</span>{' '}
+                    <span className="card-id">{viewed.id}</span>{' '}
                   </>
                 )}
                 {title}
               </h1>
-              {doc.state && <span className={`chip chip-${doc.state}`}>{stateText(t, doc.kind, doc.state)}</span>}
+              {viewed.state && <span className={`chip chip-${viewed.state}`}>{stateText(t, viewed.kind, viewed.state)}</span>}
               <div className="vault-doc-actions">
-                {canEdit(doc) && !isEditing && (
-                  <button type="button" onClick={() => setEditing(docKey)}>
+                {canEdit(viewed) && !isEditing && (
+                  <button type="button" onClick={() => startEditing(viewed)}>
                     {t.vault.editor.edit}
                   </button>
                 )}
               </div>
-              {doc.kind === 'feature' && (
+              {viewed.kind === 'feature' && (
                 <nav className="vault-doc-tabs" aria-label={t.vault.docTabs}>
                   {(['spec', 'plan', 'result'] as const).map((d) => (
-                    <a key={d} href={vaultHref(doc.id, d)} aria-current={doc.doc === d ? 'page' : undefined}>
+                    <a key={d} href={vaultHref(viewed.id, d)} aria-current={viewed.doc === d ? 'page' : undefined}>
                       {t.vault.docs[d]}
                     </a>
                   ))}
@@ -332,8 +342,8 @@ export default function Vault({ hash }: { hash: string }) {
             )}
             {isEditing ? (
               <VaultEditor
-                key={docKey}
-                doc={doc}
+                key={`${viewed.id}/${viewed.doc ?? ''}`}
+                doc={viewed}
                 entries={entries}
                 knownIds={known}
                 wikiHref={wikiHref}
@@ -344,10 +354,10 @@ export default function Vault({ hash }: { hash: string }) {
                 }}
                 onCancel={() => setEditing(null)}
               />
-            ) : doc.real ? (
+            ) : viewed.real ? (
               <div className="vault-doc-body doc" ref={bodyRef}>
                 <Markdown wikiHref={wikiHref} knownIds={known}>
-                  {stripLeadingTitle(doc.content, doc.title)}
+                  {stripLeadingTitle(viewed.content, viewed.title)}
                 </Markdown>
               </div>
             ) : (
