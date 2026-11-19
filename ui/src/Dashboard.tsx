@@ -151,6 +151,43 @@ function AttentionBand() {
   )
 }
 
+// FirstStepsBlock (T-0011): o checklist do primeiro uso, vindo do servidor
+// (app.FirstSteps). Lista vazia — depois do primeiro accept — não renderiza nada.
+export function FirstStepsBlock({ steps }: { steps?: { key: string; done: boolean }[] }) {
+  const { t } = useT()
+  if (!steps || steps.length === 0) return null
+  const d = t.dashboard
+  const text: Record<string, React.ReactNode> = {
+    ask: d.firstStepAsk,
+    approve: (
+      <>
+        {d.firstStepApprove} <a href="#/kanban">Kanban</a>.
+      </>
+    ),
+    accept: d.firstStepAccept,
+  }
+  return (
+    <section className="dash-attention">
+      <h2>{d.firstSteps}</h2>
+      <ul className="dash-attention-list">
+        {steps.map((s) => (
+          <li key={s.key}>
+            <span aria-label={s.done ? d.firstStepsDone : undefined}>{s.done ? '✓' : '○'}</span> {text[s.key]}
+          </li>
+        ))}
+      </ul>
+      <p className="dash-light-mode">
+        <a href="https://github.com/henriquesakata/cerne/blob/main/docs/first-week.md">{d.firstStepsGuide}</a>
+      </p>
+    </section>
+  )
+}
+
+function FirstStepsBand() {
+  const { data } = useCard(fetchState)
+  return <FirstStepsBlock steps={data?.first_steps} />
+}
+
 export default function Dashboard() {
   const { t } = useT()
   return (
@@ -158,6 +195,7 @@ export default function Dashboard() {
       <h1>{t.dashboard.title}</h1>
       <p className="counts">{t.dashboard.subtitle}</p>
       <LightModeBand />
+      <FirstStepsBand />
       <AttentionBand />
       {/* Composição (F-0233): a faixa de gates lidera fora do grid — é o único
           trabalho que a CLI não faz por você. No grid, largura segue densidade:
