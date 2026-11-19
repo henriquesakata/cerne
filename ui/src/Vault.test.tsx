@@ -139,6 +139,13 @@ describe('Vault (F-0463)', () => {
     expect(within(tree()).getByRole('link', { name: 'Plano' })).toHaveAttribute('aria-current', 'page')
   })
 
+  it('doc fora da família feature é ignorado: #/vault/D-0001/spec marca a linha da decisão', async () => {
+    await open('#/vault/D-0001/spec')
+    await screen.findByRole('heading', { name: /D-0001/ })
+    expect(loadVaultDoc).toHaveBeenCalledWith('D-0001', undefined)
+    expect(within(tree()).getByRole('link', { name: /D-0001/ })).toHaveAttribute('aria-current', 'page')
+  })
+
   it('A4: #/vault/d-0001 abre D-0001', async () => {
     await open('#/vault/d-0001')
     await screen.findByRole('heading', { name: /D-0001/ })

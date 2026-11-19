@@ -30,7 +30,9 @@ function parseHash(hash: string): { id?: string; doc?: string } {
   }
   if (rest.startsWith('wiki:')) return { id: rest }
   const [id, doc] = rest.split('/')
-  return { id: id.toUpperCase(), doc: DOC_NAMES.has(doc) ? doc : undefined }
+  const canonical = id.toUpperCase()
+  // spec/plan/result exist only for the feature family; elsewhere the segment is noise.
+  return { id: canonical, doc: DOC_NAMES.has(doc) && /^[FETB]-/.test(canonical) ? doc : undefined }
 }
 
 // pathTo lists the keys of the nodes above (and including) the one with `key`.
