@@ -18,6 +18,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/forge"
 	"github.com/henriquesakata/cerne/internal/tracker"
 	"github.com/henriquesakata/cerne/internal/version"
@@ -122,6 +123,7 @@ type jiraFake struct {
 	issues     map[string]*jiraFakeIssue
 	order      []string // keys, in creation order
 	jql        []string // every JQL searched
+	moved      []string // every transition id applied
 	reqs       *[]jiraReq
 }
 
@@ -176,6 +178,12 @@ func (f *jiraFake) handler() http.Handler {
 	api := f.api()
 	mux.HandleFunc("GET "+api+"/project/{key}", f.project)
 	mux.HandleFunc("POST "+api+"/issue", f.create)
+	mux.HandleFunc("GET "+api+"/issue/{key}", f.issue(func(w http.ResponseWriter, _ *http.Request, iss *jiraFakeIssue) {
+		jiraReply(w, http.StatusOK, f.view(iss))
+	}))
+	mux.HandleFunc("PUT "+api+"/issue/{key}", f.issue(f.edit))
+	mux.HandleFunc("GET "+api+"/issue/{key}/transitions", f.issue(f.transitions))
+	mux.HandleFunc("POST "+api+"/issue/{key}/transitions", f.issue(f.transition))
 	if f.cloud {
 		mux.HandleFunc("GET "+api+"/search/jql", f.search)
 		mux.HandleFunc("GET "+api+"/search", func(w http.ResponseWriter, _ *http.Request) {
@@ -296,6 +304,157 @@ func (f *jiraFake) create(w http.ResponseWriter, r *http.Request) {
 	}
 	ref := f.add(&jiraFakeIssue{summary: summary, desc: in.Fields["description"], status: f.statuses[0].name, typ: f.types[k].Name})
 	jiraReply(w, http.StatusCreated, map[string]string{"id": "1000" + strconv.Itoa(len(f.order)), "key": ref.ID, "self": "https://" + f.host + f.api() + "/issue/" + ref.ID})
+}
+
+func (f *jiraFake) issue(h func(http.ResponseWriter, *http.Request, *jiraFakeIssue)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		iss, ok := f.issues[r.PathValue("key")]
+		if !ok {
+			jiraReply(w, http.StatusNotFound, map[string]any{"errorMessages": []string{"Issue does not exist"}})
+			return
+		}
+		h(w, r, iss)
+	}
+}
+
+func (f *jiraFake) view(iss *jiraFakeIssue) map[string]any {
+	var res any
+	if iss.resolution != "" {
+		res = map[string]string{"name": iss.resolution}
+	}
+	return map[string]any{"key": iss.key, "fields": map[string]any{
+		"summary": iss.summary, "description": iss.desc, "labels": append([]string{}, iss.labels...), "resolution": res,
+		"status":    map[string]any{"name": iss.status, "statusCategory": map[string]string{"key": f.cat(iss.status)}},
+		"issuetype": map[string]string{"name": iss.typ},
+	}}
+}
+
+// edit is PUT /issue/{key}: summary and description in fields, label add and
+// remove operations in update.
+func (f *jiraFake) edit(w http.ResponseWriter, r *http.Request, iss *jiraFakeIssue) {
+	var in struct {
+		Fields map[string]json.RawMessage     `json:"fields"`
+		Update map[string][]map[string]string `json:"update"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		jiraReply(w, http.StatusBadRequest, map[string]any{"errorMessages": []string{err.Error()}})
+		return
+	}
+	for name, raw := range in.Fields {
+		switch {
+		case name == "summary" && json.Unmarshal(raw, &iss.summary) == nil && iss.summary != "":
+		case name == "description" && !f.badDesc(raw):
+			iss.desc = raw
+		default:
+			jiraReply(w, http.StatusBadRequest, map[string]any{"errors": map[string]string{name: "Field cannot be set"}})
+			return
+		}
+	}
+	for name, ops := range in.Update {
+		if name != "labels" {
+			jiraReply(w, http.StatusBadRequest, map[string]any{"errors": map[string]string{name: "Field cannot be set"}})
+			return
+		}
+		for _, op := range ops {
+			if l, ok := op["add"]; ok && !slices.Contains(iss.labels, l) {
+				iss.labels = append(iss.labels, l)
+			}
+			if l, ok := op["remove"]; ok {
+				iss.labels = slices.DeleteFunc(iss.labels, func(x string) bool { return x == l })
+			}
+		}
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// available is the transitions the workflow offers from the issue's status.
+func (f *jiraFake) available(iss *jiraFakeIssue) []jiraMove {
+	var out []jiraMove
+	for _, m := range f.moves {
+		if m.to != iss.status && (m.from == nil || slices.Contains(m.from, iss.status)) {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+func (f *jiraFake) transitions(w http.ResponseWriter, r *http.Request, iss *jiraFakeIssue) {
+	expand := strings.Contains(r.URL.Query().Get("expand"), "transitions.fields")
+	var out []any
+	for _, m := range f.available(iss) {
+		t := map[string]any{"id": m.id, "name": m.name, "to": map[string]any{"name": m.to, "statusCategory": map[string]string{"key": f.cat(m.to)}}}
+		if expand {
+			fields := map[string]any{}
+			if m.res != nil {
+				var allowed []map[string]string
+				for _, n := range m.res {
+					allowed = append(allowed, map[string]string{"id": jiraResolutionIDs[n], "name": n})
+				}
+				fields["resolution"] = map[string]any{"required": m.required, "name": "Resolution", "allowedValues": allowed}
+			}
+			t["fields"] = fields
+		}
+		out = append(out, t)
+	}
+	jiraReply(w, http.StatusOK, map[string]any{"transitions": out})
+}
+
+// transition is POST /issue/{key}/transitions: a resolution only where the
+// screen has the field, one of its values, and present when it is required.
+// Leaving the Done category clears the resolution, as Jira's workflows do.
+func (f *jiraFake) transition(w http.ResponseWriter, r *http.Request, iss *jiraFakeIssue) {
+	var in struct {
+		Transition struct {
+			ID string `json:"id"`
+		} `json:"transition"`
+		Fields map[string]struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"fields"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		jiraReply(w, http.StatusBadRequest, map[string]any{"errorMessages": []string{err.Error()}})
+		return
+	}
+	avail := f.available(iss)
+	k := slices.IndexFunc(avail, func(m jiraMove) bool { return m.id == in.Transition.ID })
+	if k < 0 {
+		jiraReply(w, http.StatusBadRequest, map[string]any{"errorMessages": []string{"Transition id '" + in.Transition.ID + "' is not valid for this issue."}})
+		return
+	}
+	m, res := avail[k], ""
+	for name, v := range in.Fields {
+		i := slices.IndexFunc(m.res, func(n string) bool { return jiraResolutionIDs[n] == v.ID || n == v.Name })
+		if name != "resolution" || i < 0 {
+			jiraReply(w, http.StatusBadRequest, map[string]any{"errors": map[string]string{name: "Field cannot be set. It is not on the appropriate screen, or unknown."}})
+			return
+		}
+		res = m.res[i]
+	}
+	if m.required && res == "" {
+		jiraReply(w, http.StatusBadRequest, map[string]any{"errors": map[string]string{"resolution": "Resolution is required."}})
+		return
+	}
+	iss.status = m.to
+	f.moved = append(f.moved, m.id)
+	switch {
+	case f.cat(m.to) != "done":
+		iss.resolution = ""
+	case res != "":
+		iss.resolution = res
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// jiraWrites is every request after the first n that is not a GET.
+func jiraWrites(reqs []jiraReq, n int) []string {
+	var out []string
+	for _, req := range reqs[n:] {
+		if req.method != http.MethodGet {
+			out = append(out, req.method+" "+req.url)
+		}
+	}
+	return out
 }
 
 // jiraDocJSON is body as one ADF paragraph, built by hand: the emulator's
@@ -750,6 +909,104 @@ func TestJiraSyncJQL(t *testing.T) {
 		f := newJiraCloudFake(t)
 		if _, err := newJiraTracker(t, jiraCloud).ListOpen(ctx, "public\nOR project = OTHER"); err == nil || len(*f.reqs) != 0 {
 			t.Fatalf("ListOpen(control label) = %v after %d requests, want an error and none", err, len(*f.reqs))
+		}
+	})
+}
+
+// jiraFlavors runs fn on an emulated Cloud and an emulated Data Center.
+func jiraFlavors(t *testing.T, fn func(t *testing.T, f *jiraFake, tr tracker.IssueTracker)) {
+	t.Run("cloud", func(t *testing.T) { f := newJiraCloudFake(t); fn(t, f, newJiraTracker(t, jiraCloud)) })
+	t.Run("datacenter", func(t *testing.T) { f := newJiraDCFake(t); fn(t, f, newJiraTracker(t, jiraDC)) })
+}
+
+// F-0453 crit. 2: Create leaves the issue in the status category of the
+// card's state: To Do for candidate and approved, In Progress for
+// in_development and implemented, Done for done, rejected and superseded.
+func TestJiraCreateLeavesIssueInState(t *testing.T) {
+	want := map[domain.FeatureState]string{
+		domain.StateCandidate: "new", domain.StateApproved: "new", domain.StateInDevelopment: "indeterminate", domain.StateImplemented: "indeterminate",
+		domain.StateDone: "done", domain.StateRejected: "done", domain.StateSuperseded: "done",
+	}
+	jiraFlavors(t, func(t *testing.T, f *jiraFake, tr tracker.IssueTracker) {
+		for s, cat := range want {
+			r, err := tr.Create(context.Background(), tracker.Item{CardID: "F-0001", State: s, Title: "Public", Summary: "Summary"})
+			if err != nil {
+				t.Fatalf("Create(%s): %v", s, err)
+			}
+			if got := f.cat(f.issues[r.ID].status); got != cat {
+				t.Errorf("Create(%s) left %s in %s (%s), want category %s", s, r.ID, f.issues[r.ID].status, got, cat)
+			}
+		}
+	})
+}
+
+// F-0453 crit. 2: the transition is the first the issue offers whose target
+// status is in the card state's category, whatever the workflow names its
+// statuses and transitions; an issue already in that category is not moved.
+func TestJiraTransitionByCategory(t *testing.T) {
+	ctx := context.Background()
+	jiraFlavors(t, func(t *testing.T, f *jiraFake, tr tracker.IssueTracker) {
+		f.statuses = []jiraStatus{{"Triagem", "new"}, {"Fila", "new"}, {"Fazendo", "indeterminate"}, {"Revisão", "indeterminate"}, {"Arquivado", "done"}, {"Entregue", "done"}}
+		f.moves = []jiraMove{
+			{id: "101", name: "Arquivar", to: "Arquivado", from: []string{"Triagem", "Fila"}},
+			{id: "102", name: "Puxar", to: "Fazendo", from: []string{"Triagem", "Fila"}},
+			{id: "103", name: "Pedir revisão", to: "Revisão", from: []string{"Triagem", "Fazendo"}},
+			{id: "104", name: "Despachar", to: "Entregue", from: []string{"Fazendo", "Revisão"}},
+			{id: "105", name: "Devolver", to: "Fila", from: []string{"Arquivado", "Entregue", "Fazendo", "Revisão"}},
+		}
+		r := f.seed("Outside", "Body")
+		for _, step := range []struct {
+			state  domain.FeatureState
+			status string
+		}{
+			{domain.StateInDevelopment, "Fazendo"}, {domain.StateImplemented, "Fazendo"}, {domain.StateDone, "Entregue"},
+			{domain.StateApproved, "Fila"}, {domain.StateCandidate, "Fila"},
+		} {
+			before := len(*f.reqs)
+			if err := tr.Update(ctx, r, tracker.Item{CardID: "F-0001", State: step.state}); err != nil {
+				t.Fatalf("Update(%s): %v", step.state, err)
+			}
+			if got := f.issues[r.ID].status; got != step.status {
+				t.Fatalf("after Update(%s) the issue is in %s, want %s", step.state, got, step.status)
+			}
+			if step.state == domain.StateImplemented || step.state == domain.StateCandidate {
+				if w := jiraWrites(*f.reqs, before); len(w) != 0 || strings.Contains(fmt.Sprint((*f.reqs)[before:]), "/transitions") {
+					t.Fatalf("Update(%s) on an issue already in the category sent %v", step.state, (*f.reqs)[before:])
+				}
+			}
+		}
+		if want := []string{"102", "104", "105"}; !slices.Equal(f.moved, want) {
+			t.Fatalf("transitions applied %v, want %v", f.moved, want)
+		}
+	})
+}
+
+// F-0453 crit. 2: when no transition leads to the category, the issue keeps
+// its status, gets the cerne:<state> label in place of any earlier cerne:*
+// one, and Update returns the no-transition error the core prints as a
+// warning without failing the cerne transition. A later state the workflow
+// reaches drops the label again.
+func TestJiraNoMatchingTransitionWarns(t *testing.T) {
+	ctx := context.Background()
+	jiraFlavors(t, func(t *testing.T, f *jiraFake, tr tracker.IssueTracker) {
+		f.moves = []jiraMove{
+			{id: "11", name: "Start", to: "In Progress", from: []string{"To Do"}},
+			{id: "21", name: "Finish", to: "Done", from: []string{"In Progress"}},
+		}
+		r := f.seed("Outside", "Body", "keep", "cerne:approved")
+		err := tr.Update(ctx, r, tracker.Item{CardID: "F-0001", State: domain.StateDone})
+		if err == nil || !strings.Contains(err.Error(), "no transition to the status category done") || !strings.Contains(err.Error(), r.ID) {
+			t.Fatalf("Update(done) with no transition to Done = %v, want the no-transition error naming %s", err, r.ID)
+		}
+		iss := f.issues[r.ID]
+		if iss.status != "To Do" || !slices.Equal(iss.labels, []string{"keep", "cerne:done"}) {
+			t.Fatalf("issue in %s with labels %v, want To Do with [keep cerne:done]", iss.status, iss.labels)
+		}
+		if err := tr.Update(ctx, r, tracker.Item{CardID: "F-0001", State: domain.StateInDevelopment}); err != nil {
+			t.Fatalf("Update(in_development): %v", err)
+		}
+		if iss.status != "In Progress" || !slices.Equal(iss.labels, []string{"keep"}) {
+			t.Fatalf("issue in %s with labels %v, want In Progress with [keep]", iss.status, iss.labels)
 		}
 	})
 }

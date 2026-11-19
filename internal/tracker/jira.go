@@ -16,6 +16,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/forge"
 	"github.com/henriquesakata/cerne/internal/version"
 )
@@ -201,7 +202,41 @@ type jiraIssue struct {
 	Fields struct {
 		Summary     string          `json:"summary"`
 		Description json.RawMessage `json:"description"`
+		Labels      []string        `json:"labels"`
+		Status      struct {
+			StatusCategory jiraCategoryRef `json:"statusCategory"`
+		} `json:"status"`
 	} `json:"fields"`
+}
+
+type jiraCategoryRef struct {
+	Key string `json:"key"` // new | indeterminate | done
+}
+
+// jiraTransition is one transition the issue offers.
+type jiraTransition struct {
+	ID string `json:"id"`
+	To struct {
+		StatusCategory jiraCategoryRef `json:"statusCategory"`
+	} `json:"to"`
+}
+
+// errJiraNoTransition is an issue the workflow cannot take to the card
+// state's category from where it is: the core prints it as a warning, and
+// the transition of the card stands.
+var errJiraNoTransition = errors.New("no transition to the status category")
+
+// jiraCategory is the status category every Jira workflow has for a card
+// state: To Do (new) until work starts, In Progress (indeterminate) through
+// review, Done (done) for every state that closes an issue.
+func jiraCategory(s domain.FeatureState) string {
+	switch {
+	case closeReason(s) != "":
+		return "done"
+	case s == domain.StateInDevelopment || s == domain.StateImplemented:
+		return "indeterminate"
+	}
+	return "new"
 }
 
 // jiraADF is a node of the Atlassian Document Format, the body of API v3.
@@ -304,7 +339,12 @@ func (j jira) Create(ctx context.Context, it Item) (Ref, error) {
 	if !j.ownKey(created.Key) {
 		return Ref{}, fmt.Errorf("jira %s: unreadable answer", j.host)
 	}
-	return j.ref(created.Key), nil
+	r := j.ref(created.Key)
+	cur, err := c.issue(ctx, r.ID)
+	if err != nil {
+		return r, err
+	}
+	return r, c.apply(ctx, r.ID, cur, it) // a Ref with an error: the issue exists, its status did not land
 }
 
 // issueType is the id of the project's Task type or, when it has none, of its
@@ -340,8 +380,95 @@ func (c *jiraCall) issueType(ctx context.Context) (string, error) {
 	return first, nil
 }
 
-func (j jira) Update(context.Context, Ref, Item) error {
-	return errors.New("jira: update not implemented")
+// Update reads the issue and moves it toward it.
+func (j jira) Update(ctx context.Context, r Ref, it Item) error {
+	if !j.ownKey(r.ID) {
+		return fmt.Errorf("%w: issue key %q", errBadRef, r.ID)
+	}
+	c, err := j.call(ctx)
+	if err != nil {
+		return err
+	}
+	cur, err := c.issue(ctx, r.ID)
+	if err != nil {
+		return err
+	}
+	return c.apply(ctx, r.ID, cur, it)
+}
+
+func (c *jiraCall) issue(ctx context.Context, key string) (jiraIssue, error) {
+	var iss jiraIssue
+	err := c.do(ctx, http.MethodGet, c.api("/issue/"+key+"?fields=summary,description,status,labels"), nil, &iss)
+	return iss, err
+}
+
+// apply moves cur, issue key, to the status category of it.State by the
+// first transition the issue offers into it; an issue already there is not
+// moved. With no such transition the issue keeps its status, is labeled
+// cerne:<state>, and apply returns errJiraNoTransition. Any other cerne:*
+// label goes in the same edit. The edit goes while the issue is out of the
+// Done category: a workflow may lock editing in a closed status.
+func (c *jiraCall) apply(ctx context.Context, key string, cur jiraIssue, it Item) error {
+	path := c.api("/issue/" + key)
+	want := jiraCategory(it.State)
+	var move *jiraTransition
+	if cur.Fields.Status.StatusCategory.Key != want {
+		var ts struct {
+			Transitions []jiraTransition `json:"transitions"`
+		}
+		if err := c.do(ctx, http.MethodGet, path+"/transitions?expand=transitions.fields", nil, &ts); err != nil {
+			return err
+		}
+		if i := slices.IndexFunc(ts.Transitions, func(t jiraTransition) bool { return t.To.StatusCategory.Key == want }); i >= 0 {
+			move = &ts.Transitions[i]
+		}
+	}
+	stuck := move == nil && cur.Fields.Status.StatusCategory.Key != want
+	label := ""
+	if stuck {
+		label = stateLabel(it.State)
+	}
+	edit := map[string]any{}
+	if ops := jiraLabelOps(cur.Fields.Labels, label); len(ops) > 0 {
+		edit["update"] = map[string]any{"labels": ops}
+	}
+	transition := func() error {
+		return c.do(ctx, http.MethodPost, path+"/transitions", map[string]any{"transition": map[string]string{"id": move.ID}}, nil)
+	}
+	if move != nil && want != "done" {
+		if err := transition(); err != nil {
+			return err
+		}
+	}
+	if len(edit) > 0 {
+		if err := c.do(ctx, http.MethodPut, path, edit, nil); err != nil {
+			return err
+		}
+	}
+	if move != nil && want == "done" {
+		if err := transition(); err != nil {
+			return err
+		}
+	}
+	if stuck {
+		return fmt.Errorf("jira %s: %s: %w %s; labeled it %s", c.j.host, key, errJiraNoTransition, want, label)
+	}
+	return nil
+}
+
+// jiraLabelOps is the label edit that leaves want ("" = none) as the issue's
+// only cerne:* label and keeps every other label.
+func jiraLabelOps(cur []string, want string) []map[string]string {
+	var ops []map[string]string
+	if want != "" && !slices.Contains(cur, want) {
+		ops = append(ops, map[string]string{"add": want})
+	}
+	for _, l := range cur {
+		if l != want && strings.HasPrefix(l, "cerne:") {
+			ops = append(ops, map[string]string{"remove": l})
+		}
+	}
+	return ops
 }
 
 // jiraQuote is the JQL string escape: a backslash and a double quote.
