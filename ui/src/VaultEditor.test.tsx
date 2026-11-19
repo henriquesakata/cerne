@@ -338,6 +338,17 @@ describe('VaultEditor conflict (F-0464 critério 7)', () => {
     expect(api.saveEntityContent).toHaveBeenLastCalledWith('note', 'N-0001', 'linha minha\nlinha deles', 'h2')
   })
 
+  it('conflict: the reason and the diff sit right under the action row, above the panes', async () => {
+    api.saveEntityContent.mockResolvedValue(conflict('linha deles', 'h2'))
+    const { container } = editor(note())
+    type('linha minha')
+    save()
+    await screen.findByText(/mudou no backend/)
+    const row = container.querySelector('.vault-editor-actions')!
+    expect(row.nextElementSibling).toHaveClass('vault-editor-conflict')
+    expect(row.nextElementSibling!.nextElementSibling).toHaveClass('vault-editor-panes')
+  })
+
   it('conflict: reloading the backend version replaces the draft and the base', async () => {
     api.saveEntityContent.mockResolvedValueOnce(conflict('versão deles', 'h2')).mockResolvedValue({ ok: true })
     editor(note())

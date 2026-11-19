@@ -315,6 +315,21 @@ export default function VaultEditor({ doc, entries, knownIds, wikiHref, onSaved,
           </span>
         )}
       </div>
+      {/* The reason the buttons changed, right under them, above the panes. */}
+      {conflict && (
+        <div className="vault-editor-conflict" role="alert">
+          <p className="form-error">{t.vault.editor.conflict}</p>
+          <pre className="proposal-draft-diff">
+            {lineDiff(splitFrontmatter(conflict.content).body, draft)
+              .filter((l) => l.kind !== 'same')
+              .map((l, i) => (
+                <span key={i} className={`diff-${l.kind}`}>
+                  {(l.kind === 'add' ? '+ ' : '- ') + l.text}
+                </span>
+              ))}
+          </pre>
+        </div>
+      )}
       {approvedSpec && (
         <p className="vault-editor-notice" role="note">
           {t.vault.editor.approvedSpec}
@@ -372,20 +387,6 @@ export default function VaultEditor({ doc, entries, knownIds, wikiHref, onSaved,
           </Markdown>
         </section>
       </div>
-      {conflict && (
-        <div className="vault-editor-conflict" role="alert">
-          <p className="form-error">{t.vault.editor.conflict}</p>
-          <pre className="proposal-draft-diff">
-            {lineDiff(splitFrontmatter(conflict.content).body, draft)
-              .filter((l) => l.kind !== 'same')
-              .map((l, i) => (
-                <span key={i} className={`diff-${l.kind}`}>
-                  {(l.kind === 'add' ? '+ ' : '- ') + l.text}
-                </span>
-              ))}
-          </pre>
-        </div>
-      )}
     </div>
   )
 }
