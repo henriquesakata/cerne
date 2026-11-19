@@ -145,11 +145,30 @@ func TestLifecycleMarksMatchDomainActions(t *testing.T) {
 // are exactly the lifecycle-marked verbs (F-0323 crit. 4, "in any mode"),
 // derived, never hand-kept — and nothing more: local verbs stay allowed in the
 // subscription mode, whose write policy (F-0260/F-0267/F-0269) is unchanged.
+// Hidden verbs count (B-0039): the pt-BR twin `substituir` runs like
+// `supersede`, so a list built from the visible catalog let it through. The
+// rules match by name, so a cobra alias on a lifecycle path would escape them
+// the same way; none may exist.
 func TestAgentDeniedCommandsCoverLifecycleMarks(t *testing.T) {
 	var want []string
-	for _, v := range verbs.From(Root()) {
-		if v.Lifecycle {
-			want = append(want, "Bash(cerne "+v.Path+":*)")
+	var walk func(*cobra.Command)
+	walk = func(c *cobra.Command) {
+		for _, sub := range c.Commands() {
+			if verbs.IsLifecycle(sub) {
+				want = append(want, "Bash("+sub.CommandPath()+":*)")
+				for p := sub; p != nil; p = p.Parent() {
+					if len(p.Aliases) > 0 {
+						t.Errorf("%q has cobra aliases %v on a lifecycle path: the name-based refusals miss them", p.CommandPath(), p.Aliases)
+					}
+				}
+			}
+			walk(sub)
+		}
+	}
+	walk(Root())
+	for _, g := range []string{"feature", "decision", "note", "runbook"} {
+		if rule := "Bash(cerne " + g + " substituir:*)"; !slices.Contains(want, rule) {
+			t.Errorf("walk lacks the hidden twin %s", rule)
 		}
 	}
 	got := slices.Clone(llm.AgentDeniedCommands)

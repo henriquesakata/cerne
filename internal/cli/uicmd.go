@@ -38,13 +38,16 @@ func init() {
 // agentDeniedCommands is the claude-cli refusal list derived from the
 // lifecycle marks (crit. 4: lifecycle refused in every mode). Only lifecycle:
 // local verbs stay allowed in the subscription mode, whose write policy
-// (F-0260/F-0267/F-0269) this feature does not change.
-func agentDeniedCommands(root *cobra.Command) []string {
+// (F-0260/F-0267/F-0269) this feature does not change. It walks the whole
+// tree, hidden commands included: verbs.From is the visible catalog, and the
+// hidden pt-BR twin `substituir` runs like `supersede` (B-0039).
+func agentDeniedCommands(c *cobra.Command) []string {
 	var rules []string
-	for _, v := range verbs.From(root) {
-		if v.Lifecycle {
-			rules = append(rules, "Bash(cerne "+v.Path+":*)")
+	for _, sub := range c.Commands() {
+		if verbs.IsLifecycle(sub) {
+			rules = append(rules, "Bash("+sub.CommandPath()+":*)")
 		}
+		rules = append(rules, agentDeniedCommands(sub)...)
 	}
 	return rules
 }

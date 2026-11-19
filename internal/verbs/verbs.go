@@ -64,6 +64,10 @@ func MarkGroup(cmd *cobra.Command) *cobra.Command { return annotate(cmd, groupKe
 // not a guarded group. Every "is this a verb" test goes through here.
 func IsVerb(c *cobra.Command) bool { return c.Runnable() && c.Annotations[groupKey] == "" }
 
+// IsLifecycle reports whether c is a lifecycle verb, hidden or not: a hidden
+// pt-BR twin (B-0015) runs exactly like its English name (B-0039).
+func IsLifecycle(c *cobra.Command) bool { return IsVerb(c) && classOf(c) == ClassLifecycle }
+
 func annotate(cmd *cobra.Command, key, value string) *cobra.Command {
 	if cmd.Annotations == nil {
 		cmd.Annotations = map[string]string{}
