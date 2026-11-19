@@ -1077,6 +1077,7 @@ const ptBR = {
       reloadBackend: 'Recarregar a versão do backend',
       overwrite: 'Gravar por cima',
       discard: 'Descartar o rascunho não gravado?',
+      unsaved: 'não gravado',
       approvedSpec:
         'Esta spec está aprovada: gravar uma versão diferente vence a aprovação, e o Iniciar fica bloqueado até reaprovar.',
     },
@@ -2524,6 +2525,7 @@ const en: Messages = {
       reloadBackend: 'Reload the backend version',
       overwrite: 'Save over it',
       discard: 'Discard the unsaved draft?',
+      unsaved: 'unsaved',
       approvedSpec:
         'This spec is approved: saving a different version makes the approval stale, and Start is blocked until it is re-approved.',
     },

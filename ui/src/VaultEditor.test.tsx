@@ -157,6 +157,19 @@ describe('VaultEditor save (F-0464 critério 4)', () => {
   })
 })
 
+describe('VaultEditor action row (F-0464 I-7)', () => {
+  it('unsaved: the action row opens the editor and says when the draft is not saved', () => {
+    const { container } = editor(note())
+    const row = container.querySelector('.vault-editor')!.firstElementChild!
+    expect(row).toHaveClass('vault-editor-actions')
+    expect(screen.queryByText('não gravado')).toBeNull()
+    type('rascunho')
+    expect(row).toHaveTextContent('não gravado')
+    type(note().content)
+    expect(screen.queryByText('não gravado')).toBeNull()
+  })
+})
+
 describe('Vault while editing (F-0464 I-1)', () => {
   it('layout: the editor takes the rail too — no outline/backlinks aside until it closes', async () => {
     docs = { 'N-0001': note({ content: '# Nota\n\n## Seção\n\ntexto' }) }

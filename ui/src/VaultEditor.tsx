@@ -179,10 +179,50 @@ export default function VaultEditor({ doc, entries, knownIds, wikiHref, onSaved,
     if (!dirty || window.confirm(discard)) onCancel()
   }
 
+  // The action row sticks right under the app's sticky nav, whose height
+  // depends on its content and the viewport.
+  const [stickTop, setStickTop] = useState(0)
+  useLayoutEffect(() => {
+    const nav = document.querySelector('.nav')
+    if (!nav) return
+    const measure = () => setStickTop(nav.getBoundingClientRect().height)
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [])
+
   const approvedSpec = doc.kind === 'feature' && doc.state === 'approved' && doc.doc === 'spec'
 
   return (
     <div className="vault-editor">
+      {/* One action row, on top and sticky (the preview can run long): in
+          conflict, Save would resend the stale base and 409 again, so Save
+          over it takes its place; the draft stays editable. */}
+      <div className="vault-editor-actions" style={{ top: stickTop }}>
+        {conflict ? (
+          <>
+            <button type="button" className="vault-editor-primary" onClick={() => void save(conflict.hash)} disabled={saving}>
+              {saving ? t.vault.editor.saving : t.vault.editor.overwrite}
+            </button>
+            <button type="button" onClick={reloadBackend} disabled={saving}>
+              {t.vault.editor.reloadBackend}
+            </button>
+          </>
+        ) : (
+          <button type="button" className="vault-editor-primary" onClick={() => void save()} disabled={saving}>
+            {saving ? t.vault.editor.saving : t.common.save}
+          </button>
+        )}
+        <button type="button" onClick={cancel} disabled={saving}>
+          {t.common.cancel}
+        </button>
+        {dirty && <span className="muted">{t.vault.editor.unsaved}</span>}
+        {error && (
+          <span className="form-error" role="alert">
+            {t.vault.editor.saveError(error)}
+          </span>
+        )}
+      </div>
       {approvedSpec && (
         <p className="vault-editor-notice" role="note">
           {t.vault.editor.approvedSpec}
@@ -246,32 +286,6 @@ export default function VaultEditor({ doc, entries, knownIds, wikiHref, onSaved,
           </pre>
         </div>
       )}
-      {/* One action row: in conflict, Save would resend the stale base and 409
-          again, so Save over it takes its place; the draft stays editable. */}
-      <div className="vault-editor-actions">
-        {conflict ? (
-          <>
-            <button type="button" className="vault-editor-primary" onClick={() => void save(conflict.hash)} disabled={saving}>
-              {saving ? t.vault.editor.saving : t.vault.editor.overwrite}
-            </button>
-            <button type="button" onClick={reloadBackend} disabled={saving}>
-              {t.vault.editor.reloadBackend}
-            </button>
-          </>
-        ) : (
-          <button type="button" className="vault-editor-primary" onClick={() => void save()} disabled={saving}>
-            {saving ? t.vault.editor.saving : t.common.save}
-          </button>
-        )}
-        <button type="button" onClick={cancel} disabled={saving}>
-          {t.common.cancel}
-        </button>
-        {error && (
-          <span className="form-error" role="alert">
-            {t.vault.editor.saveError(error)}
-          </span>
-        )}
-      </div>
     </div>
   )
 }

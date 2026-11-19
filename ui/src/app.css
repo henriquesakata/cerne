@@ -3914,7 +3914,7 @@ button.clarify-chip { cursor: pointer; font: inherit; }
 .vault-editor-notice { margin: 0; padding: 0.5rem 0.75rem; border-left: 3px solid var(--accent); background: var(--surface-tint); }
 .vault-editor-conflict { display: flex; flex-direction: column; gap: 0.5rem; }
 .vault-editor-conflict .form-error { margin: 0; }
-.vault-editor-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+.vault-editor-actions { position: sticky; top: 0; z-index: 6; display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; padding: 0.4rem 0; background: var(--bg); }
 /* Edit and the editor's actions take the system's button recipe (the feature
    page's .doc-edit-actions); the primary one is full ink, never a hue. */
 .vault-doc-actions button,
