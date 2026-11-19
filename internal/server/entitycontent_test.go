@@ -122,10 +122,12 @@ func contentFixture(t *testing.T) (repoDir, projDir string) {
 	return repoDir, projDir
 }
 
-// putContent sends a raw markdown PUT, with If-Match when ifMatch is not nil.
+// putContent sends a raw markdown PUT from the local ui, with If-Match when
+// ifMatch is not nil.
 func putContent(t *testing.T, h http.Handler, target, body string, ifMatch *string) (*httptest.ResponseRecorder, map[string]any) {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPut, target, strings.NewReader(body))
+	req.Host = "127.0.0.1:7717" // the local ui (audit A4: the writes need a loopback Host)
 	req.Header.Set("Content-Type", "text/markdown")
 	if ifMatch != nil {
 		req.Header.Set("If-Match", *ifMatch)
@@ -288,5 +290,40 @@ func TestPutContentForeignCerneID(t *testing.T) {
 	}
 	if !maps.Equal(cloneTree(t, repoDir), tree) {
 		t.Fatalf("a refused PUT changed the clone")
+	}
+}
+
+// TestContentWritesRefuseForeignHostOrOrigin (F-0464 audit A4): the vault's
+// writes take the settings' guard (localWrite) — a rebound name (foreign Host)
+// or a cross-site request (foreign Origin, or a body that is not markdown) is
+// a 403 with nothing written; the local ui, with or without an Origin, writes.
+func TestContentWritesRefuseForeignHostOrOrigin(t *testing.T) {
+	urls := []string{"/api/notes/N-0001/content", "/api/decisions/D-0001/content", "/api/runbooks/RB-0001/content", "/api/features/F-0001/docs/spec"}
+	for _, tc := range []struct {
+		name    string
+		headers map[string]string
+		want    int
+	}{
+		{"rebound name (auditor's probe)", map[string]string{"Host": "evil.example:7741", "Origin": "http://evil.example:7741", "Content-Type": "text/plain"}, http.StatusForbidden},
+		{"foreign host", map[string]string{"Host": "evil.example:7717", "Content-Type": "text/markdown"}, http.StatusForbidden},
+		{"foreign origin", map[string]string{"Host": "127.0.0.1:7717", "Origin": "http://evil.example", "Content-Type": "text/markdown"}, http.StatusForbidden},
+		{"form body", map[string]string{"Host": "127.0.0.1:7717", "Content-Type": "text/plain"}, http.StatusForbidden},
+		{"loopback, no origin", map[string]string{"Host": "127.0.0.1:7717", "Content-Type": "text/markdown"}, http.StatusOK},
+		{"loopback, same origin", map[string]string{"Host": "localhost:7717", "Origin": "http://localhost:7717", "Content-Type": "text/markdown; charset=utf-8"}, http.StatusOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repoDir, projDir := contentFixture(t)
+			h := New(repoDir, projDir, "")
+			tree := cloneTree(t, repoDir)
+			for _, url := range urls {
+				body := "# Reescrito por " + tc.name + "\n"
+				if rec := doJSONWith(t, h, http.MethodPut, url, body, tc.headers, nil); rec.Code != tc.want {
+					t.Errorf("PUT %s = %d %s, want %d", url, rec.Code, rec.Body.String(), tc.want)
+				}
+			}
+			if tc.want == http.StatusForbidden && !maps.Equal(cloneTree(t, repoDir), tree) {
+				t.Fatalf("a refused PUT changed the clone")
+			}
+		})
 	}
 }

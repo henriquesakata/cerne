@@ -18,7 +18,7 @@ func seedOpenClarification(t *testing.T, repoDir, projDir string) (doc, raw stri
 	var got struct {
 		Saved bool `json:"saved"`
 	}
-	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPut, "/api/features/F-0001/docs/spec", spec, &got)
+	rec := doLocal(t, New(repoDir, projDir, ""), http.MethodPut, "/api/features/F-0001/docs/spec", spec, &got)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("seeding spec: status=%d body=%s", rec.Code, rec.Body.String())
 	}

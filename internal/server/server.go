@@ -1034,7 +1034,11 @@ func handleWikiIndex(w http.ResponseWriter, repoDir, projDir string) {
 // browser sends without a preflight (C7, F-0316): an Origin that is not this
 // server's, or a body type other than JSON (a form or text/plain post), is
 // refused. No Origin and no body type — the CLI, curl — passes.
-func sameOriginJSON(r *http.Request) bool {
+func sameOriginJSON(r *http.Request) bool { return sameOriginAs(r, "application/json") }
+
+// sameOriginAs is sameOriginJSON for a body of mediaType (F-0464: the vault's
+// text/markdown writes).
+func sameOriginAs(r *http.Request, mediaType string) bool {
 	if o := r.Header.Get("Origin"); o != "" {
 		u, err := url.Parse(o)
 		if err != nil || u.Host != r.Host {
@@ -1042,7 +1046,7 @@ func sameOriginJSON(r *http.Request) bool {
 		}
 	}
 	if ct := r.Header.Get("Content-Type"); ct != "" {
-		if mt, _, err := mime.ParseMediaType(ct); err != nil || mt != "application/json" {
+		if mt, _, err := mime.ParseMediaType(ct); err != nil || mt != mediaType {
 			return false
 		}
 	}
@@ -1371,6 +1375,9 @@ func handleCreateReference(w http.ResponseWriter, r *http.Request, repoDir, proj
 }
 
 func handleFeatureDocPut(w http.ResponseWriter, r *http.Request, repoDir, projDir, id, doc string) {
+	if !localWriteOf(w, r, "text/markdown") { // audit A4: the vault writes through it
+		return
+	}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
@@ -1403,6 +1410,9 @@ func handleFeatureDocPut(w http.ResponseWriter, r *http.Request, repoDir, projDi
 // its cerne_id, 422 past active — history takes an errata — and 409 on a
 // stale If-Match.
 func handleEntityContentPut(w http.ResponseWriter, r *http.Request, repoDir, projDir, kind, id string) {
+	if !localWriteOf(w, r, "text/markdown") { // audit A4: no rebound name, no cross-site write
+		return
+	}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
