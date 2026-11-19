@@ -127,7 +127,9 @@ function Routed({ hash }: { hash: string }) {
   if (hash === '#/vault' || hash.startsWith('#/vault/'))
     return (
       <Suspense fallback={<p className="status">{t.vault.loadingChunk}</p>}>
-        <Vault hash={hash} />
+        {/* keyed by project: another project's vault starts clean, never with
+            this one's draft or base (F-0464, audit A2) */}
+        <Vault key={activePid} hash={hash} />
       </Suspense>
     )
   if (hash === '#/decisions') return <Decisions />

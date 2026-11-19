@@ -47,14 +47,25 @@ vi.mock('./live', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./live')>()),
   LiveProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
   useLiveVersion: () => 0,
-  useProjects: () => ({ projects: mockProjects, activePid: 'p1' }),
+  useProjects: () => ({ projects: mockProjects, activePid: mockActivePid }),
 }))
 
 let mockProjects: ProjectInfo[] = []
+let mockActivePid = 'p1'
+let vaultMounts = 0
 
 // O Grafo real puxa React Flow; aqui basta saber se a rota o monta.
 vi.mock('./Graph', () => ({ default: () => <p>grafo montado</p> }))
-vi.mock('./Vault', () => ({ default: ({ hash }: { hash: string }) => <p>cofre montado em {hash}</p> }))
+// data-mount numbers each mount, so a test sees a remount (F-0464 A2).
+vi.mock('./Vault', async () => {
+  const { useState } = await import('react')
+  return {
+    default: function Vault({ hash }: { hash: string }) {
+      const [mount] = useState(() => ++vaultMounts)
+      return <p data-mount={mount}>cofre montado em {hash}</p>
+    },
+  }
+})
 
 vi.mock('./notifications', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./notifications')>()),
@@ -72,6 +83,7 @@ globalThis.ResizeObserver ??= NoopResizeObserver as unknown as typeof ResizeObse
 beforeEach(() => {
   vi.mocked(search).mockClear()
   mockProjects = []
+  mockActivePid = 'p1'
 })
 afterEach(cleanup)
 
@@ -164,6 +176,20 @@ describe('App — nav guard (F-0464 critério 9)', () => {
     setNavGuard(() => true)
     window.location.hash = '#/vault/D-0001'
     expect(await screen.findByText('cofre montado em #/vault/D-0001')).toBeInTheDocument()
+  })
+})
+
+describe('App — the vault per project (F-0464 audit A2)', () => {
+  it('project switch: the vault remounts on another project, so no draft crosses over', async () => {
+    window.location.hash = '#/vault/N-0001'
+    const { rerender } = render(<App />)
+    const mount = async () => (await screen.findByText('cofre montado em #/vault/N-0001')).getAttribute('data-mount')
+    const first = await mount()
+    rerender(<App />)
+    expect(await mount()).toBe(first)
+    mockActivePid = 'p2'
+    rerender(<App />)
+    expect(await mount()).not.toBe(first)
   })
 })
 
