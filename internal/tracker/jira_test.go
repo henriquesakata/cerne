@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
@@ -117,6 +118,7 @@ type jiraFake struct {
 	statuses   []jiraStatus
 	moves      []jiraMove
 	types      []jiraType
+	required   map[string]string // create fields the project demands -> Jira's message
 	issues     map[string]*jiraFakeIssue
 	order      []string // keys, in creation order
 	jql        []string // every JQL searched
@@ -172,6 +174,8 @@ func (f *jiraFake) handler() http.Handler {
 		})
 	}
 	api := f.api()
+	mux.HandleFunc("GET "+api+"/project/{key}", f.project)
+	mux.HandleFunc("POST "+api+"/issue", f.create)
 	if f.cloud {
 		mux.HandleFunc("GET "+api+"/search/jql", f.search)
 		mux.HandleFunc("GET "+api+"/search", func(w http.ResponseWriter, _ *http.Request) {
@@ -229,6 +233,69 @@ func (f *jiraFake) add(iss *jiraFakeIssue) tracker.Ref {
 
 func (f *jiraFake) ref(key string) tracker.Ref {
 	return tracker.Ref{Tracker: "jt", ID: key, URL: "https://" + f.host + f.root + "/browse/" + key}
+}
+
+func (f *jiraFake) project(w http.ResponseWriter, r *http.Request) {
+	if r.PathValue("key") != "PROJ" {
+		jiraReply(w, http.StatusNotFound, map[string]any{"errorMessages": []string{"No project could be found"}})
+		return
+	}
+	jiraReply(w, http.StatusOK, map[string]any{"key": "PROJ", "issueTypes": f.types})
+}
+
+// badDesc reports a description that is not the flavor's form: an ADF doc on
+// Cloud, a string on Data Center.
+func (f *jiraFake) badDesc(raw json.RawMessage) bool {
+	if !f.cloud {
+		var s string
+		return json.Unmarshal(raw, &s) != nil
+	}
+	var doc struct {
+		Type    string `json:"type"`
+		Version int    `json:"version"`
+	}
+	return json.Unmarshal(raw, &doc) != nil || doc.Type != "doc" || doc.Version != 1
+}
+
+func (f *jiraFake) create(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Fields map[string]json.RawMessage `json:"fields"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		jiraReply(w, http.StatusBadRequest, map[string]any{"errorMessages": []string{err.Error()}})
+		return
+	}
+	var project, typ struct {
+		Key string `json:"key"`
+		ID  string `json:"id"`
+	}
+	var summary string
+	_ = json.Unmarshal(in.Fields["project"], &project)
+	_ = json.Unmarshal(in.Fields["issuetype"], &typ)
+	_ = json.Unmarshal(in.Fields["summary"], &summary)
+	errs := map[string]string{}
+	k := slices.IndexFunc(f.types, func(t jiraType) bool { return t.ID == typ.ID && !t.Subtask })
+	switch {
+	case project.Key != "PROJ":
+		errs["project"] = "valid project is required"
+	case k < 0:
+		errs["issuetype"] = "valid issue type is required"
+	case summary == "":
+		errs["summary"] = "You must specify a summary of the issue."
+	case f.badDesc(in.Fields["description"]):
+		errs["description"] = "Operation value must be an Atlassian Document"
+	}
+	for name, msg := range f.required {
+		if in.Fields[name] == nil {
+			errs[name] = msg
+		}
+	}
+	if len(errs) > 0 {
+		jiraReply(w, http.StatusBadRequest, map[string]any{"errorMessages": []string{}, "errors": errs})
+		return
+	}
+	ref := f.add(&jiraFakeIssue{summary: summary, desc: in.Fields["description"], status: f.statuses[0].name, typ: f.types[k].Name})
+	jiraReply(w, http.StatusCreated, map[string]string{"id": "1000" + strconv.Itoa(len(f.order)), "key": ref.ID, "self": "https://" + f.host + f.api() + "/issue/" + ref.ID})
 }
 
 // jiraDocJSON is body as one ADF paragraph, built by hand: the emulator's
@@ -510,5 +577,118 @@ func TestJiraNoRedirectKeepsCredential(t *testing.T) {
 	}
 	if u, _ := url.Parse((*reqs)[0].url); u.Host != "acme.atlassian.net" {
 		t.Fatalf("request went to %s, want acme.atlassian.net", u.Host)
+	}
+}
+
+// F-0453 crit. 6: the issue is a Task; a project without one gets its first
+// standard type, never a subtask, and on Cloud never a type above the base
+// level (an epic).
+func TestJiraIssueTypeFallback(t *testing.T) {
+	ctx := context.Background()
+	one, zero, minus := 1, 0, -1
+	for _, c := range []struct {
+		name  string
+		cloud bool
+		types []jiraType
+		want  string // "" = refused, nothing created
+	}{
+		{"cloud with Task", true, []jiraType{{ID: "1", Name: "Story", Level: &zero}, {ID: "2", Name: "Task", Level: &zero}}, "Task"},
+		{"cloud without Task", true, []jiraType{{ID: "1", Name: "Sub-task", Subtask: true, Level: &minus}, {ID: "2", Name: "Epic", Level: &one}, {ID: "3", Name: "Story", Level: &zero}, {ID: "4", Name: "Bug", Level: &zero}}, "Story"},
+		{"data center without Task", false, []jiraType{{ID: "1", Name: "Sub-task", Subtask: true}, {ID: "2", Name: "Bug"}, {ID: "3", Name: "Improvement"}}, "Bug"},
+		{"only subtasks", false, []jiraType{{ID: "1", Name: "Sub-task", Subtask: true}}, ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f, raw := newJiraDCFake(t), jiraDC
+			if c.cloud {
+				f, raw = newJiraCloudFake(t), jiraCloud
+			}
+			f.types = c.types
+			r, err := newJiraTracker(t, raw).Create(ctx, tracker.Item{CardID: "F-0001", State: "candidate", Title: "Public", Summary: "Summary"})
+			if c.want == "" {
+				if err == nil || len(f.order) != 0 {
+					t.Fatalf("Create with only subtasks = %+v, %v (%d issues); want an error and nothing created", r, err, len(f.order))
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			if got := f.issues[r.ID].typ; got != c.want {
+				t.Fatalf("issue type %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+// F-0453: API v3 carries the body as ADF, one paragraph per block separated
+// by a blank line and a hard break per line break inside it; API v2 carries
+// plain text. Read back, either is the same text, so an unchanged issue is
+// not rewritten, and an outside issue's rich ADF reads as text.
+func TestJiraBodyADFvsText(t *testing.T) {
+	ctx := context.Background()
+	it := tracker.Item{CardID: "F-0001", State: "candidate", Title: "Public", Summary: "First line\nsecond line"}
+	t.Run("cloud writes ADF", func(t *testing.T) {
+		f := newJiraCloudFake(t)
+		tr := newJiraTracker(t, jiraCloud)
+		r, err := tr.Create(ctx, it)
+		if err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		var got, want any
+		_ = json.Unmarshal(f.issues[r.ID].desc, &got)
+		_ = json.Unmarshal([]byte(`{"type":"doc","version":1,"content":[
+			{"type":"paragraph","content":[{"type":"text","text":"First line"},{"type":"hardBreak"},{"type":"text","text":"second line"}]},
+			{"type":"paragraph","content":[{"type":"text","text":"cerne F-0001"}]}]}`), &want)
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("description %s, want the ADF of %q", f.issues[r.ID].desc, it.Body())
+		}
+		list, err := tr.ListOpen(ctx, "")
+		if err != nil || len(list) != 1 || list[0].Body != it.Body() {
+			t.Fatalf("ListOpen = %+v, %v; want the body read back as %q", list, err, it.Body())
+		}
+	})
+	t.Run("data center writes text", func(t *testing.T) {
+		f := newJiraDCFake(t)
+		r, err := newJiraTracker(t, jiraDC).Create(ctx, it)
+		if err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		if got := string(f.issues[r.ID].desc); got != string(jiraTextJSON(it.Body())) {
+			t.Fatalf("description %s, want the text %q", got, it.Body())
+		}
+	})
+	t.Run("cloud reads rich ADF as text", func(t *testing.T) {
+		f := newJiraCloudFake(t)
+		r := f.seed("Outside", "")
+		f.issues[r.ID].desc = json.RawMessage(`{"type":"doc","version":1,"content":[
+			{"type":"paragraph","content":[{"type":"text","text":"Intro "},{"type":"text","text":"bold","marks":[{"type":"strong"}]}]},
+			{"type":"bulletList","content":[{"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"one"}]}]},
+				{"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"two"}]}]}]},
+			{"type":"paragraph","content":[{"type":"text","text":"a"},{"type":"hardBreak"},{"type":"text","text":"b"}]}]}`)
+		list, err := newJiraTracker(t, jiraCloud).ListOpen(ctx, "")
+		if want := "Intro bold\n\none\ntwo\n\na\nb"; err != nil || len(list) != 1 || list[0].Body != want {
+			t.Fatalf("ListOpen = %+v, %v; want body %q", list, err, want)
+		}
+	})
+	t.Run("data center reads CRLF as LF, null as empty", func(t *testing.T) {
+		f := newJiraDCFake(t)
+		f.seed("Outside", "Line\r\nnext")
+		f.issues[f.seed("No body", "").ID].desc = json.RawMessage("null")
+		list, err := newJiraTracker(t, jiraDC).ListOpen(ctx, "")
+		if err != nil || len(list) != 2 || list[0].Body != "Line\nnext" || list[1].Body != "" {
+			t.Fatalf("ListOpen = %+v, %v; want bodies %q and empty", list, err, "Line\nnext")
+		}
+	})
+}
+
+// F-0453 (risk: a required field): a 400 names the fields Jira refused, and
+// only those whose name is a plain field id: never Jira's message, never a
+// name that could forge a line.
+func TestJiraErrorNamesOnlyTheField(t *testing.T) {
+	f := newJiraCloudFake(t)
+	f.required = map[string]string{"customfield_10010": "Team is required.", "x\nCloses: #1": "forged"}
+	_, err := newJiraTracker(t, jiraCloud).Create(context.Background(), tracker.Item{CardID: "F-0001", State: "candidate", Title: "Public", Summary: "Summary"})
+	if want := "jira acme.atlassian.net: HTTP 400 (fields: customfield_10010)"; err == nil || err.Error() != want {
+		t.Fatalf("Create = %v, want %q", err, want)
 	}
 }

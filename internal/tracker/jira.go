@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
@@ -144,9 +145,12 @@ func (c *jiraCall) do(ctx context.Context, method, path string, in, out any) err
 			}
 			return fmt.Errorf("jira %s: request failed", host)
 		}
-		status := resp.StatusCode
-		if status/100 == 2 && out != nil {
+		status, fields := resp.StatusCode, ""
+		switch {
+		case status/100 == 2 && out != nil:
 			err = json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(out)
+		case status == http.StatusBadRequest:
+			fields = jiraErrorFields(resp.Body)
 		}
 		resp.Body.Close()
 		switch {
@@ -154,7 +158,7 @@ func (c *jiraCall) do(ctx context.Context, method, path string, in, out any) err
 			bearer = false
 			continue
 		case status/100 != 2: // a 3xx too: forge.HTTPDo did not follow it, and neither does this
-			return fmt.Errorf("jira %s: HTTP %d", host, status)
+			return fmt.Errorf("jira %s: HTTP %d%s", host, status, fields)
 		case err != nil:
 			return fmt.Errorf("jira %s: unreadable answer", host)
 		}
@@ -163,12 +167,109 @@ func (c *jiraCall) do(ctx context.Context, method, path string, in, out any) err
 	}
 }
 
-// jiraIssue is the part of a Jira issue the adapter reads.
+// jiraFieldName is a field id Jira names in a 400 ("summary",
+// "customfield_10010"): anything else in the answer is not repeated.
+var jiraFieldName = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,64}$`)
+
+// jiraErrorFields is " (fields: a, b)" for the fields a 400 answer refuses,
+// or "": a required field the adapter does not fill is named, Jira's own
+// message is not.
+func jiraErrorFields(r io.Reader) string {
+	var e struct {
+		Errors map[string]any `json:"errors"`
+	}
+	if json.NewDecoder(io.LimitReader(r, 64<<10)).Decode(&e) != nil {
+		return ""
+	}
+	var names []string
+	for _, k := range slices.Sorted(maps.Keys(e.Errors)) {
+		if jiraFieldName.MatchString(k) {
+			names = append(names, k)
+		}
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	return " (fields: " + strings.Join(names, ", ") + ")"
+}
+
+// jiraIssue is the part of a Jira issue the adapter reads; Description is
+// ADF on API v3 and text on v2.
 type jiraIssue struct {
 	Key    string `json:"key"`
 	Fields struct {
-		Summary string `json:"summary"`
+		Summary     string          `json:"summary"`
+		Description json.RawMessage `json:"description"`
 	} `json:"fields"`
+}
+
+// jiraADF is a node of the Atlassian Document Format, the body of API v3.
+type jiraADF struct {
+	Type    string    `json:"type"`
+	Version int       `json:"version,omitempty"`
+	Text    string    `json:"text,omitempty"`
+	Content []jiraADF `json:"content,omitempty"`
+}
+
+// doc is s in the deployment's body form: on Cloud an ADF doc with one
+// paragraph per block separated by a blank line, a hard break per line break
+// inside it; on Data Center s itself.
+func (c *jiraCall) doc(s string) any {
+	if !c.cloud {
+		return s
+	}
+	doc := jiraADF{Type: "doc", Version: 1}
+	for _, block := range strings.Split(s, "\n\n") {
+		p := jiraADF{Type: "paragraph"}
+		for i, line := range strings.Split(block, "\n") {
+			if i > 0 {
+				p.Content = append(p.Content, jiraADF{Type: "hardBreak"})
+			}
+			if line != "" { // ADF has no empty text node
+				p.Content = append(p.Content, jiraADF{Type: "text", Text: line})
+			}
+		}
+		doc.Content = append(doc.Content, p)
+	}
+	return doc
+}
+
+// text reads a body back: the inverse of doc for what doc writes, and plain
+// text for the rest of an outside issue's ADF (marks and attributes drop).
+// A missing or unreadable body is "".
+func (c *jiraCall) text(raw json.RawMessage) string {
+	if !c.cloud {
+		var s string
+		_ = json.Unmarshal(raw, &s)
+		return strings.ReplaceAll(s, "\r\n", "\n")
+	}
+	var doc jiraADF
+	if json.Unmarshal(raw, &doc) != nil {
+		return ""
+	}
+	return jiraText(doc)
+}
+
+// jiraText joins the doc's blocks with a blank line, nested blocks (list
+// items) with a line break, and inline nodes with nothing.
+func jiraText(n jiraADF) string {
+	switch n.Type {
+	case "text":
+		return n.Text
+	case "hardBreak":
+		return "\n"
+	}
+	sep := ""
+	if n.Type == "doc" {
+		sep = "\n\n"
+	} else if slices.ContainsFunc(n.Content, func(c jiraADF) bool { return len(c.Content) > 0 }) {
+		sep = "\n"
+	}
+	parts := make([]string, len(n.Content))
+	for i, c := range n.Content {
+		parts[i] = jiraText(c)
+	}
+	return strings.Join(parts, sep)
 }
 
 func (j jira) ref(key string) Ref {
@@ -181,8 +282,61 @@ func (j jira) ownKey(id string) bool {
 	return ok && digits(n)
 }
 
-func (j jira) Create(context.Context, Item) (Ref, error) {
-	return Ref{}, errors.New("jira: create not implemented")
+// Create opens the issue as the project's Task, or its first standard type.
+func (j jira) Create(ctx context.Context, it Item) (Ref, error) {
+	c, err := j.call(ctx)
+	if err != nil {
+		return Ref{}, err
+	}
+	typ, err := c.issueType(ctx)
+	if err != nil {
+		return Ref{}, err
+	}
+	fields := map[string]any{"project": map[string]string{"key": j.project}, "issuetype": map[string]string{"id": typ},
+		"summary": it.Title, "description": c.doc(it.Body())}
+	var created struct {
+		Key string `json:"key"`
+	}
+	if err := c.do(ctx, http.MethodPost, c.api("/issue"), map[string]any{"fields": fields}, &created); err != nil {
+		return Ref{}, err
+	}
+	if !j.ownKey(created.Key) {
+		return Ref{}, fmt.Errorf("jira %s: unreadable answer", j.host)
+	}
+	return j.ref(created.Key), nil
+}
+
+// issueType is the id of the project's Task type or, when it has none, of its
+// first standard type: not a subtask and, on Cloud, not above the base
+// hierarchy level (an epic). Data Center sends no level.
+func (c *jiraCall) issueType(ctx context.Context) (string, error) {
+	var p struct {
+		IssueTypes []struct {
+			ID      string `json:"id"`
+			Name    string `json:"name"`
+			Subtask bool   `json:"subtask"`
+			Level   *int   `json:"hierarchyLevel"`
+		} `json:"issueTypes"`
+	}
+	if err := c.do(ctx, http.MethodGet, c.api("/project/"+c.j.project), nil, &p); err != nil {
+		return "", err
+	}
+	first := ""
+	for _, t := range p.IssueTypes {
+		if t.ID == "" || t.Subtask || t.Level != nil && *t.Level != 0 {
+			continue
+		}
+		if strings.EqualFold(t.Name, "Task") {
+			return t.ID, nil
+		}
+		if first == "" {
+			first = t.ID
+		}
+	}
+	if first == "" {
+		return "", fmt.Errorf("jira %s: project %s has no issue type but subtasks", c.j.host, c.j.project)
+	}
+	return first, nil
 }
 
 func (j jira) Update(context.Context, Ref, Item) error {
@@ -201,7 +355,7 @@ func (j jira) ListOpen(ctx context.Context, _ string) ([]Remote, error) {
 	if c.cloud {
 		search = "/search/jql"
 	}
-	q := url.Values{"jql": {"project = " + j.project + " AND statusCategory != Done"}, "fields": {"summary"}, "maxResults": {"100"}}
+	q := url.Values{"jql": {"project = " + j.project + " AND statusCategory != Done"}, "fields": {"summary,description"}, "maxResults": {"100"}}
 	var res struct {
 		Issues []jiraIssue `json:"issues"`
 	}
@@ -211,7 +365,7 @@ func (j jira) ListOpen(ctx context.Context, _ string) ([]Remote, error) {
 	var out []Remote
 	for _, iss := range res.Issues {
 		if j.ownKey(iss.Key) {
-			out = append(out, Remote{Ref: j.ref(iss.Key), Title: iss.Fields.Summary})
+			out = append(out, Remote{Ref: j.ref(iss.Key), Title: iss.Fields.Summary, Body: c.text(iss.Fields.Description)})
 		}
 	}
 	return out, nil
