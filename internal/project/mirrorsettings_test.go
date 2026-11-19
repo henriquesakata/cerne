@@ -285,7 +285,7 @@ func TestMirrorTrackersRecordsValidation(t *testing.T) {
 		{"duplicate name", []any{ghRecord("gh", "issues"), ghRecord("gh", "other")}, nil, ""},
 		{"empty name", []any{with(map[string]any{"name": ""})}, nil, ""},
 		{"missing name", []any{with(map[string]any{"name": nil})}, nil, ""},
-		{"unknown kind", []any{map[string]any{"name": "j", "kind": "jira", "url": "https://jira.example/PROJ"}}, tracker.ErrUnknownKind, `unknown tracker kind "jira" (supported: github)`},
+		{"unknown kind", []any{map[string]any{"name": "j", "kind": "jira", "url": "https://jira.example/PROJ"}}, tracker.ErrUnknownKind, `unknown tracker kind "jira" (supported: ` + strings.Join(tracker.KindNames(), ", ") + `)`},
 		{"missing kind", []any{with(map[string]any{"kind": nil})}, tracker.ErrUnknownKind, ""},
 		{"http url", []any{with(map[string]any{"url": "http://github.com/o/issues"})}, tracker.ErrTrackerURL, ""},
 		{"url the kind cannot read", []any{with(map[string]any{"url": "https://github.com/o"})}, tracker.ErrTrackerURL, ""},

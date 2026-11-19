@@ -61,7 +61,7 @@ type IssueTracker interface {
 var Kinds = map[string]func(Config) (IssueTracker, error){"github": newGitHub}
 
 var (
-	ErrUnknownKind = errors.New("unknown tracker kind") // text: unknown tracker kind "x" (supported: github)
+	ErrUnknownKind = errors.New("unknown tracker kind") // text: unknown tracker kind "x" (supported: <comma-separated KindNames>)
 	ErrTrackerURL  = errors.New("bad tracker url")      // not https, or a URL the kind cannot read
 )
 

@@ -129,8 +129,9 @@ func TestSettingsSetMirrorTrackers(t *testing.T) {
 	if !errors.Is(err, project.ErrInvalidSettingValue) || !errors.Is(err, tracker.ErrUnknownKind) {
 		t.Errorf("set a jira tracker: err = %v, want ErrInvalidSettingValue and ErrUnknownKind", err)
 	}
-	if err == nil || !strings.Contains(err.Error(), `unknown tracker kind "jira" (supported: github)`) {
-		t.Errorf("set a jira tracker: err = %v, want the text unknown tracker kind \"jira\" (supported: github)", err)
+	wantText := `unknown tracker kind "jira" (supported: ` + strings.Join(tracker.KindNames(), ", ") + `)`
+	if err == nil || !strings.Contains(err.Error(), wantText) {
+		t.Errorf("set a jira tracker: err = %v, want the text %s", err, wantText)
 	}
 	if _, err := execCerne(t, "settings", "set", "mirror.trackers", `[{"name":`, "--scope", "project", "--dir", projDir); !errors.Is(err, project.ErrInvalidSettingValue) {
 		t.Errorf("set bad JSON: err = %v, want ErrInvalidSettingValue", err)

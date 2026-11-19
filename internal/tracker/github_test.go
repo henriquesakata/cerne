@@ -327,16 +327,17 @@ func publicItem(card string, s domain.FeatureState) tracker.Item {
 }
 
 // F-0449 crit. 2: an unimplemented kind is refused with the exact text; the
-// kinds are github only (no fake is registered in this package).
+// text lists whatever kinds are registered (KindNames), so it holds as
+// adapters are added.
 func TestNewUnknownKind(t *testing.T) {
-	if got := tracker.KindNames(); !slices.Equal(got, []string{"github"}) {
-		t.Fatalf("KindNames() = %v, want [github]", got)
+	if got := tracker.KindNames(); !slices.Contains(got, "github") {
+		t.Fatalf("KindNames() = %v, want it to contain github", got)
 	}
 	_, err := tracker.New(tracker.Config{Name: "j", Kind: "jira", URL: "https://jira.example/PROJ"})
 	if !errors.Is(err, tracker.ErrUnknownKind) {
 		t.Fatalf("New(jira) = %v, want errors.Is ErrUnknownKind", err)
 	}
-	if got, want := err.Error(), `unknown tracker kind "jira" (supported: github)`; got != want {
+	if got, want := err.Error(), `unknown tracker kind "jira" (supported: ` + strings.Join(tracker.KindNames(), ", ") + `)`; got != want {
 		t.Fatalf("New(jira) error = %q, want %q", got, want)
 	}
 }
