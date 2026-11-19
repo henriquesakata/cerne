@@ -103,7 +103,8 @@ func (g gitlab) apply(ctx context.Context, cur glIssue, it Item) error {
 	want := stateLabel(it.State)
 	var stale []string
 	for _, l := range cur.Labels {
-		if strings.HasPrefix(l, "cerne:") && l != want {
+		// remove_labels is comma-joined: a name with a comma could name others.
+		if strings.HasPrefix(l, "cerne:") && l != want && !strings.Contains(l, ",") {
 			stale = append(stale, l)
 		}
 	}

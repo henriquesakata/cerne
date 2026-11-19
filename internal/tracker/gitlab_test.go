@@ -663,3 +663,16 @@ func TestGitLabOwnsRefusesQueryFragmentAndEscapedSeparators(t *testing.T) {
 		}
 	}
 }
+
+// F-0450 round 2 (L3): remove_labels is a comma-joined list, so a server
+// label name holding a comma could name another label too: it is skipped.
+func TestGitLabNeverRemovesLabelsWithCommas(t *testing.T) {
+	g := newFakeGL(t, "gitlab.com", "g/p")
+	n := g.add(&glIssue{Title: "T", Labels: []string{"bug", "cerne:old,bug", "cerne:stale"}})
+	if err := newGitLab(t, "https://gitlab.com/g/p").Update(context.Background(), g.ref(n), publicItem("F-0007", domain.StateCandidate)); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if got := sortedLabels(g.issues[n].Labels); !slices.Equal(got, []string{"bug", "cerne:candidate", "cerne:old,bug"}) {
+		t.Fatalf("labels = %q, want bug kept, the comma label untouched and cerne:stale swapped", got)
+	}
+}
