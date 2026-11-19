@@ -90,9 +90,9 @@ var AgentWriteTools = []string{"Bash(cerne:*)"}
 //
 // It is the FIRST layer, not the only one: these rules match by prefix, and a
 // prefix rule is brittle (a flag before the verb, command chaining, spacing).
-// The binary refuses every lifecycle verb under DenyLifecycleEnv, the stamp
-// agentRun puts on every command the agent runs (B-0040), and app.CheckHumanGate
-// still refuses approve/accept/revert for its CERNE_ACTOR=agent, so the
+// agentRun puts two stamps on every command the agent runs: under
+// DenyLifecycleEnv the binary refuses every lifecycle verb (B-0040), and under
+// CERNE_ACTOR=agent app.CheckHumanGate refuses approve/accept/revert, so the
 // lifecycle survives a harness rule that fails to match.
 var AgentDeniedCommands []string
 
@@ -181,21 +181,23 @@ func execRun(ctx context.Context, dir, name string, args []string, stdin string)
 	return execRunEnv(ctx, dir, name, args, stdin, env)
 }
 
-// agentRun is the runner of the agentic provider (F-0260): same exec, plus the
-// CERNE_ACTOR=agent stamp the child inherits. Any cerne command the agent runs
-// is then attributed to an agent in the event log, and app.CheckHumanGate keeps
+// agentRun is the runner of the agentic provider (F-0260): same exec, plus two
+// stamps the child inherits. CERNE_ACTOR=agent attributes every cerne command
+// the agent runs to an agent in the event log, and app.CheckHumanGate keeps
 // refusing approve/accept from it — the human gates (F-0131) are untouched by
-// the agent gaining write tools. os.Environ() comes first so the stamp wins
-// over an inherited value (exec keeps the last of a duplicated key).
+// the agent gaining write tools. DenyLifecycleEnv makes the binary refuse every
+// lifecycle verb (B-0040). os.Environ() comes first so the stamps win over an
+// inherited value (exec keeps the last of a duplicated key).
 func agentRun(ctx context.Context, dir, name string, args []string, stdin string) (string, string, error) {
 	return execRunEnv(ctx, dir, name, args, stdin, append(os.Environ(), "CERNE_ACTOR=agent", DenyLifecycleEnv+"=1"))
 }
 
-// DenyLifecycleEnv is the second stamp of agentRun: the cerne binary refuses
-// every lifecycle verb while it is set (B-0040), on the resolved command, so a
-// spelling the harness prefix rules miss (`cerne --verbose feature supersede`)
-// is refused all the same. CERNE_ACTOR=agent cannot carry this: a coding agent
-// in a terminal is an agent too, and it does run start/complete/supersede.
+// DenyLifecycleEnv is the second stamp of agentRun: while it is present the
+// cerne binary refuses every lifecycle verb (B-0040), on the resolved command,
+// so a spelling the harness prefix rules miss (`cerne --verbose feature
+// supersede`) is refused all the same. CERNE_ACTOR=agent cannot carry this: a
+// coding agent in a terminal is an agent too, and it does run
+// start/complete/supersede.
 const DenyLifecycleEnv = "CERNE_DENY_LIFECYCLE"
 
 // execRunEnv is execRun with an explicit child environment; nil means inherit
