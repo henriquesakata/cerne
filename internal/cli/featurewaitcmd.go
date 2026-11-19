@@ -71,7 +71,7 @@ func newFeatureWaitCmd(dir *string) *cobra.Command {
 
 // waitEnv is what the wait loop needs from the world, injectable for tests.
 type waitEnv struct {
-	refresh func() error
+	refresh func(context.Context) error // must return once its ctx ends
 	load    func() (store.Feature, error)
 	stale   func(store.Feature) bool
 	sleep   func(context.Context, time.Duration) error
@@ -87,34 +87,53 @@ type waitResult struct {
 	waited     time.Duration
 }
 
+// waitRefreshCap bounds the one refresh of a --timeout 0 check.
+const waitRefreshCap = time.Minute
+
 // waitFeature polls until the feature reaches target (or past it), becomes
-// unable to reach it, or timeout runs out. A failed refresh warns and backs
-// off (interval doubling, capped at waitMaxBackoff) but still judges the
-// clone's current state; a cancelled ctx returns its error at once.
+// unable to reach it, or timeout runs out. A failed refresh — or a failed read
+// of the clone after the first one (a file torn by a concurrent push) — warns
+// and backs off (interval doubling, capped at waitMaxBackoff, never below the
+// interval) but keeps waiting; a refresh never outlives the time left, and a
+// cancelled ctx returns its error at once, even mid-fetch.
 func waitFeature(ctx context.Context, env waitEnv, target domain.FeatureState, timeout, interval time.Duration) (waitResult, error) {
 	var r waitResult
 	began := env.now()
 	backoff := interval
 	for first := true; ; first = false {
-		rerr := env.refresh()
-		if rerr != nil {
-			fmt.Fprintf(env.warn, "warning: cannot refresh the backend (%v); judging the local clone and retrying\n", rerr)
+		limit := timeout - env.now().Sub(began)
+		if limit <= 0 {
+			limit = waitRefreshCap
 		}
-		f, err := env.load()
-		if err != nil {
-			return r, err
+		rctx, rcancel := context.WithTimeout(ctx, limit)
+		failed := env.refresh(rctx)
+		rcancel()
+		if ctx.Err() != nil {
+			return r, ctx.Err()
 		}
-		stale := env.stale(f)
-		if first {
-			r.start, r.startStale = f, stale
+		if failed != nil {
+			fmt.Fprintf(env.warn, "warning: cannot refresh the backend (%v); judging the local clone and retrying\n", failed)
 		}
-		r.end, r.waited = f, env.now().Sub(began)
-		switch {
-		case domain.FeatureAtOrPast(f.State, target) && !(f.State == domain.StateApproved && target == domain.StateApproved && stale):
-			return r, nil
-		case !domain.FeatureReachable(f.State, target):
-			r.code = waitUnreachable
-			return r, nil
+		if f, err := env.load(); err != nil {
+			if first {
+				return r, err
+			}
+			fmt.Fprintf(env.warn, "warning: cannot read the feature from the local clone (%v); retrying\n", err)
+			failed = err
+			r.waited = env.now().Sub(began)
+		} else {
+			stale := env.stale(f)
+			if first {
+				r.start, r.startStale = f, stale
+			}
+			r.end, r.waited = f, env.now().Sub(began)
+			switch {
+			case domain.FeatureAtOrPast(f.State, target) && !(f.State == domain.StateApproved && target == domain.StateApproved && stale):
+				return r, nil
+			case !domain.FeatureReachable(f.State, target):
+				r.code = waitUnreachable
+				return r, nil
+			}
 		}
 		left := timeout - r.waited
 		if left <= 0 {
@@ -122,14 +141,48 @@ func waitFeature(ctx context.Context, env waitEnv, target domain.FeatureState, t
 			return r, nil
 		}
 		d := interval
-		if rerr != nil {
+		if failed != nil {
 			d = backoff
-			backoff = min(backoff*2, waitMaxBackoff)
+			backoff = max(interval, min(backoff*2, waitMaxBackoff))
 		} else {
 			backoff = interval
 		}
 		if err := env.sleep(ctx, min(d, left)); err != nil {
 			return r, err
+		}
+	}
+}
+
+// notifyWaitSignals routes SIGINT and SIGTERM to c; a package var so a test
+// can deliver one without signalling its own process.
+var notifyWaitSignals = func(c chan<- os.Signal) { signal.Notify(c, os.Interrupt, sigTERM) }
+
+// refreshInBackground wraps a blocking refresh (git has no context) so the
+// wait can stop waiting for it — on a signal or when time runs out — and never
+// stacks a second fetch behind a hung one: while the previous call is still
+// running, a new one fails at once.
+func refreshInBackground(refresh func() error) func(context.Context) error {
+	var running chan struct{}
+	return func(c context.Context) error {
+		if running != nil {
+			select {
+			case <-running:
+			default:
+				return errors.New("the previous refresh is still running")
+			}
+		}
+		done := make(chan struct{})
+		running = done
+		var err error
+		go func() {
+			err = refresh()
+			close(done)
+		}()
+		select {
+		case <-done:
+			return err
+		case <-c.Done():
+			return c.Err()
 		}
 	}
 }
@@ -151,14 +204,23 @@ func runFeatureWait(cmd *cobra.Command, dir, id, forState string, timeout, inter
 	if target == domain.StateCandidate || !slices.Contains(mainPathAndTerminals, target) {
 		return fmt.Errorf("--for %q: want one of approved, in_development, implemented, done, rejected, superseded", forState)
 	}
+	if timeout < 0 {
+		return fmt.Errorf("--timeout %s: want a duration of 0 or more (0 checks once)", timeout)
+	}
 	if interval < 5*time.Second {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: --interval raised to 5s (was %s)\n", interval)
 		interval = 5 * time.Second
 	}
 	ctx, err := resolveProject(dir)
 	if err != nil {
 		return err
 	}
-	if _, err := store.LoadFeature(ctx.repoDir, id); err != nil {
+	refresh := refreshInBackground(func() error { return gitback.SafePullNow(ctx.repoDir) })
+	// One refresh before the existence check: a feature created on another
+	// machine is found instead of refused. Its error is the loop's to report.
+	_ = refresh(cmd.Context())
+	pre, err := store.LoadFeature(ctx.repoDir, id)
+	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			return fmt.Errorf("%s is not a feature in this project", id)
 		}
@@ -168,19 +230,20 @@ func runFeatureWait(cmd *cobra.Command, dir, id, forState string, timeout, inter
 	sigCtx, cancel := context.WithCancel(cmd.Context())
 	defer cancel()
 	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, os.Interrupt, sigTERM)
+	notifyWaitSignals(sigs)
 	defer signal.Stop(sigs)
-	var got os.Signal
+	got := make(chan os.Signal, 1)
 	go func() {
 		select {
-		case got = <-sigs:
+		case s := <-sigs:
+			got <- s
 			cancel()
 		case <-sigCtx.Done():
 		}
 	}()
 
 	env := waitEnv{
-		refresh: func() error { return gitback.SafePullNow(ctx.repoDir) },
+		refresh: refresh,
 		load:    func() (store.Feature, error) { return store.LoadFeature(ctx.repoDir, id) },
 		stale: func(f store.Feature) bool {
 			s, _, _ := lint.SpecChangedAfterApproval(ctx.repoDir, f)
@@ -197,10 +260,16 @@ func runFeatureWait(cmd *cobra.Command, dir, id, forState string, timeout, inter
 	}
 	r, err := waitFeature(sigCtx, env, target, timeout, interval)
 	if err != nil {
-		if errors.Is(err, context.Canceled) && got != nil {
+		select {
+		case s := <-got:
 			cmd.SilenceErrors = true
-			fmt.Fprintf(cmd.ErrOrStderr(), "%s: wait interrupted (still %s)\n", id, r.end.State)
-			return exitError{code: signalExitCode(got)}
+			state := r.end.State
+			if state == "" { // interrupted before the loop's first read
+				state = pre.State
+			}
+			fmt.Fprintf(cmd.ErrOrStderr(), "%s: wait interrupted (still %s)\n", id, state)
+			return exitError{code: signalExitCode(s)}
+		default:
 		}
 		return err
 	}
