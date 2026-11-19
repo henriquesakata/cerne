@@ -100,6 +100,7 @@ type Note struct {
 	Facets       []string         `json:"facets,omitempty"`     // closed-set axis (D-0002): infra/code/data/process/auth
 	Components   []string         `json:"components,omitempty"` // curated subsystem/tool axis (D-0002): gitea, kpack, …
 	Durable      bool             `json:"durable,omitempty"`    // reviewed as durable: lint's stale-note skips it
+	When         []string         `json:"when,omitempty"`       // declared triggers (F-0457): edit:<path>, bash:<words>
 	CreatedAt    time.Time        `json:"created_at"`
 	UpdatedAt    time.Time        `json:"updated_at"`
 }

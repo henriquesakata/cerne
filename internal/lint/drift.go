@@ -107,7 +107,7 @@ func matchScopes(changed []string, scopePaths map[string][]string) map[string][]
 	for _, p := range changed {
 		for scope, globs := range scopePaths {
 			for _, g := range globs {
-				if matchGlob(g, p) {
+				if domain.MatchGlob(g, p) { // one glob language with note triggers (F-0457)
 					byScope[scope] = append(byScope[scope], p)
 					break
 				}
@@ -115,20 +115,6 @@ func matchScopes(changed []string, scopePaths map[string][]string) map[string][]
 		}
 	}
 	return byScope
-}
-
-// matchGlob reports whether the slash path matches glob. Supported forms (v1):
-// an exact path, or a "dir/**" suffix that matches anything under dir. Broader
-// glob semantics (intra-segment '*') are out of scope for F-0113.
-func matchGlob(glob, path string) bool {
-	if glob == path {
-		return true
-	}
-	if strings.HasSuffix(glob, "/**") {
-		prefix := strings.TrimSuffix(glob, "**") // keep the trailing slash: "dir/"
-		return strings.HasPrefix(path, prefix)
-	}
-	return false
 }
 
 // driftDetail renders the detail: the short baseline sha and up to

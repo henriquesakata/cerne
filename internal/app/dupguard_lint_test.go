@@ -31,10 +31,10 @@ func TestForcedDuplicateIsAckedByLint(t *testing.T) {
 	const title = "Gate humano remoto procuração in-band carimbada"
 
 	repoDir, projDir, _ := newFeatureBackend(t)
-	if _, err := CreateNote(repoDir, projDir, title, "c", nil, nil, nil, false, false); err != nil {
+	if _, err := CreateNote(repoDir, projDir, title, "c", nil, nil, nil, nil, false, false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := CreateNote(repoDir, projDir, title, "c", nil, nil, nil, false, true); err != nil {
+	if _, err := CreateNote(repoDir, projDir, title, "c", nil, nil, nil, nil, false, true); err != nil {
 		t.Fatalf("forced: %v", err)
 	}
 	if got := duplicateLiveFindings(t, repoDir); len(got) != 0 {
@@ -43,10 +43,10 @@ func TestForcedDuplicateIsAckedByLint(t *testing.T) {
 
 	// Same two notes, but the second slipped past the guard (no ack): reported.
 	repoDir, projDir, _ = newFeatureBackend(t)
-	if _, err := CreateNote(repoDir, projDir, title, "c", nil, nil, nil, false, false); err != nil {
+	if _, err := CreateNote(repoDir, projDir, title, "c", nil, nil, nil, nil, false, false); err != nil {
 		t.Fatal(err)
 	}
-	other, err := CreateNote(repoDir, projDir, "Título totalmente diferente aqui", "c", nil, nil, nil, false, false)
+	other, err := CreateNote(repoDir, projDir, "Título totalmente diferente aqui", "c", nil, nil, nil, nil, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
