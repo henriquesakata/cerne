@@ -186,8 +186,9 @@ func NewServer(version string, exec Exec) *sdk.Server {
 
 // noProjectInstructions reach the model at initialize when cerne mcp runs
 // outside a cerne project (F-0456).
-const noProjectInstructions = "This folder is not a cerne project (no .cernerc), so only the guide tool is served: " +
-	"ask it what cerne is and how to use it. Running `cerne init` in the project root starts a cerne project; " +
+const noProjectInstructions = "cerne keeps a project's living documentation (features and their lifecycle, decisions, notes) " +
+	"as structured data for AI coding agents. This folder is not a cerne project (no .cernerc), so only the guide tool " +
+	"is served: ask it how to use cerne. Running `cerne init` in the project root starts a cerne project; " +
 	"restart this MCP server afterwards to get the project tools."
 
 // NewGuideServer is the server for a folder that is not a cerne project

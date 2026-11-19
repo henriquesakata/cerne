@@ -270,7 +270,7 @@ func TestMCP_OutsideProject(t *testing.T) {
 	for _, dir := range []string{plain, ""} {
 		cs, raw, stop := startMCP(t, dir)
 		ins := cs.InitializeResult().Instructions
-		for _, w := range []string{"not a cerne project", "guide", "cerne init"} {
+		for _, w := range []string{"living documentation", "not a cerne project", "guide", "cerne init"} {
 			if !strings.Contains(ins, w) {
 				t.Errorf("--dir %q: instructions lack %q: %q", dir, w, ins)
 			}
