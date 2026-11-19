@@ -19,6 +19,9 @@ Use `cerne settings set <key> <value> --scope project`. `--scope` is required: `
 ## Q: Where is the cerne UI API? Which URL does the dashboard call?
 `cerne ui` serves every project from one process, so each route is under `/api/projects/<pid>/…`, where `<pid>` is the project id of `.cernerc`. `GET /api/projects` lists the registered ids. A bare `/api/<route>` is not the UI API. The default port is 7717 (`cerne ui --port`).
 
+## Q: Can the UI edit a note, decision or runbook? Why did a save answer 409 or 422?
+Yes: the Vault (`#/vault` in `cerne ui`) edits the open document in place — a live feature's spec, plan or result, and an active decision, note or runbook. The save goes through the same core as the CLI, as a human, with a commit and a push. Each read carries the sha256 of the document (`content_hash`, or `docs_hash` per feature document) and the editor sends it back as `If-Match` on `PUT /api/projects/<pid>/notes/<id>/content` (also `decisions/`, `runbooks/` and `features/<id>/docs/<doc>`). A 409 means the backend document changed since it was loaded: nothing was written, and the body carries the current `content` and its `content_hash`. A superseded or retired entity answers 422 `entity is not live — append an errata instead`: history takes `cerne note errata` (or `cerne decision errata`, `cerne runbook errata`).
+
 ## Q: How is the before and after of a process marker dated?
 A process marker is a decision with facet `process` and component `metric`. `cerne stats --process` judges the 28 days before and after it, and the date it uses is when the decision was created (`cerne decision new`), not when the change shipped. Create the marker decision the day the change goes live, or the window is wrong.
 
