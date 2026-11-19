@@ -40,7 +40,7 @@ vi.mock('./Backlinks', () => ({ default: () => null }))
 
 import { entriesFrom } from './Palette'
 import Vault from './Vault'
-import VaultEditor, { insertWiki, placeWikiList, splitFrontmatter, wikiQuery } from './VaultEditor'
+import VaultEditor, { insertWiki, joinFrontmatter, placeWikiList, splitFrontmatter, wikiQuery } from './VaultEditor'
 import { navAllowed } from './navGuard'
 
 const note = (over: Partial<VaultDoc> = {}): VaultDoc => ({
@@ -405,6 +405,27 @@ describe('VaultEditor frontmatter (F-0464 I-5)', () => {
     expect(splitFrontmatter('sem frontmatter')).toEqual({ front: '', body: 'sem frontmatter' })
     expect(splitFrontmatter('# T\n---\nx: 1\n---\n')).toEqual({ front: '', body: '# T\n---\nx: 1\n---\n' })
     expect(splitFrontmatter('---\nnunca fechado')).toEqual({ front: '', body: '---\nnunca fechado' })
+  })
+
+  // A9: the split follows the rule cerne push reads cerne_id with
+  // (internal/doccheck.FrontmatterValue): BOM tolerated, a first line that
+  // trims to ---, a closing line that trims to ---.
+  it.each([
+    ['BOM', '\ufeff---\ncerne_id: N-0001\n---\ncorpo', '\ufeff---\ncerne_id: N-0001\n---\n', 'corpo'],
+    ['trailing spaces on the delimiters', '--- \ncerne_id: N-0001\n---  \n\ncorpo', '--- \ncerne_id: N-0001\n---  \n\n', 'corpo'],
+    ['indented key', '---\n  cerne_id: N-0001\n---\ncorpo', '---\n  cerne_id: N-0001\n---\n', 'corpo'],
+    ['no final newline', '---\ncerne_id: N-0001\n---', '---\ncerne_id: N-0001\n---', ''],
+    ['empty block', '---\n---\ncorpo', '---\n---\n', 'corpo'],
+    ['a leading rule with a later --- is body', '---\n\nTexto\n\n---\nmais', '', '---\n\nTexto\n\n---\nmais'],
+    ['an unclosed block stays in the body', '---\ncerne_id: N-0001\ncorpo', '', '---\ncerne_id: N-0001\ncorpo'],
+  ])('frontmatter rule: %s', (_name, content, front, body) => {
+    expect(splitFrontmatter(content)).toEqual({ front, body })
+    expect(joinFrontmatter(front, body)).toBe(content)
+  })
+
+  it('frontmatter rule: a block with no final newline is joined to the draft by one', () => {
+    expect(joinFrontmatter('---\ncerne_id: N-0001\n---', 'novo')).toBe('---\ncerne_id: N-0001\n---\nnovo')
+    expect(joinFrontmatter('', 'novo')).toBe('novo')
   })
 
   it('frontmatter: the draft never holds cerne_id and a save re-attaches it as loaded', async () => {

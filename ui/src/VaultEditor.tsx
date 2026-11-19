@@ -43,13 +43,31 @@ export function insertWiki(text: string, start: number, caret: number, id: strin
   return { text: text.slice(0, start) + link + text.slice(caret), caret: start + link.length }
 }
 
-const FRONTMATTER = /^---\r?\n[\s\S]*?\r?\n---(?=\r?\n|$)(?:\r?\n)*/
+// joinFrontmatter puts the frontmatter back in front of the draft: one line
+// break between them when the block ends the document without one.
+export function joinFrontmatter(front: string, body: string): string {
+  return front && body && !front.endsWith('\n') ? `${front}\n${body}` : front + body
+}
 
-// splitFrontmatter separates the leading `---` block (with the blank lines
-// after it) from the body, byte for byte: front + body === content.
+// splitFrontmatter separates the leading frontmatter (with the blank lines
+// after it) from the body, byte for byte: front + body === content. The block
+// is read as cerne push reads cerne_id (internal/doccheck.FrontmatterValue):
+// a BOM tolerated, a first line and a closing line that trim to `---`. It is
+// kept out of the draft when it carries a cerne_id line or nothing at all;
+// any other leading `---` is a rule in the body and stays editable. An
+// unclosed block stays in the body too — the core refuses a foreign cerne_id.
 export function splitFrontmatter(content: string): { front: string; body: string } {
-  const m = FRONTMATTER.exec(content)
-  return m ? { front: m[0], body: content.slice(m[0].length) } : { front: '', body: content }
+  const none = { front: '', body: content }
+  const lines = content.split(/(?<=\n)/) // each line keeps its line break
+  if (lines[0]?.replace(/^\ufeff/, '').trim() !== '---') return none
+  const close = lines.findIndex((l, i) => i > 0 && l.trim() === '---')
+  if (close < 0) return none
+  const inside = lines.slice(1, close)
+  if (inside.length > 0 && !inside.some((l) => l.trim().startsWith('cerne_id:'))) return none
+  let end = close + 1
+  while (end < lines.length && lines[end].trim() === '') end++
+  const front = lines.slice(0, end).join('')
+  return { front, body: content.slice(front.length) }
 }
 
 // placeWikiList is the top of the [[ list inside the source pane: under the
@@ -187,7 +205,7 @@ export default function VaultEditor({ doc, entries, knownIds, wikiHref, onSaved,
     if (saving) return
     setSaving(true)
     setError(null)
-    const content = head + draft
+    const content = joinFrontmatter(head, draft)
     const res =
       doc.kind === 'feature'
         ? await saveFeatureDoc(doc.id, doc.doc ?? 'spec', content, baseHash)
