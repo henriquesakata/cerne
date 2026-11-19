@@ -20,7 +20,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 LOGO = Path(__file__).resolve().parent
 
-PITH = (59.0, 57.0)  # where the rings grew from, off the centre of the trunk
+# Where the rings grew from, off the centre of the trunk. The reduced mark keeps
+# its pith nearer the middle: at 16 px there is no room for a wide swing.
+PITH = (59.0, 57.0)
+REDUCED_PITH = (56.0, 54.6)
 ANCHORS = 22  # points per ring
 LIGHT_PAGE_INK = "#1f2328"
 DARK_PAGE_INK = "#e6edf3"
@@ -28,7 +31,10 @@ DARK_PAGE_INK = "#e6edf3"
 # (scale towards the pith, stroke width); the last entry of each list is the
 # heartwood, which is filled instead of stroked.
 FULL = [(1.0, 5.0), (0.76, 3.2), (0.55, 2.6), (0.31, None)]
-REDUCED = [(0.93, 13.0), (0.42, None)]  # what still reads at 16 px: a ring 2 px wide
+# What still reads at 16 px: two rings and the heartwood, every stroke at least
+# 1 px wide and every gap at least 1.15 px. One ring and a dot read as a circle
+# with a point in it, not as a trunk (B-0033).
+REDUCED = [(1.0, 8.5), (0.55, 6.5), (0.23, None)]
 
 
 def trunk(theta):
@@ -43,18 +49,21 @@ def trunk(theta):
     return 50 + r * math.cos(theta), 50 + r * math.sin(theta)
 
 
-def ring(scale, index):
-    """The trunk's contour shrunk towards the pith, with a ripple of its own."""
+def ring(scale, index, pith, ripple):
+    """The trunk's contour shrunk towards the pith, with a ripple of its own.
+
+    ripple scales that ripple: 1 for the full mark, 0 for none.
+    """
     points = []
     for i in range(ANCHORS):
         theta = 2 * math.pi * i / ANCHORS
         tx, ty = trunk(theta)
-        x = PITH[0] + scale * (tx - PITH[0])
-        y = PITH[1] + scale * (ty - PITH[1])
-        ripple = scale * (0.55 * math.cos(4 * theta + index * 1.7) + 0.35 * math.cos(7 * theta + index * 0.9))
-        dx, dy = x - PITH[0], y - PITH[1]
+        x = pith[0] + scale * (tx - pith[0])
+        y = pith[1] + scale * (ty - pith[1])
+        wave = ripple * scale * (0.55 * math.cos(4 * theta + index * 1.7) + 0.35 * math.cos(7 * theta + index * 0.9))
+        dx, dy = x - pith[0], y - pith[1]
         length = math.hypot(dx, dy) or 1
-        points.append((x + ripple * dx / length, y + ripple * dy / length))
+        points.append((x + wave * dx / length, y + wave * dy / length))
     return points
 
 
@@ -74,8 +83,8 @@ def path_data(points):
     return d + "Z"
 
 
-def shapes(spec):
-    rings = [(ring(scale, index), width) for index, (scale, width) in enumerate(spec)]
+def shapes(spec, pith, ripple):
+    rings = [(ring(scale, index, pith, ripple), width) for index, (scale, width) in enumerate(spec)]
     # The pith is off centre; the drawing as a whole sits in the middle of the box.
     xs = [x for points, _ in rings for x, _ in points]
     ys = [y for points, _ in rings for _, y in points]
@@ -85,7 +94,7 @@ def shapes(spec):
 
 def mark(ink):
     body = ""
-    for d, width in shapes(FULL):
+    for d, width in shapes(FULL, PITH, 1):
         if width is None:
             body += '<path fill="%s" d="%s"/>' % (ink, d)
         else:
@@ -99,7 +108,8 @@ def favicon():
         "@media (prefers-color-scheme:dark){.r{stroke:%s}.h{fill:%s}}</style>"
     ) % (LIGHT_PAGE_INK, LIGHT_PAGE_INK, DARK_PAGE_INK, DARK_PAGE_INK)
     body = ""
-    for d, width in shapes(REDUCED):
+    # No ripple here: at 16 px it cannot be seen, and it narrows the gaps.
+    for d, width in shapes(REDUCED, REDUCED_PITH, 0):
         if width is None:
             body += '<path class="h" d="%s"/>' % d
         else:
