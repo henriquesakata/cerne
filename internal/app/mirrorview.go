@@ -207,6 +207,9 @@ func CheckMirror(repoDir, projDir string) ([]MirrorCheck, error) {
 		l, known := lists[f.Mirror.Tracker]
 		isOpen := l.open[f.Mirror.URL]
 		closedCard := f.State == domain.StateDone || f.State == domain.StateRejected || f.State == domain.StateSuperseded
+		// With close_on = "merge" only a merge closes an issue, and only from
+		// in_development on.
+		mergeCanClose := f.State == domain.StateInDevelopment || f.State == domain.StateImplemented
 		switch {
 		case !known:
 			c.Status, c.Reason = MirrorUnchecked, ReasonTrackerUnknown
@@ -216,7 +219,7 @@ func CheckMirror(repoDir, projDir string) ([]MirrorCheck, error) {
 			c.Status, c.Reason = MirrorUnchecked, ReasonListCapped
 		case closedCard && isOpen:
 			c.Status, c.Reason = MirrorDrift, ReasonOpenCardClosed
-		case !closedCard && !isOpen && cfg.CloseOn != "merge":
+		case !closedCard && !isOpen && !(cfg.CloseOn == "merge" && mergeCanClose):
 			c.Status, c.Reason = MirrorDrift, ReasonClosedCardOpen
 		}
 		out = append(out, c)
