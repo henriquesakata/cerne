@@ -3,15 +3,21 @@ package tracker_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/forge"
 	"github.com/henriquesakata/cerne/internal/tracker"
 	"github.com/henriquesakata/cerne/internal/version"
@@ -166,4 +172,339 @@ func TestGiteaUserAgent(t *testing.T) {
 			}
 		})
 	}
+}
+
+// gtLabel is a repository label, as the Gitea API shows it.
+type gtLabel struct {
+	ID    int64  `json:"id"`
+	Name  string `json:"name"`
+	Color string `json:"color"`
+}
+
+// gtIssue is one issue (or PR) the emulator holds; Labels are label ids.
+type gtIssue struct {
+	Title, Body, State string
+	Labels             []int64
+	PR                 bool
+	Comments           []string
+}
+
+// fakeGitea emulates, behind forge.HTTPDo, the slice of the Gitea API v1 the
+// adapter calls, for repository o/r on git.example. Labels travel by id, as
+// in Gitea. Like the Cloudflare in front of a real host it answers a request
+// without the cerne/ User-Agent with 403 "error code: 1010", and one without
+// the token with 401.
+type fakeGitea struct {
+	issues map[int64]*gtIssue
+	labels []gtLabel
+	reqs   *[]giteaReq
+}
+
+const gtBase = "/api/v1/repos/o/r"
+
+var hexColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+
+func newFakeGitea(t *testing.T) *fakeGitea {
+	t.Helper()
+	g := &fakeGitea{issues: map[int64]*gtIssue{}}
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET "+gtBase+"/labels", func(w http.ResponseWriter, r *http.Request) { reply(w, http.StatusOK, page(r, g.labels)) })
+	mux.HandleFunc("POST "+gtBase+"/labels", g.createLabel)
+	mux.HandleFunc("GET "+gtBase+"/issues", g.listIssues)
+	mux.HandleFunc("POST "+gtBase+"/issues", g.createIssue)
+	mux.HandleFunc("GET "+gtBase+"/issues/{n}", g.issue(func(w http.ResponseWriter, _ *http.Request, n int64) { reply(w, http.StatusOK, g.view(n)) }))
+	mux.HandleFunc("PATCH "+gtBase+"/issues/{n}", g.issue(g.editIssue))
+	mux.HandleFunc("POST "+gtBase+"/issues/{n}/labels", g.issue(g.addLabels))
+	mux.HandleFunc("DELETE "+gtBase+"/issues/{n}/labels/{id}", g.issue(g.removeLabel))
+	mux.HandleFunc("POST "+gtBase+"/issues/{n}/comments", g.issue(g.comment))
+	g.reqs = installGitea(t, "", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Host != "git.example":
+			http.Error(w, "unknown host", http.StatusBadGateway)
+		case r.Header.Get("User-Agent") != "cerne/"+version.Version:
+			http.Error(w, "error code: 1010", http.StatusForbidden)
+		case r.Header.Get("Authorization") != "token "+giteaFixture:
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+		default:
+			mux.ServeHTTP(w, r)
+		}
+	}))
+	return g
+}
+
+func reply(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func decodeBody(w http.ResponseWriter, r *http.Request, v any) bool {
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+		return false
+	}
+	return true
+}
+
+// page cuts list to r's ?page= and ?limit=, with Gitea's defaults: 30 per
+// page, at most 50.
+func page[T any](r *http.Request, list []T) []T {
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit <= 0 {
+		limit = 30
+	}
+	limit = min(limit, 50)
+	p, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	lo := min((max(p, 1)-1)*limit, len(list))
+	return list[lo:min(lo+limit, len(list))]
+}
+
+func (g *fakeGitea) label(id int64) (gtLabel, bool) {
+	i := slices.IndexFunc(g.labels, func(l gtLabel) bool { return l.ID == id })
+	if i < 0 {
+		return gtLabel{}, false
+	}
+	return g.labels[i], true
+}
+
+func (g *fakeGitea) labelNamed(name string) (gtLabel, bool) {
+	i := slices.IndexFunc(g.labels, func(l gtLabel) bool { return l.Name == name })
+	if i < 0 {
+		return gtLabel{}, false
+	}
+	return g.labels[i], true
+}
+
+func (g *fakeGitea) addLabel(name, color string) int64 {
+	id := int64(len(g.labels) + 1)
+	g.labels = append(g.labels, gtLabel{ID: id, Name: name, Color: color})
+	return id
+}
+
+// seed adds an issue with labels by name, creating the ones the repository lacks.
+func (g *fakeGitea) seed(iss *gtIssue, labels ...string) tracker.Ref {
+	for _, name := range labels {
+		l, ok := g.labelNamed(name)
+		if !ok {
+			l.ID = g.addLabel(name, "#ededed")
+		}
+		iss.Labels = append(iss.Labels, l.ID)
+	}
+	if iss.State == "" {
+		iss.State = "open"
+	}
+	n := int64(len(g.issues) + 1)
+	g.issues[n] = iss
+	return g.ref(n)
+}
+
+func (g *fakeGitea) url(n int64) string {
+	return "https://git.example/o/r/issues/" + strconv.FormatInt(n, 10)
+}
+
+func (g *fakeGitea) ref(n int64) tracker.Ref {
+	return tracker.Ref{Tracker: "gt", ID: strconv.FormatInt(n, 10), URL: g.url(n)}
+}
+
+func (g *fakeGitea) view(n int64) map[string]any {
+	iss := g.issues[n]
+	labels := []gtLabel{}
+	for _, id := range iss.Labels {
+		l, _ := g.label(id)
+		labels = append(labels, l)
+	}
+	v := map[string]any{"id": 1000 + n, "number": n, "html_url": g.url(n), "title": iss.Title, "body": iss.Body,
+		"state": iss.State, "labels": labels, "pull_request": nil}
+	if iss.PR {
+		v["html_url"] = "https://git.example/o/r/pulls/" + strconv.FormatInt(n, 10)
+		v["pull_request"] = map[string]any{"merged": false}
+	}
+	return v
+}
+
+// names is the sorted label names of issue n.
+func (g *fakeGitea) names(n int64) []string {
+	var out []string
+	for _, id := range g.issues[n].Labels {
+		l, _ := g.label(id)
+		out = append(out, l.Name)
+	}
+	return slices.Sorted(slices.Values(out))
+}
+
+// count is how many requests had method on the repository path p.
+func (g *fakeGitea) count(method, p string) int {
+	n := 0
+	for _, r := range *g.reqs {
+		if u, _ := url.Parse(r.url); r.method == method && u.Path == gtBase+p {
+			n++
+		}
+	}
+	return n
+}
+
+func (g *fakeGitea) createLabel(w http.ResponseWriter, r *http.Request) {
+	var in struct{ Name, Color string }
+	if !decodeBody(w, r, &in) {
+		return
+	}
+	if in.Name == "" || !hexColor.MatchString(in.Color) {
+		http.Error(w, "invalid label", http.StatusUnprocessableEntity)
+		return
+	}
+	l, _ := g.label(g.addLabel(in.Name, in.Color))
+	reply(w, http.StatusCreated, l)
+}
+
+func (g *fakeGitea) listIssues(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	// Like Gitea, a label name the repository lacks drops out of the filter,
+	// and an empty filter keeps every issue.
+	var want []int64
+	for name := range strings.SplitSeq(q.Get("labels"), ",") {
+		if l, ok := g.labelNamed(name); ok {
+			want = append(want, l.ID)
+		}
+	}
+	list := []map[string]any{}
+	for _, n := range slices.Sorted(maps.Keys(g.issues)) {
+		iss := g.issues[n]
+		if (q.Get("state") == "" || q.Get("state") == iss.State) && (q.Get("type") != "issues" || !iss.PR) &&
+			!slices.ContainsFunc(want, func(id int64) bool { return !slices.Contains(iss.Labels, id) }) {
+			list = append(list, g.view(n))
+		}
+	}
+	reply(w, http.StatusOK, page(r, list))
+}
+
+func (g *fakeGitea) createIssue(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Title, Body string
+		Labels      []int64
+	}
+	if !decodeBody(w, r, &in) {
+		return
+	}
+	for _, id := range in.Labels {
+		if _, ok := g.label(id); !ok {
+			http.Error(w, "label does not exist", http.StatusUnprocessableEntity)
+			return
+		}
+	}
+	n, _ := strconv.ParseInt(g.seed(&gtIssue{Title: in.Title, Body: in.Body, Labels: in.Labels}).ID, 10, 64)
+	reply(w, http.StatusCreated, g.view(n))
+}
+
+// issue resolves the {n} of the path for fn, or answers 404.
+func (g *fakeGitea) issue(fn func(http.ResponseWriter, *http.Request, int64)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		n, err := strconv.ParseInt(r.PathValue("n"), 10, 64)
+		if g.issues[n] == nil || err != nil {
+			http.Error(w, "issue not found", http.StatusNotFound)
+			return
+		}
+		fn(w, r, n)
+	}
+}
+
+func (g *fakeGitea) editIssue(w http.ResponseWriter, r *http.Request, n int64) {
+	var in struct{ Title, Body, State *string }
+	if !decodeBody(w, r, &in) {
+		return
+	}
+	iss := g.issues[n]
+	if in.State != nil && *in.State != "open" && *in.State != "closed" {
+		http.Error(w, "bad state", http.StatusUnprocessableEntity)
+		return
+	}
+	for dst, src := range map[*string]*string{&iss.Title: in.Title, &iss.Body: in.Body, &iss.State: in.State} {
+		if src != nil {
+			*dst = *src
+		}
+	}
+	reply(w, http.StatusCreated, g.view(n))
+}
+
+func (g *fakeGitea) addLabels(w http.ResponseWriter, r *http.Request, n int64) {
+	var in struct{ Labels []int64 }
+	if !decodeBody(w, r, &in) {
+		return
+	}
+	iss := g.issues[n]
+	for _, id := range in.Labels {
+		if _, ok := g.label(id); !ok {
+			http.Error(w, "label does not exist", http.StatusUnprocessableEntity)
+			return
+		}
+		if !slices.Contains(iss.Labels, id) {
+			iss.Labels = append(iss.Labels, id)
+		}
+	}
+	reply(w, http.StatusOK, g.view(n)["labels"])
+}
+
+func (g *fakeGitea) removeLabel(w http.ResponseWriter, r *http.Request, n int64) {
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	iss := g.issues[n]
+	if !slices.Contains(iss.Labels, id) {
+		http.Error(w, "label not on issue", http.StatusUnprocessableEntity)
+		return
+	}
+	iss.Labels = slices.DeleteFunc(iss.Labels, func(l int64) bool { return l == id })
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (g *fakeGitea) comment(w http.ResponseWriter, r *http.Request, n int64) {
+	var in struct{ Body string }
+	if !decodeBody(w, r, &in) {
+		return
+	}
+	g.issues[n].Comments = append(g.issues[n].Comments, in.Body)
+	reply(w, http.StatusCreated, map[string]any{"id": len(g.issues[n].Comments), "body": in.Body})
+}
+
+// F-0452 crit. 3: Gitea takes labels by id. Closing a rejected card's issue
+// creates cerne:rejected when the repository lacks it, with a #RRGGBB color,
+// labels the issue with the id Gitea answered, and creates it once; a label
+// the repository has, even past the first page of labels, is reused. Third
+// party labels stay.
+func TestGiteaCreatesMissingLabel(t *testing.T) {
+	ctx := context.Background()
+	t.Run("missing", func(t *testing.T) {
+		g := newFakeGitea(t)
+		r := g.seed(&gtIssue{Title: "T", Body: "B"}, "bug", "cerne:approved")
+		tr := newGiteaTracker(t, "https://git.example/o/r")
+		for range 2 {
+			if err := tr.Update(ctx, r, tracker.Item{CardID: "F-0001", State: domain.StateRejected}); err != nil {
+				t.Fatalf("Update(rejected): %v", err)
+			}
+		}
+		if n := g.count(http.MethodPost, "/labels"); n != 1 {
+			t.Fatalf("%d label creations over two updates, want 1", n)
+		}
+		l, ok := g.labelNamed("cerne:rejected")
+		if !ok || !hexColor.MatchString(l.Color) {
+			t.Fatalf("label cerne:rejected = %+v (present %v), want created with a #RRGGBB color", l, ok)
+		}
+		if got := g.names(1); !slices.Equal(got, []string{"bug", "cerne:rejected"}) || g.issues[1].State != "closed" {
+			t.Fatalf("issue labels %v, state %s; want [bug cerne:rejected], closed", got, g.issues[1].State)
+		}
+	})
+	t.Run("present past the first page", func(t *testing.T) {
+		g := newFakeGitea(t)
+		for i := range 60 {
+			g.addLabel(fmt.Sprintf("area-%02d", i), "#ededed")
+		}
+		g.addLabel("cerne:superseded", "#ededed")
+		r := g.seed(&gtIssue{Title: "T", Body: "B"}, "cerne:in_development")
+		if err := newGiteaTracker(t, "https://git.example/o/r").Update(ctx, r, tracker.Item{CardID: "F-0001", State: domain.StateSuperseded}); err != nil {
+			t.Fatalf("Update(superseded): %v", err)
+		}
+		if n := g.count(http.MethodPost, "/labels"); n != 0 {
+			t.Fatalf("%d label creations with cerne:superseded on page 2, want 0", n)
+		}
+		if got := g.names(1); !slices.Equal(got, []string{"cerne:superseded"}) || g.issues[1].State != "closed" {
+			t.Fatalf("issue labels %v, state %s; want [cerne:superseded], closed", got, g.issues[1].State)
+		}
+	})
 }

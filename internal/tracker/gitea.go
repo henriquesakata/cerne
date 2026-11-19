@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -47,17 +48,28 @@ func newGitea(c Config) (IssueTracker, error) {
 
 // giteaIssue is the part of a Gitea issue the adapter reads.
 type giteaIssue struct {
-	Number  int64  `json:"number"`
-	HTMLURL string `json:"html_url"`
-	Title   string `json:"title"`
-	Body    string `json:"body"`
-	State   string `json:"state"` // open | closed
+	Number  int64        `json:"number"`
+	HTMLURL string       `json:"html_url"`
+	Title   string       `json:"title"`
+	Body    string       `json:"body"`
+	State   string       `json:"state"` // open | closed
+	Labels  []giteaLabel `json:"labels"`
 }
 
-// giteaCall is one public call: the login is read once.
+type giteaLabel struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
+// labelColor is the color of the cerne:* labels the adapter creates.
+const labelColor = "#5319e7"
+
+// giteaCall is one public call: the login is read once, and the label ids
+// live only until the call returns.
 type giteaCall struct {
 	g            gitea
 	user, secret string
+	labels       map[string]int64 // name -> id; nil until read
 }
 
 func (g gitea) call(ctx context.Context) (*giteaCall, error) {
@@ -136,7 +148,99 @@ var errGiteaTodo = errors.New("gitea: not implemented yet")
 
 func (g gitea) Create(context.Context, Item) (Ref, error) { return Ref{}, errGiteaTodo }
 
-func (g gitea) Update(context.Context, Ref, Item) error { return errGiteaTodo }
+// Update reads the issue and writes only what differs from it.
+func (g gitea) Update(ctx context.Context, r Ref, it Item) error {
+	if !digits(r.ID) {
+		return fmt.Errorf("%w: issue number %q", errBadRef, r.ID)
+	}
+	c, err := g.call(ctx)
+	if err != nil {
+		return err
+	}
+	var iss giteaIssue
+	if err := c.do(ctx, http.MethodGet, "/issues/"+r.ID, nil, &iss); err != nil {
+		return err
+	}
+	return c.apply(ctx, iss, it)
+}
+
+// apply moves cur toward it: the state label, then open or closed. Gitea has
+// no close reason, so a rejected or superseded card's issue is told apart
+// from a done one by its cerne:<state> label alone.
+func (c *giteaCall) apply(ctx context.Context, cur giteaIssue, it Item) error {
+	issue := "/issues/" + strconv.FormatInt(cur.Number, 10)
+	if err := c.setStateLabel(ctx, issue, cur.Labels, stateLabel(it.State)); err != nil {
+		return err
+	}
+	edit := map[string]string{}
+	shut, closed := closeReason(it.State) != "", cur.State == "closed"
+	switch {
+	case closed && it.NoReopen: // the merge closed it: only the labels move
+	case closed && !shut:
+		edit["state"] = "open"
+	case !closed && shut:
+		edit["state"] = "closed"
+	}
+	if len(edit) == 0 {
+		return nil
+	}
+	return c.do(ctx, http.MethodPatch, issue, edit, nil)
+}
+
+// setStateLabel leaves want as the issue's only cerne:* label and keeps every
+// other label: it adds want first, so the issue never lacks a state label.
+func (c *giteaCall) setStateLabel(ctx context.Context, issue string, cur []giteaLabel, want string) error {
+	if !slices.ContainsFunc(cur, func(l giteaLabel) bool { return l.Name == want }) {
+		id, err := c.labelID(ctx, want)
+		if err != nil {
+			return err
+		}
+		if err := c.do(ctx, http.MethodPost, issue+"/labels", map[string][]int64{"labels": {id}}, nil); err != nil {
+			return err
+		}
+	}
+	for _, l := range cur {
+		if l.Name != want && strings.HasPrefix(l.Name, "cerne:") {
+			if err := c.do(ctx, http.MethodDelete, issue+"/labels/"+strconv.FormatInt(l.ID, 10), nil, nil); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// labelID is the id of the repository label named name, the form Gitea's API
+// takes; a label the repository lacks is created. Every page is read: a label
+// missed on a later page would be created again.
+func (c *giteaCall) labelID(ctx context.Context, name string) (int64, error) {
+	if c.labels == nil {
+		labels := map[string]int64{}
+		for page := 1; ; page++ {
+			var list []giteaLabel
+			if err := c.do(ctx, http.MethodGet, "/labels?limit=50&page="+strconv.Itoa(page), nil, &list); err != nil {
+				return 0, err
+			}
+			if len(list) == 0 {
+				break
+			}
+			for _, l := range list {
+				if _, dup := labels[l.Name]; !dup {
+					labels[l.Name] = l.ID
+				}
+			}
+		}
+		c.labels = labels
+	}
+	if id, ok := c.labels[name]; ok {
+		return id, nil
+	}
+	var l giteaLabel
+	if err := c.do(ctx, http.MethodPost, "/labels", map[string]string{"name": name, "color": labelColor}, &l); err != nil {
+		return 0, err
+	}
+	c.labels[name] = l.ID
+	return l.ID, nil
+}
 
 // ListOpen lists the open issues.
 func (g gitea) ListOpen(ctx context.Context, label string) ([]Remote, error) {
