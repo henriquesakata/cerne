@@ -95,6 +95,8 @@ func TestCallHost(t *testing.T) {
 		{"gh", []string{"api", "--hostname", "ghe.example:8443", "repos/o/r"}, "ghe.example:8443"},
 		{"glab", []string{"api", "projects/1"}, "gitlab.com"},
 		{"glab", []string{"api", "--hostname=gitlab.example", "projects/1"}, "gitlab.example"},
+		{"glab", []string{"api", "--hostname", "a.example", "--hostname", "b.example"}, "b.example"},
+		{"glab", []string{"api", "--hostname=a.example", "--hostname", "b.example", "--hostname=c.example"}, "c.example"},
 	} {
 		if got := callHost(c.cli, c.args); got != c.want {
 			t.Errorf("callHost(%s %q) = %q, want %q", c.cli, c.args, got, c.want)

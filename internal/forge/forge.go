@@ -122,16 +122,20 @@ var RunCLI = func(ctx context.Context, name string, args ...string) ([]byte, err
 	return out, nil
 }
 
-// callHost is the host a CLI call reaches: the --hostname value, else the
-// CLI's own default.
+// callHost is the host a CLI call reaches: the last --hostname value (the
+// one glab uses), else the CLI's own default.
 func callHost(name string, args []string) string {
+	host := ""
 	for i, a := range args {
 		if a == "--hostname" && i+1 < len(args) {
-			return args[i+1]
+			host = args[i+1]
 		}
 		if h, ok := strings.CutPrefix(a, "--hostname="); ok {
-			return h
+			host = h
 		}
+	}
+	if host != "" {
+		return host
 	}
 	if name == "glab" {
 		return "gitlab.com"
