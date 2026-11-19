@@ -197,7 +197,10 @@ func installCodex(projDir string) []Result {
 		map[string]any{},
 		map[string][]map[string]any{
 			"SessionStart": {eventGroup("", "cerne hook session-context --format codex")},
-			"PreToolUse":   {eventGroup("Edit|Write", "cerne hook work-gate")},
+			"PreToolUse": {
+				eventGroup("Edit|Write", "cerne hook work-gate"),
+				eventGroup("Bash", "cerne hook tool-notes --format codex"), // F-0457
+			},
 			"PostToolUse": {
 				eventGroup("Bash", "cerne hook bind-work"),
 				eventGroup("Bash", "cerne hook provenance"),

@@ -33,6 +33,7 @@ func Assets() []Asset {
 		{Script: stopScript, Command: stopCommand, Event: "Stop"},
 		{Script: precompactScript, Command: precompactCommand, Event: "PreCompact", Matcher: precompactMatcher},
 		{Script: promptNotesScript, Command: promptNotesCommand, Event: "UserPromptSubmit"},
+		{Script: toolNotesScript, Command: toolNotesCommand, Event: "PreToolUse", Matcher: toolNotesMatcher},
 	}
 }
 

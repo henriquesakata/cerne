@@ -1375,8 +1375,11 @@ const ptBR = {
       "On keeps the wiki live: when compile_on_push is set, a push recompiles the dirty pages, and wiki lint debt counts as pending work in 'cerne next'. Off stops both; the wiki stays readable, with a stale banner and an on-demand recompile.":
         "Ligado mantém a wiki viva: com compile_on_push ligado, um push recompila as páginas sujas, e a dívida de lint da wiki conta como trabalho pendente no 'cerne next'. Desligado, os dois param: a wiki continua legível, com aviso de desatualizada e recompilação sob demanda.",
       'Notes on edit': 'Notas ao editar',
-      'On shows the agent the notes that cite a file when it is about to edit that file, through the work-gate hook. Off stops showing them.':
-        'Ligado, o gancho work-gate mostra ao agente as notas que citam um arquivo quando ele vai editá-lo. Desligado, deixa de mostrá-las.',
+      'On shows the agent the notes that cite a file or declare it in an edit: trigger when it edits that file: before the edit on Claude Code and Codex, right after it on Cursor, Gemini and Copilot. Off stops showing them.':
+        'Ligado, mostra ao agente as notas que citam um arquivo ou o declaram num gatilho edit: quando ele edita esse arquivo: antes da edição no Claude Code e no Codex, logo depois no Cursor, no Gemini e no Copilot. Desligado, deixa de mostrá-las.',
+      'Notes on shell commands': 'Notas em comandos do shell',
+      'On shows the agent up to 3 active notes whose bash: trigger matches a shell command it runs: before the command on Claude Code and Codex, right after it on Cursor, Gemini and Copilot. Off stops showing them.':
+        'Ligado, mostra ao agente até 3 notas ativas cujo gatilho bash: casa com um comando do shell que ele roda: antes do comando no Claude Code e no Codex, logo depois no Cursor, no Gemini e no Copilot. Desligado, deixa de mostrá-las.',
       'Notes on prompt': 'Notas ao enviar o prompt',
       "On shows the agent up to 3 active notes or runbooks whose titles match the words of the user's prompt, once per session, through the prompt hook. Off stops showing them.":
         'Ligado, o gancho do prompt mostra ao agente até 3 notas ou runbooks ativos cujos títulos casam com as palavras do prompt do usuário, uma vez por sessão. Desligado, deixa de mostrá-los.',

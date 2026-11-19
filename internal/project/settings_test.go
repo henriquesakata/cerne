@@ -795,6 +795,27 @@ func TestNotesOnEdit(t *testing.T) {
 	}
 }
 
+// TestNotesOnBash (F-0457 crit. 7): hooks.notes_on_bash defaults on and the
+// project scope wins over the host.
+func TestNotesOnBash(t *testing.T) {
+	for _, tc := range []struct {
+		name, project, host string
+		want                bool
+	}{
+		{"default", "", "", true},
+		{"project off", "[hooks]\nnotes_on_bash = false\n", "", false},
+		{"host off", "", "[hooks]\nnotes_on_bash = false\n", false},
+		{"project on over host off", "[hooks]\nnotes_on_bash = true\n", "[hooks]\nnotes_on_bash = false\n", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			projDir, _ := settingsFixture(t, tc.project, tc.host, false)
+			if got := NotesOnBash(projDir); got != tc.want {
+				t.Errorf("NotesOnBash = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestPromptNotes (B-0020): hooks.prompt_notes defaults on and the project
 // scope wins over the host.
 func TestPromptNotes(t *testing.T) {

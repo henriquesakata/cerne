@@ -19,7 +19,7 @@ import (
 	"strings"
 )
 
-//go:embed assets/register-reference-reminder.sh assets/cerne-register-reminder.sh assets/cerne-subagent-context.sh assets/cerne-work-bind.sh assets/cerne-work-gate.sh assets/cerne-stop-closeout.sh assets/cerne-precompact.sh assets/cerne-prompt-notes.sh
+//go:embed assets/register-reference-reminder.sh assets/cerne-register-reminder.sh assets/cerne-subagent-context.sh assets/cerne-work-bind.sh assets/cerne-work-gate.sh assets/cerne-stop-closeout.sh assets/cerne-precompact.sh assets/cerne-prompt-notes.sh assets/cerne-tool-notes.sh
 var files embed.FS
 
 const (
@@ -69,6 +69,13 @@ const (
 	promptNotesScript = "cerne-prompt-notes.sh"
 	// promptNotesCommand is the settings.json command that runs promptNotesScript.
 	promptNotesCommand = `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-prompt-notes.sh"`
+	// toolNotesScript is the PreToolUse/Bash notes injector (F-0457): the
+	// active notes whose bash: trigger matches the command about to run.
+	toolNotesScript = "cerne-tool-notes.sh"
+	// toolNotesCommand is the settings.json command that runs toolNotesScript.
+	toolNotesCommand = `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-tool-notes.sh"`
+	// toolNotesMatcher limits it to the shell tool.
+	toolNotesMatcher = "Bash"
 	// promptNotesTimeout bounds the whole hook (process start included) at the
 	// host, in seconds; the lookup's own budget is far smaller.
 	promptNotesTimeout = 5
@@ -213,7 +220,7 @@ func installClaude(projDir string) ([]Result, error) {
 	}
 	results = append(results, Result{Asset: subagentScript, Status: st})
 
-	for _, script := range []string{bindScript, gateScript, stopScript, precompactScript, promptNotesScript} {
+	for _, script := range []string{bindScript, gateScript, stopScript, precompactScript, promptNotesScript, toolNotesScript} {
 		dst := filepath.Join(projDir, ".claude", "hooks", script)
 		st, err = writeIfChanged(dst, []byte(mustRead("assets/"+script)))
 		if err != nil {
@@ -491,6 +498,7 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 		}
 	}
 	needGate := !scriptWired(pre, gateScript)
+	needToolNotes := !scriptWired(pre, toolNotesScript)
 
 	var sessionStart []any
 	hasSS := false
@@ -573,7 +581,7 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	}
 	needActor := !actorPresent(envMap)
 
-	if !needHook && !needBind && !needGate && !needRegister && !needSubagent && !needStop && !needPC && !needPN && !needActor {
+	if !needHook && !needBind && !needGate && !needToolNotes && !needRegister && !needSubagent && !needStop && !needPC && !needPN && !needActor {
 		return nil, false, nil
 	}
 
@@ -596,6 +604,9 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 		}
 		if needGate {
 			fresh = withMatcherEntry(fresh, "PreToolUse", gateMatcher, gateCommand)
+		}
+		if needToolNotes {
+			fresh = withMatcherEntry(fresh, "PreToolUse", toolNotesMatcher, toolNotesCommand)
 		}
 		if needStop {
 			fresh = withEventEntry(fresh, "Stop", stopCommand)
@@ -638,6 +649,9 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	}
 	if needGate {
 		expected = withMatcherEntry(expected, "PreToolUse", gateMatcher, gateCommand)
+	}
+	if needToolNotes {
+		expected = withMatcherEntry(expected, "PreToolUse", toolNotesMatcher, toolNotesCommand)
 	}
 	if needStop {
 		expected = withEventEntry(expected, "Stop", stopCommand)
@@ -694,6 +708,15 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	if ok && needGate {
 		curHasHooks, curHasPre := reDetectEvent(cur, "PreToolUse", hasHooks, hasPre)
 		spliced, spliceOK := spliceMatcherEntry(cur, "PreToolUse", newMatcherEntry(gateMatcher, gateCommand), curHasHooks, curHasPre, detectNewline(cur), unit)
+		if !spliceOK {
+			ok = false
+		} else {
+			cur = spliced
+		}
+	}
+	if ok && needToolNotes {
+		curHasHooks, curHasPre := reDetectEvent(cur, "PreToolUse", hasHooks, hasPre)
+		spliced, spliceOK := spliceMatcherEntry(cur, "PreToolUse", newMatcherEntry(toolNotesMatcher, toolNotesCommand), curHasHooks, curHasPre, detectNewline(cur), unit)
 		if !spliceOK {
 			ok = false
 		} else {

@@ -22,6 +22,7 @@ func newHookCmd() *cobra.Command {
 	cmd.AddCommand(agentHook(newHookStopCheckCmd()))
 	cmd.AddCommand(agentHook(newHookPrecompactCmd()))
 	cmd.AddCommand(agentHook(newHookPromptNotesCmd()))
+	cmd.AddCommand(agentHook(newHookToolNotesCmd()))
 	cmd.AddCommand(agentHook(newHookProvenanceCmd()))
 	cmd.AddCommand(newHookCommitTrailerCmd())
 	cmd.AddCommand(agentHook(newHookSessionContextCmd()))

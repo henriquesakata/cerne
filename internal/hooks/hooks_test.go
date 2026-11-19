@@ -231,6 +231,15 @@ func TestInstall_MinimalDiff_AppendsToExistingPostToolUse(t *testing.T) {
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-work-gate.sh\""
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-tool-notes.sh\""
+          }
+        ]
       }
     ]`
 	// The Stop closeout block (F-0171), appended after PreToolUse.
@@ -336,6 +345,15 @@ func TestInstall_MinimalDiff_ScenarioB(t *testing.T) {
           {
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-work-gate.sh\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-tool-notes.sh\""
           }
         ]
       }],
@@ -498,6 +516,15 @@ func TestInstall_MinimalDiff_ScenarioC(t *testing.T) {
           {
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-work-gate.sh\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-tool-notes.sh\""
           }
         ]
       }
