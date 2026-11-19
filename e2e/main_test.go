@@ -32,7 +32,10 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 	os.Unsetenv("CERNE_ACTOR")
-	os.Unsetenv("CURSOR_AGENT") // Cursor's agent-shell marker counts as an agent too (F-0428)
+	// The agent-shell markers count as an agent too (B-0030, F-0428, F-0444).
+	for _, marker := range []string{"CLAUDECODE", "CURSOR_AGENT", "COPILOT_CLI"} {
+		os.Unsetenv(marker)
+	}
 	dir, err := os.MkdirTemp("", "cerne-config-")
 	if err != nil {
 		panic(err)
