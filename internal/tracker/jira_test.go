@@ -21,6 +21,7 @@ import (
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/forge"
 	"github.com/henriquesakata/cerne/internal/tracker"
+	"github.com/henriquesakata/cerne/internal/tracker/trackertest"
 	"github.com/henriquesakata/cerne/internal/version"
 )
 
@@ -1232,5 +1233,33 @@ func TestJiraOwns(t *testing.T) {
 	}
 	if len(*reqs) != 0 {
 		t.Fatalf("Owns sent %d requests, want none", len(*reqs))
+	}
+}
+
+// F-0453 crit. 7: the Jira adapter passes the contract suite the fake
+// passes, against an emulated Cloud (v3, ADF, Basic) and an emulated Data
+// Center (v2 under a context path, text, Bearer, serverInfo). Jira closes
+// nothing on a merge: NoReopen is not checked.
+func TestJiraContract(t *testing.T) {
+	for _, flavor := range []struct {
+		name string
+		fake func(*testing.T) *jiraFake
+		url  string
+	}{{"cloud", newJiraCloudFake, jiraCloud}, {"datacenter", newJiraDCFake, jiraDC}} {
+		t.Run(flavor.name, func(t *testing.T) {
+			var f *jiraFake
+			trackertest.RunContract(t, trackertest.Harness{
+				New: func(t *testing.T) tracker.IssueTracker {
+					f = flavor.fake(t)
+					return newJiraTracker(t, flavor.url)
+				},
+				Open: func(_ *testing.T, title, body, label string) tracker.Ref {
+					if label == "" {
+						return f.seed(title, body)
+					}
+					return f.seed(title, body, label)
+				},
+			})
+		})
 	}
 }
