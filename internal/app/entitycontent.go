@@ -117,36 +117,45 @@ func SaveEntityContentBy(repoDir, projDir, kind, id, content, base string, by Do
 	return err
 }
 
-// contentIDShape is the id of a decision, note or runbook — nothing else
-// reaches a path: an id decoded from a URL may carry "../" (B-0034), and an
-// unbounded number of digits makes a file name the OS refuses, a 500 that
-// names the clone's path (audit A5). Six digits are ample (ids mint as 4).
-var contentIDShape = regexp.MustCompile(`^(D|N|RB)-\d{1,6}$`)
+// contentDigits is the number of a decision, note or runbook id, after the
+// kind's own prefix: nothing else reaches a path, as an id decoded from a URL
+// may carry "../" (B-0034), and an unbounded number of digits makes a file
+// name the OS refuses, a 500 that names the clone's path (audit A5). Six
+// digits are ample (ids mint as 4).
+var contentDigits = regexp.MustCompile(`^\d{1,6}$`)
+
+// contentID reports whether id is the kind's prefix, a dash and its digits.
+func contentID(id, prefix string) bool {
+	digits, found := strings.CutPrefix(id, prefix+"-")
+	return found && contentDigits.MatchString(digits)
+}
 
 // entityContent is the content path of kind's id and the loader of its state
 // and whether that state is live (active), read inside the lock; ok is false
 // for an unknown kind or an id that is not of kind's shape.
 func entityContent(repoDir, kind, id string) (path string, state func() (string, bool, error), ok bool) {
-	m := contentIDShape.FindStringSubmatch(id)
-	if m == nil {
-		return "", nil, false
-	}
-	switch {
-	case kind == "decision" && m[1] == "D":
-		return DecisionDocPath(repoDir, id), func() (string, bool, error) {
-			d, err := store.LoadDecision(repoDir, id)
-			return string(d.State), d.State == domain.DecisionActive, err
-		}, true
-	case kind == "note" && m[1] == "N":
-		return NoteDocPath(repoDir, id), func() (string, bool, error) {
-			n, err := store.LoadNote(repoDir, id)
-			return string(n.State), n.State == domain.NoteActive, err
-		}, true
-	case kind == "runbook" && m[1] == "RB":
-		return RunbookDocPath(repoDir, id), func() (string, bool, error) {
-			rb, err := store.LoadRunbook(repoDir, id)
-			return string(rb.State), rb.State == domain.RunbookActive, err
-		}, true
+	switch kind {
+	case "decision":
+		if contentID(id, "D") {
+			return DecisionDocPath(repoDir, id), func() (string, bool, error) {
+				d, err := store.LoadDecision(repoDir, id)
+				return string(d.State), d.State == domain.DecisionActive, err
+			}, true
+		}
+	case "note":
+		if contentID(id, "N") {
+			return NoteDocPath(repoDir, id), func() (string, bool, error) {
+				n, err := store.LoadNote(repoDir, id)
+				return string(n.State), n.State == domain.NoteActive, err
+			}, true
+		}
+	case "runbook":
+		if contentID(id, "RB") {
+			return RunbookDocPath(repoDir, id), func() (string, bool, error) {
+				rb, err := store.LoadRunbook(repoDir, id)
+				return string(rb.State), rb.State == domain.RunbookActive, err
+			}, true
+		}
 	}
 	return "", nil, false
 }
