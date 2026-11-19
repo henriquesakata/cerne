@@ -268,12 +268,15 @@ func TestFaviconReadsAt16px(t *testing.T) {
 	}
 
 	// A ring is stroked on its centre line, so half of its stroke eats into
-	// each gap beside it.
-	if clear := gap(all[0], all[1]) - outer/2 - inner/2; clear*px < 1 {
-		t.Errorf("the gap between the two rings is %.2f px at 16 px, want at least 1", clear*px)
+	// each gap beside it. A gap of just 1 px between two curved strokes comes
+	// out grey, and the rings smear into one blot (B-0033): the floor leaves a
+	// pixel that is mostly background.
+	const minGap = 1.15
+	if clear := gap(all[0], all[1]) - outer/2 - inner/2; clear*px < minGap {
+		t.Errorf("the gap between the two rings is %.2f px at 16 px, want at least %.2f", clear*px, minGap)
 	}
-	if clear := gap(all[1], all[2]) - inner/2; clear*px < 1 {
-		t.Errorf("the gap between the inner ring and the heartwood is %.2f px at 16 px, want at least 1", clear*px)
+	if clear := gap(all[1], all[2]) - inner/2; clear*px < minGap {
+		t.Errorf("the gap between the inner ring and the heartwood is %.2f px at 16 px, want at least %.2f", clear*px, minGap)
 	}
 }
 
