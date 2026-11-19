@@ -2,6 +2,7 @@ package project
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -71,7 +72,9 @@ type Setting struct {
 	// DynamicDefault, when set, supplies the value of a key no scope stores:
 	// "" keeps Default, anything else becomes the value with OriginDetected.
 	// The registry does not know what it detects.
-	DynamicDefault func() string `json:"-"`
+	DynamicDefault func() string                 `json:"-"`
+	Fields         []Setting                     `json:"fields,omitempty"` // the columns; Fields[0] is the record key: non-empty, unique
+	CheckRecord    func(map[string]string) error `json:"-"`                // domain check of one record, after the fields pass
 }
 
 // settingGroups are the subject groups in display order (F-0413).
@@ -305,6 +308,12 @@ func ResolveSettings(projDir string) SettingsView {
 			problem := ""
 			if err := checkDeclared(s.ID, scope); err != nil {
 				problem = err.Error()
+			} else if s.Type == "records" {
+				if rows, err := checkRecords(s, v); err != nil {
+					problem = err.Error()
+				} else {
+					v = rows
+				}
 			} else if !hasSettingType(s, v) {
 				problem = fmt.Sprintf("%v: want %s", ErrInvalidSettingValue, settingWant(s))
 			}
@@ -331,6 +340,10 @@ func ResolveSettings(projDir string) SettingsView {
 
 // hasSettingType reports whether v is a value of s's declared type.
 func hasSettingType(s Setting, v any) bool {
+	if s.Type == "records" {
+		_, err := checkRecords(s, v)
+		return err == nil
+	}
 	switch v.(type) {
 	case bool:
 		return s.Type == "bool"
@@ -349,6 +362,9 @@ func settingWant(s Setting) string {
 	}
 	if s.Type == "int" {
 		return "a positive integer"
+	}
+	if s.Type == "records" {
+		return "a list of records {" + strings.Join(fieldIDs(s), ", ") + "}"
 	}
 	return s.Type
 }
@@ -392,7 +408,8 @@ func maxLen(s Setting) int {
 }
 
 // SetSetting writes the CLI literal raw as id's value in scope: "true"/"false"
-// for a bool key, the text itself for a string key. See SetSettingValue.
+// for a bool key, a JSON list for a records key, the text itself for a string
+// key. See SetSettingValue.
 func SetSetting(projDir, id, scope, raw string) error {
 	if err := checkDeclared(id, scope); err != nil {
 		return err
@@ -410,6 +427,10 @@ func SetSetting(projDir, id, scope, raw string) error {
 			return fmt.Errorf("%s: %w %q: want a positive integer", id, ErrInvalidSettingValue, raw)
 		}
 		v = n
+	case "records":
+		if err := json.Unmarshal([]byte(raw), &v); err != nil {
+			return fmt.Errorf("%s: %w %q: want a JSON list of records", id, ErrInvalidSettingValue, raw)
+		}
 	}
 	return SetSettingValue(projDir, id, scope, v)
 }
@@ -427,7 +448,13 @@ func SetSettingValue(projDir, id, scope string, v any) error {
 	if f, ok := v.(float64); ok && s.Type == "int" && f == float64(int64(f)) {
 		v = int64(f)
 	}
-	if !hasSettingType(s, v) {
+	if s.Type == "records" {
+		rows, err := checkRecords(s, v)
+		if err != nil {
+			return err
+		}
+		v = inlineRecords{fields: fieldIDs(s), rows: rows}
+	} else if !hasSettingType(s, v) {
 		return fmt.Errorf("%s: %w %v: want %s", id, ErrInvalidSettingValue, v, settingWant(s))
 	}
 	if str, ok := v.(string); ok && (strings.TrimSpace(str) == "" || strings.ContainsAny(str, "\r\n") || utf8.RuneCountInString(str) > maxLen(s)) {
@@ -583,4 +610,88 @@ func readTOMLFile(path string) (map[string]any, error) {
 		return nil, fmt.Errorf("%w: %w", ErrConfigParse, err)
 	}
 	return m, nil
+}
+
+// checkRecords validates v, a JSON list or a TOML array of tables, as a value
+// of the records key s, and normalizes it: one map per record, string values,
+// the empty ones dropped (the writer drops them too). A field s does not
+// declare, a value that is not one line of at most the field's MaxLen, an
+// empty or repeated Fields[0], or a CheckRecord refusal is
+// ErrInvalidSettingValue.
+func checkRecords(s Setting, v any) ([]map[string]string, error) {
+	var items []any
+	switch l := v.(type) {
+	case []any:
+		items = l
+	case []map[string]any:
+		for _, m := range l {
+			items = append(items, m)
+		}
+	case []map[string]string:
+		for _, m := range l {
+			items = append(items, m)
+		}
+	default:
+		return nil, fmt.Errorf("%s: %w: want %s", s.ID, ErrInvalidSettingValue, settingWant(s))
+	}
+	bad := func(i int, format string, a ...any) error {
+		return fmt.Errorf("%s: %w: record %d: %s", s.ID, ErrInvalidSettingValue, i+1, fmt.Sprintf(format, a...))
+	}
+	key := s.Fields[0].ID
+	out := make([]map[string]string, 0, len(items))
+	seen := map[string]bool{}
+	for i, item := range items {
+		rec := map[string]string{}
+		var fields map[string]any
+		switch m := item.(type) {
+		case map[string]any:
+			fields = m
+		case map[string]string:
+			fields = map[string]any{}
+			for k, val := range m {
+				fields[k] = val
+			}
+		default:
+			return nil, bad(i, "want an object of %s", settingWant(s))
+		}
+		for name, val := range fields {
+			j := slices.IndexFunc(s.Fields, func(f Setting) bool { return f.ID == name })
+			if j < 0 {
+				return nil, bad(i, "unknown field %q (fields: %s)", name, strings.Join(fieldIDs(s), ", "))
+			}
+			str, ok := val.(string)
+			if !ok {
+				return nil, bad(i, "%s: want a string", name)
+			}
+			if strings.ContainsAny(str, "\r\n") || utf8.RuneCountInString(str) > maxLen(s.Fields[j]) {
+				return nil, bad(i, "%s: want one line of at most %d characters", name, maxLen(s.Fields[j]))
+			}
+			if str != "" {
+				rec[name] = str
+			}
+		}
+		switch {
+		case strings.TrimSpace(rec[key]) == "":
+			return nil, bad(i, "%s is required", key)
+		case seen[rec[key]]:
+			return nil, bad(i, "duplicate %s %q", key, rec[key])
+		}
+		seen[rec[key]] = true
+		if s.CheckRecord != nil {
+			if err := s.CheckRecord(rec); err != nil {
+				return nil, fmt.Errorf("%s: %w: %w", s.ID, ErrInvalidSettingValue, err)
+			}
+		}
+		out = append(out, rec)
+	}
+	return out, nil
+}
+
+// fieldIDs lists the columns of a records key, in order.
+func fieldIDs(s Setting) []string {
+	ids := make([]string, len(s.Fields))
+	for i, f := range s.Fields {
+		ids[i] = f.ID
+	}
+	return ids
 }
