@@ -507,3 +507,35 @@ func TestGitLabCloseReasonLabel(t *testing.T) {
 		}
 	})
 }
+
+// F-0450 crit. 4: the whole trailer — #N for the commit_url's own project,
+// group/sub/project#N for another project on the same host, the issue URL on
+// another host or forge — with Refs, or Closes when closing. Pure: no glab.
+func TestGitLabCommitRefForms(t *testing.T) {
+	for _, c := range []struct {
+		name, trackerURL, commitURL string
+		closing                     bool
+		want                        string
+	}{
+		{"same project", "https://gitlab.com/g/sub/p", "https://gitlab.com/g/sub/p/-/commit/{sha}", false, "Refs: #12"},
+		{"same project, closing", "https://gitlab.com/g/sub/p", "https://gitlab.com/g/sub/p/-/commit/{sha}", true, "Closes: #12"},
+		{"other project, same host", "https://gitlab.com/g/sub/issues", "https://gitlab.com/g/code/-/commit/{sha}", false, "Refs: g/sub/issues#12"},
+		{"other project, same host, closing", "https://gitlab.com/g/sub/issues", "https://gitlab.com/g/code/-/commit/{sha}", true, "Closes: g/sub/issues#12"},
+		{"other forge", "https://gitlab.com/g/sub/p", "https://github.com/o/r/commit/{sha}", false, "Refs: https://gitlab.com/g/sub/p/-/issues/12"},
+		{"other forge, closing", "https://gitlab.com/g/sub/p", "https://github.com/o/r/commit/{sha}", true, "Closes: https://gitlab.com/g/sub/p/-/issues/12"},
+		{"same path on another host", "https://gitlab.example/g/sub/p", "https://gitlab.com/g/sub/p/-/commit/{sha}", false, "Refs: https://gitlab.example/g/sub/p/-/issues/12"},
+		{"self-hosted, same project", "https://gitlab.example/g/sub/p", "https://gitlab.example/g/sub/p/-/commit/{sha}", false, "Refs: #12"},
+		{"no commit_url", "https://gitlab.com/g/sub/p", "", false, "Refs: https://gitlab.com/g/sub/p/-/issues/12"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			g := newFakeGL(t, "gitlab.com", "g/sub/p")
+			r := tracker.Ref{Tracker: "gl", ID: "12", URL: c.trackerURL + "/-/issues/12"}
+			if got := newGitLab(t, c.trackerURL).CommitRef(r, c.commitURL, c.closing); got != c.want {
+				t.Fatalf("CommitRef = %q, want %q", got, c.want)
+			}
+			if len(g.calls) != 0 {
+				t.Fatalf("CommitRef called glab: %q (it is pure)", g.calls)
+			}
+		})
+	}
+}

@@ -157,8 +157,10 @@ func (g gitlab) ListOpen(ctx context.Context, label string) ([]Remote, error) {
 	return out, nil
 }
 
-// CommitRef cites the issue by its URL.
-func (g gitlab) CommitRef(r Ref, _ string, closing bool) string {
+// CommitRef cites the issue the shortest way GitLab links it from a commit in
+// the commitURL project: #N in the same project, group/project#N on the same
+// host, the issue URL anywhere else.
+func (g gitlab) CommitRef(r Ref, commitURL string, closing bool) string {
 	if !digits(r.ID) {
 		return ""
 	}
@@ -166,7 +168,14 @@ func (g gitlab) CommitRef(r Ref, _ string, closing bool) string {
 	if closing {
 		word = "Closes"
 	}
-	return word + ": " + r.URL
+	ref := r.URL
+	if code, _, ok := forge.ParseCommitURL(commitURL); ok && strings.EqualFold(code.Host, g.repo.Host) {
+		ref = g.repo.Path + "#" + r.ID
+		if strings.EqualFold(code.Path, g.repo.Path) {
+			ref = "#" + r.ID
+		}
+	}
+	return word + ": " + ref
 }
 
 // Owns reports whether r is an issue of this project on this host, subgroups
