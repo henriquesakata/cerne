@@ -77,9 +77,9 @@ func New(name, commitURL string) (DeliveryForge, error) {
 	return nil, fmt.Errorf("%w %q", ErrUnknownForge, name)
 }
 
-// runCLI runs a forge CLI (gh, glab) and returns its stdout. A variable so
-// tests replace it, like app.MRState.
-var runCLI = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+// RunCLI runs a forge CLI (gh, glab) and returns its stdout. A variable so
+// tests replace it, like app.MRState; the tracker adapters share it (F-0449).
+var RunCLI = func(ctx context.Context, name string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	// The deadline kills the CLI, not a child (credential helper) still
 	// holding stdout: without WaitDelay, Output waits for that child (F-0886).

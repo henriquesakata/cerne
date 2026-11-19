@@ -13,7 +13,7 @@ import (
 	"github.com/henriquesakata/cerne/internal/version"
 )
 
-// fakeCLI replaces runCLI: it records the argv and answers by the last path
+// fakeCLI replaces RunCLI: it records the argv and answers by the last path
 // element it sees in the args.
 type fakeCLI struct {
 	calls [][]string
@@ -22,9 +22,9 @@ type fakeCLI struct {
 
 func (f *fakeCLI) install(t *testing.T) {
 	t.Helper()
-	old := runCLI
-	t.Cleanup(func() { runCLI = old })
-	runCLI = func(_ context.Context, name string, args ...string) ([]byte, error) {
+	old := RunCLI
+	t.Cleanup(func() { RunCLI = old })
+	RunCLI = func(_ context.Context, name string, args ...string) ([]byte, error) {
 		f.calls = append(f.calls, append([]string{name}, args...))
 		out, err := f.reply(args)
 		return []byte(out), err
@@ -107,9 +107,9 @@ func TestCallTimeout(t *testing.T) {
 	old := CallTimeout
 	CallTimeout = 20 * time.Millisecond
 	t.Cleanup(func() { CallTimeout = old })
-	oldRun := runCLI
-	t.Cleanup(func() { runCLI = oldRun })
-	runCLI = func(ctx context.Context, _ string, _ ...string) ([]byte, error) {
+	oldRun := RunCLI
+	t.Cleanup(func() { RunCLI = oldRun })
+	RunCLI = func(ctx context.Context, _ string, _ ...string) ([]byte, error) {
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}
@@ -197,10 +197,10 @@ func giteaServer(t *testing.T, token string, h func(w http.ResponseWriter, r *ht
 		h(w, r)
 	}))
 	t.Cleanup(srv.Close)
-	oldBase, oldCred := apiBase, credentialFill
-	t.Cleanup(func() { apiBase, credentialFill = oldBase, oldCred })
+	oldBase, oldCred := apiBase, CredentialFill
+	t.Cleanup(func() { apiBase, CredentialFill = oldBase, oldCred })
 	apiBase = func(string) string { return srv.URL + "/api/v1" }
-	credentialFill = func(context.Context, string) (string, string) { return "root", token }
+	CredentialFill = func(context.Context, string) (string, string) { return "root", token }
 }
 
 func TestGiteaPRForCommit(t *testing.T) {
@@ -241,11 +241,11 @@ func TestGiteaTokenNeverInErrors(t *testing.T) {
 		t.Fatalf("err = %v: want an error without the token", err)
 	}
 	// An unreachable server: the transport error must not leak either.
-	origDo := httpDo
-	httpDo = func(*http.Request) (*http.Response, error) {
+	origDo := HTTPDo
+	HTTPDo = func(*http.Request) (*http.Response, error) {
 		return nil, errors.New("dial: Authorization: token " + token)
 	}
-	t.Cleanup(func() { httpDo = origDo })
+	t.Cleanup(func() { HTTPDo = origDo })
 	_, _, err = g.PRForCommit(context.Background(), "abc1234")
 	if err == nil || strings.Contains(err.Error(), token) {
 		t.Fatalf("transport err = %v: want an error without the token", err)
@@ -255,12 +255,12 @@ func TestGiteaTokenNeverInErrors(t *testing.T) {
 // F-0355 crit. 10: without a credential there is no request and the reason
 // names the host.
 func TestGiteaNoCredentials(t *testing.T) {
-	old := credentialFill
-	t.Cleanup(func() { credentialFill = old })
-	credentialFill = func(context.Context, string) (string, string) { return "root", "" }
-	oldDo := httpDo
-	t.Cleanup(func() { httpDo = oldDo })
-	httpDo = func(*http.Request) (*http.Response, error) {
+	old := CredentialFill
+	t.Cleanup(func() { CredentialFill = old })
+	CredentialFill = func(context.Context, string) (string, string) { return "root", "" }
+	oldDo := HTTPDo
+	t.Cleanup(func() { HTTPDo = oldDo })
+	HTTPDo = func(*http.Request) (*http.Response, error) {
 		t.Fatal("request sent without a credential")
 		return nil, nil
 	}
@@ -319,10 +319,10 @@ func TestGiteaBasicFallback(t *testing.T) {
 		fmt.Fprint(w, `{"number":5,"html_url":"https://git.example.com/acme/hub/pulls/5"}`)
 	}))
 	t.Cleanup(srv.Close)
-	oldBase, oldCred := apiBase, credentialFill
-	t.Cleanup(func() { apiBase, credentialFill = oldBase, oldCred })
+	oldBase, oldCred := apiBase, CredentialFill
+	t.Cleanup(func() { apiBase, CredentialFill = oldBase, oldCred })
 	apiBase = func(string) string { return srv.URL + "/api/v1" }
-	credentialFill = func(context.Context, string) (string, string) { return "root", secret }
+	CredentialFill = func(context.Context, string) (string, string) { return "root", secret }
 	g, _ := New("gitea", "https://git.example.com/acme/hub/commit/{sha}")
 	_, n, err := g.PRForCommit(context.Background(), "abc1234")
 	if err != nil || n != 5 {
@@ -332,7 +332,7 @@ func TestGiteaBasicFallback(t *testing.T) {
 		t.Fatalf("attempts = %d, want token then Basic", len(sent))
 	}
 	// Both refused: the error is the 401, without the secret.
-	credentialFill = func(context.Context, string) (string, string) { return "root", "wrong" }
+	CredentialFill = func(context.Context, string) (string, string) { return "root", "wrong" }
 	_, _, err = g.PRForCommit(context.Background(), "abc1234")
 	if err == nil || err.Error() != "gitea: HTTP 401" {
 		t.Fatalf("err = %v", err)

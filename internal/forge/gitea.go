@@ -27,13 +27,15 @@ var apiBase = func(host string) string {
 // to a host the commit_url did not name.
 var noRedirect = &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 
-// httpDo sends the request; a variable so tests replace the transport.
-var httpDo = func(req *http.Request) (*http.Response, error) { return noRedirect.Do(req) }
+// HTTPDo sends the request; a variable so tests replace the transport.
+// Exported for the tracker adapters (F-0451..F-0453).
+var HTTPDo = func(req *http.Request) (*http.Response, error) { return noRedirect.Do(req) }
 
-// credentialFill asks `git credential fill` for the host's login: the secret is
+// CredentialFill asks `git credential fill` for the host's login: the secret is
 // the password= line, which on a Gitea host is an access token or the account
-// password. A variable so tests replace the helper.
-var credentialFill = fillCredential
+// password. A variable so tests replace the helper; exported for the tracker
+// adapters (F-0451..F-0453).
+var CredentialFill = fillCredential
 
 func fillCredential(ctx context.Context, host string) (user, secret string) {
 	cmd := exec.CommandContext(ctx, "git", "credential", "fill")
@@ -74,7 +76,7 @@ type gitea struct{ repo Repo }
 func (g gitea) get(ctx context.Context, v any, path string) error {
 	ctx, cancel := context.WithTimeout(ctx, CallTimeout)
 	defer cancel()
-	user, secret := credentialFill(ctx, g.repo.Host)
+	user, secret := CredentialFill(ctx, g.repo.Host)
 	if secret == "" {
 		return fmt.Errorf("no credentials for %s", g.repo.Host)
 	}
@@ -90,7 +92,7 @@ func (g gitea) get(ctx context.Context, v any, path string) error {
 		auth(req)
 		req.Header.Set("User-Agent", "cerne/"+version.Version)
 		req.Header.Set("Accept", "application/json")
-		resp, err := httpDo(req)
+		resp, err := HTTPDo(req)
 		if err != nil {
 			if ctx.Err() != nil {
 				return fmt.Errorf("gitea: %w", ctx.Err())
