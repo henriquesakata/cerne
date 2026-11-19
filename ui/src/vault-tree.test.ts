@@ -34,9 +34,9 @@ const find = (nodes: VaultNode[], key: string): VaultNode | undefined => {
 describe('vault-tree (F-0463)', () => {
   it('critério 1: grupos na ordem, com a contagem de itens', () => {
     const tree = buildVaultTree(state, wiki, { history: false })
-    expect(tree.map((g) => g.title)).toEqual(['epics', 'decisions', 'notes', 'runbooks', 'references', 'wiki'])
+    expect(tree.map((g) => g.title)).toEqual(['progress', 'epics', 'decisions', 'notes', 'runbooks', 'references', 'wiki'])
     // E-0001, F-0001, F-0002, F-0004 (o pai F-0003 está oculto)
-    expect(tree.map((g) => g.count)).toEqual([4, 1, 1, 0, 1, 1])
+    expect(tree.map((g) => g.count)).toEqual([4, 4, 1, 1, 0, 1, 1])
   })
 
   it('critério 2: feature com parent aninha sob o épico; cada feature tem spec/plan/result', () => {
@@ -45,7 +45,7 @@ describe('vault-tree (F-0463)', () => {
     expect(epic.children.filter((c) => !c.doc).map((c) => c.id)).toEqual(['F-0001'])
     expect(find(tree, 'F-0001')!.children.map((c) => c.doc)).toEqual(['spec', 'plan', 'result'])
     // pai oculto: o filho sobe para a raiz do grupo
-    expect(tree[0].children.map((c) => c.id)).toContain('F-0004')
+    expect(tree[1].children.map((c) => c.id)).toContain('F-0004')
   })
 
   it('critério 3: histórico oculto por padrão; ligado, mostra com o estado', () => {
@@ -77,6 +77,36 @@ describe('vault-tree (F-0463)', () => {
     expect(find(byId, 'E-0001')).toBeDefined() // ancestral
     expect(find(byId, 'F-0001/spec')).toBeDefined()
     expect(find(byId, 'F-0002')).toBeUndefined()
-    expect(filterVaultTree(tree, 'epico')[0].children.map((c) => c.key)).toEqual(['E-0001'])
+    expect(filterVaultTree(tree, 'epico').find((g) => g.title === 'epics')!.children.map((c) => c.key)).toEqual(['E-0001'])
+  })
+
+  it('A1: um ciclo de parent não faz os dois sumirem — sobem para a raiz do grupo', () => {
+    const cyc = { ...state, features: [feat('F-0010', 'A', 'approved', 'F-0011'), feat('F-0011', 'B', 'approved', 'F-0010')] } as StateResponse
+    const epics = buildVaultTree(cyc, wiki, { history: false }).find((g) => g.title === 'epics')!
+    expect(epics.children.map((c) => c.id).sort()).toEqual(['F-0010', 'F-0011'])
+  })
+
+  it('A5: página da wiki casa só pelo título, não pelo id wiki:', () => {
+    const tree = buildVaultTree(state, wiki, { history: false })
+    expect(find(filterVaultTree(tree, 'wiki:'), 'wiki:overview.md')).toBeUndefined()
+    expect(find(filterVaultTree(tree, 'overview'), 'wiki:overview.md')).toBeDefined()
+  })
+
+  it('B6: grupo Em andamento lista candidate/approved/in_development/implemented, fixo no topo', () => {
+    const tree = buildVaultTree(state, wiki, { history: true })
+    const progress = tree[0]
+    expect(progress.title).toBe('progress')
+    expect(progress.children.map((c) => c.id)).toEqual(['E-0001', 'F-0001', 'F-0002', 'F-0004'])
+    expect(progress.children[0].children.map((c) => c.doc)).toEqual(['spec', 'plan', 'result'])
+  })
+
+  it('B3: entidade histórica visitada com histórico desligado vira nó fixo no topo', () => {
+    const tree = buildVaultTree(state, wiki, { history: false, visiting: 'D-0002' })
+    expect(tree[0].title).toBe('visiting')
+    expect(tree[0].children.map((c) => [c.id, c.state])).toEqual([['D-0002', 'retired']])
+    // histórico ligado, ou entidade viva: nenhum nó visitante
+    expect(buildVaultTree(state, wiki, { history: true, visiting: 'D-0002' }).some((g) => g.title === 'visiting')).toBe(false)
+    expect(buildVaultTree(state, wiki, { history: false, visiting: 'D-0001' }).some((g) => g.title === 'visiting')).toBe(false)
+    expect(buildVaultTree(state, wiki, { history: false, visiting: 'F-0003' })[0].children[0].children).toHaveLength(3)
   })
 })
