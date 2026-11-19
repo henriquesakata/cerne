@@ -2,6 +2,7 @@ package tracker_test
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -205,6 +206,10 @@ type fakeGitea struct {
 	reqs   *[]giteaReq
 	// noPaging makes the label list ignore ?page=, as a proxy that drops it.
 	noPaging bool
+	// pageSize caps a label page below the 50 asked (MAX_RESPONSE_ITEMS);
+	// noTotal leaves out the X-Total-Count header, as an older proxy does.
+	pageSize int
+	noTotal  bool
 }
 
 const gtBase = "/api/v1/repos/o/r"
@@ -220,7 +225,10 @@ func newFakeGitea(t *testing.T) *fakeGitea {
 			reply(w, http.StatusOK, g.labels[:min(50, len(g.labels))])
 			return
 		}
-		reply(w, http.StatusOK, page(r, g.labels))
+		if !g.noTotal {
+			w.Header().Set("X-Total-Count", strconv.Itoa(len(g.labels)))
+		}
+		reply(w, http.StatusOK, pageMax(r, g.labels, cmp.Or(g.pageSize, 50)))
 	})
 	mux.HandleFunc("POST "+gtBase+"/labels", g.createLabel)
 	mux.HandleFunc("GET "+gtBase+"/issues", g.listIssues)
@@ -261,12 +269,15 @@ func decodeBody(w http.ResponseWriter, r *http.Request, v any) bool {
 
 // page cuts list to r's ?page= and ?limit=, with Gitea's defaults: 30 per
 // page, at most 50.
-func page[T any](r *http.Request, list []T) []T {
+func page[T any](r *http.Request, list []T) []T { return pageMax(r, list, 50) }
+
+// pageMax is page with the server's own cap on the limit.
+func pageMax[T any](r *http.Request, list []T, maxLimit int) []T {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	if limit <= 0 {
 		limit = 30
 	}
-	limit = min(limit, 50)
+	limit = min(limit, maxLimit)
 	p, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	lo := min((max(p, 1)-1)*limit, len(list))
 	return list[lo:min(lo+limit, len(list))]
@@ -534,6 +545,34 @@ func TestGiteaLabelPagesStopAtShortPage(t *testing.T) {
 	}
 	if n := g.count(http.MethodGet, "/labels"); n != 2 {
 		t.Fatalf("%d label-page requests for 60 labels, want 2", n)
+	}
+}
+
+// A server that caps a page below the 50 asked (MAX_RESPONSE_ITEMS) still has
+// every label read: the existing one on page 2 is found, none is created
+// again. With X-Total-Count the read stops at that many; without it, at an
+// empty page.
+func TestGiteaLabelPagesFollowTotalNotPageSize(t *testing.T) {
+	for _, noTotal := range []bool{false, true} {
+		t.Run(fmt.Sprintf("noTotal=%v", noTotal), func(t *testing.T) {
+			g := newFakeGitea(t)
+			g.pageSize, g.noTotal = 30, noTotal
+			for i := range 39 {
+				g.addLabel(fmt.Sprintf("area-%02d", i), "#ededed")
+			}
+			g.addLabel("cerne:rejected", "#ededed") // 40th: page 2
+			for i := range 5 {
+				g.addLabel(fmt.Sprintf("zone-%02d", i), "#ededed")
+			}
+			r := g.seed(&gtIssue{Title: "T", Body: "B"}, "cerne:approved")
+			before := len(g.labels)
+			if err := newGiteaTracker(t, "https://git.example/o/r").Update(context.Background(), r, tracker.Item{CardID: "F-0001", State: domain.StateRejected}); err != nil {
+				t.Fatalf("Update: %v", err)
+			}
+			if len(g.labels) != before {
+				t.Fatalf("%d labels after Update, want %d: a duplicate cerne:* label was created", len(g.labels), before)
+			}
+		})
 	}
 }
 

@@ -69,6 +69,7 @@ type giteaCall struct {
 	g            gitea
 	user, secret string
 	labels       map[string]int64 // name -> id; nil until read
+	total        int              // X-Total-Count of the last answer, -1 when it had none
 }
 
 func (g gitea) call(ctx context.Context) (*giteaCall, error) {
@@ -122,6 +123,10 @@ func (c *giteaCall) do(ctx context.Context, method, path string, in, out any) er
 			return fmt.Errorf("gitea %s: request failed", host)
 		}
 		status := resp.StatusCode
+		c.total = -1
+		if n, err := strconv.Atoi(resp.Header.Get("X-Total-Count")); err == nil {
+			c.total = n
+		}
 		if status/100 == 2 && out != nil {
 			err = json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(out)
 		}
@@ -243,11 +248,13 @@ const (
 )
 
 // labelID is the id of the repository label named name, the form Gitea's API
-// takes; a label the repository lacks is created. Every page is read: a label
-// missed on a later page would be created again.
+// takes; a label the repository lacks is created. Every page is read, to the
+// reported total or an empty page: a label missed on a later page would be
+// created again.
 func (c *giteaCall) labelID(ctx context.Context, name string) (int64, error) {
 	if c.labels == nil {
 		labels := map[string]int64{}
+		read := 0
 		for page := 1; ; page++ {
 			if page > maxLabelPages {
 				return 0, fmt.Errorf("gitea %s: more than %d label pages", c.g.repo.Host, maxLabelPages)
@@ -261,7 +268,10 @@ func (c *giteaCall) labelID(ctx context.Context, name string) (int64, error) {
 					labels[l.Name] = l.ID
 				}
 			}
-			if len(list) < labelPageSize { // a short or empty page is the last
+			read += len(list)
+			// A server may cap a page below the size asked, so a short page
+			// is not the last: stop at the total it reports, else at an empty one.
+			if len(list) == 0 || (c.total >= 0 && read >= c.total) {
 				break
 			}
 		}
