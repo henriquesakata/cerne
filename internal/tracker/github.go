@@ -60,7 +60,7 @@ type ghIssue struct {
 }
 
 func (g github) api(ctx context.Context, v any, args ...string) error {
-	a := append([]string{"api"}, forge.HostArgs(g.repo.Host, "github.com")...)
+	a := append([]string{"api"}, forge.HostArgs(g.repo.Host)...)
 	return forge.CallJSON(ctx, v, "gh", append(a, args...)...)
 }
 

@@ -22,11 +22,10 @@ func CallJSON(ctx context.Context, v any, name string, args ...string) error {
 	return nil
 }
 
-// HostArgs adds --hostname for a host other than the CLI's own default.
-func HostArgs(host, home string) []string {
-	if host == home {
-		return nil
-	}
+// HostArgs always names the host: without --hostname glab follows the git
+// repository of the working directory and gh/glab follow GH_HOST/GITLAB_HOST,
+// even for the CLI's own default host (B-0031).
+func HostArgs(host string) []string {
 	return []string{"--hostname", host}
 }
 
@@ -34,7 +33,7 @@ func HostArgs(host, home string) []string {
 type github struct{ repo Repo }
 
 func (g github) api(ctx context.Context, v any, path string) error {
-	args := append([]string{"api"}, HostArgs(g.repo.Host, "github.com")...)
+	args := append([]string{"api"}, HostArgs(g.repo.Host)...)
 	return CallJSON(ctx, v, "gh", append(args, "repos/"+g.repo.Path+path)...)
 }
 
@@ -72,7 +71,7 @@ func (g github) OnDefaultBranch(ctx context.Context, sha string) (bool, string, 
 type gitlab struct{ repo Repo }
 
 func (g gitlab) api(ctx context.Context, v any, path string) error {
-	args := append([]string{"api"}, HostArgs(g.repo.Host, "gitlab.com")...)
+	args := append([]string{"api"}, HostArgs(g.repo.Host)...)
 	return CallJSON(ctx, v, "glab", append(args, "projects/"+url.PathEscape(g.repo.Path)+path)...)
 }
 

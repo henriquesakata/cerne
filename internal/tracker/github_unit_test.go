@@ -249,7 +249,7 @@ func TestGitHubCreateLandsInClosedState(t *testing.T) {
 
 func TestGitHubEnterpriseHostname(t *testing.T) {
 	for _, tc := range []struct{ url, hostname string }{
-		{"https://github.com/o/r", ""},
+		{"https://github.com/o/r", "github.com"},
 		{"https://ghe.example:8443/o/r", "ghe.example:8443"},
 	} {
 		g := installUnitGH(t)
@@ -321,5 +321,17 @@ func TestGitHubRefusesNumericAndLocalHostForms(t *testing.T) {
 		if _, err := tracker.New(tracker.Config{Name: "gh", Kind: "github", URL: raw}); err != nil {
 			t.Errorf("New(%s) = %v, want accepted", raw, err)
 		}
+	}
+}
+
+// B-0031: github.com is named even when GH_HOST points gh elsewhere.
+func TestGitHubNamesDefaultHostDespiteGHHost(t *testing.T) {
+	t.Setenv("GH_HOST", "ghe.example.com")
+	g := installUnitGH(t)
+	if _, err := unitTracker(t, "https://github.com/o/r").ListOpen(context.Background(), ""); err != nil {
+		t.Fatal(err)
+	}
+	if i := slices.Index(g.calls[0], "--hostname"); i < 0 || g.calls[0][i+1] != "github.com" {
+		t.Fatalf("argv = %q, want --hostname github.com", g.calls[0])
 	}
 }
