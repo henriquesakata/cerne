@@ -40,7 +40,7 @@ vi.mock('./Backlinks', () => ({ default: () => null }))
 
 import { entriesFrom } from './Palette'
 import Vault from './Vault'
-import VaultEditor from './VaultEditor'
+import VaultEditor, { insertWiki, wikiQuery } from './VaultEditor'
 
 const note = (over: Partial<VaultDoc> = {}): VaultDoc => ({
   id: 'N-0001',
@@ -161,5 +161,66 @@ describe('VaultEditor approved spec (F-0464 critério 8)', () => {
   ] as const)('approved spec: feature %s, %s → notice %s', (st, d, shown) => {
     editor(feature({ state: st, doc: d }))
     expect(screen.queryByText(/Esta spec está aprovada/) !== null).toBe(shown)
+  })
+})
+
+describe('VaultEditor wiki autocomplete (F-0464 critério 3)', () => {
+  it('wiki autocomplete: wikiQuery finds the open [[ before the caret', () => {
+    expect(wikiQuery('ver [[dec', 9)).toEqual({ start: 4, query: 'dec' })
+    expect(wikiQuery('ver [[', 6)).toEqual({ start: 4, query: '' })
+    expect(wikiQuery('ver [[D-1]] e', 13)).toBeNull()
+    expect(wikiQuery('ver [[de\nc', 10)).toBeNull()
+    expect(wikiQuery('ver [[de[c', 10)).toBeNull()
+    expect(wikiQuery('sem link', 8)).toBeNull()
+    expect(insertWiki('ver [[dec fim', 4, 9, 'D-0001')).toEqual({ text: 'ver [[D-0001]] fim', caret: 14 })
+  })
+
+  const list = () => screen.queryByRole('listbox')
+  const options = () => screen.getAllByRole('option').map((o) => o.textContent)
+
+  it('wiki autocomplete: [[ opens the list with id and title, filtered by rank ignoring accent and case', () => {
+    editor(note())
+    type('ver [[')
+    expect(options()).toEqual(['F-0001 Primeira', 'D-0001 Decisão de cache', 'D-0002 Decisão sobre índice', 'N-0001 Nota'])
+    type('ver [[INDICE')
+    expect(options()).toEqual(['D-0002 Decisão sobre índice'])
+    type('ver [[nada assim')
+    expect(list()).toBeNull()
+  })
+
+  it('wiki autocomplete: arrows move the selection, Enter inserts it and puts the caret after ]]', () => {
+    editor(note())
+    type('ver [[decisao')
+    expect(source()).toHaveAttribute('aria-activedescendant', screen.getAllByRole('option')[0].id)
+    fireEvent.keyDown(source(), { key: 'ArrowDown' })
+    expect(screen.getAllByRole('option')[1]).toHaveAttribute('aria-selected', 'true')
+    fireEvent.keyDown(source(), { key: 'ArrowDown' })
+    expect(screen.getAllByRole('option')[0]).toHaveAttribute('aria-selected', 'true') // wraps
+    fireEvent.keyDown(source(), { key: 'ArrowUp' })
+    expect(fireEvent.keyDown(source(), { key: 'Enter' })).toBe(false)
+    expect(source().value).toBe('ver [[D-0002]]')
+    expect(source().selectionStart).toBe('ver [[D-0002]]'.length)
+    expect(list()).toBeNull()
+  })
+
+  it('wiki autocomplete: a click inserts the option without leaving the editor', () => {
+    editor(note())
+    type('ver [[cache')
+    const opt = screen.getByRole('option', { name: /D-0001/ })
+    expect(fireEvent.mouseDown(opt)).toBe(false) // keeps the focus in the textarea
+    expect(source().value).toBe('ver [[D-0001]]')
+    expect(list()).toBeNull()
+  })
+
+  it('wiki autocomplete: Esc closes without inserting and does not reopen for the same [[', () => {
+    editor(note())
+    type('ver [[dec')
+    fireEvent.keyDown(source(), { key: 'Escape' })
+    expect(list()).toBeNull()
+    expect(source().value).toBe('ver [[dec')
+    type('ver [[deci')
+    expect(list()).toBeNull()
+    type('ver [[deci e [[')
+    expect(list()).not.toBeNull()
   })
 })

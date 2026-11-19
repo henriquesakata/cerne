@@ -1069,6 +1069,7 @@ const ptBR = {
       edit: 'Editar',
       source: 'Texto do documento',
       preview: 'Prévia',
+      wikiList: 'Entidades para o link',
       saving: 'Gravando…',
       saveError: (e: string) => `Não foi possível gravar: ${e}`,
       approvedSpec:
@@ -2510,6 +2511,7 @@ const en: Messages = {
       edit: 'Edit',
       source: 'Document text',
       preview: 'Preview',
+      wikiList: 'Entities to link',
       saving: 'Saving…',
       saveError: (e: string) => `Could not save: ${e}`,
       approvedSpec:
