@@ -29,6 +29,14 @@ While cerne is below 1.0.0, a minor version may change behavior: read the
   `mirror.close_on = "merge"`) for the cards a commit cites in its `Cerne:`
   trailers. Off by default; `mirror.enabled` and `mirror.trackers` are
   human-only.
+- Mirror tab in the UI (F-0465), read-only. It lists, per tracker, the cards a
+  human mirrored (state, issue link) and the ideas `cerne mirror sync` imported.
+  **Check now** asks each tracker only for its open issues and marks each card
+  up to date, drifted (closed on one side only) or not checked, with the reason;
+  opening the tab calls no tracker. Each card expands to the commits whose
+  `Cerne:` trailer cites it, from the local git. `cerne mirror sync` now keeps
+  the time and per-tracker counts of its last run in the local cache, shown as
+  "last sync on this computer".
 - Settings › Integrations shows `delivery.forge`, `delivery.commit_url`,
   `delivery.pr_url`, `mirror.enabled`, `mirror.trackers` and
   `mirror.close_on`. The existing `[delivery]` block is read and written as it

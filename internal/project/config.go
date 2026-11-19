@@ -541,7 +541,7 @@ func SaveConfig(dir string, c Config) error {
 	if err != nil {
 		return err
 	}
-	return writeFileAtomic(dir, configFilename, data)
+	return WriteFileAtomic(dir, configFilename, data)
 }
 
 // SetLLMMode sets [llm] mode in <dir>/.cernerc by editing that one line, so
@@ -832,11 +832,11 @@ func rootFromEnv(startDir string) (string, error) {
 	return root, nil
 }
 
-// writeFileAtomic writes data to <dir>/<filename> atomically: temp file in
+// WriteFileAtomic writes data to <dir>/<filename> atomically: temp file in
 // the target's dir, then rename. A symlink is written through (its target is
 // replaced, the link kept) and an existing file keeps its mode bits; a new
 // one gets 0644 (F-0314, as git config does).
-func writeFileAtomic(dir, filename string, data []byte) error {
+func WriteFileAtomic(dir, filename string, data []byte) error {
 	path, mode, err := writeTarget(filepath.Join(dir, filename))
 	if err != nil {
 		return err

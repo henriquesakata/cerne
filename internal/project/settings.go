@@ -560,7 +560,7 @@ func checkDeclared(id, scope string) error {
 // updates; one still blocked after configLockTimeout gets ErrConfigBusy and
 // writes nothing. A foreign lock is never removed: a crashed writer's stale
 // lock is the user's to delete, as with git. No change skips the write. Like
-// writeFileAtomic, it writes through a symlink and keeps the file's mode.
+// WriteFileAtomic, it writes through a symlink and keeps the file's mode.
 func editTOMLFile(path, table, key string, value any) (bool, error) {
 	if _, err := os.Stat(path); value == nil && errors.Is(err, fs.ErrNotExist) {
 		return false, nil // removing from a missing file: nothing to lock or create

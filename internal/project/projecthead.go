@@ -25,7 +25,7 @@ func SaveProjectHead(projDir, sha string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	return writeFileAtomic(dir, projectHeadFilename, []byte(sha+"\n"))
+	return WriteFileAtomic(dir, projectHeadFilename, []byte(sha+"\n"))
 }
 
 // LoadProjectHead reads <projDir>/.docs/.projecthead. ErrNoProjectHead when the
