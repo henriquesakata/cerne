@@ -676,3 +676,18 @@ func TestGitLabNeverRemovesLabelsWithCommas(t *testing.T) {
 		t.Fatalf("labels = %q, want bug kept, the comma label untouched and cerne:stale swapped", got)
 	}
 }
+
+// F-0450 round 3 (B1): the adapter's own Owns refuses a non-ASCII host
+// (EqualFold folds U+212A to k), not only the wrapper above it.
+func TestGitLabOwnsRefusesNonASCIIHost(t *testing.T) {
+	raw, err := tracker.Kinds["gitlab"](tracker.Config{Name: "gl", Kind: "gitlab", URL: "https://gitlab.kcorp.example/g/p"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !raw.Owns(tracker.Ref{Tracker: "gl", ID: "7", URL: "https://gitlab.kcorp.example/g/p/-/issues/7"}) {
+		t.Error("Owns refused the ASCII host")
+	}
+	if raw.Owns(tracker.Ref{Tracker: "gl", ID: "7", URL: "https://gitlab.Kcorp.example/g/p/-/issues/7"}) {
+		t.Error("Owns accepted a Kelvin-sign host")
+	}
+}
