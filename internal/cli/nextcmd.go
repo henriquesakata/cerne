@@ -220,7 +220,7 @@ func runNext(cmd *cobra.Command, dir string, asJSON bool) error {
 		q.DriftPending = len(pending)
 	}
 
-	q.RunbookPreflight = nextPreflights(ctx.repoDir)
+	q.RunbookPreflight = nextPreflights(ctx.repoDir, app.MRHost(ctx.cfg.Delivery))
 
 	out := cmd.OutOrStdout()
 	if asJSON {

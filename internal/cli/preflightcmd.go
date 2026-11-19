@@ -38,6 +38,7 @@ func newRunbookPreflightCmd(dir *string) *cobra.Command {
 			}
 			id := strings.ToUpper(strings.TrimSpace(args[0]))
 			forge := newForge()
+			forge.Host = app.MRHost(ctx.cfg.Delivery)
 			res, to, err := app.PreflightWith(ctx.repoDir, id, strings.ToUpper(strings.TrimSpace(upTo)), forge)
 			if err != nil {
 				return err
@@ -151,15 +152,17 @@ type nextPreflight struct {
 	openItems []app.PreResult
 }
 
-// nextPreflights checks every active run: its next step's preconditions. A run
-// with all of them met, or with no step left, adds nothing. Informational.
-func nextPreflights(repoDir string) []nextPreflight {
+// nextPreflights checks every active run: its next step's preconditions, MRs
+// asked on mrHost. A run with all of them met, or with no step left, adds
+// nothing. Informational.
+func nextPreflights(repoDir, mrHost string) []nextPreflight {
 	works, err := store.LoadAllWorks(repoDir)
 	if err != nil {
 		return nil
 	}
 	var out []nextPreflight
 	forge := app.NewForge() // one cache and one time budget for every run
+	forge.Host = mrHost
 	for _, wk := range works {
 		if wk.State != domain.WorkActive {
 			continue

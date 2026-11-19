@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/henriquesakata/cerne/internal/project"
 )
 
 // recordingGlab puts a glab on PATH that records its argv and its environment
@@ -72,6 +74,27 @@ func TestGlabMRStateDropsTokensForAnotherHost(t *testing.T) {
 		}
 		if has := slices.Contains(strings.Split(string(b), "\n"), "GITLAB_TOKEN=gl-secret"); has != c.kept {
 			t.Errorf("host %q: GITLAB_TOKEN present = %v, want %v", c.host, has, c.kept)
+		}
+	}
+}
+
+// B-0032: a precondition names no host, so the GitLab comes from [delivery]
+// when its forge is gitlab; anything else is gitlab.com.
+func TestMRHost(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		d    project.DeliveryConfig
+		want string
+	}{
+		{"no [delivery]", project.DeliveryConfig{}, "gitlab.com"},
+		{"gitlab forge", project.DeliveryConfig{Forge: "gitlab", CommitURL: "https://gitlab.acme.example/acme/app/-/commit/{sha}"}, "gitlab.acme.example"},
+		{"gitlab forge with a port", project.DeliveryConfig{Forge: "gitlab", CommitURL: "https://gitlab.acme.example:8443/g/sub/app/-/commit/{sha}"}, "gitlab.acme.example:8443"},
+		{"github forge", project.DeliveryConfig{Forge: "github", CommitURL: "https://github.com/o/r/commit/{sha}"}, "gitlab.com"},
+		{"commit_url without a forge", project.DeliveryConfig{CommitURL: "https://gitlab.acme.example/acme/app/-/commit/{sha}"}, "gitlab.com"},
+		{"gitlab forge with an unreadable commit_url", project.DeliveryConfig{Forge: "gitlab", CommitURL: "gitlab.acme.example/acme/app"}, "gitlab.com"},
+	} {
+		if got := MRHost(c.d); got != c.want {
+			t.Errorf("%s: MRHost = %q, want %q", c.name, got, c.want)
 		}
 	}
 }

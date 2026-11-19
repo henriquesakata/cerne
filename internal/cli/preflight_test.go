@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -285,5 +286,33 @@ func TestRunbookPreflightCutReachesTextAndJSON(t *testing.T) {
 	}
 	if out := rb(t, projDir, "runbook", "preflight", "RB-0001", "--json"); !strings.Contains(out, `"cut": true`) {
 		t.Fatalf("--json must carry the cut:\n%s", out)
+	}
+}
+
+// B-0032: runbook preflight and next ask the MRs on the [delivery] GitLab
+// (forge gitlab), and on gitlab.com without one.
+func TestPreflightAsksTheDeliveryGitLab(t *testing.T) {
+	projDir, _ := preFixture(t)
+	var hosts []string
+	app.MRState = func(_ context.Context, host, _, _ string) (string, error) {
+		hosts = append(hosts, host)
+		return "merged", nil
+	}
+	rb(t, projDir, "runbook", "preflight", "RB-0001")
+	path := filepath.Join(projDir, ".cernerc")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rc := "\n[delivery]\nforge = \"gitlab\"\ncommit_url = \"https://gitlab.acme.example/acme/app/-/commit/{sha}\"\n"
+	if err := os.WriteFile(path, append(data, rc...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rb(t, projDir, "runbook", "preflight", "RB-0001")
+	id := strings.Fields(rb(t, projDir, "runbook", "run", "RB-0001", "--janela", "J3"))[0]
+	rb(t, projDir, "runbook", "step", id, "S1", "--ok", "vai")
+	rb(t, projDir, "next")
+	if want := []string{"gitlab.com", "gitlab.acme.example", "gitlab.acme.example"}; !slices.Equal(hosts, want) {
+		t.Fatalf("hosts asked = %q, want %q", hosts, want)
 	}
 }

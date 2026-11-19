@@ -15,6 +15,7 @@ import (
 
 	"github.com/henriquesakata/cerne/internal/doccheck"
 	"github.com/henriquesakata/cerne/internal/forge"
+	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -75,6 +76,17 @@ func glabMRState(ctx context.Context, host, project, iid string) (string, error)
 		return "", errors.New("glab returned no state")
 	}
 	return strings.ToLower(v.State), nil
+}
+
+// MRHost is the GitLab the preflight asks for MRs (B-0032): a precondition
+// names no host, so it is the [delivery] commit_url host when the delivery
+// forge is gitlab, else gitlab.com. Never GITLAB_HOST nor the working
+// directory's repository.
+func MRHost(d project.DeliveryConfig) string {
+	if repo, _, ok := forge.ParseCommitURL(d.CommitURL); ok && d.Forge == "gitlab" {
+		return repo.Host
+	}
+	return "gitlab.com"
 }
 
 func validMRArg(a string) bool {
