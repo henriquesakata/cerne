@@ -18,6 +18,7 @@ import (
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/forge"
 	"github.com/henriquesakata/cerne/internal/tracker"
+	"github.com/henriquesakata/cerne/internal/tracker/trackertest"
 	"github.com/henriquesakata/cerne/internal/version"
 )
 
@@ -941,4 +942,31 @@ func TestTrelloUpdateRefusesForeignBoard(t *testing.T) {
 			}
 		}
 	})
+}
+
+// F-0451 crit. 6: the Trello adapter passes the IssueTracker contract suite
+// against the emulated API, with no network: twice over the same board, which
+// then holds each lifecycle list once. No merge archives a Trello card, so
+// the NoReopen case does not apply (ClosesOnMerge false).
+func TestTrelloContract(t *testing.T) {
+	fk := newTrelloFake(t)
+	inbox := fk.addOpenList(fk.boards[trelloBoard], "Inbox")
+	h := trackertest.Harness{
+		New: func(t *testing.T) tracker.IssueTracker { return newTrelloTracker(t, trelloBoardURL) },
+		Open: func(_ *testing.T, title, body, label string) tracker.Ref {
+			if label == "" {
+				return fk.seed(inbox, title, body)
+			}
+			return fk.seed(inbox, title, body, label)
+		},
+	}
+	for run := range 2 {
+		t.Run(fmt.Sprint("run ", run+1), func(t *testing.T) { trackertest.RunContract(t, h) })
+	}
+	if want := append([]string{"Inbox"}, trelloLifecycle...); !slices.Equal(fk.listNames(trelloBoard), want) {
+		t.Fatalf("after two runs the board lists are %q, want %q", fk.listNames(trelloBoard), want)
+	}
+	if n := fk.count(http.MethodPost, "/lists"); n != len(trelloLifecycle) {
+		t.Fatalf("%d lists created over two runs, want %d", n, len(trelloLifecycle))
+	}
 }
