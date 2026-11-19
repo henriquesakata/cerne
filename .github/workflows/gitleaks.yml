@@ -1,0 +1,31 @@
+name: gitleaks
+
+# Every push to any branch is scanned, so a branch is checked the moment it
+# reaches the remote, with or without a pull request. pull_request covers
+# pull requests from forks, whose pushes do not fire here.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # .gitleaks.toml at the repo root is picked up automatically.
+      # --log-opts=HEAD scans the full history of what this run checked out:
+      # the branch on a push, main plus the change on a pull request. Without
+      # it, gitleaks' default `git log --all` also scans every other remote
+      # branch fetched by fetch-depth: 0, so one unmerged branch with a finding
+      # failed every pull request and main instead of only its own runs.
+      - run: >
+          docker run --rm -v "$PWD:/repo" -w /repo
+          ghcr.io/gitleaks/gitleaks:v8.30.1 git . --redact --no-banner
+          --log-opts=HEAD
