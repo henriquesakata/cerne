@@ -615,3 +615,25 @@ func TestGitLabContractLive(t *testing.T) {
 		ClosesOnMerge: true,
 	})
 }
+
+// F-0450 round 2 (L1): the shared local-host refusal covers every numeric and
+// local spelling, for the gitlab kind too.
+func TestGitLabRefusesNumericAndLocalHostForms(t *testing.T) {
+	for _, raw := range []string{
+		"https://127.1/g/p",
+		"https://localhost./g/p",
+		"https://[fe80::1%25en0]/g/p",
+		"https://foo.localhost/g/p",
+		"https://2130706433/g/p",
+		"https://0x7f000001/g/p",
+	} {
+		_, err := tracker.New(tracker.Config{Name: "gl", Kind: "gitlab", URL: raw})
+		u, _ := url.Parse(raw)
+		if !errors.Is(err, tracker.ErrTrackerURL) || !strings.Contains(err.Error(), u.Hostname()) {
+			t.Errorf("New(%s) = %v, want ErrTrackerURL naming host %s", raw, err, u.Hostname())
+		}
+	}
+	if _, err := tracker.New(tracker.Config{Name: "gl", Kind: "gitlab", URL: "https://gitlab.example.com/g/p"}); err != nil {
+		t.Errorf("New(DNS host) = %v, want accepted", err)
+	}
+}

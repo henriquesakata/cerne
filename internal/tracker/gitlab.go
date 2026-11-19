@@ -3,7 +3,6 @@ package tracker
 import (
 	"context"
 	"fmt"
-	"net"
 	"net/url"
 	"regexp"
 	"slices"
@@ -30,10 +29,10 @@ var glPath = regexp.MustCompile(`^/((?:[A-Za-z0-9_.][A-Za-z0-9._-]*/)+[A-Za-z0-9
 func newGitLab(c Config) (IssueTracker, error) {
 	u, err := url.Parse(c.URL)
 	if err == nil {
-		// glab sends the user's token for the host it reaches: never an IP
-		// literal or localhost, as for github.
-		if h := u.Hostname(); net.ParseIP(h) != nil || strings.EqualFold(h, "localhost") {
-			return nil, fmt.Errorf("%w: gitlab tracker host %q is an IP address or localhost; use the GitLab host name", ErrTrackerURL, h)
+		// glab sends the user's token for the host it reaches: never a local
+		// or numeric host, as for github.
+		if h := u.Hostname(); localHost(h) {
+			return nil, fmt.Errorf("%w: gitlab tracker host %q is an IP address or a local or numeric name; use the GitLab host name", ErrTrackerURL, h)
 		}
 	}
 	if err == nil && u.RawQuery == "" && u.Fragment == "" { // tracker.New already refused a user and password
