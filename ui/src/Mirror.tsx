@@ -27,6 +27,18 @@ function withCode(text: string): ReactNode {
   return text.split('`').map((part, i) => (i % 2 === 1 ? <code key={i}>{part}</code> : <Fragment key={i}>{part}</Fragment>))
 }
 
+// ExtLink links only an http(s) URL; anything else (a hand-edited .cernerc, a
+// forged ref) shows the same content as plain text.
+const isWeb = (url: string) => /^https?:\/\//i.test(url)
+function ExtLink({ url, className, ariaLabel, children }: { url: string; className?: string; ariaLabel?: string; children: ReactNode }) {
+  if (!isWeb(url)) return <span className={className}>{children}</span>
+  return (
+    <a className={className} href={url} target="_blank" rel="noreferrer" aria-label={ariaLabel}>
+      {children}
+    </a>
+  )
+}
+
 const bare = (url: string) => url.replace(/^https?:\/\//, '')
 
 // A numeric issue id reads as #12; a key (PROJ-123) or a short link stays as it is.
@@ -126,9 +138,7 @@ export default function Mirror() {
                   head={
                     <>
                       <span className="badge">{tr.kind}</span>
-                      <a href={tr.url} target="_blank" rel="noreferrer">
-                        {bare(tr.url)}
-                      </a>
+                      <ExtLink url={tr.url}>{bare(tr.url)}</ExtLink>
                     </>
                   }
                   cards={data.cards.filter((c) => c.tracker === tr.name)}
@@ -219,9 +229,7 @@ function Group(p: {
               <span className="card-id">{i.id}</span>
               <span>{i.title}</span>
               {i.state !== 'active' && <span className={`chip ${IDEA_CHIP[i.state]}`}>{t.ideas.stateChip[i.state]}</span>}
-              <a href={i.url} target="_blank" rel="noreferrer">
-                {t.mirror.ideaOrigin(issueLabel(i.url.split('/').pop() ?? i.url))}
-              </a>
+              <ExtLink url={i.url}>{t.mirror.ideaOrigin(issueLabel(i.url.split('/').pop() ?? i.url))}</ExtLink>
             </li>
           ))}
         </ul>
@@ -288,15 +296,9 @@ function CardRow(p: {
         <span className="queue-meta">
           {p.showTracker && <span>{card.tracker}</span>}
           <span className={`chip chip-${card.state}`}>{t.state[card.state]}</span>
-          <a
-            className="mirror-issue"
-            href={card.ref.url}
-            target="_blank"
-            rel="noreferrer"
-            aria-label={t.mirror.issueAria(label, card.tracker)}
-          >
+          <ExtLink url={card.ref.url} className="mirror-issue" ariaLabel={t.mirror.issueAria(label, card.tracker)}>
             {label}
-          </a>
+          </ExtLink>
           {verdict && <Verdict v={verdict} />}
         </span>
       </div>
@@ -333,10 +335,10 @@ function Commits({ id, state }: { id: string; state?: CommitsState }) {
         <ul className="mirror-commits">
           {commits.map((c) => (
             <li key={c.sha}>
-              {c.url ? (
-                <a href={c.url} target="_blank" rel="noreferrer">
+              {c.url && isWeb(c.url) ? (
+                <ExtLink url={c.url}>
                   <code className="mirror-sha">{c.sha}</code>
-                </a>
+                </ExtLink>
               ) : (
                 <code className="mirror-sha">{c.sha}</code>
               )}{' '}

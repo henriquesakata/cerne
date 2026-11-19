@@ -150,6 +150,36 @@ describe('Mirror — the list (F-0465 crit. 1)', () => {
   })
 })
 
+describe('Mirror — links (F-0465)', () => {
+  it('links only http(s) URLs: anything else shows the same text without a link', async () => {
+    api.fetchMirror.mockResolvedValue({
+      ...overview,
+      trackers: [{ name: 'alpha', kind: 'github', url: 'javascript:alert(0)' }],
+      cards: [{ ...overview.cards[0], ref: { id: '12', url: 'javascript:alert(1)' } }],
+      ideas: [{ ...overview.ideas[0], url: 'data:text/html,x' }],
+    })
+    api.fetchMirrorCommits.mockResolvedValue({ repo: true, commits: [{ sha: 'abc1234', subject: 's', url: 'javascript:alert(2)' }] })
+    renderMirror()
+    const alpha = within(await screen.findByRole('region', { name: 'alpha' }))
+    fireEvent.click(alpha.getByRole('button', { name: /^F-0001/ }))
+    await screen.findByText('abc1234')
+    for (const a of Array.from(document.querySelectorAll('a'))) expect(a.getAttribute('href')).not.toMatch(/^(javascript|data):/i)
+    expect(alpha.queryByRole('link', { name: 'Open issue #12 on alpha' })).toBeNull()
+    expect(alpha.getByText('#12')).toBeInTheDocument()
+    expect(alpha.getByText('javascript:alert(0)')).toBeInTheDocument()
+    expect(screen.getByText('abc1234').closest('a')).toBeNull()
+  })
+
+  it('accepts HTTPS in any case', async () => {
+    api.fetchMirror.mockResolvedValue({
+      ...overview,
+      cards: [{ ...overview.cards[0], ref: { id: '12', url: 'HTTPS://github.com/o/alpha/issues/12' } }],
+    })
+    renderMirror()
+    expect(await screen.findByRole('link', { name: 'Open issue #12 on alpha' })).toBeInTheDocument()
+  })
+})
+
 describe('Mirror — last sync (F-0465 crit. 4)', () => {
   it('shows when, the counts and the failures of the last sync on this computer', async () => {
     renderMirror()
