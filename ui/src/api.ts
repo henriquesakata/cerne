@@ -157,11 +157,20 @@ export type FeatureDocTimes = {
   result: string | null
 }
 
+// docs_hash (F-0464): the sha256 of each doc as the backend stores it — the
+// If-Match the vault editor sends back when it saves. Absent on an older server.
+export type FeatureDocHashes = {
+  spec: string
+  plan: string
+  result: string
+}
+
 export type FeatureDetail = {
   feature: Feature
   docs: FeatureDocs
   docs_real: FeatureDocReal
   docs_updated: FeatureDocTimes
+  docs_hash?: FeatureDocHashes
   artifacts: Artifact[]
   informed_by: Reference[] // external sources that motivated this feature
   children: Feature[] // features that decompose this one (epic view)
@@ -770,12 +779,13 @@ export async function postTransition(
 export type DecisionDetail = {
   decision: Decision
   doc: string
+  content_hash?: string // sha256 of doc (F-0464): the If-Match of a save; absent on an older server
   informed_by: Reference[]
   errata: string // correções aditivas (F-0163); "" quando não há
 }
 export type ReferenceDetail = { reference: Reference; doc: string }
-export type RunbookDetail = { runbook: Runbook; doc: string; errata: string }
-export type NoteDetail = { note: Note; doc: string; errata: string }
+export type RunbookDetail = { runbook: Runbook; doc: string; content_hash?: string; errata: string }
+export type NoteDetail = { note: Note; doc: string; content_hash?: string; errata: string }
 
 export async function fetchDecision(id: string): Promise<DecisionDetail> {
   const r = await fetch(`${base()}/decisions/${encodeURIComponent(id)}`)
@@ -978,23 +988,48 @@ export async function renameFeature(
   return { ok: true }
 }
 
+// SaveContentOutcome (F-0464): a save refused by a stale If-Match (409) carries
+// the backend's current content and its hash, so the editor shows the
+// difference and can save over it without a second read.
+export type SaveContentOutcome =
+  | SaveOutcome
+  | { ok: false; error: string; conflict: { content: string; hash: string } }
+
+// saveEntityContent saves the content of a decision, note or runbook (F-0464).
+export async function saveEntityContent(
+  kind: 'decision' | 'note' | 'runbook',
+  id: string,
+  content: string,
+  baseHash?: string,
+): Promise<SaveContentOutcome> {
+  return putContent(`${base()}/${kind}s/${encodeURIComponent(id)}/content`, content, baseHash)
+}
+
+// putContent PUTs raw markdown, with If-Match when there is a base hash: the
+// server then refuses (409) a document that changed since it was loaded.
+async function putContent(url: string, content: string, baseHash?: string): Promise<SaveContentOutcome> {
+  const headers: Record<string, string> = { 'Content-Type': 'text/markdown' }
+  if (baseHash) headers['If-Match'] = baseHash
+  const r = await fetch(url, { method: 'PUT', headers, body: content })
+  if (r.status === 409) {
+    const b = (await r.json().catch(() => ({}))) as { error?: string; content?: unknown; content_hash?: unknown }
+    const error = b.error ?? `HTTP ${r.status}`
+    if (typeof b.content !== 'string' || typeof b.content_hash !== 'string') return { ok: false, error }
+    return { ok: false, error, conflict: { content: b.content, hash: b.content_hash } }
+  }
+  if (!r.ok) return { ok: false, error: await errorMessage(r) }
+  return { ok: true }
+}
+
 // saveFeatureDoc grava um doc de ciclo de vida (spec|plan|result) como
 // markdown bruto; o servidor faz commit+push e atualiza o lock.
 export async function saveFeatureDoc(
   id: string,
   doc: string,
   content: string,
-): Promise<SaveOutcome> {
-  const r = await fetch(
-    `${base()}/features/${encodeURIComponent(id)}/docs/${encodeURIComponent(doc)}`,
-    {
-      method: 'PUT',
-      headers: { 'Content-Type': 'text/markdown' },
-      body: content,
-    },
-  )
-  if (!r.ok) return { ok: false, error: await errorMessage(r) }
-  return { ok: true }
+  baseHash?: string,
+): Promise<SaveContentOutcome> {
+  return putContent(`${base()}/features/${encodeURIComponent(id)}/docs/${encodeURIComponent(doc)}`, content, baseHash)
 }
 
 // ---- perguntar à wiki + navegar a síntese (case 0017) ----

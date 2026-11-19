@@ -3914,3 +3914,49 @@ button.clarify-chip { cursor: pointer; font: inherit; }
   .page.vault { grid-template-columns: minmax(0, 1fr); }
   .vault-tree { position: static; max-height: 40vh; }
 }
+/* Vault editor (F-0464): editing, the document takes the rail's column too; the
+   markdown and its preview sit side by side at one height, and stack by the
+   editor's own width, not the viewport's. */
+.page.vault.vault-editing .vault-doc { grid-column: 2 / -1; }
+.vault-editor { display: flex; flex-direction: column; gap: 0.75rem; container-type: inline-size; }
+.vault-editor-panes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; height: 65vh; min-height: 20rem; }
+.vault-editor-source { position: relative; min-width: 0; min-height: 0; }
+.vault-editor-source .doc-textarea { height: 100%; resize: none; }
+.vault-editor-source .doc-textarea:focus-visible { outline: 2px solid var(--fg); outline-offset: 1px; }
+.vault-editor-preview { min-width: 0; min-height: 0; overflow: auto; padding-left: 1rem; border-left: 1px solid var(--border-soft); }
+/* the [[ list, placed at the caret's line by VaultEditor (top inline) */
+.vault-editor-wiki { position: absolute; left: 0; right: 0; top: 0; z-index: 5; margin: 0; padding: 0.25rem 0; list-style: none; max-height: 16rem; overflow: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18); font-size: 0.9rem; }
+.vault-editor-wiki li { padding: 0.3rem 0.6rem; cursor: pointer; }
+.vault-editor-wiki li[aria-selected='true'] { background: var(--surface-2); }
+/* a warning: the amber triplet, whole 1px border (no side stripe, no accent hue) */
+.vault-editor-notice { margin: 0; padding: 0.5rem 0.75rem; border: 1px solid var(--amber-border); border-radius: 6px; background: var(--amber-bg); color: var(--amber); }
+.vault-editor-conflict { display: flex; flex-direction: column; gap: 0.5rem; }
+.vault-editor-conflict .form-error { margin: 0; }
+.vault-editor-conflict .proposal-draft-diff { max-height: 16rem; overflow: auto; }
+/* the label naming another author's line: plain, muted, no new colour */
+.vault-editor-conflict .diff-who { font-style: normal; color: var(--muted); }
+.vault-editor-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; padding: 0.4rem 0; background: var(--bg); }
+/* Sticky (under the nav; top is set inline) only where the row fits on one
+   line: on a phone it wraps tall, and the textarea scrolls by itself there. */
+@container (min-width: 44rem) {
+  .vault-editor-actions { position: sticky; top: 0; z-index: 6; }
+}
+/* Edit and the editor's actions take the system's button recipe (the feature
+   page's .doc-edit-actions); the primary one is full ink, never a hue. */
+.vault-doc-actions button,
+.vault-editor-actions button { font: inherit; font-size: 0.88rem; min-height: 2rem; padding: 0.35rem 0.9rem; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); color: var(--fg); cursor: pointer; }
+.vault-doc-actions button:hover:not(:disabled),
+.vault-editor-actions button:hover:not(:disabled) { background: var(--surface-3); }
+.vault-editor-actions .vault-editor-primary,
+.vault-editor-actions .vault-editor-primary:hover:not(:disabled) { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.vault-doc-actions button:disabled,
+.vault-editor-actions button:disabled { opacity: 0.6; cursor: default; }
+.vault-doc-actions button:focus-visible,
+.vault-editor-actions button:focus-visible { outline: 2px solid var(--fg); outline-offset: 1px; }
+@container (max-width: 44rem) {
+  .vault-editor-panes { grid-template-columns: minmax(0, 1fr); grid-template-rows: 55vh auto; height: auto; }
+  .vault-editor-preview { overflow: visible; padding: 0.75rem 0 0; border-left: 0; border-top: 1px solid var(--border-soft); }
+}
+@media (max-width: 720px) {
+  .page.vault.vault-editing .vault-doc { grid-column: auto; }
+}

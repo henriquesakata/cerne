@@ -42,7 +42,7 @@ func agentServerEnv(t *testing.T) {
 func TestEditorWritesAsHuman(t *testing.T) {
 	agentServerEnv(t)
 	repoDir, projDir, _ := newGitBackend(t)
-	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPut, "/api/features/F-0001/docs/spec", realDoc("F-0001", "Problema real."), &map[string]any{})
+	rec := doLocal(t, New(repoDir, projDir, ""), http.MethodPut, "/api/features/F-0001/docs/spec", realDoc("F-0001", "Problema real."), &map[string]any{})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("PUT spec = %d %s", rec.Code, rec.Body.String())
 	}
@@ -101,7 +101,7 @@ func TestFeatureDetailWrites(t *testing.T) {
 		t.Fatal(err)
 	}
 	agentServerEnv(t)
-	if rec := doJSON(t, h, http.MethodPut, "/api/features/F-0001/docs/spec", realDoc("F-0001", "Problema real."), &map[string]any{}); rec.Code != http.StatusOK {
+	if rec := doLocal(t, h, http.MethodPut, "/api/features/F-0001/docs/spec", realDoc("F-0001", "Problema real."), &map[string]any{}); rec.Code != http.StatusOK {
 		t.Fatalf("PUT = %d", rec.Code)
 	}
 	rec = doJSON(t, h, http.MethodGet, "/api/features/F-0001", "", &got)

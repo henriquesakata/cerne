@@ -5,6 +5,7 @@ import { LiveProvider, useProjects } from './live'
 import { fetchProjects, HTTPError, renameProject, subscribeLive } from './api'
 import type { ProjectInfo } from './api'
 import Nav from './Nav'
+import { navAllowed, setNavGuard } from './navGuard'
 import Settings from './Settings'
 
 // F-0209: trocar de projeto pelo seletor sempre aterrissa no dashboard —
@@ -132,6 +133,36 @@ describe('LiveProvider', () => {
       btn.click()
     })
     expect(window.location.hash).toBe('')
+  })
+
+  it('F-0464 A2: an unsaved vault draft that refuses keeps the project and the route', async () => {
+    window.location.hash = '#/vault/N-0001'
+    render(
+      <LiveProvider>
+        <Probe />
+      </LiveProvider>,
+    )
+    const btn = await screen.findByText('p1')
+    setNavGuard(() => false)
+    try {
+      await act(async () => {
+        btn.click()
+      })
+      expect(screen.getByText('p1')).toBeInTheDocument()
+      expect(window.location.hash).toBe('#/vault/N-0001')
+      // a confirmed discard switches, and the router is not asked a second time
+      const guard = vi.fn(() => true)
+      setNavGuard(guard)
+      await act(async () => {
+        screen.getByText('p1').click()
+      })
+      expect(await screen.findByText('p2')).toBeInTheDocument()
+      expect(guard).toHaveBeenCalledTimes(1)
+      expect(navAllowed()).toBe(true)
+      expect(guard).toHaveBeenCalledTimes(1)
+    } finally {
+      setNavGuard(null)
+    }
   })
 
   it('critério 3: deep link no load inicial não é redirecionado', async () => {

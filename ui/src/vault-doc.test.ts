@@ -16,6 +16,7 @@ const feature = (state: string) => ({
   feature: { id: 'F-1', title: 'T', state },
   docs: { spec: 'SPEC', plan: 'PLAN', result: 'RESULT' },
   docs_real: { spec: true, plan: false, result: true },
+  docs_hash: { spec: 'HS', plan: 'HP', result: 'HR' },
 })
 
 beforeEach(() => vi.clearAllMocks())
@@ -85,6 +86,30 @@ describe('loadVaultDoc (F-0463)', () => {
     expect((await loadVaultDoc('F-1', 'spec')).real).toBe(true)
     api.fetchNote.mockResolvedValue({ note: { id: 'N-1', title: 'X', state: 'active' }, doc: '  \n' })
     expect((await loadVaultDoc('N-1')).real).toBe(false)
+  })
+})
+
+describe('loadVaultDoc hash (F-0464 critério 6)', () => {
+  it('a feature carries the docs_hash of the doc it opens, the stage doc by default', async () => {
+    api.fetchFeature.mockResolvedValue(feature('in_development'))
+    expect((await loadVaultDoc('F-1')).hash).toBe('HP')
+    expect((await loadVaultDoc('F-1', 'result')).hash).toBe('HR')
+  })
+
+  it.each([
+    ['D-1', 'fetchDecision', 'decision'],
+    ['N-1', 'fetchNote', 'note'],
+    ['RB-1', 'fetchRunbook', 'runbook'],
+  ])('hash: %s carries its content_hash', async (id, fn, key) => {
+    api[fn as keyof typeof api].mockResolvedValue({ [key]: { id, title: 'X', state: 'active' }, doc: 'B', content_hash: 'H-' + id })
+    expect((await loadVaultDoc(id)).hash).toBe('H-' + id)
+  })
+
+  it('a reference and a wiki page carry no hash', async () => {
+    api.fetchReference.mockResolvedValue({ reference: { id: 'R-1', title: 'X', state: 'current' }, doc: 'B' })
+    expect((await loadVaultDoc('R-1')).hash).toBe('')
+    api.fetchWikiPage.mockResolvedValue({ rel: 'x.md', body: 'W' })
+    expect((await loadVaultDoc('wiki:x.md')).hash).toBe('')
   })
 })
 

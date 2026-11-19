@@ -19,6 +19,7 @@ export type VaultDoc = {
   real: boolean // false: only the template scaffold (or nothing) is written
   title: string
   content: string
+  hash: string // the content hash a save sends as If-Match (F-0464); '' for reference and wiki
 }
 
 // The document a feature opens on without an explicit one, as `cerne show`.
@@ -39,6 +40,7 @@ export async function loadVaultDoc(rawId: string, doc?: string): Promise<VaultDo
     title: string,
     state: string,
     content: string,
+    hash: string | undefined,
     d?: FeatureDoc,
     real = content.trim() !== '',
   ): VaultDoc => ({
@@ -50,11 +52,12 @@ export async function loadVaultDoc(rawId: string, doc?: string): Promise<VaultDo
     real,
     title,
     content,
+    hash: hash ?? '',
   })
   if (id.startsWith('wiki:')) {
     const rel = id.slice('wiki:'.length)
     const p = await fetchWikiPage(rel)
-    return mk('wiki', rel.split('/').pop() ?? rel, '', p.body)
+    return mk('wiki', rel.split('/').pop() ?? rel, '', p.body, '')
   }
   const prefix = /^([A-Z]+)-\d+$/.exec(id)?.[1]
   switch (prefix) {
@@ -62,25 +65,25 @@ export async function loadVaultDoc(rawId: string, doc?: string): Promise<VaultDo
     case 'E':
     case 'T':
     case 'B': {
-      const { feature, docs, docs_real } = await fetchFeature(id)
+      const { feature, docs, docs_real, docs_hash } = await fetchFeature(id)
       const d = isFeatureDoc(doc) ? doc : stageDoc(feature.state)
-      return mk('feature', feature.title, feature.state, docs[d], d, docs_real[d])
+      return mk('feature', feature.title, feature.state, docs[d], docs_hash?.[d], d, docs_real[d])
     }
     case 'D': {
       const r = await fetchDecision(id)
-      return mk('decision', r.decision.title, r.decision.state, r.doc)
+      return mk('decision', r.decision.title, r.decision.state, r.doc, r.content_hash)
     }
     case 'N': {
       const r = await fetchNote(id)
-      return mk('note', r.note.title, r.note.state, r.doc)
+      return mk('note', r.note.title, r.note.state, r.doc, r.content_hash)
     }
     case 'RB': {
       const r = await fetchRunbook(id)
-      return mk('runbook', r.runbook.title, r.runbook.state, r.doc)
+      return mk('runbook', r.runbook.title, r.runbook.state, r.doc, r.content_hash)
     }
     case 'R': {
       const r = await fetchReference(id)
-      return mk('reference', r.reference.title, r.reference.state, r.doc)
+      return mk('reference', r.reference.title, r.reference.state, r.doc, '')
     }
     default:
       throw new Error(`no vault document for ${id}`)

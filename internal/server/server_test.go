@@ -1030,7 +1030,7 @@ func TestFeatureDocPut(t *testing.T) {
 	var got struct {
 		Saved bool `json:"saved"`
 	}
-	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPut, "/api/features/F-0001/docs/spec", realSpec, &got)
+	rec := doLocal(t, New(repoDir, projDir, ""), http.MethodPut, "/api/features/F-0001/docs/spec", realSpec, &got)
 	if rec.Code != http.StatusOK || !got.Saved {
 		t.Fatalf("status=%d saved=%v body=%s, want 200 saved", rec.Code, got.Saved, rec.Body.String())
 	}
@@ -1050,7 +1050,7 @@ func TestFeatureDocPut(t *testing.T) {
 func TestFeatureDocPutBadDoc(t *testing.T) {
 	repoDir, projDir, _ := newGitBackend(t)
 	var got map[string]string
-	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPut, "/api/features/F-0001/docs/notes", "x", &got)
+	rec := doLocal(t, New(repoDir, projDir, ""), http.MethodPut, "/api/features/F-0001/docs/notes", "x", &got)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400; body: %s", rec.Code, rec.Body.String())
 	}
@@ -1059,7 +1059,7 @@ func TestFeatureDocPutBadDoc(t *testing.T) {
 func TestFeatureDocPutUnknownFeature(t *testing.T) {
 	repoDir, projDir, _ := newGitBackend(t)
 	var got map[string]string
-	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPut, "/api/features/F-9999/docs/spec", realDoc("F-9999", "x"), &got)
+	rec := doLocal(t, New(repoDir, projDir, ""), http.MethodPut, "/api/features/F-9999/docs/spec", realDoc("F-9999", "x"), &got)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404; body: %s", rec.Code, rec.Body.String())
 	}
@@ -1101,7 +1101,7 @@ func TestFeatureDocPutRefusesFrozen(t *testing.T) {
 	for _, f := range frozen {
 		t.Run(string(f.state), func(t *testing.T) {
 			var got map[string]string
-			rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPut, "/api/features/"+f.id+"/docs/result", realDoc(f.id, "Reescrito."), &got)
+			rec := doLocal(t, New(repoDir, projDir, ""), http.MethodPut, "/api/features/"+f.id+"/docs/result", realDoc(f.id, "Reescrito."), &got)
 			if rec.Code != http.StatusUnprocessableEntity {
 				t.Fatalf("status = %d, want 422; body: %s", rec.Code, rec.Body.String())
 			}
@@ -1121,7 +1121,7 @@ func TestFeatureDocPutRefusesFrozen(t *testing.T) {
 		specPath := filepath.Join(repoDir, "content", "features", "F-0002", "spec.md")
 		before, _ := os.ReadFile(specPath)
 		var got map[string]string
-		rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPut, "/api/features/F-0002/docs/spec", realDoc("F-0002", "Spec reescrita."), &got)
+		rec := doLocal(t, New(repoDir, projDir, ""), http.MethodPut, "/api/features/F-0002/docs/spec", realDoc("F-0002", "Spec reescrita."), &got)
 		if rec.Code != http.StatusUnprocessableEntity {
 			t.Fatalf("status = %d, want 422; body: %s", rec.Code, rec.Body.String())
 		}
@@ -1137,7 +1137,7 @@ func TestFeatureDocPutRefusesFrozen(t *testing.T) {
 	}
 
 	var ok map[string]bool
-	if rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPut, "/api/features/F-0006/docs/result", realDoc("F-0006", "Vivo."), &ok); rec.Code != http.StatusOK {
+	if rec := doLocal(t, New(repoDir, projDir, ""), http.MethodPut, "/api/features/F-0006/docs/result", realDoc("F-0006", "Vivo."), &ok); rec.Code != http.StatusOK {
 		t.Fatalf("in_development status = %d, want 200; body: %s", rec.Code, rec.Body.String())
 	}
 }

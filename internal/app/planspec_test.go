@@ -55,7 +55,7 @@ func TestPlanWriteRecordsSpecDigest(t *testing.T) {
 		{"push of a stub plan", "F-0001", "plan", push(FileChange{Path: "content/features/F-0001/plan.md", Content: []byte("---\ncerne_id: F-0001\n---\n\n# Plano\n\n## Tarefas\n")}), ""},
 		{"push without a spec", "F-0002", "plan", push(FileChange{Path: "content/features/F-0002/plan.md", Content: []byte(plan)}), ""},
 		{"editor", "F-0001", "plan", func() error {
-			return SaveFeatureDocBy(repoDir, projDir, "F-0001", "plan", plan, HumanAuthor())
+			return SaveFeatureDocBy(repoDir, projDir, "F-0001", "plan", plan, "", HumanAuthor())
 		}, stored},
 		{"amend", "F-0001", "plan", func() error {
 			_, _, _, err := AmendFeatureDoc(repoDir, projDir, "F-0001", "plan", "# Plano\n\n## Tarefas\n\n1. Fazer melhor.\n", "refeito")

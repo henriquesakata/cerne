@@ -287,6 +287,7 @@ type featureDetailResponse struct {
 	Docs        featureDocs       `json:"docs"`
 	DocsReal    featureDocReal    `json:"docs_real"`    // per-doc: carries real content beyond the scaffold (vs stub)
 	DocsUpdated featureDocTimes   `json:"docs_updated"` // per-doc last-commit time; nil when uncommitted
+	DocsHash    featureDocHashes  `json:"docs_hash"`    // per-doc app.ContentHash, the If-Match of a write (F-0464)
 	Artifacts   []artifact        `json:"artifacts"`
 	InformedBy  []store.Reference `json:"informed_by"` // external sources that motivated this feature
 	Children    []store.Feature   `json:"children"`    // features that decompose this one (epic view)
@@ -359,6 +360,14 @@ type featureDocTimes struct {
 	Result *time.Time `json:"result"`
 }
 
+// featureDocHashes is app.ContentHash of each lifecycle document, the hash of
+// "" when absent: what the vault editor sends back as If-Match (F-0464).
+type featureDocHashes struct {
+	Spec   string `json:"spec"`
+	Plan   string `json:"plan"`
+	Result string `json:"result"`
+}
+
 type artifact struct {
 	Name string `json:"name"`
 	Path string `json:"path"`
@@ -377,15 +386,17 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, projDir, id string) {
 	docs := featureDocs{}
 	real := featureDocReal{}
 	updated := featureDocTimes{}
+	hashes := featureDocHashes{}
 	docFields := []struct {
 		name    string
 		content *string
 		real    *bool
 		updated **time.Time
+		hash    *string
 	}{
-		{"spec.md", &docs.Spec, &real.Spec, &updated.Spec},
-		{"plan.md", &docs.Plan, &real.Plan, &updated.Plan},
-		{"result.md", &docs.Result, &real.Result, &updated.Result},
+		{"spec.md", &docs.Spec, &real.Spec, &updated.Spec, &hashes.Spec},
+		{"plan.md", &docs.Plan, &real.Plan, &updated.Plan, &hashes.Plan},
+		{"result.md", &docs.Result, &real.Result, &updated.Result, &hashes.Result},
 	}
 	var docPaths []string
 	for _, d := range docFields {
@@ -396,6 +407,7 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, projDir, id string) {
 		}
 		*d.content = string(data)
 		*d.real = doccheck.HasRealContent(data)
+		*d.hash = app.ContentHash(data)
 		if len(data) > 0 {
 			docPaths = append(docPaths, "content/features/"+id+"/"+d.name)
 		}
@@ -475,7 +487,7 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, projDir, id string) {
 	if writes == nil {
 		writes = []app.DocWrite{}
 	}
-	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, DocsReal: real, DocsUpdated: updated, Artifacts: artifacts, InformedBy: informedBy, Children: children, Errata: errata, SpecChangedAfterApproval: specChanged, ApprovalDelta: delta, ApprovalBaselineMissing: app.ApprovalBaselineMissing(repoDir, f), RoastRounds: rounds, PlanRoastRounds: planRounds, ApproveReadiness: readiness, Bar: bar, JudgeQuestion: judgeQuestion, ApproveAdvice: advice, Writes: writes})
+	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, DocsReal: real, DocsUpdated: updated, DocsHash: hashes, Artifacts: artifacts, InformedBy: informedBy, Children: children, Errata: errata, SpecChangedAfterApproval: specChanged, ApprovalDelta: delta, ApprovalBaselineMissing: app.ApprovalBaselineMissing(repoDir, f), RoastRounds: rounds, PlanRoastRounds: planRounds, ApproveReadiness: readiness, Bar: bar, JudgeQuestion: judgeQuestion, ApproveAdvice: advice, Writes: writes})
 }
 
 // informedByRefs returns the external references whose Informs backlink targets
@@ -524,10 +536,11 @@ func listArtifacts(repoDir, id string) ([]artifact, error) {
 // decisionDetailResponse is the GET /api/decisions/{id} payload: the entity
 // plus its content document (empty when the doc file is absent).
 type decisionDetailResponse struct {
-	Decision   store.Decision    `json:"decision"`
-	Doc        string            `json:"doc"`
-	InformedBy []store.Reference `json:"informed_by"` // external sources that motivated this decision
-	Errata     string            `json:"errata"`      // additive corrections (F-0163); "" when none
+	Decision    store.Decision    `json:"decision"`
+	Doc         string            `json:"doc"`
+	ContentHash string            `json:"content_hash"` // app.ContentHash of doc, the If-Match of a write (F-0464)
+	InformedBy  []store.Reference `json:"informed_by"`  // external sources that motivated this decision
+	Errata      string            `json:"errata"`       // additive corrections (F-0163); "" when none
 }
 
 func handleDecisionDetail(w http.ResponseWriter, repoDir, id string) {
@@ -555,7 +568,7 @@ func handleDecisionDetail(w http.ResponseWriter, repoDir, id string) {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	writeJSON(w, http.StatusOK, decisionDetailResponse{Decision: d, Doc: doc, InformedBy: informedBy, Errata: errata})
+	writeJSON(w, http.StatusOK, decisionDetailResponse{Decision: d, Doc: doc, ContentHash: app.ContentHash([]byte(doc)), InformedBy: informedBy, Errata: errata})
 }
 
 // referenceDetailResponse is the GET /api/references/{id} payload.
@@ -584,9 +597,10 @@ func handleReferenceDetail(w http.ResponseWriter, repoDir, id string) {
 
 // runbookDetailResponse is the GET /api/runbooks/{id} payload.
 type runbookDetailResponse struct {
-	Runbook store.Runbook `json:"runbook"`
-	Doc     string        `json:"doc"`
-	Errata  string        `json:"errata"` // additive corrections (F-0163); "" when none
+	Runbook     store.Runbook `json:"runbook"`
+	Doc         string        `json:"doc"`
+	ContentHash string        `json:"content_hash"` // app.ContentHash of doc, the If-Match of a write (F-0464)
+	Errata      string        `json:"errata"`       // additive corrections (F-0163); "" when none
 }
 
 func handleRunbookDetail(w http.ResponseWriter, repoDir, id string) {
@@ -609,14 +623,15 @@ func handleRunbookDetail(w http.ResponseWriter, repoDir, id string) {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	writeJSON(w, http.StatusOK, runbookDetailResponse{Runbook: rb, Doc: doc, Errata: errata})
+	writeJSON(w, http.StatusOK, runbookDetailResponse{Runbook: rb, Doc: doc, ContentHash: app.ContentHash([]byte(doc)), Errata: errata})
 }
 
 // noteDetailResponse is the GET /api/notes/{id} payload.
 type noteDetailResponse struct {
-	Note   store.Note `json:"note"`
-	Doc    string     `json:"doc"`
-	Errata string     `json:"errata"` // additive corrections (F-0163); "" when none
+	Note        store.Note `json:"note"`
+	Doc         string     `json:"doc"`
+	ContentHash string     `json:"content_hash"` // app.ContentHash of doc, the If-Match of a write (F-0464)
+	Errata      string     `json:"errata"`       // additive corrections (F-0163); "" when none
 }
 
 func handleNoteDetail(w http.ResponseWriter, repoDir, id string) {
@@ -639,7 +654,7 @@ func handleNoteDetail(w http.ResponseWriter, repoDir, id string) {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	writeJSON(w, http.StatusOK, noteDetailResponse{Note: n, Doc: doc, Errata: errata})
+	writeJSON(w, http.StatusOK, noteDetailResponse{Note: n, Doc: doc, ContentHash: app.ContentHash([]byte(doc)), Errata: errata})
 }
 
 // readContentDoc reads content/<kind>/<id>.md (decisions, references, runbooks,
@@ -1019,7 +1034,11 @@ func handleWikiIndex(w http.ResponseWriter, repoDir, projDir string) {
 // browser sends without a preflight (C7, F-0316): an Origin that is not this
 // server's, or a body type other than JSON (a form or text/plain post), is
 // refused. No Origin and no body type — the CLI, curl — passes.
-func sameOriginJSON(r *http.Request) bool {
+func sameOriginJSON(r *http.Request) bool { return sameOriginAs(r, "application/json") }
+
+// sameOriginAs is sameOriginJSON for a body of mediaType (F-0464: the vault's
+// text/markdown writes).
+func sameOriginAs(r *http.Request, mediaType string) bool {
 	if o := r.Header.Get("Origin"); o != "" {
 		u, err := url.Parse(o)
 		if err != nil || u.Host != r.Host {
@@ -1027,7 +1046,7 @@ func sameOriginJSON(r *http.Request) bool {
 		}
 	}
 	if ct := r.Header.Get("Content-Type"); ct != "" {
-		if mt, _, err := mime.ParseMediaType(ct); err != nil || mt != "application/json" {
+		if mt, _, err := mime.ParseMediaType(ct); err != nil || mt != mediaType {
 			return false
 		}
 	}
@@ -1356,15 +1375,23 @@ func handleCreateReference(w http.ResponseWriter, r *http.Request, repoDir, proj
 }
 
 func handleFeatureDocPut(w http.ResponseWriter, r *http.Request, repoDir, projDir, id, doc string) {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
+	if !localWriteOf(w, r, "text/markdown") { // audit A4: the vault writes through it
+		return
+	}
+	body, ok := readContentBody(w, r)
+	if !ok {
 		return
 	}
 	// F-0375: the page's editor is a human's, whoever started the server.
-	switch err := app.SaveFeatureDocBy(repoDir, projDir, id, doc, string(body), app.HumanAuthor()); {
+	err := app.SaveFeatureDocBy(repoDir, projDir, id, doc, string(body), ifMatch(r), app.HumanAuthor())
+	if writeContentConflict(w, err) {
+		return
+	}
+	switch {
 	case errors.Is(err, app.ErrUnknownDoc):
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid document (use spec, plan or result)"))
+	case errors.Is(err, app.ErrCerneIDMismatch):
+		writeJSON(w, http.StatusBadRequest, errorBody(err.Error()))
 	case errors.Is(err, store.ErrNotFound):
 		writeJSON(w, http.StatusNotFound, errorBody("feature not found"))
 	case errors.Is(err, app.ErrFeatureFrozen):
@@ -1374,6 +1401,77 @@ func handleFeatureDocPut(w http.ResponseWriter, r *http.Request, repoDir, projDi
 	default:
 		writeJSON(w, http.StatusOK, map[string]bool{"saved": true})
 	}
+}
+
+// handleEntityContentPut writes a decision, note or runbook's content from the
+// vault editor (F-0464), as a human (F-0375): 404 for an id that is not of
+// kind's shape or does not exist, 400 for content naming another entity in
+// its cerne_id, 422 past active — history takes an errata — and 409 on a
+// stale If-Match.
+func handleEntityContentPut(w http.ResponseWriter, r *http.Request, repoDir, projDir, kind, id string) {
+	if !localWriteOf(w, r, "text/markdown") { // audit A4: no rebound name, no cross-site write
+		return
+	}
+	body, ok := readContentBody(w, r)
+	if !ok {
+		return
+	}
+	err := app.SaveEntityContentBy(repoDir, projDir, kind, id, string(body), ifMatch(r), app.HumanAuthor())
+	if writeContentConflict(w, err) {
+		return
+	}
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		writeJSON(w, http.StatusNotFound, errorBody(kind+" not found"))
+	case errors.Is(err, app.ErrCerneIDMismatch):
+		writeJSON(w, http.StatusBadRequest, errorBody(err.Error()))
+	case errors.Is(err, app.ErrEntityNotLive):
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody("entity is not live — append an errata instead"))
+	case err != nil:
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+	default:
+		writeJSON(w, http.StatusOK, map[string]bool{"saved": true})
+	}
+}
+
+// maxContentBody caps the markdown body of a content write (audit A7): far
+// above any document, short of letting a request hold the server's memory.
+const maxContentBody = 4 << 20
+
+// readContentBody reads a content write's body up to maxContentBody: 413 past
+// it, 400 when unreadable; false once it has answered.
+func readContentBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxContentBody))
+	var tooBig *http.MaxBytesError
+	switch {
+	case errors.As(err, &tooBig):
+		writeJSON(w, http.StatusRequestEntityTooLarge, errorBody(fmt.Sprintf("the document is larger than %d bytes", maxContentBody)))
+		return nil, false
+	case err != nil:
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
+		return nil, false
+	}
+	return body, true
+}
+
+// ifMatch is the base hash a write carries (F-0464): the raw content_hash the
+// editor loaded, "" when the header is absent or blank — no check.
+func ifMatch(r *http.Request) string { return strings.TrimSpace(r.Header.Get("If-Match")) }
+
+// writeContentConflict answers a write refused by a stale If-Match with 409,
+// the backend's content and its hash, so the editor shows the difference and
+// can write over it without a second read; false for any other err.
+func writeContentConflict(w http.ResponseWriter, err error) bool {
+	var ce *app.ContentConflictError
+	if !errors.As(err, &ce) {
+		return false
+	}
+	writeJSON(w, http.StatusConflict, map[string]string{
+		"error":        app.ErrContentConflict.Error(),
+		"content":      ce.Current,
+		"content_hash": app.ContentHash([]byte(ce.Current)),
+	})
+	return true
 }
 
 // clarifyAnswerRequest is the POST /api/clarify/{id}/answer body: the exact

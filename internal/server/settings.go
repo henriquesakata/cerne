@@ -119,8 +119,16 @@ func handleSettingsDelete(w http.ResponseWriter, r *http.Request, projDir, id st
 // same-origin JSON one, so a cross-site form or fetch cannot either. Settings
 // hold mirror.enabled and mirror.trackers: where cerne publishes.
 func localWrite(w http.ResponseWriter, r *http.Request) bool {
-	if !loopbackHost(r.Host) || !sameOriginJSON(r) {
-		writeJSON(w, http.StatusForbidden, errorBody("settings are written only from cerne ui on this machine: loopback host, same-origin JSON request"))
+	return localWriteOf(w, r, "application/json")
+}
+
+// localWriteOf is localWrite for a route whose body is mediaType, not JSON:
+// the vault editor's raw markdown (F-0464, audit A4). Same check — loopback
+// Host, same-origin request, a body of the route's own type, which a
+// cross-site form cannot send.
+func localWriteOf(w http.ResponseWriter, r *http.Request, mediaType string) bool {
+	if !loopbackHost(r.Host) || !sameOriginAs(r, mediaType) {
+		writeJSON(w, http.StatusForbidden, errorBody("this write is accepted only from cerne ui on this machine: loopback host, same-origin "+mediaType+" request"))
 		return false
 	}
 	return true

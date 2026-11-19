@@ -1127,6 +1127,24 @@ const ptBR = {
       wiki: 'Páginas da wiki',
     },
     docs: { spec: 'Especificação', plan: 'Plano', result: 'Resultado' },
+    editor: {
+      edit: 'Editar',
+      source: 'Texto do documento',
+      preview: 'Prévia',
+      wikiList: 'Entidades para o link',
+      saving: 'Gravando…',
+      saveError: (e: string) => `Não foi possível gravar: ${e}`,
+      conflict:
+        'Este documento mudou no backend depois que você o abriu. Seu rascunho continua aqui; abaixo, as linhas da versão do backend (−) e as do seu rascunho (+). As marcadas "outro autor" foram mudadas por outra pessoa desde então: para manter as duas versões, traga essas linhas para o rascunho e grave por cima.',
+      theirsMark: 'outro autor',
+      conflictSame: 'O texto do backend já é igual ao seu rascunho; grave por cima para confirmar.',
+      reloadBackend: 'Recarregar a versão do backend',
+      overwrite: 'Gravar por cima',
+      discard: 'Descartar o rascunho não gravado?',
+      unsaved: 'não gravado',
+      approvedSpec:
+        'Esta spec está aprovada: gravar uma versão diferente vence a aprovação, e o Iniciar fica bloqueado até reaprovar.',
+    },
   },
   mindmap: {
     loadingChunk: 'Carregando mapa mental…',
@@ -2620,6 +2638,24 @@ const en: Messages = {
       wiki: 'Wiki pages',
     },
     docs: { spec: 'Spec', plan: 'Plan', result: 'Result' },
+    editor: {
+      edit: 'Edit',
+      source: 'Document text',
+      preview: 'Preview',
+      wikiList: 'Entities to link',
+      saving: 'Saving…',
+      saveError: (e: string) => `Could not save: ${e}`,
+      conflict:
+        'This document changed in the backend after you opened it. Your draft is still here; below, the lines of the backend version (−) and of your draft (+). The ones marked "other author" were changed by someone else since then: to keep both versions, bring those lines into your draft and save over it.',
+      theirsMark: 'other author',
+      conflictSame: 'The backend text is already the same as your draft; save over it to confirm.',
+      reloadBackend: 'Reload the backend version',
+      overwrite: 'Save over it',
+      discard: 'Discard the unsaved draft?',
+      unsaved: 'unsaved',
+      approvedSpec:
+        'This spec is approved: saving a different version makes the approval stale, and Start is blocked until it is re-approved.',
+    },
   },
   mindmap: {
     loadingChunk: 'Loading mindmap…',

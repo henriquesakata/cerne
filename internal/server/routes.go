@@ -92,6 +92,16 @@ func dataRoutes() []dataRoute {
 		{"PUT", "/features/{id}/docs/{doc}", false, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
 			handleFeatureDocPut(w, r, repoDir, projDir, r.PathValue("id"), r.PathValue("doc"))
 		}},
+		// The vault editor's writes (F-0464): local-only, like the feature docs.
+		{"PUT", "/decisions/{id}/content", false, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
+			handleEntityContentPut(w, r, repoDir, projDir, "decision", r.PathValue("id"))
+		}},
+		{"PUT", "/notes/{id}/content", false, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
+			handleEntityContentPut(w, r, repoDir, projDir, "note", r.PathValue("id"))
+		}},
+		{"PUT", "/runbooks/{id}/content", false, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
+			handleEntityContentPut(w, r, repoDir, projDir, "runbook", r.PathValue("id"))
+		}},
 		{"POST", "/clarify/{id}/answer", false, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
 			handleClarifyAnswer(w, r, repoDir, projDir, r.PathValue("id"))
 		}},

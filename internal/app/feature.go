@@ -717,25 +717,38 @@ func SetFeature(repoDir, projDir, id, owner, priority, fixes string, setOwner, s
 // AmendFeatureResult, which carries a reason; later, only errata. The writer
 // is this process's (docAuthor, F-0375).
 func SaveFeatureDoc(repoDir, projDir, id, doc, content string) error {
-	return SaveFeatureDocBy(repoDir, projDir, id, doc, content, docAuthor(projDir))
+	return SaveFeatureDocBy(repoDir, projDir, id, doc, content, "", docAuthor(projDir))
 }
 
 // SaveFeatureDocBy is SaveFeatureDoc with the writer named by the caller
 // (F-0375): the UI editor is a human, whatever the server's environment says.
-func SaveFeatureDocBy(repoDir, projDir, id, doc, content string, by DocAuthor) error {
+// base, when not empty, is the ContentHash of the document the writer loaded
+// (F-0464): the clone is first brought to origin and a document that hashes
+// otherwise refuses the write with *ContentConflictError (ErrContentConflict).
+func SaveFeatureDocBy(repoDir, projDir, id, doc, content, base string, by DocAuthor) error {
 	filename, ok := featureDocFilenames[doc]
 	if !ok {
 		return fmt.Errorf("%w: %q", ErrUnknownDoc, doc)
 	}
-	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+	if err := checkCerneID(id, content); err != nil {
+		return err
+	}
+	err := mutateAndSnapshot(repoDir, projDir, base != "", func() (string, error) {
 		f, err := CheckDocWritable(repoDir, id, doc)
 		if err != nil {
 			return "", err
 		}
 		path := FeatureDocPath(repoDir, id, filename)
+		cur, err := os.ReadFile(path)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+		if err := checkBase(cur, base); err != nil {
+			return "", err
+		}
 		// The event below is itself a change, so the byte-identical no-op has to be
 		// detected here — captureChanges would always see the appended event.
-		if cur, err := os.ReadFile(path); err == nil && string(cur) == content {
+		if err == nil && string(cur) == content {
 			return "", fmt.Errorf("%w: %s", gitback.ErrNothingToCommit, path)
 		}
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

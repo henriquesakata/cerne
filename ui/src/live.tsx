@@ -14,6 +14,7 @@ import {
   type ProjectInfo,
 } from './api'
 import { useT } from './i18n'
+import { navAllowed, setNavGuard } from './navGuard'
 
 // Multi-projeto + atualização ao vivo (casos 0031/0032). O painel serve N
 // projetos; este provider mantém a lista, o projeto ativo, o conjunto de
@@ -146,6 +147,11 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const setActivePid = (pid: string) => {
+    // An unsaved vault draft asks first, as any route change does (F-0464,
+    // audit A2): refused, nothing switches; confirmed, the draft is
+    // discarded, so the router's own check that follows does not ask again.
+    if (!navAllowed()) return
+    setNavGuard(null)
     sessionStorage.setItem(STORAGE_KEY, pid) // esta aba
     localStorage.setItem(STORAGE_KEY, pid) // default da próxima aba
     setChanged((s) => {
