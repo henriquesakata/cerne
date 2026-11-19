@@ -182,7 +182,7 @@ func commandNotesBlock(cacheDir, repoDir, projDir, sess, command, suffix string)
 	var b strings.Builder
 	fmt.Fprintf(&b, "cerne notes on %s%s:", strings.Join(words, ", "), suffix)
 	for _, n := range shown {
-		fmt.Fprintf(&b, "\n- %s — %s", n.ID, flatTitle(n.Title))
+		b.WriteString(noteLine(n.ID, n.Title, n.Gist))
 	}
 	return b.String()
 }

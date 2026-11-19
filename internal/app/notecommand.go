@@ -15,11 +15,12 @@ import (
 
 // CommandNote is an active note whose bash: trigger matches a shell command
 // (F-0457). Words are the matched trigger's words (its best one when several
-// match).
+// match). Gist is the note's gist (F-0459), "" when it has none or its entity
+// cannot be read.
 type CommandNote struct {
-	ID, Title, Words string
-	n                int
-	updated          time.Time
+	ID, Title, Words, Gist string
+	n                      int
+	updated                time.Time
 }
 
 // NotesForCommand lists the active notes declaring a bash: trigger that
@@ -53,7 +54,7 @@ func NotesForCommand(ctx context.Context, cacheDir, repoDir, command string) ([]
 		}
 		cn := CommandNote{ID: tr.ID, Title: tr.Title, Words: words, n: n}
 		if note, err := store.LoadNote(repoDir, tr.ID); err == nil {
-			cn.updated = note.UpdatedAt
+			cn.updated, cn.Gist = note.UpdatedAt, note.Gist
 		}
 		out = append(out, cn)
 	}
