@@ -1345,6 +1345,9 @@ const ptBR = {
       add: 'Incluir tracker',
       empty: 'Nenhum tracker. Nada é publicado até haver um.',
       optional: 'opcional',
+      // A linha de efetivo e de padrão de uma lista de registros.
+      none: 'nenhum',
+      summary: (n: number, names: string) => `${n} ${n === 1 ? 'tracker' : 'trackers'}: ${names}`,
     },
     cancel: 'Cancelar',
     stateOn: 'Ligado',
@@ -2770,6 +2773,8 @@ const en: Messages = {
       add: 'Add tracker',
       empty: 'No tracker. Nothing is published until there is one.',
       optional: 'optional',
+      none: 'none',
+      summary: (n: number, names: string) => `${n} ${n === 1 ? 'tracker' : 'trackers'}: ${names}`,
     },
     cancel: 'Cancel',
     stateOn: 'On',

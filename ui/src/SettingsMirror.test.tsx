@@ -86,6 +86,28 @@ describe('Settings — mirror pieces of T10 (F-0449)', () => {
     expect(within(row('Name (unit)')).getByRole('textbox')).toHaveAttribute('maxLength', '64')
   })
 
+  it('records: the effective line counts and names the trackers; an empty list reads nenhum', async () => {
+    const fields = [field('name', 'Tracker name'), { ...field('kind', 'Tracker kind'), enum: ['github'] }, field('url', 'Issues URL')]
+    const rows = [
+      { name: 'pub', kind: 'github', url: 'https://github.com/o/pub' },
+      { name: 'internal', kind: 'github', url: 'https://github.com/o/internal' },
+    ]
+    fetchSettings.mockResolvedValue(
+      view([
+        key({ id: 'mirror.trackers', title: 'Two (unit)', type: 'records', default: [], fields, value: rows, origin: 'project', stored: { project: rows } }),
+        key({ id: 'x.recs', title: 'One (unit)', type: 'records', default: [], fields, value: rows.slice(0, 1), origin: 'project', stored: { project: rows.slice(0, 1) } }),
+        key({ id: 'y.recs', title: 'None (unit)', type: 'records', default: [], fields, value: [] }),
+      ]),
+    )
+    render(<Settings group="integrations" />)
+    await screen.findByRole('listitem', { name: 'Two (unit)' })
+    expect(row('Two (unit)')).toHaveTextContent('Efetivo: 2 trackers: pub, internal, de Projeto')
+    expect(row('One (unit)')).toHaveTextContent('Efetivo: 1 tracker: pub, de Projeto')
+    expect(row('None (unit)')).toHaveTextContent('Efetivo: nenhum (padrão)')
+    expect(row('None (unit)')).toHaveTextContent('Padrão: nenhum')
+    expect(row('Two (unit)')).not.toHaveTextContent('[{')
+  })
+
   it('records: empty list keeps the header and says nothing is published; Add focuses the new first field; a refusal shows the server reason', async () => {
     const trackers = key({
       id: 'mirror.trackers',

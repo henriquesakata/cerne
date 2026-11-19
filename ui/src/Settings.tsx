@@ -531,9 +531,16 @@ function SettingRow({
   const above = (sc: SettingScope) => ORDER.indexOf(sc) < ORDER.indexOf(ws)
   // Nothing stored here, a lower scope's value shows through (F-0413).
   const inherited = !modified && others.some((sc) => !above(sc))
-  // A declared value shows through the same label as its select option.
+  // A declared value shows through the same label as its select option; a
+  // records list by its count and keys, the table below has the rest (F-0449).
   const fmt = (v: unknown) =>
-    s.enum?.length && typeof v === 'string' ? (v === '' ? ts.emptyEnum : (ts.options[v] ?? v)) : formatValue(v, ts)
+    s.type === 'records'
+      ? recordsSummary(s, v, ts)
+      : s.enum?.length && typeof v === 'string'
+        ? v === ''
+          ? ts.emptyEnum
+          : (ts.options[v] ?? v)
+        : formatValue(v, ts)
   const desc = tx(s.description)
   const label = (sc: SettingScope) => (sc === 'host' ? ts.hostGlobal : ts.scopes[sc])
   // Busy is aria-disabled, never disabled (F-0302): the pressed control keeps
@@ -882,6 +889,14 @@ function SettingRow({
 }
 
 type RecordRow = Record<string, string>
+
+// recordsSummary says a records value in one line: how many, and their keys.
+function recordsSummary(s: ResolvedSetting, v: unknown, ts: Texts): string {
+  const rows = Array.isArray(v) ? (v as RecordRow[]) : []
+  if (rows.length === 0) return ts.records.none
+  const key = s.fields?.[0]?.id ?? ''
+  return ts.records.summary(rows.length, rows.map((r) => r[key] ?? '').join(', '))
+}
 
 // RecordsEditor edits a records key (F-0449) as a table: one row per record,
 // one field per declared column, in the registry's order. Rows are a local
