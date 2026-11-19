@@ -194,3 +194,26 @@ describe('t.kanban.drag hints (F-0415 crit. 10)', () => {
     expect(drag('en')).toMatchObject({ hintApprove: 'Drop to approve', hintAccept: 'Drop to accept' })
   })
 })
+
+// F-0463 crit. 11: os textos do Cofre existem nas duas línguas, com as mesmas
+// chaves e textos diferentes (Runbooks é o mesmo nome nas duas).
+describe('t.vault (F-0463 crit. 11)', () => {
+  const messages = (lang: Lang) => {
+    localStorage.setItem('cerne-lang', lang)
+    const { result } = renderHook(() => useT(), { wrapper: I18nProvider })
+    return result.current.t
+  }
+
+  it('mesmas chaves e textos diferentes em pt-BR e en', () => {
+    const lp = leaves(messages('pt-BR').vault)
+    const le = leaves(messages('en').vault)
+    expect(Object.keys(lp).length).toBeGreaterThan(0)
+    expect(Object.keys(lp).sort()).toEqual(Object.keys(le).sort())
+    for (const k of Object.keys(lp)) if (k !== 'groups.runbooks') expect(lp[k], k).not.toBe(le[k])
+  })
+
+  it('o item do menu existe nas duas línguas e difere', () => {
+    expect(messages('pt-BR').nav.vault).toBe('Cofre')
+    expect(messages('en').nav.vault).toBe('Vault')
+  })
+})
