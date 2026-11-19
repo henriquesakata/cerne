@@ -228,9 +228,11 @@ func TestFaviconSwitchesInkByColorScheme(t *testing.T) {
 	if !strings.Contains(svg, `viewBox="0 0 100 100"`) {
 		t.Error("the favicon's viewBox is not the 100 by 100 square")
 	}
+	// B-0033: two rings, so the reduced mark reads as tree rings and not as a
+	// circle with a dot in it.
 	tags := pathTagRE.FindAllString(svg, -1)
-	if len(tags) != 2 || !strings.Contains(tags[0], `class="r"`) || !strings.Contains(tags[1], `class="h"`) {
-		t.Fatalf("want a ring with class r and the heartwood with class h, got %v", tags)
+	if len(tags) != 3 || !strings.Contains(tags[0], `class="r"`) || !strings.Contains(tags[1], `class="r"`) || !strings.Contains(tags[2], `class="h"`) {
+		t.Fatalf("want two rings with class r and the heartwood with class h, got %d paths", len(tags))
 	}
 
 	m := schemeRE.FindStringSubmatch(svg)
@@ -252,22 +254,26 @@ func TestFaviconReadsAt16px(t *testing.T) {
 	svg := readRepoFile(t, favicon)
 	const px = 16.0 / 100 // one unit of the viewBox on a 16 px tab icon
 
-	m := strokeRE.FindStringSubmatch(svg)
-	if m == nil {
-		t.Fatal("the ring has no stroke width")
+	all := shapes(t, svg)
+	widths := strokeRE.FindAllStringSubmatch(svg, -1)
+	if len(all) != 3 || len(widths) != 2 {
+		t.Fatalf("%d paths and %d strokes, want two stroked rings and the heartwood", len(all), len(widths))
 	}
-	stroke, _ := strconv.ParseFloat(m[1], 64)
-	if stroke*px < 1 {
-		t.Errorf("the ring is %.2f px wide at 16 px, want at least 1", stroke*px)
+	outer, _ := strconv.ParseFloat(widths[0][1], 64)
+	inner, _ := strconv.ParseFloat(widths[1][1], 64)
+	for name, w := range map[string]float64{"outer": outer, "inner": inner} {
+		if w*px < 1 {
+			t.Errorf("the %s ring is %.2f px wide at 16 px, want at least 1", name, w*px)
+		}
 	}
 
-	all := shapes(t, svg)
-	if len(all) != 2 {
-		t.Fatalf("%d paths, want one ring and the heartwood", len(all))
+	// A ring is stroked on its centre line, so half of its stroke eats into
+	// each gap beside it.
+	if clear := gap(all[0], all[1]) - outer/2 - inner/2; clear*px < 1 {
+		t.Errorf("the gap between the two rings is %.2f px at 16 px, want at least 1", clear*px)
 	}
-	// The ring is stroked on its centre line, so half the stroke eats into the gap.
-	if clear := gap(all[0], all[1]) - stroke/2; clear*px < 1 {
-		t.Errorf("the gap between the ring and the heartwood is %.2f px at 16 px, want at least 1", clear*px)
+	if clear := gap(all[1], all[2]) - inner/2; clear*px < 1 {
+		t.Errorf("the gap between the inner ring and the heartwood is %.2f px at 16 px, want at least 1", clear*px)
 	}
 }
 
