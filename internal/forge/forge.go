@@ -17,6 +17,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // DeliveryForge is the read-only view of one repository on one forge.
@@ -99,7 +100,17 @@ var RunCLI = func(ctx context.Context, name string, args ...string) ([]byte, err
 		if ctx.Err() != nil {
 			return nil, fmt.Errorf("%s: %w", name, ctx.Err())
 		}
-		msg := strings.TrimSpace(stderr.String())
+		// The text comes from the server: no escape sequence reaches a
+		// terminal or an agent. Line breaks and tabs read as spaces.
+		msg := strings.TrimSpace(strings.Map(func(r rune) rune {
+			switch {
+			case unicode.IsSpace(r):
+				return ' '
+			case unicode.IsControl(r):
+				return -1
+			}
+			return r
+		}, stderr.String()))
 		if len(msg) > 200 {
 			msg = msg[:200]
 		}

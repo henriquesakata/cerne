@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"unicode"
 )
 
 // tokenVars are every token variable gh or glab reads; each case names the
@@ -113,5 +114,23 @@ func TestRunCLIDropsTokensForAnotherHost(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "GH_TOKEN=gh-secret") {
 		t.Fatal("gh for github.com lost GH_TOKEN")
+	}
+}
+
+// F-0449 fix round 2 (R6): the error text RunCLI builds from the CLI's stderr
+// carries no control character, so a server's escape sequence never reaches a
+// terminal or an agent; spaces stay.
+func TestRunCLIStripsControlCharactersFromErrors(t *testing.T) {
+	fakeBin(t, "gh", `printf 'HTTP 404: \033[31mNot Found\033[0m\n\033]0;owned\007next line\r\t!' >&2; exit 1`+"\n")
+	_, err := RunCLI(context.Background(), "gh", "api", "repos/o/r")
+	if err == nil {
+		t.Fatal("want an error")
+	}
+	msg := err.Error()
+	if strings.ContainsFunc(msg, unicode.IsControl) {
+		t.Errorf("error %q carries a control character", msg)
+	}
+	if !strings.Contains(msg, "HTTP 404: ") || !strings.Contains(msg, "Not Found") {
+		t.Errorf("error %q lost the CLI's text", msg)
 	}
 }
