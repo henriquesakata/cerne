@@ -287,6 +287,7 @@ type featureDetailResponse struct {
 	Docs        featureDocs       `json:"docs"`
 	DocsReal    featureDocReal    `json:"docs_real"`    // per-doc: carries real content beyond the scaffold (vs stub)
 	DocsUpdated featureDocTimes   `json:"docs_updated"` // per-doc last-commit time; nil when uncommitted
+	DocsHash    featureDocHashes  `json:"docs_hash"`    // per-doc app.ContentHash, the If-Match of a write (F-0464)
 	Artifacts   []artifact        `json:"artifacts"`
 	InformedBy  []store.Reference `json:"informed_by"` // external sources that motivated this feature
 	Children    []store.Feature   `json:"children"`    // features that decompose this one (epic view)
@@ -359,6 +360,14 @@ type featureDocTimes struct {
 	Result *time.Time `json:"result"`
 }
 
+// featureDocHashes is app.ContentHash of each lifecycle document, the hash of
+// "" when absent: what the vault editor sends back as If-Match (F-0464).
+type featureDocHashes struct {
+	Spec   string `json:"spec"`
+	Plan   string `json:"plan"`
+	Result string `json:"result"`
+}
+
 type artifact struct {
 	Name string `json:"name"`
 	Path string `json:"path"`
@@ -377,15 +386,17 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, projDir, id string) {
 	docs := featureDocs{}
 	real := featureDocReal{}
 	updated := featureDocTimes{}
+	hashes := featureDocHashes{}
 	docFields := []struct {
 		name    string
 		content *string
 		real    *bool
 		updated **time.Time
+		hash    *string
 	}{
-		{"spec.md", &docs.Spec, &real.Spec, &updated.Spec},
-		{"plan.md", &docs.Plan, &real.Plan, &updated.Plan},
-		{"result.md", &docs.Result, &real.Result, &updated.Result},
+		{"spec.md", &docs.Spec, &real.Spec, &updated.Spec, &hashes.Spec},
+		{"plan.md", &docs.Plan, &real.Plan, &updated.Plan, &hashes.Plan},
+		{"result.md", &docs.Result, &real.Result, &updated.Result, &hashes.Result},
 	}
 	var docPaths []string
 	for _, d := range docFields {
@@ -396,6 +407,7 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, projDir, id string) {
 		}
 		*d.content = string(data)
 		*d.real = doccheck.HasRealContent(data)
+		*d.hash = app.ContentHash(data)
 		if len(data) > 0 {
 			docPaths = append(docPaths, "content/features/"+id+"/"+d.name)
 		}
@@ -475,7 +487,7 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, projDir, id string) {
 	if writes == nil {
 		writes = []app.DocWrite{}
 	}
-	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, DocsReal: real, DocsUpdated: updated, Artifacts: artifacts, InformedBy: informedBy, Children: children, Errata: errata, SpecChangedAfterApproval: specChanged, ApprovalDelta: delta, ApprovalBaselineMissing: app.ApprovalBaselineMissing(repoDir, f), RoastRounds: rounds, PlanRoastRounds: planRounds, ApproveReadiness: readiness, Bar: bar, JudgeQuestion: judgeQuestion, ApproveAdvice: advice, Writes: writes})
+	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, DocsReal: real, DocsUpdated: updated, DocsHash: hashes, Artifacts: artifacts, InformedBy: informedBy, Children: children, Errata: errata, SpecChangedAfterApproval: specChanged, ApprovalDelta: delta, ApprovalBaselineMissing: app.ApprovalBaselineMissing(repoDir, f), RoastRounds: rounds, PlanRoastRounds: planRounds, ApproveReadiness: readiness, Bar: bar, JudgeQuestion: judgeQuestion, ApproveAdvice: advice, Writes: writes})
 }
 
 // informedByRefs returns the external references whose Informs backlink targets
@@ -524,10 +536,11 @@ func listArtifacts(repoDir, id string) ([]artifact, error) {
 // decisionDetailResponse is the GET /api/decisions/{id} payload: the entity
 // plus its content document (empty when the doc file is absent).
 type decisionDetailResponse struct {
-	Decision   store.Decision    `json:"decision"`
-	Doc        string            `json:"doc"`
-	InformedBy []store.Reference `json:"informed_by"` // external sources that motivated this decision
-	Errata     string            `json:"errata"`      // additive corrections (F-0163); "" when none
+	Decision    store.Decision    `json:"decision"`
+	Doc         string            `json:"doc"`
+	ContentHash string            `json:"content_hash"` // app.ContentHash of doc, the If-Match of a write (F-0464)
+	InformedBy  []store.Reference `json:"informed_by"`  // external sources that motivated this decision
+	Errata      string            `json:"errata"`       // additive corrections (F-0163); "" when none
 }
 
 func handleDecisionDetail(w http.ResponseWriter, repoDir, id string) {
@@ -555,7 +568,7 @@ func handleDecisionDetail(w http.ResponseWriter, repoDir, id string) {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	writeJSON(w, http.StatusOK, decisionDetailResponse{Decision: d, Doc: doc, InformedBy: informedBy, Errata: errata})
+	writeJSON(w, http.StatusOK, decisionDetailResponse{Decision: d, Doc: doc, ContentHash: app.ContentHash([]byte(doc)), InformedBy: informedBy, Errata: errata})
 }
 
 // referenceDetailResponse is the GET /api/references/{id} payload.
@@ -584,9 +597,10 @@ func handleReferenceDetail(w http.ResponseWriter, repoDir, id string) {
 
 // runbookDetailResponse is the GET /api/runbooks/{id} payload.
 type runbookDetailResponse struct {
-	Runbook store.Runbook `json:"runbook"`
-	Doc     string        `json:"doc"`
-	Errata  string        `json:"errata"` // additive corrections (F-0163); "" when none
+	Runbook     store.Runbook `json:"runbook"`
+	Doc         string        `json:"doc"`
+	ContentHash string        `json:"content_hash"` // app.ContentHash of doc, the If-Match of a write (F-0464)
+	Errata      string        `json:"errata"`       // additive corrections (F-0163); "" when none
 }
 
 func handleRunbookDetail(w http.ResponseWriter, repoDir, id string) {
@@ -609,14 +623,15 @@ func handleRunbookDetail(w http.ResponseWriter, repoDir, id string) {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	writeJSON(w, http.StatusOK, runbookDetailResponse{Runbook: rb, Doc: doc, Errata: errata})
+	writeJSON(w, http.StatusOK, runbookDetailResponse{Runbook: rb, Doc: doc, ContentHash: app.ContentHash([]byte(doc)), Errata: errata})
 }
 
 // noteDetailResponse is the GET /api/notes/{id} payload.
 type noteDetailResponse struct {
-	Note   store.Note `json:"note"`
-	Doc    string     `json:"doc"`
-	Errata string     `json:"errata"` // additive corrections (F-0163); "" when none
+	Note        store.Note `json:"note"`
+	Doc         string     `json:"doc"`
+	ContentHash string     `json:"content_hash"` // app.ContentHash of doc, the If-Match of a write (F-0464)
+	Errata      string     `json:"errata"`       // additive corrections (F-0163); "" when none
 }
 
 func handleNoteDetail(w http.ResponseWriter, repoDir, id string) {
@@ -639,7 +654,7 @@ func handleNoteDetail(w http.ResponseWriter, repoDir, id string) {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	writeJSON(w, http.StatusOK, noteDetailResponse{Note: n, Doc: doc, Errata: errata})
+	writeJSON(w, http.StatusOK, noteDetailResponse{Note: n, Doc: doc, ContentHash: app.ContentHash([]byte(doc)), Errata: errata})
 }
 
 // readContentDoc reads content/<kind>/<id>.md (decisions, references, runbooks,
