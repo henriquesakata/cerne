@@ -98,7 +98,7 @@ func TestInitFresh(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(projDir, ".docs", ".gitkeep")); err != nil {
 		t.Fatalf(".docs/.gitkeep: %v", err)
 	}
-	if !strings.Contains(out, "commit .cernerc, docs.lock") {
+	if !strings.Contains(out, "Commit .cernerc, docs.lock") {
 		t.Fatalf("output missing the commit next step:\n%s", out)
 	}
 }
@@ -199,8 +199,8 @@ func TestInitInstallsSkills(t *testing.T) {
 	if _, err := os.Stat(skillFile); err != nil {
 		t.Fatalf("expected canonical skill installed at %s: %v", skillFile, err)
 	}
-	if !strings.Contains(out, "cerne-authoring: created in .claude/skills/cerne-authoring") {
-		t.Fatalf("output missing skill install status:\n%s", out)
+	if !strings.Contains(out, "Installed 2 skills and") {
+		t.Fatalf("output missing skill install summary:\n%s", out)
 	}
 }
 
@@ -762,8 +762,9 @@ func TestEnsureDocsIgnored(t *testing.T) {
 	})
 }
 
-// TestInit_LastLinePointsToUI (F-0370, critério 5): the human's next step is
-// the final line, after the local-backend hint and the light-mode invitation.
+// TestInit_LastLinePointsToUI (F-0370, critério 5; reshaped by T-0009): the
+// dashboard is step 1 of the closing block, after the local-backend hint and
+// the light-mode invitation.
 func TestInit_LastLinePointsToUI(t *testing.T) {
 	gitignoreEnv(t)
 	for name, extra := range map[string][]string{"local": nil, "with --backend": {"--backend", newOrigin(t)}} {
@@ -772,19 +773,20 @@ func TestInit_LastLinePointsToUI(t *testing.T) {
 			if err != nil {
 				t.Fatalf("init: %v\n%s", err, out)
 			}
-			lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
-			if got, want := lines[len(lines)-1], "Open the dashboard: cerne ui  (http://localhost:7717)"; got != want {
-				t.Fatalf("last line = %q, want %q", got, want)
+			if want := "  1. Open the dashboard: cerne ui  (http://localhost:7717)"; !strings.Contains(out, want) {
+				t.Fatalf("missing %q:\n%s", want, out)
 			}
 		})
 	}
 }
 
 func TestInit_LastLineOnJoinAndNotARepo(t *testing.T) {
-	const want = "Open the dashboard: cerne ui  (http://localhost:7717)"
+	const want = "  1. Open the dashboard: cerne ui  (http://localhost:7717)"
 	last := func(out string) string {
-		l := strings.Split(strings.TrimRight(out, "\n"), "\n")
-		return l[len(l)-1]
+		if strings.Contains(out, want) {
+			return want
+		}
+		return out
 	}
 	gitignoreEnv(t)
 	out, err := execInit(t, "--name", "plain", "--dir", t.TempDir())
@@ -803,11 +805,11 @@ func TestInit_LastLineOnJoinAndNotARepo(t *testing.T) {
 func TestInit_NextStepsNamesGitignoreOnlyWhenChanged(t *testing.T) {
 	gitignoreEnv(t)
 	out, _ := execInit(t, "--name", "ns1", "--dir", gitRepoDir(t))
-	if !strings.Contains(out, "commit .cernerc, docs.lock, .gitattributes and .gitignore") {
+	if !strings.Contains(out, "Commit .cernerc, docs.lock, .gitattributes and .gitignore") {
 		t.Fatalf("changed case:\n%s", out)
 	}
 	out, _ = execInit(t, "--name", "ns2", "--dir", t.TempDir())
-	if strings.Contains(out, ".gitignore to your") || !strings.Contains(out, "commit .cernerc, docs.lock and .gitattributes") {
+	if strings.Contains(out, ".gitignore to your") || !strings.Contains(out, "Commit .cernerc, docs.lock and .gitattributes") {
 		t.Fatalf("unchanged case:\n%s", out)
 	}
 }
