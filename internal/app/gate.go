@@ -14,12 +14,13 @@ var ErrHumanGate = errors.New("human gate")
 
 // humanEscape ends every human-gate refusal (B-0030): a human typing in an
 // agent's shell (CLAUDECODE=1 and the other markers make it one) is told how
-// to declare themself, and the agent reading the same text that it is not its
-// move.
+// to say they are the human, and the agent reading the same text that it is
+// not its move.
 const humanEscape = ". A human in an agent's shell runs the command in their own terminal, or prefixes it with CERNE_ACTOR=human; an agent never sets it"
 
 // CheckHumanGate refuses when gate is human and the caller is an agent
-// (CERNE_ACTOR=agent, stamped into agent sessions by `cerne hook install`).
+// (CERNE_ACTOR=agent, stamped into agent sessions by `cerne hook install`, or
+// an agent-shell marker with no CERNE_ACTOR — see actorEnv).
 // Anything else passes — fail-open by design: the gate exists to stop the
 // *configured* agent from approving its own spec, not to authenticate humans.
 func CheckHumanGate(gate string) error {
