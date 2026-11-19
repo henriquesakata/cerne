@@ -262,3 +262,32 @@ func TestPluginEntryScript(t *testing.T) {
 		}
 	})
 }
+
+// TestPluginMarketplace (F-0454 criterion 1): the repo is its own marketplace,
+// listing the plugin at the root under the manifest's name — a mismatch makes
+// installs by that name fail.
+func TestPluginMarketplace(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(pluginDir, "marketplace.json"))
+	if err != nil {
+		t.Fatalf("marketplace manifest: %v", err)
+	}
+	var mk struct {
+		Name    string `json:"name"`
+		Plugins []struct {
+			Name   string `json:"name"`
+			Source string `json:"source"`
+		} `json:"plugins"`
+	}
+	var pl struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(raw, &mk); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(readPluginManifest(t), &pl); err != nil {
+		t.Fatal(err)
+	}
+	if mk.Name != "cerne" || len(mk.Plugins) != 1 || mk.Plugins[0].Name != pl.Name || mk.Plugins[0].Source != "./" {
+		t.Fatalf("marketplace %+v, want marketplace cerne listing plugin %q at ./", mk, pl.Name)
+	}
+}
