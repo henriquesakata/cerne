@@ -5,7 +5,9 @@ import Backlinks from './Backlinks'
 import Markdown from './Markdown'
 import { LoadPending, Notice, useLiveLoad } from './liveLoad'
 import { useT, type Messages } from './i18n'
+import { entriesFrom } from './Palette'
 import { loadVaultDoc, stripLeadingTitle } from './vault-doc'
+import VaultEditor, { canEdit } from './VaultEditor'
 import { buildVaultTree, filterVaultTree, isHistorical, type VaultKind, type VaultNode } from './vault-tree'
 
 const DOC_NAMES = new Set(['spec', 'plan', 'result'])
@@ -176,6 +178,10 @@ export default function Vault({ hash }: { hash: string }) {
     [sel.id, sel.doc],
   )
   const doc = docLoad.data
+  // The document being edited, by id/doc: another document leaves the editor.
+  const docKey = doc ? `${doc.id}/${doc.doc ?? ''}` : ''
+  const [editing, setEditing] = useState<string | null>(null)
+  const isEditing = doc !== null && editing === docKey
   // The outline is read off the rendered ##/### headings, so code blocks and
   // the markdown parser's own rules decide what counts as a heading.
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -186,7 +192,7 @@ export default function Vault({ hash }: { hash: string }) {
   useEffect(() => {
     const hs = bodyRef.current?.querySelectorAll('h2, h3') ?? []
     setOutline([...hs].map((el) => ({ text: el.textContent ?? '', el })))
-  }, [doc])
+  }, [doc, isEditing])
   const [history, setHistory] = useState(false)
   const [query, setQuery] = useState('')
   // Everything starts collapsed but the in-progress group (like an explorer).
@@ -199,6 +205,7 @@ export default function Vault({ hash }: { hash: string }) {
     [st, wiki, history, sel.id],
   )
   const shown = useMemo(() => filterVaultTree(tree, query), [tree, query])
+  const entries = useMemo(() => (st ? entriesFrom(st) : []), [st])
   const known = useMemo(() => {
     const ids = st ? [...st.features, ...st.decisions, ...st.notes, ...st.runbooks, ...st.references].map((e) => e.id.toUpperCase()) : []
     const set = new Set(ids)
@@ -299,7 +306,13 @@ export default function Vault({ hash }: { hash: string }) {
                 {title}
               </h1>
               {doc.state && <span className={`chip chip-${doc.state}`}>{stateText(t, doc.kind, doc.state)}</span>}
-              <div className="vault-doc-actions" />
+              <div className="vault-doc-actions">
+                {canEdit(doc) && !isEditing && (
+                  <button type="button" onClick={() => setEditing(docKey)}>
+                    {t.vault.editor.edit}
+                  </button>
+                )}
+              </div>
               {doc.kind === 'feature' && (
                 <nav className="vault-doc-tabs" aria-label={t.vault.docTabs}>
                   {(['spec', 'plan', 'result'] as const).map((d) => (
@@ -310,7 +323,21 @@ export default function Vault({ hash }: { hash: string }) {
                 </nav>
               )}
             </header>
-            {doc.real ? (
+            {isEditing ? (
+              <VaultEditor
+                key={docKey}
+                doc={doc}
+                entries={entries}
+                knownIds={known}
+                wikiHref={wikiHref}
+                onSaved={async () => {
+                  // Back to reading on what the backend now has, not on the draft.
+                  await docLoad.reload()
+                  setEditing(null)
+                }}
+                onCancel={() => setEditing(null)}
+              />
+            ) : doc.real ? (
               <div className="vault-doc-body doc" ref={bodyRef}>
                 <Markdown wikiHref={wikiHref} knownIds={known}>
                   {stripLeadingTitle(doc.content, doc.title)}

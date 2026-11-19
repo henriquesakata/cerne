@@ -1065,6 +1065,15 @@ const ptBR = {
       wiki: 'Páginas da wiki',
     },
     docs: { spec: 'Especificação', plan: 'Plano', result: 'Resultado' },
+    editor: {
+      edit: 'Editar',
+      source: 'Texto do documento',
+      preview: 'Prévia',
+      saving: 'Gravando…',
+      saveError: (e: string) => `Não foi possível gravar: ${e}`,
+      approvedSpec:
+        'Esta spec está aprovada: gravar uma versão diferente vence a aprovação, e o Iniciar fica bloqueado até reaprovar.',
+    },
   },
   mindmap: {
     loadingChunk: 'Carregando mapa mental…',
@@ -2497,6 +2506,15 @@ const en: Messages = {
       wiki: 'Wiki pages',
     },
     docs: { spec: 'Spec', plan: 'Plan', result: 'Result' },
+    editor: {
+      edit: 'Edit',
+      source: 'Document text',
+      preview: 'Preview',
+      saving: 'Saving…',
+      saveError: (e: string) => `Could not save: ${e}`,
+      approvedSpec:
+        'This spec is approved: saving a different version makes the approval stale, and Start is blocked until it is re-approved.',
+    },
   },
   mindmap: {
     loadingChunk: 'Loading mindmap…',

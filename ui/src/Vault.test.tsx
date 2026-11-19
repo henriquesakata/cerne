@@ -255,3 +255,30 @@ describe('Vault (F-0463)', () => {
     expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: 'start' })
   })
 })
+
+describe('Vault edit action (F-0464 critério 1)', () => {
+  it.each([
+    ['F-0101', 'feature', 'candidate', true],
+    ['F-0102', 'feature', 'approved', true],
+    ['F-0103', 'feature', 'in_development', true],
+    ['F-0104', 'feature', 'implemented', false],
+    ['F-0105', 'feature', 'done', false],
+    ['F-0106', 'feature', 'rejected', false],
+    ['F-0107', 'feature', 'superseded', false],
+    ['D-0101', 'decision', 'active', true],
+    ['D-0102', 'decision', 'superseded', false],
+    ['D-0103', 'decision', 'retired', false],
+    ['N-0101', 'note', 'active', true],
+    ['N-0102', 'note', 'superseded', false],
+    ['RB-0101', 'runbook', 'active', true],
+    ['RB-0102', 'runbook', 'superseded', false],
+    ['R-0101', 'reference', 'current', false],
+    ['wiki:x.md', 'wiki', '', false],
+  ] as const)('edit action: %s (%s %s) → %s', async (id, kind, st, shown) => {
+    docs[id] = mk(id, { kind, state: st, doc: kind === 'feature' ? 'spec' : undefined, title: `Doc ${id}` })
+    const { container } = await open(`#/vault/${id}`)
+    await screen.findByRole('heading', { name: new RegExp(`Doc ${id}`) })
+    const actions = container.querySelector('.vault-doc-actions') as HTMLElement
+    expect(within(actions).queryByRole('button', { name: 'Editar' }) !== null).toBe(shown)
+  })
+})
