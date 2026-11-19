@@ -1,14 +1,19 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/forge"
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
 )
@@ -222,3 +227,51 @@ func CheckMirror(repoDir, projDir string) ([]MirrorCheck, error) {
 // mirrorListCap is the most open issues a tracker's ListOpen returns (the
 // contract's ceiling): a list this long may have cut the card's issue off.
 const mirrorListCap = 100
+
+// Refusals of the commit list.
+var (
+	ErrBadCardID = errors.New("not a card id")
+	ErrNoGitRepo = errors.New("the project is not a git repository")
+)
+
+// MirrorCommit is a commit whose Cerne trailer cites a card; URL is empty
+// without a usable delivery.commit_url.
+type MirrorCommit struct {
+	SHA     string `json:"sha"`
+	Subject string `json:"subject"`
+	URL     string `json:"url,omitempty"`
+}
+
+// MirrorCommits lists, newest first, up to 20 commits of the project's git
+// repository whose own "Cerne: <id>" line cites card id.
+func MirrorCommits(projDir, id string) ([]MirrorCommit, error) {
+	if !store.ValidEntityID(id) {
+		return nil, fmt.Errorf("%w: %q", ErrBadCardID, id)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), mirrorTimeout)
+	defer cancel()
+	if err := exec.CommandContext(ctx, "git", "-C", projDir, "rev-parse", "--git-dir").Run(); err != nil {
+		return nil, ErrNoGitRepo
+	}
+	// The id is validated: it holds no regexp metacharacter but the dash.
+	out, err := exec.CommandContext(ctx, "git", "-C", projDir, "log", "-n", "20", "-E",
+		"--grep=^Cerne: "+id+"$", "--format=%H%x00%h%x00%s%x1e").Output()
+	if err != nil {
+		return nil, fmt.Errorf("git log: %w", err)
+	}
+	commitURL := deliveryCommitURL(projDir)
+	_, _, linkable := forge.ParseCommitURL(commitURL)
+	commits := []MirrorCommit{}
+	for _, rec := range strings.Split(string(out), "\x1e") {
+		f := strings.Split(strings.TrimLeft(rec, "\n"), "\x00")
+		if len(f) != 3 {
+			continue
+		}
+		c := MirrorCommit{SHA: f[1], Subject: f[2]}
+		if linkable { // the configured URL ends in a sample sha: swap in this commit's
+			c.URL = commitURL[:strings.LastIndex(commitURL, "/")+1] + f[0]
+		}
+		commits = append(commits, c)
+	}
+	return commits, nil
+}

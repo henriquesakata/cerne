@@ -4,11 +4,13 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
 	"github.com/henriquesakata/cerne/internal/tracker/trackertest"
 )
@@ -266,6 +268,101 @@ func TestCheckMirrorWritesNothing(t *testing.T) {
 	for _, c := range pub.Calls {
 		if c.Op != "ListOpen" {
 			t.Fatalf("tracker got %s, want only ListOpen", c.Op)
+		}
+	}
+}
+
+// ---- F-0465 T3: commits that cite a card ----
+
+// gitProject is a git repository in a fresh dir with an identity set.
+func gitProject(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	for _, a := range [][]string{{"init", "-q"}, {"config", "user.email", "t@t"}, {"config", "user.name", "t"}, {"config", "commit.gpgsign", "false"}} {
+		gitOut(t, dir, a...)
+	}
+	return dir
+}
+
+func commitMsg(t *testing.T, dir, msg string) {
+	t.Helper()
+	gitOut(t, dir, "commit", "-q", "--allow-empty", "-m", msg)
+}
+
+func TestMirrorCommits(t *testing.T) {
+	dir := gitProject(t)
+	commitMsg(t, dir, "feat: other card\n\nCerne: F-0001")
+	commitMsg(t, dir, "feat: longer id\n\nCerne: F-04650")
+	commitMsg(t, dir, "docs: mentions F-0465 only in the subject")
+	commitMsg(t, dir, "feat: prose\n\nSee Cerne: F-0465 is nice")
+	for i := 0; i < 25; i++ {
+		commitMsg(t, dir, "feat: step "+strconv.Itoa(i)+"\n\nCerne: F-0465\nRefs: #12")
+	}
+	got, err := MirrorCommits(dir, "F-0465")
+	if err != nil {
+		t.Fatalf("MirrorCommits: %v", err)
+	}
+	if len(got) != 20 {
+		t.Fatalf("got %d commits, want 20", len(got))
+	}
+	if got[0].Subject != "feat: step 24" || got[19].Subject != "feat: step 5" {
+		t.Errorf("order: first %q, last %q; want newest first", got[0].Subject, got[19].Subject)
+	}
+	if want := gitOut(t, dir, "rev-parse", "--short", "HEAD"); !strings.HasPrefix(want, got[0].SHA) && !strings.HasPrefix(got[0].SHA, want) {
+		t.Errorf("sha = %q, want the short sha %q", got[0].SHA, want)
+	}
+	// Two commits cite two cards: each is found by its own id only.
+	if o, err := MirrorCommits(dir, "F-0001"); err != nil || len(o) != 1 {
+		t.Errorf("F-0001: %d commits, %v; want 1", len(o), err)
+	}
+}
+
+func TestMirrorCommitsNoRepo(t *testing.T) {
+	if _, err := MirrorCommits(t.TempDir(), "F-0465"); !errors.Is(err, ErrNoGitRepo) {
+		t.Fatalf("err = %v, want ErrNoGitRepo", err)
+	}
+}
+
+func TestMirrorCommitsBadID(t *testing.T) {
+	dir := gitProject(t)
+	for _, id := range []string{"", "f-0465", "F-1", "F-0465$", "F-0465\nX", "--all", ".*", "F-0465|F-0001"} {
+		if _, err := MirrorCommits(dir, id); !errors.Is(err, ErrBadCardID) {
+			t.Errorf("id %q: err = %v, want ErrBadCardID", id, err)
+		}
+	}
+}
+
+func TestMirrorCommitsURL(t *testing.T) {
+	asHuman(t)
+	_, projDir, _ := newFeatureBackend(t)
+	mirrorProject(t, projDir, mirrorConf{off: true}) // writes the .cernerc the setting needs
+	gitOut(t, projDir, "init", "-q")
+	gitOut(t, projDir, "config", "user.email", "t@t")
+	gitOut(t, projDir, "config", "user.name", "t")
+	gitOut(t, projDir, "config", "commit.gpgsign", "false")
+	commitMsg(t, projDir, "feat: x\n\nCerne: F-0465")
+	sha := gitOut(t, projDir, "rev-parse", "HEAD")
+
+	got, err := MirrorCommits(projDir, "F-0465")
+	if err != nil || len(got) != 1 || got[0].URL != "" {
+		t.Fatalf("without commit_url: %+v, %v; want one commit with no link", got, err)
+	}
+	for tmpl, prefix := range map[string]string{
+		"https://github.com/o/r/commit/{sha}":      "https://github.com/o/r/commit/",
+		"https://gitlab.com/g/s/r/-/commit/{sha}":  "https://gitlab.com/g/s/r/-/commit/",
+		"https://gitea.example/o/r/commit/abc1234": "https://gitea.example/o/r/commit/",
+	} {
+		if err := project.SetSettingValue(projDir, "delivery.commit_url", project.ScopeProject, tmpl); err != nil {
+			t.Fatalf("set commit_url: %v", err)
+		}
+		got, err := MirrorCommits(projDir, "F-0465")
+		if err != nil || len(got) != 1 || !strings.HasPrefix(got[0].URL, prefix) || !strings.HasPrefix(sha, strings.TrimPrefix(got[0].URL, prefix)) || strings.HasSuffix(got[0].URL, "}") {
+			t.Fatalf("template %s: %+v, %v; want %s<sha>", tmpl, got, err, prefix)
+		}
+	}
+	if err := project.SetSettingValue(projDir, "delivery.commit_url", project.ScopeProject, "not a url"); err == nil {
+		if got, _ := MirrorCommits(projDir, "F-0465"); len(got) != 1 || got[0].URL != "" {
+			t.Fatalf("unparseable template: %+v, want a commit with no link", got)
 		}
 	}
 }
