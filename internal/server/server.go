@@ -1377,7 +1377,11 @@ func handleFeatureDocPut(w http.ResponseWriter, r *http.Request, repoDir, projDi
 		return
 	}
 	// F-0375: the page's editor is a human's, whoever started the server.
-	switch err := app.SaveFeatureDocBy(repoDir, projDir, id, doc, string(body), "", app.HumanAuthor()); {
+	err = app.SaveFeatureDocBy(repoDir, projDir, id, doc, string(body), ifMatch(r), app.HumanAuthor())
+	if writeContentConflict(w, err) {
+		return
+	}
+	switch {
 	case errors.Is(err, app.ErrUnknownDoc):
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid document (use spec, plan or result)"))
 	case errors.Is(err, store.ErrNotFound):
@@ -1389,6 +1393,52 @@ func handleFeatureDocPut(w http.ResponseWriter, r *http.Request, repoDir, projDi
 	default:
 		writeJSON(w, http.StatusOK, map[string]bool{"saved": true})
 	}
+}
+
+// handleEntityContentPut writes a decision, note or runbook's content from the
+// vault editor (F-0464), as a human (F-0375): 404 for an id that is not of
+// kind's shape or does not exist, 422 past active — history takes an errata —
+// and 409 on a stale If-Match.
+func handleEntityContentPut(w http.ResponseWriter, r *http.Request, repoDir, projDir, kind, id string) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
+		return
+	}
+	err = app.SaveEntityContentBy(repoDir, projDir, kind, id, string(body), ifMatch(r), app.HumanAuthor())
+	if writeContentConflict(w, err) {
+		return
+	}
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		writeJSON(w, http.StatusNotFound, errorBody(kind+" not found"))
+	case errors.Is(err, app.ErrEntityNotLive):
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody("entity is not live — append an errata instead"))
+	case err != nil:
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+	default:
+		writeJSON(w, http.StatusOK, map[string]bool{"saved": true})
+	}
+}
+
+// ifMatch is the base hash a write carries (F-0464): the raw content_hash the
+// editor loaded, "" when the header is absent or blank — no check.
+func ifMatch(r *http.Request) string { return strings.TrimSpace(r.Header.Get("If-Match")) }
+
+// writeContentConflict answers a write refused by a stale If-Match with 409,
+// the backend's content and its hash, so the editor shows the difference and
+// can write over it without a second read; false for any other err.
+func writeContentConflict(w http.ResponseWriter, err error) bool {
+	var ce *app.ContentConflictError
+	if !errors.As(err, &ce) {
+		return false
+	}
+	writeJSON(w, http.StatusConflict, map[string]string{
+		"error":        app.ErrContentConflict.Error(),
+		"content":      ce.Current,
+		"content_hash": app.ContentHash([]byte(ce.Current)),
+	})
+	return true
 }
 
 // clarifyAnswerRequest is the POST /api/clarify/{id}/answer body: the exact
