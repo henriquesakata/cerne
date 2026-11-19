@@ -776,3 +776,20 @@ func TestGiteaRefusesNumericAndLocalHostForms(t *testing.T) {
 		t.Errorf("New(gitea, DNS host) = %v, want nil", err)
 	}
 }
+
+// F-0452: Owns is GitHub's, so it inherits the strict rule (empty query and
+// fragment, escaped path compared). Passes on first run: inherited behavior.
+func TestGiteaOwnsRefusesQueryFragmentAndEscapedSeparators(t *testing.T) {
+	tr, err := tracker.New(tracker.Config{Name: "gt", Kind: "gitea", URL: "https://git.example.com/o/r"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !tr.Owns(tracker.Ref{ID: "7", URL: "https://git.example.com/o/r/issues/7"}) {
+		t.Error("Owns refused its own issue")
+	}
+	for _, u := range []string{"https://git.example.com/o/r/issues/7?x=1", "https://git.example.com/o/r/issues/7#c", "https://git.example.com/o/r/issues/7?", "https://git.example.com/o%2Fr/issues/7", "https://git.example.com/o/r/issues%2F7"} {
+		if tr.Owns(tracker.Ref{ID: "7", URL: u}) {
+			t.Errorf("Owns accepted %s", u)
+		}
+	}
+}
