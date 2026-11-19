@@ -508,13 +508,16 @@ func runHookWorkGate(cmd *cobra.Command, format string) {
 var patchFileRe = regexp.MustCompile(`(?m)^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+?)\s*$`)
 
 // editedPaths lists the files an edit tool call targets: file_path, or path
-// (Copilot's own arguments), or — when tool_input is the apply_patch text
-// Copilot sends for file edits (probed, F-0444) — the files the patch names.
+// (Copilot's own arguments), or the files an apply_patch text names — the
+// whole tool_input on Copilot (probed, F-0444), tool_input.command on Codex
+// (seen live, F-0457).
 func editedPaths(toolInput json.RawMessage) []string {
 	var obj struct {
 		FilePath string `json:"file_path"`
 		Path     string `json:"path"`
+		Command  string `json:"command"`
 	}
+	var patch string
 	if json.Unmarshal(toolInput, &obj) == nil {
 		if obj.FilePath != "" {
 			return []string{obj.FilePath}
@@ -522,10 +525,11 @@ func editedPaths(toolInput json.RawMessage) []string {
 		if obj.Path != "" {
 			return []string{obj.Path}
 		}
-		return nil
-	}
-	var patch string
-	if json.Unmarshal(toolInput, &patch) != nil {
+		if !isPatch(obj.Command) {
+			return nil
+		}
+		patch = obj.Command
+	} else if json.Unmarshal(toolInput, &patch) != nil {
 		return nil
 	}
 	var out []string
@@ -533,6 +537,11 @@ func editedPaths(toolInput json.RawMessage) []string {
 		out = append(out, m[1])
 	}
 	return out
+}
+
+// isPatch reports whether text is an apply_patch body, never a shell command.
+func isPatch(text string) bool {
+	return strings.HasPrefix(strings.TrimSpace(text), "*** Begin Patch")
 }
 
 // injectGateChannel delivers, on an allowed edit, the session's pending channel

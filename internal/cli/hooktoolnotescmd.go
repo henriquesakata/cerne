@@ -84,6 +84,9 @@ func runHookToolNotes(cmd *cobra.Command, format string, after bool) {
 		Command string `json:"command"`
 	}
 	_ = json.Unmarshal(in.ToolInput, &ti)
+	if isPatch(ti.Command) { // Codex's apply_patch: an edit, not a shell command
+		ti.Command = ""
+	}
 	var edited string
 	if ti.Command == "" && after { // before an edit, the work gate already speaks (F-0366)
 		if paths := editedPaths(in.ToolInput); len(paths) > 0 {

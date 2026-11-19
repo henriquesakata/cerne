@@ -283,3 +283,39 @@ func TestNotesOnEditSilentUnderCopilotCLI(t *testing.T) {
 		t.Fatalf("copilot after edit:\n%s", out)
 	}
 }
+
+// codexPatchJSON is what Codex 0.169 sends for an apply_patch edit (seen live
+// in F-0457): tool_name apply_patch, the patch text under tool_input.command,
+// paths relative to cwd.
+func codexPatchJSON(t *testing.T, sess, projDir, rel string) string {
+	return hookJSON(t, sess, projDir, "apply_patch", map[string]any{"command": "*** Begin Patch\n*** Update File: " + rel + "\n@@\n+third line\n*** End Patch"}, nil)
+}
+
+// TestCodexApplyPatchEdit (F-0457 criterion 12, seen live): the work gate
+// reads the files of a Codex apply_patch — it shows their notes and, with the
+// gate on, denies an unbound session — and tool-notes never reads the patch
+// text as a shell command.
+func TestCodexApplyPatchEdit(t *testing.T) {
+	projDir, _ := toolNotesProject(t,
+		[]string{"Tag on the merge commit", "bash:git tag"},
+		[]string{"Commit the dist with the source", "edit:ui/dist/**"},
+	)
+	noSSH(t)
+	in := codexPatchJSON(t, "sess-cx", projDir, "ui/dist/index.html")
+	out, err := execCerneStdin(t, in, "hook", "work-gate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ctx := channelEnvelope(t, out).HookSpecificOutput.AdditionalContext; ctx != "cerne notes on ui/dist/index.html:\n- N-0002 — Commit the dist with the source" {
+		t.Fatalf("codex apply_patch notes:\n%s", out)
+	}
+	patchWithTag := hookJSON(t, "sess-cx2", projDir, "apply_patch", map[string]any{"command": "*** Begin Patch\n*** Add File: notes.txt\n+git tag v1\n*** End Patch"}, nil)
+	if out, err := execCerneStdin(t, patchWithTag, "hook", "tool-notes", "--format", "codex"); err != nil || out != "" {
+		t.Fatalf("a patch is not a shell command: err %v, out %q", err, out)
+	}
+	enableWorkGate(t, projDir)
+	out, err = execCerneStdin(t, codexPatchJSON(t, "sess-unbound", projDir, "internal/a.go"), "hook", "work-gate")
+	if err != nil || !strings.Contains(out, `"permissionDecision":"deny"`) {
+		t.Fatalf("codex apply_patch on an unbound session not denied: %v\n%s", err, out)
+	}
+}
