@@ -637,3 +637,29 @@ func TestGitLabRefusesNumericAndLocalHostForms(t *testing.T) {
 		t.Errorf("New(DNS host) = %v, want accepted", err)
 	}
 }
+
+// F-0450 round 2 (L2): Owns takes the plain issue URL only: no query, no
+// fragment, and an escaped %2F is never a path separator.
+func TestGitLabOwnsRefusesQueryFragmentAndEscapedSeparators(t *testing.T) {
+	newFakeGL(t, "gitlab.com", "g/sub/p")
+	tr := newGitLab(t, "https://gitlab.com/g/sub/p")
+	for _, c := range []struct {
+		url  string
+		want bool
+	}{
+		{"https://gitlab.com/g/sub/p/-/issues/12", true},
+		{"https://gitlab.com/g/sub/p/-/work_items/12", true},
+		{"https://GitLab.com/G/Sub/P/-/issues/12/", true},
+		{"https://gitlab.com/g/sub/p/-/issues/12?x=1", false},
+		{"https://gitlab.com/g/sub/p/-/issues/12?", false},
+		{"https://gitlab.com/g/sub/p/-/issues/12#note_1", false},
+		{"https://gitlab.com/g/sub/p/-/issues/12#", false},
+		{"https://gitlab.com/g%2Fsub/p/-/issues/12", false},
+		{"https://gitlab.com/g/sub%2Fp/-/issues/12", false},
+		{"https://gitlab.com/g/sub/p/-/issues%2F12", false},
+	} {
+		if got := tr.Owns(tracker.Ref{Tracker: "gl", ID: "12", URL: c.url}); got != c.want {
+			t.Errorf("Owns(%s) = %v, want %v", c.url, got, c.want)
+		}
+	}
+}

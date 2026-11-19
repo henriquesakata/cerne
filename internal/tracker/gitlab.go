@@ -183,9 +183,9 @@ func (g gitlab) CommitRef(r Ref, commitURL string, closing bool) string {
 // /-/issues/N, or /-/work_items/N on gitlab.com 19.x.
 func (g gitlab) Owns(r Ref) bool {
 	u, err := url.Parse(r.URL)
-	if err != nil || u.Scheme != "https" || u.User != nil || !digits(r.ID) || !strings.EqualFold(u.Host, g.repo.Host) {
+	if err != nil || u.Scheme != "https" || u.User != nil || strings.ContainsAny(r.URL, "?#") || !digits(r.ID) || !strings.EqualFold(u.Host, g.repo.Host) {
 		return false
 	}
-	p := strings.TrimSuffix(u.Path, "/")
+	p := strings.TrimSuffix(u.EscapedPath(), "/")
 	return strings.EqualFold(p, "/"+g.repo.Path+"/-/issues/"+r.ID) || strings.EqualFold(p, "/"+g.repo.Path+"/-/work_items/"+r.ID)
 }
