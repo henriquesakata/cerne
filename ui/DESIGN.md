@@ -297,7 +297,8 @@ Introducing a cool gray anywhere is a defect, not a variation.
 stylesheet or in a component is a bug — it will break dark mode silently.
 
 **The No Brand Accent Rule.** There is no brand colour and none may be invented.
-A control that wants emphasis takes full ink, not a hue.
+A control that wants emphasis takes full ink, not a hue. The mark is no
+exception: it is drawn in the ink of the text around it.
 
 **Full ink is for controls, not for prose.** Inversion works because a control is
 small: a button, an active nav link, a selected filter. Applied to a block of
@@ -376,8 +377,9 @@ consolidation is still owed.
 
 **The Two Voices Rule.** Sans is the human voice; mono is the machine's. Entity
 ids, event types, and code are always mono. Prose is never mono. The wordmark is
-mono because the product's name is also an identifier. Getting this backwards
-turns a semantic distinction into decoration.
+mono because the product's name is also an identifier. The mark before it is not
+a third voice: it carries no text and takes its colour from the name. Getting
+this backwards turns a semantic distinction into decoration.
 
 **The Quiet Heading Rule.** `h2` is smaller than body text, uppercase, and muted.
 Section headings label a region; they do not compete with its contents. Never
@@ -566,8 +568,14 @@ readable; the strikethrough is that thesis rendered.
 ### Navigation
 
 Sticky top bar on `surface-sunk` with a `1px solid rule-soft` bottom edge,
-`0.6rem 1.5rem` padding, `z-index: 10`. The wordmark is mono, weight 700.
+`0.6rem 1.5rem` padding, `z-index: 10`. The wordmark is the mark followed by the
+name in mono, weight 700.
 
+- **Mark:** the reduced tree-ring drawing of the tab icon (one ring and the
+  heartwood), `1.15em` square, `0.45em` before the name. It is a decorative span
+  (`aria-hidden`) masked by `/favicon.svg` and filled with `currentColor`, so it
+  takes the ink of the name in either theme and the drawing exists once. It must
+  not change the bar's height.
 - **Default link:** `ink-muted`, 0.9rem, 6px radius, `0.3rem 0.7rem` padding.
 - **Hover:** `surface-sunk-deep` fill.
 - **Active:** full inversion — `background: ink; color: paper`. The active route
