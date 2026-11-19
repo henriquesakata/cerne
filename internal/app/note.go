@@ -36,9 +36,10 @@ type NoteOutcome struct {
 // (domain vocabulary, rejected scope) would otherwise need a second KeepNote —
 // a whole extra commit+push to set one bool.
 //
-// when (F-0457) are the note's declared triggers, validated with the tags: an
-// invalid one aborts before any side effect.
-func CreateNote(repoDir, projDir, title, body string, informs, facets, components, when []string, durable, force bool) (store.Note, error) {
+// when (F-0457) are the note's declared triggers and gist (F-0459) its
+// one-line gist ("" for none), validated with the tags: an invalid one aborts
+// before any side effect.
+func CreateNote(repoDir, projDir, title, body string, informs, facets, components, when []string, gist string, durable, force bool) (store.Note, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return store.Note{}, fmt.Errorf("the note title cannot be empty")
@@ -53,6 +54,11 @@ func CreateNote(repoDir, projDir, title, body string, informs, facets, component
 	normWhen, err := domain.NormalizeTriggers(when)
 	if err != nil {
 		return store.Note{}, err
+	}
+	if gist != "" {
+		if gist, err = domain.NormalizeGist(gist); err != nil {
+			return store.Note{}, err
+		}
 	}
 	// Reads, id mint and writes run inside the backend lock's critical section
 	// (F-0122): concurrent creations serialize instead of minting the same id.
@@ -80,6 +86,7 @@ func CreateNote(repoDir, projDir, title, body string, informs, facets, component
 			Facets:     normFacets,
 			Components: normComponents,
 			When:       normWhen,
+			Gist:       gist,
 			Durable:    durable,
 			CreatedAt:  now,
 			UpdatedAt:  now,
