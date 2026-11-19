@@ -693,3 +693,96 @@ func TestTrelloOwns(t *testing.T) {
 		t.Fatalf("Owns sent %d requests and asked for %d credentials, want none", len(w.reqs), len(w.asked))
 	}
 }
+
+// onlyReads fails when a request after the first before was not a GET.
+func (f *trelloFake) onlyReads(t *testing.T, before int, what string) {
+	t.Helper()
+	for _, req := range f.wire.reqs[before:] {
+		if req.method != http.MethodGet {
+			t.Fatalf("%s sent %s %s", what, req.method, req.url)
+		}
+	}
+}
+
+// F-0451 crit. 3: a rejected card's Trello card is archived where it is, with
+// one comment giving the reason; a second update archives nothing and
+// comments nothing. Created rejected, it is archived in Candidate.
+func TestTrelloArchivesRejected(t *testing.T) {
+	fk := newTrelloFake(t)
+	tr := newTrelloTracker(t, trelloBoardURL)
+	r := trelloCreate(t, tr, publicItem("F-0001", domain.StateApproved))
+	trelloUpdate(t, tr, r, publicItem("F-0001", domain.StateRejected))
+	c := fk.card(r.ID)
+	if !c.Closed || fk.at(c) != "Approved" || !slices.Equal(c.Comments, []string{"Rejected in cerne"}) {
+		t.Fatalf("rejected card: closed %v, list %q, comments %q; want archived in Approved with one reason", c.Closed, fk.at(c), c.Comments)
+	}
+	before := len(fk.wire.reqs)
+	trelloUpdate(t, tr, r, publicItem("F-0001", domain.StateRejected))
+	fk.onlyReads(t, before, "a second rejected update")
+
+	n := trelloCreate(t, tr, publicItem("F-0002", domain.StateRejected))
+	if c := fk.card(n.ID); !c.Closed || fk.at(c) != "Candidate" || !slices.Equal(c.Comments, []string{"Rejected in cerne"}) {
+		t.Fatalf("card created rejected: closed %v, list %q, comments %q; want archived in Candidate with one reason", c.Closed, fk.at(c), c.Comments)
+	}
+}
+
+// F-0451 crit. 3: done is the Done list, never the archive, and says nothing.
+func TestTrelloDoneStaysVisible(t *testing.T) {
+	fk := newTrelloFake(t)
+	tr := newTrelloTracker(t, trelloBoardURL)
+	r := trelloCreate(t, tr, publicItem("F-0001", domain.StateImplemented))
+	trelloUpdate(t, tr, r, publicItem("F-0001", domain.StateDone))
+	n := trelloCreate(t, tr, publicItem("F-0002", domain.StateDone))
+	for _, id := range []string{r.ID, n.ID} {
+		if c := fk.card(id); c.Closed || fk.at(c) != "Done" || len(c.Comments) != 0 {
+			t.Fatalf("done card %s: closed %v, list %q, comments %q; want open in Done, no comment", id, c.Closed, fk.at(c), c.Comments)
+		}
+	}
+}
+
+// F-0451 crit. 3: back to an open state, an archived card is restored and
+// moved to that state's list in one write, with no comment. NoReopen does not
+// hold it: no merge archives a Trello card, so only cerne did.
+func TestTrelloReopensFromArchive(t *testing.T) {
+	for _, noReopen := range []bool{false, true} {
+		t.Run(fmt.Sprint("NoReopen=", noReopen), func(t *testing.T) {
+			fk := newTrelloFake(t)
+			tr := newTrelloTracker(t, trelloBoardURL)
+			r := trelloCreate(t, tr, publicItem("F-0001", domain.StateApproved))
+			trelloUpdate(t, tr, r, publicItem("F-0001", domain.StateRejected))
+			puts := fk.count(http.MethodPut, "/cards/"+r.ID)
+			it := publicItem("F-0001", domain.StateInDevelopment)
+			it.NoReopen = noReopen
+			trelloUpdate(t, tr, r, it)
+			c := fk.card(r.ID)
+			if c.Closed || fk.at(c) != "In development" || len(c.Comments) != 1 {
+				t.Fatalf("reopened card: closed %v, list %q, comments %q; want open in In development, the one reject comment", c.Closed, fk.at(c), c.Comments)
+			}
+			if n := fk.count(http.MethodPut, "/cards/"+r.ID) - puts; n != 1 {
+				t.Fatalf("reopening took %d writes, want 1", n)
+			}
+		})
+	}
+}
+
+// F-0451 crit. 3: superseded archives too; the one comment names the
+// successor's card when it is mirrored.
+func TestTrelloSupersededCommentNamesSuccessor(t *testing.T) {
+	fk := newTrelloFake(t)
+	tr := newTrelloTracker(t, trelloBoardURL)
+	succ := trelloCreate(t, tr, publicItem("F-0002", domain.StateInDevelopment))
+	for _, c := range []struct {
+		successor *tracker.Ref
+		want      string
+	}{{&succ, "Superseded by " + succ.URL}, {nil, "Superseded in cerne"}} {
+		r := trelloCreate(t, tr, publicItem("F-0001", domain.StateApproved))
+		it := publicItem("F-0001", domain.StateSuperseded)
+		it.Successor = c.successor
+		for range 2 {
+			trelloUpdate(t, tr, r, it)
+		}
+		if card := fk.card(r.ID); !card.Closed || !slices.Equal(card.Comments, []string{c.want}) {
+			t.Fatalf("superseded card: closed %v, comments %q; want archived with one %q", card.Closed, card.Comments, c.want)
+		}
+	}
+}

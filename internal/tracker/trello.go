@@ -171,10 +171,11 @@ type trelloCard struct {
 	Name      string `json:"name"`
 	Desc      string `json:"desc"`
 	IDList    string `json:"idList"`
+	Closed    bool   `json:"closed"` // archived
 }
 
 // trelloCardFields is the ?fields= of every card read.
-const trelloCardFields = "fields=name,desc,idList,shortLink"
+const trelloCardFields = "fields=name,desc,idList,closed,shortLink"
 
 // trelloShortLink is a card's shortLink: the Ref.ID, checked before it goes
 // in a path.
@@ -184,7 +185,8 @@ func (t trello) ref(c trelloCard) Ref {
 	return Ref{Tracker: t.name, ID: c.ShortLink, URL: "https://trello.com/c/" + c.ShortLink}
 }
 
-// Create adds the card at the bottom of its state's list.
+// Create adds the card at the bottom of its state's list; a rejected or
+// superseded card is added to Candidate, then archived.
 func (t trello) Create(ctx context.Context, it Item) (Ref, error) {
 	c, err := t.call(ctx)
 	if err != nil {
@@ -194,7 +196,11 @@ func (t trello) Create(ctx context.Context, it Item) (Ref, error) {
 		return Ref{}, err
 	}
 	var card trelloCard
-	in := map[string]string{"idList": c.lists[it.State], "name": it.Title, "desc": it.Body(), "pos": "bottom"}
+	list := c.lists[it.State]
+	if list == "" {
+		list = c.lists[domain.StateCandidate]
+	}
+	in := map[string]string{"idList": list, "name": it.Title, "desc": it.Body(), "pos": "bottom"}
 	if err := c.do(ctx, http.MethodPost, "/cards?"+trelloCardFields, in, &card); err != nil {
 		return Ref{}, err
 	}
@@ -224,7 +230,10 @@ func (t trello) Update(ctx context.Context, r Ref, it Item) error {
 	return c.apply(ctx, card, it)
 }
 
-// apply moves cur toward it in one PUT, or none.
+// apply moves cur toward it in one PUT, or none: an open state's list, or
+// the archive, where it is, for rejected and superseded. The reason is
+// commented only by the call that archives the card, so a sync never repeats
+// it. done is the Done list, never the archive.
 func (c *trelloCall) apply(ctx context.Context, cur trelloCard, it Item) error {
 	edit := map[string]any{}
 	if it.Title != "" && cur.Name != it.Title {
@@ -233,13 +242,37 @@ func (c *trelloCall) apply(ctx context.Context, cur trelloCard, it Item) error {
 	if it.Title != "" && cur.Desc != it.Body() {
 		edit["desc"] = it.Body()
 	}
+	reason := trelloReason(it)
 	if l := c.lists[it.State]; l != "" && cur.IDList != l {
 		edit["idList"] = l
+	}
+	if archive := reason != ""; cur.Closed != archive {
+		edit["closed"] = archive
 	}
 	if len(edit) == 0 {
 		return nil
 	}
-	return c.do(ctx, http.MethodPut, "/cards/"+cur.ShortLink, edit, nil)
+	if err := c.do(ctx, http.MethodPut, "/cards/"+cur.ShortLink, edit, nil); err != nil {
+		return err
+	}
+	if edit["closed"] == true {
+		return c.do(ctx, http.MethodPost, "/cards/"+cur.ShortLink+"/actions/comments", map[string]string{"text": reason}, nil)
+	}
+	return nil
+}
+
+// trelloReason is the comment a card state archives its Trello card with; ""
+// keeps the card open.
+func trelloReason(it Item) string {
+	switch {
+	case it.State == domain.StateRejected:
+		return "Rejected in cerne"
+	case it.State == domain.StateSuperseded && it.Successor != nil:
+		return "Superseded by " + it.Successor.URL
+	case it.State == domain.StateSuperseded:
+		return "Superseded in cerne"
+	}
+	return ""
 }
 
 // ListOpen lists the board's open cards.
