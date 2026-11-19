@@ -52,6 +52,7 @@ func TestNextSharesForgeAcrossRuns(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	realCLI(t)
 	f := filepath.Join(t.TempDir(), "rb.md")
 	mustWrite(t, f, "# Rb\n\n- S1 a\n  Pré-condição S1: mr acme/hub!7 merged\n")
 	rb(t, projDir, "runbook", "new", "Rb", "--file", f)
@@ -94,6 +95,7 @@ func TestRunbookPreflightWithTwoStuckMRsEndsWithinTheCeiling(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	realCLI(t)
 	t0 := time.Now()
 	out := rb(t, projDir, "runbook", "preflight", "RB-0001")
 	if d := time.Since(t0); d >= 13*time.Second {
