@@ -293,3 +293,33 @@ func TestGitHubRefusesIPAndLocalhostHosts(t *testing.T) {
 		t.Errorf("New(GitHub Enterprise host) = %v, want accepted", err)
 	}
 }
+
+// F-0449 fix round 2 (R4): every other spelling of a local or numeric host is
+// refused too: a zoned IPv6 literal, *.localhost, a trailing dot, and a last
+// label a resolver reads as a number. Real top-level domains are alphabetic.
+func TestGitHubRefusesNumericAndLocalHostForms(t *testing.T) {
+	for _, raw := range []string{
+		"https://[fe80::1%25en0]/o/r",
+		"https://foo.localhost/o/r",
+		"https://LOCALHOST/o/r",
+		"https://localhost./o/r",
+		"https://127.0.0.1./o/r",
+		"https://ghe.example.com./o/r",
+		"https://127.1/o/r",
+		"https://2130706433/o/r",
+		"https://0x7f000001/o/r",
+		"https://0X7F.0.0.1/o/r",
+		"https://intranet.0x1/o/r",
+	} {
+		_, err := tracker.New(tracker.Config{Name: "gh", Kind: "github", URL: raw})
+		u, _ := url.Parse(raw)
+		if !errors.Is(err, tracker.ErrTrackerURL) || !strings.Contains(err.Error(), u.Hostname()) {
+			t.Errorf("New(%s) = %v, want ErrTrackerURL naming host %s", raw, err, u.Hostname())
+		}
+	}
+	for _, raw := range []string{"https://ghe.example.com/o/r", "https://git.example2.com/o/r", "https://ghe.example:8443/o/r"} {
+		if _, err := tracker.New(tracker.Config{Name: "gh", Kind: "github", URL: raw}); err != nil {
+			t.Errorf("New(%s) = %v, want accepted", raw, err)
+		}
+	}
+}

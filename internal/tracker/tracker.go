@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/netip"
 	"net/url"
 	"regexp"
 	"slices"
@@ -87,6 +88,21 @@ func New(c Config) (IssueTracker, error) {
 		return nil, err
 	}
 	return checked{tr}, nil
+}
+
+// localHost reports a host name that names this machine or its network
+// rather than a tracker, in any spelling: an IP literal (zoned IPv6 too),
+// localhost or *.localhost, a trailing dot, or a last label a resolver reads
+// as a number (127.1, 2130706433, 0x7f000001). Real top-level domains are
+// alphabetic. A kind whose CLI sends the user's token checks it at New.
+func localHost(h string) bool {
+	h = strings.ToLower(h)
+	if _, err := netip.ParseAddr(h); err == nil {
+		return true
+	}
+	last := h[strings.LastIndex(h, ".")+1:]
+	return h == "localhost" || strings.HasSuffix(h, ".localhost") || strings.HasSuffix(h, ".") ||
+		digits(last) || strings.HasPrefix(last, "0x")
 }
 
 // userinfoRe is the user[:password]@ of a URL's authority.
