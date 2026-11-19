@@ -19,6 +19,7 @@ const GROUPS: { key: keyof Messages['nav']; items: NavItem[] }[] = [
       { href: '#/backlog', key: 'backlog' },
       { href: '#/pendings', key: 'pendings' },
       { href: '#/ideas', key: 'ideas' },
+      { href: '#/mirror', key: 'mirror' },
       { href: '#/manage', key: 'manage' },
       { href: '#/rooms', key: 'warRoom' },
       { href: '#/activity', key: 'activity' },
@@ -67,6 +68,7 @@ function activeHref(hash: string): string {
   // The same rule App routes them by (F-0334): anything else is the dashboard.
   if (hash === '#/pendings' || hash.startsWith('#/pendings?')) return '#/pendings'
   if (hash === '#/ideas' || hash.startsWith('#/ideas?')) return '#/ideas'
+  if (hash === '#/mirror' || hash.startsWith('#/mirror?')) return '#/mirror'
   if (hash.startsWith('#/rooms')) return '#/rooms'
   if (hash.startsWith('#/manage') || hash.startsWith('#/new') || hash.startsWith('#/bug')) return '#/manage'
   if (hash.startsWith('#/vault')) return '#/vault'

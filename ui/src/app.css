@@ -2547,6 +2547,22 @@ h2 {
 .queue-btn:focus-visible,
 .queue-btn-primary:focus-visible { outline: 2px solid var(--fg); outline-offset: 1px; }
 
+/* aba Espelho (F-0465): só reaproveita a linha de fila */
+.mirror-sync { margin: 0.5rem 0 0; }
+.mirror-check { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem 0.7rem; margin: 0.7rem 0 0; }
+.mirror-check [role='status'] { margin: 0; }
+.mirror-check-hint { margin: 0.25rem 0 0; font-size: 0.85rem; }
+.mirror-tracker { margin-top: 1.5rem; }
+.mirror-tracker-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem 0.7rem; }
+.mirror-tracker-head h2 { margin: 0; }
+.mirror-tracker-head a { font-family: ui-monospace, monospace; font-size: 0.78rem; overflow-wrap: anywhere; }
+.mirror-issue { font-family: ui-monospace, monospace; font-size: 0.78rem; }
+.mirror-ideas-title { margin: 1rem 0 0.4rem; font-size: 0.85rem; font-weight: 400; color: var(--muted); }
+.mirror-ideas, .mirror-commits { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.25rem; }
+.mirror-ideas li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem 0.7rem; }
+.mirror-sha { font-size: 0.78rem; }
+.mirror-detail code, .mirror-commits li { overflow-wrap: anywhere; }
+
 /* pendências (F-0334): a linha abre o detalhe pelo botão id + título */
 .pending-row { flex-wrap: wrap; }
 /* visually hidden, still read by screen readers (e.g. the #/ideas h1) */

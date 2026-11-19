@@ -46,7 +46,7 @@ const closedAt = (h: Handoff) => (h.state === 'pending' ? undefined : (h.taken_a
 // A hora como o `handoff list` imprime: UTC, ao minuto.
 const utc = (iso: string) => new Date(iso).toISOString().slice(0, 16).replace('T', ' ') + ' UTC'
 
-function When({ iso }: { iso: string }) {
+export function When({ iso }: { iso: string }) {
   const { t } = useT()
   return (
     <span title={iso}>
