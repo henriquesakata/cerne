@@ -39,6 +39,17 @@ func CheckHumanSetting(id string) error {
 	return nil
 }
 
+// checkHumanMirror refuses an agent actor on the mirror opt-in (F-0449):
+// publishing a card leaves the backend and is hard to undo, like approve and
+// accept. Fail-open like CheckHumanGate: it stops the configured agent, it
+// does not authenticate a human.
+func checkHumanMirror() error {
+	if isAgentActor(actorEnv()) {
+		return fmt.Errorf("%w: publishing a card to a tracker is a human act — ask a human to run 'cerne feature mirror' in their own terminal", ErrHumanGate)
+	}
+	return nil
+}
+
 // projectGates loads the [gates] block from the project's .cernerc; a missing
 // or unreadable config yields the zero value, whose accessors resolve to the
 // human default on both ends.

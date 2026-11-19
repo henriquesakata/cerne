@@ -31,6 +31,7 @@ func newFeatureCmd() *cobra.Command {
 	cmd.AddCommand(verbs.MarkChat(newFeatureRenameCmd(&dir)))
 	cmd.AddCommand(newFeatureSpecCmd(&dir))
 	cmd.AddCommand(verbs.MarkLocal(newFeatureAmendCmd(&dir)))
+	cmd.AddCommand(verbs.MarkLocal(newFeatureMirrorCmd(&dir)))
 	cmd.AddCommand(newTransitionCmds(&dir)...)
 	cmd.AddCommand(newFeatureDeliverCmd(&dir))
 	cmd.AddCommand(newFeatureAcceptCmd(&dir))
