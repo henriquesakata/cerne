@@ -30,6 +30,7 @@ func newNoteCmd() *cobra.Command {
 	cmd.AddCommand(verbs.MarkChat(newNoteTagsCmd(&dir)))
 	cmd.AddCommand(verbs.MarkChat(newNoteShowCmd(&dir)))
 	cmd.AddCommand(verbs.MarkChat(newNoteRetagCmd(&dir)))
+	cmd.AddCommand(verbs.MarkChat(newNoteWhenCmd(&dir)))
 	cmd.AddCommand(verbs.MarkChat(newNoteKeepCmd(&dir)))
 	cmd.AddCommand(newNoteRetireCmd(&dir))
 	cmd.AddCommand(newNoteSupersedeCmd(&dir), legacyName(newNoteSupersedeCmd(&dir), "substituir"))
@@ -266,6 +267,9 @@ func runNoteShow(cmd *cobra.Command, dir, id string) error {
 	if len(n.Informs) > 0 {
 		fmt.Fprintf(w, "informs: %s\n", strings.Join(n.Informs, ", "))
 	}
+	if len(n.When) > 0 {
+		fmt.Fprintf(w, "when: %s\n", strings.Join(n.When, ", "))
+	}
 	if n.SupersededBy != "" {
 		fmt.Fprintf(w, "superseded by: %s\n", n.SupersededBy)
 	}
@@ -290,6 +294,7 @@ func runNoteShow(cmd *cobra.Command, dir, id string) error {
 
 func newNoteNewCmd(dir *string) *cobra.Command {
 	var informs, file, facet, component string
+	var when []string
 	var force bool
 	cmd := &cobra.Command{
 		Use:   "new [title]",
@@ -299,22 +304,25 @@ func newNoteNewCmd(dir *string) *cobra.Command {
 			"is born as a stub for you to fill in. Use --informs to link the note to the entities (F-/E-/T-/B-/D-/RB-/N-/I-) it " +
 			"informs. Use --facet (closed axis: infra,code,data,process,auth) and --component (subsystem/tool, " +
 			"e.g. gitea,kpack) to organize — both multi-valued, comma-separated. " +
+			"Use --when (repeatable) to declare when the note shows up to an agent: edit:<path> (an exact repo-relative path or <dir>/**) " +
+			"when it edits a matching file, bash:<words> (e.g. bash:git tag) when it runs a matching shell command (F-0457). " +
 			"A live note with a similar title refuses the creation (F-0324); --force overrides it. " +
 			"Personal/machine knowledge (paths, preferences) does NOT go here — it stays in local memory. The title argument may be omitted when the body (--file or stdin) opens with a `# ` heading: that heading becomes the title.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runNoteNew(cmd, *dir, args, informs, file, facet, component, force)
+			return runNoteNew(cmd, *dir, args, informs, file, facet, component, when, force)
 		},
 	}
 	cmd.Flags().StringVar(&informs, "informs", "", "comma-separated F-/E-/T-/B-/D-/RB-/N-/I- ids this note informs")
 	cmd.Flags().StringVar(&file, "file", "", "file with the note body (defaults to piped stdin)")
 	cmd.Flags().StringVar(&facet, "facet", "", "facets (comma-separated; closed set: infra,code,data,process,auth)")
 	cmd.Flags().StringVar(&component, "component", "", "components (comma-separated subsystem/tool tags, e.g. gitea,kpack)")
+	cmd.Flags().StringArrayVar(&when, "when", nil, "trigger that shows the note to an agent (repeatable): edit:<path>|edit:<dir>/** or bash:<words>")
 	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard (F-0324) for a consciously distinct note")
 	return verbs.MarkChatTool(cmd)
 }
 
-func runNoteNew(cmd *cobra.Command, dir string, args []string, informs, file, facet, component string, force bool) error {
+func runNoteNew(cmd *cobra.Command, dir string, args []string, informs, file, facet, component string, when []string, force bool) error {
 	body, err := readOptionalBody(cmd, file)
 	if err != nil {
 		return err
@@ -327,7 +335,7 @@ func runNoteNew(cmd *cobra.Command, dir string, args []string, informs, file, fa
 	if err != nil {
 		return err
 	}
-	n, err := app.CreateNote(ctx.repoDir, ctx.projDir, title, body, splitInforms(informs), splitInforms(facet), splitInforms(component), false, force)
+	n, err := app.CreateNote(ctx.repoDir, ctx.projDir, title, body, splitInforms(informs), splitInforms(facet), splitInforms(component), when, false, force)
 	if err != nil {
 		return err
 	}
@@ -445,6 +453,47 @@ func runNoteRetag(cmd *cobra.Command, dir, id, facet, component string, setFacet
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s retagged — facets: [%s] · components: [%s]\n",
 		n.ID, strings.Join(n.Facets, ", "), strings.Join(n.Components, ", "))
+	return nil
+}
+
+func newNoteWhenCmd(dir *string) *cobra.Command {
+	var clear bool
+	cmd := &cobra.Command{
+		Use:   "when <id> [trigger...]",
+		Short: "Set the triggers that show an active note to an agent (--clear removes them)",
+		Long: "Replaces the declared triggers of an active note (F-0457). A trigger is edit:<path> — an exact repo-relative " +
+			"path or <dir>/** — shown when an agent edits a matching file, or bash:<words> (e.g. 'bash:git tag') — shown when " +
+			"an agent runs a shell command containing those consecutive words. --clear removes every trigger. " +
+			"A superseded note is history and is refused.",
+		Args: cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runNoteWhen(cmd, *dir, args[0], args[1:], clear)
+		},
+	}
+	cmd.Flags().BoolVar(&clear, "clear", false, "remove every trigger")
+	return cmd
+}
+
+func runNoteWhen(cmd *cobra.Command, dir, id string, triggers []string, clear bool) error {
+	switch {
+	case clear && len(triggers) > 0:
+		return fmt.Errorf("pass triggers or --clear, not both")
+	case !clear && len(triggers) == 0:
+		return fmt.Errorf("provide at least one trigger (edit:<path> or bash:<words>), or --clear")
+	}
+	ctx, err := resolveProject(dir)
+	if err != nil {
+		return err
+	}
+	n, err := app.SetNoteWhen(ctx.repoDir, ctx.projDir, id, triggers)
+	if err != nil {
+		return err
+	}
+	if len(n.When) == 0 {
+		fmt.Fprintf(cmd.OutOrStdout(), "%s has no triggers.\n", n.ID)
+		return nil
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "%s when: %s\n", n.ID, strings.Join(n.When, ", "))
 	return nil
 }
 

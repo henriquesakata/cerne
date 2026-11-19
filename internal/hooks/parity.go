@@ -162,6 +162,15 @@ var parityTable = []ParityRow{
 		Copilot:    degraded + ": prompt-submit event not verified here — not wired",
 	},
 	{
+		// F-0457: the documented context channel decides before vs after the tool.
+		Capability: "Notes by declared trigger (F-0457)",
+		Claude:     "before the tool: PreToolUse/Bash (cerne-tool-notes.sh); edits through the work gate",
+		Cursor:     "after the tool: .claude PostToolUse/Bash|Edit|Write (cerne-after-tool-notes.sh), via the third-party import → additional_context",
+		Codex:      "before the tool: PreToolUse, matcher Bash; edits through the work gate",
+		Gemini:     "after the tool: AfterTool, matcher run_shell_command|write_file|replace → additionalContext (documented envelope, not validated live)",
+		Copilot:    "after the tool: PostToolUse, matchers Bash and Edit|Write → top-level additionalContext",
+	},
+	{
 		Capability: "CERNE_ACTOR=agent (human gates)",
 		Claude:     "settings.json env block",
 		Cursor:     "CURSOR_AGENT=1 on Cursor's agent shells (seen in 3.25.6, undocumented) — no install",

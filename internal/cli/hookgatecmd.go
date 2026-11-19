@@ -508,13 +508,16 @@ func runHookWorkGate(cmd *cobra.Command, format string) {
 var patchFileRe = regexp.MustCompile(`(?m)^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+?)\s*$`)
 
 // editedPaths lists the files an edit tool call targets: file_path, or path
-// (Copilot's own arguments), or — when tool_input is the apply_patch text
-// Copilot sends for file edits (probed, F-0444) — the files the patch names.
+// (Copilot's own arguments), or the files an apply_patch text names — the
+// whole tool_input on Copilot (probed, F-0444), tool_input.command on Codex
+// (seen live, F-0457).
 func editedPaths(toolInput json.RawMessage) []string {
 	var obj struct {
 		FilePath string `json:"file_path"`
 		Path     string `json:"path"`
+		Command  string `json:"command"`
 	}
+	var patch string
 	if json.Unmarshal(toolInput, &obj) == nil {
 		if obj.FilePath != "" {
 			return []string{obj.FilePath}
@@ -522,10 +525,11 @@ func editedPaths(toolInput json.RawMessage) []string {
 		if obj.Path != "" {
 			return []string{obj.Path}
 		}
-		return nil
-	}
-	var patch string
-	if json.Unmarshal(toolInput, &patch) != nil {
+		if !isPatch(obj.Command) {
+			return nil
+		}
+		patch = obj.Command
+	} else if json.Unmarshal(toolInput, &patch) != nil {
 		return nil
 	}
 	var out []string
@@ -533,6 +537,11 @@ func editedPaths(toolInput json.RawMessage) []string {
 		out = append(out, m[1])
 	}
 	return out
+}
+
+// isPatch reports whether text is an apply_patch body, never a shell command.
+func isPatch(text string) bool {
+	return strings.HasPrefix(strings.TrimSpace(text), "*** Begin Patch")
 }
 
 // injectGateChannel delivers, on an allowed edit, the session's pending channel
@@ -549,7 +558,13 @@ func injectGateChannel(cmd *cobra.Command, format, cacheDir, repoDir, projDir, s
 	if err != nil {
 		block = ""
 	}
-	if nb := notesOnEditBlock(cacheDir, repoDir, projDir, sess, filePath); nb != "" {
+	// The Copilot CLI also runs these .claude hooks (COPILOT_CLI=1): marking the
+	// notes seen here would silence its own post-edit hook, the channel it
+	// documents (F-0457).
+	if os.Getenv("COPILOT_CLI") == "1" {
+		filePath = ""
+	}
+	if nb := notesOnEditBlock(cacheDir, repoDir, projDir, sess, filePath, ""); nb != "" {
 		if block != "" {
 			block += "\n\n"
 		}
@@ -568,9 +583,10 @@ func injectGateChannel(cmd *cobra.Command, format, cacheDir, repoDir, projDir, s
 // listing must never hold an edit (F-0366).
 const notesBudget = 150 * time.Millisecond
 
-// notesOnEditBlock lists up to 3 not-yet-shown active notes citing filePath, or
-// "" (no setting, no file inside the repo, no index, no match, any failure).
-func notesOnEditBlock(cacheDir, repoDir, projDir, sess, filePath string) string {
+// notesOnEditBlock lists up to 3 not-yet-shown active notes citing or
+// declaring filePath (suffix marks an edit already made, F-0457), or "" (no
+// setting, no file inside the repo, no index, no match, any failure).
+func notesOnEditBlock(cacheDir, repoDir, projDir, sess, filePath, suffix string) string {
 	if filePath == "" || !project.NotesOnEdit(projDir) {
 		return ""
 	}
@@ -613,7 +629,7 @@ func notesOnEditBlock(cacheDir, repoDir, projDir, sess, filePath string) string 
 		return ""
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "cerne notes on %s:", rel)
+	fmt.Fprintf(&b, "cerne notes on %s%s:", rel, suffix)
 	for _, n := range shown {
 		fmt.Fprintf(&b, "\n- %s — %s", n.ID, flatTitle(n.Title))
 	}

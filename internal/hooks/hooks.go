@@ -19,7 +19,7 @@ import (
 	"strings"
 )
 
-//go:embed assets/register-reference-reminder.sh assets/cerne-register-reminder.sh assets/cerne-subagent-context.sh assets/cerne-work-bind.sh assets/cerne-work-gate.sh assets/cerne-stop-closeout.sh assets/cerne-precompact.sh assets/cerne-prompt-notes.sh
+//go:embed assets/register-reference-reminder.sh assets/cerne-register-reminder.sh assets/cerne-subagent-context.sh assets/cerne-work-bind.sh assets/cerne-work-gate.sh assets/cerne-stop-closeout.sh assets/cerne-precompact.sh assets/cerne-prompt-notes.sh assets/cerne-tool-notes.sh assets/cerne-after-tool-notes.sh
 var files embed.FS
 
 const (
@@ -69,6 +69,21 @@ const (
 	promptNotesScript = "cerne-prompt-notes.sh"
 	// promptNotesCommand is the settings.json command that runs promptNotesScript.
 	promptNotesCommand = `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-prompt-notes.sh"`
+	// toolNotesScript is the PreToolUse/Bash notes injector (F-0457): the
+	// active notes whose bash: trigger matches the command about to run.
+	toolNotesScript = "cerne-tool-notes.sh"
+	// toolNotesCommand is the settings.json command that runs toolNotesScript.
+	toolNotesCommand = `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-tool-notes.sh"`
+	// toolNotesMatcher limits it to the shell tool.
+	toolNotesMatcher = "Bash"
+	// afterNotesScript is the PostToolUse tool-notes for Cursor's third-party
+	// import (F-0457): Cursor takes context only after a tool; the script
+	// leaves at once outside Cursor.
+	afterNotesScript = "cerne-after-tool-notes.sh"
+	// afterNotesCommand is the settings.json command that runs afterNotesScript.
+	afterNotesCommand = `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-after-tool-notes.sh"`
+	// afterNotesMatcher covers shell commands and edits.
+	afterNotesMatcher = "Bash|Edit|Write"
 	// promptNotesTimeout bounds the whole hook (process start included) at the
 	// host, in seconds; the lookup's own budget is far smaller.
 	promptNotesTimeout = 5
@@ -213,7 +228,7 @@ func installClaude(projDir string) ([]Result, error) {
 	}
 	results = append(results, Result{Asset: subagentScript, Status: st})
 
-	for _, script := range []string{bindScript, gateScript, stopScript, precompactScript, promptNotesScript} {
+	for _, script := range []string{bindScript, gateScript, stopScript, precompactScript, promptNotesScript, toolNotesScript, afterNotesScript} {
 		dst := filepath.Join(projDir, ".claude", "hooks", script)
 		st, err = writeIfChanged(dst, []byte(mustRead("assets/"+script)))
 		if err != nil {
@@ -477,6 +492,7 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	}
 	needHook := !hookPresent(post)
 	needBind := !scriptWired(post, bindScript)
+	needAfterNotes := !scriptWired(post, afterNotesScript)
 
 	var pre []any
 	hasPre := false
@@ -491,6 +507,7 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 		}
 	}
 	needGate := !scriptWired(pre, gateScript)
+	needToolNotes := !scriptWired(pre, toolNotesScript)
 
 	var sessionStart []any
 	hasSS := false
@@ -573,7 +590,7 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	}
 	needActor := !actorPresent(envMap)
 
-	if !needHook && !needBind && !needGate && !needRegister && !needSubagent && !needStop && !needPC && !needPN && !needActor {
+	if !needHook && !needBind && !needAfterNotes && !needGate && !needToolNotes && !needRegister && !needSubagent && !needStop && !needPC && !needPN && !needActor {
 		return nil, false, nil
 	}
 
@@ -588,6 +605,9 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 		if needBind {
 			fresh = withMatcherEntry(fresh, "PostToolUse", "Bash", bindCommand)
 		}
+		if needAfterNotes {
+			fresh = withMatcherEntry(fresh, "PostToolUse", afterNotesMatcher, afterNotesCommand)
+		}
 		if needRegister {
 			fresh = withEventEntry(fresh, "SessionStart", registerCommand)
 		}
@@ -596,6 +616,9 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 		}
 		if needGate {
 			fresh = withMatcherEntry(fresh, "PreToolUse", gateMatcher, gateCommand)
+		}
+		if needToolNotes {
+			fresh = withMatcherEntry(fresh, "PreToolUse", toolNotesMatcher, toolNotesCommand)
 		}
 		if needStop {
 			fresh = withEventEntry(fresh, "Stop", stopCommand)
@@ -630,6 +653,9 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	if needBind {
 		expected = withMatcherEntry(expected, "PostToolUse", "Bash", bindCommand)
 	}
+	if needAfterNotes {
+		expected = withMatcherEntry(expected, "PostToolUse", afterNotesMatcher, afterNotesCommand)
+	}
 	if needRegister {
 		expected = withEventEntry(expected, "SessionStart", registerCommand)
 	}
@@ -638,6 +664,9 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	}
 	if needGate {
 		expected = withMatcherEntry(expected, "PreToolUse", gateMatcher, gateCommand)
+	}
+	if needToolNotes {
+		expected = withMatcherEntry(expected, "PreToolUse", toolNotesMatcher, toolNotesCommand)
 	}
 	if needStop {
 		expected = withEventEntry(expected, "Stop", stopCommand)
@@ -671,6 +700,15 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 			cur = spliced
 		}
 	}
+	if ok && needAfterNotes {
+		curHasHooks, curHasPTU := reDetectEvent(cur, "PostToolUse", hasHooks, hasPTU)
+		spliced, spliceOK := spliceMatcherEntry(cur, "PostToolUse", newMatcherEntry(afterNotesMatcher, afterNotesCommand), curHasHooks, curHasPTU, detectNewline(cur), unit)
+		if !spliceOK {
+			ok = false
+		} else {
+			cur = spliced
+		}
+	}
 	if ok && needRegister {
 		// Re-detect structure: the hook splice above may have created "hooks".
 		curHasHooks, curHasSS := reDetectEvent(cur, "SessionStart", hasHooks, hasSS)
@@ -694,6 +732,15 @@ func mergeSettings(raw []byte) ([]byte, bool, error) {
 	if ok && needGate {
 		curHasHooks, curHasPre := reDetectEvent(cur, "PreToolUse", hasHooks, hasPre)
 		spliced, spliceOK := spliceMatcherEntry(cur, "PreToolUse", newMatcherEntry(gateMatcher, gateCommand), curHasHooks, curHasPre, detectNewline(cur), unit)
+		if !spliceOK {
+			ok = false
+		} else {
+			cur = spliced
+		}
+	}
+	if ok && needToolNotes {
+		curHasHooks, curHasPre := reDetectEvent(cur, "PreToolUse", hasHooks, hasPre)
+		spliced, spliceOK := spliceMatcherEntry(cur, "PreToolUse", newMatcherEntry(toolNotesMatcher, toolNotesCommand), curHasHooks, curHasPre, detectNewline(cur), unit)
 		if !spliceOK {
 			ok = false
 		} else {

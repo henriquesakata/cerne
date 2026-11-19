@@ -677,6 +677,9 @@ func (r showResult) renderText(w io.Writer) {
 		if len(e.Informs) > 0 {
 			fmt.Fprintf(w, "informs: %s\n", strings.Join(e.Informs, ", "))
 		}
+		if len(e.When) > 0 {
+			fmt.Fprintf(w, "when: %s\n", strings.Join(e.When, ", "))
+		}
 		writeSuccession(w, e.SupersededBy, e.Reason)
 	case store.Runbook:
 		fmt.Fprintf(w, "%s  %s  [%s]  %s\n", e.ID, r.kind, e.State, e.Title)

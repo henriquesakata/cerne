@@ -34,7 +34,7 @@ func TestHookScriptsFindCerneOnBarePath(t *testing.T) {
 			t.Fatal(err)
 		}
 		cmd := exec.Command("bash", script)
-		cmd.Env = []string{"PATH=/usr/bin:/bin", "HOME=" + home}
+		cmd.Env = []string{"PATH=/usr/bin:/bin", "HOME=" + home, "CURSOR_VERSION=3.25.6"} // Cursor's bare PATH (and the Cursor-only after-tool script)
 		cmd.Stdin = strings.NewReader("{}")
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("%s: %v\n%s", script, err, out)

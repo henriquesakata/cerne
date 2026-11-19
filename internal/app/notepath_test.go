@@ -27,7 +27,7 @@ func seedPathNote(t *testing.T, repoDir, id, title, body string, st domain.NoteS
 	}
 }
 
-func buildIndex(t *testing.T, repoDir string) (cacheDir string) {
+func buildIndex(t testing.TB, repoDir string) (cacheDir string) {
 	t.Helper()
 	cacheDir = t.TempDir()
 	if err := index.Rebuild(repoDir, filepath.Join(cacheDir, "index.db"), time.Time{}); err != nil {
@@ -230,5 +230,41 @@ func TestNotesForPathSpecificityBeatsProminence(t *testing.T) {
 	got, _ := NotesForPath(context.Background(), cache, repo, relRelease, func(string) bool { return false })
 	if !sameIDs(noteIDs(got), []string{"N-0002", "N-0001"}) {
 		t.Fatalf("ids = %v", noteIDs(got))
+	}
+}
+
+// seedWhenNote writes an active note with declared triggers, updated at upd.
+func seedWhenNote(t *testing.T, repoDir, id, title, body string, upd time.Time, when ...string) {
+	t.Helper()
+	seedPathNote(t, repoDir, id, title, body, domain.NoteActive, upd)
+	n, err := store.LoadNote(repoDir, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n.When = when
+	if err := store.SaveNote(repoDir, n); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// F-0457 criterion 4: a note declaring edit: for the path ranks above the ones
+// that only cite it; an exact declared path beats <dir>/**; within a tier the
+// newest first; a note both declaring and citing appears once.
+func TestNotesForPathDeclared(t *testing.T) {
+	repo := t.TempDir()
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	seedPathNote(t, repo, "N-0001", "cites", "edit ui/dist/index.html with care", domain.NoteActive, t0)
+	seedWhenNote(t, repo, "N-0002", "dir old", "no path here", t0, "edit:ui/dist/**")
+	seedWhenNote(t, repo, "N-0003", "dir new", "no path here", t0.Add(time.Hour), "edit:ui/dist/**")
+	seedWhenNote(t, repo, "N-0004", "exact", "and ui/dist/index.html cited", t0, "edit:ui/dist/index.html")
+	seedWhenNote(t, repo, "N-0005", "other dir", "no path here", t0, "edit:ui/src/**", "bash:ui/dist/index.html")
+	seedPathNote(t, repo, "N-0006", "superseded", "x", domain.NoteSuperseded, t0)
+	cache := buildIndex(t, repo)
+	got, err := NotesForPath(context.Background(), cache, repo, "ui/dist/index.html", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"N-0004", "N-0003", "N-0002", "N-0001"}; !sameIDs(noteIDs(got), want) {
+		t.Fatalf("order = %v, want %v", noteIDs(got), want)
 	}
 }

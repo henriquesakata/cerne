@@ -57,6 +57,15 @@
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-work-gate.sh\""
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-tool-notes.sh\""
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -75,6 +84,15 @@
           {
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-work-bind.sh\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-after-tool-notes.sh\""
           }
         ]
       }

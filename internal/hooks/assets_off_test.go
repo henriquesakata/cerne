@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -101,6 +102,10 @@ func TestAssetsUnchangedWhenOn(t *testing.T) {
 	printers := map[string]bool{registerScript: true, subagentScript: true}
 	for name, env := range map[string][]string{"absent": nil, "empty": {"CERNE_NO_AGENT_HOOKS="}} {
 		for _, a := range Assets() {
+			env := env
+			if a.Script == afterNotesScript { // runs only inside Cursor (F-0457)
+				env = append(slices.Clone(env), "CURSOR_VERSION=3.25.6")
+			}
 			stdout, _, called := runAsset(t, proj, a.Script, env...)
 			if !called {
 				t.Errorf("%s (%s): cerne not called", a.Script, name)

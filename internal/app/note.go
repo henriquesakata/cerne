@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -34,7 +35,10 @@ type NoteOutcome struct {
 // stale-note never flags it: knowledge that does not expire with a feature
 // (domain vocabulary, rejected scope) would otherwise need a second KeepNote —
 // a whole extra commit+push to set one bool.
-func CreateNote(repoDir, projDir, title, body string, informs, facets, components []string, durable, force bool) (store.Note, error) {
+//
+// when (F-0457) are the note's declared triggers, validated with the tags: an
+// invalid one aborts before any side effect.
+func CreateNote(repoDir, projDir, title, body string, informs, facets, components, when []string, durable, force bool) (store.Note, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return store.Note{}, fmt.Errorf("the note title cannot be empty")
@@ -46,6 +50,10 @@ func CreateNote(repoDir, projDir, title, body string, informs, facets, component
 		return store.Note{}, err
 	}
 	normComponents := domain.NormalizeComponents(components)
+	normWhen, err := domain.NormalizeTriggers(when)
+	if err != nil {
+		return store.Note{}, err
+	}
 	// Reads, id mint and writes run inside the backend lock's critical section
 	// (F-0122): concurrent creations serialize instead of minting the same id.
 	var n store.Note
@@ -71,6 +79,7 @@ func CreateNote(repoDir, projDir, title, body string, informs, facets, component
 			Informs:    cleaned,
 			Facets:     normFacets,
 			Components: normComponents,
+			When:       normWhen,
 			Durable:    durable,
 			CreatedAt:  now,
 			UpdatedAt:  now,
@@ -240,6 +249,52 @@ func RetagNote(repoDir, projDir, id string, facets, components []string, setFace
 		}
 		return fmt.Sprintf("cerne: retag %s", id), nil
 	})
+	if err != nil {
+		return store.Note{}, err
+	}
+	return n, nil
+}
+
+// SetNoteWhen replaces the declared triggers of an active note in the backend
+// clone at repoDir (F-0457); an empty when clears them. Triggers are validated
+// before any write, so an invalid one leaves the note untouched; an unchanged
+// set is a successful no-op with no commit. Appends note.when and syncs the
+// backend + docs.lock in projDir.
+func SetNoteWhen(repoDir, projDir, id string, when []string) (store.Note, error) {
+	norm, err := domain.NormalizeTriggers(when)
+	if err != nil {
+		return store.Note{}, err
+	}
+	var n store.Note
+	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		var err error
+		n, err = store.LoadNote(repoDir, id)
+		if errors.Is(err, store.ErrNotFound) {
+			return "", fmt.Errorf("note %s not found in backend", id)
+		}
+		if err != nil {
+			return "", err
+		}
+		if n.State != domain.NoteActive {
+			return "", fmt.Errorf("note %s is not active (it is %s) — when only applies to an active note", id, n.State)
+		}
+		if slices.Equal(n.When, norm) {
+			return "", nil // unchanged: writes nothing, surfaces as ErrNothingToCommit
+		}
+		n.When = norm
+		n.UpdatedAt = time.Now().UTC()
+		if err := store.SaveNote(repoDir, n); err != nil {
+			return "", err
+		}
+		ev := domain.NewEvent(id, "note.when", map[string]string{"when": strings.Join(norm, ",")}, EventActor())
+		if err := store.AppendEvent(repoDir, ev); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: when %s", id), nil
+	})
+	if errors.Is(err, gitback.ErrNothingToCommit) {
+		return n, nil
+	}
 	if err != nil {
 		return store.Note{}, err
 	}

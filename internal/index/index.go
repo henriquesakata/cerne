@@ -49,6 +49,7 @@ const (
 // row is one document to be inserted by Rebuild.
 type row struct {
 	entityID, kind, doc, state, title, body, supersededBy string
+	when                                                  []string // an active note's declared triggers (F-0457)
 }
 
 // Result is one search hit, ordered by bm25 rank.
@@ -114,12 +115,21 @@ func Rebuild(repoDir, dbPath string, syncedAt time.Time) error {
 	if _, err := tx.Exec(createMetaSQL); err != nil {
 		return err
 	}
+	if _, err := tx.Exec(dropWhenSQL); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(createWhenSQL); err != nil {
+		return err
+	}
 	if !syncedAt.IsZero() {
 		if _, err := tx.Exec(`INSERT INTO meta (key, value) VALUES ('synced_at', ?)`, syncedAt.UTC().Format(time.RFC3339)); err != nil {
 			return err
 		}
 	}
 	if err := insertRows(tx, rows); err != nil {
+		return err
+	}
+	if err := insertWhenRows(tx, rows); err != nil {
 		return err
 	}
 	if err := insertWorkRows(tx, workRows); err != nil {
@@ -219,8 +229,20 @@ func Update(repoDir, dbPath string, ids []string, syncedAt time.Time) error {
 	if err := tx.QueryRow(`SELECT count(*) FROM sqlite_master WHERE name = 'works_fts' AND sql LIKE '%raw_title%'`).Scan(&hasWorks); err != nil {
 		return err
 	}
+	// An index built before declared triggers (F-0457) has no note_when: fail,
+	// so the caller rebuilds it whole instead of filling it for a few ids.
+	var hasWhen int
+	if err := tx.QueryRow(`SELECT count(*) FROM sqlite_master WHERE name = 'note_when'`).Scan(&hasWhen); err != nil {
+		return err
+	}
+	if hasWhen == 0 {
+		return errNoWhenTable
+	}
 	for id := range want {
 		if _, err := tx.Exec(`DELETE FROM docs WHERE entity_id = ?`, id); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`DELETE FROM note_when WHERE entity_id = ?`, id); err != nil {
 			return err
 		}
 		if hasWorks > 0 && strings.HasPrefix(id, "W-") {
@@ -230,6 +252,9 @@ func Update(repoDir, dbPath string, ids []string, syncedAt time.Time) error {
 		}
 	}
 	if err := insertRows(tx, rows); err != nil {
+		return err
+	}
+	if err := insertWhenRows(tx, rows); err != nil {
 		return err
 	}
 	if hasWorks > 0 {
@@ -563,6 +588,9 @@ func runbookRow(repoDir string, rb store.Runbook) (row, error) {
 func noteRow(repoDir string, n store.Note) (row, error) {
 	r := row{entityID: n.ID, kind: "note", state: string(n.State),
 		title: n.Title, supersededBy: n.SupersededBy}
+	if n.State == domain.NoteActive {
+		r.when = n.When
+	}
 	body, exists, err := readDoc(filepath.Join(repoDir, "content", "notes", n.ID+".md"))
 	if err != nil {
 		return r, err

@@ -187,7 +187,12 @@ var settingsRegistry = []Setting{
 	{
 		ID: "hooks.notes_on_edit", Group: "integrations", Title: "Notes on edit", Type: "bool", Default: true,
 		Scopes:      []string{ScopeProject, ScopeHost},
-		Description: "On shows the agent the notes that cite a file when it is about to edit that file, through the work-gate hook. Off stops showing them.",
+		Description: "On shows the agent the notes that cite a file or declare it in an edit: trigger when it edits that file: before the edit on Claude Code and Codex, right after it on Cursor, Gemini and Copilot. Off stops showing them.",
+	},
+	{
+		ID: "hooks.notes_on_bash", Group: "integrations", Title: "Notes on shell commands", Type: "bool", Default: true,
+		Scopes:      []string{ScopeProject, ScopeHost},
+		Description: "On shows the agent up to 3 active notes whose bash: trigger matches a shell command it runs: before the command on Claude Code and Codex, right after it on Cursor, Gemini and Copilot. Off stops showing them.",
 	},
 	{
 		ID: "hooks.prompt_notes", Group: "integrations", Title: "Notes on prompt", Type: "bool", Default: true,
@@ -238,6 +243,17 @@ func PromptNotes(projDir string) bool {
 func NotesOnEdit(projDir string) bool {
 	for _, s := range ResolveSettings(projDir).Settings {
 		if s.ID == "hooks.notes_on_edit" {
+			return s.Value != false
+		}
+	}
+	return true
+}
+
+// NotesOnBash is hooks.notes_on_bash for the project at (or above) projDir
+// (F-0457): false only when it resolves to false.
+func NotesOnBash(projDir string) bool {
+	for _, s := range ResolveSettings(projDir).Settings {
+		if s.ID == "hooks.notes_on_bash" {
 			return s.Value != false
 		}
 	}
