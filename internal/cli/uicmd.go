@@ -79,8 +79,10 @@ func newUICmd() *cobra.Command {
 // the survivors race to take the port over (F-0119).
 func runUI(cmd *cobra.Command, dir string, port int, noBrowser bool, pullInterval time.Duration) error {
 	// A cancellable context ties the per-project live-refresh goroutines to the
-	// process; Ctrl+C cancels it and shuts the server down gracefully.
-	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	// process; Ctrl+C or SIGTERM (kill, an IDE stopping a preview) cancels it,
+	// which shuts the server down gracefully or, when joined, removes this
+	// project from the host's panel (F-0466).
+	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	defer initServerTelemetry(sigCtx, dir)()
 	return superviseUI(sigCtx, cmd.OutOrStdout(), dir, port, noBrowser, pullInterval, uiResolver)
