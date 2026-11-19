@@ -186,6 +186,11 @@ export default function Vault({ hash }: { hash: string }) {
   const [editing, setEditing] = useState<VaultDoc | null>(null)
   const isEditing = editing !== null && editing.id === sel.id && (sel.doc === undefined || sel.doc === editing.doc)
   const viewed = isEditing ? editing : doc
+  // Another selection ends the edit — the router's guard already asked about
+  // a draft — so coming back to the document does not reopen it (critic C-9).
+  useEffect(() => {
+    if (editing && !isEditing) setEditing(null)
+  }, [editing, isEditing])
   const startEditing = (d: VaultDoc) => {
     // A feature opened by its stage is pinned to the document being edited,
     // replacing the history entry, so the next reloads load that one.

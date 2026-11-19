@@ -223,6 +223,19 @@ describe('Vault keeps the document being edited (F-0464 critic C-1, C-9)', () =>
     expect(navAllowed()).toBe(false)
     expect(confirm).toHaveBeenCalled()
   })
+
+  it('navigation: leaving the document and coming back does not reopen the editor', async () => {
+    docs = { 'N-0001': note(), 'D-0001': note({ id: 'D-0001', kind: 'decision', title: 'Decisão de cache' }) }
+    const { rerender } = render(<Vault hash="#/vault/N-0001" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar' }))
+    expect(source()).toBeInTheDocument()
+    rerender(<Vault hash="#/vault/D-0001" />)
+    await screen.findByRole('heading', { name: /D-0001/ })
+    rerender(<Vault hash="#/vault/N-0001" />)
+    await screen.findByRole('heading', { name: /N-0001/ })
+    expect(screen.queryByRole('textbox', { name: 'Texto do documento' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Editar' })).toBeInTheDocument()
+  })
 })
 
 describe('Vault reload while editing (F-0464 audit A3)', () => {
