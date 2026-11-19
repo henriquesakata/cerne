@@ -3897,3 +3897,22 @@ button.clarify-chip { cursor: pointer; font: inherit; }
   .page.vault { grid-template-columns: minmax(0, 1fr); }
   .vault-tree { position: static; max-height: 40vh; }
 }
+/* Vault editor (F-0464): markdown | preview side by side, stacked below 900px. */
+.vault-editor { display: flex; flex-direction: column; gap: 0.75rem; }
+.vault-editor-panes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; align-items: start; }
+.vault-editor-source { position: relative; min-width: 0; }
+.vault-editor-source .doc-textarea { min-height: 60vh; }
+.vault-editor-source .doc-textarea:focus-visible { outline: 2px solid var(--fg); outline-offset: 1px; }
+.vault-editor-preview { min-width: 0; max-height: 70vh; overflow: auto; padding-left: 1rem; border-left: 1px solid var(--border-soft); }
+/* the [[ list, anchored under the textarea */
+.vault-editor-wiki { position: absolute; left: 0; right: 0; top: 100%; z-index: 5; margin: 0.25rem 0 0; padding: 0.25rem 0; list-style: none; max-height: 16rem; overflow: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 4px 16px rgb(0 0 0 / 0.12); font-size: 0.9rem; }
+.vault-editor-wiki li { padding: 0.3rem 0.6rem; cursor: pointer; }
+.vault-editor-wiki li[aria-selected='true'] { background: var(--surface-2); }
+.vault-editor-notice { margin: 0; padding: 0.5rem 0.75rem; border-left: 3px solid var(--accent); background: var(--surface-tint); }
+.vault-editor-conflict { display: flex; flex-direction: column; gap: 0.5rem; }
+.vault-editor-conflict .form-error { margin: 0; }
+.vault-editor-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+@media (max-width: 900px) {
+  .vault-editor-panes { grid-template-columns: minmax(0, 1fr); }
+  .vault-editor-preview { max-height: none; padding: 0.75rem 0 0; border-left: 0; border-top: 1px solid var(--border-soft); }
+}

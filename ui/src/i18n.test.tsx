@@ -217,3 +217,23 @@ describe('t.vault (F-0463 crit. 11)', () => {
     expect(messages('en').nav.vault).toBe('Vault')
   })
 })
+
+describe('vault.editor copy (F-0464 critério 11)', () => {
+  const editor = (lang: Lang) => {
+    localStorage.setItem('cerne-lang', lang)
+    const { result } = renderHook(() => useT(), { wrapper: I18nProvider })
+    return result.current.t.vault.editor
+  }
+  const text = (v: unknown) => (typeof v === 'function' ? (v as (e: string) => string)('x') : v)
+
+  it('every vault.editor key exists in pt-BR and en, with a different text', () => {
+    const pt = editor('pt-BR')
+    const en = editor('en')
+    expect(Object.keys(en).sort()).toEqual(Object.keys(pt).sort())
+    expect(Object.keys(pt).length).toBeGreaterThanOrEqual(10)
+    for (const k of Object.keys(pt) as (keyof typeof pt)[]) {
+      expect(text(pt[k]), k).toBeTruthy()
+      expect(text(en[k]), k).not.toBe(text(pt[k]))
+    }
+  })
+})
