@@ -11,12 +11,15 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path"
 	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/forge"
@@ -1262,4 +1265,116 @@ func TestJiraContract(t *testing.T) {
 			})
 		})
 	}
+}
+
+// The live test's transport and credential helper: package variables are set
+// before any init runs, so these are the real ones, captured before init
+// installs the network guard.
+var jiraLiveDo, jiraLiveFill = forge.HTTPDo, forge.CredentialFill
+
+// jiraLiveSettle is the pause before each live list: Jira Cloud's search is
+// eventually consistent, so a list right after a write may not see it yet.
+// ponytail: a fixed pause; poll if the live run flakes.
+const jiraLiveSettle = 3 * time.Second
+
+// jiraLive is the live adapter, recording the key of every issue it creates
+// for the cleanup, with the settle pause before each list.
+type jiraLive struct {
+	tracker.IssueTracker
+	created *[]string
+}
+
+func (l jiraLive) Create(ctx context.Context, it tracker.Item) (tracker.Ref, error) {
+	r, err := l.IssueTracker.Create(ctx, it)
+	if r.ID != "" {
+		*l.created = append(*l.created, r.ID)
+	}
+	return r, err
+}
+
+func (l jiraLive) ListOpen(ctx context.Context, label string) ([]tracker.Remote, error) {
+	time.Sleep(jiraLiveSettle)
+	return l.IssueTracker.ListOpen(ctx, label)
+}
+
+// F-0453 crit. 7, live: the contract suite against a real, throwaway Jira
+// Cloud project, CERNE_LIVE_JIRA=https://<site>.atlassian.net/browse/<KEY>,
+// with the e-mail and API token `git credential fill` holds for the site;
+// skipped when unset. The project should use the simplified workflow, where
+// any status reaches any other, and have the Task type. Every issue the run
+// created is deleted at the end, best effort.
+func TestJiraContractLive(t *testing.T) {
+	raw := os.Getenv("CERNE_LIVE_JIRA")
+	if raw == "" {
+		t.Skip("CERNE_LIVE_JIRA is unset: no live Jira project to run against")
+	}
+	u, err := url.Parse(raw)
+	if err != nil || !strings.HasSuffix(u.Hostname(), ".atlassian.net") {
+		t.Fatalf("CERNE_LIVE_JIRA %q: want https://<site>.atlassian.net/browse/<KEY>", raw)
+	}
+	key := path.Base(u.Path)
+	prevDo, prevFill := forge.HTTPDo, forge.CredentialFill
+	t.Cleanup(func() { forge.HTTPDo, forge.CredentialFill = prevDo, prevFill })
+	forge.HTTPDo, forge.CredentialFill = jiraLiveDo, jiraLiveFill
+	user, secret := jiraLiveFill(context.Background(), u.Host)
+	if user == "" || secret == "" {
+		t.Fatalf("git credential fill holds no e-mail and API token for %s", u.Host)
+	}
+
+	// api makes the calls the contract's outside issues and the cleanup need,
+	// beside the adapter; it reports only the method, path and status.
+	api := func(method, p string, in, out any) error {
+		var body io.Reader
+		if in != nil {
+			b, _ := json.Marshal(in)
+			body = bytes.NewReader(b)
+		}
+		req, err := http.NewRequest(method, "https://"+u.Host+"/rest/api/3"+p, body)
+		if err != nil {
+			return fmt.Errorf("%s %s: bad request", method, p)
+		}
+		req.SetBasicAuth(user, secret)
+		req.Header.Set("User-Agent", "cerne/"+version.Version)
+		req.Header.Set("Accept", "application/json")
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := jiraLiveDo(req)
+		if err != nil {
+			return fmt.Errorf("%s %s: request failed", method, p)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode/100 != 2 {
+			return fmt.Errorf("%s %s: HTTP %d", method, p, resp.StatusCode)
+		}
+		if out != nil {
+			return json.NewDecoder(resp.Body).Decode(out)
+		}
+		return nil
+	}
+	var created []string
+	t.Cleanup(func() {
+		for _, k := range created {
+			if err := api(http.MethodDelete, "/issue/"+k, nil, nil); err != nil {
+				t.Logf("cleanup: %v", err)
+			}
+		}
+	})
+	tr := jiraLive{IssueTracker: newJiraTracker(t, raw), created: &created}
+	trackertest.RunContract(t, trackertest.Harness{
+		New: func(*testing.T) tracker.IssueTracker { return tr },
+		Open: func(t *testing.T, title, body, label string) tracker.Ref {
+			fields := map[string]any{"project": map[string]string{"key": key}, "issuetype": map[string]string{"name": "Task"},
+				"summary": title, "description": jiraDocJSON(body)}
+			if label != "" {
+				fields["labels"] = []string{label}
+			}
+			var iss struct {
+				Key string `json:"key"`
+			}
+			if err := api(http.MethodPost, "/issue", map[string]any{"fields": fields}, &iss); err != nil {
+				t.Fatalf("open an outside issue: %v", err)
+			}
+			created = append(created, iss.Key)
+			return tracker.Ref{Tracker: "jt", ID: iss.Key, URL: "https://" + u.Host + "/browse/" + iss.Key}
+		},
+	})
 }
