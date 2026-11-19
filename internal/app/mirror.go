@@ -217,6 +217,7 @@ func transitionIDs(id string, propagated []string, moved []store.Feature) []stri
 type MirrorSyncReport struct {
 	Ideas, Applied, Warnings []string
 	Trackers                 []MirrorTrackerRun // one per configured tracker, in order
+	Notes                    []string           // printed, never fails the command
 }
 
 // SyncMirror imports, as active ideas, the open issues of every tracker that
@@ -288,7 +289,7 @@ func SyncMirror(repoDir, projDir string) (MirrorSyncReport, error) {
 		}
 	}
 	if err := recordLastSync(repoDir, rep); err != nil {
-		rep.Warnings = append(rep.Warnings, fmt.Sprintf("cerne: mirror sync: last sync not recorded: %v", err))
+		rep.Notes = append(rep.Notes, fmt.Sprintf("cerne: mirror sync: last sync not recorded: %v", err))
 	}
 	return rep, nil
 }

@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -115,5 +116,22 @@ func TestMirrorSyncCmd(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "F-0001") || !strings.Contains(stderr, "tracker pub not configured") {
 		t.Fatalf("stderr lacks F-0001's warning:\n%s", stderr)
+	}
+}
+
+// F-0465 crit. 4: a last-sync record that cannot be written is printed, and
+// the sync still exits 0.
+func TestMirrorSyncCmdRecordFailureDoesNotFail(t *testing.T) {
+	pub := &trackertest.Fake{Name: "pub"}
+	projDir, repoDir := mirrorCLIProject(t, pub)
+	if err := os.Mkdir(filepath.Join(filepath.Dir(repoDir), "mirror-sync.json"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stdout, stderr, err := execCerneSplit(t, "mirror", "sync", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("mirror sync: %v\n%s%s", err, stdout, stderr)
+	}
+	if !strings.Contains(stderr, "last sync not recorded") {
+		t.Fatalf("stderr lacks the note:\n%s", stderr)
 	}
 }

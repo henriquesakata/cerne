@@ -62,8 +62,8 @@ func TestMirrorSyncRecordWriteFailureWarns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SyncMirror: %v", err)
 	}
-	if len(rep.Warnings) != 1 || !strings.Contains(rep.Warnings[0], "last sync") {
-		t.Fatalf("warnings = %q, want one about the last-sync record", rep.Warnings)
+	if len(rep.Warnings) != 0 || len(rep.Notes) != 1 || !strings.Contains(rep.Notes[0], "last sync") {
+		t.Fatalf("warnings = %q, notes = %q; want no warning and one note about the last-sync record", rep.Warnings, rep.Notes)
 	}
 }
 
