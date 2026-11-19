@@ -135,3 +135,20 @@ func TestNoteGistUnreadableEntity(t *testing.T) {
 		t.Fatalf("block:\n%q", ctx)
 	}
 }
+
+// TestPromptNotesNeverCarryGist (F-0459 criterion 7): the prompt block stays
+// `id — title` even when the matched note has a gist.
+func TestPromptNotesNeverCarryGist(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	seedEditNotes(t, repoDir, map[string][2]string{
+		"N-0001": {"Webhook do cliente retorna timeout após deploy", "corpo"},
+	})
+	setGistByHand(t, repoDir, "N-0001", "GIST raise the proxy timeout")
+	out, err := execCerneStdin(t, promptJSON(t, "sess-a", projDir, promptSymptom), "hook", "prompt-notes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "N-0001 — Webhook do cliente retorna timeout após deploy") || strings.Contains(out, "GIST") {
+		t.Fatalf("prompt block:\n%s", out)
+	}
+}
