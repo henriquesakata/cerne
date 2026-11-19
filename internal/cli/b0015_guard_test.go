@@ -238,25 +238,31 @@ func TestFindingTextsAreEnglish(t *testing.T) {
 	}
 }
 
-// legacyReaders are the non-test files allowed to quote a hidden pt-BR name
-// because they read it, each with its reason.
+// legacyReaders are the literals allowed to quote a hidden pt-BR name because
+// they read it, each with its reason. Keyed by the literal's whole value, so
+// the exemption never covers other text of the same file.
 var legacyReaders = map[string]string{
-	"hookprovenancecmd.go": "the provenance hook still recognizes a typed `decision substituir`",
+	`\bdecision\s+(new|supersede|substituir)\b`: "the provenance hook still recognizes a typed `decision substituir`",
 }
+
+// legacyRegistrars are the calls whose bare "substituir" argument registers the
+// hidden alias (legacyName in the note/decision/runbook groups, the append of
+// the feature transition names).
+var legacyRegistrars = map[string]bool{"legacyName": true, "append": true}
 
 // TestNoTextQuotesALegacyPortugueseName (B-0036): the hidden pt-BR names of
 // B-0015 exist only so installed scripts keep running, so no text cerne ships
 // quotes one as the command to run (N-0110). It checks every string literal of
 // the non-test Go files under internal/ and every embedded text file outside
-// testdata: the word substituir and a --<legacy flag> fail. Exempt are the
-// literal that registers the alias (exactly "substituir") and legacyReaders.
+// testdata: the word substituir and a --<legacy flag> fail. Exempt are a bare
+// "substituir" passed to a legacyRegistrars call and the legacyReaders.
 func TestNoTextQuotesALegacyPortugueseName(t *testing.T) {
 	alts := []string{"substituir"}
 	for f := range legacyFlagOf {
 		alts = append(alts, "--"+regexp.QuoteMeta(f))
 	}
 	sort.Slice(alts, func(i, j int) bool { return len(alts[i]) > len(alts[j]) })
-	legacy := regexp.MustCompile(`(?:^|[^\p{L}-])(` + strings.Join(alts, "|") + `)(?:[^\p{L}-]|$)`)
+	legacy := regexp.MustCompile(`(?i)(?:^|[^\p{L}-])(` + strings.Join(alts, "|") + `)(?:[^\p{L}-]|$)`)
 	check := func(where, s string) {
 		if m := legacy.FindStringSubmatch(s); m != nil {
 			t.Errorf("%s quotes the hidden pt-BR name %q (use the English command): %q", where, m[1], firstLine(s))
@@ -273,7 +279,7 @@ func TestNoTextQuotesALegacyPortugueseName(t *testing.T) {
 			}
 			return nil
 		}
-		if _, ok := legacyReaders[d.Name()]; ok || strings.HasSuffix(path, "_test.go") {
+		if strings.HasSuffix(path, "_test.go") {
 			return nil
 		}
 		switch filepath.Ext(path) {
@@ -282,15 +288,30 @@ func TestNoTextQuotesALegacyPortugueseName(t *testing.T) {
 			if perr != nil {
 				return perr
 			}
+			registers := map[token.Pos]bool{}
 			ast.Inspect(f, func(n ast.Node) bool {
-				if lit, ok := n.(*ast.BasicLit); ok && lit.Kind == token.STRING {
-					if s, uerr := strconv.Unquote(lit.Value); uerr == nil && s != "substituir" {
-						check(fset.Position(lit.Pos()).String(), s)
+				switch x := n.(type) {
+				case *ast.CallExpr:
+					if fn, ok := x.Fun.(*ast.Ident); ok && legacyRegistrars[fn.Name] {
+						for _, a := range x.Args {
+							if lit, ok := a.(*ast.BasicLit); ok && lit.Value == `"substituir"` {
+								registers[lit.Pos()] = true
+							}
+						}
+					}
+				case *ast.BasicLit:
+					if x.Kind != token.STRING || registers[x.Pos()] {
+						return true
+					}
+					if s, uerr := strconv.Unquote(x.Value); uerr == nil {
+						if _, ok := legacyReaders[s]; !ok {
+							check(fset.Position(x.Pos()).String(), s)
+						}
 					}
 				}
 				return true
 			})
-		case ".md", ".sh", ".ps1", ".tmpl", ".txt", ".toml":
+		case ".md", ".sh", ".ps1", ".tmpl", ".txt", ".toml", ".json", ".yaml", ".yml":
 			b, rerr := os.ReadFile(path)
 			if rerr != nil {
 				return rerr
