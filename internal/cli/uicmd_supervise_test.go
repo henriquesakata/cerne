@@ -8,11 +8,16 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
+	"syscall"
 	"testing"
 	"time"
+
+	"github.com/spf13/cobra"
 )
 
 // freePort grabs an ephemeral port for a supervise test. The tiny window
@@ -183,4 +188,95 @@ func TestSuperviseRace(t *testing.T) {
 	waitExit(t, doneC, "second survivor")
 	cancelB()
 	waitExit(t, doneB, "first survivor")
+}
+
+// startRunUI runs runUI — the real entry point, signal wiring included — and
+// returns a channel that yields its error once it exits. The test listens for
+// SIGTERM and SIGINT too: a signal runUI fails to trap then fails the test
+// instead of killing the whole test binary. Cleanup stops a runUI still up
+// (only without the fix) with SIGINT, which runUI always traps.
+func startRunUI(t *testing.T, dir string, port int) chan error {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("a Windows process cannot send itself SIGTERM")
+	}
+	absorb := make(chan os.Signal, 8)
+	signal.Notify(absorb, syscall.SIGTERM, os.Interrupt)
+	cmd := &cobra.Command{}
+	cmd.SetOut(io.Discard)
+	done := make(chan error, 1)
+	exited := make(chan struct{})
+	go func() {
+		done <- runUI(cmd, dir, port, true, 0)
+		close(exited)
+	}()
+	t.Cleanup(func() {
+		select {
+		case <-exited:
+		default:
+			sendSelf(t, os.Interrupt)
+			select {
+			case <-exited:
+			case <-time.After(10 * time.Second):
+				t.Error("runUI did not exit on SIGINT during cleanup")
+			}
+		}
+		signal.Stop(absorb)
+	})
+	return done
+}
+
+func sendSelf(t *testing.T, sig os.Signal) {
+	t.Helper()
+	p, err := os.FindProcess(os.Getpid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Signal(sig); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// F-0466 criterion 1: a joined cerne ui stopped with SIGTERM removes its
+// project from the panel, as Ctrl+C does.
+func TestRunUIJoinedSIGTERMDeregisters(t *testing.T) {
+	port := freePort(t)
+	base := fmt.Sprintf("http://127.0.0.1:%d", port)
+	dirs := superviseDirs(t, "proj-a", "proj-b")
+
+	cancelA, doneA := startSupervised(t, dirs[0], port)
+	defer func() { cancelA(); waitExit(t, doneA, "host") }()
+	waitPIDs(t, base, 5*time.Second, "proj-a")
+
+	done := startRunUI(t, dirs[1], port)
+	waitPIDs(t, base, 5*time.Second, "proj-a", "proj-b")
+
+	sendSelf(t, syscall.SIGTERM)
+	waitPIDs(t, base, 5*time.Second, "proj-a")
+	waitExit(t, done, "joined runUI")
+}
+
+// F-0466 criterion 2: a hosting cerne ui stopped with SIGTERM shuts down the
+// way Ctrl+C does: no error, and the port is free again.
+func TestRunUIHostSIGTERMShutsDown(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	port := freePort(t)
+	base := fmt.Sprintf("http://127.0.0.1:%d", port)
+
+	done := startRunUI(t, projDir, port)
+	deadline := time.Now().Add(10 * time.Second)
+	for _, err := listPIDs(base); err != nil; _, err = listPIDs(base) {
+		if time.Now().After(deadline) {
+			t.Fatalf("host never answered: %v", err)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	sendSelf(t, syscall.SIGTERM)
+	waitExit(t, done, "hosting runUI")
+	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	if err != nil {
+		t.Fatalf("port still held after SIGTERM: %v", err)
+	}
+	ln.Close()
 }
