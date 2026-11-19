@@ -73,8 +73,8 @@ func KindNames() []string { return slices.Sorted(maps.Keys(Kinds)) }
 // https and carry no credential, then the kind's constructor reads it.
 func New(c Config) (IssueTracker, error) {
 	u, err := url.Parse(c.URL)
-	if err != nil || u.Scheme != "https" || u.Host == "" {
-		return nil, fmt.Errorf("%w %q: want an https URL", ErrTrackerURL, redactURL(c.URL))
+	if err != nil || u.Scheme != "https" || u.Host == "" || nonASCII(u.Host) {
+		return nil, fmt.Errorf("%w %q: want an https URL with an ASCII host (punycode for an international name)", ErrTrackerURL, redactURL(c.URL))
 	}
 	if u.User != nil {
 		return nil, fmt.Errorf("%w %q: remove the user and password; .cernerc is committed, and the tracker's own login holds the credential", ErrTrackerURL, redactURL(c.URL))
@@ -128,7 +128,13 @@ func validRef(r Ref) bool {
 		return false
 	}
 	u, err := url.Parse(r.URL)
-	return err == nil && u.Scheme == "https" && u.Host != "" && u.User == nil
+	return err == nil && u.Scheme == "https" && u.Host != "" && !nonASCII(u.Host) && u.User == nil
+}
+
+// nonASCII reports a byte outside ASCII: EqualFold folds some of those onto
+// ASCII letters (U+212A onto k), so a host that has one is never compared.
+func nonASCII(s string) bool {
+	return strings.ContainsFunc(s, func(r rune) bool { return r > unicode.MaxASCII })
 }
 
 func (c checked) Create(ctx context.Context, it Item) (Ref, error) {

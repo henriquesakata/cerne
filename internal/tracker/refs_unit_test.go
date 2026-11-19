@@ -184,3 +184,20 @@ func TestNewRefusesRefsOutsideTheRepository(t *testing.T) {
 		t.Fatalf("ListOpen = %+v, %v; want only issue 2, the one on the tracker's own host", list, err)
 	}
 }
+
+// F-0449 round 3 (A2): EqualFold folds the Kelvin sign U+212A to k, so a host
+// with a non-ASCII byte is refused in a tracker URL and in a ref (punycode is
+// required): Owns never sees it.
+func TestTrackerRefusesNonASCIIHosts(t *testing.T) {
+	_, err := tracker.New(tracker.Config{Name: "gh", Kind: "github", URL: "https://ghe.Kcorp.example/o/r"})
+	if !errors.Is(err, tracker.ErrTrackerURL) {
+		t.Errorf("New with a Kelvin-sign host = %v, want ErrTrackerURL", err)
+	}
+	tr := unitTracker(t, "https://ghe.kcorp.example/o/r")
+	if tr.Owns(tracker.Ref{Tracker: "gh", ID: "7", URL: "https://ghe.Kcorp.example/o/r/issues/7"}) {
+		t.Error("Owns accepted a Kelvin-sign host")
+	}
+	if !tr.Owns(tracker.Ref{Tracker: "gh", ID: "7", URL: "https://ghe.kcorp.example/o/r/issues/7"}) {
+		t.Error("Owns refused the ASCII host")
+	}
+}
