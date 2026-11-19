@@ -1,0 +1,72 @@
+{
+  "name": "cerne",
+  "description": "Living documentation for AI-assisted projects: features, decisions and their lifecycle kept as structured data in git, with the authoring skill, session hooks and a read-only MCP server for your agent. Needs the cerne CLI (brew install henriquesakata/tap/cerne).",
+  "author": {
+    "name": "Henrique Sakata",
+    "url": "https://github.com/henriquesakata"
+  },
+  "homepage": "https://github.com/henriquesakata/cerne",
+  "repository": "https://github.com/henriquesakata/cerne",
+  "license": "Apache-2.0",
+  "keywords": [
+    "documentation",
+    "living-documentation",
+    "spec-driven-development",
+    "adr",
+    "feature-lifecycle",
+    "knowledge-base",
+    "kanban",
+    "mcp"
+  ],
+  "skills": "./internal/skills",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/.claude-plugin/run.sh\" hook register-reference-reminder.sh" }]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/.claude-plugin/run.sh\" hook cerne-work-bind.sh" }]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/.claude-plugin/run.sh\" hook cerne-work-gate.sh" }]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/.claude-plugin/run.sh\" hook cerne-register-reminder.sh" }]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/.claude-plugin/run.sh\" hook cerne-subagent-context.sh" }]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/.claude-plugin/run.sh\" hook cerne-stop-closeout.sh" }]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "manual|auto",
+        "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/.claude-plugin/run.sh\" hook cerne-precompact.sh" }]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/.claude-plugin/run.sh\" hook cerne-prompt-notes.sh", "timeout": 5 }]
+      }
+    ]
+  },
+  "mcpServers": {
+    "cerne": {
+      "command": "bash",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/.claude-plugin/run.sh", "mcp"]
+    }
+  }
+}
