@@ -253,7 +253,9 @@ export default function Vault({ hash }: { hash: string }) {
   const title = wikiPage ? wikiLabel(t, wikiPage.name) : doc?.title
 
   return (
-    <main className="page vault">
+    // Editing, the editor takes the rail's column too (the outline is the
+    // reading view's, and the panes need the width).
+    <main className={isEditing ? 'page vault vault-editing' : 'page vault'}>
       <nav
         className="vault-tree"
         aria-label={t.vault.treeLabel}
@@ -349,7 +351,7 @@ export default function Vault({ hash }: { hash: string }) {
           </>
         )}
       </article>
-      {doc && (
+      {doc && !isEditing && (
         <aside className="vault-side">
           {outline.length > 0 && (
             <nav aria-label={t.vault.outline}>

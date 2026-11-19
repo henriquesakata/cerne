@@ -157,6 +157,19 @@ describe('VaultEditor save (F-0464 critério 4)', () => {
   })
 })
 
+describe('Vault while editing (F-0464 I-1)', () => {
+  it('layout: the editor takes the rail too — no outline/backlinks aside until it closes', async () => {
+    docs = { 'N-0001': note({ content: '# Nota\n\n## Seção\n\ntexto' }) }
+    const { container } = render(<Vault hash="#/vault/N-0001" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar' }))
+    expect(container.querySelector('.vault-side')).toBeNull()
+    expect(container.querySelector('main')).toHaveClass('vault-editing')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+    expect(container.querySelector('.vault-side')).not.toBeNull()
+    expect(container.querySelector('main')).not.toHaveClass('vault-editing')
+  })
+})
+
 describe('VaultEditor approved spec (F-0464 critério 8)', () => {
   it.each([
     ['approved', 'spec', true],
