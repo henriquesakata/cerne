@@ -65,8 +65,8 @@
   },
   "mcpServers": {
     "cerne": {
-      "command": "bash",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/.claude-plugin/run.sh", "mcp"]
+      "command": "cerne",
+      "args": ["mcp", "--dir", "${CLAUDE_PROJECT_DIR}"]
     }
   }
 }
