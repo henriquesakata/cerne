@@ -271,6 +271,9 @@ func runNoteShow(cmd *cobra.Command, dir, id string) error {
 	if len(n.When) > 0 {
 		fmt.Fprintf(w, "when: %s\n", strings.Join(n.When, ", "))
 	}
+	if n.Gist != "" {
+		fmt.Fprintf(w, "gist: %s\n", n.Gist)
+	}
 	if n.SupersededBy != "" {
 		fmt.Fprintf(w, "superseded by: %s\n", n.SupersededBy)
 	}

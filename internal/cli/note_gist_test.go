@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -110,5 +111,35 @@ func TestNoteGist(t *testing.T) {
 	}
 	if _, err := execCerne(t, "note", "gist", "N-0001", "x", "--dir", projDir); err == nil {
 		t.Fatal("note gist on a retired note must fail")
+	}
+}
+
+// TestShowNoteGist (F-0459 criterion 3): the gist line in show and note show,
+// and the gist field in show --json.
+func TestShowNoteGist(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	if _, err := execCerne(t, "note", "new", "T", "--when", "bash:git tag", "--gist", "Tag the merge commit.", "--dir", projDir); err != nil {
+		t.Fatalf("note new: %v", err)
+	}
+	for _, args := range [][]string{{"show", "N-0001"}, {"note", "show", "N-0001"}} {
+		out, err := execCerne(t, append(args, "--dir", projDir)...)
+		if err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+		if !strings.Contains(out, "\nwhen: bash:git tag\ngist: Tag the merge commit.\n") {
+			t.Fatalf("%v output lacks the gist line after when:\n%s", args, out)
+		}
+	}
+	out, err := execCerne(t, "show", "N-0001", "--json", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("show --json: %v", err)
+	}
+	var probe struct {
+		Entity struct {
+			Gist string `json:"gist"`
+		} `json:"entity"`
+	}
+	if err := json.Unmarshal([]byte(out), &probe); err != nil || probe.Entity.Gist != "Tag the merge commit." {
+		t.Fatalf("show --json entity.gist = %q (%v):\n%s", probe.Entity.Gist, err, out)
 	}
 }
