@@ -21,7 +21,9 @@ var (
 	strokeRE   = regexp.MustCompile(`stroke-width="([0-9.]+)"`)
 	// The favicon's stylesheet: the rules for a light tab, then the ones a
 	// dark colour scheme swaps in.
-	schemeRE = regexp.MustCompile(`<style>(.*)@media\s*\(prefers-color-scheme:\s*dark\)\s*\{(.*)\}</style>`)
+	// Every .nav-mark rule of the dashboard's stylesheet, body captured.
+	navMarkRE = regexp.MustCompile(`\.nav-mark\s*\{([^}]*)\}`)
+	schemeRE  = regexp.MustCompile(`<style>(.*)@media\s*\(prefers-color-scheme:\s*dark\)\s*\{(.*)\}</style>`)
 )
 
 const (
@@ -293,6 +295,38 @@ func TestReadmeShowsMarkInBothThemes(t *testing.T) {
 	} {
 		if !strings.Contains(top, want) {
 			t.Errorf("no mark for the %s theme above the name: missing %s", theme, want)
+		}
+	}
+}
+
+// F-0462: the top nav shows the mark as a CSS mask over the favicon, painted
+// in the ink of the name. One drawing, and it follows the dashboard's theme
+// instead of the system's.
+func TestNavMarkIsAMaskOfTheFavicon(t *testing.T) {
+	rules := navMarkRE.FindAllStringSubmatch(readRepoFile(t, "ui/src/app.css"), -1)
+	if len(rules) == 0 {
+		t.Fatal("app.css has no .nav-mark rule")
+	}
+	painted := false
+	for _, r := range rules {
+		rule := r[1]
+		if inks := inksOf(rule); len(inks) != 0 {
+			t.Errorf("a .nav-mark rule fixes the colour %v, want only currentColor", inks)
+		}
+		if strings.Contains(rule, "background: currentColor") &&
+			strings.Contains(rule, "-webkit-mask: url(/favicon.svg)") &&
+			strings.Contains(rule, " mask: url(/favicon.svg)") {
+			painted = true
+		}
+	}
+	if !painted {
+		t.Error("no .nav-mark rule paints currentColor through a mask of /favicon.svg")
+	}
+
+	nav := readRepoFile(t, "ui/src/Nav.tsx")
+	for _, banned := range []string{"<svg", "<path"} {
+		if strings.Contains(nav, banned) {
+			t.Errorf("Nav.tsx carries its own drawing (%q): the mark must come from the favicon", banned)
 		}
 	}
 }
