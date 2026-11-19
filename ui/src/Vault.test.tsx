@@ -77,7 +77,11 @@ beforeEach(() => {
     'wiki:overview.md': mk('wiki:overview.md', { kind: 'wiki', state: '', title: 'overview.md' }),
   }
 })
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  // @ts-expect-error restore: jsdom has no matchMedia, a test may have stubbed it
+  delete window.matchMedia
+})
 
 const tree = () => screen.getByRole('navigation', { name: 'Documentos do projeto' })
 const open = async (hash: string) => {
@@ -241,7 +245,5 @@ describe('Vault (F-0463)', () => {
     ;(Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>).mockClear()
     fireEvent.click(within(tree()).getByRole('link', { name: /F-0001/ }))
     expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: 'start' })
-    // @ts-expect-error cleanup of the test double
-    delete window.matchMedia
   })
 })
