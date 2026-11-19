@@ -1415,6 +1415,33 @@ const ptBR = {
       'Notes on prompt': 'Notas ao enviar o prompt',
       "On shows the agent up to 3 active notes or runbooks whose titles match the words of the user's prompt, once per session, through the prompt hook. Off stops showing them.":
         'Ligado, o gancho do prompt mostra ao agente até 3 notas ou runbooks ativos cujos títulos casam com as palavras do prompt do usuário, uma vez por sessão. Desligado, deixa de mostrá-los.',
+      'Commit URL': 'URL do commit',
+      'The template that turns a bare commit SHA into a link, with a {sha} placeholder, for example https://github.com/owner/repo/commit/{sha}. Empty accepts only full commit URLs.':
+        'O modelo que transforma um SHA solto em link, com o marcador {sha}, por exemplo https://github.com/owner/repo/commit/{sha}. Vazio aceita só URLs completas de commit.',
+      'Delivery forge': 'Forge da entrega',
+      'The forge that hosts the delivery repository: github, gitlab or gitea. Set, complete looks up the PR that holds the delivery commit and accept checks that it reached the default branch; host, owner and repo come from the commit URL. Empty turns both checks off.':
+        'A forge que hospeda o repositório da entrega: github, gitlab ou gitea. Definida, o complete procura o PR que contém o commit de entrega e o accept confere se ele chegou ao branch padrão; host, dono e repositório vêm da URL do commit. Vazio desliga as duas verificações.',
+      'PR URL': 'URL do PR',
+      'The template that turns --mr #<n> into a link, with an {n} placeholder, for example https://github.com/owner/repo/pull/{n}.':
+        'O modelo que transforma --mr #<n> em link, com o marcador {n}, por exemplo https://github.com/owner/repo/pull/{n}.',
+      'Close the issue on': 'Fechar a issue no',
+      "accept closes a mirrored card's issue when a human accepts the card. merge writes Closes: in the delivery commit, so the forge closes the issue when the PR merges, and mirror sync never reopens it.":
+        'accept fecha a issue de um card espelhado quando um humano aceita o card. merge escreve Closes: no commit de entrega, e a forge fecha a issue quando o PR é mergeado, sem que o mirror sync a reabra.',
+      'Issue mirror': 'Espelho de issues',
+      "On lets a human publish a card to an issue tracker with cerne feature mirror, and keeps each mirrored card's issue in step with the card's state. Off sends nothing to any tracker. An agent cannot change this key through cerne settings: it is the project owner's decision.":
+        'Ligado, um humano publica um card num tracker de issues com cerne feature mirror, e a issue de cada card espelhado acompanha o estado do card. Desligado, nada vai para nenhum tracker. Um agente não muda esta chave pelo cerne settings: a decisão é do dono do projeto.',
+      'Issue trackers': 'Trackers de issues',
+      "The trackers a card can be mirrored to: a unique name, the kind, the https address of the issues repository (https://<host>/<owner>/<repo>) and an optional label that picks which outside issues mirror sync turns into ideas. The first one is the default of cerne feature mirror. An agent cannot change this key through cerne settings: it is the project owner's decision.":
+        'Os trackers para onde um card pode ser espelhado: um nome único, o tipo, o endereço https do repositório de issues (https://<host>/<owner>/<repo>) e uma label opcional, que escolhe quais issues de fora o mirror sync transforma em ideas. O primeiro é o padrão do cerne feature mirror. Um agente não muda esta chave pelo cerne settings: a decisão é do dono do projeto.',
+      'Name': 'Nome',
+      'A unique name for this tracker, used by --tracker.': 'Um nome único para este tracker, usado pelo --tracker.',
+      'Kind': 'Tipo',
+      "The tracker's kind.": 'O tipo do tracker.',
+      'URL': 'URL',
+      'The https address of the issues repository.': 'O endereço https do repositório de issues.',
+      'Label': 'Label',
+      'Only outside issues with this label become ideas. Empty imports every open issue.':
+        'Só as issues de fora com esta label viram ideas. Vazio importa todas as issues abertas.',
     } as Record<string, string>,
     // Rótulos dos valores de uma chave de texto com valores declarados.
     options: { on: 'ligado', off: 'desligado' } as Record<string, string>,

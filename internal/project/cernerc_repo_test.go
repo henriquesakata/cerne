@@ -3,8 +3,8 @@ package project
 import "testing"
 
 // F-0355 crit. 12: this repository's own .cernerc names its forge and PR
-// template. (`cerne settings get delivery.forge` has no registry key: adding one
-// needs the pt-BR catalog in ui/src/i18n.tsx, outside this feature.)
+// template. Since F-0449 the same [delivery] block backs the delivery.* keys
+// of the settings registry.
 func TestRepoCernercDeliveryForge(t *testing.T) {
 	cfg, _, err := LoadConfig("../..")
 	if err != nil {

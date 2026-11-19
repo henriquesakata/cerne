@@ -15,6 +15,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/henriquesakata/cerne/internal/tracker"
 )
 
 // Setting scopes, in precedence order, and the origin of a value no scope sets
@@ -130,6 +132,21 @@ var settingsRegistry = []Setting{
 		Description: "The name that signs the messages you send from the UI on a project's permanent channel. It applies to every project on this machine. It is not the project's name, which is set in the “Project name” field of the Settings screen. Empty uses your OS user name.",
 	},
 	{
+		ID: "delivery.commit_url", Group: "integrations", Title: "Commit URL", Type: "string", Default: "", MaxLen: 256,
+		Scopes:      []string{ScopeProject},
+		Description: "The template that turns a bare commit SHA into a link, with a {sha} placeholder, for example https://github.com/owner/repo/commit/{sha}. Empty accepts only full commit URLs.",
+	},
+	{
+		ID: "delivery.forge", Group: "integrations", Title: "Delivery forge", Type: "string", Default: "", Enum: DeliveryForges,
+		Scopes:      []string{ScopeProject},
+		Description: "The forge that hosts the delivery repository: github, gitlab or gitea. Set, complete looks up the PR that holds the delivery commit and accept checks that it reached the default branch; host, owner and repo come from the commit URL. Empty turns both checks off.",
+	},
+	{
+		ID: "delivery.pr_url", Group: "integrations", Title: "PR URL", Type: "string", Default: "", MaxLen: 256,
+		Scopes:      []string{ScopeProject},
+		Description: "The template that turns --mr #<n> into a link, with an {n} placeholder, for example https://github.com/owner/repo/pull/{n}.",
+	},
+	{
 		ID: "gates.gauntlet", Group: "process", Title: "Gauntlet", Type: "string", Default: "on", Enum: []string{"on", "off"},
 		Scopes: []string{ScopeProject}, HumanOnly: true,
 		Description: "Turns the Gauntlet on or off for this project. With off (light mode), approve accepts a spec without a bar, complete accepts a result without a ## Gauntlet section, and lint stops charging both. Only the literal off turns it off; any other stored value counts as on. An agent cannot change this key through cerne settings: it is the project owner's decision.",
@@ -181,6 +198,31 @@ var settingsRegistry = []Setting{
 		ID: "mindmap.enabled", Group: "interface", Title: "Mindmap", Type: "bool", Default: true,
 		Scopes:      []string{ScopeProject, ScopeHost},
 		Description: "Shows the Mindmap tab in the UI. Off hides it.",
+	},
+	{
+		ID: "mirror.close_on", Group: "integrations", Title: "Close the issue on", Type: "string", Default: "accept", Enum: []string{"accept", "merge"},
+		Scopes:      []string{ScopeProject},
+		Description: "accept closes a mirrored card's issue when a human accepts the card. merge writes Closes: in the delivery commit, so the forge closes the issue when the PR merges, and mirror sync never reopens it.",
+	},
+	{
+		ID: "mirror.enabled", Group: "integrations", Title: "Issue mirror", Type: "bool", Default: false,
+		Scopes: []string{ScopeProject}, HumanOnly: true,
+		Description: "On lets a human publish a card to an issue tracker with cerne feature mirror, and keeps each mirrored card's issue in step with the card's state. Off sends nothing to any tracker. An agent cannot change this key through cerne settings: it is the project owner's decision.",
+	},
+	{
+		ID: "mirror.trackers", Group: "integrations", Title: "Issue trackers", Type: "records", Default: []map[string]string{},
+		Scopes: []string{ScopeProject}, HumanOnly: true,
+		Description: "The trackers a card can be mirrored to: a unique name, the kind, the https address of the issues repository (https://<host>/<owner>/<repo>) and an optional label that picks which outside issues mirror sync turns into ideas. The first one is the default of cerne feature mirror. An agent cannot change this key through cerne settings: it is the project owner's decision.",
+		Fields: []Setting{
+			{ID: "name", Title: "Name", Type: "string", Description: "A unique name for this tracker, used by --tracker."},
+			{ID: "kind", Title: "Kind", Type: "string", Enum: tracker.KindNames(), Description: "The tracker's kind."},
+			{ID: "url", Title: "URL", Type: "string", MaxLen: 256, Description: "The https address of the issues repository."},
+			{ID: "label", Title: "Label", Type: "string", Description: "Only outside issues with this label become ideas. Empty imports every open issue."},
+		},
+		CheckRecord: func(r map[string]string) error {
+			_, err := tracker.New(trackerConfig(r))
+			return err
+		},
 	},
 	{
 		ID: "wiki.enabled", Group: "interface", Title: "Wiki", Type: "bool", Default: true,
