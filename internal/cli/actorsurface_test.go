@@ -1,12 +1,14 @@
 package cli
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/store"
 )
@@ -78,5 +80,34 @@ func TestWorkStartOutputShowsRecordedActor(t *testing.T) {
 	}
 	if !strings.Contains(out, "actor: "+domain.MachinePseudonym("bob@x.local")) || strings.Contains(out, "@") {
 		t.Errorf("work start output does not show the recorded pseudonym:\n%s", out)
+	}
+}
+
+// TestClaudeCodeShellRefusalNamesHumanEscape (B-0030): in a Claude Code shell
+// (CLAUDECODE=1) with no CERNE_ACTOR the human gates refuse, and the refusal
+// tells a human working in such a shell how to proceed: their own terminal, or
+// the CERNE_ACTOR=human prefix — which then passes.
+func TestClaudeCodeShellRefusalNamesHumanEscape(t *testing.T) {
+	t.Setenv("CERNE_ACTOR", "")
+	t.Setenv("CURSOR_AGENT", "")
+	t.Setenv("COPILOT_CLI", "")
+	projDir, _, repoDir := setupProject(t)
+	id := seedBarlessCandidate(t, projDir, repoDir)
+	t.Setenv("CLAUDECODE", "1")
+	set := []string{"settings", "set", "gates.gauntlet", "off", "--scope", "project", "--dir", projDir}
+	for _, args := range [][]string{{"feature", "approve", id, "--dir", projDir}, set} {
+		out, err := execCerne(t, args...)
+		if !errors.Is(err, app.ErrHumanGate) {
+			t.Fatalf("%v: err = %v, want ErrHumanGate\n%s", args[:2], err, out)
+		}
+		for _, want := range []string{"own terminal", "CERNE_ACTOR=human"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("%v: refusal lacks %q:\n%s", args[:2], want, out)
+			}
+		}
+	}
+	t.Setenv("CERNE_ACTOR", "human")
+	if out, err := execCerne(t, set...); err != nil {
+		t.Errorf("CERNE_ACTOR=human settings set: %v\n%s", err, out)
 	}
 }
