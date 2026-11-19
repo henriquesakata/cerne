@@ -145,11 +145,42 @@ func TestLifecycleMarksMatchDomainActions(t *testing.T) {
 // are exactly the lifecycle-marked verbs (F-0323 crit. 4, "in any mode"),
 // derived, never hand-kept — and nothing more: local verbs stay allowed in the
 // subscription mode, whose write policy (F-0260/F-0267/F-0269) is unchanged.
+// Hidden verbs count (B-0039): the pt-BR twin `substituir` runs like
+// `supersede`, so a list built from the visible catalog let it through. The
+// rules match by name, so a cobra alias on a lifecycle path, or cobra's prefix
+// or case-insensitive matching, would escape them the same way; none may exist.
+// A hidden twin is tied to its visible sibling by their shared Short, so a twin
+// built without the lifecycle mark fails here instead of leaving both lists.
 func TestAgentDeniedCommandsCoverLifecycleMarks(t *testing.T) {
+	if cobra.EnablePrefixMatching || cobra.EnableCaseInsensitive {
+		t.Error("cobra prefix/case-insensitive matching runs names the refusals never list")
+	}
 	var want []string
-	for _, v := range verbs.From(Root()) {
-		if v.Lifecycle {
-			want = append(want, "Bash(cerne "+v.Path+":*)")
+	var walk func(*cobra.Command)
+	walk = func(c *cobra.Command) {
+		for _, sub := range c.Commands() {
+			if sub.Hidden && verbs.IsVerb(sub) {
+				for _, twin := range c.Commands() {
+					if !twin.Hidden && twin.Short == sub.Short && verbs.IsLifecycle(twin) != verbs.IsLifecycle(sub) {
+						t.Errorf("hidden %q and its visible twin %q differ in the lifecycle mark", sub.CommandPath(), twin.CommandPath())
+					}
+				}
+			}
+			if verbs.IsLifecycle(sub) {
+				want = append(want, "Bash("+sub.CommandPath()+":*)")
+				for p := sub; p != nil; p = p.Parent() {
+					if len(p.Aliases) > 0 {
+						t.Errorf("%q has cobra aliases %v on a lifecycle path: the name-based refusals miss them", p.CommandPath(), p.Aliases)
+					}
+				}
+			}
+			walk(sub)
+		}
+	}
+	walk(Root())
+	for _, g := range []string{"feature", "decision", "note", "runbook"} {
+		if rule := "Bash(cerne " + g + " substituir:*)"; !slices.Contains(want, rule) {
+			t.Errorf("walk lacks the hidden twin %s", rule)
 		}
 	}
 	got := slices.Clone(llm.AgentDeniedCommands)
