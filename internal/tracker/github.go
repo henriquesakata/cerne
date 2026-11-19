@@ -3,6 +3,7 @@ package tracker
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/url"
 	"regexp"
 	"slices"
@@ -26,6 +27,15 @@ var ghPath = regexp.MustCompile(`^/([A-Za-z0-9._-]+)/([A-Za-z0-9._-]+)/?$`)
 
 func newGitHub(c Config) (IssueTracker, error) {
 	u, err := url.Parse(c.URL)
+	if err == nil {
+		// gh sends the user's token for the host it reaches: never an IP
+		// literal or localhost, which name a service on this machine or
+		// network rather than a GitHub. A DNS host stays allowed, for GitHub
+		// Enterprise.
+		if h := u.Hostname(); net.ParseIP(h) != nil || strings.EqualFold(h, "localhost") {
+			return nil, fmt.Errorf("%w: github tracker host %q is an IP address or localhost; use the GitHub host name", ErrTrackerURL, h)
+		}
+	}
 	if err == nil && u.User == nil && u.RawQuery == "" && u.Fragment == "" {
 		if m := ghPath.FindStringSubmatch(u.Path); m != nil && !dots(m[1]) && !dots(m[2]) {
 			return github{name: c.Name, repo: forge.Repo{Host: u.Host, Path: m[1] + "/" + m[2]}}, nil

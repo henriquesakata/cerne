@@ -3,8 +3,10 @@ package tracker_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -273,5 +275,21 @@ func TestGitHubListOpenEscapesLabel(t *testing.T) {
 	}
 	if got := g.calls[0][len(g.calls[0])-1]; got != "repos/o/r/issues?state=open&per_page=100&labels=good+first%26issue" {
 		t.Fatalf("endpoint = %q", got)
+	}
+}
+
+// F-0449 (audit finding 4): a GitHub tracker on an IP literal or localhost
+// would point gh, and the user's token for that host, at a local service; a
+// DNS host stays allowed for GitHub Enterprise.
+func TestGitHubRefusesIPAndLocalhostHosts(t *testing.T) {
+	for _, raw := range []string{"https://127.0.0.1:8443/o/r", "https://[::1]/o/r", "https://localhost/o/r", "https://LocalHost:9/o/r"} {
+		_, err := tracker.New(tracker.Config{Name: "gh", Kind: "github", URL: raw})
+		u, _ := url.Parse(raw)
+		if !errors.Is(err, tracker.ErrTrackerURL) || !strings.Contains(err.Error(), u.Hostname()) {
+			t.Errorf("New(%s) = %v, want ErrTrackerURL naming host %s", raw, err, u.Hostname())
+		}
+	}
+	if _, err := tracker.New(tracker.Config{Name: "gh", Kind: "github", URL: "https://ghe.example.com/o/r"}); err != nil {
+		t.Errorf("New(GitHub Enterprise host) = %v, want accepted", err)
 	}
 }
