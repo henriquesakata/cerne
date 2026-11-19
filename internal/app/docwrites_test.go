@@ -69,7 +69,7 @@ func TestWritePointsRecordAuthor(t *testing.T) {
 			return err
 		}, chat, nil},
 		{"UI editor", "F-0003", "spec", func() error {
-			return SaveFeatureDocBy(repoDir, projDir, "F-0003", "spec", "---\ncerne_id: F-0003\n---\n\n"+spec("editor"), HumanAuthor())
+			return SaveFeatureDocBy(repoDir, projDir, "F-0003", "spec", "---\ncerne_id: F-0003\n---\n\n"+spec("editor"), "", HumanAuthor())
 		}, HumanAuthor(), nil},
 		{"SaveFeatureDoc outside the UI", "F-0003", "plan", func() error {
 			return SaveFeatureDoc(repoDir, projDir, "F-0003", "plan", "# Plano\n\n## Tarefas\n\n1. Fazer.\n")

@@ -374,7 +374,7 @@ func mutateClarificationAt(repoDir, projDir, id, doc string, offset int, raw, an
 	if domain.IsFeatureID(id) {
 		name := strings.TrimSuffix(filepath.Base(doc), ".md")
 		if _, ok := featureDocFilenames[name]; ok {
-			if err := SaveFeatureDocBy(repoDir, projDir, id, name, next, by); err != nil {
+			if err := SaveFeatureDocBy(repoDir, projDir, id, name, next, "", by); err != nil {
 				return Answered{}, err
 			}
 			return Answered{Entity: id, Doc: doc, Question: target.Question, Answer: answer}, nil
