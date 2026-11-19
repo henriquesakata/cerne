@@ -37,10 +37,12 @@ export function wikiQuery(text: string, caret: number): { start: number; query: 
 }
 
 // insertWiki replaces text[start, caret) with the link to id and returns the
-// text and the caret right after the closing `]]`.
+// text and the caret right after the closing `]]`. Completing inside an
+// existing link takes the `]]` already after the caret instead of doubling it.
 export function insertWiki(text: string, start: number, caret: number, id: string): { text: string; caret: number } {
   const link = `[[${id}]]`
-  return { text: text.slice(0, start) + link + text.slice(caret), caret: start + link.length }
+  const rest = text.slice(caret)
+  return { text: text.slice(0, start) + link + (rest.startsWith(']]') ? rest.slice(2) : rest), caret: start + link.length }
 }
 
 // joinFrontmatter puts the frontmatter back in front of the draft: one line

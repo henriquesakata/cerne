@@ -203,6 +203,9 @@ describe('VaultEditor wiki autocomplete (F-0464 critério 3)', () => {
     expect(wikiQuery('ver [[de[c', 10)).toBeNull()
     expect(wikiQuery('sem link', 8)).toBeNull()
     expect(insertWiki('ver [[dec fim', 4, 9, 'D-0001')).toEqual({ text: 'ver [[D-0001]] fim', caret: 14 })
+    // RV-3: completing inside an existing link takes its closing ]] instead of doubling it
+    expect(insertWiki('ver [[D-00]] fim', 4, 10, 'D-0001')).toEqual({ text: 'ver [[D-0001]] fim', caret: 14 })
+    expect(insertWiki('ver [[D-00] fim', 4, 10, 'D-0001')).toEqual({ text: 'ver [[D-0001]]] fim', caret: 14 })
   })
 
   it('wiki autocomplete: placeWikiList opens under the caret line, flips above, stays in the pane', () => {
