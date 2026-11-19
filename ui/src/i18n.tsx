@@ -1073,7 +1073,7 @@ const ptBR = {
       saving: 'Gravando…',
       saveError: (e: string) => `Não foi possível gravar: ${e}`,
       conflict:
-        'Este documento mudou no backend depois que você o abriu. Seu rascunho continua aqui; abaixo, as linhas da versão do backend (−) e as do seu rascunho (+).',
+        'Este documento mudou no backend depois que você o abriu. Seu rascunho continua aqui; abaixo, as linhas da versão do backend (−) e as do seu rascunho (+). Para manter as duas versões, traga para o rascunho as linhas do backend e grave por cima.',
       reloadBackend: 'Recarregar a versão do backend',
       overwrite: 'Gravar por cima',
       discard: 'Descartar o rascunho não gravado?',
@@ -2520,7 +2520,7 @@ const en: Messages = {
       saving: 'Saving…',
       saveError: (e: string) => `Could not save: ${e}`,
       conflict:
-        'This document changed in the backend after you opened it. Your draft is still here; below, the lines of the backend version (−) and of your draft (+).',
+        'This document changed in the backend after you opened it. Your draft is still here; below, the lines of the backend version (−) and of your draft (+). To keep both versions, bring the backend lines into your draft and save over it.',
       reloadBackend: 'Reload the backend version',
       overwrite: 'Save over it',
       discard: 'Discard the unsaved draft?',

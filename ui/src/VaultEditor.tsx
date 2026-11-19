@@ -244,20 +244,25 @@ export default function VaultEditor({ doc, entries, knownIds, wikiHref, onSaved,
                 </span>
               ))}
           </pre>
-          <div className="vault-editor-actions">
+        </div>
+      )}
+      {/* One action row: in conflict, Save would resend the stale base and 409
+          again, so Save over it takes its place; the draft stays editable. */}
+      <div className="vault-editor-actions">
+        {conflict ? (
+          <>
+            <button type="button" className="vault-editor-primary" onClick={() => void save(conflict.hash)} disabled={saving}>
+              {saving ? t.vault.editor.saving : t.vault.editor.overwrite}
+            </button>
             <button type="button" onClick={reloadBackend} disabled={saving}>
               {t.vault.editor.reloadBackend}
             </button>
-            <button type="button" onClick={() => void save(conflict.hash)} disabled={saving}>
-              {t.vault.editor.overwrite}
-            </button>
-          </div>
-        </div>
-      )}
-      <div className="vault-editor-actions">
-        <button type="button" className="vault-editor-primary" onClick={() => void save()} disabled={saving}>
-          {saving ? t.vault.editor.saving : t.common.save}
-        </button>
+          </>
+        ) : (
+          <button type="button" className="vault-editor-primary" onClick={() => void save()} disabled={saving}>
+            {saving ? t.vault.editor.saving : t.common.save}
+          </button>
+        )}
         <button type="button" onClick={cancel} disabled={saving}>
           {t.common.cancel}
         </button>

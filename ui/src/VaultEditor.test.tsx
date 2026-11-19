@@ -267,6 +267,22 @@ describe('VaultEditor conflict (F-0464 critério 7)', () => {
     expect(onSaved).not.toHaveBeenCalled()
   })
 
+  it('conflict: one action row — no Save, Save over it is the primary and sends the edited draft', async () => {
+    api.saveEntityContent.mockResolvedValueOnce(conflict('linha deles', 'h2')).mockResolvedValue({ ok: true })
+    const { onSaved } = editor(note())
+    type('linha minha')
+    save()
+    expect(await screen.findByText(/traga para o rascunho as linhas do backend/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Salvar' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Cancelar' })).toBeInTheDocument()
+    expect(overwrite()).toHaveClass('vault-editor-primary')
+    expect(document.querySelectorAll('.vault-editor-actions')).toHaveLength(1)
+    type('linha minha\nlinha deles')
+    fireEvent.click(overwrite())
+    await waitFor(() => expect(onSaved).toHaveBeenCalled())
+    expect(api.saveEntityContent).toHaveBeenLastCalledWith('note', 'N-0001', 'linha minha\nlinha deles', 'h2')
+  })
+
   it('conflict: reloading the backend version replaces the draft and the base', async () => {
     api.saveEntityContent.mockResolvedValueOnce(conflict('versão deles', 'h2')).mockResolvedValue({ ok: true })
     editor(note())
