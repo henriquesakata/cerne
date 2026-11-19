@@ -333,18 +333,22 @@ const (
 	agentActorPrefix = "agent:"
 )
 
-// actorEnv is the actor the environment declares: CERNE_ACTOR, or the legacy
-// "agent" in a Cursor or Copilot CLI agent shell (F-0428, F-0444). Cursor does not apply the
-// settings.json env block that stamps CERNE_ACTOR, but puts CURSOR_AGENT=1 on
-// its agent's terminals (seen in Cursor 3.25.6, undocumented — if it goes, the
-// actor is simply the human default again).
+// actorEnv is the actor the environment declares: a non-empty CERNE_ACTOR
+// (so CERNE_ACTOR=human always declares the human), or the legacy "agent" in a
+// Claude Code, Cursor or Copilot CLI agent shell (B-0030, F-0428, F-0444).
+// Cursor does not apply the settings.json env block that stamps CERNE_ACTOR,
+// but puts CURSOR_AGENT=1 on its agent's terminals (seen in Cursor 3.25.6,
+// undocumented — if it goes, the actor is simply the human default again).
 func actorEnv() string {
 	if a := os.Getenv("CERNE_ACTOR"); a != "" {
 		return a
 	}
-	// Copilot CLI marks its bash tool's shell with COPILOT_CLI=1 (probed on
-	// 1.0.112, F-0444); the hooks' env block does not reach that shell.
-	if os.Getenv("CURSOR_AGENT") == "1" || os.Getenv("COPILOT_CLI") == "1" {
+	// Claude Code exports CLAUDECODE=1 in every shell it runs (seen in Claude
+	// Code's Bash tool, 2026-11, B-0030): without `cerne hook install` the env
+	// block that stamps CERNE_ACTOR is missing. Copilot CLI marks its bash
+	// tool's shell with COPILOT_CLI=1 (probed on 1.0.112, F-0444); the hooks'
+	// env block does not reach that shell.
+	if os.Getenv("CLAUDECODE") == "1" || os.Getenv("CURSOR_AGENT") == "1" || os.Getenv("COPILOT_CLI") == "1" {
 		return legacyAgentActor
 	}
 	return ""
