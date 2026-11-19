@@ -153,7 +153,8 @@ func entryRun(t *testing.T, home, proj string, args ...string) (stdout string, c
 	return out.String(), code
 }
 
-// loggingCerne puts a cerne in home's ~/go/bin that logs "<CERNE_PLUGIN> <args>"
+// loggingCerne puts a cerne in home's ~/go/bin that logs
+// "<CERNE_PLUGIN>/<CERNE_ACTOR> <args>"
 // per call, and returns the log path.
 func loggingCerne(t *testing.T, home string) string {
 	t.Helper()
@@ -162,7 +163,7 @@ func loggingCerne(t *testing.T, home string) string {
 		t.Fatal(err)
 	}
 	log := filepath.Join(home, "calls.log")
-	stub := "#!/bin/sh\nprintf '%s %s\\n' \"${CERNE_PLUGIN:-unset}\" \"$*\" >> '" + log + "'\n"
+	stub := "#!/bin/sh\nprintf '%s/%s %s\\n' \"${CERNE_PLUGIN:-unset}\" \"${CERNE_ACTOR:-unset}\" \"$*\" >> '" + log + "'\n"
 	if err := os.WriteFile(filepath.Join(bin, "cerne"), []byte(stub), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -230,8 +231,8 @@ func TestPluginEntryScript(t *testing.T) {
 		if code != 0 || !strings.Contains(out, "cerne project rules") {
 			t.Fatalf("out %q code %d, want the session rules", out, code)
 		}
-		if c := calls(t, log); !strings.Contains(c, "1 hook channel --point session-start") {
-			t.Fatalf("calls %q, want the session-start call with CERNE_PLUGIN=1", c)
+		if c := calls(t, log); !strings.Contains(c, "1/agent hook channel --point session-start") {
+			t.Fatalf("calls %q, want the session-start call with CERNE_PLUGIN=1 and the agent actor", c)
 		}
 		if out, code := entryRun(t, home, proj, "hook", "../../etc/passwd"); out != "" || code != 0 {
 			t.Fatalf("a name outside the assets ran: %q %d", out, code)

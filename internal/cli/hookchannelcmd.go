@@ -2,11 +2,14 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -175,7 +178,7 @@ func runHookChannel(cmd *cobra.Command, point string) {
 // "" when everything matches or on any error (fail-open, N-0021).
 func staleManagedNotice(projDir string, syncSkills bool) string {
 	var b strings.Builder
-	if names := skills.Stale(projDir); len(names) > 0 {
+	if names := withoutPluginAbsent(projDir, skills.Stale(projDir)); len(names) > 0 {
 		list := strings.Join(names, ", ")
 		if !syncSkills {
 			fmt.Fprintf(&b, "cerne: canonical skill(s) out of date with this cerne build: %s — run `cerne skill install`.\n", list)
@@ -183,10 +186,32 @@ func staleManagedNotice(projDir string, syncSkills bool) string {
 			fmt.Fprintf(&b, "cerne: updated canonical skill(s) from this cerne build: %s — the new version applies from the next session (or after reloading skills).\n", list)
 		}
 	}
-	if n := len(hooks.Stale(projDir)); n > 0 {
+	if n := len(withoutPluginAbsent(projDir, hooks.Stale(projDir))); n > 0 {
 		fmt.Fprintf(&b, "cerne: %d managed hook(s) out of date with this cerne build — run `cerne hook install` and review the diff.\n", n)
 	}
 	return b.String()
+}
+
+// fromPlugin reports whether this process runs from the Claude Code plugin,
+// whose entry script sets CERNE_PLUGIN=1 (F-0454).
+func fromPlugin() bool { return os.Getenv("CERNE_PLUGIN") == "1" }
+
+// withoutPluginAbsent drops, under the plugin, the canonical Claude Code
+// skills and hook scripts the project does not have at all: the plugin
+// delivers them, so they are not stale. A present copy that diverges stays.
+func withoutPluginAbsent(projDir string, names []string) []string {
+	if !fromPlugin() {
+		return names
+	}
+	absent := map[string]bool{}
+	missing := func(p string) bool { _, err := os.Stat(p); return errors.Is(err, fs.ErrNotExist) }
+	for _, s := range skills.All() {
+		absent[s.Name] = missing(filepath.Join(projDir, ".claude", "skills", s.Name, "SKILL.md"))
+	}
+	for _, a := range hooks.Assets() {
+		absent[a.Script] = missing(filepath.Join(projDir, ".claude", "hooks", a.Script))
+	}
+	return slices.DeleteFunc(names, func(n string) bool { return absent[n] })
 }
 
 // staleProviders is the provider set a sync rewrites: every detected provider,
@@ -224,9 +249,18 @@ func channelBlock(projectID, sess string, consume bool) string {
 // exportSession appends `export CERNE_SESSION=<id>` to CLAUDE_ENV_FILE, which
 // Claude Code sources before every Bash call of the session (R-0034): the
 // agent's own `cerne msg|next|status` then know which session they run in.
+// From the plugin it also exports CERNE_ACTOR=agent, which `cerne hook
+// install` puts in settings.json, so the human gates hold (F-0454).
 func exportSession(sess string) {
+	var lines string
+	if envSessionRe.MatchString(sess) {
+		lines = "export CERNE_SESSION=" + sess + "\n"
+	}
+	if fromPlugin() {
+		lines += "export CERNE_ACTOR=agent\n"
+	}
 	path := os.Getenv("CLAUDE_ENV_FILE")
-	if path == "" || !envSessionRe.MatchString(sess) {
+	if path == "" || lines == "" {
 		return
 	}
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
@@ -234,7 +268,7 @@ func exportSession(sess string) {
 		return
 	}
 	defer f.Close()
-	fmt.Fprintf(f, "export CERNE_SESSION=%s\n", sess)
+	fmt.Fprint(f, lines)
 }
 
 // printChannelLead opens an agent's text view (next, status --active) with its

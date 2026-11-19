@@ -8,8 +8,10 @@
 #   settings.json, so the plugin's copy steps aside instead of firing twice.
 # - The plugin does not ship the binary: without cerne, SessionStart prints how
 #   to install it, in any project, and the other hooks stay silent.
-# CERNE_PLUGIN=1 tells the binary it runs from the plugin. To turn the hooks
-# off for a process (eval, CI), set CERNE_NO_AGENT_HOOKS=1 (F-0360).
+# CERNE_PLUGIN=1 tells the binary it runs from the plugin; CERNE_ACTOR=agent is
+# what `cerne hook install` puts in settings.json's env for every hook, so the
+# hooks attribute their work to the agent. To turn the hooks off for a process
+# (eval, CI), set CERNE_NO_AGENT_HOOKS=1 (F-0360).
 [ -n "${CERNE_NO_AGENT_HOOKS:-}" ] && exit 0
 [ "$1" = hook ] || exit 0
 # Look where cerne installs to as well, like the hooks it runs (F-0428).
@@ -23,5 +25,5 @@ proj=${CLAUDE_PROJECT_DIR:-$PWD}
 asset="${CLAUDE_PLUGIN_ROOT:-$(dirname "$0")/..}/internal/hooks/assets/${2##*/}"
 [ -f "$proj/.cernerc" ] && [ -f "$asset" ] || exit 0
 [ -f "$proj/.claude/hooks/${2##*/}" ] && exit 0
-export CERNE_PLUGIN=1
+export CERNE_PLUGIN=1 CERNE_ACTOR="${CERNE_ACTOR:-agent}"
 exec bash "$asset"

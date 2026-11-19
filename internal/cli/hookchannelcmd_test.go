@@ -635,3 +635,56 @@ func TestHookChannelSessionStartOrder(t *testing.T) {
 		last = i
 	}
 }
+
+// TestHookChannelPluginMode (F-0454 criterion 7): run from the Claude Code
+// plugin (CERNE_PLUGIN=1), session start does not flag the project's hooks and
+// skills that are simply absent — the plugin delivers them — nor writes them,
+// even with sync_skills; a present copy that diverges is still flagged. It also
+// stamps CERNE_ACTOR=agent for the session's Bash calls, which `cerne hook
+// install`'s settings.json would otherwise carry, so the human gates hold.
+func TestHookChannelPluginMode(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	setSyncSkills(t, projDir, true)
+	for _, d := range []string{"hooks", "skills"} {
+		if err := os.RemoveAll(filepath.Join(projDir, ".claude", d)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("CERNE_PLUGIN", "1")
+	if out := sessionStart(t, projDir); out != "" {
+		t.Fatalf("plugin mode with absent assets must print nothing, got %q", out)
+	}
+	if _, err := os.Stat(filepath.Join(projDir, ".claude", "skills")); !os.IsNotExist(err) {
+		t.Fatalf("plugin mode must not install the skills the plugin delivers (stat err %v)", err)
+	}
+
+	script := filepath.Join(projDir, ".claude", "hooks", hooks.Assets()[1].Script)
+	if err := os.MkdirAll(filepath.Dir(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(script, []byte("#!/bin/sh\n# local\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if out := sessionStart(t, projDir); !strings.Contains(out, "1 managed hook") {
+		t.Fatalf("a present diverging hook must still be flagged, got %q", out)
+	}
+
+	env := filepath.Join(t.TempDir(), "env.sh")
+	t.Setenv("CLAUDE_ENV_FILE", env)
+	if out, err := execCerneStdin(t, sessionStartJSON(t, "s1", projDir), "hook", "channel", "--point", "session-start"); err != nil {
+		t.Fatalf("hook channel: %v\n%s", err, out)
+	}
+	if got, _ := os.ReadFile(env); string(got) != "export CERNE_SESSION=s1\nexport CERNE_ACTOR=agent\n" {
+		t.Fatalf("env file = %q, want the session and the agent actor", got)
+	}
+	t.Setenv("CERNE_PLUGIN", "")
+	if err := os.Remove(env); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := execCerneStdin(t, sessionStartJSON(t, "s2", projDir), "hook", "channel", "--point", "session-start"); err != nil {
+		t.Fatalf("hook channel: %v\n%s", err, out)
+	}
+	if got, _ := os.ReadFile(env); string(got) != "export CERNE_SESSION=s2\n" {
+		t.Fatalf("outside the plugin the actor comes from settings.json, env file = %q", got)
+	}
+}
