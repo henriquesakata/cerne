@@ -592,3 +592,36 @@ func TestGiteaContract(t *testing.T) {
 		}
 	})
 }
+
+// F-0452 crit. 4: the whole trailer, the shortest way Gitea links it from a
+// commit in the commit_url repository: #N in the same repository,
+// owner/repo#N on the same host, the issue URL anywhere else; Refs, or Closes
+// when closing. It is pure: no request.
+func TestGiteaCommitRefForms(t *testing.T) {
+	for _, c := range []struct {
+		name, trackerURL, commitURL string
+		closing                     bool
+		want                        string
+	}{
+		{"same repository", "https://git.example/o/r", "https://git.example/o/r/commit/{sha}", false, "Refs: #12"},
+		{"same repository, closing", "https://git.example/o/r", "https://git.example/o/r/commit/{sha}", true, "Closes: #12"},
+		{"same repository, host with port", "https://git.example:3000/o/r", "https://git.example:3000/o/r/commit/{sha}", true, "Closes: #12"},
+		{"other repository, same host", "https://git.example/o/issues", "https://git.example/o/r/commit/{sha}", false, "Refs: o/issues#12"},
+		{"other repository, same host, closing", "https://git.example/o/issues", "https://git.example/o/r/commit/{sha}", true, "Closes: o/issues#12"},
+		{"other forge", "https://git.example/o/r", "https://github.com/o/r/commit/{sha}", false, "Refs: https://git.example/o/r/issues/12"},
+		{"other forge, closing", "https://git.example/o/r", "https://gitlab.com/o/r/-/commit/{sha}", true, "Closes: https://git.example/o/r/issues/12"},
+		{"same path, other port", "https://git.example:3000/o/r", "https://git.example/o/r/commit/{sha}", false, "Refs: https://git.example:3000/o/r/issues/12"},
+		{"no commit_url", "https://git.example/o/r", "", false, "Refs: https://git.example/o/r/issues/12"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			reqs := installGitea(t, "", http.NotFoundHandler())
+			r := tracker.Ref{Tracker: "gt", ID: "12", URL: c.trackerURL + "/issues/12"}
+			if got := newGiteaTracker(t, c.trackerURL).CommitRef(r, c.commitURL, c.closing); got != c.want {
+				t.Fatalf("CommitRef = %q, want %q", got, c.want)
+			}
+			if len(*reqs) != 0 {
+				t.Fatalf("CommitRef sent %d requests, want none", len(*reqs))
+			}
+		})
+	}
+}

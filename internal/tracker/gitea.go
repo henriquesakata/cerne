@@ -302,14 +302,13 @@ func (g gitea) ListOpen(ctx context.Context, label string) ([]Remote, error) {
 	return out, nil
 }
 
-// CommitRef cites the issue by its URL.
-func (g gitea) CommitRef(r Ref, _ string, closing bool) string {
-	if closing {
-		return "Closes: " + r.URL
-	}
-	return "Refs: " + r.URL
+// Gitea links an issue from a commit the way GitHub does (#N in the same
+// repository, owner/repo#N on the same host) and its issue URLs have GitHub's
+// shape, https://<host>/<owner>/<repo>/issues/<n>: CommitRef and Owns are
+// the GitHub adapter's, on this repository.
+
+func (g gitea) CommitRef(r Ref, commitURL string, closing bool) string {
+	return github{repo: g.repo}.CommitRef(r, commitURL, closing)
 }
 
-// Owns reports whether r is an issue of this repository on this host. A
-// Gitea issue URL has GitHub's shape, https://<host>/<owner>/<repo>/issues/<n>.
 func (g gitea) Owns(r Ref) bool { return github{repo: g.repo}.Owns(r) }
