@@ -1072,6 +1072,10 @@ const ptBR = {
       wikiList: 'Entidades para o link',
       saving: 'Gravando…',
       saveError: (e: string) => `Não foi possível gravar: ${e}`,
+      conflict:
+        'Este documento mudou no backend depois que você o abriu. Seu rascunho continua aqui; abaixo, as linhas da versão do backend (−) e as do seu rascunho (+).',
+      reloadBackend: 'Recarregar a versão do backend',
+      overwrite: 'Gravar por cima',
       approvedSpec:
         'Esta spec está aprovada: gravar uma versão diferente vence a aprovação, e o Iniciar fica bloqueado até reaprovar.',
     },
@@ -2514,6 +2518,10 @@ const en: Messages = {
       wikiList: 'Entities to link',
       saving: 'Saving…',
       saveError: (e: string) => `Could not save: ${e}`,
+      conflict:
+        'This document changed in the backend after you opened it. Your draft is still here; below, the lines of the backend version (−) and of your draft (+).',
+      reloadBackend: 'Reload the backend version',
+      overwrite: 'Save over it',
       approvedSpec:
         'This spec is approved: saving a different version makes the approval stale, and Start is blocked until it is re-approved.',
     },

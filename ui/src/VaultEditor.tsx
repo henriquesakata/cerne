@@ -2,6 +2,7 @@ import { useDeferredValue, useEffect, useId, useLayoutEffect, useRef, useState, 
 import { saveEntityContent, saveFeatureDoc } from './api'
 import Markdown from './Markdown'
 import { useT } from './i18n'
+import { lineDiff } from './lineDiff'
 import { rank, type Entry } from './Palette'
 import { stripLeadingTitle, type VaultDoc } from './vault-doc'
 
@@ -60,10 +61,13 @@ type Props = {
 // (key) for another document.
 export default function VaultEditor({ doc, entries, knownIds, wikiHref, onSaved, onCancel }: Props) {
   const { t } = useT()
-  const [loaded] = useState(() => ({ content: doc.content, hash: doc.hash }))
+  const [loaded, setLoaded] = useState(() => ({ content: doc.content, hash: doc.hash }))
   const [draft, setDraft] = useState(doc.content)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // The backend's version a save collided with (409): the draft stays, and
+  // the user reloads that version or saves over it with its hash.
+  const [conflict, setConflict] = useState<{ content: string; hash: string } | null>(null)
   // The preview lags the keystrokes under load (a Mermaid block re-renders).
   const preview = useDeferredValue(draft)
 
@@ -115,17 +119,26 @@ export default function VaultEditor({ doc, entries, knownIds, wikiHref, onSaved,
     }
   }
 
-  const save = async () => {
+  const save = async (baseHash = loaded.hash) => {
     if (saving) return
     setSaving(true)
     setError(null)
     const res =
       doc.kind === 'feature'
-        ? await saveFeatureDoc(doc.id, doc.doc ?? 'spec', draft, loaded.hash)
-        : await saveEntityContent(doc.kind as 'decision' | 'note' | 'runbook', doc.id, draft, loaded.hash)
+        ? await saveFeatureDoc(doc.id, doc.doc ?? 'spec', draft, baseHash)
+        : await saveEntityContent(doc.kind as 'decision' | 'note' | 'runbook', doc.id, draft, baseHash)
     setSaving(false)
-    if (res.ok) await onSaved()
+    if (res.ok) {
+      setConflict(null)
+      await onSaved()
+    } else if ('conflict' in res) setConflict(res.conflict)
     else setError(res.error)
+  }
+  const reloadBackend = () => {
+    if (!conflict) return
+    setDraft(conflict.content)
+    setLoaded(conflict)
+    setConflict(null)
   }
   // The window shortcut reads the latest save (draft, saving) of this render.
   const saveRef = useRef(save)
@@ -194,6 +207,28 @@ export default function VaultEditor({ doc, entries, knownIds, wikiHref, onSaved,
           </Markdown>
         </section>
       </div>
+      {conflict && (
+        <div className="vault-editor-conflict" role="alert">
+          <p className="form-error">{t.vault.editor.conflict}</p>
+          <pre className="proposal-draft-diff">
+            {lineDiff(conflict.content, draft)
+              .filter((l) => l.kind !== 'same')
+              .map((l, i) => (
+                <span key={i} className={`diff-${l.kind}`}>
+                  {(l.kind === 'add' ? '+ ' : '- ') + l.text}
+                </span>
+              ))}
+          </pre>
+          <div className="vault-editor-actions">
+            <button type="button" onClick={reloadBackend} disabled={saving}>
+              {t.vault.editor.reloadBackend}
+            </button>
+            <button type="button" onClick={() => void save(conflict.hash)} disabled={saving}>
+              {t.vault.editor.overwrite}
+            </button>
+          </div>
+        </div>
+      )}
       <div className="vault-editor-actions">
         <button type="button" onClick={() => void save()} disabled={saving}>
           {saving ? t.vault.editor.saving : t.common.save}

@@ -224,3 +224,60 @@ describe('VaultEditor wiki autocomplete (F-0464 critério 3)', () => {
     expect(list()).not.toBeNull()
   })
 })
+
+describe('VaultEditor conflict (F-0464 critério 7)', () => {
+  const conflict = (content: string, hash: string) => ({
+    ok: false,
+    error: 'the document changed in the backend since it was loaded',
+    conflict: { content, hash },
+  })
+  const diff = () => [...document.querySelectorAll('.proposal-draft-diff span')].map((e) => [e.className, e.textContent])
+  const save = () => fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+  const reload = () => screen.getByRole('button', { name: 'Recarregar a versão do backend' })
+  const overwrite = () => screen.getByRole('button', { name: 'Gravar por cima' })
+
+  it('conflict: a 409 keeps the draft and shows backend lines as - and draft lines as +', async () => {
+    api.saveEntityContent.mockResolvedValue(conflict('linha comum\nlinha deles', 'h2'))
+    const { onSaved } = editor(note())
+    type('linha comum\nlinha minha')
+    save()
+    expect(await screen.findByText(/mudou no backend/)).toBeInTheDocument()
+    expect(source().value).toBe('linha comum\nlinha minha')
+    expect(diff()).toEqual([
+      ['diff-del', '- linha deles'],
+      ['diff-add', '+ linha minha'],
+    ])
+    expect(onSaved).not.toHaveBeenCalled()
+  })
+
+  it('conflict: reloading the backend version replaces the draft and the base', async () => {
+    api.saveEntityContent.mockResolvedValueOnce(conflict('versão deles', 'h2')).mockResolvedValue({ ok: true })
+    editor(note())
+    type('versão minha')
+    save()
+    await screen.findByText(/mudou no backend/)
+    fireEvent.click(reload())
+    expect(source().value).toBe('versão deles')
+    expect(document.querySelector('.proposal-draft-diff')).toBeNull()
+    type('versão deles, revista')
+    save()
+    await waitFor(() => expect(api.saveEntityContent).toHaveBeenLastCalledWith('note', 'N-0001', 'versão deles, revista', 'h2'))
+  })
+
+  it('conflict: saving over it sends the hash of the 409, and a second 409 shows the new difference', async () => {
+    api.saveEntityContent
+      .mockResolvedValueOnce(conflict('deles v1', 'h2'))
+      .mockResolvedValueOnce(conflict('deles v2', 'h3'))
+      .mockResolvedValue({ ok: true })
+    const { onSaved } = editor(note())
+    type('minha')
+    save()
+    await screen.findByRole('button', { name: 'Gravar por cima' })
+    fireEvent.click(overwrite())
+    await waitFor(() => expect(diff()).toEqual([['diff-del', '- deles v2'], ['diff-add', '+ minha']]))
+    expect(api.saveEntityContent).toHaveBeenNthCalledWith(2, 'note', 'N-0001', 'minha', 'h2')
+    fireEvent.click(overwrite())
+    await waitFor(() => expect(onSaved).toHaveBeenCalled())
+    expect(api.saveEntityContent).toHaveBeenNthCalledWith(3, 'note', 'N-0001', 'minha', 'h3')
+  })
+})
