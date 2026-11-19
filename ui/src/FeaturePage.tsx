@@ -261,6 +261,15 @@ export default function FeaturePage({ id }: { id: string }) {
           <p className="feature-note">{t.feature.supersededBy(f.superseded_by)}</p>
         )}
         <DeliveryLinks feature={f} />
+        {/* F-0449: apart from the delivery, which a mirrored card may not have yet. */}
+        {f.mirror && (
+          <p className="feature-note feature-delivery">
+            {t.feature.issueLabel}{' '}
+            <a href={f.mirror.url} target="_blank" rel="noreferrer">
+              {f.mirror.tracker} <code>{/^\d+$/.test(f.mirror.id) ? `#${f.mirror.id}` : f.mirror.id}</code>
+            </a>
+          </p>
+        )}
         {f.reason && <p className="feature-note">{t.common.reasonLabel} {f.reason}</p>}
         {detail.informed_by.length > 0 && (
           <p className="feature-note">

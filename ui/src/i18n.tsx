@@ -716,6 +716,7 @@ const ptBR = {
     tabs: { spec: 'Spec', plan: 'Plano', result: 'Resultado' },
     epicLabel: 'Épico:',
     deliveryLabel: 'Entrega:',
+    issueLabel: 'Issue pública:',
     supersededBy: (id: string) => `Substituída por ${id}`,
     edit: 'Editar',
     updatedAgo: (when: string) => `Atualizado ${when}`,
@@ -1329,6 +1330,20 @@ const ptBR = {
     confirmOff: (title: string, file: string, versioned: boolean) =>
       `Esta chave é só do dono do projeto. Desligar ${title} grava off no ${file}${versioned ? ', versionado — lembre de commitar' : ''}; dá para religar aqui.`,
     turnOff: 'Desligar',
+    // F-0449: ligar uma chave só-humano cujo padrão é desligado (o espelho).
+    confirmOn: (title: string, file: string) =>
+      `Ligar ${title}? A partir de agora, um card que um humano marcar como público é publicado nos trackers abaixo: título e resumo públicos, id e estado. Isto grava em ${file}.`,
+    turnOn: 'Ligar',
+    // F-0449: o editor de uma chave de registros (mirror.trackers).
+    records: {
+      actions: 'Ações',
+      row: 'linha',
+      remove: 'Remover',
+      removeRow: (n: number) => `Remover linha ${n}`,
+      add: 'Incluir tracker',
+      empty: 'Nenhum tracker. Nada é publicado até haver um.',
+      optional: 'opcional',
+    },
     cancel: 'Cancelar',
     stateOn: 'Ligado',
     stateOff: 'Desligado',
@@ -2130,6 +2145,7 @@ const en: Messages = {
     tabs: { spec: 'Spec', plan: 'Plan', result: 'Result' },
     epicLabel: 'Epic:',
     deliveryLabel: 'Delivery:',
+    issueLabel: 'Public issue:',
     supersededBy: (id: string) => `Superseded by ${id}`,
     edit: 'Edit',
     updatedAgo: (when: string) => `Updated ${when}`,
@@ -2740,6 +2756,18 @@ const en: Messages = {
     confirmOff: (title: string, file: string, versioned: boolean) =>
       `This key is the project owner's alone. Turning ${title} off writes off to ${file}${versioned ? ', versioned — remember to commit' : ''}; you can turn it back on here.`,
     turnOff: 'Turn off',
+    confirmOn: (title: string, file: string) =>
+      `Turn on ${title}? From now on, a card a human marks public is published to the trackers below: its public title, summary, id and state. This writes to ${file}.`,
+    turnOn: 'Turn on',
+    records: {
+      actions: 'Actions',
+      row: 'row',
+      remove: 'Remove',
+      removeRow: (n: number) => `Remove row ${n}`,
+      add: 'Add tracker',
+      empty: 'No tracker. Nothing is published until there is one.',
+      optional: 'optional',
+    },
     cancel: 'Cancel',
     stateOn: 'On',
     stateOff: 'Off',

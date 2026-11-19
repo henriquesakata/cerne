@@ -69,8 +69,9 @@ type Setting struct {
 	// key; the CLI still enforces it.
 	HumanOnly bool `json:"human_only,omitempty"`
 	// MaxLen is the longest string the key accepts, in characters; 0 = the
-	// default maxSettingString (a URL needs more than a display name).
-	MaxLen int `json:"-"`
+	// default maxSettingString (a URL needs more than a display name). The UI
+	// caps its text field with it (F-0449).
+	MaxLen int `json:"max_len,omitempty"`
 	// DynamicDefault, when set, supplies the value of a key no scope stores:
 	// "" keeps Default, anything else becomes the value with OriginDetected.
 	// The registry does not know what it detects.
