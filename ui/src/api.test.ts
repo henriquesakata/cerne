@@ -8,6 +8,8 @@ import {
   recompileWiki,
   registerChatCandidate,
   renameProject,
+  saveEntityContent,
+  saveFeatureDoc,
   setApiProject,
   streamChat,
   unsetSetting,
@@ -253,5 +255,67 @@ describe('streamChat (F-0436 critério 4): o contexto do turno', () => {
       () => {},
     )
     expect(fetch.mock.calls[0][1].body).not.toContain('context')
+  })
+})
+
+describe('content saves (F-0464 critério 6)', () => {
+  const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status })
+
+  it('saveFeatureDoc without a hash sends the same request as before', async () => {
+    setApiProject('proj-x')
+    const fetch = vi.fn().mockResolvedValue(json(200, { saved: true }))
+    vi.stubGlobal('fetch', fetch)
+    expect(await saveFeatureDoc('F-1', 'spec', '# S')).toEqual({ ok: true })
+    expect(fetch).toHaveBeenCalledWith('/api/projects/proj-x/features/F-1/docs/spec', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'text/markdown' },
+      body: '# S',
+    })
+  })
+
+  it('If-Match goes only when there is a base hash', async () => {
+    setApiProject('proj-x')
+    const fetch = vi.fn().mockImplementation(async () => json(200, { saved: true }))
+    vi.stubGlobal('fetch', fetch)
+    await saveFeatureDoc('F-1', 'plan', '# P', 'abc')
+    await saveEntityContent('note', 'N-1', '# N', 'def')
+    await saveEntityContent('note', 'N-1', '# N')
+    expect(fetch.mock.calls[0][1].headers).toEqual({ 'Content-Type': 'text/markdown', 'If-Match': 'abc' })
+    expect(fetch.mock.calls[1][1].headers).toEqual({ 'Content-Type': 'text/markdown', 'If-Match': 'def' })
+    expect(fetch.mock.calls[2][1].headers).toEqual({ 'Content-Type': 'text/markdown' })
+  })
+
+  it.each([
+    ['decision', 'D-1', '/api/projects/proj-x/decisions/D-1/content'],
+    ['note', 'N-1', '/api/projects/proj-x/notes/N-1/content'],
+    ['runbook', 'RB-1', '/api/projects/proj-x/runbooks/RB-1/content'],
+  ] as const)('saveEntityContent(%s) PUTs raw markdown to its content route', async (kind, id, url) => {
+    setApiProject('proj-x')
+    const fetch = vi.fn().mockResolvedValue(json(200, { saved: true }))
+    vi.stubGlobal('fetch', fetch)
+    expect(await saveEntityContent(kind, id, 'body', 'h')).toEqual({ ok: true })
+    expect(fetch).toHaveBeenCalledWith(url, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'text/markdown', 'If-Match': 'h' },
+      body: 'body',
+    })
+  })
+
+  it('a 409 becomes a typed conflict with the backend content and hash', async () => {
+    setApiProject('proj-x')
+    const body = { error: 'the document changed in the backend since it was loaded', content: 'theirs', content_hash: 'h2' }
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => json(409, body)))
+    const want = { ok: false, error: body.error, conflict: { content: 'theirs', hash: 'h2' } }
+    expect(await saveEntityContent('note', 'N-1', 'mine', 'h1')).toEqual(want)
+    expect(await saveFeatureDoc('F-1', 'spec', 'mine', 'h1')).toEqual(want)
+  })
+
+  it.each([422, 500])('a %i is a plain error, no conflict', async (status) => {
+    setApiProject('proj-x')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(status, { error: 'entity is not live — append an errata instead' })))
+    expect(await saveEntityContent('decision', 'D-1', 'x', 'h')).toEqual({
+      ok: false,
+      error: 'entity is not live — append an errata instead',
+    })
   })
 })
