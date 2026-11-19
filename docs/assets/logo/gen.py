@@ -20,7 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 LOGO = Path(__file__).resolve().parent
 
-PITH = (57.5, 55.5)  # where the rings grew from, off the centre of the 100 by 100 box
+PITH = (59.0, 57.0)  # where the rings grew from, off the centre of the trunk
 ANCHORS = 22  # points per ring
 LIGHT_PAGE_INK = "#1f2328"
 DARK_PAGE_INK = "#e6edf3"
@@ -28,7 +28,7 @@ DARK_PAGE_INK = "#e6edf3"
 # (scale towards the pith, stroke width); the last entry of each list is the
 # heartwood, which is filled instead of stroked.
 FULL = [(1.0, 5.0), (0.76, 3.2), (0.55, 2.6), (0.31, None)]
-REDUCED = [(1.0, 10.0), (0.38, None)]  # what still reads at 16 px
+REDUCED = [(0.93, 13.0), (0.42, None)]  # what still reads at 16 px: a ring 2 px wide
 
 
 def trunk(theta):
@@ -75,7 +75,12 @@ def path_data(points):
 
 
 def shapes(spec):
-    return [(path_data(ring(scale, index)), width) for index, (scale, width) in enumerate(spec)]
+    rings = [(ring(scale, index), width) for index, (scale, width) in enumerate(spec)]
+    # The pith is off centre; the drawing as a whole sits in the middle of the box.
+    xs = [x for points, _ in rings for x, _ in points]
+    ys = [y for points, _ in rings for _, y in points]
+    dx, dy = 50 - (min(xs) + max(xs)) / 2, 50 - (min(ys) + max(ys)) / 2
+    return [(path_data([(x + dx, y + dy) for x, y in points]), width) for points, width in rings]
 
 
 def mark(ink):
