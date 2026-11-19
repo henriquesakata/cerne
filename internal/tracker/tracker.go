@@ -119,7 +119,8 @@ var errBadRef = errors.New("malformed issue ref")
 // checked is what New hands out: the adapter, with every ref it answers
 // (Create, ListOpen) and every ref it is given from the backend (Update,
 // CommitRef, Owns) checked by validRef, so no adapter has to remember to
-// (F-0449). The core passes a successor only when Owns accepts it.
+// (F-0449). A ref it answers must also be one its own Owns accepts. The core
+// passes a successor only when Owns accepts it.
 type checked struct{ IssueTracker }
 
 func validRef(r Ref) bool {
@@ -135,6 +136,10 @@ func (c checked) Create(ctx context.Context, it Item) (Ref, error) {
 	if r != (Ref{}) && !validRef(r) {
 		return Ref{}, fmt.Errorf("%w: the tracker answered id %q, url %q", errBadRef, r.ID, r.URL)
 	}
+	if r != (Ref{}) && !c.IssueTracker.Owns(r) {
+		u, _ := url.Parse(r.URL) // validRef parsed it
+		return Ref{}, fmt.Errorf("%w: the tracker answered an issue outside its repository, on host %q", ErrTrackerURL, u.Host)
+	}
 	return r, err
 }
 
@@ -149,7 +154,7 @@ func (c checked) ListOpen(ctx context.Context, label string) ([]Remote, error) {
 	list, err := c.IssueTracker.ListOpen(ctx, label)
 	var out []Remote
 	for _, rm := range list {
-		if validRef(rm.Ref) {
+		if validRef(rm.Ref) && c.IssueTracker.Owns(rm.Ref) {
 			out = append(out, rm)
 		}
 	}

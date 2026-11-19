@@ -127,3 +127,60 @@ func TestGitHubOwnsRefusesQueryFragmentAndEscapedSeparators(t *testing.T) {
 		t.Errorf("Owns(%s) = false, want true", u)
 	}
 }
+
+// foreignAnswers is the fake tracker answering issue URLs on another host:
+// well-formed refs its own Owns rejects.
+type foreignAnswers struct{ *trackertest.Fake }
+
+func foreign(r tracker.Ref) tracker.Ref {
+	r.URL = strings.Replace(r.URL, "https://fake.test/", "https://elsewhere.test/", 1)
+	return r
+}
+
+func (f foreignAnswers) Create(ctx context.Context, it tracker.Item) (tracker.Ref, error) {
+	r, err := f.Fake.Create(ctx, it)
+	return foreign(r), err
+}
+
+func (f foreignAnswers) ListOpen(ctx context.Context, label string) ([]tracker.Remote, error) {
+	list, err := f.Fake.ListOpen(ctx, label)
+	for i := range list {
+		if list[i].ID == "1" {
+			list[i].Ref = foreign(list[i].Ref)
+		}
+	}
+	return list, err
+}
+
+// F-0449 fix round 2 (R5): a link the tracker answers outside its own
+// repository never reaches the backend: Create refuses it, naming only the
+// host, and ListOpen drops it.
+func TestNewRefusesRefsOutsideTheRepository(t *testing.T) {
+	ctx := context.Background()
+	pub := &trackertest.Fake{Name: "pub"}
+	prev, had := tracker.Kinds["foreign"]
+	t.Cleanup(func() {
+		if had {
+			tracker.Kinds["foreign"] = prev
+		} else {
+			delete(tracker.Kinds, "foreign")
+		}
+	})
+	tracker.Kinds["foreign"] = func(tracker.Config) (tracker.IssueTracker, error) { return foreignAnswers{pub}, nil }
+	tr, err := tracker.New(tracker.Config{Name: "pub", Kind: "foreign", URL: "https://fake.test/o/pub"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := tr.Create(ctx, tracker.Item{CardID: "F-0001", State: domain.StateCandidate, Title: "T", Summary: "S"})
+	if !errors.Is(err, tracker.ErrTrackerURL) || r != (tracker.Ref{}) {
+		t.Fatalf("Create answered on another host = %+v, %v; want no ref and ErrTrackerURL", r, err)
+	}
+	if msg := err.Error(); !strings.Contains(msg, "elsewhere.test") || strings.Contains(msg, "/issues/") {
+		t.Errorf("Create error %q, want it to name the host and nothing more of the URL", msg)
+	}
+	pub.Open("Owned", "body", "")
+	list, err := tr.ListOpen(ctx, "")
+	if err != nil || len(list) != 1 || list[0].ID != "2" {
+		t.Fatalf("ListOpen = %+v, %v; want only issue 2, the one on the tracker's own host", list, err)
+	}
+}
