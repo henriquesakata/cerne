@@ -123,11 +123,12 @@ func pickTracker(cfg project.MirrorConfig, name string) (tracker.Config, error) 
 
 // mirrorItem is everything cerne publishes about f: its state, the public text
 // the link holds, and the successor's issue when f is superseded by a card
-// that is mirrored too.
+// mirrored on the same tracker. A successor on another tracker is not cited:
+// its address is not this tracker's audience's to see.
 func mirrorItem(repoDir string, f store.Feature, link store.MirrorRef, cfg project.MirrorConfig) tracker.Item {
 	it := tracker.Item{CardID: f.ID, State: f.State, Title: link.Title, Summary: link.Summary, NoReopen: cfg.CloseOn == "merge"}
 	if f.State == domain.StateSuperseded && f.SupersededBy != "" {
-		if s, err := store.LoadFeature(repoDir, f.SupersededBy); err == nil && s.Mirror != nil {
+		if s, err := store.LoadFeature(repoDir, f.SupersededBy); err == nil && s.Mirror != nil && s.Mirror.Tracker == link.Tracker {
 			it.Successor = &tracker.Ref{Tracker: s.Mirror.Tracker, ID: s.Mirror.ID, URL: s.Mirror.URL}
 		}
 	}
