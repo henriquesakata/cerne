@@ -11,6 +11,8 @@ export type WikiLinkOptions = {
   resolve: (id: string) => string | null
   // known: when given, an id outside it renders as a broken link.
   known?: ReadonlySet<string>
+  // tooltip of the broken-link span
+  brokenTitle?: string
 }
 
 // Same pattern as internal/mdlink/mdlink.go (N-0076): id-form only, optional
@@ -30,7 +32,7 @@ function split(value: string, opts: WikiLinkOptions): MdNode[] | null {
     const label: MdNode[] = [{ type: 'text', value: m[2] ?? id }]
     out.push(
       opts.known && !opts.known.has(id)
-        ? { type: 'wikiBroken', children: label, data: { hName: 'span', hProperties: { className: 'wikilink-broken' } } }
+        ? { type: 'wikiBroken', children: label, data: { hName: 'span', hProperties: { className: 'wikilink-broken', title: opts.brokenTitle } } }
         : { type: 'link', url: href, children: label, data: { hProperties: { className: 'wikilink' } } },
     )
     last = m.index + m[0].length

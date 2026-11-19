@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import '@testing-library/jest-dom/vitest'
 import { render } from '@testing-library/react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -12,7 +13,7 @@ function html(md: string, withKnown = true) {
   const { container } = render(
     createElement(
       ReactMarkdown,
-      { remarkPlugins: [remarkGfm, [remarkWikiLink, { resolve, known: withKnown ? known : undefined }]] },
+      { remarkPlugins: [remarkGfm, [remarkWikiLink, { resolve, known: withKnown ? known : undefined, brokenTitle: 'não achada' }]] },
       md,
     ),
   )
@@ -31,7 +32,9 @@ describe('remarkWikiLink (F-0463, paridade com internal/mdlink)', () => {
   })
 
   it('id desconhecido vira span.wikilink-broken; sem known nada é quebrado', () => {
-    expect(html('[[X-9999]]').querySelector('span.wikilink-broken')?.textContent).toBe('X-9999')
+    const broken = html('[[X-9999]]').querySelector('span.wikilink-broken')
+    expect(broken?.textContent).toBe('X-9999')
+    expect(broken).toHaveAttribute('title', 'não achada')
     const c = html('[[X-9999]]', false)
     expect(c.querySelector('.wikilink-broken')).toBeNull()
     expect(c.querySelector('a.wikilink')).not.toBeNull()

@@ -344,6 +344,7 @@ export default function Markdown({
   wikiHref?: (id: string) => string | null
   knownIds?: ReadonlySet<string>
 }) {
+  const { t } = useT()
   const stripped = stripFrontmatter(children)
   const base = children.length - stripped.length
   return (
@@ -353,7 +354,7 @@ export default function Markdown({
       remarkPlugins={[
         remarkGfm,
         [remarkClarify, { base, source: stripped }],
-        [remarkWikiLink, { resolve: wikiHref, known: knownIds }],
+        [remarkWikiLink, { resolve: wikiHref, known: knownIds, brokenTitle: t.vault.brokenLink }],
       ]}
       components={{
         pre: CodeBlock,

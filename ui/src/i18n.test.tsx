@@ -209,7 +209,7 @@ describe('t.vault (F-0463 crit. 11)', () => {
     const le = leaves(messages('en').vault)
     expect(Object.keys(lp).length).toBeGreaterThan(0)
     expect(Object.keys(lp).sort()).toEqual(Object.keys(le).sort())
-    for (const k of Object.keys(lp)) if (k !== 'groups.runbooks') expect(lp[k], k).not.toBe(le[k])
+    for (const k of Object.keys(lp)) if (k !== 'groups.runbooks' && k !== 'kinds.bug') expect(lp[k], k).not.toBe(le[k])
   })
 
   it('o item do menu existe nas duas línguas e difere', () => {

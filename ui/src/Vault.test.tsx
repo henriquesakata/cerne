@@ -43,6 +43,7 @@ const mk = (id: string, over: Partial<VaultDoc> = {}): VaultDoc => ({
   kind: 'decision',
   state: 'active',
   historical: false,
+  real: true,
   title: 'T',
   content: 'corpo',
   ...over,
