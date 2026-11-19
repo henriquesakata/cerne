@@ -1,18 +1,21 @@
 package app
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/henriquesakata/cerne/internal/doccheck"
+	"github.com/henriquesakata/cerne/internal/forge"
+	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -48,27 +51,23 @@ type PreResult struct {
 	Detail string
 }
 
-// MRState asks the forge for the state of a merge request ("opened", "merged",
-// "closed"). It is a variable so tests and other forges can replace it; the
-// default asks glab, read-only, with a deadline.
+// MRState asks the GitLab at host for the state of a merge request ("opened",
+// "merged", "closed"). It is a variable so tests and other forges can replace
+// it; the default asks glab, read-only, with a deadline.
 var MRState = glabMRState
 
-func glabMRState(ctx context.Context, project, iid string) (string, error) {
+func glabMRState(ctx context.Context, host, project, iid string) (string, error) {
 	if !store.ValidMRRef(project, iid) {
 		return "", fmt.Errorf("invalid MR reference %q!%q", project, iid)
 	}
+	// glab api, not glab mr view: only api takes --hostname, and without it glab
+	// asks GITLAB_HOST or the working directory's repository (B-0032). RunCLI
+	// drops the tokens of another host and keeps the F-0886 WaitDelay.
 	// "--" ends the flags: the positional can never be read as one (F-0874).
-	cmd := exec.CommandContext(ctx, "glab", "mr", "view", "-R", project, "-F", "json", "--", iid)
-	// The deadline kills glab, not a child (credential helper, pager) still
-	// holding stdout: without WaitDelay, Output waits for that child (F-0886).
-	cmd.WaitDelay = time.Second
-	out, err := cmd.Output()
-	// glab exited 0 and its answer is in out; only a child kept the pipe open.
-	if errors.Is(err, exec.ErrWaitDelay) {
-		err = nil
-	}
+	out, err := forge.RunCLI(ctx, "glab", "api", "--hostname", cmp.Or(host, "gitlab.com"), "--",
+		"projects/"+url.PathEscape(project)+"/merge_requests/"+iid)
 	if err != nil {
-		return "", fmt.Errorf("glab: %w", err)
+		return "", err
 	}
 	var v struct {
 		State string `json:"state"`
@@ -77,6 +76,17 @@ func glabMRState(ctx context.Context, project, iid string) (string, error) {
 		return "", errors.New("glab returned no state")
 	}
 	return strings.ToLower(v.State), nil
+}
+
+// MRHost is the GitLab the preflight asks for MRs (B-0032): a precondition
+// names no host, so it is the [delivery] commit_url host when the delivery
+// forge is gitlab, else gitlab.com. Never GITLAB_HOST nor the working
+// directory's repository.
+func MRHost(d project.DeliveryConfig) string {
+	if repo, _, ok := forge.ParseCommitURL(d.CommitURL); ok && d.Forge == "gitlab" {
+		return repo.Host
+	}
+	return "gitlab.com"
 }
 
 func validMRArg(a string) bool {
@@ -102,6 +112,7 @@ func CheckPreconditions(repoDir string, pcs []Precondition) []PreResult {
 // too) and the forge gets a total time budget; past it the MRs are not asked
 // and Cut is set, so the warning says the ceiling cut the check.
 type Forge struct {
+	Host        string // the GitLab the MRs are on; "" is gitlab.com (B-0032)
 	Budget      time.Duration
 	CallTimeout time.Duration
 	Cut         bool
@@ -137,7 +148,7 @@ func (f *Forge) state(project, iid string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), d)
 	defer cancel()
 	t0 := time.Now()
-	st, err := MRState(ctx, project, iid)
+	st, err := MRState(ctx, f.Host, project, iid)
 	f.spent += time.Since(t0)
 	// The ceiling, not the forge, ended this call: its deadline was what was
 	// left, and that deadline is what stopped it — a forge failing on its own

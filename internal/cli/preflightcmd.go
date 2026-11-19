@@ -27,7 +27,9 @@ func newRunbookPreflightCmd(dir *string) *cobra.Command {
 		Long: "Reads the preconditions a runbook declares ('Precondicao S11: registro F-0869', 'result F-0869', " +
 			"'mr <project>!<n> merged') and checks, up to --ate (default: the last step), the ones the cerne can verify: " +
 			"a record exists, a feature has its result, a merge request is in a state on the forge. Anything it cannot " +
-			"verify is listed as manual, never as met. The forge gets 10 s in total; MRs past it are manual and the " +
+			"verify is listed as manual, never as met. MRs are asked on the [delivery] GitLab (the commit_url host when " +
+			"[delivery] forge is gitlab), else on gitlab.com: never GITLAB_HOST nor the current directory's repository. " +
+			"The forge gets 10 s in total; MRs past it are manual and the " +
 			"output says the ceiling cut the check. --json prints the same as an object (runbook, ate, results, cut, " +
 			"met, pending, manual). Read-only: it changes nothing and never asks production.",
 		Args: cobra.ExactArgs(1),
@@ -38,6 +40,7 @@ func newRunbookPreflightCmd(dir *string) *cobra.Command {
 			}
 			id := strings.ToUpper(strings.TrimSpace(args[0]))
 			forge := newForge()
+			forge.Host = app.MRHost(ctx.cfg.Delivery)
 			res, to, err := app.PreflightWith(ctx.repoDir, id, strings.ToUpper(strings.TrimSpace(upTo)), forge)
 			if err != nil {
 				return err
@@ -151,15 +154,17 @@ type nextPreflight struct {
 	openItems []app.PreResult
 }
 
-// nextPreflights checks every active run: its next step's preconditions. A run
-// with all of them met, or with no step left, adds nothing. Informational.
-func nextPreflights(repoDir string) []nextPreflight {
+// nextPreflights checks every active run: its next step's preconditions, MRs
+// asked on mrHost. A run with all of them met, or with no step left, adds
+// nothing. Informational.
+func nextPreflights(repoDir, mrHost string) []nextPreflight {
 	works, err := store.LoadAllWorks(repoDir)
 	if err != nil {
 		return nil
 	}
 	var out []nextPreflight
 	forge := app.NewForge() // one cache and one time budget for every run
+	forge.Host = mrHost
 	for _, wk := range works {
 		if wk.State != domain.WorkActive {
 			continue

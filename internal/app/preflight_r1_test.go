@@ -23,6 +23,7 @@ func fakeGlab(t *testing.T) (argvFile string) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	realCLI(t)
 	return argvFile
 }
 
@@ -30,21 +31,21 @@ func fakeGlab(t *testing.T) (argvFile string) {
 func TestGlabMRStateRefusesInjectionAndEndsFlags(t *testing.T) {
 	argv := fakeGlab(t)
 	for _, c := range [][2]string{{"x", "--web"}, {"acme/hub", "--web"}, {"-R/x", "1"}, {"acme/hub", "1 --web"}, {"acme/hub", ""}} {
-		if _, err := glabMRState(context.Background(), c[0], c[1]); err == nil {
+		if _, err := glabMRState(context.Background(), "", c[0], c[1]); err == nil {
 			t.Errorf("glabMRState(%q,%q) must be refused", c[0], c[1])
 		}
 		if _, err := os.Stat(argv); err == nil {
 			t.Fatalf("glab was executed for %q,%q", c[0], c[1])
 		}
 	}
-	st, err := glabMRState(context.Background(), "acme/hub", "2150")
+	st, err := glabMRState(context.Background(), "", "acme/hub", "2150")
 	if err != nil || st != "merged" {
 		t.Fatalf("valid ref: %q %v", st, err)
 	}
 	b, _ := os.ReadFile(argv)
 	got := strings.Fields(string(b))
-	if len(got) < 2 || got[len(got)-2] != "--" || got[len(got)-1] != "2150" {
-		t.Fatalf("argv must end with -- <iid>, got %v", got)
+	if len(got) < 2 || got[len(got)-2] != "--" || got[len(got)-1] != "projects/acme%2Fhub/merge_requests/2150" {
+		t.Fatalf("argv must end with -- <the MR's endpoint>, got %v", got)
 	}
 }
 
@@ -53,7 +54,7 @@ func TestGlabMRStateRefusesInjectionAndEndsFlags(t *testing.T) {
 func TestCheckPreconditionsRefusesHandBuiltUnsafeArgs(t *testing.T) {
 	root := t.TempDir()
 	old := MRState
-	MRState = func(context.Context, string, string) (string, error) {
+	MRState = func(context.Context, string, string, string) (string, error) {
 		t.Error("forge asked for an invalid ref")
 		return "merged", nil
 	}
@@ -79,7 +80,7 @@ func TestCheckPreconditionsRefusesHandBuiltUnsafeArgs(t *testing.T) {
 func TestForgeCachesPerInvocationAndCutsAtBudget(t *testing.T) {
 	calls := 0
 	old := MRState
-	MRState = func(_ context.Context, p, i string) (string, error) {
+	MRState = func(_ context.Context, _, p, i string) (string, error) {
 		calls++
 		time.Sleep(5 * time.Millisecond)
 		if i == "9" {
@@ -111,7 +112,7 @@ func TestForgeCachesPerInvocationAndCutsAtBudget(t *testing.T) {
 // that ran out of time says so and is manual.
 func TestForgeBudgetIsHardCeiling(t *testing.T) {
 	old := MRState
-	MRState = func(ctx context.Context, p, i string) (string, error) {
+	MRState = func(ctx context.Context, _, p, i string) (string, error) {
 		<-ctx.Done() // a forge that never answers
 		return "", ctx.Err()
 	}
@@ -137,7 +138,7 @@ func TestForgeBudgetIsHardCeiling(t *testing.T) {
 // declaration, never an eternal "pending"; a hand-built one is manual too.
 func TestUnknownMRStateIsManual(t *testing.T) {
 	old := MRState
-	MRState = func(context.Context, string, string) (string, error) {
+	MRState = func(context.Context, string, string, string) (string, error) {
 		t.Error("forge asked for a bad state")
 		return "merged", nil
 	}
@@ -157,6 +158,7 @@ func stuckGlab(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	realCLI(t)
 }
 
 // F-0886 crit. 1 (P-0016): a glab whose child holds the pipe returns within
@@ -166,7 +168,7 @@ func TestGlabMRStateReturnsWithinDeadlineWhenAChildHoldsThePipe(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	t0 := time.Now()
-	_, err := glabMRState(ctx, "acme/hub", "2150")
+	_, err := glabMRState(ctx, "", "acme/hub", "2150")
 	if d := time.Since(t0); d >= 7*time.Second {
 		t.Fatalf("glabMRState took %s with a 5 s deadline, want < 7 s", d)
 	}
@@ -183,10 +185,11 @@ func TestGlabMRStateKeepsTheAnswerWhenAChildOutlivesGlab(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	realCLI(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	t0 := time.Now()
-	st, err := glabMRState(ctx, "acme/hub", "2150")
+	st, err := glabMRState(ctx, "", "acme/hub", "2150")
 	if err != nil || st != "merged" {
 		t.Fatalf("glab answered merged and exited 0: state=%q err=%v", st, err)
 	}
@@ -203,7 +206,7 @@ func TestForgeCutOnlyWhenTheCeilingEndsTheCall(t *testing.T) {
 	t.Cleanup(func() { MRState = old })
 	mr := []Precondition{{Kind: "mr", Args: []string{"g/p!1", "merged"}}}
 
-	MRState = func(ctx context.Context, _, _ string) (string, error) {
+	MRState = func(ctx context.Context, _, _, _ string) (string, error) {
 		<-ctx.Done() // past the deadline
 		return "", ctx.Err()
 	}
@@ -219,7 +222,7 @@ func TestForgeCutOnlyWhenTheCeilingEndsTheCall(t *testing.T) {
 		t.Fatal("a call past its own deadline, with the ceiling not reached, is not a cut")
 	}
 
-	MRState = func(context.Context, string, string) (string, error) { return "", errors.New("forge down") }
+	MRState = func(context.Context, string, string, string) (string, error) { return "", errors.New("forge down") }
 	f = &Forge{Budget: 5 * time.Second, CallTimeout: 5 * time.Second, cache: map[string]forgeAnswer{}}
 	res := CheckPreconditionsWith("/x", mr, f)
 	if f.Cut {
@@ -248,7 +251,7 @@ func TestRunPreflightShowsGlobalManualOnlyBeforeTheFirstStep(t *testing.T) {
 		t.Fatal(err)
 	}
 	old := MRState
-	MRState = func(context.Context, string, string) (string, error) { return "", errors.New("forge down") }
+	MRState = func(context.Context, string, string, string) (string, error) { return "", errors.New("forge down") }
 	t.Cleanup(func() { MRState = old })
 	has := func(res []PreResult, text string) bool {
 		for _, r := range res {
