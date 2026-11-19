@@ -92,11 +92,14 @@ func New(c Config) (IssueTracker, error) {
 
 // localHost reports a host name that names this machine or its network
 // rather than a tracker, in any spelling: an IP literal (zoned IPv6 too),
-// localhost or *.localhost, a trailing dot, or a last label a resolver reads
+// an empty name, localhost or *.localhost, a trailing dot, or a last label a resolver reads
 // as a number (127.1, 2130706433, 0x7f000001). Real top-level domains are
 // alphabetic. A kind whose CLI sends the user's token checks it at New.
 func localHost(h string) bool {
 	h = strings.ToLower(h)
+	if h == "" {
+		return true
+	}
 	if _, err := netip.ParseAddr(h); err == nil {
 		return true
 	}

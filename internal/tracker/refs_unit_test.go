@@ -201,3 +201,11 @@ func TestTrackerRefusesNonASCIIHosts(t *testing.T) {
 		t.Error("Owns refused the ASCII host")
 	}
 }
+
+// F-0449 round 3 (A3): an empty host name is local, not a GitHub.
+func TestNewRefusesAnEmptyHost(t *testing.T) {
+	_, err := tracker.New(tracker.Config{Name: "gh", Kind: "github", URL: "https://:443/o/r"})
+	if !errors.Is(err, tracker.ErrTrackerURL) {
+		t.Errorf("New(https://:443/o/r) = %v, want ErrTrackerURL", err)
+	}
+}
