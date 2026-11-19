@@ -245,7 +245,7 @@ type entityKind struct{ noun, remedy string }
 
 var (
 	kindNote      = entityKind{"note", `retire it with 'cerne note retire %[1]s --reason "re-registered"'`}
-	kindDecision  = entityKind{"decision", "to replace it, re-run with --force and then supersede %[1]s with the new decision (cerne decision substituir %[1]s --by <the new id> --reason …)"}
+	kindDecision  = entityKind{"decision", "to replace it, re-run with --force and then supersede %[1]s with the new decision (cerne decision supersede %[1]s --by <the new id> --reason …)"}
 	kindReference = entityKind{"reference", `retire it with 'cerne reference retire %[1]s --reason "re-registered"'`}
 	kindPending   = entityKind{"pending", `drop it with 'cerne pending drop %[1]s --reason "re-registered"'`}
 )
