@@ -290,6 +290,45 @@ func ideaTitle(r tracker.Remote) string {
 	return r.URL
 }
 
-// MirrorTrailers is a placeholder until the prepare-commit-msg trailer lands
-// (plan T9): no card is cited.
-func MirrorTrailers(repoDir, projDir string, cardIDs []string) []string { return nil }
+// MirrorTrailers is the commit trailer ("Refs: …", or "Closes: …" with
+// close_on = "merge") that cites the issue of each mirrored card among
+// cardIDs, on that card's own tracker and relative to the [delivery]
+// commit_url. Only the cards handed over are cited. A card it cannot cite
+// (not mirrored, unknown, its tracker gone) is skipped: it never errors,
+// because the hook that calls it is fail-open.
+func MirrorTrailers(repoDir, projDir string, cardIDs []string) []string {
+	cfg := project.MirrorSettings(projDir)
+	if !cfg.Enabled || len(cardIDs) == 0 {
+		return nil
+	}
+	commitURL := deliveryCommitURL(projDir)
+	var out []string
+	for _, id := range cardIDs {
+		f, err := store.LoadFeature(repoDir, id)
+		if err != nil || f.Mirror == nil {
+			continue
+		}
+		k := slices.IndexFunc(cfg.Trackers, func(t tracker.Config) bool { return t.Name == f.Mirror.Tracker })
+		if k < 0 {
+			continue
+		}
+		tr, err := tracker.New(cfg.Trackers[k])
+		if err != nil {
+			continue
+		}
+		r := tracker.Ref{Tracker: f.Mirror.Tracker, ID: f.Mirror.ID, URL: f.Mirror.URL}
+		out = append(out, tr.CommitRef(r, commitURL, cfg.CloseOn == "merge"))
+	}
+	return out
+}
+
+// deliveryCommitURL is delivery.commit_url, through the settings registry.
+func deliveryCommitURL(projDir string) string {
+	for _, s := range project.ResolveSettings(projDir).Settings {
+		if s.ID == "delivery.commit_url" {
+			v, _ := s.Value.(string)
+			return v
+		}
+	}
+	return ""
+}
