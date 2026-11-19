@@ -9,6 +9,14 @@ While cerne is below 1.0.0, a minor version may change behavior: read the
 
 ## [Unreleased]
 
+### Added
+
+- Each release ships `cerne_<tag>.mcpb`, an MCP Bundle of the read-only
+  `cerne mcp` server with the binaries for every platform, and the
+  `server.json` that lists it in the official MCP Registry as
+  `io.github.henriquesakata/cerne`. A client that installs MCP Bundles asks
+  for the project folder and starts the server on it.
+
 ## [0.14.3] - 2026-11-18
 
 ### Added

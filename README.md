@@ -255,6 +255,8 @@ In a global client config, name the project with `--dir`:
 
 Outside a cerne project the server refuses to start.
 
+Clients that install MCP Bundles (MCPB) can take the server straight from a release: every release after 0.14.3 ships `cerne_<tag>.mcpb`, with the binaries for every platform. The client asks for the project folder and starts `cerne mcp --dir` on it; the folder must already be a cerne project. The bundle is also what the [official MCP Registry](https://registry.modelcontextprotocol.io) entry `io.github.henriquesakata/cerne` points to.
+
 ## Capabilities
 
 | Area | What cerne does |
