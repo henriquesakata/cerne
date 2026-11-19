@@ -1378,3 +1378,16 @@ func TestJiraContractLive(t *testing.T) {
 		},
 	})
 }
+
+// F-0453: the login goes to the record's host, so numeric and local spellings
+// are refused (the core's shared check); a normal DNS host is accepted.
+func TestJiraRefusesNumericAndLocalHostForms(t *testing.T) {
+	for _, raw := range []string{"https://127.1/browse/PROJ", "https://localhost./browse/PROJ", "https://[fe80::1%25en0]/browse/PROJ", "https://a.localhost/browse/PROJ", "https://2130706433/browse/PROJ"} {
+		if _, err := tracker.New(tracker.Config{Name: "jt", Kind: "jira", URL: raw}); !errors.Is(err, tracker.ErrTrackerURL) {
+			t.Errorf("New(jira, %s) = %v, want ErrTrackerURL", raw, err)
+		}
+	}
+	if _, err := tracker.New(tracker.Config{Name: "jt", Kind: "jira", URL: "https://jira.example.com/browse/PROJ"}); err != nil {
+		t.Errorf("New(jira, DNS host) = %v, want nil", err)
+	}
+}
