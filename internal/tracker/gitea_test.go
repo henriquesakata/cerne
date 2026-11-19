@@ -203,6 +203,8 @@ type fakeGitea struct {
 	issues map[int64]*gtIssue
 	labels []gtLabel
 	reqs   *[]giteaReq
+	// noPaging makes the label list ignore ?page=, as a proxy that drops it.
+	noPaging bool
 }
 
 const gtBase = "/api/v1/repos/o/r"
@@ -213,7 +215,13 @@ func newFakeGitea(t *testing.T) *fakeGitea {
 	t.Helper()
 	g := &fakeGitea{issues: map[int64]*gtIssue{}}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET "+gtBase+"/labels", func(w http.ResponseWriter, r *http.Request) { reply(w, http.StatusOK, page(r, g.labels)) })
+	mux.HandleFunc("GET "+gtBase+"/labels", func(w http.ResponseWriter, r *http.Request) {
+		if g.noPaging {
+			reply(w, http.StatusOK, g.labels[:min(50, len(g.labels))])
+			return
+		}
+		reply(w, http.StatusOK, page(r, g.labels))
+	})
 	mux.HandleFunc("POST "+gtBase+"/labels", g.createLabel)
 	mux.HandleFunc("GET "+gtBase+"/issues", g.listIssues)
 	mux.HandleFunc("POST "+gtBase+"/issues", g.createIssue)
@@ -512,6 +520,39 @@ func TestGiteaCreatesMissingLabel(t *testing.T) {
 			t.Fatalf("issue labels %v, state %s; want [cerne:superseded], closed", got, g.issues[1].State)
 		}
 	})
+}
+
+// A short page is the last one: 60 labels are two page requests, not three.
+func TestGiteaLabelPagesStopAtShortPage(t *testing.T) {
+	g := newFakeGitea(t)
+	for i := range 60 {
+		g.addLabel(fmt.Sprintf("area-%02d", i), "#ededed")
+	}
+	r := g.seed(&gtIssue{Title: "T", Body: "B"}, "cerne:approved")
+	if err := newGiteaTracker(t, "https://git.example/o/r").Update(context.Background(), r, tracker.Item{CardID: "F-0001", State: domain.StateRejected}); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if n := g.count(http.MethodGet, "/labels"); n != 2 {
+		t.Fatalf("%d label-page requests for 60 labels, want 2", n)
+	}
+}
+
+// A server that never ends the label list (a proxy dropping ?page=) is cut at
+// a cap, with an error that carries no server text.
+func TestGiteaLabelPagesHaveACap(t *testing.T) {
+	g := newFakeGitea(t)
+	g.noPaging = true
+	for i := range 50 {
+		g.addLabel(fmt.Sprintf("area-%02d", i), "#ededed")
+	}
+	r := g.seed(&gtIssue{Title: "T", Body: "B"}, "cerne:approved")
+	err := newGiteaTracker(t, "https://git.example/o/r").Update(context.Background(), r, tracker.Item{CardID: "F-0001", State: domain.StateRejected})
+	if err == nil || !strings.Contains(err.Error(), "git.example") || !strings.Contains(err.Error(), "20") {
+		t.Fatalf("Update = %v, want an error naming git.example and the cap 20", err)
+	}
+	if n := g.count(http.MethodGet, "/labels"); n > 20 {
+		t.Fatalf("%d label-page requests, want at most 20", n)
+	}
 }
 
 // F-0452 crit. 2 and 3: the Gitea adapter passes the contract suite the fake

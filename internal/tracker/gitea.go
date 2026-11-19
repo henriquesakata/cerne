@@ -236,6 +236,13 @@ func (c *giteaCall) setStateLabel(ctx context.Context, issue string, cur []gitea
 	return nil
 }
 
+// labelPageSize and maxLabelPages bound the label read: a server that never
+// ends the list (or a proxy that drops ?page=) is cut at 1,000 labels.
+const (
+	labelPageSize = 50
+	maxLabelPages = 20
+)
+
 // labelID is the id of the repository label named name, the form Gitea's API
 // takes; a label the repository lacks is created. Every page is read: a label
 // missed on a later page would be created again.
@@ -243,17 +250,20 @@ func (c *giteaCall) labelID(ctx context.Context, name string) (int64, error) {
 	if c.labels == nil {
 		labels := map[string]int64{}
 		for page := 1; ; page++ {
-			var list []giteaLabel
-			if err := c.do(ctx, http.MethodGet, "/labels?limit=50&page="+strconv.Itoa(page), nil, &list); err != nil {
-				return 0, err
+			if page > maxLabelPages {
+				return 0, fmt.Errorf("gitea %s: more than %d label pages", c.g.repo.Host, maxLabelPages)
 			}
-			if len(list) == 0 {
-				break
+			var list []giteaLabel
+			if err := c.do(ctx, http.MethodGet, "/labels?limit="+strconv.Itoa(labelPageSize)+"&page="+strconv.Itoa(page), nil, &list); err != nil {
+				return 0, err
 			}
 			for _, l := range list {
 				if _, dup := labels[l.Name]; !dup {
 					labels[l.Name] = l.ID
 				}
+			}
+			if len(list) < labelPageSize { // a short or empty page is the last
+				break
 			}
 		}
 		c.labels = labels
