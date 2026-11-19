@@ -51,7 +51,10 @@ export default function Mirror() {
     setCommits((c) => ({ ...c, [id]: { status: 'loading' } }))
     fetchMirrorCommits(id).then(
       (d) => setCommits((c) => ({ ...c, [id]: { status: 'done', data: d } })),
-      (e: unknown) => setCommits((c) => ({ ...c, [id]: { status: 'error', message: e instanceof Error ? e.message : String(e) } })),
+      (e: unknown) => {
+        asked.current.delete(id) // the next open fetches again
+        setCommits((c) => ({ ...c, [id]: { status: 'error', message: e instanceof Error ? e.message : String(e) } }))
+      },
     )
   }
   const toggle = (id: string) => {

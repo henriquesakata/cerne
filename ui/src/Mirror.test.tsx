@@ -307,6 +307,21 @@ describe('Mirror — commits of a card (F-0465 crit. 3)', () => {
     expect(e).toHaveClass('form-error')
   })
 
+  it('a failed commit list is fetched again on the next open', async () => {
+    api.fetchMirrorCommits.mockRejectedValueOnce(new Error('git failed')).mockResolvedValue({
+      repo: true,
+      commits: [{ sha: 'abc1234', subject: 'feat: one' }],
+    })
+    renderMirror()
+    const b = await screen.findByRole('button', { name: /^F-0001/ })
+    fireEvent.click(b)
+    expect(await screen.findByText('Could not read the commits: git failed')).toBeInTheDocument()
+    fireEvent.click(b)
+    fireEvent.click(b)
+    expect(await screen.findByText('feat: one')).toBeInTheDocument()
+    expect(api.fetchMirrorCommits).toHaveBeenCalledTimes(2)
+  })
+
   it('Expand all opens every row of that tracker and fetches each once', async () => {
     renderMirror()
     await screen.findByRole('region', { name: 'alpha' })
