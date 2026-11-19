@@ -3,14 +3,18 @@ package tracker_test
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"maps"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"regexp"
 	"slices"
 	"strconv"
@@ -624,4 +628,97 @@ func TestGiteaCommitRefForms(t *testing.T) {
 			}
 		})
 	}
+}
+
+// F-0452 crit. 2, live: the contract suite against a real, throwaway Gitea
+// that the plan's script starts in a container; skipped without
+// CERNE_LIVE_GITEA. The kind refuses localhost, so the tracker host is a name
+// only the test certificate carries, dialed on the loopback: TLS still checks
+// that name, against that one CA, and no redirect is followed. The test ends
+// by logging the closing trailer of an issue it opens, for the script's commit.
+func TestGiteaContractLive(t *testing.T) {
+	raw := os.Getenv("CERNE_LIVE_GITEA")
+	if raw == "" {
+		t.Skip("CERNE_LIVE_GITEA is unset: no live Gitea to run against")
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Port() == "" {
+		t.Fatalf("CERNE_LIVE_GITEA %q: want https://<name>:<port>/<owner>/<repo>", raw)
+	}
+	pool := x509.NewCertPool()
+	if pem, err := os.ReadFile(os.Getenv("CERNE_LIVE_GITEA_CA")); err != nil || !pool.AppendCertsFromPEM(pem) {
+		t.Fatalf("CERNE_LIVE_GITEA_CA: no certificate read (%v)", err)
+	}
+	client := &http.Client{
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12},
+			DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+				return (&net.Dialer{}).DialContext(ctx, network, net.JoinHostPort("127.0.0.1", u.Port()))
+			},
+		},
+	}
+	token := os.Getenv("CERNE_LIVE_GITEA_TOKEN")
+	prevDo, prevFill := forge.HTTPDo, forge.CredentialFill
+	t.Cleanup(func() { forge.HTTPDo, forge.CredentialFill = prevDo, prevFill })
+	forge.HTTPDo = client.Do
+	forge.CredentialFill = func(context.Context, string) (string, string) { return "", token }
+
+	// api makes the calls the contract's outside issues need, beside the adapter.
+	api := func(t *testing.T, method, path string, in, out any) {
+		t.Helper()
+		body, _ := json.Marshal(in)
+		req, err := http.NewRequest(method, "https://"+u.Host+"/api/v1/repos"+u.Path+path, bytes.NewReader(body))
+		if err != nil {
+			t.Fatalf("%s %s: %v", method, path, err)
+		}
+		req.Header.Set("Authorization", "token "+token)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("%s %s: request failed", method, path)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode/100 != 2 {
+			t.Fatalf("%s %s: HTTP %d", method, path, resp.StatusCode)
+		}
+		if out != nil {
+			if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+				t.Fatalf("%s %s: %v", method, path, err)
+			}
+		}
+	}
+	tr := newGiteaTracker(t, raw)
+	trackertest.RunContract(t, trackertest.Harness{
+		New: func(*testing.T) tracker.IssueTracker { return tr },
+		Open: func(t *testing.T, title, body, label string) tracker.Ref {
+			in := map[string]any{"title": title, "body": body}
+			if label != "" {
+				var labels []gtLabel
+				api(t, http.MethodGet, "/labels?limit=50", nil, &labels)
+				i := slices.IndexFunc(labels, func(l gtLabel) bool { return l.Name == label })
+				l := gtLabel{}
+				if i < 0 {
+					api(t, http.MethodPost, "/labels", map[string]string{"name": label, "color": "#ededed"}, &l)
+				} else {
+					l = labels[i]
+				}
+				in["labels"] = []int64{l.ID}
+			}
+			var iss struct {
+				Number  int64  `json:"number"`
+				HTMLURL string `json:"html_url"`
+			}
+			api(t, http.MethodPost, "/issues", in, &iss)
+			return tracker.Ref{Tracker: "gt", ID: strconv.FormatInt(iss.Number, 10), URL: iss.HTMLURL}
+		},
+		ClosesOnMerge: true,
+	})
+
+	r, err := tr.Create(context.Background(), tracker.Item{CardID: "F-0452", State: domain.StateInDevelopment,
+		Title: "Closed by a commit trailer", Summary: "Live check of the closing trailer"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Logf("closing trailer: %s", tr.CommitRef(r, "https://"+u.Host+u.Path+"/commit/{sha}", true))
 }
