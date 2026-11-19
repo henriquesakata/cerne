@@ -3916,6 +3916,8 @@ button.clarify-chip { cursor: pointer; font: inherit; }
 .vault-editor-conflict { display: flex; flex-direction: column; gap: 0.5rem; }
 .vault-editor-conflict .form-error { margin: 0; }
 .vault-editor-conflict .proposal-draft-diff { max-height: 16rem; overflow: auto; }
+/* the label naming another author's line: plain, muted, no new colour */
+.vault-editor-conflict .diff-who { font-style: normal; color: var(--muted); }
 .vault-editor-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; padding: 0.4rem 0; background: var(--bg); }
 /* Sticky (under the nav; top is set inline) only where the row fits on one
    line: on a phone it wraps tall, and the textarea scrolls by itself there. */

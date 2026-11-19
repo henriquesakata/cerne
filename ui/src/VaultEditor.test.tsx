@@ -42,7 +42,7 @@ vi.mock('./Backlinks', () => ({ default: () => null }))
 
 import { entriesFrom } from './Palette'
 import Vault from './Vault'
-import VaultEditor, { insertWiki, joinFrontmatter, placeWikiList, splitFrontmatter, wikiQuery } from './VaultEditor'
+import VaultEditor, { conflictLines, insertWiki, joinFrontmatter, placeWikiList, splitFrontmatter, wikiQuery } from './VaultEditor'
 import { navAllowed } from './navGuard'
 
 const note = (over: Partial<VaultDoc> = {}): VaultDoc => ({
@@ -345,7 +345,7 @@ describe('VaultEditor conflict (F-0464 critério 7)', () => {
     error: 'the document changed in the backend since it was loaded',
     conflict: { content, hash },
   })
-  const diff = () => [...document.querySelectorAll('.proposal-draft-diff span')].map((e) => [e.className, e.textContent])
+  const diff = () => [...document.querySelectorAll('.proposal-draft-diff > span')].map((e) => [e.className, e.textContent])
   const save = () => fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
   const reload = () => screen.getByRole('button', { name: 'Recarregar a versão do backend' })
   const overwrite = () => screen.getByRole('button', { name: 'Gravar por cima' })
@@ -358,7 +358,7 @@ describe('VaultEditor conflict (F-0464 critério 7)', () => {
     expect(await screen.findByText(/mudou no backend/)).toBeInTheDocument()
     expect(source().value).toBe('linha comum\nlinha minha')
     expect(diff()).toEqual([
-      ['diff-del', '- linha deles'],
+      ['diff-del diff-theirs', '- linha deles · outro autor'],
       ['diff-add', '+ linha minha'],
     ])
     expect(onSaved).not.toHaveBeenCalled()
@@ -369,7 +369,7 @@ describe('VaultEditor conflict (F-0464 critério 7)', () => {
     const { onSaved } = editor(note())
     type('linha minha')
     save()
-    expect(await screen.findByText(/traga para o rascunho as linhas do backend/)).toBeInTheDocument()
+    expect(await screen.findByText(/traga essas linhas para o rascunho/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Salvar' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Cancelar' })).toBeInTheDocument()
     expect(overwrite()).toHaveClass('vault-editor-primary')
@@ -389,6 +389,33 @@ describe('VaultEditor conflict (F-0464 critério 7)', () => {
     const row = container.querySelector('.vault-editor-actions')!
     expect(row.nextElementSibling).toHaveClass('vault-editor-conflict')
     expect(row.nextElementSibling!.nextElementSibling).toHaveClass('vault-editor-panes')
+  })
+
+  it('conflict: conflictLines marks the backend lines another author changed since the base', () => {
+    const base = 'p1 original\n\np2 original'
+    expect(conflictLines(base, 'p1 original\n\np2 deles', 'p1 meu\n\np2 original')).toEqual([
+      { kind: 'del', text: 'p1 original' }, // the user's own original: not theirs
+      { kind: 'add', text: 'p1 meu' },
+      { kind: 'del', text: 'p2 deles', theirs: true },
+      { kind: 'add', text: 'p2 original' },
+    ])
+    expect(conflictLines(base, base, 'p1 meu\n\np2 original')).toEqual([
+      { kind: 'del', text: 'p1 original' },
+      { kind: 'add', text: 'p1 meu' },
+    ])
+  })
+
+  it('conflict: the other author\'s line is marked in the view, the user\'s original is not', async () => {
+    api.saveEntityContent.mockResolvedValue(conflict('p1 original\n\np2 deles', 'h2'))
+    editor(note({ content: 'p1 original\n\np2 original' }))
+    type('p1 meu\n\np2 original')
+    save()
+    await screen.findByText(/mudou no backend/)
+    const line = (text: string) => [...document.querySelectorAll('.proposal-draft-diff > span')].find((e) => e.textContent?.startsWith(text))!
+    expect(line('- p2 deles')).toHaveClass('diff-theirs')
+    expect(line('- p2 deles')).toHaveTextContent('outro autor')
+    expect(line('- p1 original')).not.toHaveClass('diff-theirs')
+    expect(line('- p1 original')).not.toHaveTextContent('outro autor')
   })
 
   it('conflict: reloading asks before it discards the draft — refused, nothing changes', async () => {
@@ -430,7 +457,7 @@ describe('VaultEditor conflict (F-0464 critério 7)', () => {
     save()
     await screen.findByRole('button', { name: 'Gravar por cima' })
     fireEvent.click(overwrite())
-    await waitFor(() => expect(diff()).toEqual([['diff-del', '- deles v2'], ['diff-add', '+ minha']]))
+    await waitFor(() => expect(diff()).toEqual([['diff-del diff-theirs', '- deles v2 · outro autor'], ['diff-add', '+ minha']]))
     expect(api.saveEntityContent).toHaveBeenNthCalledWith(2, 'note', 'N-0001', 'minha', 'h2')
     fireEvent.click(overwrite())
     await waitFor(() => expect(onSaved).toHaveBeenCalled())
@@ -498,7 +525,7 @@ describe('VaultEditor discard (F-0464 critério 9)', () => {
 describe('VaultEditor frontmatter (F-0464 I-5)', () => {
   const FM = '---\ncerne_id: N-0001\n---\n\n'
   const conflict = (content: string, hash: string) => ({ ok: false, error: 'changed', conflict: { content, hash } })
-  const diff = () => [...document.querySelectorAll('.proposal-draft-diff span')].map((e) => e.textContent)
+  const diff = () => [...document.querySelectorAll('.proposal-draft-diff > span')].map((e) => e.textContent)
 
   it('frontmatter: splitFrontmatter keeps the leading block apart, byte for byte', () => {
     expect(splitFrontmatter(FM + '# T\n\ncorpo')).toEqual({ front: FM, body: '# T\n\ncorpo' })
@@ -555,7 +582,7 @@ describe('VaultEditor frontmatter (F-0464 I-5)', () => {
     const { onSaved } = editor(note({ content: FM + 'linha comum' }))
     type('linha minha')
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
-    await waitFor(() => expect(diff()).toEqual(['- linha deles', '+ linha minha']))
+    await waitFor(() => expect(diff()).toEqual(['- linha deles · outro autor', '+ linha minha']))
     fireEvent.click(screen.getByRole('button', { name: 'Gravar por cima' }))
     await waitFor(() => expect(onSaved).toHaveBeenCalled())
     expect(api.saveEntityContent).toHaveBeenLastCalledWith('note', 'N-0001', FM2 + 'linha minha', 'h2')

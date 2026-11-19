@@ -2,7 +2,7 @@ import { useDeferredValue, useEffect, useId, useLayoutEffect, useRef, useState, 
 import { saveEntityContent, saveFeatureDoc, type SaveContentOutcome } from './api'
 import Markdown from './Markdown'
 import { useT } from './i18n'
-import { lineDiff } from './lineDiff'
+import { lineDiff, type DiffLine } from './lineDiff'
 import { setNavGuard } from './navGuard'
 import { rank, type Entry } from './Palette'
 import { stripLeadingTitle, type VaultDoc } from './vault-doc'
@@ -70,6 +70,32 @@ export function splitFrontmatter(content: string): { front: string; body: string
   while (end < lines.length && lines[end].trim() === '') end++
   const front = lines.slice(0, end).join('')
   return { front, body: content.slice(front.length) }
+}
+
+export type ConflictLine = DiffLine & { theirs?: boolean }
+
+// conflictLines is the conflict view's diff: the backend version (−) against
+// the draft (+), changed lines only, each backend line another author changed
+// since the editor loaded `base` marked theirs.
+export function conflictLines(base: string, theirs: string, draft: string): ConflictLine[] {
+  // The backend lines (by index) that base × backend adds: another author's.
+  const changed = new Set<number>()
+  let j = 0
+  for (const l of lineDiff(base, theirs)) {
+    if (l.kind === 'del') continue
+    if (l.kind === 'add') changed.add(j)
+    j++
+  }
+  const out: ConflictLine[] = []
+  let k = 0 // index of the backend line in backend × draft
+  for (const l of lineDiff(theirs, draft)) {
+    if (l.kind === 'add') out.push(l)
+    else {
+      if (l.kind === 'del') out.push(changed.has(k) ? { ...l, theirs: true } : l)
+      k++
+    }
+  }
+  return out
 }
 
 // placeWikiList is the top of the [[ list inside the source pane: under the
@@ -324,13 +350,14 @@ export default function VaultEditor({ doc, entries, knownIds, wikiHref, onSaved,
         <div className="vault-editor-conflict" role="alert">
           <p className="form-error">{t.vault.editor.conflict}</p>
           <pre className="proposal-draft-diff">
-            {lineDiff(splitFrontmatter(conflict.content).body, draft)
-              .filter((l) => l.kind !== 'same')
-              .map((l, i) => (
-                <span key={i} className={`diff-${l.kind}`}>
-                  {(l.kind === 'add' ? '+ ' : '- ') + l.text}
-                </span>
-              ))}
+            {conflictLines(loadedBody, splitFrontmatter(conflict.content).body, draft).map((l, i) => (
+              <span key={i} className={l.theirs ? 'diff-del diff-theirs' : `diff-${l.kind}`}>
+                {(l.kind === 'add' ? '+ ' : '- ') + l.text}
+                {/* a two-way diff shows the user's own original as − too: say
+                    which lines another author changed since the editor opened */}
+                {l.theirs && <em className="diff-who"> · {t.vault.editor.theirsMark}</em>}
+              </span>
+            ))}
           </pre>
         </div>
       )}
