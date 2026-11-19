@@ -45,6 +45,14 @@ While cerne is below 1.0.0, a minor version may change behavior: read the
   superseded card closes its issue with the `cerne:rejected` or
   `cerne:superseded` label. Needs GitLab 12.3 or newer (`add_labels` and
   `remove_labels`).
+- Gitea issue tracker (F-0452). A `mirror.trackers` record with
+  `kind = "gitea"` and an `https://<host>/<owner>/<repo>` URL mirrors cards
+  as issues on that Gitea repository, with the login `git credential fill`
+  holds for the host: it travels only in the `Authorization` header, and a
+  redirect is never followed. Gitea has no close reason, so a rejected or
+  superseded card's issue closes with its `cerne:rejected` or
+  `cerne:superseded` label, created when the repository lacks it. An IP
+  address or `localhost` host is refused.
 - Settings › Integrations shows `delivery.forge`, `delivery.commit_url`,
   `delivery.pr_url`, `mirror.enabled`, `mirror.trackers` and
   `mirror.close_on`. The existing `[delivery]` block is read and written as it
