@@ -45,7 +45,7 @@ func preFixture(t *testing.T) (projDir, repoDir string) {
 	mustWrite(t, bodyFile, rbPreBody)
 	rb(t, projDir, "runbook", "new", "Troca de credencial", "--file", bodyFile)
 	old := app.MRState
-	app.MRState = func(_ context.Context, project, iid string) (string, error) {
+	app.MRState = func(_ context.Context, _, project, iid string) (string, error) {
 		if project == "acme/hub" && iid == "2150" {
 			return "opened", nil
 		}
@@ -118,7 +118,7 @@ func TestRunbookPreflightListsUnmetUpToStepAndChangesNothing(t *testing.T) {
 	_ = os.MkdirAll(filepath.Join(repoDir, "content", "features", "F-0002"), 0o755)
 	mustWrite(t, filepath.Join(repoDir, "content", "features", "F-0002", "result.md"),
 		"---\ncerne_id: F-0002\n---\n\n# Resultado\n\nEntregue e verificado com evidencia, sem pendencias.\n")
-	app.MRState = func(context.Context, string, string) (string, error) { return "merged", nil }
+	app.MRState = func(context.Context, string, string, string) (string, error) { return "merged", nil }
 	out = rb(t, projDir, "runbook", "preflight", "RB-0001", "--ate", "S2")
 	if !strings.Contains(out, "F-0002 has a result") || !strings.Contains(out, "acme/hub!2150 is merged") {
 		t.Fatalf("now met:\n%s", out)
@@ -136,7 +136,7 @@ func TestPreflightUnknownKindIsManualNeverMet(t *testing.T) {
 	if !strings.Contains(out, "[manual]  shell verde em producao") {
 		t.Fatalf("an unknown kind must be manual:\n%s", out)
 	}
-	app.MRState = func(context.Context, string, string) (string, error) { return "", errors.New("no network") }
+	app.MRState = func(context.Context, string, string, string) (string, error) { return "", errors.New("no network") }
 	out = rb(t, projDir, "runbook", "preflight", "RB-0001", "--ate", "S2")
 	if !strings.Contains(out, "[manual]") || !strings.Contains(out, "forge not reachable") || strings.Contains(out, "!2150 is") {
 		t.Fatalf("an unreachable forge must be manual:\n%s", out)
@@ -272,7 +272,7 @@ func TestRunbookPreflightCutReachesTextAndJSON(t *testing.T) {
 	mustWrite(t, bodyFile, "# Um MR\n\n## Passos\n\n- S1 confere\n  Pré-condição S1: mr acme/hub!1 merged\n")
 	rb(t, projDir, "runbook", "new", "Um MR preso", "--file", bodyFile)
 	oldState, oldForge := app.MRState, newForge
-	app.MRState = func(ctx context.Context, _, _ string) (string, error) {
+	app.MRState = func(ctx context.Context, _, _, _ string) (string, error) {
 		<-ctx.Done()
 		return "", ctx.Err()
 	}

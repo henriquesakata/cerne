@@ -48,12 +48,12 @@ type PreResult struct {
 	Detail string
 }
 
-// MRState asks the forge for the state of a merge request ("opened", "merged",
-// "closed"). It is a variable so tests and other forges can replace it; the
-// default asks glab, read-only, with a deadline.
+// MRState asks the GitLab at host for the state of a merge request ("opened",
+// "merged", "closed"). It is a variable so tests and other forges can replace
+// it; the default asks glab, read-only, with a deadline.
 var MRState = glabMRState
 
-func glabMRState(ctx context.Context, project, iid string) (string, error) {
+func glabMRState(ctx context.Context, host, project, iid string) (string, error) {
 	if !store.ValidMRRef(project, iid) {
 		return "", fmt.Errorf("invalid MR reference %q!%q", project, iid)
 	}
@@ -102,6 +102,7 @@ func CheckPreconditions(repoDir string, pcs []Precondition) []PreResult {
 // too) and the forge gets a total time budget; past it the MRs are not asked
 // and Cut is set, so the warning says the ceiling cut the check.
 type Forge struct {
+	Host        string // the GitLab the MRs are on; "" is gitlab.com (B-0032)
 	Budget      time.Duration
 	CallTimeout time.Duration
 	Cut         bool
@@ -137,7 +138,7 @@ func (f *Forge) state(project, iid string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), d)
 	defer cancel()
 	t0 := time.Now()
-	st, err := MRState(ctx, project, iid)
+	st, err := MRState(ctx, f.Host, project, iid)
 	f.spent += time.Since(t0)
 	// The ceiling, not the forge, ended this call: its deadline was what was
 	// left, and that deadline is what stopped it — a forge failing on its own
