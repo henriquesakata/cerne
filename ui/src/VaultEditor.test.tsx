@@ -129,6 +129,17 @@ describe('VaultEditor save (F-0464 critério 4)', () => {
     expect(onSaved).not.toHaveBeenCalled()
   })
 
+  it('save: a rejected request (network down) leaves Saving, shows the error and keeps the draft', async () => {
+    api.saveEntityContent.mockRejectedValue(new TypeError('Failed to fetch'))
+    const { onSaved } = editor(note())
+    type('meu rascunho')
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    expect(await screen.findByText('Não foi possível gravar: Failed to fetch')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Salvar' })).toBeEnabled()
+    expect(source().value).toBe('meu rascunho')
+    expect(onSaved).not.toHaveBeenCalled()
+  })
+
   it('save: a live reload of the same document keeps the draft and the base', async () => {
     api.saveEntityContent.mockResolvedValue({ ok: true })
     const { rerender, onSaved } = editor(note())

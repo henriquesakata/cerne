@@ -1,5 +1,5 @@
 import { useDeferredValue, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { saveEntityContent, saveFeatureDoc } from './api'
+import { saveEntityContent, saveFeatureDoc, type SaveContentOutcome } from './api'
 import Markdown from './Markdown'
 import { useT } from './i18n'
 import { lineDiff } from './lineDiff'
@@ -208,11 +208,19 @@ export default function VaultEditor({ doc, entries, knownIds, wikiHref, onSaved,
     setSaving(true)
     setError(null)
     const content = joinFrontmatter(head, draft)
-    const res =
-      doc.kind === 'feature'
-        ? await saveFeatureDoc(doc.id, doc.doc ?? 'spec', content, baseHash)
-        : await saveEntityContent(doc.kind as 'decision' | 'note' | 'runbook', doc.id, content, baseHash)
-    setSaving(false)
+    let res: SaveContentOutcome
+    try {
+      res =
+        doc.kind === 'feature'
+          ? await saveFeatureDoc(doc.id, doc.doc ?? 'spec', content, baseHash)
+          : await saveEntityContent(doc.kind as 'decision' | 'note' | 'runbook', doc.id, content, baseHash)
+    } catch (e) {
+      // A rejected request (network down) is an error like any other: the
+      // draft stays and Save is back (audit A6).
+      res = { ok: false, error: e instanceof Error ? e.message : String(e) }
+    } finally {
+      setSaving(false)
+    }
     if (res.ok) {
       setConflict(null)
       // Saved: nothing left to lose. The base stays the old hash, so a save
