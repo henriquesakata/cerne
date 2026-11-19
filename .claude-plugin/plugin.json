@@ -28,12 +28,20 @@
       {
         "matcher": "Bash",
         "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/.claude-plugin/run.sh\" hook cerne-work-bind.sh" }]
+      },
+      {
+        "matcher": "Bash|Edit|Write",
+        "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/.claude-plugin/run.sh\" hook cerne-after-tool-notes.sh" }]
       }
     ],
     "PreToolUse": [
       {
         "matcher": "Edit|Write",
         "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/.claude-plugin/run.sh\" hook cerne-work-gate.sh" }]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/.claude-plugin/run.sh\" hook cerne-tool-notes.sh" }]
       }
     ],
     "SessionStart": [
