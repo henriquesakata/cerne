@@ -20,10 +20,24 @@ import (
 // refsProject is a project whose F-0001 is in development and mirrored on the
 // fake tracker pub (issue https://fake.test/pub/issues/1), with the mirror on
 // and close_on as given ("" = unset). It returns the project and cache dirs.
-func refsProject(t *testing.T, closeOn string) (projDir, cacheDir string) {
+// gate turns [gates] commit_trailer on before the mirror keys are written:
+// enableCommitTrailer re-renders .cernerc through SaveConfig, which drops the
+// [mirror] table Config does not model.
+func refsProject(t *testing.T, closeOn string, gate bool) (projDir, cacheDir string) {
 	t.Helper()
 	pub := &trackertest.Fake{Name: "pub"}
-	projDir, repoDir := mirrorCLIProject(t, pub)
+	t.Setenv("CERNE_ACTOR", "")
+	os.Unsetenv("CERNE_ACTOR")
+	t.Setenv("COPILOT_CLI", "")
+	projDir, _, repoDir := setupProject(t)
+	if gate {
+		enableCommitTrailer(t, projDir)
+	}
+	trackertest.Register(t, pub)
+	setMirrorTrackers(t, projDir, pub)
+	if err := project.SetSettingValue(projDir, "mirror.enabled", project.ScopeProject, true); err != nil {
+		t.Fatalf("set mirror.enabled: %v", err)
+	}
 	if closeOn != "" {
 		if err := project.SetSettingValue(projDir, "mirror.close_on", project.ScopeProject, closeOn); err != nil {
 			t.Fatalf("set mirror.close_on: %v", err)
@@ -60,8 +74,7 @@ func runTrailerHook(t *testing.T, msgPath string) string {
 // the mirror off, a message with no content, or a directory with no project.
 func TestHookCommitTrailerRefs(t *testing.T) {
 	t.Run("the live binding stamps Cerne and Refs in one trailer block", func(t *testing.T) {
-		projDir, cacheDir := refsProject(t, "")
-		enableCommitTrailer(t, projDir)
+		projDir, cacheDir := refsProject(t, "", true)
 		if err := app.BindSession(cacheDir, "sess-a", "F-0001"); err != nil {
 			t.Fatal(err)
 		}
@@ -81,19 +94,19 @@ func TestHookCommitTrailerRefs(t *testing.T) {
 		}
 	})
 	t.Run("a hand-written Cerne trailer gets its Refs, with the commit_trailer gate off", func(t *testing.T) {
-		projDir, _ := refsProject(t, "")
+		projDir, _ := refsProject(t, "", false)
 		if got, want := runTrailerHook(t, writeMsgFile(t, projDir, "fix: y\n\nCerne: F-0001\n")), "fix: y\n\nCerne: F-0001\nRefs: "+issueRef+"\n"; got != want {
 			t.Fatalf("message =\n%q\nwant\n%q", got, want)
 		}
 	})
 	t.Run("close_on merge writes Closes", func(t *testing.T) {
-		projDir, _ := refsProject(t, "merge")
+		projDir, _ := refsProject(t, "merge", false)
 		if got, want := runTrailerHook(t, writeMsgFile(t, projDir, "fix: y\n\nCerne: F-0001\n")), "fix: y\n\nCerne: F-0001\nCloses: "+issueRef+"\n"; got != want {
 			t.Fatalf("message =\n%q\nwant\n%q", got, want)
 		}
 	})
 	t.Run("a subject-only message gets its own trailer paragraph", func(t *testing.T) {
-		projDir, cacheDir := refsProject(t, "")
+		projDir, cacheDir := refsProject(t, "", false)
 		if err := app.BindSession(cacheDir, "sess-a", "F-0001"); err != nil {
 			t.Fatal(err)
 		}
@@ -108,15 +121,14 @@ func TestHookCommitTrailerRefs(t *testing.T) {
 		"a comment-only message is left alone":   "# Please enter the commit message\n",
 	} {
 		t.Run(name, func(t *testing.T) {
-			projDir, _ := refsProject(t, "")
-			enableCommitTrailer(t, projDir) // no live binding: the Cerne: stamp has nothing to add
+			projDir, _ := refsProject(t, "", true) // no live binding: the Cerne: stamp has nothing to add
 			if got := runTrailerHook(t, writeMsgFile(t, projDir, msg)); got != msg {
 				t.Fatalf("message changed:\n%q\nwant\n%q", got, msg)
 			}
 		})
 	}
 	t.Run("the mirror off adds nothing", func(t *testing.T) {
-		projDir, _ := refsProject(t, "")
+		projDir, _ := refsProject(t, "", false)
 		if err := project.SetSettingValue(projDir, "mirror.enabled", project.ScopeProject, false); err != nil {
 			t.Fatal(err)
 		}
