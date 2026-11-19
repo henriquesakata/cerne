@@ -333,3 +333,48 @@ func TestSaveEntityContentStaleClone(t *testing.T) {
 		})
 	}
 }
+
+// TestSaveContentRefusesForeignCerneID (F-0464 audit A9): a document whose
+// frontmatter names another entity in cerne_id — read as cerne push reads it,
+// BOM and trailing spaces tolerated — is refused before any write, on the
+// vault content saves and on the feature docs. Its own id, no cerne_id or no
+// frontmatter at all are accepted.
+func TestSaveContentRefusesForeignCerneID(t *testing.T) {
+	repoDir, projDir, origin := newFeatureBackend(t)
+	seedContentEntity(t, repoDir, "note", "N-0001", "active")
+	seedFeatureInState(t, repoDir, "F-0001", domain.StateCandidate, "spec.md")
+	tree := backendTree(t, repoDir)
+	head, _ := gitback.HeadSHA(origin)
+
+	for _, content := range []string{
+		"---\ncerne_id: N-0002\n---\n\ncorpo\n",
+		"\ufeff--- \ncerne_id:  D-0001 \n---\ncorpo\n",
+		"---\ncerne_id: F-0001\n---\ncorpo\n",
+	} {
+		if err := SaveEntityContentBy(repoDir, projDir, "note", "N-0001", content, "", HumanAuthor()); !errors.Is(err, ErrCerneIDMismatch) {
+			t.Errorf("note content %q: err = %v, want ErrCerneIDMismatch", content, err)
+		}
+	}
+	if err := SaveFeatureDocBy(repoDir, projDir, "F-0001", "spec", "---\ncerne_id: F-0002\n---\n\n# Spec\n", "", HumanAuthor()); !errors.Is(err, ErrCerneIDMismatch) {
+		t.Errorf("feature spec: err = %v, want ErrCerneIDMismatch", err)
+	}
+	if got := backendTree(t, repoDir); !maps.Equal(got, tree) {
+		t.Fatalf("a refused write changed the clone")
+	}
+	if h, _ := gitback.HeadSHA(origin); h != head {
+		t.Fatalf("a refused write moved origin")
+	}
+
+	for i, content := range []string{
+		"---\ncerne_id: N-0001\n---\n\ncorpo próprio\n",
+		"---\ntitle: sem id\n---\ncorpo sem id\n",
+		"corpo sem frontmatter\n",
+	} {
+		if err := SaveEntityContentBy(repoDir, projDir, "note", "N-0001", content, "", HumanAuthor()); err != nil {
+			t.Errorf("accepted case %d: %v", i, err)
+		}
+	}
+	if err := SaveFeatureDocBy(repoDir, projDir, "F-0001", "spec", "---\ncerne_id: F-0001\n---\n\n# Spec própria\n", "", HumanAuthor()); err != nil {
+		t.Errorf("feature spec with its own id: %v", err)
+	}
+}

@@ -730,6 +730,9 @@ func SaveFeatureDocBy(repoDir, projDir, id, doc, content, base string, by DocAut
 	if !ok {
 		return fmt.Errorf("%w: %q", ErrUnknownDoc, doc)
 	}
+	if err := checkCerneID(id, content); err != nil {
+		return err
+	}
 	err := mutateAndSnapshot(repoDir, projDir, base != "", func() (string, error) {
 		f, err := CheckDocWritable(repoDir, id, doc)
 		if err != nil {

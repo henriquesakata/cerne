@@ -8,7 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
+	"github.com/henriquesakata/cerne/internal/doccheck"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/store"
@@ -18,6 +20,21 @@ import (
 // writer loaded — no longer matches the backend's (F-0464): someone else
 // changed the document since, and the write is refused rather than lost.
 var ErrContentConflict = errors.New("the document changed in the backend since it was loaded")
+
+// ErrCerneIDMismatch is a write whose leading frontmatter names another
+// entity in cerne_id (audit A9): cerne push routes a document by that id, so
+// the document would silently become someone else's. Content without one is
+// accepted.
+var ErrCerneIDMismatch = errors.New("the document's cerne_id is not the entity it is saved to")
+
+// checkCerneID refuses content whose frontmatter cerne_id, read by the same
+// rule cerne push uses, is not id.
+func checkCerneID(id, content string) error {
+	if cid := doccheck.FrontmatterValue([]byte(content), "cerne_id"); cid != "" && !strings.EqualFold(cid, id) {
+		return fmt.Errorf("%w: %s carries cerne_id %s", ErrCerneIDMismatch, id, cid)
+	}
+	return nil
+}
 
 // ContentConflictError is ErrContentConflict carrying the content the core
 // compared against, so the caller can show the difference without a re-read.
@@ -56,6 +73,9 @@ func SaveEntityContentBy(repoDir, projDir, kind, id, content, base string, by Do
 	path, state, ok := entityContent(repoDir, kind, id)
 	if !ok {
 		return fmt.Errorf("%w: %s %q", store.ErrNotFound, kind, id)
+	}
+	if err := checkCerneID(id, content); err != nil {
+		return err
 	}
 	// Always on origin (audit A1): the state, not only the base, decides the
 	// write, and a clone may trail a supersede pushed from elsewhere. These
