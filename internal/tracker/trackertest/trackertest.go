@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -94,6 +95,12 @@ func (f *Fake) CommitRef(r tracker.Ref, _ string, closing bool) string {
 		return "Closes: " + r.URL
 	}
 	return "Refs: " + r.URL
+}
+
+// Owns reports whether r is one of this fake's issues, by its URL.
+func (f *Fake) Owns(r tracker.Ref) bool {
+	id, ok := strings.CutPrefix(r.URL, "https://fake.test/"+f.Name+"/issues/")
+	return ok && id != "" && id == r.ID
 }
 
 // Open seeds a third-party issue, open, with no cerne state.
@@ -243,6 +250,25 @@ func RunContract(t *testing.T, h Harness) {
 		}
 		if got.Title != "Outside title" || got.Body != "Outside body" {
 			t.Fatalf("outside issue rewritten to title %q, body %q", got.Title, got.Body)
+		}
+	})
+
+	// A link is resolved by tracker name; a tracker re-pointed elsewhere must
+	// not adopt the old issues (F-0449): the core asks Owns before it writes.
+	t.Run("owns its own issues only", func(t *testing.T) {
+		tr := h.New(t)
+		r := create(t, tr, item("F-9007", domain.StateCandidate))
+		outside := h.Open(t, "Outside owned", "Body", "")
+		if !tr.Owns(r) || !tr.Owns(outside) {
+			t.Fatalf("Owns(created %+v) = %v, Owns(outside %+v) = %v; want both true", r, tr.Owns(r), outside, tr.Owns(outside))
+		}
+		u, err := url.Parse(r.URL)
+		if err != nil {
+			t.Fatalf("issue URL %q: %v", r.URL, err)
+		}
+		u.Host = "elsewhere.invalid"
+		if foreign := (tracker.Ref{Tracker: r.Tracker, ID: r.ID, URL: u.String()}); tr.Owns(foreign) {
+			t.Fatalf("Owns(%+v) = true for an issue on another host", foreign)
 		}
 	})
 

@@ -52,6 +52,7 @@ type IssueTracker interface {
 	Update(ctx context.Context, r Ref, it Item) error             // idempotent; writes only what differs; one-shot effects only on the closing call
 	ListOpen(ctx context.Context, label string) ([]Remote, error) // <=100 open issues, never PRs; label "" = no filter
 	CommitRef(r Ref, commitURL string, closing bool) string       // whole trailer: "Refs: #12" | "Closes: o/r#12" | "Refs: <url>"; pure, no network
+	Owns(r Ref) bool                                              // r is an issue of this tracker's own repository/project; pure, no network
 }
 
 // Kinds maps a tracker kind to its constructor. A new tracker = one entry + <kind>.go.

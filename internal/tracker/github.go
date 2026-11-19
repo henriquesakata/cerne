@@ -159,6 +159,20 @@ func (g github) CommitRef(r Ref, commitURL string, closing bool) string {
 	return word + ": " + ref
 }
 
+// Owns reports whether r is an issue of this repository on this host: the
+// link a card holds is checked before a tracker re-pointed since could act on
+// issue #N of another repository.
+func (g github) Owns(r Ref) bool {
+	u, err := url.Parse(r.URL)
+	return err == nil && u.Scheme == "https" && u.User == nil && digits(r.ID) && strings.EqualFold(u.Host, g.repo.Host) &&
+		strings.EqualFold(strings.TrimSuffix(u.Path, "/"), "/"+g.repo.Path+"/issues/"+r.ID)
+}
+
+// digits reports a non-empty run of ASCII digits: a GitHub issue number.
+func digits(s string) bool {
+	return s != "" && strings.Trim(s, "0123456789") == ""
+}
+
 // stateLabel is the cerne:<state> label; implemented reads as ready, like the board.
 func stateLabel(s domain.FeatureState) string {
 	if s == domain.StateImplemented {

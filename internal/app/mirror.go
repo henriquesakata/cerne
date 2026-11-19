@@ -154,7 +154,11 @@ func mirrorAfterTransition(repoDir, projDir string, ids []string) []string {
 			continue
 		}
 		if err := applyMirror(ctx, repoDir, f, cfg); err != nil {
-			warnings = append(warnings, fmt.Sprintf("cerne: mirror %s -> %s: %v; run 'cerne mirror sync'", id, f.Mirror.Tracker, err))
+			line := fmt.Sprintf("cerne: mirror %s -> %s: %v", id, f.Mirror.Tracker, err)
+			if !errors.As(err, new(notOwnedError)) { // a sync cannot fix a link on another repository
+				line += "; run 'cerne mirror sync'"
+			}
+			warnings = append(warnings, line)
 		}
 	}
 	return warnings
@@ -172,7 +176,18 @@ func applyMirror(ctx context.Context, repoDir string, f store.Feature, cfg proje
 		return err
 	}
 	r := tracker.Ref{Tracker: f.Mirror.Tracker, ID: f.Mirror.ID, URL: f.Mirror.URL}
+	if !tr.Owns(r) {
+		return notOwnedError{link: r.URL, trackerURL: cfg.Trackers[k].URL}
+	}
 	return tr.Update(ctx, r, mirrorItem(repoDir, f, *f.Mirror, cfg))
+}
+
+// notOwnedError is a card's link to an issue the tracker of that name no
+// longer owns: the tracker was re-pointed to another repository since.
+type notOwnedError struct{ link, trackerURL string }
+
+func (e notOwnedError) Error() string {
+	return fmt.Sprintf("link %s is not on %s; re-link or restore the tracker", e.link, e.trackerURL)
 }
 
 // transitionIDs is every card a transition moved: the card itself, the epics
@@ -317,6 +332,9 @@ func MirrorTrailers(repoDir, projDir string, cardIDs []string) []string {
 			continue
 		}
 		r := tracker.Ref{Tracker: f.Mirror.Tracker, ID: f.Mirror.ID, URL: f.Mirror.URL}
+		if !tr.Owns(r) {
+			continue
+		}
 		out = append(out, tr.CommitRef(r, commitURL, cfg.CloseOn == "merge"))
 	}
 	return out
