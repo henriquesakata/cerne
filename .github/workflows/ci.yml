@@ -23,6 +23,8 @@ jobs:
         run: sh scripts/release-body_test.sh
       - name: release publish script
         run: sh scripts/release-publish_test.sh
+      - name: MCP Registry publish script
+        run: sh scripts/mcp-registry-publish_test.sh
       - run: go vet ./...
       # -timeout 30m is required, not decorative: the default is 10 min per
       # package and internal/cli + internal/app spawn real git per test (F-0289).

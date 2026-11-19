@@ -26,6 +26,11 @@ jobs:
       - name: extract the release notes
         run: sh scripts/release-notes.sh "$GITHUB_REF_NAME" >"$RUNNER_TEMP/changelog-section.md"
       - run: bash scripts/build-release.sh "$GITHUB_REF_NAME"
+      # The MCP Registry listing (F-0455): dist/cerne_<tag>.mcpb (the binaries,
+      # the MCPB manifest and its launcher; its hash appended to SHA256SUMS) and
+      # dist/server.json pointing at it. Built before the attestation so both
+      # are attested and uploaded with the rest of dist/.
+      - run: sh scripts/mcpb-bundle.sh "$GITHUB_REF_NAME"
       # Verifiable with `gh attestation verify <file> --repo henriquesakata/cerne`.
       - uses: actions/attest-build-provenance@v2
         with:
@@ -99,6 +104,56 @@ jobs:
             echo "::error::brew installed '$got', want '$want'"
             exit 1
           fi
+
+  # Lists the release in the official MCP Registry (F-0455), which Glama,
+  # PulseMCP and other directories mirror, from the server.json the release
+  # job uploaded. Every stable tag verifies mcp-publisher and validates that
+  # server.json against the registry, with no login. A published version is
+  # public and can never be changed or deleted, so the publish step stays off
+  # until the owner has published the first version by hand and then sets the
+  # repository variable:
+  #   gh release download <tag> --repo henriquesakata/cerne -p server.json
+  #   mcp-publisher login github        # as henriquesakata
+  #   mcp-publisher publish server.json
+  #   gh variable set MCP_REGISTRY_PUBLISH --body true --repo henriquesakata/cerne
+  # A prerelease tag (v1.0.0-rc.1) never gets here, as with the Homebrew tap.
+  # Its own job, so a registry outage leaves the tap and the checks alone.
+  mcp-registry:
+    needs: release
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # GitHub OIDC login to the registry, no stored secret
+    env:
+      MCP_PUBLISHER_VERSION: v1.8.9
+    steps:
+      - uses: actions/checkout@v4
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      # A pinned release, verified against the registry's own release workflow
+      # before it runs (the registry's GitHub Actions guide); never releases/latest.
+      - name: download and verify mcp-publisher
+        run: |
+          set -eu
+          archive=mcp-publisher_linux_amd64.tar.gz
+          base="https://github.com/modelcontextprotocol/registry/releases/download/$MCP_PUBLISHER_VERSION"
+          curl -fsSL -o "$archive" "$base/$archive"
+          curl -fsSL -o "$archive.sigstore.json" "$base/$archive.sigstore.json"
+          cosign verify-blob --bundle "$archive.sigstore.json" \
+            --certificate-identity "https://github.com/modelcontextprotocol/registry/.github/workflows/release.yml@refs/tags/$MCP_PUBLISHER_VERSION" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "$archive"
+          tar xzf "$archive" mcp-publisher
+      - name: validate the release's server.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" -p server.json -D "$RUNNER_TEMP"
+          ./mcp-publisher validate "$RUNNER_TEMP/server.json"
+      # Skips a version the registry already has (a re-run on the same tag).
+      - name: publish to the MCP Registry
+        if: ${{ vars.MCP_REGISTRY_PUBLISH == 'true' }}
+        run: sh scripts/mcp-registry-publish.sh "$RUNNER_TEMP/server.json"
 
   # The README's commands against the release just published, on Linux and
   # Windows (quickstart.yml).
