@@ -40,7 +40,7 @@ vi.mock('./Backlinks', () => ({ default: () => null }))
 
 import { entriesFrom } from './Palette'
 import Vault from './Vault'
-import VaultEditor, { insertWiki, splitFrontmatter, wikiQuery } from './VaultEditor'
+import VaultEditor, { insertWiki, placeWikiList, splitFrontmatter, wikiQuery } from './VaultEditor'
 import { navAllowed } from './navGuard'
 
 const note = (over: Partial<VaultDoc> = {}): VaultDoc => ({
@@ -203,6 +203,15 @@ describe('VaultEditor wiki autocomplete (F-0464 critério 3)', () => {
     expect(wikiQuery('ver [[de[c', 10)).toBeNull()
     expect(wikiQuery('sem link', 8)).toBeNull()
     expect(insertWiki('ver [[dec fim', 4, 9, 'D-0001')).toEqual({ text: 'ver [[D-0001]] fim', caret: 14 })
+  })
+
+  it('wiki autocomplete: placeWikiList opens under the caret line, flips above, stays in the pane', () => {
+    expect(placeWikiList(100, 20, 150, 600)).toBe(120) // room below: under the line
+    expect(placeWikiList(500, 20, 150, 600)).toBe(350) // no room below: above the line
+    expect(placeWikiList(100, 20, 300, 350)).toBe(50) // room on neither side: clamped to the pane's bottom
+    expect(placeWikiList(-40, 20, 150, 600)).toBe(0) // line scrolled above the pane
+    expect(placeWikiList(900, 20, 150, 600)).toBe(450) // line scrolled below the pane
+    expect(placeWikiList(10, 20, 500, 300)).toBe(0) // list taller than the pane
   })
 
   const list = () => screen.queryByRole('listbox')

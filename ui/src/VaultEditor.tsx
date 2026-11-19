@@ -52,6 +52,42 @@ export function splitFrontmatter(content: string): { front: string; body: string
   return m ? { front: m[0], body: content.slice(m[0].length) } : { front: '', body: content }
 }
 
+// placeWikiList is the top of the [[ list inside the source pane: under the
+// caret's line (lineTop relative to the pane, scroll already applied), above
+// it when there is no room below, clamped inside the pane.
+export function placeWikiList(lineTop: number, lineHeight: number, listHeight: number, paneHeight: number): number {
+  const below = lineTop + lineHeight
+  const top = below + listHeight <= paneHeight || lineTop - listHeight < 0 ? below : lineTop - listHeight
+  return Math.max(0, Math.min(top, paneHeight - listHeight))
+}
+
+// The textarea styles that decide where a line wraps and how tall it is.
+const MIRRORED = [
+  'boxSizing', 'width', 'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
+  'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'fontFamily', 'fontSize', 'fontStyle',
+  'fontWeight', 'fontVariant', 'fontStretch', 'lineHeight', 'letterSpacing', 'wordSpacing', 'textIndent',
+  'textTransform', 'tabSize',
+] as const
+
+// caretLine measures the line of offset pos inside the textarea, from its top
+// edge and before scrolling, with a hidden mirror of its text (a textarea has
+// no API for it). jsdom has no layout: there it reads zeros.
+function caretLine(el: HTMLTextAreaElement, pos: number): { top: number; height: number } {
+  const cs = getComputedStyle(el)
+  const mirror = document.createElement('div')
+  for (const p of MIRRORED) mirror.style[p] = cs[p]
+  Object.assign(mirror.style, { position: 'absolute', visibility: 'hidden', top: '0', left: '-9999px', whiteSpace: 'pre-wrap', overflowWrap: 'break-word' })
+  mirror.textContent = el.value.slice(0, pos)
+  const mark = document.createElement('span')
+  mark.textContent = '\u200b'
+  mirror.appendChild(mark)
+  document.body.appendChild(mirror)
+  const lineHeight = parseFloat(cs.lineHeight)
+  const line = { top: mark.offsetTop + (parseFloat(cs.borderTopWidth) || 0), height: Number.isFinite(lineHeight) ? lineHeight : mark.offsetHeight }
+  mirror.remove()
+  return line
+}
+
 // The list a bare `[[` shows before anything is typed, as the palette's cap.
 const FIRST_ENTRIES = 20
 
@@ -91,6 +127,8 @@ export default function VaultEditor({ doc, entries, knownIds, wikiHref, onSaved,
   const [active, setActive] = useState(0)
   const [dismissed, setDismissed] = useState<number | null>(null)
   const caretAfter = useRef<number | null>(null)
+  const listRef = useRef<HTMLUListElement>(null)
+  const [listTop, setListTop] = useState(0)
   const options = !wiki ? [] : wiki.query.trim() === '' ? entries.slice(0, FIRST_ENTRIES) : rank(entries, wiki.query)
   const listOpen = options.length > 0
 
@@ -115,6 +153,17 @@ export default function VaultEditor({ doc, entries, knownIds, wikiHref, onSaved,
     sourceRef.current?.setSelectionRange(caretAfter.current, caretAfter.current)
     caretAfter.current = null
   })
+  // The list opens at the caret's line, not under the whole (tall) textarea.
+  const placeList = () => {
+    const el = sourceRef.current
+    if (!el || !listRef.current) return
+    const line = caretLine(el, el.selectionStart)
+    setListTop(placeWikiList(line.top - el.scrollTop, line.height, listRef.current.offsetHeight, el.offsetHeight))
+  }
+  useLayoutEffect(() => {
+    if (listOpen) placeList()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listOpen, wiki?.start, wiki?.query, options.length])
   const onSourceKey = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (!listOpen || !wiki) return
     const n = options.length
@@ -259,10 +308,18 @@ export default function VaultEditor({ doc, entries, knownIds, wikiHref, onSaved,
             }}
             onSelect={(e) => track(e.currentTarget.value, e.currentTarget.selectionStart)}
             onKeyDown={onSourceKey}
+            onScroll={() => listOpen && placeList()}
             spellCheck
           />
           {listOpen && (
-            <ul className="vault-editor-wiki" role="listbox" id={listId} aria-label={t.vault.editor.wikiList}>
+            <ul
+              ref={listRef}
+              className="vault-editor-wiki"
+              role="listbox"
+              id={listId}
+              aria-label={t.vault.editor.wikiList}
+              style={{ top: listTop }}
+            >
               {options.map((o, i) => (
                 <li
                   key={o.id}
