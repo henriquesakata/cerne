@@ -31,6 +31,11 @@ describe('remarkWikiLink (F-0463, paridade com internal/mdlink)', () => {
     ])
   })
 
+  it('alias vazio ou só espaços cai no id (o link nunca fica invisível)', () => {
+    const c = html('[[F-0001|]] e [[N-0002|   ]]')
+    expect([...c.querySelectorAll('a.wikilink')].map((a) => a.textContent)).toEqual(['F-0001', 'N-0002'])
+  })
+
   it('id desconhecido vira span.wikilink-broken; sem known nada é quebrado', () => {
     const broken = html('[[X-9999]]').querySelector('span.wikilink-broken')
     expect(broken?.textContent).toBe('X-9999')

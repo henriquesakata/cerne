@@ -29,7 +29,7 @@ function split(value: string, opts: WikiLinkOptions): MdNode[] | null {
     if (href === null) continue
     hit = true
     if (m.index > last) out.push({ type: 'text', value: value.slice(last, m.index) })
-    const label: MdNode[] = [{ type: 'text', value: m[2] ?? id }]
+    const label: MdNode[] = [{ type: 'text', value: m[2]?.trim() || id }]
     out.push(
       opts.known && !opts.known.has(id)
         ? { type: 'wikiBroken', children: label, data: { hName: 'span', hProperties: { className: 'wikilink-broken', title: opts.brokenTitle } } }
