@@ -320,10 +320,10 @@ func TestTrackerKindGitLabAccepted(t *testing.T) {
 	if !slices.Contains(kinds, "github") || !slices.Contains(kinds, "gitlab") {
 		t.Fatalf("KindNames() = %v, want github and gitlab", kinds)
 	}
-	_, err := tracker.New(tracker.Config{Name: "j", Kind: "jira", URL: "https://jira.example/PROJ"})
-	want := `unknown tracker kind "jira" (supported: ` + strings.Join(kinds, ", ") + ")"
+	_, err := tracker.New(tracker.Config{Name: "j", Kind: "nosuchkind", URL: "https://jira.example/PROJ"})
+	want := `unknown tracker kind "nosuchkind" (supported: ` + strings.Join(kinds, ", ") + ")"
 	if !errors.Is(err, tracker.ErrUnknownKind) || err.Error() != want {
-		t.Fatalf("New(jira) = %v, want errors.Is ErrUnknownKind with the text %q", err, want)
+		t.Fatalf("New(nosuchkind) = %v, want errors.Is ErrUnknownKind with the text %q", err, want)
 	}
 	t.Logf("unknown kind: %v", err)
 }
