@@ -350,13 +350,16 @@ func TestSaveContentRefusesForeignCerneID(t *testing.T) {
 		"---\ncerne_id: N-0002\n---\n\ncorpo\n",
 		"\ufeff--- \ncerne_id:  D-0001 \n---\ncorpo\n",
 		"---\ncerne_id: F-0001\n---\ncorpo\n",
+		"---\ncerne_id: n-0001\n---\ncorpo\n", // push routes by the id as written: another case is another file
 	} {
 		if err := SaveEntityContentBy(repoDir, projDir, "note", "N-0001", content, "", HumanAuthor()); !errors.Is(err, ErrCerneIDMismatch) {
 			t.Errorf("note content %q: err = %v, want ErrCerneIDMismatch", content, err)
 		}
 	}
-	if err := SaveFeatureDocBy(repoDir, projDir, "F-0001", "spec", "---\ncerne_id: F-0002\n---\n\n# Spec\n", "", HumanAuthor()); !errors.Is(err, ErrCerneIDMismatch) {
-		t.Errorf("feature spec: err = %v, want ErrCerneIDMismatch", err)
+	for _, cid := range []string{"F-0002", "f-0001"} {
+		if err := SaveFeatureDocBy(repoDir, projDir, "F-0001", "spec", "---\ncerne_id: "+cid+"\n---\n\n# Spec\n", "", HumanAuthor()); !errors.Is(err, ErrCerneIDMismatch) {
+			t.Errorf("feature spec with cerne_id %s: err = %v, want ErrCerneIDMismatch", cid, err)
+		}
 	}
 	if got := backendTree(t, repoDir); !maps.Equal(got, tree) {
 		t.Fatalf("a refused write changed the clone")

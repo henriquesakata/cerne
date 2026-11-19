@@ -28,9 +28,10 @@ var ErrContentConflict = errors.New("the document changed in the backend since i
 var ErrCerneIDMismatch = errors.New("the document's cerne_id is not the entity it is saved to")
 
 // checkCerneID refuses content whose frontmatter cerne_id, read by the same
-// rule cerne push uses, is not id.
+// rule cerne push uses, is not id — exactly: push routes by the id as written,
+// so d-0001 is another document than D-0001.
 func checkCerneID(id, content string) error {
-	if cid := doccheck.FrontmatterValue([]byte(content), "cerne_id"); cid != "" && !strings.EqualFold(cid, id) {
+	if cid := doccheck.FrontmatterValue([]byte(content), "cerne_id"); cid != "" && cid != id {
 		return fmt.Errorf("%w: %s carries cerne_id %s", ErrCerneIDMismatch, id, cid)
 	}
 	return nil
