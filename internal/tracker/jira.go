@@ -378,7 +378,7 @@ func (c *jiraCall) issueType(ctx context.Context) (string, error) {
 	}
 	first := ""
 	for _, t := range p.IssueTypes {
-		if t.ID == "" || t.Subtask || t.Level != nil && *t.Level != 0 {
+		if t.ID == "" || t.Subtask || (t.Level != nil && *t.Level != 0) {
 			continue
 		}
 		if strings.EqualFold(t.Name, "Task") {
@@ -389,12 +389,12 @@ func (c *jiraCall) issueType(ctx context.Context) (string, error) {
 		}
 	}
 	if first == "" {
-		return "", fmt.Errorf("jira %s: project %s has no issue type but subtasks", c.j.host, c.j.project)
+		return "", fmt.Errorf("jira %s: project %s has no issue type that is not a subtask", c.j.host, c.j.project)
 	}
 	return first, nil
 }
 
-// Update reads the issue and moves it toward it.
+// Update reads the issue and writes only what differs from the card.
 func (j jira) Update(ctx context.Context, r Ref, it Item) error {
 	if !j.ownKey(r.ID) {
 		return fmt.Errorf("%w: issue key %q", errBadRef, r.ID)
