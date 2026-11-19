@@ -289,6 +289,28 @@ describe('VaultEditor wiki autocomplete (F-0464 critério 3)', () => {
     expect(placeWikiList(10, 20, 500, 300)).toBe(0) // list taller than the pane
   })
 
+  it('wiki autocomplete: historical entities come after live ones, with their state chip', () => {
+    const e = (id: string, title: string, over = {}) => ({ id, title, kind: 'decision' as const, href: `#/d/${id}`, ...over })
+    const old = { historical: true, state: 'superseded', stateLabel: 'Substituída' }
+    render(
+      <VaultEditor
+        doc={note()}
+        entries={[e('D-0001', 'Decisão antiga', old), e('D-0002', 'Decisão viva'), e('D-0003', 'Decisão rejeitada', old)]}
+        knownIds={known}
+        wikiHref={(id) => `#/vault/${id}`}
+        onSaved={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    )
+    for (const q of ['ver [[', 'ver [[decisao']) {
+      type(q)
+      const opts = screen.getAllByRole('option')
+      expect(opts.map((o) => o.querySelector('.card-id')?.textContent)).toEqual(['D-0002', 'D-0001', 'D-0003'])
+      expect(opts[0].querySelector('.chip')).toBeNull()
+      expect(opts[1].querySelector('.chip.chip-superseded')).toHaveTextContent('Substituída')
+    }
+  })
+
   const list = () => screen.queryByRole('listbox')
   const options = () => screen.getAllByRole('option').map((o) => o.textContent)
 

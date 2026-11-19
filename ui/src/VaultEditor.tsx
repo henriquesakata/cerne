@@ -137,9 +137,17 @@ function caretLine(el: HTMLTextAreaElement, pos: number): { top: number; height:
 // The list a bare `[[` shows before anything is typed, as the palette's cap.
 const FIRST_ENTRIES = 20
 
+// EditorEntry is a [[ candidate: the palette's entry plus, from the vault,
+// whether it is history and its translated state.
+export type EditorEntry = Entry & { historical?: boolean; state?: string; stateLabel?: string }
+
+// liveFirst keeps the order within each group and puts history last: linking
+// a superseded entity is a lint debt (ref-to-superseded, critic C-6).
+const liveFirst = (es: EditorEntry[]) => [...es.filter((e) => !e.historical), ...es.filter((e) => e.historical)]
+
 type Props = {
   doc: VaultDoc
-  entries: Entry[]
+  entries: EditorEntry[]
   knownIds: ReadonlySet<string>
   wikiHref: (id: string) => string | null
   onSaved: () => void | Promise<void>
@@ -175,7 +183,7 @@ export default function VaultEditor({ doc, entries, knownIds, wikiHref, onSaved,
   const caretAfter = useRef<number | null>(null)
   const listRef = useRef<HTMLUListElement>(null)
   const [listTop, setListTop] = useState(0)
-  const options = !wiki ? [] : wiki.query.trim() === '' ? entries.slice(0, FIRST_ENTRIES) : rank(entries, wiki.query)
+  const options = !wiki ? [] : wiki.query.trim() === '' ? liveFirst(entries).slice(0, FIRST_ENTRIES) : liveFirst(rank(entries, wiki.query))
   const listOpen = options.length > 0
 
   const track = (text: string, caret: number) => {
@@ -416,6 +424,7 @@ export default function VaultEditor({ doc, entries, knownIds, wikiHref, onSaved,
                   }}
                 >
                   <span className="card-id">{o.id}</span> {o.title}
+                  {o.historical && <span className={`chip chip-${o.state}`}>{o.stateLabel}</span>}
                 </li>
               ))}
             </ul>

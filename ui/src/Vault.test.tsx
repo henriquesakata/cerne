@@ -282,3 +282,14 @@ describe('Vault edit action (F-0464 critério 1)', () => {
     expect(within(actions).queryByRole('button', { name: 'Editar' }) !== null).toBe(shown)
   })
 })
+
+describe('Vault editor entries (F-0464 critic C-6)', () => {
+  it('historical: the [[ list puts a superseded decision after the live one, with its translated state', async () => {
+    await open('#/vault/D-0001')
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Texto do documento' }), { target: { value: 'ver [[decisao' } })
+    const opts = screen.getAllByRole('option')
+    expect(opts.map((o) => o.querySelector('.card-id')?.textContent)).toEqual(['D-0001', 'D-0002'])
+    expect(opts[1].querySelector('.chip')).toHaveTextContent('Substituída')
+  })
+})

@@ -7,7 +7,7 @@ import { LoadPending, Notice, useLiveLoad } from './liveLoad'
 import { useT, type Messages } from './i18n'
 import { entriesFrom } from './Palette'
 import { loadVaultDoc, stripLeadingTitle, type VaultDoc } from './vault-doc'
-import VaultEditor, { canEdit } from './VaultEditor'
+import VaultEditor, { canEdit, type EditorEntry } from './VaultEditor'
 import { buildVaultTree, filterVaultTree, isHistorical, type VaultKind, type VaultNode } from './vault-tree'
 
 const DOC_NAMES = new Set(['spec', 'plan', 'result'])
@@ -220,7 +220,16 @@ export default function Vault({ hash }: { hash: string }) {
     [st, wiki, history, sel.id],
   )
   const shown = useMemo(() => filterVaultTree(tree, query), [tree, query])
-  const entries = useMemo(() => (st ? entriesFrom(st) : []), [st])
+  // [[ candidates, with whether each is history and its state, so the editor
+  // lists the live ones first (critic C-6).
+  const entries = useMemo<EditorEntry[]>(() => {
+    if (!st) return []
+    const states = new Map([...st.features, ...st.decisions, ...st.references, ...st.runbooks, ...st.notes].map((e) => [e.id, e.state]))
+    return entriesFrom(st).map((e) => {
+      const state = states.get(e.id) ?? ''
+      return { ...e, state, historical: isHistorical(e.kind, state), stateLabel: stateText(t, e.kind, state) }
+    })
+  }, [st, t])
   const known = useMemo(() => {
     const ids = st ? [...st.features, ...st.decisions, ...st.notes, ...st.runbooks, ...st.references].map((e) => e.id.toUpperCase()) : []
     const set = new Set(ids)
