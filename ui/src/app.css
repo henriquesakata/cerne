@@ -3821,22 +3821,40 @@ button.clarify-chip { cursor: pointer; font: inherit; }
 /* Cofre (F-0463): árvore | documento | sumário e backlinks. */
 .page.vault { display: grid; grid-template-columns: minmax(14rem, 20rem) minmax(0, 1fr) minmax(12rem, 16rem); gap: 1.25rem; max-width: none; width: 100%; align-items: start; }
 .vault-tree, .vault-side { position: sticky; top: 1rem; max-height: calc(100vh - 2rem); overflow: auto; font-size: 0.9rem; }
-.vault-tree input[type='search'] { width: 100%; box-sizing: border-box; }
+.vault-tree input[type='search'] { width: 100%; box-sizing: border-box; font: inherit; font-size: 0.95rem; padding: 0.45rem 0.6rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: inherit; }
+.vault-tree input[type='search']:focus-visible,
+.vault-tree a:focus-visible,
+.vault-tree summary:focus-visible,
+.vault-twist:focus-visible,
+.vault-side button:focus-visible,
+.vault-doc-tabs a:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
 .vault-history { display: flex; align-items: center; gap: 0.4rem; margin: 0.5rem 0; color: var(--muted); }
 .vault-tree ul, .vault-side ul { list-style: none; margin: 0; padding-left: 0.9rem; }
 .vault-tree > ul { padding-left: 0; }
-.vault-tree summary { cursor: pointer; }
+.vault-tree li { padding: 0.1rem 0; }
+.vault-tree summary { cursor: pointer; list-style: none; display: flex; align-items: center; flex-wrap: wrap; gap: 0.25rem; }
+.vault-tree summary::-webkit-details-marker { display: none; }
+.vault-tree a { color: var(--link); text-decoration: none; }
+.vault-tree a:hover { text-decoration: underline; }
 .vault-tree a[aria-current='page'] { font-weight: 600; }
-.vault-twist { border: 0; background: none; padding: 0 0.3rem 0 0; cursor: pointer; color: var(--muted); }
+.vault-tree .chip, .vault-tree .badge { margin-left: 0.3rem; }
+.vault-twist { border: 0; background: none; min-width: 24px; min-height: 24px; padding: 0; cursor: pointer; color: var(--muted); font: inherit; }
 .vault-doc { min-width: 0; }
-.vault-doc-header { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.5rem; }
+.vault-doc-header { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
 .vault-doc-header h1 { margin: 0; }
 .vault-doc-actions { margin-left: auto; }
-.wikilink-broken { color: var(--muted); text-decoration: line-through dotted; }
+.vault-doc-tabs { flex-basis: 100%; display: flex; gap: 1rem; border-bottom: 1px solid var(--border-soft); }
+.vault-doc-tabs a { color: var(--link); text-decoration: none; padding: 0.35rem 0; border-bottom: 2px solid transparent; }
+.vault-doc-tabs a[aria-current='page'] { color: var(--fg); border-bottom-color: var(--fg); font-weight: 600; }
+.wikilink-broken { color: var(--muted); text-decoration: underline dotted; cursor: help; }
 .vault-side h2 { font-size: 0.85rem; text-transform: uppercase; color: var(--muted); }
-.vault-side button { border: 0; background: none; padding: 0.1rem 0; text-align: left; cursor: pointer; color: var(--link); }
+.vault-side button { border: 0; background: none; padding: 0.1rem 0; text-align: left; cursor: pointer; color: var(--link); font: inherit; }
 .vault-outline-sub { padding-left: 0.9rem; }
-@media (max-width: 900px) {
+@media (max-width: 60rem) {
+  .page.vault { grid-template-columns: minmax(12rem, 18rem) minmax(0, 1fr); }
+  .vault-side { grid-column: 1 / -1; position: static; max-height: none; }
+}
+@media (max-width: 720px) {
   .page.vault { grid-template-columns: minmax(0, 1fr); }
-  .vault-tree, .vault-side { position: static; max-height: 40vh; }
+  .vault-tree { position: static; max-height: 40vh; }
 }
