@@ -285,7 +285,7 @@ func TestMirrorTrackersRecordsValidation(t *testing.T) {
 		{"duplicate name", []any{ghRecord("gh", "issues"), ghRecord("gh", "other")}, nil, ""},
 		{"empty name", []any{with(map[string]any{"name": ""})}, nil, ""},
 		{"missing name", []any{with(map[string]any{"name": nil})}, nil, ""},
-		{"unknown kind", []any{map[string]any{"name": "j", "kind": "jira", "url": "https://jira.example/PROJ"}}, tracker.ErrUnknownKind, `unknown tracker kind "jira" (supported: ` + strings.Join(tracker.KindNames(), ", ") + `)`},
+		{"unknown kind", []any{map[string]any{"name": "j", "kind": "nosuchkind", "url": "https://tracker.example/PROJ"}}, tracker.ErrUnknownKind, `unknown tracker kind "nosuchkind" (supported: ` + strings.Join(tracker.KindNames(), ", ") + `)`},
 		{"missing kind", []any{with(map[string]any{"kind": nil})}, tracker.ErrUnknownKind, ""},
 		{"http url", []any{with(map[string]any{"url": "http://github.com/o/issues"})}, tracker.ErrTrackerURL, ""},
 		{"url the kind cannot read", []any{with(map[string]any{"url": "https://github.com/o"})}, tracker.ErrTrackerURL, ""},
@@ -356,7 +356,7 @@ func TestSetSettingRecordsJSON(t *testing.T) {
 		{"not JSON", `[{"name":`, nil},
 		{"an object, not a list", `{"name":"gh","kind":"github","url":"https://github.com/o/issues"}`, nil},
 		{"a number in a field", `[{"name":"gh","kind":"github","url":"https://github.com/o/issues","label":7}]`, nil},
-		{"unknown kind", `[{"name":"j","kind":"jira","url":"https://jira.example/PROJ"}]`, tracker.ErrUnknownKind},
+		{"unknown kind", `[{"name":"j","kind":"nosuchkind","url":"https://tracker.example/PROJ"}]`, tracker.ErrUnknownKind},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			err := SetSetting(projDir, "mirror.trackers", ScopeProject, c.raw)
@@ -391,7 +391,7 @@ func TestMirrorSettings(t *testing.T) {
 		{"invalid values count as unset", "\n[mirror]\nenabled = \"yes\"\nclose_on = \"never\"\n" +
 			`trackers = [{name = "a", kind = "github", url = "https://github.com/o/a"}, {name = "a", kind = "github", url = "https://github.com/o/b"}]` + "\n", "",
 			MirrorConfig{CloseOn: "accept"}},
-		{"an unknown kind counts as unset", "\n[mirror]\nenabled = true\n" + `trackers = [{name = "j", kind = "jira", url = "https://jira.example/P"}]` + "\n", "",
+		{"an unknown kind counts as unset", "\n[mirror]\nenabled = true\n" + `trackers = [{name = "j", kind = "nosuchkind", url = "https://tracker.example/P"}]` + "\n", "",
 			MirrorConfig{Enabled: true, CloseOn: "accept"}},
 		{"the host scope cannot turn it on", "", "[mirror]\nenabled = true\nclose_on = \"merge\"\n" + two + "\n", MirrorConfig{CloseOn: "accept"}},
 	} {

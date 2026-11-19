@@ -125,13 +125,13 @@ func TestSettingsSetMirrorTrackers(t *testing.T) {
 	}
 
 	before, _ := os.ReadFile(rc)
-	_, err = execCerne(t, "settings", "set", "mirror.trackers", `[{"name":"j","kind":"jira","url":"https://jira.example/PROJ"}]`, "--scope", "project", "--dir", projDir)
+	_, err = execCerne(t, "settings", "set", "mirror.trackers", `[{"name":"j","kind":"nosuchkind","url":"https://tracker.example/PROJ"}]`, "--scope", "project", "--dir", projDir)
 	if !errors.Is(err, project.ErrInvalidSettingValue) || !errors.Is(err, tracker.ErrUnknownKind) {
-		t.Errorf("set a jira tracker: err = %v, want ErrInvalidSettingValue and ErrUnknownKind", err)
+		t.Errorf("set an unknown tracker kind: err = %v, want ErrInvalidSettingValue and ErrUnknownKind", err)
 	}
-	wantText := `unknown tracker kind "jira" (supported: ` + strings.Join(tracker.KindNames(), ", ") + `)`
+	wantText := `unknown tracker kind "nosuchkind" (supported: ` + strings.Join(tracker.KindNames(), ", ") + `)`
 	if err == nil || !strings.Contains(err.Error(), wantText) {
-		t.Errorf("set a jira tracker: err = %v, want the text %s", err, wantText)
+		t.Errorf("set an unknown tracker kind: err = %v, want the text %s", err, wantText)
 	}
 	if _, err := execCerne(t, "settings", "set", "mirror.trackers", `[{"name":`, "--scope", "project", "--dir", projDir); !errors.Is(err, project.ErrInvalidSettingValue) {
 		t.Errorf("set bad JSON: err = %v, want ErrInvalidSettingValue", err)

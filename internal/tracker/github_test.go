@@ -333,12 +333,12 @@ func TestNewUnknownKind(t *testing.T) {
 	if got := tracker.KindNames(); !slices.Contains(got, "github") {
 		t.Fatalf("KindNames() = %v, want it to contain github", got)
 	}
-	_, err := tracker.New(tracker.Config{Name: "j", Kind: "jira", URL: "https://jira.example/PROJ"})
+	_, err := tracker.New(tracker.Config{Name: "j", Kind: "nosuchkind", URL: "https://tracker.example/PROJ"})
 	if !errors.Is(err, tracker.ErrUnknownKind) {
-		t.Fatalf("New(jira) = %v, want errors.Is ErrUnknownKind", err)
+		t.Fatalf("New(nosuchkind) = %v, want errors.Is ErrUnknownKind", err)
 	}
-	if got, want := err.Error(), `unknown tracker kind "jira" (supported: ` + strings.Join(tracker.KindNames(), ", ") + `)`; got != want {
-		t.Fatalf("New(jira) error = %q, want %q", got, want)
+	if got, want := err.Error(), `unknown tracker kind "nosuchkind" (supported: `+strings.Join(tracker.KindNames(), ", ")+`)`; got != want {
+		t.Fatalf("New(nosuchkind) error = %q, want %q", got, want)
 	}
 }
 
