@@ -3820,7 +3820,7 @@ button.clarify-chip { cursor: pointer; font: inherit; }
 
 /* Cofre (F-0463): árvore | documento | sumário e backlinks. */
 .page.vault { display: grid; grid-template-columns: minmax(14rem, 20rem) minmax(0, 1fr) minmax(12rem, 16rem); gap: 1.25rem; max-width: none; width: 100%; align-items: start; }
-.vault-tree, .vault-side { position: sticky; top: 1rem; max-height: calc(100vh - 2rem); overflow: auto; font-size: 0.9rem; }
+.vault-tree, .vault-side { position: sticky; top: 1rem; max-height: calc(100vh - 6rem); overflow: auto; font-size: 0.9rem; }
 .vault-tree input[type='search'] { width: 100%; box-sizing: border-box; font: inherit; font-size: 0.95rem; padding: 0.45rem 0.6rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: inherit; }
 .vault-tree input[type='search']:focus-visible,
 .vault-tree a:focus-visible,
@@ -3832,7 +3832,11 @@ button.clarify-chip { cursor: pointer; font: inherit; }
 .vault-tree ul, .vault-side ul { list-style: none; margin: 0; padding-left: 0.9rem; }
 .vault-tree > ul { padding-left: 0; }
 .vault-tree li { padding: 0.1rem 0; }
-.vault-tree summary { cursor: pointer; list-style: none; display: flex; align-items: center; flex-wrap: wrap; gap: 0.25rem; }
+.vault-tree summary { cursor: pointer; list-style: none; display: flex; align-items: flex-start; flex-wrap: nowrap; gap: 0.25rem; }
+.vault-tree summary > a { flex: 1 1 auto; min-width: 0; }
+.vault-tree summary > .chip, .vault-tree summary > .badge { flex-shrink: 0; }
+/* leaf rows reserve the twist column so their text lines up with rows that have one */
+.vault-tree details > ul > li > a:first-child, .vault-tree details > ul > li > span:first-child { margin-left: 24px; }
 .vault-tree summary::-webkit-details-marker { display: none; }
 .vault-tree a { color: var(--link); text-decoration: none; }
 .vault-tree a:hover { text-decoration: underline; }
