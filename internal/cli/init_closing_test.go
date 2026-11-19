@@ -97,3 +97,47 @@ func TestInitAgentsConnectedShowsDetectedCodex(t *testing.T) {
 		t.Errorf("others line wrong:\n%s", out)
 	}
 }
+
+// Review round 1: a skipped delivery is a warning, not detail, and claude is
+// connected only after its install succeeded.
+func TestInitAgentsSkippedDeliveryIsNotSilent(t *testing.T) {
+	gitignoreEnv(t)
+	localBackendEnv(t)
+	proj := gitRepoDir(t)
+	if err := os.MkdirAll(filepath.Join(proj, ".codex"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "agents.md")
+	if err := os.WriteFile(outside, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(proj, "AGENTS.md")); err != nil {
+		t.Skip("symlinks unavailable: ", err)
+	}
+	out, err := execInit(t, "--name", "skp", "--dir", proj)
+	if err != nil {
+		t.Fatalf("init: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "skipped (AGENTS.md)") || !strings.Contains(out, "symlink") {
+		t.Errorf("skip not reported in the default output:\n%s", out)
+	}
+	if strings.Contains(out, "Agents connected: claude, codex") {
+		t.Errorf("codex reported connected:\n%s", out)
+	}
+}
+
+func TestInitAgentsNoneConnectedWhenInstallFails(t *testing.T) {
+	gitignoreEnv(t)
+	localBackendEnv(t)
+	proj := gitRepoDir(t)
+	if err := os.WriteFile(filepath.Join(proj, ".claude"), []byte("not a dir"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := execInit(t, "--name", "fail", "--dir", proj)
+	if err != nil {
+		t.Fatalf("init: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Agents connected: none (skills install failed") || strings.Contains(out, "Agents connected: claude") {
+		t.Errorf("wrong agents line:\n%s", out)
+	}
+}

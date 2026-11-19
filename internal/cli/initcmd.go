@@ -223,7 +223,7 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 	verbose := cmd.Flag("verbose").Value.String() == "true"
 	det := hooks.DetectProviders(targetDir)
 	var installed []string
-	connected, missing := []string{"claude"}, []string(nil)
+	var connected, missing []string
 	if results, err := skills.Install(targetDir, det...); err != nil {
 		fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not install cerne's skills: %v\n", err)
 	} else {
@@ -232,6 +232,15 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 		if verbose {
 			printSkillResults(out, results)
 			printAgentLines(out, results, det)
+		} else {
+			// A skipped delivery is a warning, not detail: keep its manual step.
+			var skipped []skills.Result
+			for _, r := range results {
+				if r.Status == skills.StatusSkipped {
+					skipped = append(skipped, r)
+				}
+			}
+			printSkillResults(out, skipped)
 		}
 	}
 
@@ -276,7 +285,10 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 	fmt.Fprintln(out, "  1. Open the dashboard: cerne ui  (http://localhost:7717)")
 	fmt.Fprintf(out, "  2. Ask your agent: %q\n", guide.FirstFeatureAsk)
 	fmt.Fprintln(out, "  3. Approve the spec on the dashboard.")
-	agents := "Agents connected: " + strings.Join(connected, ", ") + "."
+	agents := "Agents connected: none (skills install failed, see the warning above)."
+	if len(connected) > 0 {
+		agents = "Agents connected: " + strings.Join(connected, ", ") + "."
+	}
 	if len(missing) > 0 {
 		agents += " To connect " + strings.Join(missing, ", ") + ": cerne hook install --provider <name>, then cerne skill install"
 	}
