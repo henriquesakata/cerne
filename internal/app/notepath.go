@@ -8,13 +8,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/index"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // PathNote is an active note that cites a file (F-0366). Score is 3 when the
 // note cites the whole repo-relative path, 2 for a suffix with at least one
-// directory, 1 for the bare file name (only when that name is unique).
+// directory, 1 for the bare file name (only when that name is unique); a note
+// declaring the file in an edit: trigger (F-0457) scores 5 for the exact path
+// and 4 for a <dir>/** glob.
 type PathNote struct {
 	ID, Title string
 	Score     int
@@ -92,6 +95,31 @@ func NotesForPath(ctx context.Context, cacheDir, repoDir, rel string, uniqueName
 		}
 		pn := PathNote{ID: h.ID, Title: h.Title, Score: best, inTitle: inTitle, mentions: mentions}
 		if n, err := store.LoadNote(repoDir, h.ID); err == nil {
+			pn.updated = n.UpdatedAt
+		}
+		out = append(out, pn)
+	}
+	// Declared edit: triggers (F-0457) rank above any citation: 5 for an exact
+	// path, 4 for <dir>/**. A note both declaring and citing keeps the best.
+	trigs, err := index.NoteTriggers(ctx, filepath.Join(cacheDir, "index.db"))
+	if err != nil {
+		if errors.Is(err, index.ErrBusy) || ctx.Err() != nil {
+			return nil, nil
+		}
+		return nil, err
+	}
+	for _, tr := range trigs {
+		sc := domain.PathTriggerScore(tr.Trig, rel)
+		if sc == 0 {
+			continue
+		}
+		sc += 3
+		if i := slices.IndexFunc(out, func(p PathNote) bool { return p.ID == tr.ID }); i >= 0 {
+			out[i].Score = max(out[i].Score, sc)
+			continue
+		}
+		pn := PathNote{ID: tr.ID, Title: tr.Title, Score: sc}
+		if n, err := store.LoadNote(repoDir, tr.ID); err == nil {
 			pn.updated = n.UpdatedAt
 		}
 		out = append(out, pn)

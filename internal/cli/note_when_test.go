@@ -127,3 +127,68 @@ func TestShowNoteWhen(t *testing.T) {
 		t.Fatalf("show --json is not JSON:\n%s", out)
 	}
 }
+
+// TestNotesOnEditDeclared (F-0457 criterion 4): a note created with
+// --when edit:<dir>/** reaches the work-gate block of a file under dir with no
+// citation of it, above a note that cites the file, once per session. The
+// index comes from the note creation itself (refreshIndex), as in real use.
+func TestNotesOnEditDeclared(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	noSSH(t)
+	startBoundWork(t, projDir, repoDir, "sess-a", "Mexer na UI")
+	if out, err := execCerne(t, "note", "new", "Cites the file", "--file", writeTemp(t, "edit ui/dist/index.html with care"), "--dir", projDir); err != nil {
+		t.Fatalf("note new: %v\n%s", err, out)
+	}
+	if out, err := execCerne(t, "note", "new", "Commit the dist with the source", "--file", writeTemp(t, "the bundle is not reproducible"),
+		"--when", "edit:ui/dist/**", "--dir", projDir); err != nil {
+		t.Fatalf("note new --when: %v\n%s", err, out)
+	}
+	in := editJSON(t, "sess-a", projDir, "ui/dist/index.html")
+	out, err := execCerneStdin(t, in, "hook", "work-gate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := channelEnvelope(t, out).HookSpecificOutput.AdditionalContext
+	if want := "cerne notes on ui/dist/index.html:\n- N-0002 — Commit the dist with the source\n- N-0001 — Cites the file"; !strings.Contains(ctx, want) {
+		t.Fatalf("block:\n%s\nwant:\n%s", ctx, want)
+	}
+	if out, err := execCerneStdin(t, in, "hook", "work-gate"); err != nil || out != "" {
+		t.Fatalf("second edit, same session: %v %q", err, out)
+	}
+}
+
+// TestNoteListPathDeclared (F-0457 criterion 5): note list --path includes the
+// declared notes, in the hook's order, with no cap.
+func TestNoteListPathDeclared(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	for _, args := range [][]string{
+		{"Cites", "--file", writeTemp(t, "edit ui/dist/index.html")},
+		{"Dir glob", "--when", "edit:ui/dist/**"},
+		{"Exact", "--when", "edit:ui/dist/index.html"},
+		{"Other dir", "--when", "edit:ui/src/**"},
+	} {
+		if out, err := execCerne(t, append(append([]string{"note", "new"}, args...), "--dir", projDir)...); err != nil {
+			t.Fatalf("note new %v: %v\n%s", args, err, out)
+		}
+	}
+	out, err := execCerne(t, "note", "list", "--path", "ui/dist/index.html", "--dir", projDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
+		ids = append(ids, strings.Fields(l)[0])
+	}
+	if want := []string{"N-0003", "N-0002", "N-0001"}; !slices.Equal(ids, want) {
+		t.Fatalf("ids = %v, want %v\n%s", ids, want, out)
+	}
+}
+
+func writeTemp(t *testing.T, body string) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "body.md")
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
