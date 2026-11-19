@@ -33,6 +33,7 @@ import { LoadPending, useLiveLoad } from './liveLoad'
 import { LiveProvider, useProjects } from './live'
 import { NotificationsProvider } from './notifications'
 import { useT } from './i18n'
+import { navAllowed } from './navGuard'
 import './app.css'
 
 // Grafo e Mindmap carregam React Flow (pesado) sob demanda.
@@ -42,10 +43,18 @@ const Vault = lazy(() => import('./Vault'))
 
 // Roteamento mínimo por hash: lista de seções + rotas de detalhe
 // (#/f/<id>, #/d/<id>, #/r/<id>). Rota desconhecida cai no kanban.
+// A guard that refuses (an unsaved vault draft, F-0464) puts the URL back:
+// hashchange cannot be cancelled, so the router is the one place to hold it.
 function useHash(): string {
   const [hash, setHash] = useState(window.location.hash)
   useEffect(() => {
-    const onChange = () => setHash(window.location.hash)
+    const onChange = (e: HashChangeEvent) => {
+      if (!navAllowed()) {
+        history.replaceState(null, '', e.oldURL)
+        return
+      }
+      setHash(window.location.hash)
+    }
     window.addEventListener('hashchange', onChange)
     return () => window.removeEventListener('hashchange', onChange)
   }, [])

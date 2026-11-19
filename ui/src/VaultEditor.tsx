@@ -3,6 +3,7 @@ import { saveEntityContent, saveFeatureDoc } from './api'
 import Markdown from './Markdown'
 import { useT } from './i18n'
 import { lineDiff } from './lineDiff'
+import { setNavGuard } from './navGuard'
 import { rank, type Entry } from './Palette'
 import { stripLeadingTitle, type VaultDoc } from './vault-doc'
 
@@ -130,6 +131,7 @@ export default function VaultEditor({ doc, entries, knownIds, wikiHref, onSaved,
     setSaving(false)
     if (res.ok) {
       setConflict(null)
+      setLoaded({ content: draft, hash: baseHash }) // saved: nothing left to lose
       await onSaved()
     } else if ('conflict' in res) setConflict(res.conflict)
     else setError(res.error)
@@ -153,6 +155,27 @@ export default function VaultEditor({ doc, entries, knownIds, wikiHref, onSaved,
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
+
+  // An unsaved draft asks before it is lost: another document or route (the
+  // router's guard), closing the tab (beforeunload) and Cancel.
+  const dirty = draft !== loaded.content
+  const discard = t.vault.editor.discard
+  useEffect(() => {
+    if (!dirty) return
+    setNavGuard(() => window.confirm(discard))
+    const onUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = '' // older Chrome shows the prompt only with it
+    }
+    window.addEventListener('beforeunload', onUnload)
+    return () => {
+      setNavGuard(null)
+      window.removeEventListener('beforeunload', onUnload)
+    }
+  }, [dirty, discard])
+  const cancel = () => {
+    if (!dirty || window.confirm(discard)) onCancel()
+  }
 
   const approvedSpec = doc.kind === 'feature' && doc.state === 'approved' && doc.doc === 'spec'
 
@@ -233,7 +256,7 @@ export default function VaultEditor({ doc, entries, knownIds, wikiHref, onSaved,
         <button type="button" onClick={() => void save()} disabled={saving}>
           {saving ? t.vault.editor.saving : t.common.save}
         </button>
-        <button type="button" onClick={onCancel} disabled={saving}>
+        <button type="button" onClick={cancel} disabled={saving}>
           {t.common.cancel}
         </button>
         {error && (

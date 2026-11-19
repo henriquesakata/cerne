@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import App from './App'
+import { setNavGuard } from './navGuard'
 import {
   fetchCostDetail,
   fetchCosts,
@@ -138,6 +139,31 @@ describe('App — rota do Cofre (F-0463)', () => {
     window.location.hash = hash
     render(<App />)
     expect(await screen.findByText(`cofre montado em ${hash}`)).toBeInTheDocument()
+  })
+})
+
+describe('App — nav guard (F-0464 critério 9)', () => {
+  afterEach(() => setNavGuard(null))
+
+  it('nav guard: a refusing guard puts the URL back and keeps the route', async () => {
+    window.location.hash = '#/vault/N-0001'
+    render(<App />)
+    await screen.findByText('cofre montado em #/vault/N-0001')
+    const guard = vi.fn(() => false)
+    setNavGuard(guard)
+    window.location.hash = '#/wiki'
+    await waitFor(() => expect(guard).toHaveBeenCalled())
+    expect(window.location.hash).toBe('#/vault/N-0001')
+    expect(screen.getByText('cofre montado em #/vault/N-0001')).toBeInTheDocument()
+  })
+
+  it('nav guard: an accepting guard lets the route change', async () => {
+    window.location.hash = '#/vault/N-0001'
+    render(<App />)
+    await screen.findByText('cofre montado em #/vault/N-0001')
+    setNavGuard(() => true)
+    window.location.hash = '#/vault/D-0001'
+    expect(await screen.findByText('cofre montado em #/vault/D-0001')).toBeInTheDocument()
   })
 })
 

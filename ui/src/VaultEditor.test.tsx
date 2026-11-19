@@ -41,6 +41,7 @@ vi.mock('./Backlinks', () => ({ default: () => null }))
 import { entriesFrom } from './Palette'
 import Vault from './Vault'
 import VaultEditor, { insertWiki, wikiQuery } from './VaultEditor'
+import { navAllowed } from './navGuard'
 
 const note = (over: Partial<VaultDoc> = {}): VaultDoc => ({
   id: 'N-0001',
@@ -77,7 +78,10 @@ beforeEach(() => {
   vi.clearAllMocks()
   Element.prototype.scrollIntoView = vi.fn()
 })
-afterEach(() => cleanup())
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks() // the window.confirm spies
+})
 
 describe('VaultEditor preview (F-0464 critério 2)', () => {
   it('preview: typing re-renders the preview through Markdown', async () => {
@@ -279,5 +283,62 @@ describe('VaultEditor conflict (F-0464 critério 7)', () => {
     fireEvent.click(overwrite())
     await waitFor(() => expect(onSaved).toHaveBeenCalled())
     expect(api.saveEntityContent).toHaveBeenNthCalledWith(3, 'note', 'N-0001', 'minha', 'h3')
+  })
+})
+
+describe('VaultEditor discard (F-0464 critério 9)', () => {
+  const unload = () => {
+    const ev = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(ev)
+    return ev.defaultPrevented
+  }
+  const ASK = 'Descartar o rascunho não gravado?'
+
+  it('discard: with a dirty draft a route change asks window.confirm, and a refusal keeps the draft', () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    editor(note())
+    type('rascunho sujo')
+    expect(navAllowed()).toBe(false)
+    expect(confirm).toHaveBeenCalledWith(ASK)
+    expect(source().value).toBe('rascunho sujo')
+    confirm.mockReturnValue(true)
+    expect(navAllowed()).toBe(true)
+  })
+
+  it('discard: closing the tab with a dirty draft is default-prevented', () => {
+    editor(note())
+    expect(unload()).toBe(false)
+    type('rascunho sujo')
+    expect(unload()).toBe(true)
+  })
+
+  it('discard: a clean draft sets no guard and asks nothing, and unmounting clears it', () => {
+    const confirm = vi.spyOn(window, 'confirm')
+    const { unmount } = editor(note())
+    expect(navAllowed()).toBe(true)
+    type('sujo')
+    type(note().content) // back to what was loaded
+    expect(navAllowed()).toBe(true)
+    expect(unload()).toBe(false)
+    type('sujo de novo')
+    unmount()
+    expect(navAllowed()).toBe(true)
+    expect(unload()).toBe(false)
+    expect(confirm).not.toHaveBeenCalled()
+  })
+
+  it('discard: Cancel with a dirty draft asks too', () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const { onCancel } = editor(note())
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+    expect(onCancel).toHaveBeenCalledTimes(1) // clean: no question
+    expect(confirm).not.toHaveBeenCalled()
+    type('sujo')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+    expect(confirm).toHaveBeenCalledWith(ASK)
+    expect(onCancel).toHaveBeenCalledTimes(1)
+    confirm.mockReturnValue(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+    expect(onCancel).toHaveBeenCalledTimes(2)
   })
 })
