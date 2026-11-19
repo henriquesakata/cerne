@@ -7,6 +7,7 @@ import {
   type MirrorCheck,
   type MirrorCommits,
   type MirrorIdea,
+  type MirrorTrackerRun,
 } from './api'
 import { Chevron, ExpandAll, useExpanded, type Expanded } from './Expand'
 import { entityHref } from './entityRoute'
@@ -144,6 +145,7 @@ export default function Mirror() {
                   cards={data.cards.filter((c) => c.tracker === tr.name)}
                   ideas={data.ideas.filter((i) => i.tracker === tr.name)}
                   showTracker={false}
+                  run={data.lastSync?.trackers.find((r) => r.name === tr.name)}
                   ctx={ctx}
                 />
               ))}
@@ -185,6 +187,7 @@ function Group(p: {
   cards: MirrorCard[]
   ideas: MirrorIdea[]
   showTracker: boolean
+  run?: MirrorTrackerRun
   ctx: Ctx
 }) {
   const { t } = useT()
@@ -196,6 +199,20 @@ function Group(p: {
         <h2 id={headingId}>{p.heading}</h2>
         {p.head}
       </div>
+      {p.run && (
+        <>
+          <p className="muted mirror-check-hint">
+            {t.mirror.trackerSync(t.mirror.syncedCards(p.run.synced), t.mirror.importedIdeas(p.run.imported))}
+          </p>
+          {p.run.errors.length > 0 && (
+            <ul className="mirror-commits muted">
+              {p.run.errors.map((e, i) => (
+                <li key={i}>{e}</li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
       {p.cards.length === 0 ? (
         <p className="muted">{t.mirror.noCards}</p>
       ) : (

@@ -190,6 +190,31 @@ describe('Mirror — last sync (F-0465 crit. 4)', () => {
     expect(line).toHaveTextContent('UTC')
   })
 
+  it('shows the record per tracker, each error on its own line', async () => {
+    renderMirror()
+    const alpha = within(await screen.findByRole('region', { name: 'alpha' }))
+    expect(alpha.getByText("This tracker's last sync: 2 cards synced, 1 idea imported.")).toBeInTheDocument()
+    expect(alpha.queryByText(/boom|down/)).toBeNull()
+    const beta = within(section('beta'))
+    expect(beta.getByText("This tracker's last sync: 1 card synced, 0 ideas imported.")).toBeInTheDocument()
+    expect(beta.getByText('F-0002: boom').tagName).toBe('LI')
+    expect(beta.getByText('list: down').tagName).toBe('LI')
+    expect(alpha.queryByText('F-0002: boom')).toBeNull()
+  })
+
+  it('a tracker with no entry in the record, or no record at all, shows no per-tracker line', async () => {
+    api.fetchMirror.mockResolvedValue({ ...overview, lastSync: { ...overview.lastSync!, trackers: [overview.lastSync!.trackers[0]] } })
+    renderMirror()
+    await screen.findByRole('region', { name: 'alpha' })
+    expect(within(section('alpha')).getByText(/This tracker's last sync/)).toBeInTheDocument()
+    expect(within(section('beta')).queryByText(/This tracker's last sync/)).toBeNull()
+    cleanup()
+    api.fetchMirror.mockResolvedValue({ ...overview, lastSync: null })
+    renderMirror()
+    await screen.findByRole('region', { name: 'alpha' })
+    expect(screen.queryByText(/This tracker's last sync/)).toBeNull()
+  })
+
   it('never synced', async () => {
     api.fetchMirror.mockResolvedValue({ ...overview, lastSync: null })
     renderMirror()
