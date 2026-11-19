@@ -253,7 +253,8 @@ func printCompleteNextStep(w io.Writer, repoDir, id string, noStamp bool) {
 		fmt.Fprintf(w, "  - record its token cost: cerne cost %s --stamp, before the human accept (F-0309)\n", id)
 	}
 	f, err := store.LoadFeature(repoDir, id)
-	if err == nil && strings.HasPrefix(id, "T-") && f.Parent != "" {
+	task := err == nil && strings.HasPrefix(id, "T-") && f.Parent != ""
+	if task {
 		// A task rides its parent's accept (T-0007): one human act for all.
 		fmt.Fprintf(w, "  - human accept: %s is accepted along with its parent: cerne feature accept %s\n", id, f.Parent)
 	} else {
@@ -266,6 +267,9 @@ func printCompleteNextStep(w io.Writer, repoDir, id string, noStamp bool) {
 			}
 			fmt.Fprintf(w, "  - %s\n", line)
 		}
+	}
+	if !task { // last: it is what the agent does right before it stops (F-0460)
+		fmt.Fprintln(w, waitStep(id, domain.StateDone))
 	}
 }
 
@@ -444,6 +448,7 @@ func runApproveCheck(w io.Writer, ctx projCtx, id string) error {
 	}
 	if app.CheckHumanGate(ctx.cfg.Gates.ApproveGate()) != nil {
 		fmt.Fprintf(w, "Next: ask a human to run 'cerne feature approve %s'.\n", id)
+		fmt.Fprintf(w, "Then, %s, leave 'cerne feature wait %s --for approved' running in the background before you stop; otherwise just stop.\n", waitWhen, id)
 	} else {
 		fmt.Fprintf(w, "Next: cerne feature approve %s\n", id)
 	}
@@ -530,4 +535,14 @@ func printNewCardNextStep(w io.Writer, ctx projCtx, f store.Feature, seeded bool
 		accepts = fmt.Sprintf(" (approving accepts the `%s:` line you proposed)", doclang.Display(doclang.BarLabel, store.DocsLanguage(ctx.repoDir)))
 	}
 	fmt.Fprintf(w, "  - human approve: ask a human to run 'cerne feature approve %s'%s and stop — an agent does not approve its own spec and does not implement an unapproved feature\n", f.ID, accepts)
+	fmt.Fprintln(w, waitStep(f.ID, domain.StateApproved))
 }
+
+// waitStep is the line that teaches the background wait at a human gate
+// (F-0460): only where the harness wakes the agent; the gate stays human.
+func waitStep(id string, st domain.FeatureState) string {
+	return fmt.Sprintf("  - to be woken when they do: %s, leave 'cerne feature wait %s --for %s' running in the background before you stop; otherwise just stop", waitWhen, id, st)
+}
+
+// waitWhen is the harness condition of the background wait (F-0460).
+const waitWhen = "if your harness wakes you when a background command ends"
