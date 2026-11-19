@@ -519,7 +519,8 @@ func newNoteGistCmd(dir *string) *cobra.Command {
 		Short: "Set the one-line gist the hooks show under an active note (--clear removes it)",
 		Long: "Replaces the gist of an active note (F-0459): the one line, at most 160 runes, an agent needs when the " +
 			"note shows up — what to do or avoid, not the subject (the title has it). The edit and command note blocks " +
-			"of the hooks print it under the note's line. The words after the id are joined with one space. " +
+			"of the hooks print it under the note's line. The words after the id are joined with one space; a gist " +
+			"that starts with '-' goes after '--' (cerne note gist N-0001 -- \"-R alone does not override origin\"). " +
 			"--clear removes the gist. A superseded note is history and is refused.",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -531,11 +532,15 @@ func newNoteGistCmd(dir *string) *cobra.Command {
 }
 
 func runNoteGist(cmd *cobra.Command, dir, id, gist string, clear bool) error {
-	switch {
-	case clear && gist != "":
+	if clear && gist != "" {
 		return fmt.Errorf("pass a gist or --clear, not both")
-	case !clear && strings.TrimSpace(gist) == "":
-		return fmt.Errorf("provide the gist text, or --clear")
+	}
+	if !clear { // a blank text is refused like note new --gist (ErrEmptyGist)
+		g, err := domain.NormalizeGist(gist)
+		if err != nil {
+			return fmt.Errorf("%w (or --clear to remove the gist)", err)
+		}
+		gist = g
 	}
 	ctx, err := resolveProject(dir)
 	if err != nil {

@@ -106,6 +106,7 @@ func TestNotesOnEditGist(t *testing.T) {
 	})
 	setGistByHand(t, repoDir, "N-0001", "Line one\r\n\tline two ")
 	setGistByHand(t, repoDir, "N-0002", strings.Repeat("é", 200))
+	setGistByHand(t, repoDir, "N-0003", " \n\t ")
 	out, err := execCerneStdin(t, editJSON(t, "sess-a", projDir, "infra/k8s/scripts/release.sh"), "hook", "work-gate")
 	if err != nil {
 		t.Fatal(err)
@@ -132,6 +133,23 @@ func TestNoteGistUnreadableEntity(t *testing.T) {
 		t.Fatal(err)
 	}
 	if ctx := channelEnvelope(t, out).HookSpecificOutput.AdditionalContext; ctx != "cerne notes on `git tag`:\n- N-0001 — T" {
+		t.Fatalf("block:\n%q", ctx)
+	}
+}
+
+// TestNotesOnEditGistUnreadableEntity (F-0459 criterion 8, critic finding):
+// on the edit path too, an unreadable entity leaves its note without a gist
+// and the block still comes out.
+func TestNotesOnEditGistUnreadableEntity(t *testing.T) {
+	projDir, repoDir := gistProject(t, []string{"Commit the dist", "Never shown.", "edit:ui/dist/**"})
+	if err := os.WriteFile(filepath.Join(repoDir, "entities", "notes", "N-0001.json"), []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := execCerneStdin(t, editJSON(t, "sess-x", projDir, "ui/dist/index.html"), "hook", "work-gate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ctx := channelEnvelope(t, out).HookSpecificOutput.AdditionalContext; ctx != "cerne notes on ui/dist/index.html:\n- N-0001 — Commit the dist" {
 		t.Fatalf("block:\n%q", ctx)
 	}
 }

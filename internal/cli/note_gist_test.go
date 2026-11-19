@@ -89,14 +89,24 @@ func TestNoteGist(t *testing.T) {
 	if _, err := execCerne(t, "note", "gist", "N-0001", strings.Repeat("a", domain.GistMax+1), "--dir", projDir); !errors.Is(err, domain.ErrGistTooLong) {
 		t.Fatalf("too long: err = %v", err)
 	}
-	if _, err := execCerne(t, "note", "gist", "N-0001", "--dir", projDir); err == nil {
-		t.Fatal("note gist with no text and no --clear must fail")
+	if _, err := execCerne(t, "note", "gist", "N-0001", "--dir", projDir); !errors.Is(err, domain.ErrEmptyGist) {
+		t.Fatalf("note gist with no text and no --clear: err = %v, want ErrEmptyGist", err)
+	}
+	if _, err := execCerne(t, "note", "gist", "N-0001", " ", "--dir", projDir); !errors.Is(err, domain.ErrEmptyGist) {
+		t.Fatalf("note gist with blank text: err = %v, want ErrEmptyGist", err)
 	}
 	if _, err := execCerne(t, "note", "gist", "N-0001", "x", "--clear", "--dir", projDir); err == nil {
 		t.Fatal("note gist with text and --clear must fail")
 	}
 	if n, _ = store.LoadNote(repoDir, "N-0001"); n.Gist != "Run glab from the target repo's dir." {
 		t.Fatalf("a refused note gist mutated the note: %q", n.Gist)
+	}
+
+	if _, err := execCerne(t, "note", "gist", "N-0001", "--dir", projDir, "--", "-R alone does not override origin."); err != nil {
+		t.Fatalf("gist after --: %v", err)
+	}
+	if n, _ = store.LoadNote(repoDir, "N-0001"); n.Gist != "-R alone does not override origin." {
+		t.Fatalf("gist after -- = %q", n.Gist)
 	}
 
 	if out, err := execCerne(t, "note", "gist", "N-0001", "--clear", "--dir", projDir); err != nil || !strings.Contains(out, "N-0001 has no gist.") {
@@ -109,8 +119,8 @@ func TestNoteGist(t *testing.T) {
 	if _, err := execCerne(t, "note", "retire", "N-0001", "--reason", "done", "--dir", projDir); err != nil {
 		t.Fatalf("note retire: %v", err)
 	}
-	if _, err := execCerne(t, "note", "gist", "N-0001", "x", "--dir", projDir); err == nil {
-		t.Fatal("note gist on a retired note must fail")
+	if _, err := execCerne(t, "note", "gist", "N-0001", "x", "--dir", projDir); err == nil || !strings.Contains(err.Error(), "is not active") {
+		t.Fatalf("note gist on a retired note: err = %v, want the not-active refusal", err)
 	}
 }
 
