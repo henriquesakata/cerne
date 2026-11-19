@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -454,5 +455,113 @@ func TestMCPB_MissingBinary(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(dist, f)); err == nil {
 			t.Errorf("%s was written despite the missing binary", f)
 		}
+	}
+}
+
+// F-0455 criterion 2 (critic finding 1): a re-run of the release rebuilds the
+// bundle and re-uploads it over the asset the registry entry already pins by
+// hash, so the same binaries must give the same bundle, byte for byte, however
+// late they were copied.
+func TestMCPB_BundleReproducible(t *testing.T) {
+	first := fakeDist(t, "v9.9.9")
+	if stderr, err := runBundle(t, "v9.9.9", first); err != nil {
+		t.Fatalf("bundle: %v\n%s", err, stderr)
+	}
+	// Zip stores times at a 2 s granularity: a run 2.1 s later always lands in
+	// another slot, so a bundle that kept copy times would differ.
+	time.Sleep(2100 * time.Millisecond)
+	second := fakeDist(t, "v9.9.9")
+	later := time.Now().Add(48 * time.Hour)
+	for _, a := range formulaAssets {
+		if err := os.Chtimes(filepath.Join(second, "cerne_v9.9.9_"+a), later, later); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if stderr, err := runBundle(t, "v9.9.9", second); err != nil {
+		t.Fatalf("bundle: %v\n%s", err, stderr)
+	}
+	a, b := fileSHA(t, filepath.Join(first, "cerne_v9.9.9.mcpb")), fileSHA(t, filepath.Join(second, "cerne_v9.9.9.mcpb"))
+	if a != b {
+		t.Errorf("same binaries, different bundles: %s vs %s", a, b)
+	}
+}
+
+// F-0455 criterion 3 (critic finding 5): bundling the same dist twice leaves
+// one bundle line in SHA256SUMS, and a dist without SHA256SUMS is refused.
+func TestMCPB_SumsLine(t *testing.T) {
+	dist := fakeDist(t, "v9.9.9")
+	for i := 0; i < 2; i++ {
+		if stderr, err := runBundle(t, "v9.9.9", dist); err != nil {
+			t.Fatalf("bundle %d: %v\n%s", i, err, stderr)
+		}
+	}
+	sums, _ := os.ReadFile(filepath.Join(dist, "SHA256SUMS"))
+	if n := strings.Count(string(sums), "  cerne_v9.9.9.mcpb\n"); n != 1 {
+		t.Errorf("SHA256SUMS has %d bundle lines, want 1:\n%s", n, sums)
+	}
+
+	bare := fakeDist(t, "v9.9.9")
+	if err := os.Remove(filepath.Join(bare, "SHA256SUMS")); err != nil {
+		t.Fatal(err)
+	}
+	stderr, err := runBundle(t, "v9.9.9", bare)
+	if err == nil || !strings.Contains(stderr, "SHA256SUMS") {
+		t.Errorf("no SHA256SUMS: err %v, stderr %q; want a refusal naming it", err, stderr)
+	}
+}
+
+// F-0455 criteria 8 and 9: the bundle is built after the binaries and before
+// the attestation and the upload of dist/*; the registry job runs after the
+// release for stable tags only, and only its publish step, behind
+// MCP_REGISTRY_PUBLISH, logs in.
+func TestMCPB_ReleaseWorkflow(t *testing.T) {
+	raw, err := os.ReadFile("../.github/workflows/release.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wf := string(raw)
+	at := func(s string) int {
+		i := strings.Index(wf, s)
+		if i < 0 {
+			t.Fatalf("release.yml has no %q", s)
+		}
+		return i
+	}
+	order := []string{
+		`bash scripts/build-release.sh "$GITHUB_REF_NAME"`,
+		`sh scripts/mcpb-bundle.sh "$GITHUB_REF_NAME"`,
+		"actions/attest-build-provenance@",
+		"subject-path: 'dist/*'",
+		`sh scripts/release-publish.sh "$GITHUB_REF_NAME" "$notes" dist/*`,
+	}
+	for i := 1; i < len(order); i++ {
+		if at(order[i-1]) > at(order[i]) {
+			t.Errorf("%q comes after %q", order[i-1], order[i])
+		}
+	}
+	job := wf[at("\n  mcp-registry:\n"):]
+	if next := strings.Index(job[1:], "\n  quickstart:\n"); next > 0 {
+		job = job[:next+1]
+	}
+	for _, want := range []string{
+		"needs: release",
+		"if: ${{ !contains(github.ref_name, '-') }}",
+		"id-token: write",
+		"cosign verify-blob",
+		"./mcp-publisher validate",
+		"if: ${{ vars.MCP_REGISTRY_PUBLISH == 'true' }}",
+		"sh scripts/mcp-registry-publish.sh",
+	} {
+		if !strings.Contains(job, want) {
+			t.Errorf("mcp-registry job lacks %q", want)
+		}
+	}
+	gate := strings.Index(job, "if: ${{ vars.MCP_REGISTRY_PUBLISH == 'true' }}")
+	if pub := strings.Index(job, "sh scripts/mcp-registry-publish.sh"); gate < 0 || pub < gate {
+		t.Error("the publish script runs outside the MCP_REGISTRY_PUBLISH step")
+	}
+	// The login lives in the publish script alone, behind the gate.
+	if strings.Contains(job, "login github") {
+		t.Error("the job logs in outside scripts/mcp-registry-publish.sh")
 	}
 }
