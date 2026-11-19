@@ -314,6 +314,7 @@ export default function VaultEditor({ doc, entries, knownIds, wikiHref, onSaved,
   }, [])
 
   const approvedSpec = doc.kind === 'feature' && doc.state === 'approved' && doc.doc === 'spec'
+  const conflictDiff = conflict ? conflictLines(loadedBody, splitFrontmatter(conflict.content).body, draft) : []
 
   return (
     <div className="vault-editor">
@@ -348,17 +349,25 @@ export default function VaultEditor({ doc, entries, knownIds, wikiHref, onSaved,
       {/* The reason the buttons changed, right under them, above the panes. */}
       {conflict && (
         <div className="vault-editor-conflict" role="alert">
-          <p className="form-error">{t.vault.editor.conflict}</p>
-          <pre className="proposal-draft-diff">
-            {conflictLines(loadedBody, splitFrontmatter(conflict.content).body, draft).map((l, i) => (
-              <span key={i} className={l.theirs ? 'diff-del diff-theirs' : `diff-${l.kind}`}>
-                {(l.kind === 'add' ? '+ ' : '- ') + l.text}
-                {/* a two-way diff shows the user's own original as − too: say
-                    which lines another author changed since the editor opened */}
-                {l.theirs && <em className="diff-who"> · {t.vault.editor.theirsMark}</em>}
-              </span>
-            ))}
-          </pre>
+          {conflictDiff.length === 0 ? (
+            // Only the frontmatter differs, or the draft already is the
+            // backend's text: one line, not the explanation over an empty box.
+            <p className="form-error">{t.vault.editor.conflictSame}</p>
+          ) : (
+            <>
+              <p className="form-error">{t.vault.editor.conflict}</p>
+              <pre className="proposal-draft-diff">
+                {conflictDiff.map((l, i) => (
+                  <span key={i} className={l.theirs ? 'diff-del diff-theirs' : `diff-${l.kind}`}>
+                    {(l.kind === 'add' ? '+ ' : '- ') + l.text}
+                    {/* a two-way diff shows the user's own original as − too: say
+                        which lines another author changed since the editor opened */}
+                    {l.theirs && <em className="diff-who"> · {t.vault.editor.theirsMark}</em>}
+                  </span>
+                ))}
+              </pre>
+            </>
+          )}
         </div>
       )}
       {approvedSpec && (

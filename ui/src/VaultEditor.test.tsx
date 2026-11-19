@@ -418,6 +418,20 @@ describe('VaultEditor conflict (F-0464 critério 7)', () => {
     expect(line('- p1 original')).not.toHaveTextContent('outro autor')
   })
 
+  it.each([
+    ['the draft already equal to the backend', 'mesmo texto'],
+    ['only the frontmatter differs', '---\ncerne_id: N-0001\nextra: sim\n---\n\nmesmo texto'],
+  ])('conflict: equal bodies (%s) say so in one line, with no empty diff', async (_name, theirs) => {
+    api.saveEntityContent.mockResolvedValue(conflict(theirs, 'h2'))
+    editor(note())
+    type('mesmo texto')
+    save()
+    expect(await screen.findByText('O texto do backend já é igual ao seu rascunho; grave por cima para confirmar.')).toBeInTheDocument()
+    expect(screen.queryByText(/mudou no backend/)).toBeNull()
+    expect(document.querySelector('.proposal-draft-diff')).toBeNull()
+    expect(overwrite()).toBeInTheDocument()
+  })
+
   it('conflict: reloading asks before it discards the draft — refused, nothing changes', async () => {
     api.saveEntityContent.mockResolvedValue(conflict('versão deles', 'h2'))
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)

@@ -1075,6 +1075,7 @@ const ptBR = {
       conflict:
         'Este documento mudou no backend depois que você o abriu. Seu rascunho continua aqui; abaixo, as linhas da versão do backend (−) e as do seu rascunho (+). As marcadas "outro autor" foram mudadas por outra pessoa desde então: para manter as duas versões, traga essas linhas para o rascunho e grave por cima.',
       theirsMark: 'outro autor',
+      conflictSame: 'O texto do backend já é igual ao seu rascunho; grave por cima para confirmar.',
       reloadBackend: 'Recarregar a versão do backend',
       overwrite: 'Gravar por cima',
       discard: 'Descartar o rascunho não gravado?',
@@ -2524,6 +2525,7 @@ const en: Messages = {
       conflict:
         'This document changed in the backend after you opened it. Your draft is still here; below, the lines of the backend version (−) and of your draft (+). The ones marked "other author" were changed by someone else since then: to keep both versions, bring those lines into your draft and save over it.',
       theirsMark: 'other author',
+      conflictSame: 'The backend text is already the same as your draft; save over it to confirm.',
       reloadBackend: 'Reload the backend version',
       overwrite: 'Save over it',
       discard: 'Discard the unsaved draft?',
