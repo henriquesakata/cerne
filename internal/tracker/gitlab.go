@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/forge"
 )
 
@@ -88,7 +89,10 @@ func (g gitlab) Update(ctx context.Context, r Ref, it Item) error {
 	return g.apply(ctx, iss, it)
 }
 
-// apply PUTs cur toward it, in one call or none.
+// apply PUTs cur toward it, in one call or none. GitLab has no close reason:
+// the cerne:<state> label says why the issue closed, so only the cerne:*
+// labels move and the others stay. The superseded comment goes only with the
+// call that closes the issue, so a sync never repeats it.
 func (g gitlab) apply(ctx context.Context, cur glIssue, it Item) error {
 	var f []string
 	if it.Title != "" && cur.Title != it.Title {
@@ -97,22 +101,43 @@ func (g gitlab) apply(ctx context.Context, cur glIssue, it Item) error {
 	if it.Title != "" && cur.Description != it.Body() {
 		f = append(f, "description="+it.Body())
 	}
+	want := stateLabel(it.State)
+	var stale []string
+	for _, l := range cur.Labels {
+		if strings.HasPrefix(l, "cerne:") && l != want {
+			stale = append(stale, l)
+		}
+	}
+	if len(stale) > 0 {
+		f = append(f, "remove_labels="+strings.Join(stale, ","))
+	}
+	if !slices.Contains(cur.Labels, want) {
+		f = append(f, "add_labels="+want)
+	}
 	closed, wantClosed := cur.State == "closed", closeReason(it.State) != ""
+	closing := false
 	switch {
-	case closed && it.NoReopen: // the merge closed it
+	case closed && it.NoReopen: // the merge closed it: only the labels move
 	case closed && !wantClosed:
 		f = append(f, "state_event=reopen")
 	case !closed && wantClosed:
 		f = append(f, "state_event=close")
+		closing = true
 	}
-	if len(f) == 0 {
-		return nil
+	if len(f) > 0 {
+		args := []string{"-X", "PUT", g.issues() + "/" + strconv.Itoa(cur.IID)}
+		for _, kv := range f {
+			args = append(args, "-f", kv)
+		}
+		if err := g.api(ctx, &glIssue{}, args...); err != nil {
+			return err
+		}
 	}
-	args := []string{"-X", "PUT", g.issues() + "/" + strconv.Itoa(cur.IID)}
-	for _, kv := range f {
-		args = append(args, "-f", kv)
+	if closing && it.State == domain.StateSuperseded && it.Successor != nil {
+		path := g.issues() + "/" + strconv.Itoa(cur.IID) + "/notes"
+		return g.api(ctx, &struct{}{}, "-X", "POST", path, "-f", "body=Superseded by "+it.Successor.URL)
 	}
-	return g.api(ctx, &glIssue{}, args...)
+	return nil
 }
 
 // ListOpen lists up to 100 open issues. ponytail: one page; paginate when a tracker outgrows it.

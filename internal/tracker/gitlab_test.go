@@ -378,3 +378,132 @@ func TestGitLabContract(t *testing.T) {
 		ClosesOnMerge: true,
 	})
 }
+
+// F-0450 crit. 3: GitLab has no close reason, so the cerne:<state> label
+// carries it — rejected and superseded close with cerne:rejected and
+// cerne:superseded. Through Create and through Update, a state change swaps
+// the cerne:* label and keeps the others; the superseded comment goes only
+// with the call that closes the issue.
+func TestGitLabCloseReasonLabel(t *testing.T) {
+	ctx := context.Background()
+	for _, c := range []struct {
+		state domain.FeatureState
+		open  bool
+		label string
+	}{
+		{domain.StateCandidate, true, "cerne:candidate"},
+		{domain.StateApproved, true, "cerne:approved"},
+		{domain.StateInDevelopment, true, "cerne:in_development"},
+		{domain.StateImplemented, true, "cerne:ready"},
+		{domain.StateDone, false, "cerne:done"},
+		{domain.StateRejected, false, "cerne:rejected"},
+		{domain.StateSuperseded, false, "cerne:superseded"},
+	} {
+		t.Run(string(c.state), func(t *testing.T) {
+			check := func(t *testing.T, iss *glIssue, wantLabels []string) {
+				t.Helper()
+				if want := map[bool]string{true: "opened", false: "closed"}[c.open]; iss.State != want {
+					t.Fatalf("issue state = %s, want %s", iss.State, want)
+				}
+				if got := sortedLabels(iss.Labels); !slices.Equal(got, sortedLabels(wantLabels)) {
+					t.Fatalf("labels = %q, want %q", got, wantLabels)
+				}
+			}
+			t.Run("create", func(t *testing.T) {
+				g := newFakeGL(t, "gitlab.com", "g/p")
+				r, err := newGitLab(t, "https://gitlab.com/g/p").Create(ctx, publicItem("F-0007", c.state))
+				if err != nil {
+					t.Fatalf("Create: %v", err)
+				}
+				n, _ := strconv.Atoi(r.ID)
+				check(t, g.issues[n], []string{c.label})
+			})
+			t.Run("update", func(t *testing.T) {
+				g := newFakeGL(t, "gitlab.com", "g/p")
+				n := g.add(&glIssue{Title: "Old", Labels: []string{"bug", "cerne:stale"}})
+				if err := newGitLab(t, "https://gitlab.com/g/p").Update(ctx, g.ref(n), publicItem("F-0007", c.state)); err != nil {
+					t.Fatalf("Update: %v", err)
+				}
+				check(t, g.issues[n], []string{"bug", c.label})
+			})
+		})
+	}
+
+	t.Run("a closed issue changes its reason by label only", func(t *testing.T) {
+		g := newFakeGL(t, "gitlab.com", "g/p")
+		n := g.add(&glIssue{Title: "T", State: "closed", Labels: []string{"bug", "cerne:done"}})
+		if err := newGitLab(t, "https://gitlab.com/g/p").Update(ctx, g.ref(n), publicItem("F-0007", domain.StateRejected)); err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+		if iss := g.issues[n]; iss.State != "closed" || !slices.Equal(sortedLabels(iss.Labels), []string{"bug", "cerne:rejected"}) {
+			t.Fatalf("issue = %+v, want closed with [bug cerne:rejected]", iss)
+		}
+		if last := g.reqs[len(g.reqs)-1]; last.method == "PUT" && last.fields["state_event"] != "" {
+			t.Fatalf("PUT sent state_event=%s to an issue already closed", last.fields["state_event"])
+		}
+	})
+
+	succ := &tracker.Ref{Tracker: "gl", ID: "99", URL: "https://gitlab.com/g/p/-/issues/99"}
+	t.Run("superseded comments the mirrored successor once", func(t *testing.T) {
+		g := newFakeGL(t, "gitlab.com", "g/p")
+		n := g.add(&glIssue{Title: "T"})
+		tr := newGitLab(t, "https://gitlab.com/g/p")
+		it := publicItem("F-0007", domain.StateSuperseded)
+		it.Successor = succ
+		for range 2 {
+			if err := tr.Update(ctx, g.ref(n), it); err != nil {
+				t.Fatalf("Update: %v", err)
+			}
+		}
+		if got := g.issues[n].Notes; !slices.Equal(got, []string{"Superseded by " + succ.URL}) {
+			t.Fatalf("notes = %q, want exactly one %q", got, "Superseded by "+succ.URL)
+		}
+	})
+	t.Run("superseded with no mirrored successor writes no comment", func(t *testing.T) {
+		g := newFakeGL(t, "gitlab.com", "g/p")
+		n := g.add(&glIssue{Title: "T"})
+		if err := newGitLab(t, "https://gitlab.com/g/p").Update(ctx, g.ref(n), publicItem("F-0007", domain.StateSuperseded)); err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+		if got := g.issues[n].Notes; len(got) != 0 {
+			t.Fatalf("notes = %q, want none", got)
+		}
+	})
+	t.Run("superseded on an issue already closed writes no comment", func(t *testing.T) {
+		g := newFakeGL(t, "gitlab.com", "g/p")
+		n := g.add(&glIssue{Title: "T", State: "closed", Labels: []string{"cerne:rejected"}})
+		it := publicItem("F-0007", domain.StateSuperseded)
+		it.Successor = succ
+		if err := newGitLab(t, "https://gitlab.com/g/p").Update(ctx, g.ref(n), it); err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+		if got := g.issues[n].Notes; len(got) != 0 {
+			t.Fatalf("notes = %q, want none: the issue was not open", got)
+		}
+	})
+	t.Run("an unchanged item sends no PUT", func(t *testing.T) {
+		g := newFakeGL(t, "gitlab.com", "g/p")
+		n := g.add(&glIssue{Title: "T", Labels: []string{"bug"}})
+		tr := newGitLab(t, "https://gitlab.com/g/p")
+		it := publicItem("F-0007", domain.StateApproved)
+		puts := func() int {
+			k := 0
+			for _, r := range g.reqs {
+				if r.method == "PUT" {
+					k++
+				}
+			}
+			return k
+		}
+		if err := tr.Update(ctx, g.ref(n), it); err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+		before := puts()
+		if err := tr.Update(ctx, g.ref(n), it); err != nil {
+			t.Fatalf("second Update: %v", err)
+		}
+		if after := puts(); before == 0 || after != before {
+			t.Fatalf("PUT calls = %d then %d, want the first Update to write and the second to send none", before, after)
+		}
+	})
+}
