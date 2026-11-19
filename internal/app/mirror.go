@@ -132,3 +132,53 @@ func mirrorItem(repoDir string, f store.Feature, link store.MirrorRef, cfg proje
 	}
 	return it
 }
+
+// mirrorAfterTransition moves the issue of each mirrored card among ids to the
+// card's stored state, under one mirrorTimeout for the whole round, and
+// returns a warning line per card whose tracker failed or did not answer in
+// time. The transition is already committed: a failure never undoes it, and
+// 'cerne mirror sync' reapplies the state. With the mirror off it only reads
+// the settings.
+func mirrorAfterTransition(repoDir, projDir string, ids []string) []string {
+	cfg := project.MirrorSettings(projDir)
+	if !cfg.Enabled {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), mirrorTimeout)
+	defer cancel()
+	var warnings []string
+	for _, id := range ids {
+		f, err := store.LoadFeature(repoDir, id)
+		if err != nil || f.Mirror == nil {
+			continue
+		}
+		if err := applyMirror(ctx, repoDir, f, cfg); err != nil {
+			warnings = append(warnings, fmt.Sprintf("cerne: mirror %s -> %s: %v; run 'cerne mirror sync'", id, f.Mirror.Tracker, err))
+		}
+	}
+	return warnings
+}
+
+// applyMirror moves the issue f is linked to toward f's state.
+func applyMirror(ctx context.Context, repoDir string, f store.Feature, cfg project.MirrorConfig) error {
+	tc, err := pickTracker(cfg, f.Mirror.Tracker)
+	if err != nil {
+		return err
+	}
+	tr, err := tracker.New(tc)
+	if err != nil {
+		return err
+	}
+	r := tracker.Ref{Tracker: f.Mirror.Tracker, ID: f.Mirror.ID, URL: f.Mirror.URL}
+	return tr.Update(ctx, r, mirrorItem(repoDir, f, *f.Mirror, cfg))
+}
+
+// transitionIDs is every card a transition moved: the card itself, the epics
+// its start propagated to, and the children its cascade carried.
+func transitionIDs(id string, propagated []string, moved []store.Feature) []string {
+	ids := append([]string{id}, propagated...)
+	for _, c := range moved {
+		ids = append(ids, c.ID)
+	}
+	return ids
+}

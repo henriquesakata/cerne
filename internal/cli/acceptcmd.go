@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"io"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
@@ -77,6 +78,7 @@ func runFeatureAccept(cmd *cobra.Command, dir string, args []string, reason stri
 	if err != nil {
 		return err
 	}
+	printWarnings(cmd.ErrOrStderr(), out.Warnings)
 	fmt.Fprintf(cmd.OutOrStdout(), "%s: %s → %s\n", out.ID, out.From, out.To)
 	printMovedPendings(cmd.OutOrStdout(), out.Pendings)
 	printMovedPendings(cmd.OutOrStdout(), out.Ideas)
@@ -110,6 +112,7 @@ func runFeatureAcceptAllImplemented(cmd *cobra.Command, ctx projCtx, reason stri
 		if err != nil {
 			return fmt.Errorf("accepting %s: %w", f.ID, err)
 		}
+		printWarnings(cmd.ErrOrStderr(), out.Warnings)
 		fmt.Fprintf(cmd.OutOrStdout(), "%s: %s → %s\n", out.ID, out.From, out.To)
 		printMovedPendings(cmd.OutOrStdout(), out.Pendings)
 		printMovedPendings(cmd.OutOrStdout(), out.Ideas)
@@ -118,4 +121,12 @@ func runFeatureAcceptAllImplemented(cmd *cobra.Command, ctx projCtx, reason stri
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%d feature(s) accepted.\n", accepted)
 	return nil
+}
+
+// printWarnings writes a transition's non-blocking advisories (the mirror's
+// failed tracker round, F-0449), one per line.
+func printWarnings(w io.Writer, lines []string) {
+	for _, l := range lines {
+		fmt.Fprintln(w, l)
+	}
 }
