@@ -53,6 +53,19 @@ While cerne is below 1.0.0, a minor version may change behavior: read the
   superseded card's issue closes with its `cerne:rejected` or
   `cerne:superseded` label, created when the repository lacks it. An IP
   address or `localhost` host is refused.
+- Trello board tracker (F-0451). A `mirror.trackers` record with
+  `kind = "trello"` and an `https://trello.com/b/<boardId>/<slug>` URL mirrors
+  cards as cards on that board. A card sits in the list of its state
+  (`Candidate`, `Approved`, `In development`, `Ready`, `Done`); a list the
+  board lacks, or one a third party renamed or archived, is created at the end
+  of the board, never twice. Rejected and superseded archive the card where it
+  is, with one comment giving the reason; done stays visible in `Done`.
+  `cerne mirror sync` imports the open cards outside `Done` as ideas. Trello
+  reads no keyword in a commit, so the trailer is always
+  `Refs: https://trello.com/c/<shortLink>`. The login is what
+  `git credential fill` holds for `api.trello.com`, the API key as the username
+  and the token as the password (store it with `git credential approve`); it
+  travels only in the `Authorization` header, and a redirect is never followed.
 - Settings › Integrations shows `delivery.forge`, `delivery.commit_url`,
   `delivery.pr_url`, `mirror.enabled`, `mirror.trackers` and
   `mirror.close_on`. The existing `[delivery]` block is read and written as it
