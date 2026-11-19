@@ -108,6 +108,17 @@ describe('Settings — mirror pieces of T10 (F-0449)', () => {
     expect(row('Two (unit)')).not.toHaveTextContent('[{')
   })
 
+  it('close_on: the select and the effective line read the option labels, not accept and merge', async () => {
+    fetchSettings.mockResolvedValue(
+      view([key({ id: 'mirror.close_on', title: 'Close on (unit)', type: 'string', default: 'accept', enum: ['accept', 'merge'], value: 'accept' })]),
+    )
+    render(<Settings group="integrations" />)
+    const r = await screen.findByRole('listitem', { name: 'Close on (unit)' })
+    const select = within(r).getByRole('combobox') as HTMLSelectElement
+    expect([...select.options].map((o) => o.textContent)).toEqual(['no aceite humano', 'no merge do PR'])
+    expect(r).toHaveTextContent('Efetivo: no aceite humano (padrão)')
+  })
+
   it('records: empty list keeps the header and says nothing is published; Add focuses the new first field; a refusal shows the server reason', async () => {
     const trackers = key({
       id: 'mirror.trackers',

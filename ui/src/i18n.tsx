@@ -1464,7 +1464,8 @@ const ptBR = {
         'Só as issues de fora com esta label viram ideas. Vazio importa todas as issues abertas.',
     } as Record<string, string>,
     // Rótulos dos valores de uma chave de texto com valores declarados.
-    options: { on: 'ligado', off: 'desligado' } as Record<string, string>,
+    // accept/merge: os valores de mirror.close_on (F-0449).
+    options: { on: 'ligado', off: 'desligado', accept: 'no aceite humano', merge: 'no merge do PR' } as Record<string, string>,
   },
 }
 
@@ -2816,7 +2817,7 @@ const en: Messages = {
       failed: (e: string) => `Could not save the name: ${e}`,
     },
     text: {},
-    options: {},
+    options: { accept: 'on human accept', merge: 'on PR merge' },
   },
 }
 
