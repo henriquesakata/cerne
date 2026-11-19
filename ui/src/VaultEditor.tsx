@@ -255,7 +255,7 @@ export default function VaultEditor({ doc, entries, knownIds, wikiHref, onSaved,
         </div>
       )}
       <div className="vault-editor-actions">
-        <button type="button" onClick={() => void save()} disabled={saving}>
+        <button type="button" className="vault-editor-primary" onClick={() => void save()} disabled={saving}>
           {saving ? t.vault.editor.saving : t.common.save}
         </button>
         <button type="button" onClick={cancel} disabled={saving}>

@@ -3915,6 +3915,18 @@ button.clarify-chip { cursor: pointer; font: inherit; }
 .vault-editor-conflict { display: flex; flex-direction: column; gap: 0.5rem; }
 .vault-editor-conflict .form-error { margin: 0; }
 .vault-editor-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+/* Edit and the editor's actions take the system's button recipe (the feature
+   page's .doc-edit-actions); the primary one is full ink, never a hue. */
+.vault-doc-actions button,
+.vault-editor-actions button { font: inherit; font-size: 0.88rem; min-height: 2rem; padding: 0.35rem 0.9rem; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); color: var(--fg); cursor: pointer; }
+.vault-doc-actions button:hover:not(:disabled),
+.vault-editor-actions button:hover:not(:disabled) { background: var(--surface-3); }
+.vault-editor-actions .vault-editor-primary,
+.vault-editor-actions .vault-editor-primary:hover:not(:disabled) { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.vault-doc-actions button:disabled,
+.vault-editor-actions button:disabled { opacity: 0.6; cursor: default; }
+.vault-doc-actions button:focus-visible,
+.vault-editor-actions button:focus-visible { outline: 2px solid var(--fg); outline-offset: 1px; }
 @container (max-width: 44rem) {
   .vault-editor-panes { grid-template-columns: minmax(0, 1fr); grid-template-rows: 55vh auto; height: auto; }
   .vault-editor-preview { overflow: visible; padding: 0.75rem 0 0; border-left: 0; border-top: 1px solid var(--border-soft); }
