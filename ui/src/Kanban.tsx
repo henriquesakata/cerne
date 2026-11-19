@@ -351,7 +351,7 @@ function Columns({
   const [ghost, setGhost] = useState<string | null>(null)
   const [over, setOver] = useState<FeatureState | null>(null)
   const ghostTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
-  const [notice, setNotice] = useState<{ id: string; text: string; refused: boolean } | null>(null)
+  const [notice, setNotice] = useState<{ id: string; text: string; refused: boolean; warnings?: string[] } | null>(null)
   // F-0420: destino cuja coluna está fora da vista, apontado pela faixa na borda.
   const boardRef = useRef<HTMLDivElement>(null)
   const [edge, setEdge] = useState<FeatureState | null>(null)
@@ -443,7 +443,7 @@ function Columns({
           .then((res) =>
             setNotice(
               res.ok
-                ? { id: f.id, text: `${t.state[res.data.from]} → ${t.state[res.data.to]}`, refused: false }
+                ? { id: f.id, text: `${t.state[res.data.from]} → ${t.state[res.data.to]}`, refused: false, warnings: res.data.warnings }
                 : { id: f.id, text: res.error, refused: true },
             ),
           )
@@ -466,6 +466,11 @@ function Columns({
       {notice && (
         <>
           <span>{notice.text}</span> <a href={`#/f/${notice.id}`}>{notice.id}</a>
+          {notice.warnings?.map((w) => (
+            <span key={w} className="drag-notice-warning">
+              {t.common.warning} <code>{w}</code>
+            </span>
+          ))}
         </>
       )}
     </div>

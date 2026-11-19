@@ -242,6 +242,9 @@ export type TransitionResult = {
   to: FeatureState
   // F-0318: approve numa aprovada — renovou a vencida ou gravou a linha de base.
   approval?: 'renewed' | 'baseline'
+  // F-0449: avisos que não bloquearam a transição (o tracker do espelho falhou),
+  // as mesmas linhas que o CLI imprime no stderr.
+  warnings?: string[]
 }
 
 async function errorMessage(r: Response): Promise<string> {

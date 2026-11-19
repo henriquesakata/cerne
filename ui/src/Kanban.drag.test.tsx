@@ -80,6 +80,17 @@ describe('Kanban drag (F-0388)', () => {
     await waitFor(() => expect(post).toHaveBeenCalledWith('F-0002', { action: 'accept', sentinel: true }))
   })
 
+  // F-0449: a mirrored card whose tracker is down still moves, and the drop says so.
+  it('aceite com o tracker fora: o aviso do espelho aparece no aviso do drop', async () => {
+    const w = "cerne: mirror F-0002 -> pub: tracker down; run 'cerne mirror sync'"
+    post.mockResolvedValue({ ok: true, data: { id: 'F-0002', from: 'implemented', to: 'done', warnings: [w] } })
+    render(<Kanban />)
+    await screen.findByText('F-0002')
+    await drag('F-0002', columnOf('Conclu'))
+    await waitFor(() => expect(post).toHaveBeenCalled())
+    await waitFor(async () => expect(await findNotice()).toHaveTextContent(w))
+  })
+
   it('esclarecimento aberto: bloqueia no dragover, avisa no drop, sem API', async () => {
     payload = mkState({ 'F-0001': 2 })
     render(<Kanban />)

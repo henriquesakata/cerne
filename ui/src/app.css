@@ -3667,6 +3667,7 @@ button.clarify-chip { cursor: pointer; font: inherit; }
   .card { transition: opacity 120ms ease; }
 }
 .drag-notice { margin: 0 0 0.75rem; }
+.drag-notice-warning { display: block; margin-top: 0.25rem; }
 
 /* Settings groups (F-0413): side column on desktop, a select below 640px. */
 .settings-layout { display: grid; grid-template-columns: 12rem minmax(0, 1fr); gap: 0 2rem; align-items: start; }

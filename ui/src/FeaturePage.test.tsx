@@ -234,6 +234,20 @@ describe('FeaturePage aprovação vencida (F-0318)', () => {
     expect(screen.queryByText(/Aprovada → Aprovada/)).not.toBeInTheDocument()
   })
 
+  // F-0449: the tracker round's failure reaches the page as a notice.
+  it('aviso do espelho: a linha aparece depois da transição', async () => {
+    const w = "cerne: mirror F-0221 -> pub: tracker down; run 'cerne mirror sync'"
+    payload = stale()
+    vi.mocked(postTransition).mockResolvedValueOnce({
+      ok: true,
+      data: { id: 'F-0221', from: 'approved', to: 'approved', approval: 'renewed', warnings: [w] },
+    })
+    render(<FeaturePage id="F-0221" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Reaprovar' }))
+    expect(await screen.findByText('Aprovação renovada')).toBeInTheDocument()
+    expect(screen.getByText(w)).toBeInTheDocument()
+  })
+
   // Critério 14: aprovação anterior à F-0318 (sem versão aprovada) nunca vence;
   // o botão grava a linha de base, e o aviso diz isso.
   it('aprovação legada: Gravar linha de base envia o approve e avisa', async () => {

@@ -1532,10 +1532,15 @@ func handleTransition(w http.ResponseWriter, r *http.Request, repoDir, projDir, 
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
 		return
 	}
-	resp := map[string]string{
+	resp := map[string]any{
 		"id":   out.ID,
 		"from": string(out.From),
 		"to":   string(out.To),
+	}
+	// Non-blocking advisories, the lines the CLI prints on stderr: a mirrored
+	// card whose tracker round failed (F-0449), the parallel-work guard.
+	if len(out.Warnings) > 0 {
+		resp["warnings"] = out.Warnings
 	}
 	// An approve on an approved feature (F-0318) says what it did, so the page
 	// does not just read "approved → approved".

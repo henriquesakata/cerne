@@ -347,6 +347,8 @@ const ptBR = {
   } satisfies Record<FeatureState, string>,
   common: {
     loading: 'Carregando…',
+    // F-0449: rótulo de um aviso que não bloqueou a ação.
+    warning: 'Aviso:',
     save: 'Salvar',
     cancel: 'Cancelar',
     close: 'Fechar',
@@ -1788,6 +1790,7 @@ const en: Messages = {
   },
   common: {
     loading: 'Loading…',
+    warning: 'Warning:',
     save: 'Save',
     cancel: 'Cancel',
     close: 'Close',
