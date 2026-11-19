@@ -10,11 +10,12 @@ const api = vi.hoisted(() => ({
 }))
 vi.mock('./api', () => api)
 
-import { loadVaultDoc } from './vault-doc'
+import { loadVaultDoc, stripLeadingTitle } from './vault-doc'
 
 const feature = (state: string) => ({
   feature: { id: 'F-1', title: 'T', state },
   docs: { spec: 'SPEC', plan: 'PLAN', result: 'RESULT' },
+  docs_real: { spec: true, plan: false, result: true },
 })
 
 beforeEach(() => vi.clearAllMocks())
@@ -69,5 +70,30 @@ describe('loadVaultDoc (F-0463)', () => {
 
   it('rejects an id with no vault route', async () => {
     await expect(loadVaultDoc('W-0001')).rejects.toThrow(/W-0001/)
+  })
+
+  it('A4: id em minúscula é normalizado, como CanonicalID', async () => {
+    api.fetchDecision.mockResolvedValue({ decision: { id: 'D-1', title: 'X', state: 'active' }, doc: 'B' })
+    const d = await loadVaultDoc('d-1')
+    expect(api.fetchDecision).toHaveBeenCalledWith('D-1')
+    expect(d.id).toBe('D-1')
+  })
+
+  it('B2: real vem de docs_real na feature e de conteúdo não vazio nos demais', async () => {
+    api.fetchFeature.mockResolvedValue(feature('in_development'))
+    expect((await loadVaultDoc('F-1')).real).toBe(false) // plan, scaffold
+    expect((await loadVaultDoc('F-1', 'spec')).real).toBe(true)
+    api.fetchNote.mockResolvedValue({ note: { id: 'N-1', title: 'X', state: 'active' }, doc: '  \n' })
+    expect((await loadVaultDoc('N-1')).real).toBe(false)
+  })
+})
+
+describe('stripLeadingTitle (B3)', () => {
+  it('tira o H1 inicial quando é o título da entidade, com ou sem frontmatter', () => {
+    expect(stripLeadingTitle('---\ncerne_id: F-1\n---\n\n# Meu título\n\ncorpo', 'Meu título')).toBe('corpo')
+    expect(stripLeadingTitle('# Meu  título\ntexto', 'meu título')).toBe('texto')
+  })
+  it('mantém um H1 diferente do título', () => {
+    expect(stripLeadingTitle('# Outro\ntexto', 'Meu título')).toBe('# Outro\ntexto')
   })
 })
