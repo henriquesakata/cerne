@@ -31,6 +31,8 @@ export type Feature = {
   components?: string[] // open, slugified subsystem/tool axis (D-0002)
   delivery_commit_url?: string // F-0179: resolved URL of the delivering commit
   delivery_mr_url?: string // F-0179: URL of the delivering MR/PR
+  // F-0449: the tracker issue a human published this card to; absent = never mirrored.
+  mirror?: { tracker: string; kind: string; id: string; url: string; title?: string; summary?: string }
   capabilities?: string[] // F-0188: C- ids da taxonomia funcional
   owner?: string // F-0204: responsável (texto livre)
   origin?: 'human' | 'agent' // T-0005: quem pediu a demanda; ausente em cards antigos
@@ -240,6 +242,9 @@ export type TransitionResult = {
   to: FeatureState
   // F-0318: approve numa aprovada — renovou a vencida ou gravou a linha de base.
   approval?: 'renewed' | 'baseline'
+  // F-0449: avisos que não bloquearam a transição (o tracker do espelho falhou),
+  // as mesmas linhas que o CLI imprime no stderr.
+  warnings?: string[]
 }
 
 async function errorMessage(r: Response): Promise<string> {
@@ -1375,6 +1380,11 @@ export type ResolvedSetting = {
   human_only?: boolean
   // Values a string key may hold (F-0353); absent = free text.
   enum?: string[]
+  // The longest string the key takes (F-0449); absent = 64.
+  max_len?: number
+  // A records key's columns (F-0449), each a declared string setting; the
+  // first one is the record key.
+  fields?: { id: string; title: string; type: string; default: unknown; scopes: SettingScope[]; description: string; enum?: string[]; max_len?: number }[]
   value: unknown
   origin: SettingScope | 'default'
   stored?: Partial<Record<SettingScope, unknown>>

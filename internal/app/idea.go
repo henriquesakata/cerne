@@ -74,29 +74,18 @@ func CreateIdea(repoDir, projDir, title, body string, facets, components []strin
 				return "", nil // a retry: writes nothing, surfaces as ErrNothingToCommit
 			}
 		}
-		id, err := store.NextID(repoDir, "I")
+		var err error
+		i, err = saveNewIdea(repoDir, store.Idea{
+			Title:      title,
+			Body:       body,
+			Facets:     normFacets,
+			Components: domain.NormalizeComponents(components),
+			Token:      token,
+		})
 		if err != nil {
 			return "", err
 		}
-		now := time.Now().UTC()
-		i = store.Idea{
-			ID:         id,
-			Title:      title,
-			Body:       body,
-			State:      domain.IdeaActive,
-			Facets:     normFacets,
-			Components: domain.NormalizeComponents(components),
-			CreatedAt:  now,
-			UpdatedAt:  now,
-			Token:      token,
-		}
-		if err := store.SaveIdea(repoDir, i); err != nil {
-			return "", err
-		}
-		if err := store.AppendEvent(repoDir, domain.NewEvent(id, "idea.created", nil, EventActor())); err != nil {
-			return "", err
-		}
-		return "cerne: capture " + id, nil
+		return "cerne: capture " + i.ID, nil
 	})
 	if existing && errors.Is(err, gitback.ErrNothingToCommit) {
 		return i, nil
@@ -105,6 +94,57 @@ func CreateIdea(repoDir, projDir, title, body string, facets, components []strin
 		return store.Idea{}, err
 	}
 	return i, nil
+}
+
+// saveNewIdea mints the next I- id for i, saves it active and appends its
+// idea.created event. It runs inside the caller's MutateAndSnapshot.
+func saveNewIdea(repoDir string, i store.Idea) (store.Idea, error) {
+	id, err := store.NextID(repoDir, "I")
+	if err != nil {
+		return store.Idea{}, err
+	}
+	now := time.Now().UTC()
+	i.ID, i.State, i.CreatedAt, i.UpdatedAt = id, domain.IdeaActive, now, now
+	if err := store.SaveIdea(repoDir, i); err != nil {
+		return store.Idea{}, err
+	}
+	if err := store.AppendEvent(repoDir, domain.NewEvent(id, "idea.created", nil, EventActor())); err != nil {
+		return store.Idea{}, err
+	}
+	return i, nil
+}
+
+// saveImportedIdeas saves, in one commit, each idea whose issue (Mirror.URL)
+// no card or idea is linked to on the backend's tip, checked inside the lock
+// so a racing sync never imports an issue twice, and returns their ids
+// (F-0449). Nothing new is no commit and no error.
+func saveImportedIdeas(repoDir, projDir string, ideas []store.Idea) ([]string, error) {
+	var ids []string
+	err := mutateAndSnapshotLatest(repoDir, projDir, func() (string, error) {
+		ids = nil // mutate may run again on a re-mint
+		linked, err := linkedURLs(repoDir)
+		if err != nil {
+			return "", err
+		}
+		for _, i := range ideas {
+			if linked[i.Mirror.URL] {
+				continue
+			}
+			saved, err := saveNewIdea(repoDir, i)
+			if err != nil {
+				return "", err
+			}
+			ids = append(ids, saved.ID)
+		}
+		if len(ids) == 0 {
+			return "", nil
+		}
+		return "cerne: mirror sync imports " + strings.Join(ids, ", "), nil
+	})
+	if errors.Is(err, gitback.ErrNothingToCommit) {
+		return nil, nil
+	}
+	return ids, err
 }
 
 // IdeaFilter selects ideas for ListIdeas: State "" means active and all keeps
@@ -221,6 +261,13 @@ func PromoteIdea(repoDir, projDir, id, title, module string, force bool) (store.
 		n.light = !projectGates(projDir).GauntletEnabled()
 		if f, _, err = n.mint(repoDir); err != nil {
 			return "", err
+		}
+		if i.Mirror != nil { // the outside issue follows the card (F-0449): its accept closes it
+			m := *i.Mirror
+			f.Mirror = &m
+			if err := store.SaveFeature(repoDir, f); err != nil {
+				return "", err
+			}
 		}
 		if err := moveIdea(repoDir, &i, domain.ActionPromote, f.ID, map[string]string{"promoted_to": f.ID}); err != nil {
 			return "", err

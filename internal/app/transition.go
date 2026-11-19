@@ -510,6 +510,7 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 	for _, c := range casc.moved {
 		dispatchWebhook(projDir, c.ID, "feature", string(action), string(cascadeFrom[action]), string(c.State), c.Title)
 	}
+	out.Warnings = append(out.Warnings, mirrorAfterTransition(repoDir, projDir, transitionIDs(id, out.Propagated, casc.moved))...)
 	return out, nil
 }
 

@@ -3513,6 +3513,7 @@ button.clarify-chip { cursor: pointer; font: inherit; }
 .settings-text:focus-visible,
 .settings-select:focus-visible,
 .settings-string button:focus-visible,
+.settings-records-save:focus-visible,
 .settings-switch:focus-visible,
 .settings-check:focus-visible,
 .settings-search:focus-visible,
@@ -3549,7 +3550,8 @@ button.clarify-chip { cursor: pointer; font: inherit; }
 }
 .settings-switch[aria-disabled="true"] { opacity: 0.5; cursor: default; }
 .settings-string { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
-.settings-string button {
+.settings-string button,
+.settings-records-save {
   font: inherit;
   font-size: 0.85rem;
   padding: 0.3rem 0.8rem;
@@ -3560,6 +3562,7 @@ button.clarify-chip { cursor: pointer; font: inherit; }
   cursor: pointer;
 }
 .settings-string button[aria-disabled="true"],
+.settings-records-save[aria-disabled="true"],
 .settings-row[aria-busy="true"] input { opacity: 0.5; cursor: default; }
 .settings-row .load-notice { margin: 0.5rem 0 0; }
 .settings-file { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin: 0.6rem 0 0; font-size: 0.85rem; }
@@ -3571,6 +3574,37 @@ button.clarify-chip { cursor: pointer; font: inherit; }
 .settings-file .code-copy { position: static; flex: none; }
 .settings-file .code-copy-failed { flex-basis: 100%; }
 .settings-invalid { grid-column: 1 / -1; margin: 0.35rem 0 0; font-size: 0.85rem; }
+/* Records editor (F-0449): the row stacks, so the table gets the full width;
+   it scrolls sideways before a column shrinks below its field. */
+.settings-row.settings-row-records { grid-template-columns: minmax(0, 1fr); }
+.settings-records-scroll { overflow-x: auto; }
+.settings-records { width: 100%; min-width: 36rem; border-collapse: collapse; table-layout: fixed; font-size: 0.9rem; }
+.settings-records th { padding: 0 0.4rem 0.25rem 0; text-align: left; font-size: 0.85rem; font-weight: 400; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.settings-records td { padding: 0.25rem 0.4rem 0.25rem 0; vertical-align: middle; }
+.settings-records-narrow { width: 9rem; }
+.settings-records-actions { width: 6rem; }
+.settings-records input,
+.settings-records select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  font: inherit;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border-field);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg);
+}
+.settings-row:focus-within .settings-records input,
+.settings-row:focus-within .settings-records select { border-color: var(--muted); }
+.settings-records input::placeholder { color: var(--muted); opacity: 1; }
+/* Inside the scroller, which clips: the ring is inset (F-0413). */
+.settings-records input:focus-visible,
+.settings-records select:focus-visible,
+.settings-records .settings-switch:focus-visible { outline: 2px solid var(--fg); outline-offset: -2px; }
+.settings-records-empty { color: var(--muted); }
+.settings-records-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: 0.5rem 0 0; }
+.settings-reason { margin: 0.25rem 0 0; font-size: 0.78rem; overflow-wrap: anywhere; }
 /* releitura da lista de projetos que falhou depois do boot (F-0315): aviso
    acima do app, que continua de pé */
 .live-refresh-notice { margin: 0.5rem 1.5rem 0; }
@@ -3633,6 +3667,7 @@ button.clarify-chip { cursor: pointer; font: inherit; }
   .card { transition: opacity 120ms ease; }
 }
 .drag-notice { margin: 0 0 0.75rem; }
+.drag-notice-warning { display: block; margin-top: 0.25rem; }
 
 /* Settings groups (F-0413): side column on desktop, a select below 640px. */
 .settings-layout { display: grid; grid-template-columns: 12rem minmax(0, 1fr); gap: 0 2rem; align-items: start; }

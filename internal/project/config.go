@@ -17,6 +17,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/henriquesakata/cerne/internal/models"
+	"github.com/henriquesakata/cerne/internal/tracker"
 )
 
 // ErrNoProject is the sentinel for a LoadConfig walk that reaches the
@@ -190,6 +191,42 @@ func (d DeliveryConfig) validate() error {
 		return nil
 	}
 	return fmt.Errorf("%w: unknown [delivery] forge %q (supported: %s)", ErrDeliveryForge, d.Forge, strings.Join(DeliveryForges, ", "))
+}
+
+// MirrorConfig is the [mirror] block as the settings registry resolves it
+// (F-0449). CloseOn is "accept" or "merge".
+type MirrorConfig struct {
+	Enabled  bool
+	Trackers []tracker.Config
+	CloseOn  string
+}
+
+// MirrorSettings is mirror.* for the project at (or above) projDir, through
+// ResolveSettings: an invalid stored value counts as unset, so a hand edit
+// the registry refuses mirrors nothing instead of failing LoadConfig.
+func MirrorSettings(projDir string) MirrorConfig {
+	m := MirrorConfig{CloseOn: "accept"}
+	for _, s := range ResolveSettings(projDir).Settings {
+		switch s.ID {
+		case "mirror.enabled":
+			m.Enabled = s.Value == true
+		case "mirror.trackers":
+			rows, _ := s.Value.([]map[string]string)
+			for _, r := range rows {
+				m.Trackers = append(m.Trackers, trackerConfig(r))
+			}
+		case "mirror.close_on":
+			if v, _ := s.Value.(string); v != "" {
+				m.CloseOn = v
+			}
+		}
+	}
+	return m
+}
+
+// trackerConfig reads one mirror.trackers record.
+func trackerConfig(r map[string]string) tracker.Config {
+	return tracker.Config{Name: r["name"], Kind: r["kind"], URL: r["url"], Label: r["label"]}
 }
 
 // TelemetryConfig is the optional [telemetry] block of .cernerc (F-0149).

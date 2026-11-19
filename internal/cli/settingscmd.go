@@ -46,7 +46,7 @@ func newSettingsListCmd(dir *string) *cobra.Command {
 			w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
 			fmt.Fprintln(w, "KEY\tTYPE\tVALUE\tDEFAULT\tORIGIN")
 			for _, s := range view.Settings {
-				fmt.Fprintf(w, "%s\t%s\t%v\t%v\t%s\n", s.ID, s.Type, s.Value, s.Default, s.Origin)
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", s.ID, s.Type, settingText(s.Value), settingText(s.Default), s.Origin)
 			}
 			w.Flush()
 			fmt.Fprintln(out)
@@ -60,7 +60,7 @@ func newSettingsListCmd(dir *string) *cobra.Command {
 			for _, s := range view.Settings {
 				for _, scope := range []string{project.ScopeProject, project.ScopeHost} {
 					if v, ok := s.Stored[scope]; ok && scope != s.Origin {
-						fmt.Fprintf(out, "overridden: %s = %v in %s scope (%s) — %s wins\n", s.ID, v, scope, view.Files[scope], s.Origin)
+						fmt.Fprintf(out, "overridden: %s = %s in %s scope (%s) — %s wins\n", s.ID, settingText(v), scope, view.Files[scope], s.Origin)
 					}
 				}
 			}
@@ -122,7 +122,7 @@ func newSettingsGetCmd(dir *string) *cobra.Command {
 					}
 					fmt.Fprintf(out, "%s\t", origin)
 				}
-				fmt.Fprintln(out, values[i])
+				fmt.Fprintln(out, settingText(values[i]))
 			}
 			return nil
 		},
@@ -227,4 +227,14 @@ func findResolved(view project.SettingsView, id string) (project.ResolvedSetting
 		ids[i] = s.ID
 	}
 	return project.ResolvedSetting{}, fmt.Errorf("%w %q (known: %s)", project.ErrUnknownSetting, id, strings.Join(ids, ", "))
+}
+
+// settingText prints a value the way it is typed in: a records list as
+// compact JSON (what 'settings set' takes), anything else as is.
+func settingText(v any) string {
+	if rows, ok := v.([]map[string]string); ok {
+		b, _ := json.Marshal(rows)
+		return string(b)
+	}
+	return fmt.Sprint(v)
 }

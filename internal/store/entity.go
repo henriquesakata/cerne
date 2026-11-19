@@ -51,9 +51,23 @@ type Feature struct {
 	FromIdea string `json:"from_idea,omitempty"`
 	// Origin is who asked for the demand (T-0005): "human" | "agent", empty for
 	// a card born before the field (unknown, never migrated).
-	Origin    string    `json:"origin,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Origin string `json:"origin,omitempty"`
+	// Mirror is the issue a human published this card to (F-0449); nil = never mirrored.
+	Mirror    *MirrorRef `json:"mirror,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
+}
+
+// MirrorRef links a card or an idea to one issue on a configured tracker
+// (F-0449). Title and Summary are the public text the opt-in gave; both are
+// empty for an issue that came from outside, whose text cerne never rewrites.
+type MirrorRef struct {
+	Tracker string `json:"tracker"`
+	Kind    string `json:"kind"`
+	ID      string `json:"id"`
+	URL     string `json:"url"`
+	Title   string `json:"title,omitempty"`
+	Summary string `json:"summary,omitempty"`
 }
 
 // Decision is the persisted form of a decision entity.
@@ -383,6 +397,9 @@ type Idea struct {
 	// Token is the capture's idempotency key (C2): a retry of the same
 	// submission returns this idea instead of minting a twin.
 	Token string `json:"token,omitempty"`
+	// Mirror is the outside issue mirror sync imported this idea from (F-0449);
+	// promotion hands it to the card.
+	Mirror *MirrorRef `json:"mirror,omitempty"`
 
 	legacy bool // read from the text-only format (see Legacy)
 }

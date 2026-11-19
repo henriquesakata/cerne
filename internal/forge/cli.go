@@ -8,11 +8,11 @@ import (
 	"strings"
 )
 
-// callJSON runs a forge CLI under the call deadline and decodes its JSON stdout.
-func callJSON(ctx context.Context, v any, name string, args ...string) error {
+// CallJSON runs a forge CLI under the call deadline and decodes its JSON stdout.
+func CallJSON(ctx context.Context, v any, name string, args ...string) error {
 	ctx, cancel := context.WithTimeout(ctx, CallTimeout)
 	defer cancel()
-	out, err := runCLI(ctx, name, args...)
+	out, err := RunCLI(ctx, name, args...)
 	if err != nil {
 		return err
 	}
@@ -22,8 +22,8 @@ func callJSON(ctx context.Context, v any, name string, args ...string) error {
 	return nil
 }
 
-// hostArgs adds --hostname for a host other than the CLI's own default.
-func hostArgs(host, home string) []string {
+// HostArgs adds --hostname for a host other than the CLI's own default.
+func HostArgs(host, home string) []string {
 	if host == home {
 		return nil
 	}
@@ -34,8 +34,8 @@ func hostArgs(host, home string) []string {
 type github struct{ repo Repo }
 
 func (g github) api(ctx context.Context, v any, path string) error {
-	args := append([]string{"api"}, hostArgs(g.repo.Host, "github.com")...)
-	return callJSON(ctx, v, "gh", append(args, "repos/"+g.repo.Path+path)...)
+	args := append([]string{"api"}, HostArgs(g.repo.Host, "github.com")...)
+	return CallJSON(ctx, v, "gh", append(args, "repos/"+g.repo.Path+path)...)
 }
 
 func (g github) PRForCommit(ctx context.Context, sha string) (string, int, error) {
@@ -72,8 +72,8 @@ func (g github) OnDefaultBranch(ctx context.Context, sha string) (bool, string, 
 type gitlab struct{ repo Repo }
 
 func (g gitlab) api(ctx context.Context, v any, path string) error {
-	args := append([]string{"api"}, hostArgs(g.repo.Host, "gitlab.com")...)
-	return callJSON(ctx, v, "glab", append(args, "projects/"+url.PathEscape(g.repo.Path)+path)...)
+	args := append([]string{"api"}, HostArgs(g.repo.Host, "gitlab.com")...)
+	return CallJSON(ctx, v, "glab", append(args, "projects/"+url.PathEscape(g.repo.Path)+path)...)
 }
 
 func (g gitlab) PRForCommit(ctx context.Context, sha string) (string, int, error) {

@@ -82,7 +82,7 @@ func TestSettingsPutWritesScope(t *testing.T) {
 	h, projDir, _ := settingsBackend(t, "")
 	before, _ := os.ReadFile(filepath.Join(projDir, ".cernerc"))
 	var view project.SettingsView
-	rec := doJSON(t, h, http.MethodPut, "/api/settings/wiki.enabled", `{"scope":"host","value":false}`, &view)
+	rec := doLocal(t, h, http.MethodPut, "/api/settings/wiki.enabled", `{"scope":"host","value":false}`, &view)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 	}
@@ -113,7 +113,7 @@ func TestSettingsPutRejects(t *testing.T) {
 			h, projDir, hostDir := settingsBackend(t, tc.extra)
 			before, _ := os.ReadFile(filepath.Join(projDir, ".cernerc"))
 			var body map[string]string
-			rec := doJSON(t, h, http.MethodPut, "/api/settings/"+tc.id, tc.body, &body)
+			rec := doLocal(t, h, http.MethodPut, "/api/settings/"+tc.id, tc.body, &body)
 			// "route not found" is the mux's own 404: the handler must answer.
 			if rec.Code != tc.want || body["error"] == "" || body["error"] == "route not found" {
 				t.Fatalf("status %d body %v, want %d with an error", rec.Code, body, tc.want)
@@ -136,7 +136,7 @@ func TestSettingsDeleteUnsetsScope(t *testing.T) {
 		t.Fatal(err)
 	}
 	var view project.SettingsView
-	rec := doJSON(t, h, http.MethodDelete, "/api/settings/mindmap.enabled?scope=project", "", &view)
+	rec := doLocal(t, h, http.MethodDelete, "/api/settings/mindmap.enabled?scope=project", "", &view)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 	}
@@ -145,14 +145,14 @@ func TestSettingsDeleteUnsetsScope(t *testing.T) {
 	}
 	// A key the scope does not hold is a 200 no-op, unlike the CLI's exit 1:
 	// the UI's "unset" toggle is idempotent.
-	if rec := doJSON(t, h, http.MethodDelete, "/api/settings/mindmap.enabled?scope=project", "", &view); rec.Code != http.StatusOK {
+	if rec := doLocal(t, h, http.MethodDelete, "/api/settings/mindmap.enabled?scope=project", "", &view); rec.Code != http.StatusOK {
 		t.Errorf("absent key: status %d, want 200 no-op", rec.Code)
 	}
 	var body map[string]string
-	if rec := doJSON(t, h, http.MethodDelete, "/api/settings/nope.enabled?scope=host", "", &body); rec.Code != http.StatusNotFound {
+	if rec := doLocal(t, h, http.MethodDelete, "/api/settings/nope.enabled?scope=host", "", &body); rec.Code != http.StatusNotFound {
 		t.Errorf("unknown key: status %d, want 404", rec.Code)
 	}
-	if rec := doJSON(t, h, http.MethodDelete, "/api/settings/mindmap.enabled?scope=global", "", &body); rec.Code != http.StatusBadRequest {
+	if rec := doLocal(t, h, http.MethodDelete, "/api/settings/mindmap.enabled?scope=global", "", &body); rec.Code != http.StatusBadRequest {
 		t.Errorf("undeclared scope: status %d, want 400", rec.Code)
 	}
 }
@@ -244,7 +244,7 @@ func TestSettingsWriteAnnouncesProjects(t *testing.T) {
 	}
 
 	var view project.SettingsView
-	if rec := doJSON(t, ui, http.MethodPut, "/api/projects/proj-a/settings/graph.enabled", `{"scope":"project","value":false}`, &view); rec.Code != http.StatusOK {
+	if rec := doLocal(t, ui, http.MethodPut, "/api/projects/proj-a/settings/graph.enabled", `{"scope":"project","value":false}`, &view); rec.Code != http.StatusOK {
 		t.Fatalf("PUT: status %d %s", rec.Code, rec.Body.String())
 	}
 	if got := waitEvent(t, events); got != "" {
@@ -254,7 +254,7 @@ func TestSettingsWriteAnnouncesProjects(t *testing.T) {
 		t.Errorf("after PUT graph.enabled=false: /api/projects graph = true")
 	}
 
-	if rec := doJSON(t, ui, http.MethodDelete, "/api/projects/proj-a/settings/graph.enabled?scope=project", "", &view); rec.Code != http.StatusOK {
+	if rec := doLocal(t, ui, http.MethodDelete, "/api/projects/proj-a/settings/graph.enabled?scope=project", "", &view); rec.Code != http.StatusOK {
 		t.Fatalf("DELETE: status %d %s", rec.Code, rec.Body.String())
 	}
 	if got := waitEvent(t, events); got != "" {
@@ -265,7 +265,7 @@ func TestSettingsWriteAnnouncesProjects(t *testing.T) {
 	}
 
 	var body map[string]string
-	if rec := doJSON(t, ui, http.MethodPut, "/api/projects/proj-a/settings/graph.enabled", `{"scope":"project","value":"false"}`, &body); rec.Code != http.StatusBadRequest {
+	if rec := doLocal(t, ui, http.MethodPut, "/api/projects/proj-a/settings/graph.enabled", `{"scope":"project","value":"false"}`, &body); rec.Code != http.StatusBadRequest {
 		t.Fatalf("refused PUT: status %d, want 400", rec.Code)
 	}
 	select {
@@ -284,7 +284,7 @@ func TestSettingsPutBusyIsConflict(t *testing.T) {
 		t.Fatal(err)
 	}
 	var body map[string]string
-	rec := doJSON(t, h, http.MethodPut, "/api/settings/wiki.enabled", `{"scope":"host","value":false}`, &body)
+	rec := doLocal(t, h, http.MethodPut, "/api/settings/wiki.enabled", `{"scope":"host","value":false}`, &body)
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("status %d body %v, want 409", rec.Code, body)
 	}
@@ -330,11 +330,11 @@ func TestSettingsWriteSucceedsDespiteBadHostFile(t *testing.T) {
 			t.Fatal(err)
 		}
 		var view project.SettingsView
-		rec := doJSON(t, h, http.MethodPut, "/api/settings/graph.enabled", `{"scope":"project","value":false}`, &view)
+		rec := doLocal(t, h, http.MethodPut, "/api/settings/graph.enabled", `{"scope":"project","value":false}`, &view)
 		if g := resolvedByID(view)["graph.enabled"]; rec.Code != http.StatusOK || g.Value != false || g.Origin != project.ScopeProject {
 			t.Errorf("host %q: PUT status %d, graph.enabled %v from %s; want 200, false from project", host, rec.Code, g.Value, g.Origin)
 		}
-		rec = doJSON(t, h, http.MethodDelete, "/api/settings/graph.enabled?scope=project", "", &view)
+		rec = doLocal(t, h, http.MethodDelete, "/api/settings/graph.enabled?scope=project", "", &view)
 		if g := resolvedByID(view)["graph.enabled"]; rec.Code != http.StatusOK || g.Origin != project.OriginDefault {
 			t.Errorf("host %q: DELETE status %d, graph.enabled from %s; want 200, default", host, rec.Code, g.Origin)
 		}
@@ -366,7 +366,7 @@ func TestSettingsWriteStatusMapping(t *testing.T) {
 				}
 			}
 			var body map[string]string
-			rec := doJSON(t, New(repoDir, projDir, ""), tc.method, tc.target, tc.body, &body)
+			rec := doLocal(t, New(repoDir, projDir, ""), tc.method, tc.target, tc.body, &body)
 			if rec.Code != tc.want || body["error"] == "" {
 				t.Errorf("status %d body %v, want %d with an error", rec.Code, body, tc.want)
 			}
@@ -403,15 +403,15 @@ func TestSettingsEndpointCarriesStoredValues(t *testing.T) {
 func TestSettingsPutStringValue(t *testing.T) {
 	h, _, _ := settingsBackend(t, "")
 	var view project.SettingsView
-	rec := doJSON(t, h, http.MethodPut, "/api/settings/channel.human_name", `{"scope":"host","value":"Henrique"}`, &view)
+	rec := doLocal(t, h, http.MethodPut, "/api/settings/channel.human_name", `{"scope":"host","value":"Henrique"}`, &view)
 	if rec.Code != http.StatusOK || resolvedByID(view)["channel.human_name"].Value != "Henrique" {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 	}
 	var body map[string]string
-	if rec := doJSON(t, h, http.MethodPut, "/api/settings/channel.human_name", `{"scope":"host","value":true}`, &body); rec.Code != http.StatusBadRequest {
+	if rec := doLocal(t, h, http.MethodPut, "/api/settings/channel.human_name", `{"scope":"host","value":true}`, &body); rec.Code != http.StatusBadRequest {
 		t.Fatalf("bool under a string key: status %d", rec.Code)
 	}
-	if rec := doJSON(t, h, http.MethodPut, "/api/settings/wiki.enabled", `{"scope":"host","value":"false"}`, &body); rec.Code != http.StatusBadRequest {
+	if rec := doLocal(t, h, http.MethodPut, "/api/settings/wiki.enabled", `{"scope":"host","value":"false"}`, &body); rec.Code != http.StatusBadRequest {
 		t.Fatalf("string under a bool key: status %d", rec.Code)
 	}
 }
@@ -426,7 +426,7 @@ func TestSettingsChannelFallback(t *testing.T) {
 	channel := func(method, target, body string) project.ResolvedSetting {
 		t.Helper()
 		var view project.SettingsView
-		if rec := doJSON(t, h, method, target, body, &view); rec.Code != http.StatusOK {
+		if rec := doLocal(t, h, method, target, body, &view); rec.Code != http.StatusOK {
 			t.Fatalf("%s %s: status %d: %s", method, target, rec.Code, rec.Body.String())
 		}
 		return resolvedByID(view)["channel.human_name"]
@@ -671,13 +671,13 @@ func TestSettingsStaleDecisionDays(t *testing.T) {
 	if s := resolvedByID(view)["lint.stale_decision_days"]; s.Type != "int" || s.Value != float64(30) || s.Origin != project.ScopeProject {
 		t.Fatalf("lint.stale_decision_days = %+v, want int 30 from the project", s)
 	}
-	rec := doJSON(t, h, http.MethodPut, "/api/settings/lint.stale_decision_days", `{"scope":"project","value":45}`, &view)
+	rec := doLocal(t, h, http.MethodPut, "/api/settings/lint.stale_decision_days", `{"scope":"project","value":45}`, &view)
 	if rec.Code != http.StatusOK || resolvedByID(view)["lint.stale_decision_days"].Value != float64(45) || project.StaleDecisionDays(projDir) != 45 {
 		t.Fatalf("PUT 45: status %d: %s", rec.Code, rec.Body.String())
 	}
 	var body map[string]string
 	for _, bad := range []string{`1.5`, `"45"`, `0`} {
-		if rec := doJSON(t, h, http.MethodPut, "/api/settings/lint.stale_decision_days", `{"scope":"project","value":`+bad+`}`, &body); rec.Code != http.StatusBadRequest {
+		if rec := doLocal(t, h, http.MethodPut, "/api/settings/lint.stale_decision_days", `{"scope":"project","value":`+bad+`}`, &body); rec.Code != http.StatusBadRequest {
 			t.Errorf("value %s: status %d, want 400", bad, rec.Code)
 		}
 	}
@@ -690,14 +690,14 @@ func TestSettingsPutGauntletIgnoresServerActor(t *testing.T) {
 	t.Setenv("CERNE_ACTOR", "agent")
 	h, _, _ := settingsBackend(t, "")
 	var view project.SettingsView
-	rec := doJSON(t, h, http.MethodPut, "/api/settings/gates.gauntlet", `{"scope":"project","value":"off"}`, &view)
+	rec := doLocal(t, h, http.MethodPut, "/api/settings/gates.gauntlet", `{"scope":"project","value":"off"}`, &view)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("PUT status %d: %s", rec.Code, rec.Body.String())
 	}
 	if g := resolvedByID(view)["gates.gauntlet"]; g.Value != "off" {
 		t.Errorf("gates.gauntlet = %v, want off", g.Value)
 	}
-	if rec := doJSON(t, h, http.MethodDelete, "/api/settings/gates.gauntlet?scope=project", "", &view); rec.Code != http.StatusOK {
+	if rec := doLocal(t, h, http.MethodDelete, "/api/settings/gates.gauntlet?scope=project", "", &view); rec.Code != http.StatusOK {
 		t.Errorf("DELETE status %d: %s", rec.Code, rec.Body.String())
 	}
 }

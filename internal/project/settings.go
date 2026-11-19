@@ -2,6 +2,7 @@ package project
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -14,6 +15,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/henriquesakata/cerne/internal/tracker"
 )
 
 // Setting scopes, in precedence order, and the origin of a value no scope sets
@@ -66,12 +69,15 @@ type Setting struct {
 	// key; the CLI still enforces it.
 	HumanOnly bool `json:"human_only,omitempty"`
 	// MaxLen is the longest string the key accepts, in characters; 0 = the
-	// default maxSettingString (a URL needs more than a display name).
-	MaxLen int `json:"-"`
+	// default maxSettingString (a URL needs more than a display name). The UI
+	// caps its text field with it (F-0449).
+	MaxLen int `json:"max_len,omitempty"`
 	// DynamicDefault, when set, supplies the value of a key no scope stores:
 	// "" keeps Default, anything else becomes the value with OriginDetected.
 	// The registry does not know what it detects.
-	DynamicDefault func() string `json:"-"`
+	DynamicDefault func() string                 `json:"-"`
+	Fields         []Setting                     `json:"fields,omitempty"` // the columns; Fields[0] is the record key: non-empty, unique
+	CheckRecord    func(map[string]string) error `json:"-"`                // domain check of one record, after the fields pass
 }
 
 // settingGroups are the subject groups in display order (F-0413).
@@ -127,6 +133,21 @@ var settingsRegistry = []Setting{
 		Description: "The name that signs the messages you send from the UI on a project's permanent channel. It applies to every project on this machine. It is not the project's name, which is set in the “Project name” field of the Settings screen. Empty uses your OS user name.",
 	},
 	{
+		ID: "delivery.commit_url", Group: "integrations", Title: "Commit URL", Type: "string", Default: "", MaxLen: 256,
+		Scopes:      []string{ScopeProject},
+		Description: "The template that turns a bare commit SHA into a link, with a {sha} placeholder, for example https://github.com/owner/repo/commit/{sha}. Empty accepts only full commit URLs.",
+	},
+	{
+		ID: "delivery.forge", Group: "integrations", Title: "Delivery forge", Type: "string", Default: "", Enum: DeliveryForges,
+		Scopes:      []string{ScopeProject},
+		Description: "The forge that hosts the delivery repository: github, gitlab or gitea. Set, complete looks up the PR that holds the delivery commit and accept checks that it reached the default branch; host, owner and repo come from the commit URL. Empty turns both checks off.",
+	},
+	{
+		ID: "delivery.pr_url", Group: "integrations", Title: "PR URL", Type: "string", Default: "", MaxLen: 256,
+		Scopes:      []string{ScopeProject},
+		Description: "The template that turns --mr #<n> into a link, with an {n} placeholder, for example https://github.com/owner/repo/pull/{n}.",
+	},
+	{
 		ID: "gates.gauntlet", Group: "process", Title: "Gauntlet", Type: "string", Default: "on", Enum: []string{"on", "off"},
 		Scopes: []string{ScopeProject}, HumanOnly: true,
 		Description: "Turns the Gauntlet on or off for this project. With off (light mode), approve accepts a spec without a bar, complete accepts a result without a ## Gauntlet section, and lint stops charging both. Only the literal off turns it off; any other stored value counts as on. An agent cannot change this key through cerne settings: it is the project owner's decision.",
@@ -178,6 +199,31 @@ var settingsRegistry = []Setting{
 		ID: "mindmap.enabled", Group: "interface", Title: "Mindmap", Type: "bool", Default: true,
 		Scopes:      []string{ScopeProject, ScopeHost},
 		Description: "Shows the Mindmap tab in the UI. Off hides it.",
+	},
+	{
+		ID: "mirror.close_on", Group: "integrations", Title: "Close the issue on", Type: "string", Default: "accept", Enum: []string{"accept", "merge"},
+		Scopes:      []string{ScopeProject},
+		Description: "accept closes a mirrored card's issue when a human accepts the card. merge writes Closes: in the delivery commit, so the forge closes the issue when the PR merges, and mirror sync never reopens it.",
+	},
+	{
+		ID: "mirror.enabled", Group: "integrations", Title: "Issue mirror", Type: "bool", Default: false,
+		Scopes: []string{ScopeProject}, HumanOnly: true,
+		Description: "On lets a human publish a card to an issue tracker with cerne feature mirror, and keeps each mirrored card's issue in step with the card's state. Off sends nothing to any tracker. An agent cannot change this key through cerne settings: it is the project owner's decision.",
+	},
+	{
+		ID: "mirror.trackers", Group: "integrations", Title: "Issue trackers", Type: "records", Default: []map[string]string{},
+		Scopes: []string{ScopeProject}, HumanOnly: true,
+		Description: "The trackers a card can be mirrored to: a unique name, the kind, the https address of the issues repository (https://<host>/<owner>/<repo>) and an optional label that picks which outside issues mirror sync turns into ideas. The first one is the default of cerne feature mirror. An agent cannot change this key through cerne settings: it is the project owner's decision.",
+		Fields: []Setting{
+			{ID: "name", Title: "Name", Type: "string", Description: "A unique name for this tracker, used by --tracker."},
+			{ID: "kind", Title: "Kind", Type: "string", Enum: tracker.KindNames(), Description: "The tracker's kind."},
+			{ID: "url", Title: "URL", Type: "string", MaxLen: 256, Description: "The https address of the issues repository."},
+			{ID: "label", Title: "Label", Type: "string", Description: "Only outside issues with this label become ideas. Empty imports every open issue."},
+		},
+		CheckRecord: func(r map[string]string) error {
+			_, err := tracker.New(trackerConfig(r))
+			return err
+		},
 	},
 	{
 		ID: "wiki.enabled", Group: "interface", Title: "Wiki", Type: "bool", Default: true,
@@ -305,6 +351,12 @@ func ResolveSettings(projDir string) SettingsView {
 			problem := ""
 			if err := checkDeclared(s.ID, scope); err != nil {
 				problem = err.Error()
+			} else if s.Type == "records" {
+				if rows, err := checkRecords(s, v); err != nil {
+					problem = err.Error()
+				} else {
+					v = rows
+				}
 			} else if !hasSettingType(s, v) {
 				problem = fmt.Sprintf("%v: want %s", ErrInvalidSettingValue, settingWant(s))
 			}
@@ -331,6 +383,10 @@ func ResolveSettings(projDir string) SettingsView {
 
 // hasSettingType reports whether v is a value of s's declared type.
 func hasSettingType(s Setting, v any) bool {
+	if s.Type == "records" {
+		_, err := checkRecords(s, v)
+		return err == nil
+	}
 	switch v.(type) {
 	case bool:
 		return s.Type == "bool"
@@ -349,6 +405,9 @@ func settingWant(s Setting) string {
 	}
 	if s.Type == "int" {
 		return "a positive integer"
+	}
+	if s.Type == "records" {
+		return "a list of records {" + strings.Join(fieldIDs(s), ", ") + "}"
 	}
 	return s.Type
 }
@@ -392,7 +451,8 @@ func maxLen(s Setting) int {
 }
 
 // SetSetting writes the CLI literal raw as id's value in scope: "true"/"false"
-// for a bool key, the text itself for a string key. See SetSettingValue.
+// for a bool key, a JSON list for a records key, the text itself for a string
+// key. See SetSettingValue.
 func SetSetting(projDir, id, scope, raw string) error {
 	if err := checkDeclared(id, scope); err != nil {
 		return err
@@ -410,6 +470,10 @@ func SetSetting(projDir, id, scope, raw string) error {
 			return fmt.Errorf("%s: %w %q: want a positive integer", id, ErrInvalidSettingValue, raw)
 		}
 		v = n
+	case "records":
+		if err := json.Unmarshal([]byte(raw), &v); err != nil {
+			return fmt.Errorf("%s: %w %q: want a JSON list of records", id, ErrInvalidSettingValue, raw)
+		}
 	}
 	return SetSettingValue(projDir, id, scope, v)
 }
@@ -427,7 +491,13 @@ func SetSettingValue(projDir, id, scope string, v any) error {
 	if f, ok := v.(float64); ok && s.Type == "int" && f == float64(int64(f)) {
 		v = int64(f)
 	}
-	if !hasSettingType(s, v) {
+	if s.Type == "records" {
+		rows, err := checkRecords(s, v)
+		if err != nil {
+			return err
+		}
+		v = inlineRecords{fields: fieldIDs(s), rows: rows}
+	} else if !hasSettingType(s, v) {
 		return fmt.Errorf("%s: %w %v: want %s", id, ErrInvalidSettingValue, v, settingWant(s))
 	}
 	if str, ok := v.(string); ok && (strings.TrimSpace(str) == "" || strings.ContainsAny(str, "\r\n") || utf8.RuneCountInString(str) > maxLen(s)) {
@@ -583,4 +653,90 @@ func readTOMLFile(path string) (map[string]any, error) {
 		return nil, fmt.Errorf("%w: %w", ErrConfigParse, err)
 	}
 	return m, nil
+}
+
+// checkRecords validates v, a JSON list or a TOML array of tables, as a value
+// of the records key s, and normalizes it: one map per record, string values,
+// the empty ones dropped (the writer drops them too). A field s does not
+// declare, a value that is not one line of at most the field's MaxLen, an
+// empty or repeated Fields[0], or a CheckRecord refusal is
+// ErrInvalidSettingValue.
+func checkRecords(s Setting, v any) ([]map[string]string, error) {
+	var items []any
+	switch l := v.(type) {
+	case []any:
+		items = l
+	case []map[string]any:
+		for _, m := range l {
+			items = append(items, m)
+		}
+	case []map[string]string:
+		for _, m := range l {
+			items = append(items, m)
+		}
+	default:
+		return nil, fmt.Errorf("%s: %w: want %s", s.ID, ErrInvalidSettingValue, settingWant(s))
+	}
+	bad := func(i int, format string, a ...any) error {
+		return fmt.Errorf("%s: %w: record %d: %s", s.ID, ErrInvalidSettingValue, i+1, fmt.Sprintf(format, a...))
+	}
+	key := s.Fields[0].ID
+	out := make([]map[string]string, 0, len(items))
+	seen := map[string]bool{}
+	for i, item := range items {
+		rec := map[string]string{}
+		var fields map[string]any
+		switch m := item.(type) {
+		case map[string]any:
+			fields = m
+		case map[string]string:
+			fields = map[string]any{}
+			for k, val := range m {
+				fields[k] = val
+			}
+		default:
+			return nil, bad(i, "want an object of %s", settingWant(s))
+		}
+		for name, val := range fields {
+			j := slices.IndexFunc(s.Fields, func(f Setting) bool { return f.ID == name })
+			if j < 0 {
+				return nil, bad(i, "unknown field %q (fields: %s)", name, strings.Join(fieldIDs(s), ", "))
+			}
+			str, ok := val.(string)
+			if !ok {
+				return nil, bad(i, "%s: want a string", name)
+			}
+			// Below 0x20 and DEL: strconv.Quote would write an escape (\x01, \a)
+			// that the TOML parser then rejects.
+			if strings.ContainsFunc(str, func(r rune) bool { return r < 0x20 || r == 0x7f }) || utf8.RuneCountInString(str) > maxLen(s.Fields[j]) {
+				return nil, bad(i, "%s: want one line of at most %d characters, with no control character", name, maxLen(s.Fields[j]))
+			}
+			if str != "" {
+				rec[name] = str
+			}
+		}
+		switch {
+		case strings.TrimSpace(rec[key]) == "":
+			return nil, bad(i, "%s is required", key)
+		case seen[rec[key]]:
+			return nil, bad(i, "duplicate %s %q", key, rec[key])
+		}
+		seen[rec[key]] = true
+		if s.CheckRecord != nil {
+			if err := s.CheckRecord(rec); err != nil {
+				return nil, fmt.Errorf("%s: %w: %w", s.ID, ErrInvalidSettingValue, err)
+			}
+		}
+		out = append(out, rec)
+	}
+	return out, nil
+}
+
+// fieldIDs lists the columns of a records key, in order.
+func fieldIDs(s Setting) []string {
+	ids := make([]string, len(s.Fields))
+	for i, f := range s.Fields {
+		ids[i] = f.ID
+	}
+	return ids
 }

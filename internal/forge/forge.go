@@ -6,13 +6,18 @@ package forge
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"os"
 	"os/exec"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // DeliveryForge is the read-only view of one repository on one forge.
@@ -77,10 +82,11 @@ func New(name, commitURL string) (DeliveryForge, error) {
 	return nil, fmt.Errorf("%w %q", ErrUnknownForge, name)
 }
 
-// runCLI runs a forge CLI (gh, glab) and returns its stdout. A variable so
-// tests replace it, like app.MRState.
-var runCLI = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+// RunCLI runs a forge CLI (gh, glab) and returns its stdout. A variable so
+// tests replace it, like app.MRState; the tracker adapters share it (F-0449).
+var RunCLI = func(ctx context.Context, name string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Env = cliEnv(name, callHost(name, args), os.Environ())
 	// The deadline kills the CLI, not a child (credential helper) still
 	// holding stdout: without WaitDelay, Output waits for that child (F-0886).
 	cmd.WaitDelay = time.Second
@@ -94,7 +100,17 @@ var runCLI = func(ctx context.Context, name string, args ...string) ([]byte, err
 		if ctx.Err() != nil {
 			return nil, fmt.Errorf("%s: %w", name, ctx.Err())
 		}
-		msg := strings.TrimSpace(stderr.String())
+		// The text comes from the server: no escape sequence reaches a
+		// terminal or an agent. Line breaks and tabs read as spaces.
+		msg := strings.TrimSpace(strings.Map(func(r rune) rune {
+			switch {
+			case unicode.IsSpace(r):
+				return ' '
+			case unicode.IsControl(r):
+				return -1
+			}
+			return r
+		}, stderr.String()))
 		if len(msg) > 200 {
 			msg = msg[:200]
 		}
@@ -104,6 +120,80 @@ var runCLI = func(ctx context.Context, name string, args ...string) ([]byte, err
 		return nil, fmt.Errorf("%s: %s", name, msg)
 	}
 	return out, nil
+}
+
+// callHost is the host a CLI call reaches: the last --hostname value (the
+// one glab uses), else the CLI's own default.
+func callHost(name string, args []string) string {
+	host := ""
+	for i, a := range args {
+		if a == "--hostname" && i+1 < len(args) {
+			host = args[i+1]
+		}
+		if h, ok := strings.CutPrefix(a, "--hostname="); ok {
+			host = h
+		}
+	}
+	if host != "" {
+		return host
+	}
+	if name == "glab" {
+		return "gitlab.com"
+	}
+	return "github.com"
+}
+
+// cliEnv is environ without the token variables gh or glab would send to a
+// host they do not belong to (F-0449): glab sends GITLAB_TOKEN to any
+// --hostname, gh sends GH_ENTERPRISE_TOKEN to any host but github.com. A
+// committed .cernerc names the host, so a token reaches only the host its
+// own environment declares; the CLI's per-host login still serves the rest.
+// Names match without case: on Windows the CLIs read them that way.
+func cliEnv(name, host string, environ []string) []string {
+	get := func(key string) (v string) {
+		for _, kv := range environ {
+			if k, val, _ := strings.Cut(kv, "="); strings.EqualFold(k, key) {
+				v = val // the last one wins, as in exec.Cmd
+			}
+		}
+		return v
+	}
+	var drop []string
+	switch name {
+	case "glab":
+		if !sameHost(host, cmp.Or(get("GITLAB_HOST"), get("GL_HOST"), "gitlab.com")) {
+			drop = []string{"GITLAB_TOKEN", "GITLAB_ACCESS_TOKEN", "OAUTH_TOKEN"}
+		}
+	case "gh":
+		switch {
+		case sameHost(host, "github.com"):
+			drop = []string{"GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"}
+		case sameHost(host, get("GH_HOST")):
+			drop = []string{"GH_TOKEN", "GITHUB_TOKEN"}
+		default:
+			drop = []string{"GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"}
+		}
+	}
+	return slices.DeleteFunc(slices.Clone(environ), func(kv string) bool {
+		k, _, _ := strings.Cut(kv, "=")
+		return slices.ContainsFunc(drop, func(d string) bool { return strings.EqualFold(d, k) })
+	})
+}
+
+// sameHost compares two host names without case, scheme, path or port; an
+// empty one matches nothing.
+func sameHost(a, b string) bool {
+	h := func(s string) string {
+		if _, rest, ok := strings.Cut(s, "://"); ok {
+			s = rest
+		}
+		s, _, _ = strings.Cut(s, "/")
+		if host, _, err := net.SplitHostPort(s); err == nil {
+			s = host
+		}
+		return strings.ToLower(s)
+	}
+	return h(a) != "" && h(a) == h(b)
 }
 
 // noSingle builds the ErrNoSinglePR for count PRs.

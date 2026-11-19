@@ -200,7 +200,7 @@ func TestSettingsGet(t *testing.T) {
 		}
 	}
 	if _, err := execCerne(t, "settings", "get", "nope.enabled", "--dir", projDir); !errors.Is(err, project.ErrUnknownSetting) ||
-		!strings.Contains(err.Error(), "known: channel.human_name, gates.gauntlet, graph.enabled, lint.cli_output_language, lint.stale_decision_days, llm.base_url, llm.mode, llm.model, llm.provider, mindmap.enabled, wiki.enabled") {
+		!strings.Contains(err.Error(), "known: channel.human_name, delivery.commit_url, delivery.forge, delivery.pr_url, gates.gauntlet, graph.enabled, lint.cli_output_language, lint.stale_decision_days, llm.base_url, llm.mode, llm.model, llm.provider, mindmap.enabled, mirror.close_on, mirror.enabled, mirror.trackers, wiki.enabled") {
 		t.Errorf("unknown key: err = %v, want ErrUnknownSetting listing the known keys", err)
 	}
 }

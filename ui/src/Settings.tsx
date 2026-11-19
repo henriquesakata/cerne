@@ -508,13 +508,15 @@ function SettingRow({
   const effId = `${uid}-eff`
   const infoId = `${uid}-info`
   const askId = `${uid}-ask`
-  const [confirming, setConfirming] = useState(false)
+  // The value a human-only toggle asks to write; undefined = no question open.
+  const [pending, setPending] = useState<unknown>(undefined)
+  const confirming = pending !== undefined
   const confirmBtn = useRef<HTMLButtonElement | null>(null)
   useEffect(() => {
     if (confirming) confirmBtn.current?.focus()
   }, [confirming])
   const cancel = () => {
-    setConfirming(false)
+    setPending(undefined)
     document.getElementById(controlId(s.id))?.focus()
   }
   const titleId = `${uid}-title`
@@ -529,9 +531,16 @@ function SettingRow({
   const above = (sc: SettingScope) => ORDER.indexOf(sc) < ORDER.indexOf(ws)
   // Nothing stored here, a lower scope's value shows through (F-0413).
   const inherited = !modified && others.some((sc) => !above(sc))
-  // A declared value shows through the same label as its select option.
+  // A declared value shows through the same label as its select option; a
+  // records list by its count and keys, the table below has the rest (F-0449).
   const fmt = (v: unknown) =>
-    s.enum?.length && typeof v === 'string' ? (v === '' ? ts.emptyEnum : (ts.options[v] ?? v)) : formatValue(v, ts)
+    s.type === 'records'
+      ? recordsSummary(s, v, ts)
+      : s.enum?.length && typeof v === 'string'
+        ? v === ''
+          ? ts.emptyEnum
+          : (ts.options[v] ?? v)
+        : formatValue(v, ts)
   const desc = tx(s.description)
   const label = (sc: SettingScope) => (sc === 'host' ? ts.hostGlobal : ts.scopes[sc])
   // Busy is aria-disabled, never disabled (F-0302): the pressed control keeps
@@ -564,9 +573,11 @@ function SettingRow({
           onChange={(e) => {
             const next = onOff ? (e.target.checked ? 'on' : 'off') : e.target.checked
             if (busy) return
-            // A human-only gate asks before it is relaxed (turning it on does not).
-            if (s.human_only && !e.target.checked) {
-              setConfirming(true)
+            // A human-only toggle asks before it leaves its default (F-0449):
+            // relaxing the Gauntlet (default on), publishing with the mirror
+            // (default off). Back to the default writes at once.
+            if (s.human_only && next !== s.default) {
+              setPending(next)
               return
             }
             onWrite(ws, () => putSetting(s.id, ws, next))
@@ -576,7 +587,8 @@ function SettingRow({
       </label>
     )
     {
-      const off = onOff ? 'off' : false
+      const turningOn = pending === true || pending === 'on'
+      const file = ws === 'project' ? '.cernerc' : 'settings.toml'
       // Always a fragment, so the box is not remounted when the question opens.
       control = (
         <>
@@ -590,21 +602,22 @@ function SettingRow({
               if (e.key === 'Escape') cancel()
             }}
           >
-            <p id={askId}>{ts.confirmOff(tx(s.title), ws === 'project' ? '.cernerc' : 'settings.toml', ws === 'project')}</p>
+            <p id={askId}>{turningOn ? ts.confirmOn(tx(s.title), file) : ts.confirmOff(tx(s.title), file, ws === 'project')}</p>
             <button
               type="button"
               className="settings-confirm-yes"
               aria-disabled={lock}
               onClick={() => {
                 if (busy) return
-                setConfirming(false)
+                const next = pending
+                setPending(undefined)
                 // The question unmounts with the pressed button: hand the focus
                 // back to the box now, so a failed write leaves it there too.
                 document.getElementById(controlId(s.id))?.focus()
-                onWrite(ws, () => putSetting(s.id, ws, off))
+                onWrite(ws, () => putSetting(s.id, ws, next))
               }}
             >
-              {ts.turnOff}
+              {turningOn ? ts.turnOn : ts.turnOff}
             </button>{' '}
             <button type="button" ref={confirmBtn} className="settings-confirm-no" onClick={cancel}>
               {ts.cancel}
@@ -657,10 +670,7 @@ function SettingRow({
               name="value"
               type="text"
               className="settings-text"
-              // ponytail: the registry carries no length; 64 is the limit of
-              // the one string key (channel.human_name). Add a maxLength to
-              // Setting when a string key needs another one.
-              maxLength={64}
+              maxLength={s.max_len || 64}
               defaultValue={String(current)}
               placeholder={s.fallback}
               aria-labelledby={titleId}
@@ -723,6 +733,19 @@ function SettingRow({
               </p>
             )}
           </form>
+        ) : s.type === 'records' && s.fields?.length ? (
+          // Remounts on another scope, another value or a landed write, so the
+          // draft always starts from what is stored.
+          <RecordsEditor
+            key={`${ws}:${landed}:${JSON.stringify(current)}`}
+            s={s}
+            current={current}
+            busy={busy}
+            titleId={titleId}
+            described={described}
+            tx={tx}
+            onSave={(rows) => onWrite(ws, () => putSetting(s.id, ws, rows))}
+          />
         ) : (
           <p className="settings-readonly">
             <code>{fmt(current)}</code> <span className="settings-note">{ts.readOnly}</span>
@@ -734,7 +757,7 @@ function SettingRow({
 
   return (
     <li
-      className={modified ? 'settings-row modified' : 'settings-row'}
+      className={`settings-row${modified ? ' modified' : ''}${s.type === 'records' ? ' settings-row-records' : ''}`}
       aria-labelledby={titleId}
       aria-busy={lock}
       // Bubble, never capture (B-0025): a real click runs a microtask between
@@ -852,9 +875,171 @@ function SettingRow({
         // No retry: the message and the way to the file that needs fixing.
         <div className="load-notice" role="status">
           <p className="form-error">{ts.writeError(refusalText(failure, ts, files[ws]))}</p>
+          {/* Which record and why: the server's own words (F-0449). */}
+          {s.type === 'records' && (
+            <p className="settings-reason">
+              <code>{failure.message}</code>
+            </p>
+          )}
           {files[ws] && <FixBlock command={files[ws]} copyFailed={ts.copyFailed} />}
         </div>
       )}
     </li>
+  )
+}
+
+type RecordRow = Record<string, string>
+
+// recordsSummary says a records value in one line: how many, and their keys.
+function recordsSummary(s: ResolvedSetting, v: unknown, ts: Texts): string {
+  const rows = Array.isArray(v) ? (v as RecordRow[]) : []
+  if (rows.length === 0) return ts.records.none
+  const key = s.fields?.[0]?.id ?? ''
+  return ts.records.summary(rows.length, rows.map((r) => r[key] ?? '').join(', '))
+}
+
+// RecordsEditor edits a records key (F-0449) as a table: one row per record,
+// one field per declared column, in the registry's order. Rows are a local
+// draft until Save, which sends the whole list with the blank fields dropped;
+// the server is the only validator.
+function RecordsEditor({
+  s,
+  current,
+  busy,
+  titleId,
+  described,
+  tx,
+  onSave,
+}: {
+  s: ResolvedSetting
+  current: unknown
+  busy: boolean
+  titleId: string
+  described: string
+  tx: (src: string) => string
+  onSave: (rows: RecordRow[]) => void
+}) {
+  const { t } = useT()
+  const tr = t.settings.records
+  const uid = useId()
+  const fields = s.fields ?? []
+  const [rows, setRows] = useState<RecordRow[]>(() => (Array.isArray(current) ? current.map((r: RecordRow) => ({ ...r })) : []))
+  // The row Add just appended, whose first field takes the focus once it renders.
+  const [focusRow, setFocusRow] = useState<number | null>(null)
+  const cellId = (r: number, c: number) => `${uid}-r${r}-c${c}`
+  useEffect(() => {
+    if (focusRow === null) return
+    document.getElementById(cellId(focusRow, 0))?.focus()
+    setFocusRow(null)
+  })
+  const lock = busy || undefined
+  const set = (r: number, field: string, v: string) => setRows((rs) => rs.map((row, i) => (i === r ? { ...row, [field]: v } : row)))
+  // A new row's select starts on its first value, so what it shows is what it sends.
+  const blank = (): RecordRow => Object.fromEntries(fields.map((f) => [f.id, f.enum?.[0] ?? '']))
+  return (
+    <form
+      className="settings-records-form"
+      onSubmit={(e) => {
+        e.preventDefault()
+        if (busy) return
+        onSave(rows.map((row) => Object.fromEntries(Object.entries(row).map(([k, v]) => [k, v.trim()]).filter(([, v]) => v !== ''))))
+      }}
+    >
+      <div className="settings-records-scroll">
+        <table className="settings-records" aria-labelledby={titleId} aria-describedby={described}>
+          <thead>
+            <tr>
+              {fields.map((f) => (
+                <th key={f.id} scope="col" className={f.id === 'url' ? undefined : 'settings-records-narrow'}>
+                  {tx(f.title)}
+                </th>
+              ))}
+              <th scope="col" className="settings-records-actions">
+                <span className="sr-only">{tr.actions}</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={fields.length + 1} className="settings-records-empty">
+                  {tr.empty}
+                </td>
+              </tr>
+            ) : (
+              rows.map((row, r) => (
+                <tr key={r}>
+                  {fields.map((f, c) => {
+                    const v = row[f.id] ?? ''
+                    const label = `${tx(f.title)}, ${tr.row} ${r + 1}`
+                    return (
+                      <td key={f.id}>
+                        {f.enum?.length ? (
+                          <select id={cellId(r, c)} value={v} aria-label={label} aria-disabled={lock} onChange={(e) => set(r, f.id, e.target.value)}>
+                            {(v === '' || f.enum.includes(v) ? f.enum : [v, ...f.enum]).map((o) => (
+                              <option key={o} value={o}>
+                                {o}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            id={cellId(r, c)}
+                            type="text"
+                            value={v}
+                            maxLength={f.max_len || 64}
+                            // url: a text field, so the server's https message is what the user reads.
+                            inputMode={f.id === 'url' ? 'url' : undefined}
+                            spellCheck={false}
+                            autoCapitalize="off"
+                            autoComplete="off"
+                            // ponytail: the registry marks no field optional; label is the one there is.
+                            placeholder={f.id === 'label' ? tr.optional : undefined}
+                            aria-label={label}
+                            aria-disabled={lock}
+                            onChange={(e) => set(r, f.id, e.target.value)}
+                          />
+                        )}
+                      </td>
+                    )
+                  })}
+                  <td>
+                    <button
+                      type="button"
+                      className="settings-switch"
+                      aria-label={tr.removeRow(r + 1)}
+                      aria-disabled={lock}
+                      onClick={() => {
+                        if (!busy) setRows((rs) => rs.filter((_, i) => i !== r))
+                      }}
+                    >
+                      {tr.remove}
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+      <div className="settings-records-bar">
+        <button
+          type="button"
+          className="settings-switch"
+          aria-describedby={titleId}
+          aria-disabled={lock}
+          onClick={() => {
+            if (busy) return
+            setRows((rs) => [...rs, blank()])
+            setFocusRow(rows.length)
+          }}
+        >
+          {tr.add}
+        </button>
+        <button type="submit" id={controlId(s.id)} className="settings-records-save" aria-describedby={titleId} aria-disabled={lock}>
+          {t.common.save}
+        </button>
+      </div>
+    </form>
   )
 }

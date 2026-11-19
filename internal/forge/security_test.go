@@ -51,10 +51,10 @@ func TestGiteaDoesNotFollowRedirect(t *testing.T) {
 		http.Redirect(w, r, other.URL+r.URL.Path, http.StatusFound)
 	}))
 	t.Cleanup(first.Close)
-	oldBase, oldCred := apiBase, credentialFill
-	t.Cleanup(func() { apiBase, credentialFill = oldBase, oldCred })
+	oldBase, oldCred := apiBase, CredentialFill
+	t.Cleanup(func() { apiBase, CredentialFill = oldBase, oldCred })
 	apiBase = func(string) string { return first.URL + "/api/v1" }
-	credentialFill = func(context.Context, string) (string, string) { return "root", "s3cr3t" }
+	CredentialFill = func(context.Context, string) (string, string) { return "root", "s3cr3t" }
 	g, _ := New("gitea", "https://git.example/o/r/commit/{sha}")
 	if _, _, err := g.PRForCommit(context.Background(), "abc1234"); err == nil {
 		t.Fatal("a redirect must be an error, not a followed hop")

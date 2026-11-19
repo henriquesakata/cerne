@@ -105,6 +105,7 @@ func Root() *cobra.Command {
 	addIn("read", verbs.MarkChat(newLintCmd()))
 	addIn("author", newClarifyCmd())
 	addIn("sync", verbs.MarkLocal(newDriftCmd()))
+	addIn("sync", newMirrorCmd())
 	addIn("read", verbs.MarkChat(newSearchCmd()))
 	addIn("read", verbs.MarkChat(newGraphCmd()))
 	addIn("sync", verbs.MarkLocal(newCompileCmd()))

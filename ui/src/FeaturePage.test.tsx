@@ -234,6 +234,20 @@ describe('FeaturePage aprovação vencida (F-0318)', () => {
     expect(screen.queryByText(/Aprovada → Aprovada/)).not.toBeInTheDocument()
   })
 
+  // F-0449: the tracker round's failure reaches the page as a notice.
+  it('aviso do espelho: a linha aparece depois da transição', async () => {
+    const w = "cerne: mirror F-0221 -> pub: tracker down; run 'cerne mirror sync'"
+    payload = stale()
+    vi.mocked(postTransition).mockResolvedValueOnce({
+      ok: true,
+      data: { id: 'F-0221', from: 'approved', to: 'approved', approval: 'renewed', warnings: [w] },
+    })
+    render(<FeaturePage id="F-0221" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Reaprovar' }))
+    expect(await screen.findByText('Aprovação renovada')).toBeInTheDocument()
+    expect(screen.getByText(w)).toBeInTheDocument()
+  })
+
   // Critério 14: aprovação anterior à F-0318 (sem versão aprovada) nunca vence;
   // o botão grava a linha de base, e o aviso diz isso.
   it('aprovação legada: Gravar linha de base envia o approve e avisa', async () => {
@@ -777,5 +791,28 @@ describe('FeaturePage doc authors: mesmo autor e UTC (F-0375)', () => {
       if (tz === undefined) delete process.env.TZ
       else process.env.TZ = tz
     }
+  })
+})
+
+// F-0449 crit. 4: a mirrored card links to its issue, next to the delivery links.
+describe('FeaturePage issue link (F-0449)', () => {
+  const issue = 'https://github.com/o/r/issues/12'
+  const mirrored = (): FeatureDetail => {
+    const d = detail('in_development')
+    return { ...d, feature: { ...d.feature, mirror: { tracker: 'pub', kind: 'github', id: '12', url: issue } } as Feature }
+  }
+
+  it('mirror link: o card espelhado mostra o link da issue', async () => {
+    payload = mirrored()
+    render(<FeaturePage id="F-0221" />)
+    await waitFor(() => expect(screen.getByText('F-0221')).toBeInTheDocument())
+    expect(screen.getAllByRole('link').filter((a) => a.getAttribute('href') === issue)).toHaveLength(1)
+  })
+
+  it('mirror link: sem espelho, nenhum link de issue', async () => {
+    payload = detail('in_development')
+    render(<FeaturePage id="F-0221" />)
+    await waitFor(() => expect(screen.getByText('F-0221')).toBeInTheDocument())
+    expect(screen.queryAllByRole('link').filter((a) => (a.getAttribute('href') ?? '').includes('/issues/'))).toHaveLength(0)
   })
 })

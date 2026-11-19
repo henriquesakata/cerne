@@ -29,6 +29,7 @@ var ErrConfigLayout = errors.New("unsupported config layout")
 // splice-with-safety-net, applied to TOML).
 //
 // ponytail: line editor for "[table] key = scalar"; dotted/inline/multi-line layouts are refused by the safety net, not parsed — move to a CST TOML lib if users hit it.
+// ponytail: a records value is one inline array on one line, matched as \[[^#]*\]; a multi-line array, or a "#" inside one (a URL fragment), falls to the safety net as ErrConfigLayout — same CST upgrade path.
 func editTOML(raw []byte, table, key string, value any) ([]byte, error) {
 	want := map[string]any{}
 	if err := toml.Unmarshal(raw, &want); err != nil {
@@ -44,6 +45,7 @@ func editTOML(raw []byte, table, key string, value any) ([]byte, error) {
 		want[table] = tbl
 	}
 	var lit string
+	stored := value
 	switch v := value.(type) {
 	case nil:
 		if _, has := tbl[key]; !has {
@@ -56,11 +58,13 @@ func editTOML(raw []byte, table, key string, value any) ([]byte, error) {
 		lit = strconv.Quote(v)
 	case int64:
 		lit = strconv.FormatInt(v, 10)
+	case inlineRecords:
+		lit, stored = v.literal(), v.decoded()
 	default:
 		return nil, fmt.Errorf("editTOML: unsupported value type %T", value)
 	}
 	if value != nil {
-		tbl[key] = value
+		tbl[key] = stored
 	}
 
 	text := string(raw)
@@ -70,7 +74,7 @@ func editTOML(raw []byte, table, key string, value any) ([]byte, error) {
 	}
 	lines := strings.SplitAfter(text, "\n")
 	header := regexp.MustCompile(`^\[` + regexp.QuoteMeta(table) + `\]\s*(#.*)?$`)
-	keyLine := regexp.MustCompile(`^(\s*` + regexp.QuoteMeta(key) + `\s*=\s*)("(?:[^"\\]|\\.)*"|'[^']*'|[^\s#]+)(.*)$`)
+	keyLine := regexp.MustCompile(`^(\s*` + regexp.QuoteMeta(key) + `\s*=\s*)("(?:[^"\\]|\\.)*"|'[^']*'|\[[^#]*\]|[^\s#]+)(.*)$`)
 	h := slices.IndexFunc(lines, func(l string) bool { return header.MatchString(strings.TrimSpace(l)) })
 	i := keyLineIndex(lines, h, keyLine)
 	switch {
@@ -139,4 +143,40 @@ func keyLineIndex(lines []string, h int, keyLine *regexp.Regexp) int {
 		}
 	}
 	return -1
+}
+
+// inlineRecords is a records value as editTOML writes it: one inline array of
+// inline tables, each table's keys in fields order, the empty values left out.
+type inlineRecords struct {
+	fields []string
+	rows   []map[string]string
+}
+
+func (r inlineRecords) literal() string {
+	tables := make([]string, len(r.rows))
+	for i, row := range r.rows {
+		var kv []string
+		for _, f := range r.fields {
+			if row[f] != "" {
+				kv = append(kv, f+" = "+strconv.Quote(row[f]))
+			}
+		}
+		tables[i] = "{" + strings.Join(kv, ", ") + "}"
+	}
+	return "[" + strings.Join(tables, ", ") + "]"
+}
+
+// decoded is the literal as the TOML decoder reads it back.
+func (r inlineRecords) decoded() any {
+	out := make([]any, len(r.rows))
+	for i, row := range r.rows {
+		m := map[string]any{}
+		for f, v := range row {
+			if v != "" {
+				m[f] = v
+			}
+		}
+		out[i] = m
+	}
+	return out
 }

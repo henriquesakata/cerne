@@ -201,6 +201,8 @@ export default function FeaturePage({ id }: { id: string }) {
   const detail = live.data
   const [tab, setTab] = useState<DocTab>('spec')
   const [notice, setNotice] = useState<string | null>(null)
+  // F-0449: what did not block the last transition (the mirror's tracker round).
+  const [warnings, setWarnings] = useState<string[]>([])
   const [diagram, setDiagram] = useState<OpenDiagram | null>(null)
   // Modo de IA do projeto (case 0019): habilita/desabilita "Gerar com IA".
   const [llmMode, setLlmMode] = useState<LLMMode | null>(null)
@@ -261,6 +263,15 @@ export default function FeaturePage({ id }: { id: string }) {
           <p className="feature-note">{t.feature.supersededBy(f.superseded_by)}</p>
         )}
         <DeliveryLinks feature={f} />
+        {/* F-0449: apart from the delivery, which a mirrored card may not have yet. */}
+        {f.mirror && (
+          <p className="feature-note feature-delivery">
+            {t.feature.issueLabel}{' '}
+            <a href={f.mirror.url} target="_blank" rel="noreferrer">
+              {f.mirror.tracker} <code>{/^\d+$/.test(f.mirror.id) ? `#${f.mirror.id}` : f.mirror.id}</code>
+            </a>
+          </p>
+        )}
         {f.reason && <p className="feature-note">{t.common.reasonLabel} {f.reason}</p>}
         {detail.informed_by.length > 0 && (
           <p className="feature-note">
@@ -275,6 +286,11 @@ export default function FeaturePage({ id }: { id: string }) {
           </p>
         )}
         {notice && <p className="notice">{notice}</p>}
+        {warnings.map((w) => (
+          <p key={w} className="notice">
+            {t.common.warning} <code>{w}</code>
+          </p>
+        ))}
       </header>
       <ErrataSection content={detail.errata} />
       <Backlinks id={id} />
@@ -341,6 +357,7 @@ export default function FeaturePage({ id }: { id: string }) {
                       ? t.feature.approvalRenewed
                       : `${t.state[r.from]} → ${t.state[r.to]}`,
                 )
+                setWarnings(r.warnings ?? [])
                 load()
               }}
             />
