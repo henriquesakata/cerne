@@ -154,6 +154,11 @@ func (c *trelloCall) resolve(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	return c.resolveFrom(ctx, ls)
+}
+
+// resolveFrom is resolve over lists already read.
+func (c *trelloCall) resolveFrom(ctx context.Context, ls []trelloList) error {
 	byKey := map[string]trelloList{}
 	for _, l := range ls {
 		if _, dup := byKey[trelloNameKey(l.Name)]; !dup {
@@ -241,11 +246,20 @@ func (t trello) Update(ctx context.Context, r Ref, it Item) error {
 	if err := c.do(ctx, http.MethodGet, "/cards/"+r.ID+"?"+trelloCardFields, nil, &card); err != nil {
 		return err
 	}
-	if err := c.resolve(ctx); err != nil {
+	// Read-only until the card is known to be on this board: resolve may
+	// create lists, and a refused update must write nothing.
+	ls, err := c.openLists(ctx)
+	if err != nil {
 		return err
+	}
+	for _, l := range ls {
+		c.boardID = l.IDBoard
 	}
 	if c.boardID == "" || card.IDBoard != c.boardID {
 		return fmt.Errorf("%w: trello card %s is not on board %s", ErrTrackerURL, r.ID, c.t.board)
+	}
+	if err := c.resolveFrom(ctx, ls); err != nil {
+		return err
 	}
 	card.ShortLink = r.ID
 	return c.apply(ctx, card, it)

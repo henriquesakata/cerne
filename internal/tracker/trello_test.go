@@ -893,6 +893,27 @@ func TestTrelloCommitRefIsURL(t *testing.T) {
 // F-0451 crit. 5: a card URL does not name its board, so a link left by a
 // tracker since re-pointed at another board passes Owns; Update reads the
 // card and refuses it, writing nothing, when it is not on this board.
+// A refused update writes nothing anywhere: the target board lacks the
+// lifecycle lists, and resolving them must not create any before the refusal.
+func TestTrelloForeignBoardCreatesNoLists(t *testing.T) {
+	fk := newTrelloFake(t)
+	foreign := fk.seed(fk.addOpenList(fk.boards[trelloOther], "Inbox"), "Someone else's card", "Their body")
+	fk.addOpenList(fk.boards[trelloBoard], "Inbox") // the configured board has a list, but not the lifecycle ones
+	nLists := len(fk.lists)
+	err := newTrelloTracker(t, trelloBoardURL).Update(context.Background(), foreign, publicItem("F-0001", domain.StateApproved))
+	if !errors.Is(err, tracker.ErrTrackerURL) {
+		t.Fatalf("Update(card on another board) = %v, want errors.Is ErrTrackerURL", err)
+	}
+	for _, req := range fk.wire.reqs {
+		if req.method != http.MethodGet {
+			t.Fatalf("a refused update sent %s %s", req.method, req.url)
+		}
+	}
+	if len(fk.lists) != nLists {
+		t.Fatalf("lists went from %d to %d", nLists, len(fk.lists))
+	}
+}
+
 func TestTrelloUpdateRefusesForeignBoard(t *testing.T) {
 	fk := newTrelloFake(t)
 	foreign := fk.seed(fk.addOpenList(fk.boards[trelloOther], "Inbox"), "Someone else's card", "Their body")
