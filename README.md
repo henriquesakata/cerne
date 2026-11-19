@@ -254,7 +254,7 @@ In a global client config, name the project with `--dir`:
 }
 ```
 
-Outside a cerne project the server refuses to start.
+Outside a cerne project the server still starts, with only the `guide` tool, and tells the agent that `cerne init` starts a project.
 
 Clients that install MCP Bundles (MCPB) can take the server straight from a release: every release after 0.14.3 ships `cerne_<tag>.mcpb`, with the binaries for every platform. The client asks for the project folder and starts `cerne mcp --dir` on it; the folder must already be a cerne project. The bundle is also what the [official MCP Registry](https://registry.modelcontextprotocol.io) entry `io.github.henriquesakata/cerne` points to.
 
@@ -307,7 +307,7 @@ On Claude Code 2.1.275 or later, one line does both: `/plugin install cerne --ma
 
 - **Only in cerne projects.** The plugin's hooks run only where the project root has a `.cernerc`; elsewhere they stay silent. When the CLI is missing, the session start prints how to install it.
 - **No double hooks.** Where `init` or `cerne hook install` already put a hook script in `.claude/hooks/`, the project's copy runs and the plugin's steps aside. In those projects the authoring skill can be listed twice, as `cerne-authoring` and `cerne:cerne-authoring`, with the same text.
-- **Prefer project scope.** `cerne mcp` needs a cerne project, so a user-scope install shows the MCP server as failed in every other project. `--scope project` enables the plugin only where you ask for it.
+- **User or project scope.** In a project without cerne the MCP server still connects, with only the `guide` tool, so the agent can look up what cerne is and learns that `cerne init` starts a project. `--scope project` enables the plugin only where you ask for it.
 - **Git hooks stay with the CLI.** A plugin cannot install git hooks: the commit trailer and the commit guard still come from `cerne hook install`.
 
 Separately, some commands call a model themselves (see [Where your data goes](#where-your-data-goes)). They can use the subscription CLI of Claude Code, Codex CLI or Gemini CLI, and, from v0.14.0, the Cursor CLI and the GitHub Copilot CLI. Of these, Claude Code is the one in daily use here.
