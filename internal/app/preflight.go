@@ -1,18 +1,20 @@
 package app
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/henriquesakata/cerne/internal/doccheck"
+	"github.com/henriquesakata/cerne/internal/forge"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -57,18 +59,14 @@ func glabMRState(ctx context.Context, host, project, iid string) (string, error)
 	if !store.ValidMRRef(project, iid) {
 		return "", fmt.Errorf("invalid MR reference %q!%q", project, iid)
 	}
+	// glab api, not glab mr view: only api takes --hostname, and without it glab
+	// asks GITLAB_HOST or the working directory's repository (B-0032). RunCLI
+	// drops the tokens of another host and keeps the F-0886 WaitDelay.
 	// "--" ends the flags: the positional can never be read as one (F-0874).
-	cmd := exec.CommandContext(ctx, "glab", "mr", "view", "-R", project, "-F", "json", "--", iid)
-	// The deadline kills glab, not a child (credential helper, pager) still
-	// holding stdout: without WaitDelay, Output waits for that child (F-0886).
-	cmd.WaitDelay = time.Second
-	out, err := cmd.Output()
-	// glab exited 0 and its answer is in out; only a child kept the pipe open.
-	if errors.Is(err, exec.ErrWaitDelay) {
-		err = nil
-	}
+	out, err := forge.RunCLI(ctx, "glab", "api", "--hostname", cmp.Or(host, "gitlab.com"), "--",
+		"projects/"+url.PathEscape(project)+"/merge_requests/"+iid)
 	if err != nil {
-		return "", fmt.Errorf("glab: %w", err)
+		return "", err
 	}
 	var v struct {
 		State string `json:"state"`

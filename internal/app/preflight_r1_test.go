@@ -23,6 +23,7 @@ func fakeGlab(t *testing.T) (argvFile string) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	realCLI(t)
 	return argvFile
 }
 
@@ -43,8 +44,8 @@ func TestGlabMRStateRefusesInjectionAndEndsFlags(t *testing.T) {
 	}
 	b, _ := os.ReadFile(argv)
 	got := strings.Fields(string(b))
-	if len(got) < 2 || got[len(got)-2] != "--" || got[len(got)-1] != "2150" {
-		t.Fatalf("argv must end with -- <iid>, got %v", got)
+	if len(got) < 2 || got[len(got)-2] != "--" || got[len(got)-1] != "projects/acme%2Fhub/merge_requests/2150" {
+		t.Fatalf("argv must end with -- <the MR's endpoint>, got %v", got)
 	}
 }
 
@@ -157,6 +158,7 @@ func stuckGlab(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	realCLI(t)
 }
 
 // F-0886 crit. 1 (P-0016): a glab whose child holds the pipe returns within
@@ -183,6 +185,7 @@ func TestGlabMRStateKeepsTheAnswerWhenAChildOutlivesGlab(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	realCLI(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	t0 := time.Now()
