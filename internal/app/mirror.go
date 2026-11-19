@@ -319,14 +319,17 @@ func linkedURLs(repoDir string) (map[string]bool, error) {
 }
 
 // listOpen lists tc's open issues carrying its label, under mirrorTimeout.
-func listOpen(tc tracker.Config) ([]tracker.Remote, error) {
+func listOpen(tc tracker.Config) ([]tracker.Remote, error) { return listOpenLabeled(tc, tc.Label) }
+
+// listOpenLabeled lists tc's open issues carrying label ("" = every one), under mirrorTimeout.
+func listOpenLabeled(tc tracker.Config, label string) ([]tracker.Remote, error) {
 	tr, err := tracker.New(tc)
 	if err != nil {
 		return nil, err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), mirrorTimeout)
 	defer cancel()
-	return tr.ListOpen(ctx, tc.Label)
+	return tr.ListOpen(ctx, label)
 }
 
 // Bounds of an outside issue's text at import (F-0449).

@@ -102,6 +102,7 @@ type checkCase struct {
 	state      domain.FeatureState
 	issueOpen  bool
 	closeOn    string
+	label      string // the tracker's sync label; cerne's own issues do not carry it
 	failTrk    bool
 	delay      bool
 	unknownTrk bool
@@ -117,6 +118,8 @@ func TestCheckMirrorTable(t *testing.T) {
 		{name: "terminal card, issue still open", state: domain.StateRejected, issueOpen: true, status: MirrorDrift, reason: ReasonOpenCardClosed},
 		{name: "superseded card, issue still open", state: domain.StateSuperseded, issueOpen: true, status: MirrorDrift, reason: ReasonOpenCardClosed},
 		{name: "open card, issue gone from the list", state: domain.StateCandidate, status: MirrorDrift, reason: ReasonClosedCardOpen},
+		{name: "labeled tracker: own open issue is up to date", state: domain.StateInDevelopment, issueOpen: true, label: "cerne", status: MirrorOK},
+		{name: "labeled tracker: own closed issue of an open card is drift", state: domain.StateInDevelopment, label: "cerne", status: MirrorDrift, reason: ReasonClosedCardOpen},
 		{name: "close_on merge: closed issue of an in_development card is the merge", state: domain.StateInDevelopment, closeOn: "merge", status: MirrorOK},
 		{name: "close_on merge: closed issue of an implemented card is the merge", state: domain.StateImplemented, closeOn: "merge", status: MirrorOK},
 		{name: "close_on merge: closed issue of an approved card is drift", state: domain.StateApproved, closeOn: "merge", status: MirrorDrift, reason: ReasonClosedCardOpen},
@@ -136,7 +139,7 @@ func TestCheckMirrorTable(t *testing.T) {
 			}
 			repoDir, projDir, _ := newFeatureBackend(t)
 			pub := &trackertest.Fake{Name: "pub"}
-			mirrorProject(t, projDir, mirrorConf{closeOn: c.closeOn}, pub)
+			mirrorProject(t, projDir, mirrorConf{closeOn: c.closeOn, labels: map[string]string{"pub": c.label}}, pub)
 			r := issueOn(t, pub, "F-0001", c.state)
 			pub.Issues[r.ID].Open = c.issueOpen
 			seedMirrored(t, repoDir, "F-0001", c.state, r)

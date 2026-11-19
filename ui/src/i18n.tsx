@@ -230,7 +230,7 @@ const ptBR = {
     },
     reasonHints: {
       'closed-but-card-open':
-        'A issue não está entre as abertas com o rótulo do tracker: foi fechada ou perdeu o rótulo.',
+        'A issue não está entre as issues abertas do tracker: foi fechada fora do cerne.',
       'open-but-card-closed': 'O card está encerrado no cerne, mas a issue continua aberta no tracker.',
     },
     trackerSaid: 'Motivo informado pelo tracker:',
@@ -1740,7 +1740,7 @@ const en: Messages = {
     },
     reasonHints: {
       'closed-but-card-open':
-        "The issue is not among the tracker's open issues with its label: it was closed or lost the label.",
+        "The issue is not among the tracker's open issues: it was closed outside cerne.",
       'open-but-card-closed': 'The card is closed in cerne, but the issue is still open on the tracker.',
     },
     trackerSaid: 'Reason given by the tracker:',

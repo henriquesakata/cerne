@@ -187,7 +187,9 @@ func CheckMirror(repoDir, projDir string) ([]MirrorCheck, error) {
 	}
 	lists := map[string]listing{}
 	for _, tc := range cfg.Trackers {
-		remotes, err := listOpen(tc)
+		// No label filter: the issues cerne publishes carry only the state label,
+		// not the one the sync uses to pick outside issues.
+		remotes, err := listOpenLabeled(tc, "")
 		l := listing{open: map[string]bool{}, n: len(remotes), err: err}
 		for _, r := range remotes {
 			l.open[r.URL] = true
