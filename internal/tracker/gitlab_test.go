@@ -249,8 +249,10 @@ func (g *fakeGL) add(iss *glIssue) int {
 	return g.next
 }
 
+// webURL is the issue page as gitlab.com 19.x answers it: /-/work_items/N.
+// Older GitLab answers /-/issues/N, which TestGitLabOwns covers.
 func (g *fakeGL) webURL(n int) string {
-	return fmt.Sprintf("https://%s/%s/-/issues/%d", g.host, g.project, n)
+	return fmt.Sprintf("https://%s/%s/-/work_items/%d", g.host, g.project, n)
 }
 
 // view is the issue as the REST API answers it: a global id unlike the iid,
@@ -360,6 +362,31 @@ func TestGitLabHostPathAndQuery(t *testing.T) {
 				t.Fatalf("request = %s %s?%s, want GET with state=opened, per_page=100 and labels=cerne:x y", last.method, last.path, last.query.Encode())
 			}
 		})
+	}
+}
+
+// F-0450 crit. 2 (Owns): an issue of the project is found under both pages
+// GitLab answers for it — /-/issues/N (older GitLab) and /-/work_items/N
+// (gitlab.com 19.x) — and nothing else is.
+func TestGitLabOwns(t *testing.T) {
+	newFakeGL(t, "gitlab.com", "g/sub/p")
+	tr := newGitLab(t, "https://gitlab.com/g/sub/p")
+	for _, c := range []struct {
+		id, url string
+		want    bool
+	}{
+		{"12", "https://gitlab.com/g/sub/p/-/issues/12", true},
+		{"12", "https://gitlab.com/g/sub/p/-/work_items/12", true},
+		{"12", "https://GitLab.com/G/Sub/P/-/issues/12/", true},
+		{"12", "https://gitlab.com/g/sub/p/-/merge_requests/12", false},
+		{"12", "https://gitlab.com/g/sub/p/-/issues/13", false},
+		{"12", "https://gitlab.com/g/other/-/issues/12", false},
+		{"12", "https://gitlab.example/g/sub/p/-/issues/12", false},
+		{"12", "https://gitlab.com/g/sub/p/issues/12", false},
+	} {
+		if got := tr.Owns(tracker.Ref{Tracker: "gl", ID: c.id, URL: c.url}); got != c.want {
+			t.Errorf("Owns(%s, %s) = %v, want %v", c.id, c.url, got, c.want)
+		}
 	}
 }
 

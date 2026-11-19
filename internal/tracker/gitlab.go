@@ -180,9 +180,13 @@ func (g gitlab) CommitRef(r Ref, commitURL string, closing bool) string {
 
 // Owns reports whether r is an issue of this project on this host, subgroups
 // included: the link a card holds is checked before a tracker re-pointed
-// since could act on issue #N of another project.
+// since could act on issue #N of another project. The issue page is
+// /-/issues/N, or /-/work_items/N on gitlab.com 19.x.
 func (g gitlab) Owns(r Ref) bool {
 	u, err := url.Parse(r.URL)
-	return err == nil && u.Scheme == "https" && u.User == nil && digits(r.ID) && strings.EqualFold(u.Host, g.repo.Host) &&
-		strings.EqualFold(strings.TrimSuffix(u.Path, "/"), "/"+g.repo.Path+"/-/issues/"+r.ID)
+	if err != nil || u.Scheme != "https" || u.User != nil || !digits(r.ID) || !strings.EqualFold(u.Host, g.repo.Host) {
+		return false
+	}
+	p := strings.TrimSuffix(u.Path, "/")
+	return strings.EqualFold(p, "/"+g.repo.Path+"/-/issues/"+r.ID) || strings.EqualFold(p, "/"+g.repo.Path+"/-/work_items/"+r.ID)
 }
