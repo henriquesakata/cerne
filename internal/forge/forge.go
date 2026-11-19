@@ -144,10 +144,11 @@ func callHost(name string, args []string) string {
 // --hostname, gh sends GH_ENTERPRISE_TOKEN to any host but github.com. A
 // committed .cernerc names the host, so a token reaches only the host its
 // own environment declares; the CLI's per-host login still serves the rest.
+// Names match without case: on Windows the CLIs read them that way.
 func cliEnv(name, host string, environ []string) []string {
 	get := func(key string) (v string) {
 		for _, kv := range environ {
-			if k, val, _ := strings.Cut(kv, "="); k == key {
+			if k, val, _ := strings.Cut(kv, "="); strings.EqualFold(k, key) {
 				v = val // the last one wins, as in exec.Cmd
 			}
 		}
@@ -171,7 +172,7 @@ func cliEnv(name, host string, environ []string) []string {
 	}
 	return slices.DeleteFunc(slices.Clone(environ), func(kv string) bool {
 		k, _, _ := strings.Cut(kv, "=")
-		return slices.Contains(drop, k)
+		return slices.ContainsFunc(drop, func(d string) bool { return strings.EqualFold(d, k) })
 	})
 }
 

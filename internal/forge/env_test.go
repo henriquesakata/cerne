@@ -60,6 +60,31 @@ func TestCLIEnvKeepsTokensForTheirHostOnly(t *testing.T) {
 	}
 }
 
+// F-0449 round 3 (A1): on Windows gh and glab read variable names without
+// case, so a mixed-case spelling is the same variable.
+func TestCLIEnvKeepsTokensForTheirHostOnlyMixedCase(t *testing.T) {
+	for _, c := range []struct {
+		name, cli, host string
+		environ         []string
+		kept            bool // whether the first variable must survive
+	}{
+		{"glab foreign host drops Gitlab_Token", "glab", "x.invalid", []string{"Gitlab_Token=s"}, false},
+		{"glab declared host keeps Gitlab_Token", "glab", "gitlab.example", []string{"Gitlab_Token=s", "Gitlab_Host=gitlab.example"}, true},
+		{"glab foreign host with declared Gl_Host drops it", "glab", "x.invalid", []string{"Gitlab_Token=s", "Gl_Host=gitlab.example"}, false},
+		{"gh github.com drops gh_enterprise_token", "gh", "github.com", []string{"gh_enterprise_token=s"}, false},
+		{"gh declared host keeps gh_enterprise_token", "gh", "ghe.example", []string{"gh_enterprise_token=s", "Gh_Host=ghe.example"}, true},
+		{"gh foreign host drops gh_enterprise_token", "gh", "evil.example", []string{"gh_enterprise_token=s", "Gh_Host=ghe.example"}, false},
+		{"gh declared host drops Gh_Token", "gh", "ghe.example", []string{"Gh_Token=s", "Gh_Host=ghe.example"}, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			got := cliEnv(c.cli, c.host, c.environ)
+			if has := slices.Contains(got, c.environ[0]); has != c.kept {
+				t.Errorf("%s present = %v, want %v", c.environ[0], has, c.kept)
+			}
+		})
+	}
+}
+
 func TestCallHost(t *testing.T) {
 	for _, c := range []struct {
 		cli  string
