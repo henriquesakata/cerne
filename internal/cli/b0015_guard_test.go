@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -234,5 +235,73 @@ func TestFindingTextsAreEnglish(t *testing.T) {
 			})
 			return nil
 		})
+	}
+}
+
+// legacyReaders are the non-test files allowed to quote a hidden pt-BR name
+// because they read it, each with its reason.
+var legacyReaders = map[string]string{
+	"hookprovenancecmd.go": "the provenance hook still recognizes a typed `decision substituir`",
+}
+
+// TestNoTextQuotesALegacyPortugueseName (B-0036): the hidden pt-BR names of
+// B-0015 exist only so installed scripts keep running, so no text cerne ships
+// quotes one as the command to run (N-0110). It checks every string literal of
+// the non-test Go files under internal/ and every embedded text file outside
+// testdata: the word substituir and a --<legacy flag> fail. Exempt are the
+// literal that registers the alias (exactly "substituir") and legacyReaders.
+func TestNoTextQuotesALegacyPortugueseName(t *testing.T) {
+	alts := []string{"substituir"}
+	for f := range legacyFlagOf {
+		alts = append(alts, "--"+regexp.QuoteMeta(f))
+	}
+	sort.Slice(alts, func(i, j int) bool { return len(alts[i]) > len(alts[j]) })
+	legacy := regexp.MustCompile(`(?:^|[^\p{L}-])(` + strings.Join(alts, "|") + `)(?:[^\p{L}-]|$)`)
+	check := func(where, s string) {
+		if m := legacy.FindStringSubmatch(s); m != nil {
+			t.Errorf("%s quotes the hidden pt-BR name %q (use the English command): %q", where, m[1], firstLine(s))
+		}
+	}
+	fset := token.NewFileSet()
+	err := filepath.WalkDir("..", func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if d.Name() == "testdata" || d.Name() == "node_modules" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if _, ok := legacyReaders[d.Name()]; ok || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		switch filepath.Ext(path) {
+		case ".go":
+			f, perr := parser.ParseFile(fset, path, nil, 0)
+			if perr != nil {
+				return perr
+			}
+			ast.Inspect(f, func(n ast.Node) bool {
+				if lit, ok := n.(*ast.BasicLit); ok && lit.Kind == token.STRING {
+					if s, uerr := strconv.Unquote(lit.Value); uerr == nil && s != "substituir" {
+						check(fset.Position(lit.Pos()).String(), s)
+					}
+				}
+				return true
+			})
+		case ".md", ".sh", ".ps1", ".tmpl", ".txt", ".toml":
+			b, rerr := os.ReadFile(path)
+			if rerr != nil {
+				return rerr
+			}
+			for i, line := range strings.Split(string(b), "\n") {
+				check(path+":"+strconv.Itoa(i+1), line)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }

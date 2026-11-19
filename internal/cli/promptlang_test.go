@@ -59,7 +59,6 @@ var promptExceptions = []struct{ re, why string }{
 	{`(?m)^\s*Etapa \d.*$`, "the execution-map example lines are parsed by the plan readers (N-0087)"},
 	{`the words Etapa and paralelas are parsed, keep them exactly`, "names the two parsed words of the execution map"},
 	{`cerne-(proposta|pergunta|nota|comando)`, "fence info strings the UI parses to draw the cards; renaming one breaks the UI"},
-	{`\bsubstituir\b`, "a cerne verb name (feature substituir) the chat lists among the lifecycle verbs the harness refuses"},
 	{`with the entity "não registrada"`, "the literal value of the handoff's Entidade line, named in the instruction that teaches the handoff"},
 }
 

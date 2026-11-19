@@ -124,13 +124,17 @@ func TestCreateDecisionGuard(t *testing.T) {
 	if !errors.Is(err, ErrSimilarExists) {
 		t.Fatalf("err = %v, want ErrSimilarExists", err)
 	}
-	for _, want := range []string{"see it with 'cerne show " + first.ID + "'", "to replace it, re-run with --force and then supersede " + first.ID, "cerne decision substituir " + first.ID + " --by <the new id>", "proceed with --force if this is a distinct decision"} {
+	for _, want := range []string{"see it with 'cerne show " + first.ID + "'", "to replace it, re-run with --force and then supersede " + first.ID, "cerne decision supersede " + first.ID + " --by <the new id>", "proceed with --force if this is a distinct decision"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("message %q lacks %q", err.Error(), want)
 		}
 	}
-	if strings.Contains(err.Error(), "'cerne decision substituir") {
+	if strings.Contains(err.Error(), "'cerne decision supersede") {
 		t.Errorf("decision advice must be prose, not a quoted command: %q", err.Error())
+	}
+	// B-0036: the hidden pt-BR alias is never the command a message teaches.
+	if strings.Contains(err.Error(), "substituir") {
+		t.Errorf("decision advice quotes the pt-BR alias substituir: %q", err.Error())
 	}
 	if ds, _ := store.LoadAllDecisions(repoDir); len(ds) != 1 {
 		t.Fatalf("decisions = %d, want 1", len(ds))

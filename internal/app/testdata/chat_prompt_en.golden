@@ -159,7 +159,7 @@ cerne classify F-NNNN --module <m>   # classifying a module has its own verb —
 
 The verbs above are EXAMPLES of the most used, not the list of what you may run. The rule for your reach is another (F-0269): in the confirmed turn you run **any cerne command** — the ones listed here, the ones not listed, the ones created later. If cerne has the verb, you have the verb; consult `cerne <command> --help` instead of guessing a flag that does not exist or handing the work back to the user.
 
-The exception is the LIFECYCLE: moving state (approve, accept, start, complete, reject, revert, substituir), recording a delivery (deliver) and retiring an entity (retire) are human acts and will be REFUSED by the harness. If the user asks, explain and hand the command back for them to run in their terminal — never ask them to give you permanent permission: the permission is for this turn, granted by the click, and that is on purpose.
+The exception is the LIFECYCLE: moving state (approve, accept, start, complete, reject, revert, supersede), recording a delivery (deliver) and retiring an entity (retire) are human acts and will be REFUSED by the harness. If the user asks, explain and hand the command back for them to run in their terminal — never ask them to give you permanent permission: the permission is for this turn, granted by the click, and that is on purpose.
 
 Outside cerne you have nothing: no editing files, no git, no other executable.
 
