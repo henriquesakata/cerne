@@ -31,6 +31,7 @@ func newNoteCmd() *cobra.Command {
 	cmd.AddCommand(verbs.MarkChat(newNoteShowCmd(&dir)))
 	cmd.AddCommand(verbs.MarkChat(newNoteRetagCmd(&dir)))
 	cmd.AddCommand(verbs.MarkChat(newNoteWhenCmd(&dir)))
+	cmd.AddCommand(verbs.MarkChat(newNoteGistCmd(&dir)))
 	cmd.AddCommand(verbs.MarkChat(newNoteKeepCmd(&dir)))
 	cmd.AddCommand(newNoteRetireCmd(&dir))
 	cmd.AddCommand(newNoteSupersedeCmd(&dir), legacyName(newNoteSupersedeCmd(&dir), "substituir"))
@@ -505,6 +506,47 @@ func runNoteWhen(cmd *cobra.Command, dir, id string, triggers []string, clear bo
 		return nil
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s when: %s\n", n.ID, strings.Join(n.When, ", "))
+	return nil
+}
+
+func newNoteGistCmd(dir *string) *cobra.Command {
+	var clear bool
+	cmd := &cobra.Command{
+		Use:   "gist <id> [text]",
+		Short: "Set the one-line gist the hooks show under an active note (--clear removes it)",
+		Long: "Replaces the gist of an active note (F-0459): the one line, at most 160 runes, an agent needs when the " +
+			"note shows up — what to do or avoid, not the subject (the title has it). The edit and command note blocks " +
+			"of the hooks print it under the note's line. The words after the id are joined with one space. " +
+			"--clear removes the gist. A superseded note is history and is refused.",
+		Args: cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runNoteGist(cmd, *dir, args[0], strings.Join(args[1:], " "), clear)
+		},
+	}
+	cmd.Flags().BoolVar(&clear, "clear", false, "remove the gist")
+	return cmd
+}
+
+func runNoteGist(cmd *cobra.Command, dir, id, gist string, clear bool) error {
+	switch {
+	case clear && gist != "":
+		return fmt.Errorf("pass a gist or --clear, not both")
+	case !clear && strings.TrimSpace(gist) == "":
+		return fmt.Errorf("provide the gist text, or --clear")
+	}
+	ctx, err := resolveProject(dir)
+	if err != nil {
+		return err
+	}
+	n, err := app.SetNoteGist(ctx.repoDir, ctx.projDir, id, gist)
+	if err != nil {
+		return err
+	}
+	if n.Gist == "" {
+		fmt.Fprintf(cmd.OutOrStdout(), "%s has no gist.\n", n.ID)
+		return nil
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "%s gist: %s\n", n.ID, n.Gist)
 	return nil
 }
 

@@ -52,3 +52,63 @@ func TestNoteNewGistRefused(t *testing.T) {
 		t.Fatal("refused note new wrote a body")
 	}
 }
+
+// TestNoteGist (F-0459 criterion 2): replaces the gist with a note.gist
+// event, an unchanged gist commits nothing, --clear removes it, bad input
+// leaves the note untouched, and a retired note is history.
+func TestNoteGist(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	if _, err := execCerne(t, "note", "new", "T", "--gist", "old line", "--dir", projDir); err != nil {
+		t.Fatalf("note new: %v", err)
+	}
+	out, err := execCerne(t, "note", "gist", "N-0001", "Run glab from the target repo's dir.", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("note gist: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "N-0001 gist: Run glab from the target repo's dir.") {
+		t.Fatalf("output: %q", out)
+	}
+	n, _ := store.LoadNote(repoDir, "N-0001")
+	if n.Gist != "Run glab from the target repo's dir." {
+		t.Fatalf("gist = %q", n.Gist)
+	}
+	evs, _ := store.ReadEvents(repoDir)
+	if last := evs[len(evs)-1]; last.Type != "note.gist" || last.Payload["gist"] != n.Gist {
+		t.Fatalf("last event = %+v, want note.gist", last)
+	}
+
+	head := gitHead(t, repoDir)
+	if _, err := execCerne(t, "note", "gist", "N-0001", "Run glab from the target  repo's dir.", "--dir", projDir); err != nil {
+		t.Fatalf("unchanged gist: %v", err)
+	}
+	if gitHead(t, repoDir) != head {
+		t.Fatal("an unchanged gist committed")
+	}
+
+	if _, err := execCerne(t, "note", "gist", "N-0001", strings.Repeat("a", domain.GistMax+1), "--dir", projDir); !errors.Is(err, domain.ErrGistTooLong) {
+		t.Fatalf("too long: err = %v", err)
+	}
+	if _, err := execCerne(t, "note", "gist", "N-0001", "--dir", projDir); err == nil {
+		t.Fatal("note gist with no text and no --clear must fail")
+	}
+	if _, err := execCerne(t, "note", "gist", "N-0001", "x", "--clear", "--dir", projDir); err == nil {
+		t.Fatal("note gist with text and --clear must fail")
+	}
+	if n, _ = store.LoadNote(repoDir, "N-0001"); n.Gist != "Run glab from the target repo's dir." {
+		t.Fatalf("a refused note gist mutated the note: %q", n.Gist)
+	}
+
+	if out, err := execCerne(t, "note", "gist", "N-0001", "--clear", "--dir", projDir); err != nil || !strings.Contains(out, "N-0001 has no gist.") {
+		t.Fatalf("--clear: %v\n%s", err, out)
+	}
+	if n, _ = store.LoadNote(repoDir, "N-0001"); n.Gist != "" {
+		t.Fatalf("--clear left %q", n.Gist)
+	}
+
+	if _, err := execCerne(t, "note", "retire", "N-0001", "--reason", "done", "--dir", projDir); err != nil {
+		t.Fatalf("note retire: %v", err)
+	}
+	if _, err := execCerne(t, "note", "gist", "N-0001", "x", "--dir", projDir); err == nil {
+		t.Fatal("note gist on a retired note must fail")
+	}
+}
