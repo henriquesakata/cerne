@@ -3,6 +3,8 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { markerSpans, parseClarification, type MarkerSpan } from './clarify'
 import { useT } from './i18n'
+import { entityHref } from './entityRoute'
+import { remarkWikiLink } from './remarkWikiLink'
 
 // stripFrontmatter remove um bloco "---\n…\n---" no início do doc (o cerne
 // carimba cerne_id/imported_from ali) para que não seja renderizado como
@@ -331,16 +333,28 @@ export default function Markdown({
   children,
   onAnswer,
   onCorrect,
+  wikiHref = entityHref,
+  knownIds,
 }: {
   children: string
   onAnswer?: AnswerHandler
   onCorrect?: AnswerHandler
+  // [[ID]] target (F-0463); the vault points it at its own route. Without
+  // knownIds no link is marked broken.
+  wikiHref?: (id: string) => string | null
+  knownIds?: ReadonlySet<string>
 }) {
   const stripped = stripFrontmatter(children)
   const base = children.length - stripped.length
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm, [remarkClarify, { base, source: stripped }]]}
+      // remarkWikiLink runs after remarkClarify: the chip reads source offsets
+      // off the text nodes, which the wiki-link split would drop.
+      remarkPlugins={[
+        remarkGfm,
+        [remarkClarify, { base, source: stripped }],
+        [remarkWikiLink, { resolve: wikiHref, known: knownIds }],
+      ]}
       components={{
         pre: CodeBlock,
         a: ({ href, children: label, ...rest }) => {

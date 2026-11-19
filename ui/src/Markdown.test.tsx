@@ -227,3 +227,28 @@ describe('Markdown (F-0282): chip de esclarecimento em célula de tabela', () =>
     )
   })
 })
+
+describe('Markdown (F-0463): wiki-links id-form', () => {
+  it('critério 7: [[ID]] vira link para a página da entidade (entityHref)', () => {
+    render(<Markdown>{'ver [[D-0001]] e [[N-0002|a nota]]'}</Markdown>)
+    expect(screen.getByRole('link', { name: 'D-0001' })).toHaveAttribute('href', '#/d/D-0001')
+    expect(screen.getByRole('link', { name: 'a nota' })).toHaveAttribute('href', '#/n/N-0002')
+  })
+
+  it('critério 6: wikiHref e knownIds — conhecido vira link, desconhecido marcado quebrado', () => {
+    const { container } = render(
+      <Markdown wikiHref={(id) => `#/vault/${id}`} knownIds={new Set(['D-0001'])}>
+        {'[[D-0001]] [[D-0009]]'}
+      </Markdown>,
+    )
+    expect(screen.getByRole('link', { name: 'D-0001' })).toHaveAttribute('href', '#/vault/D-0001')
+    expect(container.querySelector('.wikilink-broken')?.textContent).toBe('D-0009')
+  })
+
+  it('convive com o chip de esclarecimento na mesma linha', () => {
+    render(<Markdown>{'[[D-0001]] antes [ESCLARECER: qual?] depois [[N-0002]]'}</Markdown>)
+    expect(screen.getByRole('link', { name: 'D-0001' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'N-0002' })).toBeInTheDocument()
+    expect(document.body.textContent).toContain('qual?')
+  })
+})
