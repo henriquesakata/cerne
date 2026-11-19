@@ -198,6 +198,16 @@ func TestInstall_MinimalDiff_AppendsToExistingPostToolUse(t *testing.T) {
           }
         ]
       }`
+	// The Cursor-only after-tool notes block (F-0457), after work-bind.
+	afterBlock := `      {
+        "matcher": "Bash|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-after-tool-notes.sh\""
+          }
+        ]
+      }`
 	// The SessionStart reminder block (F-0139), inserted as a new member of the
 	// hooks object after PostToolUse.
 	ssBlock := `    "SessionStart": [
@@ -282,7 +292,7 @@ func TestInstall_MinimalDiff_AppendsToExistingPostToolUse(t *testing.T) {
 	// bracket; the SessionStart, SubagentStart and PreToolUse members are
 	// appended to the hooks object; the CERNE_ACTOR key is appended inside the
 	// existing inline env object. Nothing else moves.
-	want := strings.Replace(pre, "\n      }\n    ]", "\n      },\n"+bashBlock+",\n"+bindBlock+"\n    ]", 1)
+	want := strings.Replace(pre, "\n      }\n    ]", "\n      },\n"+bashBlock+",\n"+bindBlock+",\n"+afterBlock+"\n    ]", 1)
 	want = strings.Replace(want, "\n    ]\n  }\n}", "\n    ],\n"+ssBlock+",\n"+sbBlock+",\n"+preBlock+",\n"+stopBlock+",\n"+pcBlock+",\n"+upBlock+"\n  }\n}", 1)
 	want = strings.Replace(want, `"env": {"GREETING": "Olá & tchau"},`,
 		"\"env\": {\"GREETING\": \"Olá & tchau\",\n    \"CERNE_ACTOR\": \"agent\"},", 1)
@@ -373,6 +383,15 @@ func TestInstall_MinimalDiff_ScenarioB(t *testing.T) {
           {
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-work-bind.sh\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-after-tool-notes.sh\""
           }
         ]
       }
@@ -485,6 +504,15 @@ func TestInstall_MinimalDiff_ScenarioC(t *testing.T) {
           {
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-work-bind.sh\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/cerne-after-tool-notes.sh\""
           }
         ]
       }

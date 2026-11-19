@@ -146,3 +146,115 @@ func TestHookToolNotesSilent(t *testing.T) {
 		}
 	}
 }
+
+// afterProject has one note per trigger kind, for the post-tool harnesses.
+func afterProject(t *testing.T) (projDir, repoDir string) {
+	t.Helper()
+	projDir, repoDir = toolNotesProject(t,
+		[]string{"Tag on the merge commit", "bash:git tag"},
+		[]string{"Commit the dist with the source", "edit:ui/dist/**"},
+	)
+	noSSH(t)
+	return projDir, repoDir
+}
+
+const (
+	afterCmdHeader  = "cerne notes on `git tag` (the command already ran):\n- N-0001 — Tag on the merge commit"
+	afterEditHeader = "cerne notes on ui/dist/index.html (after this edit):\n- N-0002 — Commit the dist with the source"
+)
+
+// TestHookToolNotesAfterCursor (F-0457 criterion 11): Cursor runs the .claude
+// PostToolUse entry through its third-party import; a Shell or Write call
+// gets the block in Cursor's native additional_context.
+func TestHookToolNotesAfterCursor(t *testing.T) {
+	projDir, _ := afterProject(t)
+	shell := cursorFixture(t, "post-tool-use-terminals-cwd.json", projDir)
+	shell["tool_input"] = map[string]any{"command": "git tag v1", "cwd": projDir}
+	out, err := execCerneStdin(t, payloadString(t, shell), "hook", "tool-notes", "--after")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := decodeTop(t, out); m["additional_context"] != afterCmdHeader {
+		t.Fatalf("cursor shell:\n%s", out)
+	}
+	write := cursorFixture(t, "pre-tool-use-write.json", projDir)
+	write["hook_event_name"] = "postToolUse"
+	write["tool_input"] = map[string]any{"file_path": filepath.Join(projDir, "ui", "dist", "index.html"), "content": "x"}
+	out, err = execCerneStdin(t, payloadString(t, write), "hook", "tool-notes", "--after")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := decodeTop(t, out); m["additional_context"] != afterEditHeader {
+		t.Fatalf("cursor write:\n%s", out)
+	}
+}
+
+// TestHookToolNotesAfterGemini (F-0457 criterion 11): AfterTool appends
+// hookSpecificOutput.additionalContext to the tool result (R-0036).
+func TestHookToolNotesAfterGemini(t *testing.T) {
+	projDir, _ := afterProject(t)
+	for _, tc := range []struct {
+		tool  string
+		input map[string]any
+		want  string
+	}{
+		{"run_shell_command", map[string]any{"command": "git tag v1", "description": "tag"}, afterCmdHeader},
+		{"write_file", map[string]any{"file_path": filepath.Join(projDir, "ui", "dist", "index.html"), "content": "x"}, afterEditHeader},
+	} {
+		in := hookJSON(t, "sess-gem", projDir, tc.tool, tc.input, map[string]any{"llmContent": "ok"})
+		out, err := execCerneStdin(t, in, "hook", "tool-notes", "--after", "--format", "gemini")
+		if err != nil {
+			t.Fatal(err)
+		}
+		c := channelEnvelope(t, out)
+		if c.HookSpecificOutput.HookEventName != "AfterTool" || c.HookSpecificOutput.AdditionalContext != tc.want {
+			t.Fatalf("gemini %s:\n%s", tc.tool, out)
+		}
+	}
+}
+
+// TestHookToolNotesAfterCopilot (F-0457 criterion 11): Copilot's PostToolUse
+// takes a top-level additionalContext; its edits carry the apply_patch text.
+func TestHookToolNotesAfterCopilot(t *testing.T) {
+	projDir, _ := afterProject(t)
+	res := `,"tool_result":{"result_type":"success","text_result_for_llm":"ok"}`
+	bash := copilotPayload("sess-cop", projDir, "PostToolUse", "Bash", `{"command":"git tag v1","description":"x"}`, res)
+	out, err := execCerneStdin(t, bash, "hook", "tool-notes", "--after", "--format", "copilot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := decodeTop(t, out); m["additionalContext"] != afterCmdHeader {
+		t.Fatalf("copilot bash:\n%s", out)
+	}
+	patch := jsonString("*** Begin Patch\n*** Update File: ui/dist/index.html\n@@\n-a\n+b\n*** End Patch\n")
+	out, err = execCerneStdin(t, copilotPayload("sess-cop", projDir, "PostToolUse", "Edit", patch, res), "hook", "tool-notes", "--after", "--format", "copilot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := decodeTop(t, out); m["additionalContext"] != afterEditHeader {
+		t.Fatalf("copilot edit:\n%s", out)
+	}
+}
+
+// TestHookToolNotesAfterSilent (F-0457 criteria 10, 11): the after mode says
+// nothing to Claude Code and Codex (their before mode already did), and an
+// edit honors hooks.notes_on_edit.
+func TestHookToolNotesAfterSilent(t *testing.T) {
+	projDir, repoDir := afterProject(t)
+	for _, format := range []string{"claude", "codex"} {
+		in := hookJSON(t, "sess-q", projDir, "Bash", map[string]any{"command": "git tag v1"}, map[string]any{"stdout": ""})
+		if out, err := execCerneStdin(t, in, "hook", "tool-notes", "--after", "--format", format); err != nil || out != "" {
+			t.Errorf("%s after: err %v, out %q", format, err, out)
+		}
+	}
+	if len(app.SeenNotes(filepath.Dir(repoDir), "sess-q")) != 0 {
+		t.Error("a silent after call marked notes as seen")
+	}
+	if err := os.WriteFile(filepath.Join(projDir, ".cernerc"), append(mustRead(t, filepath.Join(projDir, ".cernerc")), []byte("\n[hooks]\nnotes_on_edit = false\n")...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	in := hookJSON(t, "sess-off", projDir, "write_file", map[string]any{"file_path": filepath.Join(projDir, "ui", "dist", "index.html")}, map[string]any{"llmContent": "ok"})
+	if out, err := execCerneStdin(t, in, "hook", "tool-notes", "--after", "--format", "gemini"); err != nil || out != "" {
+		t.Errorf("notes_on_edit off: err %v, out %q", err, out)
+	}
+}

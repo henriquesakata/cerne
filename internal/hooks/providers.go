@@ -163,7 +163,7 @@ func installCursor(projDir string) []Result {
 
 	// Not installed natively (R-0037) — reported, with what covers them, never silent.
 	results = append(results,
-		Result{Asset: "cursor: work-gate", Status: StatusSkipped, Note: "not wired natively: Cursor runs the installed .claude hooks (work gate, session binding, provenance, stop closeout) through its third-party import, the \"Include Third-Party Plugins, Skills, and Other Configs\" setting (on by default); with it off, only the rules and the live board reach Cursor (F-0428)"},
+		Result{Asset: "cursor: work-gate", Status: StatusSkipped, Note: "not wired natively: Cursor runs the installed .claude hooks (work gate, session binding, provenance, tool notes, stop closeout) through its third-party import, the \"Include Third-Party Plugins, Skills, and Other Configs\" setting (on by default); with it off, only the rules and the live board reach Cursor (F-0428)"},
 		Result{Asset: "cursor: CERNE_ACTOR", Status: StatusSkipped, Note: "nothing to install: Cursor marks its agent shells with CURSOR_AGENT=1 (seen in Cursor 3.25.6, undocumented), which cerne's human gates read as an agent (F-0428)"},
 		Result{Asset: "cursor: CERNE_PROVIDER", Status: StatusSkipped, Note: "no documented per-project session env — documents written from Cursor record their author as unknown unless CERNE_PROVIDER/CERNE_MODEL are exported in its shell"},
 		Result{Asset: "cursor: subagent-context", Status: StatusSkipped, Note: "subagentStart output has no additional_context — subagents start without the live board"},
@@ -232,7 +232,10 @@ func installGemini(projDir string) []Result {
 		map[string][]map[string]any{
 			"SessionStart": {eventGroup("", "cerne hook session-context --format gemini")},
 			"BeforeTool":   {eventGroup("write_file|replace", "cerne hook work-gate --format gemini")},
-			"AfterTool":    {eventGroup("run_shell_command", "cerne hook bind-work --format gemini")},
+			"AfterTool": {
+				eventGroup("run_shell_command", "cerne hook bind-work --format gemini"),
+				eventGroup("run_shell_command|write_file|replace", "cerne hook tool-notes --after --format gemini"), // F-0457
+			},
 		},
 	))
 
@@ -314,6 +317,8 @@ func copilotHooksBytes() ([]byte, error) {
 			"PostToolUse": []any{
 				copilotEntry("Bash", "cerne hook bind-work --format copilot"),
 				copilotEntry("Bash", "cerne hook provenance --format copilot"),
+				copilotEntry("Bash", "cerne hook tool-notes --after --format copilot"),       // F-0457
+				copilotEntry("Edit|Write", "cerne hook tool-notes --after --format copilot"), // F-0457
 			},
 			"Stop": []any{copilotEntry("", "cerne hook stop-check")},
 		},

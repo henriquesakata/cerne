@@ -98,3 +98,85 @@ func TestInstallCodex_WiresToolNotes(t *testing.T) {
 		t.Fatalf("codex PreToolUse:\n%s", b)
 	}
 }
+
+// TestInstall_WiresToolNotesAfter (F-0457 criterion 8): the .claude settings
+// carry a PostToolUse/Bash|Edit|Write entry for Cursor's third-party import;
+// its script leaves at once outside Cursor (no CURSOR_VERSION), so Claude
+// Code pays no process for it.
+func TestInstall_WiresToolNotesAfter(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Install(dir); err != nil {
+		t.Fatal(err)
+	}
+	script, err := os.ReadFile(filepath.Join(dir, ".claude", "hooks", afterNotesScript))
+	if err != nil {
+		t.Fatalf("after-notes script not installed: %v", err)
+	}
+	for _, want := range []string{"cerne hook tool-notes --after", "CURSOR_VERSION", "CERNE_NO_AGENT_HOOKS", "exit 0"} {
+		if !strings.Contains(string(script), want) {
+			t.Fatalf("script missing %q:\n%s", want, script)
+		}
+	}
+	s, b := readSettingsHooks(t, filepath.Join(dir, ".claude", "settings.json"))
+	if !s.wired("PostToolUse", "Bash|Edit|Write", afterNotesScript) {
+		t.Fatalf("PostToolUse wiring:\n%s", b)
+	}
+	if !slices.ContainsFunc(Assets(), func(a Asset) bool {
+		return a.Script == afterNotesScript && a.Event == "PostToolUse" && a.Matcher == "Bash|Edit|Write"
+	}) {
+		t.Fatal("Assets() does not list the after-notes hook")
+	}
+	stdout, _, called := runAsset(t, dir, afterNotesScript, "CURSOR_VERSION=")
+	if called || stdout != "" {
+		t.Fatalf("outside Cursor the script must not run cerne (called=%v, out %q)", called, stdout)
+	}
+	if _, _, called := runAsset(t, dir, afterNotesScript, "CURSOR_VERSION=3.25.6"); !called {
+		t.Fatal("inside Cursor the script must run cerne")
+	}
+}
+
+// TestInstallGeminiCopilot_WiresToolNotes (F-0457 criterion 8): Gemini's
+// AfterTool and Copilot's PostToolUse run tool-notes --after in their format.
+func TestInstallGeminiCopilot_WiresToolNotes(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Install(dir, ProviderGemini); err != nil {
+		t.Fatal(err)
+	}
+	s, b := readSettingsHooks(t, filepath.Join(dir, ".gemini", "settings.json"))
+	if !s.wired("AfterTool", "run_shell_command|write_file|replace", "cerne hook tool-notes --after --format gemini") {
+		t.Fatalf("gemini AfterTool:\n%s", b)
+	}
+	if _, err := Install(dir, ProviderCopilot); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, ".github", "hooks", "cerne.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range []string{"Bash", "Edit|Write"} {
+		if !copilotWired(t, raw, "PostToolUse", m, "cerne hook tool-notes --after --format copilot") {
+			t.Fatalf("copilot PostToolUse %s:\n%s", m, raw)
+		}
+	}
+}
+
+// copilotWired reports whether Copilot's hook file runs invocation under
+// event with matcher.
+func copilotWired(t *testing.T, raw []byte, event, matcher, invocation string) bool {
+	t.Helper()
+	var doc struct {
+		Hooks map[string][]struct {
+			Matcher string `json:"matcher"`
+			Bash    string `json:"bash"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range doc.Hooks[event] {
+		if e.Matcher == matcher && strings.Contains(e.Bash, invocation) {
+			return true
+		}
+	}
+	return false
+}

@@ -549,7 +549,7 @@ func injectGateChannel(cmd *cobra.Command, format, cacheDir, repoDir, projDir, s
 	if err != nil {
 		block = ""
 	}
-	if nb := notesOnEditBlock(cacheDir, repoDir, projDir, sess, filePath); nb != "" {
+	if nb := notesOnEditBlock(cacheDir, repoDir, projDir, sess, filePath, ""); nb != "" {
 		if block != "" {
 			block += "\n\n"
 		}
@@ -568,9 +568,10 @@ func injectGateChannel(cmd *cobra.Command, format, cacheDir, repoDir, projDir, s
 // listing must never hold an edit (F-0366).
 const notesBudget = 150 * time.Millisecond
 
-// notesOnEditBlock lists up to 3 not-yet-shown active notes citing filePath, or
-// "" (no setting, no file inside the repo, no index, no match, any failure).
-func notesOnEditBlock(cacheDir, repoDir, projDir, sess, filePath string) string {
+// notesOnEditBlock lists up to 3 not-yet-shown active notes citing or
+// declaring filePath (suffix marks an edit already made, F-0457), or "" (no
+// setting, no file inside the repo, no index, no match, any failure).
+func notesOnEditBlock(cacheDir, repoDir, projDir, sess, filePath, suffix string) string {
 	if filePath == "" || !project.NotesOnEdit(projDir) {
 		return ""
 	}
@@ -613,7 +614,7 @@ func notesOnEditBlock(cacheDir, repoDir, projDir, sess, filePath string) string 
 		return ""
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "cerne notes on %s:", rel)
+	fmt.Fprintf(&b, "cerne notes on %s%s:", rel, suffix)
 	for _, n := range shown {
 		fmt.Fprintf(&b, "\n- %s — %s", n.ID, flatTitle(n.Title))
 	}

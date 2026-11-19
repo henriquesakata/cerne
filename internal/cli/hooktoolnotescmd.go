@@ -62,11 +62,38 @@ func runHookToolNotes(cmd *cobra.Command, format string, after bool) {
 	if err != nil || !toolNotesEmits(after, format, in.cursor(), os.Getenv("COPILOT_CLI") == "1") {
 		return
 	}
+	if in.cursor() {
+		format = "cursor" // F-0428: a Cursor payload, whatever the wrapper passed
+	}
+	switch format { // the host env fills what the payload may lack, as in the gate
+	case "gemini":
+		if in.SessionID == "" {
+			in.SessionID = os.Getenv("GEMINI_SESSION_ID")
+		}
+		if in.CWD == "" {
+			if in.CWD = os.Getenv("GEMINI_CWD"); in.CWD == "" {
+				in.CWD = os.Getenv("GEMINI_PROJECT_DIR")
+			}
+		}
+	case "copilot":
+		if in.CWD == "" {
+			in.CWD = os.Getenv("COPILOT_PROJECT_DIR")
+		}
+	}
 	var ti struct {
 		Command string `json:"command"`
 	}
 	_ = json.Unmarshal(in.ToolInput, &ti)
-	if ti.Command == "" {
+	var edited string
+	if ti.Command == "" && after { // before an edit, the work gate already speaks (F-0366)
+		if paths := editedPaths(in.ToolInput); len(paths) > 0 {
+			edited = paths[0]
+			if !filepath.IsAbs(edited) { // Copilot's patch paths are relative to its cwd
+				edited = filepath.Join(in.CWD, edited)
+			}
+		}
+	}
+	if ti.Command == "" && edited == "" {
 		return
 	}
 	cfg, projDir, err := project.LoadConfig(in.CWD)
@@ -81,14 +108,35 @@ func runHookToolNotes(cmd *cobra.Command, format string, after bool) {
 	if err != nil {
 		return // F-0434
 	}
-	block := commandNotesBlock(cacheDir, repoDir, projDir, in.SessionID, ti.Command, "")
+	var block string
+	switch {
+	case ti.Command != "" && after:
+		block = commandNotesBlock(cacheDir, repoDir, projDir, in.SessionID, ti.Command, " (the command already ran)")
+	case ti.Command != "":
+		block = commandNotesBlock(cacheDir, repoDir, projDir, in.SessionID, ti.Command, "")
+	default:
+		block = notesOnEditBlock(cacheDir, repoDir, projDir, in.SessionID, edited, " (after this edit)")
+	}
 	if block == "" {
 		return
 	}
-	var c sessionContext
-	c.HookSpecificOutput.HookEventName = "PreToolUse"
-	c.HookSpecificOutput.AdditionalContext = block
-	_ = json.NewEncoder(cmd.OutOrStdout()).Encode(c)
+	enc := json.NewEncoder(cmd.OutOrStdout())
+	switch {
+	case !after:
+		var c sessionContext
+		c.HookSpecificOutput.HookEventName = "PreToolUse"
+		c.HookSpecificOutput.AdditionalContext = block
+		_ = enc.Encode(c)
+	case format == "cursor":
+		_ = enc.Encode(cursorContext{AdditionalContext: block})
+	case format == "copilot":
+		_ = enc.Encode(copilotContext{AdditionalContext: block})
+	default: // gemini: appended to the tool result (R-0036)
+		var c sessionContext
+		c.HookSpecificOutput.HookEventName = "AfterTool"
+		c.HookSpecificOutput.AdditionalContext = block
+		_ = enc.Encode(c)
+	}
 }
 
 // commandNotesBlock lists up to 3 not-yet-shown active notes whose bash:
