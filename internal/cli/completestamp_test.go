@@ -174,7 +174,7 @@ func TestCompleteEndsWithOneNextStepBlock(t *testing.T) {
 			t.Fatal(err)
 		}
 		block := nextStepBlock(t, out)
-		if len(block) != 1 || block[0] != "  - human accept: cerne feature accept F-0001 (or drag the card to Done)" {
+		if len(block) != 2 || block[0] != "  - human accept: cerne feature accept F-0001 (or drag the card to Done)" || !strings.Contains(block[1], "cerne feature wait F-0001 --for done") {
 			t.Errorf("block = %q", block)
 		}
 		if strings.Count(out, "Next step") != 1 || strings.Contains(out, "delivery:") {
@@ -190,7 +190,7 @@ func TestCompleteEndsWithOneNextStepBlock(t *testing.T) {
 			t.Fatal(err)
 		}
 		block := nextStepBlock(t, out)
-		if len(block) != 2 || !strings.HasPrefix(block[1], "  - delivery: commit abc1234 · PR o/r#12") || !strings.HasSuffix(block[1], "— mark it ready for review now: human review starts on Ready, not after CI") {
+		if len(block) != 3 || !strings.HasPrefix(block[1], "  - delivery: commit abc1234 · PR o/r#12") || !strings.HasSuffix(block[1], "— mark it ready for review now: human review starts on Ready, not after CI") {
 			t.Errorf("block = %q", block)
 		}
 		if strings.Count(out, "delivery:") != 1 {
@@ -213,7 +213,7 @@ func TestCompleteEndsWithOneNextStepBlock(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if block := nextStepBlock(t, out); len(block) != 2 || !strings.Contains(block[1], "PR o/r#7") {
+		if block := nextStepBlock(t, out); len(block) != 3 || !strings.Contains(block[1], "PR o/r#7") {
 			t.Errorf("block = %q", block)
 		}
 	})
@@ -225,7 +225,7 @@ func TestCompleteEndsWithOneNextStepBlock(t *testing.T) {
 			t.Fatal(err)
 		}
 		block := nextStepBlock(t, out)
-		if len(block) != 2 || !strings.Contains(block[0], "cerne cost F-0001 --stamp") || !strings.Contains(block[1], "human accept") {
+		if len(block) != 3 || !strings.Contains(block[0], "cerne cost F-0001 --stamp") || !strings.Contains(block[1], "human accept") || !strings.Contains(block[2], "cerne feature wait") {
 			t.Errorf("block = %q", block)
 		}
 	})
