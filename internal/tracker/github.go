@@ -177,11 +177,14 @@ func (g github) CommitRef(r Ref, commitURL string, closing bool) string {
 
 // Owns reports whether r is an issue of this repository on this host: the
 // link a card holds is checked before a tracker re-pointed since could act on
-// issue #N of another repository.
+// issue #N of another repository. Only the plain issue URL counts: no query
+// or fragment, and the path as written, so an escaped %2F never becomes a
+// separator.
 func (g github) Owns(r Ref) bool {
 	u, err := url.Parse(r.URL)
-	return err == nil && u.Scheme == "https" && u.User == nil && digits(r.ID) && strings.EqualFold(u.Host, g.repo.Host) &&
-		strings.EqualFold(strings.TrimSuffix(u.Path, "/"), "/"+g.repo.Path+"/issues/"+r.ID)
+	return err == nil && u.Scheme == "https" && u.User == nil && !strings.ContainsAny(r.URL, "?#") && digits(r.ID) &&
+		strings.EqualFold(u.Host, g.repo.Host) &&
+		strings.EqualFold(strings.TrimSuffix(u.EscapedPath(), "/"), "/"+g.repo.Path+"/issues/"+r.ID)
 }
 
 // digits reports a non-empty run of ASCII digits: a GitHub issue number.

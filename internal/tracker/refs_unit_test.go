@@ -105,3 +105,25 @@ func TestNewRefusesCredentialsInURL(t *testing.T) {
 		}
 	}
 }
+
+// F-0449 fix round 2 (R3): Owns takes the plain issue URL only: a query, a
+// fragment or an escaped separator that decodes into the issue's path is
+// another page, not this repository's issue.
+func TestGitHubOwnsRefusesQueryFragmentAndEscapedSeparators(t *testing.T) {
+	tr := unitTracker(t, "https://github.com/o/r")
+	for _, u := range []string{
+		"https://github.com/o/r/issues/7?x",
+		"https://github.com/o/r/issues/7?",
+		"https://github.com/o/r/issues/7#y",
+		"https://github.com/o%2Fr/issues/7",
+		"https://github.com/o/r/issues%2F7",
+		"https://github.com/o/r%2fissues/7",
+	} {
+		if tr.Owns(tracker.Ref{Tracker: "gh", ID: "7", URL: u}) {
+			t.Errorf("Owns(%s) = true, want false", u)
+		}
+	}
+	if u := "https://github.com/o/r/issues/7"; !tr.Owns(tracker.Ref{Tracker: "gh", ID: "7", URL: u}) {
+		t.Errorf("Owns(%s) = false, want true", u)
+	}
+}
