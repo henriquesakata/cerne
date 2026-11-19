@@ -43,6 +43,15 @@ export function insertWiki(text: string, start: number, caret: number, id: strin
   return { text: text.slice(0, start) + link + text.slice(caret), caret: start + link.length }
 }
 
+const FRONTMATTER = /^---\r?\n[\s\S]*?\r?\n---(?=\r?\n|$)(?:\r?\n)*/
+
+// splitFrontmatter separates the leading `---` block (with the blank lines
+// after it) from the body, byte for byte: front + body === content.
+export function splitFrontmatter(content: string): { front: string; body: string } {
+  const m = FRONTMATTER.exec(content)
+  return m ? { front: m[0], body: content.slice(m[0].length) } : { front: '', body: content }
+}
+
 // The list a bare `[[` shows before anything is typed, as the palette's cap.
 const FIRST_ENTRIES = 20
 
@@ -59,11 +68,13 @@ type Props = {
 // beside its preview, rendered by the same Markdown as the reading view.
 // The draft and the base hash come from `doc` once, at mount — a live reload
 // of the same document must not replace either; the vault remounts the editor
-// (key) for another document.
+// (key) for another document. The frontmatter (cerne_id) is not editable: it
+// stays out of the draft and the diff, and a save puts it back as loaded; the
+// base is still the hash of the whole loaded content.
 export default function VaultEditor({ doc, entries, knownIds, wikiHref, onSaved, onCancel }: Props) {
   const { t } = useT()
   const [loaded, setLoaded] = useState(() => ({ content: doc.content, hash: doc.hash }))
-  const [draft, setDraft] = useState(doc.content)
+  const [draft, setDraft] = useState(() => splitFrontmatter(doc.content).body)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // The backend's version a save collided with (409): the draft stays, and
@@ -120,27 +131,31 @@ export default function VaultEditor({ doc, entries, knownIds, wikiHref, onSaved,
     }
   }
 
-  const save = async (baseHash = loaded.hash) => {
+  const { front, body: loadedBody } = splitFrontmatter(loaded.content)
+  // head is the frontmatter the saved content starts with: the loaded one, or
+  // the 409's when saving over the backend's version.
+  const save = async (baseHash = loaded.hash, head = front) => {
     if (saving) return
     setSaving(true)
     setError(null)
+    const content = head + draft
     const res =
       doc.kind === 'feature'
-        ? await saveFeatureDoc(doc.id, doc.doc ?? 'spec', draft, baseHash)
-        : await saveEntityContent(doc.kind as 'decision' | 'note' | 'runbook', doc.id, draft, baseHash)
+        ? await saveFeatureDoc(doc.id, doc.doc ?? 'spec', content, baseHash)
+        : await saveEntityContent(doc.kind as 'decision' | 'note' | 'runbook', doc.id, content, baseHash)
     setSaving(false)
     if (res.ok) {
       setConflict(null)
       // Saved: nothing left to lose. The base stays the old hash, so a save
       // from here before the vault closes the editor is a 409, not an overwrite.
-      setLoaded({ content: draft, hash: baseHash })
+      setLoaded({ content, hash: baseHash })
       await onSaved()
     } else if ('conflict' in res) setConflict(res.conflict)
     else setError(res.error)
   }
   const reloadBackend = () => {
     if (!conflict) return
-    setDraft(conflict.content)
+    setDraft(splitFrontmatter(conflict.content).body)
     setLoaded(conflict)
     setConflict(null)
   }
@@ -160,7 +175,7 @@ export default function VaultEditor({ doc, entries, knownIds, wikiHref, onSaved,
 
   // An unsaved draft asks before it is lost: another document or route (the
   // router's guard), closing the tab (beforeunload) and Cancel.
-  const dirty = draft !== loaded.content
+  const dirty = draft !== loadedBody
   const discard = t.vault.editor.discard
   useEffect(() => {
     if (!dirty) return
@@ -201,7 +216,7 @@ export default function VaultEditor({ doc, entries, knownIds, wikiHref, onSaved,
       <div className="vault-editor-actions" style={{ top: stickTop }}>
         {conflict ? (
           <>
-            <button type="button" className="vault-editor-primary" onClick={() => void save(conflict.hash)} disabled={saving}>
+            <button type="button" className="vault-editor-primary" onClick={() => void save(conflict.hash, splitFrontmatter(conflict.content).front)} disabled={saving}>
               {saving ? t.vault.editor.saving : t.vault.editor.overwrite}
             </button>
             <button type="button" onClick={reloadBackend} disabled={saving}>
@@ -276,7 +291,7 @@ export default function VaultEditor({ doc, entries, knownIds, wikiHref, onSaved,
         <div className="vault-editor-conflict" role="alert">
           <p className="form-error">{t.vault.editor.conflict}</p>
           <pre className="proposal-draft-diff">
-            {lineDiff(conflict.content, draft)
+            {lineDiff(splitFrontmatter(conflict.content).body, draft)
               .filter((l) => l.kind !== 'same')
               .map((l, i) => (
                 <span key={i} className={`diff-${l.kind}`}>

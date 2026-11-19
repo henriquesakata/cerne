@@ -40,7 +40,7 @@ vi.mock('./Backlinks', () => ({ default: () => null }))
 
 import { entriesFrom } from './Palette'
 import Vault from './Vault'
-import VaultEditor, { insertWiki, wikiQuery } from './VaultEditor'
+import VaultEditor, { insertWiki, splitFrontmatter, wikiQuery } from './VaultEditor'
 import { navAllowed } from './navGuard'
 
 const note = (over: Partial<VaultDoc> = {}): VaultDoc => ({
@@ -382,5 +382,65 @@ describe('VaultEditor discard (F-0464 critério 9)', () => {
     confirm.mockReturnValue(true)
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
     expect(onCancel).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('VaultEditor frontmatter (F-0464 I-5)', () => {
+  const FM = '---\ncerne_id: N-0001\n---\n\n'
+  const conflict = (content: string, hash: string) => ({ ok: false, error: 'changed', conflict: { content, hash } })
+  const diff = () => [...document.querySelectorAll('.proposal-draft-diff span')].map((e) => e.textContent)
+
+  it('frontmatter: splitFrontmatter keeps the leading block apart, byte for byte', () => {
+    expect(splitFrontmatter(FM + '# T\n\ncorpo')).toEqual({ front: FM, body: '# T\n\ncorpo' })
+    expect(splitFrontmatter('---\r\ncerne_id: X\r\n---\r\ncorpo')).toEqual({ front: '---\r\ncerne_id: X\r\n---\r\n', body: 'corpo' })
+    expect(splitFrontmatter('sem frontmatter')).toEqual({ front: '', body: 'sem frontmatter' })
+    expect(splitFrontmatter('# T\n---\nx: 1\n---\n')).toEqual({ front: '', body: '# T\n---\nx: 1\n---\n' })
+    expect(splitFrontmatter('---\nnunca fechado')).toEqual({ front: '', body: '---\nnunca fechado' })
+  })
+
+  it('frontmatter: the draft never holds cerne_id and a save re-attaches it as loaded', async () => {
+    api.saveEntityContent.mockResolvedValue({ ok: true })
+    const { onSaved } = editor(note({ content: FM + '# Nota\n\ntexto original' }))
+    expect(source().value).toBe('# Nota\n\ntexto original')
+    expect(screen.queryByText('não gravado')).toBeNull()
+    type('novo corpo')
+    expect(source().value).not.toContain('cerne_id')
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(onSaved).toHaveBeenCalled())
+    expect(api.saveEntityContent).toHaveBeenCalledWith('note', 'N-0001', FM + 'novo corpo', 'h1')
+  })
+
+  it('frontmatter: a doc without frontmatter saves unchanged', async () => {
+    api.saveEntityContent.mockResolvedValue({ ok: true })
+    const { onSaved } = editor(note())
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(onSaved).toHaveBeenCalled())
+    expect(api.saveEntityContent).toHaveBeenCalledWith('note', 'N-0001', '# Nota\n\ntexto original', 'h1')
+  })
+
+  it('frontmatter: the conflict diff, the reload and the overwrite keep it out of the draft', async () => {
+    const FM2 = '---\ncerne_id: N-0001\nextra: sim\n---\n\n'
+    api.saveEntityContent.mockResolvedValueOnce(conflict(FM2 + 'linha deles', 'h2')).mockResolvedValue({ ok: true })
+    const { onSaved } = editor(note({ content: FM + 'linha comum' }))
+    type('linha minha')
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(diff()).toEqual(['- linha deles', '+ linha minha']))
+    fireEvent.click(screen.getByRole('button', { name: 'Gravar por cima' }))
+    await waitFor(() => expect(onSaved).toHaveBeenCalled())
+    expect(api.saveEntityContent).toHaveBeenLastCalledWith('note', 'N-0001', FM2 + 'linha minha', 'h2')
+  })
+
+  it('frontmatter: reloading the backend version splits the 409 content the same way', async () => {
+    const FM2 = '---\ncerne_id: N-0001\nextra: sim\n---\n\n'
+    api.saveEntityContent.mockResolvedValueOnce(conflict(FM2 + 'linha deles', 'h2')).mockResolvedValue({ ok: true })
+    editor(note({ content: FM + 'linha comum' }))
+    type('linha minha')
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Recarregar a versão do backend' }))
+    expect(source().value).toBe('linha deles')
+    expect(screen.queryByText('não gravado')).toBeNull()
+    type('linha deles, revista')
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(api.saveEntityContent).toHaveBeenLastCalledWith('note', 'N-0001', FM2 + 'linha deles, revista', 'h2'))
   })
 })
