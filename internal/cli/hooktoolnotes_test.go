@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"database/sql"
 	"os"
 	"path/filepath"
 	"strings"
@@ -317,5 +318,77 @@ func TestCodexApplyPatchEdit(t *testing.T) {
 	out, err = execCerneStdin(t, codexPatchJSON(t, "sess-unbound", projDir, "internal/a.go"), "hook", "work-gate")
 	if err != nil || !strings.Contains(out, `"permissionDecision":"deny"`) {
 		t.Fatalf("codex apply_patch on an unbound session not denied: %v\n%s", err, out)
+	}
+}
+
+// TestHookToolNotesEditWithCommandKey (critic finding 3): an edit tool whose
+// input carries both a command verb and a path (text-editor style) is an edit,
+// never a shell command.
+func TestHookToolNotesEditWithCommandKey(t *testing.T) {
+	projDir, _ := afterProject(t)
+	in := hookJSON(t, "sess-ed", projDir, "replace", map[string]any{"command": "git tag", "path": filepath.Join(projDir, "ui", "dist", "index.html")}, map[string]any{"llmContent": "ok"})
+	out, err := execCerneStdin(t, in, "hook", "tool-notes", "--after", "--format", "gemini")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ctx := channelEnvelope(t, out).HookSpecificOutput.AdditionalContext; ctx != afterEditHeader {
+		t.Fatalf("edit with a command key:\n%s", out)
+	}
+}
+
+// TestWorkGateNotesSilentOnPostToolHarnesses (critic finding 2, criterion
+// 10): the work gate in Copilot's and Gemini's own formats never shows nor
+// marks edit notes — those harnesses get them after the edit.
+func TestWorkGateNotesSilentOnPostToolHarnesses(t *testing.T) {
+	projDir, repoDir := afterProject(t)
+	cacheDir := filepath.Dir(repoDir)
+	patch := jsonString("*** Begin Patch\n*** Update File: ui/dist/index.html\n@@\n-a\n+b\n*** End Patch\n")
+	if out, err := execCerneStdin(t, copilotPayload("sess-wc", projDir, "PreToolUse", "Edit", patch, ""), "hook", "work-gate", "--format", "copilot"); err != nil || strings.Contains(out, "cerne notes") {
+		t.Fatalf("copilot work gate: err %v, out %q", err, out)
+	}
+	in := hookJSON(t, "sess-wg", projDir, "write_file", map[string]any{"file_path": filepath.Join(projDir, "ui", "dist", "index.html")}, nil)
+	if out, err := execCerneStdin(t, in, "hook", "work-gate", "--format", "gemini"); err != nil || strings.Contains(out, "cerne notes") {
+		t.Fatalf("gemini work gate: err %v, out %q", err, out)
+	}
+	for _, sess := range []string{"sess-wc", "sess-wg"} {
+		if len(app.SeenNotes(cacheDir, sess)) != 0 {
+			t.Errorf("%s: the work gate marked notes as seen", sess)
+		}
+	}
+	// Positive control (critic finding 8): a delivering call does mark, in
+	// this very cache dir.
+	if out, _ := execCerneStdin(t, editJSON(t, "sess-wclaude", projDir, "ui/dist/index.html"), "hook", "work-gate"); !strings.Contains(out, "N-0002") {
+		t.Fatalf("claude work gate did not deliver: %q", out)
+	}
+	if !app.SeenNotes(cacheDir, "sess-wclaude")["N-0002"] {
+		t.Fatal("positive control: the delivering call did not mark N-0002 in the cache dir the silent checks read")
+	}
+}
+
+// TestNoteWhenAfterOldIndex (critic finding 4): a project whose index was
+// built before declared triggers gets the trigger to the hook right after
+// note when (Update fails, the write path rebuilds), and --clear removes it.
+func TestNoteWhenAfterOldIndex(t *testing.T) {
+	projDir, repoDir := toolNotesProject(t, []string{"Tag on the merge commit"})
+	db, err := sql.Open("sqlite", filepath.Join(filepath.Dir(repoDir), "index.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`DROP TABLE note_when`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	if out, err := execCerne(t, "note", "when", "N-0001", "bash:git tag", "--dir", projDir); err != nil {
+		t.Fatalf("note when: %v\n%s", err, out)
+	}
+	out, err := execCerneStdin(t, bashJSON(t, "sess-old", projDir, "git tag v1"), "hook", "tool-notes")
+	if err != nil || !strings.Contains(out, "N-0001 — Tag on the merge commit") {
+		t.Fatalf("after note when on an old index: err %v, out %q", err, out)
+	}
+	if out, err := execCerne(t, "note", "when", "N-0001", "--clear", "--dir", projDir); err != nil {
+		t.Fatalf("note when --clear: %v\n%s", err, out)
+	}
+	if out, err := execCerneStdin(t, bashJSON(t, "sess-old2", projDir, "git tag v1"), "hook", "tool-notes"); err != nil || out != "" {
+		t.Fatalf("after --clear: err %v, out %q", err, out)
 	}
 }

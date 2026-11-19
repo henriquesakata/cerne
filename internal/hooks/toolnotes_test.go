@@ -180,3 +180,47 @@ func copilotWired(t *testing.T, raw []byte, event, matcher, invocation string) b
 	}
 	return false
 }
+
+// TestInstallUpgradesProviderFiles (critic finding 14): a .codex/hooks.json or
+// .gemini/settings.json written by a release before F-0457 gains the
+// tool-notes entry once, keeps a team's own entry, and a reinstall changes
+// nothing.
+func TestInstallUpgradesProviderFiles(t *testing.T) {
+	for _, tc := range []struct {
+		p           Provider
+		file, event string
+		matcher     string
+		cmd         string
+		old         string
+	}{
+		{ProviderCodex, ".codex/hooks.json", "PreToolUse", "Bash", "cerne hook tool-notes --format codex",
+			`{"hooks":{"PreToolUse":[{"matcher":"Edit|Write","hooks":[{"type":"command","command":"cerne hook work-gate"}]},{"matcher":"Bash","hooks":[{"type":"command","command":"echo team"}]}]}}`},
+		{ProviderGemini, ".gemini/settings.json", "AfterTool", "run_shell_command|write_file|replace", "cerne hook tool-notes --after --format gemini",
+			`{"hooks":{"AfterTool":[{"matcher":"run_shell_command","hooks":[{"type":"command","command":"cerne hook bind-work --format gemini"}]},{"matcher":"read_file","hooks":[{"type":"command","command":"echo team"}]}]}}`},
+	} {
+		dir := t.TempDir()
+		path := filepath.Join(dir, filepath.FromSlash(tc.file))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(tc.old), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Install(dir, tc.p); err != nil {
+			t.Fatal(err)
+		}
+		s, b := readSettingsHooks(t, path)
+		if !s.wired(tc.event, tc.matcher, tc.cmd) || !strings.Contains(string(b), "echo team") {
+			t.Fatalf("%s upgrade:\n%s", tc.p, b)
+		}
+		if n := strings.Count(string(b), tc.cmd); n != 1 {
+			t.Fatalf("%s: tool-notes wired %d times:\n%s", tc.p, n, b)
+		}
+		if _, err := Install(dir, tc.p); err != nil {
+			t.Fatal(err)
+		}
+		if again, _ := os.ReadFile(path); string(again) != string(b) {
+			t.Fatalf("%s: reinstall changed the file:\n%s", tc.p, again)
+		}
+	}
+}

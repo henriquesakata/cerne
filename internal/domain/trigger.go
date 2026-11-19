@@ -29,7 +29,13 @@ var (
 	ErrTriggerPath = errors.New("invalid trigger path")
 	// ErrTriggerEmpty is a trigger with nothing after its prefix.
 	ErrTriggerEmpty = errors.New("empty trigger")
+	// ErrTriggerWords is a bash: trigger holding a shell operator: commands
+	// are split on them, so such words could never match.
+	ErrTriggerWords = errors.New("invalid trigger words")
 )
+
+// shellOperators split a command into words (CommandTriggerWords).
+const shellOperators = ";&|()"
 
 // NormalizeTriggers validates each trigger and returns them in canonical form,
 // blanks dropped and duplicates removed (order-preserving): edit: paths with
@@ -55,6 +61,9 @@ func NormalizeTriggers(in []string) ([]string, error) {
 			words := strings.Fields(strings.TrimPrefix(t, triggerBash))
 			if len(words) == 0 {
 				return nil, fmt.Errorf("%w: %q — %s", ErrTriggerEmpty, raw, triggerForms)
+			}
+			if strings.ContainsAny(strings.Join(words, ""), shellOperators) {
+				return nil, fmt.Errorf("%w: %q holds a shell operator (%s); one trigger per command — %s", ErrTriggerWords, raw, shellOperators, triggerForms)
 			}
 			norm = triggerBash + strings.Join(words, " ")
 		default:
@@ -136,7 +145,7 @@ func CommandTriggerWords(trig, cmd string) int {
 		return 0
 	}
 	got := strings.FieldsFunc(cmd, func(r rune) bool {
-		return unicode.IsSpace(r) || strings.ContainsRune(";&|()", r)
+		return unicode.IsSpace(r) || strings.ContainsRune(shellOperators, r)
 	})
 	for i := 0; i+len(want) <= len(got); i++ {
 		match := true

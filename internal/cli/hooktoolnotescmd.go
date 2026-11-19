@@ -80,23 +80,21 @@ func runHookToolNotes(cmd *cobra.Command, format string, after bool) {
 			in.CWD = os.Getenv("COPILOT_PROJECT_DIR")
 		}
 	}
+	// A path makes the call an edit, whatever else its input carries (Codex's
+	// apply_patch has its patch under "command", a text editor a verb).
 	var ti struct {
 		Command string `json:"command"`
 	}
-	_ = json.Unmarshal(in.ToolInput, &ti)
-	if isPatch(ti.Command) { // Codex's apply_patch: an edit, not a shell command
-		ti.Command = ""
-	}
 	var edited string
-	if ti.Command == "" && after { // before an edit, the work gate already speaks (F-0366)
-		if paths := editedPaths(in.ToolInput); len(paths) > 0 {
-			edited = paths[0]
-			if !filepath.IsAbs(edited) { // Copilot's patch paths are relative to its cwd
-				edited = filepath.Join(in.CWD, edited)
-			}
+	if paths := editedPaths(in.ToolInput); len(paths) > 0 {
+		if !after {
+			return // before an edit, the work gate already speaks (F-0366)
 		}
-	}
-	if ti.Command == "" && edited == "" {
+		edited = paths[0]
+		if !filepath.IsAbs(edited) { // patch paths are relative to the cwd
+			edited = filepath.Join(in.CWD, edited)
+		}
+	} else if json.Unmarshal(in.ToolInput, &ti); ti.Command == "" {
 		return
 	}
 	cfg, projDir, err := project.LoadConfig(in.CWD)

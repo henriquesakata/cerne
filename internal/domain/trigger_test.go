@@ -42,6 +42,10 @@ func TestNormalizeTriggersRefusals(t *testing.T) {
 		{"edit:", ErrTriggerEmpty},
 		{"bash:", ErrTriggerEmpty},
 		{"bash:   ", ErrTriggerEmpty},
+		{"bash:git tag && git push", ErrTriggerWords},
+		{"bash:echo;ls", ErrTriggerWords},
+		{"bash:(git)", ErrTriggerWords},
+		{"bash:a|b", ErrTriggerWords},
 	}
 	for _, c := range cases {
 		got, err := NormalizeTriggers([]string{"bash:git tag", c.in})
