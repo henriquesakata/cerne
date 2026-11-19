@@ -84,6 +84,9 @@ func (g github) Create(ctx context.Context, it Item) (Ref, error) {
 
 // Update reads the issue and writes only what differs from it.
 func (g github) Update(ctx context.Context, r Ref, it Item) error {
+	if !digits(r.ID) {
+		return fmt.Errorf("%w: issue number %q", errBadRef, r.ID)
+	}
 	var iss ghIssue
 	if err := g.api(ctx, &iss, g.issues()+"/"+r.ID); err != nil {
 		return err
@@ -155,6 +158,9 @@ func (g github) ListOpen(ctx context.Context, label string) ([]Remote, error) {
 // the commitURL repository: #N in the same repository, owner/repo#N on the
 // same host, the issue URL anywhere else.
 func (g github) CommitRef(r Ref, commitURL string, closing bool) string {
+	if !digits(r.ID) {
+		return ""
+	}
 	word := "Refs"
 	if closing {
 		word = "Closes"

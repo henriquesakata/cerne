@@ -93,6 +93,8 @@ func runHookCommitTrailer(msgPath string) {
 			}
 		}
 	}
+	// A line with a line break would forge another trailer: never write it.
+	add = slices.DeleteFunc(add, func(l string) bool { return strings.ContainsAny(l, "\r\n") })
 	if len(add) == 0 {
 		return
 	}

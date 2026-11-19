@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/project"
@@ -65,7 +67,7 @@ func MirrorFeature(repoDir, projDir, id, trackerName, title, summary string) (st
 	link := store.MirrorRef{Tracker: tc.Name, Kind: tc.Kind, Title: title, Summary: summary}
 	ctx, cancel := context.WithTimeout(context.Background(), mirrorTimeout)
 	defer cancel()
-	r, createErr := tr.Create(ctx, mirrorItem(repoDir, f, link, cfg))
+	r, createErr := tr.Create(ctx, mirrorItem(repoDir, f, link, cfg, tr))
 	if r.URL == "" {
 		return store.Feature{}, fmt.Errorf("mirror %s -> %s: %w", id, tc.Name, createErr)
 	}
@@ -123,13 +125,16 @@ func pickTracker(cfg project.MirrorConfig, name string) (tracker.Config, error) 
 
 // mirrorItem is everything cerne publishes about f: its state, the public text
 // the link holds, and the successor's issue when f is superseded by a card
-// mirrored on the same tracker. A successor on another tracker is not cited:
-// its address is not this tracker's audience's to see.
-func mirrorItem(repoDir string, f store.Feature, link store.MirrorRef, cfg project.MirrorConfig) tracker.Item {
+// mirrored on the same tracker, an issue tr owns. A successor on another
+// tracker is not cited (its address is not this tracker's audience's to see),
+// nor a stored link the contract finds malformed.
+func mirrorItem(repoDir string, f store.Feature, link store.MirrorRef, cfg project.MirrorConfig, tr tracker.IssueTracker) tracker.Item {
 	it := tracker.Item{CardID: f.ID, State: f.State, Title: link.Title, Summary: link.Summary, NoReopen: cfg.CloseOn == "merge"}
 	if f.State == domain.StateSuperseded && f.SupersededBy != "" {
 		if s, err := store.LoadFeature(repoDir, f.SupersededBy); err == nil && s.Mirror != nil && s.Mirror.Tracker == link.Tracker {
-			it.Successor = &tracker.Ref{Tracker: s.Mirror.Tracker, ID: s.Mirror.ID, URL: s.Mirror.URL}
+			if r := (tracker.Ref{Tracker: s.Mirror.Tracker, ID: s.Mirror.ID, URL: s.Mirror.URL}); tr.Owns(r) {
+				it.Successor = &r
+			}
 		}
 	}
 	return it
@@ -180,7 +185,7 @@ func applyMirror(ctx context.Context, repoDir string, f store.Feature, cfg proje
 	if !tr.Owns(r) {
 		return notOwnedError{link: r.URL, trackerURL: cfg.Trackers[k].URL}
 	}
-	return tr.Update(ctx, r, mirrorItem(repoDir, f, *f.Mirror, cfg))
+	return tr.Update(ctx, r, mirrorItem(repoDir, f, *f.Mirror, cfg, tr))
 }
 
 // notOwnedError is a card's link to an issue the tracker of that name no
@@ -188,7 +193,11 @@ func applyMirror(ctx context.Context, repoDir string, f store.Feature, cfg proje
 type notOwnedError struct{ link, trackerURL string }
 
 func (e notOwnedError) Error() string {
-	return fmt.Sprintf("link %s is not on %s; re-link or restore the tracker", e.link, e.trackerURL)
+	link := e.link
+	if strings.ContainsFunc(link, unicode.IsControl) { // a forged link: never a raw line break in a warning
+		link = strconv.Quote(link)
+	}
+	return fmt.Sprintf("link %s is not on %s; re-link or restore the tracker", link, e.trackerURL)
 }
 
 // transitionIDs is every card a transition moved: the card itself, the epics

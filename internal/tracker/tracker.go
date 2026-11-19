@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/henriquesakata/cerne/internal/domain"
 )
@@ -76,5 +77,65 @@ func New(c Config) (IssueTracker, error) {
 	if !ok {
 		return nil, fmt.Errorf("%w %q (supported: %s)", ErrUnknownKind, c.Kind, strings.Join(KindNames(), ", "))
 	}
-	return mk(c)
+	tr, err := mk(c)
+	if err != nil {
+		return nil, err
+	}
+	return checked{tr}, nil
 }
+
+// errBadRef is an issue ref with a control character in its id or URL, or a
+// URL that is not https: it could forge a line in a commit message.
+var errBadRef = errors.New("malformed issue ref")
+
+// checked is what New hands out: the adapter, with every ref it answers
+// (Create, ListOpen) and every ref it is given from the backend (Update,
+// CommitRef, Owns) checked by validRef, so no adapter has to remember to
+// (F-0449). The core passes a successor only when Owns accepts it.
+type checked struct{ IssueTracker }
+
+func validRef(r Ref) bool {
+	if r.ID == "" || strings.ContainsFunc(r.ID+r.URL, unicode.IsControl) {
+		return false
+	}
+	u, err := url.Parse(r.URL)
+	return err == nil && u.Scheme == "https" && u.Host != "" && u.User == nil
+}
+
+func (c checked) Create(ctx context.Context, it Item) (Ref, error) {
+	r, err := c.IssueTracker.Create(ctx, it)
+	if r != (Ref{}) && !validRef(r) {
+		return Ref{}, fmt.Errorf("%w: the tracker answered id %q, url %q", errBadRef, r.ID, r.URL)
+	}
+	return r, err
+}
+
+func (c checked) Update(ctx context.Context, r Ref, it Item) error {
+	if !validRef(r) {
+		return fmt.Errorf("%w: id %q, url %q", errBadRef, r.ID, r.URL)
+	}
+	return c.IssueTracker.Update(ctx, r, it)
+}
+
+func (c checked) ListOpen(ctx context.Context, label string) ([]Remote, error) {
+	list, err := c.IssueTracker.ListOpen(ctx, label)
+	var out []Remote
+	for _, rm := range list {
+		if validRef(rm.Ref) {
+			out = append(out, rm)
+		}
+	}
+	return out, err
+}
+
+func (c checked) CommitRef(r Ref, commitURL string, closing bool) string {
+	if !validRef(r) {
+		return ""
+	}
+	if s := c.IssueTracker.CommitRef(r, commitURL, closing); !strings.ContainsFunc(s, unicode.IsControl) {
+		return s
+	}
+	return ""
+}
+
+func (c checked) Owns(r Ref) bool { return validRef(r) && c.IssueTracker.Owns(r) }
