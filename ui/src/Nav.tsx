@@ -28,6 +28,7 @@ const GROUPS: { key: keyof Messages['nav']; items: NavItem[] }[] = [
   {
     key: 'groupKnowledge',
     items: [
+      { href: '#/vault', key: 'vault' },
       { href: '#/decisions', key: 'decisions' },
       { href: '#/references', key: 'references' },
       { href: '#/runbooks', key: 'runbooks' },
@@ -68,6 +69,7 @@ function activeHref(hash: string): string {
   if (hash === '#/ideas' || hash.startsWith('#/ideas?')) return '#/ideas'
   if (hash.startsWith('#/rooms')) return '#/rooms'
   if (hash.startsWith('#/manage') || hash.startsWith('#/new') || hash.startsWith('#/bug')) return '#/manage'
+  if (hash.startsWith('#/vault')) return '#/vault'
   if (hash.startsWith('#/decisions') || hash.startsWith('#/d/')) return '#/decisions'
   if (hash.startsWith('#/references') || hash.startsWith('#/r/')) return '#/references'
   if (hash.startsWith('#/runbooks') || hash.startsWith('#/rb/')) return '#/runbooks'

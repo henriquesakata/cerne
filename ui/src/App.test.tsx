@@ -53,6 +53,7 @@ let mockProjects: ProjectInfo[] = []
 
 // O Grafo real puxa React Flow; aqui basta saber se a rota o monta.
 vi.mock('./Graph', () => ({ default: () => <p>grafo montado</p> }))
+vi.mock('./Vault', () => ({ default: ({ hash }: { hash: string }) => <p>cofre montado em {hash}</p> }))
 
 vi.mock('./notifications', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./notifications')>()),
@@ -129,6 +130,14 @@ describe('App — rota do Grafo governada por graph.enabled (F-0315)', () => {
     window.location.hash = '#/graph'
     render(<App />)
     expect(await screen.findByText('grafo montado')).toBeInTheDocument()
+  })
+})
+
+describe('App — rota do Cofre (F-0463)', () => {
+  it.each(['#/vault', '#/vault/D-0001/spec'])('%s monta o Cofre, carregado sob demanda', async (hash) => {
+    window.location.hash = hash
+    render(<App />)
+    expect(await screen.findByText(`cofre montado em ${hash}`)).toBeInTheDocument()
   })
 })
 

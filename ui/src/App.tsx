@@ -38,6 +38,7 @@ import './app.css'
 // Grafo e Mindmap carregam React Flow (pesado) sob demanda.
 const Graph = lazy(() => import('./Graph'))
 const Mindmap = lazy(() => import('./Mindmap'))
+const Vault = lazy(() => import('./Vault'))
 
 // Roteamento mínimo por hash: lista de seções + rotas de detalhe
 // (#/f/<id>, #/d/<id>, #/r/<id>). Rota desconhecida cai no kanban.
@@ -114,6 +115,12 @@ function Routed({ hash }: { hash: string }) {
   if (costDetail) return <CostDetailPage key={costDetail[1]} id={decodeOr(costDetail[1])} />
   const wikiPage = /^#\/wiki\/(.+)$/.exec(hash)
   if (wikiPage) return <WikiPageView key={wikiPage[1]} rel={decodeURIComponent(wikiPage[1])} />
+  if (hash === '#/vault' || hash.startsWith('#/vault/'))
+    return (
+      <Suspense fallback={<p className="status">{t.vault.loadingChunk}</p>}>
+        <Vault hash={hash} />
+      </Suspense>
+    )
   if (hash === '#/decisions') return <Decisions />
   if (hash === '#/references') return <References />
   if (hash === '#/runbooks') return <Runbooks />
