@@ -25,7 +25,7 @@ func SaveSessionSnapshot(projDir, sha string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	return writeFileAtomic(dir, snapshotFilename, []byte(sha+"\n"))
+	return WriteFileAtomic(dir, snapshotFilename, []byte(sha+"\n"))
 }
 
 // LoadSessionSnapshot reads <projDir>/.docs/.snapshot. ErrNoSessionSnapshot

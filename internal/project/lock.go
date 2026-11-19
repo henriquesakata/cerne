@@ -30,7 +30,7 @@ func SaveLock(dir string, l Lock) error {
 	if err != nil {
 		return err
 	}
-	return writeFileAtomic(dir, lockFilename, append(data, '\n'))
+	return WriteFileAtomic(dir, lockFilename, append(data, '\n'))
 }
 
 // LoadLock reads <dir>/docs.lock; ErrNoLock when missing.

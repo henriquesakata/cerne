@@ -39,7 +39,7 @@ const csv = (s: string) =>
 // with the chips of the pendings' (F-0419: the idea follows their pattern).
 const IDEA_STATES = ['active', 'resolved', 'dropped', 'promoted', 'all'] as const
 type StateFilter = (typeof IDEA_STATES)[number]
-const CHIP: Record<Exclude<Idea['state'], 'active'>, string> = {
+export const CHIP: Record<Exclude<Idea['state'], 'active'>, string> = {
   resolved: 'chip-done',
   dropped: 'chip-obsolete',
   promoted: 'chip-implemented',

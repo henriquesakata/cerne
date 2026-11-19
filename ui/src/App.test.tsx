@@ -35,6 +35,7 @@ vi.mock('./api', async (importOriginal) => ({
   fetchPendings: vi.fn(async () => []),
   fetchIdeas: vi.fn(async () => []),
   fetchHandoffs: vi.fn(async () => []),
+  fetchMirror: vi.fn(async () => ({ enabled: false, trackers: [], cards: [], ideas: [], lastSync: null })),
   fetchHandoff: vi.fn(async () => { throw new Error('handoff not found') }),
   fetchCosts: vi.fn(async () => { throw new Error('costs down') }),
   fetchCostDetail: vi.fn(async () => { throw new Error('feature not found: F-0001') }),
@@ -232,6 +233,18 @@ describe('App — pendências e ideias (F-0334)', () => {
     expect(h1).not.toHaveClass('sr-only')
     expect(screen.queryByRole('heading', { level: 2, name: 'Ideias' })).toBeNull()
     expect(screen.getByPlaceholderText('Anote uma ideia e tecle Enter…')).toBeInTheDocument()
+  })
+
+  it('#/mirror monta a aba Espelho (F-0465)', async () => {
+    window.location.hash = '#/mirror'
+    render(<App />)
+    expect(await screen.findByRole('heading', { level: 1, name: 'Espelho' })).toBeInTheDocument()
+  })
+
+  it('#/mirrorfoo não monta o Espelho (F-0465)', async () => {
+    window.location.hash = '#/mirrorfoo'
+    render(<App />)
+    expect(await screen.findByRole('heading', { level: 1, name: 'Dashboard' })).toBeInTheDocument()
   })
 
   it('#/ideas?state=… também monta o painel, com o filtro (F-0416 crit. 3)', async () => {

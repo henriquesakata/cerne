@@ -72,6 +72,7 @@ func newMirrorSyncCmd(dir *string) *cobra.Command {
 				}
 			}
 			printWarnings(cmd.ErrOrStderr(), rep.Warnings)
+			printWarnings(cmd.ErrOrStderr(), rep.Notes) // a note never fails the command
 			if err != nil {
 				return err
 			}

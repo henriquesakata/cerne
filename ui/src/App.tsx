@@ -21,6 +21,7 @@ import ReportBug from './ReportBug'
 import StatsPage from './Stats'
 import Activity from './Activity'
 import Handoffs, { HandoffPage } from './Handoffs'
+import Mirror from './Mirror'
 import Costs, { CostDetailPage } from './Costs'
 import Dashboard from './Dashboard'
 import WarRoom, { WarRoomDetail } from './WarRoom'
@@ -169,6 +170,7 @@ function Routed({ hash }: { hash: string }) {
   if (hash === '#/bug') return <ReportBug />
   if (hash === '#/pendings' || hash.startsWith('#/pendings?')) return <Pendings hash={hash} />
   if (hash === '#/ideas' || hash.startsWith('#/ideas?')) return <IdeasPage hash={hash} />
+  if (hash === '#/mirror' || hash.startsWith('#/mirror?')) return <Mirror />
   if (hash === '#/kanban') return <Kanban />
   if (hash === '#/backlog') return <Backlog />
   if (hash === '#/rooms') return <WarRoom />

@@ -562,7 +562,7 @@ func TestSetThenUnsetRestoresFile(t *testing.T) {
 // TestConfigWritesKeepModeAndFollowSymlinks (critic C7): a rewrite keeps the
 // file's mode bits (a new file gets 0644, as git checks one out) and writes
 // through a symlink to its target, keeping the link: true of the settings
-// writers and of writeFileAtomic (SaveConfig, docs.lock).
+// writers and of WriteFileAtomic (SaveConfig, docs.lock).
 func TestConfigWritesKeepModeAndFollowSymlinks(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX mode bits and symlinks")

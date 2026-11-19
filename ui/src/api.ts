@@ -564,6 +564,88 @@ export async function fetchHandoff(id: string): Promise<Handoff> {
   return (await r.json()) as Handoff
 }
 
+// Aba Espelho (F-0465): somente leitura. A conferência só lista as issues abertas
+// em cada tracker; os commits vêm do git local do projeto.
+export type MirrorIssue = { id: string; url: string }
+
+export type MirrorCard = {
+  id: string
+  title: string
+  state: FeatureState
+  tracker: string
+  ref: MirrorIssue
+}
+
+export type MirrorIdea = {
+  id: string
+  title: string
+  state: Idea['state']
+  tracker: string
+  issueId: string
+  url: string
+}
+
+export type MirrorTrackerRun = { name: string; synced: number; imported: number; errors: string[] }
+
+export type MirrorOverview = {
+  enabled: boolean
+  trackers: { name: string; kind: string; url: string }[]
+  cards: MirrorCard[]
+  ideas: MirrorIdea[]
+  lastSync: { at: string; trackers: MirrorTrackerRun[] } | null
+}
+
+export type MirrorReason =
+  | 'tracker-failed'
+  | 'tracker-unknown'
+  | 'list-capped'
+  | 'open-but-card-closed'
+  | 'closed-but-card-open'
+
+export type MirrorCheck = {
+  id: string
+  status: 'ok' | 'drift' | 'unchecked'
+  reason?: MirrorReason
+  detail?: string
+}
+
+export type MirrorCheckOutcome =
+  | { kind: 'ok'; results: MirrorCheck[] }
+  | { kind: 'off' }
+  | { kind: 'error'; message: string }
+
+export type MirrorCommits = {
+  repo: boolean
+  commits: { sha: string; subject: string; url?: string }[]
+}
+
+export async function fetchMirror(): Promise<MirrorOverview> {
+  const r = await fetch(`${base()}/mirror`)
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return (await r.json()) as MirrorOverview
+}
+
+// postMirrorCheck never throws: 409 is the mirror being off, anything else a message.
+export async function postMirrorCheck(): Promise<MirrorCheckOutcome> {
+  try {
+    const r = await fetch(`${base()}/mirror/check`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    })
+    if (r.status === 409) return { kind: 'off' }
+    if (!r.ok) return { kind: 'error', message: await errorMessage(r) }
+    return { kind: 'ok', results: ((await r.json()) as { results: MirrorCheck[] | null }).results ?? [] }
+  } catch (e) {
+    return { kind: 'error', message: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+export async function fetchMirrorCommits(id: string): Promise<MirrorCommits> {
+  const r = await fetch(`${base()}/mirror/commits/${encodeURIComponent(id)}`)
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return (await r.json()) as MirrorCommits
+}
+
 // fetchVersion devolve a versão do binário que está servindo a UI (F-0129).
 export async function fetchVersion(): Promise<string> {
   const r = await fetch(`${base()}/version`)
