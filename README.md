@@ -342,6 +342,7 @@ cerne has no hosted service. There is no account to create, and no usage telemet
 | The dashboard | Served by the binary on `127.0.0.1:7717`, with every asset embedded | While `cerne ui` runs |
 | Prompts for `cerne ask`, the authoring helpers, `compile`, `import --agent` and the Backlog chat | With no `llm.mode` set, the first subscription CLI cerne finds on your `PATH` (`claude`, `codex`, `gemini`, then `cursor-agent` on `main`), so the prompt goes to that vendor under your subscription. With an API key or a gateway set in Settings › AI, to that provider (Anthropic, OpenAI, Gemini, OpenRouter or any OpenAI-compatible endpoint, including a local one). With `llm.mode` set to `delegation`, nowhere: the agent you already run answers | Only when you use those features. Settings › AI shows which mode is in use and where that choice came from |
 | PR/MR lookups for a feature's delivery commit | Your forge, through `gh` or `glab`, or the Gitea API | Only when `[delivery]` is configured in `.cernerc` |
+| The public title and summary, id and state of a card a human mirrored | The issue tracker named in `mirror.trackers`, through `gh` | Only after `cerne feature mirror`, with `mirror.enabled` on. Off by default |
 | Traces | An OTLP endpoint you set (`[telemetry] otlp_endpoint` or `OTEL_EXPORTER_OTLP_ENDPOINT`) | Off by default. Prometheus metrics are exposed on the local server and sent nowhere |
 | Webhook notifications on state transitions | A URL you set | Off by default |
 

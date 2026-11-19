@@ -17,6 +17,29 @@ While cerne is below 1.0.0, a minor version may change behavior: read the
   `io.github.henriquesakata/cerne`. A client that installs MCP Bundles asks
   for the project folder and starts the server on it.
 
+- Issue mirror (F-0449). A human publishes a card to GitHub Issues with
+  `cerne feature mirror <id> --title <public title> --summary <public summary>`;
+  only that public text, the card id and its state leave the backend. The issue
+  then follows the card's state on every transition: open with a
+  `cerne:<state>` label, closed as completed on accept, closed as not planned on
+  reject and supersede. A failed or slow tracker never blocks the transition: it
+  prints one warning line, and `cerne mirror sync` reapplies the state. The sync
+  also imports outside issues as ideas, and promoting one hands its issue to the
+  card. With the mirror on, `prepare-commit-msg` adds `Refs:` (or `Closes:` with
+  `mirror.close_on = "merge"`) for the cards a commit cites in its `Cerne:`
+  trailers. Off by default; `mirror.enabled` and `mirror.trackers` are
+  human-only.
+- Settings › Integrations shows `delivery.forge`, `delivery.commit_url`,
+  `delivery.pr_url`, `mirror.enabled`, `mirror.trackers` and
+  `mirror.close_on`. The existing `[delivery]` block is read and written as it
+  is. `mirror.trackers` is a list of trackers, edited as a table in the UI and as
+  JSON in `cerne settings set`.
+
+### Changed
+
+- A human-only switch in Settings asks before it moves away from its default:
+  turning the mirror on now asks, as turning the Gauntlet off already did.
+
 ## [0.14.3] - 2026-11-18
 
 ### Added
