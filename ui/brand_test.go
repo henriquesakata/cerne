@@ -22,8 +22,10 @@ var (
 	// The favicon's stylesheet: the rules for a light tab, then the ones a
 	// dark colour scheme swaps in.
 	// Every .nav-mark rule of the dashboard's stylesheet, body captured.
-	navMarkRE = regexp.MustCompile(`\.nav-mark\s*\{([^}]*)\}`)
-	schemeRE  = regexp.MustCompile(`<style>(.*)@media\s*\(prefers-color-scheme:\s*dark\)\s*\{(.*)\}</style>`)
+	navMarkRE    = regexp.MustCompile(`\.nav-mark\s*\{([^}]*)\}`)
+	navMarkOffRE = regexp.MustCompile(`\.nav-mark\s*\{\s*display:\s*none;?\s*\}`)
+	navMarkOnRE  = regexp.MustCompile(`@supports \(mask-image: none\) or \(-webkit-mask-image: none\)\s*\{\s*\.nav-mark\s*\{([^}]*)\}\s*\}`)
+	schemeRE     = regexp.MustCompile(`<style>(.*)@media\s*\(prefers-color-scheme:\s*dark\)\s*\{(.*)\}</style>`)
 )
 
 const (
@@ -303,24 +305,31 @@ func TestReadmeShowsMarkInBothThemes(t *testing.T) {
 // in the ink of the name. One drawing, and it follows the dashboard's theme
 // instead of the system's.
 func TestNavMarkIsAMaskOfTheFavicon(t *testing.T) {
-	rules := navMarkRE.FindAllStringSubmatch(readRepoFile(t, "ui/src/app.css"), -1)
-	if len(rules) == 0 {
-		t.Fatal("app.css has no .nav-mark rule")
+	css := readRepoFile(t, "ui/src/app.css")
+
+	// Outside the guard the span draws nothing: a browser without masks must
+	// not show a solid square.
+	if !navMarkOffRE.MatchString(css) {
+		t.Error("app.css has no base rule .nav-mark { display: none; }")
 	}
-	painted := false
-	for _, r := range rules {
-		rule := r[1]
-		if inks := inksOf(rule); len(inks) != 0 {
+	guarded := navMarkOnRE.FindStringSubmatch(css)
+	if guarded == nil {
+		t.Fatal("the rule that paints .nav-mark is not inside @supports (mask-image: none) or (-webkit-mask-image: none)")
+	}
+	for name, want := range map[string]*regexp.Regexp{
+		"display: inline-block":          regexp.MustCompile(`(^|[;\s])display:\s*inline-block\s*;`),
+		"background: currentColor":       regexp.MustCompile(`(^|[;\s])background:\s*currentColor\s*;`),
+		"-webkit-mask over /favicon.svg": regexp.MustCompile(`(^|[;\s])-webkit-mask:\s*url\(/favicon\.svg\)`),
+		"mask over /favicon.svg":         regexp.MustCompile(`(^|[;\s])mask:\s*url\(/favicon\.svg\)`),
+	} {
+		if !want.MatchString(guarded[1]) {
+			t.Errorf("the guarded .nav-mark rule lacks %s", name)
+		}
+	}
+	for _, r := range navMarkRE.FindAllStringSubmatch(css, -1) {
+		if inks := inksOf(r[1]); len(inks) != 0 {
 			t.Errorf("a .nav-mark rule fixes the colour %v, want only currentColor", inks)
 		}
-		if strings.Contains(rule, "background: currentColor") &&
-			strings.Contains(rule, "-webkit-mask: url(/favicon.svg)") &&
-			strings.Contains(rule, " mask: url(/favicon.svg)") {
-			painted = true
-		}
-	}
-	if !painted {
-		t.Error("no .nav-mark rule paints currentColor through a mask of /favicon.svg")
 	}
 
 	nav := readRepoFile(t, "ui/src/Nav.tsx")

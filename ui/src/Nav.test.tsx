@@ -371,6 +371,7 @@ describe('Mark in the wordmark (F-0462)', () => {
     expect(mark).not.toBeNull()
     expect(mark).toHaveAttribute('aria-hidden', 'true')
     expect(brand!.firstElementChild).toBe(mark)
-    expect((brand!.textContent ?? '').trim().startsWith('cerne')).toBe(true)
+    // The text right after the mark is the name itself; the version tag is a separate element.
+    expect((mark!.nextSibling?.textContent ?? '').trim()).toBe('cerne')
   })
 })
