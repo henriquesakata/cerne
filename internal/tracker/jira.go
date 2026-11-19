@@ -579,6 +579,22 @@ func (j jira) ListOpen(ctx context.Context, label string) ([]Remote, error) {
 	return out, nil
 }
 
-func (j jira) CommitRef(Ref, string, bool) string { return "" }
+// CommitRef is "Refs: <KEY>-<n>", whatever forge hosts the code: Jira links
+// a commit to the issue whose key its message names. Jira closes nothing on
+// a merge, so closing changes nothing.
+func (j jira) CommitRef(r Ref, _ string, _ bool) string {
+	if !j.ownKey(r.ID) {
+		return ""
+	}
+	return "Refs: " + r.ID
+}
 
-func (j jira) Owns(Ref) bool { return false }
+// Owns reports whether r is an issue of this project on this site,
+// https://<site>[/<context>]/browse/<KEY>-<n> with that key for id: the
+// link a card holds is checked before a tracker re-pointed since could act
+// on an issue of another project.
+func (j jira) Owns(r Ref) bool {
+	u, err := url.Parse(r.URL)
+	return err == nil && u.Scheme == "https" && u.User == nil && j.ownKey(r.ID) && strings.EqualFold(u.Host, j.host) &&
+		strings.TrimSuffix(u.Path, "/") == j.root+"/browse/"+r.ID
+}

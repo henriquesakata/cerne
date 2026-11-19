@@ -1175,3 +1175,62 @@ func jiraSameJSON(a, b json.RawMessage) bool {
 	var x, y any
 	return json.Unmarshal(a, &x) == nil && json.Unmarshal(b, &y) == nil && reflect.DeepEqual(x, y)
 }
+
+// F-0453 crit. 5: the trailer is "Refs: <KEY>-<n>", whatever forge hosts the
+// code: Jira links a commit by the key in its message. Jira closes nothing
+// on a merge, so closing (mirror.close_on = "merge") changes nothing. It is
+// pure: no request.
+func TestJiraCommitRef(t *testing.T) {
+	reqs := installJira(t, jiraEmail, http.NotFoundHandler())
+	tr := newJiraTracker(t, jiraCloud)
+	r := tracker.Ref{Tracker: "jt", ID: "PROJ-123", URL: "https://acme.atlassian.net/browse/PROJ-123"}
+	for _, commitURL := range []string{"https://github.com/o/r/commit/{sha}", "https://gitlab.com/o/r/-/commit/{sha}", ""} {
+		for _, closing := range []bool{false, true} {
+			if got := tr.CommitRef(r, commitURL, closing); got != "Refs: PROJ-123" {
+				t.Errorf("CommitRef(%q, closing=%v) = %q, want %q", commitURL, closing, got, "Refs: PROJ-123")
+			}
+		}
+	}
+	for _, id := range []string{"OTHER-123", "PROJ-", "PROJ-12a", "123"} {
+		if got := tr.CommitRef(tracker.Ref{Tracker: "jt", ID: id, URL: "https://acme.atlassian.net/browse/" + id}, "", false); got != "" {
+			t.Errorf("CommitRef(id %q) = %q, want none", id, got)
+		}
+	}
+	if len(*reqs) != 0 {
+		t.Fatalf("CommitRef sent %d requests, want none", len(*reqs))
+	}
+}
+
+// F-0453 crit. 5: Owns accepts only https://<site>[/<context>]/browse/<KEY>-<n>
+// of the configured site and project, whose id is that key; it refuses
+// another host, another project, another context and a malformed id.
+func TestJiraOwns(t *testing.T) {
+	reqs := installJira(t, jiraEmail, http.NotFoundHandler())
+	cloud, dc := newJiraTracker(t, jiraCloud), newJiraTracker(t, jiraDC)
+	ref := func(id, u string) tracker.Ref { return tracker.Ref{Tracker: "jt", ID: id, URL: u} }
+	for _, c := range []struct {
+		name string
+		tr   tracker.IssueTracker
+		r    tracker.Ref
+		want bool
+	}{
+		{"cloud issue", cloud, ref("PROJ-12", "https://acme.atlassian.net/browse/PROJ-12"), true},
+		{"host in other case", cloud, ref("PROJ-12", "https://ACME.atlassian.net/browse/PROJ-12"), true},
+		{"data center issue under its context", dc, ref("PROJ-3", "https://jira.example/jira/browse/PROJ-3"), true},
+		{"other host", cloud, ref("PROJ-12", "https://evil.atlassian.net/browse/PROJ-12"), false},
+		{"other project", cloud, ref("OTHER-12", "https://acme.atlassian.net/browse/OTHER-12"), false},
+		{"id and URL disagree", cloud, ref("PROJ-12", "https://acme.atlassian.net/browse/PROJ-13"), false},
+		{"malformed id", cloud, ref("PROJ-x", "https://acme.atlassian.net/browse/PROJ-x"), false},
+		{"bare number", cloud, ref("12", "https://acme.atlassian.net/browse/12"), false},
+		{"missing context", dc, ref("PROJ-3", "https://jira.example/browse/PROJ-3"), false},
+		{"not browse", cloud, ref("PROJ-12", "https://acme.atlassian.net/issues/PROJ-12"), false},
+		{"http", cloud, ref("PROJ-12", "http://acme.atlassian.net/browse/PROJ-12"), false},
+	} {
+		if got := c.tr.Owns(c.r); got != c.want {
+			t.Errorf("%s: Owns(%+v) = %v, want %v", c.name, c.r, got, c.want)
+		}
+	}
+	if len(*reqs) != 0 {
+		t.Fatalf("Owns sent %d requests, want none", len(*reqs))
+	}
+}
