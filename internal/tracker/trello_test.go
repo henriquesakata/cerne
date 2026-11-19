@@ -866,3 +866,79 @@ func TestTrelloListOpenCapsAt100(t *testing.T) {
 		t.Fatalf("ListOpen listed %d cards, want Open 0 to Open 99", len(list))
 	}
 }
+
+// F-0451 crit. 5: Trello reads no keyword in a commit message, so the trailer
+// is the card's URL, Refs whether or not the commit closes, wherever the code
+// lives. It is pure: no request.
+func TestTrelloCommitRefIsURL(t *testing.T) {
+	w := installTrello(t, trelloKey, trelloToken, trelloEmpty())
+	tr := newTrelloTracker(t, trelloBoardURL)
+	r := tracker.Ref{Tracker: "tt", ID: "AbCd1234", URL: "https://trello.com/c/AbCd1234"}
+	for _, commitURL := range []string{"https://github.com/o/r/commit/{sha}", "https://trello.com/o/r/commit/{sha}", ""} {
+		for _, closing := range []bool{false, true} {
+			if got, want := tr.CommitRef(r, commitURL, closing), "Refs: https://trello.com/c/AbCd1234"; got != want {
+				t.Errorf("CommitRef(%q, closing=%v) = %q, want %q", commitURL, closing, got, want)
+			}
+		}
+	}
+	if got := tr.CommitRef(tracker.Ref{Tracker: "tt", ID: "AbCd", URL: "https://trello.com/c/AbCd"}, "", false); got != "" {
+		t.Errorf("CommitRef(malformed shortLink) = %q, want none", got)
+	}
+	if len(w.reqs) != 0 || len(w.asked) != 0 {
+		t.Fatalf("CommitRef sent %d requests and asked for %d credentials, want none", len(w.reqs), len(w.asked))
+	}
+}
+
+// F-0451 crit. 5: a card URL does not name its board, so a link left by a
+// tracker since re-pointed at another board passes Owns; Update reads the
+// card and refuses it, writing nothing, when it is not on this board.
+func TestTrelloUpdateRefusesForeignBoard(t *testing.T) {
+	fk := newTrelloFake(t)
+	foreign := fk.seed(fk.addOpenList(fk.boards[trelloOther], "Inbox"), "Someone else's card", "Their body")
+	tr := newTrelloTracker(t, trelloBoardURL)
+	if !tr.Owns(foreign) {
+		t.Fatalf("Owns(%+v) = false; the case needs a ref of the right form", foreign)
+	}
+	err := tr.Update(context.Background(), foreign, publicItem("F-0001", domain.StateRejected))
+	if !errors.Is(err, tracker.ErrTrackerURL) || !strings.Contains(err.Error(), foreign.ID) {
+		t.Fatalf("Update(card on another board) = %v, want errors.Is ErrTrackerURL naming %s", err, foreign.ID)
+	}
+	c := fk.card(foreign.ID)
+	if c.Closed || c.Name != "Someone else's card" || c.Desc != "Their body" || fk.at(c) != "Inbox" || len(c.Comments) != 0 {
+		t.Fatalf("the foreign card changed: %+v", c)
+	}
+	for _, req := range fk.wire.reqs {
+		if u, _ := url.Parse(req.url); strings.HasPrefix(u.Path, "/1/cards/") && req.method != http.MethodGet {
+			t.Fatalf("a refused update sent %s %s", req.method, req.url)
+		}
+	}
+
+	// An answer with no board id proves nothing: the card is refused, even
+	// when the card's own idBoard is missing too.
+	t.Run("no board id", func(t *testing.T) {
+		w := installTrello(t, trelloKey, trelloToken, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet {
+				http.Error(w, "read only", http.StatusMethodNotAllowed)
+				return
+			}
+			if strings.HasPrefix(r.URL.Path, "/1/cards/") {
+				trelloReply(w, map[string]any{"id": "1", "shortLink": "AbCd1234", "name": "N", "desc": "D", "idList": "l1"})
+				return
+			}
+			var lists []map[string]any
+			for i, name := range trelloLifecycle {
+				lists = append(lists, map[string]any{"id": fmt.Sprint("l", i+1), "name": name, "pos": i + 1})
+			}
+			trelloReply(w, lists)
+		}))
+		r := tracker.Ref{Tracker: "tt", ID: "AbCd1234", URL: "https://trello.com/c/AbCd1234"}
+		if err := newTrelloTracker(t, trelloBoardURL).Update(context.Background(), r, publicItem("F-0001", domain.StateApproved)); !errors.Is(err, tracker.ErrTrackerURL) {
+			t.Fatalf("Update with no board id = %v, want errors.Is ErrTrackerURL", err)
+		}
+		for _, req := range w.reqs {
+			if req.method != http.MethodGet {
+				t.Fatalf("a refused update sent %s %s", req.method, req.url)
+			}
+		}
+	})
+}

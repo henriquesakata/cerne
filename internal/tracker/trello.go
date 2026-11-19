@@ -46,9 +46,10 @@ func newTrello(c Config) (IssueTracker, error) {
 // trelloCall is one public call: the login is read once, and the lists live
 // only until the call returns.
 type trelloCall struct {
-	t     trello
-	auth  string                         // the Authorization header
-	lists map[domain.FeatureState]string // state -> list id; nil until resolved
+	t       trello
+	auth    string                         // the Authorization header
+	lists   map[domain.FeatureState]string // state -> list id; nil until resolved
+	boardID string                         // the board's long id, as a card's idBoard carries it; "" until resolved
 }
 
 func (t trello) call(ctx context.Context) (*trelloCall, error) {
@@ -121,9 +122,10 @@ const trelloDone = "Done"
 
 // trelloList is the part of a Trello list the adapter reads.
 type trelloList struct {
-	ID   string  `json:"id"`
-	Name string  `json:"name"`
-	Pos  float64 `json:"pos"`
+	ID      string  `json:"id"`
+	Name    string  `json:"name"`
+	Pos     float64 `json:"pos"`
+	IDBoard string  `json:"idBoard"`
 }
 
 // trelloKey is a list name with its case and spaces dropped: the form two
@@ -133,7 +135,7 @@ func trelloKey(name string) string { return strings.ToLower(strings.Join(strings
 // openLists reads the board's open lists, in board order.
 func (c *trelloCall) openLists(ctx context.Context) ([]trelloList, error) {
 	var ls []trelloList
-	if err := c.do(ctx, http.MethodGet, "/boards/"+c.t.board+"/lists?filter=open&fields=name,pos", nil, &ls); err != nil {
+	if err := c.do(ctx, http.MethodGet, "/boards/"+c.t.board+"/lists?filter=open&fields=name,pos,idBoard", nil, &ls); err != nil {
 		return nil, err
 	}
 	slices.SortStableFunc(ls, func(a, b trelloList) int { return cmp.Compare(a.Pos, b.Pos) })
@@ -143,7 +145,8 @@ func (c *trelloCall) openLists(ctx context.Context) ([]trelloList, error) {
 // resolve finds the list of each lifecycle state: the first open list, in
 // board order, whose name matches. A list the board lacks (or that a third
 // party renamed or archived) is created, at the end of the board, in
-// lifecycle order; a duplicate never is.
+// lifecycle order; a duplicate never is. The lists' idBoard is the board's
+// long id.
 func (c *trelloCall) resolve(ctx context.Context) error {
 	ls, err := c.openLists(ctx)
 	if err != nil {
@@ -154,6 +157,7 @@ func (c *trelloCall) resolve(ctx context.Context) error {
 		if _, dup := byKey[trelloKey(l.Name)]; !dup {
 			byKey[trelloKey(l.Name)] = l
 		}
+		c.boardID = l.IDBoard
 	}
 	c.lists = map[domain.FeatureState]string{}
 	for _, want := range trelloLists {
@@ -164,6 +168,7 @@ func (c *trelloCall) resolve(ctx context.Context) error {
 			}
 		}
 		c.lists[want.state] = l.ID
+		c.boardID = l.IDBoard
 	}
 	return nil
 }
@@ -174,6 +179,7 @@ type trelloCard struct {
 	Name      string        `json:"name"`
 	Desc      string        `json:"desc"`
 	IDList    string        `json:"idList"`
+	IDBoard   string        `json:"idBoard"`
 	Closed    bool          `json:"closed"` // archived
 	Labels    []trelloLabel `json:"labels"`
 }
@@ -183,7 +189,7 @@ type trelloLabel struct {
 }
 
 // trelloCardFields is the ?fields= of every card read.
-const trelloCardFields = "fields=name,desc,idList,closed,shortLink,labels"
+const trelloCardFields = "fields=name,desc,idList,idBoard,closed,shortLink,labels"
 
 // trelloShortLink is a card's shortLink: the Ref.ID, checked before it goes
 // in a path.
@@ -218,7 +224,9 @@ func (t trello) Create(ctx context.Context, it Item) (Ref, error) {
 	return t.ref(card), c.apply(ctx, card, it) // a Ref with an error: the card exists, its state did not land
 }
 
-// Update reads the card and writes only what differs from it.
+// Update reads the card and writes only what differs from it. A card on
+// another board is refused: its URL does not name the board, so Owns cannot
+// tell a link left by a tracker since re-pointed elsewhere.
 func (t trello) Update(ctx context.Context, r Ref, it Item) error {
 	if !trelloShortLink.MatchString(r.ID) {
 		return fmt.Errorf("%w: card shortLink %q", errBadRef, r.ID)
@@ -233,6 +241,9 @@ func (t trello) Update(ctx context.Context, r Ref, it Item) error {
 	}
 	if err := c.resolve(ctx); err != nil {
 		return err
+	}
+	if c.boardID == "" || card.IDBoard != c.boardID {
+		return fmt.Errorf("%w: trello card %s is not on board %s", ErrTrackerURL, r.ID, c.t.board)
 	}
 	card.ShortLink = r.ID
 	return c.apply(ctx, card, it)
@@ -318,7 +329,14 @@ func (t trello) ListOpen(ctx context.Context, label string) ([]Remote, error) {
 	return out, nil
 }
 
-func (t trello) CommitRef(Ref, string, bool) string { return "" }
+// CommitRef is the card's URL: Trello reads no keyword in a commit message,
+// so a closing commit and the code's forge change nothing.
+func (t trello) CommitRef(r Ref, _ string, _ bool) string {
+	if !trelloShortLink.MatchString(r.ID) {
+		return ""
+	}
+	return "Refs: https://trello.com/c/" + r.ID
+}
 
 // trelloCardPath is the escaped path of a card URL, /c/<shortLink>[/<slug>].
 var trelloCardPath = regexp.MustCompile(`^/c/([A-Za-z0-9]{8})(?:/[A-Za-z0-9._~-]+)?$`)
