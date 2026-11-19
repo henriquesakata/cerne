@@ -368,9 +368,9 @@ func TestGitLabHostPathAndQuery(t *testing.T) {
 
 // F-0450 crit. 2 (Owns): an issue of the project is found under both pages
 // GitLab answers for it — /-/issues/N (older GitLab) and /-/work_items/N
-// (gitlab.com 19.x) — and nothing else is.
+// (gitlab.com 19.x) — and nothing else is. Pure: no glab.
 func TestGitLabOwns(t *testing.T) {
-	newFakeGL(t, "gitlab.com", "g/sub/p")
+	g := newFakeGL(t, "gitlab.com", "g/sub/p")
 	tr := newGitLab(t, "https://gitlab.com/g/sub/p")
 	for _, c := range []struct {
 		id, url string
@@ -388,6 +388,9 @@ func TestGitLabOwns(t *testing.T) {
 		if got := tr.Owns(tracker.Ref{Tracker: "gl", ID: c.id, URL: c.url}); got != c.want {
 			t.Errorf("Owns(%s, %s) = %v, want %v", c.id, c.url, got, c.want)
 		}
+	}
+	if len(g.calls) != 0 {
+		t.Fatalf("Owns called glab: %q (it is pure)", g.calls)
 	}
 }
 
