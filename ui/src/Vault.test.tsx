@@ -131,4 +131,22 @@ describe('Vault (F-0463)', () => {
     expect(container.querySelector('.vault-doc-actions')).toBeEmptyDOMElement()
     expect(within(tree()).getByRole('link', { name: /D-0002/ })).toBeInTheDocument()
   })
+
+  it('outline: lista ##/### fora de bloco de código e rola até a seção', async () => {
+    await open('#/vault/N-0001')
+    const outline = await screen.findByRole('navigation', { name: 'Neste documento' })
+    const items = within(outline).getAllByRole('button')
+    expect(items.map((b) => b.textContent)).toEqual(['A', 'B'])
+    fireEvent.click(items[1])
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalled()
+  })
+
+  it('backlinks: painel da entidade aberta, nenhum para wiki', async () => {
+    await open('#/vault/D-0001')
+    expect(await screen.findByText('backlinks de D-0001')).toBeInTheDocument()
+    cleanup()
+    await open('#/vault/wiki:overview.md')
+    await screen.findByText('corpo')
+    expect(screen.queryByText(/backlinks de/)).toBeNull()
+  })
 })

@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { fetchState, fetchWikiIndex, type WikiIndex } from './api'
+import Backlinks from './Backlinks'
 import Markdown from './Markdown'
 import { LoadPending, Notice, useLiveLoad } from './liveLoad'
 import { useT } from './i18n'
@@ -129,6 +130,14 @@ export default function Vault({ hash }: { hash: string }) {
     [sel.id, sel.doc],
   )
   const doc = docLoad.data
+  // The outline is read off the rendered ##/### headings, so code blocks and
+  // the markdown parser's own rules decide what counts as a heading.
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const [outline, setOutline] = useState<{ text: string; el: Element }[]>([])
+  useEffect(() => {
+    const hs = bodyRef.current?.querySelectorAll('h2, h3') ?? []
+    setOutline([...hs].map((el) => ({ text: el.textContent ?? '', el })))
+  }, [doc])
   const [history, setHistory] = useState(false)
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState<ReadonlySet<string>>(
@@ -212,7 +221,7 @@ export default function Vault({ hash }: { hash: string }) {
               {doc.historical && <span className={`chip chip-${doc.state}`}>{doc.state}</span>}
               <div className="vault-doc-actions" />
             </header>
-            <div className="vault-doc-body">
+            <div className="vault-doc-body" ref={bodyRef}>
               <Markdown wikiHref={vaultHref} knownIds={known}>
                 {doc.content}
               </Markdown>
@@ -220,6 +229,25 @@ export default function Vault({ hash }: { hash: string }) {
           </>
         )}
       </article>
+      {doc && (
+        <aside className="vault-side">
+          {outline.length > 0 && (
+            <nav aria-label={t.vault.outline}>
+              <h2>{t.vault.outline}</h2>
+              <ul>
+                {outline.map((h, i) => (
+                  <li key={i} className={h.el.tagName === 'H3' ? 'vault-outline-sub' : undefined}>
+                    <button type="button" onClick={() => h.el.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+                      {h.text}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+          )}
+          {doc.kind !== 'wiki' && <Backlinks id={doc.id} />}
+        </aside>
+      )}
     </main>
   )
 }
