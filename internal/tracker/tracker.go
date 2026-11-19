@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"maps"
 	"net/url"
+	"regexp"
 	"slices"
 	"strings"
 	"unicode"
@@ -68,10 +69,14 @@ var (
 func KindNames() []string { return slices.Sorted(maps.Keys(Kinds)) }
 
 // New builds the adapter for c without touching the network: the URL must be
-// https, then the kind's constructor reads it.
+// https and carry no credential, then the kind's constructor reads it.
 func New(c Config) (IssueTracker, error) {
-	if u, err := url.Parse(c.URL); err != nil || u.Scheme != "https" || u.Host == "" {
-		return nil, fmt.Errorf("%w %q: want an https URL", ErrTrackerURL, c.URL)
+	u, err := url.Parse(c.URL)
+	if err != nil || u.Scheme != "https" || u.Host == "" {
+		return nil, fmt.Errorf("%w %q: want an https URL", ErrTrackerURL, redactURL(c.URL))
+	}
+	if u.User != nil {
+		return nil, fmt.Errorf("%w %q: remove the user and password; .cernerc is committed, and the tracker's own login holds the credential", ErrTrackerURL, redactURL(c.URL))
 	}
 	mk, ok := Kinds[c.Kind]
 	if !ok {
@@ -83,6 +88,13 @@ func New(c Config) (IssueTracker, error) {
 	}
 	return checked{tr}, nil
 }
+
+// userinfoRe is the user[:password]@ of a URL's authority.
+var userinfoRe = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9+.-]*://)[^/?#]*@`)
+
+// redactURL drops the user and password from raw, for an error message that
+// repeats a tracker URL.
+func redactURL(raw string) string { return userinfoRe.ReplaceAllString(raw, "${1}") }
 
 // errBadRef is an issue ref with a control character in its id or URL, or a
 // URL that is not https: it could forge a line in a commit message.

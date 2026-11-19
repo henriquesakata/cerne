@@ -2,6 +2,8 @@ package tracker_test
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/domain"
@@ -79,5 +81,27 @@ func TestGitHubRefusesNonDigitIDs(t *testing.T) {
 	}
 	if s := tr.CommitRef(tracker.Ref{Tracker: "gh", ID: "x1", URL: "https://github.com/o/r/issues/x1"}, "https://github.com/o/r/commit/{sha}", false); s != "" {
 		t.Errorf("CommitRef with a non-digit id = %q, want none", s)
+	}
+}
+
+// F-0449 (audit finding 6): a credential in a tracker URL is refused for every
+// kind, and no error message repeats the user or the password.
+func TestNewRefusesCredentialsInURL(t *testing.T) {
+	trackertest.Register(t, &trackertest.Fake{Name: "pub"})
+	for _, c := range []tracker.Config{
+		{Name: "gh", Kind: "github", URL: "https://token@github.com/o/r"},
+		{Name: "gh", Kind: "github", URL: "https://u:p@github.com/o/r"},
+		{Name: "pub", Kind: "fake", URL: "https://u:p@fake.test/o/pub"},
+		{Name: "gh", Kind: "github", URL: "http://token@github.com/o/r"},
+		{Name: "gh", Kind: "github", URL: "https://u:p@github.com/o/r/extra"},
+	} {
+		_, err := tracker.New(c)
+		if !errors.Is(err, tracker.ErrTrackerURL) {
+			t.Errorf("New(%s %s) = %v, want ErrTrackerURL", c.Kind, c.URL, err)
+			continue
+		}
+		if msg := err.Error(); strings.Contains(msg, "token") || strings.Contains(msg, "p@") {
+			t.Errorf("New(%s %s) error repeats the credential: %s", c.Kind, c.URL, msg)
+		}
 	}
 }

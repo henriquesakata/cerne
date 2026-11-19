@@ -36,12 +36,12 @@ func newGitHub(c Config) (IssueTracker, error) {
 			return nil, fmt.Errorf("%w: github tracker host %q is an IP address or localhost; use the GitHub host name", ErrTrackerURL, h)
 		}
 	}
-	if err == nil && u.User == nil && u.RawQuery == "" && u.Fragment == "" {
+	if err == nil && u.RawQuery == "" && u.Fragment == "" { // tracker.New already refused a user and password
 		if m := ghPath.FindStringSubmatch(u.Path); m != nil && !dots(m[1]) && !dots(m[2]) {
 			return github{name: c.Name, repo: forge.Repo{Host: u.Host, Path: m[1] + "/" + m[2]}}, nil
 		}
 	}
-	return nil, fmt.Errorf("%w %q: want https://<host>/<owner>/<repo>", ErrTrackerURL, c.URL)
+	return nil, fmt.Errorf("%w %q: want https://<host>/<owner>/<repo>", ErrTrackerURL, redactURL(c.URL))
 }
 
 func dots(seg string) bool { return strings.Trim(seg, ".") == "" }
