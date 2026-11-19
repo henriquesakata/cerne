@@ -184,7 +184,8 @@ func testPutContent(t *testing.T, kind, live, dead, unknown string) {
 	}
 
 	tree := cloneTree(t, repoDir)
-	for _, id := range []string{unknown, "..%2F..%2Fentities%2Fnotes%2FN-0001", "..%2Fnotes%2FN-0001", "..%2F..%2F..%2Fescaped"} {
+	long := strings.Repeat("1", 5000) // audit A5: 404, not a 500 naming the clone path
+	for _, id := range []string{unknown, "..%2F..%2Fentities%2Fnotes%2FN-0001", "..%2Fnotes%2FN-0001", "..%2F..%2F..%2Fescaped", live[:strings.Index(live, "-")+1] + long, live + "%00", live + "%5C..%5Cx"} {
 		rec, got := putContent(t, h, base+id+"/content", "# Sobrescrito\n", nil)
 		if rec.Code != http.StatusNotFound || got["error"] != kind+" not found" {
 			t.Errorf("PUT %s = %d %v, want 404 %q", id, rec.Code, got, kind+" not found")

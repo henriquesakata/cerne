@@ -98,8 +98,10 @@ func SaveEntityContentBy(repoDir, projDir, kind, id, content, base string, by Do
 }
 
 // contentIDShape is the id of a decision, note or runbook — nothing else
-// reaches a path: an id decoded from a URL may carry "../" (B-0034).
-var contentIDShape = regexp.MustCompile(`^(D|N|RB)-\d+$`)
+// reaches a path: an id decoded from a URL may carry "../" (B-0034), and an
+// unbounded number of digits makes a file name the OS refuses, a 500 that
+// names the clone's path (audit A5). Six digits are ample (ids mint as 4).
+var contentIDShape = regexp.MustCompile(`^(D|N|RB)-\d{1,6}$`)
 
 // entityContent is the content path of kind's id and the loader of its state
 // and whether that state is live (active), read inside the lock; ok is false

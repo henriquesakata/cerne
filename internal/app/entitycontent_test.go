@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/domain"
@@ -225,6 +226,10 @@ func TestSaveEntityContentByRefusals(t *testing.T) {
 		{"decision", "D-1/../N-1", store.ErrNotFound},
 		{"note", "../../entities/notes/N-0001", store.ErrNotFound},
 		{"note", "N-0001/", store.ErrNotFound},
+		{"note", "N-" + strings.Repeat("1", 5000), store.ErrNotFound}, // audit A5: no ENAMETOOLONG 500
+		{"note", "N-1234567", store.ErrNotFound},
+		{"note", "N-0001\x00", store.ErrNotFound},
+		{"note", `N-0001\..\x`, store.ErrNotFound},
 		{"note", "N-0002", ErrEntityNotLive},
 		{"runbook", "RB-0002", ErrEntityNotLive},
 		{"decision", "D-0002", ErrEntityNotLive},
