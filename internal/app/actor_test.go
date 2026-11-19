@@ -340,3 +340,65 @@ func TestCopilotCLIShellIsAgent(t *testing.T) {
 		t.Errorf("explicit CERNE_ACTOR=human must decide, got %v", err)
 	}
 }
+
+// agentShell sets the agent-shell markers for one test: claudeCode is the
+// CLAUDECODE value, actor the CERNE_ACTOR one, and unset drops CERNE_ACTOR
+// (an empty value and an absent variable are both "no explicit actor"). The
+// Cursor/Copilot markers the invoking shell may carry are cleared (N-0058).
+func agentShell(t *testing.T, claudeCode, actor string, unset bool) {
+	t.Helper()
+	t.Setenv("CURSOR_AGENT", "")
+	t.Setenv("COPILOT_CLI", "")
+	t.Setenv("CLAUDECODE", claudeCode)
+	t.Setenv("CERNE_ACTOR", actor)
+	if unset {
+		os.Unsetenv("CERNE_ACTOR")
+	}
+}
+
+// TestActorEnvClaudeCode (B-0030): Claude Code exports CLAUDECODE=1 in every
+// shell it runs, so with no explicit CERNE_ACTOR the marker makes the process
+// the legacy agent; CERNE_ACTOR=human is the human's way out of such a shell.
+func TestActorEnvClaudeCode(t *testing.T) {
+	for _, tc := range []struct {
+		name, claudeCode, actor string
+		unset                   bool
+		want                    string
+	}{
+		{"marker alone", "1", "", true, legacyAgentActor},
+		{"marker with empty CERNE_ACTOR", "1", "", false, legacyAgentActor},
+		{"marker with CERNE_ACTOR=human", "1", "human", false, "human"},
+		{"no marker", "", "", true, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			agentShell(t, tc.claudeCode, tc.actor, tc.unset)
+			if got := actorEnv(); got != tc.want {
+				t.Errorf("actorEnv = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestClaudeCodeShellHitsHumanGates (B-0030): with only CLAUDECODE=1 the human
+// gates refuse — a human-gated transition, a human-only setting — and a new
+// card's origin is the agent's; CERNE_ACTOR=human passes them.
+func TestClaudeCodeShellHitsHumanGates(t *testing.T) {
+	agentShell(t, "1", "", true)
+	if err := CheckHumanGate(project.GateHuman); !errors.Is(err, ErrHumanGate) {
+		t.Errorf("CheckHumanGate = %v, want ErrHumanGate", err)
+	}
+	if err := CheckHumanSetting("gates.gauntlet"); !errors.Is(err, ErrHumanGate) {
+		t.Errorf("CheckHumanSetting(gates.gauntlet) = %v, want ErrHumanGate", err)
+	}
+	if origin, _, err := resolveOrigin(""); err != nil || origin != "agent" {
+		t.Errorf("resolveOrigin = %q, %v; want agent", origin, err)
+	}
+
+	t.Setenv("CERNE_ACTOR", "human")
+	if err := CheckHumanGate(project.GateHuman); err != nil {
+		t.Errorf("CERNE_ACTOR=human: CheckHumanGate = %v, want nil", err)
+	}
+	if err := CheckHumanSetting("gates.gauntlet"); err != nil {
+		t.Errorf("CERNE_ACTOR=human: CheckHumanSetting = %v, want nil", err)
+	}
+}

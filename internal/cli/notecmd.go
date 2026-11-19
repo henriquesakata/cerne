@@ -31,6 +31,7 @@ func newNoteCmd() *cobra.Command {
 	cmd.AddCommand(verbs.MarkChat(newNoteShowCmd(&dir)))
 	cmd.AddCommand(verbs.MarkChat(newNoteRetagCmd(&dir)))
 	cmd.AddCommand(verbs.MarkChat(newNoteWhenCmd(&dir)))
+	cmd.AddCommand(verbs.MarkChat(newNoteGistCmd(&dir)))
 	cmd.AddCommand(verbs.MarkChat(newNoteKeepCmd(&dir)))
 	cmd.AddCommand(newNoteRetireCmd(&dir))
 	cmd.AddCommand(newNoteSupersedeCmd(&dir), legacyName(newNoteSupersedeCmd(&dir), "substituir"))
@@ -270,6 +271,9 @@ func runNoteShow(cmd *cobra.Command, dir, id string) error {
 	if len(n.When) > 0 {
 		fmt.Fprintf(w, "when: %s\n", strings.Join(n.When, ", "))
 	}
+	if n.Gist != "" {
+		fmt.Fprintf(w, "gist: %s\n", n.Gist)
+	}
 	if n.SupersededBy != "" {
 		fmt.Fprintf(w, "superseded by: %s\n", n.SupersededBy)
 	}
@@ -293,7 +297,7 @@ func runNoteShow(cmd *cobra.Command, dir, id string) error {
 }
 
 func newNoteNewCmd(dir *string) *cobra.Command {
-	var informs, file, facet, component string
+	var informs, file, facet, component, gist string
 	var when []string
 	var force bool
 	cmd := &cobra.Command{
@@ -306,11 +310,12 @@ func newNoteNewCmd(dir *string) *cobra.Command {
 			"e.g. gitea,kpack) to organize — both multi-valued, comma-separated. " +
 			"Use --when (repeatable) to declare when the note shows up to an agent: edit:<path> (an exact repo-relative path or <dir>/**) " +
 			"when it edits a matching file, bash:<words> (e.g. bash:git tag) when it runs a matching shell command (F-0457). " +
+			"Use --gist for the one line (at most 160 runes) the agent needs when the note shows up: what to do or avoid, not the subject — the hook blocks print it under the note's line (F-0459). " +
 			"A live note with a similar title refuses the creation (F-0324); --force overrides it. " +
 			"Personal/machine knowledge (paths, preferences) does NOT go here — it stays in local memory. The title argument may be omitted when the body (--file or stdin) opens with a `# ` heading: that heading becomes the title.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runNoteNew(cmd, *dir, args, informs, file, facet, component, when, force)
+			return runNoteNew(cmd, *dir, args, informs, file, facet, component, gist, when, force)
 		},
 	}
 	cmd.Flags().StringVar(&informs, "informs", "", "comma-separated F-/E-/T-/B-/D-/RB-/N-/I- ids this note informs")
@@ -318,11 +323,21 @@ func newNoteNewCmd(dir *string) *cobra.Command {
 	cmd.Flags().StringVar(&facet, "facet", "", "facets (comma-separated; closed set: infra,code,data,process,auth)")
 	cmd.Flags().StringVar(&component, "component", "", "components (comma-separated subsystem/tool tags, e.g. gitea,kpack)")
 	cmd.Flags().StringArrayVar(&when, "when", nil, "trigger that shows the note to an agent (repeatable): edit:<path>|edit:<dir>/** or bash:<words>")
+	cmd.Flags().StringVar(&gist, "gist", "", "the one line (at most 160 runes) an agent needs when the note shows up: what to do or avoid")
 	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard (F-0324) for a consciously distinct note")
 	return verbs.MarkChatTool(cmd)
 }
 
-func runNoteNew(cmd *cobra.Command, dir string, args []string, informs, file, facet, component string, when []string, force bool) error {
+func runNoteNew(cmd *cobra.Command, dir string, args []string, informs, file, facet, component, gist string, when []string, force bool) error {
+	// An explicit --gist is validated even when blank (CreateNote reads "" as
+	// none), before the body is read or anything is written.
+	if cmd.Flags().Changed("gist") {
+		g, err := domain.NormalizeGist(gist)
+		if err != nil {
+			return err
+		}
+		gist = g
+	}
 	body, err := readOptionalBody(cmd, file)
 	if err != nil {
 		return err
@@ -335,7 +350,7 @@ func runNoteNew(cmd *cobra.Command, dir string, args []string, informs, file, fa
 	if err != nil {
 		return err
 	}
-	n, err := app.CreateNote(ctx.repoDir, ctx.projDir, title, body, splitInforms(informs), splitInforms(facet), splitInforms(component), when, false, force)
+	n, err := app.CreateNote(ctx.repoDir, ctx.projDir, title, body, splitInforms(informs), splitInforms(facet), splitInforms(component), when, gist, false, force)
 	if err != nil {
 		return err
 	}
@@ -494,6 +509,52 @@ func runNoteWhen(cmd *cobra.Command, dir, id string, triggers []string, clear bo
 		return nil
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s when: %s\n", n.ID, strings.Join(n.When, ", "))
+	return nil
+}
+
+func newNoteGistCmd(dir *string) *cobra.Command {
+	var clear bool
+	cmd := &cobra.Command{
+		Use:   "gist <id> [text]",
+		Short: "Set the one-line gist the hooks show under an active note (--clear removes it)",
+		Long: "Replaces the gist of an active note (F-0459): the one line, at most 160 runes, an agent needs when the " +
+			"note shows up — what to do or avoid, not the subject (the title has it). The edit and command note blocks " +
+			"of the hooks print it under the note's line. The words after the id are joined with one space; a gist " +
+			"that starts with '-' goes after '--' (cerne note gist N-0001 -- \"-R alone does not override origin\"). " +
+			"--clear removes the gist. A superseded note is history and is refused.",
+		Args: cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runNoteGist(cmd, *dir, args[0], strings.Join(args[1:], " "), clear)
+		},
+	}
+	cmd.Flags().BoolVar(&clear, "clear", false, "remove the gist")
+	return cmd
+}
+
+func runNoteGist(cmd *cobra.Command, dir, id, gist string, clear bool) error {
+	if clear && gist != "" {
+		return fmt.Errorf("pass a gist or --clear, not both")
+	}
+	if !clear { // a blank text is refused like note new --gist (ErrEmptyGist)
+		g, err := domain.NormalizeGist(gist)
+		if err != nil {
+			return fmt.Errorf("%w (or --clear to remove the gist)", err)
+		}
+		gist = g
+	}
+	ctx, err := resolveProject(dir)
+	if err != nil {
+		return err
+	}
+	n, err := app.SetNoteGist(ctx.repoDir, ctx.projDir, id, gist)
+	if err != nil {
+		return err
+	}
+	if n.Gist == "" {
+		fmt.Fprintf(cmd.OutOrStdout(), "%s has no gist.\n", n.ID)
+		return nil
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "%s gist: %s\n", n.ID, n.Gist)
 	return nil
 }
 

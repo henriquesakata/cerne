@@ -101,6 +101,7 @@ type Note struct {
 	Components   []string         `json:"components,omitempty"` // curated subsystem/tool axis (D-0002): gitea, kpack, …
 	Durable      bool             `json:"durable,omitempty"`    // reviewed as durable: lint's stale-note skips it
 	When         []string         `json:"when,omitempty"`       // declared triggers (F-0457): edit:<path>, bash:<words>
+	Gist         string           `json:"gist,omitempty"`       // the one line an agent needs when the note shows up (F-0459)
 	CreatedAt    time.Time        `json:"created_at"`
 	UpdatedAt    time.Time        `json:"updated_at"`
 }

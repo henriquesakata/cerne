@@ -17,9 +17,11 @@ import (
 // note cites the whole repo-relative path, 2 for a suffix with at least one
 // directory, 1 for the bare file name (only when that name is unique); a note
 // declaring the file in an edit: trigger (F-0457) scores 5 for the exact path
-// and 4 for a <dir>/** glob.
+// and 4 for a <dir>/** glob. Gist is the note's gist (F-0459), "" when it has
+// none or its entity cannot be read.
 type PathNote struct {
 	ID, Title string
+	Gist      string
 	Score     int
 	inTitle   bool // the cited path is in the title (round 2: prominence)
 	mentions  int  // citations of it in the body
@@ -95,7 +97,7 @@ func NotesForPath(ctx context.Context, cacheDir, repoDir, rel string, uniqueName
 		}
 		pn := PathNote{ID: h.ID, Title: h.Title, Score: best, inTitle: inTitle, mentions: mentions}
 		if n, err := store.LoadNote(repoDir, h.ID); err == nil {
-			pn.updated = n.UpdatedAt
+			pn.updated, pn.Gist = n.UpdatedAt, n.Gist
 		}
 		out = append(out, pn)
 	}
@@ -120,7 +122,7 @@ func NotesForPath(ctx context.Context, cacheDir, repoDir, rel string, uniqueName
 		}
 		pn := PathNote{ID: tr.ID, Title: tr.Title, Score: sc}
 		if n, err := store.LoadNote(repoDir, tr.ID); err == nil {
-			pn.updated = n.UpdatedAt
+			pn.updated, pn.Gist = n.UpdatedAt, n.Gist
 		}
 		out = append(out, pn)
 	}

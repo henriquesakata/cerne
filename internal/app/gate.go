@@ -12,13 +12,20 @@ import (
 // [gates] config keeps that end human.
 var ErrHumanGate = errors.New("human gate")
 
+// humanEscape ends every human-gate refusal (B-0030): a human typing in an
+// agent's shell (CLAUDECODE=1 and the other markers make it one) is told how
+// to say they are the human, and the agent reading the same text that it is
+// not its move.
+const humanEscape = ". A human in an agent's shell runs the command in their own terminal, or prefixes it with CERNE_ACTOR=human; an agent never sets it"
+
 // CheckHumanGate refuses when gate is human and the caller is an agent
-// (CERNE_ACTOR=agent, stamped into agent sessions by `cerne hook install`).
+// (CERNE_ACTOR=agent, stamped into agent sessions by `cerne hook install`, or
+// an agent-shell marker with no CERNE_ACTOR — see actorEnv).
 // Anything else passes — fail-open by design: the gate exists to stop the
 // *configured* agent from approving its own spec, not to authenticate humans.
 func CheckHumanGate(gate string) error {
 	if gate == project.GateHuman && isAgentActor(actorEnv()) {
-		return fmt.Errorf("%w: this transition is a human act in this project — ask a human for the approval/acceptance (or configure [gates] in .cernerc for an explicit bypass)", ErrHumanGate)
+		return fmt.Errorf("%w: this transition is a human act in this project — ask a human for the approval/acceptance (or configure [gates] in .cernerc for an explicit bypass)%s", ErrHumanGate, humanEscape)
 	}
 	return nil
 }
@@ -27,7 +34,7 @@ func CheckHumanGate(gate string) error {
 // (F-0392). Fail-open like CheckHumanGate; the UI server does not call it.
 func CheckHumanSetting(id string) error {
 	if project.SettingHumanOnly(id) && isAgentActor(actorEnv()) {
-		return fmt.Errorf("%w: %s is the project owner's decision — changing it is done in the Settings screen of cerne ui, or by the owner in their own terminal", ErrHumanGate, id)
+		return fmt.Errorf("%w: %s is the project owner's decision — changing it is done in the Settings screen of cerne ui, or by the owner in their own terminal%s", ErrHumanGate, id, humanEscape)
 	}
 	return nil
 }
