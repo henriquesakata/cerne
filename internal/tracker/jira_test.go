@@ -1391,3 +1391,19 @@ func TestJiraRefusesNumericAndLocalHostForms(t *testing.T) {
 		t.Errorf("New(jira, DNS host) = %v, want nil", err)
 	}
 }
+
+// F-0453: Owns takes no query or fragment (even empty) and compares the
+// escaped path, so an encoded separator never passes for a real one.
+func TestJiraOwnsRefusesQueryFragmentAndEscapedSeparators(t *testing.T) {
+	installJira(t, jiraEmail, http.NotFoundHandler())
+	dc := newJiraTracker(t, jiraDC)
+	ref := func(u string) tracker.Ref { return tracker.Ref{Tracker: "jt", ID: "PROJ-3", URL: u} }
+	if !dc.Owns(ref("https://jira.example/jira/browse/PROJ-3")) {
+		t.Error("Owns refused its own issue")
+	}
+	for _, u := range []string{"https://jira.example/jira/browse/PROJ-3?x=1", "https://jira.example/jira/browse/PROJ-3#c", "https://jira.example/jira/browse/PROJ-3?", "https://jira.example/jira/browse/PROJ-3#", "https://jira.example/jira%2Fbrowse/PROJ-3", "https://jira.example/jira/browse%2FPROJ-3"} {
+		if dc.Owns(ref(u)) {
+			t.Errorf("Owns accepted %s", u)
+		}
+	}
+}

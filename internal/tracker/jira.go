@@ -594,6 +594,6 @@ func (j jira) CommitRef(r Ref, _ string, _ bool) string {
 // on an issue of another project.
 func (j jira) Owns(r Ref) bool {
 	u, err := url.Parse(r.URL)
-	return err == nil && u.Scheme == "https" && u.User == nil && j.ownKey(r.ID) && strings.EqualFold(u.Host, j.host) &&
-		strings.TrimSuffix(u.Path, "/") == j.root+"/browse/"+r.ID
+	return err == nil && u.Scheme == "https" && u.User == nil && !strings.ContainsAny(r.URL, "?#") && j.ownKey(r.ID) && strings.EqualFold(u.Host, j.host) &&
+		strings.TrimSuffix(u.EscapedPath(), "/") == j.root+"/browse/"+r.ID
 }
