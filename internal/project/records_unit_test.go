@@ -1,6 +1,7 @@
 package project
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 
@@ -48,6 +49,17 @@ func TestInlineRecordsLiteralDecodes(t *testing.T) {
 		}
 		if !reflect.DeepEqual(doc["k"], r.decoded()) {
 			t.Fatalf("TOML reads %#v, decoded() says %#v", doc["k"], r.decoded())
+		}
+	}
+}
+
+// F-0449: a control character in a records value is refused before
+// strconv.Quote turns it into an escape the TOML parser rejects.
+func TestCheckRecordsRefusesControlCharacters(t *testing.T) {
+	for _, v := range []string{"a\x01b", "tab\there", "del\x7f"} {
+		_, err := checkRecords(unitRecords, []any{map[string]any{"name": "gh", "url": v}})
+		if !errors.Is(err, ErrInvalidSettingValue) {
+			t.Errorf("checkRecords(url %q) = %v, want ErrInvalidSettingValue", v, err)
 		}
 	}
 }

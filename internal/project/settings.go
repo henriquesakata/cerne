@@ -706,8 +706,10 @@ func checkRecords(s Setting, v any) ([]map[string]string, error) {
 			if !ok {
 				return nil, bad(i, "%s: want a string", name)
 			}
-			if strings.ContainsAny(str, "\r\n") || utf8.RuneCountInString(str) > maxLen(s.Fields[j]) {
-				return nil, bad(i, "%s: want one line of at most %d characters", name, maxLen(s.Fields[j]))
+			// Below 0x20 and DEL: strconv.Quote would write an escape (\x01, \a)
+			// that the TOML parser then rejects.
+			if strings.ContainsFunc(str, func(r rune) bool { return r < 0x20 || r == 0x7f }) || utf8.RuneCountInString(str) > maxLen(s.Fields[j]) {
+				return nil, bad(i, "%s: want one line of at most %d characters, with no control character", name, maxLen(s.Fields[j]))
 			}
 			if str != "" {
 				rec[name] = str
