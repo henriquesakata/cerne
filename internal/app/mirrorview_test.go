@@ -426,3 +426,27 @@ func TestCitedCardIDs(t *testing.T) {
 		}
 	}
 }
+
+// F-0465 critic: only git's own "not a git repository" reads as no repository;
+// a git that fails otherwise (dubious ownership, missing from PATH) is an error
+// that carries git's message.
+func TestMirrorCommitsGitFailures(t *testing.T) {
+	t.Run("dubious ownership", func(t *testing.T) {
+		bin := t.TempDir()
+		script := "#!/bin/sh\necho \"fatal: detected dubious ownership in repository at '/x'\" >&2\nexit 128\n"
+		if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("PATH", bin)
+		_, err := MirrorCommits(t.TempDir(), "F-0465")
+		if err == nil || errors.Is(err, ErrNoGitRepo) || !strings.Contains(err.Error(), "dubious ownership") {
+			t.Fatalf("err = %v, want an error carrying git's dubious-ownership text, not ErrNoGitRepo", err)
+		}
+	})
+	t.Run("git missing", func(t *testing.T) {
+		t.Setenv("PATH", t.TempDir())
+		if _, err := MirrorCommits(t.TempDir(), "F-0465"); err == nil || errors.Is(err, ErrNoGitRepo) {
+			t.Fatalf("err = %v, want a plain error, not ErrNoGitRepo", err)
+		}
+	})
+}

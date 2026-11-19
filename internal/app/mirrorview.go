@@ -257,8 +257,13 @@ func MirrorCommits(projDir, id string) ([]MirrorCommit, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), mirrorTimeout)
 	defer cancel()
-	if err := exec.CommandContext(ctx, "git", "-C", projDir, "rev-parse", "--git-dir").Run(); err != nil {
-		return nil, ErrNoGitRepo
+	probe := exec.CommandContext(ctx, "git", "-C", projDir, "rev-parse", "--git-dir")
+	probe.Env = append(os.Environ(), "LC_ALL=C") // git's message is matched below: keep it in English
+	if out, err := probe.CombinedOutput(); err != nil {
+		if strings.Contains(string(out), "not a git repository") {
+			return nil, ErrNoGitRepo
+		}
+		return nil, fmt.Errorf("git rev-parse: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	// git narrows by a case-insensitive Cerne: line and the id; the grammar
 	// (CitedCardIDs) decides, so F-00010 is not F-0001 and a subject is no trailer.
