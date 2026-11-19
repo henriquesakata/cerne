@@ -3916,7 +3916,12 @@ button.clarify-chip { cursor: pointer; font: inherit; }
 .vault-editor-conflict { display: flex; flex-direction: column; gap: 0.5rem; }
 .vault-editor-conflict .form-error { margin: 0; }
 .vault-editor-conflict .proposal-draft-diff { max-height: 16rem; overflow: auto; }
-.vault-editor-actions { position: sticky; top: 0; z-index: 6; display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; padding: 0.4rem 0; background: var(--bg); }
+.vault-editor-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; padding: 0.4rem 0; background: var(--bg); }
+/* Sticky (under the nav; top is set inline) only where the row fits on one
+   line: on a phone it wraps tall, and the textarea scrolls by itself there. */
+@container (min-width: 44rem) {
+  .vault-editor-actions { position: sticky; top: 0; z-index: 6; }
+}
 /* Edit and the editor's actions take the system's button recipe (the feature
    page's .doc-edit-actions); the primary one is full ink, never a hue. */
 .vault-doc-actions button,
