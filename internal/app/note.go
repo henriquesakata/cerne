@@ -36,9 +36,10 @@ type NoteOutcome struct {
 // (domain vocabulary, rejected scope) would otherwise need a second KeepNote —
 // a whole extra commit+push to set one bool.
 //
-// when (F-0457) are the note's declared triggers, validated with the tags: an
-// invalid one aborts before any side effect.
-func CreateNote(repoDir, projDir, title, body string, informs, facets, components, when []string, durable, force bool) (store.Note, error) {
+// when (F-0457) are the note's declared triggers and gist (F-0459) its
+// one-line gist ("" for none), validated with the tags: an invalid one aborts
+// before any side effect.
+func CreateNote(repoDir, projDir, title, body string, informs, facets, components, when []string, gist string, durable, force bool) (store.Note, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return store.Note{}, fmt.Errorf("the note title cannot be empty")
@@ -53,6 +54,11 @@ func CreateNote(repoDir, projDir, title, body string, informs, facets, component
 	normWhen, err := domain.NormalizeTriggers(when)
 	if err != nil {
 		return store.Note{}, err
+	}
+	if gist != "" {
+		if gist, err = domain.NormalizeGist(gist); err != nil {
+			return store.Note{}, err
+		}
 	}
 	// Reads, id mint and writes run inside the backend lock's critical section
 	// (F-0122): concurrent creations serialize instead of minting the same id.
@@ -80,6 +86,7 @@ func CreateNote(repoDir, projDir, title, body string, informs, facets, component
 			Facets:     normFacets,
 			Components: normComponents,
 			When:       normWhen,
+			Gist:       gist,
 			Durable:    durable,
 			CreatedAt:  now,
 			UpdatedAt:  now,
@@ -291,6 +298,54 @@ func SetNoteWhen(repoDir, projDir, id string, when []string) (store.Note, error)
 			return "", err
 		}
 		return fmt.Sprintf("cerne: when %s", id), nil
+	})
+	if errors.Is(err, gitback.ErrNothingToCommit) {
+		return n, nil
+	}
+	if err != nil {
+		return store.Note{}, err
+	}
+	return n, nil
+}
+
+// SetNoteGist replaces the gist of an active note in the backend clone at
+// repoDir (F-0459); an empty gist clears it. The gist is normalized before any
+// write, so an invalid one leaves the note untouched; an unchanged gist is a
+// successful no-op with no commit. Appends note.gist and syncs the backend +
+// docs.lock in projDir.
+func SetNoteGist(repoDir, projDir, id, gist string) (store.Note, error) {
+	if gist != "" {
+		var err error
+		if gist, err = domain.NormalizeGist(gist); err != nil {
+			return store.Note{}, err
+		}
+	}
+	var n store.Note
+	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		var err error
+		n, err = store.LoadNote(repoDir, id)
+		if errors.Is(err, store.ErrNotFound) {
+			return "", fmt.Errorf("note %s not found in backend", id)
+		}
+		if err != nil {
+			return "", err
+		}
+		if n.State != domain.NoteActive {
+			return "", fmt.Errorf("note %s is not active (it is %s) — a gist only applies to an active note", id, n.State)
+		}
+		if n.Gist == gist {
+			return "", nil // unchanged: writes nothing, surfaces as ErrNothingToCommit
+		}
+		n.Gist = gist
+		n.UpdatedAt = time.Now().UTC()
+		if err := store.SaveNote(repoDir, n); err != nil {
+			return "", err
+		}
+		ev := domain.NewEvent(id, "note.gist", map[string]string{"gist": gist}, EventActor())
+		if err := store.AppendEvent(repoDir, ev); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: gist %s", id), nil
 	})
 	if errors.Is(err, gitback.ErrNothingToCommit) {
 		return n, nil

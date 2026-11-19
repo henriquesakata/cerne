@@ -631,7 +631,7 @@ func notesOnEditBlock(cacheDir, repoDir, projDir, sess, filePath, suffix string)
 	var b strings.Builder
 	fmt.Fprintf(&b, "cerne notes on %s%s:", rel, suffix)
 	for _, n := range shown {
-		fmt.Fprintf(&b, "\n- %s — %s", n.ID, flatTitle(n.Title))
+		b.WriteString(noteLine(n.ID, n.Title, n.Gist))
 	}
 	// Same basis as `note list --path`: every match beyond the ones listed here.
 	if rest := len(notes) - len(shown); rest > 0 {
@@ -647,6 +647,26 @@ func notesOnEditBlock(cacheDir, repoDir, projDir, sess, filePath, suffix string)
 // flatTitle flattens a title so it cannot break the block's line structure.
 func flatTitle(s string) string {
 	return strings.Join(strings.Fields(s), " ")
+}
+
+// noteLine is one note of a hook block: "\n- <id> — <title>", plus, when the
+// note has a gist (F-0459), "\n  <gist>" — flattened and capped again, since
+// the entity may have been edited by hand in the clone.
+func noteLine(id, title, gist string) string {
+	line := "\n- " + id + " — " + flatTitle(title)
+	if g := flatTitle(gist); g != "" {
+		line += "\n  " + capRunes(g, domain.GistMax)
+	}
+	return line
+}
+
+// capRunes cuts s to n runes, with an ellipsis when it was longer.
+func capRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n-1]) + "…"
 }
 
 // realPath resolves symlinks (macOS /var vs /private/var) even for a path that

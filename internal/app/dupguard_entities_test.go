@@ -44,11 +44,11 @@ func liveNotes(t *testing.T, repoDir, title string) int {
 // retag verb, writes nothing.
 func TestCreateNoteRefusesSimilarLive(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	first, err := CreateNote(repoDir, projDir, "Desligar capacidade rebaixa a cobrança", "corpo", nil, nil, nil, nil, false, false)
+	first, err := CreateNote(repoDir, projDir, "Desligar capacidade rebaixa a cobrança", "corpo", nil, nil, nil, nil, "", false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = CreateNote(repoDir, projDir, "Desligar capacidade rebaixa a cobrança", "outro corpo", nil, nil, nil, nil, false, false)
+	_, err = CreateNote(repoDir, projDir, "Desligar capacidade rebaixa a cobrança", "outro corpo", nil, nil, nil, nil, "", false, false)
 	if !errors.Is(err, ErrSimilarExists) {
 		t.Fatalf("err = %v, want ErrSimilarExists", err)
 	}
@@ -72,14 +72,14 @@ func TestCreateNoteRefusesSimilarLive(t *testing.T) {
 // Crit. 5, 6: a retired note and an entity of another type never block.
 func TestCreateNoteGuardIgnoresRetiredAndOtherTypes(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	old, err := CreateNote(repoDir, projDir, "Gate humano remoto procuração in-band", "c", nil, nil, nil, nil, false, false)
+	old, err := CreateNote(repoDir, projDir, "Gate humano remoto procuração in-band", "c", nil, nil, nil, nil, "", false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := TransitionNote(repoDir, projDir, old.ID, "", "obsolete"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := CreateNote(repoDir, projDir, "Gate humano remoto procuração in-band", "c", nil, nil, nil, nil, false, false); err != nil {
+	if _, err := CreateNote(repoDir, projDir, "Gate humano remoto procuração in-band", "c", nil, nil, nil, nil, "", false, false); err != nil {
 		t.Fatalf("after retire: %v", err)
 	}
 	if _, err := CreateExternalReference(repoDir, projDir, "Gate humano remoto procuração in-band", "http://a", "c", nil, nil, nil, false); err != nil {
@@ -93,10 +93,10 @@ func TestCreateNoteGuardIgnoresRetiredAndOtherTypes(t *testing.T) {
 // Crit. 8: --force creates and leaves guard=forced on the creation event.
 func TestCreateNoteForceRecordsGuard(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	if _, err := CreateNote(repoDir, projDir, "Mesmo título da nota", "c", nil, nil, nil, nil, false, false); err != nil {
+	if _, err := CreateNote(repoDir, projDir, "Mesmo título da nota", "c", nil, nil, nil, nil, "", false, false); err != nil {
 		t.Fatal(err)
 	}
-	n, err := CreateNote(repoDir, projDir, "Mesmo título da nota", "c", nil, nil, nil, nil, false, true)
+	n, err := CreateNote(repoDir, projDir, "Mesmo título da nota", "c", nil, nil, nil, nil, "", false, true)
 	if err != nil {
 		t.Fatalf("forced: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestCreateNoteForceRecordsGuard(t *testing.T) {
 		t.Fatalf("guard = %q, want forced", got)
 	}
 	// A first (non-colliding) note forced carries no marker.
-	m, err := CreateNote(repoDir, projDir, "Título totalmente diferente aqui", "c", nil, nil, nil, nil, false, true)
+	m, err := CreateNote(repoDir, projDir, "Título totalmente diferente aqui", "c", nil, nil, nil, nil, "", false, true)
 	if err != nil {
 		t.Fatal(err)
 	}

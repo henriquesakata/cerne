@@ -104,12 +104,3 @@ func promptNotesBlock(dir, sess, prompt string) string {
 	}
 	return b.String()
 }
-
-// capRunes cuts s to n runes, with an ellipsis when it was longer.
-func capRunes(s string, n int) string {
-	r := []rune(s)
-	if len(r) <= n {
-		return s
-	}
-	return string(r[:n-1]) + "…"
-}

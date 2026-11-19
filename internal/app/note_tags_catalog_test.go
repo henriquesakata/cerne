@@ -12,7 +12,7 @@ func TestNoteTagCatalog(t *testing.T) {
 
 	mustNote := func(title string, facets, components []string) string {
 		t.Helper()
-		n, err := CreateNote(repoDir, projDir, title, "corpo real da nota", nil, facets, components, nil, false, false)
+		n, err := CreateNote(repoDir, projDir, title, "corpo real da nota", nil, facets, components, nil, "", false, false)
 		if err != nil {
 			t.Fatalf("CreateNote(%s, false): %v", title, err)
 		}
