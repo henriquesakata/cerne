@@ -107,18 +107,20 @@ jobs:
 
   # Lists the release in the official MCP Registry (F-0455), which Glama,
   # PulseMCP and other directories mirror, from the server.json the release
-  # job uploaded. A published version is public and can never be changed or
-  # deleted, so this job stays off until the owner has published the first
-  # version by hand and then sets the repository variable:
+  # job uploaded. Every stable tag verifies mcp-publisher and validates that
+  # server.json against the registry, with no login. A published version is
+  # public and can never be changed or deleted, so the publish step stays off
+  # until the owner has published the first version by hand and then sets the
+  # repository variable:
   #   gh release download <tag> --repo henriquesakata/cerne -p server.json
   #   mcp-publisher login github        # as henriquesakata
   #   mcp-publisher publish server.json
   #   gh variable set MCP_REGISTRY_PUBLISH --body true --repo henriquesakata/cerne
-  # A prerelease tag (v1.0.0-rc.1) is never published, as with the Homebrew tap.
+  # A prerelease tag (v1.0.0-rc.1) never gets here, as with the Homebrew tap.
   # Its own job, so a registry outage leaves the tap and the checks alone.
   mcp-registry:
     needs: release
-    if: ${{ !contains(github.ref_name, '-') && vars.MCP_REGISTRY_PUBLISH == 'true' }}
+    if: ${{ !contains(github.ref_name, '-') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -142,13 +144,16 @@ jobs:
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "$archive"
           tar xzf "$archive" mcp-publisher
-      # Skips a version the registry already has (a re-run on the same tag).
-      - name: publish to the MCP Registry
+      - name: validate the release's server.json
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" -p server.json -D "$RUNNER_TEMP"
-          sh scripts/mcp-registry-publish.sh "$RUNNER_TEMP/server.json"
+          ./mcp-publisher validate "$RUNNER_TEMP/server.json"
+      # Skips a version the registry already has (a re-run on the same tag).
+      - name: publish to the MCP Registry
+        if: ${{ vars.MCP_REGISTRY_PUBLISH == 'true' }}
+        run: sh scripts/mcp-registry-publish.sh "$RUNNER_TEMP/server.json"
 
   # The README's commands against the release just published, on Linux and
   # Windows (quickstart.yml).
