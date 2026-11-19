@@ -131,7 +131,9 @@ export default function VaultEditor({ doc, entries, knownIds, wikiHref, onSaved,
     setSaving(false)
     if (res.ok) {
       setConflict(null)
-      setLoaded({ content: draft, hash: baseHash }) // saved: nothing left to lose
+      // Saved: nothing left to lose. The base stays the old hash, so a save
+      // from here before the vault closes the editor is a 409, not an overwrite.
+      setLoaded({ content: draft, hash: baseHash })
       await onSaved()
     } else if ('conflict' in res) setConflict(res.conflict)
     else setError(res.error)
