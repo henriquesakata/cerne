@@ -128,9 +128,11 @@ type trelloList struct {
 	IDBoard string  `json:"idBoard"`
 }
 
-// trelloKey is a list name with its case and spaces dropped: the form two
+// trelloNameKey is a list name with its case and spaces dropped: the form two
 // names are compared in.
-func trelloKey(name string) string { return strings.ToLower(strings.Join(strings.Fields(name), "")) }
+func trelloNameKey(name string) string {
+	return strings.ToLower(strings.Join(strings.Fields(name), ""))
+}
 
 // openLists reads the board's open lists, in board order.
 func (c *trelloCall) openLists(ctx context.Context) ([]trelloList, error) {
@@ -154,14 +156,14 @@ func (c *trelloCall) resolve(ctx context.Context) error {
 	}
 	byKey := map[string]trelloList{}
 	for _, l := range ls {
-		if _, dup := byKey[trelloKey(l.Name)]; !dup {
-			byKey[trelloKey(l.Name)] = l
+		if _, dup := byKey[trelloNameKey(l.Name)]; !dup {
+			byKey[trelloNameKey(l.Name)] = l
 		}
 		c.boardID = l.IDBoard
 	}
 	c.lists = map[domain.FeatureState]string{}
 	for _, want := range trelloLists {
-		l, ok := byKey[trelloKey(want.name)]
+		l, ok := byKey[trelloNameKey(want.name)]
 		if !ok {
 			if err := c.do(ctx, http.MethodPost, "/boards/"+c.t.board+"/lists", map[string]string{"name": want.name, "pos": "bottom"}, &l); err != nil {
 				return err
@@ -297,8 +299,8 @@ func trelloReason(it Item) string {
 // ListOpen lists up to 100 open cards of the board carrying label ("" = any),
 // matched here by name, in the order the board answers them. A card in a Done
 // list is finished work, and one on an archived list is out of sight: neither
-// is listed. Listing creates no list. ponytail: one read of every open card;
-// page by ?before= when a board outgrows the 8 MiB answer.
+// is listed. Listing creates no list. ponytail: one read of every open card,
+// up to an 8 MiB answer; page the read when a board outgrows it.
 func (t trello) ListOpen(ctx context.Context, label string) ([]Remote, error) {
 	c, err := t.call(ctx)
 	if err != nil {
@@ -310,7 +312,7 @@ func (t trello) ListOpen(ctx context.Context, label string) ([]Remote, error) {
 	}
 	shown := map[string]bool{}
 	for _, l := range ls {
-		shown[l.ID] = trelloKey(l.Name) != trelloKey(trelloDone)
+		shown[l.ID] = trelloNameKey(l.Name) != trelloNameKey(trelloDone)
 	}
 	var cards []trelloCard
 	if err := c.do(ctx, http.MethodGet, "/boards/"+t.board+"/cards?filter=open&"+trelloCardFields, nil, &cards); err != nil {

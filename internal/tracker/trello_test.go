@@ -788,8 +788,8 @@ func TestTrelloSupersededCommentNamesSuccessor(t *testing.T) {
 	}
 }
 
-// seedTrello puts a third-party card on list l of the board, in no lifecycle
-// list unless l is one, and returns the ref the adapter answers for it.
+// seed puts a third-party card on list l and returns the ref the adapter
+// answers for it.
 func (f *trelloFake) seed(l *trelloFakeList, name, desc string, labels ...string) tracker.Ref {
 	c := f.addCardOn(l, name, desc, labels...)
 	return tracker.Ref{Tracker: "tt", ID: c.ShortLink, URL: "https://trello.com/c/" + c.ShortLink}
