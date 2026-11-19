@@ -232,7 +232,11 @@ export default function VaultEditor({ doc, entries, knownIds, wikiHref, onSaved,
   }
   const reloadBackend = () => {
     if (!conflict) return
-    setDraft(splitFrontmatter(conflict.content).body)
+    const theirs = splitFrontmatter(conflict.content).body
+    // The draft is replaced with no undo, so a draft that differs asks first,
+    // as Cancel does (critic C-2); refused, nothing changes.
+    if (draft !== theirs && !window.confirm(t.vault.editor.discard)) return
+    setDraft(theirs)
     setLoaded(conflict)
     setConflict(null)
   }

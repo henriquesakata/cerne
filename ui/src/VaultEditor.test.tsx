@@ -391,13 +391,28 @@ describe('VaultEditor conflict (F-0464 critério 7)', () => {
     expect(row.nextElementSibling!.nextElementSibling).toHaveClass('vault-editor-panes')
   })
 
-  it('conflict: reloading the backend version replaces the draft and the base', async () => {
-    api.saveEntityContent.mockResolvedValueOnce(conflict('versão deles', 'h2')).mockResolvedValue({ ok: true })
+  it('conflict: reloading asks before it discards the draft — refused, nothing changes', async () => {
+    api.saveEntityContent.mockResolvedValue(conflict('versão deles', 'h2'))
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
     editor(note())
     type('versão minha')
     save()
     await screen.findByText(/mudou no backend/)
     fireEvent.click(reload())
+    expect(confirm).toHaveBeenCalledWith('Descartar o rascunho não gravado?')
+    expect(source().value).toBe('versão minha')
+    expect(document.querySelector('.proposal-draft-diff')).not.toBeNull()
+  })
+
+  it('conflict: reloading the backend version replaces the draft and the base', async () => {
+    api.saveEntityContent.mockResolvedValueOnce(conflict('versão deles', 'h2')).mockResolvedValue({ ok: true })
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    editor(note())
+    type('versão minha')
+    save()
+    await screen.findByText(/mudou no backend/)
+    fireEvent.click(reload())
+    expect(confirm).toHaveBeenCalledWith('Descartar o rascunho não gravado?')
     expect(source().value).toBe('versão deles')
     expect(document.querySelector('.proposal-draft-diff')).toBeNull()
     type('versão deles, revista')
@@ -549,6 +564,7 @@ describe('VaultEditor frontmatter (F-0464 I-5)', () => {
   it('frontmatter: reloading the backend version splits the 409 content the same way', async () => {
     const FM2 = '---\ncerne_id: N-0001\nextra: sim\n---\n\n'
     api.saveEntityContent.mockResolvedValueOnce(conflict(FM2 + 'linha deles', 'h2')).mockResolvedValue({ ok: true })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
     editor(note({ content: FM + 'linha comum' }))
     type('linha minha')
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
