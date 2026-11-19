@@ -3,8 +3,12 @@
 package e2e_test
 
 import (
+	"archive/zip"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -293,5 +297,162 @@ func TestMCPB_Launcher(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "linux/riscv64") {
 		t.Errorf("stderr does not name the pair: %q", stderr)
+	}
+}
+
+// fakeDist writes the build-release.sh layout of tag into a temp dir: the
+// five binaries (formulaAssets) with distinct content, minus omit, and their
+// SHA256SUMS.
+func fakeDist(t *testing.T, tag string, omit ...string) string {
+	t.Helper()
+	dist := t.TempDir()
+	var sums strings.Builder
+	for _, a := range formulaAssets {
+		if contains(omit, a) {
+			continue
+		}
+		name := "cerne_" + tag + "_" + a
+		body := []byte("binary " + a)
+		if err := os.WriteFile(filepath.Join(dist, name), body, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		fmt.Fprintf(&sums, "%x  %s\n", sha256.Sum256(body), name)
+	}
+	if err := os.WriteFile(filepath.Join(dist, "SHA256SUMS"), []byte(sums.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dist
+}
+
+func runBundle(t *testing.T, tag, dist string) (stderr string, err error) {
+	t.Helper()
+	if _, err := exec.LookPath("zip"); err != nil {
+		t.Skip("zip not on PATH")
+	}
+	cmd := exec.Command("sh", "../scripts/mcpb-bundle.sh", tag, dist)
+	var errOut strings.Builder
+	cmd.Stderr = &errOut
+	err = cmd.Run()
+	return errOut.String(), err
+}
+
+func fileSHA(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fmt.Sprintf("%x", sha256.Sum256(b))
+}
+
+// F-0455 criterion 3: the bundle holds the versioned manifest, the launcher
+// and the five binaries renamed without the tag (executable), the manifest
+// validates against MCPB v0.3, and SHA256SUMS gains the bundle's line.
+func TestMCPB_BundleContents(t *testing.T) {
+	dist := fakeDist(t, "v9.9.9")
+	sumsBefore, _ := os.ReadFile(filepath.Join(dist, "SHA256SUMS"))
+	if stderr, err := runBundle(t, "v9.9.9", dist); err != nil {
+		t.Fatalf("bundle: %v\n%s", err, stderr)
+	}
+	bundle := filepath.Join(dist, "cerne_v9.9.9.mcpb")
+	zr, err := zip.OpenReader(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer zr.Close()
+	got := map[string]*zip.File{}
+	var names []string
+	for _, f := range zr.File {
+		if f.FileInfo().IsDir() {
+			continue
+		}
+		got[f.Name] = f
+		names = append(names, f.Name)
+	}
+	want := []string{"manifest.json", "server/cerne.sh"}
+	for _, a := range formulaAssets {
+		want = append(want, "server/cerne_"+a)
+	}
+	sort.Strings(names)
+	sort.Strings(want)
+	if strings.Join(names, " ") != strings.Join(want, " ") {
+		t.Fatalf("bundle files:\n got %v\nwant %v", names, want)
+	}
+	read := func(name string) []byte {
+		rc, err := got[name].Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer rc.Close()
+		b, err := io.ReadAll(rc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	for _, a := range formulaAssets {
+		name := "server/cerne_" + a
+		if string(read(name)) != "binary "+a {
+			t.Errorf("%s is not cerne_v9.9.9_%s", name, a)
+		}
+		if got[name].Mode()&0o111 == 0 {
+			t.Errorf("%s is stored without an execute bit: %v", name, got[name].Mode())
+		}
+	}
+	manifest := read("manifest.json")
+	validate(t, "mcpb-manifest-v0.3.schema.json", manifest)
+	m := readManifest(t, manifest)
+	if m.ManifestVersion != "0.3" || m.Version != "9.9.9" || m.Server.Type != "binary" {
+		t.Errorf("manifest_version %q version %q server.type %q", m.ManifestVersion, m.Version, m.Server.Type)
+	}
+	sums, _ := os.ReadFile(filepath.Join(dist, "SHA256SUMS"))
+	if wantSums := string(sumsBefore) + fileSHA(t, bundle) + "  cerne_v9.9.9.mcpb\n"; string(sums) != wantSums {
+		t.Errorf("SHA256SUMS:\n got %q\nwant %q", sums, wantSums)
+	}
+}
+
+// F-0455 criterion 2: dist/server.json is the template with the version, the
+// release URL of the bundle and its SHA-256, valid against the registry schema.
+func TestMCPB_RenderedServerJSON(t *testing.T) {
+	dist := fakeDist(t, "v9.9.9")
+	if stderr, err := runBundle(t, "v9.9.9", dist); err != nil {
+		t.Fatalf("bundle: %v\n%s", err, stderr)
+	}
+	raw, err := os.ReadFile(filepath.Join(dist, "server.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	validate(t, "server.schema.json", raw)
+	if strings.Contains(string(raw), "${") {
+		t.Errorf("a marker survived the render:\n%s", raw)
+	}
+	s := readServerJSON(t, raw)
+	if s.Version != "9.9.9" {
+		t.Errorf("version = %q, want 9.9.9", s.Version)
+	}
+	p := s.Packages[0]
+	if want := "https://github.com/henriquesakata/cerne/releases/download/v9.9.9/cerne_v9.9.9.mcpb"; p.Identifier != want {
+		t.Errorf("identifier = %q, want %q", p.Identifier, want)
+	}
+	if want := fileSHA(t, filepath.Join(dist, "cerne_v9.9.9.mcpb")); p.FileSha256 != want {
+		t.Errorf("fileSha256 = %q, want the bundle's %q", p.FileSha256, want)
+	}
+}
+
+// F-0455 criterion 7: a binary missing from dist fails naming it, before any
+// bundle or server.json is written.
+func TestMCPB_MissingBinary(t *testing.T) {
+	dist := fakeDist(t, "v9.9.9", "linux_arm64")
+	stderr, err := runBundle(t, "v9.9.9", dist)
+	if err == nil {
+		t.Fatal("bundle succeeded with linux_arm64 missing")
+	}
+	if !strings.Contains(stderr, "cerne_v9.9.9_linux_arm64") {
+		t.Errorf("stderr does not name the missing binary: %q", stderr)
+	}
+	for _, f := range []string{"cerne_v9.9.9.mcpb", "server.json"} {
+		if _, err := os.Stat(filepath.Join(dist, f)); err == nil {
+			t.Errorf("%s was written despite the missing binary", f)
+		}
 	}
 }
