@@ -5,8 +5,12 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/henriquesakata/cerne/internal/cost"
+	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // writeClaudeTranscript writes one Claude Code session file under
@@ -173,5 +177,33 @@ func TestLLMAuthorAnsweredModel(t *testing.T) {
 	}
 	if got := LLMAuthorAnswered(project.LLMConfig{Mode: "byo-key", Provider: "openai", Model: "gpt-x"}, "x"); got.Model != "gpt-x" {
 		t.Fatalf("byo-key: %+v", got)
+	}
+}
+
+// TestDocWriteMarksSession (F-0486): an agent session's write of a document
+// marks that session as the document's writer on this machine — the agent
+// that wrote the spec is often not the one that wrote the plan or the result —
+// and a human's write marks nothing.
+func TestDocWriteMarksSession(t *testing.T) {
+	cacheDir := t.TempDir()
+	repoDir := filepath.Join(cacheDir, "repo")
+	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0001", Title: "x", State: domain.StateApproved, CreatedAt: time.Now(), UpdatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CERNE_ORIGIN", "")
+	t.Setenv("CERNE_SESSION", "s-plan")
+	if err := RecordDocWrite(repoDir, "F-0001", "plan", DocAuthor{Provider: "anthropic", Model: "m", Source: "transcript"}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CERNE_SESSION", "s-human")
+	if err := RecordDocWrite(repoDir, "F-0001", "spec", HumanAuthor()); err != nil {
+		t.Fatal(err)
+	}
+	marks, err := cost.ReadMarks(cacheDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(marks) != 1 || marks[0].Session != "s-plan" || marks[0].Entity != "F-0001" || marks[0].Role != "plan" {
+		t.Fatalf("marks = %+v, want only s-plan wrote the plan of F-0001", marks)
 	}
 }

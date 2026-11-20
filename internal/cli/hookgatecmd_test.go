@@ -518,14 +518,14 @@ func TestHookBindRecordsOpenedFromCardNew(t *testing.T) {
 	run(`cerne feature new --help`, "F-0010 created (candidate)")
 	run(`cerne feature new "Dup" --context "y"`, "Error: a similar live feature exists: F-0001")
 
-	opened, err := cost.ReadOpened(cacheDir)
+	opened, err := cost.ReadMarks(cacheDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var got []string
 	for _, b := range opened {
-		if b.Session != "sess-open" || b.Harness != cost.HarnessClaudeCode {
-			t.Fatalf("opening mark %+v, want session sess-open under claude-code", b)
+		if b.Session != "sess-open" || b.Harness != cost.HarnessClaudeCode || b.Role != app.RoleOpened {
+			t.Fatalf("opening mark %+v, want sess-open opened under claude-code", b)
 		}
 		got = append(got, b.Entity)
 	}

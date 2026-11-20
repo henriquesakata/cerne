@@ -91,14 +91,15 @@ func BindSessionAgent(cacheDir, sess, agent, harness, id string) error {
 	return cost.AppendBind(cacheDir, cost.Bind{Session: sess, Agent: agent, Entity: id, Harness: harness, TS: time.Now().UTC()})
 }
 
-// RecordOpened records that session sess (agent inside a subagent) created the
-// card id (F-0486). Unlike a binding it writes no sessions/ file and no cost
-// ledger line: the session keeps working under whatever it was bound to.
-func RecordOpened(cacheDir, sess, agent, harness, id string) error {
+// RecordMark records that session sess (agent inside a subagent) did kind
+// (RoleOpened, or the document it wrote) on card id (F-0486). Unlike a
+// binding it writes no sessions/ file and no cost ledger line: the session
+// keeps working under whatever it was bound to.
+func RecordMark(cacheDir, sess, agent, harness, id, kind string) error {
 	if _, err := bindingName(sess, agent); err != nil {
 		return err
 	}
-	return cost.AppendOpened(cacheDir, cost.Bind{Session: sess, Agent: agent, Entity: id, Harness: harness, TS: time.Now().UTC()})
+	return cost.AppendMark(cacheDir, cost.Bind{Session: sess, Agent: agent, Entity: id, Role: kind, Harness: harness, TS: time.Now().UTC()})
 }
 
 // TouchBinding refreshes the mtime of the (sess, agent) binding file — its

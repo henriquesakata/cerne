@@ -398,7 +398,7 @@ func (n newFeature) mint(repoDir string) (store.Feature, string, error) {
 		if n.author == (DocAuthor{}) {
 			return nil
 		}
-		return store.AppendEvent(repoDir, n.author.docEdited(id, "spec", f.State, nil))
+		return n.author.recordDocEdited(repoDir, id, "spec", f.State, nil)
 	}()
 	if err != nil {
 		return store.Feature{}, "", err
@@ -756,7 +756,7 @@ func SaveFeatureDocBy(repoDir, projDir, id, doc, content, base string, by DocAut
 		// queryable by lint or stats. state is the state at write time. Whether an
 		// approval went stale is decided by content since F-0318, not by this
 		// event (lint.SpecChangedAfterApproval). F-0375: and who wrote it.
-		if err := store.AppendEvent(repoDir, by.docEdited(id, doc, f.State, planSpecDigest(repoDir, id, doc, []byte(content), nil))); err != nil {
+		if err := by.recordDocEdited(repoDir, id, doc, f.State, planSpecDigest(repoDir, id, doc, []byte(content), nil)); err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("cerne: update %s/%s", id, filename), nil
@@ -809,7 +809,7 @@ func UpdateCandidateSpecBy(repoDir, projDir, id, specBody string, by DocAuthor) 
 		// queryable by lint or by the entity history, so the write announces itself.
 		// It matters more here since F-0265 — the writer can be the agent, and the
 		// actor is what tells a spec the agent rewrote from one the human did.
-		if err := store.AppendEvent(repoDir, by.docEdited(id, "spec", f.State, nil)); err != nil {
+		if err := by.recordDocEdited(repoDir, id, "spec", f.State, nil); err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("cerne: update %s/spec.md", id), nil
@@ -870,7 +870,7 @@ func AmendFeatureResult(repoDir, projDir, id, body, reason string) (f store.Feat
 		if err := CheckResultRecord(repoDir, f, projectGates(projDir)); err != nil {
 			return "", err // an amend does not trade one debt for another
 		}
-		if err := store.AppendEvent(repoDir, by.docEdited(id, "result", f.State, map[string]string{"reason": reason})); err != nil {
+		if err := by.recordDocEdited(repoDir, id, "result", f.State, map[string]string{"reason": reason}); err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("cerne: amend %s/result.md", id), nil
@@ -972,7 +972,7 @@ func AmendFeatureDoc(repoDir, projDir, id, doc, body, reason string) (f store.Fe
 		}
 		extra := map[string]string{"reason": reason, "rev": strconv.Itoa(rev)}
 		maps.Copy(extra, planSpecDigest(repoDir, id, doc, []byte(content), nil))
-		if err := store.AppendEvent(repoDir, by.docEdited(id, doc, f.State, extra)); err != nil {
+		if err := by.recordDocEdited(repoDir, id, doc, f.State, extra); err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("cerne: amend %s/%s", id, filename), nil

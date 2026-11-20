@@ -323,7 +323,7 @@ func runHookBindWork(cmd *cobra.Command, format string) {
 	// bind would move the session's cost to the new card).
 	if cerneRun(ti.Command, cerneCardNewRe) != "" {
 		if m := cardCreatedRe.FindStringSubmatch(string(in.ToolResponse)); m != nil {
-			if err := app.RecordOpened(cacheDir, in.SessionID, in.AgentID, harness, m[1]); err != nil {
+			if err := app.RecordMark(cacheDir, in.SessionID, in.AgentID, harness, m[1], app.RoleOpened); err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "warning: card opener not recorded: %v\n", err)
 			}
 		}

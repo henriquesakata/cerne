@@ -50,10 +50,11 @@ func CurrentHarness() string {
 	return "other"
 }
 
-// openedFile records which session opened each card (F-0486): same line shape
-// as the ledger, its own file, so no cost reader — this binary's or an older
-// one's — ever attributes tokens through it.
-const openedFile = "opened.ndjson"
+// marksFile records what each session did on a card besides binding to it
+// (F-0486): opened it, wrote its spec, plan or result — Role names which.
+// Same line shape as the ledger, its own file, so no cost reader — this
+// binary's or an older one's — ever attributes tokens through it.
+const marksFile = "sessionmarks.ndjson"
 
 // AppendBind appends b as one JSON line to the ledger, creating it on first
 // use. One Write of the whole line keeps concurrent appends from interleaving.
@@ -61,10 +62,10 @@ func AppendBind(cacheDir string, b Bind) error {
 	return appendLine(cacheDir, ledgerFile, b)
 }
 
-// AppendOpened records that b.Session (b.Agent inside a subagent) created the
-// card b.Entity (F-0486).
-func AppendOpened(cacheDir string, b Bind) error {
-	return appendLine(cacheDir, openedFile, b)
+// AppendMark records that b.Session (b.Agent inside a subagent) did b.Role on
+// the card b.Entity (F-0486).
+func AppendMark(cacheDir string, b Bind) error {
+	return appendLine(cacheDir, marksFile, b)
 }
 
 // ReadBinds is every ledger line, in file order (F-0486: who worked where).
@@ -73,9 +74,9 @@ func ReadBinds(cacheDir string) ([]Bind, error) {
 	return binds, err
 }
 
-// ReadOpened is every opening mark, in file order.
-func ReadOpened(cacheDir string) ([]Bind, error) {
-	binds, _, err := readBindFile(cacheDir, openedFile)
+// ReadMarks is every session mark, in file order.
+func ReadMarks(cacheDir string) ([]Bind, error) {
+	binds, _, err := readBindFile(cacheDir, marksFile)
 	return binds, err
 }
 
