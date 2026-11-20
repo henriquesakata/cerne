@@ -427,12 +427,16 @@ describe('LiveProvider — nome do projeto ao vivo (F-0331)', () => {
 // cada aba recarrega quando o painel volta com outra identidade.
 describe('LiveProvider — reinício no binário novo (F-0478)', () => {
   const running = { version: 'v0.14.3', ui: 'old' }
-  const listWith = (installed: { version: string; ui: string; error?: string }, id = running) => async () => ({
-    projects: mockProjects,
-    default: 'p1',
-    ...id,
-    installed,
-  })
+  // changed segue o servidor: o arquivo no disco é outro quando a identidade
+  // difere da que roda (o teste do build local passa changed à parte).
+  const listWith =
+    (installed: { version: string; ui: string; error?: string; changed?: boolean }, id = running) =>
+    async () => ({
+      projects: mockProjects,
+      default: 'p1',
+      ...id,
+      installed: { changed: installed.version !== id.version || installed.ui !== id.ui, ...installed },
+    })
   let onProjects = () => {}
   beforeEach(() => {
     vi.mocked(subscribeLive).mockImplementation((h) => {
@@ -460,8 +464,39 @@ describe('LiveProvider — reinício no binário novo (F-0478)', () => {
     expect(screen.getByRole('status')).toHaveClass('advisory')
   })
 
+  it('critério 1: build local novo com a mesma versão e UI também avisa', async () => {
+    vi.mocked(fetchProjects).mockImplementation(listWith({ ...running, changed: true }))
+    render(
+      <LiveProvider>
+        <Probe />
+      </LiveProvider>,
+    )
+    expect(await screen.findByRole('button', { name: 'Reiniciar o painel' })).toBeInTheDocument()
+  })
+
+  it('reinício aceito que não traz o painel de volta noutra versão sai do "Reiniciando…" em 30 s', async () => {
+    vi.mocked(fetchProjects).mockImplementation(listWith({ version: 'v0.15.0', ui: 'new' }))
+    vi.mocked(restartPanel).mockResolvedValue(undefined)
+    render(
+      <LiveProvider>
+        <Probe />
+      </LiveProvider>,
+    )
+    const btn = await screen.findByRole('button', { name: 'Reiniciar o painel' })
+    vi.useFakeTimers()
+    try {
+      await act(async () => fireEvent.click(btn))
+      expect(screen.getByRole('status')).toHaveTextContent('Reiniciando o painel…')
+      await act(async () => vi.advanceTimersByTimeAsync(30_500))
+      expect(screen.getByRole('status')).toHaveTextContent('O painel não voltou numa versão nova.')
+      expect(btn).toHaveAttribute('aria-disabled', 'false')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('o binário do disco que não responde não vira aviso', async () => {
-    vi.mocked(fetchProjects).mockImplementation(listWith({ version: '', ui: '', error: 'exit status 3' }))
+    vi.mocked(fetchProjects).mockImplementation(listWith({ version: '', ui: '', error: 'exit status 3', changed: true }))
     render(
       <LiveProvider>
         <Probe />

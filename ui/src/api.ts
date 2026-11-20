@@ -288,8 +288,9 @@ function base(): string {
 }
 
 // PanelIdentity é a versão e a UI de um binário do cerne (F-0478); error diz
-// por que o binário no disco não pôde ser lido.
-export type PanelIdentity = { version: string; ui: string; error?: string }
+// por que o binário no disco não pôde ser lido, e changed que o arquivo no
+// disco não é o que subiu o painel (um build local pode ter a mesma versão e UI).
+export type PanelIdentity = { version: string; ui: string; error?: string; changed?: boolean }
 
 // fetchProjects lista os projetos registrados (rota global, não escopada),
 // com a identidade do binário que serve o painel e a do binário que o comando

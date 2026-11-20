@@ -81,6 +81,11 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   // Prazo da recarga pendente: o painel volta antes de os processos acoplados
   // registrarem de novo os seus projetos.
   const reloadBy = useRef(0)
+  // Um reinício aceito que não traz o painel de volta noutra versão (o exec
+  // falhou e o processo seguiu na versão de antes) não pode deixar o aviso
+  // em "Reiniciando…" para sempre.
+  const restartTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useEffect(() => () => clearTimeout(restartTimer.current), [])
 
   // activeRef espelha o pid ativo para uso síncrono fora do ciclo de render
   // (callbacks de SSE e o reload da lista), evitando closures velhas.
@@ -137,6 +142,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
               setTimeout(() => void reload(), 15_100)
             }
             if (!back && Date.now() < reloadBy.current) return
+            reloadBy.current = 0
             // A recarga passa pela trava do rascunho do cofre (F-0464): recusada,
             // a página fica e o aviso oferece recarregar depois.
             if (navAllowed()) {
@@ -225,15 +231,16 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const doRestart = () => {
     if (restart.state === 'restarting') return
     setRestart({ state: 'restarting' })
-    restartPanel().catch((e: unknown) =>
-      setRestart({ state: 'failed', error: e instanceof Error ? e.message : String(e) }),
-    )
+    restartTimer.current = setTimeout(() => setRestart({ state: 'failed', error: t.live.restartTimedOut }), 30_000)
+    restartPanel().catch((e: unknown) => {
+      clearTimeout(restartTimer.current)
+      setRestart({ state: 'failed', error: e instanceof Error ? e.message : String(e) })
+    })
   }
   const installed = panel?.installed
-  const newBinary =
-    !!installed?.version &&
-    !installed.error &&
-    (installed.version !== panel?.running.version || installed.ui !== panel?.running.ui)
+  // Pelo arquivo, não pela versão: um build local novo pode ter a mesma versão
+  // e a mesma UI (critério 1).
+  const newBinary = !!installed?.changed && !!installed.version && !installed.error
 
   if (!ready) return <p className="status">{t.live.loading}</p>
   if (projects.length === 0) return <p className="status">{t.live.noProjects}</p>
@@ -268,7 +275,9 @@ export function LiveProvider({ children }: { children: ReactNode }) {
             role="status"
           >
             {restart.state === 'failed' ? (
-              <p className="form-error">{t.live.restartFailed(restart.error ?? '')}</p>
+              <p className="form-error">
+                {restart.error === t.live.restartTimedOut ? restart.error : t.live.restartFailed(restart.error ?? '')}
+              </p>
             ) : (
               <p>
                 {restart.state === 'restarting'
