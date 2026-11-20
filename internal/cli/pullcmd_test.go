@@ -489,6 +489,31 @@ func TestSecondPullKeepsUnreconciledConflict(t *testing.T) {
 	}
 }
 
+// B-0041: with no .docs/.snapshot (a pre-F-0102 checkout) the merge base comes
+// from docs.lock, the same fallback push uses.
+func TestPullMergeBaseFallsBackToDocsLock(t *testing.T) {
+	projDir, origin, _, specPath := pulledFeatureProject(t, "Conteúdo original.")
+	got, _ := os.ReadFile(specPath)
+	mustWrite(t, specPath, strings.Replace(string(got), "# Título", "# Título local", 1))
+	clone2 := filepath.Join(t.TempDir(), "clone2")
+	if err := gitback.Clone(origin, clone2); err != nil {
+		t.Fatalf("Clone clone2: %v", err)
+	}
+	mustWrite(t, filepath.Join(clone2, "content", "features", "F-0001", "spec.md"), realDoc("F-0001", "Versão remota."))
+	if _, err := gitback.CommitAndPush(clone2, "remote edit, another line"); err != nil {
+		t.Fatalf("CommitAndPush clone2: %v", err)
+	}
+	if err := os.Remove(filepath.Join(projDir, ".docs", ".snapshot")); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := execCerne(t, "pull", "--dir", projDir); err != nil {
+		t.Fatalf("pull should merge over the docs.lock base: %v\n%s", err, out)
+	}
+	if got, _ := os.ReadFile(specPath); !strings.Contains(string(got), "# Título local") || !strings.Contains(string(got), "Versão remota.") {
+		t.Fatalf("merged spec lacks a side:\n%s", got)
+	}
+}
+
 // --force keeps its meaning: discard unsent edits and restore from the backend.
 func TestPullForceDiscardsUnpushedEdits(t *testing.T) {
 	projDir, _, _, specPath := pulledFeatureProject(t, "Conteúdo original.")

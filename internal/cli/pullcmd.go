@@ -68,7 +68,7 @@ func runPull(cmd *cobra.Command, dir, scope string, okfFlag, force, syncSkillsFl
 	var conflicts, merged []string
 	// The commit .docs/ was last synced to: the merge base of an unsent edit
 	// (B-0041). Unreadable means no base, and the doc falls back to a conflict.
-	prevSnap, _ := project.LoadSessionSnapshot(ctx.projDir)
+	prevSnap, _ := syncedSnapshot(ctx.projDir)
 	// Hold the backend lock for the whole clone-touching section: bring the
 	// shared clone to the latest remote, materialize, and 3-way merge unsent
 	// edits — so a concurrent push cannot reset the worktree mid-materialize.

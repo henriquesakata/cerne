@@ -61,21 +61,11 @@ func runPush(cmd *cobra.Command, dir string, dryRun, force bool) error {
 	if err != nil {
 		return err
 	}
-	// The reconcile base is the snapshot .docs/ was last synced to: the
-	// session sidecar when present (with pin_branch set, the committed
-	// docs.lock is stale on feature branches by design — F-0102), falling
-	// back to docs.lock for a pre-0102 checkout.
-	base, err := project.LoadSessionSnapshot(ctx.projDir)
-	if errors.Is(err, project.ErrNoSessionSnapshot) {
-		lock, lerr := project.LoadLock(ctx.projDir)
-		if errors.Is(lerr, project.ErrNoLock) {
-			return fmt.Errorf("no docs.lock found — run 'cerne pull' first")
-		}
-		if lerr != nil {
-			return lerr
-		}
-		base = lock.Snapshot
-	} else if err != nil {
+	base, err := syncedSnapshot(ctx.projDir)
+	if errors.Is(err, project.ErrNoLock) {
+		return fmt.Errorf("no docs.lock found — run 'cerne pull' first")
+	}
+	if err != nil {
 		return err
 	}
 
@@ -267,6 +257,19 @@ func reportDryRun(cmd *cobra.Command, ctx projCtx, docs []pushedDoc) error {
 	}
 	printFindings(out, findings)
 	return lintFailure(findings)
+}
+
+// syncedSnapshot is the backend commit .docs/ was last synced to: the session
+// sidecar when present (with pin_branch set, the committed docs.lock is stale
+// on feature branches by design — F-0102), falling back to docs.lock for a
+// pre-0102 checkout. Push reconciles over it; pull merges over it (B-0041).
+func syncedSnapshot(projDir string) (string, error) {
+	base, err := project.LoadSessionSnapshot(projDir)
+	if !errors.Is(err, project.ErrNoSessionSnapshot) {
+		return base, err
+	}
+	lock, err := project.LoadLock(projDir)
+	return lock.Snapshot, err
 }
 
 // checkReconciled refuses the docs whose remote version a pull stashed under
