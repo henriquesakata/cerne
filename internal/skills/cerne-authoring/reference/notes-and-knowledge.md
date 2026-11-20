@@ -14,6 +14,20 @@ A **note** is durable, team-relevant project knowledge an agent acquired across 
 - Declare when it shows up (F-0457): `cerne note new "<title>" --when edit:ui/dist/** --when "bash:git tag"` (repeatable), or `cerne note when N-NNNN <trigger>...` on an active note (`--clear` removes them). **`edit:<path>`** (an exact repo-relative path or `<dir>/**`) puts the note's id and title in front of an agent that edits a matching file, above the notes that merely cite it; **`bash:<words>`** does the same for a shell command containing those consecutive words. Up to 3 notes per event, each once per session: before the tool on Claude Code and Codex, right after it on Cursor, Gemini and Copilot. Declare a trigger when the moment the note matters is an edit or a command the note's text does not name as a file path (a folder, a CLI verb); a note that cites the file path already reaches the edit without one. `cerne note list --path <file>` shows what an edit of that file would surface. Turn them off per project with `hooks.notes_on_edit` / `hooks.notes_on_bash`.
 - Give it a gist (F-0459): `cerne note new "<title>" --gist "<one line>"`, or `cerne note gist N-NNNN "<one line>"` on an active note (`--clear` removes it). The edit and command note blocks print the gist under the note's `id — title` line, so the agent gets the detail without a `cerne show` round trip. Write **what the agent must do or avoid at that moment** (the exact flag, the error it prevents), not the subject (the title already has it): at most 160 runes, in the project's documentation language. A note without a gist shows its title alone; the prompt block (titles matched against the prompt) never carries it. Every note with a `--when` trigger deserves one.
 
+### Note or reference: guidance vs. source
+
+Each type keeps one thing. A **reference** (`R-`) keeps the source: the article, RFC, vendor doc or spec someone outside wrote that backs the project's architecture. A **note** (`N-`) keeps the guidance: what to do or avoid here, which is what the project decided to do with that source.
+
+When guidance rests on a source, the note points to the reference:
+
+- New source: `cerne reference new "<title>" --url <url> --informs N-NNNN [--file <summary>]`.
+- Source already registered: `cerne reference link R-NNNN --informs N-NNNN`.
+
+Why: the agent receives the guidance, which is short, and opens the source only when it needs the grounds.
+
+- Mistake: source pasted into a note. The note weighs on every task it shows up in. State the guidance in a few lines and point to the reference.
+- Mistake: guidance written in a reference. The reference summary says what the source claims, not what the project should do; guidance hidden there never reaches the agent. Put it in a note.
+
 ### Conventions: prescriptive notes an agent pulls before building (F-0165)
 
 A note whose components include the reserved slug **`convention`** is a **convention**: prescriptive guidance (*how to build here* — form validation rules, money/date fields, menu assembly, layout standards), as opposed to a descriptive note (*what was discovered*). `cerne note list` marks it `convention`. Author one like any note, pairing `convention` with the topic component: `cerne note new "Formulários: validação e campos" --component convention,forms --file <body>`. When an agent gets something wrong, don't fix it only in chat — **supersede the convention with a better one** (`cerne note supersede N-NNNN --by N-MMMM --reason "…"`): the correction becomes the standard the next agent reads.
