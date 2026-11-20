@@ -52,3 +52,37 @@ func TestSkillRoutesGuidanceToNoteAndSourceToReference(t *testing.T) {
 		t.Errorf("routing line has Portuguese %q", m)
 	}
 }
+
+// F-0483 crit. 2, 5: the reference files teach what each type keeps, the two
+// commands that link them, and the two mistakes.
+func TestReferenceFilesTeachNoteVsReferenceSplit(t *testing.T) {
+	notes := readFile(t, referenceDir+"/notes-and-knowledge.md")
+	for _, want := range []string{
+		"### Note or reference: guidance vs. source",
+		"cerne reference new",
+		"--informs N-NNNN",
+		"cerne reference link R-NNNN --informs N-NNNN",
+		"Mistake: source pasted into a note",
+		"Mistake: guidance written in a reference",
+	} {
+		if !strings.Contains(notes, want) {
+			t.Errorf("notes-and-knowledge.md lacks %q", want)
+		}
+	}
+	ext := readFile(t, referenceDir+"/external-sources.md")
+	for _, want := range []string{"notes-and-knowledge.md", "Mistake: guidance written in a reference"} {
+		if !strings.Contains(ext, want) {
+			t.Errorf("external-sources.md lacks %q", want)
+		}
+	}
+	i := strings.Index(notes, "### Note or reference")
+	if i >= 0 {
+		sub := notes[i:]
+		if j := strings.Index(sub[4:], "\n#"); j >= 0 {
+			sub = sub[:j+4]
+		}
+		if m := ptNoise.FindString(sub); m != "" {
+			t.Errorf("new subsection has Portuguese %q", m)
+		}
+	}
+}
