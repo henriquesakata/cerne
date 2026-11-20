@@ -189,7 +189,7 @@ const codexEnvFragment = `# cerne (F-0174): human gates recognize agent sessions
 set = { CERNE_ACTOR = "agent", CERNE_PROVIDER = "openai" }
 `
 
-func installCodex(projDir string) []Result {
+func installCodex(projDir string, network bool) []Result {
 	var results []Result
 
 	r := mergeProviderJSON(
@@ -216,7 +216,7 @@ func installCodex(projDir string) []Result {
 	envDst := filepath.Join(projDir, ".codex", "config.toml")
 	results = append(results, ensureLineFile(envDst, "codex: config.toml (CERNE_ACTOR, CERNE_PROVIDER)", "CERNE_PROVIDER", codexEnvFragment, false))
 
-	results = append(results, installCodexSandbox(projDir)...)
+	results = append(results, installCodexSandbox(projDir, network)...)
 
 	results = append(results, Result{Asset: "codex: subagent-context", Status: StatusSkipped, Note: "SubagentStart wiring pending live validation of its context envelope"})
 	results = append(results, Result{Asset: "codex: prompt-notes", Status: StatusSkipped, Note: "notes matching the prompt are only injected on Claude Code (UserPromptSubmit); no verified equivalent prompt-submit event that adds context is wired here (B-0020)"})

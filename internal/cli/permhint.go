@@ -6,6 +6,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/henriquesakata/cerne/internal/llm"
 )
 
 // cacheRefreshError explains why touching the cache clone at repoDir failed.
@@ -13,8 +15,14 @@ import (
 // dir and /tmp be written) names the folders to open and never advises
 // deleting anything; any other failure keeps the "delete to re-clone" advice.
 func cacheRefreshError(what, repoDir, backend string, err error) error {
-	if errors.Is(err, fs.ErrPermission) {
+	inCodex := os.Getenv("CODEX_THREAD_ID") != ""
+	// Inside Codex a cut network can surface as EPERM: only a folder that
+	// really refuses writes gets the permission message (F-0484).
+	if errors.Is(err, fs.ErrPermission) && (!inCodex || errors.Is(probeCacheDir(repoDir), fs.ErrPermission)) {
 		return notWritableError(repoDir, backend, err)
+	}
+	if inCodex { // the sandbox cut the network; deleting the cache will not help
+		return fmt.Errorf("%s at %s failed (%s): %w", what, repoDir, llm.CodexSandboxHint, err)
 	}
 	return fmt.Errorf("%s at %s failed (delete that directory and re-run the command to force a fresh clone): %w", what, repoDir, err)
 }
@@ -39,14 +47,19 @@ func unwritableCacheErr(repoDir, backend string, err error) error {
 	if errors.Is(err, fs.ErrPermission) {
 		return notWritableError(repoDir, backend, err)
 	}
-	f, perr := os.CreateTemp(filepath.Dir(repoDir), ".cerne-write-probe-*")
-	if perr == nil {
+	if errors.Is(probeCacheDir(repoDir), fs.ErrPermission) {
+		return notWritableError(repoDir, backend, err)
+	}
+	return err
+}
+
+// probeCacheDir tries to create a file in the cache dir (parent of the clone);
+// nil means it accepts writes.
+func probeCacheDir(repoDir string) error {
+	f, err := os.CreateTemp(filepath.Dir(repoDir), ".cerne-write-probe-*")
+	if err == nil {
 		f.Close()
 		os.Remove(f.Name())
-		return err
-	}
-	if errors.Is(perr, fs.ErrPermission) {
-		return notWritableError(repoDir, backend, err)
 	}
 	return err
 }

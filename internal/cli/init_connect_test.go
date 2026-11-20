@@ -33,6 +33,10 @@ func TestInitClosingConnectsDetectedAgentFirst(t *testing.T) {
 	if !strings.Contains(out, "  4. Approve the spec on the dashboard.") {
 		t.Errorf("steps not renumbered:\n%s", out)
 	}
+	// F-0484: init never suggests opening the network.
+	if strings.Contains(out, "--network") {
+		t.Errorf("init closing suggests --network:\n%s", out)
+	}
 }
 
 func TestInitClosingConnectsSeveralAgentsOnOneLine(t *testing.T) {
