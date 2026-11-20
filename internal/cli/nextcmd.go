@@ -231,8 +231,21 @@ func runNext(cmd *cobra.Command, dir string, asJSON bool) error {
 		return enc.Encode(q)
 	}
 	// F-0476 crit. 4: managed files older than this binary, on top.
+	// F-0477: the automatic refresh first; the line shows what is left.
+	line, leftover := autoRefresh(ctx.projDir)
+	spoke := line != ""
+	if line != "" {
+		fmt.Fprintln(out, line)
+	}
 	if h, g := staleManaged(ctx.projDir); len(h)+len(g) > 0 {
-		fmt.Fprintln(out, "cerne: this project's hooks or guide are older than this cerne build — run 'cerne update'")
+		spoke = true
+		warn := "cerne: this project's hooks or guide are older than this cerne build — run 'cerne update'"
+		if len(leftover) > 0 {
+			warn += " (" + leftoverNote(leftover) + ")"
+		}
+		fmt.Fprintln(out, warn)
+	}
+	if spoke {
 		fmt.Fprintln(out)
 	}
 	printChannelLead(out, ctx.cfg.ProjectID)
