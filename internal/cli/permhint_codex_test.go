@@ -2,9 +2,11 @@ package cli
 
 import (
 	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -40,10 +42,52 @@ func TestCacheRefreshErrorInsideCodex(t *testing.T) {
 	}
 }
 
+// F-0484 critic #6: a cut network can surface as EPERM wrapped in a net error;
+// inside Codex, on a writable folder, that is still the network hint.
+func TestCacheRefreshErrorEPERMInsideCodexOnWritableFolder(t *testing.T) {
+	repoDir := filepath.Join(t.TempDir(), "clone")
+	cause := &net.OpError{Op: "dial", Net: "tcp", Err: os.NewSyscallError("connect", syscall.EPERM)}
+
+	t.Setenv("CODEX_THREAD_ID", "019e-thread")
+	got := cacheRefreshError("syncing the cache clone", repoDir, "git://127.0.0.1/r.git", cause).Error()
+	if !strings.Contains(got, "cerne hook install --provider codex --network") || strings.Contains(got, "does not accept writes") {
+		t.Errorf("inside Codex, writable folder: %q", got)
+	}
+
+	// Outside Codex: unchanged (the B-0052 message).
+	t.Setenv("CODEX_THREAD_ID", "")
+	got = cacheRefreshError("syncing the cache clone", repoDir, "x", cause).Error()
+	if !strings.Contains(got, "does not accept writes") || strings.Contains(got, "--network") {
+		t.Errorf("outside Codex changed: %q", got)
+	}
+
+	// Inside Codex on an unwritable folder: B-0052.
+	if os.Geteuid() != 0 {
+		ro := t.TempDir()
+		if err := os.Chmod(ro, 0o555); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(ro, 0o755) })
+		t.Setenv("CODEX_THREAD_ID", "019e-thread")
+		got = cacheRefreshError("syncing the cache clone", filepath.Join(ro, "clone"), "x", cause).Error()
+		if !strings.Contains(got, "does not accept writes") || strings.Contains(got, "--network") {
+			t.Errorf("unwritable folder inside Codex: %q", got)
+		}
+	}
+}
+
 // An unwritable folder keeps the B-0052 message even inside Codex.
 func TestCacheRefreshErrorUnwritableInsideCodexKeepsB0052(t *testing.T) {
 	t.Setenv("CODEX_THREAD_ID", "019e-thread")
-	repoDir := filepath.Join(t.TempDir(), "clone")
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	ro := t.TempDir()
+	if err := os.Chmod(ro, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(ro, 0o755) })
+	repoDir := filepath.Join(ro, "clone")
 	err := cacheRefreshError("syncing the cache clone", repoDir, "x", &os.PathError{Op: "mkdir", Path: repoDir, Err: os.ErrPermission})
 	if !strings.Contains(err.Error(), "does not accept writes") || strings.Contains(err.Error(), "--network") {
 		t.Errorf("B-0052 message changed: %v", err)
