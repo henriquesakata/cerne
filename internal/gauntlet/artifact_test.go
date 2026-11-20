@@ -85,7 +85,8 @@ func TestAssemble(t *testing.T) {
 }
 
 func TestAssembleNoCriteria(t *testing.T) {
-	for _, spec := range []string{"", "## Problema\n\nx\n"} {
+	// A feature spec with only a "Contexto" is no bug report (B-0037 review).
+	for _, spec := range []string{"", "## Problema\n\nx\n", "## Contexto\n\nx\n", "## Context\n\nx\n\n## Steps to reproduce\n\ny\n"} {
 		if _, err := Assemble(Input{Lang: doclang.PT, Spec: spec}); !errors.Is(err, ErrNoCriteria) {
 			t.Errorf("spec %q: err = %v, want ErrNoCriteria", spec, err)
 		}
