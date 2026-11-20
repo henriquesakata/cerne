@@ -81,10 +81,15 @@ func printRename(w io.Writer, rep app.RenameReport, force bool) {
 			strings.Join(e.Before, ", "), strings.Join(e.After, ", "))
 	}
 	_ = tw.Flush()
-	if rep.Merge {
+	switch {
+	case rep.Merge && rep.DryRun:
 		fmt.Fprintf(w, "%q is already on %s: this merges %q into it; an entity with both keeps one.\n", rep.To, entityCount(rep.ToCount), rep.From)
-	} else {
+	case rep.Merge:
+		fmt.Fprintf(w, "%q was already on %s: %q was merged into it; an entity with both kept one.\n", rep.To, entityCount(rep.ToCount), rep.From)
+	case rep.DryRun:
 		fmt.Fprintf(w, "%q is a new component: no entity has it yet.\n", rep.To)
+	default:
+		fmt.Fprintf(w, "%q was a new component: no entity had it before.\n", rep.To)
 	}
 	if rep.DryRun {
 		apply := fmt.Sprintf("cerne tags rename %s %s", rep.From, rep.To)

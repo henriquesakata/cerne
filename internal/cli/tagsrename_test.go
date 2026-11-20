@@ -85,12 +85,16 @@ func TestTagsRenameWritesAndMerges(t *testing.T) {
 	if first := strings.SplitN(out, "\n", 2)[0]; first != `Renamed component "old" to "fresh" on 3 entities in one commit, one retag event each.` {
 		t.Errorf("first line = %q", first)
 	}
-	if strings.Contains(out, "Apply:") {
-		t.Errorf("a write prints no apply command:\n%s", out)
+	if strings.Contains(out, "Apply:") || !strings.Contains(out, `"fresh" was a new component: no entity had it before.`) {
+		t.Errorf("a write prints no apply command and speaks in the past:\n%s", out)
 	}
 	tags, _ := execCerne(t, "tags", "--dir", projDir)
 	if !strings.Contains(tags, "  fresh (3)") || strings.Contains(tags, "  old (") {
 		t.Fatalf("after the rename:\n%s", tags)
+	}
+	merged, err := execCerne(t, "tags", "rename", "fresh", "gitea", "--dir", projDir)
+	if err != nil || !strings.Contains(merged, `"gitea" was already on 1 entity: "fresh" was merged into it; an entity with both kept one.`) {
+		t.Fatalf("merge write: %v\n%s", err, merged)
 	}
 }
 
