@@ -82,7 +82,7 @@ func TestRetagReferenceInvalidFacetNoOp(t *testing.T) {
 	}
 }
 
-// TestRetagReferenceNotFoundOrObsolete: missing id and obsolete reference both error.
+// TestRetagReferenceNotFoundOrObsolete: missing id and obsolete reference errors, an obsolete one is accepted (F-0482).
 func TestRetagReferenceNotFoundOrObsolete(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	if _, err := RetagReference(repoDir, projDir, "R-9999", []string{"auth"}, nil, true, false); err == nil {
@@ -95,12 +95,12 @@ func TestRetagReferenceNotFoundOrObsolete(t *testing.T) {
 		t.Fatalf("SaveReference obsolete: %v", err)
 	}
 	commitBackend(t, repoDir)
-	if _, err := RetagReference(repoDir, projDir, r.ID, []string{"code"}, nil, true, false); err == nil {
-		t.Fatalf("retag of obsolete reference should error")
+	if _, err := RetagReference(repoDir, projDir, r.ID, []string{"code"}, nil, true, false); err != nil {
+		t.Fatalf("retag of an obsolete reference refused: %v", err)
 	}
 	reload, _ := store.LoadReference(repoDir, r.ID)
-	if len(reload.Facets) != 1 || reload.Facets[0] != "auth" {
-		t.Fatalf("obsolete reference mutated on refused retag: %v", reload.Facets)
+	if len(reload.Facets) != 1 || reload.Facets[0] != "code" {
+		t.Fatalf("obsolete reference not retagged: %v", reload.Facets)
 	}
 }
 

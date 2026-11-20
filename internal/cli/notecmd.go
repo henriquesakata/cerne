@@ -438,8 +438,8 @@ func newNoteRetagCmd(dir *string) *cobra.Command {
 	var facet, component string
 	cmd := &cobra.Command{
 		Use:   "retag <id>",
-		Short: "Reset the tags (facet/component) of an active note",
-		Long: "Sets or replaces the tag axes of an active note, without creating a successor — preserves durable, " +
+		Short: "Reset the tags (facet/component) of a note",
+		Long: "Sets or replaces the tag axes of a note in any state, without creating a successor — preserves durable, " +
 			"informs and body. Changes only the axis passed: 'retag N-0001 --component gitea' keeps the facets; " +
 			"'--facet \"\"' clears the facets. A facet outside the closed set (infra,code,data,process,auth) is rejected.",
 		Args: cobra.ExactArgs(1),

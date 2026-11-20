@@ -45,8 +45,8 @@ func newRunbookRetagCmd(dir *string) *cobra.Command {
 	var facet, component string
 	cmd := &cobra.Command{
 		Use:   "retag <id>",
-		Short: "Reset the tags (facet/component) of an active runbook",
-		Long: "Sets or replaces the tag axes of an active runbook, without superseding it — preserves body and " +
+		Short: "Reset the tags (facet/component) of a runbook",
+		Long: "Sets or replaces the tag axes of a runbook in any state, without superseding it — preserves body and " +
 			"state. Changes only the axis passed: 'retag RB-0001 --component gitback' keeps the facets; '--facet \"\"' " +
 			"clears the facets. A facet outside the closed set (infra,code,data,process,auth) is rejected.",
 		Args: cobra.ExactArgs(1),

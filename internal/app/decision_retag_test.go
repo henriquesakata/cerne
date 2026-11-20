@@ -81,7 +81,7 @@ func TestRetagDecisionInvalidFacetNoOp(t *testing.T) {
 	}
 }
 
-// TestRetagDecisionNotFoundOrSuperseded: missing id and superseded decision both error.
+// TestRetagDecisionNotFoundOrSuperseded: missing id and superseded decision errors, a superseded one is accepted (F-0482).
 func TestRetagDecisionNotFoundOrSuperseded(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	if _, err := RetagDecision(repoDir, projDir, "D-9999", []string{"auth"}, nil, true, false); err == nil {
@@ -92,7 +92,7 @@ func TestRetagDecisionNotFoundOrSuperseded(t *testing.T) {
 	if _, err := TransitionDecision(repoDir, projDir, d.ID, d2.ID, "obsoleta"); err != nil {
 		t.Fatalf("TransitionDecision: %v", err)
 	}
-	if _, err := RetagDecision(repoDir, projDir, d.ID, []string{"auth"}, nil, true, false); err == nil {
-		t.Fatalf("retag of superseded decision should error")
+	if _, err := RetagDecision(repoDir, projDir, d.ID, []string{"auth"}, nil, true, false); err != nil {
+		t.Fatalf("retag of a superseded decision refused: %v", err)
 	}
 }

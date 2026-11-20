@@ -102,7 +102,7 @@ func TestRetagRunbookPreservesTitleState(t *testing.T) {
 	}
 }
 
-// TestRetagRunbookNotFoundOrSuperseded: missing id and superseded runbook both error.
+// TestRetagRunbookNotFoundOrSuperseded: missing id and superseded runbook errors, a superseded one is accepted (F-0482).
 func TestRetagRunbookNotFoundOrSuperseded(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	if _, err := RetagRunbook(repoDir, projDir, "RB-9999", []string{"infra"}, nil, true, false); err == nil {
@@ -116,7 +116,7 @@ func TestRetagRunbookNotFoundOrSuperseded(t *testing.T) {
 	if _, err := TransitionRunbook(repoDir, projDir, rb.ID, by.ID, "obsoleto"); err != nil {
 		t.Fatalf("TransitionRunbook: %v", err)
 	}
-	if _, err := RetagRunbook(repoDir, projDir, rb.ID, []string{"infra"}, nil, true, false); err == nil {
-		t.Fatalf("want error retagging a superseded runbook")
+	if _, err := RetagRunbook(repoDir, projDir, rb.ID, []string{"infra"}, nil, true, false); err != nil {
+		t.Fatalf("retag of a superseded runbook refused: %v", err)
 	}
 }

@@ -409,11 +409,9 @@ func (n newFeature) mint(repoDir string) (store.Feature, string, error) {
 // RetagFeature sets the tag axes of a feature in the backend clone at repoDir.
 // Each axis is replaced only when its set flag is true, so a caller can update
 // facets without touching components (or clear an axis by passing an empty slice
-// with set=true); every other field is preserved. Unlike a decision (retaggable
-// only while active), a feature is retaggable in every state EXCEPT the dead
-// history ones (superseded/rejected): the implemented backlog is living,
-// searchable knowledge worth categorizing, so tagging it is allowed even though
-// the untagged-live lint never nags about it. Facets are validated against the
+// with set=true); every other field is preserved. Every state is retaggable,
+// the dead-history ones (superseded/rejected) included (F-0482): only the body
+// of a closed entity is immutable, its tags are a living index. Facets are validated against the
 // closed set before any write. Appends feature.retagged and syncs backend +
 // docs.lock.
 func RetagFeature(repoDir, projDir, id string, facets, components []string, setFacets, setComponents bool) (store.Feature, error) {
@@ -423,9 +421,6 @@ func RetagFeature(repoDir, projDir, id string, facets, components []string, setF
 		f, err = store.LoadFeature(repoDir, id)
 		if err != nil {
 			return "", err
-		}
-		if f.State == domain.StateSuperseded || f.State == domain.StateRejected {
-			return "", fmt.Errorf("feature %s is closed (%s) — retag only applies to a live or implemented feature", id, f.State)
 		}
 		if setFacets {
 			nf, err := domain.NormalizeFacets(facets)

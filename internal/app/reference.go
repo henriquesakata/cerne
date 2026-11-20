@@ -96,7 +96,7 @@ func CreateExternalReference(repoDir, projDir, title, url, content string, infor
 	return r, nil
 }
 
-// RetagReference sets the tag axes of a current reference in the backend clone
+// RetagReference sets the tag axes of a reference, in any state, in the backend clone
 // at repoDir. Each axis is replaced only when its set flag is true, so a caller
 // can update facets without touching components (or clear an axis by passing an
 // empty slice with set=true); state, url, external, informs and the content doc
@@ -113,9 +113,6 @@ func RetagReference(repoDir, projDir, id string, facets, components []string, se
 		}
 		if err != nil {
 			return "", err
-		}
-		if r.State != domain.ReferenceCurrent {
-			return "", fmt.Errorf("reference %s is not current (it is %s) — retag only applies to a current reference", id, r.State)
 		}
 		if setFacets {
 			nf, err := domain.NormalizeFacets(facets)
