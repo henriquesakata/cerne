@@ -317,7 +317,7 @@ export async function fetchProjects(): Promise<{
 // nova que o binário instalado e se o painel pode trocá-lo por dentro; quando
 // não pode, why e fix dizem por que e o comando a rodar. last é o fim da
 // última troca (state: updated | up to date | not done).
-export type UpdateOutcome = { state: string; detail?: string; fix?: string }
+export type UpdateOutcome = { state: string; detail?: string; fix?: string; restart_error?: string }
 export type UpdateState = {
   current: string
   latest?: string

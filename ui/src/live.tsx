@@ -267,7 +267,11 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       void reload()
     })
   }
-  const updateFailed = !update?.running && update?.last?.state === 'not done' ? update.last : null
+  // Uma troca que não instalou nada (falhou, ou o gerenciador não achou versão
+  // nova) só vale enquanto ainda há versão nova: resolvida por fora, o aviso sai.
+  const updateFailed =
+    !update?.running && update?.newer && update.last && update.last.state !== 'updated' ? update.last : null
+  const updateNoRestart = !update?.running && update?.last?.state === 'updated' ? update.last.restart_error : ''
   const installed = panel?.installed
   // Pelo arquivo, não pela versão: um build local novo pode ter a mesma versão
   // e a mesma UI (critério 1).
@@ -307,6 +311,11 @@ export function LiveProvider({ children }: { children: ReactNode }) {
               {t.live.runInTerminal} <code>{updateFailed.fix}</code>
             </p>
           )}
+        </div>
+      )}
+      {updateNoRestart && (
+        <div className="load-notice live-refresh-notice" role="status">
+          <p className="form-error">{t.live.updateNoRestart(updateNoRestart)}</p>
         </div>
       )}
       {showUpdateFix && update?.newer && !update.swappable && update.latest && (

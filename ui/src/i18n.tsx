@@ -1396,6 +1396,8 @@ const ptBR = {
     updateTo: (v: string) => `Atualizar para ${v}`,
     updateAvailable: (v: string) => `${v} disponível`,
     updateFailed: (e: string) => `A atualização não terminou: ${e}`,
+    updateNoRestart: (e: string) =>
+      `O cerne foi atualizado, mas o painel não reiniciou: ${e}. Use o aviso de reinício, ou encerre este cerne ui e rode cerne ui de novo.`,
     updateManual: (v: string) => `O cerne ${v} saiu. Este painel não troca o próprio binário; para atualizar, rode no terminal:`,
     runInTerminal: 'Rode no terminal:',
   },
@@ -2949,6 +2951,8 @@ const en: Messages = {
     updateTo: (v: string) => `Update to ${v}`,
     updateAvailable: (v: string) => `${v} available`,
     updateFailed: (e: string) => `The update did not finish: ${e}`,
+    updateNoRestart: (e: string) =>
+      `cerne was updated, but the panel did not restart: ${e}. Use the restart notice, or stop this cerne ui and run cerne ui again.`,
     updateManual: (v: string) => `cerne ${v} is out. This panel does not replace its own binary; to update, run in a terminal:`,
     runInTerminal: 'Run in a terminal:',
   },

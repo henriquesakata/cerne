@@ -701,6 +701,36 @@ describe('Nav — botão Atualizar (F-0480)', () => {
     expect(screen.getByRole('button', { name: 'Atualizar para 0.15.0' })).toBeInTheDocument()
   })
 
+  it('o aviso de falha sai quando já não há versão nova (resolvida por fora)', async () => {
+    const failed = { state: 'not done', detail: 'checksum mismatch', fix: 'brew upgrade henriquesakata/tap/cerne' }
+    vi.mocked(fetchUpdate).mockImplementation(async () => ({ ...base, last: failed }))
+    renderNav()
+    expect(await screen.findByText('A atualização não terminou: checksum mismatch')).toBeInTheDocument()
+    vi.mocked(fetchUpdate).mockImplementation(async () => ({ ...base, current: 'v0.15.0', newer: false, last: failed }))
+    await act(async () => onProjects())
+    expect(screen.queryByText(/A atualização não terminou/)).not.toBeInTheDocument()
+  })
+
+  it('o gerenciador que não acha nada para instalar não deixa o clique mudo', async () => {
+    vi.mocked(fetchUpdate).mockImplementation(async () => ({
+      ...base,
+      last: { state: 'up to date', detail: 'Homebrew has nothing newer' },
+    }))
+    renderNav()
+    expect(await screen.findByText('A atualização não terminou: Homebrew has nothing newer')).toBeInTheDocument()
+  })
+
+  it('a troca que instalou mas não reiniciou o painel diz por quê', async () => {
+    vi.mocked(fetchUpdate).mockImplementation(async () => ({
+      ...base,
+      current: 'v0.15.0',
+      newer: false,
+      last: { state: 'updated', restart_error: 'the cerne on disk does not run' },
+    }))
+    renderNav()
+    expect(await screen.findByText(/O cerne foi atualizado, mas o painel não reiniciou: the cerne on disk does not run/)).toBeInTheDocument()
+  })
+
   it('critério 6: sem troca por dentro, mostra a versão nova e o comando, sem botão de troca', async () => {
     vi.mocked(fetchUpdate).mockImplementation(async () => ({
       ...base,
