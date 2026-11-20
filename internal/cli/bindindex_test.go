@@ -96,6 +96,11 @@ func TestBindIndexOnFeatureStart(t *testing.T) {
 	if strings.Contains(out, "BODY-MARKER") {
 		t.Fatalf("a note body was printed:\n%s", out)
 	}
+	// T-0018: the package of the same task carries those linked bodies; the
+	// index stays without them.
+	if pkg := mustCerne(t, "context", id, "--dir", projDir); !strings.Contains(pkg, "  BODY-MARKER of the rule.\n") {
+		t.Fatalf("the package lacks the linked bodies the index leaves out:\n%s", pkg)
+	}
 	// The bind hook still binds the started feature, from the whole output and
 	// from its last line alone (the B-0002 path through the clone).
 	bindsTo(t, projDir, repoDir, "sess-start-all", "cerne feature start "+id, out, id)
