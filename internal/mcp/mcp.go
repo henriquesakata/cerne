@@ -117,6 +117,11 @@ type showArgs struct {
 	ID string `json:"id" jsonschema:"entity id, e.g. F-0363, D-0001, N-0028, R-0061, RB-0001"`
 }
 
+type contextArgs struct {
+	ID     string `json:"id" jsonschema:"feature, epic, task or bug id, e.g. F-0363, T-0017"`
+	Budget *int   `json:"budget,omitempty" jsonschema:"ceiling in estimated tokens, 1 to 200000 (default 8000)"`
+}
+
 type askArgs struct {
 	Question string `json:"question" jsonschema:"natural-language question; returns the retrieved sources, no LLM call"`
 }
@@ -128,7 +133,7 @@ type guideArgs struct {
 // ToolNames lists the tools NewServer serves, in order: the one list a client
 // config that must name its tools (Copilot's .mcp.json, F-0444) copies. A test
 // keeps it equal to what the server announces.
-var ToolNames = []string{"status", "brief", "next", "search", "show", "ask", "guide"}
+var ToolNames = []string{"status", "brief", "next", "search", "show", "context", "ask", "guide"}
 
 // NewServer registers the tools on an MCP server named cerne.
 func NewServer(version string, exec Exec) *sdk.Server {
@@ -171,6 +176,25 @@ func NewServer(version string, exec Exec) *sdk.Server {
 				return nil, fmt.Errorf("id %q is not a cerne id (e.g. F-0363): %w", in.ID, ErrBadArgument)
 			}
 			return []string{"show", in.ID, "--json"}, nil
+		})
+	add(s, g, exec, "context", "The task package: a feature's stage document whole, its epic, and the notes, decisions and sources that inform it (id, title, one-line gist; bodies via show), within a token budget. Start a task here.",
+		func(p map[string]*jsonschema.Schema) {
+			p["id"].Pattern = idPattern
+			p["budget"].Type, p["budget"].Types = "integer", nil
+			p["budget"].Minimum, p["budget"].Maximum = jsonschema.Ptr(1.0), jsonschema.Ptr(200000.0)
+		},
+		func(in contextArgs) ([]string, error) {
+			if !idRe.MatchString(in.ID) {
+				return nil, fmt.Errorf("id %q is not a cerne id (e.g. T-0017): %w", in.ID, ErrBadArgument)
+			}
+			args := []string{"context", in.ID, "--json"}
+			if in.Budget != nil {
+				if *in.Budget < 1 || *in.Budget > 200000 {
+					return nil, fmt.Errorf("budget %d is outside 1..200000: %w", *in.Budget, ErrBadArgument)
+				}
+				args = append(args, "--budget", strconv.Itoa(*in.Budget))
+			}
+			return args, nil
 		})
 	add(s, g, exec, "ask", "Retrieve the sources that answer a question, ranked, with snippets. Makes no LLM call: you answer from the sources.",
 		func(p map[string]*jsonschema.Schema) { p["question"].MinLength = jsonschema.Ptr(1) },

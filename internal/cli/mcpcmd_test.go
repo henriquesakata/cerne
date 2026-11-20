@@ -143,6 +143,8 @@ var allCalls = []struct {
 	{"search", map[string]any{"query": "Conta", "limit": 1}, []string{"search", "Conta", "--json", "--limit", "1"}},
 	{"show", map[string]any{"id": "F-0001"}, []string{"show", "F-0001", "--json"}},
 	{"show", map[string]any{"id": "N-0001"}, []string{"show", "N-0001", "--json"}},
+	{"context", map[string]any{"id": "F-0001"}, []string{"context", "F-0001", "--json"}},
+	{"context", map[string]any{"id": "F-0001", "budget": 1}, []string{"context", "F-0001", "--json", "--budget", "1"}},
 	{"ask", map[string]any{"question": "qual banco usar?"}, []string{"ask", "qual banco usar?", "--json"}},
 	{"guide", map[string]any{"query": "settings"}, []string{"guide", "settings", "--json"}},
 }
@@ -360,8 +362,8 @@ func TestMCP_NoWriteTools(t *testing.T) {
 		}
 	}
 	sort.Strings(names)
-	if strings.Join(names, ",") != "ask,brief,guide,next,search,show,status" {
-		t.Fatalf("tools = %v, want exactly the seven reading tools", names)
+	if strings.Join(names, ",") != "ask,brief,context,guide,next,search,show,status" {
+		t.Fatalf("tools = %v, want exactly the eight reading tools", names)
 	}
 	for _, c := range allCalls {
 		callTool(t, cs, c.tool, c.args)
@@ -386,7 +388,7 @@ func TestMCP_NoWriteTools(t *testing.T) {
 // or kill the server, so any appearance in their sources fails here.
 func TestMCP_ToolCommandsNeverTouchProcessStdio(t *testing.T) {
 	banned := regexp.MustCompile(`os\.Stdout|os\.Stdin|os\.Exit\(|fmt\.Print(ln|f)?\(`)
-	for _, name := range []string{"status", "brief", "next", "search", "show", "ask"} {
+	for _, name := range []string{"status", "brief", "next", "search", "show", "context", "ask"} {
 		src, err := os.ReadFile(name + "cmd.go")
 		if err != nil {
 			t.Fatal(err)

@@ -239,7 +239,7 @@ A project with only code needs no import: run `cerne init`, then ask your agent 
 
 ### Agents without a shell: MCP
 
-`cerne mcp` serves the project to any MCP client over stdio, with seven read-only tools: `status`, `brief`, `next`, `search`, `show` and `ask` return exactly what the command of the same name prints with `--json`, and `guide` answers how to use cerne itself from its skill, help and FAQ. None writes anything, and `ask` returns the ranked sources without calling a model.
+`cerne mcp` serves the project to any MCP client over stdio, with eight read-only tools: `status`, `brief`, `next`, `search`, `show`, `context` and `ask` return exactly what the command of the same name prints with `--json`, and `guide` answers how to use cerne itself from its skill, help and FAQ. None writes anything, and `ask` returns the ranked sources without calling a model.
 
 In a project-scoped config (for example a `.mcp.json` at the project root, which the client starts from there):
 

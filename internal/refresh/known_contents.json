@@ -86,6 +86,7 @@
    "be6b16528653c28ff5698b3c4d4dd7195fdb05c851a801fe490f5afde0705361"
   ],
   ".agents/skills/cerne-authoring/reference/mcp-and-demo.md": [
+   "1512fc1a65b94207052d73aef9eaeb125680b906a6a3a1fb81e91d0ca4a7fe15",
    "153b3ec2f168f1785e5b0add437552669ff7b70099e73997e620fc14cfbf8dfc",
    "35b478de3d83a3f759643b6cb454c49ce0b40185be70a93e0cb3fe36cc31dbd5"
   ],
@@ -282,6 +283,7 @@
    "be6b16528653c28ff5698b3c4d4dd7195fdb05c851a801fe490f5afde0705361"
   ],
   ".claude/skills/cerne-authoring/reference/mcp-and-demo.md": [
+   "1512fc1a65b94207052d73aef9eaeb125680b906a6a3a1fb81e91d0ca4a7fe15",
    "153b3ec2f168f1785e5b0add437552669ff7b70099e73997e620fc14cfbf8dfc",
    "35b478de3d83a3f759643b6cb454c49ce0b40185be70a93e0cb3fe36cc31dbd5"
   ],
@@ -439,6 +441,7 @@
    "be6b16528653c28ff5698b3c4d4dd7195fdb05c851a801fe490f5afde0705361"
   ],
   ".cursor/skills/cerne-authoring/reference/mcp-and-demo.md": [
+   "1512fc1a65b94207052d73aef9eaeb125680b906a6a3a1fb81e91d0ca4a7fe15",
    "153b3ec2f168f1785e5b0add437552669ff7b70099e73997e620fc14cfbf8dfc",
    "35b478de3d83a3f759643b6cb454c49ce0b40185be70a93e0cb3fe36cc31dbd5"
   ],
@@ -558,6 +561,7 @@
    "be6b16528653c28ff5698b3c4d4dd7195fdb05c851a801fe490f5afde0705361"
   ],
   ".gemini/skills/cerne-authoring/reference/mcp-and-demo.md": [
+   "1512fc1a65b94207052d73aef9eaeb125680b906a6a3a1fb81e91d0ca4a7fe15",
    "153b3ec2f168f1785e5b0add437552669ff7b70099e73997e620fc14cfbf8dfc",
    "35b478de3d83a3f759643b6cb454c49ce0b40185be70a93e0cb3fe36cc31dbd5"
   ],
@@ -656,6 +660,7 @@
    "be6b16528653c28ff5698b3c4d4dd7195fdb05c851a801fe490f5afde0705361"
   ],
   ".github/skills/cerne-authoring/reference/mcp-and-demo.md": [
+   "1512fc1a65b94207052d73aef9eaeb125680b906a6a3a1fb81e91d0ca4a7fe15",
    "153b3ec2f168f1785e5b0add437552669ff7b70099e73997e620fc14cfbf8dfc",
    "35b478de3d83a3f759643b6cb454c49ce0b40185be70a93e0cb3fe36cc31dbd5"
   ],
@@ -687,6 +692,9 @@
   ],
   ".mcp.json#bc34bdbc1ae6d877b95be6c197d81ead01b249e956b913f2f947fe1e85ace7ef": [
    "bc34bdbc1ae6d877b95be6c197d81ead01b249e956b913f2f947fe1e85ace7ef"
+  ],
+  ".mcp.json#f1b1ef15bfc9d62a2a8628d339c1f9c15060ac6d1d54930b42fc58c394ded84c": [
+   "f1b1ef15bfc9d62a2a8628d339c1f9c15060ac6d1d54930b42fc58c394ded84c"
   ],
   "AGENTS.md": [
    "d980e1de0c3b98ac659f6bd5540bbc0c7f62f0818942925e5c11fff1c46e5239"
