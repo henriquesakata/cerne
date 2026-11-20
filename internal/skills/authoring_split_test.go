@@ -100,13 +100,13 @@ func TestSkillMdKeepsTheRules(t *testing.T) {
 			"are three separate agents; one agent playing two collapses it into self-scoring.",
 			"Hand the critic one file path under the rule \"read exactly this file, do not run git, do not read the repository\".",
 			"Never fix the bar inside the delivery it is judging: route a hole in the bar as a separate improvement (a new feature, or a note).",
-			"A `Rodada N` line carries the judge's quoted verdict; a critic-only pass (no judge) goes on the `Achados do crítico` line, never on a `Rodada N` line.",
+			"A `Round N` line carries the judge's quoted verdict; a critic-only pass (no judge) goes on the `Critic findings` line, never on a `Round N` line.",
 			"`cerne feature complete` refuses a result whose record `cerne lint` would flag (a numbered criterion never cited, or no valid `## Gauntlet`), and `--force` does not cross it.",
 		},
 		"errata for the concluded":     {"is **history: its body is immutable**", "do **not** rewrite it and do **not** reopen it. Append an **errata** instead"},
 		"do not turn the Gauntlet off": {"Do not switch it yourself to get past a gate: turning the Gauntlet off is the project owner's decision"},
 		"triage the learnings":         {"**Closing includes triaging the learnings (F-0401).**"},
-		"mark ambiguity":               {"**Mark ambiguity, don't guess:** leave `[ESCLARECER: pergunta específica]`"},
+		"mark ambiguity":               {"**Mark ambiguity, don't guess:** leave `[CLARIFY: specific question]`"},
 		"project language":             {"Write every document in the project's language: check the headings of the stub you are filling."},
 		"register non-feature work":    {"The moment you pick up a non-feature task, register it with `cerne work start", "run `cerne work list` before delegating an investigation"},
 		"ideas on demand":              {"Ideas are on demand only: never pull ideas in unasked."},
@@ -192,7 +192,29 @@ func TestNoSentenceOfTheOldSkillIsLost(t *testing.T) {
 	}
 }
 
+// f0475Rewritten are the passages F-0475 re-presented English-first without a
+// pt-BR form of their own: the language paragraph and the headers of its tables.
+var f0475Rewritten = []string{
+	"**Write every document in the project's language**: check the headings of the stub",
+	"The sections and literal forms below are shown in Portuguese",
+	"| Document | Portuguese sections | English sections |",
+	"| Literal form | Portuguese | English |",
+	"| EARS criterion |",
+}
+
 func isRewritten(s string) bool {
+	// F-0475: a sentence that names a pt-BR section or form now names its
+	// English form first (skills_lang_test.go pins the pairs and the order).
+	for _, p := range allPairs() {
+		if p.pt.MatchString(s) {
+			return true
+		}
+	}
+	for _, r := range f0475Rewritten {
+		if strings.HasPrefix(s, r) {
+			return true
+		}
+	}
 	for _, r := range rewritten {
 		if strings.HasPrefix(s, r) {
 			return true

@@ -105,6 +105,9 @@ func TestSkill_ProtocolFormsBilingual(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, b := range blocks(string(data)) {
+			if strings.HasPrefix(b, "#") {
+				continue // headings are lookup keys the guide contract pins as they were
+			}
 			for _, p := range allPairs() {
 				pt, en := p.pt.FindStringIndex(b), p.en.FindStringIndex(b)
 				switch {
