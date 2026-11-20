@@ -71,7 +71,7 @@ func contextFixture(t *testing.T) string {
 	feat("T-0002", "Assemble the package of a task", "E-0001", domain.StateInDevelopment, "cli", "hooks")
 	write("content/features/T-0002/spec.md", "# Task\n\n## Problem\n\nThe package gathers what informs a task from the search index.\n\n"+
 		"It follows [[N-0001]], not the done [[F-0009]], next to the live [[F-0010]], the source [[R-0001]] and the runbook [[RB-0001]].\n")
-	write("content/features/T-0002/plan.md", "# Plan\n\nTouch `internal/cli/contextcmd.go` and `internal/hooks/rules.go:12`, never `https://example.com/a/b`.\n")
+	write("content/features/T-0002/plan.md", "# Plan\n\nTouch `internal/cli/contextcmd.go` and `internal/hooks/rules.go:12`, never `https://example.com/a/b`; branch from `origin/main`, the folder `internal/lint` aside.\n")
 	feat("F-0009", "Done feature", "", domain.StateDone, "cli")
 	feat("F-0010", "Live feature", "", domain.StateApproved)
 	feat("F-0011", "Rejected proposal", "", domain.StateRejected, "hooks")
@@ -90,6 +90,7 @@ func contextFixture(t *testing.T) string {
 	note("N-0008", domain.NoteActive, "", nil, nil, "Plain words.", "cli", "hooks")
 	note("N-0009", domain.NoteActive, "", nil, nil, "How the package gathers from the search index.")
 	note("N-0011", domain.NoteActive, "", nil, nil, "Plain words.", "cli")
+	note("N-0012", domain.NoteActive, "", nil, nil, "Rebase on origin/main, never internal/lint/x.go.")
 	note("N-0010", domain.NoteSuperseded, "", nil, nil, "The package of a task from the search index.", "cli")
 	ref("R-0001", domain.ReferenceCurrent, nil)
 	ref("R-0002", domain.ReferenceCurrent, []string{"N-0001"})

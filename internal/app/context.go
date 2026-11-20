@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -396,13 +397,15 @@ var backtickRe = regexp.MustCompile("`([^`\\s]+)`")
 // lineSuffixRe is a ":12" or ":12-30" after a cited path.
 var lineSuffixRe = regexp.MustCompile(`:\d+(-\d+)?$`)
 
-// citedPaths are the repository paths cited in code spans of text: a span
-// with a directory, without a scheme, a glob or a placeholder.
+// citedPaths are the files cited in code spans of text: a span with a
+// directory and an extension — a folder, or a branch like origin/main, would
+// match every note citing anything under it — without a scheme, a glob or a
+// placeholder.
 func citedPaths(text string) []string {
 	var out []string
 	for _, m := range backtickRe.FindAllStringSubmatch(text, -1) {
 		p := strings.TrimSuffix(lineSuffixRe.ReplaceAllString(strings.TrimPrefix(m[1], "./"), ""), "/")
-		if !strings.Contains(p, "/") || strings.Contains(p, "://") || strings.ContainsAny(p, "*<>{}$") || slices.Contains(out, p) {
+		if !strings.Contains(p, "/") || path.Ext(p) == "" || strings.Contains(p, "://") || strings.ContainsAny(p, "*<>{}$") || slices.Contains(out, p) {
 			continue
 		}
 		out = append(out, p)
