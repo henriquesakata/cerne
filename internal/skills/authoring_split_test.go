@@ -141,6 +141,10 @@ var rewritten = []string{
 	"Prints both ids. A dropped or promoted idea is refused",
 	// F-0442: the default work actor is a machine pseudonym, not <user>@<hostname>.
 	"Actor defaults to `<user>@<hostname>`",
+	// B-0041: pull merges different lines of one document; push refuses a
+	// document while its remote copy is stashed in .docs/.conflicts/.
+	"Disjoint documents reconcile automatically; a real **same-document** conflict",
+	"- **`cerne pull`** 3-way merges: it brings in the remote advance while keeping your unsent `.docs/` edits (it does",
 }
 
 // b0015Renames maps the pt-BR names and placeholders the 2026-11-13 snapshot
