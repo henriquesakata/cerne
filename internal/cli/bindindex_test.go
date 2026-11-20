@@ -60,6 +60,20 @@ func stdoutOf(t *testing.T, args ...string) string {
 	return out
 }
 
+// bindsTo runs the bind hook on one Bash call — command, and the stdout the
+// agent saw — and asserts the session is then bound to want (T-0017 critic
+// M2/L7: the index lengthens the output the hook reads).
+func bindsTo(t *testing.T, projDir, repoDir, sess, command, stdout, want string) {
+	t.Helper()
+	stdin := hookJSON(t, sess, projDir, "Bash", map[string]any{"command": command}, map[string]any{"stdout": stdout})
+	if o, err := execCerneStdin(t, stdin, "hook", "bind-work"); err != nil {
+		t.Fatalf("bind-work: %v\n%s", err, o)
+	}
+	if id, ok, err := app.CurrentBinding(filepath.Dir(repoDir), repoDir, sess, ""); err != nil || !ok || id != want {
+		t.Fatalf("%s: binding = (%q, %v, %v), want %s", command, id, ok, err, want)
+	}
+}
+
 var indexLineRe = regexp.MustCompile(`(?m)^  \[a\] N-\d{4}  Rule \d+ — gist \d+$`)
 
 // E-0005 criterion 9 (T-0017): feature start ends with the index of the notes
@@ -82,6 +96,10 @@ func TestBindIndexOnFeatureStart(t *testing.T) {
 	if strings.Contains(out, "BODY-MARKER") {
 		t.Fatalf("a note body was printed:\n%s", out)
 	}
+	// The bind hook still binds the started feature, from the whole output and
+	// from its last line alone (the B-0002 path through the clone).
+	bindsTo(t, projDir, repoDir, "sess-start-all", "cerne feature start "+id, out, id)
+	bindsTo(t, projDir, repoDir, "sess-start-tail", "cerne feature start "+id+" | tail -1", outLines(out)[len(outLines(out))-1], id)
 }
 
 func TestBindIndexWithNoNote(t *testing.T) {
@@ -108,14 +126,8 @@ func TestBindIndexOnWorkStartKeepsTheTailBinding(t *testing.T) {
 	if last != "W-0001 created (active) — task package: cerne context F-0001" {
 		t.Fatalf("last line %q:\n%s", last, out)
 	}
-	stdin := hookJSON(t, "sess-tail", projDir, "Bash",
-		map[string]any{"command": `cerne work start "Investigar erro X" --ref F-0001 | tail -1`}, map[string]any{"stdout": last})
-	if o, err := execCerneStdin(t, stdin, "hook", "bind-work"); err != nil {
-		t.Fatalf("bind-work: %v\n%s", err, o)
-	}
-	if id, ok, err := app.CurrentBinding(filepath.Dir(repoDir), repoDir, "sess-tail", ""); err != nil || !ok || id != "W-0001" {
-		t.Fatalf("binding = (%q, %v, %v), want W-0001", id, ok, err)
-	}
+	bindsTo(t, projDir, repoDir, "sess-tail", `cerne work start "Investigar erro X" --ref F-0001 | tail -1`, last, "W-0001")
+	bindsTo(t, projDir, repoDir, "sess-all", `cerne work start "Investigar erro X" --ref F-0001`, out, "W-0001")
 	// Without a feature ref there is no index and nothing changes.
 	plain := mustCerne(t, "work", "start", "Revisar o MR", "--dir", projDir)
 	if strings.Contains(plain, "cerne context") {
@@ -134,6 +146,8 @@ func TestBindIndexOnHandoffTake(t *testing.T) {
 	}
 	last := outLines(out)[len(outLines(out))-1]
 	if !workCreatedRe.MatchString(last) || !strings.Contains(last, "cerne context F-0001") {
-		t.Fatalf("last line %q does not bind or name the package:\n%s", last, out)
+		t.Fatalf("last line %q does not name the work and the package:\n%s", last, out)
 	}
+	bindsTo(t, projDir, repoDir, "sess-take-all", "cerne handoff take HO-0001 --note li", out, "W-0002")
+	bindsTo(t, projDir, repoDir, "sess-take-tail", "cerne handoff take HO-0001 --note li | tail -1", last, "W-0002")
 }
