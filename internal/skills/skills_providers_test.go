@@ -459,6 +459,37 @@ func TestAgentLinesKeepSkipReason(t *testing.T) {
 	}
 }
 
+// T-0009: init summarizes the agents as connected (claude always, the detected
+// ones whose delivery was not skipped) or not detected.
+func TestAgentSummary(t *testing.T) {
+	dir := t.TempDir()
+	det := []hooks.Provider{hooks.ProviderCodex}
+	rs, _ := Install(dir, det...)
+	connected, missing := AgentSummary(rs, det)
+	if got := strings.Join(connected, ","); got != "claude,codex" {
+		t.Errorf("connected = %q, want claude,codex", got)
+	}
+	if got := strings.Join(missing, ","); got != "cursor,gemini,copilot" {
+		t.Errorf("missing = %q, want cursor,gemini,copilot", got)
+	}
+
+	c2, m2 := AgentSummary(nil, nil)
+	if strings.Join(c2, ",") != "claude" || len(m2) != 4 {
+		t.Errorf("no detection: connected=%v missing=%v", c2, m2)
+	}
+}
+
+func TestAgentSummarySkippedIsNeither(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, ".cursor"), []byte("x"), 0o644)
+	det := []hooks.Provider{hooks.ProviderCursor}
+	rs, _ := Install(dir, det...)
+	connected, missing := AgentSummary(rs, det)
+	if strings.Contains(strings.Join(connected, ","), "cursor") || strings.Contains(strings.Join(missing, ","), "cursor") {
+		t.Fatalf("skipped cursor listed: connected=%v missing=%v", connected, missing)
+	}
+}
+
 func TestParityCellsCarryTheCondition(t *testing.T) {
 	for _, r := range hooks.ParityRows() {
 		if r.Capability != "Authoring guide" {

@@ -12,6 +12,7 @@ import (
 
 	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/gitback"
+	"github.com/henriquesakata/cerne/internal/guide"
 	"github.com/henriquesakata/cerne/internal/hooks"
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/skills"
@@ -218,12 +219,29 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 	// Install cerne's canonical Claude Code skills so a new project ships with
 	// the agent guide. The project is already provisioned at this point, so a
 	// skills failure must not fail init — warn and continue.
+	// The per-file detail is for --verbose; the default is one summary line.
+	verbose := cmd.Flag("verbose").Value.String() == "true"
 	det := hooks.DetectProviders(targetDir)
+	var installed []string
+	var connected, missing []string
 	if results, err := skills.Install(targetDir, det...); err != nil {
 		fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not install cerne's skills: %v\n", err)
 	} else {
-		printSkillResults(out, results)
-		printAgentLines(out, results, det)
+		installed = append(installed, fmt.Sprintf("%d skills", len(results)))
+		connected, missing = skills.AgentSummary(results, det)
+		if verbose {
+			printSkillResults(out, results)
+			printAgentLines(out, results, det)
+		} else {
+			// A skipped delivery is a warning, not detail: keep its manual step.
+			var skipped []skills.Result
+			for _, r := range results {
+				if r.Status == skills.StatusSkipped {
+					skipped = append(skipped, r)
+				}
+			}
+			printSkillResults(out, skipped)
+		}
 	}
 
 	// Install cerne's Claude Code hooks too (F-0139): the provenance gate and
@@ -232,7 +250,13 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 	if results, err := hooks.Install(targetDir); err != nil {
 		fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not install cerne's hooks: %v\n", err)
 	} else {
-		printHookResults(out, results)
+		installed = append(installed, fmt.Sprintf("%d hook files", len(results)))
+		if verbose {
+			printHookResults(out, results)
+		}
+	}
+	if len(installed) > 0 {
+		fmt.Fprintf(out, "Installed %s (--verbose lists each file).\n", strings.Join(installed, " and "))
 	}
 
 	// Wire docs.lock to the merge driver so concurrent branches don't conflict
@@ -253,13 +277,24 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 	if !joined {
 		fmt.Fprintln(out, `Gauntlet is off (light mode). Turn it on in the Settings screen of cerne ui, or run: cerne settings set gates.gauntlet on --scope project`)
 	}
-	fmt.Fprintln(out, "Next steps:")
 	toCommit := ".cernerc, docs.lock and .gitattributes"
 	if docsIgnored {
 		toCommit = ".cernerc, docs.lock, .gitattributes and .gitignore"
 	}
-	fmt.Fprintf(out, "  - commit %s to your project repository\n", toCommit)
-	fmt.Fprintln(out, "Open the dashboard: cerne ui  (http://localhost:7717)")
+	fmt.Fprintln(out, "Next steps:")
+	fmt.Fprintln(out, "  1. Open the dashboard: cerne ui  (http://localhost:7717)")
+	fmt.Fprintf(out, "  2. Ask your agent: %q\n", guide.FirstFeatureAsk)
+	fmt.Fprintln(out, "  3. Approve the spec on the dashboard.")
+	agents := "Agents connected: none (skills install failed, see the warning above)."
+	if len(connected) > 0 {
+		agents = "Agents connected: " + strings.Join(connected, ", ") + "."
+	}
+	if len(missing) > 0 {
+		agents += " To connect " + strings.Join(missing, ", ") + ": cerne hook install --provider <name>, then cerne skill install"
+	}
+	fmt.Fprintln(out, agents)
+	fmt.Fprintf(out, "Commit %s to your project repository.\n", toCommit)
+	fmt.Fprintln(out, "First week: "+guide.FirstWeekURL)
 	return nil
 }
 

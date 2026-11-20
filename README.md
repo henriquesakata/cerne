@@ -292,7 +292,7 @@ cerne is built for Claude Code, Cursor, Codex CLI, Gemini CLI and GitHub Copilot
 | **GitHub Copilot** | An instructions file in `.github/instructions/cerne.instructions.md`, hooks in `.github/hooks/cerne.json`, the guide in `.github/skills/` | **Early testing.** Hooks probed on Copilot CLI; VS Code agent mode and the cloud agent are not verified |
 | **Any MCP client** | `cerne mcp`, read-only, over stdio | Covered by automated tests through the MCP Go SDK client; not validated against specific clients |
 
-`init` delivers the guide to Claude Code always, and to the other agents only when their config folder (`.cursor/`, `.codex/`, `.gemini/`) exists in the project; it prints one line per agent, including the ones not detected. To add one whose folder is missing:
+`init` delivers the guide to Claude Code always, and to the other agents only when their config folder (`.cursor/`, `.codex/`, `.gemini/`) exists in the project; it closes with the agents it connected and how to connect the others (`init --verbose` prints one line per agent and per installed file). To add one whose folder is missing:
 
 ```bash
 cerne hook install --provider cursor,codex,gemini   # hooks; creates each agent's config folder

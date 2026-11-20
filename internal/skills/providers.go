@@ -287,3 +287,30 @@ func AgentLines(results []Result, detected []hooks.Provider) []string {
 	}
 	return lines
 }
+
+// AgentSummary splits the agents into the ones the guide reached (claude
+// always, plus every detected agent whose delivery was not skipped) and the
+// ones not detected. A skipped delivery is in neither: AgentLines carries its
+// reason.
+func AgentSummary(results []Result, detected []hooks.Provider) (connected, missing []string) {
+	has := map[hooks.Provider]bool{}
+	for _, p := range detected {
+		has[p] = true
+	}
+	skipped := map[hooks.Provider]bool{}
+	for _, r := range results {
+		if r.Status == StatusSkipped {
+			skipped[r.Agent] = true
+		}
+	}
+	connected = []string{"claude"}
+	for _, p := range []hooks.Provider{hooks.ProviderCursor, hooks.ProviderCodex, hooks.ProviderGemini, hooks.ProviderCopilot} {
+		switch {
+		case !has[p]:
+			missing = append(missing, string(p))
+		case !skipped[p]:
+			connected = append(connected, string(p))
+		}
+	}
+	return connected, missing
+}
