@@ -87,6 +87,35 @@ func TestLinkDecision(t *testing.T) {
 	}
 }
 
+// Critic L3: promoting an idea carries the active decisions informing it to
+// the new feature, as it does for references (F-0389); a superseded one
+// stays as it was.
+func TestPromoteIdeaCarriesDecisionLinks(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	i, _ := CreateIdea(repoDir, projDir, "Exportar CSV", "", nil, nil, "", false)
+	live, err := CreateDecision(repoDir, projDir, "Usar CSV", "corpo", []string{i.ID}, nil, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dead, _ := CreateDecision(repoDir, projDir, "Usar planilha", "corpo", []string{i.ID}, nil, nil, false)
+	if _, err := TransitionDecision(repoDir, projDir, dead.ID, live.ID, "trocou"); err != nil {
+		t.Fatal(err)
+	}
+	_, f, err := PromoteIdea(repoDir, projDir, i.ID, "", "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := store.LoadDecision(repoDir, live.ID); !slices.Equal(got.Informs, []string{i.ID, f.ID}) {
+		t.Fatalf("live informs = %v, want [%s %s]", got.Informs, i.ID, f.ID)
+	}
+	if got, _ := store.LoadDecision(repoDir, dead.ID); !slices.Equal(got.Informs, []string{i.ID}) {
+		t.Fatalf("superseded informs = %v, want untouched", got.Informs)
+	}
+	if p := createdPayload(t, repoDir, live.ID, "decision.linked"); p["via"] != "promote" || p["informs"] != f.ID {
+		t.Fatalf("payload = %v", p)
+	}
+}
+
 // N-0061: the targets of --informs and --unlink are ids in any case, stored
 // and removed by the canonical id.
 func TestLinkDecisionTargetsInAnyCase(t *testing.T) {

@@ -361,8 +361,9 @@ func notActive(i store.Idea) error {
 	return fmt.Errorf("%w: %s is %s", ErrIdeaNotActive, i.ID, i.State)
 }
 
-// carryReferenceLinks adds feature fID to every live reference informing the
-// idea, keeping the idea (F-0389): the source stays tied to where it went.
+// carryReferenceLinks adds feature fID to every live reference, and every
+// active decision, informing the idea, keeping the idea (F-0389): the source
+// stays tied to where it went.
 func carryReferenceLinks(repoDir, ideaID, fID string) error {
 	refs, err := ReferencesInforming(repoDir, ideaID)
 	if err != nil {
@@ -378,6 +379,25 @@ func carryReferenceLinks(repoDir, ideaID, fID string) error {
 			return err
 		}
 		if err := appendLinkEvents(repoDir, "reference", r.ID, []string{fID}, nil, "promote"); err != nil {
+			return err
+		}
+	}
+	// The active decisions informing the idea follow it too (T-0018 critic
+	// L3): a decision linked to an idea reaches the package of its feature.
+	decs, err := store.LoadAllDecisions(repoDir)
+	if err != nil {
+		return err
+	}
+	for _, d := range decs {
+		if d.State != domain.DecisionActive || !slices.Contains(d.Informs, ideaID) || slices.Contains(d.Informs, fID) {
+			continue
+		}
+		d.Informs = append(d.Informs, fID)
+		d.UpdatedAt = time.Now().UTC()
+		if err := store.SaveDecision(repoDir, d); err != nil {
+			return err
+		}
+		if err := appendLinkEvents(repoDir, "decision", d.ID, []string{fID}, nil, "promote"); err != nil {
 			return err
 		}
 	}
