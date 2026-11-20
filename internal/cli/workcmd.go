@@ -106,6 +106,9 @@ func runWorkStart(cmd *cobra.Command, dir, title, ref, agent, paths, from string
 		fmt.Fprintf(cmd.OutOrStdout(), "warning: paths overlap active %s (%s) on %s — coordinate before touching shared files\n",
 			m.ID, m.Title, joinRefs(m.Globs))
 	}
+	if t := taskRef(w.Refs); t != "" { // E-0005 criterion 9: the session binds here
+		printTaskIndex(cmd.OutOrStdout(), ctx.repoDir, t, w.ID)
+	}
 	return nil
 }
 

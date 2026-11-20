@@ -81,6 +81,9 @@ func newHandoffTakeCmd(dir *string) *cobra.Command {
 					printHandoff(out, h)
 				}
 			}
+			if t := taskRef(r.Refs); t != "" { // E-0005 criterion 9: the session binds here
+				printTaskIndex(out, ctx.repoDir, t, r.ID)
+			}
 			return nil
 		},
 	}
