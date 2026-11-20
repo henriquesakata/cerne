@@ -8,7 +8,7 @@ cerne is a single executable with no dependencies. Put it on your `PATH` and you
 brew install henriquesakata/tap/cerne
 ```
 
-`brew upgrade cerne` updates it. Use the full name `henriquesakata/tap/cerne`: since Homebrew 6.0 a third-party tap must be trusted before use, and installing by the full name trusts this formula only, in the same command.
+`cerne update` updates it later (see [Updating](#updating)). Use the full name `henriquesakata/tap/cerne`: since Homebrew 6.0 a third-party tap must be trusted before use, and installing by the full name trusts this formula only, in the same command.
 
 ## Quick install (macOS and Linux)
 
@@ -16,7 +16,7 @@ brew install henriquesakata/tap/cerne
 curl -fsSL https://raw.githubusercontent.com/henriquesakata/cerne/main/install.sh | sh
 ```
 
-The script picks the release file for your machine, verifies it against the release's `SHA256SUMS` and installs it as `cerne` in `/usr/local/bin` when you can write there, otherwise in `~/.local/bin`. It never calls `sudo` and never edits your shell profile; if the directory is not on your `PATH`, it prints the line to add. Run it again to update.
+The script picks the release file for your machine, verifies it against the release's `SHA256SUMS` and installs it as `cerne` in `/usr/local/bin` when you can write there, otherwise in `~/.local/bin`. It never calls `sudo` and never edits your shell profile; if the directory is not on your `PATH`, it prints the line to add. To update later, run `cerne update` (see [Updating](#updating)).
 
 | Variable | Effect |
 |---|---|
@@ -33,7 +33,7 @@ In PowerShell (Windows PowerShell 5.1 or PowerShell 7):
 irm https://raw.githubusercontent.com/henriquesakata/cerne/main/install.ps1 | iex
 ```
 
-The script downloads `cerne.exe` for the latest release, verifies it against the release's `SHA256SUMS` and installs it in `%LOCALAPPDATA%\Programs\cerne`, without admin rights. It adds that folder to your user `PATH` (and to the current session) when it is not there yet, so `cerne` works right away and in new terminals. Run it again to update; a running `cerne ui` does not block the update. On Windows on ARM it installs the amd64 build, which Windows 11 runs under emulation.
+The script downloads `cerne.exe` for the latest release, verifies it against the release's `SHA256SUMS` and installs it in `%LOCALAPPDATA%\Programs\cerne`, without admin rights. It adds that folder to your user `PATH` (and to the current session) when it is not there yet, so `cerne` works right away and in new terminals. To update later, run `cerne update` (see [Updating](#updating)); a running `cerne ui` does not block it. On Windows on ARM it installs the amd64 build, which Windows 11 runs under emulation.
 
 It reads the same `CERNE_VERSION` and `CERNE_INSTALL_DIR` variables, set before the line: `$env:CERNE_VERSION = 'v0.5.0'; irm … | iex`.
 
@@ -115,7 +115,15 @@ Close and reopen the terminal, then run `cerne --version`. If Windows shows *"Wi
 
 ### Updating
 
-`brew upgrade cerne`, or run the install script again. Installed by hand: replace the old executable with the new one.
+Run `cerne update` inside your project. It updates the binary the way you installed it, then renews the hooks and the authoring guide of the agents already connected to that project:
+
+- **Homebrew:** it runs `brew upgrade henriquesakata/tap/cerne`, so Homebrew's own records stay right.
+- **Install script, or a release file put in place by hand:** it downloads the latest release, checks it against the release's `SHA256SUMS` and replaces the executable in the same place. If the check or the swap fails, the old executable stays in place and working.
+- **A local build or a `go install`, or a folder you cannot write:** it leaves the binary alone and prints the command to run.
+
+It ends with one line per part (binary, hooks, guide): updated, up to date, or not done with the reason and the command to run. The exit code is 0 only when nothing was left not done. New hooks apply from your agent's next session. `cerne update --check` only lists the project files that are out of date: it writes nothing and uses no network. Outside a project, `cerne update` updates the binary alone, so run it again inside each project. An agent can run it too, but only to renew the project files: replacing the binary is left to you, in your own terminal.
+
+On a version without the command (`cerne update` answers `unknown command`), update the binary first with `brew upgrade henriquesakata/tap/cerne` or the install script, then run `cerne update` in each project.
 
 ## 3. What you need
 
