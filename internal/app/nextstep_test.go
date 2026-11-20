@@ -6,7 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/henriquesakata/cerne/internal/cost"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/spectmpl"
 	"github.com/henriquesakata/cerne/internal/store"
@@ -195,6 +197,36 @@ func TestNextStepUnknownState(t *testing.T) {
 	}
 	if _, err := NextStep(repo, proj, "F-0001"); err == nil || !strings.Contains(err.Error(), "banana") {
 		t.Errorf("err = %v", err)
+	}
+}
+
+// TestNextStepUnsupportedHarness (B-0053): a cost bound under a harness without
+// a reader is no debt the agent can pay — no non-command line, the delivery
+// link still listed, and the accept reached once nothing else is owed.
+func TestNextStepUnsupportedHarness(t *testing.T) {
+	proj, repo := nextStepRepo(t)
+	if err := store.SaveFeature(repo, store.Feature{ID: "F-0001", Title: "t", State: domain.StateImplemented}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cost.AppendBind(proj, cost.Bind{Session: "s", Entity: "F-0001", Harness: "codex", TS: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := NextStep(repo, proj, "F-0001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got.Step, "cost check failed") || got.Command != "cerne feature deliver F-0001 --mr <url>" || len(got.Commands) != 1 {
+		t.Errorf("owing delivery: NextStep = %+v", got)
+	}
+	if err := store.SaveFeature(repo, store.Feature{ID: "F-0001", Title: "t", State: domain.StateImplemented, DeliveryMRURL: "https://example.com/mr/1"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err = NextStep(repo, proj, "F-0001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Actor != ActorHuman || strings.Contains(got.Step, "cost check failed") {
+		t.Errorf("nothing owed: NextStep = %+v, want the human accept", got)
 	}
 }
 
