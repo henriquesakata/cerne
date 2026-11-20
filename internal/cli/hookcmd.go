@@ -120,10 +120,15 @@ func printCodexTrust(out io.Writer, dir string) {
 	// Codex matches the absolute path; "." would never match.
 	if abs, err := filepath.Abs(dir); err == nil {
 		dir = abs
+		// Codex sees the real path (macOS /var -> /private/var).
+		if real, err := filepath.EvalSymlinks(abs); err == nil {
+			dir = real
+		}
 	}
 	fmt.Fprintf(out, `codex: Codex only reads .codex/ in a trusted project. Trust this one in ~/.codex/config.toml (or per run with -c):
   [projects.%q]
   trust_level = "trusted"
+codex: the project's default_permissions = "cerne" replaces your own default profile inside this project; it extends :workspace, and -s/-P on the command line still win.
 codex: to check it, inside a Codex session run "printenv CERNE_ACTOR" (it prints agent) and "cerne next" (it runs with no permission error).
 `, dir)
 }

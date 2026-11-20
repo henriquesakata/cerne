@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -16,13 +17,20 @@ func TestHookInstallCodexSaysHowToTrustAndCheck(t *testing.T) {
 	if err := project.SaveConfig(dir, project.Config{ProjectID: "p", Backend: "/tmp/b"}); err != nil {
 		t.Fatal(err)
 	}
+	real, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	out, err := execCerne(t, "hook", "install", "--dir", dir, "--provider", "codex")
 	if err != nil {
 		t.Fatalf("hook install: %v\noutput: %s", err, out)
 	}
 	for _, want := range []string{
 		"only reads .codex/ in a trusted project",
-		"[projects.\"" + dir + "\"]",
+		"[projects.\"" + real + "\"]",
+		"replaces your own default profile inside this project",
+		"extends :workspace",
+		"-s/-P on the command line still win",
 		`trust_level = "trusted"`,
 		"printenv CERNE_ACTOR",
 		"cerne next",
@@ -48,7 +56,7 @@ func TestHookInstallCodexTrustHintIsAbsolute(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Chdir(dir)
-	abs, err := filepath.Abs(".")
+	abs, err := filepath.EvalSymlinks(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,5 +66,27 @@ func TestHookInstallCodexTrustHintIsAbsolute(t *testing.T) {
 	}
 	if !strings.Contains(out, "[projects.\""+abs+"\"]") || strings.Contains(out, `[projects."."]`) {
 		t.Errorf("want absolute path %q in:\n%s", abs, out)
+	}
+}
+
+// The hint resolves symlinks (macOS /var -> /private/var): Codex sees the real path.
+func TestHookInstallCodexTrustHintResolvesSymlinks(t *testing.T) {
+	real, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := project.SaveConfig(real, project.Config{ProjectID: "p", Backend: "/tmp/b"}); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skip("symlinks unavailable")
+	}
+	out, err := execCerne(t, "hook", "install", "--dir", link, "--provider", "codex")
+	if err != nil {
+		t.Fatalf("hook install: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "[projects.\""+real+"\"]") || strings.Contains(out, link) {
+		t.Errorf("want %q (not the link) in:\n%s", real, out)
 	}
 }
