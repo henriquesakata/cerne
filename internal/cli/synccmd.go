@@ -33,5 +33,5 @@ func runSync(cmd *cobra.Command, dir string) error {
 	if err := runPull(cmd, dir, "", false, false, false); err != nil {
 		return err
 	}
-	return runPush(cmd, dir, false)
+	return runPush(cmd, dir, false, false)
 }

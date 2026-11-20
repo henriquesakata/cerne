@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/henriquesakata/cerne/internal/doccheck"
 	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/telemetry"
@@ -22,6 +23,15 @@ type FileChange struct {
 	Path    string // slash-separated, relative to the backend clone root
 	Content []byte
 	Deleted bool
+	// BaseSum, when set, is the ContentHash of the version the caller last
+	// received (B-0041). The base commit is shared by every change, so it can
+	// sit past a remote edit this document never got: a base blob that hashes
+	// otherwise makes the write a conflict instead of an overwrite.
+	BaseSum string
+	// New marks a document the caller never received: it must not be a real
+	// document at the base (a stub is fine), so one that exists there is a
+	// conflict, not an overwrite.
+	New bool
 }
 
 // Conflict names a document whose change collides with a different remote change
@@ -630,8 +640,9 @@ func confirmElidedHead(op *telemetry.Op, repoDir, theirs string) (bool, error) {
 func plan3Way(repoDir, base, theirs string, changes []FileChange) (apply []FileChange, conflicts []Conflict, err error) {
 	for _, ch := range changes {
 		var baseBlob []byte
+		var baseExists bool
 		if base != "" {
-			baseBlob, _, err = gitback.FileBlobAt(repoDir, base, ch.Path)
+			baseBlob, baseExists, err = gitback.FileBlobAt(repoDir, base, ch.Path)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -658,6 +669,9 @@ func plan3Way(repoDir, base, theirs string, changes []FileChange) (apply []FileC
 		default: // whole-file write
 			switch {
 			case theirsExists && bytes.Equal(ch.Content, theirsBlob): // already there
+			case ch.BaseSum != "" && ContentHash(baseBlob) != ch.BaseSum, // base is past my copy
+				ch.New && baseExists && doccheck.HasRealContent(baseBlob): // base has a real document I never received
+				conflicts = append(conflicts, Conflict{Path: ch.Path, Diff: shortDiff(ch.Content, theirsBlob)})
 			case bytes.Equal(theirsBlob, baseBlob): // remote untouched: take mine
 				apply = append(apply, FileChange{Path: ch.Path, Content: ch.Content})
 			case bytes.Equal(ch.Content, baseBlob): // I did not change it: keep theirs

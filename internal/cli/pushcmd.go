@@ -27,20 +27,25 @@ import (
 
 func newPushCmd() *cobra.Command {
 	var dir string
-	var dryRun bool
+	var dryRun, force bool
 	cmd := &cobra.Command{
 		Use:   "push",
 		Short: "Send locally edited .docs/ documents back to the backend",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runPush(cmd, dir, dryRun)
+			return runPush(cmd, dir, dryRun, force)
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "validate and show what would go to the backend, without committing or sending")
+	cmd.Flags().BoolVar(&force, "force", false, "send documents whose remote version a pull stashed in .docs/.conflicts/, overwriting that remote edit")
 	return withFinalLine(cmd)
 }
+
+// errUnreconciledConflict refuses a push of a document whose remote version a
+// pull stashed under .docs/.conflicts/ and nobody has reconciled yet (B-0041).
+var errUnreconciledConflict = errors.New("unreconciled conflict")
 
 // pushedDoc is one changed materialized document mapped back to its
 // backend destination.
@@ -51,26 +56,16 @@ type pushedDoc struct {
 	sum        string // sha256 hex of body
 }
 
-func runPush(cmd *cobra.Command, dir string, dryRun bool) error {
+func runPush(cmd *cobra.Command, dir string, dryRun, force bool) error {
 	ctx, err := resolvePaths(dir)
 	if err != nil {
 		return err
 	}
-	// The reconcile base is the snapshot .docs/ was last synced to: the
-	// session sidecar when present (with pin_branch set, the committed
-	// docs.lock is stale on feature branches by design — F-0102), falling
-	// back to docs.lock for a pre-0102 checkout.
-	base, err := project.LoadSessionSnapshot(ctx.projDir)
-	if errors.Is(err, project.ErrNoSessionSnapshot) {
-		lock, lerr := project.LoadLock(ctx.projDir)
-		if errors.Is(lerr, project.ErrNoLock) {
-			return fmt.Errorf("no docs.lock found — run 'cerne pull' first")
-		}
-		if lerr != nil {
-			return lerr
-		}
-		base = lock.Snapshot
-	} else if err != nil {
+	base, err := syncedSnapshot(ctx.projDir)
+	if errors.Is(err, project.ErrNoLock) {
+		return fmt.Errorf("no docs.lock found — run 'cerne pull' first")
+	}
+	if err != nil {
 		return err
 	}
 
@@ -92,6 +87,11 @@ func runPush(cmd *cobra.Command, dir string, dryRun bool) error {
 		fmt.Fprintln(cmd.OutOrStdout(), "Nothing to send.")
 		return nil
 	}
+	if !force {
+		if err := checkReconciled(docsDir, docs); err != nil {
+			return err
+		}
+	}
 
 	if dryRun {
 		return reportDryRun(cmd, ctx, docs)
@@ -100,10 +100,18 @@ func runPush(cmd *cobra.Command, dir string, dryRun bool) error {
 	// Reconcile per document against the latest backend, starting from the
 	// snapshot we pulled: a remote advance on a DIFFERENT document never blocks
 	// this push (auto-rebase + retry); only the SAME document changed both ways
-	// is a real conflict.
+	// is a real conflict. Each document carries the version .docs/ last
+	// received (B-0041): the snapshot may be past it. Its hash is not checked
+	// under OKF, whose .docs/ form never hashes like the backend file (index.md
+	// marks it); a document .docs/ never received must be absent there anyway.
+	_, okf := manifest["index.md"]
 	changes := make([]app.FileChange, len(docs))
 	for i, d := range docs {
-		changes[i] = app.FileChange{Path: d.backendRel, Content: d.body}
+		sum, tracked := manifest[d.rel]
+		changes[i] = app.FileChange{Path: d.backendRel, Content: d.body, New: !tracked}
+		if tracked && !okf {
+			changes[i].BaseSum = sum
+		}
 	}
 	staleBefore := pushedSpecStaleness(ctx.repoDir, docs)
 	// F-0375: who writes the feature documents, read before the lock below —
@@ -140,6 +148,10 @@ func runPush(cmd *cobra.Command, dir string, dryRun bool) error {
 	}
 	if err := project.SaveManifest(ctx.projDir, manifest); err != nil {
 		return err
+	}
+	// Sent over --force: the stashed remote copy no longer guards anything.
+	for _, d := range docs {
+		_ = os.Remove(conflictCopyPath(docsDir, d.rel))
 	}
 	if head == "" {
 		fmt.Fprintln(cmd.OutOrStdout(), "Nothing to send.")
@@ -222,7 +234,7 @@ func reportPushConflicts(cmd *cobra.Command, conflicts []app.Conflict) error {
 			fmt.Fprintf(out, "    %s\n", line)
 		}
 	}
-	fmt.Fprintln(out, "\nThe same document changed in the backend. Reconcile and run 'cerne push' again, or 'cerne pull' to bring in the remote version.")
+	fmt.Fprintln(out, "\nThe same document changed in the backend since your copy. Run 'cerne pull': it merges the remote edit into yours when they touch different lines, or keeps yours and stashes the remote one in .docs/.conflicts/. Then run 'cerne push'.")
 	return fmt.Errorf("%d document(s) in conflict", len(conflicts))
 }
 
@@ -253,6 +265,37 @@ func reportDryRun(cmd *cobra.Command, ctx projCtx, docs []pushedDoc) error {
 	}
 	printFindings(out, findings)
 	return lintFailure(findings)
+}
+
+// syncedSnapshot is the backend commit .docs/ was last synced to: the session
+// sidecar when present (with pin_branch set, the committed docs.lock is stale
+// on feature branches by design — F-0102), falling back to docs.lock for a
+// pre-0102 checkout. Push reconciles over it; pull merges over it (B-0041).
+func syncedSnapshot(projDir string) (string, error) {
+	base, err := project.LoadSessionSnapshot(projDir)
+	if !errors.Is(err, project.ErrNoSessionSnapshot) {
+		return base, err
+	}
+	lock, err := project.LoadLock(projDir)
+	return lock.Snapshot, err
+}
+
+// checkReconciled refuses the docs whose remote version a pull stashed under
+// .docs/.conflicts/ (B-0041): that pull already moved the snapshot past the
+// remote edit, so sending the doc would erase it without a conflict. Deleting
+// the stashed copy is what marks the document reconciled.
+func checkReconciled(docsDir string, docs []pushedDoc) error {
+	var open []string
+	for _, d := range docs {
+		if _, err := os.Stat(conflictCopyPath(docsDir, d.rel)); err == nil {
+			open = append(open, fmt.Sprintf("  %s — the remote version is in .docs/.conflicts/%s", d.rel, d.rel))
+		}
+	}
+	if len(open) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%w in %d document(s), nothing sent:\n%s\nFold the remote changes you want to keep into your file, delete its copy under .docs/.conflicts/, and run 'cerne push' again; 'cerne push --force' sends your version over the remote one",
+		errUnreconciledConflict, len(open), strings.Join(open, "\n"))
 }
 
 // checkContextUntouched errors when the generated CONTEXT.md was edited
@@ -299,6 +342,14 @@ func collectChangedDocs(repoDir, docsDir string, manifest map[string]string) ([]
 	err = filepath.WalkDir(currentDir, func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
+		}
+		// B-0042: cerne never materializes a hidden entry, so one is an
+		// editor's (.obsidian/, .trash/, swap files), not a document to send.
+		if p != currentDir && strings.HasPrefix(d.Name(), ".") {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 		if d.IsDir() || !strings.HasSuffix(d.Name(), ".md") {
 			return nil

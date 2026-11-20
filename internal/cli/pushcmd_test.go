@@ -287,6 +287,47 @@ func TestPushUntrackedFile(t *testing.T) {
 	}
 }
 
+// TestPushIgnoresHiddenEntries (B-0042): a .md an editor leaves in a hidden
+// folder (or a hidden file) under .docs/current/ is not a cerne document. push
+// sends the real edit around it instead of refusing with an untracked-file
+// error that pull cannot clear, and pull keeps the file where it was.
+func TestPushIgnoresHiddenEntries(t *testing.T) {
+	projDir, _, repoDir, specPath := pulledProject(t)
+	current := filepath.Join(projDir, ".docs", "current")
+	hidden := []string{
+		filepath.Join(current, ".trash", "x.md"),
+		filepath.Join(current, "features", ".obsidian", "plugin.md"),
+		filepath.Join(filepath.Dir(specPath), ".spec.md.swp.md"),
+	}
+	for _, p := range hidden {
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		mustWrite(t, p, "# editor scratch\n")
+	}
+	edited := realDoc("F-0001", "Dividir compras em parcelas, editado.")
+	mustWrite(t, specPath, edited)
+
+	if out, err := execCerne(t, "push", "--dir", projDir); err != nil {
+		t.Fatalf("push with hidden entries: %v\noutput: %s", err, out)
+	}
+	got, err := os.ReadFile(filepath.Join(repoDir, "content", "features", "F-0001", "spec.md"))
+	if err != nil || string(got) != edited {
+		t.Fatalf("backend spec = %q (err %v), want the edit", got, err)
+	}
+	if out, err := execCerne(t, "pull", "--dir", projDir); err != nil {
+		t.Fatalf("pull: %v\noutput: %s", err, out)
+	}
+	for _, p := range hidden {
+		if _, err := os.Stat(p); err != nil {
+			t.Fatalf("pull dropped %s: %v", p, err)
+		}
+	}
+	if out, err := execCerne(t, "push", "--dir", projDir); err != nil || !strings.Contains(out, "Nothing to send") {
+		t.Fatalf("push after pull: %v\noutput: %s", err, out)
+	}
+}
+
 // TestPushOpensPickupAutoWork (F-0208 crit. 1): pushing an edited plan.md for
 // a still-approved feature opens the pickup auto-work in the same commit as
 // the push — the agent's first backend touch after claiming the feature.
@@ -548,5 +589,122 @@ func TestPushRefusalOfClosedDocUnblocks(t *testing.T) {
 		if _, err := os.Stat(local); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("after %v the local copy is back (stat err %v)", step, err)
 		}
+	}
+}
+
+// B-0041: a document whose remote version is still stashed in
+// .docs/.conflicts/ is not pushed over it. push refuses, naming the stash and
+// the ways out; --force sends it and clears the stash.
+func TestPushRefusesUnreconciledConflict(t *testing.T) {
+	projDir, origin, _, specPath := pulledFeatureProject(t, "Conteúdo original.")
+	mine := "---\ncerne_id: F-0001\n---\n\n# Parcelamento\n\nMinha edição não-enviada.\n"
+	mustWrite(t, specPath, mine)
+	clone2 := filepath.Join(t.TempDir(), "clone2")
+	if err := gitback.Clone(origin, clone2); err != nil {
+		t.Fatalf("Clone clone2: %v", err)
+	}
+	mustWrite(t, filepath.Join(clone2, "content", "features", "F-0001", "spec.md"), realDoc("F-0001", "Versão remota do mesmo documento."))
+	theirHead, err := gitback.CommitAndPush(clone2, "remote same-doc edit")
+	if err != nil {
+		t.Fatalf("CommitAndPush clone2: %v", err)
+	}
+	if out, err := execCerne(t, "pull", "--dir", projDir); err == nil {
+		t.Fatalf("same-doc pull should conflict\n%s", out)
+	}
+
+	out, err := execCerne(t, "push", "--dir", projDir)
+	if !errors.Is(err, errUnreconciledConflict) {
+		t.Fatalf("push over an unreconciled conflict: err=%v, want errUnreconciledConflict\n%s", err, out)
+	}
+	for _, want := range []string{
+		"current/features/F-0001-parcelamento/spec.md",
+		".docs/.conflicts/current/features/F-0001-parcelamento/spec.md",
+		"delete",
+		"cerne push --force",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("refusal %q missing %q", err, want)
+		}
+	}
+	if head, _ := gitback.HeadSHA(origin); head != theirHead {
+		t.Fatalf("refused push moved origin to %s, want %s", head, theirHead)
+	}
+
+	rb(t, projDir, "push", "--force")
+	head, _ := gitback.HeadSHA(origin)
+	if stored, _, _ := gitback.FileBlobAt(origin, head, "content/features/F-0001/spec.md"); string(stored) != mine {
+		t.Fatalf("push --force sent %q, want mine", stored)
+	}
+	stash := filepath.Join(projDir, ".docs", ".conflicts", "current", "features", "F-0001-parcelamento", "spec.md")
+	if _, err := os.Stat(stash); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("push --force left the stash: %v", err)
+	}
+}
+
+// TestNewDocAfterSnapshotMovedIsAConflict (B-0041 review, round 2): B creates
+// F-0001's result.md and pushes; A runs note new, which moves A's snapshot
+// past B's file; A then writes its own result.md. A document .docs/ never
+// received must be absent at the base: A's push conflicts, B's result stays.
+func TestNewDocAfterSnapshotMovedIsAConflict(t *testing.T) {
+	projA, origin, _, specA := pulledFeatureProject(t, "Conteúdo original.")
+	cacheA := os.Getenv("CERNE_CACHE_DIR")
+	projB, cacheB := t.TempDir(), t.TempDir()
+	cfg, err := os.ReadFile(filepath.Join(projA, ".cernerc"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(projB, ".cernerc"), string(cfg))
+	run := func(proj, cache string, args ...string) (string, error) {
+		t.Setenv("CERNE_CACHE_DIR", cache)
+		defer t.Setenv("CERNE_CACHE_DIR", cacheA)
+		return execCerne(t, append(args, "--dir", proj)...)
+	}
+	if out, err := run(projB, cacheB, "pull"); err != nil {
+		t.Fatalf("B pull: %v\n%s", err, out)
+	}
+	result := func(proj string) string {
+		return filepath.Join(proj, ".docs", "current", "features", "F-0001-parcelamento", "result.md")
+	}
+	theirs := "---\ncerne_id: F-0001\n---\n\n# Resultado\n\nResultado de B.\n"
+	mustWrite(t, result(projB), theirs)
+	if out, err := run(projB, cacheB, "push"); err != nil {
+		t.Fatalf("B push: %v\n%s", err, out)
+	}
+	if out, err := run(projA, cacheA, "note", "new", "Nota de A"); err != nil {
+		t.Fatalf("A note new: %v\n%s", err, out)
+	}
+	mustWrite(t, filepath.Join(filepath.Dir(specA), "result.md"), "---\ncerne_id: F-0001\n---\n\n# Resultado\n\nResultado de A.\n")
+
+	if out, err := run(projA, cacheA, "push"); err == nil || !strings.Contains(out, "Conflict in 1") {
+		t.Fatalf("A's push of a result.md B already created must conflict: %v\n%s", err, out)
+	}
+	head, _ := gitback.HeadSHA(origin)
+	if stored, _, _ := gitback.FileBlobAt(origin, head, "content/features/F-0001/result.md"); string(stored) != theirs {
+		t.Fatalf("backend result.md = %q, want B's", stored)
+	}
+}
+
+// TestNewDocOverStubAtBaseIsNoConflict (B-0041 review, round 3): `feature
+// start` writes a result stub into the backend and moves the snapshot without
+// materializing. Writing result.md by hand and pushing without a pull must
+// go through: a stub at base is not a document someone else wrote.
+func TestNewDocOverStubAtBaseIsNoConflict(t *testing.T) {
+	projDir, origin, repoDir, specPath := pulledFeatureProject(t, "Conteúdo original.")
+	writeDoc(t, repoDir, "F-0001", "plan.md", realDoc("F-0001", "Plano real."))
+	commitBackend(t, repoDir)
+	for _, verb := range []string{"approve", "start"} {
+		if out, err := execCerne(t, "feature", verb, "F-0001", "--dir", projDir); err != nil {
+			t.Fatalf("%s: %v\n%s", verb, err, out)
+		}
+	}
+	mine := "---\ncerne_id: F-0001\n---\n\n# Resultado\n\nResultado real.\n"
+	mustWrite(t, filepath.Join(filepath.Dir(specPath), "result.md"), mine)
+
+	if out, err := execCerne(t, "push", "--dir", projDir); err != nil {
+		t.Fatalf("push over a result stub must go through: %v\n%s", err, out)
+	}
+	head, _ := gitback.HeadSHA(origin)
+	if stored, _, _ := gitback.FileBlobAt(origin, head, "content/features/F-0001/result.md"); string(stored) != mine {
+		t.Fatalf("backend result.md = %q, want mine", stored)
 	}
 }

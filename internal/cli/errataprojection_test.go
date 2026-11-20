@@ -165,6 +165,11 @@ func TestConflictMineStaleBlockStripsOnPush(t *testing.T) {
 	if kept, _ := os.ReadFile(file); !strings.Contains(string(kept), "meu corpo") {
 		t.Fatalf("mine must stay in .docs/:\n%s", kept)
 	}
+	// Reconciled by keeping mine: the stashed remote copy goes (B-0041).
+	rel, _ := filepath.Rel(filepath.Join(projDir, ".docs"), file)
+	if err := os.Remove(filepath.Join(projDir, ".docs", ".conflicts", rel)); err != nil {
+		t.Fatal(err)
+	}
 	rb(t, projDir, "push")
 	stored, _ := store.LoadNoteContent(repoDir, "N-0001")
 	if !strings.Contains(stored, "meu corpo") || strings.Contains(stored, "cerne:errata") {

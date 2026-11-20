@@ -369,6 +369,234 @@ func TestPullSameDocConflictNonDestructive(t *testing.T) {
 	}
 }
 
+// TestTwoAuthorsDisjointParagraphsBothSurvive (B-0041) runs the bug's seven
+// steps: A and B, each with its own clone of one backend, edit different
+// paragraphs of the same note. A's push conflicts; A's pull must merge the two
+// edits line by line, and A's next push must keep B's paragraph in the backend.
+func TestTwoAuthorsDisjointParagraphsBothSurvive(t *testing.T) {
+	projA, origin, _ := setupProject(t)
+	cacheA := os.Getenv("CERNE_CACHE_DIR")
+	body := filepath.Join(t.TempDir(), "n.md")
+	mustWrite(t, body, "Paragrafo um.\n\nParagrafo dois.\n\nParagrafo tres.\n")
+	rb(t, projA, "note", "new", "Nota compartilhada", "--file", body)
+	rb(t, projA, "pull")
+
+	// 1. B: a second project on the same backend, with its own cache clone.
+	projB, cacheB := t.TempDir(), t.TempDir()
+	cfg, err := os.ReadFile(filepath.Join(projA, ".cernerc"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(projB, ".cernerc"), string(cfg))
+	run := func(proj, cache string, args ...string) (string, error) {
+		t.Setenv("CERNE_CACHE_DIR", cache)
+		defer t.Setenv("CERNE_CACHE_DIR", cacheA)
+		return execCerne(t, append(args, "--dir", proj)...)
+	}
+	if out, err := run(projB, cacheB, "pull"); err != nil {
+		t.Fatalf("B pull: %v\n%s", err, out)
+	}
+	note := func(proj string) string {
+		m, _ := filepath.Glob(filepath.Join(proj, ".docs", "current", "notes", "N-0001-*.md"))
+		if len(m) != 1 {
+			t.Fatalf("materialized N-0001 in %s: %v", proj, m)
+		}
+		return m[0]
+	}
+	edit := func(p, from, to string) {
+		got, err := os.ReadFile(p)
+		if err != nil || !strings.Contains(string(got), from) {
+			t.Fatalf("%s lacks %q (err %v):\n%s", p, from, err, got)
+		}
+		mustWrite(t, p, strings.Replace(string(got), from, to, 1))
+	}
+
+	// 2. A edits paragraph 2 and does not send. 3. B edits paragraph 3 and pushes.
+	edit(note(projA), "Paragrafo dois.", "Paragrafo dois, de A.")
+	edit(note(projB), "Paragrafo tres.", "Paragrafo tres, de B.")
+	if out, err := run(projB, cacheB, "push"); err != nil {
+		t.Fatalf("B push: %v\n%s", err, out)
+	}
+	// 4. A's push conflicts.
+	if out, err := run(projA, cacheA, "push"); err == nil || !strings.Contains(out, "Conflict in 1") {
+		t.Fatalf("A push should conflict: %v\n%s", err, out)
+	}
+	// 5. A's pull merges the disjoint paragraphs.
+	if out, err := run(projA, cacheA, "pull"); err != nil {
+		t.Fatalf("A pull should merge disjoint paragraphs: %v\n%s", err, out)
+	}
+	both := []string{"Paragrafo dois, de A.", "Paragrafo tres, de B."}
+	got, _ := os.ReadFile(note(projA))
+	for _, want := range both {
+		if !strings.Contains(string(got), want) {
+			t.Fatalf("A's .docs/ after pull lacks %q:\n%s", want, got)
+		}
+	}
+	// 6. A pushes. 7. The backend HEAD keeps both paragraphs.
+	if out, err := run(projA, cacheA, "push"); err != nil {
+		t.Fatalf("A push after merge: %v\n%s", err, out)
+	}
+	head, err := gitback.HeadSHA(origin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, _, err := gitback.FileBlobAt(origin, head, "content/notes/N-0001.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range both {
+		if !strings.Contains(string(stored), want) {
+			t.Fatalf("backend HEAD lost %q:\n%s", want, stored)
+		}
+	}
+}
+
+// B-0041: a second pull before the conflict is reconciled does not resolve it
+// on its own: it still reports the conflict, the remote copy is still in
+// .docs/.conflicts/, and push still refuses — the other author's edit survives.
+func TestSecondPullKeepsUnreconciledConflict(t *testing.T) {
+	projDir, origin, _, specPath := pulledFeatureProject(t, "Conteúdo original.")
+	mine := "---\ncerne_id: F-0001\n---\n\n# Parcelamento\n\nMinha edição não-enviada.\n"
+	mustWrite(t, specPath, mine)
+	clone2 := filepath.Join(t.TempDir(), "clone2")
+	if err := gitback.Clone(origin, clone2); err != nil {
+		t.Fatalf("Clone clone2: %v", err)
+	}
+	theirSpec := realDoc("F-0001", "Versão remota do mesmo documento.")
+	mustWrite(t, filepath.Join(clone2, "content", "features", "F-0001", "spec.md"), theirSpec)
+	theirHead, err := gitback.CommitAndPush(clone2, "remote same-doc edit")
+	if err != nil {
+		t.Fatalf("CommitAndPush clone2: %v", err)
+	}
+	stash := filepath.Join(projDir, ".docs", ".conflicts", "current", "features", "F-0001-parcelamento", "spec.md")
+	for i := 1; i <= 2; i++ {
+		out, err := execCerne(t, "pull", "--dir", projDir)
+		if err == nil || !strings.Contains(out, "Conflict in 1 document(s)") {
+			t.Fatalf("pull %d must still report the conflict: %v\n%s", i, err, out)
+		}
+		if got, err := os.ReadFile(stash); err != nil || string(got) != theirSpec {
+			t.Fatalf("pull %d: stash = %q (err %v), want the remote version", i, got, err)
+		}
+		if got, _ := os.ReadFile(specPath); string(got) != mine {
+			t.Fatalf("pull %d replaced my version:\n%s", i, got)
+		}
+	}
+	if out, err := execCerne(t, "push", "--dir", projDir); !errors.Is(err, errUnreconciledConflict) {
+		t.Fatalf("push after two pulls: err=%v, want errUnreconciledConflict\n%s", err, out)
+	}
+	if head, _ := gitback.HeadSHA(origin); head != theirHead {
+		t.Fatalf("origin moved to %s, want %s", head, theirHead)
+	}
+}
+
+// B-0041: with no .docs/.snapshot (a pre-F-0102 checkout) the merge base comes
+// from docs.lock, the same fallback push uses.
+func TestPullMergeBaseFallsBackToDocsLock(t *testing.T) {
+	projDir, origin, _, specPath := pulledFeatureProject(t, "Conteúdo original.")
+	got, _ := os.ReadFile(specPath)
+	mustWrite(t, specPath, strings.Replace(string(got), "# Título", "# Título local", 1))
+	clone2 := filepath.Join(t.TempDir(), "clone2")
+	if err := gitback.Clone(origin, clone2); err != nil {
+		t.Fatalf("Clone clone2: %v", err)
+	}
+	mustWrite(t, filepath.Join(clone2, "content", "features", "F-0001", "spec.md"), realDoc("F-0001", "Versão remota."))
+	if _, err := gitback.CommitAndPush(clone2, "remote edit, another line"); err != nil {
+		t.Fatalf("CommitAndPush clone2: %v", err)
+	}
+	if err := os.Remove(filepath.Join(projDir, ".docs", ".snapshot")); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := execCerne(t, "pull", "--dir", projDir); err != nil {
+		t.Fatalf("pull should merge over the docs.lock base: %v\n%s", err, out)
+	}
+	if got, _ := os.ReadFile(specPath); !strings.Contains(string(got), "# Título local") || !strings.Contains(string(got), "Versão remota.") {
+		t.Fatalf("merged spec lacks a side:\n%s", got)
+	}
+}
+
+// TestStaleDocAfterSnapshotMovedIsAConflict (B-0041 review): B edits N-0002
+// and pushes; A pushes N-0001, which auto-rebases and moves A's snapshot past
+// B's edit that A's .docs/ never received; A then edits its stale N-0002. That
+// push must conflict, not overwrite. The pull after it has no verifiable base
+// (the snapshot is past what .docs/ had), so it stashes instead of merging,
+// and B's line survives until A reconciles.
+func TestStaleDocAfterSnapshotMovedIsAConflict(t *testing.T) {
+	projA, origin, _ := setupProject(t)
+	cacheA := os.Getenv("CERNE_CACHE_DIR")
+	for _, title := range []string{"Nota um", "Nota dois"} {
+		body := filepath.Join(t.TempDir(), "n.md")
+		mustWrite(t, body, "Linha um.\n\nLinha dois.\n\nLinha tres.\n")
+		rb(t, projA, "note", "new", title, "--file", body)
+	}
+	rb(t, projA, "pull")
+	projB, cacheB := t.TempDir(), t.TempDir()
+	cfg, err := os.ReadFile(filepath.Join(projA, ".cernerc"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(projB, ".cernerc"), string(cfg))
+	run := func(proj, cache string, args ...string) (string, error) {
+		t.Setenv("CERNE_CACHE_DIR", cache)
+		defer t.Setenv("CERNE_CACHE_DIR", cacheA)
+		return execCerne(t, append(args, "--dir", proj)...)
+	}
+	must := func(proj, cache string, args ...string) {
+		if out, err := run(proj, cache, args...); err != nil {
+			t.Fatalf("%s %v: %v\n%s", proj, args, err, out)
+		}
+	}
+	note := func(proj, id string) string {
+		m, _ := filepath.Glob(filepath.Join(proj, ".docs", "current", "notes", id+"-*.md"))
+		if len(m) != 1 {
+			t.Fatalf("materialized %s in %s: %v", id, proj, m)
+		}
+		return m[0]
+	}
+	edit := func(p, from, to string) {
+		got, _ := os.ReadFile(p)
+		if !strings.Contains(string(got), from) {
+			t.Fatalf("%s lacks %q:\n%s", p, from, got)
+		}
+		mustWrite(t, p, strings.Replace(string(got), from, to, 1))
+	}
+	backendHas := func(want string) bool {
+		head, _ := gitback.HeadSHA(origin)
+		stored, _, _ := gitback.FileBlobAt(origin, head, "content/notes/N-0002.md")
+		return strings.Contains(string(stored), want)
+	}
+	must(projB, cacheB, "pull")
+
+	edit(note(projB, "N-0002"), "Linha dois.", "Linha dois, de B.")
+	must(projB, cacheB, "push")
+	edit(note(projA, "N-0001"), "Linha um.", "Linha um, de A.")
+	must(projA, cacheA, "push") // auto-rebases over B's commit: A's snapshot moves past it
+	edit(note(projA, "N-0002"), "Linha tres.", "Linha tres, de A.")
+
+	if out, err := run(projA, cacheA, "push"); err == nil || !strings.Contains(out, "Conflict in 1") {
+		t.Fatalf("push of a stale N-0002 must conflict: %v\n%s", err, out)
+	}
+	if !backendHas("Linha dois, de B.") {
+		t.Fatal("B's line left the backend")
+	}
+	// The pull cannot merge over the moved snapshot: it stashes B's version.
+	if out, err := run(projA, cacheA, "pull"); err == nil || !strings.Contains(out, "Conflict in 1") {
+		t.Fatalf("pull over a moved snapshot must stash, not merge: %v\n%s", err, out)
+	}
+	if _, err := run(projA, cacheA, "push"); !errors.Is(err, errUnreconciledConflict) {
+		t.Fatalf("push before reconciling: err=%v, want errUnreconciledConflict", err)
+	}
+	// A reconciles: folds B's line in, deletes the copy, pushes.
+	rel, _ := filepath.Rel(filepath.Join(projA, ".docs"), note(projA, "N-0002"))
+	edit(note(projA, "N-0002"), "Linha dois.", "Linha dois, de B.")
+	if err := os.Remove(filepath.Join(projA, ".docs", ".conflicts", rel)); err != nil {
+		t.Fatal(err)
+	}
+	must(projA, cacheA, "push")
+	if !backendHas("Linha dois, de B.") || !backendHas("Linha tres, de A.") {
+		t.Fatal("the reconciled push must keep both lines")
+	}
+}
+
 // --force keeps its meaning: discard unsent edits and restore from the backend.
 func TestPullForceDiscardsUnpushedEdits(t *testing.T) {
 	projDir, _, _, specPath := pulledFeatureProject(t, "Conteúdo original.")

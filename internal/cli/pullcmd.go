@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -65,7 +66,10 @@ func runPull(cmd *cobra.Command, dir, scope string, okfFlag, force, syncSkillsFl
 
 	var manifest map[string]string
 	var head string
-	var conflicts []string
+	var conflicts, merged []string
+	// The commit .docs/ was last synced to: the merge base of an unsent edit
+	// (B-0041). Unreadable means no base, and the doc falls back to a conflict.
+	prevSnap, _ := syncedSnapshot(ctx.projDir)
 	// Hold the backend lock for the whole clone-touching section: bring the
 	// shared clone to the latest remote, materialize, and 3-way merge unsent
 	// edits — so a concurrent push cannot reset the worktree mid-materialize.
@@ -91,7 +95,7 @@ func runPull(cmd *cobra.Command, dir, scope string, okfFlag, force, syncSkillsFl
 		if err != nil {
 			return err
 		}
-		var mine map[string][]byte
+		var mine, stashed map[string][]byte
 		prevBlocks, err := store.LoadErrataBlocks(docsDir) // before the wipe
 		if err != nil {
 			return err
@@ -105,6 +109,9 @@ func runPull(cmd *cobra.Command, dir, scope string, okfFlag, force, syncSkillsFl
 			if err != nil {
 				return err
 			}
+			if stashed, err = readConflictCopies(docsDir); err != nil {
+				return err
+			}
 		}
 
 		manifest, err = materialize.MaterializeAt(ctx.repoDir, docsDir, scope, okf, ctx.cfg.RecentWorkWindowDays(), time.Now())
@@ -112,10 +119,13 @@ func runPull(cmd *cobra.Command, dir, scope string, okfFlag, force, syncSkillsFl
 			return err
 		}
 		if len(mine) > 0 {
-			conflicts, err = reapplyUnsent(docsDir, prevManifest, manifest, mine, prevBlocks)
+			conflicts, merged, err = reapplyUnsent(ctx.repoDir, prevSnap, docsDir, prevManifest, manifest, mine, prevBlocks)
 			if err != nil {
 				return err
 			}
+		}
+		if conflicts, err = keepConflictCopies(docsDir, stashed, mine, conflicts); err != nil {
+			return err
 		}
 
 		head, err = gitback.HeadSHA(ctx.repoDir)
@@ -181,6 +191,12 @@ func runPull(cmd *cobra.Command, dir, scope string, okfFlag, force, syncSkillsFl
 	fmt.Fprintf(cmd.OutOrStdout(),
 		"Materialized: %d feature(s), %d decision(s), %d reference(s)%s into .docs/ (snapshot %s).\n",
 		nFeatures, nDecisions, nReferences, extra, snap)
+	if len(merged) > 0 {
+		fmt.Fprintf(cmd.OutOrStdout(), "Merged the remote changes into %d unsent document(s); review and run 'cerne push':\n", len(merged))
+		for _, rel := range merged {
+			fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", rel)
+		}
+	}
 	// Explain a known no-op instead of a mute "0 feature(s)": a scoped pull that
 	// materializes nothing usually means the module's features are implemented
 	// (concluded entities don't materialize — they are history).
@@ -255,16 +271,18 @@ func readBodies(docsDir string, rels []string) (map[string][]byte, error) {
 
 // reapplyUnsent merges the captured unsent edits (mine) back over the freshly
 // materialized .docs/ (theirs), guided by the pre-pull manifest (base hashes).
-// Disjoint edits are restored; a document changed on both sides keeps MINE in
-// place (non-destructive), stashes THEIRS under .docs/.conflicts/, and is left
-// flagged unsent (fresh[rel] reset to base) so it is not lost. It mutates fresh
-// for conflicts and returns the conflicting paths, sorted.
-func reapplyUnsent(docsDir string, prev, fresh map[string]string, mine map[string][]byte, prevBlocks map[string]string) ([]string, error) {
+// Disjoint edits are restored. A document changed on both sides is merged line
+// by line over its version at prevSnap (B-0041) and stays unsent; when the
+// hunks overlap, or there is no base, it keeps MINE in place (non-destructive)
+// and stashes THEIRS under .docs/.conflicts/. Either way the manifest keeps
+// THEIRS as the version .docs/ last received, which is what push checks its
+// base against; the stash, not the manifest, holds the push back until the
+// conflict is reconciled. It returns the conflicting and the merged paths, sorted.
+func reapplyUnsent(repoDir, prevSnap, docsDir string, prev, fresh map[string]string, mine map[string][]byte, prevBlocks map[string]string) (conflicts, merged []string, err error) {
 	newBlocks, err := store.LoadErrataBlocks(docsDir)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	var conflicts []string
 	for rel, raw := range mine {
 		baseHash := prev[rel]
 		theirsHash, theirsTracked := fresh[rel]
@@ -284,34 +302,62 @@ func reapplyUnsent(docsDir string, prev, fresh map[string]string, mine map[strin
 			// Net-new local doc (e.g. result.md before first push), or removed
 			// remotely: restore mine. Absent from fresh, so it stays unsent.
 			if err := writeDocsFile(docsDir, rel, grafted); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		case theirsHash == mineHash:
 			// Coincidentally identical to the remote: leave theirs in place.
 		case theirsHash == baseHash:
 			// Remote did not touch this doc: keep my unsent edit.
 			if err := writeDocsFile(docsDir, rel, grafted); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		default:
-			// Same document changed both sides: keep MINE visible, stash THEIRS,
-			// and keep it unsent (so nothing is silently discarded).
 			theirs, err := os.ReadFile(filepath.Join(docsDir, filepath.FromSlash(rel)))
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
+			// Same document changed both sides: merge mine and theirs, bodies
+			// without the errata block, under the block this pull generated.
+			theirsBody, terr := store.StripErrataBlock(theirs, newBlocks[rel])
+			if base, ok := mergeBase(repoDir, prevSnap, rel, body, baseHash); ok && serr == nil && terr == nil {
+				if out, ok := gitback.MergeFile(base, body, theirsBody); ok {
+					if err := writeDocsFile(docsDir, rel, append(out, newBlocks[rel]...)); err != nil {
+						return nil, nil, err
+					}
+					merged = append(merged, rel)
+					continue
+				}
+			}
+			// Overlapping hunks: keep MINE visible (unsent, as it differs from
+			// theirs) and stash THEIRS, so nothing is silently discarded.
 			if err := saveConflictCopy(docsDir, rel, theirs); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			if err := writeDocsFile(docsDir, rel, grafted); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
-			fresh[rel] = baseHash
 			conflicts = append(conflicts, rel)
 		}
 	}
 	sort.Strings(conflicts)
-	return conflicts, nil
+	sort.Strings(merged)
+	return conflicts, merged, nil
+}
+
+// mergeBase reads rel as .docs/ last had it — its backend file at the commit
+// snap — for a 3-way merge. ok only when it hashes to the manifest's base, so a
+// moved snapshot or an OKF projection (whose .docs/ form is not the backend's)
+// never merges over a wrong ancestor.
+func mergeBase(repoDir, snap, rel string, mine []byte, baseHash string) ([]byte, bool) {
+	backendRel, err := backendRelPath(rel, parseCerneID(mine))
+	if snap == "" || err != nil {
+		return nil, false
+	}
+	base, found, err := gitback.FileBlobAt(repoDir, snap, backendRel)
+	if err != nil || !found || sha256Hex(base) != baseHash {
+		return nil, false
+	}
+	return base, true
 }
 
 func writeDocsFile(docsDir, rel string, body []byte) error {
@@ -323,13 +369,61 @@ func writeDocsFile(docsDir, rel string, body []byte) error {
 }
 
 // saveConflictCopy stashes the remote version of a conflicting doc under
-// .docs/.conflicts/ (outside .docs/current/, so it is inert to push/pull walks).
+// .docs/.conflicts/ (outside .docs/current/, so push and pull never read it as
+// a document; push only checks it is gone — checkReconciled).
 func saveConflictCopy(docsDir, rel string, theirs []byte) error {
-	p := filepath.Join(docsDir, ".conflicts", filepath.FromSlash(rel))
+	p := conflictCopyPath(docsDir, rel)
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return err
 	}
 	return os.WriteFile(p, theirs, 0o644)
+}
+
+// readConflictCopies reads every stashed remote copy under .docs/.conflicts/,
+// keyed by the .docs-relative path of its document, before materialize wipes
+// .docs/ (keepConflictCopies puts them back).
+func readConflictCopies(docsDir string) (map[string][]byte, error) {
+	root := filepath.Join(docsDir, ".conflicts")
+	copies := map[string][]byte{}
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, walkErr error) error {
+		if errors.Is(walkErr, fs.ErrNotExist) {
+			return nil
+		}
+		if walkErr != nil || d.IsDir() {
+			return walkErr
+		}
+		rel, err := filepath.Rel(root, p)
+		if err != nil {
+			return err
+		}
+		body, err := os.ReadFile(p)
+		copies[filepath.ToSlash(rel)] = body
+		return err
+	})
+	return copies, err
+}
+
+// keepConflictCopies puts back the stashed copy of each document that is
+// still unsent: deleting the copy is the only thing that reconciles it, so a
+// pull must not (B-0041). Each is reported with this pull's conflicts; a copy
+// this pull re-stashed is already fresher. The copy of a document with no
+// unsent edit is dropped: there is nothing left to reconcile.
+func keepConflictCopies(docsDir string, stashed, mine map[string][]byte, conflicts []string) ([]string, error) {
+	for rel, body := range stashed {
+		if _, unsent := mine[rel]; !unsent || slices.Contains(conflicts, rel) {
+			continue
+		}
+		if err := saveConflictCopy(docsDir, rel, body); err != nil {
+			return nil, err
+		}
+		conflicts = append(conflicts, rel)
+	}
+	sort.Strings(conflicts)
+	return conflicts, nil
+}
+
+func conflictCopyPath(docsDir, rel string) string {
+	return filepath.Join(docsDir, ".conflicts", filepath.FromSlash(rel))
 }
 
 // reportPullConflicts prints the same-document conflicts a pull merged
@@ -341,7 +435,7 @@ func reportPullConflicts(cmd *cobra.Command, conflicts []string) error {
 	for _, rel := range conflicts {
 		fmt.Fprintf(out, "  %s\n", rel)
 	}
-	fmt.Fprintln(out, "Reconcile each document and run 'cerne push' (the remote version is in .docs/.conflicts/).")
+	fmt.Fprintln(out, "For each one, fold the remote changes you want to keep into your file, delete its copy under .docs/.conflicts/, then run 'cerne push' (push refuses the document while that copy is there).")
 	return fmt.Errorf("%d document(s) in conflict on pull", len(conflicts))
 }
 
