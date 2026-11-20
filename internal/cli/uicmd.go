@@ -356,6 +356,19 @@ func joinUI(ctx context.Context, out io.Writer, dir string, port int, firstJoin,
 		}
 		return joinRetry, nil
 	}
+	mine := hostInfo{Version: version.Version, UI: server.UIIdentity()}
+	act := joinAction(hostVer, mine)
+	if act == actRestart { // criterion 7: the panel's binary on disk is this one
+		if err := requestPanelRestart(base); err == nil {
+			fmt.Fprintf(out, "the cerne ui on %s runs %s; restarting it into the installed %s\n", base, hostVer.Version, mine.Version)
+			if v, ok := waitPanelIdentity(ctx, base, mine, 15*time.Second); ok {
+				hostVer = v
+			}
+		}
+		if act = joinAction(hostVer, mine); act == actRestart {
+			act = actWarn // the restart did not land: say what to do by hand
+		}
+	}
 	if dir == "" {
 		dir = "."
 	}
@@ -381,7 +394,7 @@ func joinUI(ctx context.Context, out io.Writer, dir string, port int, firstJoin,
 	if hostVer.UI != "" {
 		host.UI = hostVer.UI
 	}
-	myVersion, myUI := version.Version, server.UIIdentity()
+	myVersion, myUI := mine.Version, mine.UI
 	// Bare base opens whichever project the panel already shows; the project's
 	// own pid in the link needs a panel that reads it, which only one with a UI
 	// identity does (F-0373).
@@ -390,9 +403,17 @@ func joinUI(ctx context.Context, out io.Writer, dir string, port int, firstJoin,
 	if oldPanel {
 		target = base
 	}
-	if hostVer.UI != myUI || hostVer.Version != myVersion {
-		if key := host.Version + "|" + host.UI; !warned[key] {
-			warned[key] = true
+	if key := host.Version + "|" + host.UI; act != actNone && !warned[key] {
+		warned[key] = true
+		switch act {
+		case actInform: // criterion 8: the panel is current; this process is the odd one
+			tail := ""
+			if myVersion == "dev" {
+				tail = "; to see this build's UI, run it with --port <another port>"
+			}
+			fmt.Fprintf(out, "the cerne ui on %s runs the installed cerne %s (ui %s); this cerne is %s (ui %s) and only keeps the project registered%s\n",
+				base, host.Version, host.UI, myVersion, myUI, tail)
+		default:
 			tail := ""
 			if oldPanel {
 				tail = " (that panel ignores project links, so this opens its base address)"
@@ -425,6 +446,62 @@ func joinUI(ctx context.Context, out io.Writer, dir string, port int, firstJoin,
 	}
 	fmt.Fprintf(out, "\nproject %q removed from the panel\n", name)
 	return joinExitUser, nil
+}
+
+// joinAct is what a joining cerne ui does about the panel it found (F-0478).
+type joinAct int
+
+const (
+	actNone    joinAct = iota // the panel is this very build
+	actRestart                // the panel's binary on disk is this one: restart the panel into it
+	actInform                 // the panel runs its binary on disk; this process is another build
+	actWarn                   // anything else, or a panel that does not report its binary on disk
+)
+
+// joinAction decides from the panel's running identity and the binary on its
+// disk, never from version order: a local build (dev) has no order.
+func joinAction(host, mine hostInfo) joinAct {
+	if host.Version == mine.Version && host.UI == mine.UI {
+		return actNone
+	}
+	if in := host.Installed; in != nil && in.Version != "" {
+		switch {
+		case in.Version == mine.Version && in.UI == mine.UI:
+			return actRestart
+		case in.Version == host.Version && in.UI == host.UI:
+			return actInform
+		}
+	}
+	return actWarn
+}
+
+// requestPanelRestart asks the panel on base to restart into its binary on
+// disk (POST /api/restart, 202).
+func requestPanelRestart(base string) error {
+	r, err := probeClient.Post(base+"/api/restart", "application/json", nil)
+	if err != nil {
+		return err
+	}
+	defer r.Body.Close()
+	if r.StatusCode != http.StatusAccepted {
+		return fmt.Errorf("HTTP %d", r.StatusCode)
+	}
+	return nil
+}
+
+// waitPanelIdentity polls the panel until it reports want, for up to timeout:
+// the restarted process answers once it has re-read its first project.
+func waitPanelIdentity(ctx context.Context, base string, want hostInfo, timeout time.Duration) (hostInfo, bool) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if v, ok := probeCerneUI(base); ok && v.Version == want.Version && v.UI == want.UI {
+			return v, true
+		}
+		if !sleepCtx(ctx, 200*time.Millisecond) {
+			break
+		}
+	}
+	return hostInfo{}, false
 }
 
 // errHostDied signals that the hosting cerne ui went away (its SSE stream
@@ -484,6 +561,9 @@ var probeClient = &http.Client{Timeout: 2 * time.Second}
 type hostInfo struct {
 	Version string `json:"version"`
 	UI      string `json:"ui"`
+	// Installed is the binary the panel's command resolves to on disk
+	// (F-0478); nil on an older panel.
+	Installed *hostInfo `json:"installed,omitempty"`
 }
 
 func probeCerneUI(base string) (info hostInfo, ok bool) {
@@ -499,14 +579,15 @@ func probeCerneUI(base string) (info hostInfo, ok bool) {
 		Projects []struct {
 			PID string `json:"pid"`
 		} `json:"projects"`
-		Version string `json:"version"` // absent on a panel built before F-0373
-		UI      string `json:"ui"`
+		Version   string    `json:"version"` // absent on a panel built before F-0373
+		UI        string    `json:"ui"`
+		Installed *hostInfo `json:"installed"` // absent on a panel built before F-0478
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		return hostInfo{}, false
 	}
 	// a cerne ui always returns a (possibly empty) array
-	return hostInfo{body.Version, body.UI}, body.Projects != nil
+	return hostInfo{Version: body.Version, UI: body.UI, Installed: body.Installed}, body.Projects != nil
 }
 
 // openURL opens a URL in the browser; a variable so tests never launch one.
