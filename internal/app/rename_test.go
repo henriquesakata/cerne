@@ -20,10 +20,10 @@ import (
 func seedRename(t *testing.T, repoDir string) {
 	t.Helper()
 	for _, err := range []error{
-		store.SaveFeature(repoDir, store.Feature{ID: "F-0001", Title: "Done feature", State: domain.FeatureState("done"), Components: []string{"old", "gitea"}}),
+		store.SaveFeature(repoDir, store.Feature{ID: "F-0001", Title: "Done feature", State: domain.FeatureState("done"), Facets: []string{"code"}, Components: []string{"old", "gitea"}}),
 		store.SaveFeature(repoDir, store.Feature{ID: "T-0002", Title: "Rejected task", State: domain.FeatureState("rejected"), Components: []string{"old"}}),
 		store.SaveFeature(repoDir, store.Feature{ID: "F-0003", Title: "Live feature", State: domain.FeatureState("in_development"), Components: []string{"gitea"}}),
-		store.SaveNote(repoDir, store.Note{ID: "N-0001", Title: "Old note", State: domain.NoteState("superseded"), Components: []string{"kpack", "old"}}),
+		store.SaveNote(repoDir, store.Note{ID: "N-0001", Title: "Old note", State: domain.NoteState("superseded"), Facets: []string{"infra", "data"}, Components: []string{"kpack", "old"}}),
 		store.SaveDecision(repoDir, store.Decision{ID: "D-0001", Title: "Old decision", State: domain.DecisionState("superseded"), Components: []string{"old"}}),
 		store.SaveReference(repoDir, store.Reference{ID: "R-0001", Title: "Old ref", State: domain.ReferenceState("obsolete"), Components: []string{"old"}}),
 		store.SaveRunbook(repoDir, store.Runbook{ID: "RB-0001", Title: "Runbook", State: domain.RunbookState("active"), Components: []string{"old"}}),
@@ -72,6 +72,35 @@ func componentsOf(t *testing.T, repoDir string) map[string][]string {
 	return got
 }
 
+// verbRetagTypes is the event type each per-entity retag verb writes, by the
+// retagKinds name (feature, task, note, …): read from the verbs themselves.
+func verbRetagTypes(t *testing.T) map[string]string {
+	t.Helper()
+	repoDir, projDir, _ := newFeatureBackend(t)
+	types := map[string]string{}
+	for n, k := range retagKinds() {
+		id := k.seed(t, repoDir, n+1, k.states[0])
+		commitBackend(t, repoDir)
+		if _, err := k.retag(repoDir, projDir, id, []string{"code"}, true); err != nil {
+			t.Fatalf("%s retag: %v", k.name, err)
+		}
+		all, _ := store.ReadAllEvents(repoDir)
+		types[k.name] = all[len(all)-1].Type
+	}
+	return types
+}
+
+// projectFiles reads the projection files a write refreshes in projDir.
+func projectFiles(t *testing.T, projDir string) map[string]string {
+	t.Helper()
+	got := map[string]string{}
+	for _, f := range []string{"docs.lock", ".docs/.snapshot", ".docs/.manifest.json"} {
+		b, _ := os.ReadFile(filepath.Join(projDir, f))
+		got[f] = string(b)
+	}
+	return got
+}
+
 func eventCount(t *testing.T, repoDir string) int {
 	t.Helper()
 	evs, err := store.ReadAllEvents(repoDir)
@@ -86,11 +115,14 @@ func eventCount(t *testing.T, repoDir string) int {
 func TestRenameComponentOneWriteEveryKindAndState(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	seedRename(t, repoDir)
-	commits, events := commitCount(t, repoDir), eventCount(t, repoDir)
+	commits, events, files := commitCount(t, repoDir), eventCount(t, repoDir), projectFiles(t, projDir)
 
 	rep, err := RenameComponent(repoDir, projDir, "old", "fresh", false, false)
 	if err != nil {
 		t.Fatalf("RenameComponent: %v", err)
+	}
+	if after := projectFiles(t, projDir); after["docs.lock"] == files["docs.lock"] {
+		t.Errorf("the write did not refresh docs.lock: the dry-run file check would see no write either")
 	}
 	if got := commitCount(t, repoDir); got != commits+1 {
 		t.Fatalf("commits %d -> %d, want exactly one more", commits, got)
@@ -117,11 +149,16 @@ func TestRenameComponentOneWriteEveryKindAndState(t *testing.T) {
 	if len(all) != events+8 {
 		t.Fatalf("events %d -> %d, want one per renamed entity (8)", events, len(all))
 	}
-	kinds := map[string]string{"F-0001": "feature", "T-0002": "feature", "N-0001": "note", "D-0001": "decision",
+	verbs := verbRetagTypes(t)
+	kinds := map[string]string{"F-0001": "feature", "T-0002": "task", "N-0001": "note", "D-0001": "decision",
 		"R-0001": "reference", "RB-0001": "runbook", "P-0001": "pending", "I-0001": "idea"}
+	facets := map[string]string{"F-0001": "code", "N-0001": "infra,data"}
 	for _, ev := range all[events:] {
-		if ev.Type != kinds[ev.EntityID]+".retagged" {
-			t.Errorf("event %s %s, want %s.retagged", ev.EntityID, ev.Type, kinds[ev.EntityID])
+		if w := verbs[kinds[ev.EntityID]]; w == "" || ev.Type != w {
+			t.Errorf("event %s %s, want %q, the type the %s retag verb writes", ev.EntityID, ev.Type, w, kinds[ev.EntityID])
+		}
+		if ev.Payload["facets"] != facets[ev.EntityID] {
+			t.Errorf("event %s facets = %q, want %q", ev.EntityID, ev.Payload["facets"], facets[ev.EntityID])
 		}
 		if ev.Payload["components"] != strings.Join(want[ev.EntityID], ",") {
 			t.Errorf("event %s components = %q, want %q", ev.EntityID, ev.Payload["components"], strings.Join(want[ev.EntityID], ","))
@@ -170,6 +207,7 @@ func TestRenameComponentRefusalsAndDryRunWriteNothing(t *testing.T) {
 			repoDir, projDir, _ := newFeatureBackend(t)
 			seedRename(t, repoDir)
 			commits, events, tags := commitCount(t, repoDir), eventCount(t, repoDir), componentsOf(t, repoDir)
+			files := projectFiles(t, projDir)
 			rep, err := RenameComponent(repoDir, projDir, tc.from, tc.to, tc.force, tc.dryRun)
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatalf("err = %v, want %v", err, tc.wantErr)
@@ -187,6 +225,11 @@ func TestRenameComponentRefusalsAndDryRunWriteNothing(t *testing.T) {
 			}
 			if out, _ := exec.Command("git", "-C", repoDir, "status", "--porcelain").Output(); len(out) != 0 {
 				t.Errorf("worktree dirty after a write-nothing rename:\n%s", out)
+			}
+			for f, b := range projectFiles(t, projDir) {
+				if b != files[f] {
+					t.Errorf("%s changed in the project after a write-nothing rename", f)
+				}
 			}
 		})
 	}
