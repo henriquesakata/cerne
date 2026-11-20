@@ -271,6 +271,41 @@ func TestRenameComponentNormalizesLikeTheWriters(t *testing.T) {
 	}
 }
 
+// M3 (critic round 1): a target carried only by a closed idea, a resolved
+// pending or a superseded note is in use: a merge, counted, and not refused as
+// near "kpack" (which it would be, were it new).
+func TestRenameComponentMergesIntoTargetOnlyOnClosedEntities(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		save func(repoDir string) error
+	}{
+		{"dropped idea", func(r string) error {
+			return store.SaveIdea(r, store.Idea{ID: "I-0002", Title: "i", State: domain.IdeaState("dropped"), Components: []string{"kpak"}})
+		}},
+		{"resolved pending", func(r string) error {
+			return store.SavePending(r, store.Pending{ID: "P-0002", Title: "p", From: "F-0001", State: domain.PendingState("resolved"), Components: []string{"kpak"}})
+		}},
+		{"superseded note", func(r string) error {
+			return store.SaveNote(r, store.Note{ID: "N-0002", Title: "n", State: domain.NoteState("superseded"), Components: []string{"kpak"}})
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repoDir, projDir, _ := newFeatureBackend(t)
+			if err := tc.save(repoDir); err != nil {
+				t.Fatal(err)
+			}
+			seedRename(t, repoDir)
+			rep, err := RenameComponent(repoDir, projDir, "old", "kpak", false, false)
+			if err != nil {
+				t.Fatalf("RenameComponent: %v", err)
+			}
+			if !rep.Merge || rep.ToCount != 1 || len(rep.Entities) != 8 {
+				t.Fatalf("merge=%v to_count=%d entities=%d, want a merge into 1 entity, 8 renamed", rep.Merge, rep.ToCount, len(rep.Entities))
+			}
+		})
+	}
+}
+
 // pushFromOtherClone tags N-0099 with "old" from a second clone of origin, so
 // the local clone trails the backend by one entity carrying the component.
 func pushFromOtherClone(t *testing.T, origin string) {
