@@ -514,6 +514,89 @@ func TestPullMergeBaseFallsBackToDocsLock(t *testing.T) {
 	}
 }
 
+// TestStaleDocAfterSnapshotMovedIsAConflict (B-0041 review): B edits N-0002
+// and pushes; A pushes N-0001, which auto-rebases and moves A's snapshot past
+// B's edit that A's .docs/ never received; A then edits its stale N-0002. That
+// push must conflict, not overwrite. The pull after it has no verifiable base
+// (the snapshot is past what .docs/ had), so it stashes instead of merging,
+// and B's line survives until A reconciles.
+func TestStaleDocAfterSnapshotMovedIsAConflict(t *testing.T) {
+	projA, origin, _ := setupProject(t)
+	cacheA := os.Getenv("CERNE_CACHE_DIR")
+	for _, title := range []string{"Nota um", "Nota dois"} {
+		body := filepath.Join(t.TempDir(), "n.md")
+		mustWrite(t, body, "Linha um.\n\nLinha dois.\n\nLinha tres.\n")
+		rb(t, projA, "note", "new", title, "--file", body)
+	}
+	rb(t, projA, "pull")
+	projB, cacheB := t.TempDir(), t.TempDir()
+	cfg, err := os.ReadFile(filepath.Join(projA, ".cernerc"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(projB, ".cernerc"), string(cfg))
+	run := func(proj, cache string, args ...string) (string, error) {
+		t.Setenv("CERNE_CACHE_DIR", cache)
+		defer t.Setenv("CERNE_CACHE_DIR", cacheA)
+		return execCerne(t, append(args, "--dir", proj)...)
+	}
+	must := func(proj, cache string, args ...string) {
+		if out, err := run(proj, cache, args...); err != nil {
+			t.Fatalf("%s %v: %v\n%s", proj, args, err, out)
+		}
+	}
+	note := func(proj, id string) string {
+		m, _ := filepath.Glob(filepath.Join(proj, ".docs", "current", "notes", id+"-*.md"))
+		if len(m) != 1 {
+			t.Fatalf("materialized %s in %s: %v", id, proj, m)
+		}
+		return m[0]
+	}
+	edit := func(p, from, to string) {
+		got, _ := os.ReadFile(p)
+		if !strings.Contains(string(got), from) {
+			t.Fatalf("%s lacks %q:\n%s", p, from, got)
+		}
+		mustWrite(t, p, strings.Replace(string(got), from, to, 1))
+	}
+	backendHas := func(want string) bool {
+		head, _ := gitback.HeadSHA(origin)
+		stored, _, _ := gitback.FileBlobAt(origin, head, "content/notes/N-0002.md")
+		return strings.Contains(string(stored), want)
+	}
+	must(projB, cacheB, "pull")
+
+	edit(note(projB, "N-0002"), "Linha dois.", "Linha dois, de B.")
+	must(projB, cacheB, "push")
+	edit(note(projA, "N-0001"), "Linha um.", "Linha um, de A.")
+	must(projA, cacheA, "push") // auto-rebases over B's commit: A's snapshot moves past it
+	edit(note(projA, "N-0002"), "Linha tres.", "Linha tres, de A.")
+
+	if out, err := run(projA, cacheA, "push"); err == nil || !strings.Contains(out, "Conflict in 1") {
+		t.Fatalf("push of a stale N-0002 must conflict: %v\n%s", err, out)
+	}
+	if !backendHas("Linha dois, de B.") {
+		t.Fatal("B's line left the backend")
+	}
+	// The pull cannot merge over the moved snapshot: it stashes B's version.
+	if out, err := run(projA, cacheA, "pull"); err == nil || !strings.Contains(out, "Conflict in 1") {
+		t.Fatalf("pull over a moved snapshot must stash, not merge: %v\n%s", err, out)
+	}
+	if _, err := run(projA, cacheA, "push"); !errors.Is(err, errUnreconciledConflict) {
+		t.Fatalf("push before reconciling: err=%v, want errUnreconciledConflict", err)
+	}
+	// A reconciles: folds B's line in, deletes the copy, pushes.
+	rel, _ := filepath.Rel(filepath.Join(projA, ".docs"), note(projA, "N-0002"))
+	edit(note(projA, "N-0002"), "Linha dois.", "Linha dois, de B.")
+	if err := os.Remove(filepath.Join(projA, ".docs", ".conflicts", rel)); err != nil {
+		t.Fatal(err)
+	}
+	must(projA, cacheA, "push")
+	if !backendHas("Linha dois, de B.") || !backendHas("Linha tres, de A.") {
+		t.Fatal("the reconciled push must keep both lines")
+	}
+}
+
 // --force keeps its meaning: discard unsent edits and restore from the backend.
 func TestPullForceDiscardsUnpushedEdits(t *testing.T) {
 	projDir, _, _, specPath := pulledFeatureProject(t, "Conteúdo original.")

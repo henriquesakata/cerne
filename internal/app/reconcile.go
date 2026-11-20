@@ -22,6 +22,11 @@ type FileChange struct {
 	Path    string // slash-separated, relative to the backend clone root
 	Content []byte
 	Deleted bool
+	// BaseSum, when set, is the ContentHash of the version the caller last
+	// received (B-0041). The base commit is shared by every change, so it can
+	// sit past a remote edit this document never got: a base blob that hashes
+	// otherwise makes the write a conflict instead of an overwrite.
+	BaseSum string
 }
 
 // Conflict names a document whose change collides with a different remote change
@@ -658,6 +663,8 @@ func plan3Way(repoDir, base, theirs string, changes []FileChange) (apply []FileC
 		default: // whole-file write
 			switch {
 			case theirsExists && bytes.Equal(ch.Content, theirsBlob): // already there
+			case ch.BaseSum != "" && ContentHash(baseBlob) != ch.BaseSum: // base is past my copy
+				conflicts = append(conflicts, Conflict{Path: ch.Path, Diff: shortDiff(ch.Content, theirsBlob)})
 			case bytes.Equal(theirsBlob, baseBlob): // remote untouched: take mine
 				apply = append(apply, FileChange{Path: ch.Path, Content: ch.Content})
 			case bytes.Equal(ch.Content, baseBlob): // I did not change it: keep theirs

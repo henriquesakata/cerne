@@ -100,10 +100,16 @@ func runPush(cmd *cobra.Command, dir string, dryRun, force bool) error {
 	// Reconcile per document against the latest backend, starting from the
 	// snapshot we pulled: a remote advance on a DIFFERENT document never blocks
 	// this push (auto-rebase + retry); only the SAME document changed both ways
-	// is a real conflict.
+	// is a real conflict. Each document carries the version .docs/ last
+	// received (B-0041): the snapshot may be past it. Not under OKF, whose
+	// .docs/ form never hashes like the backend file (index.md marks it).
+	_, okf := manifest["index.md"]
 	changes := make([]app.FileChange, len(docs))
 	for i, d := range docs {
 		changes[i] = app.FileChange{Path: d.backendRel, Content: d.body}
+		if !okf {
+			changes[i].BaseSum = manifest[d.rel]
+		}
 	}
 	staleBefore := pushedSpecStaleness(ctx.repoDir, docs)
 	// F-0375: who writes the feature documents, read before the lock below —
@@ -226,7 +232,7 @@ func reportPushConflicts(cmd *cobra.Command, conflicts []app.Conflict) error {
 			fmt.Fprintf(out, "    %s\n", line)
 		}
 	}
-	fmt.Fprintln(out, "\nThe same document changed in the backend. Reconcile and run 'cerne push' again, or 'cerne pull' to bring in the remote version.")
+	fmt.Fprintln(out, "\nThe same document changed in the backend since your copy. Run 'cerne pull': it merges the remote edit into yours when they touch different lines, or keeps yours and stashes the remote one in .docs/.conflicts/. Then run 'cerne push'.")
 	return fmt.Errorf("%d document(s) in conflict", len(conflicts))
 }
 
