@@ -203,6 +203,7 @@ func staleManagedNotice(projDir string, syncSkills bool) string {
 	for _, w := range warns {
 		fmt.Fprintln(&b, w)
 	}
+	b.WriteString(updateNotice(projDir)) // F-0479: after the refresh and the leftover warning
 	return b.String()
 }
 
