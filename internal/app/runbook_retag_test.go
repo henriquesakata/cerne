@@ -19,7 +19,7 @@ func mkTaggedRunbook(t *testing.T, repoDir, projDir string, facets, components [
 	if facets == nil && components == nil {
 		return rb
 	}
-	rb, err = RetagRunbook(repoDir, projDir, rb.ID, facets, components, facets != nil, components != nil)
+	rb, err = RetagRunbook(repoDir, projDir, rb.ID, facets, components, facets != nil, components != nil, false)
 	if err != nil {
 		t.Fatalf("seed RetagRunbook: %v", err)
 	}
@@ -30,7 +30,7 @@ func mkTaggedRunbook(t *testing.T, repoDir, projDir string, facets, components [
 func TestRetagRunbookReplacesAxes(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	rb := mkTaggedRunbook(t, repoDir, projDir, []string{"code"}, []string{"old"})
-	got, err := RetagRunbook(repoDir, projDir, rb.ID, []string{"Infra"}, []string{"Gitback"}, true, true)
+	got, err := RetagRunbook(repoDir, projDir, rb.ID, []string{"Infra"}, []string{"Gitback"}, true, true, false)
 	if err != nil {
 		t.Fatalf("RetagRunbook: %v", err)
 	}
@@ -47,7 +47,7 @@ func TestRetagRunbookReplacesAxes(t *testing.T) {
 func TestRetagRunbookPartialKeepsOtherAxis(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	rb := mkTaggedRunbook(t, repoDir, projDir, []string{"infra"}, []string{"gitback"})
-	got, err := RetagRunbook(repoDir, projDir, rb.ID, nil, []string{"materialize"}, false, true)
+	got, err := RetagRunbook(repoDir, projDir, rb.ID, nil, []string{"materialize"}, false, true, false)
 	if err != nil {
 		t.Fatalf("RetagRunbook: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestRetagRunbookPartialKeepsOtherAxis(t *testing.T) {
 func TestRetagRunbookClearAxis(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	rb := mkTaggedRunbook(t, repoDir, projDir, []string{"infra"}, []string{"gitback"})
-	got, err := RetagRunbook(repoDir, projDir, rb.ID, nil, nil, true, false)
+	got, err := RetagRunbook(repoDir, projDir, rb.ID, nil, nil, true, false, false)
 	if err != nil {
 		t.Fatalf("RetagRunbook: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestRetagRunbookClearAxis(t *testing.T) {
 func TestRetagRunbookInvalidFacetNoOp(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	rb := mkTaggedRunbook(t, repoDir, projDir, []string{"infra"}, nil)
-	_, err := RetagRunbook(repoDir, projDir, rb.ID, []string{"prod"}, nil, true, false)
+	_, err := RetagRunbook(repoDir, projDir, rb.ID, []string{"prod"}, nil, true, false, false)
 	if err == nil {
 		t.Fatalf("want error for unknown facet 'prod'")
 	}
@@ -93,7 +93,7 @@ func TestRetagRunbookInvalidFacetNoOp(t *testing.T) {
 func TestRetagRunbookPreservesTitleState(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	rb := mkTaggedRunbook(t, repoDir, projDir, nil, nil)
-	got, err := RetagRunbook(repoDir, projDir, rb.ID, []string{"process"}, nil, true, false)
+	got, err := RetagRunbook(repoDir, projDir, rb.ID, []string{"process"}, nil, true, false, false)
 	if err != nil {
 		t.Fatalf("RetagRunbook: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestRetagRunbookPreservesTitleState(t *testing.T) {
 // TestRetagRunbookNotFoundOrSuperseded: missing id and superseded runbook errors, a superseded one is accepted (F-0482).
 func TestRetagRunbookNotFoundOrSuperseded(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	if _, err := RetagRunbook(repoDir, projDir, "RB-9999", []string{"infra"}, nil, true, false); err == nil {
+	if _, err := RetagRunbook(repoDir, projDir, "RB-9999", []string{"infra"}, nil, true, false, false); err == nil {
 		t.Fatalf("want error for missing runbook")
 	}
 	rb := mkTaggedRunbook(t, repoDir, projDir, nil, nil)
@@ -116,7 +116,7 @@ func TestRetagRunbookNotFoundOrSuperseded(t *testing.T) {
 	if _, err := TransitionRunbook(repoDir, projDir, rb.ID, by.ID, "obsoleto"); err != nil {
 		t.Fatalf("TransitionRunbook: %v", err)
 	}
-	if _, err := RetagRunbook(repoDir, projDir, rb.ID, []string{"infra"}, nil, true, false); err != nil {
+	if _, err := RetagRunbook(repoDir, projDir, rb.ID, []string{"infra"}, nil, true, false, false); err != nil {
 		t.Fatalf("retag of a superseded runbook refused: %v", err)
 	}
 }

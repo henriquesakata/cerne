@@ -46,6 +46,11 @@ func CreateDecision(repoDir, projDir, title, body string, facets, components []s
 		if err != nil {
 			return "", err
 		}
+		// After the duplicate guard (E-0005): a duplicate is refused first, so
+		// the --force a near component asks for is never given blind to it.
+		if err := checkComponents(repoDir, normComponents, force); err != nil {
+			return "", err
+		}
 		id, err := store.NextID(repoDir, "D")
 		if err != nil {
 			return "", err
@@ -218,7 +223,7 @@ func RetireDecision(repoDir, projDir, id, reason string) (DecisionOutcome, error
 // preserved. Facets are validated against the closed set before any write, so an
 // unknown facet aborts leaving the decision untouched. Appends decision.retagged
 // and syncs the backend + docs.lock in projDir.
-func RetagDecision(repoDir, projDir, id string, facets, components []string, setFacets, setComponents bool) (store.Decision, error) {
+func RetagDecision(repoDir, projDir, id string, facets, components []string, setFacets, setComponents, force bool) (store.Decision, error) {
 	var d store.Decision
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		var err error
@@ -238,6 +243,9 @@ func RetagDecision(repoDir, projDir, id string, facets, components []string, set
 		}
 		if setComponents {
 			d.Components = domain.NormalizeComponents(components)
+			if err := checkComponents(repoDir, d.Components, force); err != nil {
+				return "", err
+			}
 		}
 		d.UpdatedAt = time.Now().UTC()
 		if err := store.SaveDecision(repoDir, d); err != nil {

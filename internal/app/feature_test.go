@@ -695,7 +695,7 @@ func TestRetagFeature(t *testing.T) {
 	}
 
 	// Set facets only — components stay empty.
-	f, err := RetagFeature(repoDir, projDir, "F-0001", []string{"code"}, nil, true, false)
+	f, err := RetagFeature(repoDir, projDir, "F-0001", []string{"code"}, nil, true, false, false)
 	if err != nil {
 		t.Fatalf("retag facets: %v", err)
 	}
@@ -703,7 +703,7 @@ func TestRetagFeature(t *testing.T) {
 		t.Fatalf("after facet retag = facets %v comps %v, want [code] / []", f.Facets, f.Components)
 	}
 	// Set components only — facets preserved.
-	f, err = RetagFeature(repoDir, projDir, "F-0001", nil, []string{"gitback"}, false, true)
+	f, err = RetagFeature(repoDir, projDir, "F-0001", nil, []string{"gitback"}, false, true, false)
 	if err != nil {
 		t.Fatalf("retag components: %v", err)
 	}
@@ -711,7 +711,7 @@ func TestRetagFeature(t *testing.T) {
 		t.Fatalf("after comp retag = facets %v comps %v, want [code] / [gitback]", f.Facets, f.Components)
 	}
 	// Clear facets (empty slice with set=true).
-	f, err = RetagFeature(repoDir, projDir, "F-0001", nil, nil, true, false)
+	f, err = RetagFeature(repoDir, projDir, "F-0001", nil, nil, true, false, false)
 	if err != nil {
 		t.Fatalf("clear facets: %v", err)
 	}
@@ -719,7 +719,7 @@ func TestRetagFeature(t *testing.T) {
 		t.Fatalf("after clear = facets %v comps %v, want [] / [gitback]", f.Facets, f.Components)
 	}
 	// Unknown facet leaves the feature untouched.
-	if _, err := RetagFeature(repoDir, projDir, "F-0001", []string{"bogus"}, nil, true, false); !errors.Is(err, domain.ErrUnknownFacet) {
+	if _, err := RetagFeature(repoDir, projDir, "F-0001", []string{"bogus"}, nil, true, false, false); !errors.Is(err, domain.ErrUnknownFacet) {
 		t.Fatalf("err = %v, want ErrUnknownFacet", err)
 	}
 
@@ -729,7 +729,7 @@ func TestRetagFeature(t *testing.T) {
 		t.Fatalf("SaveFeature rejected: %v", err)
 	}
 	commitBackend(t, repoDir)
-	if _, err := RetagFeature(repoDir, projDir, "F-0002", []string{"code"}, nil, true, false); err != nil {
+	if _, err := RetagFeature(repoDir, projDir, "F-0002", []string{"code"}, nil, true, false, false); err != nil {
 		t.Fatalf("retag of rejected feature refused: %v", err)
 	}
 }

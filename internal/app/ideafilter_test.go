@@ -16,7 +16,7 @@ func TestListIdeasStateComponentSearch(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	seedFeatureInState(t, repoDir, "F-0010", domain.StateApproved)
 	mk := func(title string, comps []string) store.Idea {
-		i, err := CreateIdea(repoDir, projDir, title, "", nil, comps, "")
+		i, err := CreateIdea(repoDir, projDir, title, "", nil, comps, "", false)
 		if err != nil {
 			t.Fatal(err)
 		}

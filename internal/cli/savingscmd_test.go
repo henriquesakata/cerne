@@ -69,7 +69,8 @@ func TestSavings(t *testing.T) {
 		"KIND", "CORPUS", "CURRENT",
 		"feature", "decision",
 		"TOTAL", "1000", "250",
-		"Saved: 750 bytes", "~187 tokens", "75.0%",
+		"Corpus reduction — full corpus vs current .docs/ projection",
+		"Reduced: 750 bytes", "~187 tokens", "75.0%",
 		"CONTEXT.md is not counted",
 	} {
 		if !strings.Contains(out, want) {
@@ -109,5 +110,48 @@ func TestSavingsJSON(t *testing.T) {
 	}
 	if got := s.Kinds["decision"]; got != (materialize.KindStats{Count: 1, Bytes: 100, CurrentCount: 1, CurrentBytes: 100}) {
 		t.Errorf("decision kind = %+v", got)
+	}
+}
+
+// E-0005 criterion 5: savings says it measures what stays out of the folder
+// the agent reads — not what the agent ends up reading — and prints the size
+// of the map every session starts from, CONTEXT.md.
+func TestSavingsSaysWhatItMeasures(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	seedStatsProject(t, repoDir)
+	ctxPath := filepath.Join(projDir, ".docs", "CONTEXT.md")
+	if err := os.MkdirAll(filepath.Dir(ctxPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(ctxPath, []byte(strings.Repeat("a", 4000)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := execCerne(t, "savings", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("savings: %v\n%s", err, out)
+	}
+	if strings.Contains(out, "stays out of the agent's context") {
+		t.Fatalf("savings still claims to measure the agent's context:\n%s", out)
+	}
+	for _, want := range []string{"of the corpus stays in history, outside the folder the agent searches", "Map: .docs/CONTEXT.md is 4000 bytes (~1000 tokens)"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("savings output missing %q:\n%s", want, out)
+		}
+	}
+	js, err := execCerne(t, "savings", "--json", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("savings --json: %v\n%s", err, js)
+	}
+	var got struct {
+		ContextBytes int64 `json:"context_md_bytes"`
+	}
+	if err := json.Unmarshal([]byte(js), &got); err != nil || got.ContextBytes != 4000 {
+		t.Fatalf("savings --json context_md_bytes = %d (%v):\n%s", got.ContextBytes, err, js)
+	}
+	if err := os.Remove(ctxPath); err != nil {
+		t.Fatal(err)
+	}
+	if out, _ := execCerne(t, "savings", "--dir", projDir); !strings.Contains(out, "Map: .docs/CONTEXT.md is not materialized yet — run 'cerne pull'") {
+		t.Fatalf("savings without a map:\n%s", out)
 	}
 }

@@ -17,7 +17,7 @@ import (
 // store — the state a link or promote leaves — committed and pushed.
 func seedLinkedIdea(t *testing.T, repoDir, projDir, title, featureID string) store.Idea {
 	t.Helper()
-	i, err := CreateIdea(repoDir, projDir, title, "", nil, nil, "")
+	i, err := CreateIdea(repoDir, projDir, title, "", nil, nil, "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +204,7 @@ func TestUnlinkIdeaRefusesADoneFeature(t *testing.T) {
 func TestLinkIdeaRefusesAClosedIdeaWithErrIdeaNotActive(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	seedFeatureInState(t, repoDir, "F-0010", domain.StateApproved)
-	i, err := CreateIdea(repoDir, projDir, "uma ideia", "", nil, nil, "")
+	i, err := CreateIdea(repoDir, projDir, "uma ideia", "", nil, nil, "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +231,7 @@ func TestDropRefusesALinkedIdea(t *testing.T) {
 // candidate's context, so the sentence the idea said is not lost.
 func TestPromoteIdeaWithATitleKeepsTheIdeaTitle(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	i, err := CreateIdea(repoDir, projDir, "Exportar o kanban", "em CSV", nil, nil, "")
+	i, err := CreateIdea(repoDir, projDir, "Exportar o kanban", "em CSV", nil, nil, "", false)
 	if err != nil {
 		t.Fatal(err)
 	}

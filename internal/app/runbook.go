@@ -126,7 +126,7 @@ func TransitionRunbook(repoDir, projDir, id, by, reason string) (RunbookOutcome,
 // preserved. Facets are validated against the closed set before any write, so an
 // unknown facet aborts leaving the runbook untouched. Appends runbook.retagged and
 // syncs the backend + docs.lock in projDir.
-func RetagRunbook(repoDir, projDir, id string, facets, components []string, setFacets, setComponents bool) (store.Runbook, error) {
+func RetagRunbook(repoDir, projDir, id string, facets, components []string, setFacets, setComponents, force bool) (store.Runbook, error) {
 	var rb store.Runbook
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		var err error
@@ -146,6 +146,9 @@ func RetagRunbook(repoDir, projDir, id string, facets, components []string, setF
 		}
 		if setComponents {
 			rb.Components = domain.NormalizeComponents(components)
+			if err := checkComponents(repoDir, rb.Components, force); err != nil {
+				return "", err
+			}
 		}
 		rb.UpdatedAt = time.Now().UTC()
 		if err := store.SaveRunbook(repoDir, rb); err != nil {

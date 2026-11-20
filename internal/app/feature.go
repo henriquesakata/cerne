@@ -317,6 +317,9 @@ func (n newFeature) mint(repoDir string) (store.Feature, string, error) {
 				capabilities = tgt.Capabilities
 			}
 		}
+		if err := checkComponents(repoDir, components, force); err != nil {
+			return err
+		}
 		if prefix == "T" {
 			// A task is born approved: its human gate is the parent PRD's, which
 			// therefore must be committed (past candidacy) itself.
@@ -414,7 +417,7 @@ func (n newFeature) mint(repoDir string) (store.Feature, string, error) {
 // of a closed entity is immutable, its tags are a living index. Facets are validated against the
 // closed set before any write. Appends feature.retagged and syncs backend +
 // docs.lock.
-func RetagFeature(repoDir, projDir, id string, facets, components []string, setFacets, setComponents bool) (store.Feature, error) {
+func RetagFeature(repoDir, projDir, id string, facets, components []string, setFacets, setComponents, force bool) (store.Feature, error) {
 	var f store.Feature
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		var err error
@@ -431,6 +434,9 @@ func RetagFeature(repoDir, projDir, id string, facets, components []string, setF
 		}
 		if setComponents {
 			f.Components = domain.NormalizeComponents(components)
+			if err := checkComponents(repoDir, f.Components, force); err != nil {
+				return "", err
+			}
 		}
 		f.UpdatedAt = time.Now().UTC()
 		if err := store.SaveFeature(repoDir, f); err != nil {

@@ -23,7 +23,7 @@ func mkTaggedReference(t *testing.T, repoDir, projDir string, facets, components
 func TestRetagReferenceReplacesAxes(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	r := mkTaggedReference(t, repoDir, projDir, []string{"code"}, []string{"old"})
-	got, err := RetagReference(repoDir, projDir, r.ID, []string{"Auth"}, []string{"Keycloak"}, true, true)
+	got, err := RetagReference(repoDir, projDir, r.ID, []string{"Auth"}, []string{"Keycloak"}, true, true, false)
 	if err != nil {
 		t.Fatalf("RetagReference: %v", err)
 	}
@@ -40,7 +40,7 @@ func TestRetagReferenceReplacesAxes(t *testing.T) {
 func TestRetagReferencePartialKeepsOtherAxis(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	r := mkTaggedReference(t, repoDir, projDir, []string{"auth"}, []string{"keycloak"})
-	got, err := RetagReference(repoDir, projDir, r.ID, nil, []string{"gitea"}, false, true)
+	got, err := RetagReference(repoDir, projDir, r.ID, nil, []string{"gitea"}, false, true, false)
 	if err != nil {
 		t.Fatalf("RetagReference: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestRetagReferencePartialKeepsOtherAxis(t *testing.T) {
 func TestRetagReferenceClearAxis(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	r := mkTaggedReference(t, repoDir, projDir, []string{"auth"}, []string{"keycloak"})
-	got, err := RetagReference(repoDir, projDir, r.ID, nil, nil, true, false)
+	got, err := RetagReference(repoDir, projDir, r.ID, nil, nil, true, false, false)
 	if err != nil {
 		t.Fatalf("RetagReference: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestRetagReferenceClearAxis(t *testing.T) {
 func TestRetagReferenceInvalidFacetNoOp(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	r := mkTaggedReference(t, repoDir, projDir, []string{"auth"}, []string{"keycloak"})
-	_, err := RetagReference(repoDir, projDir, r.ID, []string{"prod"}, nil, true, false)
+	_, err := RetagReference(repoDir, projDir, r.ID, []string{"prod"}, nil, true, false, false)
 	if !errors.Is(err, domain.ErrUnknownFacet) {
 		t.Fatalf("err = %v, want ErrUnknownFacet", err)
 	}
@@ -85,7 +85,7 @@ func TestRetagReferenceInvalidFacetNoOp(t *testing.T) {
 // TestRetagReferenceNotFoundOrObsolete: missing id and obsolete reference errors, an obsolete one is accepted (F-0482).
 func TestRetagReferenceNotFoundOrObsolete(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	if _, err := RetagReference(repoDir, projDir, "R-9999", []string{"auth"}, nil, true, false); err == nil {
+	if _, err := RetagReference(repoDir, projDir, "R-9999", []string{"auth"}, nil, true, false, false); err == nil {
 		t.Fatalf("retag of missing reference should error")
 	}
 	r := mkTaggedReference(t, repoDir, projDir, []string{"auth"}, nil)
@@ -95,7 +95,7 @@ func TestRetagReferenceNotFoundOrObsolete(t *testing.T) {
 		t.Fatalf("SaveReference obsolete: %v", err)
 	}
 	commitBackend(t, repoDir)
-	if _, err := RetagReference(repoDir, projDir, r.ID, []string{"code"}, nil, true, false); err != nil {
+	if _, err := RetagReference(repoDir, projDir, r.ID, []string{"code"}, nil, true, false, false); err != nil {
 		t.Fatalf("retag of an obsolete reference refused: %v", err)
 	}
 	reload, _ := store.LoadReference(repoDir, r.ID)
@@ -116,7 +116,7 @@ func TestRetagReferencePreservesURLInforms(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateExternalReference: %v", err)
 	}
-	got, err := RetagReference(repoDir, projDir, r.ID, []string{"infra"}, []string{"gitea"}, true, true)
+	got, err := RetagReference(repoDir, projDir, r.ID, []string{"infra"}, []string{"gitea"}, true, true, false)
 	if err != nil {
 		t.Fatalf("RetagReference: %v", err)
 	}

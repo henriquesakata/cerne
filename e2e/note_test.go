@@ -12,8 +12,8 @@ import (
 )
 
 // TestNoteGoldenPath walks the note loop end to end: init → note new (N-0001
-// born active, scaffolded as a stub) → pull (materialized, listed in CONTEXT.md's
-// Conhecimento section) → write the real note in .docs/ → push → ask (cites the
+// born active, scaffolded as a stub) → pull (materialized, counted in CONTEXT.md's
+// Knowledge section) → write the real note in .docs/ → push → ask (cites the
 // note from the index) → note new (successor) → note substituir → pull (gone from
 // .docs/, kept in searchable history), asserting the .docs/ projection and the
 // backend via a fresh clone of origin.
@@ -42,8 +42,8 @@ func TestNoteGoldenPath(t *testing.T) {
 		t.Fatalf("materialized note does not start with the expected frontmatter:\n%s", stub)
 	}
 	ctx := mustRead(t, ctxPath)
-	if !strings.Contains(ctx, "## Knowledge") || !strings.Contains(ctx, "N-0001 — go-git ignora ssh config") {
-		t.Fatalf("CONTEXT.md missing active note N-0001 under Knowledge:\n%s", ctx)
+	if !strings.Contains(ctx, "## Knowledge\n\n1 active note,") {
+		t.Fatalf("CONTEXT.md does not count the active note N-0001 under Knowledge:\n%s", ctx)
 	}
 
 	realNote := frontmatter + "\n# go-git ignora ssh config\n\n" +
@@ -88,9 +88,10 @@ func TestNoteGoldenPath(t *testing.T) {
 	if strings.Contains(ctx, "N-0001") {
 		t.Fatalf("CONTEXT.md still mentions superseded N-0001:\n%s", ctx)
 	}
-	if !strings.Contains(ctx, "N-0002 — Nota sucessora") {
-		t.Fatalf("CONTEXT.md missing successor N-0002:\n%s", ctx)
+	if !strings.Contains(ctx, "## Knowledge\n\n1 active note,") {
+		t.Fatalf("CONTEXT.md does not count the successor N-0002:\n%s", ctx)
 	}
+	mustRead(t, filepath.Join(docsDir, "current", "notes", "N-0002-nota-sucessora.md"))
 
 	// The superseded note remains searchable history (index covers all states).
 	hist := mustCerne(t, "search", "key-file", "--dir", proj)

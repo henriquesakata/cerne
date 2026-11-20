@@ -22,7 +22,7 @@ func mkTaggedDecision(t *testing.T, repoDir, projDir string, facets, components 
 func TestRetagDecisionReplacesAxes(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	d := mkTaggedDecision(t, repoDir, projDir, []string{"code"}, []string{"old"})
-	got, err := RetagDecision(repoDir, projDir, d.ID, []string{"Auth"}, []string{"Keycloak"}, true, true)
+	got, err := RetagDecision(repoDir, projDir, d.ID, []string{"Auth"}, []string{"Keycloak"}, true, true, false)
 	if err != nil {
 		t.Fatalf("RetagDecision: %v", err)
 	}
@@ -39,7 +39,7 @@ func TestRetagDecisionReplacesAxes(t *testing.T) {
 func TestRetagDecisionPartialKeepsOtherAxis(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	d := mkTaggedDecision(t, repoDir, projDir, []string{"auth"}, []string{"keycloak"})
-	got, err := RetagDecision(repoDir, projDir, d.ID, nil, []string{"gitea"}, false, true)
+	got, err := RetagDecision(repoDir, projDir, d.ID, nil, []string{"gitea"}, false, true, false)
 	if err != nil {
 		t.Fatalf("RetagDecision: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestRetagDecisionPartialKeepsOtherAxis(t *testing.T) {
 func TestRetagDecisionClearAxis(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	d := mkTaggedDecision(t, repoDir, projDir, []string{"auth"}, []string{"keycloak"})
-	got, err := RetagDecision(repoDir, projDir, d.ID, nil, nil, true, false)
+	got, err := RetagDecision(repoDir, projDir, d.ID, nil, nil, true, false, false)
 	if err != nil {
 		t.Fatalf("RetagDecision: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestRetagDecisionClearAxis(t *testing.T) {
 func TestRetagDecisionInvalidFacetNoOp(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	d := mkTaggedDecision(t, repoDir, projDir, []string{"auth"}, []string{"keycloak"})
-	_, err := RetagDecision(repoDir, projDir, d.ID, []string{"prod"}, nil, true, false)
+	_, err := RetagDecision(repoDir, projDir, d.ID, []string{"prod"}, nil, true, false, false)
 	if !errors.Is(err, domain.ErrUnknownFacet) {
 		t.Fatalf("err = %v, want ErrUnknownFacet", err)
 	}
@@ -84,7 +84,7 @@ func TestRetagDecisionInvalidFacetNoOp(t *testing.T) {
 // TestRetagDecisionNotFoundOrSuperseded: missing id and superseded decision errors, a superseded one is accepted (F-0482).
 func TestRetagDecisionNotFoundOrSuperseded(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	if _, err := RetagDecision(repoDir, projDir, "D-9999", []string{"auth"}, nil, true, false); err == nil {
+	if _, err := RetagDecision(repoDir, projDir, "D-9999", []string{"auth"}, nil, true, false, false); err == nil {
 		t.Fatalf("retag of missing decision should error")
 	}
 	d := mkTaggedDecision(t, repoDir, projDir, nil, nil)
@@ -92,7 +92,7 @@ func TestRetagDecisionNotFoundOrSuperseded(t *testing.T) {
 	if _, err := TransitionDecision(repoDir, projDir, d.ID, d2.ID, "obsoleta"); err != nil {
 		t.Fatalf("TransitionDecision: %v", err)
 	}
-	if _, err := RetagDecision(repoDir, projDir, d.ID, []string{"auth"}, nil, true, false); err != nil {
+	if _, err := RetagDecision(repoDir, projDir, d.ID, []string{"auth"}, nil, true, false, false); err != nil {
 		t.Fatalf("retag of a superseded decision refused: %v", err)
 	}
 }
