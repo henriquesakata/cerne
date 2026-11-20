@@ -141,6 +141,9 @@ func CreatePending(repoDir, projDir, title, body, from string, facets, component
 		if len(components) == 0 {
 			normComponents = origin.Components
 		}
+		if err := checkComponents(repoDir, normComponents, force); err != nil {
+			return "", err
+		}
 		forced, err := guardPending(repoDir, title, from, force)
 		if err != nil {
 			return "", err

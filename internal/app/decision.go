@@ -41,6 +41,9 @@ func CreateDecision(repoDir, projDir, title, body string, facets, components []s
 	// (F-0122): concurrent creations serialize instead of minting the same id.
 	var d store.Decision
 	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		if err := checkComponents(repoDir, normComponents, force); err != nil {
+			return "", err
+		}
 		// Duplicate guard (F-0324): before the id mint and any write.
 		forced, err := guardDecision(repoDir, title, tagSet{facets: normFacets, components: normComponents}, force)
 		if err != nil {
@@ -218,7 +221,7 @@ func RetireDecision(repoDir, projDir, id, reason string) (DecisionOutcome, error
 // preserved. Facets are validated against the closed set before any write, so an
 // unknown facet aborts leaving the decision untouched. Appends decision.retagged
 // and syncs the backend + docs.lock in projDir.
-func RetagDecision(repoDir, projDir, id string, facets, components []string, setFacets, setComponents bool) (store.Decision, error) {
+func RetagDecision(repoDir, projDir, id string, facets, components []string, setFacets, setComponents, force bool) (store.Decision, error) {
 	var d store.Decision
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		var err error
@@ -238,6 +241,9 @@ func RetagDecision(repoDir, projDir, id string, facets, components []string, set
 		}
 		if setComponents {
 			d.Components = domain.NormalizeComponents(components)
+			if err := checkComponents(repoDir, d.Components, force); err != nil {
+				return "", err
+			}
 		}
 		d.UpdatedAt = time.Now().UTC()
 		if err := store.SaveDecision(repoDir, d); err != nil {

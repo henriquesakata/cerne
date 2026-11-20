@@ -43,12 +43,14 @@ func CanonicalIdeaID(id string) (string, error) {
 
 // CreateIdea captures an active idea (I-, F-0312): text and optional tags,
 // nothing else — no project, module, work or duplicate guard is read, so the
-// capture costs nothing (crit. 1). Tags are validated before any write.
+// capture costs nothing (crit. 1). Tags are validated before any write; a
+// component is checked against the vocabulary (E-0005), and a near one is
+// written only with force.
 // token is the submission's idempotency key (C2, the F-0121 retry parity):
 // checked inside the lock, a token already in the backend returns that idea
 // and writes nothing — so retrying a capture whose push landed but whose tail
 // failed never mints a twin. An empty token always mints.
-func CreateIdea(repoDir, projDir, title, body string, facets, components []string, token string) (store.Idea, error) {
+func CreateIdea(repoDir, projDir, title, body string, facets, components []string, token string, force bool) (store.Idea, error) {
 	title, body = strings.TrimSpace(title), strings.TrimSpace(body)
 	if title == "" {
 		return store.Idea{}, ErrIdeaTitleRequired
@@ -74,12 +76,16 @@ func CreateIdea(repoDir, projDir, title, body string, facets, components []strin
 				return "", nil // a retry: writes nothing, surfaces as ErrNothingToCommit
 			}
 		}
+		normComponents := domain.NormalizeComponents(components)
+		if err := checkComponents(repoDir, normComponents, force); err != nil {
+			return "", err
+		}
 		var err error
 		i, err = saveNewIdea(repoDir, store.Idea{
 			Title:      title,
 			Body:       body,
 			Facets:     normFacets,
-			Components: domain.NormalizeComponents(components),
+			Components: normComponents,
 			Token:      token,
 		})
 		if err != nil {

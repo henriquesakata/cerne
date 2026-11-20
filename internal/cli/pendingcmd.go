@@ -60,10 +60,12 @@ func newPendingNewCmd(dir *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			notice := componentNotice(cmd, ctx.repoDir, component)
 			p, err := app.CreatePending(ctx.repoDir, ctx.projDir, args[0], body, from, splitInforms(facet), splitInforms(component), force)
 			if err != nil {
 				return err
 			}
+			notice()
 			fmt.Fprintf(cmd.OutOrStdout(), "%s created (open) from %s — %s\n", p.ID, p.From, p.Title)
 			return nil
 		},
@@ -72,7 +74,7 @@ func newPendingNewCmd(dir *string) *cobra.Command {
 	cmd.Flags().StringVar(&file, "file", "", "file with the pending's context (defaults to piped stdin)")
 	cmd.Flags().StringVar(&facet, "facet", "", "facets (CSV; closed set: infra,code,data,process,auth); default: the origin's")
 	cmd.Flags().StringVar(&component, "component", "", "components (CSV); default: the origin's")
-	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard for a consciously distinct pending")
+	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard for a consciously distinct pending, and accept a component near an existing one (E-0005; check 'cerne tags' first)")
 	return cmd
 }
 

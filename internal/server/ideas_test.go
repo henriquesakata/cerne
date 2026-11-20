@@ -68,7 +68,7 @@ func TestIdeasLeaveAPIOutputsUnchanged(t *testing.T) {
 		t.FailNow()
 	}
 	for _, text := range []string{"zebra listrada", "conciliação do OFX", "terceira"} {
-		if _, err := app.CreateIdea(repoDir, projDir, text, "", nil, []string{"lint"}, ""); err != nil {
+		if _, err := app.CreateIdea(repoDir, projDir, text, "", nil, []string{"lint"}, "", false); err != nil {
 			t.Fatalf("CreateIdea: %v", err)
 		}
 	}
@@ -160,7 +160,7 @@ func TestIdeaCaptureConcurrentAcrossSurfaces(t *testing.T) {
 			defer wg.Done()
 			text := fmt.Sprintf("corpo %d", k)
 			if k%2 == 0 {
-				i, err := app.CreateIdea(repoDir, projDir, text, "", nil, nil, "")
+				i, err := app.CreateIdea(repoDir, projDir, text, "", nil, nil, "", false)
 				ids[k], errs[k] = i.ID, err
 				return
 			}
@@ -244,7 +244,7 @@ func TestIdeaCaptureRouteIsIdempotentByToken(t *testing.T) {
 func TestIdeaWriteRoutesRefuseCrossOrigin(t *testing.T) {
 	repoDir, projDir, _ := newGitBackend(t)
 	h := New(repoDir, projDir, "")
-	if _, err := app.CreateIdea(repoDir, projDir, "alvo", "", nil, nil, ""); err != nil {
+	if _, err := app.CreateIdea(repoDir, projDir, "alvo", "", nil, nil, "", false); err != nil {
 		t.Fatal(err)
 	}
 	for _, path := range []string{"/api/ideas", "/api/ideas/I-0001/drop", "/api/ideas/I-0001/promote"} {
@@ -275,11 +275,11 @@ func TestIdeaWriteRoutesRefuseCrossOrigin(t *testing.T) {
 func TestIdeasAPIInformedBy(t *testing.T) {
 	repoDir, projDir, _ := newGitBackend(t)
 	h := New(repoDir, projDir, "")
-	i, err := app.CreateIdea(repoDir, projDir, "com fonte", "", nil, nil, "")
+	i, err := app.CreateIdea(repoDir, projDir, "com fonte", "", nil, nil, "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := app.CreateIdea(repoDir, projDir, "sem fonte", "", nil, nil, ""); err != nil {
+	if _, err := app.CreateIdea(repoDir, projDir, "sem fonte", "", nil, nil, "", false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := app.CreateExternalReference(repoDir, projDir, "Artigo", "http://a", "c", []string{i.ID}, nil, nil, false); err != nil {

@@ -77,7 +77,7 @@ func TestPromoteIdeaOrigin(t *testing.T) {
 	for actor, want := range map[string]string{"": "human", "agent": "agent"} {
 		t.Setenv("CERNE_ACTOR", actor)
 		repoDir, projDir, _ := newFeatureBackend(t)
-		i, err := CreateIdea(repoDir, projDir, "Uma ideia", "corpo", nil, nil, "")
+		i, err := CreateIdea(repoDir, projDir, "Uma ideia", "corpo", nil, nil, "", false)
 		if err != nil {
 			t.Fatal(err)
 		}

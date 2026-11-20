@@ -34,7 +34,7 @@ func retagKinds() []retagKind {
 				return id
 			},
 			retag: func(repoDir, projDir, id string, facets []string, set bool) ([]string, error) {
-				f, err := RetagFeature(repoDir, projDir, id, facets, nil, set, false)
+				f, err := RetagFeature(repoDir, projDir, id, facets, nil, set, false, false)
 				return f.Facets, err
 			},
 		}
@@ -51,7 +51,7 @@ func retagKinds() []retagKind {
 				return id
 			},
 			retag: func(repoDir, projDir, id string, facets []string, set bool) ([]string, error) {
-				n, err := RetagNote(repoDir, projDir, id, facets, nil, set, false)
+				n, err := RetagNote(repoDir, projDir, id, facets, nil, set, false, false)
 				return n.Facets, err
 			},
 		},
@@ -65,7 +65,7 @@ func retagKinds() []retagKind {
 				return id
 			},
 			retag: func(repoDir, projDir, id string, facets []string, set bool) ([]string, error) {
-				r, err := RetagReference(repoDir, projDir, id, facets, nil, set, false)
+				r, err := RetagReference(repoDir, projDir, id, facets, nil, set, false, false)
 				return r.Facets, err
 			},
 		},
@@ -79,7 +79,7 @@ func retagKinds() []retagKind {
 				return id
 			},
 			retag: func(repoDir, projDir, id string, facets []string, set bool) ([]string, error) {
-				d, err := RetagDecision(repoDir, projDir, id, facets, nil, set, false)
+				d, err := RetagDecision(repoDir, projDir, id, facets, nil, set, false, false)
 				return d.Facets, err
 			},
 		},
@@ -121,7 +121,7 @@ func retagKinds() []retagKind {
 				return id
 			},
 			retag: func(repoDir, projDir, id string, facets []string, set bool) ([]string, error) {
-				rb, err := RetagRunbook(repoDir, projDir, id, facets, nil, set, false)
+				rb, err := RetagRunbook(repoDir, projDir, id, facets, nil, set, false, false)
 				return rb.Facets, err
 			},
 		},

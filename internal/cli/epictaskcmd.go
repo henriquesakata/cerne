@@ -56,7 +56,7 @@ func newEpicNewCmd(dir *string) *cobra.Command {
 	cmd.Flags().StringVar(&component, "component", "", "components (CSV; subsystem/tool, e.g. gitback,materialize)")
 	cmd.Flags().StringVar(&file, "file", "", "file with the full spec body (defaults to piped stdin)")
 	cmd.Flags().StringVar(&context, "context", "", "creation context (1-3 sentences) seeded into the spec's Problem section")
-	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard (F-0147) for a consciously distinct problem")
+	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard (F-0147) for a consciously distinct problem, and accept a component near an existing one (E-0005; check 'cerne tags' first)")
 	cmd.Flags().StringVar(&owner, "owner", "", "responsible handle (free text, F-0204)")
 	cmd.Flags().StringVar(&priority, "priority", "", "priority (closed set: p0,p1,p2,p3, F-0204)")
 	cmd.Flags().StringVar(&onBehalf, "on-behalf", "", onBehalfHelp)
@@ -100,7 +100,7 @@ func newTaskNewCmd(dir *string) *cobra.Command {
 	cmd.Flags().StringVar(&component, "component", "", "components (CSV; subsystem/tool, e.g. gitback,materialize)")
 	cmd.Flags().StringVar(&file, "file", "", "file with the full spec body (defaults to piped stdin)")
 	cmd.Flags().StringVar(&context, "context", "", "creation context (1-3 sentences) seeded into the spec's Problem section")
-	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard (F-0147) for a consciously distinct problem")
+	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard (F-0147) for a consciously distinct problem, and accept a component near an existing one (E-0005; check 'cerne tags' first)")
 	cmd.Flags().StringVar(&owner, "owner", "", "responsible handle (free text, F-0204)")
 	cmd.Flags().StringVar(&priority, "priority", "", "priority (closed set: p0,p1,p2,p3, F-0204)")
 	cmd.Flags().StringVar(&onBehalf, "on-behalf", "", onBehalfHelp)
@@ -140,11 +140,13 @@ func runFeatureLikeNew(cmd *cobra.Command, dir string, args []string, module, pa
 	if hasContext {
 		specBody = spectmpl.StubWithContextIn(store.DocsLanguage(ctx.repoDir), title, context)
 	}
+	notice := componentNotice(cmd, ctx.repoDir, component)
 	f, err := create(ctx.repoDir, ctx.projDir, title, module, parent,
 		splitInforms(facet), splitInforms(component), specBody, force, owner, priority, onBehalf)
 	if err != nil {
 		return err
 	}
+	notice()
 	if f.Parent != "" && app.EpicPlanStub(ctx.repoDir, f.Parent) {
 		fmt.Fprintf(cmd.OutOrStdout(), "epic plan scaffolded — fill it in before approve (N-0031)\n")
 	}

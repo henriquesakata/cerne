@@ -324,7 +324,7 @@ func newNoteNewCmd(dir *string) *cobra.Command {
 	cmd.Flags().StringVar(&component, "component", "", "components (comma-separated subsystem/tool tags, e.g. gitea,kpack)")
 	cmd.Flags().StringArrayVar(&when, "when", nil, "trigger that shows the note to an agent (repeatable): edit:<path>|edit:<dir>/** or bash:<words>")
 	cmd.Flags().StringVar(&gist, "gist", "", "the one line (at most 160 runes) an agent needs when the note shows up: what to do or avoid")
-	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard (F-0324) for a consciously distinct note")
+	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard (F-0324) for a consciously distinct note, and accept a component near an existing one (E-0005; check 'cerne tags' first)")
 	return verbs.MarkChatTool(cmd)
 }
 
@@ -350,10 +350,12 @@ func runNoteNew(cmd *cobra.Command, dir string, args []string, informs, file, fa
 	if err != nil {
 		return err
 	}
+	notice := componentNotice(cmd, ctx.repoDir, component)
 	n, err := app.CreateNote(ctx.repoDir, ctx.projDir, title, body, splitInforms(informs), splitInforms(facet), splitInforms(component), when, gist, false, force)
 	if err != nil {
 		return err
 	}
+	notice()
 	// A note created with a body is already real content, committed and pushed
 	// by CreateNote (CommitAndSnapshot) — there is nothing to fill or push.
 	// Confirm it is synced and point at 'cerne pull', so the caller doesn't
@@ -436,6 +438,7 @@ func runNoteKeep(cmd *cobra.Command, dir, id string) error {
 
 func newNoteRetagCmd(dir *string) *cobra.Command {
 	var facet, component string
+	var force bool
 	cmd := &cobra.Command{
 		Use:   "retag <id>",
 		Short: "Reset the tags (facet/component) of a note",
@@ -445,15 +448,16 @@ func newNoteRetagCmd(dir *string) *cobra.Command {
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runNoteRetag(cmd, *dir, args[0], facet, component,
-				cmd.Flags().Changed("facet"), cmd.Flags().Changed("component"))
+				cmd.Flags().Changed("facet"), cmd.Flags().Changed("component"), force)
 		},
 	}
 	cmd.Flags().StringVar(&facet, "facet", "", "new facets (CSV; closed set) — empty clears")
 	cmd.Flags().StringVar(&component, "component", "", "new components (CSV) — empty clears")
+	cmd.Flags().BoolVar(&force, "force", false, forceComponentHelp)
 	return cmd
 }
 
-func runNoteRetag(cmd *cobra.Command, dir, id, facet, component string, setFacets, setComponents bool) error {
+func runNoteRetag(cmd *cobra.Command, dir, id, facet, component string, setFacets, setComponents, force bool) error {
 	if !setFacets && !setComponents {
 		return fmt.Errorf("provide at least --facet or --component")
 	}
@@ -461,11 +465,13 @@ func runNoteRetag(cmd *cobra.Command, dir, id, facet, component string, setFacet
 	if err != nil {
 		return err
 	}
+	notice := componentNotice(cmd, ctx.repoDir, component)
 	n, err := app.RetagNote(ctx.repoDir, ctx.projDir, id,
-		splitInforms(facet), splitInforms(component), setFacets, setComponents)
+		splitInforms(facet), splitInforms(component), setFacets, setComponents, force)
 	if err != nil {
 		return err
 	}
+	notice()
 	fmt.Fprintf(cmd.OutOrStdout(), "%s retagged — facets: [%s] · components: [%s]\n",
 		n.ID, strings.Join(n.Facets, ", "), strings.Join(n.Components, ", "))
 	return nil

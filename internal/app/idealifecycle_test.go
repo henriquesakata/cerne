@@ -29,7 +29,7 @@ func lastIdeaPayload(t *testing.T, repoDir, id, typ string) map[string]string {
 // reason and idea.resolved; a closed idea is refused with the drop's sentinel.
 func TestResolveIdea(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	i, err := CreateIdea(repoDir, projDir, "já entregue", "", nil, nil, "")
+	i, err := CreateIdea(repoDir, projDir, "já entregue", "", nil, nil, "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestResolveIdea(t *testing.T) {
 	if _, err := ResolveIdea(repoDir, projDir, i.ID, ""); !errors.Is(err, ErrIdeaNotActive) || !strings.Contains(err.Error(), "resolved") {
 		t.Fatalf("second resolve err = %v, want ErrIdeaNotActive naming resolved", err)
 	}
-	d, _ := CreateIdea(repoDir, projDir, "descartável", "", nil, nil, "")
+	d, _ := CreateIdea(repoDir, projDir, "descartável", "", nil, nil, "", false)
 	if _, err := DropIdea(repoDir, projDir, d.ID, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestLinkIdeaOnlyToLiveFeature(t *testing.T) {
 	for i, st := range closedStates {
 		seedFeatureInState(t, repoDir, fmt.Sprintf("F-%04d", 10+i), st)
 	}
-	idea, err := CreateIdea(repoDir, projDir, "ideia a ligar", "", nil, nil, "")
+	idea, err := CreateIdea(repoDir, projDir, "ideia a ligar", "", nil, nil, "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestLinkIdeaOnlyToLiveFeature(t *testing.T) {
 	for i, st := range []domain.FeatureState{domain.StateCandidate, domain.StateApproved, domain.StateInDevelopment} {
 		id := fmt.Sprintf("F-%04d", 20+i)
 		seedFeatureInState(t, repoDir, id, st)
-		q, _ := CreateIdea(repoDir, projDir, fmt.Sprintf("ideia %d", i), "", nil, nil, "")
+		q, _ := CreateIdea(repoDir, projDir, fmt.Sprintf("ideia %d", i), "", nil, nil, "", false)
 		got, err := LinkIdea(repoDir, projDir, strings.ToLower(q.ID), strings.ToLower(id))
 		if err != nil {
 			t.Fatalf("link to %s (%s): %v", id, st, err)
@@ -125,7 +125,7 @@ func TestLinkIdeaToEveryCardPrefix(t *testing.T) {
 	for k, p := range prefixes {
 		id := fmt.Sprintf("%s%04d", p, 30+k)
 		seedFeatureInState(t, repoDir, id, domain.StateCandidate)
-		q, _ := CreateIdea(repoDir, projDir, "ideia para "+id, "", nil, nil, "")
+		q, _ := CreateIdea(repoDir, projDir, "ideia para "+id, "", nil, nil, "", false)
 		got, err := LinkIdea(repoDir, projDir, q.ID, strings.ToLower(id))
 		if err != nil {
 			t.Fatalf("link to %s: %v", id, err)
@@ -137,7 +137,7 @@ func TestLinkIdeaToEveryCardPrefix(t *testing.T) {
 			t.Fatalf("%s.from_idea = %q, want %s", id, f.FromIdea, q.ID)
 		}
 	}
-	q, _ := CreateIdea(repoDir, projDir, "ideia sem card", "", nil, nil, "")
+	q, _ := CreateIdea(repoDir, projDir, "ideia sem card", "", nil, nil, "", false)
 	if _, err := LinkIdea(repoDir, projDir, q.ID, "N-0001"); err == nil {
 		t.Fatal("link to a note id was accepted")
 	}
@@ -149,7 +149,7 @@ func TestLinkIdeaToEveryCardPrefix(t *testing.T) {
 func TestUnlinkIdeaReopens(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	seedFeatureInState(t, repoDir, "F-0010", domain.StateApproved)
-	i, _ := CreateIdea(repoDir, projDir, "ligada e desligada", "", nil, nil, "")
+	i, _ := CreateIdea(repoDir, projDir, "ligada e desligada", "", nil, nil, "", false)
 	if _, err := LinkIdea(repoDir, projDir, i.ID, "F-0010"); err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestUnlinkIdeaReopens(t *testing.T) {
 	}
 
 	seedFeatureInState(t, repoDir, "F-0011", domain.StateImplemented)
-	old, _ := CreateIdea(repoDir, projDir, "promovida e entregue", "", nil, nil, "")
+	old, _ := CreateIdea(repoDir, projDir, "promovida e entregue", "", nil, nil, "", false)
 	old.State, old.PromotedTo = domain.IdeaPromoted, "F-0011"
 	if err := store.SaveIdea(repoDir, old); err != nil {
 		t.Fatal(err)

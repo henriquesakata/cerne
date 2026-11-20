@@ -73,7 +73,7 @@ func newFeatureNewCmd(dir *string) *cobra.Command {
 	cmd.Flags().StringVar(&component, "component", "", "components (CSV; subsystem/tool, e.g. gitback,materialize)")
 	cmd.Flags().StringVar(&file, "file", "", "file with the full spec body (defaults to piped stdin)")
 	cmd.Flags().StringVar(&context, "context", "", "creation context (1-3 sentences) seeded into the spec's Problem section")
-	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard (F-0147) for a consciously distinct problem")
+	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard (F-0147) for a consciously distinct problem, and accept a component near an existing one (E-0005; check 'cerne tags' first)")
 	cmd.Flags().StringVar(&owner, "owner", "", "responsible handle (free text, F-0204)")
 	cmd.Flags().StringVar(&priority, "priority", "", "priority (closed set: p0,p1,p2,p3, F-0204)")
 	cmd.Flags().StringVar(&onBehalf, "on-behalf", "", onBehalfHelp)
@@ -211,6 +211,7 @@ func runFeatureAmend(cmd *cobra.Command, dir, id, doc, file, reason string) erro
 
 func newFeatureRetagCmd(dir *string) *cobra.Command {
 	var facet, component string
+	var force bool
 	cmd := &cobra.Command{
 		Use:   "retag <id>",
 		Short: "Redefine a feature's tags (facet/component)",
@@ -221,15 +222,16 @@ func newFeatureRetagCmd(dir *string) *cobra.Command {
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runFeatureRetag(cmd, *dir, args[0], facet, component,
-				cmd.Flags().Changed("facet"), cmd.Flags().Changed("component"))
+				cmd.Flags().Changed("facet"), cmd.Flags().Changed("component"), force)
 		},
 	}
 	cmd.Flags().StringVar(&facet, "facet", "", "new facets (CSV; closed set) — empty clears")
 	cmd.Flags().StringVar(&component, "component", "", "new components (CSV) — empty clears")
+	cmd.Flags().BoolVar(&force, "force", false, forceComponentHelp)
 	return cmd
 }
 
-func runFeatureRetag(cmd *cobra.Command, dir, id, facet, component string, setFacets, setComponents bool) error {
+func runFeatureRetag(cmd *cobra.Command, dir, id, facet, component string, setFacets, setComponents, force bool) error {
 	if !setFacets && !setComponents {
 		return fmt.Errorf("pass at least --facet or --component")
 	}
@@ -237,11 +239,13 @@ func runFeatureRetag(cmd *cobra.Command, dir, id, facet, component string, setFa
 	if err != nil {
 		return err
 	}
+	notice := componentNotice(cmd, ctx.repoDir, component)
 	f, err := app.RetagFeature(ctx.repoDir, ctx.projDir, id,
-		splitInforms(facet), splitInforms(component), setFacets, setComponents)
+		splitInforms(facet), splitInforms(component), setFacets, setComponents, force)
 	if err != nil {
 		return err
 	}
+	notice()
 	fmt.Fprintf(cmd.OutOrStdout(), "%s retagged — facets: [%s] · components: [%s]\n",
 		f.ID, strings.Join(f.Facets, ", "), strings.Join(f.Components, ", "))
 	return nil

@@ -33,6 +33,7 @@ func newReferenceCmd() *cobra.Command {
 
 func newReferenceRetagCmd(dir *string) *cobra.Command {
 	var facet, component string
+	var force bool
 	cmd := &cobra.Command{
 		Use:   "retag <id>",
 		Short: "Reset the tags (facet/component) of a reference",
@@ -42,15 +43,16 @@ func newReferenceRetagCmd(dir *string) *cobra.Command {
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runReferenceRetag(cmd, *dir, args[0], facet, component,
-				cmd.Flags().Changed("facet"), cmd.Flags().Changed("component"))
+				cmd.Flags().Changed("facet"), cmd.Flags().Changed("component"), force)
 		},
 	}
 	cmd.Flags().StringVar(&facet, "facet", "", "new facets (CSV; closed set) — empty clears")
 	cmd.Flags().StringVar(&component, "component", "", "new components (CSV) — empty clears")
+	cmd.Flags().BoolVar(&force, "force", false, forceComponentHelp)
 	return cmd
 }
 
-func runReferenceRetag(cmd *cobra.Command, dir, id, facet, component string, setFacets, setComponents bool) error {
+func runReferenceRetag(cmd *cobra.Command, dir, id, facet, component string, setFacets, setComponents, force bool) error {
 	if !setFacets && !setComponents {
 		return fmt.Errorf("provide at least --facet or --component")
 	}
@@ -58,11 +60,13 @@ func runReferenceRetag(cmd *cobra.Command, dir, id, facet, component string, set
 	if err != nil {
 		return err
 	}
+	notice := componentNotice(cmd, ctx.repoDir, component)
 	r, err := app.RetagReference(ctx.repoDir, ctx.projDir, id,
-		splitInforms(facet), splitInforms(component), setFacets, setComponents)
+		splitInforms(facet), splitInforms(component), setFacets, setComponents, force)
 	if err != nil {
 		return err
 	}
+	notice()
 	fmt.Fprintf(cmd.OutOrStdout(), "%s retagged — facets: [%s] · components: [%s]\n",
 		r.ID, strings.Join(r.Facets, ", "), strings.Join(r.Components, ", "))
 	return nil
@@ -123,7 +127,7 @@ func newReferenceNewCmd(dir *string) *cobra.Command {
 	cmd.Flags().StringVar(&file, "file", "", "file with the source content (defaults to stdin)")
 	cmd.Flags().StringVar(&facet, "facet", "", "facets (comma-separated; closed set: infra,code,data,process,auth)")
 	cmd.Flags().StringVar(&component, "component", "", "components (comma-separated subsystem/tool tags, e.g. gitea,kpack)")
-	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard (F-0324) for a consciously distinct source")
+	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard (F-0324) for a consciously distinct source, and accept a component near an existing one (E-0005; check 'cerne tags' first)")
 	_ = cmd.MarkFlagRequired("url")
 	return verbs.MarkChatTool(cmd)
 }
@@ -141,10 +145,12 @@ func runReferenceNew(cmd *cobra.Command, dir string, args []string, url, informs
 	if err != nil {
 		return err
 	}
+	notice := componentNotice(cmd, ctx.repoDir, component)
 	r, err := app.CreateExternalReference(ctx.repoDir, ctx.projDir, title, url, content, splitInforms(informs), splitInforms(facet), splitInforms(component), force)
 	if err != nil {
 		return err
 	}
+	notice()
 	fmt.Fprintf(cmd.OutOrStdout(), "%s registered (external: %s).\n", r.ID, r.URL)
 	return nil
 }

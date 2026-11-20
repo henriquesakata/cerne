@@ -57,7 +57,7 @@ func newBugNewCmd(dir *string) *cobra.Command {
 	cmd.Flags().StringVar(&context, "context", "", "what happens and where (1-3 sentences), seeded into the Context section")
 	cmd.Flags().StringVar(&steps, "steps", "", "numbered steps to the defect, seeded into the Steps to reproduce section")
 	cmd.Flags().StringVar(&expected, "expected", "", "what should happen × what happened, seeded into the Expected × actual section")
-	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard (F-0147) for a consciously distinct problem")
+	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard (F-0147) for a consciously distinct problem, and accept a component near an existing one (E-0005; check 'cerne tags' first)")
 	cmd.Flags().StringVar(&owner, "owner", "", "responsible handle (free text, F-0204)")
 	cmd.Flags().StringVar(&priority, "priority", "", "priority (closed set: p0,p1,p2,p3, F-0204)")
 	cmd.Flags().StringVar(&onBehalf, "on-behalf", "", onBehalfHelp)
@@ -99,11 +99,13 @@ func runBugNew(cmd *cobra.Command, dir string, args []string, module, fixes, fac
 		// regression-test exemption unless the file brought a valid bar.
 		specBody = strings.TrimRight(body, "\n") + "\n\n" + spectmpl.BugBarIn(lang) + "\n"
 	}
+	notice := componentNotice(cmd, ctx.repoDir, component)
 	f, err := app.CreateBugWithSpec(ctx.repoDir, ctx.projDir, title, module, strings.TrimSpace(fixes),
 		splitInforms(facet), splitInforms(component), specBody, force, owner, priority, onBehalf, app.DocAuthor{})
 	if err != nil {
 		return err
 	}
+	notice()
 	fmt.Fprintf(cmd.OutOrStdout(), "%s created (%s) with its report as the spec. Run 'cerne pull' to materialize it locally.\n", f.ID, f.State)
 	if f.State == domain.StateApproved {
 		fmt.Fprintf(cmd.OutOrStdout(), "Next step: the human report is the approval — run 'cerne feature start %s' now, no plan needed.\n", f.ID)
