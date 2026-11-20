@@ -66,8 +66,89 @@ func TestLatestCachedSlowServerFailsWithinTimeout(t *testing.T) {
 	if d := time.Since(start); d > time.Second {
 		t.Fatalf("took %v, want about the 200ms timeout", d)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "update-check.json")); err == nil {
-		t.Fatal("a failed check wrote the cache")
+	// The failure is remembered for a day, so the next session does not ask again.
+	if _, err := LatestCached(s.URL, dir, time.Now().Add(time.Hour), 200*time.Millisecond); err == nil {
+		t.Fatal("want the remembered failure")
+	}
+	if n := atomic.LoadInt32(&hits); n != 1 {
+		t.Fatalf("requests after two sessions = %d, want 1", n)
+	}
+}
+
+// F-0479: offline, a 5xx, a prerelease and an unwritable cache each cost one
+// request a day, not one per session.
+func TestLatestCachedRemembersFailures(t *testing.T) {
+	var hits int32
+	fail := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	t.Cleanup(fail.Close)
+	dir := t.TempDir()
+	now := time.Now()
+	for i := 0; i < 3; i++ {
+		if _, err := LatestCached(fail.URL, dir, now.Add(time.Duration(i)*time.Minute), time.Second); err == nil {
+			t.Fatal("want an error")
+		}
+	}
+	if hits != 1 {
+		t.Fatalf("failing server: %d requests, want 1", hits)
+	}
+	if _, err := LatestCached(fail.URL, dir, now.Add(25*time.Hour), time.Second); err == nil || hits != 2 {
+		t.Fatalf("after 25h: err %v, hits %d, want a new request", err, hits)
+	}
+
+	var tag atomic.Value
+	tag.Store("v2.0.0-rc.1")
+	var pre int32
+	ps := releaseServer(t, &tag, &pre, 0)
+	pdir := t.TempDir()
+	for i := 0; i < 2; i++ {
+		LatestCached(ps.URL, pdir, now, time.Second)
+	}
+	if pre != 1 {
+		t.Fatalf("prerelease: %d requests, want 1", pre)
+	}
+
+	// A cache dir that cannot be written: the process still asks once.
+	var ro int32
+	tag.Store("v1.2.0")
+	rs := releaseServer(t, &tag, &ro, 0)
+	f := filepath.Join(t.TempDir(), "file")
+	os.WriteFile(f, nil, 0o644)
+	bad := filepath.Join(f, "sub")
+	for i := 0; i < 2; i++ {
+		LatestCached(rs.URL, bad, now, time.Second)
+	}
+	if ro != 1 {
+		t.Fatalf("unwritable cache: %d requests, want 1 in the process", ro)
+	}
+}
+
+// A cached answer belongs to the base it was asked of.
+func TestLatestCachedKeysByBase(t *testing.T) {
+	var tag atomic.Value
+	tag.Store("v1.2.0")
+	var a, b int32
+	sa, sb := releaseServer(t, &tag, &a, 0), releaseServer(t, &tag, &b, 0)
+	dir := t.TempDir()
+	now := time.Now()
+	LatestCached(sa.URL, dir, now, time.Second)
+	LatestCached(sb.URL, dir, now, time.Second)
+	if a != 1 || b != 1 {
+		t.Fatalf("requests a=%d b=%d, want 1 each", a, b)
+	}
+}
+
+// A tag the redirect gives that passes tagRe but is not a version is an error,
+// not a panic.
+func TestLatestCachedNonSemverTag(t *testing.T) {
+	var tag atomic.Value
+	tag.Store("v1.2")
+	var hits int32
+	s := releaseServer(t, &tag, &hits, 0)
+	if got, err := LatestCached(s.URL, t.TempDir(), time.Now(), time.Second); err == nil {
+		t.Fatalf("got %q, want an error", got)
 	}
 }
 
@@ -105,9 +186,16 @@ func TestClaimNoticeOncePerTag(t *testing.T) {
 }
 
 func TestClaimNoticeReadOnlyDirFailsOpen(t *testing.T) {
-	if ClaimNotice(filepath.Join(t.TempDir(), "missing", "deeper"), "v1.2.0") {
-		// MkdirAll creates it: the claim works.
-		return
+	if os.Geteuid() == 0 {
+		t.Skip("root writes anywhere")
+	}
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o700) })
+	if ClaimNotice(dir, "v1.2.0") {
+		t.Fatal("an unwritable dir must not claim")
 	}
 	f := filepath.Join(t.TempDir(), "file")
 	os.WriteFile(f, nil, 0o644)
