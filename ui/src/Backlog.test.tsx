@@ -639,3 +639,69 @@ describe('Backlog — coluna de histórico no painel do chat (F-0431)', () => {
     expect(within(rail()).getByText('Conversa B').closest('button')).toHaveFocus()
   })
 })
+
+// B-0048: the candidates column collapses into a narrow strip, like the
+// kanban's Backlog column (F-0342), so the chat takes the width.
+describe('Backlog — coluna de candidatas recolhível (B-0048)', () => {
+  const toggle = () => screen.getByRole('button', { name: /^backlog$/i })
+
+  it('recolhe e expande a coluna; recolhida, as candidatas saem do DOM e a página marca o layout', async () => {
+    payload = state([feature('F-0001'), feature('F-0002')])
+    const { container } = render(<Backlog />)
+    await screen.findByText('F-0001')
+    expect(toggle()).toHaveAttribute('aria-expanded', 'true')
+
+    fireEvent.click(toggle())
+    expect(toggle()).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('F-0001')).not.toBeInTheDocument()
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
+    expect(container.querySelector('main')).toHaveClass('backlog-layout-collapsed')
+    // recolhida, a contagem vira só o número
+    expect(screen.getByText('2')).toBeInTheDocument()
+    // o chat continua montado
+    expect(screen.getByPlaceholderText(/descreva/i)).toBeInTheDocument()
+
+    fireEvent.click(toggle())
+    expect(toggle()).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByText('F-0001')).toBeInTheDocument()
+  })
+
+  it('a escolha fica lembrada por navegador', async () => {
+    payload = state([feature('F-0001')])
+    render(<Backlog />)
+    await screen.findByText('F-0001')
+    fireEvent.click(toggle())
+    cleanup()
+
+    render(<Backlog />)
+    await screen.findByPlaceholderText(/descreva/i)
+    expect(toggle()).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('F-0001')).not.toBeInTheDocument()
+  })
+
+  it('storage inacessível cai no padrão expandido sem quebrar a página', async () => {
+    payload = state([feature('F-0001')])
+    // Só a chave da coluna: os outros leitores do storage têm seus próprios testes.
+    const KEY = 'cerne.backlog.listOpen'
+    const realGet = Storage.prototype.getItem
+    const realSet = Storage.prototype.setItem
+    const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(function (this: Storage, k: string) {
+      if (k === KEY) throw new Error('blocked')
+      return realGet.call(this, k)
+    })
+    const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, k: string, v: string) {
+      if (k === KEY) throw new Error('blocked')
+      realSet.call(this, k, v)
+    })
+    try {
+      render(<Backlog />)
+      await screen.findByText('F-0001')
+      expect(toggle()).toHaveAttribute('aria-expanded', 'true')
+      fireEvent.click(toggle())
+      expect(toggle()).toHaveAttribute('aria-expanded', 'false')
+    } finally {
+      get.mockRestore()
+      set.mockRestore()
+    }
+  })
+})

@@ -34,6 +34,27 @@ function useWide(): boolean {
   return wide
 }
 
+// B-0048: recolher a coluna de candidatas é preferência de quem olha, por
+// navegador — o mesmo contrato da coluna Backlog do kanban (F-0342). Storage
+// inacessível cai no padrão expandido e nunca quebra a página.
+const LIST_OPEN_KEY = 'cerne.backlog.listOpen'
+
+function readListOpen(): boolean {
+  try {
+    return localStorage.getItem(LIST_OPEN_KEY) !== 'false'
+  } catch {
+    return true
+  }
+}
+
+function writeListOpen(open: boolean) {
+  try {
+    localStorage.setItem(LIST_OPEN_KEY, String(open))
+  } catch {
+    // preferência não persistida; o toggle da sessão continua valendo
+  }
+}
+
 export default function Backlog() {
   const [features, setFeatures] = useState<Feature[] | null>(null)
   // F-0195: contagem de [ESCLARECER] abertos, mesma fonte do kanban. Servidor
@@ -45,6 +66,11 @@ export default function Backlog() {
   const { t } = useT()
   const chats = useBacklogChats()
   const wide = useWide()
+  const [listOpen, setListOpen] = useState(readListOpen)
+  const toggleList = () => {
+    setListOpen(!listOpen)
+    writeListOpen(!listOpen)
+  }
   // Trocar de conversa remonta o chat (key): depois de escolher ou criar, o
   // foco vai para o compositor da nova conversa.
   const focusComposer = useRef(false)
@@ -85,10 +111,27 @@ export default function Backlog() {
   }, [version, refreshKey])
 
   return (
-    <main className="kanban backlog-layout">
+    <main className={listOpen ? 'kanban backlog-layout' : 'kanban backlog-layout backlog-layout-collapsed'}>
       <header className="backlog-head">
-        <h1>{t.nav.backlog}</h1>
-        {features && <p className="backlog-count">{t.backlog.count(features.length)}</p>}
+        {/* B-0048: o título é o controle, como o <summary> da coluna Backlog
+            do kanban; botão dentro do h1 (o inverso seria inválido). */}
+        <h1>
+          <button
+            type="button"
+            className="backlog-toggle"
+            aria-expanded={listOpen}
+            aria-controls="backlog-list"
+            title={listOpen ? t.backlog.collapseList : t.backlog.expandList}
+            onClick={toggleList}
+          >
+            {t.nav.backlog}
+          </button>
+        </h1>
+        {features && (
+          <p className="backlog-count" title={t.backlog.count(features.length)}>
+            {listOpen ? t.backlog.count(features.length) : features.length}
+          </p>
+        )}
       </header>
       {/* DOM: o painel do chat vem antes das candidatas (ordem de Tab e de
           leitura iguais à visual abaixo de 60rem); acima, o grid posiciona. A
@@ -125,23 +168,25 @@ export default function Backlog() {
           }}
         />
       </div>
-      <div className="backlog-list-col">
-        {error && <p className="backlog-note backlog-note-error">{t.backlog.loadError(error)}</p>}
-        {!error && !features && <p className="backlog-note">{t.common.loading}</p>}
-        {features && features.length === 0 && <p className="backlog-note">{t.backlog.empty}</p>}
-        {features && features.length > 0 && (
-          <div className="backlog-roster">
-            {sortByPriority(features).map((f) => (
-              <BacklogCard
-                key={f.id}
-                feature={f}
-                pending={openClarifications[f.id] ?? 0}
-                onRefine={() => chats.refineFeature(f.id)}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+      {listOpen && (
+        <div className="backlog-list-col" id="backlog-list">
+          {error && <p className="backlog-note backlog-note-error">{t.backlog.loadError(error)}</p>}
+          {!error && !features && <p className="backlog-note">{t.common.loading}</p>}
+          {features && features.length === 0 && <p className="backlog-note">{t.backlog.empty}</p>}
+          {features && features.length > 0 && (
+            <div className="backlog-roster">
+              {sortByPriority(features).map((f) => (
+                <BacklogCard
+                  key={f.id}
+                  feature={f}
+                  pending={openClarifications[f.id] ?? 0}
+                  onRefine={() => chats.refineFeature(f.id)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </main>
   )
 }

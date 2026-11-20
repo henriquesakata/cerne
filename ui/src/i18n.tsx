@@ -577,6 +577,8 @@ const ptBR = {
     count: (n: number) => `${n} candidata(s)`,
     empty: 'Nenhuma candidata no momento — comece uma com "cerne feature new".',
     refineInChat: 'Refinar no chat',
+    collapseList: 'Recolher candidatas',
+    expandList: 'Expandir candidatas',
   },
   backlogChat: {
     title: 'Converse com o agente',
@@ -2109,6 +2111,8 @@ const en: Messages = {
     count: (n: number) => `${n} candidate(s)`,
     empty: 'No candidates right now — start one with "cerne feature new".',
     refineInChat: 'Refine in chat',
+    collapseList: 'Collapse candidates',
+    expandList: 'Expand candidates',
   },
   backlogChat: {
     title: 'Talk to the agent',

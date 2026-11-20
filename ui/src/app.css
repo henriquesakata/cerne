@@ -388,6 +388,51 @@ h2 {
   margin: 0 0 1.25rem;
 }
 
+/* B-0048: o título recolhe a coluna de candidatas, o mesmo gesto da coluna
+   Backlog do kanban (F-0342): marcador ▼/▶ próprio, tira vertical tracejada
+   quando recolhida, e o chat — o foco da tela — fica com a largura. */
+.backlog-toggle {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.backlog-toggle::before {
+  content: '▼';
+  content: '▼' / '';
+  display: inline-block;
+  writing-mode: horizontal-tb;
+  margin: 0 0.4rem 0 0;
+  font-size: 0.5em;
+  vertical-align: 0.3em;
+  color: var(--muted);
+}
+
+.backlog-toggle[aria-expanded='false']::before { content: '▶'; content: '▶' / ''; }
+.backlog-toggle:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; border-radius: 6px; }
+
+.backlog-layout-collapsed { grid-template-columns: auto minmax(0, 1fr); }
+
+.backlog-layout-collapsed .backlog-head {
+  grid-row: 1 / -1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.75rem 0.4rem;
+  border: 1px dashed var(--border-strong);
+  border-radius: 8px;
+}
+
+.backlog-layout-collapsed .backlog-head h1 { font-size: 1rem; }
+.backlog-layout-collapsed .backlog-toggle { writing-mode: vertical-rl; }
+.backlog-layout-collapsed .backlog-toggle::before { margin: 0 0 0.4rem; vertical-align: baseline; }
+
 .backlog-count {
   margin: 0;
   flex-shrink: 0;
@@ -1183,6 +1228,19 @@ h2 {
 
   .backlog-layout { row-gap: 1rem; }
   .backlog-head { margin-bottom: 0; }
+
+  /* Recolhida em uma coluna: só some a lista; o cabeçalho segue deitado. */
+  .backlog-layout-collapsed .backlog-head {
+    grid-row: auto;
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 0;
+    border: 0;
+  }
+  .backlog-layout-collapsed .backlog-head h1 { font-size: 1.5rem; }
+  .backlog-layout-collapsed .backlog-toggle { writing-mode: horizontal-tb; }
+  .backlog-layout-collapsed .backlog-toggle::before { margin: 0 0.4rem 0 0; vertical-align: 0.3em; }
 
   /* Um chat vazio não empurra o backlog para fora da tela (F-0431). */
   .backlog-chat-shell { height: auto; min-height: 14rem; max-height: 70dvh; }
