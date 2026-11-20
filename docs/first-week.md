@@ -213,5 +213,6 @@ cerne work done W-0001 --note "button shipped"
 3. Let the agent work. When it completes a feature, review it and accept it (`cerne accept queue` lists them).
 4. When something changes your plan, reject or supersede with a reason.
 5. `cerne sync` brings in what others changed and sends your own edits. `cerne lint` lists stale documentation.
+6. When a new cerne release comes out, run `cerne update` inside the project. It updates the binary, then renews the hooks and the guide your agent reads. While the project's files are older than the binary, `cerne next` opens with a line asking for it. On a version without the command, update the binary first with `brew upgrade henriquesakata/tap/cerne` or the install script.
 
 When you forget a command, ask: `cerne guide "how do I close a feature"`.

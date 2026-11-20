@@ -73,6 +73,7 @@ func Root() *cobra.Command {
 	}
 	addIn("start", verbs.MarkLocal(newInitCmd()))
 	addIn("start", verbs.MarkLocal(newDemoCmd()))
+	addIn("start", verbs.MarkLocal(newUpdateCmd()))
 	addIn("author", newFeatureCmd())
 	addIn("author", newEpicCmd())
 	addIn("author", newTaskCmd())

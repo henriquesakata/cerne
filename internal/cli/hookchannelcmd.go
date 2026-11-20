@@ -178,16 +178,17 @@ func runHookChannel(cmd *cobra.Command, point string) {
 // "" when everything matches or on any error (fail-open, N-0021).
 func staleManagedNotice(projDir string, syncSkills bool) string {
 	var b strings.Builder
-	if names := withoutPluginAbsent(projDir, skills.Stale(projDir)); len(names) > 0 {
+	staleHooks, staleSkills := staleManaged(projDir)
+	if names := staleSkills; len(names) > 0 {
 		list := strings.Join(names, ", ")
 		if !syncSkills {
-			fmt.Fprintf(&b, "cerne: canonical skill(s) out of date with this cerne build: %s — run `cerne skill install`.\n", list)
+			fmt.Fprintf(&b, "cerne: canonical skill(s) out of date with this cerne build: %s — run `cerne update`.\n", list)
 		} else if _, err := skills.Install(projDir, staleProviders(projDir, names)...); err == nil {
 			fmt.Fprintf(&b, "cerne: updated canonical skill(s) from this cerne build: %s — the new version applies from the next session (or after reloading skills).\n", list)
 		}
 	}
-	if n := len(withoutPluginAbsent(projDir, hooks.Stale(projDir))); n > 0 {
-		fmt.Fprintf(&b, "cerne: %d managed hook(s) out of date with this cerne build — run `cerne hook install` and review the diff.\n", n)
+	if n := len(staleHooks); n > 0 {
+		fmt.Fprintf(&b, "cerne: %d managed hook(s) out of date with this cerne build — run `cerne update` and review the diff.\n", n)
 	}
 	return b.String()
 }

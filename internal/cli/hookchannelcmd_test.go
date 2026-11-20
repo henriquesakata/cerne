@@ -289,7 +289,7 @@ func TestHookChannelSessionStartStaleSkills(t *testing.T) {
 	}
 
 	out := sessionStart(t, projDir)
-	if !strings.Contains(out, "cerne skill install") || strings.Count(out, "\n") != 1 || !strings.HasSuffix(out, "\n") {
+	if !strings.Contains(out, "run `cerne update`") || strings.Count(out, "\n") != 1 || !strings.HasSuffix(out, "\n") {
 		t.Fatalf("without sync_skills want one warning line naming the fix, got %q", out)
 	}
 	if raw, _ := os.ReadFile(stale); string(raw) != "old" {
@@ -320,7 +320,7 @@ func TestHookChannelSessionStartStaleHooks(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := sessionStart(t, projDir)
-	if !strings.Contains(out, "1 managed hook") || !strings.Contains(out, "cerne hook install") || strings.Count(out, "\n") != 1 {
+	if !strings.Contains(out, "1 managed hook") || !strings.Contains(out, "run `cerne update`") || strings.Count(out, "\n") != 1 {
 		t.Fatalf("want a counted hook warning, got %q", out)
 	}
 	if raw, _ := os.ReadFile(script); string(raw) != "#!/bin/sh\n# local\n" {

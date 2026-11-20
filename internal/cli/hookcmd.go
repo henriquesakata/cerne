@@ -82,8 +82,7 @@ func runHookInstall(cmd *cobra.Command, dir string, providerNames []string) erro
 	}
 	var ps []hooks.Provider
 	if len(providerNames) == 0 {
-		// Default: Claude Code plus every provider whose config dir exists.
-		ps = append([]hooks.Provider{hooks.ProviderClaude}, hooks.DetectProviders(dir)...)
+		ps = defaultHookProviders(dir)
 	} else {
 		for _, name := range providerNames {
 			ps = append(ps, hooks.Provider(name))

@@ -356,5 +356,5 @@ func copilotStaleNotice(projDir string) string {
 	if len(names) == 0 {
 		return ""
 	}
-	return "cerne: managed Copilot file(s) out of date with this cerne build: " + strings.Join(names, ", ") + " — run `cerne hook install --provider copilot` and `cerne skill install`."
+	return "cerne: managed Copilot file(s) out of date with this cerne build: " + strings.Join(names, ", ") + " — run `cerne update`."
 }

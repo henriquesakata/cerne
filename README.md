@@ -333,11 +333,12 @@ The founding design document is [docs/process/cases/0001_founding-spec/spec.md](
 
 ## Where your data goes
 
-cerne has no hosted service. There is no account to create, and no usage telemetry, crash reporting or update check: the binary talks to the places you point it at, and to nothing else.
+cerne has no hosted service. There is no account to create, and no usage telemetry or crash reporting. The only version check is `cerne update`, and only when you run it: no other command, hook or screen asks for a new version. Otherwise the binary talks to the places you point it at, and to nothing else.
 
 | What | Where it goes | When |
 |---|---|---|
 | Specs, plans, results, decisions, notes, runbooks, references, the event log | The backend git repository you chose: a folder on your machine, a git server you host, or a private repository on a hosting service | Always. It is the only place cerne stores your documentation. `cerne ui` syncs with it every 15 s by default (`--pull-interval`) |
+| The latest release tag and, when it is newer, its binary and `SHA256SUMS` | The cerne repository on GitHub, or the `CERNE_BASE_URL` you set. Under Homebrew, `brew upgrade` asks the tap instead | Only when you run `cerne update`, never with `--check` |
 | `.docs/`, the search index, the cached backend clone | Your disk | Always. All are rebuilt from the backend |
 | The dashboard | Served by the binary on `127.0.0.1:7717`, with every asset embedded | While `cerne ui` runs |
 | Prompts for `cerne ask`, the authoring helpers, `compile`, `import --agent` and the Backlog chat | With no `llm.mode` set, the first subscription CLI cerne finds on your `PATH` (`claude`, `codex`, `gemini`, then `cursor-agent` on `main`), so the prompt goes to that vendor under your subscription. With an API key or a gateway set in Settings › AI, to that provider (Anthropic, OpenAI, Gemini, OpenRouter or any OpenAI-compatible endpoint, including a local one). With `llm.mode` set to `delegation`, nowhere: the agent you already run answers | Only when you use those features. Settings › AI shows which mode is in use and where that choice came from |
