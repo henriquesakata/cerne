@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/hooks"
 	"github.com/henriquesakata/cerne/internal/materialize"
@@ -686,5 +687,25 @@ func TestHookChannelPluginMode(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(env); string(got) != "export CERNE_SESSION=s2\n" {
 		t.Fatalf("outside the plugin the actor comes from settings.json, env file = %q", got)
+	}
+}
+
+// TestHookChannelReachesNeverBoundSession (F-0486 crit. 8, critic finding 3):
+// a session that only opened a card or wrote one of its documents has no
+// binding file at all; a message from the card's page still reaches it at
+// session start, naming the card and how to answer.
+func TestHookChannelReachesNeverBoundSession(t *testing.T) {
+	boardOff(t)
+	projDir, _, repoDir := setupProject(t)
+	t.Setenv("CLAUDE_ENV_FILE", "")
+	if _, err := app.ChannelPost(filepath.Dir(repoDir), "Henrique", "F-0001", []string{"sess-opener"}, "o plano está certo?", time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	out, err := execCerneStdin(t, sessionStartJSON(t, "sess-opener", projDir), "hook", "channel", "--point", "session-start")
+	if err != nil || !strings.Contains(out, "Henrique (human) → you, about F-0001: o plano está certo?") || !strings.Contains(out, "cerne msg send --ref F-0001") {
+		t.Fatalf("session start of a never-bound addressed session: %v\n%q", err, out)
+	}
+	if out, err := execCerneStdin(t, sessionStartJSON(t, "sess-other", projDir), "hook", "channel", "--point", "session-start"); err != nil || strings.Contains(out, "plano") {
+		t.Fatalf("an unaddressed session got it: %v\n%q", err, out)
 	}
 }

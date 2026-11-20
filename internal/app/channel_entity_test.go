@@ -47,7 +47,7 @@ func TestChannelToSessionDeliveredWithoutLiveBinding(t *testing.T) {
 	want := fmt.Sprintf("#%d Henrique (human) → you, about F-0001: o teste do canal quebrou", seq)
 	for i := range 2 {
 		out := f.inject("s-dev", true)
-		if !strings.Contains(out, want) || !strings.Contains(out, `cerne msg send "<text>"`) {
+		if !strings.Contains(out, want) || !strings.Contains(out, `cerne msg send --ref F-0001 "<text>"`) {
 			t.Fatalf("s-dev injection %d = %q, want the addressed message and how to answer", i+1, out)
 		}
 	}
@@ -65,7 +65,7 @@ func TestChannelToSessionDeliveredWithoutLiveBinding(t *testing.T) {
 		t.Fatalf("session ids served: to=%v session=%q", got.To, got.Session)
 	}
 
-	reply, to, err := ChannelSend(f.cacheDir, f.repoDir, "s-dev", "corrigido no PR", f.at.Add(time.Second))
+	reply, to, err := ChannelSend(f.cacheDir, f.repoDir, "s-dev", "", "corrigido no PR", f.at.Add(time.Second))
 	f.at = f.at.Add(time.Second)
 	if err != nil {
 		t.Fatalf("reply without live work: %v", err)
@@ -115,12 +115,21 @@ func TestChannelToSessionNotDeliveredTarget(t *testing.T) {
 }
 
 // TestChannelReplyWithLiveWorkCarriesRef: a session with live work answers
-// as its work, and its answer joins the card's thread.
+// the card with --ref, as its work, on the card's thread; without --ref its
+// post stays a peer message (critic finding 1) — and still answers.
 func TestChannelReplyWithLiveWorkCarriesRef(t *testing.T) {
 	f := newChanFixture(t)
 	seq := f.postTo("F-0001", []string{"s1"}, "quem escreveu o plano?")
 	f.inject("s1", true)
-	reply, _, err := ChannelSend(f.cacheDir, f.repoDir, "s1", "fui eu", f.at.Add(time.Second))
+	peer, to, err := ChannelSend(f.cacheDir, f.repoDir, "s1", "", "W-0002 segura o rooms.go", f.at.Add(time.Second))
+	f.at = f.at.Add(time.Second)
+	if err != nil || peer.Ref != "" || !slices.Contains(to, "W-0002") {
+		t.Fatalf("peer message = %+v to %v (%v), want a plain F-0325 message to W-0002", peer, to, err)
+	}
+	if out := f.inject("s2", true); !strings.Contains(out, "W-0002 segura") {
+		t.Fatalf("peer did not get the message: %q", out)
+	}
+	reply, _, err := ChannelSend(f.cacheDir, f.repoDir, "s1", "F-0001", "fui eu", f.at.Add(time.Second))
 	f.at = f.at.Add(time.Second)
 	if err != nil || reply.Nick != "W-0001" || reply.Ref != "F-0001" {
 		t.Fatalf("reply = %+v (%v), want W-0001 on the F-0001 thread", reply, err)
@@ -128,6 +137,9 @@ func TestChannelReplyWithLiveWorkCarriesRef(t *testing.T) {
 	msgs, _ := f.read("")
 	if got := stateOf(t, msgs, seq); got.State != ChannelAnswered {
 		t.Fatalf("state = %+v, want answered", got)
+	}
+	if _, _, err := ChannelSend(f.cacheDir, f.repoDir, "s1", "F-0099", "x", f.at); !errors.Is(err, ErrNoCardMessage) {
+		t.Fatalf("--ref of a card with no message to s1: err = %v, want ErrNoCardMessage", err)
 	}
 }
 
@@ -164,7 +176,11 @@ func TestChannelToSessionAckAndStop(t *testing.T) {
 func TestChannelSendWithoutWorkNorAddressRefused(t *testing.T) {
 	f := newChanFixture(t)
 	f.postTo("F-0001", []string{"s-dev"}, "só para o s-dev")
-	if _, _, err := ChannelSend(f.cacheDir, f.repoDir, "s-ghost", "oi", f.at); !errors.Is(err, ErrNoChannelIdentity) {
+	if _, _, err := ChannelSend(f.cacheDir, f.repoDir, "s-ghost", "", "oi", f.at); !errors.Is(err, ErrNoChannelIdentity) {
 		t.Fatalf("err = %v, want ErrNoChannelIdentity", err)
+	}
+	// s-dev was never shown the message: without --ref it has nothing to answer.
+	if _, _, err := ChannelSend(f.cacheDir, f.repoDir, "s-dev", "", "oi", f.at); !errors.Is(err, ErrNoChannelIdentity) {
+		t.Fatalf("unshown: err = %v, want ErrNoChannelIdentity", err)
 	}
 }

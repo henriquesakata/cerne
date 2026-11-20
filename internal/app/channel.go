@@ -237,8 +237,9 @@ func (cs channelState) ackedBySession(m room.Message, sess string) bool {
 	return false
 }
 
-// pendingRef is the card of the newest live message addressed to sess and
-// still unanswered: what its next post answers. "" when none.
+// pendingRef is the card of the newest live message addressed to sess, shown
+// to it and still unanswered: what a post of a session with no live work
+// answers. "" when none.
 // ponytail: with pending messages about two cards, the newest wins.
 func pendingRef(ch room.Channel, repoDir, sess string, now time.Time) string {
 	msgs, err := ch.Messages()
@@ -252,12 +253,28 @@ func pendingRef(ch room.Channel, repoDir, sess string, now time.Time) string {
 	cs := channelState{msgs: msgs, dels: dels}
 	live := liveMessages(repoDir, msgs, now)
 	for i := len(live) - 1; i >= 0; i-- {
-		if m := live[i]; slices.Contains(m.To, sess) && !cs.answeredBySession(m, sess) {
+		if m := live[i]; slices.Contains(m.To, sess) && cs.shownTo(m, sess) && !cs.answeredBySession(m, sess) {
 			return m.Ref
 		}
 	}
 	return ""
 }
+
+// addressedAbout reports whether a live message about card ref is addressed
+// to session sess: what `cerne msg send --ref` answers.
+func addressedAbout(ch room.Channel, repoDir, sess, ref string, now time.Time) bool {
+	msgs, err := ch.Messages()
+	if err != nil {
+		return false
+	}
+	return slices.ContainsFunc(liveMessages(repoDir, msgs, now), func(m room.Message) bool {
+		return m.Ref == ref && slices.Contains(m.To, sess)
+	})
+}
+
+// ErrNoCardMessage is the sentinel for `cerne msg send --ref` with no live
+// message about that card addressed to the session.
+var ErrNoCardMessage = errors.New("no live message about that card is addressed to this session")
 
 // channelState is the derived view of the channel for one identity.
 type channelState struct {
@@ -498,6 +515,15 @@ func injectionTail(sel []injItem, more, directedPending int) string {
 	case directedPending > 0: // only in the count line: never an ack the reader cannot see (critic C15)
 		b.WriteString("↳ addressed to you, not shown above: read it with cerne msg read\n")
 	}
+	var refs []string // F-0486: a card's page waits for the answer
+	for _, it := range sel {
+		if it.directed && len(it.m.To) > 0 && !slices.Contains(refs, it.m.Ref) {
+			refs = append(refs, it.m.Ref)
+		}
+	}
+	for _, ref := range refs {
+		fmt.Fprintf(&b, "↳ about %s: answer it on the card's page with cerne msg send --ref %s \"<text>\"\n", ref, ref)
+	}
 	return b.String()
 }
 
@@ -570,11 +596,12 @@ func channelOf(cacheDir string) room.Channel {
 
 // ChannelSend posts body as session sess's work, creating the channel on
 // demand (criterion 1), and returns the open works with another live session
-// that will receive it (criterion 12) — empty when nobody is around. A session
-// the human addressed from a card's page (F-0486) answers on that card's
-// thread: as its work, or — with no live work — as <card>·<session>; that
-// answer is for the page, so nobody else receives it.
-func ChannelSend(cacheDir, repoDir, sess, body string, now time.Time) (room.Message, []string, error) {
+// that will receive it (criterion 12) — empty when nobody is around. A post
+// with ref answers the human on that card's thread (F-0486) and reaches nobody
+// else: a session with live work names the card (`--ref`), so its peer
+// messages stay peer messages; one with no live work answers the message it
+// was shown, as <card>·<session>, even without naming it.
+func ChannelSend(cacheDir, repoDir, sess, ref, body string, now time.Time) (room.Message, []string, error) {
 	if strings.TrimSpace(body) == "" {
 		return room.Message{}, nil, errors.New("the message cannot be empty")
 	}
@@ -583,12 +610,18 @@ func ChannelSend(cacheDir, repoDir, sess, body string, now time.Time) (room.Mess
 	}
 	ch := channelOf(cacheDir)
 	id, ok := sessionWork(cacheDir, repoDir, sess)
-	ref := pendingRef(ch, repoDir, sess, now)
-	nick := id.Work
 	switch {
-	case !ok && ref == "":
-		return room.Message{}, nil, ErrNoChannelIdentity
+	case ref != "":
+		if !addressedAbout(ch, repoDir, sess, ref, now) {
+			return room.Message{}, nil, fmt.Errorf("%w (%s)", ErrNoCardMessage, ref)
+		}
 	case !ok:
+		if ref = pendingRef(ch, repoDir, sess, now); ref == "" {
+			return room.Message{}, nil, ErrNoChannelIdentity
+		}
+	}
+	nick := id.Work
+	if !ok {
 		nick = entityNick(ref, sess)
 	}
 	m, err := ch.Append(room.Message{Type: "message", Nick: nick, Session: sess, Body: body, Time: now, Ref: ref})

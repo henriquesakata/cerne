@@ -80,19 +80,24 @@ func SessionInfos(roots, sessions []string) (map[string]SessionInfo, error) {
 	return out, nil
 }
 
+// maxLocationWindow caps how much of a transcript's end readLocation holds in
+// memory (the agents panel reads it on every reload).
+const maxLocationWindow = 8 << 20
+
 // readLocation scans the end of a transcript for the last title, folder,
 // branch and PR. Claude Code repeats the title and PR lines every turn and
 // stamps cwd/gitBranch on every message, so the last MiB almost always holds
-// them; without a folder there, the window widens (x8) up to the whole file.
-// ponytail: a title or PR seen only early in a long session can be missed — add
-// a full scan for it if that ever matters.
+// them; without a folder there, the window widens once, to 8 MiB.
+// ponytail: a title, folder or PR seen only before the last 8 MiB is missed —
+// a streaming full scan if that ever matters.
 func readLocation(p string, size int64) (locationLine, error) {
 	f, err := os.Open(p)
 	if err != nil {
 		return locationLine{}, err
 	}
 	defer f.Close()
-	for window := int64(1 << 20); ; window *= 8 {
+	var loc locationLine
+	for window := int64(1 << 20); window <= maxLocationWindow; window *= 8 {
 		start := max(0, size-window)
 		buf := make([]byte, size-start)
 		if _, err := f.ReadAt(buf, start); err != nil && !errors.Is(err, io.EOF) {
@@ -105,7 +110,7 @@ func readLocation(p string, size int64) (locationLine, error) {
 				buf = nil
 			}
 		}
-		var loc locationLine
+		loc = locationLine{}
 		for _, line := range bytes.Split(buf, []byte("\n")) {
 			if !containsAny(line, locationKeys) {
 				continue
@@ -124,9 +129,10 @@ func readLocation(p string, size int64) (locationLine, error) {
 			}
 		}
 		if loc.Cwd != "" || start == 0 {
-			return loc, nil
+			break
 		}
 	}
+	return loc, nil
 }
 
 func containsAny(line []byte, keys [][]byte) bool {

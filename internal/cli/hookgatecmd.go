@@ -320,14 +320,14 @@ func runHookBindWork(cmd *cobra.Command, format string) {
 	}
 	// F-0486: a card the session created records it as the card's opener — a
 	// mark of its own, never a binding (a candidate is no live binding, and a
-	// bind would move the session's cost to the new card).
+	// bind would move the session's cost to the new card). A chain that also
+	// starts or takes something still binds below.
 	if cerneRun(ti.Command, cerneCardNewRe) != "" {
 		if m := cardCreatedRe.FindStringSubmatch(string(in.ToolResponse)); m != nil {
 			if err := app.RecordMark(cacheDir, in.SessionID, in.AgentID, harness, m[1], app.RoleOpened); err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "warning: card opener not recorded: %v\n", err)
 			}
 		}
-		return
 	}
 	var id string
 	switch {

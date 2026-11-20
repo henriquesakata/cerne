@@ -284,7 +284,7 @@ func handleRoomSay(w http.ResponseWriter, r *http.Request, repoDir, projDir, pro
 		now := time.Now().UTC()
 		var msg room.Message
 		if req.SessionID != "" {
-			msg, _, err = app.ChannelSend(cacheDir, repoDir, req.SessionID, req.Body, now)
+			msg, _, err = app.ChannelSend(cacheDir, repoDir, req.SessionID, req.Ref, req.Body, now)
 			msg.Session = "" // a session id is never served
 		} else {
 			if req.Ref != "" || len(req.To) > 0 {

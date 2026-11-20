@@ -539,3 +539,25 @@ func TestHookBindRecordsOpenedFromCardNew(t *testing.T) {
 		t.Fatalf("cost ledger written by a card creation (stat err %v)", err)
 	}
 }
+
+// TestHookBindCardNewChainStillBinds (F-0486, critic finding 6): a chain that
+// creates a card and then starts one records the opening and still binds.
+func TestHookBindCardNewChainStillBinds(t *testing.T) {
+	t.Setenv("CLAUDECODE", "1")
+	projDir, _, repoDir := setupProject(t)
+	cacheDir := filepath.Dir(repoDir)
+	stdin := hookJSON(t, "sess-chain", projDir, "Bash",
+		map[string]any{"command": `cerne feature new "X" --context "y" && cerne feature start F-0007`},
+		map[string]any{"stdout": "✓ F-0006 created (candidate)\nF-0007: approved → in_development"})
+	if out, err := execCerneStdin(t, stdin, "hook", "bind-work"); err != nil {
+		t.Fatalf("hook bind-work: %v\n%s", err, out)
+	}
+	marks, err := cost.ReadMarks(cacheDir)
+	if err != nil || len(marks) != 1 || marks[0].Entity != "F-0006" {
+		t.Fatalf("marks = %+v (%v), want the opening of F-0006", marks, err)
+	}
+	binds, err := cost.ReadBinds(cacheDir)
+	if err != nil || len(binds) != 1 || binds[0].Entity != "F-0007" {
+		t.Fatalf("binds = %+v (%v), want the start of F-0007 bound", binds, err)
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -126,5 +127,23 @@ func TestChannelPostToCardSessions(t *testing.T) {
 	doJSON(t, h, http.MethodGet, "/api/rooms/channel/messages", "", &all)
 	if len(all.Messages) != 2 {
 		t.Fatalf("whole channel = %d messages, want both", len(all.Messages))
+	}
+}
+
+// TestChannelRoutesAreLocalOnly (F-0486 crit. 14, critic finding 2): the
+// channel routes serve short session ids in targets and nicks; none of them
+// joins `cerne serve`.
+func TestChannelRoutesAreLocalOnly(t *testing.T) {
+	seen := 0
+	for _, r := range dataRoutes() {
+		if strings.HasPrefix(r.pattern, "/rooms") {
+			seen++
+			if r.remote {
+				t.Errorf("%s %s is remote, want local-only", r.method, r.pattern)
+			}
+		}
+	}
+	if seen == 0 {
+		t.Fatal("no /rooms route found")
 	}
 }
