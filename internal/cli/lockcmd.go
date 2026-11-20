@@ -238,6 +238,11 @@ func ensureLockMergeDriver(projDir string) error {
 		return err
 	}
 	sec := cfg.Raw.Section("merge").Subsection("cerne-lock")
+	// F-0474: already registered with these values → no write, so a sandbox that
+	// protects .git raises no warning on every run.
+	if sec.Option("name") == lockMergeName && sec.Option("driver") == lockMergeDriverCommand() {
+		return nil
+	}
 	sec.SetOption("name", lockMergeName)
 	sec.SetOption("driver", lockMergeDriverCommand())
 	return repo.SetConfig(cfg)
@@ -256,6 +261,10 @@ func registerMergeDriverViaGit(projDir string) error {
 		{"merge.cerne-lock.name", lockMergeName},
 		{"merge.cerne-lock.driver", lockMergeDriverCommand()},
 	} {
+		// F-0474: already holds the expected value → no write.
+		if cur, err := exec.Command("git", "-C", projDir, "config", "--local", "--get", kv[0]).Output(); err == nil && strings.TrimSpace(string(cur)) == kv[1] {
+			continue
+		}
 		out, err := exec.Command("git", "-C", projDir, "config", kv[0], kv[1]).CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("git config %s: %w: %s", kv[0], err, strings.TrimSpace(string(out)))

@@ -283,8 +283,14 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 	}
 	fmt.Fprintln(out, "Next steps:")
 	fmt.Fprintln(out, "  1. Open the dashboard: cerne ui  (http://localhost:7717)")
-	fmt.Fprintf(out, "  2. Ask your agent: %q\n", guide.FirstFeatureAsk)
-	fmt.Fprintln(out, "  3. Approve the spec on the dashboard.")
+	step := 2
+	if names, flags := detectedUnconnected(missing); len(names) > 0 {
+		// F-0474: connect a detected agent before asking it for the first feature.
+		fmt.Fprintf(out, "  2. Connect %s (found on your PATH): cerne hook install --provider %s && cerne skill install\n", strings.Join(names, ", "), flags)
+		step = 3
+	}
+	fmt.Fprintf(out, "  %d. Ask your agent: %q\n", step, guide.FirstFeatureAsk)
+	fmt.Fprintf(out, "  %d. Approve the spec on the dashboard.\n", step+1)
 	agents := "Agents connected: none (skills install failed, see the warning above)."
 	if len(connected) > 0 {
 		agents = "Agents connected: " + strings.Join(connected, ", ") + "."
@@ -360,4 +366,22 @@ func ensureDocsIgnored(dir string) (changed bool, err error) {
 func isExit(err error, code int) bool {
 	var ee *exec.ExitError
 	return errors.As(err, &ee) && ee.ExitCode() == code
+}
+
+// agentCLIs maps a provider to the executable that signals the person uses it.
+var agentCLIs = map[string]string{"cursor": "cursor-agent", "codex": "codex", "gemini": "gemini", "copilot": "copilot"}
+
+// detectedUnconnected returns the providers in missing whose CLI is on PATH,
+// and the comma-joined list for --provider.
+func detectedUnconnected(missing []string) (names []string, flags string) {
+	onPath := map[string]bool{}
+	for _, c := range project.FoundSubscriptionCLIs() {
+		onPath[c] = true
+	}
+	for _, m := range missing {
+		if onPath[agentCLIs[m]] {
+			names = append(names, m)
+		}
+	}
+	return names, strings.Join(names, ",")
 }

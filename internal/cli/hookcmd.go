@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -94,6 +95,11 @@ func runHookInstall(cmd *cobra.Command, dir string, providerNames []string) erro
 		return err
 	}
 	printHookResults(cmd.OutOrStdout(), results)
+	for _, p := range ps {
+		if p == hooks.ProviderCodex {
+			printCodexTrust(cmd.OutOrStdout(), dir)
+		}
+	}
 	scripts := map[string]bool{}
 	for _, a := range hooks.Assets() {
 		scripts[a.Script] = true
@@ -105,6 +111,26 @@ func runHookInstall(cmd *cobra.Command, dir string, providerNames []string) erro
 		}
 	}
 	return nil
+}
+
+// printCodexTrust tells what Codex needs beyond the files (F-0474): it reads
+// .codex/ only in a trusted project, and the user checks the result from inside
+// a session.
+func printCodexTrust(out io.Writer, dir string) {
+	// Codex matches the absolute path; "." would never match.
+	if abs, err := filepath.Abs(dir); err == nil {
+		dir = abs
+		// Codex sees the real path (macOS /var -> /private/var).
+		if real, err := filepath.EvalSymlinks(abs); err == nil {
+			dir = real
+		}
+	}
+	fmt.Fprintf(out, `codex: Codex only reads .codex/ in a trusted project. Trust this one in ~/.codex/config.toml (or per run with -c):
+  [projects.%q]
+  trust_level = "trusted"
+codex: the project's default_permissions = "cerne" replaces your own default profile inside this project; it extends :workspace, and -s/-P on the command line still win.
+codex: to check it, inside a Codex session run "printenv CERNE_ACTOR" (it prints agent) and "cerne next" (it runs with no permission error).
+`, dir)
 }
 
 // printHookResults writes one status line per installed hook asset.
