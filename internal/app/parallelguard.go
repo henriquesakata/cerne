@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/henriquesakata/cerne/internal/doccheck"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/store"
 )
@@ -29,6 +30,7 @@ var ErrActiveWorkElsewhere = errors.New("another session is already working on t
 // parallelWork names one active work that collides with a start or an amend.
 // Session is the newest other session bound to it ("" without session
 // evidence, as in the start) and Signal the age of its last signal (F-0485).
+// Card is the live child it was found on, for an amend ("" on the card itself).
 type parallelWork struct {
 	ID      string
 	Actor   string
@@ -36,10 +38,15 @@ type parallelWork struct {
 	Age     time.Duration
 	Session string
 	Signal  time.Duration
+	Card    string
 }
 
 func (p parallelWork) line() string {
-	s := fmt.Sprintf("  %s  actor: %s  age: %s", p.ID, p.Actor, shortAge(p.Age))
+	s := "  " + p.ID
+	if p.Card != "" {
+		s += "  on " + p.Card
+	}
+	s += fmt.Sprintf("  actor: %s  age: %s", p.Actor, shortAge(p.Age))
 	if p.Session != "" {
 		s += fmt.Sprintf("  session: %s signal %s ago", p.Session, shortAge(p.Signal))
 	}
@@ -153,11 +160,109 @@ func guardParallelStart(repoDir, projDir, featureID string, force bool) (forced 
 	if force {
 		return true, warnings, nil
 	}
-	lines := make([]string, 0, len(foreign))
-	for _, p := range foreign {
-		lines = append(lines, p.line())
+	return false, nil, fmt.Errorf("%w (%s):\n%s\nstop and confirm with them before implementing; use --force only if you are taking it over", ErrActiveWorkElsewhere, featureID, workLines(foreign))
+}
+
+// liveChildren is id's direct children still in flight (candidate, approved,
+// in development), sorted by id: cards decomposed from its current text.
+func liveChildren(features []store.Feature, id string) []store.Feature {
+	var out []store.Feature
+	for _, c := range store.ChildrenByParent(features)[id] {
+		if c.State == domain.StateCandidate || c.State == domain.StateApproved || c.State == domain.StateInDevelopment {
+			out = append(out, c)
+		}
 	}
-	return false, nil, fmt.Errorf("%w (%s):\n%s\nstop and confirm with them before implementing; use --force only if you are taking it over", ErrActiveWorkElsewhere, featureID, strings.Join(lines, "\n"))
+	return out
+}
+
+// classifyAmendWorks is classifyParallelWorks over the card id and each of
+// its live children, each work once (F-0485): in the case that motivated it,
+// the other session's work was on the child task, not on the epic.
+func classifyAmendWorks(works []store.Work, features []store.Feature, id string, mine []string, mySession string, sessions map[string][]SessionSignal, now time.Time) (foreign, ambiguous []parallelWork) {
+	cards := []string{id}
+	for _, c := range liveChildren(features, id) {
+		cards = append(cards, c.ID)
+	}
+	seen := map[string]bool{}
+	for _, card := range cards {
+		fs, as := classifyParallelWorks(works, card, mine, mySession, sessions, now)
+		for _, group := range []struct {
+			in  []parallelWork
+			out *[]parallelWork
+		}{{fs, &foreign}, {as, &ambiguous}} {
+			for _, p := range group.in {
+				if seen[p.ID] {
+					continue
+				}
+				seen[p.ID] = true
+				if card != id {
+					p.Card = card
+				}
+				*group.out = append(*group.out, p)
+			}
+		}
+	}
+	return foreign, ambiguous
+}
+
+// guardAmend is the session guard of a spec or plan amend on f (F-0485): the
+// start's guard with session evidence on — the amend is rare, so a refusal
+// after /clear costs one --force, while two agent sessions on one machine
+// share the actor and only the session tells them apart. Without force a
+// foreign work refuses, naming who is on the card, what the amend causes in
+// f's state and what was written against the current text; nothing is
+// written. With force the crossed works' ids come back for the event, their
+// lines in notes. Same-actor works with no session evidence only warn.
+func guardAmend(repoDir string, f store.Feature, doc string, force bool) (crossed, notes []string, err error) {
+	works, err := store.LoadAllWorks(repoDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	features, err := store.LoadAllFeatures(repoDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	sessions := WorkSessions(works, SessionSignals(filepath.Dir(repoDir)))
+	foreign, ambiguous := classifyAmendWorks(works, features, f.ID, myActors(), os.Getenv("CERNE_SESSION"), sessions, time.Now().UTC())
+	for _, p := range ambiguous {
+		notes = append(notes, fmt.Sprintf("warning: %s is active on %s (same actor, no session bound on this machine) — confirm nobody else is working on it", p.ID, cmpOr(p.Card, f.ID)))
+	}
+	var against []string
+	if plan, _ := os.ReadFile(FeatureDocPath(repoDir, f.ID, "plan.md")); doc == "spec" && doccheck.HasRealContent(plan) {
+		against = append(against, "plan.md")
+	}
+	for _, c := range liveChildren(features, f.ID) {
+		against = append(against, fmt.Sprintf("%s (%s)", c.ID, c.State))
+	}
+	effect := string(f.State) + ": the " + doc + " amend takes effect at once, with no re-approval"
+	if f.State == domain.StateApproved && doc == "spec" {
+		effect = "approved: the approval goes stale — 'cerne feature start' refuses until the owner re-approves"
+	}
+	if len(against) > 0 {
+		effect += "\nwritten against the current " + doc + ": " + strings.Join(against, ", ")
+	}
+	if len(foreign) > 0 && !force {
+		return nil, nil, fmt.Errorf("%w (%s or its live children):\n%s\n%s\nstop and confirm with them before amending; use --force to amend anyway", ErrActiveWorkElsewhere, f.ID, workLines(foreign), effect)
+	}
+	if len(foreign) > 0 {
+		notes = append(notes, "forced past active work of another session or actor:\n"+workLines(foreign))
+	}
+	for _, p := range foreign {
+		crossed = append(crossed, p.ID)
+	}
+	if f.State == domain.StateInDevelopment {
+		notes = append(notes, strings.Replace(effect, "the current", "the previous", 1))
+	}
+	return crossed, notes, nil
+}
+
+// workLines renders one line per work, joined.
+func workLines(ps []parallelWork) string {
+	lines := make([]string, len(ps))
+	for i, p := range ps {
+		lines[i] = p.line()
+	}
+	return strings.Join(lines, "\n")
 }
 
 // sessionBindingsIn reads the session→entity bindings under cacheDir as is
