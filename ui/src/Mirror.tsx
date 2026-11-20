@@ -85,6 +85,7 @@ export default function Mirror() {
 
   const runCheck = async () => {
     setChecking(true)
+    setCappedLines([])
     const out = await postMirrorCheck()
     setChecking(false)
     if (out.kind === 'off') return setStatus(t.mirror.checkOff)
@@ -135,12 +136,14 @@ export default function Mirror() {
                     >
                       {checking ? t.mirror.checking : t.mirror.check}
                     </button>
-                    <p role="status">{status}</p>
-                    {cappedLines.map((l) => (
-                      <p key={l} className="muted">
-                        {l}
-                      </p>
-                    ))}
+                    <div role="status">
+                      <p>{status}</p>
+                      {cappedLines.map((l) => (
+                        <p key={l} className="muted">
+                          {l}
+                        </p>
+                      ))}
+                    </div>
                   </div>
                   <p className="muted mirror-check-hint">{t.mirror.checkHint}</p>
                 </>

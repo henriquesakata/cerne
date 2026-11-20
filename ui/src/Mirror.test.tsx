@@ -312,6 +312,32 @@ describe('Mirror — list cap in Check now (F-0469 crits. 3 and 4)', () => {
     expect(screen.queryByText(/beta: .*100/)).toBeNull()
   })
 
+  it('the cap line is inside the live status region', async () => {
+    api.postMirrorCheck.mockResolvedValue(capped)
+    renderMirror()
+    fireEvent.click(await screen.findByRole('button', { name: 'Check now' }))
+    const line = await screen.findByText(/alpha: .*100.* 2 cards/)
+    expect(screen.getByRole('status')).toContainElement(line)
+  })
+
+  it('a later check that answers off or fails clears the cap line', async () => {
+    api.postMirrorCheck.mockResolvedValue(capped)
+    renderMirror()
+    fireEvent.click(await screen.findByRole('button', { name: 'Check now' }))
+    await screen.findByText(/alpha: .*100.* 2 cards/)
+    api.postMirrorCheck.mockResolvedValue({ kind: 'off' })
+    fireEvent.click(screen.getByRole('button', { name: 'Check now' }))
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('The mirror is off'))
+    expect(screen.queryByText(/alpha: .*100/)).toBeNull()
+    api.postMirrorCheck.mockResolvedValue(capped)
+    fireEvent.click(screen.getByRole('button', { name: 'Check now' }))
+    await screen.findByText(/alpha: .*100.* 2 cards/)
+    api.postMirrorCheck.mockResolvedValue({ kind: 'error', message: 'HTTP 500' })
+    fireEvent.click(screen.getByRole('button', { name: 'Check now' }))
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('The check failed'))
+    expect(screen.queryByText(/alpha: .*100/)).toBeNull()
+  })
+
   it('shows no line when no result is list-capped', async () => {
     renderMirror()
     fireEvent.click(await screen.findByRole('button', { name: 'Check now' }))
