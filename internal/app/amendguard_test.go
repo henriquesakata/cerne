@@ -82,7 +82,7 @@ func seedEpicWithBoundChild(t *testing.T, state domain.FeatureState) (repoDir, p
 // state, and what was written against the current text.
 func TestAmendRefusesAnotherSessionsCard(t *testing.T) {
 	for _, tc := range []struct {
-		state      domain.FeatureState
+		state       domain.FeatureState
 		consequence string
 	}{
 		{domain.StateApproved, "the approval goes stale"},
