@@ -1,47 +1,49 @@
 package refresh
 
 import (
-	"os/exec"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func latestTag(t *testing.T) string {
-	t.Helper()
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not available")
+// F-0477 crit. 8: what this build writes must be in the committed list, so a
+// managed file changed without `go run ./tools/knowncontents` fails here. It
+// needs no tags, so it never skips in CI.
+func TestKnownCoversTheCurrentBuild(t *testing.T) {
+	if len(Current()) == 0 {
+		t.Fatal("this build's install read back no managed item")
 	}
-	out, err := exec.Command("git", "tag", "-l", "v*", "--sort=-v:refname").Output()
-	if err != nil {
-		t.Skip("not in a git checkout")
+	if missing := missingContent(Current(), known); len(missing) > 0 {
+		t.Fatalf("known_contents.json lacks this build's content for %s: run `go run ./tools/knowncontents` and commit it", strings.Join(missing, ", "))
 	}
-	for _, tag := range strings.Fields(string(out)) {
-		if !strings.Contains(tag, "-") { // a stable release
-			return tag
+}
+
+func TestKnownMissingContentFails(t *testing.T) {
+	cur := map[string]string{".claude/hooks/a.sh": "new", "AGENTS.md": "same"}
+	list := Contents{Known: map[string][]string{".claude/hooks/a.sh": {"old"}, "AGENTS.md": {"same"}}}
+	got := missingContent(cur, list)
+	if len(got) != 1 || got[0] != ".claude/hooks/a.sh" {
+		t.Fatalf("missing = %v, want the changed script named by path", got)
+	}
+	list.Known[".claude/hooks/a.sh"] = append(list.Known[".claude/hooks/a.sh"], "new")
+	if got := missingContent(cur, list); len(got) != 0 {
+		t.Fatalf("a covered build still fails: %v", got)
+	}
+}
+
+// C3: reading this build's install back writes nothing outside its scratch
+// folder: not the home, not the XDG config.
+func TestCurrentWritesOnlyInItsScratchFolder(t *testing.T) {
+	home, xdg := t.TempDir(), t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	if err := InstallAll(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range []string{home, xdg} {
+		if entries, _ := os.ReadDir(d); len(entries) > 0 {
+			t.Errorf("the install wrote into %s: %v", filepath.Base(d), entries)
 		}
-	}
-	t.Skip("no release tag in this checkout")
-	return ""
-}
-
-func TestKnownCoversTheLatestTag(t *testing.T) {
-	tag := latestTag(t)
-	if msg := missingRelease(known, tag); msg != "" {
-		t.Fatal(msg)
-	}
-}
-
-func TestKnownMissingReleaseFails(t *testing.T) {
-	c := Contents{Tags: map[string]string{"v0.1.0": ""}}
-	if msg := missingRelease(c, "v0.2.0"); !strings.Contains(msg, "v0.2.0") {
-		t.Fatalf("a list without the latest tag must fail naming it, got %q", msg)
-	}
-	c.Tags["v0.2.0"] = "does not build"
-	if msg := missingRelease(c, "v0.2.0"); !strings.Contains(msg, "does not build") {
-		t.Fatalf("a skipped latest tag must fail with the reason, got %q", msg)
-	}
-	c.Tags["v0.2.0"] = ""
-	if msg := missingRelease(c, "v0.2.0"); msg != "" {
-		t.Fatalf("a covered tag passes, got %q", msg)
 	}
 }
