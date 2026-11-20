@@ -107,6 +107,79 @@ func TestChannelDirectedTo(t *testing.T) {
 	}
 }
 
+// TestChannelHumanAddressedToEveryLiveWork (B-0054 crit. 2): a human message
+// that names nobody is addressed to every session with a live work — it
+// repeats with the protocol line until that work answers or acks — and reaches
+// a session with no work once, unaddressed.
+func TestChannelHumanAddressedToEveryLiveWork(t *testing.T) {
+	f := newChanFixture(t)
+	seq := f.post("Henrique", "se receberem esta mensagem, podem dizer qual atividade estão fazendo?", true)
+	want := fmt.Sprintf("#%d Henrique (human) → you: se receberem", seq)
+	ack := fmt.Sprintf(" or cerne msg ack %d\n", seq)
+	for i := range 2 {
+		for _, sess := range []string{"s1", "s2"} {
+			if out := f.inject(sess, true); !strings.Contains(out, want) || !strings.HasSuffix(out, ack) {
+				t.Fatalf("%s injection %d = %q, want the addressed human message and its protocol line", sess, i+1, out)
+			}
+		}
+	}
+	acked, _, err := ChannelAck(f.cacheDir, f.repoDir, "s2", []int{seq}, f.at)
+	if err != nil || !slices.Equal(acked, []int{seq}) {
+		t.Fatalf("ack of the human message = %v, %v", acked, err)
+	}
+	if out := f.inject("s2", true); out != "" {
+		t.Fatalf("after the ack: %q, want zero bytes", out)
+	}
+	f.post("W-0001", "implementando o B-0054", false)
+	if out := f.inject("s1", true); out != "" {
+		t.Fatalf("after the answer: %q, want zero bytes", out)
+	}
+	if out := f.inject("s-none", true); !strings.Contains(out, fmt.Sprintf("#%d Henrique (human): se", seq)) || strings.Contains(out, "→ you") {
+		t.Fatalf("session with no work = %q, want the human message once, unaddressed", out)
+	}
+	if out := f.inject("s-none", true); strings.Contains(out, "Henrique") {
+		t.Fatalf("session with no work got the human message twice: %q", out)
+	}
+	f.at = f.at.Add(time.Second)
+	if text, _ := ChannelStopReminder(f.cacheDir, f.repoDir, "s3", f.at); !strings.Contains(text, want) {
+		t.Fatalf("Stop reminder of a live work = %q, want the unanswered human message", text)
+	}
+}
+
+// TestChannelHumanTargetsLiveWorks (B-0054 crit. 2/3): a human broadcast
+// targets every live work — not an active work with no session here — and is
+// not_delivered until each was shown it, answered once each answered or acked.
+func TestChannelHumanTargetsLiveWorks(t *testing.T) {
+	f := newChanFixture(t)
+	saveChanWork(t, f.repoDir, "W-0004", nil, nil) // active, no session on this machine
+	seq := f.post("Henrique", "alguém aí?", true)
+	check := func(state string, perWork map[string]string) {
+		t.Helper()
+		msgs, _ := f.read("")
+		got := stateOf(t, msgs, seq)
+		works := map[string]string{}
+		for _, tg := range got.Targets {
+			works[tg.Work] = tg.State
+		}
+		if got.State != state || !got.Directed || !maps.Equal(works, perWork) {
+			t.Fatalf("state = %s directed=%v targets %v, want %s %v", got.State, got.Directed, works, state, perWork)
+		}
+	}
+	nd := ChannelNotDelivered
+	check(nd, map[string]string{"W-0001": nd, "W-0002": nd, "W-0003": nd})
+	f.inject("s1", true)
+	check(nd, map[string]string{"W-0001": ChannelDelivered, "W-0002": nd, "W-0003": nd})
+	f.inject("s2", true)
+	f.inject("s3", true)
+	check(ChannelDelivered, map[string]string{"W-0001": ChannelDelivered, "W-0002": ChannelDelivered, "W-0003": ChannelDelivered})
+	f.post("W-0001", "eu: B-0054", false)
+	f.post("W-0002", "eu: revisão", false)
+	if _, _, err := ChannelAck(f.cacheDir, f.repoDir, "s3", []int{seq}, f.at); err != nil {
+		t.Fatal(err)
+	}
+	check(ChannelAnswered, map[string]string{"W-0001": ChannelAnswered, "W-0002": ChannelAnswered, "W-0003": ChannelAnswered})
+}
+
 // TestChannelExpiry (F-0325 crit. 20): an agent message lives 24h or until its
 // sender's work closes, whichever comes first; a human message only 24h.
 func TestChannelExpiry(t *testing.T) {
@@ -813,8 +886,9 @@ func TestChannelStopReminderWithinBudget(t *testing.T) {
 
 // TestChannelHumansNeverSilentlyConsumed (critic C6): a human message that
 // does not fit inline stays pending for that session — the next injections
-// show it — so a session with 23 human messages pending eventually sees every
-// one inline and none ends not_delivered.
+// show the ones it has not seen first — so a session with 23 human messages
+// pending sees every one inline within a few contact points and none ends
+// not_delivered for its work.
 func TestChannelHumansNeverSilentlyConsumed(t *testing.T) {
 	f := newChanFixture(t)
 	var humans []int
@@ -822,14 +896,11 @@ func TestChannelHumansNeverSilentlyConsumed(t *testing.T) {
 		humans = append(humans, f.post("Henrique", ptBody(fmt.Sprintf("humano %d", i), 400), true))
 	}
 	seen := map[int]bool{}
-	for round := 0; ; round++ {
-		out := f.inject("s2", true)
-		if out == "" {
-			break
-		}
+	for round := 0; len(seen) < len(humans); round++ {
 		if round == 5 {
-			t.Fatalf("still injecting after 5 rounds:\n%s", out)
+			t.Fatalf("after 5 rounds only %d of %d humans shown inline: %v", len(seen), len(humans), seen)
 		}
+		out := f.inject("s2", true)
 		if tokens := (len(out) + 3) / 4; tokens > 400 {
 			t.Fatalf("round %d = %d tokens", round, tokens)
 		}
@@ -839,11 +910,10 @@ func TestChannelHumansNeverSilentlyConsumed(t *testing.T) {
 	}
 	msgs, _ := f.read("")
 	for _, seq := range humans {
-		if !seen[seq] {
-			t.Fatalf("human #%d never shown inline (seen %v)", seq, seen)
-		}
-		if got := stateOf(t, msgs, seq); got.State == ChannelNotDelivered {
-			t.Fatalf("human #%d left not_delivered: %+v", seq, got)
+		for _, tg := range stateOf(t, msgs, seq).Targets {
+			if tg.Work == "W-0002" && tg.State != ChannelDelivered {
+				t.Fatalf("human #%d is %s for W-0002, want delivered", seq, tg.State)
+			}
 		}
 	}
 }
@@ -861,7 +931,7 @@ func TestChannelLongHumanNameKeepsTheCap(t *testing.T) {
 	if n := len(injectedBodies(out)); n < 5 {
 		t.Fatalf("%d inline with a long human name, want >= 5:\n%s", n, out)
 	}
-	if (len(out)+3)/4 > 400 || !strings.Contains(out, strings.Repeat("𝕳", 24)+"… (human): ") {
+	if (len(out)+3)/4 > 400 || !strings.Contains(out, strings.Repeat("𝕳", 24)+"… (human) → you: ") {
 		t.Fatalf("name not cut to 24 runes, or over budget:\n%s", out)
 	}
 }
@@ -876,11 +946,14 @@ func TestChannelProtocolLineTruthful(t *testing.T) {
 		f.post("Henrique", fmt.Sprintf("humano %d", i), true)
 	}
 	out := f.inject("s1", true)
-	if strings.Contains(out, "→ you") || !strings.Contains(out, "+1 more") {
+	if strings.Contains(out, "#1 ") || !strings.Contains(out, "+1 more") {
 		t.Fatalf("want the addressed message counted, not inline:\n%s", out)
 	}
-	if !strings.HasSuffix(out, "↳ addressed to you, not shown above: read it with cerne msg read\n") || strings.Contains(out, "ack") {
-		t.Fatalf("protocol line not pointing at the read:\n%s", out)
+	// The inline humans are addressed too (B-0054): the ack names only them,
+	// and one more line points at the read for the counted one.
+	if !strings.Contains(out, "cerne msg ack 2 3 4 5 6\n") ||
+		!strings.HasSuffix(out, "↳ more addressed to you, not shown above: read them with cerne msg read\n") {
+		t.Fatalf("protocol lines not truthful about the counted message:\n%s", out)
 	}
 }
 
