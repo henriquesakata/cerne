@@ -349,27 +349,36 @@ func TestServeRefusesMalformedPID(t *testing.T) {
 	t.Setenv(serveProjectsEnv, "")
 	origin := seedBareBackend(t, "Escape")
 	h := NewMultiProject("s3cret")
-	for _, pid := range []string{"..%2F..%2Fescape", "%2E%2E", "a%2Fb", "a%5Cb", "a.b"} {
-		if rec := doMP(t, h, http.MethodPut, "/api/projects/"+pid, `{"backend":"`+origin+`"}`, "s3cret", nil); rec.Code != http.StatusNotFound {
-			t.Errorf("PUT /api/projects/%s = %d %s, want 404", pid, rec.Code, rec.Body.String())
-		}
-		if rec := doMP(t, h, http.MethodGet, "/api/projects/"+pid+"/state", "", "s3cret", nil); rec.Code != http.StatusNotFound {
-			t.Errorf("GET /api/projects/%s/state = %d %s, want 404", pid, rec.Code, rec.Body.String())
+	// A registered project, so a traversal that lands on its directory would
+	// read it: the 404 below is the shape check's, not "not registered".
+	if rec := doMP(t, h, http.MethodPut, "/api/projects/acme", `{"backend":"`+origin+`"}`, "s3cret", nil); rec.Code != http.StatusOK {
+		t.Fatalf("PUT /api/projects/acme = %d %s, want 200", rec.Code, rec.Body.String())
+	}
+	refused := func(method, target, body string) {
+		t.Helper()
+		rec := doMP(t, h, method, target, body, "s3cret", nil)
+		if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "not a project id") {
+			t.Errorf("%s %s = %d %s, want 404 not a project id", method, target, rec.Code, rec.Body.String())
 		}
 	}
+	for _, pid := range []string{"..%2F..%2Fescape", "%2E%2E", "a%2Fb", "a%5Cb", "a.b", strings.Repeat("a", 129)} {
+		refused(http.MethodPut, "/api/projects/"+pid, `{"backend":"`+origin+`"}`)
+		refused(http.MethodGet, "/api/projects/"+pid+"/state", "")
+	}
+	refused(http.MethodGet, "/api/projects/x%2F..%2Facme/state", "") // resolves to acme's clone without the check
 	if _, err := os.Stat(filepath.Join(base, "escape")); !os.IsNotExist(err) {
 		t.Fatalf("a malformed pid created a directory outside the cache root: stat err = %v", err)
 	}
 }
 
-// TestServeAcceptsProjectIDShapes: a slug (cerne init's project_id) and a
-// UUID (the hub's project id) are well-formed pids and register.
+// TestServeAcceptsProjectIDShapes: a slug (cerne init's project_id), a UUID
+// (the hub's project id) and a pid at the 128-character limit register.
 func TestServeAcceptsProjectIDShapes(t *testing.T) {
 	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
 	t.Setenv(serveProjectsEnv, "")
 	origin := seedBareBackend(t, "Shapes")
 	h := NewMultiProject("s3cret")
-	for _, pid := range []string{"acme-hub", "3f2c9a1e-7b4d-4c1a-9e2f-0a1b2c3d4e5f", "Proj_1"} {
+	for _, pid := range []string{"acme-hub", "3f2c9a1e-7b4d-4c1a-9e2f-0a1b2c3d4e5f", "Proj_1", strings.Repeat("a", 128)} {
 		if rec := doMP(t, h, http.MethodPut, "/api/projects/"+pid, `{"backend":"`+origin+`"}`, "s3cret", nil); rec.Code != http.StatusOK {
 			t.Errorf("PUT /api/projects/%s = %d %s, want 200", pid, rec.Code, rec.Body.String())
 		}
