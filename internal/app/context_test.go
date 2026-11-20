@@ -70,7 +70,8 @@ func contextFixture(t *testing.T) string {
 	write("content/features/E-0001/spec.md", "# Epic\n\n## Problem\n\nThe epic cites [[D-0001]] and [[N-0004]].\n")
 	feat("T-0002", "Assemble the package of a task", "E-0001", domain.StateInDevelopment, "cli", "hooks")
 	write("content/features/T-0002/spec.md", "# Task\n\n## Problem\n\nThe package gathers what informs a task from the search index.\n\n"+
-		"It follows [[N-0001]], not the done [[F-0009]], next to the live [[F-0010]], the source [[R-0001]] and the runbook [[RB-0001]].\n")
+		"It follows [[N-0001]], not the done [[F-0009]], next to the live [[F-0010]], the source [[R-0001]] and the runbook [[RB-0001]]; "+
+		"the superseded [[N-0013]], the resolved [[P-0001]], the open [[P-0002]], the promoted [[I-0001]], the untitled [[I-0002]] and the done [[W-0001]].\n")
 	write("content/features/T-0002/plan.md", "# Plan\n\nTouch `internal/cli/contextcmd.go` and `internal/hooks/rules.go:12`, never `https://example.com/a/b`; branch from `origin/main`, the folder `internal/lint` aside.\n")
 	feat("F-0009", "Done feature", "", domain.StateDone, "cli")
 	feat("F-0010", "Live feature", "", domain.StateApproved)
@@ -91,6 +92,24 @@ func contextFixture(t *testing.T) string {
 	note("N-0009", domain.NoteActive, "", nil, nil, "How the package gathers from the search index.")
 	note("N-0011", domain.NoteActive, "", nil, nil, "Plain words.", "cli")
 	note("N-0012", domain.NoteActive, "", nil, nil, "Rebase on origin/main, never internal/lint/x.go.")
+	note("N-0013", domain.NoteSuperseded, "", nil, nil, "Old words.")
+	note("N-0014", domain.NoteSuperseded, "", []string{"T-0002"}, nil, "Old words.")
+	for id, st := range map[string]domain.PendingState{"P-0001": domain.PendingResolved, "P-0002": domain.PendingOpen} {
+		if err := store.SavePending(repo, store.Pending{ID: id, Title: "Pending " + id, State: st, CreatedAt: now, UpdatedAt: now}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, i := range []store.Idea{
+		{ID: "I-0001", Title: "Promoted idea", State: domain.IdeaPromoted, CreatedAt: now},
+		{ID: "I-0002", Body: "First line of the idea\nmore of it", State: domain.IdeaActive, CreatedAt: now},
+	} {
+		if err := store.SaveIdea(repo, i); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.SaveWork(repo, store.Work{ID: "W-0001", Title: "Finished work", State: domain.WorkDone}); err != nil {
+		t.Fatal(err)
+	}
 	note("N-0010", domain.NoteSuperseded, "", nil, nil, "The package of a task from the search index.", "cli")
 	ref("R-0001", domain.ReferenceCurrent, nil)
 	ref("R-0002", domain.ReferenceCurrent, []string{"N-0001"})
@@ -128,7 +147,8 @@ func TestTaskContextRings(t *testing.T) {
 	}
 	want := []ringID{
 		{"a", "N-0001"}, {"a", "F-0010"}, {"a", "R-0001"}, {"a", "RB-0001"}, // the task's spec cites them, in order
-		{"a", "N-0002"}, {"a", "R-0003"}, // they inform the task
+		{"a", "P-0002"}, {"a", "I-0002"}, // in force; the superseded note, the resolved pending, the promoted idea and the done work are not
+		{"a", "N-0002"}, {"a", "R-0003"}, // they inform the task (the superseded N-0014 does not count)
 		{"a", "D-0001"}, {"a", "N-0004"}, // the epic's spec cites them
 		{"b", "N-0003"}, {"b", "N-0005"}, // a trigger, then a citation, of a path the plan cites
 		{"c", "N-0006"}, {"c", "N-0008"}, {"c", "N-0007"}, {"c", "N-0011"}, // hooks (2 active notes) before cli (3); N-0008 enters by hooks
@@ -149,6 +169,9 @@ func TestTaskContextRings(t *testing.T) {
 	}
 	if n := byID["N-0001"]; n.Gist != "gist one" || !reflect.DeepEqual(n.Sources, []string{"R-0002"}) || n.Kind != "note" {
 		t.Fatalf("N-0001 = %+v, want its gist and the reference that sustains it", n)
+	}
+	if i := byID["I-0002"]; i.Title != "First line of the idea" || i.Kind != "idea" {
+		t.Fatalf("an untitled idea = %+v, want its first line as the title", i)
 	}
 	if byID["N-0003"].Why != "edit:internal/hooks/**" || byID["N-0005"].Why != "internal/cli/contextcmd.go" || byID["N-0006"].Why != "hooks" {
 		t.Fatalf("why: %+v %+v %+v", byID["N-0003"], byID["N-0005"], byID["N-0006"])
@@ -204,10 +227,10 @@ func TestTaskContextBudget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(tiny.Items) != 0 || tiny.Doc != full.Doc || !reflect.DeepEqual(tiny.Omitted, map[string]int{"a": 8, "b": 2, "c": 4, "d": 1}) {
+	if len(tiny.Items) != 0 || tiny.Doc != full.Doc || !reflect.DeepEqual(tiny.Omitted, map[string]int{"a": 10, "b": 2, "c": 4, "d": 1}) {
 		t.Fatalf("budget 1: items %v, omitted %v, doc kept %v", ringIDs(tiny.Items), tiny.Omitted, tiny.Doc == full.Doc)
 	}
-	if last := lastLine(tiny.Text()); !strings.Contains(last, "a 8 · b 2 · c 4 · d 1") || !strings.Contains(last, "cerne show <id>") {
+	if last := lastLine(tiny.Text()); !strings.Contains(last, "a 10 · b 2 · c 4 · d 1") || !strings.Contains(last, "cerne show <id>") {
 		t.Fatalf("last line %q does not say what was omitted and how to read it", last)
 	}
 	// A budget that holds the fixed part and a few short lines.

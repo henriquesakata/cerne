@@ -239,6 +239,9 @@ func (t task) neighbourhood(repoDir string, notes []store.Note, refs []store.Ref
 		}
 		it := ContextItem{ID: id, Ring: ring, Why: why}
 		if n, ok := byID[id]; ok {
+			if n.State != domain.NoteActive { // a superseded rule never reaches the agent as one in force
+				return
+			}
 			it.Kind, it.Title, it.State, it.Gist, it.Sources = "note", n.Title, string(n.State), n.Gist, sources[id]
 		} else if !full {
 			return
@@ -250,7 +253,7 @@ func (t task) neighbourhood(repoDir string, notes []store.Note, refs []store.Ref
 			it.Kind, it.Title, it.State = "feature", f.Title, string(f.State)
 		} else {
 			m, kind, err := store.LoadMeta(repoDir, id)
-			if err != nil {
+			if err != nil || !inForce(kind, m.State) {
 				return
 			}
 			it.Kind, it.Title, it.State = kind, m.Title, m.State
@@ -577,8 +580,17 @@ func ringCounts(items []ContextItem) map[string]int {
 	return out
 }
 
-// historyStates mark a linked entity that is no longer in force.
-var historyStates = []string{"superseded", "rejected", "retired"}
+// inForce reports whether a linked entity that is not a feature is still in
+// force: active, current, open (a pending, also while a feature pays it) or
+// pending (a handoff). Superseded, retired and obsolete entities, closed
+// pendings and ideas, finished works and historicals are history (criterion
+// 19: history enters only as a count).
+func inForce(kind, state string) bool {
+	if kind == "pending" && state == string(domain.PendingPromoted) {
+		return true
+	}
+	return state == "active" || state == "current" || state == "open" || state == "pending"
+}
 
 // line is the item as the package prints it.
 func (it ContextItem) line(compact bool) string {
@@ -586,9 +598,6 @@ func (it ContextItem) line(compact bool) string {
 		return fmt.Sprintf("[%s] %s  %s\n", it.Ring, it.ID, it.Title)
 	}
 	s := fmt.Sprintf("[%s] %s  %s  %s", it.Ring, it.ID, it.Kind, it.Title)
-	if slices.Contains(historyStates, it.State) {
-		s += " [" + it.State + "]"
-	}
 	if it.Gist != "" {
 		s += " — " + it.Gist
 	}
