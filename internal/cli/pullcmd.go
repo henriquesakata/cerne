@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -94,7 +95,7 @@ func runPull(cmd *cobra.Command, dir, scope string, okfFlag, force, syncSkillsFl
 		if err != nil {
 			return err
 		}
-		var mine map[string][]byte
+		var mine, stashed map[string][]byte
 		prevBlocks, err := store.LoadErrataBlocks(docsDir) // before the wipe
 		if err != nil {
 			return err
@@ -108,6 +109,9 @@ func runPull(cmd *cobra.Command, dir, scope string, okfFlag, force, syncSkillsFl
 			if err != nil {
 				return err
 			}
+			if stashed, err = readConflictCopies(docsDir); err != nil {
+				return err
+			}
 		}
 
 		manifest, err = materialize.MaterializeAt(ctx.repoDir, docsDir, scope, okf, ctx.cfg.RecentWorkWindowDays(), time.Now())
@@ -119,6 +123,9 @@ func runPull(cmd *cobra.Command, dir, scope string, okfFlag, force, syncSkillsFl
 			if err != nil {
 				return err
 			}
+		}
+		if conflicts, err = keepConflictCopies(docsDir, stashed, mine, conflicts); err != nil {
+			return err
 		}
 
 		head, err = gitback.HeadSHA(ctx.repoDir)
@@ -266,10 +273,11 @@ func readBodies(docsDir string, rels []string) (map[string][]byte, error) {
 // materialized .docs/ (theirs), guided by the pre-pull manifest (base hashes).
 // Disjoint edits are restored. A document changed on both sides is merged line
 // by line over its version at prevSnap (B-0041) and stays unsent; when the
-// hunks overlap, or there is no base, it keeps MINE in place (non-destructive),
-// stashes THEIRS under .docs/.conflicts/, and is left flagged unsent (fresh[rel]
-// reset to base) so it is not lost. It mutates fresh for conflicts and returns
-// the conflicting and the merged paths, sorted.
+// hunks overlap, or there is no base, it keeps MINE in place (non-destructive)
+// and stashes THEIRS under .docs/.conflicts/. Either way the manifest keeps
+// THEIRS as the version .docs/ last received, which is what push checks its
+// base against; the stash, not the manifest, holds the push back until the
+// conflict is reconciled. It returns the conflicting and the merged paths, sorted.
 func reapplyUnsent(repoDir, prevSnap, docsDir string, prev, fresh map[string]string, mine map[string][]byte, prevBlocks map[string]string) (conflicts, merged []string, err error) {
 	newBlocks, err := store.LoadErrataBlocks(docsDir)
 	if err != nil {
@@ -320,15 +328,14 @@ func reapplyUnsent(repoDir, prevSnap, docsDir string, prev, fresh map[string]str
 					continue
 				}
 			}
-			// Overlapping hunks: keep MINE visible, stash THEIRS, and keep it
-			// unsent (so nothing is silently discarded).
+			// Overlapping hunks: keep MINE visible (unsent, as it differs from
+			// theirs) and stash THEIRS, so nothing is silently discarded.
 			if err := saveConflictCopy(docsDir, rel, theirs); err != nil {
 				return nil, nil, err
 			}
 			if err := writeDocsFile(docsDir, rel, grafted); err != nil {
 				return nil, nil, err
 			}
-			fresh[rel] = baseHash
 			conflicts = append(conflicts, rel)
 		}
 	}
@@ -370,6 +377,49 @@ func saveConflictCopy(docsDir, rel string, theirs []byte) error {
 		return err
 	}
 	return os.WriteFile(p, theirs, 0o644)
+}
+
+// readConflictCopies reads every stashed remote copy under .docs/.conflicts/,
+// keyed by the .docs-relative path of its document, before materialize wipes
+// .docs/ (keepConflictCopies puts them back).
+func readConflictCopies(docsDir string) (map[string][]byte, error) {
+	root := filepath.Join(docsDir, ".conflicts")
+	copies := map[string][]byte{}
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, walkErr error) error {
+		if errors.Is(walkErr, fs.ErrNotExist) {
+			return nil
+		}
+		if walkErr != nil || d.IsDir() {
+			return walkErr
+		}
+		rel, err := filepath.Rel(root, p)
+		if err != nil {
+			return err
+		}
+		body, err := os.ReadFile(p)
+		copies[filepath.ToSlash(rel)] = body
+		return err
+	})
+	return copies, err
+}
+
+// keepConflictCopies puts back the stashed copy of each document that is
+// still unsent: deleting the copy is the only thing that reconciles it, so a
+// pull must not (B-0041). Each is reported with this pull's conflicts; a copy
+// this pull re-stashed is already fresher. The copy of a document with no
+// unsent edit is dropped: there is nothing left to reconcile.
+func keepConflictCopies(docsDir string, stashed, mine map[string][]byte, conflicts []string) ([]string, error) {
+	for rel, body := range stashed {
+		if _, unsent := mine[rel]; !unsent || slices.Contains(conflicts, rel) {
+			continue
+		}
+		if err := saveConflictCopy(docsDir, rel, body); err != nil {
+			return nil, err
+		}
+		conflicts = append(conflicts, rel)
+	}
+	sort.Strings(conflicts)
+	return conflicts, nil
 }
 
 func conflictCopyPath(docsDir, rel string) string {
