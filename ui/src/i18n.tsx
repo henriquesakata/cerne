@@ -846,6 +846,7 @@ const ptBR = {
       revert: 'Reverter',
     } satisfies Record<TransitionAction, string>,
     actions: 'Ações',
+    approval: 'Aprovação',
     staleApproval:
       'A spec mudou desde a aprovação: a aprovação venceu e o Iniciar fica bloqueado até reaprovar (ou reverta ao Backlog). Mudou isto:',
     reapprove: 'Reaprovar',
@@ -2383,6 +2384,7 @@ const en: Messages = {
       revert: 'Revert',
     },
     actions: 'Actions',
+    approval: 'Approval',
     staleApproval:
       'The spec changed since approval: the approval is stale and Start is blocked until it is re-approved (or revert to the Backlog). What changed:',
     reapprove: 'Re-approve',
