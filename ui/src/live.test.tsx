@@ -534,8 +534,11 @@ describe('LiveProvider — reinício no binário novo (F-0478)', () => {
     expect(screen.getByText('p1')).toBeInTheDocument() // a aba não troca de projeto
 
     vi.mocked(fetchProjects).mockImplementation(only(mockProjects))
+    sessionStorage.clear() // a aba que chegou pelo link do `cerne ui` não guardou escolha
     await act(async () => onProjects())
     expect(pageReload.run).toHaveBeenCalledTimes(1)
+    // A recarga volta no projeto da aba, não no padrão do painel (p2).
+    expect(sessionStorage.getItem('cerne.activePid')).toBe('p1')
   })
 
   it('critério 5: projeto que não volta recarrega mesmo assim depois de 15 s', async () => {

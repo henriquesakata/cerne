@@ -141,6 +141,9 @@ export function LiveProvider({ children }: { children: ReactNode }) {
             // a página fica e o aviso oferece recarregar depois.
             if (navAllowed()) {
               setNavGuard(null)
+              // A aba que veio pelo link do `cerne ui` não guardou escolha: sem
+              // isto a recarga cairia no projeto padrão do painel.
+              if (activeRef.current) sessionStorage.setItem(STORAGE_KEY, activeRef.current)
               pageReload.run()
               return
             }
@@ -248,7 +251,13 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       {updatedTo ? (
         <div className="load-notice live-refresh-notice advisory" role="status">
           <p>{t.live.panelUpdated(shortVersion(updatedTo))}</p>
-          <button type="button" onClick={() => pageReload.run()}>
+          <button
+            type="button"
+            onClick={() => {
+              if (activeRef.current) sessionStorage.setItem(STORAGE_KEY, activeRef.current)
+              pageReload.run()
+            }}
+          >
             {t.live.reloadPage}
           </button>
         </div>
