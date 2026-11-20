@@ -405,7 +405,7 @@ func NewUIMulti(ctx context.Context, resolve Resolver, pullInterval time.Duratio
 		writeJSON(w, http.StatusNotFound, errorBody("route not found"))
 	})
 	mux.Handle("/", spaHandler())
-	return localWrites(mux), nil
+	return localOnly(mux), nil
 }
 
 var (

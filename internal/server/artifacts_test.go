@@ -33,7 +33,7 @@ func TestArtifactGet(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	New(repoDir, projDir, "").ServeHTTP(rec,
-		httptest.NewRequest(http.MethodGet, "/api/artifacts/F-0001/seq.excalidraw", nil))
+		localRequest(http.MethodGet, "/api/artifacts/F-0001/seq.excalidraw", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
 	}
@@ -69,7 +69,7 @@ func TestArtifactGetTraversalRejected(t *testing.T) {
 		"/api/artifacts/F-0001/..%5Csecret.excalidraw",
 	} {
 		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
+		h.ServeHTTP(rec, localRequest(http.MethodGet, target, nil))
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("GET %s status = %d, want 400; body: %s", target, rec.Code, rec.Body.String())
 		}
@@ -195,7 +195,7 @@ func TestArtifactGetMmd(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	New(repoDir, projDir, "").ServeHTTP(rec,
-		httptest.NewRequest(http.MethodGet, "/api/artifacts/F-0001/sequence.mmd", nil))
+		localRequest(http.MethodGet, "/api/artifacts/F-0001/sequence.mmd", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
 	}

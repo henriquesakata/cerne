@@ -51,7 +51,7 @@ func seedProcessPerf(t *testing.T, repoDir string, n int, stamp bool) {
 func getProcessPerf(t *testing.T, repoDir, projDir string) (stats.ProcessReport, string) {
 	t.Helper()
 	rec := httptest.NewRecorder()
-	New(repoDir, projDir, "proj").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/process-perf", nil))
+	New(repoDir, projDir, "proj").ServeHTTP(rec, localRequest(http.MethodGet, "/api/process-perf", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}

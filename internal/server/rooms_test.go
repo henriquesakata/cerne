@@ -136,7 +136,7 @@ func TestRoomSessionNeverLeaksInPublicReads(t *testing.T) {
 	sess := joinAs(t, h, opened.ID, "alice")
 
 	for _, path := range []string{"/api/rooms", "/api/rooms/" + opened.ID + "/messages?since=0"} {
-		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req := localRequest(http.MethodGet, path, nil)
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 		if strings.Contains(rec.Body.String(), sess.SessionID) {
@@ -278,7 +278,7 @@ func TestRoomReadAuthenticatedProjectsOwn(t *testing.T) {
 	doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/messages", `{"session_id":"`+alice.SessionID+`","body":"minha"}`, &messageJSON{})
 	doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/messages", `{"session_id":"`+bob.SessionID+`","body":"do bob"}`, &messageJSON{})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/rooms/"+opened.ID+"/messages?since=0", nil)
+	req := localRequest(http.MethodGet, "/api/rooms/"+opened.ID+"/messages?since=0", nil)
 	req.Header.Set("X-Room-Session", alice.SessionID)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -304,7 +304,7 @@ func TestRoomReadAuthenticatedProjectsOwn(t *testing.T) {
 		}
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/api/rooms/"+opened.ID+"/messages?since=0", nil)
+	req = localRequest(http.MethodGet, "/api/rooms/"+opened.ID+"/messages?since=0", nil)
 	req.Header.Set("X-Room-Session", "deadbeef")
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -371,7 +371,7 @@ func TestFacilitatorIDNeverLeaksInPublicReadsOrList(t *testing.T) {
 	doJSON(t, h, http.MethodPost, "/api/rooms", `{"topic":"t"}`, &opened)
 
 	for _, path := range []string{"/api/rooms", "/api/rooms/" + opened.ID + "/messages?since=0"} {
-		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req := localRequest(http.MethodGet, path, nil)
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 		if strings.Contains(rec.Body.String(), opened.FacilitatorID) {
@@ -426,7 +426,7 @@ func TestPendingRequiresFacilitator(t *testing.T) {
 	var item itemJSON
 	doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/items", `{"session_id":"`+sess.SessionID+`","kind":"proposal","title":"t","body":"b"}`, &item)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/rooms/"+opened.ID+"/items/pending", nil)
+	req := localRequest(http.MethodGet, "/api/rooms/"+opened.ID+"/items/pending", nil)
 	req.Header.Set("X-Room-Facilitator", "deadbeefdeadbeefdeadbeefdeadbeef")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -434,7 +434,7 @@ func TestPendingRequiresFacilitator(t *testing.T) {
 		t.Fatalf("pending with bogus facilitator status = %d, want 403", rec.Code)
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/api/rooms/"+opened.ID+"/items/pending", nil)
+	req = localRequest(http.MethodGet, "/api/rooms/"+opened.ID+"/items/pending", nil)
 	req.Header.Set("X-Room-Facilitator", opened.FacilitatorID)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -538,7 +538,7 @@ func TestRoomReadFollowWakesOnNewMessage(t *testing.T) {
 	}
 	done := make(chan result, 1)
 	go func() {
-		req := httptest.NewRequest(http.MethodGet, "/api/rooms/"+opened.ID+"/messages?since="+strconv.Itoa(since)+"&follow=1", nil)
+		req := localRequest(http.MethodGet, "/api/rooms/"+opened.ID+"/messages?since="+strconv.Itoa(since)+"&follow=1", nil)
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 		done <- result{rec.Code, rec.Body.String()}
@@ -759,7 +759,7 @@ func TestChannelReadFollowWakesOnDelivery(t *testing.T) {
 
 	done := make(chan channelReadJSON, 1)
 	go func() {
-		req := httptest.NewRequest(http.MethodGet, "/api/rooms/channel/messages?follow=1&version="+strconv.FormatInt(first.Version, 10), nil)
+		req := localRequest(http.MethodGet, "/api/rooms/channel/messages?follow=1&version="+strconv.FormatInt(first.Version, 10), nil)
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 		var got channelReadJSON

@@ -277,7 +277,9 @@ func TestHandoffListMatchesAPI(t *testing.T) {
 	seedHandoffs(t, repoDir, now)
 
 	rec := httptest.NewRecorder()
-	server.New(repoDir, projDir, "").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/handoffs", nil))
+	req := httptest.NewRequest(http.MethodGet, "/api/handoffs", nil)
+	req.Host = "127.0.0.1:7717" // the local ui answers only a loopback Host (B-0044)
+	server.New(repoDir, projDir, "").ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET /api/handoffs = %d: %s", rec.Code, rec.Body.String())
 	}

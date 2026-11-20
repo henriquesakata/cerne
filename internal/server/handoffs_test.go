@@ -48,7 +48,7 @@ func seedHandoffs(t *testing.T, repoDir string) {
 func getHandoffs(t *testing.T, repoDir, projDir, path string) *httptest.ResponseRecorder {
 	t.Helper()
 	rec := httptest.NewRecorder()
-	New(repoDir, projDir, "proj").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+	New(repoDir, projDir, "proj").ServeHTTP(rec, localRequest(http.MethodGet, path, nil))
 	return rec
 }
 

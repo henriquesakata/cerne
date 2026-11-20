@@ -392,7 +392,7 @@ func TestLLMConfigGetLiveQueryCodex(t *testing.T) {
 		var got struct {
 			LiveQuery bool `json:"live_query"`
 		}
-		req := httptest.NewRequest(http.MethodGet, "/api/config/llm", nil)
+		req := localRequest(http.MethodGet, "/api/config/llm", nil)
 		req = req.WithContext(context.WithValue(req.Context(), remoteKey{}, tt.remote))
 		rec := httptest.NewRecorder()
 		handleLLMConfigGet(rec, req, projDir)

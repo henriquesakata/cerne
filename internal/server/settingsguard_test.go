@@ -10,7 +10,7 @@ import (
 )
 
 // localRequest is httptest.NewRequest as the local ui sends it: a loopback
-// Host, which every write to it requires (B-0043) — httptest's own is
+// Host, which every request to it requires (B-0043, B-0044) — httptest's own is
 // example.com.
 func localRequest(method, target string, body io.Reader) *http.Request {
 	req := httptest.NewRequest(method, target, body)

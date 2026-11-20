@@ -39,7 +39,7 @@ func TestIdeasLeaveAPIOutputsUnchanged(t *testing.T) {
 			// computed over the ideas — never the cached one.
 			for deadline := time.Now().Add(20 * time.Second); ; time.Sleep(50 * time.Millisecond) {
 				rec := httptest.NewRecorder()
-				h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, p, nil))
+				h.ServeHTTP(rec, localRequest(http.MethodGet, p, nil))
 				if rec.Code != http.StatusOK {
 					t.Fatalf("GET %s = %d: %s", p, rec.Code, rec.Body.String())
 				}
@@ -130,7 +130,7 @@ func TestIdeasAPIRoundTrip(t *testing.T) {
 		t.Fatalf("promote = %d %+v", rec.Code, promoted)
 	}
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/state", nil))
+	h.ServeHTTP(rec, localRequest(http.MethodGet, "/api/state", nil))
 	if !strings.Contains(rec.Body.String(), promoted.Feature.ID) {
 		t.Fatalf("/api/state lacks the promoted candidate %s", promoted.Feature.ID)
 	}
@@ -305,7 +305,7 @@ func TestIdeasAPIInformedBy(t *testing.T) {
 		}
 	}
 	if rec := httptest.NewRecorder(); true {
-		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/ideas", nil))
+		h.ServeHTTP(rec, localRequest(http.MethodGet, "/api/ideas", nil))
 		if strings.Contains(rec.Body.String(), `"informed_by": null`) {
 			t.Fatal("informed_by must be [] not null")
 		}

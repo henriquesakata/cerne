@@ -37,7 +37,7 @@ func TestConventionsExport(t *testing.T) {
 	writeContentDoc(t, repoDir, "notes", "N-0001", realDoc("N-0001", "Use o DatePicker."))
 	writeContentDoc(t, repoDir, "notes", "N-0002", realDoc("N-0002", "Registrar em PLATFORM_WORKLOADS."))
 
-	req := httptest.NewRequest(http.MethodGet, "/api/conventions-export", nil)
+	req := localRequest(http.MethodGet, "/api/conventions-export", nil)
 	rec := httptest.NewRecorder()
 	New(repoDir, projDir, "").ServeHTTP(rec, req)
 
@@ -72,7 +72,7 @@ func TestConventionsExport(t *testing.T) {
 // never an error (the consumer treats empty as "no platform conventions yet").
 func TestConventionsExportEmptyCatalog(t *testing.T) {
 	repoDir, projDir := newBackend(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/conventions-export", nil)
+	req := localRequest(http.MethodGet, "/api/conventions-export", nil)
 	rec := httptest.NewRecorder()
 	New(repoDir, projDir, "").ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -95,7 +95,7 @@ func TestConventionsExportStableETag(t *testing.T) {
 	writeContentDoc(t, repoDir, "notes", "N-0001", realDoc("N-0001", "Corpo v1."))
 
 	get := func() *httptest.ResponseRecorder {
-		req := httptest.NewRequest(http.MethodGet, "/api/conventions-export", nil)
+		req := localRequest(http.MethodGet, "/api/conventions-export", nil)
 		rec := httptest.NewRecorder()
 		New(repoDir, projDir, "").ServeHTTP(rec, req)
 		return rec
@@ -123,7 +123,7 @@ func TestConventionsExportFreshnessHeaders(t *testing.T) {
 	}
 	writeContentDoc(t, repoDir, "notes", "N-0001", realDoc("N-0001", "Corpo."))
 
-	req := httptest.NewRequest(http.MethodGet, "/api/conventions-export", nil)
+	req := localRequest(http.MethodGet, "/api/conventions-export", nil)
 	rec := httptest.NewRecorder()
 	New(repoDir, projDir, "").ServeHTTP(rec, req)
 
@@ -154,7 +154,7 @@ func TestConventionsExportWithoutGit(t *testing.T) {
 	}
 	writeContentDoc(t, repoDir, "notes", "N-0001", realDoc("N-0001", "Corpo."))
 
-	req := httptest.NewRequest(http.MethodGet, "/api/conventions-export", nil)
+	req := localRequest(http.MethodGet, "/api/conventions-export", nil)
 	rec := httptest.NewRecorder()
 	New(repoDir, projDir, "").ServeHTTP(rec, req)
 

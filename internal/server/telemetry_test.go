@@ -26,7 +26,7 @@ func TestInstrumentedRouteUsesTemplatedLabel(t *testing.T) {
 
 	h := New(repoDir, projDir, "demo")
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/features/F-9999", nil))
+	h.ServeHTTP(rec, localRequest(http.MethodGet, "/api/features/F-9999", nil))
 
 	if strings.Contains(buf.String(), "F-9999") {
 		t.Fatalf("log line leaks the raw path:\n%s", buf.String())
@@ -58,13 +58,13 @@ func TestMetricsAndTimingsEndpoints(t *testing.T) {
 	op.End("ok")
 
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	h.ServeHTTP(rec, localRequest(http.MethodGet, "/metrics", nil))
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "go_goroutines") {
 		t.Fatalf("/metrics: code=%d, want 200 with go_* metrics", rec.Code)
 	}
 
 	rec = httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/debug/timings", nil))
+	h.ServeHTTP(rec, localRequest(http.MethodGet, "/api/debug/timings", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("/api/debug/timings: code=%d, want 200", rec.Code)
 	}
@@ -140,7 +140,7 @@ func TestLintObservedPerProject(t *testing.T) {
 	before := testutil.CollectAndCount(telemetry.Default.LintDur)
 
 	rec := httptest.NewRecorder()
-	New(repoDir, projDir, proj).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/lint", nil))
+	New(repoDir, projDir, proj).ServeHTTP(rec, localRequest(http.MethodGet, "/api/lint", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("lint status = %d", rec.Code)
 	}
@@ -161,14 +161,14 @@ func TestPprofGatedByEnv(t *testing.T) {
 	// Ungated, /debug/pprof/ falls through to the SPA (any unknown path serves
 	// index.html) — the profiler page itself must not exist.
 	rec := httptest.NewRecorder()
-	New(repoDir, projDir, "demo").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/debug/pprof/", nil))
+	New(repoDir, projDir, "demo").ServeHTTP(rec, localRequest(http.MethodGet, "/debug/pprof/", nil))
 	if strings.Contains(rec.Body.String(), "Types of profiles available") {
 		t.Fatal("pprof page served without CERNE_PPROF")
 	}
 
 	t.Setenv("CERNE_PPROF", "1")
 	rec = httptest.NewRecorder()
-	New(repoDir, projDir, "demo").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/debug/pprof/", nil))
+	New(repoDir, projDir, "demo").ServeHTTP(rec, localRequest(http.MethodGet, "/debug/pprof/", nil))
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Types of profiles available") {
 		t.Fatalf("pprof gated on: code=%d, want the profiler index page", rec.Code)
 	}
@@ -181,7 +181,7 @@ func TestSSEGaugeTracksStreamClients(t *testing.T) {
 	before := testutil.ToFloat64(telemetry.Default.SSEClients)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	req := httptest.NewRequest(http.MethodGet, "/api/stream", nil).WithContext(ctx)
+	req := localRequest(http.MethodGet, "/api/stream", nil).WithContext(ctx)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)

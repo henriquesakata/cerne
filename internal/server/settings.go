@@ -134,16 +134,21 @@ func localWriteOf(w http.ResponseWriter, r *http.Request, mediaType string) bool
 	return true
 }
 
-// localWrites refuses, with 403, every write to the local ui — any method but
-// GET and HEAD — whose Host is not the loopback or whose Origin names another
-// host (B-0043): a page served from a name rebound to 127.0.0.1 sends its own
-// name as Host, a cross-site page its own Origin. One guard on the router, so a
-// route added later cannot forget it; the routes that take a body type check it
-// themselves (localWriteOf, sameOriginAs). The remote `cerne serve` is not
-// wrapped: its writes come from other hosts by design.
-func localWrites(h http.Handler) http.Handler {
+// localOnly refuses, with 403, every request to the local ui whose Host is not
+// the loopback (B-0044): a page served from a name rebound to 127.0.0.1 sends
+// its own name as Host, and would otherwise read the project and the host's
+// ~/.claude layer. A write — any method but GET and HEAD — must also be
+// same-origin (B-0043): a cross-site page sends its own Origin. One guard on
+// the router, so a route added later cannot forget it; the routes that take a
+// body type check it themselves (localWriteOf, sameOriginAs). The remote
+// `cerne serve` is not wrapped: its requests come from other hosts by design.
+func localOnly(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet && r.Method != http.MethodHead && (!loopbackHost(r.Host) || !sameOrigin(r)) {
+		if !loopbackHost(r.Host) {
+			writeJSON(w, http.StatusForbidden, errorBody("cerne ui answers only on this machine: loopback host"))
+			return
+		}
+		if r.Method != http.MethodGet && r.Method != http.MethodHead && !sameOrigin(r) {
 			writeJSON(w, http.StatusForbidden, errorBody("writes are accepted only from cerne ui on this machine: loopback host, same-origin request"))
 			return
 		}

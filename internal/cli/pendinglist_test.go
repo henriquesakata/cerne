@@ -76,7 +76,9 @@ func TestListPendingsMatchesCLI(t *testing.T) {
 				q[k] = v
 			}
 			rec := httptest.NewRecorder()
-			h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/pendings?"+q.Encode(), nil))
+			req := httptest.NewRequest(http.MethodGet, "/api/pendings?"+q.Encode(), nil)
+			req.Host = "127.0.0.1:7717" // the local ui answers only a loopback Host (B-0044)
+			h.ServeHTTP(rec, req)
 			if rec.Code != http.StatusOK {
 				t.Fatalf("GET /api/pendings?%s = %d: %s", q.Encode(), rec.Code, rec.Body.String())
 			}
