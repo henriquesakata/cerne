@@ -262,7 +262,7 @@ func registerMergeDriverViaGit(projDir string) error {
 		{"merge.cerne-lock.driver", lockMergeDriverCommand()},
 	} {
 		// F-0474: already holds the expected value → no write.
-		if cur, err := exec.Command("git", "-C", projDir, "config", "--get", kv[0]).Output(); err == nil && strings.TrimSpace(string(cur)) == kv[1] {
+		if cur, err := exec.Command("git", "-C", projDir, "config", "--local", "--get", kv[0]).Output(); err == nil && strings.TrimSpace(string(cur)) == kv[1] {
 			continue
 		}
 		out, err := exec.Command("git", "-C", projDir, "config", kv[0], kv[1]).CombinedOutput()
