@@ -177,7 +177,7 @@ func NewServer(version string, exec Exec) *sdk.Server {
 			}
 			return []string{"show", in.ID, "--json"}, nil
 		})
-	add(s, g, exec, "context", "The task package: a feature's stage document whole, its epic, and the notes, decisions and sources that inform it (id, title, one-line gist; bodies via show), within a token budget. Start a task here.",
+	add(s, g, exec, "context", "The task package: a feature's stage document whole, its epic, and the notes, decisions and sources that inform it (the linked notes and decisions with their body, the rest as id, title and one-line gist), within a token budget. Start a task here.",
 		func(p map[string]*jsonschema.Schema) {
 			p["id"].Pattern = idPattern
 			p["budget"].Type, p["budget"].Types = "integer", nil
