@@ -347,8 +347,11 @@ func actorEnv() string {
 	// Code's Bash tool, 2026-11, B-0030): without `cerne hook install` the env
 	// block that stamps CERNE_ACTOR is missing. Copilot CLI marks its bash
 	// tool's shell with COPILOT_CLI=1 (probed on 1.0.112, F-0444); the hooks'
-	// env block does not reach that shell.
-	if os.Getenv("CLAUDECODE") == "1" || os.Getenv("CURSOR_AGENT") == "1" || os.Getenv("COPILOT_CLI") == "1" {
+	// env block does not reach that shell. Codex exports CODEX_THREAD_ID (a
+	// thread id, so any non-empty value) in its tool shells, no project trust or
+	// hook install needed (codex-cli 0.169.0 `codex exec` and the interactive
+	// Codex, 2026-11-20, B-0051).
+	if os.Getenv("CLAUDECODE") == "1" || os.Getenv("CURSOR_AGENT") == "1" || os.Getenv("COPILOT_CLI") == "1" || os.Getenv("CODEX_THREAD_ID") != "" {
 		return legacyAgentActor
 	}
 	return ""

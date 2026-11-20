@@ -25,6 +25,7 @@ func TestMain(m *testing.M) {
 	os.Unsetenv("CERNE_ACTOR")
 	os.Unsetenv("CURSOR_AGENT") // Cursor's agent-shell marker counts as an agent too (F-0428)
 	os.Unsetenv("COPILOT_CLI")  // and Copilot CLI's (F-0444); CLAUDECODE is dropped below (B-0030)
+	os.Unsetenv("CODEX_THREAD_ID") // and Codex's (B-0051)
 	dir, err := os.MkdirTemp("", "cerne-config-")
 	if err != nil {
 		panic(err)

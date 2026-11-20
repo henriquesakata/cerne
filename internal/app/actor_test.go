@@ -349,6 +349,7 @@ func agentShell(t *testing.T, claudeCode, actor string, unset bool) {
 	t.Helper()
 	t.Setenv("CURSOR_AGENT", "")
 	t.Setenv("COPILOT_CLI", "")
+	t.Setenv("CODEX_THREAD_ID", "")
 	t.Setenv("CLAUDECODE", claudeCode)
 	t.Setenv("CERNE_ACTOR", actor)
 	if unset {
@@ -400,5 +401,43 @@ func TestClaudeCodeShellHitsHumanGates(t *testing.T) {
 	}
 	if err := CheckHumanSetting("gates.gauntlet"); err != nil {
 		t.Errorf("CERNE_ACTOR=human: CheckHumanSetting = %v, want nil", err)
+	}
+}
+
+// TestCodexShellHitsHumanGates (B-0051): Codex exports CODEX_THREAD_ID (an id,
+// not "1") in its tool shells; without the project config that stamps
+// CERNE_ACTOR, the marker alone makes the shell an agent's.
+func TestCodexShellHitsHumanGates(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		unset bool
+	}{{"no CERNE_ACTOR", true}, {"empty CERNE_ACTOR", false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			agentShell(t, "", "", tc.unset)
+			t.Setenv("CODEX_THREAD_ID", "019e-thread")
+			if got := actorEnv(); got != legacyAgentActor {
+				t.Errorf("actorEnv = %q, want %q", got, legacyAgentActor)
+			}
+			if err := CheckHumanGate(project.GateHuman); !errors.Is(err, ErrHumanGate) {
+				t.Errorf("CheckHumanGate = %v, want ErrHumanGate", err)
+			}
+			if err := CheckHumanSetting("gates.gauntlet"); !errors.Is(err, ErrHumanGate) {
+				t.Errorf("CheckHumanSetting = %v, want ErrHumanGate", err)
+			}
+			if origin, _, err := resolveOrigin(""); err != nil || origin != "agent" {
+				t.Errorf("resolveOrigin = %q, %v; want agent", origin, err)
+			}
+		})
+	}
+}
+
+func TestCodexMarkerYieldsToExplicitHuman(t *testing.T) {
+	agentShell(t, "", "human", false)
+	t.Setenv("CODEX_THREAD_ID", "019e-thread")
+	if err := CheckHumanGate(project.GateHuman); err != nil {
+		t.Errorf("CERNE_ACTOR=human + marker: CheckHumanGate = %v, want nil", err)
+	}
+	if err := CheckHumanSetting("gates.gauntlet"); err != nil {
+		t.Errorf("CERNE_ACTOR=human + marker: CheckHumanSetting = %v, want nil", err)
 	}
 }

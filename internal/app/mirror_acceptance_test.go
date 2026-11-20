@@ -32,7 +32,7 @@ import (
 // asHuman clears every agent marker actorEnv reads (N-0058: unset, not "").
 func asHuman(t *testing.T) {
 	t.Helper()
-	for _, k := range []string{"CERNE_ACTOR", "COPILOT_CLI", "CURSOR_AGENT"} {
+	for _, k := range []string{"CERNE_ACTOR", "COPILOT_CLI", "CURSOR_AGENT", "CODEX_THREAD_ID"} {
 		t.Setenv(k, "")
 		os.Unsetenv(k)
 	}
