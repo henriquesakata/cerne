@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/henriquesakata/cerne/internal/app"
@@ -173,7 +174,7 @@ func newRoomReadCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt)
+			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 			return roomReadLoop(ctx, cmd.OutOrStdout(), c, args[0], since, follow, once)
 		},

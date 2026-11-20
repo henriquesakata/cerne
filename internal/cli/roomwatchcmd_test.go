@@ -3,10 +3,16 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -292,4 +298,109 @@ func TestRoomWatchLoopPrintsSameFormatAsRead(t *testing.T) {
 	if !strings.Contains(out.String(), fmt.Sprintf("[%s] oi", "bob")) {
 		t.Fatalf("watch output = %q, want the same '[nick] body' rendering as read", out.String())
 	}
+}
+
+// runRoomTrapped runs a `cerne room` command under startTrapped (the signal
+// wiring is what is under test), writing its output to out.
+func runRoomTrapped(t *testing.T, out *syncBuf, args ...string) chan error {
+	t.Helper()
+	cmd := newRoomCmd()
+	cmd.SetOut(out)
+	cmd.SetErr(out)
+	cmd.SetArgs(args)
+	return startTrapped(t, cmd.Execute)
+}
+
+// waitOutput polls out until it contains want.
+func waitOutput(t *testing.T, out *syncBuf, want string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !strings.Contains(out.String(), want) {
+		if time.Now().After(deadline) {
+			t.Fatalf("output = %q, want it to contain %q", out.String(), want)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func assertNoLock(t *testing.T, cpPath string) {
+	t.Helper()
+	if _, err := os.Stat(cpPath + ".lock"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("checkpoint lock still on disk after the signal (stat err %v)", err)
+	}
+}
+
+// F-0467 criterion 1: a room watch stopped with SIGTERM mid-loop exits clean
+// and releases the checkpoint lock, so the same session can watch again.
+func TestRoomWatchSIGTERMReleasesLock(t *testing.T) {
+	dir, port := newRoomTestServer(t, "proj-watch-sigterm")
+	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
+	runRoom(t, append([]string{"open", "topic"}, dirFlag...)...)
+	sessA := joinRoomAs(t, dirFlag, "R1", "ana")
+	sessB := joinRoomAs(t, dirFlag, "R1", "bob") // R1 now at seq 3 (open, 2 joins)
+	c, err := newRoomClient(dir, port)
+	if err != nil {
+		t.Fatalf("newRoomClient: %v", err)
+	}
+	cpPath := filepath.Join(t.TempDir(), "cursor.json")
+	watch := append([]string{"watch", "R1", "--session", sessA, "--cursor-file", cpPath}, dirFlag...)
+
+	out := &syncBuf{}
+	// --since pins the start, so bob's line is seen even if it lands first.
+	done := runRoomTrapped(t, out, append(watch, "--since", "3")...)
+	if _, err := c.say(context.Background(), "R1", sessB, "primeira"); err != nil {
+		t.Fatalf("say: %v", err)
+	}
+	waitOutput(t, out, "primeira") // the watch is in its loop
+
+	sendSelf(t, syscall.SIGTERM)
+	waitExit(t, done, "room watch")
+	assertNoLock(t, cpPath)
+
+	if _, err := c.say(context.Background(), "R1", sessB, "segunda"); err != nil {
+		t.Fatalf("say: %v", err)
+	}
+	if _, err := runRoom(t, append(watch, "--once")...); err != nil {
+		t.Fatalf("second watch on the same session: %v", err)
+	}
+}
+
+// F-0467 criterion 2: a signal while the watch still resolves its start
+// cursor (lock taken, loop not reached) releases the lock too.
+func TestRoomWatchSignalDuringStartReleasesLock(t *testing.T) {
+	resumed := make(chan struct{}, 1)
+	unblock := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/sessions/resume") {
+			select {
+			case resumed <- struct{}{}:
+			default:
+			}
+			select {
+			case <-r.Context().Done():
+			case <-unblock:
+			}
+		}
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(srv.Close)
+	t.Cleanup(func() { close(unblock) }) // LIFO: frees a stuck handler before srv.Close
+	port := srv.Listener.Addr().(*net.TCPAddr).Port
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".cernerc"), []byte("project_id = \"p\"\nbackend = \"/dev/null\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cpPath := filepath.Join(t.TempDir(), "cursor.json")
+	done := runRoomTrapped(t, &syncBuf{}, "watch", "R1", "--session", "s", "--cursor-file", cpPath,
+		"--dir", dir, "--port", strconv.Itoa(port))
+	select {
+	case <-resumed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the watch never asked the server for its start cursor")
+	}
+
+	sendSelf(t, syscall.SIGTERM)
+	waitExit(t, done, "room watch")
+	assertNoLock(t, cpPath)
 }

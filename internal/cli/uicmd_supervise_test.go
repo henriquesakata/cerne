@@ -190,24 +190,31 @@ func TestSuperviseRace(t *testing.T) {
 	waitExit(t, doneB, "first survivor")
 }
 
-// startRunUI runs runUI — the real entry point, signal wiring included — and
-// returns a channel that yields its error once it exits. The test listens for
-// SIGTERM and SIGINT too: a signal runUI fails to trap then fails the test
-// instead of killing the whole test binary. Cleanup stops a runUI still up
-// (only without the fix) with SIGINT, which runUI always traps.
+// startRunUI runs runUI — the real entry point, signal wiring included — under
+// startTrapped.
 func startRunUI(t *testing.T, dir string, port int) chan error {
+	t.Helper()
+	cmd := &cobra.Command{}
+	cmd.SetOut(io.Discard)
+	return startTrapped(t, func() error { return runUI(cmd, dir, port, true, 0) })
+}
+
+// startTrapped runs fn, a command whose signal wiring is under test, in a
+// goroutine and returns a channel that yields its error once it exits. The
+// test listens for SIGTERM and SIGINT too: a signal fn fails to trap then
+// fails the test instead of killing the whole test binary. Cleanup stops an
+// fn still up (only without the fix) with SIGINT.
+func startTrapped(t *testing.T, fn func() error) chan error {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("a Windows process cannot send itself SIGTERM")
 	}
 	absorb := make(chan os.Signal, 8)
 	signal.Notify(absorb, syscall.SIGTERM, os.Interrupt)
-	cmd := &cobra.Command{}
-	cmd.SetOut(io.Discard)
 	done := make(chan error, 1)
 	exited := make(chan struct{})
 	go func() {
-		done <- runUI(cmd, dir, port, true, 0)
+		done <- fn()
 		close(exited)
 	}()
 	t.Cleanup(func() {
@@ -218,7 +225,7 @@ func startRunUI(t *testing.T, dir string, port int) chan error {
 			select {
 			case <-exited:
 			case <-time.After(10 * time.Second):
-				t.Error("runUI did not exit on SIGINT during cleanup")
+				t.Error("the command under test did not exit on SIGINT during cleanup")
 			}
 		}
 		signal.Stop(absorb)

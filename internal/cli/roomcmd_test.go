@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -805,4 +806,20 @@ func TestRoomSayChannelPostsAsAgent(t *testing.T) {
 	if err != nil || len(msgs) != 1 || msgs[0].Human || msgs[0].Nick != a {
 		t.Fatalf("stored = %+v, %v; want the agent %s", msgs, err, a)
 	}
+}
+
+// F-0467 criterion 3: room read --follow stopped with SIGTERM exits clean, as
+// with Ctrl+C.
+func TestRoomReadFollowSIGTERMExitsClean(t *testing.T) {
+	dir, port := newRoomTestServer(t, "proj-follow-sigterm")
+	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
+	runRoom(t, append([]string{"open", "topic"}, dirFlag...)...)
+	joinRoomAs(t, dirFlag, "R1", "ana")
+
+	out := &syncBuf{}
+	done := runRoomTrapped(t, out, append([]string{"read", "R1", "--follow"}, dirFlag...)...)
+	waitOutput(t, out, "ana") // transcript printed: the follow loop is running
+
+	sendSelf(t, syscall.SIGTERM)
+	waitExit(t, done, "room read --follow")
 }
