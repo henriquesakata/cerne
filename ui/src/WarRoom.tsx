@@ -551,7 +551,7 @@ export function WarRoomDetail({ id }: { id: string }) {
           {t.warRoom.backToList}
         </a>
         <div className="room-title">
-          <span className="card-id">{id}</span>
+          {topic && <span className="card-id">{id}</span>}
           <h1>{topic || id}</h1>
           <span className={`badge ${closed ? 'room-badge-closed' : 'room-badge-open'}`}>
             {closed ? t.warRoom.closedBadge : t.warRoom.openBadge}
@@ -737,7 +737,7 @@ export function WarRoomDetail({ id }: { id: string }) {
                 <p className="room-side-muted">{t.warRoom.facilitatorTransferHint}</p>
               </>
             )}
-            {!closed && !facilitatorId && !transferredToken && (
+            {!closed && !facilitatorId && (
               <form className="room-field" onSubmit={claimFacilitator}>
                 <label htmlFor="room-claim">{t.warRoom.facilitatorClaimTitle}</label>
                 <div className="room-inline-form">
