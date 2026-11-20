@@ -68,12 +68,14 @@ func CreateNote(repoDir, projDir, title, body string, informs, facets, component
 		if err != nil {
 			return "", err
 		}
-		if err := checkComponents(repoDir, normComponents, force); err != nil {
-			return "", err
-		}
 		// Duplicate guard (F-0324): before the id mint and any write.
 		forced, err := guardNote(repoDir, title, tagSet{normFacets, normComponents, cleaned}, force)
 		if err != nil {
+			return "", err
+		}
+		// After the duplicate guard (E-0005): a duplicate is refused first, so
+		// the --force a near component asks for is never given blind to it.
+		if err := checkComponents(repoDir, normComponents, force); err != nil {
 			return "", err
 		}
 		id, err := store.NextID(repoDir, "N")

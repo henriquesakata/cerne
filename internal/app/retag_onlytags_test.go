@@ -176,10 +176,10 @@ func TestRetagDoesNotMoveFlowStats(t *testing.T) {
 	if _, err := RetagFeature(repoDir, projDir, "F-0001", []string{"code"}, nil, true, false, false); err != nil {
 		t.Fatalf("RetagFeature: %v", err)
 	}
-	if _, err := RetagIdea(repoDir, projDir, "I-0001", []string{"code"}, nil, true, false); err != nil {
+	if _, err := RetagIdea(repoDir, projDir, "I-0001", []string{"code"}, nil, true, false, false); err != nil {
 		t.Fatalf("RetagIdea: %v", err)
 	}
-	if _, err := RetagPending(repoDir, projDir, "P-0001", []string{"code"}, nil, true, false); err != nil {
+	if _, err := RetagPending(repoDir, projDir, "P-0001", []string{"code"}, nil, true, false, false); err != nil {
 		t.Fatalf("RetagPending: %v", err)
 	}
 	if after := compute(); !reflect.DeepEqual(before, after) {

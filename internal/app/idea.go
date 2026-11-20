@@ -624,7 +624,7 @@ func UnlinkIdea(repoDir, projDir, id string) (store.Idea, error) {
 // repoDir (F-0482). Each axis is replaced only when its set flag is true (an
 // empty slice with set=true clears it); everything else is preserved. An
 // unknown facet aborts with nothing written. Appends idea.retagged.
-func RetagIdea(repoDir, projDir, id string, facets, components []string, setFacets, setComponents bool) (store.Idea, error) {
+func RetagIdea(repoDir, projDir, id string, facets, components []string, setFacets, setComponents, force bool) (store.Idea, error) {
 	id, err := CanonicalIdeaID(id)
 	if err != nil {
 		return store.Idea{}, err
@@ -644,6 +644,9 @@ func RetagIdea(repoDir, projDir, id string, facets, components []string, setFace
 		}
 		if setComponents {
 			i.Components = domain.NormalizeComponents(components)
+			if err := checkComponents(repoDir, i.Components, force); err != nil {
+				return "", err
+			}
 		}
 		i.UpdatedAt = time.Now().UTC()
 		if err := store.SaveIdea(repoDir, i); err != nil {

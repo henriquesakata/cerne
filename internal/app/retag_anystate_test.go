@@ -93,7 +93,7 @@ func retagKinds() []retagKind {
 				return id
 			},
 			retag: func(repoDir, projDir, id string, facets []string, set bool) ([]string, error) {
-				i, err := RetagIdea(repoDir, projDir, id, facets, nil, set, false)
+				i, err := RetagIdea(repoDir, projDir, id, facets, nil, set, false, false)
 				return i.Facets, err
 			},
 		},
@@ -107,7 +107,7 @@ func retagKinds() []retagKind {
 				return id
 			},
 			retag: func(repoDir, projDir, id string, facets []string, set bool) ([]string, error) {
-				p, err := RetagPending(repoDir, projDir, id, facets, nil, set, false)
+				p, err := RetagPending(repoDir, projDir, id, facets, nil, set, false, false)
 				return p.Facets, err
 			},
 		},
@@ -178,17 +178,17 @@ func TestRetagIdeaAndPendingAxes(t *testing.T) {
 	}
 	commitBackend(t, repoDir)
 
-	i, err := RetagIdea(repoDir, projDir, "i-0001", nil, []string{"Gitback"}, false, true)
+	i, err := RetagIdea(repoDir, projDir, "i-0001", nil, []string{"Gitback"}, false, true, false)
 	if err != nil {
 		t.Fatalf("RetagIdea components: %v", err)
 	}
 	if !slices.Equal(i.Facets, []string{"auth"}) || !slices.Equal(i.Components, []string{"gitback"}) || i.State != domain.IdeaPromoted || i.PromotedTo != "F-0001" {
 		t.Fatalf("idea after component retag = %+v", i)
 	}
-	if i, err = RetagIdea(repoDir, projDir, "I-0001", nil, nil, true, false); err != nil || len(i.Facets) != 0 || len(i.Components) != 1 {
+	if i, err = RetagIdea(repoDir, projDir, "I-0001", nil, nil, true, false, false); err != nil || len(i.Facets) != 0 || len(i.Components) != 1 {
 		t.Fatalf("idea clear facets = %+v, %v", i, err)
 	}
-	p, err := RetagPending(repoDir, projDir, "P-0001", []string{"code"}, nil, true, false)
+	p, err := RetagPending(repoDir, projDir, "P-0001", []string{"code"}, nil, true, false, false)
 	if err != nil {
 		t.Fatalf("RetagPending: %v", err)
 	}
@@ -201,7 +201,7 @@ func TestRetagIdeaAndPendingAxes(t *testing.T) {
 	if c := retagEventCount(t, repoDir, "P-0001", "pending.retagged"); c != 1 {
 		t.Fatalf("pending.retagged events = %d, want 1", c)
 	}
-	if _, err := RetagIdea(repoDir, projDir, "I-9999", []string{"code"}, nil, true, false); err == nil {
+	if _, err := RetagIdea(repoDir, projDir, "I-9999", []string{"code"}, nil, true, false, false); err == nil {
 		t.Fatalf("retag of a missing idea should error")
 	}
 }

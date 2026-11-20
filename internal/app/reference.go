@@ -51,13 +51,15 @@ func CreateExternalReference(repoDir, projDir, title, url, content string, infor
 		if err != nil {
 			return "", err
 		}
-		if err := checkComponents(repoDir, normComponents, force); err != nil {
-			return "", err
-		}
 		// Duplicate guard (F-0324): a reference is its source, so only a live
 		// reference with the same normalized URL collides (never the title).
 		forced, err := guardReference(repoDir, url, tagSet{normFacets, normComponents, cleaned}, force)
 		if err != nil {
+			return "", err
+		}
+		// After the duplicate guard (E-0005): a duplicate is refused first, so
+		// the --force a near component asks for is never given blind to it.
+		if err := checkComponents(repoDir, normComponents, force); err != nil {
 			return "", err
 		}
 		id, err := store.NextID(repoDir, "R")

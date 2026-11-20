@@ -141,11 +141,13 @@ func CreatePending(repoDir, projDir, title, body, from string, facets, component
 		if len(components) == 0 {
 			normComponents = origin.Components
 		}
-		if err := checkComponents(repoDir, normComponents, force); err != nil {
-			return "", err
-		}
 		forced, err := guardPending(repoDir, title, from, force)
 		if err != nil {
+			return "", err
+		}
+		// After the duplicate guard (E-0005): a duplicate is refused first, so
+		// the --force a near component asks for is never given blind to it.
+		if err := checkComponents(repoDir, normComponents, force); err != nil {
 			return "", err
 		}
 		id, err := store.NextID(repoDir, "P")
@@ -626,7 +628,7 @@ func closePending(repoDir, projDir, id string, action domain.Action, reason stri
 // RetagPending sets the tag axes of a pending, in any state, in the backend
 // clone at repoDir (F-0482), with the semantics of RetagIdea. Appends
 // pending.retagged.
-func RetagPending(repoDir, projDir, id string, facets, components []string, setFacets, setComponents bool) (store.Pending, error) {
+func RetagPending(repoDir, projDir, id string, facets, components []string, setFacets, setComponents, force bool) (store.Pending, error) {
 	id, err := canonPendingID(id)
 	if err != nil {
 		return store.Pending{}, err
@@ -646,6 +648,9 @@ func RetagPending(repoDir, projDir, id string, facets, components []string, setF
 		}
 		if setComponents {
 			p.Components = domain.NormalizeComponents(components)
+			if err := checkComponents(repoDir, p.Components, force); err != nil {
+				return "", err
+			}
 		}
 		p.UpdatedAt = time.Now().UTC()
 		if err := store.SavePending(repoDir, p); err != nil {

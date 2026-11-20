@@ -41,12 +41,14 @@ func CreateDecision(repoDir, projDir, title, body string, facets, components []s
 	// (F-0122): concurrent creations serialize instead of minting the same id.
 	var d store.Decision
 	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
-		if err := checkComponents(repoDir, normComponents, force); err != nil {
-			return "", err
-		}
 		// Duplicate guard (F-0324): before the id mint and any write.
 		forced, err := guardDecision(repoDir, title, tagSet{facets: normFacets, components: normComponents}, force)
 		if err != nil {
+			return "", err
+		}
+		// After the duplicate guard (E-0005): a duplicate is refused first, so
+		// the --force a near component asks for is never given blind to it.
+		if err := checkComponents(repoDir, normComponents, force); err != nil {
 			return "", err
 		}
 		id, err := store.NextID(repoDir, "D")

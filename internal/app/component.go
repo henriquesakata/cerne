@@ -100,7 +100,8 @@ func NewComponents(repoDir string, comps []string) ([]string, error) {
 
 // checkComponents is the one check every component writer runs inside its
 // critical section, on the normalized names: a name the backend does not have
-// yet that is near one it has (domain.NearComponent) is refused unless force.
+// yet that is near one it has (domain.NearComponent), or near another new
+// name of the same write, is refused unless force.
 func checkComponents(repoDir string, comps []string, force bool) error {
 	if force || len(comps) == 0 {
 		return nil
@@ -111,9 +112,17 @@ func checkComponents(repoDir string, comps []string, force bool) error {
 	}
 	vocab := slices.Sorted(maps.Keys(use))
 	for _, c := range comps {
-		if near, ok := domain.NearComponent(c, vocab); ok {
+		if use[c] != nil {
+			continue
+		}
+		near, ok := domain.NearComponent(c, vocab)
+		if ok && use[near] == nil {
+			return fmt.Errorf("%w: %q is close to %q, also new in this write — keep one, or pass --force if they are different things", ErrNearComponent, c, near)
+		}
+		if ok {
 			return fmt.Errorf("%w: %q is close to the existing %q — use %q (see 'cerne tags'), or pass --force if it is a different thing", ErrNearComponent, c, near, near)
 		}
+		vocab = append(vocab, c) // a later new name of the same write is checked against it
 	}
 	return nil
 }
