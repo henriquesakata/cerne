@@ -242,7 +242,7 @@ func guardAmend(repoDir string, f store.Feature, doc string, force bool) (crosse
 		effect += "\nwritten against the current " + doc + ": " + strings.Join(against, ", ")
 	}
 	if len(foreign) > 0 && !force {
-		return nil, nil, fmt.Errorf("%w (%s or its live children):\n%s\n%s\nstop and confirm with them before amending; use --force to amend anyway", ErrActiveWorkElsewhere, f.ID, workLines(foreign), effect)
+		return nil, nil, fmt.Errorf("%w (%s or its live children):\n%s\n%s\nstop and confirm with them before amending — an old signal can mean that session ended; use --force to amend anyway", ErrActiveWorkElsewhere, f.ID, workLines(foreign), effect)
 	}
 	if len(foreign) > 0 {
 		notes = append(notes, "forced past active work of another session or actor:\n"+workLines(foreign))

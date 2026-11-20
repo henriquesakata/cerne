@@ -141,6 +141,7 @@ func runFeatureSpec(cmd *cobra.Command, dir, id, file string) error {
 
 func newFeatureAmendCmd(dir *string) *cobra.Command {
 	var file, reason, doc string
+	var force bool
 	cmd := &cobra.Command{
 		Use:   "amend <id>",
 		Short: "Replace a feature document with a reason: the result before the accept, or the spec/plan while approved or in development",
@@ -151,7 +152,11 @@ func newFeatureAmendCmd(dir *string) *cobra.Command {
 			"  --doc spec | --doc plan: the spec or plan of an APPROVED or IN-DEVELOPMENT feature (F-0338). Write the " +
 			"amendment into the criterion or task it changes — a body with an appended amendment section is refused. " +
 			"The replaced text stays readable as a revision ('cerne show <id> --doc <doc> --rev N'); amending an " +
-			"approved spec stales the approval until a human re-approves.\n" +
+			"approved spec stales the approval until a human re-approves; in development the amend takes effect at once, " +
+			"with no re-approval. The spec/plan amend is refused when another session or actor has active work on the " +
+			"card or on a live child: it lists who is on it, what the amend causes in that state and what was written " +
+			"against the current text — confirm with them, then --force to amend anyway (recorded as guard: forced). " +
+			"A same-actor work with no session bound on this machine only warns.\n" +
 			"Start from the stored text: 'cerne show <id> --doc <doc> > <doc>.md'. Before the approve a spec is a " +
 			"draft (pull/push); anything else is corrected with 'cerne feature errata'.",
 		Example: "  cerne feature amend F-0001 --file result.md --reason \"criterion 2 had no evidence\"\n" +
@@ -159,16 +164,17 @@ func newFeatureAmendCmd(dir *string) *cobra.Command {
 			"  cat plan.md | cerne feature amend F-0001 --doc plan --reason \"<why>\"",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runFeatureAmend(cmd, *dir, args[0], doc, file, reason)
+			return runFeatureAmend(cmd, *dir, args[0], doc, file, reason, force)
 		},
 	}
 	cmd.Flags().StringVar(&doc, "doc", "result", "document to amend: result|spec|plan")
+	cmd.Flags().BoolVar(&force, "force", false, "spec/plan: amend even though another session or actor has active work on the card")
 	cmd.Flags().StringVar(&file, "file", "", "file with the full document body (defaults to piped stdin)")
 	cmd.Flags().StringVar(&reason, "reason", "", "why the document is amended (required; recorded on the event)")
 	return cmd
 }
 
-func runFeatureAmend(cmd *cobra.Command, dir, id, doc, file, reason string) error {
+func runFeatureAmend(cmd *cobra.Command, dir, id, doc, file, reason string, force bool) error {
 	body, err := readOptionalBody(cmd, file)
 	if err != nil {
 		return err
@@ -178,7 +184,7 @@ func runFeatureAmend(cmd *cobra.Command, dir, id, doc, file, reason string) erro
 		return err
 	}
 	if doc != "result" {
-		f, rev, changed, err := app.AmendFeatureDoc(ctx.repoDir, ctx.projDir, id, doc, body, reason)
+		f, rev, changed, notes, err := app.AmendFeatureDocForce(ctx.repoDir, ctx.projDir, id, doc, body, reason, force)
 		if err != nil {
 			return err
 		}
@@ -188,6 +194,9 @@ func runFeatureAmend(cmd *cobra.Command, dir, id, doc, file, reason string) erro
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "✓ %s %s amended (%s) — revision %d keeps the previous text: 'cerne show %s --doc %s --rev %d'. Run 'cerne pull' to refresh .docs/.\n",
 			f.ID, doc, f.State, rev, f.ID, doc, rev)
+		for _, n := range notes {
+			fmt.Fprintln(cmd.OutOrStdout(), n)
+		}
 		return nil
 	}
 	f, changed, err := app.AmendFeatureResult(ctx.repoDir, ctx.projDir, id, body, reason)
