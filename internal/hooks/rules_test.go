@@ -12,7 +12,7 @@ import (
 func TestRegisterRulesIncludesPickupInstruction(t *testing.T) {
 	for _, want := range []string{
 		"cerne work start",
-		"planejamento",
+		"<planning, in the docs language>",
 		"--ref F-NNNN",
 		"F-0208",
 	} {
@@ -32,7 +32,7 @@ func TestRegisterReminderScriptMatchesGoRules(t *testing.T) {
 	}
 	for _, want := range []string{
 		"cerne work start",
-		"planejamento",
+		"<planning, in the docs language>",
 		"--ref F-NNNN",
 		"F-0208",
 	} {
@@ -97,10 +97,10 @@ func TestRegisterRulesCompleteCard(t *testing.T) {
 // static Cursor rule keeps it with the light-mode escape; no copy cites the
 // stray F-0545 id any more.
 func TestSessionRules_LightMode(t *testing.T) {
-	if s := SessionRules(false); strings.Contains(s, "GAUNTLET") || strings.Contains(s, "Barra:") || !strings.Contains(s, "HUMAN GATES") || !strings.Contains(s, "DUPLICATE GUARD") {
+	if s := SessionRules(false, ""); strings.Contains(s, "GAUNTLET") || strings.Contains(s, "Barra:") || !strings.Contains(s, "HUMAN GATES") || !strings.Contains(s, "DUPLICATE GUARD") {
 		t.Fatalf("light mode session rules:\n%s", s)
 	}
-	if s := SessionRules(true); !strings.Contains(s, "GAUNTLET (F-0270)") || strings.Contains(s, "skip it when") {
+	if s := SessionRules(true, ""); !strings.Contains(s, "GAUNTLET (F-0270)") || strings.Contains(s, "skip it when") {
 		t.Fatalf("gauntlet-on session rules:\n%s", s)
 	}
 	body, err := os.ReadFile("assets/cerne-register-reminder.sh")
@@ -132,7 +132,7 @@ func TestRegisterRulesHandoff(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for name, text := range map[string]string{"RegisterRules": RegisterRules, "SessionRules(false)": SessionRules(false), "cerne-register-reminder.sh": string(body)} {
+	for name, text := range map[string]string{"RegisterRules": RegisterRules, "SessionRules(false)": SessionRules(false, ""), "cerne-register-reminder.sh": string(body)} {
 		for _, want := range handoffRuleLines {
 			if !strings.Contains(text, want) {
 				t.Errorf("%s missing %q", name, want)
