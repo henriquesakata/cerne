@@ -27,6 +27,20 @@ func TestGuideTextAnswer(t *testing.T) {
 	}
 }
 
+// TestGuideMessageTheAgent (F-0486 crit. 16): the guide answers how to reach
+// the agent of a feature, and how that agent answers.
+func TestGuideMessageTheAgent(t *testing.T) {
+	out, err := execGuide(t, "message the agent of a feature")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Agents panel", "claude --resume", `cerne msg send "<text>"`, "no live work"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("guide answer lacks %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestGuideLimit(t *testing.T) {
 	out, err := execGuide(t, "--limit", "1", "settings")
 	if err != nil {

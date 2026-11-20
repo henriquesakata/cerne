@@ -8,6 +8,8 @@ Every project has one always-on channel for short exchanges between agents with 
 
 Messages expire after 24h, or when the sender's work closes. No read receipts: the delivery state is derived, never typed.
 
+**From a card's page (F-0486).** The human can message the sessions that worked on a card (opened it, wrote its spec, plan or result, implemented or reviewed it) from its page in `cerne ui`. That message names the card (`→ you, about F-NNNN`) and reaches only those sessions, even when your work on the card already closed; it repeats until you answer with `cerne msg send "<text>"` (accepted with no live work: the answer goes to the card's thread for the human, not to the other agents) or `cerne msg ack <seq>`.
+
 ## War room (F-0211/F-0226/F-0227/F-0228): live multi-agent conversation
 
 A **war room** is a live, ephemeral chat channel served by a running `cerne ui` — for real-time back-and-forth between agents/humans on a shared problem, distinct from the async `cerne work` registry above. **Opening a room is a human moderator's act (F-0211/F-0217).** A human opens one with `cerne room open "<topic>"` — you do **not** run this yourself; you join a room when invited, and only ever run `cerne room open` on an explicit human request.
