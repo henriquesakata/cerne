@@ -21,19 +21,21 @@ import (
 
 // The task package (E-0005): what a feature, epic, task or bug needs to start,
 // within a budget — its stage document whole, its epic, and its neighbourhood
-// in four rings, each item an id, a title and a one-line gist, never a body:
+// in four rings, each item an id, a title and a one-line gist:
 //
-//	(a) what its documents and its epic's cite by [[id]], or what informs them;
+//	(a) what its documents and its epic's cite by [[id]], or what informs them
+//	    (a note, a decision or a reference) — the notes and decisions in force
+//	    with their body, since the author linked them (T-0018);
 //	(b) active notes whose edit: trigger, or whose cited file, matches a path
 //	    its spec or plan cites;
 //	(c) active notes sharing a component with it, the least used one first;
 //	(d) up to five active notes the search index ranks for its title and the
 //	    first paragraph of its problem.
 //
-// It reads the bodies of the task and its epic only: the rest is entity
-// metadata and the search index, opened read-only and never built
-// (criterion 16). No model, no network. TaskIndex, what the binding points
-// print, is the notes of rings (a) to (c).
+// It reads the bodies of the task, its epic and those ring (a) notes and
+// decisions only: the rest is entity metadata and the search index, opened
+// read-only and never built (criterion 16). No model, no network. TaskIndex,
+// what the binding points print, is the notes of rings (a) to (c), no body.
 
 // DefaultContextBudget is the package's ceiling in estimated tokens.
 const DefaultContextBudget = 8000
@@ -49,7 +51,8 @@ var docSlots = []string{"spec", "plan", "result"}
 
 // ContextItem is one neighbour of the package. Why is what brought a ring (b)
 // or (c) item in: the trigger or the cited path, the shared component.
-// Sources are the current references informing a note.
+// Sources are the current references informing a note. Body is the content
+// of a note or decision in force the author linked (ring a), "" for the rest.
 type ContextItem struct {
 	ID      string   `json:"id"`
 	Kind    string   `json:"kind"`
@@ -59,6 +62,9 @@ type ContextItem struct {
 	Ring    string   `json:"ring"`
 	Why     string   `json:"why,omitempty"`
 	Sources []string `json:"sources,omitempty"`
+	Body    string   `json:"body,omitempty"`
+	// Unreadable: a linked body the package could not read (critic L5).
+	Unreadable bool `json:"unreadable,omitempty"`
 }
 
 // ContextRef names the epic of the package.
@@ -82,8 +88,9 @@ type OnDemand struct {
 	Command string `json:"command,omitempty"`
 }
 
-// TaskPack is the package of one task. Compact means the budget cut the
-// items to id and title; Omitted counts, per ring, the items it left out.
+// TaskPack is the package of one task. Omitted, set when the budget cut,
+// counts per ring the items it left out; Compact means it also cut the items
+// left to id and title.
 type TaskPack struct {
 	ID         string         `json:"id"`
 	Title      string         `json:"title"`
@@ -97,6 +104,10 @@ type TaskPack struct {
 	Budget     int            `json:"budget"`
 	Compact    bool           `json:"compact"`
 	Omitted    map[string]int `json:"omitted,omitempty"`
+	// OmittedBodies counts the ring (a) bodies the budget left out.
+	OmittedBodies int `json:"omitted_bodies,omitempty"`
+
+	demand onDemandSet // what OnDemand counts, recounted at each cut
 }
 
 // TaskContext assembles the package of id within budget tokens (<= 0: the
@@ -123,8 +134,18 @@ func taskContext(repoDir, id string, budget int, content bool) (TaskPack, error)
 	if err != nil {
 		return TaskPack{}, err
 	}
-	p := TaskPack{ID: t.f.ID, Title: t.f.Title, State: string(t.f.State), Items: t.neighbourhood(repoDir, notes, refs, true, content),
+	decs, err := store.LoadAllDecisions(repoDir)
+	if err != nil {
+		return TaskPack{}, err
+	}
+	p := TaskPack{ID: t.f.ID, Title: t.f.Title, State: string(t.f.State), Items: t.neighbourhood(repoDir, notes, refs, decs, true, content),
 		Components: t.f.Components, Budget: budget}
+	for i, it := range p.Items { // ring (a) holds only what is in force
+		if it.Ring == "a" && (it.Kind == "note" || it.Kind == "decision") {
+			body, err := linkedBody(filepath.Join(repoDir, "content", it.Kind+"s", it.ID+".md"))
+			p.Items[i].Body, p.Items[i].Unreadable = body, err != nil
+		}
+	}
 	if p.Components == nil {
 		p.Components = []string{}
 	}
@@ -137,9 +158,10 @@ func taskContext(repoDir, id string, budget int, content bool) (TaskPack, error)
 	if name := StageDoc(t.f.State, slices.Collect(maps.Keys(t.docs))); name != "" {
 		p.Doc = ContextDoc{Name: name, Body: t.docs[name]}
 	}
-	if p.OnDemand, err = onDemand(repoDir, t.f.Components, refs, p.Items); err != nil {
+	if p.demand, err = onDemand(repoDir, t.f.Components, refs, decs); err != nil {
 		return TaskPack{}, err
 	}
+	p.OnDemand = p.demand.counts(p.Items)
 	p.fit(budget)
 	return p, nil
 }
@@ -155,7 +177,7 @@ func TaskIndex(repoDir, id string) ([]ContextItem, error) {
 	if err != nil {
 		return nil, err
 	}
-	return t.neighbourhood(repoDir, notes, nil, false, false), nil
+	return t.neighbourhood(repoDir, notes, nil, nil, false, false), nil
 }
 
 // StageDoc is the document of a feature's stage (F-0338) among the real ones
@@ -217,9 +239,28 @@ func realDocs(repoDir, id string) map[string]string {
 	return out
 }
 
+// linkedBody is the content of a linked note or decision without its
+// frontmatter and its title heading, which the item line already carries; ""
+// for a stub, an error for a file it cannot read.
+func linkedBody(file string) (string, error) {
+	data, err := os.ReadFile(file)
+	if err != nil || !doccheck.HasRealContent(data) {
+		return "", err
+	}
+	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
+	if _, rest, opens, closed := doccheck.LeadingBlock(lines); opens && closed {
+		lines = rest
+	}
+	body := strings.TrimSpace(strings.Join(lines, "\n"))
+	if strings.HasPrefix(body, "# ") {
+		_, body, _ = strings.Cut(body, "\n")
+	}
+	return strings.TrimSpace(body), nil
+}
+
 // neighbourhood lists rings (a) to (c), and (d) with content; without full only
 // notes are listed and no other entity is loaded.
-func (t task) neighbourhood(repoDir string, notes []store.Note, refs []store.Reference, full, content bool) []ContextItem {
+func (t task) neighbourhood(repoDir string, notes []store.Note, refs []store.Reference, decs []store.Decision, full, content bool) []ContextItem {
 	byID := make(map[string]store.Note, len(notes))
 	for _, n := range notes {
 		byID[n.ID] = n
@@ -291,6 +332,11 @@ func (t task) neighbourhood(repoDir string, notes []store.Note, refs []store.Ref
 		for _, n := range notes {
 			if slices.Contains(n.Informs, o.id) {
 				add(n.ID, "a", "")
+			}
+		}
+		for _, d := range decs {
+			if slices.Contains(d.Informs, o.id) {
+				add(d.ID, "a", "")
 			}
 		}
 		for _, r := range refs {
@@ -484,73 +530,91 @@ func problemParagraph(spec string) string {
 // shownIDs caps the ids an on-demand line lists itself.
 const shownIDs = 10
 
-// onDemand counts the decisions, references and runbooks in force, and the
-// rejected or superseded proposals, sharing a component with the task
-// (criterion 19). Each count is exactly what its command lists — Listed says
-// how many of them the rings already show — and a kind no command lists by
-// component and state (runbooks, proposals) names its ids instead.
-func onDemand(repoDir string, comps []string, refs []store.Reference, items []ContextItem) ([]OnDemand, error) {
-	listed := map[string]bool{}
-	for _, it := range items {
-		listed[it.ID] = true
+// onDemandSet is what shares a component with the task and may stay on
+// demand (criterion 19), by kind in close order — decisions, references and
+// runbooks in force, rejected or superseded proposals — with the components
+// the list commands take.
+type onDemandSet struct {
+	comps string
+	ids   [4][]string
+}
+
+// onDemandKinds name the kinds of an onDemandSet, in order.
+var onDemandKinds = [4]string{"decisions", "references", "runbooks", "rejected or superseded proposals"}
+
+// onDemand gathers the onDemandSet of a task with components comps.
+func onDemand(repoDir string, comps []string, refs []store.Reference, ds []store.Decision) (onDemandSet, error) {
+	set := onDemandSet{comps: strings.Join(comps, ",")}
+	if len(comps) == 0 {
+		return set, nil
 	}
 	shares := func(cs []string) bool {
 		return slices.ContainsFunc(cs, func(c string) bool { return slices.Contains(comps, c) })
 	}
-	decs, rfs := OnDemand{What: "decisions"}, OnDemand{What: "references"}
-	rbs, props := OnDemand{What: "runbooks"}, OnDemand{What: "rejected or superseded proposals"}
-	var rbIDs, propIDs []string
-	count := func(o *OnDemand, id string) {
-		o.Count++
-		if listed[id] {
-			o.Listed++
+	for _, d := range ds {
+		if d.State == domain.DecisionActive && shares(d.Components) {
+			set.ids[0] = append(set.ids[0], d.ID)
 		}
 	}
-	if len(comps) > 0 {
-		ds, err := store.LoadAllDecisions(repoDir)
-		if err != nil {
-			return nil, err
-		}
-		for _, d := range ds {
-			if d.State == domain.DecisionActive && shares(d.Components) {
-				count(&decs, d.ID)
-			}
-		}
-		for _, r := range refs {
-			if r.State == domain.ReferenceCurrent && shares(r.Components) {
-				count(&rfs, r.ID)
-			}
-		}
-		runbooks, err := store.LoadAllRunbooks(repoDir)
-		if err != nil {
-			return nil, err
-		}
-		for _, rb := range runbooks {
-			if rb.State == domain.RunbookActive && shares(rb.Components) {
-				count(&rbs, rb.ID)
-				rbIDs = append(rbIDs, rb.ID)
-			}
-		}
-		feats, err := store.LoadAllFeatures(repoDir)
-		if err != nil {
-			return nil, err
-		}
-		for _, f := range feats {
-			if (f.State == domain.StateRejected || f.State == domain.StateSuperseded) && shares(f.Components) {
-				count(&props, f.ID)
-				propIDs = append(propIDs, f.ID)
-			}
+	for _, r := range refs {
+		if r.State == domain.ReferenceCurrent && shares(r.Components) {
+			set.ids[1] = append(set.ids[1], r.ID)
 		}
 	}
-	csv := strings.Join(comps, ",")
-	if decs.Count > 0 {
-		decs.Command = "cerne decision list --component " + csv
+	runbooks, err := store.LoadAllRunbooks(repoDir)
+	if err != nil {
+		return set, err
 	}
-	if rfs.Count > 0 {
-		rfs.Command = "cerne reference list --component " + csv
+	for _, rb := range runbooks {
+		if rb.State == domain.RunbookActive && shares(rb.Components) {
+			set.ids[2] = append(set.ids[2], rb.ID)
+		}
 	}
-	rbs.Command, props.Command = showIDs(rbIDs), showIDs(propIDs)
-	return []OnDemand{decs, rfs, rbs, props}, nil
+	feats, err := store.LoadAllFeatures(repoDir)
+	if err != nil {
+		return set, err
+	}
+	for _, f := range feats {
+		if (f.State == domain.StateRejected || f.State == domain.StateSuperseded) && shares(f.Components) {
+			set.ids[3] = append(set.ids[3], f.ID)
+		}
+	}
+	return set, nil
+}
+
+// counts is the close against the items the package keeps: a count leaves
+// out what they show (T-0018) and Listed says how many those are — together,
+// exactly what its command lists. A kind no command lists by component and
+// state (runbooks, proposals) names its ids instead. Recounted at each cut of
+// the budget, so a cut item returns to its count (critic M1).
+func (s onDemandSet) counts(items []ContextItem) []OnDemand {
+	listed := map[string]bool{}
+	for _, it := range items {
+		listed[it.ID] = true
+	}
+	out := make([]OnDemand, len(onDemandKinds))
+	for k, ids := range s.ids {
+		o := OnDemand{What: onDemandKinds[k]}
+		var rest []string
+		for _, id := range ids {
+			if listed[id] {
+				o.Listed++
+			} else {
+				rest = append(rest, id)
+			}
+		}
+		o.Count = len(rest)
+		switch {
+		case k == 0 && o.Count > 0:
+			o.Command = "cerne decision list --component " + s.comps
+		case k == 1 && o.Count > 0:
+			o.Command = "cerne reference list --component " + s.comps
+		case k >= 2:
+			o.Command = showIDs(rest)
+		}
+		out[k] = o
+	}
+	return out
 }
 
 // showIDs is the command that reads ids, the first shownIDs of them named.
@@ -566,33 +630,61 @@ func showIDs(ids []string) string {
 	return "cerne show <id>: " + strings.Join(ids, ", ")
 }
 
-// fit applies the budget (criterion 7): when the text passes it, every item
-// is cut to id and title, then items leave from the end — ring (d) first, (a)
-// last — until it fits. The document is never cut.
+// fit applies the budget (criterion 7, in the spec's order): when the text
+// passes it, the items of rings (d), (c) and (b) leave from the end, whole
+// lines; then the ring (a) bodies, the longest first; only then what is left
+// drops to id and title (critic L1); and last the ring (a) items leave, from
+// the end, until it fits. The document is never cut.
+//
+// ponytail: each step renders the whole text again, O(items x text); a few
+// dozen items fit well under the time budget of criterion 15.
 func (p *TaskPack) fit(budget int) {
 	limit := budget * 4 // bytes: the ~4 bytes per token of every estimate here
 	if len(p.Text()) <= limit {
 		return
 	}
-	all := p.Items
-	p.Compact = true
-	p.Items, p.Omitted = nil, ringCounts(all)
-	room := limit - len(p.Text())
-	kept := 0
-	for kept < len(all) {
-		n := len(all[kept].line(true))
-		if n > room {
-			break
+	items := slices.Clone(p.Items) // the bodies are cut on this copy
+	bodies := 0
+	for _, it := range items {
+		if it.Body != "" {
+			bodies++
 		}
-		room -= n
-		kept++
 	}
-	for {
-		p.Items, p.Omitted = all[:kept], ringCounts(all[kept:])
-		if kept == 0 || len(p.Text()) <= limit {
+	keep := func(n int) bool {
+		p.Items, p.Omitted, p.OmittedBodies = items[:n], ringCounts(items[n:]), bodies
+		p.OnDemand = p.demand.counts(p.Items)
+		for _, it := range p.Items {
+			if it.Body != "" {
+				p.OmittedBodies--
+			}
+		}
+		return n == 0 || len(p.Text()) <= limit
+	}
+	n := len(items)
+	for n > 0 && items[n-1].Ring != "a" { // rings (d), (c), (b): the end of the list
+		if n--; keep(n) {
 			return
 		}
-		kept--
+	}
+	longest := make([]int, 0, bodies)
+	for i, it := range items[:n] {
+		if it.Body != "" {
+			longest = append(longest, i)
+		}
+	}
+	slices.SortStableFunc(longest, func(i, j int) int { return len(items[j].Body) - len(items[i].Body) })
+	for _, i := range longest {
+		if items[i].Body = ""; keep(n) {
+			return
+		}
+	}
+	if p.Compact = true; keep(n) {
+		return
+	}
+	for n > 0 {
+		if n--; keep(n) {
+			return
+		}
 	}
 }
 
@@ -617,8 +709,28 @@ func inForce(kind, state string) bool {
 	return state == "active" || state == "current" || state == "open" || state == "pending"
 }
 
-// line is the item as the package prints it.
+// line is the item as the package prints it, its body right under it,
+// indented.
 func (it ContextItem) line(compact bool) string {
+	if it.Unreadable && !compact {
+		return it.head(false) + "  (body unreadable: cerne show " + it.ID + ")\n"
+	}
+	if it.Body == "" {
+		return it.head(compact)
+	}
+	var b strings.Builder
+	b.WriteString(it.head(compact))
+	for l := range strings.SplitSeq(it.Body, "\n") {
+		if l != "" { // an empty line stays empty
+			b.WriteString("  " + l)
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+// head is the item line alone.
+func (it ContextItem) head(compact bool) string {
 	if compact {
 		return fmt.Sprintf("[%s] %s  %s\n", it.Ring, it.ID, it.Title)
 	}
@@ -666,7 +778,7 @@ func (p TaskPack) Text() string {
 		for _, o := range p.OnDemand {
 			fmt.Fprintf(&b, "%s: %d", o.What, o.Count)
 			if o.Listed > 0 {
-				fmt.Fprintf(&b, " (%d of them listed above)", o.Listed)
+				fmt.Fprintf(&b, ", plus the %d listed above", o.Listed)
 			}
 			if o.Command != "" {
 				b.WriteString(" — " + o.Command)
@@ -674,14 +786,17 @@ func (p TaskPack) Text() string {
 			b.WriteString("\n")
 		}
 	}
-	if p.Compact {
+	if p.Omitted != nil { // the budget cut
 		o := p.Omitted
-		what := "cut the list to id and title and left out"
-		if len(p.Items) == 0 { // the document alone fills the budget
+		what := "left out"
+		switch {
+		case len(p.Items) == 0: // the document alone fills the budget
 			what = "left out every neighbourhood item"
+		case p.Compact:
+			what = "cut the list to id and title and left out"
 		}
-		fmt.Fprintf(&b, "the budget of %d tokens %s: a %d · b %d · c %d · d %d — raise --budget, or read one: cerne show <id>\n",
-			p.Budget, what, o["a"], o["b"], o["c"], o["d"])
+		fmt.Fprintf(&b, "the budget of %d tokens %s: a %d · b %d · c %d · d %d, and %d ring (a) bodies — raise --budget, or read one: cerne show <id>\n",
+			p.Budget, what, o["a"], o["b"], o["c"], o["d"], p.OmittedBodies)
 	}
 	return b.String()
 }

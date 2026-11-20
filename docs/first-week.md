@@ -215,7 +215,7 @@ cerne task new "<step>" --parent F-0001 --context "<what this step does>"
 cerne bug new "<what breaks>" --context "<what happens, where>" --on-behalf "<your words>"
 ```
 
-To work one: ask your agent to start it. The agent runs `cerne feature start <id>` and, for work that is not a card (a review, an investigation), `cerne work start "<what>" --ref <id>`. Both end with the index of the notes that inform that task and the command of its package, `cerne context <id>`: the task's document of the stage, its epic and the notes, decisions and sources that inform it, as id, title and a one-line gist, within a token budget; the agent opens a body with `cerne show <id>` when it needs it. Starting a task also registers what is in progress, so two agents do not do the same thing:
+To work one: ask your agent to start it. The agent runs `cerne feature start <id>` and, for work that is not a card (a review, an investigation), `cerne work start "<what>" --ref <id>`. Both end with the index of the notes that inform that task and the command of its package, `cerne context <id>`: the task's document of the stage, its epic and the notes, decisions and sources that inform it, within a token budget: the notes and decisions linked to the task come with their body, the rest as id, title and a one-line gist; the agent opens another body with `cerne show <id>` when it needs it. Starting a task also registers what is in progress, so two agents do not do the same thing:
 
 <!-- quickstart -->
 ```bash

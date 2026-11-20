@@ -12,7 +12,7 @@ import (
 // (lower/slug/dedup) and persisted on the decision, like a note.
 func TestCreateDecisionWithTags(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	d, err := CreateDecision(repoDir, projDir, "Usar Keycloak para OIDC", "corpo real do ADR",
+	d, err := CreateDecision(repoDir, projDir, "Usar Keycloak para OIDC", "corpo real do ADR", nil,
 		[]string{"Auth", "AUTH", "infra"}, []string{"Keycloak", "Gitea"}, false)
 	if err != nil {
 		t.Fatalf("CreateDecision: %v", err)
@@ -36,7 +36,7 @@ func TestCreateDecisionWithTags(t *testing.T) {
 // and mints nothing (validated before NextID / any write).
 func TestCreateDecisionInvalidFacet(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	_, err := CreateDecision(repoDir, projDir, "T", "body", []string{"prod"}, nil, false)
+	_, err := CreateDecision(repoDir, projDir, "T", "body", nil, []string{"prod"}, nil, false)
 	if !errors.Is(err, domain.ErrUnknownFacet) {
 		t.Fatalf("err = %v, want errors.Is ErrUnknownFacet", err)
 	}

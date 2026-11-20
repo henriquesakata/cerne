@@ -2,9 +2,11 @@ package app
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -51,12 +53,12 @@ func contextFixture(t *testing.T) string {
 		}
 		write("content/references/"+id+".md", "# Source "+id+"\n\nreference body\n")
 	}
-	dec := func(id string, st domain.DecisionState, comps ...string) {
+	dec := func(id string, st domain.DecisionState, informs []string, comps ...string) {
 		t.Helper()
-		if err := store.SaveDecision(repo, store.Decision{ID: id, Title: "Decision " + id, State: st, Components: comps, CreatedAt: now, UpdatedAt: now}); err != nil {
+		if err := store.SaveDecision(repo, store.Decision{ID: id, Title: "Decision " + id, State: st, Informs: informs, Components: comps, CreatedAt: now, UpdatedAt: now}); err != nil {
 			t.Fatal(err)
 		}
-		write("content/decisions/"+id+".md", "# Decision "+id+"\n\ndecision body\n")
+		write("content/decisions/"+id+".md", "---\ncerne_id: "+id+"\n---\n\n# Decision "+id+"\n\nBody of "+id+".\n")
 	}
 	rb := func(id string, st domain.RunbookState, comps ...string) {
 		t.Helper()
@@ -84,10 +86,10 @@ func contextFixture(t *testing.T) string {
 	write("content/features/F-0020/spec.md", "# Lonely\n\n## Problem\n\nXyzzy plugh.\n")
 	write("content/features/F-0009/spec.md", "# Done\n\ndone body\n")
 
-	note("N-0001", domain.NoteActive, "gist one", nil, nil, "Plain words.")
-	note("N-0002", domain.NoteActive, "", []string{"T-0002"}, nil, "Plain words.")
+	note("N-0001", domain.NoteActive, "gist one", nil, nil, "Body of N-0001.\n\nIts second paragraph.")
+	note("N-0002", domain.NoteActive, "", []string{"T-0002"}, nil, "Body of N-0002.")
 	note("N-0003", domain.NoteActive, "", nil, []string{"edit:internal/hooks/**"}, "Plain words.")
-	note("N-0004", domain.NoteActive, "", nil, nil, "Plain words.")
+	note("N-0004", domain.NoteActive, "", nil, nil, "<!-- Record the durable knowledge here. Replace this line. -->") // a stub: no body
 	note("N-0005", domain.NoteActive, "", nil, nil, "Mind internal/hooks/rules.go and internal/cli/contextcmd.go before editing.")
 	note("N-0006", domain.NoteActive, "", nil, nil, "Plain words.", "hooks")
 	note("N-0007", domain.NoteActive, "", nil, nil, "Plain words.", "cli")
@@ -118,9 +120,11 @@ func contextFixture(t *testing.T) string {
 	ref("R-0002", domain.ReferenceCurrent, []string{"N-0001"})
 	ref("R-0003", domain.ReferenceCurrent, []string{"T-0002"}, "hooks") // in ring (a) and on demand
 	ref("R-0004", domain.ReferenceCurrent, nil, "hooks")
-	dec("D-0001", domain.DecisionActive, "cli") // in ring (a) and on demand
-	dec("D-0003", domain.DecisionActive, "cli")
-	dec("D-0004", domain.DecisionSuperseded, "cli")
+	dec("D-0001", domain.DecisionActive, nil, "cli") // in ring (a) and on demand
+	dec("D-0003", domain.DecisionActive, nil, "cli")
+	dec("D-0004", domain.DecisionSuperseded, nil, "cli")
+	dec("D-0005", domain.DecisionActive, []string{"T-0002"}) // informs the task (T-0018)
+	dec("D-0006", domain.DecisionSuperseded, []string{"T-0002"})
 	rb("RB-0001", domain.RunbookActive)
 	rb("RB-0002", domain.RunbookActive, "cli")
 	if err := index.Rebuild(repo, filepath.Join(filepath.Dir(repo), "index.db"), time.Time{}); err != nil {
@@ -151,7 +155,7 @@ func TestTaskContextRings(t *testing.T) {
 	want := []ringID{
 		{"a", "N-0001"}, {"a", "F-0010"}, {"a", "R-0001"}, {"a", "RB-0001"}, // the task's spec cites them, in order
 		{"a", "P-0002"}, {"a", "I-0002"}, // in force; the superseded note, the resolved pending, the promoted idea and the done work are not
-		{"a", "N-0002"}, {"a", "R-0003"}, // they inform the task (the superseded N-0014 does not count)
+		{"a", "N-0002"}, {"a", "D-0005"}, {"a", "R-0003"}, // they inform the task (the superseded N-0014 and D-0006 do not count)
 		{"a", "D-0001"}, {"a", "N-0004"}, // the epic's spec cites them
 		{"b", "N-0003"}, {"b", "N-0005"}, // a trigger, then a citation, of a path the plan cites
 		{"c", "N-0006"}, {"c", "N-0008"}, {"c", "N-0007"}, {"c", "N-0011"}, // hooks (2 active notes) before cli (3); N-0008 enters by hooks
@@ -173,17 +177,36 @@ func TestTaskContextRings(t *testing.T) {
 	if n := byID["N-0001"]; n.Gist != "gist one" || !reflect.DeepEqual(n.Sources, []string{"R-0002"}) || n.Kind != "note" {
 		t.Fatalf("N-0001 = %+v, want its gist and the reference that sustains it", n)
 	}
+	// T-0018 (criteria 6 and 16): the notes and decisions in force the author
+	// linked come with their body — no frontmatter, no title heading, a stub
+	// none — and every other item stays an index line.
+	wantBody := map[string]string{
+		"N-0001": "Body of N-0001.\n\nIts second paragraph.",
+		"N-0002": "Body of N-0002.",
+		"D-0001": "Body of D-0001.",
+		"D-0005": "Body of D-0005.",
+	}
+	for _, it := range p.Items {
+		if it.Body != wantBody[it.ID] {
+			t.Errorf("%s [%s] body = %q, want %q", it.ID, it.Ring, it.Body, wantBody[it.ID])
+		}
+	}
+	if text := p.Text(); !strings.Contains(text, "[a] N-0001  note  Note N-0001 — gist one  · sources R-0002\n  Body of N-0001.\n\n  Its second paragraph.\n[a] F-0010") ||
+		!strings.Contains(text, "[a] D-0005  decision  Decision D-0005\n  Body of D-0005.\n[a] R-0003") {
+		t.Errorf("a body is not right under its item line:\n%s", text)
+	}
 	if i := byID["I-0002"]; i.Title != "First line of the idea" || i.Kind != "idea" {
 		t.Fatalf("an untitled idea = %+v, want its first line as the title", i)
 	}
 	if byID["N-0003"].Why != "edit:internal/hooks/**" || byID["N-0005"].Why != "internal/cli/contextcmd.go" || byID["N-0006"].Why != "hooks" {
 		t.Fatalf("why: %+v %+v %+v", byID["N-0003"], byID["N-0005"], byID["N-0006"])
 	}
-	// Each count is what its command lists (critic M3), saying how many of
-	// them ring (a) already listed; with no list command, the ids themselves.
+	// A count leaves out what ring (a) already shows (T-0018), and says how
+	// many: with them, it is what its command lists (critic M3); with no list
+	// command, the ids themselves.
 	wantOnDemand := []OnDemand{
-		{What: "decisions", Count: 2, Listed: 1, Command: "cerne decision list --component cli,hooks"},
-		{What: "references", Count: 2, Listed: 1, Command: "cerne reference list --component cli,hooks"},
+		{What: "decisions", Count: 1, Listed: 1, Command: "cerne decision list --component cli,hooks"},
+		{What: "references", Count: 1, Listed: 1, Command: "cerne reference list --component cli,hooks"},
 		{What: "runbooks", Count: 1, Command: "cerne show RB-0002"},
 		{What: "rejected or superseded proposals", Count: 2, Command: "cerne show <id>: F-0011, F-0012"},
 	}
@@ -191,10 +214,10 @@ func TestTaskContextRings(t *testing.T) {
 		t.Fatalf("on demand:\n got %+v\nwant %+v", p.OnDemand, wantOnDemand)
 	}
 	text := p.Text()
-	if !strings.Contains(text, "decisions: 2 (1 of them listed above) — cerne decision list --component cli,hooks\n") {
+	if !strings.Contains(text, "decisions: 1, plus the 1 listed above — cerne decision list --component cli,hooks\n") {
 		t.Fatalf("the close does not say what ring (a) already listed:\n%s", text)
 	}
-	for _, gone := range []string{"F-0009", "] F-0011", "] F-0012", "N-0010", "D-0004", "done body", "reference body", "Plain words"} { // the proposals only as ids of the close
+	for _, gone := range []string{"F-0009", "] F-0011", "] F-0012", "N-0010", "D-0004", "D-0006", "done body", "reference body", "runbook body", "Plain words", "Body of D-0003", "Old words"} { // the proposals only as ids of the close
 		if strings.Contains(text, gone) {
 			t.Errorf("the package shows %q:\n%s", gone, text)
 		}
@@ -235,10 +258,10 @@ func TestTaskContextBudget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(tiny.Items) != 0 || tiny.Doc != full.Doc || !reflect.DeepEqual(tiny.Omitted, map[string]int{"a": 10, "b": 2, "c": 4, "d": 1}) {
+	if len(tiny.Items) != 0 || tiny.Doc != full.Doc || !reflect.DeepEqual(tiny.Omitted, map[string]int{"a": 11, "b": 2, "c": 4, "d": 1}) {
 		t.Fatalf("budget 1: items %v, omitted %v, doc kept %v", ringIDs(tiny.Items), tiny.Omitted, tiny.Doc == full.Doc)
 	}
-	if last := lastLine(tiny.Text()); !strings.Contains(last, "left out every neighbourhood item: a 10 · b 2 · c 4 · d 1") || !strings.Contains(last, "cerne show <id>") || strings.Contains(last, "cut the list") {
+	if last := lastLine(tiny.Text()); !strings.Contains(last, "left out every neighbourhood item: a 11 · b 2 · c 4 · d 1") || !strings.Contains(last, "cerne show <id>") || strings.Contains(last, "cut the list") {
 		t.Fatalf("last line %q does not say what was omitted and how to read it", last)
 	}
 	// A budget that holds the fixed part and a few short lines.
@@ -270,9 +293,147 @@ func TestTaskContextBudget(t *testing.T) {
 	}
 }
 
+// E-0005 verification 16 (criterion 7, T-0018): over every budget from the
+// document alone to the whole package, the cut goes in the spec's order — the
+// items of (d), (c) and (b) leave first, whole lines; then the ring (a) bodies,
+// the longest first; only then what is left drops to id and title (critic
+// L1); and last the ring (a) items — within the budget, the document whole,
+// and the last line counts what left, the bodies too.
+func TestTaskContextCutOrder(t *testing.T) {
+	repo := contextFixture(t)
+	full, err := TaskContext(repo, "T-0002", DefaultContextBudget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bodies, ringA := 0, 0
+	for _, it := range full.Items {
+		if it.Body != "" {
+			bodies++
+		}
+		if it.Ring == "a" {
+			ringA++
+		}
+	}
+	if full.Compact || bodies != 4 {
+		t.Fatalf("the whole package: compact=%v, %d bodies", full.Compact, bodies)
+	}
+	bodyLen := map[string]int{}
+	for _, it := range full.Items {
+		bodyLen[it.ID] = len(it.Body)
+	}
+	seen := map[string]bool{}
+	for budget := 1; budget <= (len(full.Text())+3)/4; budget++ {
+		p := full
+		p.Items = slices.Clone(full.Items)
+		p.fit(budget)
+		if p.Doc != full.Doc {
+			t.Fatalf("budget %d cut the document", budget)
+		}
+		if !reflect.DeepEqual(ringIDs(p.Items), ringIDs(full.Items)[:len(p.Items)]) {
+			t.Fatalf("budget %d: the items left are not a prefix: %v", budget, ringIDs(p.Items))
+		}
+		if len(p.Items) > 0 && len(p.Text()) > budget*4 {
+			t.Fatalf("budget %d: %d bytes", budget, len(p.Text()))
+		}
+		shown, keptA, outer := 0, 0, 0
+		minDropped, maxShown := 1<<30, 0
+		for _, it := range p.Items {
+			switch {
+			case it.Ring != "a":
+				outer++
+			case it.Body != "":
+				shown++
+				maxShown = max(maxShown, len(it.Body))
+			case bodyLen[it.ID] > 0:
+				minDropped = min(minDropped, bodyLen[it.ID])
+			}
+			if it.Ring == "a" {
+				keptA++
+			}
+		}
+		if p.OmittedBodies != bodies-shown {
+			t.Fatalf("budget %d: omitted bodies %d, want %d", budget, p.OmittedBodies, bodies-shown)
+		}
+		switch {
+		case outer > 0 && (shown < bodies || keptA < ringA || p.Compact):
+			t.Fatalf("budget %d: a ring (a) body or item, or a gist, left before the outer rings: %v", budget, ringIDs(p.Items))
+		case p.Compact && shown > 0:
+			t.Fatalf("budget %d: the list dropped to id and title before every body left", budget)
+		case keptA < ringA && !p.Compact:
+			t.Fatalf("budget %d: a ring (a) item left before the list dropped to id and title", budget)
+		case !p.Compact && keptA > 0 && !strings.Contains(p.Text(), "Note N-0001 — gist one  · sources R-0002\n"):
+			t.Fatalf("budget %d: a whole line lost its gist:\n%s", budget, p.Text())
+		case maxShown > minDropped:
+			t.Fatalf("budget %d: a body of %d bytes stayed while one of %d left", budget, maxShown, minDropped)
+		}
+		if cut := len(p.Items) < len(full.Items) || shown < bodies || p.Compact; cut != (p.Omitted != nil) {
+			t.Fatalf("budget %d: cut %v, omitted %v", budget, cut, p.Omitted)
+		}
+		if p.Omitted != nil {
+			if want := fmt.Sprintf(", and %d ring (a) bodies — ", p.OmittedBodies); !strings.Contains(lastLine(p.Text()), want) {
+				t.Fatalf("budget %d: last line %q lacks %q", budget, lastLine(p.Text()), want)
+			}
+		}
+		// Critic M1: the close counts against the items kept — a cut item
+		// returns to the count, which still adds up to what the command lists.
+		kinds := map[string]int{}
+		for _, it := range p.Items {
+			kinds[it.Kind]++
+		}
+		for i, o := range p.OnDemand {
+			if f := full.OnDemand[i]; o.Count+o.Listed != f.Count+f.Listed {
+				t.Fatalf("budget %d: %s %d+%d, want %d in all", budget, o.What, o.Count, o.Listed, f.Count+f.Listed)
+			}
+			if kind := strings.TrimSuffix(o.What, "s"); o.Listed > kinds[kind] {
+				t.Fatalf("budget %d: %s says %d listed above, %d kept", budget, o.What, o.Listed, kinds[kind])
+			}
+		}
+		switch {
+		case outer > 0 && outer < len(full.Items)-ringA:
+			seen["outer"] = true
+		case outer == 0 && keptA == ringA && shown > 0 && shown < bodies:
+			seen["bodies"] = true
+		case p.Compact && keptA == ringA:
+			seen["id and title"] = true
+		case keptA > 0 && keptA < ringA:
+			seen["ring a"] = true
+		}
+	}
+	if len(seen) != 4 {
+		t.Fatalf("the sweep did not reach every phase of the cut: %v", seen)
+	}
+}
+
+// Critic L5: a linked body the package cannot read is not passed off as an
+// index line: the item says so and how to read it; a stub is no body at all.
+func TestTaskContextUnreadableLinkedBody(t *testing.T) {
+	repo := contextFixture(t)
+	file := filepath.Join(repo, "content", "notes", "N-0002.md")
+	if err := os.Chmod(file, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(file, 0o644) })
+	if _, err := os.ReadFile(file); err == nil {
+		t.Skip("running as a user that reads mode 000 files (root)")
+	}
+	p, err := TaskContext(repo, "T-0002", DefaultContextBudget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range p.Items {
+		if want := it.ID == "N-0002"; it.Unreadable != want {
+			t.Errorf("%s unreadable = %v, want %v", it.ID, it.Unreadable, want)
+		}
+	}
+	if !strings.Contains(p.Text(), "[a] N-0002  note  Note N-0002\n  (body unreadable: cerne show N-0002)\n") {
+		t.Fatalf("the unreadable body is not named:\n%s", p.Text())
+	}
+}
+
 // Verification 11, second half (criterion 16): the package comes out the same
-// with every other entity's body unreadable — it reads the bodies of the task
-// and its epic only; the rest is metadata and the index.
+// with every other entity's body unreadable — it reads the bodies of the task,
+// its epic and the notes and decisions in force of ring (a) only (T-0018); the
+// rest is metadata and the index.
 func TestTaskContextReadsOnlyItsOwnBodies(t *testing.T) {
 	repo := contextFixture(t)
 	before, err := TaskContext(repo, "T-0002", DefaultContextBudget)
@@ -283,9 +444,14 @@ func TestTaskContextReadsOnlyItsOwnBodies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if before.Items[0].ID != "N-0001" || before.Items[0].Body == "" {
+		t.Fatalf("the probe needs a ring (a) body: %+v", before.Items[0])
+	}
+	// The superseded N-0013, N-0014 and D-0006 are linked too, and locked.
+	readable := []string{"T-0002", "E-0001", "N-0001", "N-0002", "N-0004", "D-0001", "D-0005"}
 	var locked []string
 	err = filepath.WalkDir(filepath.Join(repo, "content"), func(p string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || strings.Contains(p, "T-0002") || strings.Contains(p, "E-0001") {
+		if err != nil || d.IsDir() || slices.ContainsFunc(readable, func(id string) bool { return strings.Contains(p, id) }) {
 			return err
 		}
 		locked = append(locked, p)

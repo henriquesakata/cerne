@@ -38,7 +38,7 @@
     { "name": "next", "description": "Active features grouped by their next action, plus the documentation debts lint finds." },
     { "name": "search", "description": "Find entities and documents by subject (full-text, history included)." },
     { "name": "show", "description": "Read one entity by id: its metadata and its documents." },
-    { "name": "context", "description": "The task package: a feature's stage document, its epic and the notes that inform it, within a token budget." },
+    { "name": "context", "description": "The task package: a feature's stage document, its epic and the notes and decisions that inform it, within a token budget." },
     { "name": "ask", "description": "The sources that answer a question, ranked, with snippets. Makes no LLM call." },
     { "name": "guide", "description": "How to use cerne itself: the matching sections of its skill, command help and FAQ." }
   ],

@@ -33,6 +33,10 @@ func TestHookChannelSubagentGetsTheBoundTask(t *testing.T) {
 	if strings.Contains(out, "BODY-MARKER") {
 		t.Fatalf("a body reached the subagent:\n%s", out)
 	}
+	// T-0018: the package carries the bodies the subagent block leaves out.
+	if pkg := mustCerne(t, "context", "F-0001", "--dir", projDir); !strings.Contains(pkg, "  BODY-MARKER of the rule.\n") {
+		t.Fatalf("the package lacks the linked bodies:\n%s", pkg)
+	}
 
 	if out, err := execCerneStdin(t, sessionStartJSON(t, "sess-free", projDir), "hook", "channel", "--point", "subagent"); err != nil || out != "" {
 		t.Fatalf("unbound session: %v %q, want silence", err, out)

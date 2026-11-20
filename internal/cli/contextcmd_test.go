@@ -63,6 +63,68 @@ func TestContextCmdText(t *testing.T) {
 	}
 }
 
+// E-0005 verification 16 through the CLI (T-0018): a note and a decision
+// linked to the task — by note new --informs and decision link — come with
+// their body, in the text and in --json; a note of ring (c) stays an index
+// line; a tight budget says how many bodies it left out.
+func TestContextCmdLinkedBodies(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	dir := t.TempDir()
+	file := func(name, body string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	spec := file("spec.md", "# Conta digital\n\n## Problema\n\nAbrir conta sem agência.\n")
+	for _, args := range [][]string{
+		{"feature", "new", "Conta digital", "--file", spec, "--component", "gitea"},
+		{"note", "new", "Token do forge", "--informs", "F-0001", "--file", file("n1.md", "Use the root token, never a package token.\n")},
+		{"decision", "new", "Forge pela API", "--file", file("d1.md", "## Decision\n\nOpen pull requests through the API.\n")},
+		{"decision", "link", "D-0001", "--informs", "F-0001"},
+		{"note", "new", "Webhook do forge", "--component", "gitea", "--file", file("n2.md", "RING-C-BODY stays out.\n")},
+	} {
+		if out, err := execCerne(t, append(args, "--dir", projDir)...); err != nil {
+			t.Fatalf("%v: %v\n%s", args, err, out)
+		}
+	}
+	out := mustCerne(t, "context", "F-0001", "--dir", projDir)
+	for _, want := range []string{
+		"[a] N-0001  note  Token do forge\n  Use the root token, never a package token.\n",
+		"[a] D-0001  decision  Forge pela API\n  ## Decision\n\n  Open pull requests through the API.\n",
+		"[c] N-0002  note  Webhook do forge  · gitea\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("context output missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "RING-C-BODY") {
+		t.Fatalf("a ring (c) body reached the package:\n%s", out)
+	}
+	var p app.TaskPack
+	if err := json.Unmarshal([]byte(mustCerne(t, "context", "F-0001", "--json", "--dir", projDir)), &p); err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Items) != 3 || p.Items[0].Body != "Use the root token, never a package token." || p.Items[1].ID != "D-0001" ||
+		p.Items[1].Body != "## Decision\n\nOpen pull requests through the API." || p.Items[2].Body != "" {
+		t.Fatalf("context --json items = %+v", p.Items)
+	}
+	// Critic L4: the MCP tool returns the same bodies.
+	cs, _, stop := startMCP(t, projDir)
+	res := callTool(t, cs, "context", map[string]any{"id": "F-0001"})
+	if err := stop(); err != nil {
+		t.Fatalf("cerne mcp: %v", err)
+	}
+	var viaMCP app.TaskPack
+	if err := json.Unmarshal([]byte(res), &viaMCP); err != nil || len(viaMCP.Items) != 3 || viaMCP.Items[0].Body != p.Items[0].Body || viaMCP.Items[1].Body != p.Items[1].Body {
+		t.Fatalf("MCP context: %v\n%s", err, res)
+	}
+	if small := mustCerne(t, "context", "F-0001", "--budget", "1", "--dir", projDir); !strings.Contains(small, "a 2 · b 0 · c 1 · d 0, and 2 ring (a) bodies") {
+		t.Fatalf("context --budget 1 does not count the bodies it left out:\n%s", small)
+	}
+}
+
 // E-0005 criterion 8 (T-0017): --json is the same package, structured.
 func TestContextCmdJSON(t *testing.T) {
 	projDir := contextProject(t)

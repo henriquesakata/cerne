@@ -161,7 +161,7 @@ func validateInforms(repoDir string, informs []string) ([]string, error) {
 	var out []string
 	seen := map[string]bool{}
 	for _, raw := range informs {
-		id := strings.TrimSpace(raw)
+		id := domain.CanonicalID(raw) // N-0061: stored by the canonical id
 		if id == "" || seen[id] {
 			continue
 		}
@@ -169,26 +169,26 @@ func validateInforms(repoDir string, informs []string) ([]string, error) {
 		switch {
 		case domain.IsFeatureID(id):
 			if _, err := store.LoadFeature(repoDir, id); errors.Is(err, store.ErrNotFound) {
-				return nil, fmt.Errorf("--informs: feature %s not found in backend", id)
+				return nil, fmt.Errorf("--informs: feature %s not found in backend: %w", id, store.ErrNotFound)
 			} else if err != nil {
 				return nil, err
 			}
 		case strings.HasPrefix(id, "D-"):
 			if _, err := store.LoadDecision(repoDir, id); errors.Is(err, store.ErrNotFound) {
-				return nil, fmt.Errorf("--informs: decision %s not found in backend", id)
+				return nil, fmt.Errorf("--informs: decision %s not found in backend: %w", id, store.ErrNotFound)
 			} else if err != nil {
 				return nil, err
 			}
 		case strings.HasPrefix(id, "RB-"):
 			if _, err := store.LoadRunbook(repoDir, id); errors.Is(err, store.ErrNotFound) {
-				return nil, fmt.Errorf("--informs: runbook %s not found in backend", id)
+				return nil, fmt.Errorf("--informs: runbook %s not found in backend: %w", id, store.ErrNotFound)
 			} else if err != nil {
 				return nil, err
 			}
 		case strings.HasPrefix(id, "I-"):
 			idea, err := store.LoadIdea(repoDir, id)
 			if errors.Is(err, store.ErrNotFound) {
-				return nil, fmt.Errorf("--informs: idea %s not found in backend", id)
+				return nil, fmt.Errorf("--informs: idea %s not found in backend: %w", id, store.ErrNotFound)
 			} else if err != nil {
 				return nil, err
 			}
@@ -197,7 +197,7 @@ func validateInforms(repoDir string, informs []string) ([]string, error) {
 			}
 		case strings.HasPrefix(id, "N-"):
 			if _, err := store.LoadNote(repoDir, id); errors.Is(err, store.ErrNotFound) {
-				return nil, fmt.Errorf("--informs: note %s not found in backend", id)
+				return nil, fmt.Errorf("--informs: note %s not found in backend: %w", id, store.ErrNotFound)
 			} else if err != nil {
 				return nil, err
 			}
@@ -336,11 +336,16 @@ func LinkReference(repoDir, projDir, id string, add, remove []string) (store.Ref
 
 // relink applies add (validated) and remove to informs: added and removed are
 // what changed, absent the removed ids that were not there. An id in both
-// lists is refused; the remove list is deduped.
+// lists is refused; the remove list is deduped and compared by the canonical
+// id (N-0061).
 func relink(informs, add, remove []string) (out, added, removed, absent []string, err error) {
 	out = informs
+	canon := make([]string, 0, len(remove))
+	for _, t := range remove {
+		canon = append(canon, domain.CanonicalID(t))
+	}
 	for _, t := range add {
-		if slices.Contains(remove, t) {
+		if slices.Contains(canon, t) {
 			return nil, nil, nil, nil, fmt.Errorf("--informs and --unlink both name %s", t)
 		}
 		if !slices.Contains(out, t) {
@@ -349,14 +354,14 @@ func relink(informs, add, remove []string) (out, added, removed, absent []string
 		}
 	}
 	seen := map[string]bool{}
-	for _, t := range remove {
-		t = strings.TrimSpace(t)
+	for _, t := range canon {
 		if t == "" || seen[t] {
 			continue
 		}
 		seen[t] = true
-		if slices.Contains(out, t) {
-			out = slices.DeleteFunc(out, func(x string) bool { return x == t })
+		same := func(x string) bool { return domain.CanonicalID(x) == t }
+		if slices.ContainsFunc(out, same) {
+			out = slices.DeleteFunc(out, same)
 			removed = append(removed, t)
 		} else {
 			absent = append(absent, t)
@@ -365,7 +370,7 @@ func relink(informs, add, remove []string) (out, added, removed, absent []string
 	return out, added, removed, absent, nil
 }
 
-// appendLinkEvents records <kind>.linked / <kind>.unlinked (kind reference or
+// appendLinkEvents records <kind>.linked / <kind>.unlinked (kind reference, decision or
 // note); via names the path that linked (promote) when not a direct link.
 func appendLinkEvents(repoDir, kind, id string, added, removed []string, via string) error {
 	for _, e := range []struct {

@@ -27,7 +27,7 @@ func TestComponentWritersRefuseNearName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed note: %v", err)
 	}
-	d, err := CreateDecision(repoDir, projDir, "Retag target decision", "", nil, nil, false)
+	d, err := CreateDecision(repoDir, projDir, "Retag target decision", "", nil, nil, nil, false)
 	if err != nil {
 		t.Fatalf("seed decision: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestComponentWritersRefuseNearName(t *testing.T) {
 			return err
 		}},
 		{"decision new", func(c []string, force bool) error {
-			_, err := CreateDecision(repoDir, projDir, "Gamma writer "+boolWord(force), "", nil, c, force)
+			_, err := CreateDecision(repoDir, projDir, "Gamma writer "+boolWord(force), "", nil, nil, c, force)
 			return err
 		}},
 		{"decision retag", func(c []string, force bool) error {
@@ -138,7 +138,7 @@ func TestDuplicateGuardRefusesBeforeTheComponentCheck(t *testing.T) {
 	if _, err := CreateNote(repoDir, projDir, "Same note title", "", nil, nil, []string{"testing"}, nil, "", false, false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := CreateDecision(repoDir, projDir, "Same decision title", "", nil, []string{"testing"}, false); err != nil {
+	if _, err := CreateDecision(repoDir, projDir, "Same decision title", "", nil, nil, []string{"testing"}, false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := CreateExternalReference(repoDir, projDir, "Some source", "http://same", "c", nil, nil, []string{"testing"}, false); err != nil {
@@ -158,7 +158,7 @@ func TestDuplicateGuardRefusesBeforeTheComponentCheck(t *testing.T) {
 			return err
 		},
 		"decision": func() error {
-			_, err := CreateDecision(repoDir, projDir, "Same decision title", "", nil, near, false)
+			_, err := CreateDecision(repoDir, projDir, "Same decision title", "", nil, nil, near, false)
 			return err
 		},
 		"reference": func() error {
@@ -201,7 +201,7 @@ func boolWord(b bool) string {
 // The CLI's "new component" notice reads which names the backend lacks.
 func TestNewComponents(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	if _, err := CreateDecision(repoDir, projDir, "Seed decision", "", nil, []string{"gitea"}, false); err != nil {
+	if _, err := CreateDecision(repoDir, projDir, "Seed decision", "", nil, nil, []string{"gitea"}, false); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	got, err := NewComponents(repoDir, []string{"gitea", "kpack"})

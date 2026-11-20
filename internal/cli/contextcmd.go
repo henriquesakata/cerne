@@ -22,10 +22,12 @@ func newContextCmd() *cobra.Command {
 			"development) whole, its epic, and its neighbourhood in four rings — (a) what its documents and its " +
 			"epic's link by [[id]] or what informs them; (b) active notes whose edit: trigger or cited file matches a " +
 			"path its spec or plan cites; (c) active notes sharing a component, the least used first; (d) up to five " +
-			"active notes the search index ranks for its title and problem. Each item is an id, a title and a " +
-			"one-line gist — read a body with 'cerne show <id>'. It closes with the counts of what shares a " +
-			"component and stays on demand. Past --budget (estimated tokens) the list drops to id and title and " +
-			"leaves from ring (d) to (a); the document is never cut. Reads the local clone and index as they are: " +
+			"active notes the search index ranks for its title and problem. The active notes and decisions of ring " +
+			"(a), which the author linked, come with their body; every other item is an id, a title and a one-line " +
+			"gist — read a body with 'cerne show <id>'. It closes with the counts of what shares a component and " +
+			"stays on demand. Past --budget (estimated tokens) the items of rings (d), (c) and (b) leave first, then " +
+			"the ring (a) bodies, the longest first; only then what is left drops to id and title, and the ring (a) " +
+			"items leave last; the document is never cut. Reads the local clone and index as they are: " +
 			"no network, no model. --json for structured output.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

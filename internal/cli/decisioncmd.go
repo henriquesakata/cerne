@@ -30,6 +30,7 @@ func newDecisionCmd() *cobra.Command {
 	cmd.AddCommand(verbs.MarkChat(newDecisionListCmd(&dir)))
 	cmd.AddCommand(verbs.MarkLocal(newDecisionDraftCmd(&dir)))
 	cmd.AddCommand(verbs.MarkChat(newDecisionRetagCmd(&dir)))
+	cmd.AddCommand(verbs.MarkChat(newDecisionLinkCmd(&dir)))
 	cmd.AddCommand(newDecisionSupersedeCmd(&dir), legacyName(newDecisionSupersedeCmd(&dir), "substituir"))
 	cmd.AddCommand(verbs.MarkChat(newDecisionKeepCmd(&dir)))
 	cmd.AddCommand(newDecisionRetireCmd(&dir))
@@ -168,7 +169,7 @@ func runDecisionRetag(cmd *cobra.Command, dir, id, facet, component string, setF
 }
 
 func newDecisionNewCmd(dir *string) *cobra.Command {
-	var file, facet, component string
+	var informs, file, facet, component string
 	var force bool
 	cmd := &cobra.Command{
 		Use:   "new [title]",
@@ -177,12 +178,14 @@ func newDecisionNewCmd(dir *string) *cobra.Command {
 			"real content, already committed and pushed — no draft+push cycle. Without a body, it is born as a stub of the " +
 			"template to fill in. Use --facet (closed axis: infra,code,data,process,auth) and --component " +
 			"(subsystem/tool, e.g. keycloak,gitea) to organize — both multi-valued, comma-separated. " +
+			"Use --informs to link the decision to the entities (F-/E-/T-/B-/D-/RB-/N-/I-) it informs: a linked decision reaches the task package (cerne context) with its body. " +
 			"A live decision with a similar title refuses the creation (F-0324); --force overrides it. The title argument may be omitted when the body (--file or stdin) opens with a `# ` heading: that heading becomes the title.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runDecisionNew(cmd, *dir, args, file, facet, component, force)
+			return runDecisionNew(cmd, *dir, args, informs, file, facet, component, force)
 		},
 	}
+	cmd.Flags().StringVar(&informs, "informs", "", "comma-separated F-/E-/T-/B-/D-/RB-/N-/I- ids this decision informs")
 	cmd.Flags().StringVar(&file, "file", "", "file with the ADR body (defaults to piped stdin); one-shot, skips draft+push")
 	cmd.Flags().StringVar(&facet, "facet", "", "facets (comma-separated; closed set: infra,code,data,process,auth)")
 	cmd.Flags().StringVar(&component, "component", "", "components (comma-separated subsystem/tool tags, e.g. keycloak,gitea)")
@@ -190,7 +193,7 @@ func newDecisionNewCmd(dir *string) *cobra.Command {
 	return cmd
 }
 
-func runDecisionNew(cmd *cobra.Command, dir string, args []string, file, facet, component string, force bool) error {
+func runDecisionNew(cmd *cobra.Command, dir string, args []string, informs, file, facet, component string, force bool) error {
 	body, err := readOptionalBody(cmd, file)
 	if err != nil {
 		return err
@@ -208,7 +211,7 @@ func runDecisionNew(cmd *cobra.Command, dir string, args []string, file, facet, 
 		return err
 	}
 	notice := componentNotice(cmd, ctx.repoDir, component)
-	d, err := app.CreateDecision(ctx.repoDir, ctx.projDir, title, body, splitInforms(facet), splitInforms(component), force)
+	d, err := app.CreateDecision(ctx.repoDir, ctx.projDir, title, body, splitInforms(informs), splitInforms(facet), splitInforms(component), force)
 	if err != nil {
 		return err
 	}
@@ -222,6 +225,45 @@ func runDecisionNew(cmd *cobra.Command, dir string, args []string, file, facet, 
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s created (active). Next step: fill in the ADR ('cerne decision draft %s' scaffolds it) and run 'cerne push'.\n", d.ID, d.ID)
 	return nil
+}
+
+// newDecisionLinkCmd is note link for a decision (E-0005 criterion 22): a
+// decision linked to a task reaches its package in ring (a), with its body.
+func newDecisionLinkCmd(dir *string) *cobra.Command {
+	var informs, unlink string
+	cmd := &cobra.Command{
+		Use:   "link <id>",
+		Short: "Add or remove the entities an active decision informs",
+		Long: "Adds (--informs) or removes (--unlink) the F-/E-/T-/B-/D-/RB-/N-/I- targets of an active decision, without " +
+			"duplicating the ones already there. A linked decision reaches the agent of the task it informs: the task " +
+			"package (cerne context) prints it with its body. Prints the final list.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if strings.TrimSpace(informs) == "" && strings.TrimSpace(unlink) == "" {
+				return fmt.Errorf("provide at least --informs or --unlink")
+			}
+			ctx, err := resolveProject(*dir)
+			if err != nil {
+				return err
+			}
+			d, absent, err := app.LinkDecision(ctx.repoDir, ctx.projDir, args[0], splitInforms(informs), splitInforms(unlink))
+			if err != nil {
+				return err
+			}
+			if len(absent) > 0 {
+				fmt.Fprintf(cmd.ErrOrStderr(), "not present: %s\n", strings.Join(absent, ", "))
+			}
+			list := "(none)"
+			if len(d.Informs) > 0 {
+				list = strings.Join(d.Informs, ", ")
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%s informs: %s\n", d.ID, list)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&informs, "informs", "", "comma-separated F-/E-/T-/B-/D-/RB-/N-/I- ids to add")
+	cmd.Flags().StringVar(&unlink, "unlink", "", "comma-separated ids to remove")
+	return cmd
 }
 
 func newDecisionSupersedeCmd(dir *string) *cobra.Command {
