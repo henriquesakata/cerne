@@ -410,3 +410,54 @@ func TestMirrorSettings(t *testing.T) {
 		}
 	})
 }
+
+// F-0471 crit. 1 to 3: the cerne: prefix belongs to the mirror's state labels.
+func TestMirrorTrackersRefusesCerneLabel(t *testing.T) {
+	record := func(label string) map[string]any {
+		r := ghRecord("gh", "issues")
+		r["label"] = label
+		return r
+	}
+	for _, label := range []string{"cerne:public", "Cerne:Public", "  cerne:x", "cerne:approved"} {
+		t.Run("refuses "+label, func(t *testing.T) {
+			projDir, _ := settingsFixture(t, "", "", false)
+			before := readRC(t, projDir)
+			err := SetSettingValue(projDir, "mirror.trackers", ScopeProject, []any{record(label)})
+			if !errors.Is(err, ErrInvalidSettingValue) {
+				t.Fatalf("set label %q = %v, want errors.Is ErrInvalidSettingValue", label, err)
+			}
+			if !strings.Contains(err.Error(), label) || !strings.Contains(err.Error(), "cerne:") {
+				t.Errorf("error %q must cite the label and the reserved prefix", err)
+			}
+			if got := readRC(t, projDir); got != before {
+				t.Fatalf("a refused value wrote:\n%s", got)
+			}
+		})
+	}
+	for _, label := range []string{"", "cerne-public", "public:cerne", "cerne"} {
+		t.Run("accepts "+label, func(t *testing.T) {
+			projDir, _ := settingsFixture(t, "", "", false)
+			if err := SetSettingValue(projDir, "mirror.trackers", ScopeProject, []any{record(label)}); err != nil {
+				t.Fatalf("set label %q: %v", label, err)
+			}
+		})
+	}
+	t.Run("a hand-edited .cernerc is an invalid value", func(t *testing.T) {
+		rc := "\n[mirror]\nenabled = true\n" + `trackers = [{name = "gh", kind = "github", url = "https://github.com/o/issues", label = "cerne:public"}]` + "\n"
+		projDir, _ := settingsFixture(t, rc, "", false)
+		if got := MirrorSettings(projDir); len(got.Trackers) != 0 {
+			t.Fatalf("MirrorSettings trackers = %v, want none", got.Trackers)
+		}
+		var found bool
+		for _, s := range ResolveSettings(projDir).Settings {
+			for _, p := range s.Invalid {
+				if s.ID == "mirror.trackers" && p.Scope == ScopeProject {
+					found = true
+				}
+			}
+		}
+		if !found {
+			t.Fatal("no project-scope Invalid for mirror.trackers")
+		}
+	})
+}
