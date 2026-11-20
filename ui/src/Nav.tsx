@@ -106,6 +106,7 @@ export default function Nav({ hash }: { hash: string }) {
       </span>
       <NavLinks active={active} hash={hash} />
       <ProjectSelector />
+      <NavUpdate />
       <SettingsLink active={active === '#/settings'} />
       <NotificationBell />
       <LangToggle />
@@ -227,6 +228,27 @@ function NavVersion() {
     <span className="nav-version" title={t.nav.versionTitle}>
       {v}
     </span>
+  )
+}
+
+// Botão Atualizar (F-0480): só com release mais nova que o binário instalado.
+// Trocável por dentro, o clique troca o binário e o painel reinicia nele
+// (F-0478); não trocável (build local, go install, pasta sem escrita), o
+// botão mostra a versão nova e abre o aviso com o comando a rodar. Durante a
+// troca some daqui: o andamento fica no aviso do topo.
+function NavUpdate() {
+  const { t } = useT()
+  const { update, beginUpdate, toggleUpdateFix } = useProjects()
+  if (!update?.newer || !update.latest || update.running) return null
+  const v = update.latest.replace(/^v/, '')
+  return update.swappable ? (
+    <button type="button" className="theme-toggle nav-update" onClick={beginUpdate}>
+      {t.live.updateTo(v)}
+    </button>
+  ) : (
+    <button type="button" className="theme-toggle nav-update" onClick={toggleUpdateFix}>
+      {t.live.updateAvailable(v)}
+    </button>
   )
 }
 

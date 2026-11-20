@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, act, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import { LiveProvider, pageReload, useProjects } from './live'
-import { fetchProjects, HTTPError, renameProject, restartPanel, subscribeLive } from './api'
+import { fetchProjects, fetchUpdate, HTTPError, renameProject, restartPanel, startUpdate, subscribeLive } from './api'
+import type { UpdateState } from './api'
 import type { ProjectInfo } from './api'
 import Nav from './Nav'
 import { navAllowed, setNavGuard } from './navGuard'
@@ -25,6 +26,8 @@ vi.mock('./api', async (importOriginal) => ({
   fetchSettings: vi.fn(async () => ({ settings: [], files: {} })),
   renameProject: vi.fn(),
   restartPanel: vi.fn(),
+  fetchUpdate: vi.fn(async () => null),
+  startUpdate: vi.fn(),
 }))
 
 vi.mock('./NotificationBell', () => ({ default: () => null }))
@@ -622,5 +625,94 @@ describe('LiveProvider — reinício no binário novo (F-0478)', () => {
     } finally {
       setNavGuard(null)
     }
+  })
+})
+
+// F-0480: o botão Atualizar só aparece com release mais nova que o binário
+// instalado; o clique troca o binário e o painel reinicia nele (F-0478).
+describe('Nav — botão Atualizar (F-0480)', () => {
+  const base: UpdateState = { current: 'v0.14.3', latest: 'v0.15.0', newer: true, swappable: true, running: false }
+  let onProjects = () => {}
+  let onUpdate: (line: string) => void = () => {}
+  beforeEach(() => {
+    vi.mocked(subscribeLive).mockImplementation((h) => {
+      onProjects = h.onProjects
+      onUpdate = h.onUpdate ?? (() => {})
+      return () => {}
+    })
+    vi.mocked(startUpdate).mockReset()
+  })
+  afterEach(() => vi.mocked(fetchUpdate).mockImplementation(async () => null))
+
+  const renderNav = () =>
+    render(
+      <LiveProvider>
+        <Nav hash="#/" />
+      </LiveProvider>,
+    )
+
+  it('critério 2: aparece com release nova e some em dia ou sem consulta', async () => {
+    vi.mocked(fetchUpdate).mockImplementation(async () => base)
+    renderNav()
+    expect(await screen.findByRole('button', { name: 'Atualizar para 0.15.0' })).toBeInTheDocument()
+
+    vi.mocked(fetchUpdate).mockImplementation(async () => ({ ...base, latest: 'v0.14.3', newer: false }))
+    await act(async () => onProjects())
+    expect(screen.queryByRole('button', { name: /Atualizar para/ })).not.toBeInTheDocument()
+
+    vi.mocked(fetchUpdate).mockImplementation(async () => ({ ...base, latest: undefined, newer: false, error: 'offline' }))
+    await act(async () => onProjects())
+    expect(screen.queryByRole('button', { name: /Atualizar para|disponível/ })).not.toBeInTheDocument()
+  })
+
+  it('critério 3: o clique pede a troca e mostra o andamento', async () => {
+    vi.mocked(fetchUpdate).mockImplementation(async () => base)
+    vi.mocked(startUpdate).mockImplementation(() => new Promise(() => {}))
+    renderNav()
+    fireEvent.click(await screen.findByRole('button', { name: 'Atualizar para 0.15.0' }))
+    expect(startUpdate).toHaveBeenCalledTimes(1)
+    await act(async () => onUpdate('==> Upgrading henriquesakata/tap/cerne'))
+    expect(screen.getByRole('status')).toHaveTextContent('Atualizando o cerne… ==> Upgrading henriquesakata/tap/cerne')
+    expect(screen.queryByRole('button', { name: /Atualizar para/ })).not.toBeInTheDocument()
+  })
+
+  it('critério 4: a troca que termina bem cai no reinício da F-0478', async () => {
+    vi.mocked(fetchUpdate).mockImplementation(async () => base)
+    pageReload.run = vi.fn()
+    vi.mocked(fetchProjects).mockImplementation(async () => ({ projects: mockProjects, default: 'p1', version: 'v0.14.3', ui: 'old' }))
+    renderNav()
+    await screen.findByRole('button', { name: 'Atualizar para 0.15.0' })
+    // O painel voltou no binário novo (o servidor reinicia sozinho depois da troca).
+    vi.mocked(fetchUpdate).mockImplementation(async () => ({ ...base, current: 'v0.15.0', newer: false }))
+    vi.mocked(fetchProjects).mockImplementation(async () => ({ projects: mockProjects, default: 'p1', version: 'v0.15.0', ui: 'new' }))
+    await act(async () => onProjects())
+    expect(pageReload.run).toHaveBeenCalledTimes(1)
+  })
+
+  it('critério 5: a troca que falha mostra o motivo e o comando', async () => {
+    vi.mocked(fetchUpdate).mockImplementation(async () => ({
+      ...base,
+      last: { state: 'not done', detail: 'checksum mismatch; the old executable is untouched', fix: 'brew upgrade henriquesakata/tap/cerne' },
+    }))
+    renderNav()
+    expect(await screen.findByText('A atualização não terminou: checksum mismatch; the old executable is untouched')).toBeInTheDocument()
+    expect(screen.getByText('brew upgrade henriquesakata/tap/cerne')).toBeInTheDocument()
+    // O botão segue lá para tentar de novo.
+    expect(screen.getByRole('button', { name: 'Atualizar para 0.15.0' })).toBeInTheDocument()
+  })
+
+  it('critério 6: sem troca por dentro, mostra a versão nova e o comando, sem botão de troca', async () => {
+    vi.mocked(fetchUpdate).mockImplementation(async () => ({
+      ...base,
+      swappable: false,
+      why: 'this is a local build (version dev), not a release: it is not replaced',
+      fix: 'go install github.com/henriquesakata/cerne/cmd/cerne@latest',
+    }))
+    renderNav()
+    const chip = await screen.findByRole('button', { name: '0.15.0 disponível' })
+    expect(screen.queryByRole('button', { name: /Atualizar para/ })).not.toBeInTheDocument()
+    fireEvent.click(chip)
+    expect(screen.getByText('go install github.com/henriquesakata/cerne/cmd/cerne@latest')).toBeInTheDocument()
+    expect(startUpdate).not.toHaveBeenCalled()
   })
 })
