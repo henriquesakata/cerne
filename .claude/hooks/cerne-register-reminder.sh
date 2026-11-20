@@ -30,8 +30,25 @@ case $payload in
 esac
 cat <<'RULES'
 cerne project rules — make in-flight work visible from minute one:
-- Picking up a FEATURE? First action: `cerne feature new "<title>" --context "<1-3 sentences of why>"` (lands as a candidate on the kanban; --file spec.md for a one-shot spec). Register it complete in that same act: spec (`--file`), tags (`--facet`/`--component`) and, once the project has a capability taxonomy, capability (`cerne feature capability <id> C-…`) — `cerne feature approve <id> --check` flags a card without them and the approve refuses it. Advance it as you go: spec -> approve (HUMAN gate), plan -> `cerne feature start`, result -> `cerne feature complete` as soon as the PR is open (never wait for CI or the merge). Abandoned? `cerne feature reject <id> --reason "..."`.
-- Picking up an ALREADY-APPROVED feature to plan? First action, before writing the plan: `cerne work start "F-NNNN: <what> — planejamento" --ref F-NNNN` (F-0208) — registers the pickup immediately, closing the blind window before `feature start` (which needs a real plan and so lags). A `cerne push` of the plan auto-opens the same work if you forget. It closes by itself at `cerne feature start` (F-0341).
+- START a session with `cerne next` (what to do now, and the lint debts), then a task with its package, `cerne context <id>` (the stage document, the epic and the notes that inform it, within a token budget), not by reading `.docs/CONTEXT.md`: that file is the map of what is live and of the note components — read it when you need the map. Tagging? Reuse a component `cerne tags` lists; a new name near an existing one is refused without --force.
+- Picking up a FEATURE? First action: `cerne feature new "<title>" --context "<1-3 sentences of why>"` (lands as a candidate on the kanban; --file spec.md for a one-shot spec). Before writing that spec, read the code the request touches: the Problem cites real file:line and no open question asks what the code already answers. Register it complete in that same act: spec (`--file`), tags (`--facet`/`--component`) and, once the project has a capability taxonomy, capability (`cerne feature capability <id> C-…`) — `cerne feature approve <id> --check` flags a card without them and the approve refuses it. Advance it as you go: spec -> approve (HUMAN gate), plan -> `cerne feature start`, result -> `cerne feature complete` as soon as the PR is open (never wait for CI or the merge). Abandoned? `cerne feature reject <id> --reason "..."`.
+RULES
+# The planning item and the DOCS LANGUAGE line come from cerne (F-0475): the
+# example speaks the project's documentation language and the line lists its
+# forms. With no cerne, or a cerne that fails, the item is printed in the
+# neutral form written here and the line is left out.
+lang_rules=""
+if command -v cerne >/dev/null 2>&1; then
+  lang_rules=$(cerne hook lang-rules </dev/null 2>/dev/null) || lang_rules=""
+fi
+if [ -n "$lang_rules" ]; then
+  printf '%s\n' "$lang_rules"
+else
+  cat <<'PLANNING'
+- Picking up an ALREADY-APPROVED feature to plan? First action, before writing the plan: `cerne work start "F-NNNN: <what> — <planning, in the docs language>" --ref F-NNNN` (F-0208) — registers the pickup immediately, closing the blind window before `feature start` (which needs a real plan and so lags). A `cerne push` of the plan auto-opens the same work if you forget. It closes by itself at `cerne feature start` (F-0341).
+PLANNING
+fi
+cat <<'RULES'
 - Picking up a NON-feature task (error investigation, review, ops)? First action: `cerne work start "<description>" [--ref F-...]`; when finished, `cerne work done W-... [--note "..."]`. BEFORE delegating an error investigation to another agent, run `cerne work list` — someone may already be on it. (Feature implementations need no manual work entry: `cerne feature start`/`complete` auto-register the activity, F-0146.)
 - HANDOFF (F-0368): Passing the baton? `cerne work handoff W-… --next …` and pass only the HO- code. Received an HO-? First action: `cerne handoff take HO-…`.
 - HUMAN GATES (F-0131): `cerne feature approve` and `cerne feature accept` are human acts by default — write the spec, ask for approval, STOP. Never run them yourself unless the project's .cernerc [gates] explicitly sets auto. To be woken when the human acts (F-0460): if your harness wakes you when a background command ends (interactive Claude Code does), leave `cerne feature wait F-… --for approved` (`--for done` after the complete) running in the background, then stop; otherwise just stop.
