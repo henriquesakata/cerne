@@ -129,7 +129,63 @@ func TestSkill_ProtocolFormsBilingual(t *testing.T) {
 	}
 }
 
-func allPairs() []pair { return append(append([]pair{}, protocolPairs...), sectionPairs()...) }
+func allPairs() []pair {
+	return append(append(append([]pair{}, protocolPairs...), sectionPairs()...), proseFormPairs()...)
+}
+
+// proseFormPairs pairs the pt-BR free-text forms the templates teach with
+// their English ones, taken from doclang.Examples where it has them (F-0475).
+func proseFormPairs() []pair {
+	pt, en := doclang.Examples(doclang.PT), doclang.Examples(doclang.EN)
+	lit := func(s string) *regexp.Regexp {
+		s = strings.TrimSpace(strings.SplitN(strings.Trim(s, "`\""), " / ", 2)[0])
+		return regexp.MustCompile(regexp.QuoteMeta(strings.Trim(s, "\"")))
+	}
+	return []pair{
+		{lit(pt.ExpectedOutput), lit(en.ExpectedOutput)},
+		{lit(pt.DecisionVoice), lit(en.DecisionVoice)},
+		{lit(pt.Parallel), lit(en.Parallel)},
+		{regexp.MustCompile(`Nível:`), regexp.MustCompile(`Level:`)},
+		{regexp.MustCompile(`Em produção:`), regexp.MustCompile(`In production:`)},
+		{regexp.MustCompile(`PENDENTE`), regexp.MustCompile(`UNMET`)},
+	}
+}
+
+// TestSkill_PtBRAsidesClose (F-0475): every "(pt-BR:" aside opened in the
+// guide closes on the same line, so the rule that follows stays outside it.
+func TestSkill_PtBRAsidesClose(t *testing.T) {
+	files, _ := filepath.Glob(filepath.Join("cerne-authoring", "reference", "*.md"))
+	for _, f := range append([]string{filepath.Join("cerne-authoring", "SKILL.md")}, files...) {
+		data, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for n, line := range strings.Split(string(data), "\n") {
+			for rest := line; ; {
+				i := strings.Index(rest, "(pt-BR:")
+				if i < 0 {
+					break
+				}
+				depth, closed := 0, false
+				for _, r := range rest[i:] {
+					if r == '(' {
+						depth++
+					} else if r == ')' {
+						depth--
+						if depth == 0 {
+							closed = true
+							break
+						}
+					}
+				}
+				if !closed {
+					t.Errorf("%s:%d: a (pt-BR: aside never closes: %.100s", f, n+1, rest[i:])
+				}
+				rest = rest[i+len("(pt-BR:"):]
+			}
+		}
+	}
+}
 
 // TestSkill_TopSaysHowToFindTheLanguage (F-0475 crit. 2): before any protocol
 // form, the skill says how the agent learns the project's documentation
