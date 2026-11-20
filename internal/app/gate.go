@@ -39,6 +39,11 @@ func CheckHumanSetting(id string) error {
 	return nil
 }
 
+// AgentEnv reports whether the environment declares an agent, by the same
+// test as the human gates: `cerne update` leaves the binary to the human
+// (F-0476 crit. 10).
+func AgentEnv() bool { return isAgentActor(actorEnv()) }
+
 // checkHumanMirror refuses an agent actor on the mirror opt-in (F-0449):
 // publishing a card leaves the backend and is hard to undo, like approve and
 // accept. Fail-open like CheckHumanGate: it stops the configured agent, it

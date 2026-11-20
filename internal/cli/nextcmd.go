@@ -230,6 +230,11 @@ func runNext(cmd *cobra.Command, dir string, asJSON bool) error {
 		enc.SetIndent("", "  ")
 		return enc.Encode(q)
 	}
+	// F-0476 crit. 4: managed files older than this binary, on top.
+	if h, g := staleManaged(ctx.projDir); len(h)+len(g) > 0 {
+		fmt.Fprintln(out, "cerne: this project's hooks or guide are older than this cerne build — run 'cerne update'")
+		fmt.Fprintln(out)
+	}
 	printChannelLead(out, ctx.cfg.ProjectID)
 
 	width := 0
