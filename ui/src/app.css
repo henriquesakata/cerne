@@ -2019,6 +2019,15 @@ h2 {
 
 .dash-attention > h2 { margin: 0 0 0.5rem; }
 
+/* T-0011: um passo por linha, na ordem; os links mantêm o estilo padrão. */
+.dash-first-steps {
+  margin: 0;
+  padding-left: 0.25rem;
+  list-style: none;
+  display: grid;
+  gap: 0.35rem;
+}
+
 /* F-0364: o modo leve é uma escolha visível, não um aviso de erro. */
 .dash-light-mode {
   margin: 1rem 0 0;

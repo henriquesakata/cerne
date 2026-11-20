@@ -153,6 +153,27 @@ type stateResponse struct {
 	// Gauntlet is "off" when the project runs in light mode (F-0364), "on"
 	// otherwise — the dashboard shows the choice.
 	Gauntlet string `json:"gauntlet"`
+	// FirstSteps is the first-use checklist (T-0011) derived from the event log
+	// by app.FirstSteps: empty once a feature was accepted. Never persisted.
+	FirstSteps []firstStep `json:"first_steps"`
+}
+
+type firstStep struct {
+	Key  string `json:"key"`
+	Done bool   `json:"done"`
+}
+
+// firstSteps reads the log best-effort: an unreadable log hides the checklist.
+func firstSteps(repoDir string) []firstStep {
+	steps := []firstStep{}
+	events, err := store.ReadEvents(repoDir)
+	if err != nil {
+		return steps
+	}
+	for _, s := range app.FirstSteps(events) {
+		steps = append(steps, firstStep{Key: s.Key, Done: s.Done})
+	}
+	return steps
 }
 
 // activeWorkItem is one active W-item referencing a feature: enough to badge
@@ -254,6 +275,7 @@ func handleState(w http.ResponseWriter, repoDir, projDir string) {
 		ActiveWork:         activeWorkByRef(repoDir),
 		StaleApprovals:     stale,
 		Gauntlet:           gauntletMode(projDir),
+		FirstSteps:         firstSteps(repoDir),
 	})
 }
 
