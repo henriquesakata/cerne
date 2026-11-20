@@ -159,7 +159,7 @@ func runPull(cmd *cobra.Command, dir, scope string, okfFlag, force, syncSkillsFl
 		return project.SaveManifest(ctx.projDir, manifest)
 	})
 	if lockErr != nil {
-		return fmt.Errorf("syncing the cache clone at %s failed (delete that directory and run again to force a fresh clone): %w", ctx.repoDir, lockErr)
+		return cacheRefreshError("syncing the cache clone", ctx.repoDir, ctx.cfg.Backend, lockErr)
 	}
 
 	// Self-heal the merge driver: .git/config never travels in a clone, so the

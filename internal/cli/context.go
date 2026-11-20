@@ -198,7 +198,7 @@ func resolveRefreshed(startDir string, refresh func(string) error) (projCtx, err
 		return projCtx{}, err
 	}
 	if err := refresh(ctx.repoDir); err != nil {
-		return projCtx{}, fmt.Errorf("refreshing cached backend clone at %s failed (delete that directory and re-run the command to force a fresh clone): %w", ctx.repoDir, err)
+		return projCtx{}, cacheRefreshError("refreshing cached backend clone", ctx.repoDir, ctx.cfg.Backend, err)
 	}
 	return ctx, nil
 }

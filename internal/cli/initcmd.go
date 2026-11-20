@@ -145,7 +145,7 @@ func runInit(cmd *cobra.Command, targetDir, name, backend string, modules []stri
 		// up, so a skipped fetch (F-0200) saves nothing and risks initializing
 		// against a stale snapshot.
 		if err := gitback.SafePullNow(repoDir); err != nil {
-			return fmt.Errorf("refreshing cached backend clone at %s failed (delete that directory to force a fresh clone): %w", repoDir, err)
+			return cacheRefreshError("refreshing cached backend clone", repoDir, backend, err)
 		}
 	} else if errors.Is(err, os.ErrNotExist) {
 		if err := os.MkdirAll(cacheDir, 0o755); err != nil {
