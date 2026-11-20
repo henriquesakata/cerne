@@ -337,3 +337,41 @@ func TestServer_OriginCheckIsCachedForTTL(t *testing.T) {
 		t.Fatal("after the verdict expires a swapped origin is refused")
 	}
 }
+
+// TestServeRefusesMalformedPID pins B-0045: the mux decodes %2F inside a
+// segment, so {pid} reaches the cache path as "../../escape". A pid outside
+// the project id shape is a 404 before it becomes a path: nothing is cloned
+// or created outside the cache root, on the register route and the data
+// routes alike.
+func TestServeRefusesMalformedPID(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("CERNE_CACHE_DIR", filepath.Join(base, "cache", "root"))
+	t.Setenv(serveProjectsEnv, "")
+	origin := seedBareBackend(t, "Escape")
+	h := NewMultiProject("s3cret")
+	for _, pid := range []string{"..%2F..%2Fescape", "%2E%2E", "a%2Fb", "a%5Cb", "a.b"} {
+		if rec := doMP(t, h, http.MethodPut, "/api/projects/"+pid, `{"backend":"`+origin+`"}`, "s3cret", nil); rec.Code != http.StatusNotFound {
+			t.Errorf("PUT /api/projects/%s = %d %s, want 404", pid, rec.Code, rec.Body.String())
+		}
+		if rec := doMP(t, h, http.MethodGet, "/api/projects/"+pid+"/state", "", "s3cret", nil); rec.Code != http.StatusNotFound {
+			t.Errorf("GET /api/projects/%s/state = %d %s, want 404", pid, rec.Code, rec.Body.String())
+		}
+	}
+	if _, err := os.Stat(filepath.Join(base, "escape")); !os.IsNotExist(err) {
+		t.Fatalf("a malformed pid created a directory outside the cache root: stat err = %v", err)
+	}
+}
+
+// TestServeAcceptsProjectIDShapes: a slug (cerne init's project_id) and a
+// UUID (the hub's project id) are well-formed pids and register.
+func TestServeAcceptsProjectIDShapes(t *testing.T) {
+	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
+	t.Setenv(serveProjectsEnv, "")
+	origin := seedBareBackend(t, "Shapes")
+	h := NewMultiProject("s3cret")
+	for _, pid := range []string{"acme-hub", "3f2c9a1e-7b4d-4c1a-9e2f-0a1b2c3d4e5f", "Proj_1"} {
+		if rec := doMP(t, h, http.MethodPut, "/api/projects/"+pid, `{"backend":"`+origin+`"}`, "s3cret", nil); rec.Code != http.StatusOK {
+			t.Errorf("PUT /api/projects/%s = %d %s, want 200", pid, rec.Code, rec.Body.String())
+		}
+	}
+}
