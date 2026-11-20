@@ -161,6 +161,9 @@ func runHookChannel(cmd *cobra.Command, point string) {
 	}
 	if consume {
 		fmt.Fprint(cmd.OutOrStdout(), staleManagedNotice(projDir, cfg.SyncSkills))
+		// F-0479: last of the notice lines, and the only caller: the claim of
+		// the once-per-version marker sits right next to the print.
+		fmt.Fprint(cmd.OutOrStdout(), updateNotice(projDir))
 	}
 	if !cloneIsOurs(cfg, projDir) { // F-0434
 		return
@@ -203,7 +206,6 @@ func staleManagedNotice(projDir string, syncSkills bool) string {
 	for _, w := range warns {
 		fmt.Fprintln(&b, w)
 	}
-	b.WriteString(updateNotice(projDir)) // F-0479: after the refresh and the leftover warning
 	return b.String()
 }
 

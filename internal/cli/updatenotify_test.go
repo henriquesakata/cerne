@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/henriquesakata/cerne/internal/hooks"
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/version"
 )
@@ -71,7 +72,10 @@ func TestUpdateNoticeOncePerVersion(t *testing.T) {
 // crits. 4, 5 and 8: where cerne update cannot swap the binary, with the
 // variable, with CI, or with the setting off, there is no line and no query.
 func TestUpdateNoticeStaysQuiet(t *testing.T) {
-	gobin := filepath.Join(os.Getenv("HOME"), "go", "bin", "cerne")
+	gopath := t.TempDir()
+	t.Setenv("GOPATH", gopath)
+	t.Setenv("GOBIN", "")
+	gobin := filepath.Join(gopath, "bin", "cerne")
 	cases := []struct {
 		name, exe, ver, env string
 		notify, want        bool
@@ -138,5 +142,46 @@ func TestSessionStartCarriesTheUpdateLine(t *testing.T) {
 	out, _ = execCerneStdin(t, sessionStartJSON(t, "s-notify-2", projDir), "hook", "channel", "--point", "session-start")
 	if strings.Contains(out, "cerne update") {
 		t.Fatalf("second session repeated the notice: %q", out)
+	}
+}
+
+// F-0479: cerne next is out of scope: it neither prints the line nor spends the
+// once-per-version marker, so the session start still gets it afterwards.
+func TestNextNeverSpendsTheUpdateNotice(t *testing.T) {
+	projDir, hits, cache := notifyFixture(t, "v1.1.0", true)
+	out, err := execCerne(t, "next", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("next: %v\n%s", err, out)
+	}
+	if strings.Contains(out, "is out (this is") {
+		t.Fatalf("next printed the release line:\n%s", out)
+	}
+	if m, _ := filepath.Glob(filepath.Join(cache, "update-notified-*")); len(m) != 0 || *hits != 0 {
+		t.Fatalf("next left markers %v or asked %d times", m, *hits)
+	}
+	out, _ = execCerneStdin(t, sessionStartJSON(t, "s-after-next", projDir), "hook", "channel", "--point", "session-start")
+	if !strings.Contains(out, "is out (this is v1.0.0)") {
+		t.Fatalf("session start lost the line: %q", out)
+	}
+}
+
+// The line comes last: after what the refresh renewed and the stale warnings.
+func TestUpdateLineComesAfterTheStaleLines(t *testing.T) {
+	projDir, _, _ := notifyFixture(t, "v1.1.0", true)
+	t.Setenv("HOME", t.TempDir())
+	assets := hooks.Assets()
+	hookDir := filepath.Join(projDir, ".claude", "hooks")
+	appendTo(t, filepath.Join(hookDir, assets[0].Script), "\n# local edit\n")
+	if err := os.Remove(filepath.Join(hookDir, assets[1].Script)); err != nil {
+		t.Fatal(err)
+	}
+	appendTo(t, filepath.Join(projDir, ".claude", "skills", "cerne-authoring", "SKILL.md"), "\nold guide\n")
+	out, err := execCerneStdin(t, sessionStartJSON(t, "s-order", projDir), "hook", "channel", "--point", "session-start")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale, line := strings.Index(out, "out of date"), strings.Index(out, "is out (this is")
+	if stale < 0 || line < 0 || stale > line {
+		t.Fatalf("stale warning at %d, update line at %d, want the line last:\n%s", stale, line, out)
 	}
 }

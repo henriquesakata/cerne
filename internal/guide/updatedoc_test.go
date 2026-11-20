@@ -88,7 +88,7 @@ func TestReadmeNamesTheVersionChecks(t *testing.T) {
 		!strings.Contains(data, "`CERNE_NO_UPDATE_NOTIFIER`") {
 		t.Error("README does not say the session notice is opt-in and how to turn it off")
 	}
-	if !strings.Contains(data, "\n| The latest release tag, asked by an agent's session start") || !strings.Contains(data, "At most once every 24 hours per machine, only with `update.notify` on") {
+	if !strings.Contains(data, "\n| The latest release tag, asked by an agent's session start") || !strings.Contains(data, "About once every 24 hours per machine, only with `update.notify` on") {
 		t.Error("README data table lacks the session notice's row")
 	}
 	if !strings.Contains(data, "\n| The latest release tag, read by the panel") || !strings.Contains(data, "every 24 hours while it is open") {
