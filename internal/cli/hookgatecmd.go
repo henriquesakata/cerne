@@ -551,25 +551,13 @@ func isPatch(text string) bool {
 // Cursor and Gemini document no context on an allowed preToolUse, so they get
 // none. Fail-open: any error is silence.
 func injectGateChannel(cmd *cobra.Command, format, cacheDir, repoDir, projDir, sess, filePath string) {
-	if format != "claude" && format != "codex" {
+	// The Copilot CLI also runs these .claude hooks (COPILOT_CLI=1) and ignores
+	// their output: consuming the channel or marking the notes seen here would
+	// silence its own post-tool hook, the channel it documents (F-0457, B-0054).
+	if format != "claude" && format != "codex" || os.Getenv("COPILOT_CLI") == "1" {
 		return
 	}
-	block, err := app.ChannelInject(cacheDir, repoDir, sess, true, time.Now().UTC())
-	if err != nil {
-		block = ""
-	}
-	// The Copilot CLI also runs these .claude hooks (COPILOT_CLI=1): marking the
-	// notes seen here would silence its own post-edit hook, the channel it
-	// documents (F-0457).
-	if os.Getenv("COPILOT_CLI") == "1" {
-		filePath = ""
-	}
-	if nb := notesOnEditBlock(cacheDir, repoDir, projDir, sess, filePath, ""); nb != "" {
-		if block != "" {
-			block += "\n\n"
-		}
-		block += nb
-	}
+	block := channelThen(cacheDir, repoDir, sess, notesOnEditBlock(cacheDir, repoDir, projDir, sess, filePath, ""))
 	if block == "" {
 		return
 	}
