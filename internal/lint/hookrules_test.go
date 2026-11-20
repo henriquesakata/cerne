@@ -156,7 +156,7 @@ func TestHookRuleBlocks(t *testing.T) {
 	if Advisory(RuleHookCitesMissingRule) {
 		t.Error("hook-cites-missing-rule não pode ser advisory")
 	}
-	if ruleRank[RuleHookCitesMissingRule] != len(RuleOrder)-1 {
-		t.Error("a regra vai no fim do RuleOrder")
+	if RuleOrder[ruleRank[RuleHookCitesMissingRule]] != RuleHookCitesMissingRule {
+		t.Error("a posição da regra no RuleOrder deve bater com o rank")
 	}
 }

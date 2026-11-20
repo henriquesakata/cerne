@@ -62,6 +62,11 @@ const (
 	RuleSpecChangedAfterApproval = "spec-changed-after-approval"
 	RuleResultMissingEvidence    = "result-missing-evidence"
 	RuleResultMissingGauntlet    = "result-missing-gauntlet"
+	// F-0473: a criterion without a marked test, a mark on a missing criterion,
+	// and the one config finding when the scan found no test file at all.
+	RuleCriterionWithoutTest = "criterion-without-test"
+	RuleOrphanCriterionTest  = "orphan-criterion-test"
+	RuleCriterionTestsConfig = "criterion-tests-config"
 	// RuleSpecMissingBar flags a candidate spec with no valid bar (F-0308).
 	RuleSpecMissingBar = "spec-missing-bar"
 	// RulePreconditionMalformed flags a runbook precondition line the preflight
@@ -111,7 +116,7 @@ const StalePendingAfter = 30 * 24 * time.Hour
 
 // advisoryRules are the warning-severity rules: printed like any other, but
 // they never fail 'cerne lint' on their own.
-var advisoryRules = map[string]bool{RuleStalePending: true, RulePreconditionMalformed: true, RuleErrataPending: true, RuleRunStalled: true, RuleAppendedAmendment: true, RuleStatusInBody: true, RuleWorkOutlivedFeature: true, RuleSpecCLILiteralPT: true, RulePlanOlderThanSpec: true, RuleStaleDecision: true}
+var advisoryRules = map[string]bool{RuleStalePending: true, RulePreconditionMalformed: true, RuleErrataPending: true, RuleRunStalled: true, RuleAppendedAmendment: true, RuleStatusInBody: true, RuleWorkOutlivedFeature: true, RuleSpecCLILiteralPT: true, RulePlanOlderThanSpec: true, RuleStaleDecision: true, RuleCriterionTestsConfig: true}
 
 // Advisory reports whether rule is a warning that does not fail the lint.
 func Advisory(rule string) bool { return advisoryRules[rule] }
@@ -158,7 +163,7 @@ func DropGauntletRules(findings []Finding, gauntletOn bool) []Finding {
 func Blocking(f Finding) bool { return !Advisory(f.Rule) && !f.Downgraded }
 
 // RuleOrder is the deterministic report order of the lint rules.
-var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleEpicUnplanned, RuleStaleCandidate, RuleStaleReady, RuleStaleWork, RuleStaleNote, RuleStaleDecision, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect, RuleOpenClarification, RuleClarifyUnescapedPipe, RuleCapabilityOrphan, RuleSpecChangedAfterApproval, RuleResultMissingEvidence, RuleResultMissingGauntlet, RuleDuplicateLive, RuleStalePending, RuleSpecMissingBar, RulePreconditionMalformed, RuleErrataPending, RuleRunStalled, RuleAppendedAmendment, RuleStatusInBody, RuleWorkOutlivedFeature, RuleSpecCLILiteralPT, RulePlanOlderThanSpec, RuleHookCitesMissingRule}
+var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleEpicUnplanned, RuleStaleCandidate, RuleStaleReady, RuleStaleWork, RuleStaleNote, RuleStaleDecision, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect, RuleOpenClarification, RuleClarifyUnescapedPipe, RuleCapabilityOrphan, RuleSpecChangedAfterApproval, RuleResultMissingEvidence, RuleResultMissingGauntlet, RuleDuplicateLive, RuleStalePending, RuleSpecMissingBar, RulePreconditionMalformed, RuleErrataPending, RuleRunStalled, RuleAppendedAmendment, RuleStatusInBody, RuleWorkOutlivedFeature, RuleSpecCLILiteralPT, RulePlanOlderThanSpec, RuleHookCitesMissingRule, RuleCriterionWithoutTest, RuleOrphanCriterionTest, RuleCriterionTestsConfig}
 
 var ruleRank = map[string]int{
 	RuleRefToSuperseded:          0,
@@ -198,6 +203,9 @@ var ruleRank = map[string]int{
 	RuleSpecCLILiteralPT:         34,
 	RulePlanOlderThanSpec:        35,
 	RuleHookCitesMissingRule:     36,
+	RuleCriterionWithoutTest:     37,
+	RuleOrphanCriterionTest:      38,
+	RuleCriterionTestsConfig:     39,
 }
 
 // Finding is one lint problem detected in the backend.
