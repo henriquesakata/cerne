@@ -1,0 +1,61 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "bash": "sh -c 'command -v cerne >/dev/null 2>&1 || PATH=\"${PATH:+$PATH:}$HOME/go/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin\"; command -v cerne >/dev/null 2>&1 || exit 0; cerne hook bind-work --format copilot 2>/dev/null || true'",
+        "env": {
+          "CERNE_ACTOR": "agent",
+          "CERNE_PROVIDER": "copilot"
+        },
+        "matcher": "Bash",
+        "powershell": "if (Get-Command cerne -ErrorAction SilentlyContinue) { cerne hook bind-work --format copilot 2>$null }; exit 0",
+        "type": "command"
+      },
+      {
+        "bash": "sh -c 'command -v cerne >/dev/null 2>&1 || PATH=\"${PATH:+$PATH:}$HOME/go/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin\"; command -v cerne >/dev/null 2>&1 || exit 0; cerne hook provenance --format copilot 2>/dev/null || true'",
+        "env": {
+          "CERNE_ACTOR": "agent",
+          "CERNE_PROVIDER": "copilot"
+        },
+        "matcher": "Bash",
+        "powershell": "if (Get-Command cerne -ErrorAction SilentlyContinue) { cerne hook provenance --format copilot 2>$null }; exit 0",
+        "type": "command"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "bash": "sh -c 'command -v cerne >/dev/null 2>&1 || PATH=\"${PATH:+$PATH:}$HOME/go/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin\"; command -v cerne >/dev/null 2>&1 || exit 0; cerne hook work-gate --format copilot 2>/dev/null || true'",
+        "env": {
+          "CERNE_ACTOR": "agent",
+          "CERNE_PROVIDER": "copilot"
+        },
+        "matcher": "Edit|Write",
+        "powershell": "if (Get-Command cerne -ErrorAction SilentlyContinue) { cerne hook work-gate --format copilot 2>$null }; exit 0",
+        "type": "command"
+      }
+    ],
+    "SessionStart": [
+      {
+        "bash": "sh -c 'command -v cerne >/dev/null 2>&1 || PATH=\"${PATH:+$PATH:}$HOME/go/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin\"; command -v cerne >/dev/null 2>&1 || exit 0; cerne hook session-context --format copilot 2>/dev/null || true'",
+        "env": {
+          "CERNE_ACTOR": "agent",
+          "CERNE_PROVIDER": "copilot"
+        },
+        "powershell": "if (Get-Command cerne -ErrorAction SilentlyContinue) { cerne hook session-context --format copilot 2>$null }; exit 0",
+        "type": "command"
+      }
+    ],
+    "Stop": [
+      {
+        "bash": "sh -c 'command -v cerne >/dev/null 2>&1 || PATH=\"${PATH:+$PATH:}$HOME/go/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin\"; command -v cerne >/dev/null 2>&1 || exit 0; cerne hook stop-check 2>/dev/null || true'",
+        "env": {
+          "CERNE_ACTOR": "agent",
+          "CERNE_PROVIDER": "copilot"
+        },
+        "powershell": "if (Get-Command cerne -ErrorAction SilentlyContinue) { cerne hook stop-check 2>$null }; exit 0",
+        "type": "command"
+      }
+    ]
+  },
+  "version": 1
+}

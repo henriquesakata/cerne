@@ -887,3 +887,30 @@ func TestUpdateCheckSetting(t *testing.T) {
 		t.Fatal("ui.update_check accepted the project scope")
 	}
 }
+
+// TestAutoRefreshSetting (F-0477 crits. 6 and 12): hooks.auto_refresh is a bool
+// in the integrations group, on by default, in both scopes, and the project
+// scope wins over the host.
+func TestAutoRefreshSetting(t *testing.T) {
+	projDir, _ := settingsFixture(t, "", "", false)
+	s := findSetting(t, ResolveSettings(projDir), "hooks.auto_refresh")
+	if s.Type != "bool" || s.Default != true || s.Group != "integrations" || !slices.Equal(s.Scopes, []string{ScopeProject, ScopeHost}) {
+		t.Fatalf("hooks.auto_refresh = %+v, want a bool on by default, in integrations, with both scopes", s.Setting)
+	}
+	for _, tc := range []struct {
+		name, project, host string
+		want                bool
+	}{
+		{"default", "", "", true},
+		{"project off", "[hooks]\nauto_refresh = false\n", "", false},
+		{"host off", "", "[hooks]\nauto_refresh = false\n", false},
+		{"project on over host off", "[hooks]\nauto_refresh = true\n", "[hooks]\nauto_refresh = false\n", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			projDir, _ := settingsFixture(t, tc.project, tc.host, false)
+			if got := AutoRefresh(projDir); got != tc.want {
+				t.Errorf("AutoRefresh = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

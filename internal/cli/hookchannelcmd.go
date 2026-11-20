@@ -173,22 +173,35 @@ func runHookChannel(cmd *cobra.Command, point string) {
 
 // staleManagedNotice is the session-start check of the managed assets the
 // binary embeds (F-0405): a stale canonical skill is rewritten when the project
-// opted into sync_skills and only flagged otherwise; stale hook scripts are
-// only flagged — they may be versioned in the project's git. Local, no network,
-// "" when everything matches or on any error (fail-open, N-0021).
+// opted into sync_skills; then the automatic refresh (F-0477) renews the agents
+// whose files no one edited, and what is left is only flagged — it may have
+// been edited or be versioned in the project's git. Local, no network, "" when
+// everything matches or on any error (fail-open, N-0021).
 func staleManagedNotice(projDir string, syncSkills bool) string {
 	var b strings.Builder
-	staleHooks, staleSkills := staleManaged(projDir)
-	if names := staleSkills; len(names) > 0 {
-		list := strings.Join(names, ", ")
-		if !syncSkills {
-			fmt.Fprintf(&b, "cerne: canonical skill(s) out of date with this cerne build: %s — run `cerne update`.\n", list)
-		} else if _, err := skills.Install(projDir, staleProviders(projDir, names)...); err == nil {
-			fmt.Fprintf(&b, "cerne: updated canonical skill(s) from this cerne build: %s — the new version applies from the next session (or after reloading skills).\n", list)
+	// sync_skills keeps its own path for the guide, ahead of the refresh (F-0477).
+	if _, staleSkills := staleManaged(projDir); syncSkills && len(staleSkills) > 0 {
+		if _, err := skills.Install(projDir, staleProviders(projDir, staleSkills)...); err == nil {
+			fmt.Fprintf(&b, "cerne: updated canonical skill(s) from this cerne build: %s — the new version applies from the next session (or after reloading skills).\n", strings.Join(staleSkills, ", "))
 		}
 	}
+	line, leftover := autoRefresh(projDir)
+	if line != "" {
+		fmt.Fprintln(&b, line)
+	}
+	staleHooks, staleSkills := staleManaged(projDir)
+	var warns []string
+	if len(staleSkills) > 0 && !syncSkills {
+		warns = append(warns, fmt.Sprintf("cerne: canonical skill(s) out of date with this cerne build: %s — run `cerne update`.", strings.Join(staleSkills, ", ")))
+	}
 	if n := len(staleHooks); n > 0 {
-		fmt.Fprintf(&b, "cerne: %d managed hook(s) out of date with this cerne build — run `cerne update` and review the diff.\n", n)
+		warns = append(warns, fmt.Sprintf("cerne: %d managed hook(s) out of date with this cerne build — run `cerne update` and review the diff.", n))
+	}
+	if len(warns) > 0 && len(leftover) > 0 { // crit. 2: the warning names what was left and why
+		warns[len(warns)-1] += " (" + leftoverNote(leftover) + ")"
+	}
+	for _, w := range warns {
+		fmt.Fprintln(&b, w)
 	}
 	return b.String()
 }

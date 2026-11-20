@@ -1,0 +1,10 @@
+{
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "sh -c 'command -v cerne >/dev/null 2>&1 || PATH=\"${PATH:+$PATH:}$HOME/go/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin\"; command -v cerne >/dev/null 2>&1 || exit 0; cerne hook session-context --format cursor 2>/dev/null || true'"
+      }
+    ]
+  },
+  "version": 1
+}

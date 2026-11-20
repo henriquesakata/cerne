@@ -1,0 +1,564 @@
+{
+ "tags": {
+  "v0.1.0": "",
+  "v0.10.0": "",
+  "v0.11.0": "",
+  "v0.12.0": "",
+  "v0.13.0": "",
+  "v0.14.0": "",
+  "v0.14.0-rc.1": "",
+  "v0.14.1": "",
+  "v0.14.2": "",
+  "v0.14.3": "",
+  "v0.2.0": "",
+  "v0.3.0": "",
+  "v0.4.0": "",
+  "v0.5.0": "",
+  "v0.6.0": "",
+  "v0.7.0": "",
+  "v0.8.0": "",
+  "v0.9.0": ""
+ },
+ "known": {
+  ".agents/skills/cerne-authoring/SKILL.md": [
+   "11ad1363c6ed10ddfbbccdd723dbce2051993ac582798c6b54ca9a37aa616e4c",
+   "52baf721ff3ae16a1a86296e481bff6bde2f87accbb0856567b33bc474d7dcd2",
+   "60c824bdb8dc782894a9f79e399696d78354e0227b21f5a54136f96013d32086",
+   "637e0b803360f06f522955e090f6c9989ecb5060c5000a00162b3ee2380ea301",
+   "8e5517711c201ce8688d2db7ad062656fdf11ddad15e69b93869e9c1cc061b1e",
+   "b90d04dc3d6e899fceb51a5d3a38b852e30e95af96ec1b9a131a1ee59a17806a",
+   "c1d857983f2cc453198ef3909d73fbb53cff9e154ebd0edf60840d43f1018463"
+  ],
+  ".agents/skills/cerne-authoring/reference/decisions-runbooks.md": [
+   "bfcbca4a3f0d26fe84675827c127674ba4ceabbc5f13f7c714aa2c2b78192068",
+   "cc050e3a701c22c569a3109888b7d40effbac5eca8fdd4309a5f773ce9da93df"
+  ],
+  ".agents/skills/cerne-authoring/reference/drift.md": [
+   "82ed14be9d12948e1e3297153d26cbc1096c9296503ebb1456685048d0ab0b07"
+  ],
+  ".agents/skills/cerne-authoring/reference/epics.md": [
+   "49693e0a6436bce6f4aaa6a008ac1765f769cf7a748245a250255e0f588f3e9d",
+   "eb7f55db42d898ad7006653dd8498b1f89f840e734a05220ae14539317cfa02f",
+   "ec4bba3103b5b8b9efdbc64de53ef76036885216de0216ea3f7a827da74d764a"
+  ],
+  ".agents/skills/cerne-authoring/reference/errata.md": [
+   "6eacf4276aa2fe16ae998c003b8cb46b2f15395d1a542164bff53f850f3f4963",
+   "9007ff4b57fc252faa94bf34c8067cd79c933e3b79ff081a17a58fd631be0f7b",
+   "b88ac62b5058f3d08c4b08aa85ebfd87042780ebe1541cfa2bdcfe8f930fe3de",
+   "ff4941fc31a839f23e9c91f7aa4c711e8e2133d075b4edd29cdc34c463984fed"
+  ],
+  ".agents/skills/cerne-authoring/reference/external-sources.md": [
+   "3fcdca411d9166e6b8df08dd9ff97053cdbc93d771d9f33ebb94a1118c6f3936"
+  ],
+  ".agents/skills/cerne-authoring/reference/gauntlet.md": [
+   "08e72fc5b0ed038c6c6c6977e310c0b0e814ef8a8fa10fca88fbf302c57aeb5a",
+   "40a042e7cb9ad7495ed80f224f0964c885ce7db3e97c131a31823ea925b86639"
+  ],
+  ".agents/skills/cerne-authoring/reference/housekeeping.md": [
+   "0719af35b854e8bfe0e7ef275251010e7c443ab683b71ba3a1de17d0f7dd6351",
+   "51786658912c1df4445c665524c1eba57542f80ebad666051499b7e7f8e178fc",
+   "b8bb45f178f5bb4460266b2aea87a9288c11d6487ce7111f2072faf3775574d9"
+  ],
+  ".agents/skills/cerne-authoring/reference/ideas-pendings.md": [
+   "010c4b20ce287f5af57dfe2616cbb051b14a1272d58e9a283c0e0dac65b18aed",
+   "87ef0b5e3d08e459fe6e0570fe5409a04b2d07b7838e316e19ff5f61ac52cca6",
+   "a52184be259e6edffd5902452c8f61f425713ab3cee75d59d19ce848a1e1a5f3"
+  ],
+  ".agents/skills/cerne-authoring/reference/language.md": [
+   "4783850ce66e85b8b6f17c2075a3e288780cafa307568aeee90ffc1cc4506691"
+  ],
+  ".agents/skills/cerne-authoring/reference/lifecycle.md": [
+   "5b84622fcdb3b2245f900de4698bc4c2b5fbe0d640d8659da51696c7c9fe77cb",
+   "be1bc18074bb7f93c5ae28509248e1d6ec0d2f5d31f8801a41c6ed243fbbe033",
+   "be6b16528653c28ff5698b3c4d4dd7195fdb05c851a801fe490f5afde0705361"
+  ],
+  ".agents/skills/cerne-authoring/reference/mcp-and-demo.md": [
+   "153b3ec2f168f1785e5b0add437552669ff7b70099e73997e620fc14cfbf8dfc"
+  ],
+  ".agents/skills/cerne-authoring/reference/notes-and-knowledge.md": [
+   "176481dab4d5f030927210cb7907e5b8a32129eb78068f5ce087c8e559ef7573",
+   "1f604fe98434f04643a0c497f75b7463c256376145f1598856095b2778fda7a7"
+  ],
+  ".agents/skills/cerne-authoring/reference/templates.md": [
+   "464a6a3e39be5c3c07e30b7930a33bd1e7f8f2df4de58b7016e31a59712f1fd7",
+   "7445961e85e168c95a5dcedb483379fd80463949e2328a641f373f439cbbd1be",
+   "a95a8d32300e57fbfadb202571727387d40419c87fbcf1b77ee350edc3603d6d"
+  ],
+  ".agents/skills/cerne-authoring/reference/validate-and-settings.md": [
+   "af54d3796dca24b38a71a894f12fe54dae645102cf2224679806ee5be0a3808e"
+  ],
+  ".agents/skills/cerne-authoring/reference/war-room-channel.md": [
+   "6036bf235d16eaeb5eebe4faf6c17388245ccf0153059a2488394f134e10e4ee",
+   "d7d1d8450286c61ac2e67b37c46c33f7d75c1cee0fa3ca75fe51517b475de4e3"
+  ],
+  ".agents/skills/cerne-authoring/reference/work-and-handoffs.md": [
+   "0a37ab7e5e1fc0db2889764f90b55a505324c5c65b1b6ca52c1f55fce4cf4a89",
+   "9b787626b2653d7da6e3661ef49d57ba8b30f18145d4575d42c227f7bd641822",
+   "a4ec0be7f0bc34f98e9c9aa9122d250c6d16925e3550ed305c388891f24698ba",
+   "abbf6d8217f7be9f26cd3f9167621d1582860142cec713811bfc0ee58f0fbf26"
+  ],
+  ".claude/hooks/cerne-lifecycle-reminder.sh": [
+   "6f78e98a14655a7fd6829a27ae5cba3ecf44720ac9b2118d7d379633ef09c4b4",
+   "ecfbcc72de56e9ae343ddca9043500a97edcb233af94553da076550f92424cdd"
+  ],
+  ".claude/hooks/cerne-precompact.sh": [
+   "0364cca5e23562fdff89a2361e3a325c42aa7b194be9c7c162c30d5e92364ce8",
+   "169e849b8d26db02dfef3e22cf032f8dc7278df00c2a149fa7027d0a760e7711"
+  ],
+  ".claude/hooks/cerne-prompt-notes.sh": [
+   "b5b5ba26f2d2dff7d38984978cd7b730d325fd9aa1efcdb3d6a7bd05b89e4bcb"
+  ],
+  ".claude/hooks/cerne-register-reminder.sh": [
+   "04307e399e8a3aa504e1171596fcd02e5389ea2ae3ccc22700f21d6239759ef0",
+   "05e8f3d241e33c5ee50affbee6b3686a77cae323e37e222589a713fa09ec0649",
+   "13803c027f589b5d1de1f5f280ace710bda928063cb2e688b7d13e12c3ec386c",
+   "a17611f5a8de629427f9b3c795a3ca18a6f1393143bc362eb3f4bcde347cf369",
+   "ac6e032e755b27fcade60d3bb1a0c5f7e6bedba83063501c8f9958edc1e26b27",
+   "bad84d8c5758920ebcd82fa818d30683fc48bba466b51b7a3ef30677dca8cb47",
+   "f5e828441c59d4758373ea2eb88b92db05c59910b60e9c8cbf0be961136d6898"
+  ],
+  ".claude/hooks/cerne-stop-closeout.sh": [
+   "8ae61afbfe0e923590142d7ceb13090e95210a6a24a71becbd7fd3fc0ff85372",
+   "a65f8dd992bf2c82d0a6482b69ba48a76478e6650e434d439af369c329c9ca66",
+   "b065e0d586208515b5bb849917675e5684e883335490e27db9199841afbfd9fa"
+  ],
+  ".claude/hooks/cerne-subagent-context.sh": [
+   "1d98f6ef125ff18ebb2708a6dc5145231b59b9aca5f8d73ab08dffa86a32cd81",
+   "c5e899dcb279510e45a94f07e35465a94f063dbbdb31f234a6d8d1f3eba3f96f",
+   "d2e05e0efc19ff02013f44616f07046c8461087d43db7ce5a66ca5b4c7cb0046",
+   "e590beb87882d463b9d8579db17368d0e5cfc976dd5119b3d848014a3700b621"
+  ],
+  ".claude/hooks/cerne-work-bind.sh": [
+   "5049d831f5313ae2bebc3e9e8e0bc70e11e8d8b0ad1561f07aeb054288350433",
+   "bbf1512155fad43a4991cfee068d47514635042f1eec30bbac0a5d4de20b8974",
+   "e204e05accbe3e6c0503c90b9538e765d401bb75162e45f2b6b538d46f969050"
+  ],
+  ".claude/hooks/cerne-work-gate.sh": [
+   "0e77f565d1d3d43e00b3a1df6628f2ca58ce402eeb8708a34bc64421756a157c",
+   "619cf85fd31109bbb7995d38f52f217d8880dee85f5365b2254f9dd654bb9155",
+   "a5a04b5fc3154d90e2230e077843f061b6f28a1339881be5235c6cc04e0f19a0"
+  ],
+  ".claude/hooks/register-reference-reminder.sh": [
+   "6447b6d9f4195c8089f60f9be4a6ef03dd7b0d45c7ca4bf273b0e5dc0361f31d",
+   "67064cf28e5ffa69c6d39284bff7451a3909a83053b95864972d4a538a06891f",
+   "de4828bbe209c5ab27e1f4f55e8e884997fcdfb318ee97c9c2e950aca8c41a2b",
+   "f6224523b0a337223b7882251966fa4792365e68f69b291ca99bfdaa9699b1e6"
+  ],
+  ".claude/settings.json#12100575a940ee335b7c39e875e4d40cf3941d55f200b07dd079d94ce6055ece": [
+   "12100575a940ee335b7c39e875e4d40cf3941d55f200b07dd079d94ce6055ece"
+  ],
+  ".claude/settings.json#13e3e0ace896fef191c597333bbc1eb4756142b430d666917b843d6b66c03ee8": [
+   "13e3e0ace896fef191c597333bbc1eb4756142b430d666917b843d6b66c03ee8"
+  ],
+  ".claude/settings.json#17e3b4f9546b1c5fd85800a1d49138dbedecedb84bedfe1296f0e66a7d9f7297": [
+   "17e3b4f9546b1c5fd85800a1d49138dbedecedb84bedfe1296f0e66a7d9f7297"
+  ],
+  ".claude/settings.json#34bcbfc01d3ed2640b5ffdc5619d2b100a054c2f33bcbbc4c4a601322b32a182": [
+   "34bcbfc01d3ed2640b5ffdc5619d2b100a054c2f33bcbbc4c4a601322b32a182"
+  ],
+  ".claude/settings.json#6ce44dc6211e9e2e079f4a1acdbf436e7052ac5f0adae697f5dd59e1020644bf": [
+   "6ce44dc6211e9e2e079f4a1acdbf436e7052ac5f0adae697f5dd59e1020644bf"
+  ],
+  ".claude/settings.json#82ad19355303bf6a89be6777177afbf81b8f1ba125ec8a2324bec2f073023928": [
+   "82ad19355303bf6a89be6777177afbf81b8f1ba125ec8a2324bec2f073023928"
+  ],
+  ".claude/settings.json#93cb8ec24f0fb4170f9182f2f109371a76eba45bbe06789c21a1001c7166b404": [
+   "93cb8ec24f0fb4170f9182f2f109371a76eba45bbe06789c21a1001c7166b404"
+  ],
+  ".claude/settings.json#b87f94f06b314d9b976494d1d88e08d655f038815c7eee9f2a3090dca6c38378": [
+   "b87f94f06b314d9b976494d1d88e08d655f038815c7eee9f2a3090dca6c38378"
+  ],
+  ".claude/settings.json#d555bb31e5197d9212dba3201e5d250d4532a01579275e6023a85747819975f4": [
+   "d555bb31e5197d9212dba3201e5d250d4532a01579275e6023a85747819975f4"
+  ],
+  ".claude/settings.json#e908bb0cfb9e9ff22d586638c3402e149e8b4ccbdb44ff65f7dbc2fef5c74a36": [
+   "e908bb0cfb9e9ff22d586638c3402e149e8b4ccbdb44ff65f7dbc2fef5c74a36"
+  ],
+  ".claude/skills/cerne-authoring/SKILL.md": [
+   "11ad1363c6ed10ddfbbccdd723dbce2051993ac582798c6b54ca9a37aa616e4c",
+   "52baf721ff3ae16a1a86296e481bff6bde2f87accbb0856567b33bc474d7dcd2",
+   "60c824bdb8dc782894a9f79e399696d78354e0227b21f5a54136f96013d32086",
+   "637e0b803360f06f522955e090f6c9989ecb5060c5000a00162b3ee2380ea301",
+   "8e5517711c201ce8688d2db7ad062656fdf11ddad15e69b93869e9c1cc061b1e",
+   "a024c66f3f7a30d4664a92e5107d7ebb44c1198de017ccfcd0e9cc77f815e56d",
+   "b90d04dc3d6e899fceb51a5d3a38b852e30e95af96ec1b9a131a1ee59a17806a",
+   "bedb92bf9be9159caa641a59a7d7a69fabad43136c98a49f158e13e4904111cd",
+   "c1d857983f2cc453198ef3909d73fbb53cff9e154ebd0edf60840d43f1018463",
+   "c50a54380675f815e34c8bfdd73ae878d19aa926bc51a0e4ba93847f045d9a67",
+   "d80e22b350d6aa4857cd9a94c1c4b1fcc7398027de82b3f6c0f772cb61e46269",
+   "e4d29eeee178ce0f69189847a6809d7d063b5cb24be48ee72e0ccc2667fdbeee"
+  ],
+  ".claude/skills/cerne-authoring/reference/decisions-runbooks.md": [
+   "bfcbca4a3f0d26fe84675827c127674ba4ceabbc5f13f7c714aa2c2b78192068",
+   "cc050e3a701c22c569a3109888b7d40effbac5eca8fdd4309a5f773ce9da93df"
+  ],
+  ".claude/skills/cerne-authoring/reference/drift.md": [
+   "82ed14be9d12948e1e3297153d26cbc1096c9296503ebb1456685048d0ab0b07"
+  ],
+  ".claude/skills/cerne-authoring/reference/epics.md": [
+   "49693e0a6436bce6f4aaa6a008ac1765f769cf7a748245a250255e0f588f3e9d",
+   "eb7f55db42d898ad7006653dd8498b1f89f840e734a05220ae14539317cfa02f",
+   "ec4bba3103b5b8b9efdbc64de53ef76036885216de0216ea3f7a827da74d764a"
+  ],
+  ".claude/skills/cerne-authoring/reference/errata.md": [
+   "6eacf4276aa2fe16ae998c003b8cb46b2f15395d1a542164bff53f850f3f4963",
+   "9007ff4b57fc252faa94bf34c8067cd79c933e3b79ff081a17a58fd631be0f7b",
+   "b88ac62b5058f3d08c4b08aa85ebfd87042780ebe1541cfa2bdcfe8f930fe3de",
+   "ff4941fc31a839f23e9c91f7aa4c711e8e2133d075b4edd29cdc34c463984fed"
+  ],
+  ".claude/skills/cerne-authoring/reference/external-sources.md": [
+   "3fcdca411d9166e6b8df08dd9ff97053cdbc93d771d9f33ebb94a1118c6f3936"
+  ],
+  ".claude/skills/cerne-authoring/reference/gauntlet.md": [
+   "08e72fc5b0ed038c6c6c6977e310c0b0e814ef8a8fa10fca88fbf302c57aeb5a",
+   "40a042e7cb9ad7495ed80f224f0964c885ce7db3e97c131a31823ea925b86639"
+  ],
+  ".claude/skills/cerne-authoring/reference/housekeeping.md": [
+   "0719af35b854e8bfe0e7ef275251010e7c443ab683b71ba3a1de17d0f7dd6351",
+   "51786658912c1df4445c665524c1eba57542f80ebad666051499b7e7f8e178fc",
+   "b8bb45f178f5bb4460266b2aea87a9288c11d6487ce7111f2072faf3775574d9"
+  ],
+  ".claude/skills/cerne-authoring/reference/ideas-pendings.md": [
+   "010c4b20ce287f5af57dfe2616cbb051b14a1272d58e9a283c0e0dac65b18aed",
+   "87ef0b5e3d08e459fe6e0570fe5409a04b2d07b7838e316e19ff5f61ac52cca6",
+   "a52184be259e6edffd5902452c8f61f425713ab3cee75d59d19ce848a1e1a5f3"
+  ],
+  ".claude/skills/cerne-authoring/reference/language.md": [
+   "4783850ce66e85b8b6f17c2075a3e288780cafa307568aeee90ffc1cc4506691"
+  ],
+  ".claude/skills/cerne-authoring/reference/lifecycle.md": [
+   "5b84622fcdb3b2245f900de4698bc4c2b5fbe0d640d8659da51696c7c9fe77cb",
+   "be1bc18074bb7f93c5ae28509248e1d6ec0d2f5d31f8801a41c6ed243fbbe033",
+   "be6b16528653c28ff5698b3c4d4dd7195fdb05c851a801fe490f5afde0705361"
+  ],
+  ".claude/skills/cerne-authoring/reference/mcp-and-demo.md": [
+   "153b3ec2f168f1785e5b0add437552669ff7b70099e73997e620fc14cfbf8dfc"
+  ],
+  ".claude/skills/cerne-authoring/reference/notes-and-knowledge.md": [
+   "176481dab4d5f030927210cb7907e5b8a32129eb78068f5ce087c8e559ef7573",
+   "1f604fe98434f04643a0c497f75b7463c256376145f1598856095b2778fda7a7"
+  ],
+  ".claude/skills/cerne-authoring/reference/templates.md": [
+   "464a6a3e39be5c3c07e30b7930a33bd1e7f8f2df4de58b7016e31a59712f1fd7",
+   "7445961e85e168c95a5dcedb483379fd80463949e2328a641f373f439cbbd1be",
+   "a95a8d32300e57fbfadb202571727387d40419c87fbcf1b77ee350edc3603d6d"
+  ],
+  ".claude/skills/cerne-authoring/reference/validate-and-settings.md": [
+   "af54d3796dca24b38a71a894f12fe54dae645102cf2224679806ee5be0a3808e"
+  ],
+  ".claude/skills/cerne-authoring/reference/war-room-channel.md": [
+   "6036bf235d16eaeb5eebe4faf6c17388245ccf0153059a2488394f134e10e4ee",
+   "d7d1d8450286c61ac2e67b37c46c33f7d75c1cee0fa3ca75fe51517b475de4e3"
+  ],
+  ".claude/skills/cerne-authoring/reference/work-and-handoffs.md": [
+   "0a37ab7e5e1fc0db2889764f90b55a505324c5c65b1b6ca52c1f55fce4cf4a89",
+   "9b787626b2653d7da6e3661ef49d57ba8b30f18145d4575d42c227f7bd641822",
+   "a4ec0be7f0bc34f98e9c9aa9122d250c6d16925e3550ed305c388891f24698ba",
+   "abbf6d8217f7be9f26cd3f9167621d1582860142cec713811bfc0ee58f0fbf26"
+  ],
+  ".claude/skills/cerne-self-learning/SKILL.md": [
+   "314f50b7f930dc549b6bd4b8870acb7782c7c0fbf5b6fc2e0016b7a27eef8a65",
+   "e649431fe7827eafa794ed12991ac99abc9336bc25ab7eafea6094fbc986efd0",
+   "ef8c402506816992990ebb38f9516ed1a0c39ab134f4815a9c58a593b0be318f"
+  ],
+  ".codex/hooks.json#16aad9cdfeeea0831d6f33540147c1ee2ac40bd117d89f8964cda9d0368c417a": [
+   "16aad9cdfeeea0831d6f33540147c1ee2ac40bd117d89f8964cda9d0368c417a"
+  ],
+  ".codex/hooks.json#17d68017404f07296fba48f6ec5c9dcdfcd1f8d2d5eb083c5e4ba9f3f40c9fe9": [
+   "17d68017404f07296fba48f6ec5c9dcdfcd1f8d2d5eb083c5e4ba9f3f40c9fe9"
+  ],
+  ".codex/hooks.json#2e1ae94f18efb92e4efb68ca6d27ba1553119acd92945466f25eb5a27be1e6ba": [
+   "2e1ae94f18efb92e4efb68ca6d27ba1553119acd92945466f25eb5a27be1e6ba"
+  ],
+  ".codex/hooks.json#57e91445d8c6b1bd966c89187a76aeceb7b6360a6e5efeb4475e30ceba25a83e": [
+   "57e91445d8c6b1bd966c89187a76aeceb7b6360a6e5efeb4475e30ceba25a83e"
+  ],
+  ".codex/hooks.json#71f9670e9bf7f64181c5723a0122f6cec54cd585b97c107c93803c47c3b59582": [
+   "71f9670e9bf7f64181c5723a0122f6cec54cd585b97c107c93803c47c3b59582"
+  ],
+  ".codex/hooks.json#b5bba36a33da1927c42b0958e8595148b98e938178556bdbae6bea8d09d67431": [
+   "b5bba36a33da1927c42b0958e8595148b98e938178556bdbae6bea8d09d67431"
+  ],
+  ".codex/hooks.json#c5a959009d3790e12829e5f9484901de1cd742bac79f749bd96254308f319c94": [
+   "c5a959009d3790e12829e5f9484901de1cd742bac79f749bd96254308f319c94"
+  ],
+  ".codex/hooks.json#c5e86b7bb12c3cc0be7e252306f11883771dc8f7f7b182f32ef14e787a8cb610": [
+   "c5e86b7bb12c3cc0be7e252306f11883771dc8f7f7b182f32ef14e787a8cb610"
+  ],
+  ".codex/hooks.json#d9710d78a03e63f801a6076f1387aeb4dd517e54a9421f81db02e6dacbfd0cdd": [
+   "d9710d78a03e63f801a6076f1387aeb4dd517e54a9421f81db02e6dacbfd0cdd"
+  ],
+  ".codex/hooks.json#e75fc8fdc2dde6f39d4a00ff73a4af82f357952ff41b3e45b0dc8bf9f9fd36a4": [
+   "e75fc8fdc2dde6f39d4a00ff73a4af82f357952ff41b3e45b0dc8bf9f9fd36a4"
+  ],
+  ".codex/hooks.json#f2ef88e5e9e7d6fca921674acf162ca733405920b26c07ebdd8e141e79bc8af2": [
+   "f2ef88e5e9e7d6fca921674acf162ca733405920b26c07ebdd8e141e79bc8af2"
+  ],
+  ".cursor/hooks.json#225875b7acaee99eec8dff8a0d96e39068a503f2733c0efc3436cd61a91364d3": [
+   "225875b7acaee99eec8dff8a0d96e39068a503f2733c0efc3436cd61a91364d3"
+  ],
+  ".cursor/hooks.json#65947cf842f9ee8b86de4be3418ada01841fc6c0f6b62cb6395b418ef5b0cd79": [
+   "65947cf842f9ee8b86de4be3418ada01841fc6c0f6b62cb6395b418ef5b0cd79"
+  ],
+  ".cursor/rules/cerne.mdc": [
+   "01fd3d8ab38fbd6fd99e132ca2fe41f1cb2e6c6225eccbf30a9759cc2114e600",
+   "49afcbcd2a93161a40d9df79bfad487b9082a7421eddc504913705000b01ea4d",
+   "51bbb60169f9ae41e4947e5cd554df4a30e9d17e9e49c6737f5b21cfa5c1b7eb",
+   "68fb362d006aa8727506b30cd8e3ecd83e3f8183f20400264fc1a85a9ade9667",
+   "9adf7d020520834b901ecb7bcbc8097902699b2003e8ba1f4f440f1ad477b0fc",
+   "ac7a8eba4fba36ac73f351489726a7d6e8ec75ce29f9864e44f5bc44881026e0",
+   "cd76db39b0de067e44f4651d8d2935bc4adf6163a819adf3a8da81cad798120f"
+  ],
+  ".cursor/skills/cerne-authoring/SKILL.md": [
+   "11ad1363c6ed10ddfbbccdd723dbce2051993ac582798c6b54ca9a37aa616e4c",
+   "52baf721ff3ae16a1a86296e481bff6bde2f87accbb0856567b33bc474d7dcd2",
+   "60c824bdb8dc782894a9f79e399696d78354e0227b21f5a54136f96013d32086",
+   "637e0b803360f06f522955e090f6c9989ecb5060c5000a00162b3ee2380ea301",
+   "8e5517711c201ce8688d2db7ad062656fdf11ddad15e69b93869e9c1cc061b1e",
+   "b90d04dc3d6e899fceb51a5d3a38b852e30e95af96ec1b9a131a1ee59a17806a",
+   "c1d857983f2cc453198ef3909d73fbb53cff9e154ebd0edf60840d43f1018463"
+  ],
+  ".cursor/skills/cerne-authoring/reference/decisions-runbooks.md": [
+   "bfcbca4a3f0d26fe84675827c127674ba4ceabbc5f13f7c714aa2c2b78192068",
+   "cc050e3a701c22c569a3109888b7d40effbac5eca8fdd4309a5f773ce9da93df"
+  ],
+  ".cursor/skills/cerne-authoring/reference/drift.md": [
+   "82ed14be9d12948e1e3297153d26cbc1096c9296503ebb1456685048d0ab0b07"
+  ],
+  ".cursor/skills/cerne-authoring/reference/epics.md": [
+   "49693e0a6436bce6f4aaa6a008ac1765f769cf7a748245a250255e0f588f3e9d",
+   "eb7f55db42d898ad7006653dd8498b1f89f840e734a05220ae14539317cfa02f",
+   "ec4bba3103b5b8b9efdbc64de53ef76036885216de0216ea3f7a827da74d764a"
+  ],
+  ".cursor/skills/cerne-authoring/reference/errata.md": [
+   "6eacf4276aa2fe16ae998c003b8cb46b2f15395d1a542164bff53f850f3f4963",
+   "9007ff4b57fc252faa94bf34c8067cd79c933e3b79ff081a17a58fd631be0f7b",
+   "b88ac62b5058f3d08c4b08aa85ebfd87042780ebe1541cfa2bdcfe8f930fe3de",
+   "ff4941fc31a839f23e9c91f7aa4c711e8e2133d075b4edd29cdc34c463984fed"
+  ],
+  ".cursor/skills/cerne-authoring/reference/external-sources.md": [
+   "3fcdca411d9166e6b8df08dd9ff97053cdbc93d771d9f33ebb94a1118c6f3936"
+  ],
+  ".cursor/skills/cerne-authoring/reference/gauntlet.md": [
+   "08e72fc5b0ed038c6c6c6977e310c0b0e814ef8a8fa10fca88fbf302c57aeb5a",
+   "40a042e7cb9ad7495ed80f224f0964c885ce7db3e97c131a31823ea925b86639"
+  ],
+  ".cursor/skills/cerne-authoring/reference/housekeeping.md": [
+   "0719af35b854e8bfe0e7ef275251010e7c443ab683b71ba3a1de17d0f7dd6351",
+   "51786658912c1df4445c665524c1eba57542f80ebad666051499b7e7f8e178fc",
+   "b8bb45f178f5bb4460266b2aea87a9288c11d6487ce7111f2072faf3775574d9"
+  ],
+  ".cursor/skills/cerne-authoring/reference/ideas-pendings.md": [
+   "010c4b20ce287f5af57dfe2616cbb051b14a1272d58e9a283c0e0dac65b18aed",
+   "87ef0b5e3d08e459fe6e0570fe5409a04b2d07b7838e316e19ff5f61ac52cca6",
+   "a52184be259e6edffd5902452c8f61f425713ab3cee75d59d19ce848a1e1a5f3"
+  ],
+  ".cursor/skills/cerne-authoring/reference/language.md": [
+   "4783850ce66e85b8b6f17c2075a3e288780cafa307568aeee90ffc1cc4506691"
+  ],
+  ".cursor/skills/cerne-authoring/reference/lifecycle.md": [
+   "5b84622fcdb3b2245f900de4698bc4c2b5fbe0d640d8659da51696c7c9fe77cb",
+   "be1bc18074bb7f93c5ae28509248e1d6ec0d2f5d31f8801a41c6ed243fbbe033",
+   "be6b16528653c28ff5698b3c4d4dd7195fdb05c851a801fe490f5afde0705361"
+  ],
+  ".cursor/skills/cerne-authoring/reference/mcp-and-demo.md": [
+   "153b3ec2f168f1785e5b0add437552669ff7b70099e73997e620fc14cfbf8dfc"
+  ],
+  ".cursor/skills/cerne-authoring/reference/notes-and-knowledge.md": [
+   "176481dab4d5f030927210cb7907e5b8a32129eb78068f5ce087c8e559ef7573",
+   "1f604fe98434f04643a0c497f75b7463c256376145f1598856095b2778fda7a7"
+  ],
+  ".cursor/skills/cerne-authoring/reference/templates.md": [
+   "464a6a3e39be5c3c07e30b7930a33bd1e7f8f2df4de58b7016e31a59712f1fd7",
+   "7445961e85e168c95a5dcedb483379fd80463949e2328a641f373f439cbbd1be",
+   "a95a8d32300e57fbfadb202571727387d40419c87fbcf1b77ee350edc3603d6d"
+  ],
+  ".cursor/skills/cerne-authoring/reference/validate-and-settings.md": [
+   "af54d3796dca24b38a71a894f12fe54dae645102cf2224679806ee5be0a3808e"
+  ],
+  ".cursor/skills/cerne-authoring/reference/war-room-channel.md": [
+   "6036bf235d16eaeb5eebe4faf6c17388245ccf0153059a2488394f134e10e4ee",
+   "d7d1d8450286c61ac2e67b37c46c33f7d75c1cee0fa3ca75fe51517b475de4e3"
+  ],
+  ".cursor/skills/cerne-authoring/reference/work-and-handoffs.md": [
+   "0a37ab7e5e1fc0db2889764f90b55a505324c5c65b1b6ca52c1f55fce4cf4a89",
+   "9b787626b2653d7da6e3661ef49d57ba8b30f18145d4575d42c227f7bd641822",
+   "a4ec0be7f0bc34f98e9c9aa9122d250c6d16925e3550ed305c388891f24698ba",
+   "abbf6d8217f7be9f26cd3f9167621d1582860142cec713811bfc0ee58f0fbf26"
+  ],
+  ".gemini/settings.json#207fbc42c050ea774174af859133ea3dc59fcff000990a0873bf9d894d135d51": [
+   "207fbc42c050ea774174af859133ea3dc59fcff000990a0873bf9d894d135d51"
+  ],
+  ".gemini/settings.json#22ed70243125c3c89d2a909eff37328b730faab367edb1c25348e8d9e1d18dbd": [
+   "22ed70243125c3c89d2a909eff37328b730faab367edb1c25348e8d9e1d18dbd"
+  ],
+  ".gemini/settings.json#38a8fe27dea18c2c01ac2e9baa0c2b0549912f81ff2c37898e1f9c69199792a5": [
+   "38a8fe27dea18c2c01ac2e9baa0c2b0549912f81ff2c37898e1f9c69199792a5"
+  ],
+  ".gemini/settings.json#559c1bd751481583f67dc0b32d760141842cc64669030a788ae2bc0362dbe0da": [
+   "559c1bd751481583f67dc0b32d760141842cc64669030a788ae2bc0362dbe0da"
+  ],
+  ".gemini/settings.json#650b8ce899c316bcb86ed212665730ef4b67066adea4d896d440ad928a599b70": [
+   "650b8ce899c316bcb86ed212665730ef4b67066adea4d896d440ad928a599b70"
+  ],
+  ".gemini/settings.json#a3c144e7d0140e6246710622741a66c9bf42ce22b3f98d29c82fdd30aad1259a": [
+   "a3c144e7d0140e6246710622741a66c9bf42ce22b3f98d29c82fdd30aad1259a"
+  ],
+  ".gemini/skills/cerne-authoring/SKILL.md": [
+   "11ad1363c6ed10ddfbbccdd723dbce2051993ac582798c6b54ca9a37aa616e4c",
+   "52baf721ff3ae16a1a86296e481bff6bde2f87accbb0856567b33bc474d7dcd2",
+   "60c824bdb8dc782894a9f79e399696d78354e0227b21f5a54136f96013d32086",
+   "637e0b803360f06f522955e090f6c9989ecb5060c5000a00162b3ee2380ea301",
+   "8e5517711c201ce8688d2db7ad062656fdf11ddad15e69b93869e9c1cc061b1e",
+   "b90d04dc3d6e899fceb51a5d3a38b852e30e95af96ec1b9a131a1ee59a17806a",
+   "c1d857983f2cc453198ef3909d73fbb53cff9e154ebd0edf60840d43f1018463"
+  ],
+  ".gemini/skills/cerne-authoring/reference/decisions-runbooks.md": [
+   "bfcbca4a3f0d26fe84675827c127674ba4ceabbc5f13f7c714aa2c2b78192068",
+   "cc050e3a701c22c569a3109888b7d40effbac5eca8fdd4309a5f773ce9da93df"
+  ],
+  ".gemini/skills/cerne-authoring/reference/drift.md": [
+   "82ed14be9d12948e1e3297153d26cbc1096c9296503ebb1456685048d0ab0b07"
+  ],
+  ".gemini/skills/cerne-authoring/reference/epics.md": [
+   "49693e0a6436bce6f4aaa6a008ac1765f769cf7a748245a250255e0f588f3e9d",
+   "eb7f55db42d898ad7006653dd8498b1f89f840e734a05220ae14539317cfa02f",
+   "ec4bba3103b5b8b9efdbc64de53ef76036885216de0216ea3f7a827da74d764a"
+  ],
+  ".gemini/skills/cerne-authoring/reference/errata.md": [
+   "6eacf4276aa2fe16ae998c003b8cb46b2f15395d1a542164bff53f850f3f4963",
+   "9007ff4b57fc252faa94bf34c8067cd79c933e3b79ff081a17a58fd631be0f7b",
+   "b88ac62b5058f3d08c4b08aa85ebfd87042780ebe1541cfa2bdcfe8f930fe3de",
+   "ff4941fc31a839f23e9c91f7aa4c711e8e2133d075b4edd29cdc34c463984fed"
+  ],
+  ".gemini/skills/cerne-authoring/reference/external-sources.md": [
+   "3fcdca411d9166e6b8df08dd9ff97053cdbc93d771d9f33ebb94a1118c6f3936"
+  ],
+  ".gemini/skills/cerne-authoring/reference/gauntlet.md": [
+   "08e72fc5b0ed038c6c6c6977e310c0b0e814ef8a8fa10fca88fbf302c57aeb5a",
+   "40a042e7cb9ad7495ed80f224f0964c885ce7db3e97c131a31823ea925b86639"
+  ],
+  ".gemini/skills/cerne-authoring/reference/housekeeping.md": [
+   "0719af35b854e8bfe0e7ef275251010e7c443ab683b71ba3a1de17d0f7dd6351",
+   "51786658912c1df4445c665524c1eba57542f80ebad666051499b7e7f8e178fc",
+   "b8bb45f178f5bb4460266b2aea87a9288c11d6487ce7111f2072faf3775574d9"
+  ],
+  ".gemini/skills/cerne-authoring/reference/ideas-pendings.md": [
+   "010c4b20ce287f5af57dfe2616cbb051b14a1272d58e9a283c0e0dac65b18aed",
+   "87ef0b5e3d08e459fe6e0570fe5409a04b2d07b7838e316e19ff5f61ac52cca6",
+   "a52184be259e6edffd5902452c8f61f425713ab3cee75d59d19ce848a1e1a5f3"
+  ],
+  ".gemini/skills/cerne-authoring/reference/language.md": [
+   "4783850ce66e85b8b6f17c2075a3e288780cafa307568aeee90ffc1cc4506691"
+  ],
+  ".gemini/skills/cerne-authoring/reference/lifecycle.md": [
+   "5b84622fcdb3b2245f900de4698bc4c2b5fbe0d640d8659da51696c7c9fe77cb",
+   "be1bc18074bb7f93c5ae28509248e1d6ec0d2f5d31f8801a41c6ed243fbbe033",
+   "be6b16528653c28ff5698b3c4d4dd7195fdb05c851a801fe490f5afde0705361"
+  ],
+  ".gemini/skills/cerne-authoring/reference/mcp-and-demo.md": [
+   "153b3ec2f168f1785e5b0add437552669ff7b70099e73997e620fc14cfbf8dfc"
+  ],
+  ".gemini/skills/cerne-authoring/reference/notes-and-knowledge.md": [
+   "176481dab4d5f030927210cb7907e5b8a32129eb78068f5ce087c8e559ef7573",
+   "1f604fe98434f04643a0c497f75b7463c256376145f1598856095b2778fda7a7"
+  ],
+  ".gemini/skills/cerne-authoring/reference/templates.md": [
+   "464a6a3e39be5c3c07e30b7930a33bd1e7f8f2df4de58b7016e31a59712f1fd7",
+   "7445961e85e168c95a5dcedb483379fd80463949e2328a641f373f439cbbd1be",
+   "a95a8d32300e57fbfadb202571727387d40419c87fbcf1b77ee350edc3603d6d"
+  ],
+  ".gemini/skills/cerne-authoring/reference/validate-and-settings.md": [
+   "af54d3796dca24b38a71a894f12fe54dae645102cf2224679806ee5be0a3808e"
+  ],
+  ".gemini/skills/cerne-authoring/reference/war-room-channel.md": [
+   "6036bf235d16eaeb5eebe4faf6c17388245ccf0153059a2488394f134e10e4ee",
+   "d7d1d8450286c61ac2e67b37c46c33f7d75c1cee0fa3ca75fe51517b475de4e3"
+  ],
+  ".gemini/skills/cerne-authoring/reference/work-and-handoffs.md": [
+   "0a37ab7e5e1fc0db2889764f90b55a505324c5c65b1b6ca52c1f55fce4cf4a89",
+   "9b787626b2653d7da6e3661ef49d57ba8b30f18145d4575d42c227f7bd641822",
+   "a4ec0be7f0bc34f98e9c9aa9122d250c6d16925e3550ed305c388891f24698ba",
+   "abbf6d8217f7be9f26cd3f9167621d1582860142cec713811bfc0ee58f0fbf26"
+  ],
+  ".github/hooks/cerne.json": [
+   "07b0495c06b163bb425ef211948a929e45240f43ae0d882da50591d8cbe296ad"
+  ],
+  ".github/instructions/cerne.instructions.md": [
+   "78fba7d494498614b602753d7bab4b8caae9fdc471fd3f9a5ae56415ec7b5930",
+   "8c1473f79bbc03547719a11d1c469c3e6548c06666d8176a424412becf3b85e3"
+  ],
+  ".github/skills/cerne-authoring/SKILL.md": [
+   "60c824bdb8dc782894a9f79e399696d78354e0227b21f5a54136f96013d32086",
+   "637e0b803360f06f522955e090f6c9989ecb5060c5000a00162b3ee2380ea301",
+   "c1d857983f2cc453198ef3909d73fbb53cff9e154ebd0edf60840d43f1018463"
+  ],
+  ".github/skills/cerne-authoring/reference/decisions-runbooks.md": [
+   "bfcbca4a3f0d26fe84675827c127674ba4ceabbc5f13f7c714aa2c2b78192068",
+   "cc050e3a701c22c569a3109888b7d40effbac5eca8fdd4309a5f773ce9da93df"
+  ],
+  ".github/skills/cerne-authoring/reference/drift.md": [
+   "82ed14be9d12948e1e3297153d26cbc1096c9296503ebb1456685048d0ab0b07"
+  ],
+  ".github/skills/cerne-authoring/reference/epics.md": [
+   "49693e0a6436bce6f4aaa6a008ac1765f769cf7a748245a250255e0f588f3e9d",
+   "eb7f55db42d898ad7006653dd8498b1f89f840e734a05220ae14539317cfa02f"
+  ],
+  ".github/skills/cerne-authoring/reference/errata.md": [
+   "b88ac62b5058f3d08c4b08aa85ebfd87042780ebe1541cfa2bdcfe8f930fe3de",
+   "ff4941fc31a839f23e9c91f7aa4c711e8e2133d075b4edd29cdc34c463984fed"
+  ],
+  ".github/skills/cerne-authoring/reference/external-sources.md": [
+   "3fcdca411d9166e6b8df08dd9ff97053cdbc93d771d9f33ebb94a1118c6f3936"
+  ],
+  ".github/skills/cerne-authoring/reference/gauntlet.md": [
+   "08e72fc5b0ed038c6c6c6977e310c0b0e814ef8a8fa10fca88fbf302c57aeb5a"
+  ],
+  ".github/skills/cerne-authoring/reference/housekeeping.md": [
+   "51786658912c1df4445c665524c1eba57542f80ebad666051499b7e7f8e178fc",
+   "b8bb45f178f5bb4460266b2aea87a9288c11d6487ce7111f2072faf3775574d9"
+  ],
+  ".github/skills/cerne-authoring/reference/ideas-pendings.md": [
+   "87ef0b5e3d08e459fe6e0570fe5409a04b2d07b7838e316e19ff5f61ac52cca6",
+   "a52184be259e6edffd5902452c8f61f425713ab3cee75d59d19ce848a1e1a5f3"
+  ],
+  ".github/skills/cerne-authoring/reference/language.md": [
+   "4783850ce66e85b8b6f17c2075a3e288780cafa307568aeee90ffc1cc4506691"
+  ],
+  ".github/skills/cerne-authoring/reference/lifecycle.md": [
+   "be1bc18074bb7f93c5ae28509248e1d6ec0d2f5d31f8801a41c6ed243fbbe033",
+   "be6b16528653c28ff5698b3c4d4dd7195fdb05c851a801fe490f5afde0705361"
+  ],
+  ".github/skills/cerne-authoring/reference/mcp-and-demo.md": [
+   "153b3ec2f168f1785e5b0add437552669ff7b70099e73997e620fc14cfbf8dfc"
+  ],
+  ".github/skills/cerne-authoring/reference/notes-and-knowledge.md": [
+   "176481dab4d5f030927210cb7907e5b8a32129eb78068f5ce087c8e559ef7573",
+   "1f604fe98434f04643a0c497f75b7463c256376145f1598856095b2778fda7a7"
+  ],
+  ".github/skills/cerne-authoring/reference/templates.md": [
+   "7445961e85e168c95a5dcedb483379fd80463949e2328a641f373f439cbbd1be",
+   "a95a8d32300e57fbfadb202571727387d40419c87fbcf1b77ee350edc3603d6d"
+  ],
+  ".github/skills/cerne-authoring/reference/validate-and-settings.md": [
+   "af54d3796dca24b38a71a894f12fe54dae645102cf2224679806ee5be0a3808e"
+  ],
+  ".github/skills/cerne-authoring/reference/war-room-channel.md": [
+   "6036bf235d16eaeb5eebe4faf6c17388245ccf0153059a2488394f134e10e4ee",
+   "d7d1d8450286c61ac2e67b37c46c33f7d75c1cee0fa3ca75fe51517b475de4e3"
+  ],
+  ".github/skills/cerne-authoring/reference/work-and-handoffs.md": [
+   "0a37ab7e5e1fc0db2889764f90b55a505324c5c65b1b6ca52c1f55fce4cf4a89",
+   "9b787626b2653d7da6e3661ef49d57ba8b30f18145d4575d42c227f7bd641822"
+  ],
+  ".mcp.json#bc34bdbc1ae6d877b95be6c197d81ead01b249e956b913f2f947fe1e85ace7ef": [
+   "bc34bdbc1ae6d877b95be6c197d81ead01b249e956b913f2f947fe1e85ace7ef"
+  ],
+  "AGENTS.md": [
+   "d980e1de0c3b98ac659f6bd5540bbc0c7f62f0818942925e5c11fff1c46e5239"
+  ],
+  "GEMINI.md": [
+   "4f5486d1ea93c3387e8d8fe09934ffade0811a154cf18dac346a00bddd41e456"
+  ]
+ }
+}

@@ -391,14 +391,19 @@ func compactBlock(dir, sess string) string {
 // only the Copilot entries of the shared stale lists, so a Copilot-only
 // project is not told about the Claude Code skills it never installed.
 func copilotStaleNotice(projDir string) string {
+	line, leftover := autoRefresh(projDir)
 	var names []string
 	for _, n := range append(hooks.Stale(projDir), skills.Stale(projDir)...) {
 		if strings.Contains(n, "copilot") {
 			names = append(names, n)
 		}
 	}
-	if len(names) == 0 {
-		return ""
+	notice := ""
+	if len(names) > 0 {
+		notice = "cerne: managed Copilot file(s) out of date with this cerne build: " + strings.Join(names, ", ") + " — run `cerne update`."
+		if len(leftover) > 0 {
+			notice += " (" + leftoverNote(leftover) + ")"
+		}
 	}
-	return "cerne: managed Copilot file(s) out of date with this cerne build: " + strings.Join(names, ", ") + " — run `cerne update`."
+	return strings.TrimSpace(line + "\n" + notice)
 }

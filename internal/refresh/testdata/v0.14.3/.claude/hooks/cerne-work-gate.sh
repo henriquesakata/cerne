@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# PreToolUse/Edit|Write hook installed by `cerne hook install` (F-0151). Pipes
+# the hook payload to `cerne hook work-gate`, which denies the edit when the
+# project enables [gates] work_gate and the session holds no live cerne
+# registration (run `cerne work start` / `cerne feature start` first). The
+# toggle is evaluated inside the Go subcommand at run time — switching it in
+# .cernerc needs no hook reinstall. Fail-open by design: with the binary
+# absent (or anything unexpected) this wrapper exits 0 silently, because a
+# broken install must never lock the user out of editing. Tool-managed — do
+# not edit; fix it upstream in internal/hooks/assets/ and re-run
+# `cerne hook install`.
+# To turn it off for a process (eval, CI), set CERNE_NO_AGENT_HOOKS=1
+# instead of editing it (F-0360).
+[ -n "${CERNE_NO_AGENT_HOOKS:-}" ] && exit 0
+# A GUI host (Cursor, an IDE opened from the Dock) can run hooks with the
+# bare system PATH; look where cerne installs to as well (F-0428).
+command -v cerne >/dev/null 2>&1 || PATH="${PATH:+$PATH:}$HOME/go/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin"
+
+command -v cerne >/dev/null 2>&1 || exit 0
+cerne hook work-gate 2>/dev/null || true
+exit 0

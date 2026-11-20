@@ -258,6 +258,11 @@ var settingsRegistry = []Setting{
 		Scopes:      []string{ScopeProject, ScopeHost},
 		Description: "On shows the agent up to 3 active notes or runbooks whose titles match the words of the user's prompt, once per session, through the prompt hook. Off stops showing them.",
 	},
+	{
+		ID: "hooks.auto_refresh", Group: "integrations", Title: "Refresh hooks and guide", Type: "bool", Default: true,
+		Scopes:      []string{ScopeProject, ScopeHost},
+		Description: "On renews an agent's hooks and authoring guide by themselves, at the session start and in cerne next, when every managed file is one a past cerne release wrote and none was edited; the change applies from the next session. Off leaves them alone and only warns that they are out of date (cerne update renews them).",
+	},
 }
 
 // WikiEnabled is wiki.enabled for the project at (or above) projDir (F-0316):
@@ -313,6 +318,17 @@ func UpdateCheck(projDir string) bool {
 func NotesOnEdit(projDir string) bool {
 	for _, s := range ResolveSettings(projDir).Settings {
 		if s.ID == "hooks.notes_on_edit" {
+			return s.Value != false
+		}
+	}
+	return true
+}
+
+// AutoRefresh is hooks.auto_refresh for the project at (or above) projDir
+// (F-0477): false only when it resolves to false.
+func AutoRefresh(projDir string) bool {
+	for _, s := range ResolveSettings(projDir).Settings {
+		if s.ID == "hooks.auto_refresh" {
 			return s.Value != false
 		}
 	}

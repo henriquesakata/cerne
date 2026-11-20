@@ -1,0 +1,3 @@
+# cerne (F-0174): human gates recognize agent sessions; F-0375: documents record their provider.
+[shell_environment_policy]
+set = { CERNE_ACTOR = "agent", CERNE_PROVIDER = "openai" }

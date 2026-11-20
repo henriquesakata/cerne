@@ -15,6 +15,7 @@ import (
 	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/hooks"
 	"github.com/henriquesakata/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/refresh"
 	"github.com/henriquesakata/cerne/internal/selfupdate"
 	"github.com/henriquesakata/cerne/internal/server"
 	"github.com/henriquesakata/cerne/internal/skills"
@@ -150,7 +151,8 @@ func runUpdate(cmd *cobra.Command, dir string, check, filesOnly bool) error {
 	case !inProject:
 		fmt.Fprintln(out, "no cerne project here (no .cernerc from "+dir+" up): only the binary was looked at, no project was touched")
 	default:
-		hookPart, guidePart := renewHooks(projDir), renewGuide(projDir)
+		hookPart, guidePart := renewAgents(projDir, defaultHookProviders(projDir))
+		hookPart, guidePart = verifyRenewed(projDir, hookPart, guidePart)
 		fmt.Fprintln(out, hookPart)
 		fmt.Fprintln(out, guidePart)
 		if hookPart.state == stUpdated {
@@ -194,39 +196,51 @@ func staleManaged(projDir string) (hookNames, guideNames []string) {
 // defaultHookProviders is the agent set `cerne hook install` uses with no
 // --provider: Claude Code plus every provider whose config dir exists.
 func defaultHookProviders(dir string) []hooks.Provider {
-	return append([]hooks.Provider{hooks.ProviderClaude}, hooks.DetectProviders(dir)...)
+	return refresh.Connected(dir)
 }
 
-func renewHooks(projDir string) part {
-	results, err := hooks.Install(projDir, defaultHookProviders(projDir)...)
+// renewAgents is the one renewal of cerne update and of the automatic refresh
+// (F-0477): the hooks and the guide of exactly the providers it is given, and
+// nothing of any other. Claude Code's guide is written only when it is among
+// them. A part is "updated" with the files that changed, "up to date" when
+// none did, or "not done" when the install itself failed.
+func renewAgents(projDir string, providers []hooks.Provider) (hookPart, guidePart part) {
+	hookPart, guidePart = part{name: "hooks", state: stCurrent}, part{name: "guide", state: stCurrent}
+	results, err := hooks.Install(projDir, providers...)
 	if err != nil {
-		return part{name: "hooks", state: stNotDone, detail: err.Error(), fix: "cerne hook install"}
-	}
-	if left, _ := staleManaged(projDir); len(left) > 0 {
-		return part{name: "hooks", state: stNotDone, detail: "still out of date: " + strings.Join(left, ", "), fix: "cerne hook install"}
-	}
-	var changed []string
-	for _, r := range results {
-		if r.Status == hooks.StatusCreated || r.Status == hooks.StatusUpdated {
-			changed = append(changed, r.Asset)
+		hookPart = part{name: "hooks", state: stNotDone, detail: err.Error(), fix: "cerne hook install"}
+	} else {
+		var changed []string
+		for _, r := range results {
+			if r.Status == hooks.StatusCreated || r.Status == hooks.StatusUpdated {
+				changed = append(changed, r.Asset)
+			}
+		}
+		if len(changed) > 0 {
+			hookPart = part{name: "hooks", state: stUpdated, detail: strings.Join(changed, ", ")}
 		}
 	}
-	if len(changed) == 0 {
-		return part{name: "hooks", state: stCurrent}
-	}
-	return part{name: "hooks", state: stUpdated, detail: strings.Join(changed, ", ")}
-}
 
-func renewGuide(projDir string) part {
-	results, err := skills.Install(projDir, hooks.DetectProviders(projDir)...)
-	if err != nil {
-		return part{name: "guide", state: stNotDone, detail: err.Error(), fix: "cerne skill install"}
+	var others []hooks.Provider
+	claude := false
+	for _, p := range providers {
+		if p == hooks.ProviderClaude {
+			claude = true
+		} else {
+			others = append(others, p)
+		}
 	}
-	if _, left := staleManaged(projDir); len(left) > 0 {
-		return part{name: "guide", state: stNotDone, detail: "still out of date: " + strings.Join(left, ", "), fix: "cerne skill install"}
+	var sres []skills.Result
+	if claude {
+		sres, err = skills.Install(projDir, others...)
+	} else {
+		sres, err = skills.InstallProviders(projDir, others...)
+	}
+	if err != nil {
+		return hookPart, part{name: "guide", state: stNotDone, detail: err.Error(), fix: "cerne skill install"}
 	}
 	var changed []string
-	for _, r := range results {
+	for _, r := range sres {
 		if r.Status == skills.StatusCreated || r.Status == skills.StatusUpdated {
 			name := r.Path
 			if name == "" {
@@ -235,10 +249,24 @@ func renewGuide(projDir string) part {
 			changed = append(changed, name)
 		}
 	}
-	if len(changed) == 0 {
-		return part{name: "guide", state: stCurrent}
+	if len(changed) > 0 {
+		guidePart = part{name: "guide", state: stUpdated, detail: strings.Join(changed, ", ")}
 	}
-	return part{name: "guide", state: stUpdated, detail: strings.Join(changed, ", ")}
+	return hookPart, guidePart
+}
+
+// verifyRenewed turns a part into "not done" when the files it renewed are
+// still out of date (an unwritable file, a skipped slot): cerne update's
+// closing lines must not claim what it did not do.
+func verifyRenewed(projDir string, hookPart, guidePart part) (part, part) {
+	left, leftGuide := staleManaged(projDir)
+	if hookPart.state != stNotDone && len(left) > 0 {
+		hookPart = part{name: "hooks", state: stNotDone, detail: "still out of date: " + strings.Join(left, ", "), fix: "cerne hook install"}
+	}
+	if guidePart.state != stNotDone && len(leftGuide) > 0 {
+		guidePart = part{name: "guide", state: stNotDone, detail: "still out of date: " + strings.Join(leftGuide, ", "), fix: "cerne skill install"}
+	}
+	return hookPart, guidePart
 }
 
 // installScriptCmd is the install script line for this OS: the fix when the

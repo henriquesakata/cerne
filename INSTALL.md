@@ -123,6 +123,8 @@ Run `cerne update` inside your project. It updates the binary the way you instal
 
 It ends with one line per part (binary, hooks, guide): updated, up to date, or not done with the reason and the command to run. The exit code is 0 only when nothing was left not done. New hooks apply from your agent's next session. `cerne update --check` only lists the project files that are out of date: it writes nothing and uses no network. Outside a project, `cerne update` updates the binary alone, so run it again inside each project. An agent can run it too, but only to renew the project files: replacing the binary is left to you, in your own terminal.
 
+After a new binary the hooks and the guide of a connected agent renew by themselves, at your agent's session start and in `cerne next`, when every managed file of that agent is exactly one a past cerne release wrote: nothing you edited is overwritten, and a line says which agents were renewed (the change applies from the next session). When any file of an agent is one cerne does not recognize (you edited it, or a newer cerne wrote it), it touches nothing of that agent and only warns, naming the file; `cerne update` replaces it when you decide. It uses no network and connects no new agent. To turn it off, run `cerne settings set hooks.auto_refresh false` (add `--scope host` for every project on this machine).
+
 On a version without the command (`cerne update` answers `unknown command`), update the binary first with `brew upgrade henriquesakata/tap/cerne` or the install script, then run `cerne update` in each project.
 
 ## 3. What you need
