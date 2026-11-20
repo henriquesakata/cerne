@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -186,22 +187,27 @@ func TestClaimNoticeOncePerTag(t *testing.T) {
 }
 
 func TestClaimNoticeReadOnlyDirFailsOpen(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("root writes anywhere")
-	}
-	dir := t.TempDir()
-	if err := os.Chmod(dir, 0o500); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.Chmod(dir, 0o700) })
-	if ClaimNotice(dir, "v1.2.0") {
-		t.Fatal("an unwritable dir must not claim")
-	}
-	f := filepath.Join(t.TempDir(), "file")
-	os.WriteFile(f, nil, 0o644)
-	if ClaimNotice(filepath.Join(f, "sub"), "v1.2.0") {
-		t.Fatal("a dir that cannot be made must not claim")
-	}
+	t.Run("dir that cannot be made", func(t *testing.T) {
+		f := filepath.Join(t.TempDir(), "file")
+		os.WriteFile(f, nil, 0o644)
+		if ClaimNotice(filepath.Join(f, "sub"), "v1.2.0") {
+			t.Fatal("a dir that cannot be made must not claim")
+		}
+	})
+	t.Run("unwritable dir", func(t *testing.T) {
+		// chmod does not take write access away from a folder on Windows.
+		if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+			t.Skip("needs POSIX permissions and a non-root user")
+		}
+		dir := t.TempDir()
+		if err := os.Chmod(dir, 0o500); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { os.Chmod(dir, 0o700) })
+		if ClaimNotice(dir, "v1.2.0") {
+			t.Fatal("an unwritable dir must not claim")
+		}
+	})
 }
 
 // Separate processes race on the same directory: exactly one wins.
