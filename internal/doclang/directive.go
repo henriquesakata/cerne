@@ -97,6 +97,7 @@ type Prose struct {
 	LevelLine, OriginExample              string // the Level metadata line and the Origin example of a spec
 	DecisionVoice, DecisionTitle          string // how an ADR states its decision and titles itself
 	ExpectedOutput, Consulted             string // a runbook step's expected output, and the chat's consulted-sources label
+	Planning                              string // the word that ends a planning work title, "F-NNNN: <what> — <word>" (F-0475)
 }
 
 var proseForms = map[Lang]Prose{
@@ -119,6 +120,7 @@ var proseForms = map[Lang]Prose{
 		DecisionTitle:  `"Usar X", não "Devemos usar X?"`,
 		ExpectedOutput: `"você deve ver: X"`,
 		Consulted:      "Consultei",
+		Planning:       "planejamento",
 	},
 	EN: {
 		Method:         "blind side-by-side comparison by a fresh-context critic who did not take part in the build",
@@ -139,6 +141,7 @@ var proseForms = map[Lang]Prose{
 		DecisionTitle:  `"Use X", not "Should we use X?"`,
 		ExpectedOutput: `"you should see: X"`,
 		Consulted:      "Consulted",
+		Planning:       "planning",
 	},
 }
 

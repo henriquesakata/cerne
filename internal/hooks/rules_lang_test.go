@@ -27,7 +27,7 @@ func TestStaticGuidance_Bilingual(t *testing.T) {
 	for name, s := range map[string]string{
 		"GauntletRule":     GauntletRule,
 		"RegisterRules":    RegisterRules,
-		"SessionRules(on)": SessionRules(true),
+		"SessionRules(on)": SessionRules(true, ""),
 		"installed script": string(script), // the fallback copy cerne hook install writes
 	} {
 		firstBefore(t, name, s, "`Bar:`", "`Barra:`")

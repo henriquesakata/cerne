@@ -1,5 +1,11 @@
 package hooks
 
+import (
+	"strings"
+
+	"github.com/henriquesakata/cerne/internal/doclang"
+)
+
 // RegisterRules is the canonical registration ruleset injected at session
 // start (F-0139/F-0174) — the floor every provider gets. The Claude Code
 // asset (cerne-register-reminder.sh) carries the same text in shell form;
@@ -10,11 +16,57 @@ const RegisterRules = registerHead + "\n" + GauntletRule + " " + gauntletSkip + 
 // SessionRules is the ruleset the dynamic session-start path injects
 // (F-0364): in light mode ([gates] gauntlet = "off") the GAUNTLET item is
 // left out, so a new project is not told to write a bar it is not charged.
-func SessionRules(gauntletOn bool) string {
-	if !gauntletOn {
-		return registerHead + "\n" + registerTail
+//
+// l is the project's documentation language (F-0475): the planning example
+// speaks it and a DOCS LANGUAGE line lists its forms. An empty l — the
+// language could not be resolved — keeps the neutral text and adds no line.
+func SessionRules(gauntletOn bool, l doclang.Lang) string {
+	head := registerHead
+	if l != "" {
+		head = langHead(l)
 	}
-	return registerHead + "\n" + GauntletRule + "\n" + registerTail
+	if !gauntletOn {
+		return head + "\n" + registerTail
+	}
+	return head + "\n" + GauntletRule + "\n" + registerTail
+}
+
+// planningNeutral is what the static texts (RegisterRules, the installed
+// script) put where the planning word of the project's language goes.
+const planningNeutral = "<planning, in the docs language>"
+
+// langHead is registerHead with the planning word of l and the DOCS LANGUAGE
+// line after it; every name comes from internal/doclang.
+func langHead(l doclang.Lang) string {
+	return strings.Replace(registerHead, planningNeutral, doclang.Examples(l).Planning, 1) + "\n" + langLine(l)
+}
+
+func langLine(l doclang.Lang) string {
+	d := func(t doclang.Term) string { return doclang.Display(t, l) }
+	sections := func(k doclang.Kind) string { return strings.Join(doclang.Sections(k, l), " · ") }
+	return "- DOCS LANGUAGE: " + string(l) + " — write every document in it, with these forms only. Spec sections: " + sections(doclang.Spec) +
+		". Plan sections: " + sections(doclang.Plan) + ". Result sections: " + sections(doclang.Result) +
+		". Bar line `" + d(doclang.BarLabel) + ":` (with `" + d(doclang.MethodLabel) + ":` and `" + d(doclang.ExitLabel) + ":`); evidence `" + d(doclang.Criterion) +
+		" N`; open question `" + doclang.AmbiguityMarker(l) + " …]`."
+}
+
+// LangRules is what `cerne hook lang-rules` prints for the Claude Code
+// script (F-0475): the planning item and, when the language is known, the
+// DOCS LANGUAGE line.
+func LangRules(l doclang.Lang) string {
+	if l == "" {
+		return planningLine(registerHead)
+	}
+	return planningLine(strings.Replace(registerHead, planningNeutral, doclang.Examples(l).Planning, 1)) + "\n" + langLine(l)
+}
+
+func planningLine(head string) string {
+	for _, ln := range strings.Split(head, "\n") {
+		if strings.Contains(ln, "ALREADY-APPROVED") {
+			return ln
+		}
+	}
+	return ""
 }
 
 // gauntletSkip is the light-mode escape the static Cursor rule carries: it is
@@ -23,7 +75,7 @@ const gauntletSkip = `(skip it when .cernerc sets [gates] gauntlet = "off")`
 
 const registerHead = `cerne project rules — make in-flight work visible from minute one:
 - Picking up a FEATURE? First action: ` + "`cerne feature new \"<title>\" --context \"<1-3 sentences of why>\"`" + ` (lands as a candidate on the kanban; --file spec.md for a one-shot spec). Register it complete in that same act: spec (` + "`--file`" + `), tags (` + "`--facet`/`--component`" + `) and, once the project has a capability taxonomy, capability (` + "`cerne feature capability <id> C-…`" + `) — ` + "`cerne feature approve <id> --check`" + ` flags a card without them and the approve refuses it. Advance it as you go: spec -> approve (HUMAN gate), plan -> ` + "`cerne feature start`" + `, result -> ` + "`cerne feature complete`" + ` as soon as the PR is open (never wait for CI or the merge). Abandoned? ` + "`cerne feature reject <id> --reason \"...\"`" + `.
-- Picking up an ALREADY-APPROVED feature to plan? First action, before writing the plan: ` + "`cerne work start \"F-NNNN: <what> — planejamento\" --ref F-NNNN`" + ` (F-0208) — registers the pickup immediately, closing the blind window before ` + "`feature start`" + ` (which needs a real plan and so lags). A ` + "`cerne push`" + ` of the plan auto-opens the same work if you forget. It closes by itself at ` + "`cerne feature start`" + ` (F-0341).
+- Picking up an ALREADY-APPROVED feature to plan? First action, before writing the plan: ` + "`cerne work start \"F-NNNN: <what> — " + planningNeutral + "\" --ref F-NNNN`" + ` (F-0208) — registers the pickup immediately, closing the blind window before ` + "`feature start`" + ` (which needs a real plan and so lags). A ` + "`cerne push`" + ` of the plan auto-opens the same work if you forget. It closes by itself at ` + "`cerne feature start`" + ` (F-0341).
 - Picking up a NON-feature task (error investigation, review, ops)? First action: ` + "`cerne work start \"<description>\" [--ref F-...]`" + `; when finished, ` + "`cerne work done W-... [--note \"...\"]`" + `. BEFORE delegating an error investigation to another agent, run ` + "`cerne work list`" + ` — someone may already be on it.
 - HANDOFF (F-0368): Passing the baton? ` + "`cerne work handoff W-… --next …`" + ` and pass only the HO- code. Received an HO-? First action: ` + "`cerne handoff take HO-…`" + `.
 - HUMAN GATES (F-0131): ` + "`cerne feature approve`" + ` and ` + "`cerne feature accept`" + ` are human acts by default — write the spec, ask for approval, STOP. To be woken when the human acts (F-0460): if your harness wakes you when a background command ends (interactive Claude Code does), leave ` + "`cerne feature wait F-… --for approved`" + ` (` + "`--for done`" + ` after the complete) running in the background, then stop; otherwise just stop.`

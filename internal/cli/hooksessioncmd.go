@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/hooks"
@@ -70,6 +71,49 @@ func newHookGauntletRuleCmd() *cobra.Command {
 				return nil
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), hooks.GauntletRule)
+			return nil
+		},
+	}
+}
+
+// sessionDocsLang is the project's documentation language for the session
+// text, or "" when it cannot be resolved (no clone yet, a foreign clone, no
+// project.json): the hooks fail open, so the text then stays neutral (F-0475).
+func sessionDocsLang(cfg project.Config, projDir string) doclang.Lang {
+	cacheDir, err := project.CacheDir(cfg.ProjectID)
+	if err != nil {
+		return ""
+	}
+	repoDir, err := guardedRepoDir(cacheDir, cfg, projDir)
+	if err != nil {
+		return ""
+	}
+	if _, err := store.LoadProject(repoDir); err != nil {
+		return ""
+	}
+	return store.DocsLanguage(repoDir)
+}
+
+// newHookLangRulesCmd prints, for Claude Code's SessionStart script, the
+// planning item and the DOCS LANGUAGE line in the project's language
+// (F-0475); outside a project, or with the language unresolved, only the
+// neutral planning item. It never reads stdin, like gauntlet-rule.
+func newHookLangRulesCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:    "lang-rules",
+		Short:  "SessionStart plumbing: the planning item and the DOCS LANGUAGE line (F-0475)",
+		Hidden: true,
+		Args:   cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dir := os.Getenv("CLAUDE_PROJECT_DIR")
+			if dir == "" {
+				dir, _ = os.Getwd()
+			}
+			var l doclang.Lang
+			if cfg, projDir, err := project.LoadConfig(dir); err == nil {
+				l = sessionDocsLang(cfg, projDir)
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), hooks.LangRules(l))
 			return nil
 		},
 	}
@@ -260,7 +304,7 @@ func runHookSessionContext(cmd *cobra.Command, format string) {
 	if ours {
 		work = activeWorkLines(cfg.ProjectID)
 	}
-	text := hooks.SessionRules(cfg.Gates.GauntletEnabled()) + "\n\nACTIVE WORK RIGHT NOW (cerne work list):\n" + work
+	text := hooks.SessionRules(cfg.Gates.GauntletEnabled(), sessionDocsLang(cfg, projDir)) + "\n\nACTIVE WORK RIGHT NOW (cerne work list):\n" + work
 	if stale != "" {
 		text += "\n\n" + stale
 	}
