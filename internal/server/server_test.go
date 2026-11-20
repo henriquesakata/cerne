@@ -1068,6 +1068,20 @@ func TestFeatureDocPutUnknownFeature(t *testing.T) {
 	}
 }
 
+// TestFeatureDocPutRefusesEncodedTraversal pins B-0034: the mux decodes %2F
+// inside a segment, so the id reaches the core as "../../entities/features/F-0001".
+// It names no feature: 404, and nothing is written in the backend clone.
+func TestFeatureDocPutRefusesEncodedTraversal(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	rec := doLocal(t, New(repoDir, projDir, ""), http.MethodPut, "/api/features/..%2F..%2Fentities%2Ffeatures%2FF-0001/docs/spec", "x", &map[string]any{})
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404; body: %s", rec.Code, rec.Body.String())
+	}
+	if _, err := os.Stat(filepath.Join(repoDir, "entities", "features", "F-0001", "spec.md")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the write landed outside content/features: stat err = %v", err)
+	}
+}
+
 // TestFeatureDocPutRefusesFrozen (F-0305 crit. 6): the feature page writes only
 // while the feature is live; past it the PUT is a 422 naming the state's path,
 // with the document and the event log untouched.
