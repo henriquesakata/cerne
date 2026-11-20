@@ -174,7 +174,7 @@ var parityTable = []ParityRow{
 		Capability: "CERNE_ACTOR=agent (human gates)",
 		Claude:     "settings.json env block + CLAUDECODE=1 on every shell Claude Code runs (B-0030) — no install",
 		Cursor:     "CURSOR_AGENT=1 on Cursor's agent shells (seen in 3.25.6, undocumented) — no install",
-		Codex:      "shell_environment_policy.set in .codex/config.toml",
+		Codex:      "shell_environment_policy.set in .codex/config.toml, or CODEX_THREAD_ID (non-empty) on Codex's tool shells — no install (B-0051)",
 		Gemini:     ".gemini/.env",
 		Copilot:    "env block on each hook + COPILOT_CLI=1 on the bash tool shell — verified on Copilot CLI 1.0.112 only; VS Code agent mode and the cloud agent unverified — no install",
 	},

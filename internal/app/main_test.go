@@ -13,7 +13,7 @@ import (
 // play the human (N-0058); tests that need one set it per case.
 func TestMain(m *testing.M) {
 	os.Setenv("CERNE_NO_CLI_DETECT", "1")
-	for _, marker := range []string{"CLAUDECODE", "CURSOR_AGENT", "COPILOT_CLI"} {
+	for _, marker := range []string{"CLAUDECODE", "CURSOR_AGENT", "COPILOT_CLI", "CODEX_THREAD_ID"} {
 		os.Unsetenv(marker)
 	}
 	// And the host settings (a [llm] saved from the UI reaches every LoadConfig).
