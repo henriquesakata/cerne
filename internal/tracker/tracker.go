@@ -59,7 +59,7 @@ type IssueTracker interface {
 }
 
 // Kinds maps a tracker kind to its constructor. A new tracker = one entry + <kind>.go.
-var Kinds = map[string]func(Config) (IssueTracker, error){"gitea": newGitea, "github": newGitHub, "gitlab": newGitLab}
+var Kinds = map[string]func(Config) (IssueTracker, error){"gitea": newGitea, "github": newGitHub, "gitlab": newGitLab, "trello": newTrello}
 
 var (
 	ErrUnknownKind = errors.New("unknown tracker kind") // text: unknown tracker kind "x" (supported: <comma-separated KindNames>)
