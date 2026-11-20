@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -37,5 +38,25 @@ func TestHookInstallCodexSaysHowToTrustAndCheck(t *testing.T) {
 	}
 	if strings.Contains(out, "trusted project") {
 		t.Errorf("codex guidance printed for gemini:\n%s", out)
+	}
+}
+
+// A relative --dir prints the absolute project path: Codex cannot match ".".
+func TestHookInstallCodexTrustHintIsAbsolute(t *testing.T) {
+	dir := t.TempDir()
+	if err := project.SaveConfig(dir, project.Config{ProjectID: "p", Backend: "/tmp/b"}); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	abs, err := filepath.Abs(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := execCerne(t, "hook", "install", "--dir", ".", "--provider", "codex")
+	if err != nil {
+		t.Fatalf("hook install: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "[projects.\""+abs+"\"]") || strings.Contains(out, `[projects."."]`) {
+		t.Errorf("want absolute path %q in:\n%s", abs, out)
 	}
 }

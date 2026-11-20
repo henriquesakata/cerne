@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -116,6 +117,10 @@ func runHookInstall(cmd *cobra.Command, dir string, providerNames []string) erro
 // .codex/ only in a trusted project, and the user checks the result from inside
 // a session.
 func printCodexTrust(out io.Writer, dir string) {
+	// Codex matches the absolute path; "." would never match.
+	if abs, err := filepath.Abs(dir); err == nil {
+		dir = abs
+	}
 	fmt.Fprintf(out, `codex: Codex only reads .codex/ in a trusted project. Trust this one in ~/.codex/config.toml (or per run with -c):
   [projects.%q]
   trust_level = "trusted"
