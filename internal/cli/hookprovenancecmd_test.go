@@ -106,3 +106,42 @@ func TestHookProvenancePushFailedIsSilent(t *testing.T) {
 		t.Fatalf("err=%v out=%s", err, out)
 	}
 }
+
+// TestHookProvenanceNeedsAnInvocation (B-0038): the gate reminder fires only
+// when the command runs the cerne binary with the gate verb; the words in a
+// grep, heredoc, commit message or path are no call.
+func TestHookProvenanceNeedsAnInvocation(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	for name, tc := range map[string]struct {
+		command string
+		remind  bool
+	}{
+		"grep in a cerne path":     {`cd /w/cerne && grep -n "decision new" internal/cli/*.go`, false},
+		"heredoc body":             {"cd /w/cerne && cat > x_test.go <<'EOF'\ncerne decision new X\nEOF", false},
+		"commit message":           {`cd /w/cerne && git commit -m "docs: cerne decision new flow"`, false},
+		"unrelated in a repo":      {"cd /w/cerne && go test ./...", false},
+		"plain":                    {`cerne decision new "X"`, true},
+		"flag before verb":         {"./bin/cerne --verbose decision supersede D-0001 --by D-0002", true},
+		"after cd":                 {"cd x && cerne feature complete B-1", true},
+		"env prefix":               {`CERNE_ACTOR=agent cerne decision new "X"`, true},
+		"exe":                      {`cerne.exe decision new "X"`, true},
+		"after heredoc":            {"cat <<EOF\nx\nEOF\ncerne decision new X", true},
+		"dir flag, space":          {"cerne --dir x decision new X", true},
+		"dir flag, equals":         {"cerne --dir=x decision new X", true},
+		"command substitution":     {"echo $(cerne decision new X)", true},
+		"dash heredoc, tabbed end": {"cat <<-EOF\n\tcerne decision new X\n\tEOF\ncerne decision new Y", true},
+		"quoted heredoc then call": {"cat <<'EOF'\nbody\nEOF\ncerne decision new X", true},
+		"unclosed heredoc":         {"cat <<EOF\ncerne decision new X", false},
+		"here-string then call":    {"grep x <<< foo\ncerne decision new x", true},
+	} {
+		stdin := hookJSON(t, "s", projDir, "Bash",
+			map[string]any{"command": tc.command}, map[string]any{"stdout": "ok"})
+		out, err := execCerneStdin(t, stdin, "hook", "provenance")
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if got := strings.Contains(out, "additionalContext"); got != tc.remind {
+			t.Errorf("%s: reminder = %v, want %v\n%s", name, got, tc.remind, out)
+		}
+	}
+}

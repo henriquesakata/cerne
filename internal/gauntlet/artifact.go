@@ -89,8 +89,16 @@ func Assemble(in Input) (string, error) {
 		f = fenceText[doclang.PT]
 	}
 	var parts []string
-	for _, s := range splitSections(in.Spec) {
-		if doclang.IsCriteriaSection(s.heading) {
+	secs := splitSections(in.Spec)
+	// "Contexto" is a heading of other cards too: the bug sections count only
+	// in a spec that has the bug's own expected × actual section.
+	isBug := false
+	for _, s := range secs {
+		isBug = isBug || doclang.IsBugReportSection(s.heading)
+	}
+	for _, s := range secs {
+		// A bug card has no criteria section: its report is the bar (B-0037).
+		if doclang.IsCriteriaSection(s.heading) || isBug && doclang.IsBugSection(s.heading) {
 			parts = append(parts, strings.TrimSpace(s.text))
 		}
 	}

@@ -107,7 +107,7 @@ func scanAuthor(path, sess string, args []string) (pending []string, lastModel s
 				lastModel, lastTS, ok = l.Message.Model, ts, true
 			}
 			for _, b := range blocks {
-				if b.Type == "tool_use" && b.Name == "Bash" && runs(b.Input.Command, args) {
+				if b.Type == "tool_use" && b.Name == "Bash" && Runs(b.Input.Command, args) {
 					calls[b.ID] = l.Message.Model
 				}
 			}
@@ -125,28 +125,53 @@ func scanAuthor(path, sess string, args []string) (pending []string, lastModel s
 	return pending, lastModel, lastTS, ok
 }
 
-// runs reports whether a shell command calls cerne with the verb words of
+// Runs reports whether a shell command calls cerne with the verb words of
 // args: a simple command that starts with cerne (any path ending in /cerne),
 // after VAR=value or env prefixes, whose own verb words begin with those.
 // Text in quotes or in another command's arguments is no call, and args
 // with no verb words match nothing.
-func runs(command string, args []string) bool {
+func Runs(command string, args []string) bool {
 	want := verbWords(args)
 	if len(want) == 0 {
 		return false
 	}
-	for _, seg := range commandSegments(command) {
+	for _, seg := range commandSegments(stripHeredocs(command)) {
 		i := 0
 		for i < len(seg) && (seg[i] == "env" || envAssign.MatchString(seg[i])) {
 			i++
 		}
-		if i < len(seg) && filepath.Base(seg[i]) == "cerne" {
+		if i < len(seg) && isCerne(filepath.Base(seg[i])) {
 			if got := verbWords(seg[i+1:]); len(got) >= len(want) && slices.Equal(got[:len(want)], want) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+func isCerne(base string) bool { return base == "cerne" || base == "cerne.exe" }
+
+// heredocStart finds the delimiter of a `<<EOF`, `<<-EOF` or `<<'EOF'` redirect.
+var heredocStart = regexp.MustCompile(`(?:^|[^<])<<-?\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?`)
+
+// stripHeredocs drops the body lines of heredocs: they are a command's stdin,
+// not commands. ponytail: a `<<` inside quotes reads as a heredoc.
+func stripHeredocs(command string) string {
+	var out []string
+	end := ""
+	for _, line := range strings.Split(command, "\n") {
+		if end != "" {
+			if strings.TrimSpace(line) == end {
+				end = ""
+			}
+			continue
+		}
+		if m := heredocStart.FindStringSubmatch(line); m != nil {
+			end = m[1]
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
 }
 
 // envAssign is a VAR=value prefix of a simple command.

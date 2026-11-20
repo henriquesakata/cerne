@@ -85,7 +85,8 @@ func TestAssemble(t *testing.T) {
 }
 
 func TestAssembleNoCriteria(t *testing.T) {
-	for _, spec := range []string{"", "## Problema\n\nx\n"} {
+	// A feature spec with only a "Contexto" is no bug report (B-0037 review).
+	for _, spec := range []string{"", "## Problema\n\nx\n", "## Contexto\n\nx\n", "## Context\n\nx\n\n## Steps to reproduce\n\ny\n"} {
 		if _, err := Assemble(Input{Lang: doclang.PT, Spec: spec}); !errors.Is(err, ErrNoCriteria) {
 			t.Errorf("spec %q: err = %v, want ErrNoCriteria", spec, err)
 		}
@@ -164,6 +165,26 @@ func TestAssembleEvidenceKeptWhole(t *testing.T) {
 	for _, want := range []string{"=== EVIDENCE: a (start) ===\nx\n\n\n=== EVIDENCE: a (end) ===", "=== EVIDENCE: b (start) ===\ny\n=== EVIDENCE: b (end) ==="} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+}
+
+// A bug card has no criteria section: its report is the critic's bar (B-0037).
+func TestAssembleBugReport(t *testing.T) {
+	for _, l := range doclang.Langs() {
+		s := doclang.Sections(doclang.Bug, l)
+		spec := "# B\n\n## " + s[0] + "\n\nctx\n\n## " + s[1] + "\n\nrepro\n\n## " + s[2] + "\n\nbar\n\n## Outra\n\nfora\n"
+		out, err := Assemble(Input{Lang: l, Spec: spec, Diff: "d\n"})
+		if err != nil {
+			t.Fatalf("%s: %v", l, err)
+		}
+		for _, want := range []string{"## " + s[0], "ctx", "## " + s[1], "repro", "## " + s[2], "bar"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("%s: bundle lacks %q", l, want)
+			}
+		}
+		if strings.Contains(out, "fora") {
+			t.Errorf("%s: bundle carries a section outside the report", l)
 		}
 	}
 }

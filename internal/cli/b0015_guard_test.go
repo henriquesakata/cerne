@@ -242,7 +242,7 @@ func TestFindingTextsAreEnglish(t *testing.T) {
 // they read it, each with its reason. Keyed by the literal's whole value, so
 // the exemption never covers other text of the same file.
 var legacyReaders = map[string]string{
-	`\bdecision\s+(new|supersede|substituir)\b`: "the provenance hook still recognizes a typed `decision substituir`",
+	"decision substituir": "the provenance hook still recognizes a typed `decision substituir`",
 }
 
 // legacyRegistrars are the calls whose bare "substituir" argument registers the
