@@ -201,7 +201,7 @@ cerne ui        # your dashboard, at http://localhost:7717
 
 Commit the files `init` wrote at the root (`.cernerc`, `docs.lock`, `.gitattributes`, `.gitignore`). For a team, pass `--backend` an empty private repository on GitHub or GitLab instead; `init` prints how to move a local backend to a remote later. Documents are scaffolded in English; add `--docs-language pt-BR` for Portuguese.
 
-Now open your agent in the project and ask for something: *"add sign in with Google"*. It registers the feature and drafts the spec, and the card shows up on your board, waiting for your approval. Claude Code picks up everything `init` installed; for the other agents, see [Agent integrations](#agent-integrations).
+Now open your agent in the project and ask for something: *"add sign in with Google"*. It registers the feature and drafts the spec, and the card shows up on your board, waiting for your approval. Claude Code picks up everything `init` installed; for the other agents, see [Agent integrations](#agent-integrations). What to do in your first week, from the first spec to the daily routine: [first-week guide](docs/first-week.md).
 
 You do not type the commands below. This is your agent's shell: what it runs when you ask for a feature, and what it reads after you reject one. The rejected feature leaves its context and stays one search away.
 
@@ -235,7 +235,7 @@ cerne import --agent --ingest --yes   # apply it
 
 `--root <dir>` points it at a docs folder other than the project root. With a subscription CLI or an API key set, cerne drafts the plan itself; in delegation mode it hands the mapping prompt to the agent you already run.
 
-A project with only code needs no import: run `cerne init`, then ask your agent to register the features in progress and the decisions in force (`cerne feature new`, `cerne decision new`). From there, new work follows the normal flow.
+A project with only code needs no import: run `cerne init`, then ask your agent to register the features in progress and the decisions in force (`cerne feature new`, `cerne decision new`). From there, follow the [first-week guide](docs/first-week.md): the first feature, the backlog and the daily routine.
 
 ### Agents without a shell: MCP
 
