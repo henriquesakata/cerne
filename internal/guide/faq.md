@@ -4,6 +4,9 @@ cerne is an engineering workflow for software built with AI agents, in one local
 ## Q: A command fails with "cache clone belongs to another backend". What now?
 Two projects on this machine share one `project_id`, and the local cache is keyed by that id alone, so the clone in the cache is the other project's. cerne refuses to read or write through it, and never deletes it (the cache also holds rooms and messages). Give this project its own cache with `CERNE_CACHE_DIR=<dir>`, or a distinct `project_id` in its `.cernerc`. `cerne demo` already picks `taskflow-2`, `taskflow-3`… when `taskflow` is taken.
 
+## Q: A command fails with "the folder does not accept writes" (permission denied on the cache, or search fails). What now?
+The cache folder, or the local backend folder, is read-only for this process, typically an agent sandbox (Codex, for one) that only lets the project folder and /tmp be written. Nothing is corrupt and nothing needs deleting. Make the folders named in the message writable (the cache, `CERNE_CACHE_DIR` when set; for a local backend, its data folder, `CERNE_DATA_DIR` when set), or point `CERNE_CACHE_DIR` at a writable path, then re-run.
+
 ## Q: Which command do I run first? I just installed cerne.
 Read the top-level help (run cerne with no arguments): the first section, "Start here", holds the on-ramp. `cerne init` sets up a project (or `cerne demo` creates a sample one to explore), `cerne ui` opens the dashboard, `cerne import` brings in an existing documentation tree, and `cerne guide "<what you want to do>"` answers any later question. The other sections group the rest by journey: read the state, author and move the work, sync with the backend, agents and coordination, administration.
 
