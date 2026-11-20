@@ -42,7 +42,7 @@ func addFeature(t *testing.T, backendDir, id, title, module string, state domain
 	}
 }
 
-func addDecision(t *testing.T, backendDir, id, title string, state domain.DecisionState, body string) {
+func addDecision(t testing.TB, backendDir, id, title string, state domain.DecisionState, body string) {
 	t.Helper()
 	d := store.Decision{ID: id, Title: title, State: state, CreatedAt: seedTime, UpdatedAt: seedTime}
 	if err := store.SaveDecision(backendDir, d); err != nil {

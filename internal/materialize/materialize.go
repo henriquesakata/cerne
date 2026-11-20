@@ -98,12 +98,14 @@ const contextTemplate = `# {{.ProjectName}} — current state
 
 {{end}}## Active decisions
 
-{{if .Decisions}}{{range .Decisions}}- {{.}}
+{{if or .Decisions .MoreDecisions}}{{range .Decisions}}- {{.}}
+{{end}}{{if .MoreDecisions}}- {{.MoreDecisions}} more left out to keep this file within 16 KB: cerne decision list
 {{end}}{{else}}_None._
 {{end}}
 ## Runbooks
 
-{{if .Runbooks}}{{range .Runbooks}}- {{.}}
+{{if or .Runbooks .MoreRunbooks}}{{range .Runbooks}}- {{.}}
+{{end}}{{if .MoreRunbooks}}- {{.MoreRunbooks}} more left out to keep this file within 16 KB: cerne brief
 {{end}}{{else}}_None._
 {{end}}
 ## Knowledge
@@ -114,10 +116,11 @@ const contextTemplate = `# {{.ProjectName}} — current state
 {{else}}_None._
 {{end}}`
 
-const boardTemplate = `{{define "board"}}{{if or .ActiveWorks .IdleWorks}}
+const boardTemplate = `{{define "board"}}{{if or .ActiveWorks .IdleWorks .MoreWorks}}
 ## In progress
 
 {{range .ActiveWorks}}- {{.ID}} — {{.Title}} ({{.Actor}}, since {{.Since}}){{if .PendingHO}} — handoff {{.PendingHO}} pending{{else if .HandoffAt}} — handoff {{.HandoffAt}}: cerne show {{.ID}}{{end}}
+{{end}}{{if .MoreWorks}}- {{.MoreWorks}} more active work(s) left out to keep CONTEXT.md within 16 KB: cerne work list
 {{end}}{{if .IdleWorks}}- {{.IdleWorks}} more active work(s) idle for over {{.IdleDays}} days (oldest: {{.IdleOldestID}}, idle since {{.IdleOldestSince}}) — triage: 'cerne work list', then 'cerne work done|abandon <id>'
 {{end}}{{end}}{{if .PendingHandoffs}}
 ## Pending handoffs
@@ -145,6 +148,8 @@ type boardData struct {
 	// MoreHandoffs counts the pending ones past the cap.
 	PendingHandoffs []string
 	MoreHandoffs    int
+	// MoreWorks counts the active works CONTEXT.md's ceiling left out (E-0005).
+	MoreWorks int
 }
 
 // contextData feeds contextTemplate; Decisions and References carry the
@@ -158,6 +163,8 @@ type contextData struct {
 	Epics     []epicSection
 	Decisions []string
 	Runbooks  []string
+	// MoreDecisions and MoreRunbooks count the lines the ceiling left out.
+	MoreDecisions, MoreRunbooks int
 	// Knowledge counts the active notes and current references, and
 	// NoteComponents renders the components of the active notes with their
 	// counts: the one read of the tags (criterion 2), not a line per entity.
@@ -390,11 +397,6 @@ func MaterializeAt(repoDir, docsDir, scope string, okf bool, recentDays int, now
 	if activeNotes+currentRefs > 0 {
 		data.Knowledge = plural(activeNotes, "active note") + ", " + plural(currentRefs, "current reference") + "."
 	}
-	comps := make([]string, 0, len(noteComps))
-	for _, c := range slices.Sorted(maps.Keys(noteComps)) {
-		comps = append(comps, fmt.Sprintf("%s (%d)", c, noteComps[c]))
-	}
-	data.NoteComponents = strings.Join(comps, ", ")
 
 	if err := copyWiki(repoDir, docsDir, manifest); err != nil {
 		return nil, err
@@ -415,7 +417,7 @@ func MaterializeAt(repoDir, docsDir, scope string, okf bool, recentDays int, now
 		}
 	}
 
-	body, err := fitContext(data, live, rows, progress)
+	body, err := fitContext(data, live, rows, progress, noteComps)
 	if err != nil {
 		return nil, err
 	}
@@ -428,36 +430,71 @@ func MaterializeAt(repoDir, docsDir, scope string, okf bool, recentDays int, now
 }
 
 // fitContext renders CONTEXT.md within contextMaxBytes (E-0005 criterion 3).
-// Every live feature is listed when they fit; otherwise the table keeps them
-// in contextKeepOrder, newest first within a state, as many as fit (a binary
-// search over the count, so a few renders, not one per feature), and a line
-// counts the ones left out with the command that lists them. The epics follow
-// the features kept. A map that does not fit even with no feature (a backend
-// with thousands of decisions) is cut at the last whole line under the ceiling.
-func fitContext(data contextData, live []store.Feature, rows map[string]featureRow, progress []store.Feature) ([]byte, error) {
+// Everything is listed when it fits. Otherwise lines go in this order, as few
+// as fit (a binary search over how many, so a few renders, not one per line):
+// the candidate, approved and implemented features (contextKeepOrder read
+// backwards, oldest first within a state), then the last active decisions,
+// runbooks and works, then the in-development features (oldest first), then
+// the least used note components. Each section says how many it left out and
+// the command that lists them, so the in-development rows outlive a long
+// decision list and the tag list with the group search outlives everything. A
+// map that still does not fit (a board of thousands of works with no other
+// line left) is cut at the last whole line under the ceiling.
+func fitContext(data contextData, live []store.Feature, rows map[string]featureRow, progress []store.Feature, comps map[string]int) ([]byte, error) {
 	tmpl, err := template.New("context").Parse(boardTemplate + contextTemplate)
 	if err != nil {
 		return nil, err
 	}
-	var keep []store.Feature
+	var keepDev, keepLow []store.Feature // newest first within a state
 	for _, state := range contextKeepOrder {
 		for i := len(live) - 1; i >= 0; i-- {
-			if live[i].State == state {
-				keep = append(keep, live[i])
+			if live[i].State != state {
+				continue
+			}
+			if state == domain.StateInDevelopment {
+				keepDev = append(keepDev, live[i])
+			} else {
+				keepLow = append(keepLow, live[i])
 			}
 		}
 	}
+	// The components leave the least used first; they print alphabetically.
+	byUse := slices.SortedFunc(maps.Keys(comps), func(a, b string) int {
+		if d := comps[b] - comps[a]; d != 0 {
+			return d
+		}
+		return strings.Compare(a, b)
+	})
+	total := len(keepLow) + len(data.Decisions) + len(data.Runbooks) + len(data.ActiveWorks) + len(keepDev) + len(byUse)
 	render := func(k int) ([]byte, error) {
+		take := func(n int) int { x := min(n, k); k -= x; return x }
+		lowCut := take(len(keepLow))
+		decCut := take(len(data.Decisions))
+		rbCut := take(len(data.Runbooks))
+		workCut := take(len(data.ActiveWorks))
+		devCut := take(len(keepDev))
+		compCut := take(len(byUse))
+
+		d := data
+		d.Decisions, d.MoreDecisions = data.Decisions[:len(data.Decisions)-decCut], decCut
+		d.Runbooks, d.MoreRunbooks = data.Runbooks[:len(data.Runbooks)-rbCut], rbCut
+		d.ActiveWorks, d.MoreWorks = data.ActiveWorks[:len(data.ActiveWorks)-workCut], workCut
 		kept := map[string]bool{}
 		left := map[domain.FeatureState]int{}
-		for i, f := range keep {
-			if i < k {
+		for i, f := range keepDev {
+			if i < len(keepDev)-devCut {
 				kept[f.ID] = true
 			} else {
 				left[f.State]++
 			}
 		}
-		d := data
+		for i, f := range keepLow {
+			if i < len(keepLow)-lowCut {
+				kept[f.ID] = true
+			} else {
+				left[f.State]++
+			}
+		}
 		d.Features, d.Omitted = nil, ""
 		var shown []store.Feature
 		for _, f := range live {
@@ -467,7 +504,7 @@ func fitContext(data contextData, live []store.Feature, rows map[string]featureR
 			}
 		}
 		d.Epics = epicSections(shown, progress)
-		if n := len(keep) - k; n > 0 {
+		if n := lowCut + devCut; n > 0 {
 			var parts []string
 			for _, s := range contextKeepOrder {
 				if left[s] > 0 {
@@ -477,31 +514,48 @@ func fitContext(data contextData, live []store.Feature, rows map[string]featureR
 			d.Omitted = fmt.Sprintf("%s left out to keep this file within 16 KB (%s) — 'cerne feature list --state <state>' lists them.",
 				plural(n, "live feature"), strings.Join(parts, ", "))
 		}
+		shownComps := slices.Sorted(slices.Values(byUse[:len(byUse)-compCut]))
+		parts := make([]string, 0, len(shownComps))
+		for _, c := range shownComps {
+			parts = append(parts, fmt.Sprintf("%s (%d)", c, comps[c]))
+		}
+		d.NoteComponents = strings.Join(parts, ", ")
+		if compCut > 0 {
+			d.NoteComponents += fmt.Sprintf(" and %d more ('cerne tags' lists them)", compCut)
+		}
 		var buf bytes.Buffer
 		if err := tmpl.Execute(&buf, d); err != nil {
 			return nil, err
 		}
 		return buf.Bytes(), nil
 	}
-	body, err := render(len(keep))
-	if err != nil || len(body) <= contextMaxBytes {
+	fits := func(k int) ([]byte, bool, error) {
+		b, err := render(k)
+		return b, len(b) <= contextMaxBytes, err
+	}
+	body, ok, err := fits(0)
+	if err != nil || ok {
 		return body, err
 	}
-	lo, hi := 0, len(keep)-1 // the largest k whose render fits; 0 may not
+	lo, hi := 1, total // the fewest lines left out that fit
 	for lo < hi {
-		mid := (lo + hi + 1) / 2
-		b, err := render(mid)
+		mid := (lo + hi) / 2
+		_, ok, err := fits(mid)
 		if err != nil {
 			return nil, err
 		}
-		if len(b) <= contextMaxBytes {
-			lo = mid
+		if ok {
+			hi = mid
 		} else {
-			hi = mid - 1
+			lo = mid + 1
 		}
 	}
-	if body, err = render(lo); err != nil || len(body) <= contextMaxBytes {
-		return body, err
+	// A section's "N more" line can outweigh the line it replaces, so the
+	// size is not strictly monotone in k: step on until it fits.
+	for ; lo <= total; lo++ {
+		if body, ok, err = fits(lo); err != nil || ok {
+			return body, err
+		}
 	}
 	const cut = "\n_Cut at 16 KB: run 'cerne brief' for the whole map._\n"
 	body = body[:bytes.LastIndexByte(body[:contextMaxBytes-len(cut)], '\n')]

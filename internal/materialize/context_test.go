@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/store"
@@ -112,25 +113,98 @@ func TestContextFitsTheCeiling(t *testing.T) {
 		t.Fatalf("CONTEXT.md is %d bytes, over the %d ceiling", len(ctx), contextMaxBytes)
 	}
 	count := func(state string) int { return strings.Count(ctx, "| "+state+" |") }
-	if count("in_development") != 125 || count("candidate") != 0 {
-		t.Fatalf("cut out of order: %d in_development (want all 125), %d candidate (want 0)\n%s",
-			count("in_development"), count("candidate"), ctx)
+	impl := count("implemented")
+	if count("in_development") != 125 || impl == 0 || impl == 125 || count("approved") != 0 || count("candidate") != 0 {
+		t.Fatalf("cut out of order: %d in_development (want 125), %d implemented (want some, not all), %d approved and %d candidate (want 0)\n%s",
+			count("in_development"), impl, count("approved"), count("candidate"), ctx)
 	}
-	kept := count("in_development") + count("implemented") + count("approved")
-	want := fmt.Sprintf("%d live features left out to keep this file within 16 KB", 500-kept)
-	if !strings.Contains(ctx, want) || !strings.Contains(ctx, "125 candidate") || !strings.Contains(ctx, "cerne feature list --state <state>") {
-		t.Fatalf("missing the left-out line %q with the per-state counts and the command:\n%s", want, ctx)
+	want := fmt.Sprintf("%d live features left out to keep this file within 16 KB (%d implemented, 125 approved, 125 candidate) — 'cerne feature list --state <state>' lists them.", 375-impl, 125-impl)
+	if !strings.Contains(ctx, want) {
+		t.Fatalf("missing the left-out line %q:\n%s", want, ctx)
+	}
+	// Newest first within a state: F-0498 is the last implemented, F-0002 the first.
+	if !strings.Contains(ctx, "| F-0498 | implemented |") || strings.Contains(ctx, "| F-0002 |") {
+		t.Fatalf("the cut does not keep the newest implemented first:\n%s", ctx)
+	}
+	if strings.Contains(ctx, "_Cut at 16 KB") {
+		t.Fatalf("hard cut although the features alone could be trimmed:\n%s", ctx)
+	}
+}
+
+// E-0005 criterion 3, the other sections: 150 active decisions do not push
+// out the in-development rows nor the tag list and the group search; the
+// decisions are trimmed and counted, and nothing is cut blind.
+func TestContextTrimsEverySection(t *testing.T) {
+	backend := seedBackend(t)
+	for i := 1; i <= 5; i++ {
+		f := store.Feature{ID: fmt.Sprintf("F-%04d", i), Title: fmt.Sprintf("Em curso %d", i), State: domain.StateInDevelopment, CreatedAt: seedTime, UpdatedAt: seedTime}
+		if err := store.SaveFeature(backend, f); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 1; i <= 150; i++ {
+		id := fmt.Sprintf("D-%04d", i)
+		addDecision(t, backend, id, fmt.Sprintf("Decisao ativa numero %d com um titulo do tamanho de uma ADR real", i), domain.DecisionActive, "decision "+id+"\n")
+	}
+	addNote(t, backend, "N-0001", "Nota", domain.NoteActive, "---\ncerne_id: N-0001\n---\n\nCorpo.\n")
+	n, _ := store.LoadNote(backend, "N-0001")
+	n.Components = []string{"gitea"}
+	if err := store.SaveNote(backend, n); err != nil {
+		t.Fatal(err)
+	}
+	docsDir := filepath.Join(t.TempDir(), ".docs")
+	if _, err := Materialize(backend, docsDir, "", false); err != nil {
+		t.Fatal(err)
+	}
+	ctx := readContext(t, docsDir)
+	if len(ctx) > contextMaxBytes || strings.Contains(ctx, "_Cut at 16 KB") {
+		t.Fatalf("CONTEXT.md is %d bytes or cut blind:\n%s", len(ctx), ctx)
+	}
+	if got := strings.Count(ctx, "| in_development |"); got != 5 {
+		t.Fatalf("%d in-development rows, want all 5:\n%s", got, ctx)
+	}
+	kept := strings.Count(ctx, "- [D-")
+	for _, want := range []string{
+		fmt.Sprintf("- %d more left out to keep this file within 16 KB: cerne decision list", 150-kept),
+		"Components of the active notes: gitea (1).",
+		"cerne note list --component a,b,c",
+	} {
+		if kept == 0 || kept == 150 || !strings.Contains(ctx, want) {
+			t.Fatalf("CONTEXT.md missing %q (%d decisions kept):\n%s", want, kept, ctx)
+		}
 	}
 }
 
 // seedScaleBackend is a synthetic backend of n entities, mostly done features
-// as in a mature project, with live work, notes and references beside them.
+// as in a mature project, with live features carrying their documents (so
+// their rows carry the links), decisions, runbooks, active works, notes and
+// references beside them.
 func seedScaleBackend(t testing.TB, n int) string {
 	t.Helper()
 	backend := seedBackend(t)
+	decs, rbs, works := n/80, n/500, n/160
 	notes, refs, live := n/8, n/8, n/20
-	feats := n - notes - refs
+	feats := n - notes - refs - decs - rbs - works
 	seedLiveFeatures(t, backend, live)
+	for i := 1; i <= live; i++ {
+		dir := filepath.Join(backend, "content", "features", fmt.Sprintf("F-%04d", i))
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "spec.md"), []byte("spec\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 1; i <= decs; i++ {
+		id := fmt.Sprintf("D-%04d", i)
+		addDecision(t, backend, id, fmt.Sprintf("Decisao ativa numero %d com um titulo do tamanho de uma ADR real", i), domain.DecisionActive, "decision "+id+"\n")
+	}
+	for i := 1; i <= rbs; i++ {
+		addRunbook(t, backend, fmt.Sprintf("RB-%04d", i), fmt.Sprintf("Runbook ativo %d", i), domain.RunbookActive)
+	}
+	for i := 1; i <= works; i++ {
+		addWork(t, backend, fmt.Sprintf("W-%04d", i), fmt.Sprintf("Trabalho em andamento numero %d", i), "agent:m-1", domain.WorkActive, time.Now().UTC())
+	}
 	for i := live + 1; i <= feats; i++ {
 		f := store.Feature{ID: fmt.Sprintf("F-%04d", i), Title: fmt.Sprintf("Feature concluida %d", i), State: domain.StateDone,
 			Components: []string{fmt.Sprintf("comp%d", i%150)}, CreatedAt: seedTime, UpdatedAt: seedTime}
@@ -155,15 +229,22 @@ func seedScaleBackend(t testing.TB, n int) string {
 }
 
 // E-0005 verification 12 (criterion 17): with 5,000 entities the map stays in
-// 16 KB. The pull-time half is BenchmarkMaterialize5000, run before and after.
+// 16 KB, keeps in-development rows and the tag list, and is never cut blind.
+// The pull-time half is BenchmarkMaterialize5000, run before and after.
 func TestContextAt5000Entities(t *testing.T) {
 	backend := seedScaleBackend(t, 5000)
 	docsDir := filepath.Join(t.TempDir(), ".docs")
 	if _, err := Materialize(backend, docsDir, "", false); err != nil {
 		t.Fatal(err)
 	}
-	if ctx := readContext(t, docsDir); len(ctx) > contextMaxBytes {
-		t.Fatalf("CONTEXT.md is %d bytes with 5,000 entities, over %d", len(ctx), contextMaxBytes)
+	ctx := readContext(t, docsDir)
+	if len(ctx) > contextMaxBytes || strings.Contains(ctx, "_Cut at 16 KB") {
+		t.Fatalf("CONTEXT.md is %d bytes with 5,000 entities (ceiling %d), or cut blind:\n%s", len(ctx), contextMaxBytes, ctx)
+	}
+	for _, want := range []string{"| in_development |", "[spec](current/features/", "Components of the active notes:", "cerne note list --component a,b,c", "left out to keep this file within 16 KB"} {
+		if !strings.Contains(ctx, want) {
+			t.Fatalf("CONTEXT.md at 5,000 entities missing %q:\n%s", want, ctx)
+		}
 	}
 }
 
