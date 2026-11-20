@@ -90,8 +90,9 @@ func seedContextScale(tb testing.TB, n int) string {
 	}
 	for i := 1; i <= decs; i++ {
 		id := fmt.Sprintf("D-%04d", i)
+		// Each decision informs a live feature, two of them F-0001 (T-0018).
 		if err := store.SaveDecision(repo, store.Decision{ID: id, Title: fmt.Sprintf("Decision %d", i), State: domain.DecisionActive,
-			Components: []string{fmt.Sprintf("comp%d", i%150)}, CreatedAt: now, UpdatedAt: now}); err != nil {
+			Informs: []string{fmt.Sprintf("F-%04d", 1+(i-1)%max(1, decs/2))}, Components: []string{fmt.Sprintf("comp%d", i%150)}, CreatedAt: now, UpdatedAt: now}); err != nil {
 			tb.Fatal(err)
 		}
 		write("content/decisions/"+id+".md", "# Decision\n\n"+prose+"\n")
@@ -109,6 +110,8 @@ func seedContextScale(tb testing.TB, n int) string {
 	return repo
 }
 
+// benchPack times the package of F-0001, whose ring (a) holds the five notes
+// its spec cites and the two decisions that inform it, all with their body.
 func benchPack(b *testing.B, n int, content bool) {
 	repo := seedContextScale(b, n)
 	for b.Loop() {
@@ -116,7 +119,20 @@ func benchPack(b *testing.B, n int, content bool) {
 		if err != nil || len(p.Items) == 0 {
 			b.Fatalf("package: %v, %d items", err, len(p.Items))
 		}
+		if bodies := packBodies(p); bodies != 7 || p.Compact {
+			b.Fatalf("package: %d bodies, compact %v; want the 7 linked bodies in full", bodies, p.Compact)
+		}
 	}
+}
+
+func packBodies(p TaskPack) int {
+	n := 0
+	for _, it := range p.Items {
+		if it.Body != "" {
+			n++
+		}
+	}
+	return n
 }
 
 func benchIndex(b *testing.B, n int) {
