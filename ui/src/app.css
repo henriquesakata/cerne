@@ -1836,7 +1836,7 @@ h2 {
 
 /* ---- painel de ações ---- */
 
-.actions, .artifacts, .epic {
+.actions, .approval, .artifacts, .epic {
   background: var(--surface-2);
   border: 1px solid var(--border-soft);
   border-radius: 8px;
@@ -1845,6 +1845,7 @@ h2 {
 
 .artifacts { margin-top: 1rem; }
 .epic { margin-top: 1rem; }
+.approval { margin-top: 1rem; }
 .epic > h2 { margin: 0 0 0.5rem; font-size: 0.95rem; }
 .epic-progress { margin: 0 0 0.4rem; font-size: 0.85rem; color: var(--muted); }
 .epic-children ul { list-style: none; margin: 0 0 0.6rem; padding: 0; }
@@ -1906,6 +1907,11 @@ h2 {
 /* F-0390: conselho é neutro — nem a cor de erro nem a de pendência. */
 .approve-readiness .approve-advice { margin: 0 0 0.35rem; padding: 0.35rem 0.5rem; border-left: 2px solid var(--border); }
 .approve-readiness .bar-forms { margin: 0 0 0.35rem; font-size: 0.78rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* F-0481: gabarito das formas literais, recolhido até alguém precisar dele. */
+.approve-readiness .literal-forms { margin: 0 0 0.35rem; }
+.approve-readiness .literal-forms summary { width: fit-content; cursor: pointer; color: var(--muted); }
+.approve-readiness .literal-forms summary:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; border-radius: 6px; }
+.approve-readiness .literal-forms[open] summary { margin-bottom: 0.35rem; }
 
 /* ---- diagramas ---- */
 

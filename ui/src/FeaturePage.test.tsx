@@ -301,7 +301,8 @@ describe('FeaturePage approve readiness (F-0308)', () => {
     const items = container.querySelectorAll('.approve-advice li')
     expect(items).toHaveLength(2)
     items.forEach((li) => expect(li.className).not.toMatch(/impediment/))
-    expect(items[0].closest('section')).toBe(approve.closest('section'))
+    // F-0481: a prontidão mora no card Aprovação, logo depois do card Ações.
+    expect(items[0].closest('section')).toHaveClass('approval')
     // Conselho não é impedimento: nem o título dos impedimentos aparece.
     expect(screen.queryByText('O que impede a aprovação:')).not.toBeInTheDocument()
   })
@@ -362,9 +363,9 @@ describe('FeaturePage approve readiness (F-0308)', () => {
       judge_question: 'qual ensaio é mais claro?',
     }
     render(<FeaturePage id="F-0221" />)
-    const approve = await screen.findByRole('button', { name: 'Aprovar' })
+    await screen.findByRole('button', { name: 'Aprovar' })
     const q = screen.getByText('qual ensaio é mais claro?')
-    expect(q.closest('section')).toBe(approve.closest('section'))
+    expect(q.closest('section')).toHaveClass('approval')
     expect(screen.getByText(/e esta pergunta ao juiz/)).toBeInTheDocument()
   })
 
@@ -431,7 +432,7 @@ describe('FeaturePage approve readiness (F-0308)', () => {
     const approve = await screen.findByRole('button', { name: 'Aprovar' })
     expect(approve).toBeEnabled()
     const bar = screen.getByText('Barra: cerne push --dry-run — ensaio com gate')
-    expect(bar.closest('section')).toBe(approve.closest('section'))
+    expect(bar.closest('section')).toHaveClass('approval')
     expect(screen.getByText(/Aprovar é aceitar esta barra/)).toBeInTheDocument()
   })
 
@@ -450,6 +451,97 @@ describe('FeaturePage approve readiness (F-0308)', () => {
     fireEvent.click(approve)
     await waitFor(() => expect(screen.getByText(/Spec sem linha "Barra:"/)).toBeInTheDocument())
     expect(screen.queryByText(/spec has no valid Gauntlet bar/)).not.toBeInTheDocument()
+  })
+})
+
+// F-0481: o card Ações tem só as ações; o que diz se a feature pode ser
+// aprovada vai para um card Aprovação logo depois dele.
+describe('FeaturePage card Aprovação (F-0481)', () => {
+  const busy = (): FeatureDetail => ({
+    ...detail('candidate'),
+    bar: 'Barra: cerne push --dry-run — ensaio com gate',
+    approve_advice: [{ code: 'gauntlet-cost', message: 'median 252.7k weighted tokens' }],
+    approve_readiness: [{ code: 'bar-malformed', message: 'malformed', hard: true }],
+  })
+
+  it('card Ações só com botões; a prontidão fica fora dele (critério 1)', async () => {
+    payload = busy()
+    const { container } = render(<FeaturePage id="F-0221" />)
+    const approve = await screen.findByRole('button', { name: 'Aprovar' })
+    const actions = container.querySelector('section.actions') as HTMLElement
+    expect(actions).toContainElement(approve)
+    expect(actions).toContainElement(screen.getByRole('button', { name: 'Rejeitar' }))
+    expect(actions).not.toHaveTextContent('ensaio com gate')
+    expect(actions).not.toHaveTextContent('median 252.7k')
+    expect(actions).not.toHaveTextContent('O que impede a aprovação:')
+    expect(actions.querySelector('.approve-readiness, .approval-delta, .bar-forms')).toBeNull()
+  })
+
+  it('card Aprovação com título, logo depois do card Ações (critério 2)', async () => {
+    payload = busy()
+    const { container } = render(<FeaturePage id="F-0221" />)
+    await screen.findByRole('button', { name: 'Aprovar' })
+    const approval = container.querySelector('section.approval') as HTMLElement
+    expect(approval).not.toBeNull()
+    expect(approval.querySelector('h2')).toHaveTextContent('Aprovação')
+    expect(container.querySelector('section.actions')?.nextElementSibling).toBe(approval)
+    expect(approval).toHaveTextContent('ensaio com gate')
+    expect(approval).toHaveTextContent('median 252.7k')
+    expect(approval).toHaveTextContent('O que impede a aprovação:')
+  })
+
+  it('aprovação vencida: o delta vai para o card Aprovação, Reaprovar fica em Ações (critério 2)', async () => {
+    payload = {
+      ...detail('approved'),
+      spec_changed_after_approval: true,
+      approval_delta: { approved: 'A', current: 'B' },
+    }
+    const { container } = render(<FeaturePage id="F-0221" />)
+    const reapprove = await screen.findByRole('button', { name: 'Reaprovar' })
+    expect(reapprove.closest('section')).toHaveClass('actions')
+    expect(container.querySelector('.approval-delta')?.closest('section')).toHaveClass('approval')
+  })
+
+  it('nada a mostrar: sem card Aprovação (critério 3)', async () => {
+    payload = detail('candidate')
+    const { container } = render(<FeaturePage id="F-0221" />)
+    await screen.findByRole('button', { name: 'Aprovar' })
+    expect(container.querySelector('section.approval')).toBeNull()
+
+    cleanup()
+    payload = detail('approved')
+    const second = render(<FeaturePage id="F-0221" />)
+    await screen.findByRole('button', { name: 'Iniciar' })
+    expect(second.container.querySelector('section.approval')).toBeNull()
+  })
+
+  it('formas literais num <details> recolhido (critério 4)', async () => {
+    payload = {
+      ...detail('candidate'),
+      approve_readiness: [
+        { code: 'bar-malformed', message: 'malformed', hard: true },
+        { code: 'judge-question-missing', message: 'x', hard: true },
+      ],
+    }
+    const { container } = render(<FeaturePage id="F-0221" />)
+    await screen.findByRole('button', { name: 'Aprovar' })
+    const forms = [...container.querySelectorAll('pre.bar-forms')]
+    expect(forms).toHaveLength(2)
+    forms.forEach((pre) => {
+      const details = pre.closest('details') as HTMLDetailsElement
+      expect(details).not.toBeNull()
+      expect(details.open).toBe(false)
+      expect(details.querySelector('summary')).not.toBeNull()
+    })
+  })
+
+  it('"Resolva os impedimentos" só no title do Aprovar, não no corpo (critério 5)', async () => {
+    payload = busy()
+    render(<FeaturePage id="F-0221" />)
+    const approve = await screen.findByRole('button', { name: 'Aprovar' })
+    expect(approve).toBeDisabled()
+    expect(approve).toHaveAttribute('title', 'Resolva os impedimentos marcados antes de aprovar.')
+    expect(screen.queryByText('Resolva os impedimentos marcados antes de aprovar.')).not.toBeInTheDocument()
   })
 })
 

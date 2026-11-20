@@ -340,12 +340,8 @@ export default function FeaturePage({ id }: { id: string }) {
               id={f.id}
               state={f.state}
               staleApproval={detail.spec_changed_after_approval}
-              approvalDelta={detail.approval_delta}
               baselineMissing={detail.approval_baseline_missing === true}
               readiness={detail.approve_readiness}
-              bar={detail.bar}
-              judgeQuestion={detail.judge_question}
-              advice={detail.approve_advice}
               onRefresh={load}
               onDone={(r: TransitionResult) => {
                 // F-0318: approve numa aprovada diz o que fez — "Aprovada →
@@ -360,6 +356,15 @@ export default function FeaturePage({ id }: { id: string }) {
                 setWarnings(r.warnings ?? [])
                 load()
               }}
+            />
+            <ApprovalPanel
+              state={f.state}
+              staleApproval={detail.spec_changed_after_approval}
+              approvalDelta={detail.approval_delta}
+              readiness={detail.approve_readiness}
+              bar={detail.bar}
+              judgeQuestion={detail.judge_question}
+              advice={detail.approve_advice}
             />
             <EpicPanel feature={f} childFeatures={detail.children} onChanged={load} />
             <DiagramsSection
@@ -901,28 +906,123 @@ const ACTIONS_BY_STATE: Record<FeatureState, ActionSpec[]> = {
   superseded: [],
 }
 
-function ActionsPanel({
-  id,
+// ApprovalPanel diz se a feature pode ser aprovada, num card logo depois do
+// card Ações (F-0481): o delta da aprovação vencida (F-0318), a barra que o
+// approve aceita e a pergunta ao juiz (F-0308/F-0381), os conselhos (F-0390) e
+// os impedimentos. Sem nada disso, não há card.
+function ApprovalPanel({
   state,
   staleApproval,
   approvalDelta,
-  baselineMissing = false,
   readiness = [],
   bar,
   judgeQuestion,
   advice = [],
+}: {
+  state: FeatureState
+  staleApproval: boolean
+  approvalDelta?: { approved: string; current: string }
+  readiness?: ApproveImpediment[]
+  bar?: string
+  judgeQuestion?: string
+  advice?: ApproveAdvice[]
+}) {
+  const { t } = useT()
+  const showReadiness = (state === 'candidate' || staleApproval) && (!!bar || readiness.length > 0)
+  if (!staleApproval && !showReadiness) return null
+  const blocked = readiness.some((r) => r.hard)
+
+  return (
+    <section className="approval">
+      <h2>{t.feature.approval}</h2>
+      {staleApproval && (
+        // F-0318 critério 9: o aviso da F-0262 vira o título do delta — só as
+        // linhas alteradas desde a aprovação, sem reler a spec inteira.
+        <div className="approval-delta">
+          <p className="form-error">{t.feature.staleApproval}</p>
+          <pre className="proposal-draft-diff">
+            {lineDiff(approvalDelta?.approved ?? '', approvalDelta?.current ?? '')
+              .filter((l) => l.kind !== 'same')
+              .map((l, i) => (
+                <span key={i} className={`diff-${l.kind}`}>
+                  {(l.kind === 'add' ? '+ ' : '- ') + l.text}
+                </span>
+              ))}
+          </pre>
+        </div>
+      )}
+      {showReadiness && (
+        <div className="approve-readiness">
+          {bar && (
+            <p className="approve-bar">
+              {t.feature.approveBar} <code>{bar}</code>
+            </p>
+          )}
+          {bar && judgeQuestion && (
+            <p className="approve-bar">
+              {t.feature.approveJudgeQuestion} <code>{judgeQuestion}</code>
+            </p>
+          )}
+          {bar && advice.length > 0 && (
+            <div className="approve-advice">
+              <p className="approve-readiness-title">{t.approve.advice.title}</p>
+              <ul>
+                {advice.map((a, i) => (
+                  <li key={i}>
+                    <strong>{t.approve.advice.label(a.code)}</strong>
+                    <span className="muted"> — {a.message}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {readiness.length > 0 && (
+            <>
+              <p className="approve-readiness-title">
+                {blocked ? t.feature.approveImpediments : t.feature.approvePending}
+              </p>
+              <ul>
+                {readiness.map((r, i) => (
+                  <li key={i} className={r.hard ? 'impediment-hard' : 'impediment-soft'}>
+                    {t.feature.impediment(r.code, r.message)}
+                  </li>
+                ))}
+              </ul>
+              {/* Gabarito de consulta: só quem vai editar a linha precisa abrir. */}
+              {readiness.some((r) => r.code === 'bar-missing' || r.code === 'bar-malformed') && (
+                <details className="literal-forms">
+                  <summary>{t.feature.barFormsIntro}</summary>
+                  <pre className="bar-forms">{BAR_FORMS}</pre>
+                </details>
+              )}
+              {readiness.some((r) => r.code === 'judge-question-missing' || r.code === 'judge-question-misplaced') && (
+                <details className="literal-forms">
+                  <summary>{t.feature.judgeFormsIntro}</summary>
+                  <pre className="bar-forms">{JUDGE_FORMS}</pre>
+                </details>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function ActionsPanel({
+  id,
+  state,
+  staleApproval,
+  baselineMissing = false,
+  readiness = [],
   onDone,
   onRefresh,
 }: {
   id: string
   state: FeatureState
   staleApproval: boolean
-  approvalDelta?: { approved: string; current: string }
   baselineMissing?: boolean
   readiness?: ApproveImpediment[]
-  bar?: string
-  judgeQuestion?: string
-  advice?: ApproveAdvice[]
   onDone: (r: TransitionResult) => void
   onRefresh: () => void
 }) {
@@ -983,76 +1083,6 @@ function ActionsPanel({
   return (
     <section className="actions">
       <h2>{t.feature.actions}</h2>
-      {staleApproval && (
-        // F-0318 critério 9: o aviso da F-0262 vira o título do delta — só as
-        // linhas alteradas desde a aprovação, sem reler a spec inteira.
-        <div className="approval-delta">
-          <p className="form-error">{t.feature.staleApproval}</p>
-          <pre className="proposal-draft-diff">
-            {lineDiff(approvalDelta?.approved ?? '', approvalDelta?.current ?? '')
-              .filter((l) => l.kind !== 'same')
-              .map((l, i) => (
-                <span key={i} className={`diff-${l.kind}`}>
-                  {(l.kind === 'add' ? '+ ' : '- ') + l.text}
-                </span>
-              ))}
-          </pre>
-        </div>
-      )}
-      {(state === 'candidate' || staleApproval) && (bar || readiness.length > 0) && (
-        <div className="approve-readiness">
-          {bar && (
-            <p className="approve-bar">
-              {t.feature.approveBar} <code>{bar}</code>
-            </p>
-          )}
-          {bar && judgeQuestion && (
-            <p className="approve-bar">
-              {t.feature.approveJudgeQuestion} <code>{judgeQuestion}</code>
-            </p>
-          )}
-          {bar && advice.length > 0 && (
-            <div className="approve-advice">
-              <p className="approve-readiness-title">{t.approve.advice.title}</p>
-              <ul>
-                {advice.map((a, i) => (
-                  <li key={i}>
-                    <strong>{t.approve.advice.label(a.code)}</strong>
-                    <span className="muted"> — {a.message}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {readiness.length > 0 && (
-            <>
-              <p className="approve-readiness-title">
-                {blocked ? t.feature.approveImpediments : t.feature.approvePending}
-              </p>
-              <ul>
-                {readiness.map((r, i) => (
-                  <li key={i} className={r.hard ? 'impediment-hard' : 'impediment-soft'}>
-                    {t.feature.impediment(r.code, r.message)}
-                  </li>
-                ))}
-              </ul>
-              {readiness.some((r) => r.code === 'bar-missing' || r.code === 'bar-malformed') && (
-                <>
-                  <p className="muted">{t.feature.barFormsIntro}</p>
-                  <pre className="bar-forms">{BAR_FORMS}</pre>
-                </>
-              )}
-              {readiness.some((r) => r.code === 'judge-question-missing' || r.code === 'judge-question-misplaced') && (
-                <>
-                  <p className="muted">{t.feature.judgeFormsIntro}</p>
-                  <pre className="bar-forms">{JUDGE_FORMS}</pre>
-                </>
-              )}
-              {blocked && <p className="muted">{t.feature.approveBlocked}</p>}
-            </>
-          )}
-        </div>
-      )}
       <div className="action-buttons">
         {actions.map((a) => (
           <button
