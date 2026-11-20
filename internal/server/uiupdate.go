@@ -36,6 +36,9 @@ type BinaryOutcome struct {
 	Detail string `json:"detail,omitempty"`
 	Fix    string `json:"fix,omitempty"`
 	NewExe string `json:"new_exe,omitempty"`
+	// RestartError says why the panel did not restart after a swap that
+	// landed: the new binary is installed, the panel still runs the old one.
+	RestartError string `json:"restart_error,omitempty"`
 }
 
 // updateCheckInterval is how often an open panel asks for the latest
@@ -69,6 +72,7 @@ type updater struct {
 	err     string
 	running bool
 	last    *BinaryOutcome
+	skipped bool // the last check found ui.update_check off
 	// plan is PlanBinary's answer, read at each check and after a swap, not
 	// on every GET: for a script install it writes a probe file in the folder.
 	swappable bool
@@ -85,7 +89,16 @@ func (u *updater) installed() string {
 }
 
 func (u *updater) state() updateState {
+	// The setting is read here too, so turning it off hides the button at
+	// once; turned back on, the check it skipped runs now, not a day later.
+	on := project.UpdateCheck(u.projDir)
 	u.mu.Lock()
+	if !on {
+		u.latest, u.err = "", ""
+	} else if u.skipped && !u.running {
+		u.skipped = false
+		go u.check()
+	}
 	st := updateState{Latest: u.latest, Error: u.err, Running: u.running, Last: u.last,
 		Swappable: u.swappable, Why: u.why, Fix: u.fix}
 	u.mu.Unlock()
@@ -108,10 +121,20 @@ func (u *updater) plan() {
 // setting is read on every check, so turning it off takes effect without a
 // restart, and a panel with it off never opens a connection for this.
 func (u *updater) check() {
+	u.mu.Lock()
+	busy := u.running // a swap is under way: its end re-reads the plan
+	u.mu.Unlock()
+	if busy {
+		return
+	}
 	if !project.UpdateCheck(u.projDir) {
 		u.mu.Lock()
-		u.latest, u.err = "", ""
+		had := u.latest != ""
+		u.latest, u.err, u.skipped = "", "", true
 		u.mu.Unlock()
+		if had {
+			u.announce(liveEvent{kind: "projects"})
+		}
 		return
 	}
 	base := os.Getenv("CERNE_BASE_URL")
@@ -163,11 +186,13 @@ func (u *updater) start() (int, error) {
 	u.mu.Unlock()
 	u.announce(liveEvent{kind: "projects"})
 	go func() {
-		out := ReplaceBinary(&eventLines{announce: u.announce}, u.cmd)
+		lines := &eventLines{announce: u.announce}
+		out := ReplaceBinary(lines, u.cmd)
+		lines.Flush()
 		if out.State == "updated" {
 			u.watch.check()
 			if _, err := u.watch.requestRestart(); err != nil {
-				out.Detail += "; the panel did not restart: " + err.Error()
+				out.RestartError = err.Error()
 			}
 		}
 		u.plan()
@@ -179,24 +204,29 @@ func (u *updater) start() (int, error) {
 	return http.StatusAccepted, nil
 }
 
-// eventLines turns the swap's output into one "update" event per line (an
-// SSE data field holds one line).
+// eventLines turns the swap's output into one "update" event per line: an
+// SSE data field holds no line break, and a progress bar redraws itself with
+// carriage returns, so both end a line.
 type eventLines struct {
 	announce func(liveEvent)
 	buf      bytes.Buffer
 }
 
 func (e *eventLines) Write(p []byte) (int, error) {
-	e.buf.Write(p)
-	for {
-		line, err := e.buf.ReadString('\n')
-		if err != nil { // no newline yet: keep the rest for the next write
-			e.buf.Reset()
-			e.buf.WriteString(line)
-			return len(p), nil
+	for _, c := range p {
+		if c == '\n' || c == '\r' {
+			e.Flush()
+			continue
 		}
-		if line = strings.TrimRight(line, "\r\n"); line != "" {
-			e.announce(liveEvent{kind: "update", data: line})
-		}
+		e.buf.WriteByte(c)
 	}
+	return len(p), nil
+}
+
+// Flush sends what is left, a last line with no newline.
+func (e *eventLines) Flush() {
+	if line := strings.TrimSpace(e.buf.String()); line != "" {
+		e.announce(liveEvent{kind: "update", data: line})
+	}
+	e.buf.Reset()
 }

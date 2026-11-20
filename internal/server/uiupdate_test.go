@@ -285,3 +285,69 @@ func TestUpdatePostFailureKeepsPanel(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 	}
 }
+
+// Critic 9 (F-0480 criterion 6): a local build (dev) counts as older than any
+// release, so the panel shows the new version with the command.
+func TestUpdateStateDevBuild(t *testing.T) {
+	fakeReleases(t, "v0.15.0")
+	plan := func(string) (bool, string, string) {
+		return false, "this is a local build (version dev)", "go build ./cmd/cerne"
+	}
+	srv, _, _ := updatePanel(t, "dev", plan, nil)
+	b := waitUpdate(t, srv.URL, func(b updateBody) bool { return b.Latest != "" })
+	if !b.Newer || b.Swappable || b.Fix == "" {
+		t.Fatalf("dev build state = %+v, want newer with the command", b)
+	}
+}
+
+// Critic 7 (F-0480 criterion 1): turning ui.update_check off hides the
+// button at once, without waiting for the next tick.
+func TestUpdateStateFollowsTheSettingNow(t *testing.T) {
+	host := filepath.Join(t.TempDir(), "cerne")
+	if err := os.MkdirAll(host, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CERNE_CONFIG_DIR", host)
+	fakeReleases(t, "v0.15.0")
+	srv, _, _ := updatePanel(t, "v0.14.3", swappable, nil)
+	waitUpdate(t, srv.URL, func(b updateBody) bool { return b.Newer })
+	if err := os.WriteFile(filepath.Join(host, "settings.toml"), []byte("[ui]\nupdate_check = false\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if b := getUpdate(t, srv.URL); b.Newer || b.Latest != "" {
+		t.Fatalf("state with the check just turned off = %+v, want nothing", b)
+	}
+}
+
+// Critic 3: a swap that landed but whose restart was refused says so.
+func TestUpdatePostRestartRefused(t *testing.T) {
+	fakeReleases(t, "v0.15.0")
+	swap := func(w io.Writer, exe string) BinaryOutcome {
+		return BinaryOutcome{State: "updated", Detail: "v0.14.3 → v0.15.0"} // the file did not change: nothing to restart into
+	}
+	srv, _, _ := updatePanel(t, "v0.14.3", swappable, swap)
+	waitUpdate(t, srv.URL, func(b updateBody) bool { return b.Newer })
+	r, err := http.Post(srv.URL+"/api/update", "application/json", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Body.Close()
+	b := waitUpdate(t, srv.URL, func(b updateBody) bool { return !b.Running && b.Last != nil })
+	if b.Last.RestartError == "" {
+		t.Fatalf("last = %+v, want the restart's refusal", b.Last)
+	}
+}
+
+// Critic 6: a carriage return inside the swap's output becomes its own line
+// (an SSE data field must hold no line break), and a last line without a
+// newline is still sent.
+func TestEventLinesSplitAndFlush(t *testing.T) {
+	var got []string
+	e := &eventLines{announce: func(ev liveEvent) { got = append(got, ev.data) }}
+	fmt.Fprint(e, "==> Downloading\r###  10%\r### 100%\nPouring cerne")
+	e.Flush()
+	want := []string{"==> Downloading", "###  10%", "### 100%", "Pouring cerne"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("lines = %q, want %q", got, want)
+	}
+}
