@@ -120,6 +120,12 @@ type Message struct {
 	// Session is the agent session that posted a channel message (F-0325):
 	// an answer counts only from the session that was shown the message.
 	Session string `json:"session,omitempty"`
+	// Ref is the card a channel message is about (F-0486): the human's message
+	// from the card's page, and the replies to it — the card's thread.
+	Ref string `json:"ref,omitempty"`
+	// To is the sessions a human's message from a card's page is for, and only
+	// them (F-0486). Like Session, never served.
+	To []string `json:"to,omitempty"`
 }
 
 // Manager owns every room for one project: in-memory state for concurrency

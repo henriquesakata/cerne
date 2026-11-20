@@ -283,7 +283,7 @@ func handleRoomSay(w http.ResponseWriter, r *http.Request, repoDir, projDir, pro
 			msg, _, err = app.ChannelSend(cacheDir, repoDir, req.SessionID, req.Body, now)
 			msg.Session = "" // a session id is never served
 		} else {
-			msg, err = app.ChannelPost(cacheDir, app.ChannelHumanName(projDir), req.Body, now)
+			msg, err = app.ChannelPost(cacheDir, app.ChannelHumanName(projDir), "", nil, req.Body, now)
 		}
 		if err != nil {
 			writeRoomErr(w, err)
