@@ -931,7 +931,7 @@ func TestBuildChatSystemPrompt_DraftCheck(t *testing.T) {
 
 // TestBuildChatSystemPrompt_QuestionContract (F-0437 crit. 1 and 4): the
 // prompt teaches the cerne-pergunta block (format, 2-4 options, one
-// recommended, at most 3 per turn) and the rule that answered questions
+// recommended, exactly one per turn — B-0047) and the rule that answered questions
 // become "Decisões do design" lines with their origin. The English prompt
 // carries the English forms and no Portuguese ones.
 func TestBuildChatSystemPrompt_QuestionContract(t *testing.T) {
@@ -945,7 +945,8 @@ func TestBuildChatSystemPrompt_QuestionContract(t *testing.T) {
 			"- <option> — <consequence in one line>",
 			"(" + d(doclang.Recommended) + ")",
 			"2 to 4 options",
-			"at most 3 blocks",
+			"Emit exactly one block per turn", // B-0047: one question at a time
+			"the next question waits for the answer to this one",
 			d(doclang.OriginAccepted),
 			d(doclang.OriginOther),
 			d(doclang.OriginFree),
@@ -1029,7 +1030,10 @@ func TestBuildChatSystemPrompt_InterviewProtocol(t *testing.T) {
 			"depends on the answer to another still open",           // (c) no dependent question in a round
 			"changes an acceptance criterion, the scope or the bar", // (d) relevance filter
 			doclang.Display(doclang.Assumed, l),                     // (d) low-impact list
-			"at most 3 questions",                                   // (e) cap
+			"Ask ONE question per turn",                             // (e) B-0047: one at a time
+			"only after the human answered the previous one",        // (e) B-0047: next waits for the answer
+			"aim for at most 5 questions in the whole interview",    // (e) B-0047: budget
+			"only a scenario whose decisions really change",         // (e) B-0047: more only when needed
 			"through the " + chatQuestionFence + " block",           // (e) cites the F-0437 contract
 			"worded so that \"yes\" accepts the recommendation",     // (e) recommendation phrased for "yes"
 			doclang.Display(doclang.TreeProgress, l),                // (f) progress line

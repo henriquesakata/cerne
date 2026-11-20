@@ -1729,49 +1729,28 @@ describe('cartão de pergunta (F-0437)', () => {
     streamChat.mockResolvedValueOnce({ answered: true, reply: two })
     renderChat()
     send('Oi')
-    await screen.findByText('Pergunta 1 de 2')
+    await screen.findByRole('group', { name: 'Qual canal?' })
   }
 
-  it('numbers the cards "Pergunta 1 de 2" and marks the answered ones after the round is sent', async () => {
+  // B-0047: one question at a time. A turn that still carries several cards
+  // shows only the first open one; answering it sends at once, and the rest of
+  // that turn never shows — the analyst asks again knowing the answer.
+  it('a turn with several questions shows only the first one, with no round button', async () => {
     await askTwo()
-    expect(screen.getByText('Pergunta 2 de 2')).toBeInTheDocument()
-    streamChat.mockResolvedValueOnce({ answered: true, reply: 'Ok.' })
-    fireEvent.click(screen.getByRole('button', { name: /Push/ }))
-    fireEvent.click(screen.getByRole('button', { name: /Amanhã/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'Enviar respostas (2/2)' }))
-    await screen.findByText(/Pergunta 1 de 2 · Respondida/)
-    expect(screen.getByText(/Pergunta 2 de 2 · Respondida/)).toBeInTheDocument()
-  })
-
-  // B-0023: a round of several cards (F-0443) is answered as a whole — the
-  // first click used to send the turn and leave the other cards dead.
-  it('in a round, a click only picks: nothing is sent and the other card stays live', async () => {
-    await askTwo()
-    fireEvent.click(screen.getByRole('button', { name: /Push/ }))
-    expect(streamChat).toHaveBeenCalledTimes(1)
-    expect(screen.getByRole('button', { name: /Push/ })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: /Hoje/ })).toBeEnabled()
-    expect(screen.getByRole('button', { name: /Amanhã/ })).toBeEnabled()
-    expect(screen.getByRole('button', { name: 'Enviar respostas (1/2)' })).toBeDisabled()
-  })
-
-  it('the round goes out as one turn, one line per question, and a pick can change before sending', async () => {
-    await askTwo()
-    fireEvent.click(screen.getByRole('button', { name: /Email/ }))
-    fireEvent.click(screen.getByRole('button', { name: /Push/ }))
-    fireEvent.change(within(screen.getByRole('group', { name: 'Quando?' })).getByLabelText('Outra resposta'), {
-      target: { value: 'Sexta' },
-    })
-    fireEvent.click(within(screen.getByRole('group', { name: 'Quando?' })).getByRole('button', { name: 'Responder' }))
-    expect(streamChat).toHaveBeenCalledTimes(1)
-    streamChat.mockResolvedValueOnce({ answered: true, reply: 'Anotado.' })
-    fireEvent.click(screen.getByRole('button', { name: 'Enviar respostas (2/2)' }))
-    await waitFor(() => expect(streamChat).toHaveBeenCalledTimes(2))
-    expect(lastTurn()).toBe('**Qual canal?** → Push (recomendação aceita)\n**Quando?** → Sexta (resposta livre)')
-    await screen.findByText('Anotado.')
-    expect(screen.getByRole('button', { name: /Push/ })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: /Email/ })).toBeDisabled()
+    expect(screen.getByText('Pergunta 1 de 1')).toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Quando?' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Enviar respostas/ })).not.toBeInTheDocument()
+  })
+
+  it('answering the first question sends it at once and the rest of that turn stays hidden', async () => {
+    await askTwo()
+    streamChat.mockResolvedValueOnce({ answered: true, reply: 'Anotado.' })
+    fireEvent.click(screen.getByRole('button', { name: /Push/ }))
+    await waitFor(() => expect(streamChat).toHaveBeenCalledTimes(2))
+    expect(lastTurn()).toBe('**Qual canal?** → Push (recomendação aceita)')
+    await screen.findByText('Anotado.')
+    expect(screen.getByText(/Pergunta 1 de 1 · Respondida/)).toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Quando?' })).not.toBeInTheDocument()
   })
 
   it('a combined answer turn spends every card of the round (also after a reload) and renders one line per question', () => {
@@ -1826,8 +1805,10 @@ describe('cartão de pergunta (F-0437)', () => {
         { role: 'user', content: '**Qual canal?** → Push (recomendação aceita)' },
       ],
     })
-    expect(screen.getByText(/Pergunta 1 de 2 · Respondida/)).toBeInTheDocument()
-    expect(screen.getByText('Pergunta 2 de 2')).toBeInTheDocument()
+    // B-0047: the spent card shows; the second copy is the rest of the turn,
+    // hidden once one card of it was answered.
+    expect(screen.getByText(/Pergunta 1 de 1 · Respondida/)).toBeInTheDocument()
+    expect(screen.getAllByRole('group', { name: 'Qual canal?' })).toHaveLength(1)
   })
 
   it('the answer turn renders the question in <strong> with no asterisks; other user text stays literal', () => {
