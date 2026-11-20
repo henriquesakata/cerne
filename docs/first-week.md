@@ -67,12 +67,26 @@ Pick only the providers you use. What each one receives:
 |---|---|
 | Claude Code | Both skills in `.claude/skills/`, the hooks and `CERNE_ACTOR=agent` in `.claude/settings.json` (always installed by `init`) |
 | Cursor | `.cursor/rules/cerne.mdc`, `.cursor/hooks.json`, the guide in `.cursor/skills/` |
-| Codex CLI | Hooks, `.codex/config.toml`, the guide in `.agents/skills/` and a pointer in `AGENTS.md` |
+| Codex CLI | Hooks, `.codex/config.toml` (with the sandbox profile), the guide in `.agents/skills/` and a pointer in `AGENTS.md`; see [Codex](#codex) below |
 | Gemini CLI | `.gemini/settings.json` and `.gemini/.env`, the guide in `.gemini/skills/` and a pointer in `GEMINI.md` |
 | GitHub Copilot | `.github/instructions/cerne.instructions.md`, `.github/hooks/cerne.json`, the guide in `.github/skills/` |
 | Any MCP client | `cerne mcp` over stdio, read-only (see the README) |
 
 Some hooks are degraded on some agents. `cerne hook install --provider cursor` says which ones it skipped and why; the [provider parity matrix](provider-parity.md) lists all of them. cerne cannot check that an agent loads what it installed, so ask yours once: "What does cerne's authoring guide tell you to do when I ask for a feature?"
+
+### Codex
+
+Codex runs every command in a sandbox that writes only your project, `/tmp` and `$TMPDIR`. cerne keeps its cache and a local backend in your home, so out of the box every cerne command fails inside Codex. `cerne hook install --provider codex` fixes that in two steps:
+
+- It adds a `cerne` profile to the project's `.codex/config.toml` (`default_permissions = "cerne"`, extending `:workspace`) that lets Codex write cerne's cache folder and your local backend folder. Paths use `~/`, so the file works on every machine of your team, and your own lines in the file are kept. If the file already sets `default_permissions`, or the folders are specific to this machine (`CERNE_CACHE_DIR`, `XDG_CACHE_HOME`, a local backend outside your home), the install writes nothing and prints the snippet to paste into `~/.codex/config.toml`, plus the alternative `codex --add-dir <folder>`.
+- Codex reads `.codex/` only in a trusted project, and the install tells you so. Trust the project by adding this to `~/.codex/config.toml` (the install prints it with your path):
+
+```toml
+[projects."/path/to/your/project"]
+trust_level = "trusted"
+```
+
+Check it from inside a Codex session: `printenv CERNE_ACTOR` prints `agent`, and `cerne next` runs with no permission error. With a remote backend (SSH or HTTPS), the sandbox may still block the network for `cerne pull` and `cerne push`.
 
 ## Ask for the first feature and approve it
 
