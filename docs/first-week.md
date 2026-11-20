@@ -13,7 +13,7 @@ Inside your project's repository (skip this if you already ran it):
 cerne init --name my-project
 ```
 
-`init` ends with the same three steps it shows in `cerne next`:
+`init` ends with the steps to take now: the dashboard, the request to your agent and the approval. `cerne next` then adds the accept step:
 
 ```text
 Next steps:
@@ -46,9 +46,10 @@ Next steps:
   1. Search what came in:  cerne search "Postgres"
   2. Ask your agent for the first feature:
      "Use cerne to plan <a small change you want>: register the feature and write its spec."
+First-week guide: https://github.com/henriquesakata/cerne/blob/main/docs/first-week.md
 ```
 
-On a terminal, an import that brings delivered features asks once whether they enter as `implemented` (delivered, waiting for your accept) or `done` (already validated). In a script, pass `--delivered-state implemented|done`. Imported features that are `implemented` count as waiting for accept; `done` ones do not.
+When the import brings delivered features and you gave no `--delivered-state`, the import asks on a terminal dry-run, never with `--yes`: it asks once whether they enter as `implemented` (delivered, waiting for your accept) or `done` (already validated). In a script or an agent run (no terminal) the dry-run does not ask; it prints `N delivered feature(s) will enter as implemented; add --delivered-state done to enter them as done.`, so pass `--delivered-state implemented|done` when you apply. Imported features that are `implemented` count as waiting for accept; `done` ones do not.
 
 ## Connect your agent
 
