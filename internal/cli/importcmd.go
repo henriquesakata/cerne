@@ -20,7 +20,7 @@ import (
 // Dry-run plan breakdown orders; only the states the import heuristics can
 // produce are listed.
 var (
-	planFeatureStates  = []string{"candidate", "in_development", "implemented", "superseded"}
+	planFeatureStates  = []string{"candidate", "in_development", "implemented", "done", "superseded"}
 	planDecisionStates = []string{"active", "superseded"}
 )
 
@@ -70,7 +70,7 @@ func runImport(cmd *cobra.Command, dir, root, delivered string, yes, agent, inge
 	// deterministic case-folder import below runs exactly as before.
 	if agent {
 		if ingest {
-			return runImportAgentIngest(cmd, ctx, deliveredState, yes)
+			return runImportAgentIngest(cmd, ctx, delivered, deliveredState, yes)
 		}
 		return runImportAgent(cmd, ctx, root)
 	}
@@ -114,6 +114,7 @@ func runImport(cmd *cobra.Command, dir, root, delivered string, yes, agent, inge
 	}
 	skipped += seedSkipped
 
+	deliveredState = askDeliveredState(cmd, delivered, yes, countDelivered(cands), deliveredState)
 	importer.SetDelivered(cands, deliveredState)
 	out := cmd.OutOrStdout()
 	nothingNew := len(cands) == 0 && len(seeds) == 0
@@ -387,7 +388,7 @@ func runImportAgent(cmd *cobra.Command, ctx projCtx, root string) error {
 // runImportAgentIngest is phase 2: read the agent's plan.json, validate it
 // against the cerne model (cerne is the authority), drop already-imported items
 // (idempotency), then either print the dry-run plan or apply it (--yes).
-func runImportAgentIngest(cmd *cobra.Command, ctx projCtx, deliveredState string, yes bool) error {
+func runImportAgentIngest(cmd *cobra.Command, ctx projCtx, delivered, deliveredState string, yes bool) error {
 	out := cmd.OutOrStdout()
 	planPath := filepath.Join(ctx.projDir, filepath.FromSlash(agentPlanRel))
 	data, err := os.ReadFile(planPath)
@@ -417,6 +418,7 @@ func runImportAgentIngest(cmd *cobra.Command, ctx projCtx, deliveredState string
 
 	// Dry-run: show the plan, write nothing.
 	if !yes {
+		importer.SetPlanDelivered(kept, askDeliveredState(cmd, delivered, yes, countPlanDelivered(kept), deliveredState))
 		printAgentPlan(out, kept, skipped)
 		return nil
 	}
