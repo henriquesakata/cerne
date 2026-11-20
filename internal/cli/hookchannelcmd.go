@@ -169,11 +169,12 @@ func runHookChannel(cmd *cobra.Command, point string) {
 		fmt.Fprint(cmd.OutOrStdout(), sessionBoard(cfg.ProjectID, cfg.RecentWorkWindowDays()))
 	}
 	block := channelBlock(cfg.ProjectID, in.SessionID, consume)
-	if !consume {
-		if task := sessionTask(cfg.ProjectID, in.SessionID, in.AgentID); task != "" && block != "" {
-			block = task + "\n" + block
-		} else if task != "" {
-			block = task
+	if point == "subagent" {
+		if task := sessionTask(cfg.ProjectID, in.SessionID, in.AgentID); task != "" {
+			if block != "" {
+				task += "\n"
+			}
+			block = task + block
 		}
 	}
 	fmt.Fprint(cmd.OutOrStdout(), block)
