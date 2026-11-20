@@ -220,7 +220,7 @@ func installCodexSandbox(projDir string, network bool) []Result {
 	if mErr := os.MkdirAll(filepath.Dir(path), 0o755); mErr != nil {
 		return append([]Result{{Asset: codexSandboxAsset, Status: StatusSkipped, Note: "cannot create directory: " + mErr.Error()}}, results...)
 	}
-	if wErr := os.WriteFile(path, []byte(out), 0o644); wErr != nil {
+	if wErr := writeFileAtomic(path, []byte(out), 0o644); wErr != nil {
 		return append([]Result{{Asset: codexSandboxAsset, Status: StatusSkipped, Note: "cannot write: " + wErr.Error()}}, results...)
 	}
 	st := StatusUpdated

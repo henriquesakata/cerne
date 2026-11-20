@@ -308,7 +308,7 @@ func installGuardCommitMsgGitHook(projDir string) Result {
 		if mkErr := os.MkdirAll(filepath.Dir(dst), 0o755); mkErr != nil {
 			return skipped("cannot create .git/hooks: " + mkErr.Error())
 		}
-		if wErr := os.WriteFile(dst, []byte(guardHookContent), 0o755); wErr != nil {
+		if wErr := writeFileAtomic(dst, []byte(guardHookContent), 0o755); wErr != nil {
 			return skipped("cannot write hook: " + wErr.Error())
 		}
 		return Result{Asset: guardHookName, Status: StatusCreated}
@@ -320,7 +320,7 @@ func installGuardCommitMsgGitHook(projDir string) Result {
 			content += "\n"
 		}
 		content += guardMarker + "\n" + guardHookBody
-		if wErr := os.WriteFile(dst, []byte(content), 0o755); wErr != nil {
+		if wErr := writeFileAtomic(dst, []byte(content), 0o755); wErr != nil {
 			return skipped("cannot write hook: " + wErr.Error())
 		}
 		return Result{Asset: guardHookName, Status: StatusUpdated}
@@ -376,7 +376,7 @@ func installCommitTrailerGitHook(projDir string) Result {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return skipped("cannot create .git/hooks: " + err.Error())
 	}
-	if err := os.WriteFile(dst, []byte(trailerHookContent), 0o755); err != nil {
+	if err := writeFileAtomic(dst, []byte(trailerHookContent), 0o755); err != nil {
 		return skipped("cannot write hook: " + err.Error())
 	}
 	return Result{Asset: trailerHookName, Status: StatusCreated}
@@ -398,7 +398,7 @@ func writeIfChanged(dst string, content []byte) (Status, error) {
 		if bytes.Equal(existing, content) {
 			return StatusUnchanged, nil
 		}
-		if err := os.WriteFile(dst, content, 0o644); err != nil {
+		if err := writeFileAtomic(dst, content, 0o644); err != nil {
 			return "", err
 		}
 		return StatusUpdated, nil
@@ -409,7 +409,7 @@ func writeIfChanged(dst string, content []byte) (Status, error) {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(dst, content, 0o644); err != nil {
+	if err := writeFileAtomic(dst, content, 0o644); err != nil {
 		return "", err
 	}
 	return StatusCreated, nil
@@ -429,7 +429,7 @@ func mergeSettingsFile(dst string) (Status, error) {
 		if !changed {
 			return StatusUnchanged, nil
 		}
-		if err := os.WriteFile(dst, merged, 0o644); err != nil {
+		if err := writeFileAtomic(dst, merged, 0o644); err != nil {
 			return "", err
 		}
 		return StatusUpdated, nil
@@ -441,7 +441,7 @@ func mergeSettingsFile(dst string) (Status, error) {
 		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 			return "", err
 		}
-		if err := os.WriteFile(dst, fresh, 0o644); err != nil {
+		if err := writeFileAtomic(dst, fresh, 0o644); err != nil {
 			return "", err
 		}
 		return StatusCreated, nil

@@ -3,6 +3,7 @@ package refresh
 import (
 	"slices"
 	"sort"
+	"strings"
 
 	"github.com/henriquesakata/cerne/internal/hooks"
 )
@@ -34,21 +35,35 @@ func Connected(projDir string) []hooks.Provider {
 	return append([]hooks.Provider{hooks.ProviderClaude}, hooks.DetectProviders(projDir)...)
 }
 
+// isGuide says whether a slot is part of the authoring guide: the skill
+// copies, Copilot's instructions and the pointer blocks of AGENTS.md/GEMINI.md.
+func isGuide(slot string) bool {
+	path := pathOf(slot)
+	return strings.Contains(path, "/skills/") || strings.HasPrefix(path, ".github/instructions/") || path == "AGENTS.md" || path == "GEMINI.md"
+}
+
 // Classify reads the project's managed items of agent p against what this
-// build writes and the list of what releases wrote. It only reads files.
-func Classify(projDir string, p hooks.Provider) Verdict {
-	disk, want := Collect(projDir), Current()
+// build writes and the list of what releases wrote. It only reads files. With
+// withGuide false the guide's files are left out of the verdict (sync_skills
+// owns them, F-0477). An agent is connected only when one of its expected files
+// or one of its hook entries is on disk: a lone leftover file is not.
+func Classify(projDir string, p hooks.Provider, withGuide bool) Verdict {
+	want := Current()
+	if len(want) == 0 { // the scratch install failed: say nothing rather than guess
+		return Verdict{}
+	}
+	disk := Collect(projDir)
 	present := false
 	var unknown []string
 	renew := false
 	for slot, sha := range disk {
-		if agentOf(slot) != p {
+		if agentOf(slot) != p || (!withGuide && isGuide(slot)) {
 			continue
 		}
 		cur, expected := want[slot]
 		_, tuple := cutHash(slot)
-		// A file nobody expects and no release wrote is the person's own.
-		if !expected && !tuple && !knownSlot(slot) {
+		// A file nobody expects is the person's own (or a retired one).
+		if !expected && !tuple {
 			continue
 		}
 		present = true
@@ -64,7 +79,7 @@ func Classify(projDir string, p hooks.Provider) Verdict {
 		return Verdict{}
 	}
 	for slot := range want {
-		if _, ok := disk[slot]; !ok && agentOf(slot) == p {
+		if _, ok := disk[slot]; !ok && agentOf(slot) == p && (withGuide || !isGuide(slot)) {
 			renew = true
 		}
 	}

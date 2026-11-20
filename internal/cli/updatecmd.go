@@ -183,6 +183,14 @@ func updateCheck(out io.Writer, projDir string) error {
 	if len(h)+len(g) == 0 {
 		return nil
 	}
+	// The automatic refresh leaves an agent with an edit alone; --check says so.
+	withGuide := true
+	if cfg, _, err := project.LoadConfig(projDir); err == nil {
+		withGuide = !cfg.SyncSkills
+	}
+	if _, left := classifyAgents(projDir, withGuide); len(left) > 0 {
+		fmt.Fprintln(out, "the automatic refresh "+leftoverNote(left))
+	}
 	return fmt.Errorf("project files out of date with this cerne build — run 'cerne update'")
 }
 
