@@ -94,6 +94,7 @@ func Root() *cobra.Command {
 	addIn("read", verbs.MarkChat(newStatusCmd()))
 	addIn("read", verbs.MarkChat(newNextCmd()))
 	addIn("read", verbs.MarkChat(newBriefCmd()))
+	addIn("read", verbs.MarkChat(newTagsCmd()))
 	addIn("start", verbs.MarkChat(newGuideCmd()))
 	addIn("read", verbs.MarkChat(newSavingsCmd()))
 	addIn("read", verbs.MarkChat(newStatsCmd()))
