@@ -27,7 +27,7 @@ func TestGuideAnswersNoteOrReference(t *testing.T) {
 				t.Errorf("%q: entry lacks %q", q, want)
 			}
 		}
-		if m := regexp.MustCompile(`(?i)[áàâãéêíóôõúç]|\b(nota|fonte|orientação|não|para|uma|com)\b`).FindString(first.Title + first.Text); m != "" {
+		if m := regexp.MustCompile(`(?i)[áàâãéêíóôõúç]|(?:^|[^\p{L}])(nota|fonte|orientação|não|para|uma|com)(?:[^\p{L}]|$)`).FindString(first.Title + first.Text); m != "" {
 			t.Errorf("entry has Portuguese %q", m)
 		}
 	}

@@ -33,14 +33,14 @@ func TestSkillRoutesGuidanceToNoteAndSourceToReference(t *testing.T) {
 	}
 	var line string
 	for _, l := range strings.Split(sec, "\n") {
-		if strings.Contains(l, "reference/notes-and-knowledge.md") {
+		if strings.Contains(l, "Guidance → note") {
 			line = l
 		}
 	}
 	if line == "" {
-		t.Fatal("no routing line pointing to reference/notes-and-knowledge.md")
+		t.Fatal("no routing line starting with Guidance -> note")
 	}
-	for _, want := range []string{"note", "reference", "--informs N-NNNN"} {
+	for _, want := range []string{"Guidance → note, source → reference", "a reference the note points to", "--informs N-NNNN", "reference/notes-and-knowledge.md"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("routing line lacks %q: %s", want, line)
 		}
@@ -59,6 +59,8 @@ func TestReferenceFilesTeachNoteVsReferenceSplit(t *testing.T) {
 	notes := readFile(t, referenceDir+"/notes-and-knowledge.md")
 	for _, want := range []string{
 		"### Note or reference: guidance vs. source",
+		"keeps the source",
+		"keeps the guidance",
 		"cerne reference new",
 		"--informs N-NNNN",
 		"cerne reference link R-NNNN --informs N-NNNN",
