@@ -70,13 +70,14 @@ type workHitJSON struct {
 	Title string `json:"title"`
 }
 
-func runSearch(cmd *cobra.Command, dir, query string, limit int, asJSON, perDoc, worksOnly bool) error {
+func runSearch(cmd *cobra.Command, dir, query string, limit int, asJSON, perDoc, worksOnly bool) (err error) {
 	// Offline by design: search reads the cached clone and the local index,
 	// never the remote. 'cerne pull' is the sync point that refreshes both.
 	ctx, err := resolvePaths(dir)
 	if err != nil {
 		return err
 	}
+	defer func() { err = unwritableCacheErr(ctx.repoDir, ctx.cfg.Backend, err) }()
 	dbPath, err := project.IndexPath(ctx.cfg.ProjectID)
 	if err != nil {
 		return err
