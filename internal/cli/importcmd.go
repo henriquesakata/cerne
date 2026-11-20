@@ -26,6 +26,7 @@ var (
 
 func newImportCmd() *cobra.Command {
 	var dir, root string
+	var delivered string
 	var yes, agent, ingest bool
 	cmd := &cobra.Command{
 		Use:   "import",
@@ -37,7 +38,7 @@ func newImportCmd() *cobra.Command {
 			"then 'cerne import --agent --ingest' validates and applies it (--yes).",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runImport(cmd, dir, root, yes, agent, ingest)
+			return runImport(cmd, dir, root, delivered, yes, agent, ingest)
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
@@ -45,11 +46,16 @@ func newImportCmd() *cobra.Command {
 	cmd.Flags().StringVar(&root, "root", "", "documentation tree to scan (defaults to the project directory)")
 	cmd.Flags().BoolVar(&yes, "yes", false, "apply the import instead of printing the dry-run plan")
 	cmd.Flags().BoolVar(&agent, "agent", false, "AI-assisted generic import: emit a mapping prompt for any doc structure")
+	cmd.Flags().StringVar(&delivered, "delivered-state", "", "state a feature imported as delivered enters with: implemented (default) or done")
 	cmd.Flags().BoolVar(&ingest, "ingest", false, "ingest the agent's plan.json: validate, then dry-run (or --yes to apply)")
 	return cmd
 }
 
-func runImport(cmd *cobra.Command, dir, root string, yes, agent, ingest bool) error {
+func runImport(cmd *cobra.Command, dir, root, delivered string, yes, agent, ingest bool) error {
+	deliveredState, err := importer.ResolveDeliveredState(delivered)
+	if err != nil {
+		return err
+	}
 	ctx, err := resolveProject(dir)
 	if err != nil {
 		return err
@@ -64,7 +70,7 @@ func runImport(cmd *cobra.Command, dir, root string, yes, agent, ingest bool) er
 	// deterministic case-folder import below runs exactly as before.
 	if agent {
 		if ingest {
-			return runImportAgentIngest(cmd, ctx, yes)
+			return runImportAgentIngest(cmd, ctx, deliveredState, yes)
 		}
 		return runImportAgent(cmd, ctx, root)
 	}
@@ -108,6 +114,7 @@ func runImport(cmd *cobra.Command, dir, root string, yes, agent, ingest bool) er
 	}
 	skipped += seedSkipped
 
+	importer.SetDelivered(cands, deliveredState)
 	out := cmd.OutOrStdout()
 	nothingNew := len(cands) == 0 && len(seeds) == 0
 
@@ -371,7 +378,7 @@ func runImportAgent(cmd *cobra.Command, ctx projCtx, root string) error {
 // runImportAgentIngest is phase 2: read the agent's plan.json, validate it
 // against the cerne model (cerne is the authority), drop already-imported items
 // (idempotency), then either print the dry-run plan or apply it (--yes).
-func runImportAgentIngest(cmd *cobra.Command, ctx projCtx, yes bool) error {
+func runImportAgentIngest(cmd *cobra.Command, ctx projCtx, deliveredState string, yes bool) error {
 	out := cmd.OutOrStdout()
 	planPath := filepath.Join(ctx.projDir, filepath.FromSlash(agentPlanRel))
 	data, err := os.ReadFile(planPath)
@@ -405,6 +412,7 @@ func runImportAgentIngest(cmd *cobra.Command, ctx projCtx, yes bool) error {
 		return nil
 	}
 
+	importer.SetPlanDelivered(kept, deliveredState)
 	sum, err := importer.ApplyPlan(ctx.repoDir, kept, app.EventActor())
 	if err != nil {
 		return err
