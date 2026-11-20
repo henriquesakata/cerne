@@ -113,24 +113,25 @@ var errCheckpointLocked = errors.New("another 'room watch' is already running fo
 // clear error rather than wait or steal — two live consumers can't safely
 // share one cursor.
 //
-// ponytail: contention is detected via errors.Is(err, os.ErrExist), which
-// covers Linux/macOS/CI. Windows can surface a sharing-violation error
-// instead for a live holder (see internal/gitback/lock_windows.go); revisit
-// if `cerne room watch` needs to run under Windows CI.
+// The lock is an OS lock on the file (tryLockFile), not the file's existence:
+// the kernel drops it when the holder dies, however it dies, so a watch killed
+// with SIGKILL or a crash never blocks the session (F-0472). release closes
+// the file and leaves it on disk: removing it would let a process that opened
+// the old file and one that creates a new one both hold "the" lock.
 func lockCheckpoint(path string) (func(), error) {
 	lockPath := path + ".lock"
 	if err := os.MkdirAll(filepath.Dir(lockPath), 0o700); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return nil, errCheckpointLocked
-		}
 		return nil, err
 	}
-	f.Close()
-	return func() { os.Remove(lockPath) }, nil
+	if err := tryLockFile(f); err != nil {
+		f.Close()
+		return nil, err
+	}
+	return func() { f.Close() }, nil
 }
 
 func newRoomWatchCmd() *cobra.Command {
