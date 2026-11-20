@@ -145,6 +145,9 @@ var rewritten = []string{
 	// document while its remote copy is stashed in .docs/.conflicts/.
 	"Disjoint documents reconcile automatically; a real **same-document** conflict",
 	"- **`cerne pull`** 3-way merges: it brings in the remote advance while keeping your unsent `.docs/` edits (it does",
+	// B-0054: the prompt and every shell command became channel contact
+	// points, and a human message is addressed to every live work.
+	"Pending messages reach you on their own at session start, in subagents, in `cerne next`",
 }
 
 // b0015Renames maps the pt-BR names and placeholders the 2026-11-13 snapshot
