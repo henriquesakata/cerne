@@ -221,6 +221,9 @@ var settingsRegistry = []Setting{
 			{ID: "label", Title: "Label", Type: "string", Description: "Only outside issues with this label become ideas. Empty imports every open issue."},
 		},
 		CheckRecord: func(r map[string]string) error {
+			if strings.HasPrefix(strings.ToLower(strings.TrimSpace(r["label"])), "cerne:") {
+				return fmt.Errorf("label %q: the cerne: prefix is reserved for the mirror's state labels", r["label"])
+			}
 			_, err := tracker.New(trackerConfig(r))
 			return err
 		},
