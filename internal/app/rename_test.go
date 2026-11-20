@@ -248,6 +248,29 @@ func TestRenameComponentMidwayFailureWritesNothing(t *testing.T) {
 	}
 }
 
+// M2 (critic round 1): both names go through the normalizer every component
+// writer uses, so a mixed-case or punctuated spelling finds the stored name
+// and writes the name a retag would.
+func TestRenameComponentNormalizesLikeTheWriters(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	if err := store.SaveNote(repoDir, store.Note{ID: "N-0005", Title: "n", State: domain.NoteState("active"),
+		Components: domain.NormalizeComponents([]string{"Auth_Tokens", "kpack"})}); err != nil {
+		t.Fatal(err)
+	}
+	commitBackend(t, repoDir)
+	rep, err := RenameComponent(repoDir, projDir, "Auth_Tokens", "ui.v2", false, false)
+	if err != nil {
+		t.Fatalf("RenameComponent: %v", err)
+	}
+	from, to := domain.NormalizeComponents([]string{"Auth_Tokens"}), domain.NormalizeComponents([]string{"ui.v2"})
+	if rep.From != from[0] || rep.To != to[0] || len(rep.Entities) != 1 {
+		t.Fatalf("report %q -> %q on %d entities, want %q -> %q on 1", rep.From, rep.To, len(rep.Entities), from[0], to[0])
+	}
+	if got, want := componentsOf(t, repoDir)["N-0005"], domain.NormalizeComponents([]string{"ui.v2", "kpack"}); !slices.Equal(got, want) {
+		t.Fatalf("N-0005 components = %v, want %v", got, want)
+	}
+}
+
 // pushFromOtherClone tags N-0099 with "old" from a second clone of origin, so
 // the local clone trails the backend by one entity carrying the component.
 func pushFromOtherClone(t *testing.T, origin string) {

@@ -9,7 +9,6 @@ import (
 
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gitback"
-	"github.com/henriquesakata/cerne/internal/slug"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -60,7 +59,7 @@ type renameHit struct {
 // (from excluded, it disappears), unless force. dryRun reports and writes
 // nothing; the refusals apply to it too.
 func RenameComponent(repoDir, projDir, from, to string, force, dryRun bool) (RenameReport, error) {
-	from, to = slug.Make(from), slug.Make(to)
+	from, to = normalizeComponent(from), normalizeComponent(to)
 	if from == "" || to == "" {
 		return RenameReport{}, fmt.Errorf("%w: give the component to rename and its new name (see 'cerne tags')", errEmptyComponent)
 	}
@@ -131,6 +130,15 @@ func RenameComponent(repoDir, projDir, from, to string, force, dryRun bool) (Ren
 		return RenameReport{}, err
 	}
 	return rep, nil
+}
+
+// normalizeComponent is one name through the normalizer every component writer
+// uses (domain.NormalizeComponents); "" when it normalizes to nothing.
+func normalizeComponent(name string) string {
+	if c := domain.NormalizeComponents([]string{name}); len(c) == 1 {
+		return c[0]
+	}
+	return ""
 }
 
 // readLatest runs read on the tree mutateAndSnapshotLatest's mutate sees — the
