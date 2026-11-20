@@ -300,6 +300,14 @@ func collectChangedDocs(repoDir, docsDir string, manifest map[string]string) ([]
 		if walkErr != nil {
 			return walkErr
 		}
+		// B-0042: cerne never materializes a hidden entry, so one is an
+		// editor's (.obsidian/, .trash/, swap files), not a document to send.
+		if p != currentDir && strings.HasPrefix(d.Name(), ".") {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
 		if d.IsDir() || !strings.HasSuffix(d.Name(), ".md") {
 			return nil
 		}

@@ -287,6 +287,47 @@ func TestPushUntrackedFile(t *testing.T) {
 	}
 }
 
+// TestPushIgnoresHiddenEntries (B-0042): a .md an editor leaves in a hidden
+// folder (or a hidden file) under .docs/current/ is not a cerne document. push
+// sends the real edit around it instead of refusing with an untracked-file
+// error that pull cannot clear, and pull keeps the file where it was.
+func TestPushIgnoresHiddenEntries(t *testing.T) {
+	projDir, _, repoDir, specPath := pulledProject(t)
+	current := filepath.Join(projDir, ".docs", "current")
+	hidden := []string{
+		filepath.Join(current, ".trash", "x.md"),
+		filepath.Join(current, "features", ".obsidian", "plugin.md"),
+		filepath.Join(filepath.Dir(specPath), ".spec.md.swp.md"),
+	}
+	for _, p := range hidden {
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		mustWrite(t, p, "# editor scratch\n")
+	}
+	edited := realDoc("F-0001", "Dividir compras em parcelas, editado.")
+	mustWrite(t, specPath, edited)
+
+	if out, err := execCerne(t, "push", "--dir", projDir); err != nil {
+		t.Fatalf("push with hidden entries: %v\noutput: %s", err, out)
+	}
+	got, err := os.ReadFile(filepath.Join(repoDir, "content", "features", "F-0001", "spec.md"))
+	if err != nil || string(got) != edited {
+		t.Fatalf("backend spec = %q (err %v), want the edit", got, err)
+	}
+	if out, err := execCerne(t, "pull", "--dir", projDir); err != nil {
+		t.Fatalf("pull: %v\noutput: %s", err, out)
+	}
+	for _, p := range hidden {
+		if _, err := os.Stat(p); err != nil {
+			t.Fatalf("pull dropped %s: %v", p, err)
+		}
+	}
+	if out, err := execCerne(t, "push", "--dir", projDir); err != nil || !strings.Contains(out, "Nothing to send") {
+		t.Fatalf("push after pull: %v\noutput: %s", err, out)
+	}
+}
+
 // TestPushOpensPickupAutoWork (F-0208 crit. 1): pushing an edited plan.md for
 // a still-approved feature opens the pickup auto-work in the same commit as
 // the push — the agent's first backend touch after claiming the feature.
