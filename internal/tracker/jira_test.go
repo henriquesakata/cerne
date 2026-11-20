@@ -1275,13 +1275,16 @@ func TestJiraContract(t *testing.T) {
 // installs the network guard.
 var jiraLiveDo, jiraLiveFill = forge.HTTPDo, forge.CredentialFill
 
-// jiraLiveSettle is the pause before each live list: Jira Cloud's search is
+// jiraLiveSettle is the pause between live lists: Jira Cloud's search is
 // eventually consistent, so a list right after a write may not see it yet.
-// ponytail: a fixed pause; poll if the live run flakes.
+// A fixed 3 s pause flaked once in three live runs (F-0453 Gauntlet), so a
+// list now reads until two reads in a row agree.
+// ponytail: a lag past ~4 reads still flakes; /search/jql's reconcileIssues
+// gives read-after-write if it does.
 const jiraLiveSettle = 3 * time.Second
 
 // jiraLive is the live adapter, recording the key of every issue it creates
-// for the cleanup, with the settle pause before each list.
+// for the cleanup, with each list read until it settles.
 type jiraLive struct {
 	tracker.IssueTracker
 	created *[]string
@@ -1296,8 +1299,19 @@ func (l jiraLive) Create(ctx context.Context, it tracker.Item) (tracker.Ref, err
 }
 
 func (l jiraLive) ListOpen(ctx context.Context, label string) ([]tracker.Remote, error) {
-	time.Sleep(jiraLiveSettle)
-	return l.IssueTracker.ListOpen(ctx, label)
+	var prev []tracker.Remote
+	for i := range 5 {
+		time.Sleep(jiraLiveSettle)
+		got, err := l.IssueTracker.ListOpen(ctx, label)
+		if err != nil {
+			return nil, err
+		}
+		if i > 0 && reflect.DeepEqual(got, prev) {
+			return got, nil
+		}
+		prev = got
+	}
+	return prev, nil
 }
 
 // F-0453 crit. 7, live: the contract suite against a real, throwaway Jira
