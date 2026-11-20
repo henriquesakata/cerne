@@ -13,6 +13,7 @@ import (
 	"github.com/henriquesakata/cerne/internal/cost"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gitback"
+	"github.com/henriquesakata/cerne/internal/guide"
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
 )
@@ -112,15 +113,113 @@ func TestNextListsEpicsReadyToClose(t *testing.T) {
 	}
 }
 
-// TestNextEmpty: a project with no active work and no debts says so, exit 0.
+// seedAcceptEvent records a first accept in the backend (E-0004): the first
+// steps are gone after it.
+func seedAcceptEvent(t *testing.T, repoDir string) {
+	t.Helper()
+	if err := store.AppendEvent(repoDir, domain.NewEvent("F-0001", "feature.accepted", nil, "human")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "seed accept"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestNextEmpty: a project past its first accept, with no active work and no
+// debts, says so, exit 0.
 func TestNextEmpty(t *testing.T) {
+	t.Setenv("CERNE_ACTOR", "")
+	projDir, _, repoDir := setupProject(t)
+	seedAcceptEvent(t, repoDir)
+	out, err := execCerne(t, "next", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("next: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "Nothing pending. ✓") || strings.Contains(out, "FIRST STEPS") {
+		t.Fatalf("empty project should report nothing pending:\n%s", out)
+	}
+}
+
+// TestNextFreshProjectFirstSteps: until the first accept, the queue opens with
+// the first steps (E-0004) and the guide address; "Nothing pending" is gone.
+func TestNextFreshProjectFirstSteps(t *testing.T) {
 	projDir, _, _ := setupProject(t)
 	out, err := execCerne(t, "next", "--dir", projDir)
 	if err != nil {
 		t.Fatalf("next: %v\noutput: %s", err, out)
 	}
-	if !strings.Contains(out, "Nothing pending. ✓") {
-		t.Fatalf("empty project should report nothing pending:\n%s", out)
+	if !strings.Contains(out, "FIRST STEPS") {
+		t.Fatalf("first steps block missing:\n%s", out)
+	}
+	for _, want := range []string{guide.FirstWeekURL, guide.FirstFeatureAsk, "[ ] Approve", "[ ] Accept"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "Nothing pending") {
+		t.Errorf("block replaces the empty message:\n%s", out)
+	}
+}
+
+// TestNextCandidateFirstSteps: the block sits above the sections, never in
+// place of them; a done step is ticked.
+func TestNextCandidateFirstSteps(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	now := time.Now().UTC()
+	f := store.Feature{ID: "F-0001", Title: "Candidata", State: domain.StateCandidate, CreatedAt: now, UpdatedAt: now}
+	if err := store.SaveFeature(repoDir, f); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AppendEvent(repoDir, domain.NewEvent("F-0001", "feature.created", nil, "agent")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "seed"); err != nil {
+		t.Fatal(err)
+	}
+	out, err := execCerne(t, "next", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("next: %v\noutput: %s", err, out)
+	}
+	i, j := strings.Index(out, "FIRST STEPS"), strings.Index(out, "CANDIDATES (1)")
+	if i < 0 || j < i {
+		t.Fatalf("block must precede the candidate section (block at %d, section at %d):\n%s", i, j, out)
+	}
+	if !strings.Contains(out, "[x] Ask") {
+		t.Errorf("created event should tick the ask step:\n%s", out)
+	}
+}
+
+// TestNextAcceptedNoFirstSteps: after the first accept the block is gone.
+func TestNextAcceptedNoFirstSteps(t *testing.T) {
+	t.Setenv("CERNE_ACTOR", "")
+	projDir, _, repoDir := setupProject(t)
+	seedAcceptEvent(t, repoDir)
+	out, err := execCerne(t, "next", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("next: %v\noutput: %s", err, out)
+	}
+	if strings.Contains(out, "FIRST STEPS") {
+		t.Fatalf("no block after an accept:\n%s", out)
+	}
+}
+
+// TestNextWritesNothingFirstSteps: showing the steps writes no event (E-0004:
+// the state is derived, never stored).
+func TestNextWritesNothingFirstSteps(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	before, err := store.ReadAllEvents(repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, err := execCerne(t, "next", "--dir", projDir); err != nil {
+		t.Fatalf("next: %v\n%s", err, out)
+	}
+	after, err := store.ReadAllEvents(repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(before) != len(after) {
+		t.Fatalf("events before %d, after %d", len(before), len(after))
 	}
 }
 

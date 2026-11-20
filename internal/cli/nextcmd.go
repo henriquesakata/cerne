@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"slices"
 	"sort"
 	"time"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/guide"
 	"github.com/henriquesakata/cerne/internal/lint"
 	"github.com/henriquesakata/cerne/internal/store"
 )
@@ -240,6 +242,14 @@ func runNext(cmd *cobra.Command, dir string, asJSON bool) error {
 	}
 
 	printed := false
+	// First steps (E-0004): derived from the event log, shown above the
+	// sections until the first accept; nothing is stored for them.
+	if events, err := store.ReadEvents(ctx.repoDir); err == nil {
+		if steps := app.FirstSteps(events); len(steps) > 0 {
+			printed = true
+			printFirstSteps(out, steps)
+		}
+	}
 	for _, g := range q.Groups {
 		printed = true
 		fmt.Fprintf(out, "%s (%d) — %s\n", g.header, len(g.Features), g.Action)
@@ -302,6 +312,25 @@ func runNext(cmd *cobra.Command, dir string, asJSON bool) error {
 		fmt.Fprintln(out, "Nothing pending. ✓")
 	}
 	return nil
+}
+
+// firstStepText is the line each first step shows, by key.
+var firstStepText = map[string]string{
+	"ask":     `Ask your agent: "` + guide.FirstFeatureAsk + `"`,
+	"approve": "Approve the spec: cerne ui → Kanban, or cerne feature approve <id>",
+	"accept":  "Accept the delivery: cerne feature accept <id>",
+}
+
+func printFirstSteps(out io.Writer, steps []app.FirstStep) {
+	fmt.Fprintf(out, "FIRST STEPS (guide: %s):\n", guide.FirstWeekURL)
+	for _, s := range steps {
+		mark := " "
+		if s.Done {
+			mark = "x"
+		}
+		fmt.Fprintf(out, "  [%s] %s\n", mark, firstStepText[s.Key])
+	}
+	fmt.Fprintln(out)
 }
 
 // implementedMissing maps each implemented feature whose next step is the
