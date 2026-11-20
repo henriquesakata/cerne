@@ -20,11 +20,11 @@ func newSavingsCmd() *cobra.Command {
 	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "savings",
-		Short: "Context savings: full corpus vs the current .docs/ projection",
+		Short: "Corpus reduction: full corpus vs the current .docs/ projection",
 		Long: "Measures how much documentation the backend holds (every entity, every state) against " +
 			"the entity documents the current .docs/ projection delivers to an agent — per kind and in total, " +
-			"as counts, bytes and an estimated token figure (bytes/4). The difference is the context " +
-			"the agent never has to read. The generated .docs/CONTEXT.md roster is not counted on either side. " +
+			"as counts, bytes and an estimated token figure (bytes/4). The difference is the reduction " +
+			"of what the agent has to search: nothing is deleted, the rest stays in history. The generated .docs/CONTEXT.md roster is not counted on either side. " +
 			"--json emits the full object for machine consumption.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {

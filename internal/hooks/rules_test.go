@@ -92,6 +92,26 @@ func TestRegisterRulesCompleteCard(t *testing.T) {
 	}
 }
 
+// TestRegisterRulesReadCodeFirst (B-0059): the FEATURE rule tells the agent to
+// read the code the request touches before writing the spec, in the static
+// copy, the asset fallback and the dynamic SessionRules.
+func TestRegisterRulesReadCodeFirst(t *testing.T) {
+	body, err := os.ReadFile("assets/cerne-register-reminder.sh")
+	if err != nil {
+		t.Fatalf("read asset: %v", err)
+	}
+	const want = "read the code the request touches"
+	for name, text := range map[string]string{"RegisterRules": RegisterRules, "SessionRules(true)": SessionRules(true, ""), "cerne-register-reminder.sh": string(body)} {
+		rule := text[strings.Index(text, "Picking up a FEATURE?"):]
+		if j := strings.Index(rule, "\n- "); j > 0 {
+			rule = rule[:j]
+		}
+		if !strings.Contains(rule, want) {
+			t.Errorf("%s: the FEATURE rule lacks %q", name, want)
+		}
+	}
+}
+
 // TestSessionRules_LightMode (F-0364, Ajustes 2 e 3): the dynamic session
 // text drops the GAUNTLET item in light mode and keeps it otherwise; the
 // static Cursor rule keeps it with the light-mode escape; no copy cites the

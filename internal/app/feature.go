@@ -916,30 +916,37 @@ var ErrAmendNoDoc = errors.New("no document to amend yet")
 // (changed false: no revision, no event, no commit), judged against origin. A
 // document absent or still the stub is refused inside the lock (ErrAmendNoDoc):
 // its first text goes in through .docs/ + push.
-func AmendFeatureDoc(repoDir, projDir, id, doc, body, reason string) (f store.Feature, rev int, changed bool, err error) {
+//
+// The session guard (F-0485, guardAmend) runs inside the lock, before any
+// write: active work of another session or actor on the card or a live child
+// refuses with ErrActiveWorkElsewhere, unless force — then the event carries
+// guard: forced and the crossed works' ids. notes are the lines to print after
+// a write: warnings, the crossed works, and in development what the amend
+// changes at once.
+func AmendFeatureDoc(repoDir, projDir, id, doc, body, reason string, force bool) (f store.Feature, rev int, changed bool, notes []string, err error) {
 	if doc != "spec" && doc != "plan" {
-		return store.Feature{}, 0, false, fmt.Errorf("%w: %q (amend takes spec or plan; the result has its own amend)", ErrUnknownDoc, doc)
+		return store.Feature{}, 0, false, nil, fmt.Errorf("%w: %q (amend takes spec or plan; the result has its own amend)", ErrUnknownDoc, doc)
 	}
 	reason = strings.TrimSpace(reason)
 	if reason == "" {
-		return store.Feature{}, 0, false, errors.New("an amend needs a reason: pass --reason \"<why>\"")
+		return store.Feature{}, 0, false, nil, errors.New("an amend needs a reason: pass --reason \"<why>\"")
 	}
 	if strings.ContainsAny(reason, "\r\n") {
-		return store.Feature{}, 0, false, errors.New("the reason must be one line: no line breaks in --reason")
+		return store.Feature{}, 0, false, nil, errors.New("the reason must be one line: no line breaks in --reason")
 	}
 	emptyBody := fmt.Errorf("empty %s body: pass the full %s via --file <%s.md> or on stdin", doc, doc, doc)
 	if strings.TrimSpace(body) == "" {
-		return store.Feature{}, 0, false, emptyBody
+		return store.Feature{}, 0, false, nil, emptyBody
 	}
 	if lines := lint.AmendmentLines(strings.ReplaceAll(body, "\r\n", "\n")); len(lines) > 0 {
-		return store.Feature{}, 0, false, fmt.Errorf("%w (line %d): write the amendment into the criterion or task it changes, then amend the whole %s", ErrAppendedAmendment, lines[0], doc)
+		return store.Feature{}, 0, false, nil, fmt.Errorf("%w (line %d): write the amendment into the criterion or task it changes, then amend the whole %s", ErrAppendedAmendment, lines[0], doc)
 	}
 	content, err := stampedDoc(id, doc, body, false)
 	if err != nil {
-		return store.Feature{}, 0, false, err
+		return store.Feature{}, 0, false, nil, err
 	}
 	if !doccheck.HasRealContent([]byte(content)) {
-		return store.Feature{}, 0, false, emptyBody // frontmatter or a stub only
+		return store.Feature{}, 0, false, nil, emptyBody // frontmatter or a stub only
 	}
 	filename := doc + ".md"
 	by := docAuthor(projDir)
@@ -967,6 +974,12 @@ func AmendFeatureDoc(repoDir, projDir, id, doc, body, reason string) (f store.Fe
 		if string(lint.SpecContent(cur)) == string(lint.SpecContent([]byte(content))) {
 			return "", fmt.Errorf("%w: %s", gitback.ErrNothingToCommit, path)
 		}
+		// Before any write, so a refused amend leaves no revision behind.
+		crossed, guardNotes, err := guardAmend(repoDir, f, doc, force)
+		if err != nil {
+			return "", err
+		}
+		notes = guardNotes
 		if rev, err = store.ArchiveDocRevision(repoDir, id, doc, string(cur)); err != nil {
 			return "", err
 		}
@@ -977,6 +990,10 @@ func AmendFeatureDoc(repoDir, projDir, id, doc, body, reason string) (f store.Fe
 			return "", err
 		}
 		extra := map[string]string{"reason": reason, "rev": strconv.Itoa(rev)}
+		if len(crossed) > 0 {
+			extra["guard"] = "forced"
+			extra["works"] = strings.Join(crossed, ",")
+		}
 		maps.Copy(extra, planSpecDigest(repoDir, id, doc, []byte(content), nil))
 		if err := by.recordDocEdited(repoDir, id, doc, f.State, extra); err != nil {
 			return "", err
@@ -984,12 +1001,12 @@ func AmendFeatureDoc(repoDir, projDir, id, doc, body, reason string) (f store.Fe
 		return fmt.Sprintf("cerne: amend %s/%s", id, filename), nil
 	})
 	if errors.Is(err, gitback.ErrNothingToCommit) {
-		return f, 0, false, nil // the stored document already says this
+		return f, 0, false, nil, nil // the stored document already says this
 	}
 	if err != nil {
-		return store.Feature{}, 0, false, err
+		return store.Feature{}, 0, false, nil, err
 	}
-	return f, rev, true, nil
+	return f, rev, true, notes, nil
 }
 
 // ErrBodyFrontmatter is returned by stampedDoc for a body whose opening '---'

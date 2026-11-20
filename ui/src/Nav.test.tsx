@@ -84,7 +84,7 @@ describe('Nav agrupada (F-0332)', () => {
     ['Trabalho', ['Kanban', 'Backlog', 'Pendências', 'Ideias', 'Espelho', 'Gestão', 'War Room', 'Atividade', 'Passagens']],
     ['Conhecimento', ['Cofre', 'Decisões', 'Referências', 'Runbooks', 'Notas', 'Convenções']],
     ['Explorar', ['Wiki', 'Perguntar', 'Busca', 'Grafo', 'Mapa mental']],
-    ['Saúde', ['Lint', 'Harness', 'Histórico', 'Economia', 'Custos']],
+    ['Saúde', ['Lint', 'Harness', 'Histórico', 'Acervo', 'Custos']],
   ])('critério 2: o grupo %s contém exatamente seus itens, na ordem', (group, want) => {
     render(<Nav hash="#/" />)
     expect(itemsOf(group)).toEqual(want)
@@ -218,7 +218,7 @@ describe('Nav agrupada (F-0332)', () => {
     ['#/lint', 'Saúde', 'Lint'],
     ['#/harness', 'Saúde', 'Harness'],
     ['#/history', 'Saúde', 'Histórico'],
-    ['#/stats', 'Saúde', 'Economia'],
+    ['#/stats', 'Saúde', 'Acervo'],
     ['#/costs', 'Saúde', 'Custos'],
     ['#/costs?vendor=anthropic', 'Saúde', 'Custos'],
     ['#/costs/F-0001', 'Saúde', 'Custos'],
