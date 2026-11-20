@@ -76,7 +76,28 @@ func codexSandboxPaths(projDir string) (portable, machine []string, err error) {
 	return portable, machine, nil
 }
 
-func codexProfileTables(paths []string) string {
+// codexNetworkTable (F-0484): codex-cli 0.169.0 has no domain list for the
+// profile's network, only this switch.
+const codexNetworkTable = "[permissions.cerne.network]\nenabled = true\n"
+
+// appendCodexNetwork adds only the network table to a file that already has the
+// F-0474 block, validating the result before writing.
+func appendCodexNetwork(path, body string) Result {
+	if !strings.HasSuffix(body, "\n") {
+		body += "\n"
+	}
+	out := body + "\n" + codexNetworkTable
+	var check map[string]any
+	if _, err := toml.Decode(out, &check); err != nil {
+		return Result{Asset: codexSandboxAsset, Status: StatusSkipped, Note: "adding the network table would make the file invalid (" + err.Error() + ") — add it manually:\n" + codexNetworkTable}
+	}
+	if err := os.WriteFile(path, []byte(out), 0o644); err != nil {
+		return Result{Asset: codexSandboxAsset, Status: StatusSkipped, Note: "cannot write: " + err.Error()}
+	}
+	return Result{Asset: codexSandboxAsset, Status: StatusUpdated}
+}
+
+func codexProfileTables(paths []string, network bool) string {
 	sorted := append([]string(nil), paths...)
 	sort.Strings(sorted)
 	var b strings.Builder
@@ -84,12 +105,15 @@ func codexProfileTables(paths []string) string {
 	for _, p := range sorted {
 		b.WriteString(strconv.Quote(p) + " = \"write\"\n")
 	}
+	if network {
+		b.WriteString("\n" + codexNetworkTable)
+	}
 	return b.String()
 }
 
 // codexSandboxSnippet is what the user pastes into ~/.codex/config.toml when
 // the install cannot (or must not) write it into the project.
-func codexSandboxSnippet(paths []string) string {
+func codexSandboxSnippet(paths []string, network bool) string {
 	var b strings.Builder
 	home, _ := os.UserHomeDir()
 	b.WriteString("start Codex with: codex")
@@ -100,14 +124,14 @@ func codexSandboxSnippet(paths []string) string {
 		b.WriteString(" --add-dir " + strconv.Quote(p))
 	}
 	b.WriteString("\nor add to your ~/.codex/config.toml:\ndefault_permissions = \"cerne\"\n\n")
-	b.WriteString(codexProfileTables(paths))
+	b.WriteString(codexProfileTables(paths, network))
 	return b.String()
 }
 
 // installCodexSandbox writes the managed sandbox block into the project's
 // .codex/config.toml, preserving the user's lines. Fail-closed: a file that is
 // not valid TOML, or would not be after the edit, is left untouched.
-func installCodexSandbox(projDir string) []Result {
+func installCodexSandbox(projDir string, network bool) []Result {
 	portable, machine, err := codexSandboxPaths(projDir)
 	if err != nil {
 		return []Result{{Asset: codexSandboxAsset, Status: StatusSkipped, Note: "cannot resolve cerne's folders (" + err.Error() + ") — run from a project with a .cernerc"}}
@@ -117,7 +141,7 @@ func installCodexSandbox(projDir string) []Result {
 		// print ONE snippet with every folder (two layers defining the same
 		// profile is unverified).
 		return []Result{{Asset: codexSandboxAsset, Status: StatusSkipped,
-			Note: "some of cerne's folders are specific to this machine, so nothing is written to the project file; " + codexSandboxSnippet(append(append([]string(nil), portable...), machine...))}}
+			Note: "some of cerne's folders are specific to this machine, so nothing is written to the project file; " + codexSandboxSnippet(append(append([]string(nil), portable...), machine...), network)}}
 	}
 	var results []Result
 	if len(portable) == 0 {
@@ -129,14 +153,17 @@ func installCodexSandbox(projDir string) []Result {
 	exists := rErr == nil
 	if exists {
 		if strings.Contains(string(raw), codexSandboxMarker) {
+			if network && !strings.Contains(string(raw), "[permissions.cerne.network]") {
+				return []Result{appendCodexNetwork(path, string(raw))}
+			}
 			return append([]Result{{Asset: codexSandboxAsset, Status: StatusUnchanged}}, results...)
 		}
 		var top map[string]any
 		if _, dErr := toml.Decode(string(raw), &top); dErr != nil {
-			return append([]Result{{Asset: codexSandboxAsset, Status: StatusSkipped, Note: "existing file is not valid TOML — add the sandbox profile manually: " + codexSandboxSnippet(portable)}}, results...)
+			return append([]Result{{Asset: codexSandboxAsset, Status: StatusSkipped, Note: "existing file is not valid TOML — add the sandbox profile manually: " + codexSandboxSnippet(portable, network)}}, results...)
 		}
 		if _, has := top["default_permissions"]; has {
-			return append([]Result{{Asset: codexSandboxAsset, Status: StatusSkipped, Note: "default_permissions is already set — not overwritten; " + codexSandboxSnippet(portable)}}, results...)
+			return append([]Result{{Asset: codexSandboxAsset, Status: StatusSkipped, Note: "default_permissions is already set — not overwritten; " + codexSandboxSnippet(portable, network)}}, results...)
 		}
 	}
 
@@ -150,10 +177,10 @@ func installCodexSandbox(projDir string) []Result {
 	if body != "" {
 		out += "\n"
 	}
-	out += codexProfileTables(portable)
+	out += codexProfileTables(portable, network)
 	var check map[string]any
 	if _, dErr := toml.Decode(out, &check); dErr != nil {
-		return append([]Result{{Asset: codexSandboxAsset, Status: StatusSkipped, Note: "adding the profile would make the file invalid (" + dErr.Error() + ") — add it manually: " + codexSandboxSnippet(portable)}}, results...)
+		return append([]Result{{Asset: codexSandboxAsset, Status: StatusSkipped, Note: "adding the profile would make the file invalid (" + dErr.Error() + ") — add it manually: " + codexSandboxSnippet(portable, network)}}, results...)
 	}
 	if mErr := os.MkdirAll(filepath.Dir(path), 0o755); mErr != nil {
 		return append([]Result{{Asset: codexSandboxAsset, Status: StatusSkipped, Note: "cannot create directory: " + mErr.Error()}}, results...)
