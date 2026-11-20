@@ -80,6 +80,36 @@ func codexSandboxPaths(projDir string) (portable, machine []string, err error) {
 // profile's network, only this switch.
 const codexNetworkTable = "[permissions.cerne.network]\nenabled = true\n"
 
+// codexNetworkState parses a config.toml: is permissions.cerne.network present,
+// and is its enabled key true? An unparsable file reads as absent.
+func codexNetworkState(raw string) (enabled, present bool) {
+	var c struct {
+		Permissions map[string]struct {
+			Network map[string]any `toml:"network"`
+		} `toml:"permissions"`
+	}
+	if _, err := toml.Decode(raw, &c); err != nil {
+		return false, false
+	}
+	n := c.Permissions["cerne"].Network
+	if n == nil {
+		return false, false
+	}
+	e, _ := n["enabled"].(bool)
+	return e, true
+}
+
+// CodexNetworkOpen reports whether the project's .codex/config.toml opens the
+// network in the cerne profile.
+func CodexNetworkOpen(projDir string) bool {
+	raw, err := os.ReadFile(filepath.Join(projDir, ".codex", "config.toml"))
+	if err != nil {
+		return false
+	}
+	en, _ := codexNetworkState(string(raw))
+	return en
+}
+
 // appendCodexNetwork adds only the network table to a file that already has the
 // F-0474 block, validating the result before writing.
 func appendCodexNetwork(path, body string) Result {
@@ -153,8 +183,13 @@ func installCodexSandbox(projDir string, network bool) []Result {
 	exists := rErr == nil
 	if exists {
 		if strings.Contains(string(raw), codexSandboxMarker) {
-			if network && !strings.Contains(string(raw), "[permissions.cerne.network]") {
-				return []Result{appendCodexNetwork(path, string(raw))}
+			if network {
+				switch enabled, present := codexNetworkState(string(raw)); {
+				case present && !enabled:
+					return []Result{{Asset: codexSandboxAsset, Status: StatusSkipped, Note: "[permissions.cerne.network] has enabled = false — not changed; set it to true to open the network"}}
+				case !present:
+					return []Result{appendCodexNetwork(path, string(raw))}
+				}
 			}
 			return append([]Result{{Asset: codexSandboxAsset, Status: StatusUnchanged}}, results...)
 		}
