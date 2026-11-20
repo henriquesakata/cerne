@@ -862,3 +862,28 @@ func TestSettingsRegistryGroups(t *testing.T) {
 		t.Errorf("registry lacks %s", id)
 	}
 }
+
+// TestUpdateCheckSetting (F-0480 criterion 1): ui.update_check is a host
+// setting, on by default; turned off in the host's settings.toml, the
+// panel's release check is off for every project of the machine.
+func TestUpdateCheckSetting(t *testing.T) {
+	projDir, _ := settingsFixture(t, "", "", true)
+	writeCernerc(t, projDir, editFixture)
+	t.Setenv("CERNE_CONFIG_DIR", filepath.Join(t.TempDir(), "cerne"))
+	s := findSetting(t, ResolveSettings(projDir), "ui.update_check")
+	if s.Type != "bool" || s.Default != true || !slices.Equal(s.Scopes, []string{ScopeHost}) {
+		t.Fatalf("ui.update_check = %+v, want a host-only bool on by default", s.Setting)
+	}
+	if !UpdateCheck(projDir) {
+		t.Fatal("UpdateCheck is off with nothing stored")
+	}
+	if err := SetSetting(projDir, "ui.update_check", ScopeHost, "false"); err != nil {
+		t.Fatal(err)
+	}
+	if UpdateCheck(projDir) {
+		t.Fatal("UpdateCheck still on after ui.update_check = false on the host")
+	}
+	if err := SetSetting(projDir, "ui.update_check", ScopeProject, "false"); err == nil {
+		t.Fatal("ui.update_check accepted the project scope")
+	}
+}

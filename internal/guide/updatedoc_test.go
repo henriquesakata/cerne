@@ -66,17 +66,25 @@ func TestDocsTeachCerneUpdate(t *testing.T) {
 	}
 }
 
-// F-0476 crit. 11: the README says cerne update is the only version check,
-// and its data table has the row.
-func TestReadmeNamesTheOnlyVersionCheck(t *testing.T) {
+// F-0476 crit. 11, as F-0480 criterion 7 changes it: the README names the
+// two version checks (cerne update when you run it, the panel at start and
+// every 24 hours) and how to turn the panel's off, and the data table has a
+// row for each.
+func TestReadmeNamesTheVersionChecks(t *testing.T) {
 	data := section(t, "../../README.md", "## Where your data goes")
 	if strings.Contains(data, "crash reporting or update check") {
 		t.Error("README still promises no update check at all")
 	}
-	if !strings.Contains(data, "The only version check is `cerne update`, and only when you run it") {
-		t.Error("README lacks the sentence naming cerne update as the only version check")
+	if !strings.Contains(data, "There are two version checks: `cerne update`, only when you run it, and the `cerne ui` panel") {
+		t.Error("README lacks the sentence naming the two version checks")
+	}
+	if !strings.Contains(data, "cerne settings set ui.update_check false --scope host") {
+		t.Error("README does not say how to turn the panel's check off")
 	}
 	if !strings.Contains(data, "\n| The latest release tag") || !strings.Contains(data, "Only when you run `cerne update`") {
 		t.Error("README data table lacks the cerne update row")
+	}
+	if !strings.Contains(data, "\n| The latest release tag, read by the panel") || !strings.Contains(data, "every 24 hours while it is open") {
+		t.Error("README data table lacks the panel's row")
 	}
 }

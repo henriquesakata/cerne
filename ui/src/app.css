@@ -3300,6 +3300,13 @@ h2 {
    só a falha do reinício fica na borda de perigo do .load-notice */
 .load-notice.advisory { border-color: var(--gold); background: var(--gold-bg); color: var(--gold-fg); }
 .load-notice.advisory p { margin: 0 0 0.5rem; }
+/* F-0480: o botão Atualizar da barra é informativo, no mesmo dourado do aviso */
+/* nowrap e sem encolher: com o botão na barra, o flex encolhia o seletor de
+   idioma (overflow: hidden) e cortava o EN; quem quebra linha é o nav-links */
+.nav-update { font-size: 0.82rem; white-space: nowrap; flex-shrink: 0; border-color: var(--gold); background: var(--gold-bg); color: var(--gold-fg); }
+.nav .lang-toggle { flex-shrink: 0; }
+.nav-update:hover { border-color: var(--gold-fg); }
+.load-notice .update-line { font-family: ui-monospace, monospace; font-size: 0.78rem; overflow-wrap: anywhere; }
 .manage-action-error button,
 .load-notice button,
 .ask-notice button {

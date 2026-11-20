@@ -1,8 +1,9 @@
 // Package selfupdate replaces the cerne binary with the latest release, the
 // way install.sh and install.ps1 do it (F-0476): resolve the tag from the
 // /releases/latest redirect, download the asset and SHA256SUMS, verify, then
-// stage next to the executable and rename. `cerne update` is its only caller,
-// so it is the only version check the binary ever makes (F-0476 crit. 11).
+// stage next to the executable and rename. Its callers are `cerne update` and
+// the cerne ui panel's release check and Update button (F-0480, behind
+// ui.update_check): the binary's only version checks (F-0476 crit. 11).
 package selfupdate
 
 import (

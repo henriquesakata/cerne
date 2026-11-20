@@ -234,6 +234,11 @@ var settingsRegistry = []Setting{
 		},
 	},
 	{
+		ID: "ui.update_check", Group: "interface", Title: "Check for a new release", Type: "bool", Default: true,
+		Scopes:      []string{ScopeHost},
+		Description: "On, the cerne ui panel asks GitHub for the latest release when it starts and every 24 hours while it is open, and shows an Update button when a newer one exists. Off, the panel never asks; cerne update still checks when you run it. It applies to every project on this machine.",
+	},
+	{
 		ID: "wiki.enabled", Group: "interface", Title: "Wiki", Type: "bool", Default: true,
 		Scopes:      []string{ScopeProject, ScopeHost},
 		Description: "On keeps the wiki live: when compile_on_push is set, a push recompiles the dirty pages, and wiki lint debt counts as pending work in 'cerne next'. Off stops both; the wiki stays readable, with a stale banner and an on-demand recompile.",
@@ -286,6 +291,17 @@ func WikiEnabled(projDir string) (on bool, warning string) {
 func PromptNotes(projDir string) bool {
 	for _, s := range ResolveSettings(projDir).Settings {
 		if s.ID == "hooks.prompt_notes" {
+			return s.Value != false
+		}
+	}
+	return true
+}
+
+// UpdateCheck is ui.update_check (F-0480), a host setting read through the
+// project at (or above) projDir: false only when it resolves to false.
+func UpdateCheck(projDir string) bool {
+	for _, s := range ResolveSettings(projDir).Settings {
+		if s.ID == "ui.update_check" {
 			return s.Value != false
 		}
 	}

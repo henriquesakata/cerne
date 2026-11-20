@@ -8,12 +8,15 @@ import {
 } from 'react'
 import {
   fetchProjects,
+  fetchUpdate,
   restartPanel,
   setApiProject,
+  startUpdate,
   subscribeLive,
   type ModelsChange,
   type PanelIdentity,
   type ProjectInfo,
+  type UpdateState,
 } from './api'
 import { useT } from './i18n'
 import { navAllowed, setNavGuard } from './navGuard'
@@ -49,6 +52,10 @@ type ProjectsState = {
   lastChange: { pid: string; seq: number }
   // Último refresh do catálogo de modelos anunciado (F-0311): global, sem pid.
   modelsChange: ModelsChange | null
+  // F-0480: a release nova e a troca do binário pelo painel (o botão mora no Nav).
+  update: UpdateState | null
+  beginUpdate: () => void
+  toggleUpdateFix: () => void
 }
 
 const Ctx = createContext<ProjectsState | null>(null)
@@ -78,6 +85,12 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     state: 'idle',
   })
   const [updatedTo, setUpdatedTo] = useState('')
+  // F-0480: estado da release nova, a última linha da troca em curso, a recusa
+  // do POST e o aviso com o comando de quem não troca o binário por dentro.
+  const [update, setUpdate] = useState<UpdateState | null>(null)
+  const [updateLine, setUpdateLine] = useState('')
+  const [updateError, setUpdateError] = useState('')
+  const [showUpdateFix, setShowUpdateFix] = useState(false)
   // Prazo da recarga pendente: o painel volta antes de os processos acoplados
   // registrarem de novo os seus projetos.
   const reloadBy = useRef(0)
@@ -126,7 +139,13 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   // vazio com ready=true liberava as telas para montar chamadas /projects//,
   // 404 permanente. Sucesso com lista vazia é estado legítimo, não erro —
   // ready=true renderiza a mensagem de zero-projetos em vez dos children.
-  const reload = () =>
+  const reload = () => {
+    void fetchUpdate()
+      .then(setUpdate)
+      .catch(() => setUpdate(null)) // sem estado, sem botão: a falha não vira erro de UI
+    return loadProjects()
+  }
+  const loadProjects = () =>
     fetchProjects()
       .then(({ projects, default: def, version, ui, installed }) => {
         if (version !== undefined) {
@@ -197,6 +216,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       },
       onProjects: () => void reload(),
       onModels: setModelsChange,
+      onUpdate: setUpdateLine,
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -237,6 +257,21 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       setRestart({ state: 'failed', error: e instanceof Error ? e.message : String(e) })
     })
   }
+  const beginUpdate = () => {
+    if (update?.running) return
+    setUpdateError('')
+    setUpdateLine('')
+    setUpdate((u) => (u ? { ...u, running: true, last: undefined } : u))
+    startUpdate().catch((e: unknown) => {
+      setUpdateError(e instanceof Error ? e.message : String(e))
+      void reload()
+    })
+  }
+  // Uma troca que não instalou nada (falhou, ou o gerenciador não achou versão
+  // nova) só vale enquanto ainda há versão nova: resolvida por fora, o aviso sai.
+  const updateFailed =
+    !update?.running && update?.newer && update.last && update.last.state !== 'updated' ? update.last : null
+  const updateNoRestart = !update?.running && update?.last?.state === 'updated' ? update.last.restart_error : ''
   const installed = panel?.installed
   // Pelo arquivo, não pela versão: um build local novo pode ter a mesma versão
   // e a mesma UI (critério 1).
@@ -246,7 +281,53 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   if (projects.length === 0) return <p className="status">{t.live.noProjects}</p>
 
   return (
-    <Ctx.Provider value={{ projects, activePid, setActivePid, changed, version, lastChange, modelsChange }}>
+    <Ctx.Provider
+      value={{
+        projects,
+        activePid,
+        setActivePid,
+        changed,
+        version,
+        lastChange,
+        modelsChange,
+        update,
+        beginUpdate,
+        toggleUpdateFix: () => setShowUpdateFix((v) => !v),
+      }}
+    >
+      {update?.running && (
+        <div className="load-notice live-refresh-notice advisory" role="status">
+          <p>
+            {t.live.updating}
+            {updateLine && <span className="update-line"> {updateLine}</span>}
+          </p>
+        </div>
+      )}
+      {(updateFailed || updateError) && (
+        <div className="load-notice live-refresh-notice" role="status">
+          <p className="form-error">{t.live.updateFailed(updateError || updateFailed?.detail || '')}</p>
+          {updateFailed?.fix && (
+            <p>
+              {t.live.runInTerminal} <code>{updateFailed.fix}</code>
+            </p>
+          )}
+        </div>
+      )}
+      {updateNoRestart && (
+        <div className="load-notice live-refresh-notice" role="status">
+          <p className="form-error">{t.live.updateNoRestart(updateNoRestart)}</p>
+        </div>
+      )}
+      {showUpdateFix && update?.newer && !update.swappable && update.latest && (
+        <div className="load-notice live-refresh-notice advisory" role="status">
+          <p>{t.live.updateManual(shortVersion(update.latest))}</p>
+          {update.fix && (
+            <p>
+              <code>{update.fix}</code>
+            </p>
+          )}
+        </div>
+      )}
       {refreshError && (
         <div className="load-notice live-refresh-notice" role="status">
           <p className="form-error">{t.live.refreshError(refreshError)}</p>

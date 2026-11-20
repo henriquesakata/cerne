@@ -1392,6 +1392,14 @@ const ptBR = {
     restartTimedOut: 'O painel não voltou numa versão nova. Confira o terminal em que o cerne ui roda.',
     panelUpdated: (v: string) => `O painel agora roda o cerne ${v}. Recarregue a página para ver a versão nova.`,
     reloadPage: 'Recarregar',
+    updating: 'Atualizando o cerne…',
+    updateTo: (v: string) => `Atualizar para ${v}`,
+    updateAvailable: (v: string) => `${v} disponível`,
+    updateFailed: (e: string) => `A atualização não terminou: ${e}`,
+    updateNoRestart: (e: string) =>
+      `O cerne foi atualizado, mas o painel não reiniciou: ${e}. Use o aviso de reinício, ou encerre este cerne ui e rode cerne ui de novo.`,
+    updateManual: (v: string) => `O cerne ${v} saiu. Este painel não troca o próprio binário; para atualizar, rode no terminal:`,
+    runInTerminal: 'Rode no terminal:',
   },
   settings: {
     title: 'Configurações',
@@ -1537,6 +1545,9 @@ const ptBR = {
         'O provedor por trás do byo-key. gemini e openrouter usam o próprio endereço e a própria variável de chave; compatible aceita qualquer endpoint no estilo OpenAI pela URL base da API, com chave opcional.',
       'Mindmap': 'Mapa mental',
       'Shows the Mindmap tab in the UI. Off hides it.': 'Mostra a aba Mapa mental na UI. Desligado a esconde.',
+      'Check for a new release': 'Procurar versão nova',
+      'On, the cerne ui panel asks GitHub for the latest release when it starts and every 24 hours while it is open, and shows an Update button when a newer one exists. Off, the panel never asks; cerne update still checks when you run it. It applies to every project on this machine.':
+        'Ligado, o painel do cerne ui pergunta ao GitHub qual é a última release quando sobe e a cada 24 horas enquanto está aberto, e mostra o botão Atualizar quando há uma mais nova. Desligado, o painel nunca pergunta; o cerne update continua conferindo quando você o roda. Vale para todos os projetos desta máquina.',
       'Wiki': 'Wiki',
       "On keeps the wiki live: when compile_on_push is set, a push recompiles the dirty pages, and wiki lint debt counts as pending work in 'cerne next'. Off stops both; the wiki stays readable, with a stale banner and an on-demand recompile.":
         "Ligado mantém a wiki viva: com compile_on_push ligado, um push recompila as páginas sujas, e a dívida de lint da wiki conta como trabalho pendente no 'cerne next'. Desligado, os dois param: a wiki continua legível, com aviso de desatualizada e recompilação sob demanda.",
@@ -2936,6 +2947,14 @@ const en: Messages = {
     restartTimedOut: 'The panel did not come back on a new version. Check the terminal cerne ui runs in.',
     panelUpdated: (v: string) => `The panel now runs cerne ${v}. Reload the page to see the new version.`,
     reloadPage: 'Reload',
+    updating: 'Updating cerne…',
+    updateTo: (v: string) => `Update to ${v}`,
+    updateAvailable: (v: string) => `${v} available`,
+    updateFailed: (e: string) => `The update did not finish: ${e}`,
+    updateNoRestart: (e: string) =>
+      `cerne was updated, but the panel did not restart: ${e}. Use the restart notice, or stop this cerne ui and run cerne ui again.`,
+    updateManual: (v: string) => `cerne ${v} is out. This panel does not replace its own binary; to update, run in a terminal:`,
+    runInTerminal: 'Run in a terminal:',
   },
   settings: {
     title: 'Settings',

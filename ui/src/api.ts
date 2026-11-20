@@ -313,6 +313,38 @@ export async function fetchProjects(): Promise<{
   }
 }
 
+// UpdateState é o GET /api/update (F-0480): a última release, se ela é mais
+// nova que o binário instalado e se o painel pode trocá-lo por dentro; quando
+// não pode, why e fix dizem por que e o comando a rodar. last é o fim da
+// última troca (state: updated | up to date | not done).
+export type UpdateOutcome = { state: string; detail?: string; fix?: string; restart_error?: string }
+export type UpdateState = {
+  current: string
+  latest?: string
+  newer: boolean
+  swappable: boolean
+  why?: string
+  fix?: string
+  running: boolean
+  error?: string
+  last?: UpdateOutcome
+}
+
+// fetchUpdate devolve null num painel que não confere versão (sem a rota).
+export async function fetchUpdate(): Promise<UpdateState | null> {
+  const r = await fetch('/api/update')
+  if (r.status === 404) return null
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return (await r.json()) as UpdateState
+}
+
+// startUpdate pede a troca do binário (F-0480): 202 aceita; o andamento chega
+// pelo evento SSE "update", e o fim pelo estado relido.
+export async function startUpdate(): Promise<void> {
+  const r = await fetch('/api/update', { method: 'POST' })
+  if (!r.ok) throw new Error(await errorMessage(r))
+}
+
 // restartPanel pede ao painel que reinicie no binário do disco (F-0478):
 // 202 aceito; 409/422 trazem o motivo.
 export async function restartPanel(): Promise<void> {
@@ -1663,6 +1695,8 @@ export function subscribeLive(handlers: {
   onChange: (pid: string) => void
   onProjects: () => void
   onModels?: (change: ModelsChange) => void
+  // Uma linha do andamento da troca do binário pelo painel (F-0480).
+  onUpdate?: (line: string) => void
 }): () => void {
   const es = new EventSource('/api/stream')
   es.addEventListener('models', (e) => {
@@ -1685,6 +1719,7 @@ export function subscribeLive(handlers: {
     if (pid) handlers.onChange(pid)
   })
   es.addEventListener('projects', () => handlers.onProjects())
+  es.addEventListener('update', (e) => handlers.onUpdate?.(String((e as MessageEvent).data ?? '')))
   return () => es.close()
 }
 
