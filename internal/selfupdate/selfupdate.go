@@ -239,8 +239,9 @@ func Replace(target string, data []byte, goos string) error {
 		os.Remove(staged)
 		return err
 	}
-	defer os.Remove(staged) // gone already after a successful rename
-	if err := os.Chmod(staged, 0o755); err != nil { // WriteFile's mode is cut by the umask
+	defer os.Remove(staged) // a no-op after a successful rename
+	// WriteFile's mode is cut by the umask.
+	if err := os.Chmod(staged, 0o755); err != nil {
 		return err
 	}
 	if goos != "windows" {
