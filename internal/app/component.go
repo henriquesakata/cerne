@@ -110,6 +110,11 @@ func checkComponents(repoDir string, comps []string, force bool) error {
 	if err != nil {
 		return err
 	}
+	return checkNear(comps, use)
+}
+
+// checkNear is checkComponents against the vocabulary use (ComponentUsage).
+func checkNear(comps []string, use map[string]map[string]int) error {
 	vocab := slices.Sorted(maps.Keys(use))
 	for _, c := range comps {
 		if use[c] != nil {
