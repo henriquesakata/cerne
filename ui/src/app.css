@@ -2019,7 +2019,7 @@ h2 {
 
 .dash-attention > h2 { margin: 0 0 0.5rem; }
 
-/* T-0011: um passo por linha, na ordem; os links mantêm o estilo padrão. */
+/* T-0011: one step per line, in order; links keep the default style. */
 .dash-first-steps {
   margin: 0;
   padding-left: 0.25rem;

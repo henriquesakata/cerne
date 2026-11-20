@@ -44,7 +44,10 @@ describe('gateCounts', () => {
   })
 })
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals() // also when an assertion failed before the test's own cleanup
+})
 
 // Modo leve (F-0364, critério 4): o projeto que roda sem o Gauntlet vê isso no
 // dashboard; com o Gauntlet ligado (ou servidor antigo, sem o campo) nada aparece.
@@ -68,8 +71,8 @@ describe('LightModeNotice', () => {
   })
 })
 
-// Primeiros passos (T-0011): o bloco aparece enquanto a lista do servidor não
-// está vazia, marca o que já foi feito e some depois do primeiro accept.
+// First steps (T-0011): the block shows while the server's list is not empty,
+// ticks what is done and disappears after the first accept.
 describe('FirstStepsBlock', () => {
   const steps = (done: number) =>
     ['ask', 'approve', 'accept'].map((key, i) => ({ key, done: i < done }))
@@ -78,14 +81,14 @@ describe('FirstStepsBlock', () => {
     [0, 0],
     [1, 1],
     [2, 2],
-  ])('com %i passo(s) feito(s) marca %i', (done, ticked) => {
+  ])('with %i step(s) done it ticks %i', (done, ticked) => {
     render(<FirstStepsBlock steps={steps(done)} />)
     expect(screen.getAllByRole('listitem')).toHaveLength(3)
     expect(screen.queryAllByText('feito')).toHaveLength(ticked)
     expect(screen.queryAllByText('pendente')).toHaveLength(3 - ticked)
   })
 
-  it('some depois do primeiro accept (lista vazia) e sem o campo', () => {
+  it('disappears after the first accept (empty list) and without the field', () => {
     const { container, rerender } = render(<FirstStepsBlock steps={[]} />)
     expect(container).toBeEmptyDOMElement()
     rerender(<FirstStepsBlock />)
@@ -93,10 +96,10 @@ describe('FirstStepsBlock', () => {
   })
 })
 
-// Fiação (T-0011): o Dashboard monta a faixa — tirar <FirstStepsBand /> da tela
-// derruba este teste, o que os testes do bloco sozinhos não pegam.
+// Wiring (T-0011): the Dashboard mounts the band; removing <FirstStepsBand />
+// from the screen fails this test, which the block tests alone do not catch.
 describe('Dashboard first steps wiring', () => {
-  it('mostra o bloco quando /state traz first_steps', async () => {
+  it('shows the block when /state carries first_steps', async () => {
     const state = { features: [], first_steps: [{ key: 'ask', done: false }] }
     vi.stubGlobal('fetch', (url: string) =>
       String(url).endsWith('/state')
@@ -105,6 +108,5 @@ describe('Dashboard first steps wiring', () => {
     )
     render(<Dashboard />)
     expect(await screen.findByText('Primeiros passos')).toBeInTheDocument()
-    vi.unstubAllGlobals()
   })
 })
