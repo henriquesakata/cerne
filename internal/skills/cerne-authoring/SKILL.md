@@ -85,6 +85,7 @@ When you acquire knowledge worth keeping, route it by **who it belongs to**, not
 - **Durable, team-relevant project knowledge → `cerne note new`.** Gotchas, invariants, hard-won conventions, "why X and not Y" — anything a teammate or your own agent on another machine would need. It belongs in the guardian, where it is shared across machines and members, versioned, indexed, and governed (so it can be superseded instead of rotting). This is the gap notes exist to close: such knowledge otherwise dies in one person's local `~/.claude/.../memory/`.
 - **Personal or machine-specific knowledge → stays in local Claude Code memory, never pushed.** Who you are and how you like to work (`user`/`feedback`-class) is personal — sharing it imposes one person's style on the team. **Machine-specific** facts are worse: a memory like "Go lives at `C:\…\go\bin`" is correct on one box and **wrong** on another, so pushing it is an actively harmful asset. Leave these where they are.
 - **When in doubt, ask:** would this still be true and useful for a different person on a different machine? If yes, it is a note. If it only holds for *you* or *this box*, keep it local. Never bulk-sync memory into cerne — the boundary requires this per-item judgment.
+- **Guidance → note, source → reference.** A note says what to do; the external source behind it is a reference the note points to (`--informs N-NNNN`), never pasted in: `reference/notes-and-knowledge.md`.
 
 ## External sources (provenance)
 
