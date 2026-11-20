@@ -21,20 +21,21 @@ import (
 
 // The task package (E-0005): what a feature, epic, task or bug needs to start,
 // within a budget — its stage document whole, its epic, and its neighbourhood
-// in four rings, each item an id, a title and a one-line gist, never a body:
+// in four rings, each item an id, a title and a one-line gist:
 //
 //	(a) what its documents and its epic's cite by [[id]], or what informs them
-//	    (a note, a decision or a reference);
+//	    (a note, a decision or a reference) — the notes and decisions in force
+//	    with their body, since the author linked them (T-0018);
 //	(b) active notes whose edit: trigger, or whose cited file, matches a path
 //	    its spec or plan cites;
 //	(c) active notes sharing a component with it, the least used one first;
 //	(d) up to five active notes the search index ranks for its title and the
 //	    first paragraph of its problem.
 //
-// It reads the bodies of the task and its epic only: the rest is entity
-// metadata and the search index, opened read-only and never built
-// (criterion 16). No model, no network. TaskIndex, what the binding points
-// print, is the notes of rings (a) to (c).
+// It reads the bodies of the task, its epic and those ring (a) notes and
+// decisions only: the rest is entity metadata and the search index, opened
+// read-only and never built (criterion 16). No model, no network. TaskIndex,
+// what the binding points print, is the notes of rings (a) to (c), no body.
 
 // DefaultContextBudget is the package's ceiling in estimated tokens.
 const DefaultContextBudget = 8000
@@ -50,7 +51,8 @@ var docSlots = []string{"spec", "plan", "result"}
 
 // ContextItem is one neighbour of the package. Why is what brought a ring (b)
 // or (c) item in: the trigger or the cited path, the shared component.
-// Sources are the current references informing a note.
+// Sources are the current references informing a note. Body is the content
+// of a note or decision in force the author linked (ring a), "" for the rest.
 type ContextItem struct {
 	ID      string   `json:"id"`
 	Kind    string   `json:"kind"`
@@ -60,6 +62,7 @@ type ContextItem struct {
 	Ring    string   `json:"ring"`
 	Why     string   `json:"why,omitempty"`
 	Sources []string `json:"sources,omitempty"`
+	Body    string   `json:"body,omitempty"`
 }
 
 // ContextRef names the epic of the package.
@@ -130,6 +133,11 @@ func taskContext(repoDir, id string, budget int, content bool) (TaskPack, error)
 	}
 	p := TaskPack{ID: t.f.ID, Title: t.f.Title, State: string(t.f.State), Items: t.neighbourhood(repoDir, notes, refs, decs, true, content),
 		Components: t.f.Components, Budget: budget}
+	for i, it := range p.Items { // ring (a) holds only what is in force
+		if it.Ring == "a" && (it.Kind == "note" || it.Kind == "decision") {
+			p.Items[i].Body = linkedBody(filepath.Join(repoDir, "content", it.Kind+"s", it.ID+".md"))
+		}
+	}
 	if p.Components == nil {
 		p.Components = []string{}
 	}
@@ -220,6 +228,25 @@ func realDocs(repoDir, id string) map[string]string {
 		}
 	}
 	return out
+}
+
+// linkedBody is the content of a linked note or decision without its
+// frontmatter and its title heading, which the item line already carries; ""
+// for a stub or a file it cannot read.
+func linkedBody(file string) string {
+	data, err := os.ReadFile(file)
+	if err != nil || !doccheck.HasRealContent(data) {
+		return ""
+	}
+	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
+	if _, rest, opens, closed := doccheck.LeadingBlock(lines); opens && closed {
+		lines = rest
+	}
+	body := strings.TrimSpace(strings.Join(lines, "\n"))
+	if strings.HasPrefix(body, "# ") {
+		_, body, _ = strings.Cut(body, "\n")
+	}
+	return strings.TrimSpace(body)
 }
 
 // neighbourhood lists rings (a) to (c), and (d) with content; without full only
@@ -623,8 +650,25 @@ func inForce(kind, state string) bool {
 	return state == "active" || state == "current" || state == "open" || state == "pending"
 }
 
-// line is the item as the package prints it.
+// line is the item as the package prints it, its body right under it,
+// indented.
 func (it ContextItem) line(compact bool) string {
+	if it.Body == "" {
+		return it.head(compact)
+	}
+	var b strings.Builder
+	b.WriteString(it.head(compact))
+	for l := range strings.SplitSeq(it.Body, "\n") {
+		if l != "" { // an empty line stays empty
+			b.WriteString("  " + l)
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+// head is the item line alone.
+func (it ContextItem) head(compact bool) string {
 	if compact {
 		return fmt.Sprintf("[%s] %s  %s\n", it.Ring, it.ID, it.Title)
 	}

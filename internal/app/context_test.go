@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -56,7 +57,7 @@ func contextFixture(t *testing.T) string {
 		if err := store.SaveDecision(repo, store.Decision{ID: id, Title: "Decision " + id, State: st, Informs: informs, Components: comps, CreatedAt: now, UpdatedAt: now}); err != nil {
 			t.Fatal(err)
 		}
-		write("content/decisions/"+id+".md", "# Decision "+id+"\n\ndecision body\n")
+		write("content/decisions/"+id+".md", "---\ncerne_id: "+id+"\n---\n\n# Decision "+id+"\n\nBody of "+id+".\n")
 	}
 	rb := func(id string, st domain.RunbookState, comps ...string) {
 		t.Helper()
@@ -84,10 +85,10 @@ func contextFixture(t *testing.T) string {
 	write("content/features/F-0020/spec.md", "# Lonely\n\n## Problem\n\nXyzzy plugh.\n")
 	write("content/features/F-0009/spec.md", "# Done\n\ndone body\n")
 
-	note("N-0001", domain.NoteActive, "gist one", nil, nil, "Plain words.")
-	note("N-0002", domain.NoteActive, "", []string{"T-0002"}, nil, "Plain words.")
+	note("N-0001", domain.NoteActive, "gist one", nil, nil, "Body of N-0001.\n\nIts second paragraph.")
+	note("N-0002", domain.NoteActive, "", []string{"T-0002"}, nil, "Body of N-0002.")
 	note("N-0003", domain.NoteActive, "", nil, []string{"edit:internal/hooks/**"}, "Plain words.")
-	note("N-0004", domain.NoteActive, "", nil, nil, "Plain words.")
+	note("N-0004", domain.NoteActive, "", nil, nil, "<!-- Record the durable knowledge here. Replace this line. -->") // a stub: no body
 	note("N-0005", domain.NoteActive, "", nil, nil, "Mind internal/hooks/rules.go and internal/cli/contextcmd.go before editing.")
 	note("N-0006", domain.NoteActive, "", nil, nil, "Plain words.", "hooks")
 	note("N-0007", domain.NoteActive, "", nil, nil, "Plain words.", "cli")
@@ -175,6 +176,24 @@ func TestTaskContextRings(t *testing.T) {
 	if n := byID["N-0001"]; n.Gist != "gist one" || !reflect.DeepEqual(n.Sources, []string{"R-0002"}) || n.Kind != "note" {
 		t.Fatalf("N-0001 = %+v, want its gist and the reference that sustains it", n)
 	}
+	// T-0018 (criteria 6 and 16): the notes and decisions in force the author
+	// linked come with their body — no frontmatter, no title heading, a stub
+	// none — and every other item stays an index line.
+	wantBody := map[string]string{
+		"N-0001": "Body of N-0001.\n\nIts second paragraph.",
+		"N-0002": "Body of N-0002.",
+		"D-0001": "Body of D-0001.",
+		"D-0005": "Body of D-0005.",
+	}
+	for _, it := range p.Items {
+		if it.Body != wantBody[it.ID] {
+			t.Errorf("%s [%s] body = %q, want %q", it.ID, it.Ring, it.Body, wantBody[it.ID])
+		}
+	}
+	if text := p.Text(); !strings.Contains(text, "[a] N-0001  note  Note N-0001 — gist one  · sources R-0002\n  Body of N-0001.\n\n  Its second paragraph.\n[a] F-0010") ||
+		!strings.Contains(text, "[a] D-0005  decision  Decision D-0005\n  Body of D-0005.\n[a] R-0003") {
+		t.Errorf("a body is not right under its item line:\n%s", text)
+	}
 	if i := byID["I-0002"]; i.Title != "First line of the idea" || i.Kind != "idea" {
 		t.Fatalf("an untitled idea = %+v, want its first line as the title", i)
 	}
@@ -196,7 +215,7 @@ func TestTaskContextRings(t *testing.T) {
 	if !strings.Contains(text, "decisions: 2 (1 of them listed above) — cerne decision list --component cli,hooks\n") {
 		t.Fatalf("the close does not say what ring (a) already listed:\n%s", text)
 	}
-	for _, gone := range []string{"F-0009", "] F-0011", "] F-0012", "N-0010", "D-0004", "D-0006", "done body", "reference body", "Plain words"} { // the proposals only as ids of the close
+	for _, gone := range []string{"F-0009", "] F-0011", "] F-0012", "N-0010", "D-0004", "D-0006", "done body", "reference body", "runbook body", "Plain words", "Body of D-0003", "Old words"} { // the proposals only as ids of the close
 		if strings.Contains(text, gone) {
 			t.Errorf("the package shows %q:\n%s", gone, text)
 		}
@@ -273,8 +292,9 @@ func TestTaskContextBudget(t *testing.T) {
 }
 
 // Verification 11, second half (criterion 16): the package comes out the same
-// with every other entity's body unreadable — it reads the bodies of the task
-// and its epic only; the rest is metadata and the index.
+// with every other entity's body unreadable — it reads the bodies of the task,
+// its epic and the notes and decisions in force of ring (a) only (T-0018); the
+// rest is metadata and the index.
 func TestTaskContextReadsOnlyItsOwnBodies(t *testing.T) {
 	repo := contextFixture(t)
 	before, err := TaskContext(repo, "T-0002", DefaultContextBudget)
@@ -285,9 +305,14 @@ func TestTaskContextReadsOnlyItsOwnBodies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if before.Items[0].ID != "N-0001" || before.Items[0].Body == "" {
+		t.Fatalf("the probe needs a ring (a) body: %+v", before.Items[0])
+	}
+	// The superseded N-0013, N-0014 and D-0006 are linked too, and locked.
+	readable := []string{"T-0002", "E-0001", "N-0001", "N-0002", "N-0004", "D-0001", "D-0005"}
 	var locked []string
 	err = filepath.WalkDir(filepath.Join(repo, "content"), func(p string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || strings.Contains(p, "T-0002") || strings.Contains(p, "E-0001") {
+		if err != nil || d.IsDir() || slices.ContainsFunc(readable, func(id string) bool { return strings.Contains(p, id) }) {
 			return err
 		}
 		locked = append(locked, p)
