@@ -205,7 +205,7 @@ Done. Explore it:
   cerne ui                   # dashboard and kanban at http://localhost:7717
   cat .docs/CONTEXT.md       # what an AI agent reads: only the current state
   cerne search facebook      # the rejected proposal is still one search away
-  cerne savings              # how much history stays out of the agent's context
+  cerne savings              # how much of the corpus stays out of .docs/
   cerne feature accept $digest   # the weekly digest waits for you: accepting is a human act
 
 To start over, delete "$dest".

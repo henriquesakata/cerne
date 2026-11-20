@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -22,7 +24,8 @@ func newSavingsCmd() *cobra.Command {
 		Long: "Measures how much documentation the backend holds (every entity, every state) against " +
 			"the entity documents the current .docs/ projection delivers to an agent — per kind and in total, " +
 			"as counts, bytes and an estimated token figure (bytes/4). The difference is the context " +
-			"the agent never has to read. The generated .docs/CONTEXT.md roster is not counted on either side. " +
+			"left out of .docs/, the folder the agent reads — not a measure of what the agent ends up reading. The generated " +
+			".docs/CONTEXT.md is not counted on either side; its size is printed apart, since every session starts from it. " +
 			"--json emits the full object for machine consumption.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -44,19 +47,28 @@ func runSavings(cmd *cobra.Command, dir string, asJSON bool) error {
 	if err != nil {
 		return err
 	}
+	// The map's size (E-0005 criterion 5): 0 when it is not materialized.
+	var mapBytes int64
+	if fi, err := os.Stat(filepath.Join(ctx.projDir, ".docs", "CONTEXT.md")); err == nil {
+		mapBytes = fi.Size()
+	}
 	out := cmd.OutOrStdout()
 	if asJSON {
 		enc := json.NewEncoder(out)
 		enc.SetIndent("", "  ")
-		return enc.Encode(s)
+		return enc.Encode(struct {
+			materialize.Stats
+			ContextBytes int64 `json:"context_md_bytes"`
+		}{s, mapBytes})
 	}
-	renderSavings(out, s)
+	renderSavings(out, s, mapBytes)
 	return nil
 }
 
 // renderSavings prints the compact savings table: per kind and total, the full
-// corpus vs the current projection, then the saved line with the percentage.
-func renderSavings(out io.Writer, s materialize.Stats) {
+// corpus vs the current projection, then the saved line with the percentage
+// and the size of the map (mapBytes 0: not materialized).
+func renderSavings(out io.Writer, s materialize.Stats, mapBytes int64) {
 	fmt.Fprintln(out, "Context savings — full corpus vs current .docs/ projection")
 	fmt.Fprintln(out)
 	fmt.Fprintf(out, "%-10s  %28s    %28s\n", "", "CORPUS (all states)", "CURRENT (projected)")
@@ -70,7 +82,12 @@ func renderSavings(out io.Writer, s materialize.Stats) {
 	fmt.Fprintf(out, "%-10s  %6d  %9d  %9d    %6d  %9d  %9d\n",
 		"TOTAL", s.TotalCount, s.TotalBytes, s.TotalTokensEst, s.CurrentCount, s.CurrentBytes, s.CurrentTokensEst)
 	fmt.Fprintln(out)
-	fmt.Fprintf(out, "Saved: %d bytes (~%d tokens) — %.1f%% of the corpus stays out of the agent's context\n",
+	fmt.Fprintf(out, "Saved: %d bytes (~%d tokens) — %.1f%% of the corpus stays out of .docs/, the folder the agent reads (what the agent reads from it is not measured)\n",
 		s.SavedBytes, s.SavedTokensEst, s.SavedPct)
+	if mapBytes > 0 {
+		fmt.Fprintf(out, "Map: .docs/CONTEXT.md is %d bytes (~%d tokens), the map a session starts from.\n", mapBytes, mapBytes/4)
+	} else {
+		fmt.Fprintln(out, "Map: .docs/CONTEXT.md is not materialized yet — run 'cerne pull'.")
+	}
 	fmt.Fprintln(out, "Token figures are a bytes/4 estimate. The generated .docs/CONTEXT.md is not counted on either side.")
 }
