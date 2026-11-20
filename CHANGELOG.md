@@ -66,6 +66,21 @@ While cerne is below 1.0.0, a minor version may change behavior: read the
   `git credential fill` holds for `api.trello.com`, the API key as the username
   and the token as the password (store it with `git credential approve`); it
   travels only in the `Authorization` header, and a redirect is never followed.
+- Jira issue tracker (F-0453). A `mirror.trackers` record with
+  `kind = "jira"` and an `https://<site>/browse/<KEY>` URL mirrors cards as
+  issues of that Jira project, on Jira Cloud or Data Center (a context path
+  such as `/jira/browse/<KEY>` too). The login is the one
+  `git credential fill` holds for the site: on Cloud the account e-mail and
+  an API token, on Data Center a personal access token. It travels only in
+  the `Authorization` header, and a redirect is never followed. The issue
+  moves through the project's own workflow by status category (To Do, In
+  Progress, Done), with no status names to configure; when no transition
+  reaches the category, the issue gets a `cerne:<state>` label and the
+  transition prints a warning. A rejected or superseded card's issue
+  resolves as `Won't Do` when the project has it, otherwise as `Done` with
+  its `cerne:<state>` label. The commit trailer is `Refs: <KEY>-<n>`, and
+  `mirror.close_on = "merge"` changes nothing on Jira. An IP address or
+  `localhost` host is refused.
 - Settings › Integrations shows `delivery.forge`, `delivery.commit_url`,
   `delivery.pr_url`, `mirror.enabled`, `mirror.trackers` and
   `mirror.close_on`. The existing `[delivery]` block is read and written as it
