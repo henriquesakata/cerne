@@ -135,6 +135,7 @@ func runImport(cmd *cobra.Command, dir, root, delivered string, yes, agent, inge
 	}
 
 	// Apply the scanned docs, when there is anything new.
+	var closing *importClosing
 	if nothingNew {
 		reportNothingNew(out, skipped)
 	} else {
@@ -155,6 +156,11 @@ func runImport(cmd *cobra.Command, dir, root, delivered string, yes, agent, inge
 				opts.BlobBase = importer.BlobBase(url, sha)
 			}
 		}
+		closing = newImportClosing()
+		for _, c := range cands {
+			closing.add(c.Kind, c.State, c.Title)
+		}
+		closing.historicals = len(seeds)
 		sum, err := importer.Apply(ctx.repoDir, cands, app.EventActor(), opts)
 		if err != nil {
 			return err
@@ -186,6 +192,9 @@ func runImport(cmd *cobra.Command, dir, root, delivered string, yes, agent, inge
 		return err
 	}
 	reportClassifyResult(out, len(assigned), residual)
+	if closing != nil {
+		closing.print(out)
+	}
 	return nil
 }
 
@@ -428,6 +437,11 @@ func runImportAgentIngest(cmd *cobra.Command, ctx projCtx, deliveredState string
 	_ = os.RemoveAll(filepath.Join(ctx.projDir, filepath.FromSlash(".docs/import/.pending")))
 	fmt.Fprintf(out, "Imported (agent): %d features, %d decisions, %d references, %d runbooks, %d notes (snapshot %s).\n",
 		sum.Features, sum.Decisions, sum.References, sum.Runbooks, sum.Notes, shortSHA(sha))
+	closing := newImportClosing()
+	for _, it := range kept {
+		closing.add(it.Kind, it.State, it.Title)
+	}
+	closing.print(out)
 	return nil
 }
 
