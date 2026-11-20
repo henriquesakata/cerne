@@ -751,7 +751,10 @@ const ptBR = {
     noRecipient: 'Marque ao menos uma sessão para enviar.',
     noSessionToSend: 'Não há sessão para receber: nenhuma sessão desta máquina trabalhou neste card.',
     notReached: (title: string) =>
-      `${title} só lê a mensagem quando rodar um comando. Se ela está parada esperando você, abra-a:`,
+      `${title} só lê a mensagem quando rodar um comando. Parada esperando você? Abra-a no app e mande qualquer prompt, ou cole no terminal (ela já começa lendo a mensagem):`,
+    notReachedOther: (title: string) =>
+      `${title} só lê a mensagem quando rodar um comando. Parada esperando você? Abra essa sessão no agente dela e mande qualquer prompt.`,
+    messageThis: 'Mensagem só para esta sessão',
   },
   warRoom: {
     title: 'War Room',
@@ -2352,7 +2355,10 @@ const en: Messages = {
     noRecipient: 'Check at least one session to send.',
     noSessionToSend: 'Nobody to receive it: no session on this machine worked on this card.',
     notReached: (title: string) =>
-      `${title} reads the message only when it runs a command. If it is waiting for you, open it:`,
+      `${title} reads the message only when it runs a command. Waiting for you? Open it in the app and send any prompt, or paste this in a terminal (it starts by reading the message):`,
+    notReachedOther: (title: string) =>
+      `${title} reads the message only when it runs a command. Waiting for you? Open that session in its agent and send any prompt.`,
+    messageThis: 'Message this session only',
   },
   warRoom: {
     title: 'War Room',

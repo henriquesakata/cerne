@@ -73,7 +73,7 @@ describe('FeatureAgents (F-0486)', () => {
     expect(screen.getByText('/w/ho')).toBeInTheDocument()
     expect(screen.getByText('feat/x')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'https://github.com/o/r/pull/7' })).toBeInTheDocument()
-    expect(screen.getByText(`cd "/w/tl" && claude --resume ${tl.session}`)).toBeInTheDocument()
+    expect(screen.getByText(`cd '/w/tl' && claude --resume ${tl.session}`)).toBeInTheDocument()
     expect(screen.getByText(/trabalho W-0010 — revisão/)).toBeInTheDocument()
     expect(screen.getByText(/transcript não encontrado nesta máquina/)).toBeInTheDocument()
     expect(screen.getByText('Sessão c0dexc0d (sem título)')).toBeInTheDocument()
@@ -139,8 +139,51 @@ describe('FeatureAgents (F-0486)', () => {
     expect(screen.getByText('TL do lote recebeu — sem resposta')).toBeInTheDocument()
     expect(screen.getByText('HO-0008 ainda não recebeu')).toBeInTheDocument()
     const hint = screen.getByText(/HO-0008 só lê a mensagem quando rodar um comando/).closest('.agents-unreached') as HTMLElement
-    expect(within(hint).getByText(`cd "/w/ho" && claude --resume ${dev.session}`)).toBeInTheDocument()
+    expect(within(hint).getByText(/abra-a no app e mande qualquer prompt/i)).toBeInTheDocument()
+    expect(
+      within(hint).getByText(
+        `cd '/w/ho' && claude --resume ${dev.session} 'A message about F-0486 is waiting for you on the cerne channel: read it and answer it on the card'\\''s page.'`,
+      ),
+    ).toBeInTheDocument()
     expect(screen.getByText('foi o HO-0008')).toBeInTheDocument()
+  })
+
+  it('a linha de uma sessão abre o chat só para ela (rodada 1 do Gauntlet)', async () => {
+    fetchFeatureAgents.mockResolvedValue({ sessions: [tl, dev] })
+    postChannel.mockResolvedValue({ seq: 9, type: 'message', nick: 'Henrique', body: 'x', time: '', state: 'not_delivered' })
+    renderPanel()
+    await waitFor(() => expect(screen.getByText('HO-0008')).toBeInTheDocument())
+    const row = screen.getByText('HO-0008').closest('li') as HTMLElement
+    fireEvent.click(within(row).getByRole('button', { name: /mensagem só para esta sessão/i }))
+    expect(screen.getByRole('checkbox', { name: /mandar para TL do lote/i })).not.toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /mandar para HO-0008/i })).toBeChecked()
+    fireEvent.change(screen.getByPlaceholderText(/sessões marcadas/i), { target: { value: 'corrige?' } })
+    fireEvent.click(screen.getByRole('button', { name: /^enviar$/i }))
+    await waitFor(() => expect(postChannel).toHaveBeenCalledWith('corrige?', 'F-0486', [dev.session]))
+  })
+
+  it('aspas simples na pasta: o comando colado nunca expande o nome (achado 4 do crítico)', async () => {
+    fetchFeatureAgents.mockResolvedValue({ sessions: [{ ...tl, info: { ...tl.info, cwd: "/w/it's $(rm -rf x)" } }] })
+    renderPanel()
+    expect(await screen.findByText(`cd '/w/it'\\''s $(rm -rf x)' && claude --resume ${tl.session}`)).toBeInTheDocument()
+  })
+
+  it('sessão que não retoma com claude: diz como abrir, sem comando (achado 8 do crítico)', async () => {
+    fetchFeatureAgents.mockResolvedValue({ sessions: [codex] })
+    thread = {
+      version: 2,
+      messages: [
+        {
+          seq: 1, type: 'message', nick: 'Henrique', human: true, body: 'oi', time: '', state: 'not_delivered', directed: true, ref: 'F-0486',
+          targets: [{ work: 'F-0486·c0dexc0d', session: 'c0dexc0d', state: 'not_delivered' }],
+        },
+      ],
+    }
+    renderPanel()
+    await waitFor(() => expect(screen.getByText('Sessão c0dexc0d (sem título)')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /mandar mensagem aos agentes/i }))
+    const hint = (await screen.findByText(/abra essa sessão no agente dela/i)).closest('.agents-unreached') as HTMLElement
+    expect(within(hint).queryByText(/claude --resume/)).toBeNull()
   })
 
   it('fala inglês quando o leitor escolheu inglês (critério 15)', async () => {

@@ -47,6 +47,12 @@ export default function FeatureAgents({ id }: { id: string }) {
       return n
     })
   const selected = sessions.filter((s) => !unchecked.has(s.session)).map((s) => s.session)
+  // A row's own button opens the chat for that session alone: the common case
+  // is one question to the one agent that did the work.
+  const only = (sess: string) => {
+    setUnchecked(new Set(sessions.map((s) => s.session).filter((s) => s !== sess)))
+    setOpen(true)
+  }
 
   return (
     <section className="agents">
@@ -59,7 +65,13 @@ export default function FeatureAgents({ id }: { id: string }) {
           <p className="muted">{t.agents.intro}</p>
           <ul className="agents-list">
             {sessions.map((s) => (
-              <AgentRow key={s.session} s={s} checked={!unchecked.has(s.session)} onToggle={() => toggle(s.session)} />
+              <AgentRow
+                key={s.session}
+                s={s}
+                checked={!unchecked.has(s.session)}
+                onToggle={() => toggle(s.session)}
+                onOnly={() => only(s.session)}
+              />
             ))}
           </ul>
         </>
@@ -79,15 +91,37 @@ function sessionTitle(s: AgentSession, untitled: (short: string) => string): str
   return s.info.title || untitled(s.session.slice(0, 8))
 }
 
-// resumeCommand opens the session again from its folder. Only a Claude Code
-// session resumes with claude.
-function resumeCommand(s: AgentSession): string | null {
-  if (s.harness !== 'claude-code') return null
-  const resume = `claude --resume ${s.session}`
-  return s.info.cwd ? `cd "${s.info.cwd}" && ${resume}` : resume
+// shellQuote single-quotes s for a POSIX shell: the folder comes from a
+// transcript, and a pasted command must never expand what is inside it.
+function shellQuote(s: string): string {
+  return `'${s.replaceAll("'", `'\\''`)}'`
 }
 
-function AgentRow({ s, checked, onToggle }: { s: AgentSession; checked: boolean; onToggle: () => void }) {
+// resumeCommand opens the session again from its folder; with prompt, the
+// session starts by reading the waiting message (its first prompt is a
+// contact point). Only a Claude Code session resumes with claude.
+function resumeCommand(s: AgentSession, prompt?: string): string | null {
+  if (s.harness !== 'claude-code') return null
+  let resume = `claude --resume ${s.session}`
+  if (prompt) resume += ` ${shellQuote(prompt)}`
+  return s.info.cwd ? `cd ${shellQuote(s.info.cwd)} && ${resume}` : resume
+}
+
+// readPrompt is what a resumed session is asked first. English: an agent reads it.
+const readPrompt = (ref: string) =>
+  `A message about ${ref} is waiting for you on the cerne channel: read it and answer it on the card's page.`
+
+function AgentRow({
+  s,
+  checked,
+  onToggle,
+  onOnly,
+}: {
+  s: AgentSession
+  checked: boolean
+  onToggle: () => void
+  onOnly: () => void
+}) {
   const { t, lang } = useT()
   const title = sessionTitle(s, t.agents.untitled)
   const role = (r: AgentRole) => {
@@ -100,7 +134,10 @@ function AgentRow({ s, checked, onToggle }: { s: AgentSession; checked: boolean;
       <label>
         <input type="checkbox" checked={checked} onChange={onToggle} aria-label={t.agents.pick(title)} />{' '}
         <strong>{title}</strong>
-      </label>
+      </label>{' '}
+      <button type="button" className="queue-btn" onClick={onOnly}>
+        {t.agents.messageThis}
+      </button>
       <p>{s.roles.map(role).join(' · ')}</p>
       {s.info.found ? (
         <p className="muted">
@@ -173,19 +210,24 @@ function AgentChat({ id, sessions, selected }: { id: string; sessions: AgentSess
           {load.data.messages.length === 0 && <p className="muted">{t.agents.threadEmpty}</p>}
           {load.data.messages.map((m) => {
             const unreached = (m.targets ?? []).filter((tg) => tg.state === 'not_delivered').map(byShort)
+            const ref = m.ref ?? id
             return (
               <ChannelLine
                 key={m.seq}
                 m={m}
                 targetName={targetName}
                 extra={unreached.map(
-                  (s) =>
-                    s && (
+                  (s) => {
+                    if (!s) return null
+                    const wake = resumeCommand(s, readPrompt(ref))
+                    const title = sessionTitle(s, t.agents.untitled)
+                    return (
                       <div key={s.session} className="agents-unreached">
-                        <p className="muted">{t.agents.notReached(sessionTitle(s, t.agents.untitled))}</p>
-                        {resumeCommand(s) && <FixBlock command={resumeCommand(s)!} label={t.agents.resume} />}
+                        <p className="muted">{wake ? t.agents.notReached(title) : t.agents.notReachedOther(title)}</p>
+                        {wake && <FixBlock command={wake} label={t.agents.resume} />}
                       </div>
-                    ),
+                    )
+                  },
                 )}
               />
             )
