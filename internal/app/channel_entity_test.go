@@ -85,8 +85,8 @@ func TestChannelToSessionDeliveredWithoutLiveBinding(t *testing.T) {
 	if got := stateOf(t, msgs, seq); got.State != ChannelAnswered || got.Targets[0].State != ChannelAnswered || got.Targets[0].Acked {
 		t.Fatalf("after the answer = %+v, want answered by a reply", got)
 	}
-	if r := stateOf(t, msgs, reply.Seq); r.Ref != "F-0001" {
-		t.Fatalf("reply on the thread = %+v, want it alive with ref F-0001", r)
+	if r := stateOf(t, msgs, reply.Seq); r.Ref != "F-0001" || r.State != ChannelDelivered || len(r.Targets) != 0 {
+		t.Fatalf("reply on the thread = %+v, want it alive with ref F-0001, delivered to the page, no target", r)
 	}
 
 	// crit. 13: the addressed message and its reply expire in 24h too.

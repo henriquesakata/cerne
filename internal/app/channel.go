@@ -774,6 +774,10 @@ func (cs channelState) derive(m room.Message, works []store.Work, live map[strin
 		cm.State = worstState(cm.Targets)
 		return cm
 	}
+	if m.Ref != "" && !m.Human { // a reply on a card's thread is for the page: it got there
+		cm.State = ChannelDelivered
+		return cm
+	}
 	named := channelRefRe.FindAllString(m.Body, -1)
 	for _, w := range works {
 		switch {

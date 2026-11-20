@@ -3688,6 +3688,12 @@ button.clarify-chip { cursor: pointer; font: inherit; }
 .harness-outside { color: var(--accent); border-color: var(--accent); }
 
 .harness-fix { margin-top: 0.35rem; max-width: 28rem; }
+/* F-0486: the card's agent sessions and its chat. */
+.agents-list { list-style: none; padding: 0; margin: 0.5rem 0; display: grid; gap: 0.75rem; }
+.agents-row p { margin: 0.2rem 0; }
+.agents-row code { overflow-wrap: anywhere; }
+.agents-chat { margin-top: 0.5rem; }
+.agents-unreached { margin-top: 0.25rem; }
 .harness-fix pre {
   margin: 0;
   padding: 0.35rem 0.6rem;

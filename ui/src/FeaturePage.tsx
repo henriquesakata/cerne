@@ -6,6 +6,7 @@ import { appendAssistantToFeatureChat } from './useBacklogChats'
 import ErrataSection from './ErrataSection'
 import Backlinks from './Backlinks'
 import { DeliveryPendings } from './Pendings'
+import FeatureAgents from './FeatureAgents'
 import Tag from './Tag'
 import {
   fetchArtifactText,
@@ -295,6 +296,7 @@ export default function FeaturePage({ id }: { id: string }) {
       <ErrataSection content={detail.errata} />
       <Backlinks id={id} />
       <DeliveryPendings id={id} />
+      <FeatureAgents id={id} />
       {diagram ? (
         <Suspense fallback={<p className="status">{t.common.loading}</p>}>
           <MermaidView

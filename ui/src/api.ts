@@ -1962,8 +1962,9 @@ export async function readRoomMessages(
 export type ChannelState = 'not_delivered' | 'delivered' | 'answered'
 
 // acked: answered by `cerne msg ack`, not by a reply; closed: the work closed
-// and will never receive it.
-export type ChannelTarget = { work: string; state: ChannelState; acked?: boolean; closed?: boolean }
+// and will never receive it; session: for a message from a card's page
+// (F-0486), the first 8 characters of the addressed session.
+export type ChannelTarget = { work: string; state: ChannelState; acked?: boolean; closed?: boolean; session?: string }
 
 // ChannelMessage espelha app.ChannelMessage: a mensagem viva com o estado
 // dela e, para uma dirigida, cada work destinatário com o seu.
@@ -1977,15 +1978,23 @@ export type ChannelMessage = {
   state: ChannelState
   directed?: boolean
   targets?: ChannelTarget[]
+  // F-0486: the card the message is about — a post from its page or a reply.
+  ref?: string
 }
 
 export type ChannelSnapshot = { messages: ChannelMessage[]; version: number }
 
 // readChannel lê o canal inteiro (só o vivo); follow=true segura a resposta
 // até a versão mudar — mensagem nova ou entrega gravada por um hook — ou
-// ~25s de timeout.
-export async function readChannel(follow: boolean, version: number, signal?: AbortSignal): Promise<ChannelSnapshot> {
+// ~25s de timeout. ref (F-0486) keeps one card's thread.
+export async function readChannel(
+  follow: boolean,
+  version: number,
+  signal?: AbortSignal,
+  ref?: string,
+): Promise<ChannelSnapshot> {
   const params = new URLSearchParams()
+  if (ref) params.set('ref', ref)
   if (follow) {
     params.set('follow', '1')
     params.set('version', String(version))
@@ -1996,14 +2005,41 @@ export async function readChannel(follow: boolean, version: number, signal?: Abo
 }
 
 // postChannel publica como o humano: o servidor dá o nome (channel.human_name).
-export async function postChannel(body: string): Promise<ChannelMessage> {
+// From a card's page (F-0486) it names the card and the sessions it is for.
+export async function postChannel(body: string, ref?: string, to?: string[]): Promise<ChannelMessage> {
   const r = await fetch(`${base()}/rooms/channel/messages`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ body }),
+    body: JSON.stringify(ref ? { body, ref, to } : { body }),
   })
   if (!r.ok) throw new Error(await errorMessage(r))
   return (await r.json()) as ChannelMessage
+}
+
+// ---- agentes de um card (F-0486) ----
+
+// AgentRole is one thing a session — or its subagent — did on the card:
+// opened, spec, plan, result, implemented, critic, judge, builder, other,
+// worked, or work (a W- that refs it).
+export type AgentRole = { kind: string; work?: string; work_title?: string; agent?: string; agent_type?: string; at: string }
+
+// AgentSession is a session of this machine that worked on the card, with
+// where it is, read from its transcript (found=false: no transcript here).
+export type AgentSession = {
+  session: string
+  harness: string
+  roles: AgentRole[]
+  info: { title?: string; cwd?: string; branch?: string; pr?: string; last?: string; found: boolean }
+}
+
+// unavailable: the route is missing — `cerne serve` never serves it.
+export type FeatureAgents = { sessions: AgentSession[] } | { unavailable: true }
+
+export async function fetchFeatureAgents(id: string): Promise<FeatureAgents> {
+  const r = await fetch(`${base()}/features/${encodeURIComponent(id)}/agents`)
+  if (r.status === 404) return { unavailable: true }
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return (await r.json()) as { sessions: AgentSession[] }
 }
 
 // --- Ideias (F-0312) ---
