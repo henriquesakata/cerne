@@ -451,6 +451,44 @@ func TestTwoAuthorsDisjointParagraphsBothSurvive(t *testing.T) {
 	}
 }
 
+// B-0041: a second pull before the conflict is reconciled does not resolve it
+// on its own: it still reports the conflict, the remote copy is still in
+// .docs/.conflicts/, and push still refuses — the other author's edit survives.
+func TestSecondPullKeepsUnreconciledConflict(t *testing.T) {
+	projDir, origin, _, specPath := pulledFeatureProject(t, "Conteúdo original.")
+	mine := "---\ncerne_id: F-0001\n---\n\n# Parcelamento\n\nMinha edição não-enviada.\n"
+	mustWrite(t, specPath, mine)
+	clone2 := filepath.Join(t.TempDir(), "clone2")
+	if err := gitback.Clone(origin, clone2); err != nil {
+		t.Fatalf("Clone clone2: %v", err)
+	}
+	theirSpec := realDoc("F-0001", "Versão remota do mesmo documento.")
+	mustWrite(t, filepath.Join(clone2, "content", "features", "F-0001", "spec.md"), theirSpec)
+	theirHead, err := gitback.CommitAndPush(clone2, "remote same-doc edit")
+	if err != nil {
+		t.Fatalf("CommitAndPush clone2: %v", err)
+	}
+	stash := filepath.Join(projDir, ".docs", ".conflicts", "current", "features", "F-0001-parcelamento", "spec.md")
+	for i := 1; i <= 2; i++ {
+		out, err := execCerne(t, "pull", "--dir", projDir)
+		if err == nil || !strings.Contains(out, "Conflict in 1 document(s)") {
+			t.Fatalf("pull %d must still report the conflict: %v\n%s", i, err, out)
+		}
+		if got, err := os.ReadFile(stash); err != nil || string(got) != theirSpec {
+			t.Fatalf("pull %d: stash = %q (err %v), want the remote version", i, got, err)
+		}
+		if got, _ := os.ReadFile(specPath); string(got) != mine {
+			t.Fatalf("pull %d replaced my version:\n%s", i, got)
+		}
+	}
+	if out, err := execCerne(t, "push", "--dir", projDir); !errors.Is(err, errUnreconciledConflict) {
+		t.Fatalf("push after two pulls: err=%v, want errUnreconciledConflict\n%s", err, out)
+	}
+	if head, _ := gitback.HeadSHA(origin); head != theirHead {
+		t.Fatalf("origin moved to %s, want %s", head, theirHead)
+	}
+}
+
 // --force keeps its meaning: discard unsent edits and restore from the backend.
 func TestPullForceDiscardsUnpushedEdits(t *testing.T) {
 	projDir, _, _, specPath := pulledFeatureProject(t, "Conteúdo original.")
