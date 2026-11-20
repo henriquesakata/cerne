@@ -647,7 +647,7 @@ func TestSyncMirrorNotesListCap(t *testing.T) {
 	}{
 		{"at the cap", 100, "", false, []string{"pub", "100", "not imported", "label"}},
 		{"under the cap", 99, "", false, nil},
-		{"with label", 100, "bug", false, []string{"pub", `"bug"`, "not imported"}},
+		{"with label", 100, "bug", false, []string{"pub", `"bug"`, "not imported", "They are imported once fewer than 100 open issues carry it."}},
 		{"list fails", 100, "", true, nil},
 	}
 	for _, c := range cases {

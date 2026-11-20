@@ -328,7 +328,7 @@ func listOpen(tc tracker.Config) ([]tracker.Remote, error) { return listOpenLabe
 // not read, and what to do about it (F-0469).
 func listCapNote(tc tracker.Config) string {
 	if tc.Label != "" {
-		return fmt.Sprintf("cerne: mirror sync <- %s: %d or more open issues carry label %q; issues past the first %d were not imported, the rest are imported once fewer do.", tc.Name, mirrorListCap, tc.Label, mirrorListCap)
+		return fmt.Sprintf("cerne: mirror sync <- %s: %d or more open issues carry label %q; issues past the first %d were not imported. They are imported once fewer than %d open issues carry it.", tc.Name, mirrorListCap, tc.Label, mirrorListCap, mirrorListCap)
 	}
 	return fmt.Sprintf("cerne: mirror sync <- %s: listed %d open issues, the most one sync reads; issues past them were not imported. Set a label on the tracker record so only the issues to import are listed.", tc.Name, mirrorListCap)
 }
