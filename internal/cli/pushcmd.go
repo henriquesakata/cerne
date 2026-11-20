@@ -27,20 +27,25 @@ import (
 
 func newPushCmd() *cobra.Command {
 	var dir string
-	var dryRun bool
+	var dryRun, force bool
 	cmd := &cobra.Command{
 		Use:   "push",
 		Short: "Send locally edited .docs/ documents back to the backend",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runPush(cmd, dir, dryRun)
+			return runPush(cmd, dir, dryRun, force)
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "validate and show what would go to the backend, without committing or sending")
+	cmd.Flags().BoolVar(&force, "force", false, "send documents whose remote version a pull stashed in .docs/.conflicts/, overwriting that remote edit")
 	return withFinalLine(cmd)
 }
+
+// errUnreconciledConflict refuses a push of a document whose remote version a
+// pull stashed under .docs/.conflicts/ and nobody has reconciled yet (B-0041).
+var errUnreconciledConflict = errors.New("unreconciled conflict")
 
 // pushedDoc is one changed materialized document mapped back to its
 // backend destination.
@@ -51,7 +56,7 @@ type pushedDoc struct {
 	sum        string // sha256 hex of body
 }
 
-func runPush(cmd *cobra.Command, dir string, dryRun bool) error {
+func runPush(cmd *cobra.Command, dir string, dryRun, force bool) error {
 	ctx, err := resolvePaths(dir)
 	if err != nil {
 		return err
@@ -91,6 +96,11 @@ func runPush(cmd *cobra.Command, dir string, dryRun bool) error {
 	if len(docs) == 0 {
 		fmt.Fprintln(cmd.OutOrStdout(), "Nothing to send.")
 		return nil
+	}
+	if !force {
+		if err := checkReconciled(docsDir, docs); err != nil {
+			return err
+		}
 	}
 
 	if dryRun {
@@ -140,6 +150,10 @@ func runPush(cmd *cobra.Command, dir string, dryRun bool) error {
 	}
 	if err := project.SaveManifest(ctx.projDir, manifest); err != nil {
 		return err
+	}
+	// Sent over --force: the stashed remote copy no longer guards anything.
+	for _, d := range docs {
+		_ = os.Remove(conflictCopyPath(docsDir, d.rel))
 	}
 	if head == "" {
 		fmt.Fprintln(cmd.OutOrStdout(), "Nothing to send.")
@@ -253,6 +267,24 @@ func reportDryRun(cmd *cobra.Command, ctx projCtx, docs []pushedDoc) error {
 	}
 	printFindings(out, findings)
 	return lintFailure(findings)
+}
+
+// checkReconciled refuses the docs whose remote version a pull stashed under
+// .docs/.conflicts/ (B-0041): that pull already moved the snapshot past the
+// remote edit, so sending the doc would erase it without a conflict. Deleting
+// the stashed copy is what marks the document reconciled.
+func checkReconciled(docsDir string, docs []pushedDoc) error {
+	var open []string
+	for _, d := range docs {
+		if _, err := os.Stat(conflictCopyPath(docsDir, d.rel)); err == nil {
+			open = append(open, fmt.Sprintf("  %s — the remote version is in .docs/.conflicts/%s", d.rel, d.rel))
+		}
+	}
+	if len(open) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%w in %d document(s), nothing sent:\n%s\nFold the remote changes you want to keep into your file, delete its copy under .docs/.conflicts/, and run 'cerne push' again; 'cerne push --force' sends your version over the remote one",
+		errUnreconciledConflict, len(open), strings.Join(open, "\n"))
 }
 
 // checkContextUntouched errors when the generated CONTEXT.md was edited

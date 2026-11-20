@@ -591,3 +591,52 @@ func TestPushRefusalOfClosedDocUnblocks(t *testing.T) {
 		}
 	}
 }
+
+// B-0041: a document whose remote version is still stashed in
+// .docs/.conflicts/ is not pushed over it. push refuses, naming the stash and
+// the ways out; --force sends it and clears the stash.
+func TestPushRefusesUnreconciledConflict(t *testing.T) {
+	projDir, origin, _, specPath := pulledFeatureProject(t, "Conteúdo original.")
+	mine := "---\ncerne_id: F-0001\n---\n\n# Parcelamento\n\nMinha edição não-enviada.\n"
+	mustWrite(t, specPath, mine)
+	clone2 := filepath.Join(t.TempDir(), "clone2")
+	if err := gitback.Clone(origin, clone2); err != nil {
+		t.Fatalf("Clone clone2: %v", err)
+	}
+	mustWrite(t, filepath.Join(clone2, "content", "features", "F-0001", "spec.md"), realDoc("F-0001", "Versão remota do mesmo documento."))
+	theirHead, err := gitback.CommitAndPush(clone2, "remote same-doc edit")
+	if err != nil {
+		t.Fatalf("CommitAndPush clone2: %v", err)
+	}
+	if out, err := execCerne(t, "pull", "--dir", projDir); err == nil {
+		t.Fatalf("same-doc pull should conflict\n%s", out)
+	}
+
+	out, err := execCerne(t, "push", "--dir", projDir)
+	if !errors.Is(err, errUnreconciledConflict) {
+		t.Fatalf("push over an unreconciled conflict: err=%v, want errUnreconciledConflict\n%s", err, out)
+	}
+	for _, want := range []string{
+		"current/features/F-0001-parcelamento/spec.md",
+		".docs/.conflicts/current/features/F-0001-parcelamento/spec.md",
+		"delete",
+		"cerne push --force",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("refusal %q missing %q", err, want)
+		}
+	}
+	if head, _ := gitback.HeadSHA(origin); head != theirHead {
+		t.Fatalf("refused push moved origin to %s, want %s", head, theirHead)
+	}
+
+	rb(t, projDir, "push", "--force")
+	head, _ := gitback.HeadSHA(origin)
+	if stored, _, _ := gitback.FileBlobAt(origin, head, "content/features/F-0001/spec.md"); string(stored) != mine {
+		t.Fatalf("push --force sent %q, want mine", stored)
+	}
+	stash := filepath.Join(projDir, ".docs", ".conflicts", "current", "features", "F-0001-parcelamento", "spec.md")
+	if _, err := os.Stat(stash); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("push --force left the stash: %v", err)
+	}
+}

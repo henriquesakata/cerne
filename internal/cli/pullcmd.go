@@ -362,13 +362,18 @@ func writeDocsFile(docsDir, rel string, body []byte) error {
 }
 
 // saveConflictCopy stashes the remote version of a conflicting doc under
-// .docs/.conflicts/ (outside .docs/current/, so it is inert to push/pull walks).
+// .docs/.conflicts/ (outside .docs/current/, so push and pull never read it as
+// a document; push only checks it is gone — checkReconciled).
 func saveConflictCopy(docsDir, rel string, theirs []byte) error {
-	p := filepath.Join(docsDir, ".conflicts", filepath.FromSlash(rel))
+	p := conflictCopyPath(docsDir, rel)
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return err
 	}
 	return os.WriteFile(p, theirs, 0o644)
+}
+
+func conflictCopyPath(docsDir, rel string) string {
+	return filepath.Join(docsDir, ".conflicts", filepath.FromSlash(rel))
 }
 
 // reportPullConflicts prints the same-document conflicts a pull merged
@@ -380,7 +385,7 @@ func reportPullConflicts(cmd *cobra.Command, conflicts []string) error {
 	for _, rel := range conflicts {
 		fmt.Fprintf(out, "  %s\n", rel)
 	}
-	fmt.Fprintln(out, "Reconcile each document and run 'cerne push' (the remote version is in .docs/.conflicts/).")
+	fmt.Fprintln(out, "For each one, fold the remote changes you want to keep into your file, delete its copy under .docs/.conflicts/, then run 'cerne push' (push refuses the document while that copy is there).")
 	return fmt.Errorf("%d document(s) in conflict on pull", len(conflicts))
 }
 
