@@ -106,8 +106,19 @@ func TestContextCmdLinkedBodies(t *testing.T) {
 	if err := json.Unmarshal([]byte(mustCerne(t, "context", "F-0001", "--json", "--dir", projDir)), &p); err != nil {
 		t.Fatal(err)
 	}
-	if len(p.Items) != 3 || p.Items[0].Body != "Use the root token, never a package token." || p.Items[1].ID != "D-0001" || p.Items[2].Body != "" {
+	if len(p.Items) != 3 || p.Items[0].Body != "Use the root token, never a package token." || p.Items[1].ID != "D-0001" ||
+		p.Items[1].Body != "## Decision\n\nOpen pull requests through the API." || p.Items[2].Body != "" {
 		t.Fatalf("context --json items = %+v", p.Items)
+	}
+	// Critic L4: the MCP tool returns the same bodies.
+	cs, _, stop := startMCP(t, projDir)
+	res := callTool(t, cs, "context", map[string]any{"id": "F-0001"})
+	if err := stop(); err != nil {
+		t.Fatalf("cerne mcp: %v", err)
+	}
+	var viaMCP app.TaskPack
+	if err := json.Unmarshal([]byte(res), &viaMCP); err != nil || len(viaMCP.Items) != 3 || viaMCP.Items[0].Body != p.Items[0].Body || viaMCP.Items[1].Body != p.Items[1].Body {
+		t.Fatalf("MCP context: %v\n%s", err, res)
 	}
 	if small := mustCerne(t, "context", "F-0001", "--budget", "1", "--dir", projDir); !strings.Contains(small, "a 2 · b 0 · c 1 · d 0, and 2 ring (a) bodies") {
 		t.Fatalf("context --budget 1 does not count the bodies it left out:\n%s", small)
