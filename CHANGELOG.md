@@ -9,15 +9,54 @@ While cerne is below 1.0.0, a minor version may change behavior: read the
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-11-20
+
+### Highlights
+
+- **Mirror cards to the tracker your team already uses.** A human publishes a
+  card to GitHub, GitLab, Gitea, Jira or Trello with a public title and
+  summary. The issue then follows the card's state, issues opened outside come
+  back as ideas, and the delivery commit cites the issue. The Mirror tab shows
+  what is mirrored and what drifted. Off by default.
+  ([#78](https://github.com/henriquesakata/cerne/pull/78),
+  [#80](https://github.com/henriquesakata/cerne/pull/80),
+  [#81](https://github.com/henriquesakata/cerne/pull/81),
+  [#82](https://github.com/henriquesakata/cerne/pull/82),
+  [#84](https://github.com/henriquesakata/cerne/pull/84),
+  [#99](https://github.com/henriquesakata/cerne/pull/99))
+- **One command to update, and the project follows.** `cerne update` updates
+  the binary the way you installed it and renews the project's hooks and
+  authoring guide. From then on, an agent's session start renews the managed
+  files nobody edited, and `cerne ui` shows an Update button and restarts into
+  the new binary without losing its projects.
+  ([#127](https://github.com/henriquesakata/cerne/pull/127),
+  [#139](https://github.com/henriquesakata/cerne/pull/139),
+  [#132](https://github.com/henriquesakata/cerne/pull/132),
+  [#134](https://github.com/henriquesakata/cerne/pull/134))
+- **An agent starts a task with what it needs.** `cerne context <id>` hands
+  over the task's document, its epic and the notes and decisions linked to it,
+  within a size budget, from the CLI or the MCP server. `.docs/CONTEXT.md` now
+  holds only what is live and stays under 16 KB.
+  ([#138](https://github.com/henriquesakata/cerne/pull/138),
+  [#150](https://github.com/henriquesakata/cerne/pull/150),
+  [#151](https://github.com/henriquesakata/cerne/pull/151))
+- **Notes show up when they matter.** A note can name the files and shell
+  commands it is about, and the agent gets it, with a one-line gist, when it
+  edits one of those files or runs one of those commands, on every agent cerne
+  installs.
+  ([#88](https://github.com/henriquesakata/cerne/pull/88),
+  [#90](https://github.com/henriquesakata/cerne/pull/90))
+- **More ways to get cerne.** Claude Code installs it from cerne's own plugin
+  marketplace, the `cerne mcp` server is listed in the official MCP Registry
+  with an MCP Bundle in every release, and outside a cerne project the server
+  answers with the guide instead of failing.
+  ([#77](https://github.com/henriquesakata/cerne/pull/77),
+  [#76](https://github.com/henriquesakata/cerne/pull/76),
+  [#79](https://github.com/henriquesakata/cerne/pull/79))
+
 ### Added
 
-- Each release ships `cerne_<tag>.mcpb`, an MCP Bundle of the read-only
-  `cerne mcp` server with the binaries for every platform, and the
-  `server.json` that lists it in the official MCP Registry as
-  `io.github.henriquesakata/cerne`. A client that installs MCP Bundles asks
-  for the project folder and starts the server on it.
-
-- Issue mirror (F-0449). A human publishes a card to GitHub Issues with
+- Issue mirror on GitHub. A human publishes a card with
   `cerne feature mirror <id> --title <public title> --summary <public summary>`;
   only that public text, the card id and its state leave the backend. The issue
   then follows the card's state on every transition: open with a
@@ -28,86 +67,397 @@ While cerne is below 1.0.0, a minor version may change behavior: read the
   card. With the mirror on, `prepare-commit-msg` adds `Refs:` (or `Closes:` with
   `mirror.close_on = "merge"`) for the cards a commit cites in its `Cerne:`
   trailers. Off by default; `mirror.enabled` and `mirror.trackers` are
-  human-only.
-- Mirror tab in the UI (F-0465), read-only. It lists, per tracker, the cards a
-  human mirrored (state, issue link) and the ideas `cerne mirror sync` imported.
-  **Check now** asks each tracker only for its open issues and marks each card
-  up to date, drifted (closed on one side only) or not checked, with the reason;
-  opening the tab calls no tracker. Each card expands to the commits whose
-  `Cerne:` trailer cites it, from the local git. `cerne mirror sync` now keeps
-  the time and per-tracker counts of its last run in the local cache, shown as
-  "last sync on this computer".
-- GitLab issue mirror (F-0450). `kind = "gitlab"` in `mirror.trackers` mirrors
-  cards into the issues of a GitLab project, on gitlab.com or self-hosted, with
+  human-only, and a tracker `label` in cerne's own `cerne:` namespace is
+  refused.
+  ([#78](https://github.com/henriquesakata/cerne/pull/78),
+  [#111](https://github.com/henriquesakata/cerne/pull/111))
+- GitLab issue mirror. `kind = "gitlab"` in `mirror.trackers` mirrors cards
+  into the issues of a GitLab project, on gitlab.com or self-hosted, with
   subgroups in the `url` (`https://<host>/<group>/<subgroup>/<project>`). It
   talks through `glab` and its `glab auth login`; no token goes into
   `.cernerc`. GitLab has no "not planned" close reason, so a rejected or
   superseded card closes its issue with the `cerne:rejected` or
   `cerne:superseded` label. Needs GitLab 12.3 or newer (`add_labels` and
   `remove_labels`).
-- Gitea issue tracker (F-0452). A `mirror.trackers` record with
-  `kind = "gitea"` and an `https://<host>/<owner>/<repo>` URL mirrors cards
-  as issues on that Gitea repository, with the login `git credential fill`
-  holds for the host: it travels only in the `Authorization` header, and a
-  redirect is never followed. Gitea has no close reason, so a rejected or
-  superseded card's issue closes with its `cerne:rejected` or
-  `cerne:superseded` label, created when the repository lacks it. An IP
-  address or `localhost` host is refused.
-- Trello board tracker (F-0451). A `mirror.trackers` record with
-  `kind = "trello"` and an `https://trello.com/b/<boardId>/<slug>` URL mirrors
-  cards as cards on that board. A card sits in the list of its state
-  (`Candidate`, `Approved`, `In development`, `Ready`, `Done`); a list the
-  board lacks, or one a third party renamed or archived, is created at the end
-  of the board, never twice. Rejected and superseded archive the card where it
-  is, with one comment giving the reason; done stays visible in `Done`.
-  `cerne mirror sync` imports the open cards outside `Done` as ideas. Trello
-  reads no keyword in a commit, so the trailer is always
-  `Refs: https://trello.com/c/<shortLink>`. The login is what
-  `git credential fill` holds for `api.trello.com`, the API key as the username
-  and the token as the password (store it with `git credential approve`); it
-  travels only in the `Authorization` header, and a redirect is never followed.
-- Jira issue tracker (F-0453). A `mirror.trackers` record with
-  `kind = "jira"` and an `https://<site>/browse/<KEY>` URL mirrors cards as
-  issues of that Jira project, on Jira Cloud or Data Center (a context path
-  such as `/jira/browse/<KEY>` too). The login is the one
-  `git credential fill` holds for the site: on Cloud the account e-mail and
-  an API token, on Data Center a personal access token. It travels only in
-  the `Authorization` header, and a redirect is never followed. The issue
-  moves through the project's own workflow by status category (To Do, In
-  Progress, Done), with no status names to configure; when no transition
-  reaches the category, the issue gets a `cerne:<state>` label and the
-  transition prints a warning. A rejected or superseded card's issue
-  resolves as `Won't Do` when the project has it, otherwise as `Done` with
-  its `cerne:<state>` label. The commit trailer is `Refs: <KEY>-<n>`, and
-  `mirror.close_on = "merge"` changes nothing on Jira. An IP address or
-  `localhost` host is refused.
+  ([#80](https://github.com/henriquesakata/cerne/pull/80))
+- Gitea issue mirror. A `mirror.trackers` record with `kind = "gitea"` and an
+  `https://<host>/<owner>/<repo>` URL mirrors cards as issues on that Gitea
+  repository, with the login `git credential fill` holds for the host: it
+  travels only in the `Authorization` header, and a redirect is never
+  followed. Gitea has no close reason, so a rejected or superseded card's
+  issue closes with its `cerne:rejected` or `cerne:superseded` label, created
+  when the repository lacks it. An IP address or `localhost` host is refused.
+  ([#81](https://github.com/henriquesakata/cerne/pull/81))
+- Trello board mirror. A `mirror.trackers` record with `kind = "trello"` and
+  an `https://trello.com/b/<boardId>/<slug>` URL mirrors cards as cards on that
+  board. A card sits in the list of its state (`Candidate`, `Approved`,
+  `In development`, `Ready`, `Done`); a list the board lacks, or one a third
+  party renamed or archived, is created at the end of the board, never twice.
+  Rejected and superseded archive the card where it is, with one comment giving
+  the reason; done stays visible in `Done`. `cerne mirror sync` imports the
+  open cards outside `Done` as ideas. Trello reads no keyword in a commit, so
+  the trailer is always `Refs: https://trello.com/c/<shortLink>`. The login is
+  what `git credential fill` holds for `api.trello.com`, the API key as the
+  username and the token as the password (store it with
+  `git credential approve`); it travels only in the `Authorization` header, and
+  a redirect is never followed.
+  ([#84](https://github.com/henriquesakata/cerne/pull/84))
+- Jira issue mirror. A `mirror.trackers` record with `kind = "jira"` and an
+  `https://<site>/browse/<KEY>` URL mirrors cards as issues of that Jira
+  project, on Jira Cloud or Data Center (a context path such as
+  `/jira/browse/<KEY>` too). The login is the one `git credential fill` holds
+  for the site: on Cloud the account e-mail and an API token, on Data Center a
+  personal access token. It travels only in the `Authorization` header, and a
+  redirect is never followed. The issue moves through the project's own
+  workflow by status category (To Do, In Progress, Done), with no status names
+  to configure; when no transition reaches the category, the issue gets a
+  `cerne:<state>` label and the transition prints a warning. A rejected or
+  superseded card's issue resolves as `Won't Do` when the project has it,
+  otherwise as `Done` with its `cerne:<state>` label. The commit trailer is
+  `Refs: <KEY>-<n>`, and `mirror.close_on = "merge"` changes nothing on Jira.
+  An IP address or `localhost` host is refused.
+  ([#82](https://github.com/henriquesakata/cerne/pull/82),
+  [#112](https://github.com/henriquesakata/cerne/pull/112))
+- Mirror tab in the UI, read-only. It lists, per tracker, the cards a human
+  mirrored (state, issue link) and the ideas `cerne mirror sync` imported.
+  **Check now** asks each tracker only for its open issues and marks each card
+  up to date, drifted (closed on one side only) or not checked, with the
+  reason; opening the tab calls no tracker. Each card expands to the commits
+  whose `Cerne:` trailer cites it, from the local git. `cerne mirror sync` now
+  keeps the time and per-tracker counts of its last run in the local cache,
+  shown as "last sync on this computer". Both say when a tracker's list of open
+  issues stopped at 100.
+  ([#99](https://github.com/henriquesakata/cerne/pull/99),
+  [#116](https://github.com/henriquesakata/cerne/pull/116))
 - Settings › Integrations shows `delivery.forge`, `delivery.commit_url`,
   `delivery.pr_url`, `mirror.enabled`, `mirror.trackers` and
   `mirror.close_on`. The existing `[delivery]` block is read and written as it
-  is. `mirror.trackers` is a list of trackers, edited as a table in the UI and as
-  JSON in `cerne settings set`.
-
-- `cerne update` (F-0476): one command, run inside a project, updates the
-  binary and the project's cerne files. The binary goes to the latest release
-  the way it was installed: through `brew upgrade henriquesakata/tap/cerne`
-  under Homebrew; otherwise it downloads the release file, checks it against
+  is. `mirror.trackers` is a list of trackers, edited as a table in the UI and
+  as JSON in `cerne settings set`. `cerne guide` answers, for each tracker, the
+  shape of its address and which credential it reads.
+  ([#78](https://github.com/henriquesakata/cerne/pull/78),
+  [#114](https://github.com/henriquesakata/cerne/pull/114))
+- `cerne update`: one command, run inside a project, updates the binary and
+  the project's cerne files. The binary goes to the latest release the way it
+  was installed: through `brew upgrade henriquesakata/tap/cerne` under
+  Homebrew; otherwise it downloads the release file, checks it against
   `SHA256SUMS` and swaps the executable in place, keeping the old one when the
   check or the swap fails. A local build, a `go install`, a folder you cannot
   write or an agent session leave the binary alone and print the command to
   run. Then the new binary renews the hooks and the authoring guide of the
-  agents already connected, like `cerne hook install` plus `cerne skill
-  install`. It ends with one line per part (binary, hooks, guide) and exits
-  non-zero when a part was not done. `cerne update --check` lists what is out
-  of date without writing or using the network. `cerne next` and the
-  session-start notices now ask for `cerne update`. It is the only version
-  check cerne makes, and only when you run it; the README's "Where your data
-  goes" says so. On a version without the command, update the binary with
-  your package manager or the install script first.
+  agents already connected, like `cerne hook install` plus
+  `cerne skill install`. It ends with one line per part (binary, hooks, guide)
+  and exits non-zero when a part was not done. `cerne update --check` lists
+  what is out of date without writing or using the network.
+  ([#127](https://github.com/henriquesakata/cerne/pull/127))
+- The project's hooks and authoring guide renew by themselves. At an agent's
+  session start and in `cerne next`, cerne renews every connected agent whose
+  managed files all match what some earlier release wrote, and says so in one
+  line. An agent with a file you edited, or one a newer cerne wrote, is left
+  untouched, and the notice names the files. Each file is replaced through a
+  temporary file, so a hook script that is running keeps its old content.
+  ([#139](https://github.com/henriquesakata/cerne/pull/139),
+  [#141](https://github.com/henriquesakata/cerne/pull/141))
+- `cerne ui` shows **Update to X.Y.Z** when a newer release exists, and one
+  click updates cerne the way `cerne update` does. A binary the panel cannot
+  replace (a local build, `go install`, a folder it cannot write) shows
+  **X.Y.Z available** with the command to run instead. The panel asks GitHub
+  for the latest release when it starts and every 24 hours while it is open;
+  the host setting `ui.update_check` turns that off.
+  ([#134](https://github.com/henriquesakata/cerne/pull/134))
+- `cerne ui` notices when the cerne on disk is a different build from the one
+  running (every 30 seconds, without the network), shows both versions and
+  **Restart the panel**, and comes back on the same port with every registered
+  project; open tabs reload where they were. A `cerne ui` started from the new
+  binary restarts the panel instead of asking you to stop it.
+  ([#132](https://github.com/henriquesakata/cerne/pull/132))
+- `cerne context <id> [--budget N] [--json]` gives an agent what it needs to
+  start a task: the task's current document whole, its epic, and around it, in
+  order, the notes and decisions linked to the task, the notes whose triggers
+  or cited files match a file the spec or plan names, the notes that share a
+  component, and a few more from search. Linked notes and decisions come with
+  their body, the rest as id, title and gist. Past the budget the outer rings
+  leave first and the last line counts what left; the document is never cut.
+  It reads only the local clone and index. The MCP server offers the same as
+  the `context` tool, and `cerne feature start`, `cerne work start --ref` and
+  `cerne handoff take` end with the index of those notes and the command.
+  ([#150](https://github.com/henriquesakata/cerne/pull/150),
+  [#151](https://github.com/henriquesakata/cerne/pull/151))
+- `cerne note link` and `cerne decision link <id> --informs <ids>
+  [--unlink <ids>]` (also `cerne decision new --informs`) link a note or a
+  decision to the work it informs; `cerne show` on a decision lists it.
+  `cerne lint` reports, as advice, a note no task can reach
+  (`note-unreachable`).
+  ([#150](https://github.com/henriquesakata/cerne/pull/150),
+  [#151](https://github.com/henriquesakata/cerne/pull/151))
+- Components as a shared vocabulary. `cerne tags` lists the components in use
+  with a count per kind of entity; `cerne tags rename <from> <to>` renames one
+  on every entity in a single commit (`--dry-run` shows the change first, and
+  renaming onto a name in use merges the two); `--component a,b` on
+  `note list`, `decision list` and `reference list` ranks the entries that
+  carry any of them. `cerne lint` flags, as advice, a component used once,
+  names that share a root and components only notes use.
+  ([#138](https://github.com/henriquesakata/cerne/pull/138),
+  [#144](https://github.com/henriquesakata/cerne/pull/144))
+- `retag` works on entities in any state, and `cerne idea retag` and
+  `cerne pending retag` are new.
+  ([#135](https://github.com/henriquesakata/cerne/pull/135))
+- A note can say when it shows up: `cerne note new --when 'edit:<glob>'` or
+  `--when 'bash:<command>'`, and `cerne note when <id> <trigger>...` to replace
+  them (`--clear` removes them). When an agent edits a matching file or runs a
+  matching command, it gets up to three matching notes per event, each once per
+  session: before the tool on Claude Code and Codex, after it on Cursor, Gemini
+  and Copilot, where the block says the command already ran.
+  ([#88](https://github.com/henriquesakata/cerne/pull/88))
+- `cerne note new --gist "<one line>"` and `cerne note gist <id> "<one line>"`
+  (or `--clear`) give a note a summary of at most 160 characters. It is
+  printed under the note's title in the edit and command blocks, and by
+  `cerne show`.
+  ([#90](https://github.com/henriquesakata/cerne/pull/90))
+- `cerne feature wait <id> --for <state> [--timeout 24h] [--interval 30s]`:
+  an agent leaves it running in the background at a human gate and is woken
+  when the human approves or accepts. It refreshes the backend clone without
+  touching `.docs/` or `docs.lock`, and exits 0 when the state is reached (an
+  approval gone stale does not count), 2 when the state can no longer be
+  reached and 3 on timeout. The gate messages teach it to agents whose harness
+  wakes them when a background command ends.
+  ([#93](https://github.com/henriquesakata/cerne/pull/93))
+- The feature page has an **Agents** panel with the sessions that opened the
+  card or wrote its spec, plan or result, each with its folder, branch, PR and
+  last activity (read from the transcript's metadata, never from the
+  conversation), and a chat that sends a message only to the sessions you pick,
+  through the project channel.
+  ([#149](https://github.com/henriquesakata/cerne/pull/149))
+- A **Vault** screen (`#/vault`): every project document in a tree, the open
+  one with clickable `[[ID]]` links, its outline and its backlinks. A live
+  document can be edited in place beside a preview, with `[[` completing
+  entity ids; saving commits and pushes as you and never overwrites a change
+  another agent made in the meantime. Concluded documents stay read-only.
+  ([#95](https://github.com/henriquesakata/cerne/pull/95),
+  [#100](https://github.com/henriquesakata/cerne/pull/100))
+- Criteria tied to tests. A test with the comment `F-NNNN crit. N` (`T-NNNN`
+  for a task; for a bug, its id alone on the regression test) proves that
+  criterion. `cerne lint` reports `criterion-without-test` and
+  `orphan-criterion-test`, and `cerne feature complete` refuses while either
+  stands. cerne reads the marks and never runs the tests. It applies only to
+  work started from 2026-11-21; `test_roots` and `test_patterns` in `.cernerc`
+  say where the tests are, and the setting `lint.criterion_tests` turns it off.
+  ([#124](https://github.com/henriquesakata/cerne/pull/124))
+- Each release ships `cerne_<tag>.mcpb`, an MCP Bundle of the read-only
+  `cerne mcp` server with the binaries for every platform, and the
+  `server.json` that lists it in the official MCP Registry as
+  `io.github.henriquesakata/cerne`. A client that installs MCP Bundles asks
+  for the project folder and starts the server on it.
+  ([#76](https://github.com/henriquesakata/cerne/pull/76))
+- Claude Code can install cerne from the repository's own plugin marketplace:
+  `/plugin marketplace add henriquesakata/cerne`, then
+  `/plugin install cerne@cerne`. The plugin brings the authoring skills, the
+  hooks and the MCP server that `cerne init` sets up for Claude Code; a hook
+  the project already has takes precedence, and every hook stays quiet outside
+  a cerne project. The plugin does not install the binary: its session start
+  says how.
+  ([#77](https://github.com/henriquesakata/cerne/pull/77))
+- First use. `cerne init` ends with three first steps, the agents it connected
+  and one line to connect the others; the per-file detail moved behind
+  `--verbose`. `cerne next` and the dashboard show a first-steps checklist
+  until the first accept. `cerne import` ends with what came in and what to do
+  next, and `--delivered-state implemented|done` says where delivered features
+  land (default `implemented`). A first-week guide, `docs/first-week.md`, is
+  linked from the README, and `cerne guide` now answers what cerne is and what
+  to do after installing.
+  ([#83](https://github.com/henriquesakata/cerne/pull/83),
+  [#104](https://github.com/henriquesakata/cerne/pull/104),
+  [#105](https://github.com/henriquesakata/cerne/pull/105),
+  [#106](https://github.com/henriquesakata/cerne/pull/106),
+  [#107](https://github.com/henriquesakata/cerne/pull/107),
+  [#108](https://github.com/henriquesakata/cerne/pull/108),
+  [#109](https://github.com/henriquesakata/cerne/pull/109))
+- `cerne hook install --provider codex` writes a `cerne` sandbox profile into
+  `.codex/config.toml` with cerne's cache and local backend folders, and says
+  how to trust the project; `cerne init` shows a Connect step for an agent CLI
+  it detects. `--network` adds network access to that profile, never by
+  default, and the two errors a cut network causes inside Codex say so.
+  ([#128](https://github.com/henriquesakata/cerne/pull/128),
+  [#140](https://github.com/henriquesakata/cerne/pull/140))
+- cerne has a mark, a cross-section of a tree trunk: the `cerne ui` tab icon,
+  the README header and the dashboard's top bar.
+  ([#91](https://github.com/henriquesakata/cerne/pull/91),
+  [#92](https://github.com/henriquesakata/cerne/pull/92),
+  [#94](https://github.com/henriquesakata/cerne/pull/94))
 
 ### Changed
 
+- `.docs/CONTEXT.md` lists only live work: live features, epics with a live
+  child, active decisions and runbooks, and work in progress. Concluded
+  features, notes and references become counts with the command that lists
+  them, and the file stays within 16 KB, saying how many features it left out.
+  ([#138](https://github.com/henriquesakata/cerne/pull/138))
+- A new component name close to an existing one (the same root, or a few
+  letters apart) is refused with the existing name; `--force` writes it.
+  ([#138](https://github.com/henriquesakata/cerne/pull/138))
+- `cerne feature amend --doc spec|plan` refuses a card another session is
+  working on, listing those works and what the amend would cause; `--force`
+  writes anyway and records that it did.
+  ([#148](https://github.com/henriquesakata/cerne/pull/148))
+- `cerne pull` merges your edit and the remote one line by line when both
+  changed the same document. Only overlapping lines keep yours and put theirs
+  in `.docs/.conflicts/`, and `cerne push` refuses that document until you
+  delete the copy (or pass `--force`).
+  ([#110](https://github.com/henriquesakata/cerne/pull/110))
+- `cerne work done` on a work that is already done exits 0 and changes
+  nothing.
+  ([#137](https://github.com/henriquesakata/cerne/pull/137))
+- Outside a cerne project, `cerne mcp` serves only the `guide` tool and says
+  the folder is not a cerne project, instead of exiting with an error.
+  ([#79](https://github.com/henriquesakata/cerne/pull/79))
+- `cerne savings` and the UI call the number what it measures, the reduction
+  of the corpus the agent searches, not context savings, and show the size of
+  `CONTEXT.md`.
+  ([#138](https://github.com/henriquesakata/cerne/pull/138),
+  [#147](https://github.com/henriquesakata/cerne/pull/147))
+- The authoring guide and the session-start rules name sections and forms in
+  the project's documentation language. The guide asks the agent to read the
+  code a request touches before writing the spec, asks for EARS-style
+  criteria, and explains when knowledge is a note and when it is a reference.
+  ([#129](https://github.com/henriquesakata/cerne/pull/129),
+  [#133](https://github.com/henriquesakata/cerne/pull/133),
+  [#136](https://github.com/henriquesakata/cerne/pull/136),
+  [#146](https://github.com/henriquesakata/cerne/pull/146))
+- The Backlog chat asks one question per turn, and a message sent while the
+  agent works waits in a queue instead of being blocked. The candidates column
+  and the conversations rail collapse, and the browser remembers it.
+  ([#121](https://github.com/henriquesakata/cerne/pull/121))
+- On the feature page, the **Actions** card holds only the transition
+  buttons; whether the card can be approved moved to an **Approval** card
+  below it.
+  ([#130](https://github.com/henriquesakata/cerne/pull/130))
 - A human-only switch in Settings asks before it moves away from its default:
   turning the mirror on now asks, as turning the Gauntlet off already did.
+  ([#78](https://github.com/henriquesakata/cerne/pull/78))
+- The README lists what cerne does not do.
+  ([#75](https://github.com/henriquesakata/cerne/pull/75))
+
+### Fixed
+
+- `cerne ui` answers only requests whose Host is a loopback address, for
+  reads as well as writes, and a write that sends an Origin must name that same
+  host. A web page that rebinds its domain to 127.0.0.1 can no longer read or
+  change your documents through the panel.
+  ([#115](https://github.com/henriquesakata/cerne/pull/115),
+  [#119](https://github.com/henriquesakata/cerne/pull/119))
+- An entity id with an encoded `../` (`%2F`) could write or delete files
+  outside the backend's content folder through the local server, and
+  `cerne serve` accepted a project id that cloned into and read from a folder
+  outside the cache. Both are refused.
+  ([#115](https://github.com/henriquesakata/cerne/pull/115),
+  [#120](https://github.com/henriquesakata/cerne/pull/120))
+- A Claude Code shell (`CLAUDECODE=1`) and a Codex shell (`CODEX_THREAD_ID`)
+  count as agents at the human gates, so an agent can no longer approve or
+  accept on a machine without cerne's hooks. The refusal says how a human in
+  that shell gets through.
+  ([#87](https://github.com/henriquesakata/cerne/pull/87),
+  [#125](https://github.com/henriquesakata/cerne/pull/125))
+- The Backlog chat's agent can no longer reach a lifecycle command through a
+  hidden alias or a flag placed before the verb, and the texts agents read name
+  `supersede`, not its old alias.
+  ([#96](https://github.com/henriquesakata/cerne/pull/96),
+  [#97](https://github.com/henriquesakata/cerne/pull/97),
+  [#98](https://github.com/henriquesakata/cerne/pull/98))
+- Calls to `gh` and `glab` always name the host, so `GH_HOST`, `GITLAB_HOST`
+  or the repository of the working directory no longer send them to another
+  server, and the runbook preflight no longer hands your other token variables
+  to `glab`.
+  ([#86](https://github.com/henriquesakata/cerne/pull/86),
+  [#89](https://github.com/henriquesakata/cerne/pull/89))
+- A push after a pull conflict no longer erases the other author's edit, and a
+  markdown file in a hidden folder under `.docs/` (`.obsidian/`, `.trash/`) no
+  longer traps `cerne push` in a push and pull loop.
+  ([#110](https://github.com/henriquesakata/cerne/pull/110))
+- A human message on the project channel reaches every live work and repeats
+  until each answers or acknowledges it. Sessions also hear the channel when
+  you send a prompt and before a shell command, not only at session start and
+  on file edits.
+  ([#126](https://github.com/henriquesakata/cerne/pull/126))
+- A `cerne ui` stopped with SIGTERM leaves the panel's project list and shuts
+  down cleanly.
+  ([#103](https://github.com/henriquesakata/cerne/pull/103))
+- `cerne room watch` releases its lock on SIGTERM, and the operating system
+  now holds the lock, so a watch killed by SIGKILL or a crash no longer blocks
+  every later watch on that room.
+  ([#113](https://github.com/henriquesakata/cerne/pull/113),
+  [#118](https://github.com/henriquesakata/cerne/pull/118))
+- `cerne idea link` accepts every card kind on the board (epic, task, bug), not
+  only features.
+  ([#74](https://github.com/henriquesakata/cerne/pull/74))
+- The notes recalled from a prompt split identifiers such as
+  `JsonDateSerializer`, so a prompt that says "date serializer" finds them.
+  ([#72](https://github.com/henriquesakata/cerne/pull/72))
+- `cerne gauntlet artifact` accepts bug cards, and the reminder to register an
+  external source fires only when a command actually runs cerne.
+  ([#117](https://github.com/henriquesakata/cerne/pull/117))
+- When the cache or the local backend folder does not accept writes (an agent
+  sandbox, for example), cerne says so, names both folders and no longer
+  suggests deleting them.
+  ([#122](https://github.com/henriquesakata/cerne/pull/122))
+- Outside Claude Code, `cerne next` no longer lists a delivery step with no
+  command, and `cerne feature complete` no longer advises a `--stamp` that
+  cannot run.
+  ([#123](https://github.com/henriquesakata/cerne/pull/123),
+  [#131](https://github.com/henriquesakata/cerne/pull/131))
+- The War Room page puts the conversation beside its side panel again, its
+  composer sends with Enter and breaks the line with Shift+Enter, and the room
+  list counts rooms, not participants.
+  ([#121](https://github.com/henriquesakata/cerne/pull/121))
+
+### Upgrading
+
+Everything not listed here needs no action.
+
+- **Update the binary.** `brew upgrade henriquesakata/tap/cerne`, or run the
+  install script again, or
+  `go install github.com/henriquesakata/cerne/cmd/cerne@v0.15.0` (details in
+  INSTALL.md, *Updating*). `cerne --version` then prints 0.15.0. From this
+  version on, `cerne update` does this for you.
+- **Hooks and the authoring guide renew on their own.** After the update, the
+  next agent session start or `cerne next` renews the managed files nobody
+  edited and prints one line. Files you edited are left alone and named: run
+  `cerne hook install` and `cerne skill install` to review them.
+- **Human gates inside an agent's shell.** `cerne feature approve` and
+  `accept` typed in a Claude Code or Codex shell are now refused as an agent's.
+  Run them in your own terminal, or prefix them with `CERNE_ACTOR=human`.
+- **Open `cerne ui` at `localhost` or `127.0.0.1`.** Any other host name, even
+  one that resolves to your machine, gets a 403.
+- **`GH_HOST` and `GITLAB_HOST` no longer pick the server.** cerne passes the
+  host of the project's repository or tracker URL to `gh` and `glab`.
+- **`CONTEXT.md` no longer lists concluded features, notes or references.**
+  An agent that read them there finds them with
+  `cerne feature list --state done`, `cerne note list` or `cerne search`.
+- **Work started from 2026-11-21 needs its criteria tied to tests.** Mark each
+  proving test with `F-NNNN crit. N`, or end an untested criterion with
+  `(manual verification)`. If your tests are outside the default places, set
+  `test_roots` and `test_patterns` in `.cernerc`;
+  `cerne settings set lint.criterion_tests false` turns the rule off.
+- **A remote copy in `.docs/.conflicts/` now blocks its push.** Reconcile the
+  document, delete the copy and push again, or use `cerne push --force`.
+- **New component names are checked.** A name close to one already in use is
+  refused: reuse the existing one (`cerne tags` lists them), or pass `--force`.
+- **`cerne ui` checks for new releases.** It asks GitHub when it starts and
+  every 24 hours. Turn it off with
+  `cerne settings set --scope host ui.update_check false`.
+
+### Known limitations
+
+- The note triggers on Gemini follow Gemini's documented hook format but were
+  not checked against a live Gemini session.
+- Cursor and the Copilot CLI drop the context of a prompt hook, so there the
+  project channel arrives only at the other points (session start, after a
+  command or an edit).
+- Restarting the panel into a new binary was checked by hand on macOS only; on
+  Windows the new binary starts as a child process in the same console.
+- `cerne mirror sync` and **Check now** read at most 100 open issues per
+  tracker, and say so when a list stops there.
+
+**Full changelog:** [v0.14.3...v0.15.0](https://github.com/henriquesakata/cerne/compare/v0.14.3...v0.15.0)
 
 ## [0.14.3] - 2026-11-18
 
@@ -476,7 +826,8 @@ Everything not listed here needs no action.
 First release published on GitHub. Versions 0.1.0 to 0.12.0 were released
 before the move and have no public release notes.
 
-[Unreleased]: https://github.com/henriquesakata/cerne/compare/v0.14.3...HEAD
+[Unreleased]: https://github.com/henriquesakata/cerne/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/henriquesakata/cerne/compare/v0.14.3...v0.15.0
 [0.14.3]: https://github.com/henriquesakata/cerne/compare/v0.14.2...v0.14.3
 [0.14.2]: https://github.com/henriquesakata/cerne/compare/v0.14.1...v0.14.2
 [0.14.1]: https://github.com/henriquesakata/cerne/compare/v0.14.0...v0.14.1
