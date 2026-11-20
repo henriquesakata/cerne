@@ -516,6 +516,54 @@ describe('LiveProvider — reinício no binário novo (F-0478)', () => {
     expect(pageReload.run).toHaveBeenCalledTimes(1)
   })
 
+  it('critério 5: espera o projeto da aba voltar ao painel antes de recarregar', async () => {
+    vi.mocked(fetchProjects).mockImplementation(listWith(running))
+    render(
+      <LiveProvider>
+        <Probe />
+      </LiveProvider>,
+    )
+    await screen.findByText('p1')
+    const upgraded = { version: 'v0.15.0', ui: 'new' }
+    const only = (list: ProjectInfo[]) => async () => ({ projects: list, default: 'p2', ...upgraded, installed: upgraded })
+
+    // O painel voltou, mas o processo do p1 ainda não se registrou de novo.
+    vi.mocked(fetchProjects).mockImplementation(only([{ pid: 'p2', name: 'P2' }]))
+    await act(async () => onProjects())
+    expect(pageReload.run).not.toHaveBeenCalled()
+    expect(screen.getByText('p1')).toBeInTheDocument() // a aba não troca de projeto
+
+    vi.mocked(fetchProjects).mockImplementation(only(mockProjects))
+    await act(async () => onProjects())
+    expect(pageReload.run).toHaveBeenCalledTimes(1)
+  })
+
+  it('critério 5: projeto que não volta recarrega mesmo assim depois de 15 s', async () => {
+    vi.mocked(fetchProjects).mockImplementation(listWith(running))
+    render(
+      <LiveProvider>
+        <Probe />
+      </LiveProvider>,
+    )
+    await screen.findByText('p1')
+    vi.useFakeTimers()
+    try {
+      const upgraded = { version: 'v0.15.0', ui: 'new' }
+      vi.mocked(fetchProjects).mockImplementation(async () => ({
+        projects: [{ pid: 'p2', name: 'P2' }],
+        default: 'p2',
+        ...upgraded,
+        installed: upgraded,
+      }))
+      await act(async () => onProjects())
+      expect(pageReload.run).not.toHaveBeenCalled()
+      await act(async () => vi.advanceTimersByTimeAsync(15_500))
+      expect(pageReload.run).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('critério 5 com rascunho aberto: a trava recusa e o aviso oferece recarregar', async () => {
     vi.mocked(fetchProjects).mockImplementation(listWith(running))
     render(

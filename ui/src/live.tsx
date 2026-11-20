@@ -78,6 +78,9 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     state: 'idle',
   })
   const [updatedTo, setUpdatedTo] = useState('')
+  // Prazo da recarga pendente: o painel volta antes de os processos acoplados
+  // registrarem de novo os seus projetos.
+  const reloadBy = useRef(0)
 
   // activeRef espelha o pid ativo para uso síncrono fora do ciclo de render
   // (callbacks de SSE e o reload da lista), evitando closures velhas.
@@ -125,6 +128,15 @@ export function LiveProvider({ children }: { children: ReactNode }) {
           const id = `${version}|${ui ?? ''}`
           if (!bootIdentity.current) bootIdentity.current = id
           else if (id !== bootIdentity.current) {
+            // Espera o projeto desta aba voltar à lista, para a recarga cair
+            // nele; um projeto que não volta não segura a recarga mais de 15 s.
+            // Até lá a lista parcial não entra, senão a aba trocaria de projeto.
+            const back = projects.some((p) => p.pid === activeRef.current)
+            if (!back && !reloadBy.current) {
+              reloadBy.current = Date.now() + 15_000
+              setTimeout(() => void reload(), 15_100)
+            }
+            if (!back && Date.now() < reloadBy.current) return
             // A recarga passa pela trava do rascunho do cofre (F-0464): recusada,
             // a página fica e o aviso oferece recarregar depois.
             if (navAllowed()) {
