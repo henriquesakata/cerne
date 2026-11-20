@@ -12,8 +12,11 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -82,7 +85,30 @@ func newUICmd() *cobra.Command {
 // runUI serves the dashboard for N projects. The process either binds the
 // port and hosts, or joins the cerne ui already on it; when the host dies,
 // the survivors race to take the port over (F-0119).
+//
+// A host asked to restart (F-0478) leaves superviseUI with a restartRequest;
+// runUI then turns into the binary on disk. A restart that fails keeps this
+// version serving, on the same socket where the platform kept it.
 func runUI(cmd *cobra.Command, dir string, port int, noBrowser bool, pullInterval time.Duration) error {
+	uiCommand = commandPath()
+	for {
+		err := serveUI(cmd, dir, port, noBrowser, pullInterval)
+		var rr *restartRequest
+		if !errors.As(err, &rr) {
+			return err
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "restarting the panel into %s\n", rr.path)
+		restartErr := restartUI(rr) // returns only when the restart failed
+		fmt.Fprintf(cmd.OutOrStdout(), "warning: could not restart into %s: %v; this version keeps serving\n", rr.path, restartErr)
+		if rr.file != nil {
+			os.Setenv(listenFDEnv, strconv.Itoa(int(rr.file.Fd())))
+		}
+		os.Setenv(restartedEnv, "1")
+	}
+}
+
+// serveUI is one life of the panel process, from bind or join to exit.
+func serveUI(cmd *cobra.Command, dir string, port int, noBrowser bool, pullInterval time.Duration) error {
 	// A cancellable context ties the per-project live-refresh goroutines to the
 	// process; Ctrl+C or SIGTERM (kill, an IDE stopping a preview) cancels it,
 	// which shuts the server down gracefully or, when joined, removes this
@@ -90,7 +116,78 @@ func runUI(cmd *cobra.Command, dir string, port int, noBrowser bool, pullInterva
 	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	defer initServerTelemetry(sigCtx, dir)()
-	return superviseUI(sigCtx, cmd.OutOrStdout(), dir, port, noBrowser, pullInterval, uiResolver)
+	return superviseUI(sigCtx, cmd.OutOrStdout(), dir, port, noBrowser, pullInterval, uiResolve)
+}
+
+// uiResolve is uiResolver; a variable so the restart test's helper process
+// serves fixture directories without a backend.
+var uiResolve server.Resolver = uiResolver
+
+// uiCommand is the command that started this process, as an absolute path;
+// empty outside runUI, which leaves the panel without restart (F-0478).
+var uiCommand string
+
+// The restart hands the next process the panel's socket and tells it that it
+// is a restart, so it opens no browser tab (F-0478 criterion 4).
+const (
+	listenFDEnv  = "CERNE_UI_LISTEN_FD"
+	restartedEnv = "CERNE_UI_RESTARTED"
+)
+
+// restartRequest ends host mode for a restart into path. file is the socket
+// kept open across the restart (nil where the platform cannot keep it).
+type restartRequest struct {
+	file *os.File
+	path string
+}
+
+func (*restartRequest) Error() string { return "the panel was asked to restart" }
+
+// commandPath resolves the command as it was invoked: a path is made
+// absolute, a bare name is looked up in PATH. A Homebrew link stays a link,
+// so after an upgrade it reaches the new Cellar — os.Executable may name the
+// old one, which `brew cleanup` deletes.
+func commandPath() string {
+	arg := os.Args[0]
+	if filepath.Base(arg) == arg {
+		if p, err := exec.LookPath(arg); err == nil {
+			arg = p
+		}
+	}
+	if p, err := filepath.Abs(arg); err == nil {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	p, _ := os.Executable()
+	return p
+}
+
+// restartEnv is this process's environment without the restart variables,
+// for the next process to receive fresh ones.
+func restartEnv() []string {
+	env := os.Environ()
+	return slices.DeleteFunc(env, func(kv string) bool {
+		return strings.HasPrefix(kv, listenFDEnv+"=") || strings.HasPrefix(kv, restartedEnv+"=")
+	})
+}
+
+// inheritedListener takes over the socket a restarting panel handed down,
+// and clears the variables so no subprocess inherits them. The handed-down
+// descriptor is closed: net.FileListener keeps its own close-on-exec copy.
+func inheritedListener() (net.Listener, error) {
+	v := os.Getenv(listenFDEnv)
+	if v == "" {
+		return nil, nil
+	}
+	os.Unsetenv(listenFDEnv)
+	fd, err := strconv.Atoi(v)
+	if err != nil {
+		return nil, fmt.Errorf("%s=%q: %w", listenFDEnv, v, err)
+	}
+	f := os.NewFile(uintptr(fd), "cerne-ui-listener")
+	defer f.Close()
+	return net.FileListener(f)
 }
 
 // superviseUI is the per-process takeover loop: try to bind and host; on
@@ -105,6 +202,15 @@ func superviseUI(ctx context.Context, out io.Writer, dir string, port int, noBro
 	// different families — and the port-bind mutex only works when every
 	// process races for the same address.
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	if os.Getenv(restartedEnv) != "" {
+		os.Unsetenv(restartedEnv)
+		noBrowser = true // a restart reuses the tabs already open
+	}
+	if ln, err := inheritedListener(); err != nil {
+		return err
+	} else if ln != nil {
+		return hostUI(ctx, out, ln, addr, dir, pullInterval, resolve, false)
+	}
 	first := true
 	warned := map[string]bool{} // host identities already warned about, per process
 	backoff := 250 * time.Millisecond
@@ -153,29 +259,59 @@ func sleepCtx(ctx context.Context, d time.Duration) bool {
 
 // hostUI is host mode: this process owns the port and serves every registered
 // project until ctx is done. openTab controls the automatic browser tab.
+// A restart asked through the panel (F-0478) ends it with a restartRequest
+// holding a copy of the socket, taken before the shutdown closes ln.
 func hostUI(ctx context.Context, out io.Writer, ln net.Listener, addr, dir string, pullInterval time.Duration, resolve server.Resolver, openTab bool) error {
-	handler, err := server.NewUIMulti(ctx, resolve, pullInterval, dir)
+	srvCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	restartCh := make(chan struct{}, 1)
+	var host server.UIHost
+	if uiCommand != "" {
+		host = server.UIHost{Command: uiCommand, Restart: func() {
+			select {
+			case restartCh <- struct{}{}:
+			default:
+			}
+		}}
+	}
+	handler, err := server.NewUIMultiHost(srvCtx, resolve, pullInterval, dir, host)
 	if err != nil {
 		ln.Close()
 		return err
 	}
 	url := fmt.Sprintf("http://%s", addr)
-	fmt.Fprintf(out, "Local UI at %s (Ctrl+C to exit)\n", url)
+	fmt.Fprintf(out, "Local UI at %s, cerne %s (Ctrl+C to exit)\n", url, version.Short())
 	if openTab {
-		go openBrowser(url)
+		go openURL(url)
 	}
 	srv := &http.Server{Handler: handler}
+	var rr *restartRequest
+	stopped := make(chan struct{})
 	go func() {
-		<-ctx.Done()
-		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+		defer close(stopped)
+		select {
+		case <-srvCtx.Done():
+		case <-restartCh:
+			f, err := dupListener(ln)
+			if err != nil {
+				fmt.Fprintf(out, "warning: the port cannot be kept across the restart (%v); it is free for a moment\n", err)
+			}
+			rr = &restartRequest{file: f, path: uiCommand}
+		}
+		cancel() // ends the SSE streams (multiHub.done) and the watchers
+		shutCtx, cancelShut := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancelShut()
 		_ = srv.Shutdown(shutCtx)
-		// The SSE streams end with ctx (multiHub.done), but force-close any
-		// straggler so the port frees for the takeover race deterministically.
+		// Force-close any straggler so the port frees for the takeover race
+		// deterministically.
 		_ = srv.Close()
 	}()
 	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
+	}
+	<-stopped
+	if rr != nil {
+		return rr
 	}
 	return nil
 }
