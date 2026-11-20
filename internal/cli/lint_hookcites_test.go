@@ -23,7 +23,7 @@ func hookCitesFixture(t *testing.T) (projDir, repoDir string) {
 	if err := os.WriteFile(bodyFile, []byte(body.String()), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := execCerne(t, "note", "new", "Regras de sessão", "--file", bodyFile, "--facet", "auth", "--component", "hooks", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "note", "new", "Regras de sessão", "--file", bodyFile, "--facet", "auth", "--dir", projDir); err != nil {
 		t.Fatalf("note new: %v\n%s", err, out)
 	}
 	script := "const msg = '(N-0001, regra 15)';\n// N-0001 regra 15\n// N-0001 regra 14\n"
