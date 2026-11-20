@@ -75,7 +75,7 @@ func TestWritePointsRecordAuthor(t *testing.T) {
 			return SaveFeatureDoc(repoDir, projDir, "F-0003", "plan", "# Plano\n\n## Tarefas\n\n1. Fazer.\n")
 		}, declared, nil},
 		{"feature amend", "F-0001", "spec", func() error {
-			_, _, _, err := AmendFeatureDoc(repoDir, projDir, "F-0001", "spec", spec("emendada"), "mudou")
+			_, _, _, _, err := AmendFeatureDoc(repoDir, projDir, "F-0001", "spec", spec("emendada"), "mudou", false)
 			return err
 		}, declared, map[string]string{"reason": "mudou", "rev": "1"}},
 		{"result amend", "F-0002", "result", func() error {

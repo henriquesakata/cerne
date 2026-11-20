@@ -85,7 +85,7 @@ func TestAmendRefusesAnotherSessionsCard(t *testing.T) {
 		state       domain.FeatureState
 		consequence string
 	}{
-		{domain.StateApproved, "the approval goes stale"},
+		{domain.StateApproved, "stales the approval"},
 		{domain.StateInDevelopment, "takes effect at once, with no re-approval"},
 	} {
 		t.Run(string(tc.state), func(t *testing.T) {
@@ -93,7 +93,7 @@ func TestAmendRefusesAnotherSessionsCard(t *testing.T) {
 			head0, _ := gitback.HeadSHA(origin)
 			evs0, _ := store.ReadEvents(repoDir)
 
-			_, _, _, _, err := AmendFeatureDocForce(repoDir, projDir, "E-0001", "spec", amendedSpec, "mudou", false)
+			_, _, _, _, err := AmendFeatureDoc(repoDir, projDir, "E-0001", "spec", amendedSpec, "mudou", false)
 			if !errors.Is(err, ErrActiveWorkElsewhere) {
 				t.Fatalf("err = %v, want ErrActiveWorkElsewhere", err)
 			}
@@ -120,7 +120,7 @@ func TestAmendRefusesAnotherSessionsCard(t *testing.T) {
 func TestAmendForceRecordsCrossedWorks(t *testing.T) {
 	repoDir, projDir, _ := seedEpicWithBoundChild(t, domain.StateInDevelopment)
 
-	_, rev, changed, notes, err := AmendFeatureDocForce(repoDir, projDir, "E-0001", "spec", amendedSpec, "mudou", true)
+	_, rev, changed, notes, err := AmendFeatureDoc(repoDir, projDir, "E-0001", "spec", amendedSpec, "mudou", true)
 	if err != nil || !changed || rev != 1 {
 		t.Fatalf("forced amend: rev %d, changed %v, err %v", rev, changed, err)
 	}
@@ -148,7 +148,7 @@ func TestAmendInDevelopmentSaysItTakesEffect(t *testing.T) {
 	seedActiveWork(t, repoDir, "W-0001", autoWorkActor(), "E-0001", false)
 	t.Setenv("CERNE_SESSION", "sess-a")
 
-	_, _, changed, notes, err := AmendFeatureDocForce(repoDir, projDir, "E-0001", "spec", amendedSpec, "mudou", false)
+	_, _, changed, notes, err := AmendFeatureDoc(repoDir, projDir, "E-0001", "spec", amendedSpec, "mudou", false)
 	if err != nil || !changed {
 		t.Fatalf("amend: changed %v, err %v", changed, err)
 	}
@@ -164,5 +164,26 @@ func TestAmendInDevelopmentSaysItTakesEffect(t *testing.T) {
 	evs, _ := store.ReadEvents(repoDir)
 	if last := evs[len(evs)-1]; last.Payload["guard"] != "" {
 		t.Fatalf("an unforced amend carries no guard mark: %+v", last)
+	}
+}
+
+// TestAmendWithoutSessionFallsToActor (criterion 7, end to end; critic C3):
+// with no CERNE_SESSION, another session's binding proves nothing, so the same
+// actor's work only warns — saying why — and another actor's still refuses.
+func TestAmendWithoutSessionFallsToActor(t *testing.T) {
+	repoDir, projDir, _ := seedEpicWithBoundChild(t, domain.StateInDevelopment)
+	t.Setenv("CERNE_SESSION", "")
+
+	_, _, changed, notes, err := AmendFeatureDoc(repoDir, projDir, "E-0001", "spec", amendedSpec, "mudou", false)
+	if err != nil || !changed {
+		t.Fatalf("same actor without CERNE_SESSION: changed %v, err %v", changed, err)
+	}
+	if out := strings.Join(notes, "\n"); !strings.Contains(out, "warning: W-0001 is active on T-0001") || !strings.Contains(out, "CERNE_SESSION is unset") {
+		t.Fatalf("notes must warn on W-0001 and say sessions were not compared:\n%s", out)
+	}
+
+	seedActiveWork(t, repoDir, "W-0002", "outro@maquina", "E-0001", false)
+	if _, _, _, _, err := AmendFeatureDoc(repoDir, projDir, "E-0001", "spec", amendedSpec+"\nMais.\n", "de novo", false); !errors.Is(err, ErrActiveWorkElsewhere) || !strings.Contains(err.Error(), "W-0002") {
+		t.Fatalf("another actor without CERNE_SESSION: err = %v, want ErrActiveWorkElsewhere naming W-0002", err)
 	}
 }

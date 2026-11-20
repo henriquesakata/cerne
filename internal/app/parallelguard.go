@@ -222,10 +222,15 @@ func guardAmend(repoDir string, f store.Feature, doc string, force bool) (crosse
 	if err != nil {
 		return nil, nil, err
 	}
+	sess := os.Getenv("CERNE_SESSION")
 	sessions := WorkSessions(works, SessionSignals(filepath.Dir(repoDir)))
-	foreign, ambiguous := classifyAmendWorks(works, features, f.ID, myActors(), os.Getenv("CERNE_SESSION"), sessions, time.Now().UTC())
+	foreign, ambiguous := classifyAmendWorks(works, features, f.ID, myActors(), sess, sessions, time.Now().UTC())
+	why := "same actor, no session bound on this machine"
+	if sess == "" {
+		why = "same actor; CERNE_SESSION is unset, so sessions are not compared"
+	}
 	for _, p := range ambiguous {
-		notes = append(notes, fmt.Sprintf("warning: %s is active on %s (same actor, no session bound on this machine) — confirm nobody else is working on it", p.ID, cmpOr(p.Card, f.ID)))
+		notes = append(notes, fmt.Sprintf("warning: %s is active on %s (%s) — confirm nobody else is working on it", p.ID, cmpOr(p.Card, f.ID), why))
 	}
 	var against []string
 	if plan, _ := os.ReadFile(FeatureDocPath(repoDir, f.ID, "plan.md")); doc == "spec" && doccheck.HasRealContent(plan) {
@@ -236,7 +241,7 @@ func guardAmend(repoDir string, f store.Feature, doc string, force bool) (crosse
 	}
 	effect := string(f.State) + ": the " + doc + " amend takes effect at once, with no re-approval"
 	if f.State == domain.StateApproved && doc == "spec" {
-		effect = "approved: the approval goes stale — 'cerne feature start' refuses until the owner re-approves"
+		effect = "approved: a spec that differs from the approved one stales the approval — 'cerne feature start' refuses until the owner re-approves"
 	}
 	if len(against) > 0 {
 		effect += "\nwritten against the current " + doc + ": " + strings.Join(against, ", ")

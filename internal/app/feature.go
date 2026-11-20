@@ -916,18 +916,14 @@ var ErrAmendNoDoc = errors.New("no document to amend yet")
 // (changed false: no revision, no event, no commit), judged against origin. A
 // document absent or still the stub is refused inside the lock (ErrAmendNoDoc):
 // its first text goes in through .docs/ + push.
-func AmendFeatureDoc(repoDir, projDir, id, doc, body, reason string) (f store.Feature, rev int, changed bool, err error) {
-	f, rev, changed, _, err = AmendFeatureDocForce(repoDir, projDir, id, doc, body, reason, false)
-	return f, rev, changed, err
-}
-
-// AmendFeatureDocForce is AmendFeatureDoc behind the session guard (F-0485,
-// guardAmend): active work of another session or actor on the card or a live
-// child refuses with ErrActiveWorkElsewhere, unless force — then the event
-// carries guard: forced and the crossed works' ids. notes are the lines to
-// print after a write: warnings, the crossed works, and in development what
-// the amend changes at once.
-func AmendFeatureDocForce(repoDir, projDir, id, doc, body, reason string, force bool) (f store.Feature, rev int, changed bool, notes []string, err error) {
+//
+// The session guard (F-0485, guardAmend) runs inside the lock, before any
+// write: active work of another session or actor on the card or a live child
+// refuses with ErrActiveWorkElsewhere, unless force — then the event carries
+// guard: forced and the crossed works' ids. notes are the lines to print after
+// a write: warnings, the crossed works, and in development what the amend
+// changes at once.
+func AmendFeatureDoc(repoDir, projDir, id, doc, body, reason string, force bool) (f store.Feature, rev int, changed bool, notes []string, err error) {
 	if doc != "spec" && doc != "plan" {
 		return store.Feature{}, 0, false, nil, fmt.Errorf("%w: %q (amend takes spec or plan; the result has its own amend)", ErrUnknownDoc, doc)
 	}

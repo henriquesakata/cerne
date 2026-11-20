@@ -184,7 +184,7 @@ func runFeatureAmend(cmd *cobra.Command, dir, id, doc, file, reason string, forc
 		return err
 	}
 	if doc != "result" {
-		f, rev, changed, notes, err := app.AmendFeatureDocForce(ctx.repoDir, ctx.projDir, id, doc, body, reason, force)
+		f, rev, changed, notes, err := app.AmendFeatureDoc(ctx.repoDir, ctx.projDir, id, doc, body, reason, force)
 		if err != nil {
 			return err
 		}

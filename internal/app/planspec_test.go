@@ -58,7 +58,7 @@ func TestPlanWriteRecordsSpecDigest(t *testing.T) {
 			return SaveFeatureDocBy(repoDir, projDir, "F-0001", "plan", plan, "", HumanAuthor())
 		}, stored},
 		{"amend", "F-0001", "plan", func() error {
-			_, _, _, err := AmendFeatureDoc(repoDir, projDir, "F-0001", "plan", "# Plano\n\n## Tarefas\n\n1. Fazer melhor.\n", "refeito")
+			_, _, _, _, err := AmendFeatureDoc(repoDir, projDir, "F-0001", "plan", "# Plano\n\n## Tarefas\n\n1. Fazer melhor.\n", "refeito", false)
 			return err
 		}, stored},
 		{"plan draft", "F-0001", "plan", func() error {
