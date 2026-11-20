@@ -11,7 +11,7 @@ import (
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
-func addWork(t *testing.T, backendDir, id, title, actor string, state domain.WorkState, createdAt time.Time) {
+func addWork(t testing.TB, backendDir, id, title, actor string, state domain.WorkState, createdAt time.Time) {
 	t.Helper()
 	w := store.Work{ID: id, Title: title, State: state, Actor: actor, CreatedAt: createdAt, UpdatedAt: createdAt}
 	if err := store.SaveWork(backendDir, w); err != nil {

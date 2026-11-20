@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -29,17 +30,26 @@ import (
 var featureDocFilenames = []string{"spec.md", "plan.md", "result.md"}
 
 // contextGroupOrder is the fixed display order of the CONTEXT.md feature
-// table; terminal states (rejected, superseded) are never listed.
+// table: only what is live (E-0005 criterion 1). Done, rejected and superseded
+// come as a count per state; a done feature's delivery is in the code.
 var contextGroupOrder = []domain.FeatureState{
 	domain.StateInDevelopment,
 	domain.StateApproved,
 	domain.StateCandidate,
 	domain.StateImplemented,
-	// StateDone (F-0131) lists alongside implemented, terminal but still
-	// worth surfacing in the roster ("Ready"/"Done" are both post-code
-	// states); its content is not materialized (see materializedStates).
-	domain.StateDone,
 }
+
+// contextKeepOrder is the order the table keeps live features in when they do
+// not fit contextMaxBytes (E-0005 criterion 3): the last ones go first.
+var contextKeepOrder = []domain.FeatureState{
+	domain.StateInDevelopment,
+	domain.StateImplemented,
+	domain.StateApproved,
+	domain.StateCandidate,
+}
+
+// contextClosedOrder is the order of the "Not listed" counts.
+var contextClosedOrder = []domain.FeatureState{domain.StateDone, domain.StateRejected, domain.StateSuperseded}
 
 // materializedStates are the feature states whose content documents are
 // copied into .docs/. Implemented features stay listed in CONTEXT.md but
@@ -73,6 +83,10 @@ const contextTemplate = `# {{.ProjectName}} — current state
 |---|---|---|---|---|---|
 {{range .Features}}| {{.ID}} | {{.State}} | {{.Parent}} | {{.Module}} | {{.Title}} | {{.Docs}} |
 {{end}}{{else}}_None._
+{{end}}{{if .Omitted}}
+{{.Omitted}}
+{{end}}{{if .Closed}}
+{{.Closed}}
 {{end}}
 ## Epics
 
@@ -84,29 +98,29 @@ const contextTemplate = `# {{.ProjectName}} — current state
 
 {{end}}## Active decisions
 
-{{if .Decisions}}{{range .Decisions}}- {{.}}
+{{if or .Decisions .MoreDecisions}}{{range .Decisions}}- {{.}}
+{{end}}{{if .MoreDecisions}}- {{.MoreDecisions}} more left out to keep this file within 16 KB: cerne decision list
 {{end}}{{else}}_None._
 {{end}}
 ## Runbooks
 
-{{if .Runbooks}}{{range .Runbooks}}- {{.}}
+{{if or .Runbooks .MoreRunbooks}}{{range .Runbooks}}- {{.}}
+{{end}}{{if .MoreRunbooks}}- {{.MoreRunbooks}} more left out to keep this file within 16 KB: cerne brief
 {{end}}{{else}}_None._
 {{end}}
 ## Knowledge
 
-{{if .Notes}}{{range .Notes}}- {{.}}
-{{end}}{{else}}_None._
-{{end}}
-## References
-
-{{if .References}}{{range .References}}- {{.}}
-{{end}}{{else}}_None._
+{{if .Knowledge}}{{.Knowledge}}
+{{if .NoteComponents}}Components of the active notes: {{.NoteComponents}}.
+{{end}}Pull the notes of a group: cerne note list --component a,b,c (decision list and reference list take the same group).
+{{else}}_None._
 {{end}}`
 
-const boardTemplate = `{{define "board"}}{{if or .ActiveWorks .IdleWorks}}
+const boardTemplate = `{{define "board"}}{{if or .ActiveWorks .IdleWorks .MoreWorks}}
 ## In progress
 
 {{range .ActiveWorks}}- {{.ID}} — {{.Title}} ({{.Actor}}, since {{.Since}}){{if .PendingHO}} — handoff {{.PendingHO}} pending{{else if .HandoffAt}} — handoff {{.HandoffAt}}: cerne show {{.ID}}{{end}}
+{{end}}{{if .MoreWorks}}- {{.MoreWorks}} more active work(s) left out to keep CONTEXT.md within 16 KB: cerne work list
 {{end}}{{if .IdleWorks}}- {{.IdleWorks}} more active work(s) idle for over {{.IdleDays}} days (oldest: {{.IdleOldestID}}, idle since {{.IdleOldestSince}}) — triage: 'cerne work list', then 'cerne work done|abandon <id>'
 {{end}}{{end}}{{if .PendingHandoffs}}
 ## Pending handoffs
@@ -114,6 +128,9 @@ const boardTemplate = `{{define "board"}}{{if or .ActiveWorks .IdleWorks}}
 {{range .PendingHandoffs}}- {{.}}
 {{end}}{{if .MoreHandoffs}}- {{.MoreHandoffs}} more: cerne handoff list
 {{end}}{{end}}{{end}}`
+
+// contextMaxBytes is the CONTEXT.md ceiling (E-0005 criterion 3): a constant, no setting (N-0121).
+const contextMaxBytes = 16 * 1024
 
 // maxPendingHandoffs caps the CONTEXT.md handoff block (F-0368 crit. 10).
 const maxPendingHandoffs = 10
@@ -131,6 +148,8 @@ type boardData struct {
 	// MoreHandoffs counts the pending ones past the cap.
 	PendingHandoffs []string
 	MoreHandoffs    int
+	// MoreWorks counts the active works CONTEXT.md's ceiling left out (E-0005).
+	MoreWorks int
 }
 
 // contextData feeds contextTemplate; Decisions and References carry the
@@ -138,12 +157,19 @@ type boardData struct {
 type contextData struct {
 	ProjectName string
 	boardData
-	Features   []featureRow
-	Epics      []epicSection
-	Decisions  []string
-	Runbooks   []string
-	Notes      []string
-	References []string
+	Features  []featureRow
+	Omitted   string // the live features the ceiling left out, with the command (E-0005 criterion 3)
+	Closed    string // the count per state of the features not listed (criterion 1)
+	Epics     []epicSection
+	Decisions []string
+	Runbooks  []string
+	// MoreDecisions and MoreRunbooks count the lines the ceiling left out.
+	MoreDecisions, MoreRunbooks int
+	// Knowledge counts the active notes and current references, and
+	// NoteComponents renders the components of the active notes with their
+	// counts: the one read of the tags (criterion 2), not a line per entity.
+	Knowledge      string
+	NoteComponents string
 }
 
 // workRow is one active work (agent activity, F-0130) in the CONTEXT.md
@@ -265,7 +291,21 @@ func MaterializeAt(repoDir, docsDir, scope string, okf bool, recentDays int, now
 	data := contextData{ProjectName: proj.Name}
 	data.boardData = boardDataOf(works, events, handoffs, now, recentDays)
 
-	var shown []store.Feature // in-scope, non-terminal features, for the epic breakdown
+	var live []store.Feature                // in-scope live features, in display order
+	rows := map[string]featureRow{}         // their table rows, by id
+	closed := map[domain.FeatureState]int{} // in-scope features not listed, by state
+	var progress []store.Feature            // live and done: the epics' implemented/total
+	for _, f := range features {
+		if scope != "" && f.Module != scope {
+			continue
+		}
+		if !slices.Contains(contextGroupOrder, f.State) {
+			closed[f.State]++
+		}
+		if f.State == domain.StateDone || slices.Contains(contextGroupOrder, f.State) {
+			progress = append(progress, f)
+		}
+	}
 	for _, state := range contextGroupOrder {
 		for _, f := range features { // already sorted by ID
 			if f.State != state {
@@ -290,11 +330,11 @@ func MaterializeAt(repoDir, docsDir, scope string, okf bool, recentDays int, now
 				}
 				row.Docs += links
 			}
-			data.Features = append(data.Features, row)
-			shown = append(shown, f)
+			rows[f.ID] = row
+			live = append(live, f)
 		}
 	}
-	data.Epics = epicSections(shown)
+	data.Closed = closedLine(closed)
 
 	for _, d := range decisions {
 		if !decisionIsCurrent(d) {
@@ -326,22 +366,22 @@ func MaterializeAt(repoDir, docsDir, scope string, okf bool, recentDays int, now
 		data.Runbooks = append(data.Runbooks, line)
 	}
 
+	// Notes and references are still materialized whole; the map carries
+	// only their counts and the components of the notes (E-0005 criterion 2).
+	activeNotes, currentRefs := 0, 0
+	noteComps := map[string]int{}
 	for _, n := range notes {
 		if !noteIsCurrent(n) {
 			continue
 		}
 		meta := okfMeta{Type: "note", Title: n.Title, Timestamp: okfTime(n.UpdatedAt), Informs: n.Informs}
-		line, err := copyEntry(repoDir, docsDir, "notes", n.ID, n.Title, manifest, blocks, okf, meta, descs)
-		if err != nil {
+		if _, err := copyEntry(repoDir, docsDir, "notes", n.ID, n.Title, manifest, blocks, okf, meta, descs); err != nil {
 			return nil, err
 		}
-		if len(n.Facets) > 0 {
-			line += " · facet " + strings.Join(n.Facets, ",")
+		activeNotes++
+		for _, c := range n.Components {
+			noteComps[c]++
 		}
-		if len(n.Components) > 0 {
-			line += " · comp " + strings.Join(n.Components, ",")
-		}
-		data.Notes = append(data.Notes, line)
 	}
 
 	for _, r := range references {
@@ -349,11 +389,13 @@ func MaterializeAt(repoDir, docsDir, scope string, okf bool, recentDays int, now
 			continue
 		}
 		meta := okfMeta{Type: "reference", Title: r.Title, Timestamp: okfTime(r.UpdatedAt), Resource: r.URL, External: r.External, Informs: r.Informs}
-		line, err := copyEntry(repoDir, docsDir, "references", r.ID, r.Title, manifest, blocks, okf, meta, descs)
-		if err != nil {
+		if _, err := copyEntry(repoDir, docsDir, "references", r.ID, r.Title, manifest, blocks, okf, meta, descs); err != nil {
 			return nil, err
 		}
-		data.References = append(data.References, line)
+		currentRefs++
+	}
+	if activeNotes+currentRefs > 0 {
+		data.Knowledge = plural(activeNotes, "active note") + ", " + plural(currentRefs, "current reference") + "."
 	}
 
 	if err := copyWiki(repoDir, docsDir, manifest); err != nil {
@@ -375,20 +417,171 @@ func MaterializeAt(repoDir, docsDir, scope string, okf bool, recentDays int, now
 		}
 	}
 
-	tmpl, err := template.New("context").Parse(boardTemplate + contextTemplate)
+	body, err := fitContext(data, live, rows, progress, noteComps)
 	if err != nil {
 		return nil, err
 	}
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, data); err != nil {
-		return nil, err
-	}
-	sum, err := writeFile(docsDir, "CONTEXT.md", buf.Bytes())
+	sum, err := writeFile(docsDir, "CONTEXT.md", body)
 	if err != nil {
 		return nil, err
 	}
 	manifest["CONTEXT.md"] = sum
 	return manifest, nil
+}
+
+// fitContext renders CONTEXT.md within contextMaxBytes (E-0005 criterion 3).
+// Everything is listed when it fits. Otherwise lines go in this order, as few
+// as fit (a binary search over how many, so a few renders, not one per line):
+// the candidate, approved and implemented features (contextKeepOrder read
+// backwards, oldest first within a state), then the last active decisions,
+// runbooks and works, then the in-development features (oldest first), then
+// the least used note components. Each section says how many it left out and
+// the command that lists them, so the in-development rows outlive a long
+// decision list and the tag list with the group search outlives everything. A
+// map that still does not fit (a board of thousands of works with no other
+// line left) is cut at the last whole line under the ceiling.
+func fitContext(data contextData, live []store.Feature, rows map[string]featureRow, progress []store.Feature, comps map[string]int) ([]byte, error) {
+	tmpl, err := template.New("context").Parse(boardTemplate + contextTemplate)
+	if err != nil {
+		return nil, err
+	}
+	var keepDev, keepLow []store.Feature // newest first within a state
+	for _, state := range contextKeepOrder {
+		for i := len(live) - 1; i >= 0; i-- {
+			if live[i].State != state {
+				continue
+			}
+			if state == domain.StateInDevelopment {
+				keepDev = append(keepDev, live[i])
+			} else {
+				keepLow = append(keepLow, live[i])
+			}
+		}
+	}
+	// The components leave the least used first; they print alphabetically.
+	byUse := slices.SortedFunc(maps.Keys(comps), func(a, b string) int {
+		if d := comps[b] - comps[a]; d != 0 {
+			return d
+		}
+		return strings.Compare(a, b)
+	})
+	total := len(keepLow) + len(data.Decisions) + len(data.Runbooks) + len(data.ActiveWorks) + len(keepDev) + len(byUse)
+	render := func(k int) ([]byte, error) {
+		take := func(n int) int { x := min(n, k); k -= x; return x }
+		lowCut := take(len(keepLow))
+		decCut := take(len(data.Decisions))
+		rbCut := take(len(data.Runbooks))
+		workCut := take(len(data.ActiveWorks))
+		devCut := take(len(keepDev))
+		compCut := take(len(byUse))
+
+		d := data
+		d.Decisions, d.MoreDecisions = data.Decisions[:len(data.Decisions)-decCut], decCut
+		d.Runbooks, d.MoreRunbooks = data.Runbooks[:len(data.Runbooks)-rbCut], rbCut
+		d.ActiveWorks, d.MoreWorks = data.ActiveWorks[:len(data.ActiveWorks)-workCut], workCut
+		kept := map[string]bool{}
+		left := map[domain.FeatureState]int{}
+		for i, f := range keepDev {
+			if i < len(keepDev)-devCut {
+				kept[f.ID] = true
+			} else {
+				left[f.State]++
+			}
+		}
+		for i, f := range keepLow {
+			if i < len(keepLow)-lowCut {
+				kept[f.ID] = true
+			} else {
+				left[f.State]++
+			}
+		}
+		d.Features, d.Omitted = nil, ""
+		var shown []store.Feature
+		for _, f := range live {
+			if kept[f.ID] {
+				d.Features = append(d.Features, rows[f.ID])
+				shown = append(shown, f)
+			}
+		}
+		d.Epics = epicSections(shown, progress)
+		if n := lowCut + devCut; n > 0 {
+			var parts []string
+			for _, s := range contextKeepOrder {
+				if left[s] > 0 {
+					parts = append(parts, fmt.Sprintf("%d %s", left[s], s))
+				}
+			}
+			d.Omitted = fmt.Sprintf("%s left out to keep this file within 16 KB (%s) — 'cerne feature list --state <state>' lists them.",
+				plural(n, "live feature"), strings.Join(parts, ", "))
+		}
+		shownComps := slices.Sorted(slices.Values(byUse[:len(byUse)-compCut]))
+		parts := make([]string, 0, len(shownComps))
+		for _, c := range shownComps {
+			parts = append(parts, fmt.Sprintf("%s (%d)", c, comps[c]))
+		}
+		d.NoteComponents = strings.Join(parts, ", ")
+		if compCut > 0 {
+			d.NoteComponents += fmt.Sprintf(" and %d more ('cerne tags' lists them)", compCut)
+		}
+		var buf bytes.Buffer
+		if err := tmpl.Execute(&buf, d); err != nil {
+			return nil, err
+		}
+		return buf.Bytes(), nil
+	}
+	fits := func(k int) ([]byte, bool, error) {
+		b, err := render(k)
+		return b, len(b) <= contextMaxBytes, err
+	}
+	body, ok, err := fits(0)
+	if err != nil || ok {
+		return body, err
+	}
+	lo, hi := 1, total // the fewest lines left out that fit
+	for lo < hi {
+		mid := (lo + hi) / 2
+		_, ok, err := fits(mid)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			hi = mid
+		} else {
+			lo = mid + 1
+		}
+	}
+	// A section's "N more" line can outweigh the line it replaces, so the
+	// size is not strictly monotone in k: step on until it fits.
+	for ; lo <= total; lo++ {
+		if body, ok, err = fits(lo); err != nil || ok {
+			return body, err
+		}
+	}
+	const cut = "\n_Cut at 16 KB: run 'cerne brief' for the whole map._\n"
+	body = body[:bytes.LastIndexByte(body[:contextMaxBytes-len(cut)], '\n')]
+	return append(body, cut...), nil
+}
+
+// closedLine counts the features the map does not list, by state.
+func closedLine(closed map[domain.FeatureState]int) string {
+	var parts []string
+	for _, s := range contextClosedOrder {
+		if closed[s] > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", closed[s], s))
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "Not listed: " + strings.Join(parts, ", ") + " — 'cerne feature list --state <state>' lists them."
+}
+
+// plural is "n word" with an s when n is not 1.
+func plural(n int, word string) string {
+	if n == 1 {
+		return "1 " + word
+	}
+	return fmt.Sprintf("%d %ss", n, word)
 }
 
 // boardDataOf builds the in-progress board from the works, events and handoffs of
@@ -676,12 +869,13 @@ func entityPaths(features []store.Feature, decisions []store.Decision, runbooks 
 // (in-scope, non-terminal) features, so children are already live; epics are
 // sorted by ID. A child whose parent is not among the shown features (e.g. the
 // epic itself is terminal) is left to the lint, not rendered here.
-func epicSections(shown []store.Feature) []epicSection {
+func epicSections(shown, progress []store.Feature) []epicSection {
 	byID := make(map[string]store.Feature, len(shown))
 	for _, f := range shown {
 		byID[f.ID] = f
 	}
 	childrenByParent := store.ChildrenByParent(shown)
+	progressByParent := store.ChildrenByParent(progress)
 	epicIDs := make([]string, 0, len(childrenByParent))
 	for id := range childrenByParent {
 		epicIDs = append(epicIDs, id)
@@ -695,7 +889,7 @@ func epicSections(shown []store.Feature) []epicSection {
 			continue
 		}
 		children := childrenByParent[id]
-		done, total := store.EpicProgress(children)
+		done, total := store.EpicProgress(progressByParent[id])
 		sec := epicSection{ID: id, Title: epic.Title, Done: done, Total: total}
 		for _, c := range children {
 			sec.Children = append(sec.Children, epicChild{ID: c.ID, State: string(c.State), Title: c.Title})

@@ -65,7 +65,7 @@ func handleCreateIdea(w http.ResponseWriter, r *http.Request, repoDir, projDir s
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
 		return
 	}
-	i, err := app.CreateIdea(repoDir, projDir, req.Title, req.Body, req.Facets, req.Components, req.Token)
+	i, err := app.CreateIdea(repoDir, projDir, req.Title, req.Body, req.Facets, req.Components, req.Token, false)
 	if err != nil {
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error())) // blank text, unknown facet
 		return

@@ -39,7 +39,7 @@ func TestMigrateIdeas(t *testing.T) {
 	repoDir, projDir, origin := newFeatureBackend(t)
 	seedLegacyIdea(t, repoDir, "I-0001", "primeira linha\nresto do texto")
 	seedLegacyIdea(t, repoDir, "I-0002", "só uma linha")
-	if _, err := CreateIdea(repoDir, projDir, "já no formato novo", "", nil, nil, ""); err != nil {
+	if _, err := CreateIdea(repoDir, projDir, "já no formato novo", "", nil, nil, "", false); err != nil {
 		t.Fatal(err)
 	}
 

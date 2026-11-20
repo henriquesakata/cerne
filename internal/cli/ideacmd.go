@@ -45,6 +45,7 @@ func newIdeaCmd() *cobra.Command {
 
 func newIdeaNewCmd(dir *string) *cobra.Command {
 	var facet, component, file string
+	var force bool
 	cmd := &cobra.Command{
 		Use:   "new <title…>",
 		Short: "Capture an idea: the title is all it takes (body and tags optional)",
@@ -61,26 +62,29 @@ func newIdeaNewCmd(dir *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			notice := componentNotice(cmd, ctx.repoDir, component)
 			// One token per invocation, reused by the one internal retry: a
 			// failure after the push lands (snapshot, unconfirmed head) is
 			// retried without minting a twin (C2).
 			token := rand.Text()
 			create := func() (store.Idea, error) {
-				return app.CreateIdea(ctx.repoDir, ctx.projDir, strings.Join(args, " "), body, splitInforms(facet), splitInforms(component), token)
+				return app.CreateIdea(ctx.repoDir, ctx.projDir, strings.Join(args, " "), body, splitInforms(facet), splitInforms(component), token, force)
 			}
 			i, err := create()
-			if err != nil && !errors.Is(err, app.ErrIdeaTitleRequired) && !errors.Is(err, app.ErrIdeaTitleMultiline) && !errors.Is(err, domain.ErrUnknownFacet) {
+			if err != nil && !errors.Is(err, app.ErrIdeaTitleRequired) && !errors.Is(err, app.ErrIdeaTitleMultiline) && !errors.Is(err, domain.ErrUnknownFacet) && !errors.Is(err, app.ErrNearComponent) {
 				i, err = create()
 			}
 			if err != nil {
 				return err
 			}
+			notice()
 			fmt.Fprintf(cmd.OutOrStdout(), "%s created (%s) — %s\n", i.ID, i.State, ideaFirstLine(i.Title))
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&facet, "facet", "", "facets (CSV; closed set: infra,code,data,process,auth)")
 	cmd.Flags().StringVar(&component, "component", "", "components (CSV)")
+	cmd.Flags().BoolVar(&force, "force", false, forceComponentHelp)
 	cmd.Flags().StringVar(&file, "file", "", "file with the idea's body (defaults to piped stdin)")
 	// A dash-leading title parses as a flag: say how to pass it (C15).
 	cmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
@@ -346,6 +350,7 @@ func newIdeaPromoteCmd(dir *string) *cobra.Command {
 
 func newIdeaRetagCmd(dir *string) *cobra.Command {
 	var facet, component string
+	var force bool
 	cmd := &cobra.Command{
 		Use:   "retag <id>",
 		Short: "Reset the tags (facet/component) of an idea, in any state",
@@ -362,10 +367,12 @@ func newIdeaRetagCmd(dir *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			e, err := app.RetagIdea(ctx.repoDir, ctx.projDir, args[0], splitInforms(facet), splitInforms(component), setFacets, setComponents)
+			notice := componentNotice(cmd, ctx.repoDir, component)
+			e, err := app.RetagIdea(ctx.repoDir, ctx.projDir, args[0], splitInforms(facet), splitInforms(component), setFacets, setComponents, force)
 			if err != nil {
 				return err
 			}
+			notice()
 			fmt.Fprintf(cmd.OutOrStdout(), "%s retagged — facets: [%s] · components: [%s]\n",
 				e.ID, strings.Join(e.Facets, ", "), strings.Join(e.Components, ", "))
 			return nil
@@ -373,5 +380,6 @@ func newIdeaRetagCmd(dir *string) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&facet, "facet", "", "new facets (CSV; closed set) — empty clears")
 	cmd.Flags().StringVar(&component, "component", "", "new components (CSV) — empty clears")
+	cmd.Flags().BoolVar(&force, "force", false, forceComponentHelp)
 	return cmd
 }

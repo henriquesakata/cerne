@@ -57,6 +57,11 @@ func CreateExternalReference(repoDir, projDir, title, url, content string, infor
 		if err != nil {
 			return "", err
 		}
+		// After the duplicate guard (E-0005): a duplicate is refused first, so
+		// the --force a near component asks for is never given blind to it.
+		if err := checkComponents(repoDir, normComponents, force); err != nil {
+			return "", err
+		}
 		id, err := store.NextID(repoDir, "R")
 		if err != nil {
 			return "", err
@@ -103,7 +108,7 @@ func CreateExternalReference(repoDir, projDir, title, url, content string, infor
 // are preserved. Facets are validated against the closed set before any write,
 // so an unknown facet aborts leaving the reference untouched. Appends
 // reference.retagged and syncs the backend + docs.lock in projDir.
-func RetagReference(repoDir, projDir, id string, facets, components []string, setFacets, setComponents bool) (store.Reference, error) {
+func RetagReference(repoDir, projDir, id string, facets, components []string, setFacets, setComponents, force bool) (store.Reference, error) {
 	var r store.Reference
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		var err error
@@ -123,6 +128,9 @@ func RetagReference(repoDir, projDir, id string, facets, components []string, se
 		}
 		if setComponents {
 			r.Components = domain.NormalizeComponents(components)
+			if err := checkComponents(repoDir, r.Components, force); err != nil {
+				return "", err
+			}
 		}
 		r.UpdatedAt = time.Now().UTC()
 		if err := store.SaveReference(repoDir, r); err != nil {

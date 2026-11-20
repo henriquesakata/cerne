@@ -73,24 +73,32 @@ func TestRetagOfClosedEntityChangesOnlyTags(t *testing.T) {
 	}
 	cases := []kase{
 		{f.ID, "feature.retagged", f, func() (any, error) {
-			return RetagFeature(repoDir, projDir, f.ID, []string{"code"}, []string{"gitback"}, true, true)
+			return RetagFeature(repoDir, projDir, f.ID, []string{"code"}, []string{"gitback"}, true, true, false)
 		}, stripF},
-		{rej.ID, "feature.retagged", rej, func() (any, error) { return RetagFeature(repoDir, projDir, rej.ID, []string{"code"}, nil, true, false) }, stripF},
-		{n.ID, "note.retagged", n, func() (any, error) { return RetagNote(repoDir, projDir, n.ID, []string{"infra"}, nil, true, false) },
+		{rej.ID, "feature.retagged", rej, func() (any, error) {
+			return RetagFeature(repoDir, projDir, rej.ID, []string{"code"}, nil, true, false, false)
+		}, stripF},
+		{n.ID, "note.retagged", n, func() (any, error) {
+			return RetagNote(repoDir, projDir, n.ID, []string{"infra"}, nil, true, false, false)
+		},
 			func(v any) (any, time.Time) {
 				x := v.(store.Note)
 				u := x.UpdatedAt
 				x.Facets, x.Components, x.UpdatedAt = nil, nil, time.Time{}
 				return x, u
 			}},
-		{d.ID, "decision.retagged", d, func() (any, error) { return RetagDecision(repoDir, projDir, d.ID, []string{"data"}, nil, true, false) },
+		{d.ID, "decision.retagged", d, func() (any, error) {
+			return RetagDecision(repoDir, projDir, d.ID, []string{"data"}, nil, true, false, false)
+		},
 			func(v any) (any, time.Time) {
 				x := v.(store.Decision)
 				u := x.UpdatedAt
 				x.Facets, x.Components, x.UpdatedAt = nil, nil, time.Time{}
 				return x, u
 			}},
-		{r.ID, "reference.retagged", r, func() (any, error) { return RetagReference(repoDir, projDir, r.ID, []string{"code"}, nil, true, false) },
+		{r.ID, "reference.retagged", r, func() (any, error) {
+			return RetagReference(repoDir, projDir, r.ID, []string{"code"}, nil, true, false, false)
+		},
 			func(v any) (any, time.Time) {
 				x := v.(store.Reference)
 				u := x.UpdatedAt
@@ -98,7 +106,7 @@ func TestRetagOfClosedEntityChangesOnlyTags(t *testing.T) {
 				return x, u
 			}},
 		{rb.ID, "runbook.retagged", rb, func() (any, error) {
-			return RetagRunbook(repoDir, projDir, rb.ID, []string{"process"}, nil, true, false)
+			return RetagRunbook(repoDir, projDir, rb.ID, []string{"process"}, nil, true, false, false)
 		},
 			func(v any) (any, time.Time) {
 				x := v.(store.Runbook)
@@ -165,13 +173,13 @@ func TestRetagDoesNotMoveFlowStats(t *testing.T) {
 	}
 	commitBackend(t, repoDir)
 	before := compute()
-	if _, err := RetagFeature(repoDir, projDir, "F-0001", []string{"code"}, nil, true, false); err != nil {
+	if _, err := RetagFeature(repoDir, projDir, "F-0001", []string{"code"}, nil, true, false, false); err != nil {
 		t.Fatalf("RetagFeature: %v", err)
 	}
-	if _, err := RetagIdea(repoDir, projDir, "I-0001", []string{"code"}, nil, true, false); err != nil {
+	if _, err := RetagIdea(repoDir, projDir, "I-0001", []string{"code"}, nil, true, false, false); err != nil {
 		t.Fatalf("RetagIdea: %v", err)
 	}
-	if _, err := RetagPending(repoDir, projDir, "P-0001", []string{"code"}, nil, true, false); err != nil {
+	if _, err := RetagPending(repoDir, projDir, "P-0001", []string{"code"}, nil, true, false, false); err != nil {
 		t.Fatalf("RetagPending: %v", err)
 	}
 	if after := compute(); !reflect.DeepEqual(before, after) {

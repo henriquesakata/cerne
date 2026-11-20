@@ -12,7 +12,6 @@ import (
 
 	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/domain"
-	"github.com/henriquesakata/cerne/internal/slug"
 	"github.com/henriquesakata/cerne/internal/store"
 	"github.com/henriquesakata/cerne/internal/verbs"
 )
@@ -49,6 +48,7 @@ func newNoteListCmd(dir *string) *cobra.Command {
 			"knowledge even when '.docs/' is stale (no 'cerne pull'). By default shows only the " +
 			"active ones; --all includes the superseded (history). Each line carries id, state, title and markers " +
 			"(durable, informs F-/E-/T-/B-/D-/RB-/N-/I-, facet/component, successor). Filter by --facet and/or --component (logical AND). " +
+			"--component takes a group (a,b,c): the notes with any of them, most matches first and, on a tie, the rarest matched component first; each line adds the gist and what matched. " +
 			"--path <file> lists the active notes that cite that file (full path, then dir suffix, then a unique bare name; newest first), the same rule as the edit hook, without its cap of 3. " +
 			"--json for structured output.",
 		Args: cobra.NoArgs,
@@ -59,7 +59,7 @@ func newNoteListCmd(dir *string) *cobra.Command {
 	cmd.Flags().BoolVar(&all, "all", false, "include superseded notes (history)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output")
 	cmd.Flags().StringVar(&facet, "facet", "", "filter by facet (e.g. infra)")
-	cmd.Flags().StringVar(&component, "component", "", "filter by component (e.g. gitea)")
+	cmd.Flags().StringVar(&component, "component", "", "filter by components, any of them (CSV, e.g. gitea,kpack)")
 	cmd.Flags().StringVar(&onPath, "path", "", "only the active notes that cite this file (repo-relative or absolute)")
 	return cmd
 }
@@ -105,7 +105,7 @@ func runNoteList(cmd *cobra.Command, dir string, all, asJSON bool, facet, compon
 	// Normalize the filters to the stored form so '--facet Infra'/'--component
 	// Gitea' match the lower/slug values persisted on the note.
 	facetQ := strings.ToLower(strings.TrimSpace(facet))
-	compQ := slug.Make(component)
+	compQ := domain.NormalizeComponents(splitInforms(component))
 	w := cmd.OutOrStdout()
 	shown := make([]store.Note, 0, len(notes))
 	for _, n := range notes {
@@ -115,9 +115,6 @@ func runNoteList(cmd *cobra.Command, dir string, all, asJSON bool, facet, compon
 		if facetQ != "" && !slices.Contains(n.Facets, facetQ) {
 			continue
 		}
-		if compQ != "" && !slices.Contains(n.Components, compQ) {
-			continue
-		}
 		shown = append(shown, n)
 	}
 	if onPath != "" {
@@ -125,17 +122,26 @@ func runNoteList(cmd *cobra.Command, dir string, all, asJSON bool, facet, compon
 			return err
 		}
 	}
+	// The group ranks last, so with --path its order is the final one.
+	var matched map[string][]string
+	if len(compQ) > 0 {
+		shown, matched = rankByComponents(shown, func(n store.Note) (string, []string) { return n.ID, n.Components }, compQ)
+	}
 
 	if asJSON {
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
 		return enc.Encode(struct {
-			Notes []store.Note `json:"notes"`
-		}{shown})
+			Notes   []store.Note        `json:"notes"`
+			Matched map[string][]string `json:"matched,omitempty"`
+		}{shown, matched})
 	}
 
 	for _, n := range shown {
 		line := fmt.Sprintf("%s  [%s]  %s", n.ID, n.State, n.Title)
+		if matched != nil && n.Gist != "" {
+			line += " — " + n.Gist
+		}
 		var tags []string
 		// The reserved component 'convention' marks a prescriptive convention
 		// (F-0165): surface it first so an agent tells guidance from discovery.
@@ -156,6 +162,9 @@ func runNoteList(cmd *cobra.Command, dir string, all, asJSON bool, facet, compon
 		}
 		if n.SupersededBy != "" {
 			tags = append(tags, "→ "+n.SupersededBy)
+		}
+		if m := matched[n.ID]; m != nil {
+			tags = append(tags, "matched "+strings.Join(m, ","))
 		}
 		if len(tags) > 0 {
 			line += "  · " + strings.Join(tags, " · ")
@@ -324,7 +333,7 @@ func newNoteNewCmd(dir *string) *cobra.Command {
 	cmd.Flags().StringVar(&component, "component", "", "components (comma-separated subsystem/tool tags, e.g. gitea,kpack)")
 	cmd.Flags().StringArrayVar(&when, "when", nil, "trigger that shows the note to an agent (repeatable): edit:<path>|edit:<dir>/** or bash:<words>")
 	cmd.Flags().StringVar(&gist, "gist", "", "the one line (at most 160 runes) an agent needs when the note shows up: what to do or avoid")
-	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard (F-0324) for a consciously distinct note")
+	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard (F-0324) for a consciously distinct note, and accept a component near an existing one (E-0005; check 'cerne tags' first)")
 	return verbs.MarkChatTool(cmd)
 }
 
@@ -350,10 +359,12 @@ func runNoteNew(cmd *cobra.Command, dir string, args []string, informs, file, fa
 	if err != nil {
 		return err
 	}
+	notice := componentNotice(cmd, ctx.repoDir, component)
 	n, err := app.CreateNote(ctx.repoDir, ctx.projDir, title, body, splitInforms(informs), splitInforms(facet), splitInforms(component), when, gist, false, force)
 	if err != nil {
 		return err
 	}
+	notice()
 	// A note created with a body is already real content, committed and pushed
 	// by CreateNote (CommitAndSnapshot) — there is nothing to fill or push.
 	// Confirm it is synced and point at 'cerne pull', so the caller doesn't
@@ -436,6 +447,7 @@ func runNoteKeep(cmd *cobra.Command, dir, id string) error {
 
 func newNoteRetagCmd(dir *string) *cobra.Command {
 	var facet, component string
+	var force bool
 	cmd := &cobra.Command{
 		Use:   "retag <id>",
 		Short: "Reset the tags (facet/component) of a note",
@@ -445,15 +457,16 @@ func newNoteRetagCmd(dir *string) *cobra.Command {
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runNoteRetag(cmd, *dir, args[0], facet, component,
-				cmd.Flags().Changed("facet"), cmd.Flags().Changed("component"))
+				cmd.Flags().Changed("facet"), cmd.Flags().Changed("component"), force)
 		},
 	}
 	cmd.Flags().StringVar(&facet, "facet", "", "new facets (CSV; closed set) — empty clears")
 	cmd.Flags().StringVar(&component, "component", "", "new components (CSV) — empty clears")
+	cmd.Flags().BoolVar(&force, "force", false, forceComponentHelp)
 	return cmd
 }
 
-func runNoteRetag(cmd *cobra.Command, dir, id, facet, component string, setFacets, setComponents bool) error {
+func runNoteRetag(cmd *cobra.Command, dir, id, facet, component string, setFacets, setComponents, force bool) error {
 	if !setFacets && !setComponents {
 		return fmt.Errorf("provide at least --facet or --component")
 	}
@@ -461,11 +474,13 @@ func runNoteRetag(cmd *cobra.Command, dir, id, facet, component string, setFacet
 	if err != nil {
 		return err
 	}
+	notice := componentNotice(cmd, ctx.repoDir, component)
 	n, err := app.RetagNote(ctx.repoDir, ctx.projDir, id,
-		splitInforms(facet), splitInforms(component), setFacets, setComponents)
+		splitInforms(facet), splitInforms(component), setFacets, setComponents, force)
 	if err != nil {
 		return err
 	}
+	notice()
 	fmt.Fprintf(cmd.OutOrStdout(), "%s retagged — facets: [%s] · components: [%s]\n",
 		n.ID, strings.Join(n.Facets, ", "), strings.Join(n.Components, ", "))
 	return nil

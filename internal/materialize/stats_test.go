@@ -12,7 +12,7 @@ import (
 
 // addRunbook saves a runbook entity with no content document at all: stats must
 // still count the entity (count semantics are per entity, bytes per doc).
-func addRunbook(t *testing.T, backendDir, id, title string, state domain.RunbookState) {
+func addRunbook(t testing.TB, backendDir, id, title string, state domain.RunbookState) {
 	t.Helper()
 	rb := store.Runbook{ID: id, Title: title, State: state, CreatedAt: seedTime, UpdatedAt: seedTime}
 	if err := store.SaveRunbook(backendDir, rb); err != nil {

@@ -38,7 +38,7 @@ func ideaEvents(t *testing.T, repoDir, id string) ([]string, []map[string]string
 // Crit. 1: text only — no work, no module, no tags — mints an active I-.
 func TestCreateIdeaTextOnly(t *testing.T) {
 	repoDir, projDir, origin := newFeatureBackend(t)
-	i, err := CreateIdea(repoDir, projDir, "  talvez um dia X  ", "", nil, nil, "")
+	i, err := CreateIdea(repoDir, projDir, "  talvez um dia X  ", "", nil, nil, "", false)
 	if err != nil {
 		t.Fatalf("CreateIdea: %v", err)
 	}
@@ -52,10 +52,10 @@ func TestCreateIdeaTextOnly(t *testing.T) {
 	if types, _ := ideaEvents(t, repoDir, "I-0001"); !slices.Equal(types, []string{"idea.created"}) {
 		t.Fatalf("events = %v, want [idea.created]", types)
 	}
-	if _, err := CreateIdea(repoDir, projDir, " \n ", "", nil, nil, ""); !errors.Is(err, ErrIdeaTitleRequired) {
+	if _, err := CreateIdea(repoDir, projDir, " \n ", "", nil, nil, "", false); !errors.Is(err, ErrIdeaTitleRequired) {
 		t.Fatalf("blank text err = %v, want ErrIdeaTitleRequired", err)
 	}
-	if _, err := CreateIdea(repoDir, projDir, "duas\nlinhas", "", nil, nil, ""); !errors.Is(err, ErrIdeaTitleMultiline) {
+	if _, err := CreateIdea(repoDir, projDir, "duas\nlinhas", "", nil, nil, "", false); !errors.Is(err, ErrIdeaTitleMultiline) {
 		t.Fatalf("multiline title err = %v, want ErrIdeaTitleMultiline", err)
 	}
 	if all, _ := store.LoadAllIdeas(repoDir); len(all) != 1 {
@@ -66,7 +66,7 @@ func TestCreateIdeaTextOnly(t *testing.T) {
 // F-0419 crit. 5: a new idea is written as title + body and never as text.
 func TestCreateIdeaTitleAndBody(t *testing.T) {
 	repoDir, projDir, origin := newFeatureBackend(t)
-	i, err := CreateIdea(repoDir, projDir, " um título ", "\n o corpo\n", nil, nil, "")
+	i, err := CreateIdea(repoDir, projDir, " um título ", "\n o corpo\n", nil, nil, "", false)
 	if err != nil {
 		t.Fatalf("CreateIdea: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestCreateIdeaTitleAndBody(t *testing.T) {
 // refused before anything is written.
 func TestCreateIdeaTags(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	i, err := CreateIdea(repoDir, projDir, "com tags", "", []string{"code"}, []string{"Lint"}, "")
+	i, err := CreateIdea(repoDir, projDir, "com tags", "", []string{"code"}, []string{"Lint"}, "", false)
 	if err != nil {
 		t.Fatalf("CreateIdea: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestCreateIdeaTags(t *testing.T) {
 	if !slices.Equal(stored.Facets, []string{"code"}) || !slices.Equal(stored.Components, []string{"lint"}) {
 		t.Fatalf("tags = %v / %v, want [code] / [lint]", stored.Facets, stored.Components)
 	}
-	if _, err := CreateIdea(repoDir, projDir, "faceta ruim", "", []string{"nope"}, nil, ""); !errors.Is(err, domain.ErrUnknownFacet) {
+	if _, err := CreateIdea(repoDir, projDir, "faceta ruim", "", []string{"nope"}, nil, "", false); !errors.Is(err, domain.ErrUnknownFacet) {
 		t.Fatalf("unknown facet err = %v, want ErrUnknownFacet", err)
 	}
 	if all, _ := store.LoadAllIdeas(repoDir); len(all) != 1 {
@@ -104,7 +104,7 @@ func TestCreateIdeaTags(t *testing.T) {
 func TestListIdeasFilters(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	for _, text := range []string{"primeira", "conciliação do OFX", "terceira"} {
-		if _, err := CreateIdea(repoDir, projDir, text, "", nil, nil, ""); err != nil {
+		if _, err := CreateIdea(repoDir, projDir, text, "", nil, nil, "", false); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -137,7 +137,7 @@ func TestListIdeasFilters(t *testing.T) {
 // refused naming the state.
 func TestDropIdeaKeepsRecordWithReason(t *testing.T) {
 	repoDir, projDir, origin := newFeatureBackend(t)
-	i, err := CreateIdea(repoDir, projDir, "talvez", "", nil, nil, "")
+	i, err := CreateIdea(repoDir, projDir, "talvez", "", nil, nil, "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +169,7 @@ func TestDropIdeaKeepsRecordWithReason(t *testing.T) {
 // lock, so exactly one wins and the log has one idea.dropped.
 func TestDropIdeaRaceOneWinner(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	i, err := CreateIdea(repoDir, projDir, "disputada", "", nil, nil, "")
+	i, err := CreateIdea(repoDir, projDir, "disputada", "", nil, nil, "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +204,7 @@ func TestDropIdeaRaceOneWinner(t *testing.T) {
 // and the idea records promoted_to and leaves the active list.
 func TestPromoteIdeaCreatesLinkedCandidate(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	i, err := CreateIdea(repoDir, projDir, "Exportar o kanban em CSV", "com filtros", nil, []string{"kanban"}, "")
+	i, err := CreateIdea(repoDir, projDir, "Exportar o kanban em CSV", "com filtros", nil, []string{"kanban"}, "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,7 +234,7 @@ func TestPromoteIdeaCreatesLinkedCandidate(t *testing.T) {
 	}
 	createdPayload(t, repoDir, f.ID, "feature.created")
 
-	long, err := CreateIdea(repoDir, projDir, strings.Repeat("a", 200), "", nil, nil, "")
+	long, err := CreateIdea(repoDir, projDir, strings.Repeat("a", 200), "", nil, nil, "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +251,7 @@ func TestPromoteIdeaCreatesLinkedCandidate(t *testing.T) {
 // naming the state and the existing feature.
 func TestPromoteIdeaRefusesClosed(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	i, err := CreateIdea(repoDir, projDir, "Promovida uma vez", "", nil, nil, "")
+	i, err := CreateIdea(repoDir, projDir, "Promovida uma vez", "", nil, nil, "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,7 +264,7 @@ func TestPromoteIdeaRefusesClosed(t *testing.T) {
 	if !errors.Is(err, ErrIdeaNotActive) || !strings.Contains(err.Error(), "promoted") || !strings.Contains(err.Error(), f.ID) {
 		t.Fatalf("second promote err = %v, want ErrIdeaNotActive naming promoted and %s", err, f.ID)
 	}
-	d, err := CreateIdea(repoDir, projDir, "Descartada", "", nil, nil, "")
+	d, err := CreateIdea(repoDir, projDir, "Descartada", "", nil, nil, "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -299,7 +299,7 @@ func TestIdeaIDValidatedBeforeAnyPath(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(repoDir, "entities", "ideas", "W-0001.json")); err == nil {
 		t.Fatal("a traversal planted entities/ideas/W-0001.json")
 	}
-	if _, err := CreateIdea(repoDir, projDir, "minúscula", "", nil, nil, ""); err != nil {
+	if _, err := CreateIdea(repoDir, projDir, "minúscula", "", nil, nil, "", false); err != nil {
 		t.Fatal(err)
 	}
 	if got, err := DropIdea(repoDir, projDir, "i-0001", ""); err != nil || got.ID != "I-0001" {
@@ -312,7 +312,7 @@ func TestIdeaIDValidatedBeforeAnyPath(t *testing.T) {
 func TestListIdeasSearchEveryWord(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	for _, text := range []string{"zebraquux plain", "Ação rápida — émoji", "só zebraquux"} {
-		if _, err := CreateIdea(repoDir, projDir, text, "", nil, nil, ""); err != nil {
+		if _, err := CreateIdea(repoDir, projDir, text, "", nil, nil, "", false); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -340,7 +340,7 @@ func TestListIdeasSearchEveryWord(t *testing.T) {
 func TestPromoteIdeaRaceDropNoOrphan(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	for n := 0; n < 20; n++ {
-		i, err := CreateIdea(repoDir, projDir, fmt.Sprintf("alvo de corrida %d", n), "", nil, nil, "")
+		i, err := CreateIdea(repoDir, projDir, fmt.Sprintf("alvo de corrida %d", n), "", nil, nil, "", false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -378,7 +378,7 @@ func TestCreateIdeaRetryAfterPostPushFailureIsIdempotent(t *testing.T) {
 	if err := os.WriteFile(docs, []byte("not a dir"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := CreateIdea(repoDir, projDir, "sonda pós-push", "", nil, nil, "tok-1"); err == nil {
+	if _, err := CreateIdea(repoDir, projDir, "sonda pós-push", "", nil, nil, "tok-1", false); err == nil {
 		t.Fatal("the snapshot failure was not reported")
 	}
 	if _, ok := originHas(t, origin, "entities/ideas/I-0001.json"); !ok {
@@ -387,14 +387,14 @@ func TestCreateIdeaRetryAfterPostPushFailureIsIdempotent(t *testing.T) {
 	if err := os.Remove(docs); err != nil {
 		t.Fatal(err)
 	}
-	again, err := CreateIdea(repoDir, projDir, "sonda pós-push", "", nil, nil, "tok-1")
+	again, err := CreateIdea(repoDir, projDir, "sonda pós-push", "", nil, nil, "tok-1", false)
 	if err != nil || again.ID != "I-0001" {
 		t.Fatalf("retry = %+v, %v; want the existing I-0001", again, err)
 	}
 	if all, _ := store.LoadAllIdeas(repoDir); len(all) != 1 {
 		t.Fatalf("the retry minted a twin: %d ideas", len(all))
 	}
-	if other, err := CreateIdea(repoDir, projDir, "sonda pós-push", "", nil, nil, "tok-2"); err != nil || other.ID != "I-0002" {
+	if other, err := CreateIdea(repoDir, projDir, "sonda pós-push", "", nil, nil, "tok-2", false); err != nil || other.ID != "I-0002" {
 		t.Fatalf("a new token = %+v, %v; want a new idea I-0002", other, err)
 	}
 }
