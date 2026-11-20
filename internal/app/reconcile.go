@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/henriquesakata/cerne/internal/doccheck"
 	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/telemetry"
@@ -27,8 +28,9 @@ type FileChange struct {
 	// sit past a remote edit this document never got: a base blob that hashes
 	// otherwise makes the write a conflict instead of an overwrite.
 	BaseSum string
-	// New marks a document the caller never received: it must be absent at
-	// the base, so one that exists there is a conflict, not an overwrite.
+	// New marks a document the caller never received: it must not be a real
+	// document at the base (a stub is fine), so one that exists there is a
+	// conflict, not an overwrite.
 	New bool
 }
 
@@ -668,7 +670,7 @@ func plan3Way(repoDir, base, theirs string, changes []FileChange) (apply []FileC
 			switch {
 			case theirsExists && bytes.Equal(ch.Content, theirsBlob): // already there
 			case ch.BaseSum != "" && ContentHash(baseBlob) != ch.BaseSum, // base is past my copy
-				ch.New && baseExists: // base has a document I never received
+				ch.New && baseExists && doccheck.HasRealContent(baseBlob): // base has a real document I never received
 				conflicts = append(conflicts, Conflict{Path: ch.Path, Diff: shortDiff(ch.Content, theirsBlob)})
 			case bytes.Equal(theirsBlob, baseBlob): // remote untouched: take mine
 				apply = append(apply, FileChange{Path: ch.Path, Content: ch.Content})

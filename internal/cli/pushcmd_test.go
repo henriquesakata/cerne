@@ -683,3 +683,28 @@ func TestNewDocAfterSnapshotMovedIsAConflict(t *testing.T) {
 		t.Fatalf("backend result.md = %q, want B's", stored)
 	}
 }
+
+// TestNewDocOverStubAtBaseIsNoConflict (B-0041 review, round 3): `feature
+// start` writes a result stub into the backend and moves the snapshot without
+// materializing. Writing result.md by hand and pushing without a pull must
+// go through: a stub at base is not a document someone else wrote.
+func TestNewDocOverStubAtBaseIsNoConflict(t *testing.T) {
+	projDir, origin, repoDir, specPath := pulledFeatureProject(t, "Conteúdo original.")
+	writeDoc(t, repoDir, "F-0001", "plan.md", realDoc("F-0001", "Plano real."))
+	commitBackend(t, repoDir)
+	for _, verb := range []string{"approve", "start"} {
+		if out, err := execCerne(t, "feature", verb, "F-0001", "--dir", projDir); err != nil {
+			t.Fatalf("%s: %v\n%s", verb, err, out)
+		}
+	}
+	mine := "---\ncerne_id: F-0001\n---\n\n# Resultado\n\nResultado real.\n"
+	mustWrite(t, filepath.Join(filepath.Dir(specPath), "result.md"), mine)
+
+	if out, err := execCerne(t, "push", "--dir", projDir); err != nil {
+		t.Fatalf("push over a result stub must go through: %v\n%s", err, out)
+	}
+	head, _ := gitback.HeadSHA(origin)
+	if stored, _, _ := gitback.FileBlobAt(origin, head, "content/features/F-0001/result.md"); string(stored) != mine {
+		t.Fatalf("backend result.md = %q, want mine", stored)
+	}
+}
