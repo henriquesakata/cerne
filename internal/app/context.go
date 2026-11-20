@@ -525,9 +525,10 @@ const shownIDs = 10
 
 // onDemand counts the decisions, references and runbooks in force, and the
 // rejected or superseded proposals, sharing a component with the task
-// (criterion 19). Each count is exactly what its command lists — Listed says
-// how many of them the rings already show — and a kind no command lists by
-// component and state (runbooks, proposals) names its ids instead.
+// (criterion 19). A count leaves out what the rings already show (T-0018) and
+// Listed says how many those are: together, exactly what its command lists. A
+// kind no command lists by component and state (runbooks, proposals) names
+// its ids instead.
 func onDemand(repoDir string, comps []string, refs []store.Reference, ds []store.Decision, items []ContextItem) ([]OnDemand, error) {
 	listed := map[string]bool{}
 	for _, it := range items {
@@ -539,11 +540,13 @@ func onDemand(repoDir string, comps []string, refs []store.Reference, ds []store
 	decs, rfs := OnDemand{What: "decisions"}, OnDemand{What: "references"}
 	rbs, props := OnDemand{What: "runbooks"}, OnDemand{What: "rejected or superseded proposals"}
 	var rbIDs, propIDs []string
-	count := func(o *OnDemand, id string) {
-		o.Count++
+	count := func(o *OnDemand, id string) bool { // false: shown above
 		if listed[id] {
 			o.Listed++
+			return false
 		}
+		o.Count++
+		return true
 	}
 	if len(comps) > 0 {
 		for _, d := range ds {
@@ -561,8 +564,7 @@ func onDemand(repoDir string, comps []string, refs []store.Reference, ds []store
 			return nil, err
 		}
 		for _, rb := range runbooks {
-			if rb.State == domain.RunbookActive && shares(rb.Components) {
-				count(&rbs, rb.ID)
+			if rb.State == domain.RunbookActive && shares(rb.Components) && count(&rbs, rb.ID) {
 				rbIDs = append(rbIDs, rb.ID)
 			}
 		}
@@ -571,8 +573,7 @@ func onDemand(repoDir string, comps []string, refs []store.Reference, ds []store
 			return nil, err
 		}
 		for _, f := range feats {
-			if (f.State == domain.StateRejected || f.State == domain.StateSuperseded) && shares(f.Components) {
-				count(&props, f.ID)
+			if (f.State == domain.StateRejected || f.State == domain.StateSuperseded) && shares(f.Components) && count(&props, f.ID) {
 				propIDs = append(propIDs, f.ID)
 			}
 		}
@@ -745,7 +746,7 @@ func (p TaskPack) Text() string {
 		for _, o := range p.OnDemand {
 			fmt.Fprintf(&b, "%s: %d", o.What, o.Count)
 			if o.Listed > 0 {
-				fmt.Fprintf(&b, " (%d of them listed above)", o.Listed)
+				fmt.Fprintf(&b, ", plus the %d listed above", o.Listed)
 			}
 			if o.Command != "" {
 				b.WriteString(" — " + o.Command)

@@ -201,11 +201,12 @@ func TestTaskContextRings(t *testing.T) {
 	if byID["N-0003"].Why != "edit:internal/hooks/**" || byID["N-0005"].Why != "internal/cli/contextcmd.go" || byID["N-0006"].Why != "hooks" {
 		t.Fatalf("why: %+v %+v %+v", byID["N-0003"], byID["N-0005"], byID["N-0006"])
 	}
-	// Each count is what its command lists (critic M3), saying how many of
-	// them ring (a) already listed; with no list command, the ids themselves.
+	// A count leaves out what ring (a) already shows (T-0018), and says how
+	// many: with them, it is what its command lists (critic M3); with no list
+	// command, the ids themselves.
 	wantOnDemand := []OnDemand{
-		{What: "decisions", Count: 2, Listed: 1, Command: "cerne decision list --component cli,hooks"},
-		{What: "references", Count: 2, Listed: 1, Command: "cerne reference list --component cli,hooks"},
+		{What: "decisions", Count: 1, Listed: 1, Command: "cerne decision list --component cli,hooks"},
+		{What: "references", Count: 1, Listed: 1, Command: "cerne reference list --component cli,hooks"},
 		{What: "runbooks", Count: 1, Command: "cerne show RB-0002"},
 		{What: "rejected or superseded proposals", Count: 2, Command: "cerne show <id>: F-0011, F-0012"},
 	}
@@ -213,7 +214,7 @@ func TestTaskContextRings(t *testing.T) {
 		t.Fatalf("on demand:\n got %+v\nwant %+v", p.OnDemand, wantOnDemand)
 	}
 	text := p.Text()
-	if !strings.Contains(text, "decisions: 2 (1 of them listed above) — cerne decision list --component cli,hooks\n") {
+	if !strings.Contains(text, "decisions: 1, plus the 1 listed above — cerne decision list --component cli,hooks\n") {
 		t.Fatalf("the close does not say what ring (a) already listed:\n%s", text)
 	}
 	for _, gone := range []string{"F-0009", "] F-0011", "] F-0012", "N-0010", "D-0004", "D-0006", "done body", "reference body", "runbook body", "Plain words", "Body of D-0003", "Old words"} { // the proposals only as ids of the close
