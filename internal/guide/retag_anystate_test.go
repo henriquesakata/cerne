@@ -23,7 +23,7 @@ func TestGuideSaysTagsChangeInAnyState(t *testing.T) {
 		}
 	}
 	for _, s := range corpus {
-		if strings.Contains(s.Text, "retag only applies") || strings.Contains(s.Text, "frozen history") && strings.Contains(s.Text, "retag") {
+		if strings.Contains(s.Text, "retag only applies") || (strings.Contains(s.Text, "frozen history") && strings.Contains(s.Text, "retag")) {
 			t.Errorf("section %q (%s) still teaches the retag refusal", s.Title, s.Source)
 		}
 	}

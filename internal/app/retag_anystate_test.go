@@ -146,8 +146,20 @@ func TestRetagAcceptsEveryState(t *testing.T) {
 				if !slices.Equal(got, []string{"code"}) {
 					t.Fatalf("facets = %v, want [code]", got)
 				}
+				before, err := store.ReadAllEvents(repoDir)
+				if err != nil {
+					t.Fatalf("ReadAllEvents: %v", err)
+				}
 				if _, err := k.retag(repoDir, projDir, id, []string{"bogus"}, true); !errors.Is(err, domain.ErrUnknownFacet) {
 					t.Fatalf("unknown facet err = %v, want ErrUnknownFacet", err)
+				}
+				// The refusal writes nothing: same tags, same event log.
+				after, _ := store.ReadAllEvents(repoDir)
+				if len(after) != len(before) {
+					t.Fatalf("refused retag appended events: %d -> %d", len(before), len(after))
+				}
+				if again, err := k.retag(repoDir, projDir, id, nil, false); err != nil || !slices.Equal(again, []string{"code"}) {
+					t.Fatalf("tags after refused retag = %v, %v; want [code]", again, err)
 				}
 			})
 		}
