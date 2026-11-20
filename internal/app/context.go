@@ -86,8 +86,9 @@ type OnDemand struct {
 	Command string `json:"command,omitempty"`
 }
 
-// TaskPack is the package of one task. Compact means the budget cut the
-// items to id and title; Omitted counts, per ring, the items it left out.
+// TaskPack is the package of one task. Omitted, set when the budget cut,
+// counts per ring the items it left out; Compact means it also cut the items
+// left to id and title.
 type TaskPack struct {
 	ID         string         `json:"id"`
 	Title      string         `json:"title"`
@@ -626,11 +627,11 @@ func showIDs(ids []string) string {
 	return "cerne show <id>: " + strings.Join(ids, ", ")
 }
 
-// fit applies the budget (criterion 7): when the text passes it, every item
-// is cut to id and title, a ring (a) body kept; then the items of rings (d),
-// (c) and (b) leave from the end, then the ring (a) bodies, the longest first,
-// and last the ring (a) items, from the end, until it fits. The document is
-// never cut.
+// fit applies the budget (criterion 7, in the spec's order): when the text
+// passes it, the items of rings (d), (c) and (b) leave from the end, whole
+// lines; then the ring (a) bodies, the longest first; only then what is left
+// drops to id and title (critic L1); and last the ring (a) items leave, from
+// the end, until it fits. The document is never cut.
 //
 // ponytail: each step renders the whole text again, O(items x text); a few
 // dozen items fit well under the time budget of criterion 15.
@@ -646,7 +647,6 @@ func (p *TaskPack) fit(budget int) {
 			bodies++
 		}
 	}
-	p.Compact = true
 	keep := func(n int) bool {
 		p.Items, p.Omitted, p.OmittedBodies = items[:n], ringCounts(items[n:]), bodies
 		p.OnDemand = p.demand.counts(p.Items)
@@ -658,13 +658,10 @@ func (p *TaskPack) fit(budget int) {
 		return n == 0 || len(p.Text()) <= limit
 	}
 	n := len(items)
-	for ; n > 0 && items[n-1].Ring != "a"; n-- { // rings (d), (c), (b): the end of the list
-		if keep(n) {
+	for n > 0 && items[n-1].Ring != "a" { // rings (d), (c), (b): the end of the list
+		if n--; keep(n) {
 			return
 		}
-	}
-	if keep(n) {
-		return
 	}
 	longest := make([]int, 0, bodies)
 	for i, it := range items[:n] {
@@ -674,13 +671,17 @@ func (p *TaskPack) fit(budget int) {
 	}
 	slices.SortStableFunc(longest, func(i, j int) int { return len(items[j].Body) - len(items[i].Body) })
 	for _, i := range longest {
-		items[i].Body = ""
-		if keep(n) {
+		if items[i].Body = ""; keep(n) {
 			return
 		}
 	}
-	for n > 0 && !keep(n-1) {
-		n--
+	if p.Compact = true; keep(n) {
+		return
+	}
+	for n > 0 {
+		if n--; keep(n) {
+			return
+		}
 	}
 }
 
@@ -779,11 +780,14 @@ func (p TaskPack) Text() string {
 			b.WriteString("\n")
 		}
 	}
-	if p.Compact {
+	if p.Omitted != nil { // the budget cut
 		o := p.Omitted
-		what := "cut the list to id and title and left out"
-		if len(p.Items) == 0 { // the document alone fills the budget
+		what := "left out"
+		switch {
+		case len(p.Items) == 0: // the document alone fills the budget
 			what = "left out every neighbourhood item"
+		case p.Compact:
+			what = "cut the list to id and title and left out"
 		}
 		fmt.Fprintf(&b, "the budget of %d tokens %s: a %d · b %d · c %d · d %d, and %d ring (a) bodies — raise --budget, or read one: cerne show <id>\n",
 			p.Budget, what, o["a"], o["b"], o["c"], o["d"], p.OmittedBodies)

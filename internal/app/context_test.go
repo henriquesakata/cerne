@@ -294,10 +294,11 @@ func TestTaskContextBudget(t *testing.T) {
 }
 
 // E-0005 verification 16 (criterion 7, T-0018): over every budget from the
-// document alone to the whole package, the cut goes in order — the items of
-// (d), (c) and (b) leave first, then the ring (a) bodies, the longest first,
-// and only then the ring (a) items — within the budget, the document whole,
-// and the last line counts the bodies that left.
+// document alone to the whole package, the cut goes in the spec's order — the
+// items of (d), (c) and (b) leave first, whole lines; then the ring (a) bodies,
+// the longest first; only then what is left drops to id and title (critic
+// L1); and last the ring (a) items — within the budget, the document whole,
+// and the last line counts what left, the bodies too.
 func TestTaskContextCutOrder(t *testing.T) {
 	repo := contextFixture(t)
 	full, err := TaskContext(repo, "T-0002", DefaultContextBudget)
@@ -354,14 +355,21 @@ func TestTaskContextCutOrder(t *testing.T) {
 			t.Fatalf("budget %d: omitted bodies %d, want %d", budget, p.OmittedBodies, bodies-shown)
 		}
 		switch {
-		case outer > 0 && (shown < bodies || keptA < ringA):
-			t.Fatalf("budget %d: a ring (a) body or item left before the outer rings: %v", budget, ringIDs(p.Items))
-		case keptA < ringA && shown > 0:
-			t.Fatalf("budget %d: a ring (a) item left before every body did", budget)
+		case outer > 0 && (shown < bodies || keptA < ringA || p.Compact):
+			t.Fatalf("budget %d: a ring (a) body or item, or a gist, left before the outer rings: %v", budget, ringIDs(p.Items))
+		case p.Compact && shown > 0:
+			t.Fatalf("budget %d: the list dropped to id and title before every body left", budget)
+		case keptA < ringA && !p.Compact:
+			t.Fatalf("budget %d: a ring (a) item left before the list dropped to id and title", budget)
+		case !p.Compact && keptA > 0 && !strings.Contains(p.Text(), "Note N-0001 — gist one  · sources R-0002\n"):
+			t.Fatalf("budget %d: a whole line lost its gist:\n%s", budget, p.Text())
 		case maxShown > minDropped:
 			t.Fatalf("budget %d: a body of %d bytes stayed while one of %d left", budget, maxShown, minDropped)
 		}
-		if p.Compact {
+		if cut := len(p.Items) < len(full.Items) || shown < bodies || p.Compact; cut != (p.Omitted != nil) {
+			t.Fatalf("budget %d: cut %v, omitted %v", budget, cut, p.Omitted)
+		}
+		if p.Omitted != nil {
 			if want := fmt.Sprintf(", and %d ring (a) bodies — ", p.OmittedBodies); !strings.Contains(lastLine(p.Text()), want) {
 				t.Fatalf("budget %d: last line %q lacks %q", budget, lastLine(p.Text()), want)
 			}
@@ -385,11 +393,13 @@ func TestTaskContextCutOrder(t *testing.T) {
 			seen["outer"] = true
 		case outer == 0 && keptA == ringA && shown > 0 && shown < bodies:
 			seen["bodies"] = true
+		case p.Compact && keptA == ringA:
+			seen["id and title"] = true
 		case keptA > 0 && keptA < ringA:
 			seen["ring a"] = true
 		}
 	}
-	if len(seen) != 3 {
+	if len(seen) != 4 {
 		t.Fatalf("the sweep did not reach every phase of the cut: %v", seen)
 	}
 }
