@@ -152,7 +152,7 @@ func Runs(command string, args []string) bool {
 func isCerne(base string) bool { return base == "cerne" || base == "cerne.exe" }
 
 // heredocStart finds the delimiter of a `<<EOF`, `<<-EOF` or `<<'EOF'` redirect.
-var heredocStart = regexp.MustCompile(`<<-?\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?`)
+var heredocStart = regexp.MustCompile(`(?:^|[^<])<<-?\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?`)
 
 // stripHeredocs drops the body lines of heredocs: they are a command's stdin,
 // not commands. ponytail: a `<<` inside quotes reads as a heredoc.

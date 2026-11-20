@@ -126,6 +126,15 @@ func TestAuthorModel(t *testing.T) {
 			{ts: at(0), agent: "dev", model: "claude-sonnet-5", id: "d1", cmd: "cd /w && (FOO=1 env BAR=2 ./bin/cerne push)"},
 			{ts: at(1), model: "claude-opus-5-5", id: "m1"},
 		}, push, "claude-sonnet-5", true},
+		// B-0038: a heredoc body is stdin, not a call; cerne.exe is the binary.
+		{"a heredoc body is no call", []tline{
+			{ts: at(0), agent: "dev", model: "claude-sonnet-5", id: "d1", cmd: "cat <<EOF\ncerne push\nEOF"},
+			{ts: at(1), model: "claude-opus-5-5", id: "m1"},
+		}, push, "claude-opus-5-5", true},
+		{"cerne.exe is a call", []tline{
+			{ts: at(0), agent: "dev", model: "claude-sonnet-5", id: "d1", cmd: "cerne.exe push"},
+			{ts: at(1), model: "claude-opus-5-5", id: "m1"},
+		}, push, "claude-sonnet-5", true},
 		{"no verb words match nothing", []tline{
 			{ts: at(0), agent: "dev", model: "claude-sonnet-5", id: "d1", cmd: "cerne push"},
 			{ts: at(1), model: "claude-opus-5-5", id: "m1"},
