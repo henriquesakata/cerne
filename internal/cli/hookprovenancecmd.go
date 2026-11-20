@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/henriquesakata/cerne/internal/cost"
 	"github.com/henriquesakata/cerne/internal/lint"
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
@@ -27,10 +28,20 @@ import (
 
 var (
 	pushRe             = regexp.MustCompile(`\bpush\b`)
-	featureCompleteRe  = regexp.MustCompile(`\bfeature\s+complete\b`)
-	decisionRecordRe   = regexp.MustCompile(`\bdecision\s+(new|supersede|substituir)\b`)
 	frontmatterCerneID = regexp.MustCompile(`(?m)^cerne_id:\s*(\S+)`)
 )
+
+// runsGateVerb reports whether the command invokes cerne with a verb that
+// records or closes a decision (B-0038): a mention in a grep, heredoc or
+// commit message is no call.
+func runsGateVerb(command string) bool {
+	for _, v := range []string{"feature complete", "decision new", "decision supersede", "decision substituir"} {
+		if cost.Runs(command, strings.Fields(v)) {
+			return true
+		}
+	}
+	return false
+}
 
 func newHookProvenanceCmd() *cobra.Command {
 	var format string
@@ -63,7 +74,7 @@ func runHookProvenance(cmd *cobra.Command, format string) {
 
 	var msg string
 	switch {
-	case featureCompleteRe.MatchString(ti.Command) || decisionRecordRe.MatchString(ti.Command):
+	case runsGateVerb(ti.Command):
 		msg = "cerne provenance (F-0103): you just recorded/advanced a decision. If an external source (article, RFC, vendor doc, spec) SHAPED it, register it now — without being asked — with: cerne reference new \"<title>\" --url <url> --informs <id>. Register only the useful sources (the ones that moved the outcome); dead-ends never become references."
 	case pushRe.MatchString(ti.Command) && strings.Contains(string(in.ToolResponse), "Sent:"):
 		msg = orphanPushMessage(in.CWD)
