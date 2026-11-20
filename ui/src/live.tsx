@@ -8,9 +8,11 @@ import {
 } from 'react'
 import {
   fetchProjects,
+  restartPanel,
   setApiProject,
   subscribeLive,
   type ModelsChange,
+  type PanelIdentity,
   type ProjectInfo,
 } from './api'
 import { useT } from './i18n'
@@ -28,6 +30,13 @@ import { navAllowed, setNavGuard } from './navGuard'
 // tornava impossível acompanhar dois projetos em paralelo.
 
 const STORAGE_KEY = 'cerne.activePid'
+
+// pageReload recarrega a aba; um objeto para os testes trocarem a ação
+// (o jsdom não navega).
+export const pageReload = { run: () => window.location.reload() }
+
+// Sem o "v" das tags, como o selo de versão da barra mostra.
+const shortVersion = (v: string) => v.replace(/^v/, '')
 
 type ProjectsState = {
   projects: ProjectInfo[]
@@ -59,6 +68,24 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const [refreshError, setRefreshError] = useState<string | null>(null)
   const booted = useRef(false)
   const { t } = useT()
+
+  // F-0478: o binário que serve o painel e o que o comando dele resolve hoje
+  // no disco. A identidade da subida fica guardada: quando o painel volta de
+  // um reinício com outra, o código desta página é de outra versão.
+  const [panel, setPanel] = useState<{ running: PanelIdentity; installed?: PanelIdentity } | null>(null)
+  const bootIdentity = useRef('')
+  const [restart, setRestart] = useState<{ state: 'idle' | 'restarting' | 'failed'; error?: string }>({
+    state: 'idle',
+  })
+  const [updatedTo, setUpdatedTo] = useState('')
+  // Prazo da recarga pendente: o painel volta antes de os processos acoplados
+  // registrarem de novo os seus projetos.
+  const reloadBy = useRef(0)
+  // Um reinício aceito que não traz o painel de volta noutra versão (o exec
+  // falhou e o processo seguiu na versão de antes) não pode deixar o aviso
+  // em "Reiniciando…" para sempre.
+  const restartTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useEffect(() => () => clearTimeout(restartTimer.current), [])
 
   // activeRef espelha o pid ativo para uso síncrono fora do ciclo de render
   // (callbacks de SSE e o reload da lista), evitando closures velhas.
@@ -101,7 +128,35 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   // ready=true renderiza a mensagem de zero-projetos em vez dos children.
   const reload = () =>
     fetchProjects()
-      .then(({ projects, default: def }) => {
+      .then(({ projects, default: def, version, ui, installed }) => {
+        if (version !== undefined) {
+          const id = `${version}|${ui ?? ''}`
+          if (!bootIdentity.current) bootIdentity.current = id
+          else if (id !== bootIdentity.current) {
+            // Espera o projeto desta aba voltar à lista, para a recarga cair
+            // nele; um projeto que não volta não segura a recarga mais de 15 s.
+            // Até lá a lista parcial não entra, senão a aba trocaria de projeto.
+            const back = projects.some((p) => p.pid === activeRef.current)
+            if (!back && !reloadBy.current) {
+              reloadBy.current = Date.now() + 15_000
+              setTimeout(() => void reload(), 15_100)
+            }
+            if (!back && Date.now() < reloadBy.current) return
+            reloadBy.current = 0
+            // A recarga passa pela trava do rascunho do cofre (F-0464): recusada,
+            // a página fica e o aviso oferece recarregar depois.
+            if (navAllowed()) {
+              setNavGuard(null)
+              // A aba que veio pelo link do `cerne ui` não guardou escolha: sem
+              // isto a recarga cairia no projeto padrão do painel.
+              if (activeRef.current) sessionStorage.setItem(STORAGE_KEY, activeRef.current)
+              pageReload.run()
+              return
+            }
+            setUpdatedTo(version)
+          }
+          setPanel({ running: { version, ui: ui ?? '' }, installed })
+        }
         setProjects(projects)
         apply(pick(projects, def))
         if (linkedRef.current) {
@@ -173,6 +228,20 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       </p>
     )
   }
+  const doRestart = () => {
+    if (restart.state === 'restarting') return
+    setRestart({ state: 'restarting' })
+    restartTimer.current = setTimeout(() => setRestart({ state: 'failed', error: t.live.restartTimedOut }), 30_000)
+    restartPanel().catch((e: unknown) => {
+      clearTimeout(restartTimer.current)
+      setRestart({ state: 'failed', error: e instanceof Error ? e.message : String(e) })
+    })
+  }
+  const installed = panel?.installed
+  // Pelo arquivo, não pela versão: um build local novo pode ter a mesma versão
+  // e a mesma UI (critério 1).
+  const newBinary = !!installed?.changed && !!installed.version && !installed.error
+
   if (!ready) return <p className="status">{t.live.loading}</p>
   if (projects.length === 0) return <p className="status">{t.live.noProjects}</p>
 
@@ -185,6 +254,43 @@ export function LiveProvider({ children }: { children: ReactNode }) {
             {t.live.retry}
           </button>
         </div>
+      )}
+      {updatedTo ? (
+        <div className="load-notice live-refresh-notice advisory" role="status">
+          <p>{t.live.panelUpdated(shortVersion(updatedTo))}</p>
+          <button
+            type="button"
+            onClick={() => {
+              if (activeRef.current) sessionStorage.setItem(STORAGE_KEY, activeRef.current)
+              pageReload.run()
+            }}
+          >
+            {t.live.reloadPage}
+          </button>
+        </div>
+      ) : (
+        newBinary && (
+          <div
+            className={`load-notice live-refresh-notice${restart.state === 'failed' ? '' : ' advisory'}`}
+            role="status"
+          >
+            {restart.state === 'failed' ? (
+              <p className="form-error">
+                {restart.error === t.live.restartTimedOut ? restart.error : t.live.restartFailed(restart.error ?? '')}
+              </p>
+            ) : (
+              <p>
+                {restart.state === 'restarting'
+                  ? t.live.restarting
+                  : t.live.restartAvailable(shortVersion(installed.version), shortVersion(panel?.running.version ?? ''))}
+              </p>
+            )}
+            {/* aria-disabled, não disabled: o botão fica focável enquanto reinicia (F-0302) */}
+            <button type="button" onClick={doRestart} aria-disabled={restart.state === 'restarting'}>
+              {t.live.restartPanel}
+            </button>
+          </div>
+        )
       )}
       {linkMissing && (
         <div className="load-notice live-refresh-notice" role="status">

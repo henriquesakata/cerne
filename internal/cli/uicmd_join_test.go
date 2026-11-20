@@ -243,3 +243,112 @@ func TestJoinWarnsOncePerHostIdentity(t *testing.T) {
 		t.Fatalf("want a warning on the first join only:\nfirst:\n%s\nsecond:\n%s", first, second)
 	}
 }
+
+// TestJoinAction (F-0478 criteria 7, 8 and 9): what a joining cerne ui does
+// about the panel, from the panel's running and installed identities.
+func TestJoinAction(t *testing.T) {
+	mine := hostInfo{Version: "v1.1.0", UI: "new"}
+	old := &hostInfo{Version: "v1.0.0", UI: "old"}
+	cases := []struct {
+		name string
+		host hostInfo
+		want joinAct
+	}{
+		{"same build", hostInfo{Version: "v1.1.0", UI: "new"}, actNone},
+		{"older panel, this binary installed", hostInfo{Version: "v1.0.0", UI: "old", Installed: &hostInfo{Version: "v1.1.0", UI: "new"}}, actRestart},
+		{"panel runs the installed binary", hostInfo{Version: "v1.0.0", UI: "old", Installed: old}, actInform},
+		{"panel predates F-0478", hostInfo{Version: "v1.0.0", UI: "old"}, actWarn},
+		{"installed is a third binary", hostInfo{Version: "v1.0.0", UI: "old", Installed: &hostInfo{Version: "v1.2.0", UI: "other"}}, actWarn},
+		{"installed unreadable", hostInfo{Version: "v1.0.0", UI: "old", Installed: &hostInfo{}}, actWarn},
+	}
+	for _, c := range cases {
+		if got := joinAction(c.host, mine); got != c.want {
+			t.Errorf("%s: %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+// restartableHost is fakeHost for a panel that reports installed and, when
+// accept is set, "restarts" into it on POST /api/restart.
+func restartableHost(t *testing.T, running, installed hostID, accept bool) (base string, port int, restarts *int) {
+	t.Helper()
+	var mu sync.Mutex
+	cur := running
+	n := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/projects", func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		_ = json.NewEncoder(w).Encode(map[string]any{"projects": []any{}, "default": "", "version": cur.version, "ui": cur.ui,
+			"installed": map[string]string{"version": installed.version, "ui": installed.ui}})
+	})
+	mux.HandleFunc("POST /api/restart", func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		n++
+		if !accept {
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "nothing to restart into"})
+			return
+		}
+		cur = installed
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"restarting":true}`))
+	})
+	mux.HandleFunc("POST /api/projects", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"pid": "proj x/é", "name": "Proj X"})
+	})
+	mux.HandleFunc("DELETE /api/projects/{pid}", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]bool{"removed": true})
+	})
+	mux.HandleFunc("GET /api/stream", func(w http.ResponseWriter, r *http.Request) {
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	u, _ := url.Parse(srv.URL)
+	port, _ = strconv.Atoi(u.Port())
+	return srv.URL, port, &n
+}
+
+// criterion 7: the panel runs another build and its binary on disk is this
+// one — it is restarted, nothing tells to stop it, and the link opens.
+func TestJoinRestartsPanelIntoInstalledBinary(t *testing.T) {
+	base, port, restarts := restartableHost(t, hostID{"v0.0.1", "x"}, same, true)
+	out, opened := runJoin(t, port, true, false)
+	if *restarts != 1 {
+		t.Fatalf("restarts = %d, want 1\n%s", *restarts, out)
+	}
+	if strings.Contains(out, "warning:") {
+		t.Fatalf("warning after a restart that landed:\n%s", out)
+	}
+	if len(opened) != 1 || opened[0] != base+wantLink {
+		t.Fatalf("opened = %v, want the project link", opened)
+	}
+}
+
+// A refused restart falls back to today's warning (criterion 9's path).
+func TestJoinRestartRefusedWarns(t *testing.T) {
+	base, port, _ := restartableHost(t, hostID{"v0.0.1", "x"}, same, false)
+	out, _ := runJoin(t, port, true, true)
+	if !strings.Contains(out, warnLine(base, "v0.0.1", "x", version.Version, server.UIIdentity())) {
+		t.Fatalf("no warning after a refused restart:\n%s", out)
+	}
+}
+
+// criterion 8: the panel already runs its installed binary and this process
+// is another build — no "stop that ui"; a local build hears about --port.
+func TestJoinInstalledPanelInforms(t *testing.T) {
+	base, port, restarts := restartableHost(t, hostID{"v9.9.9", "y"}, hostID{"v9.9.9", "y"}, true)
+	out, _ := runJoin(t, port, true, true)
+	if *restarts != 0 || strings.Contains(out, "stop that ui") {
+		t.Fatalf("restarts = %d; the panel runs the installed binary, nothing to stop:\n%s", *restarts, out)
+	}
+	if !strings.Contains(out, "the cerne ui on "+base+" runs the installed cerne v9.9.9") {
+		t.Fatalf("output does not say the panel runs the installed cerne:\n%s", out)
+	}
+	if version.Version == "dev" && !strings.Contains(out, "--port") {
+		t.Fatalf("a local build is not told about --port:\n%s", out)
+	}
+}

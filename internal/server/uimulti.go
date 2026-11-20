@@ -325,6 +325,13 @@ func watchHeadMulti(ctx context.Context, hub *multiHub, pid, repoDir string, int
 // initialDir as the first (default) project; resolve provides per-project
 // locations. The watchers stop when ctx is cancelled.
 func NewUIMulti(ctx context.Context, resolve Resolver, pullInterval time.Duration, initialDir string) (http.Handler, error) {
+	return NewUIMultiHost(ctx, resolve, pullInterval, initialDir, UIHost{})
+}
+
+// NewUIMultiHost is NewUIMulti for the process that hosts the panel: host
+// names its command on disk, watched for a new binary, and the restart into
+// it (F-0478).
+func NewUIMultiHost(ctx context.Context, resolve Resolver, pullInterval time.Duration, initialDir string, host UIHost) (http.Handler, error) {
 	hub := newMultiHub(ctx.Done())
 	// A finished lint revalidation (F-0155) announces like any backend change:
 	// the page refetches and receives the fresh findings (stale: false).
@@ -350,12 +357,33 @@ func NewUIMulti(ctx context.Context, resolve Resolver, pullInterval time.Duratio
 	// never in registry.add (a second project must not re-trigger it).
 	startCatalogRefresh(ctx, hub, reg.projDir(pid))
 
+	// F-0478: a new binary on disk shows on every tab through the projects
+	// event, which makes each one re-read the list and its installed field.
+	var watch *binaryWatch
+	if host.Command != "" {
+		watch = newBinaryWatch(host, reg.projDir(pid))
+		go watch.run(ctx, binaryPollInterval, func() { hub.broadcast(liveEvent{kind: "projects"}) })
+	}
+
 	mux := http.NewServeMux()
 
 	// Project set: list, register (by dir), deregister (by pid).
 	mux.HandleFunc("GET /api/projects", func(w http.ResponseWriter, r *http.Request) {
 		infos, def := reg.list()
-		writeJSON(w, http.StatusOK, map[string]any{"projects": infos, "default": def, "version": version.Version, "ui": UIIdentity()})
+		body := map[string]any{"projects": infos, "default": def, "version": version.Version, "ui": UIIdentity()}
+		if watch != nil {
+			body["installed"] = watch.installed()
+		}
+		writeJSON(w, http.StatusOK, body)
+	})
+	mux.HandleFunc("POST /api/restart", func(w http.ResponseWriter, r *http.Request) {
+		code, err := watch.requestRestart()
+		if err != nil {
+			writeJSON(w, code, errorBody(err.Error()))
+			return
+		}
+		writeJSON(w, code, map[string]bool{"restarting": true})
+		hub.broadcast(liveEvent{kind: "projects"})
 	})
 	mux.HandleFunc("POST /api/projects", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {

@@ -20,6 +20,11 @@ import (
 // CLAUDECODE marker: no test reads real transcripts or inherits the agent's
 // harness; cost tests opt in per-case via t.Setenv.
 func TestMain(m *testing.M) {
+	// F-0478: a copy of this test binary stands in for the cerne on disk in
+	// the restart test (uiHelperMain).
+	if os.Getenv("CERNE_TEST_UI_HELPER") == "1" {
+		os.Exit(uiHelperMain())
+	}
 	// F-0414: never probe PATH for a subscription CLI (children inherit this).
 	os.Setenv("CERNE_NO_CLI_DETECT", "1")
 	os.Unsetenv("CERNE_ACTOR")

@@ -12,8 +12,11 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -57,14 +60,19 @@ func newUICmd() *cobra.Command {
 	var port int
 	var noBrowser bool
 	var pullInterval time.Duration
+	var identity bool
 	cmd := &cobra.Command{
 		Use:   "ui",
 		Short: "Serve the local web dashboard",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if identity {
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(hostInfo{Version: version.Version, UI: server.UIIdentity()})
+			}
 			return runUI(cmd, dir, port, noBrowser, pullInterval)
 		},
 	}
+	cmd.Flags().BoolVar(&identity, "identity", false, "print this binary's version and UI identity as JSON and exit")
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
 	cmd.Flags().IntVar(&port, "port", 7717, "port for the local UI server")
@@ -77,7 +85,32 @@ func newUICmd() *cobra.Command {
 // runUI serves the dashboard for N projects. The process either binds the
 // port and hosts, or joins the cerne ui already on it; when the host dies,
 // the survivors race to take the port over (F-0119).
+//
+// A host asked to restart (F-0478) leaves superviseUI with a restartRequest;
+// runUI then turns into the binary on disk. A restart that fails keeps this
+// version serving, on the same socket where the platform kept it.
 func runUI(cmd *cobra.Command, dir string, port int, noBrowser bool, pullInterval time.Duration) error {
+	uiCommand = commandPath()
+	// The running binary is the file as it was when this process started: a
+	// panel built later (a takeover after an upgrade, a failed restart that
+	// keeps serving) must still see a newer file on disk as new.
+	uiStart = server.StampCommand(uiCommand)
+	for {
+		err := serveUI(cmd, dir, port, noBrowser, pullInterval)
+		var rr *restartRequest
+		if !errors.As(err, &rr) {
+			return err
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "restarting the panel into %s\n", rr.path)
+		restartErr := restartUI(rr) // returns only when the restart failed
+		fmt.Fprintf(cmd.OutOrStdout(), "warning: could not restart into %s: %v; this version keeps serving\n", rr.path, restartErr)
+		keepForRetry(rr) // the same socket serves again, when the platform kept it
+		os.Setenv(restartedEnv, "1")
+	}
+}
+
+// serveUI is one life of the panel process, from bind or join to exit.
+func serveUI(cmd *cobra.Command, dir string, port int, noBrowser bool, pullInterval time.Duration) error {
 	// A cancellable context ties the per-project live-refresh goroutines to the
 	// process; Ctrl+C or SIGTERM (kill, an IDE stopping a preview) cancels it,
 	// which shuts the server down gracefully or, when joined, removes this
@@ -85,7 +118,84 @@ func runUI(cmd *cobra.Command, dir string, port int, noBrowser bool, pullInterva
 	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	defer initServerTelemetry(sigCtx, dir)()
-	return superviseUI(sigCtx, cmd.OutOrStdout(), dir, port, noBrowser, pullInterval, uiResolver)
+	return superviseUI(sigCtx, cmd.OutOrStdout(), dir, port, noBrowser, pullInterval, uiResolve)
+}
+
+// uiResolve is uiResolver; a variable so the restart test's helper process
+// serves fixture directories without a backend.
+var uiResolve server.Resolver = uiResolver
+
+// uiCommand is the command that started this process, as an absolute path;
+// empty outside runUI, which leaves the panel without restart (F-0478).
+// uiStart is its file as it was at process start.
+var (
+	uiCommand string
+	uiStart   server.CommandStamp
+)
+
+// The restart hands the next process the panel's socket and tells it that it
+// is a restart, so it opens no browser tab (F-0478 criterion 4).
+const (
+	listenFDEnv  = "CERNE_UI_LISTEN_FD"
+	restartedEnv = "CERNE_UI_RESTARTED"
+)
+
+// restartRequest ends host mode for a restart into path. file is the socket
+// kept open across the restart and fd its descriptor (nil and -1 where the
+// platform cannot keep it).
+type restartRequest struct {
+	file *os.File
+	fd   int
+	path string
+}
+
+func (*restartRequest) Error() string { return "the panel was asked to restart" }
+
+// commandPath resolves the command as it was invoked: a path is made
+// absolute, a bare name is looked up in PATH. A Homebrew link stays a link,
+// so after an upgrade it reaches the new Cellar — os.Executable may name the
+// old one, which `brew cleanup` deletes.
+func commandPath() string {
+	arg := os.Args[0]
+	if filepath.Base(arg) == arg {
+		if p, err := exec.LookPath(arg); err == nil {
+			arg = p
+		}
+	}
+	if p, err := filepath.Abs(arg); err == nil {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	p, _ := os.Executable()
+	return p
+}
+
+// restartEnv is this process's environment without the restart variables,
+// for the next process to receive fresh ones.
+func restartEnv() []string {
+	env := os.Environ()
+	return slices.DeleteFunc(env, func(kv string) bool {
+		return strings.HasPrefix(kv, listenFDEnv+"=") || strings.HasPrefix(kv, restartedEnv+"=")
+	})
+}
+
+// inheritedListener takes over the socket a restarting panel handed down,
+// and clears the variables so no subprocess inherits them. The handed-down
+// descriptor is closed: net.FileListener keeps its own close-on-exec copy.
+func inheritedListener() (net.Listener, error) {
+	v := os.Getenv(listenFDEnv)
+	if v == "" {
+		return nil, nil
+	}
+	os.Unsetenv(listenFDEnv)
+	fd, err := strconv.Atoi(v)
+	if err != nil {
+		return nil, fmt.Errorf("%s=%q: %w", listenFDEnv, v, err)
+	}
+	f := os.NewFile(uintptr(fd), "cerne-ui-listener")
+	defer f.Close()
+	return net.FileListener(f)
 }
 
 // superviseUI is the per-process takeover loop: try to bind and host; on
@@ -100,6 +210,15 @@ func superviseUI(ctx context.Context, out io.Writer, dir string, port int, noBro
 	// different families — and the port-bind mutex only works when every
 	// process races for the same address.
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	if os.Getenv(restartedEnv) != "" {
+		os.Unsetenv(restartedEnv)
+		noBrowser = true // a restart reuses the tabs already open
+	}
+	if ln, err := inheritedListener(); err != nil {
+		return err
+	} else if ln != nil {
+		return hostUI(ctx, out, ln, addr, dir, pullInterval, resolve, false)
+	}
 	first := true
 	warned := map[string]bool{} // host identities already warned about, per process
 	backoff := 250 * time.Millisecond
@@ -148,29 +267,59 @@ func sleepCtx(ctx context.Context, d time.Duration) bool {
 
 // hostUI is host mode: this process owns the port and serves every registered
 // project until ctx is done. openTab controls the automatic browser tab.
+// A restart asked through the panel (F-0478) ends it with a restartRequest
+// holding a copy of the socket, taken before the shutdown closes ln.
 func hostUI(ctx context.Context, out io.Writer, ln net.Listener, addr, dir string, pullInterval time.Duration, resolve server.Resolver, openTab bool) error {
-	handler, err := server.NewUIMulti(ctx, resolve, pullInterval, dir)
+	srvCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	restartCh := make(chan struct{}, 1)
+	var host server.UIHost
+	if uiCommand != "" {
+		host = server.UIHost{Command: uiCommand, Start: uiStart, Restart: func() {
+			select {
+			case restartCh <- struct{}{}:
+			default:
+			}
+		}}
+	}
+	handler, err := server.NewUIMultiHost(srvCtx, resolve, pullInterval, dir, host)
 	if err != nil {
 		ln.Close()
 		return err
 	}
 	url := fmt.Sprintf("http://%s", addr)
-	fmt.Fprintf(out, "Local UI at %s (Ctrl+C to exit)\n", url)
+	fmt.Fprintf(out, "Local UI at %s, cerne %s (Ctrl+C to exit)\n", url, version.Short())
 	if openTab {
-		go openBrowser(url)
+		go openURL(url)
 	}
 	srv := &http.Server{Handler: handler}
+	var rr *restartRequest
+	stopped := make(chan struct{})
 	go func() {
-		<-ctx.Done()
-		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+		defer close(stopped)
+		select {
+		case <-srvCtx.Done():
+		case <-restartCh:
+			f, fd, err := dupListener(ln)
+			if err != nil {
+				fmt.Fprintf(out, "warning: the port cannot be kept across the restart (%v); it is free for a moment\n", err)
+			}
+			rr = &restartRequest{file: f, fd: fd, path: uiCommand}
+		}
+		cancel() // ends the SSE streams (multiHub.done) and the watchers
+		shutCtx, cancelShut := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancelShut()
 		_ = srv.Shutdown(shutCtx)
-		// The SSE streams end with ctx (multiHub.done), but force-close any
-		// straggler so the port frees for the takeover race deterministically.
+		// Force-close any straggler so the port frees for the takeover race
+		// deterministically.
 		_ = srv.Close()
 	}()
 	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
+	}
+	<-stopped
+	if rr != nil {
+		return rr
 	}
 	return nil
 }
@@ -215,6 +364,19 @@ func joinUI(ctx context.Context, out io.Writer, dir string, port int, firstJoin,
 		}
 		return joinRetry, nil
 	}
+	mine := hostInfo{Version: version.Version, UI: server.UIIdentity()}
+	act := joinAction(hostVer, mine)
+	if act == actRestart { // criterion 7: the panel's binary on disk is this one
+		if err := requestPanelRestart(base); err == nil {
+			fmt.Fprintf(out, "the cerne ui on %s runs %s; restarting it into the installed %s\n", base, hostVer.Version, mine.Version)
+			if v, ok := waitPanelIdentity(ctx, base, mine, 15*time.Second); ok {
+				hostVer = v
+			}
+		}
+		if act = joinAction(hostVer, mine); act == actRestart {
+			act = actWarn // the restart did not land: say what to do by hand
+		}
+	}
 	if dir == "" {
 		dir = "."
 	}
@@ -240,7 +402,7 @@ func joinUI(ctx context.Context, out io.Writer, dir string, port int, firstJoin,
 	if hostVer.UI != "" {
 		host.UI = hostVer.UI
 	}
-	myVersion, myUI := version.Version, server.UIIdentity()
+	myVersion, myUI := mine.Version, mine.UI
 	// Bare base opens whichever project the panel already shows; the project's
 	// own pid in the link needs a panel that reads it, which only one with a UI
 	// identity does (F-0373).
@@ -249,9 +411,17 @@ func joinUI(ctx context.Context, out io.Writer, dir string, port int, firstJoin,
 	if oldPanel {
 		target = base
 	}
-	if hostVer.UI != myUI || hostVer.Version != myVersion {
-		if key := host.Version + "|" + host.UI; !warned[key] {
-			warned[key] = true
+	if key := host.Version + "|" + host.UI; act != actNone && !warned[key] {
+		warned[key] = true
+		switch act {
+		case actInform: // criterion 8: the panel is current; this process is the odd one
+			tail := ""
+			if myVersion == "dev" {
+				tail = "; to see this build's UI, run it with --port <another port>"
+			}
+			fmt.Fprintf(out, "the cerne ui on %s runs the installed cerne %s (ui %s); this cerne is %s (ui %s) and only keeps the project registered%s\n",
+				base, host.Version, host.UI, myVersion, myUI, tail)
+		default:
 			tail := ""
 			if oldPanel {
 				tail = " (that panel ignores project links, so this opens its base address)"
@@ -284,6 +454,62 @@ func joinUI(ctx context.Context, out io.Writer, dir string, port int, firstJoin,
 	}
 	fmt.Fprintf(out, "\nproject %q removed from the panel\n", name)
 	return joinExitUser, nil
+}
+
+// joinAct is what a joining cerne ui does about the panel it found (F-0478).
+type joinAct int
+
+const (
+	actNone    joinAct = iota // the panel is this very build
+	actRestart                // the panel's binary on disk is this one: restart the panel into it
+	actInform                 // the panel runs its binary on disk; this process is another build
+	actWarn                   // anything else, or a panel that does not report its binary on disk
+)
+
+// joinAction decides from the panel's running identity and the binary on its
+// disk, never from version order: a local build (dev) has no order.
+func joinAction(host, mine hostInfo) joinAct {
+	if host.Version == mine.Version && host.UI == mine.UI {
+		return actNone
+	}
+	if in := host.Installed; in != nil && in.Version != "" {
+		switch {
+		case in.Version == mine.Version && in.UI == mine.UI:
+			return actRestart
+		case in.Version == host.Version && in.UI == host.UI:
+			return actInform
+		}
+	}
+	return actWarn
+}
+
+// requestPanelRestart asks the panel on base to restart into its binary on
+// disk (POST /api/restart, 202).
+func requestPanelRestart(base string) error {
+	r, err := probeClient.Post(base+"/api/restart", "application/json", nil)
+	if err != nil {
+		return err
+	}
+	defer r.Body.Close()
+	if r.StatusCode != http.StatusAccepted {
+		return fmt.Errorf("HTTP %d", r.StatusCode)
+	}
+	return nil
+}
+
+// waitPanelIdentity polls the panel until it reports want, for up to timeout:
+// the restarted process answers once it has re-read its first project.
+func waitPanelIdentity(ctx context.Context, base string, want hostInfo, timeout time.Duration) (hostInfo, bool) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if v, ok := probeCerneUI(base); ok && v.Version == want.Version && v.UI == want.UI {
+			return v, true
+		}
+		if !sleepCtx(ctx, 200*time.Millisecond) {
+			break
+		}
+	}
+	return hostInfo{}, false
 }
 
 // errHostDied signals that the hosting cerne ui went away (its SSE stream
@@ -338,8 +564,15 @@ var probeClient = &http.Client{Timeout: 2 * time.Second}
 // app holding the port) by confirming GET /api/projects returns the expected
 // shape.
 // hostInfo is what a cerne ui reports about itself on the probe; both fields
-// are empty on a panel older than F-0373.
-type hostInfo struct{ Version, UI string }
+// are empty on a panel older than F-0373. `cerne ui --identity` prints the
+// same pair as JSON (F-0478).
+type hostInfo struct {
+	Version string `json:"version"`
+	UI      string `json:"ui"`
+	// Installed is the binary the panel's command resolves to on disk
+	// (F-0478); nil on an older panel.
+	Installed *hostInfo `json:"installed,omitempty"`
+}
 
 func probeCerneUI(base string) (info hostInfo, ok bool) {
 	r, err := probeClient.Get(base + "/api/projects")
@@ -354,14 +587,15 @@ func probeCerneUI(base string) (info hostInfo, ok bool) {
 		Projects []struct {
 			PID string `json:"pid"`
 		} `json:"projects"`
-		Version string `json:"version"` // absent on a panel built before F-0373
-		UI      string `json:"ui"`
+		Version   string    `json:"version"` // absent on a panel built before F-0373
+		UI        string    `json:"ui"`
+		Installed *hostInfo `json:"installed"` // absent on a panel built before F-0478
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		return hostInfo{}, false
 	}
 	// a cerne ui always returns a (possibly empty) array
-	return hostInfo{body.Version, body.UI}, body.Projects != nil
+	return hostInfo{Version: body.Version, UI: body.UI, Installed: body.Installed}, body.Projects != nil
 }
 
 // openURL opens a URL in the browser; a variable so tests never launch one.

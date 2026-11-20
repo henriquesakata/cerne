@@ -15,7 +15,9 @@ import (
 	"time"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/server"
 	"github.com/henriquesakata/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/version"
 )
 
 func TestUICmdPullIntervalFlag(t *testing.T) {
@@ -37,6 +39,27 @@ func TestUICmdPullIntervalFlag(t *testing.T) {
 	}
 	if d != 0 {
 		t.Fatalf("pull-interval = %v, want 0", d)
+	}
+}
+
+// TestUIIdentityFlag (F-0478): `cerne ui --identity` prints the binary's
+// version and UI identity as JSON and exits, without serving anything — the
+// panel runs it against the binary on disk to know what a restart lands on.
+func TestUIIdentityFlag(t *testing.T) {
+	root := Root()
+	out := &bytes.Buffer{}
+	root.SetOut(out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"ui", "--identity", "--port", "1"}) // port 1 would fail to bind: proves nothing is served
+	if err := root.Execute(); err != nil {
+		t.Fatalf("ui --identity: %v", err)
+	}
+	var got struct{ Version, UI string }
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("output is not JSON: %q (%v)", out.String(), err)
+	}
+	if got.Version != version.Version || got.UI != server.UIIdentity() {
+		t.Fatalf("identity = %+v, want version %q ui %q", got, version.Version, server.UIIdentity())
 	}
 }
 
