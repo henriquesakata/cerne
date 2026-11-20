@@ -157,6 +157,9 @@ var rewritten = []string{
 	// is live, not the first read.
 	"Read current state from .docs/CONTEXT.md and `cerne status`.",
 	"Read current state from `.docs/CONTEXT.md` and `cerne status` (or `cerne brief`",
+	// E-0005: CONTEXT.md counts the notes and lists their components.
+	"Active notes also appear in the `## Conhecimento` section of `.docs/CONTEXT.md`",
+	"Tags render inline in `note list`/`note show`, fold into the FTS body",
 }
 
 // b0015Renames maps the pt-BR names and placeholders the 2026-11-13 snapshot
