@@ -723,7 +723,9 @@ h2 {
   border-right: 1px solid var(--border-soft);
 }
 
-.backlog-chat-rail .backlog-chat-new { align-self: flex-start; }
+/* B-0048: "Nova conversa" e o recolher da coluna na mesma linha. */
+.backlog-chat-rail-head { display: flex; align-items: center; justify-content: space-between; gap: 0.4rem; }
+.backlog-chat-rail-hide { padding: 0.3rem 0.55rem; line-height: 1; }
 .backlog-chat-rail .conversation-list { flex: 1; min-height: 0; overflow-y: auto; }
 .backlog-chat-rail .conversation-list ul { max-height: none; overflow: visible; }
 

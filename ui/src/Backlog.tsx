@@ -34,22 +34,23 @@ function useWide(): boolean {
   return wide
 }
 
-// B-0048: recolher a coluna de candidatas é preferência de quem olha, por
-// navegador — o mesmo contrato da coluna Backlog do kanban (F-0342). Storage
-// inacessível cai no padrão expandido e nunca quebra a página.
+// B-0048: recolher a coluna de candidatas e a de conversas é preferência de
+// quem olha, por navegador — o mesmo contrato da coluna Backlog do kanban
+// (F-0342). Storage inacessível cai no padrão expandido e nunca quebra a página.
 const LIST_OPEN_KEY = 'cerne.backlog.listOpen'
+const RAIL_OPEN_KEY = 'cerne.backlog.railOpen'
 
-function readListOpen(): boolean {
+function readOpen(key: string): boolean {
   try {
-    return localStorage.getItem(LIST_OPEN_KEY) !== 'false'
+    return localStorage.getItem(key) !== 'false'
   } catch {
     return true
   }
 }
 
-function writeListOpen(open: boolean) {
+function writeOpen(key: string, open: boolean) {
   try {
-    localStorage.setItem(LIST_OPEN_KEY, String(open))
+    localStorage.setItem(key, String(open))
   } catch {
     // preferência não persistida; o toggle da sessão continua valendo
   }
@@ -66,11 +67,19 @@ export default function Backlog() {
   const { t } = useT()
   const chats = useBacklogChats()
   const wide = useWide()
-  const [listOpen, setListOpen] = useState(readListOpen)
+  const [listOpen, setListOpen] = useState(() => readOpen(LIST_OPEN_KEY))
   const toggleList = () => {
     setListOpen(!listOpen)
-    writeListOpen(!listOpen)
+    writeOpen(LIST_OPEN_KEY, !listOpen)
   }
+  // Rail recolhido = o layout largo usa o menu da barra do layout estreito:
+  // "Nova conversa" e o histórico continuam a um clique, só a coluna sai.
+  const [railOpen, setRailOpen] = useState(() => readOpen(RAIL_OPEN_KEY))
+  const toggleRail = () => {
+    setRailOpen(!railOpen)
+    writeOpen(RAIL_OPEN_KEY, !railOpen)
+  }
+  const railed = wide && railOpen
   // Trocar de conversa remonta o chat (key): depois de escolher ou criar, o
   // foco vai para o compositor da nova conversa.
   const focusComposer = useRef(false)
@@ -137,17 +146,46 @@ export default function Backlog() {
           leitura iguais à visual abaixo de 60rem); acima, o grid posiciona. A
           coluna de histórico fica fora do key, para manter rolagem e foco ao
           trocar de conversa. */}
-      <div className={wide ? 'backlog-chat-shell' : 'backlog-chat-shell backlog-chat-shell-stack'}>
-        {!wide && (
+      <div className={railed ? 'backlog-chat-shell' : 'backlog-chat-shell backlog-chat-shell-stack'}>
+        {!railed && (
           <ChatToolbar refineId={chats.active.featureId ?? ''}>
             <HistoryMenu history={history} />
+            {wide && (
+              <button
+                type="button"
+                className="backlog-chat-new"
+                aria-expanded={false}
+                aria-controls="backlog-chat-rail"
+                onClick={toggleRail}
+              >
+                {t.backlogChat.showConversations}
+              </button>
+            )}
           </ChatToolbar>
         )}
-        {wide && (
-          <div className="backlog-chat-rail" role="region" aria-label={t.backlogChat.conversationsTitle}>
-            <button type="button" className="backlog-chat-new" onClick={history.onNew}>
-              {t.backlogChat.newConversation}
-            </button>
+        {railed && (
+          <div
+            className="backlog-chat-rail"
+            id="backlog-chat-rail"
+            role="region"
+            aria-label={t.backlogChat.conversationsTitle}
+          >
+            <div className="backlog-chat-rail-head">
+              <button type="button" className="backlog-chat-new" onClick={history.onNew}>
+                {t.backlogChat.newConversation}
+              </button>
+              <button
+                type="button"
+                className="backlog-chat-new backlog-chat-rail-hide"
+                aria-expanded={true}
+                aria-controls="backlog-chat-rail"
+                aria-label={t.backlogChat.hideConversations}
+                title={t.backlogChat.hideConversations}
+                onClick={toggleRail}
+              >
+                <span aria-hidden="true">‹</span>
+              </button>
+            </div>
             <ConversationList
               conversations={history.conversations}
               activeId={history.activeId}
@@ -161,7 +199,7 @@ export default function Backlog() {
           key={chats.active.id}
           conversation={chats.active}
           onUpdate={chats.updateActive}
-          toolbarOutside={!wide}
+          toolbarOutside={!railed}
           onRegistered={(feature) => {
             chats.appendRegisteredId(feature.id)
             setRefreshKey((k) => k + 1)
