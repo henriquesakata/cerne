@@ -66,7 +66,7 @@ func newMux(repoDir, projDir, projectID string) http.Handler {
 		writeJSON(w, http.StatusNotFound, errorBody("route not found"))
 	})
 	mux.Handle("/", spaHandler())
-	return mux
+	return localWrites(mux)
 }
 
 // handleVersion returns the binary's build version (F-0129) — the same
@@ -1061,11 +1061,8 @@ func sameOriginJSON(r *http.Request) bool { return sameOriginAs(r, "application/
 // sameOriginAs is sameOriginJSON for a body of mediaType (F-0464: the vault's
 // text/markdown writes).
 func sameOriginAs(r *http.Request, mediaType string) bool {
-	if o := r.Header.Get("Origin"); o != "" {
-		u, err := url.Parse(o)
-		if err != nil || u.Host != r.Host {
-			return false
-		}
+	if !sameOrigin(r) {
+		return false
 	}
 	if ct := r.Header.Get("Content-Type"); ct != "" {
 		if mt, _, err := mime.ParseMediaType(ct); err != nil || mt != mediaType {
@@ -1073,6 +1070,17 @@ func sameOriginAs(r *http.Request, mediaType string) bool {
 		}
 	}
 	return true
+}
+
+// sameOrigin reports a request with no Origin, or one naming this request's
+// own Host.
+func sameOrigin(r *http.Request) bool {
+	o := r.Header.Get("Origin")
+	if o == "" {
+		return true
+	}
+	u, err := url.Parse(o)
+	return err == nil && u.Host == r.Host
 }
 
 // callableLLM reports whether projDir's [llm] can synthesize for a human in

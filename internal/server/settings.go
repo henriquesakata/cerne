@@ -134,6 +134,23 @@ func localWriteOf(w http.ResponseWriter, r *http.Request, mediaType string) bool
 	return true
 }
 
+// localWrites refuses, with 403, every write to the local ui — any method but
+// GET and HEAD — whose Host is not the loopback or whose Origin names another
+// host (B-0043): a page served from a name rebound to 127.0.0.1 sends its own
+// name as Host, a cross-site page its own Origin. One guard on the router, so a
+// route added later cannot forget it; the routes that take a body type check it
+// themselves (localWriteOf, sameOriginAs). The remote `cerne serve` is not
+// wrapped: its writes come from other hosts by design.
+func localWrites(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead && (!loopbackHost(r.Host) || !sameOrigin(r)) {
+			writeJSON(w, http.StatusForbidden, errorBody("writes are accepted only from cerne ui on this machine: loopback host, same-origin request"))
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
+}
+
 // loopbackHost reports a Host header naming this machine's loopback
 // (localhost, 127.0.0.1 or [::1]), with any port.
 func loopbackHost(host string) bool {

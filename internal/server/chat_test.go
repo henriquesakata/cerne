@@ -57,7 +57,7 @@ func fakeChatProvider(t *testing.T, gotPrompt *string, replyText string) *httpte
 // the last line is decoded into terminal.
 func doChatStream(t *testing.T, h http.Handler, body string, terminal any) (deltas []string, rec *httptest.ResponseRecorder) {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(body))
+	req := localRequest(http.MethodPost, "/api/chat", strings.NewReader(body))
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -1205,7 +1205,7 @@ func TestCodexChatProjectFilesLocalOnly(t *testing.T) {
 			}
 			return fake, nil
 		}
-		req := httptest.NewRequest("POST", "/api/chat", strings.NewReader(`{"messages":[{"role":"user","content":"stage?"}]}`))
+		req := localRequest("POST", "/api/chat", strings.NewReader(`{"messages":[{"role":"user","content":"stage?"}]}`))
 		req.Header.Set("Content-Type", "application/json")
 		req = req.WithContext(context.WithValue(req.Context(), remoteKey{}, remote))
 		rec := httptest.NewRecorder()
@@ -1237,7 +1237,7 @@ func TestCodexChatWithoutCommitHasNoLiveQuery(t *testing.T) {
 		gotRoot = root
 		return fake, nil
 	}
-	req := httptest.NewRequest("POST", "/api/chat", strings.NewReader(`{"messages":[{"role":"user","content":"stage?"}]}`))
+	req := localRequest("POST", "/api/chat", strings.NewReader(`{"messages":[{"role":"user","content":"stage?"}]}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	handleChat(rec, req, repo, dir, "test")

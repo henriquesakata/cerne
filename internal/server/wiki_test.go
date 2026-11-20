@@ -303,7 +303,7 @@ func TestWikiCompileEndpoint(t *testing.T) {
 		return func(w http.ResponseWriter, r *http.Request) { sh(w, r, repoDir, projDir, "") }
 	}, true)
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/wiki/compile", nil))
+	mux.ServeHTTP(rec, localRequest(http.MethodPost, "/api/wiki/compile", nil))
 	if rec.Code == http.StatusOK {
 		t.Fatalf("remote subset served POST /api/wiki/compile: %d %s", rec.Code, rec.Body.String())
 	}
@@ -338,7 +338,7 @@ func TestWikiCompileBusy(t *testing.T) {
 	h := New(repoDir, projDir, "")
 	post := func() (int, string) {
 		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/wiki/compile", nil))
+		h.ServeHTTP(rec, localRequest(http.MethodPost, "/api/wiki/compile", nil))
 		return rec.Code, rec.Body.String()
 	}
 
@@ -416,13 +416,13 @@ func TestWikiCompileRefusesCrossSite(t *testing.T) {
 		{"cross-origin text/plain", "https://evil.example", "text/plain", http.StatusForbidden},
 		{"opaque origin", "null", "", http.StatusForbidden},
 		{"no origin, form body", "", "application/x-www-form-urlencoded", http.StatusForbidden},
-		{"same origin", "http://example.com", "", http.StatusOK},
-		{"same origin JSON", "http://example.com", "application/json; charset=utf-8", http.StatusOK},
+		{"same origin", "http://127.0.0.1:7717", "", http.StatusOK},
+		{"same origin JSON", "http://127.0.0.1:7717", "application/json; charset=utf-8", http.StatusOK},
 		{"no origin (CLI, curl)", "", "", http.StatusOK},
 	}
 	for _, tc := range cases {
 		runs = 0
-		req := httptest.NewRequest(http.MethodPost, "/api/wiki/compile", nil) // Host: example.com
+		req := localRequest(http.MethodPost, "/api/wiki/compile", nil) // Host: 127.0.0.1:7717
 		if tc.origin != "" {
 			req.Header.Set("Origin", tc.origin)
 		}

@@ -79,7 +79,7 @@ func mirrorFixture(t *testing.T, on bool) (h http.Handler, repoDir, projDir stri
 }
 
 func do(h http.Handler, method, path string, hdr map[string]string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(method, path, nil)
+	req := localRequest(method, path, nil)
 	for k, v := range hdr {
 		req.Header.Set(k, v)
 	}

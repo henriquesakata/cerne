@@ -132,9 +132,9 @@ func doJSON(t *testing.T, h http.Handler, method, target, body string, out any) 
 	t.Helper()
 	var req *http.Request
 	if body == "" {
-		req = httptest.NewRequest(method, target, nil)
+		req = localRequest(method, target, nil)
 	} else {
-		req = httptest.NewRequest(method, target, strings.NewReader(body))
+		req = localRequest(method, target, strings.NewReader(body))
 	}
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
