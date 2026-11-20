@@ -888,6 +888,31 @@ func TestUpdateCheckSetting(t *testing.T) {
 	}
 }
 
+// TestUpdateNotifySetting (F-0479 criterion 8): update.notify is a host bool in
+// integrations, off by default; on in the host's settings, the session-start
+// notice may ask for the latest release.
+func TestUpdateNotifySetting(t *testing.T) {
+	projDir, _ := settingsFixture(t, "", "", true)
+	writeCernerc(t, projDir, editFixture)
+	t.Setenv("CERNE_CONFIG_DIR", filepath.Join(t.TempDir(), "cerne"))
+	s := findSetting(t, ResolveSettings(projDir), "update.notify")
+	if s.Type != "bool" || s.Default != false || s.Group != "integrations" || !slices.Equal(s.Scopes, []string{ScopeHost}) {
+		t.Fatalf("update.notify = %+v, want a host-only bool in integrations, off by default", s.Setting)
+	}
+	if UpdateNotify(projDir) {
+		t.Fatal("UpdateNotify is on with nothing stored")
+	}
+	if err := SetSetting(projDir, "update.notify", ScopeHost, "true"); err != nil {
+		t.Fatal(err)
+	}
+	if !UpdateNotify(projDir) {
+		t.Fatal("UpdateNotify still off after update.notify = true on the host")
+	}
+	if err := SetSetting(projDir, "update.notify", ScopeProject, "true"); err == nil {
+		t.Fatal("update.notify accepted the project scope")
+	}
+}
+
 // TestAutoRefreshSetting (F-0477 crits. 6 and 12): hooks.auto_refresh is a bool
 // in the integrations group, on by default, in both scopes, and the project
 // scope wins over the host.

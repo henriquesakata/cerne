@@ -1548,6 +1548,9 @@ const ptBR = {
       'Check for a new release': 'Procurar versão nova',
       'On, the cerne ui panel asks GitHub for the latest release when it starts and every 24 hours while it is open, and shows an Update button when a newer one exists. Off, the panel never asks; cerne update still checks when you run it. It applies to every project on this machine.':
         'Ligado, o painel do cerne ui pergunta ao GitHub qual é a última release quando sobe e a cada 24 horas enquanto está aberto, e mostra o botão Atualizar quando há uma mais nova. Desligado, o painel nunca pergunta; o cerne update continua conferindo quando você o roda. Vale para todos os projetos desta máquina.',
+      'New release notice': 'Aviso de versão nova',
+      "On, an agent's session start asks GitHub for the latest release at most once a day, and tells one agent per machine, once per version, to ask you to run cerne update. Off, no session asks. CERNE_NO_UPDATE_NOTIFIER or CI turns it off whatever this says. It applies to every project on this machine.":
+        'Ligado, o início de sessão de um agente pergunta ao GitHub qual é a última release, no máximo uma vez por dia, e avisa um agente por máquina, uma vez por versão, para pedir que você rode o cerne update. Desligado, nenhuma sessão pergunta. CERNE_NO_UPDATE_NOTIFIER ou CI desligam o aviso seja qual for esta configuração. Vale para todos os projetos desta máquina.',
       'Wiki': 'Wiki',
       "On keeps the wiki live: when compile_on_push is set, a push recompiles the dirty pages, and wiki lint debt counts as pending work in 'cerne next'. Off stops both; the wiki stays readable, with a stale banner and an on-demand recompile.":
         "Ligado mantém a wiki viva: com compile_on_push ligado, um push recompila as páginas sujas, e a dívida de lint da wiki conta como trabalho pendente no 'cerne next'. Desligado, os dois param: a wiki continua legível, com aviso de desatualizada e recompilação sob demanda.",
