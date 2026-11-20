@@ -24,7 +24,7 @@ func newSavingsCmd() *cobra.Command {
 		Long: "Measures how much documentation the backend holds (every entity, every state) against " +
 			"the entity documents the current .docs/ projection delivers to an agent — per kind and in total, " +
 			"as counts, bytes and an estimated token figure (bytes/4). The difference is the reduction " +
-			"of what the agent has to search: nothing is deleted, the rest stays in history.  The generated .docs/CONTEXT.md roster is not counted on either side. " +
+			"of what the agent has to search: nothing is deleted, the rest stays in history. The generated .docs/CONTEXT.md roster is not counted on either side. " +
 			"--json emits the full object for machine consumption.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
