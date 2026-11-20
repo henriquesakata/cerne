@@ -75,14 +75,21 @@ func TestReadmeNamesTheVersionChecks(t *testing.T) {
 	if strings.Contains(data, "crash reporting or update check") {
 		t.Error("README still promises no update check at all")
 	}
-	if !strings.Contains(data, "There are two version checks: `cerne update`, only when you run it, and the `cerne ui` panel") {
-		t.Error("README lacks the sentence naming the two version checks")
+	if !strings.Contains(data, "There are three version checks: `cerne update`, only when you run it, and the `cerne ui` panel") {
+		t.Error("README lacks the sentence naming the three version checks")
 	}
 	if !strings.Contains(data, "cerne settings set ui.update_check false --scope host") {
 		t.Error("README does not say how to turn the panel's check off")
 	}
 	if !strings.Contains(data, "\n| The latest release tag") || !strings.Contains(data, "Only when you run `cerne update`") {
 		t.Error("README data table lacks the cerne update row")
+	}
+	if !strings.Contains(data, "no agent's session start asks until you turn it on with `cerne settings set update.notify true --scope host`") ||
+		!strings.Contains(data, "`CERNE_NO_UPDATE_NOTIFIER`") {
+		t.Error("README does not say the session notice is opt-in and how to turn it off")
+	}
+	if !strings.Contains(data, "\n| The latest release tag, asked by an agent's session start") || !strings.Contains(data, "At most once every 24 hours per machine, only with `update.notify` on") {
+		t.Error("README data table lacks the session notice's row")
 	}
 	if !strings.Contains(data, "\n| The latest release tag, read by the panel") || !strings.Contains(data, "every 24 hours while it is open") {
 		t.Error("README data table lacks the panel's row")
@@ -108,6 +115,24 @@ func TestDocsSayWhenTheFilesRenewThemselves(t *testing.T) {
 			if !strings.Contains(doc, want) {
 				t.Errorf("%s does not say %q", path, want)
 			}
+		}
+	}
+}
+
+// F-0479 crit. 7: the FAQ answer about updating says the session notice is
+// opt-in, who hears it and how to turn it off.
+func TestFAQSaysHowTheNewReleaseNoticeWorks(t *testing.T) {
+	raw, err := os.ReadFile("faq.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"cerne settings set update.notify true --scope host",
+		"one agent per machine",
+		"CERNE_NO_UPDATE_NOTIFIER",
+	} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("faq.md does not say %q", want)
 		}
 	}
 }
