@@ -547,7 +547,8 @@ var jiraQuote = strings.NewReplacer(`\`, `\\`, `"`, `\"`)
 // /search/jql. A label with a control character is refused: JQL has no
 // escape for one. ponytail: one page; paginate when a project outgrows it.
 func (j jira) ListOpen(ctx context.Context, label string) ([]Remote, error) {
-	jql := "project = " + j.project + " AND statusCategory != Done"
+	// The key is quoted: a valid key can be a JQL reserved word (OR, IS, IN).
+	jql := `project = "` + j.project + `" AND statusCategory != Done`
 	if strings.ContainsFunc(label, unicode.IsControl) {
 		return nil, fmt.Errorf("jira %s: label %q has a control character", j.host, label)
 	}

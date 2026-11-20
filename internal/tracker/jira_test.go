@@ -485,8 +485,9 @@ func jiraTextJSON(s string) json.RawMessage {
 	return b
 }
 
-// jiraJQL is the only JQL the adapter writes: the spec's, plus a quoted label.
-var jiraJQL = regexp.MustCompile(`^project = ([A-Z][A-Z0-9_]*) AND statusCategory != Done(?: AND labels = "((?:[^"\\]|\\.)*)")?$`)
+// jiraJQL is the only JQL the adapter writes: the spec's, with the project key
+// quoted (a key can be a JQL reserved word), plus a quoted label.
+var jiraJQL = regexp.MustCompile(`^project = "([A-Z][A-Z0-9_]*)" AND statusCategory != Done(?: AND labels = "((?:[^"\\]|\\.)*)")?$`)
 
 var jiraUnescape = regexp.MustCompile(`\\(.)`)
 
@@ -516,9 +517,11 @@ func (f *jiraFake) search(w http.ResponseWriter, r *http.Request) {
 // the adapter reaches the site, under its context, for that project key.
 func TestJiraURLParsesSiteAndKey(t *testing.T) {
 	for _, c := range []struct{ raw, wantAPI, wantJQL string }{
-		{"https://acme.atlassian.net/browse/PROJ", "https://acme.atlassian.net/rest/api/3/search/jql", "project = PROJ AND statusCategory != Done"},
-		{"https://jira.example/jira/browse/OPS", "https://jira.example/jira/rest/api/2/search", "project = OPS AND statusCategory != Done"},
-		{"https://jira.example:8443/browse/K2_X/", "https://jira.example:8443/rest/api/2/search", "project = K2_X AND statusCategory != Done"},
+		{"https://acme.atlassian.net/browse/PROJ", "https://acme.atlassian.net/rest/api/3/search/jql", `project = "PROJ" AND statusCategory != Done`},
+		{"https://jira.example/jira/browse/OPS", "https://jira.example/jira/rest/api/2/search", `project = "OPS" AND statusCategory != Done`},
+		{"https://jira.example:8443/browse/K2_X/", "https://jira.example:8443/rest/api/2/search", `project = "K2_X" AND statusCategory != Done`},
+		// a key that is a JQL reserved word must still parse
+		{"https://acme.atlassian.net/browse/OR", "https://acme.atlassian.net/rest/api/3/search/jql", `project = "OR" AND statusCategory != Done`},
 	} {
 		t.Run(c.raw, func(t *testing.T) {
 			u, _ := url.Parse(c.raw)
@@ -867,14 +870,14 @@ func TestJiraErrorNamesOnlyTheField(t *testing.T) {
 	}
 }
 
-// F-0453 crit. 4: the sync lists by the spec's JQL, project = <KEY> AND
+// F-0453 crit. 4: the sync lists by the spec's JQL, project = "<KEY>" AND
 // statusCategory != Done, plus AND labels = "<label>" when the record has
 // one, quoted with its quote and backslash escaped; on Cloud through
 // /rest/api/3/search/jql, on Data Center through /rest/api/2/search. A label
 // with a control character is refused before any request.
 func TestJiraSyncJQL(t *testing.T) {
 	ctx := context.Background()
-	const base = "project = PROJ AND statusCategory != Done"
+	const base = `project = "PROJ" AND statusCategory != Done`
 	for _, c := range []struct {
 		name   string
 		cloud  bool
