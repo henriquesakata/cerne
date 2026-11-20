@@ -25,6 +25,7 @@ var protocolPairs = []pair{
 	{regexp.MustCompile(`Achados do crítico`), regexp.MustCompile(`Critic findings`)},
 	{regexp.MustCompile(`critério N`), regexp.MustCompile(`criterion N`)},
 	{regexp.MustCompile(`\[ESCLARECER`), regexp.MustCompile(`\[CLARIFY`)},
+	{regexp.MustCompile(`(^|[^\p{L}])QUANDO($|[^\p{L}])`), regexp.MustCompile(`(^|[^\p{L}])WHEN($|[^\p{L}])`)},
 	{regexp.MustCompile(`Verificação`), regexp.MustCompile(`Verification`)},
 }
 
