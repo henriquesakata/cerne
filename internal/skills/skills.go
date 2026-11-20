@@ -184,7 +184,7 @@ func writeSkill(dst, content string) (Status, error) {
 		if bytes.Equal(existing, []byte(content)) {
 			return StatusUnchanged, nil
 		}
-		if err := os.WriteFile(dst, []byte(content), 0o644); err != nil {
+		if err := writeAtomic(dst, []byte(content), 0o644); err != nil {
 			return "", err
 		}
 		return StatusUpdated, nil
@@ -195,7 +195,7 @@ func writeSkill(dst, content string) (Status, error) {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(dst, []byte(content), 0o644); err != nil {
+	if err := writeAtomic(dst, []byte(content), 0o644); err != nil {
 		return "", err
 	}
 	return StatusCreated, nil
