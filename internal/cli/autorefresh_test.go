@@ -459,3 +459,58 @@ func TestAutoRefreshLeavesTheGuideToSyncSkills(t *testing.T) {
 		t.Fatalf("stale after both: %v %v", h, g)
 	}
 }
+
+// C7: every agent's session start renews its untouched files, not only
+// Claude's channel hook and Copilot's notice.
+func TestAutoRefreshAtEveryAgentsSessionStart(t *testing.T) {
+	for _, format := range []string{"cursor", "codex", "gemini", "copilot"} {
+		t.Run(format, func(t *testing.T) {
+			projDir := oldProject(t, append(claudeOnly(), ".cursor", ".codex", ".gemini", ".github", ".agents", "AGENTS.md", "GEMINI.md")...)
+			out, err := execCerneStdin(t, sessionPayload("sess-"+format, projDir, "startup"), "hook", "session-context", "--format", format)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(out, "cerne: renewed") {
+				t.Fatalf("%s session start did not renew:\n%s", format, out)
+			}
+			if h, g := hooks.Stale(projDir), skills.Stale(projDir); len(h)+len(g) > 0 {
+				t.Fatalf("still stale: %v %v", h, g)
+			}
+		})
+	}
+}
+
+// C7: next --json renews too, and says so in "refreshed".
+func TestAutoRefreshNextJSON(t *testing.T) {
+	projDir := oldProject(t, claudeOnly()...)
+	out, err := execCerne(t, "next", "--json", "--dir", projDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var q struct {
+		Refreshed string `json:"refreshed"`
+	}
+	if err := json.Unmarshal([]byte(out), &q); err != nil || !strings.Contains(q.Refreshed, "renewed claude") {
+		t.Fatalf("refreshed = %q (%v)\n%s", q.Refreshed, err, out)
+	}
+	if h, g := hooks.Stale(projDir), skills.Stale(projDir); len(h)+len(g) > 0 {
+		t.Fatalf("still stale after next --json: %v %v", h, g)
+	}
+	again, _ := execCerne(t, "next", "--json", "--dir", projDir)
+	if strings.Contains(again, "refreshed") {
+		t.Fatalf("second run says refreshed:\n%s", again)
+	}
+}
+
+// C11: update --check names what the automatic refresh leaves alone.
+func TestUpdateCheckNamesTheLeftover(t *testing.T) {
+	projDir := oldProject(t, claudeOnly()...)
+	appendTo(t, filepath.Join(projDir, ".claude", "hooks", "cerne-work-gate.sh"), "\n# mine\n")
+	out, err := execCerne(t, "update", "--check", "--dir", projDir)
+	if err == nil {
+		t.Fatal("--check passes with files out of date")
+	}
+	if !strings.Contains(out, "edited in the project or written by a newer cerne") || !strings.Contains(out, ".claude/hooks/cerne-work-gate.sh") {
+		t.Fatalf("--check misses the leftover note:\n%s", out)
+	}
+}

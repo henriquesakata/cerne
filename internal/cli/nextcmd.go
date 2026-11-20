@@ -120,6 +120,9 @@ type nextJSON struct {
 	DriftPending      int             `json:"drift_pending"`
 	// RunbookPreflight (F-0874): runs in progress whose next step has open preconditions.
 	RunbookPreflight []nextPreflight `json:"runbook_preflight,omitempty"`
+	// Refreshed (F-0477): the line saying which agents' hooks and guide the
+	// automatic refresh renewed, when it did.
+	Refreshed string `json:"refreshed,omitempty"`
 }
 
 // runNext consolidates `status --active` and `lint` into one agent-facing work
@@ -225,14 +228,16 @@ func runNext(cmd *cobra.Command, dir string, asJSON bool) error {
 	q.RunbookPreflight = nextPreflights(ctx.repoDir, app.MRHost(ctx.cfg.Delivery))
 
 	out := cmd.OutOrStdout()
+	// F-0477: the automatic refresh runs for the text and the JSON alike; the
+	// line shows what is left (text) or comes as "refreshed" (JSON).
+	line, leftover := autoRefresh(ctx.projDir)
 	if asJSON {
+		q.Refreshed = line
 		enc := json.NewEncoder(out)
 		enc.SetIndent("", "  ")
 		return enc.Encode(q)
 	}
 	// F-0476 crit. 4: managed files older than this binary, on top.
-	// F-0477: the automatic refresh first; the line shows what is left.
-	line, leftover := autoRefresh(ctx.projDir)
 	spoke := line != ""
 	if line != "" {
 		fmt.Fprintln(out, line)
