@@ -190,6 +190,14 @@ func runWorkFinish(cmd *cobra.Command, dir, id, note string, abandon bool, reaso
 	if err := app.ClearBindings(filepath.Dir(ctx.repoDir), out.ID); err != nil {
 		fmt.Fprintf(cmd.ErrOrStderr(), "warning: clearing session bindings: %v\n", err)
 	}
+	if out.AlreadyDone {
+		msg := fmt.Sprintf("%s was already done; nothing changed", out.ID)
+		if strings.TrimSpace(note) != "" {
+			msg += " (the note was not recorded)"
+		}
+		fmt.Fprintln(cmd.OutOrStdout(), msg)
+		return nil
+	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s: %s -> %s\n", out.ID, out.From, out.To)
 	return nil
 }

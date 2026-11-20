@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -152,7 +153,7 @@ func TestFinishWorkTerminalRefused(t *testing.T) {
 	if _, err := FinishWork(repoDir, projDir, w.ID, "ok", false, ""); err != nil {
 		t.Fatalf("FinishWork: %v", err)
 	}
-	_, err = FinishWork(repoDir, projDir, w.ID, "de novo", false, "")
+	_, err = FinishWork(repoDir, projDir, w.ID, "", true, "tarde demais")
 	if !errors.Is(err, domain.ErrInvalidTransition) {
 		t.Fatalf("err = %v, want errors.Is ErrInvalidTransition", err)
 	}
@@ -166,5 +167,42 @@ func TestFinishWorkNotFound(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "W-9999") {
 		t.Fatalf("err = %v, want to mention W-9999", err)
+	}
+}
+
+func TestFinishWorkDoneTwiceIsIdempotent(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	w, err := StartWork(repoDir, projDir, "Investigar erro X", nil, "", false, nil, "")
+	if err != nil {
+		t.Fatalf("StartWork: %v", err)
+	}
+	if _, err := FinishWork(repoDir, projDir, w.ID, "ok", false, ""); err != nil {
+		t.Fatalf("FinishWork: %v", err)
+	}
+	before, _ := gitback.HeadSHA(repoDir)
+	out, err := FinishWork(repoDir, projDir, w.ID, "de novo", false, "")
+	if err != nil {
+		t.Fatalf("second FinishWork: %v, want nil", err)
+	}
+	if !out.AlreadyDone || out.To != domain.WorkDone {
+		t.Fatalf("outcome = %+v, want AlreadyDone and To=done", out)
+	}
+	if after, _ := gitback.HeadSHA(repoDir); after != before {
+		t.Fatalf("backend HEAD moved %s -> %s, want no commit", before, after)
+	}
+}
+
+func TestFinishWorkAbandonedThenDoneRefused(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	w, err := StartWork(repoDir, projDir, "Investigar erro X", nil, "", false, nil, "")
+	if err != nil {
+		t.Fatalf("StartWork: %v", err)
+	}
+	if _, err := FinishWork(repoDir, projDir, w.ID, "", true, "motivo"); err != nil {
+		t.Fatalf("abandon: %v", err)
+	}
+	_, err = FinishWork(repoDir, projDir, w.ID, "", false, "")
+	if !errors.Is(err, domain.ErrInvalidTransition) {
+		t.Fatalf("err = %v, want ErrInvalidTransition", err)
 	}
 }
