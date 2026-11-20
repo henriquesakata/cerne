@@ -585,6 +585,9 @@ const ptBR = {
     intro: 'Descreva o que você precisa — o agente conhece o domínio e o estado atual do projeto.',
     placeholder: 'Descreva o que você precisa…',
     send: 'Enviar',
+    queue: 'Pôr na fila',
+    queued: 'Na fila — vai quando o agente terminar',
+    unqueue: 'Tirar da fila',
     processing: (elapsed: string, model: string, effort: string) =>
       `Processando… ${elapsed}${model ? ` · ${model}` : ''}${effort ? `/${effort}` : ''}`,
     retry: 'Reenviar',
@@ -2119,6 +2122,9 @@ const en: Messages = {
     intro: "Describe what you need — the agent knows the project's domain and current state.",
     placeholder: 'Describe what you need…',
     send: 'Send',
+    queue: 'Queue message',
+    queued: 'Queued — sends when the agent finishes',
+    unqueue: 'Remove from queue',
     processing: (elapsed: string, model: string, effort: string) =>
       `Processing… ${elapsed}${model ? ` · ${model}` : ''}${effort ? `/${effort}` : ''}`,
     retry: 'Retry',

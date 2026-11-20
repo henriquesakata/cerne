@@ -930,14 +930,100 @@ describe('BacklogChat (F-0230: resposta em voo sobrevive à navegação)', () =>
     expect(streamChat).toHaveBeenCalledTimes(2)
   })
 
-  it('critério 5: um segundo envio na mesma conversa é bloqueado enquanto a primeira segue pendente', async () => {
+  // B-0049 replaced the block: a second send while the first is in flight is
+  // queued, never a concurrent request (the F-0230 invariant still holds).
+  it('critério 5: um segundo envio com a primeira pendente não abre outra requisição', async () => {
     streamChat.mockReturnValue(new Promise(() => {}))
     renderChat()
 
     fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
     fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+    fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'E mais isto' } })
+    fireEvent.click(screen.getByRole('button', { name: /pôr na fila/i }))
 
-    expect(screen.getByRole('button', { name: /enviar/i })).toBeDisabled()
+    expect(streamChat).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('E mais isto')).toBeInTheDocument()
+  })
+})
+
+// B-0049: the composer stays open while the agent works, the way Claude Code,
+// Codex and Cursor take a message mid-turn: it waits in a visible queue and
+// goes out as the next turn when the current one ends.
+describe('BacklogChat — fila durante o processamento (B-0049)', () => {
+  const pendingStream = () => {
+    const box: { resolve: ((v: ChatAnswer) => void) | null } = { resolve: null }
+    streamChat.mockImplementation(() => new Promise((r) => (box.resolve = r)))
+    return box
+  }
+  const type = (text: string) => fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: text } })
+
+  it('Enter com o agente ocupado enfileira, limpa o compositor e mostra a mensagem na fila', async () => {
+    pendingStream()
+    renderChat()
+    type('primeira')
+    fireEvent.keyDown(screen.getByPlaceholderText(/descreva/i), { key: 'Enter' })
+    await screen.findByText(/processando/i)
+
+    type('segunda')
+    fireEvent.keyDown(screen.getByPlaceholderText(/descreva/i), { key: 'Enter' })
+
+    expect(screen.getByPlaceholderText(/descreva/i)).toHaveValue('')
+    expect(screen.getByText('segunda')).toBeInTheDocument()
+    expect(screen.getByText(/na fila/i)).toBeInTheDocument()
+    expect(streamChat).toHaveBeenCalledTimes(1)
+  })
+
+  it('ao terminar o turno, a fila vai como um único turno seguinte', async () => {
+    const stream = pendingStream()
+    renderChat()
+    type('primeira')
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+    await screen.findByText(/processando/i)
+    type('segunda')
+    fireEvent.click(screen.getByRole('button', { name: /pôr na fila/i }))
+    type('terceira')
+    fireEvent.click(screen.getByRole('button', { name: /pôr na fila/i }))
+
+    const first = stream.resolve!
+    await act(async () => first({ answered: true, reply: 'resposta um' }))
+
+    await waitFor(() => expect(streamChat).toHaveBeenCalledTimes(2))
+    const sent = streamChat.mock.calls[1][0] as { role: string; content: string }[]
+    expect(sent.map((m) => m.role)).toEqual(['user', 'assistant', 'user'])
+    expect(sent[2].content).toBe('segunda\n\nterceira')
+    expect(screen.queryByText(/na fila/i)).not.toBeInTheDocument()
+  })
+
+  it('tirar da fila remove a mensagem e nada é enviado depois', async () => {
+    const stream = pendingStream()
+    renderChat()
+    type('primeira')
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+    await screen.findByText(/processando/i)
+    type('arrependi')
+    fireEvent.click(screen.getByRole('button', { name: /pôr na fila/i }))
+    fireEvent.click(screen.getByRole('button', { name: /tirar da fila/i }))
+    expect(screen.queryByText('arrependi')).not.toBeInTheDocument()
+
+    const first = stream.resolve!
+    await act(async () => first({ answered: true, reply: 'resposta um' }))
+    await screen.findByText('resposta um')
+    expect(streamChat).toHaveBeenCalledTimes(1)
+  })
+
+  it('se o turno falhar, a fila volta ao compositor em vez de sumir', async () => {
+    let reject!: (e: Error) => void
+    streamChat.mockImplementation(() => new Promise((_r, j) => (reject = j)))
+    renderChat()
+    type('primeira')
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+    await screen.findByText(/processando/i)
+    type('não perca isto')
+    fireEvent.click(screen.getByRole('button', { name: /pôr na fila/i }))
+
+    await act(async () => reject(new Error('rede caiu')))
+    await screen.findByText('rede caiu')
+    expect(screen.getByPlaceholderText(/descreva/i)).toHaveValue('não perca isto')
     expect(streamChat).toHaveBeenCalledTimes(1)
   })
 })

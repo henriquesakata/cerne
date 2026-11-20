@@ -755,6 +755,33 @@ h2 {
 
 .backlog-chat-msg p { margin: 0; }
 
+/* B-0049: a mensagem na fila ainda não é transcript — borda tracejada e tinta
+   desbotada até sair, com o "tirar da fila" ao lado do aviso. */
+.backlog-chat-msg-queued { border-style: dashed; color: var(--muted); }
+
+.backlog-chat-msg .backlog-chat-queued-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.3rem;
+  font-size: 0.85rem;
+  white-space: normal;
+}
+
+.backlog-chat-queued-cancel {
+  font: inherit;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.backlog-chat-queued-cancel:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; border-radius: 6px; }
+
 .backlog-chat-progress {
   display: flex;
   align-items: center;

@@ -839,6 +839,9 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
   // F-0328: aviso neutro (não erro) — a spec confirmada já era a gravada.
   const [notice, setNotice] = useState<string | null>(null)
   const [failedMessages, setFailedMessages] = useState<ChatMsg[] | null>(null)
+  // B-0049: what the human sent while the agent was still working. Ephemeral
+  // on purpose — it is not part of the transcript until it goes out.
+  const [queued, setQueued] = useState<string[]>([])
   const [needsProvider, setNeedsProvider] = useState(false)
   // F-0255: o rascunho não é estado próprio — as revisões saem do transcript
   // (abaixo). O que se guarda é quantas revisões já foram registradas, para o
@@ -1044,22 +1047,47 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
     onUpdate({ messages: next })
   }
 
-  const submitMessage = () => {
-    const content = input.trim()
-    if (content === '' || busy) return
+  const sendContent = (content: string) => {
     const next = [...messages, { role: 'user' as const, content }]
     setMessages(next)
-    setInput('')
-    // F-0246: limpar o valor não desfaz a altura — o autoExpand deixou um
-    // style.height inline, e sem removê-lo o campo fica alto e vazio até o
-    // próximo caractere. Limpar o inline devolve a altura ao CSS (rows=1).
-    if (textareaRef.current) textareaRef.current.style.height = ''
     sendMessages(next)
     // F-0310 crit. 14: o título truncado nasce com a primeira mensagem; antes
     // do primeiro delta não há escritor concorrente (F-0248 crit. 8), e chamar
     // depois do send deixa o carimbo local ≥ o do storage.
     onUpdate({ messages: next })
   }
+
+  const submitMessage = () => {
+    const content = input.trim()
+    if (content === '') return
+    setInput('')
+    // F-0246: limpar o valor não desfaz a altura — o autoExpand deixou um
+    // style.height inline, e sem removê-lo o campo fica alto e vazio até o
+    // próximo caractere. Limpar o inline devolve a altura ao CSS (rows=1).
+    if (textareaRef.current) textareaRef.current.style.height = ''
+    // B-0049: with the agent working, the message waits in the queue instead
+    // of opening a second request (F-0230: one request per conversation).
+    if (busy) {
+      setQueued((q) => [...q, content])
+      return
+    }
+    sendContent(content)
+  }
+
+  // B-0049: when the turn ends, the queue goes out as one user turn — the
+  // agent reads it all before answering, like Claude Code delivers queued
+  // input. A failed turn sends nothing: the queue returns to the composer so
+  // the human decides (retry, edit, resend).
+  useEffect(() => {
+    if (busy || queued.length === 0) return
+    setQueued([])
+    if (error) {
+      setInput((cur) => [cur.trim(), ...queued].filter((l) => l !== '').join('\n\n'))
+      return
+    }
+    sendContent(queued.join('\n\n'))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy, queued, error])
 
   const retry = () => {
     if (busy || !failedMessages) return
@@ -1333,6 +1361,21 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
             )}
           </p>
         )}
+        {queued.map((q, k) => (
+          <div key={k} className="backlog-chat-msg backlog-chat-msg-user backlog-chat-msg-queued">
+            <p>{q}</p>
+            <p className="backlog-chat-queued-meta">
+              {t.backlogChat.queued}
+              <button
+                type="button"
+                className="backlog-chat-queued-cancel"
+                onClick={() => setQueued((cur) => cur.filter((_, i) => i !== k))}
+              >
+                {t.backlogChat.unqueue}
+              </button>
+            </p>
+          </div>
+        ))}
       </div>
       {notice && (
         <p className="status backlog-chat-notice" role="status">
@@ -1391,9 +1434,9 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
           <button
             type="submit"
             className="backlog-chat-send"
-            aria-label={t.backlogChat.send}
-            title={t.backlogChat.send}
-            disabled={busy || input.trim() === ''}
+            aria-label={busy ? t.backlogChat.queue : t.backlogChat.send}
+            title={busy ? t.backlogChat.queue : t.backlogChat.send}
+            disabled={input.trim() === ''}
           >
             <span aria-hidden="true">↵</span>
           </button>
