@@ -151,8 +151,8 @@ function AttentionBand() {
   )
 }
 
-// FirstStepsBlock (T-0011): o checklist do primeiro uso, vindo do servidor
-// (app.FirstSteps). Lista vazia — depois do primeiro accept — não renderiza nada.
+// FirstStepsBlock (T-0011): the first-use checklist, served by the backend
+// (app.FirstSteps). An empty list (after the first accept) renders nothing.
 export function FirstStepsBlock({ steps }: { steps?: { key: string; done: boolean }[] }) {
   const { t } = useT()
   if (!steps || steps.length === 0) return null

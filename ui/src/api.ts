@@ -127,7 +127,7 @@ export type StateResponse = {
   // vencida), para o badge do card. Ausente em servidor antigo.
   stale_approvals?: string[]
   gauntlet?: 'on' | 'off' // F-0364: 'off' = modo leve; ausente em servidor antigo
-  // T-0011: primeiros passos do projeto novo; vazio após o primeiro accept.
+  // T-0011: first steps of a new project; empty after the first accept.
   first_steps?: { key: 'ask' | 'approve' | 'accept'; done: boolean }[]
 }
 

@@ -54,6 +54,9 @@ func TestImportAsksDeliveredStateOnlyOnATerminal(t *testing.T) {
 		if strings.Contains(out, deliveredQuestion) {
 			t.Errorf("asked without a terminal:\n%s", out)
 		}
+		if !strings.Contains(out, noTerminalLine) {
+			t.Errorf("dry-run without a terminal must state the default:\n%s", out)
+		}
 	})
 	t.Run("choice given never asks", func(t *testing.T) {
 		projDir, _, _ := setupProject(t)
@@ -84,7 +87,41 @@ func TestImportAsksDeliveredStateOnlyOnATerminal(t *testing.T) {
 		if strings.Contains(out, deliveredQuestion) {
 			t.Errorf("asked without a terminal:\n%s", out)
 		}
+		if !strings.Contains(out, "delivered feature(s) will enter as implemented; add --delivered-state done") {
+			t.Errorf("agent dry-run without a terminal must state the default:\n%s", out)
+		}
 	})
+}
+
+// T-0013: with no terminal (an agent or a script) the dry-run states the default
+// and the flag in one line; with a terminal, a chosen state or --yes it stays quiet.
+const noTerminalLine = "1 delivered feature(s) will enter as implemented; add --delivered-state done to enter them as done."
+
+func TestImportDryRunWithoutTerminalIsSilentWhenTheLineDoesNotApply(t *testing.T) {
+	treeDir := t.TempDir()
+	writeTree(t, treeDir, importFixtureFiles())
+	for name, args := range map[string][]string{
+		"choice given": {"--delivered-state", "done"},
+		"yes":          {"--yes"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			projDir, _, _ := setupProject(t)
+			out := execCerneIn(t, false, "", append([]string{"import", "--root", treeDir, "--dir", projDir}, args...)...)
+			if strings.Contains(out, "will enter as implemented; add") {
+				t.Errorf("line printed:\n%s", out)
+			}
+		})
+	}
+}
+
+func TestImportTerminalAnswerDoneIsAnInstruction(t *testing.T) {
+	treeDir := t.TempDir()
+	writeTree(t, treeDir, importFixtureFiles())
+	projDir, _, _ := setupProject(t)
+	out := execCerneIn(t, true, "done\n", "import", "--root", treeDir, "--dir", projDir)
+	if !strings.Contains(out, "To enter them as done, add --delivered-state done when you apply.") || strings.Contains(out, "will enter as implemented; add") {
+		t.Errorf("wrong terminal answer wording:\n%s", out)
+	}
 }
 
 func TestStdinIsInteractiveRejectsPlainReaders(t *testing.T) {

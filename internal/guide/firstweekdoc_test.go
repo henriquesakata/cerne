@@ -72,3 +72,44 @@ func TestGuideAnswersWhatToDoAfterInstalling(t *testing.T) {
 		}
 	}
 }
+
+// T-0013: the guide and the FAQ describe what the code prints, not what the
+// first draft of the epic said it would.
+func TestFirstWeekTextMatchesWhatTheCodePrints(t *testing.T) {
+	raw, err := os.ReadFile("../../docs/first-week.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := string(raw)
+	for _, bad := range []string{
+		"same three steps",
+		"On a terminal, an import that brings delivered features asks once",
+	} {
+		if strings.Contains(doc, bad) {
+			t.Errorf("guide still claims %q", bad)
+		}
+	}
+	for _, want := range []string{
+		"the import asks on a terminal dry-run, never with `--yes`",
+		"delivered feature(s) will enter as implemented; add --delivered-state done",
+		"First-week guide: " + guide.FirstWeekURL,
+	} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("guide lacks %q", want)
+		}
+	}
+
+	found := guide.Search(guide.Corpus(cli.Root()), "what do I do after installing", 3)
+	if len(found) == 0 {
+		t.Fatal("no answer")
+	}
+	for _, bad := range []string{"approve the spec, and accept the delivery", "shows the same three steps"} {
+		if strings.Contains(found[0].Text, bad) {
+			t.Errorf("FAQ answer claims init prints an accept step: %q", bad)
+		}
+	}
+	faq := guide.Search(guide.Corpus(cli.Root()), "which agents did cerne init connect", 3)
+	if len(faq) == 0 || strings.Contains(faq[0].Text, "and every other agent whose folder") {
+		t.Errorf("FAQ says init connects every detected agent")
+	}
+}

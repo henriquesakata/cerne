@@ -69,6 +69,33 @@ func TestApplyPlanCreatesEachKind(t *testing.T) {
 	}
 }
 
+// T-0013: an agent plan with the delivered state set to done still writes only
+// <kind>.imported events, never an approval or an accept.
+func TestApplyPlanDeliveredDoneWritesOnlyImportedEvents(t *testing.T) {
+	repo := t.TempDir()
+	if err := store.InitLayout(repo, store.Project{Name: "t"}); err != nil {
+		t.Fatal(err)
+	}
+	items := []PlanItem{validItem("feature"), validItem("decision")}
+	SetPlanDelivered(items, "done")
+	if _, err := ApplyPlan(repo, items, "tester"); err != nil {
+		t.Fatal(err)
+	}
+	f, err := store.LoadFeature(repo, "F-0001")
+	if err != nil || f.State != "done" {
+		t.Fatalf("feature = %+v err=%v, want done", f, err)
+	}
+	evs, err := store.ReadAllEvents(repo)
+	if err != nil || len(evs) == 0 {
+		t.Fatalf("events = %d err=%v", len(evs), err)
+	}
+	for _, e := range evs {
+		if !strings.HasSuffix(e.Type, ".imported") {
+			t.Errorf("event %q written, want only <kind>.imported", e.Type)
+		}
+	}
+}
+
 func TestApplyPlanUnknownKind(t *testing.T) {
 	repo := t.TempDir()
 	if err := store.InitLayout(repo, store.Project{Name: "t"}); err != nil {

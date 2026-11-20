@@ -189,6 +189,27 @@ func TestNextCandidateFirstSteps(t *testing.T) {
 	}
 }
 
+// TestNextFirstStepsTickedByTheRealCommands (T-0013): the real `feature new`
+// and `feature approve` tick the steps; no event name is seeded by hand.
+func TestNextFirstStepsTickedByTheRealCommands(t *testing.T) {
+	t.Setenv("CERNE_ACTOR", "") // N-0058: approve is a human gate
+	projDir, _, repoDir := setupProject(t)
+	id := newFeature(t, projDir, "Primeira", 1)
+	out, err := execCerne(t, "next", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "[x] Ask") || !strings.Contains(out, "[ ] Approve") {
+		t.Fatalf("after feature new: err=%v\n%s", err, out)
+	}
+	writeDoc(t, repoDir, id, "spec.md", realDoc(id, "Problema real descrito aqui."))
+	commitBackend(t, repoDir)
+	if o, err := execCerne(t, "feature", "approve", id, "--dir", projDir); err != nil {
+		t.Fatalf("approve: %v\n%s", err, o)
+	}
+	out, err = execCerne(t, "next", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "[x] Approve") || !strings.Contains(out, "[ ] Accept") {
+		t.Fatalf("after approve: err=%v\n%s", err, out)
+	}
+}
+
 // TestNextAcceptedNoFirstSteps: after the first accept the block is gone.
 func TestNextAcceptedNoFirstSteps(t *testing.T) {
 	t.Setenv("CERNE_ACTOR", "")
