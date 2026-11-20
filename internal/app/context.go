@@ -443,14 +443,15 @@ func notesCitingPaths(dbPath string, paths []string) map[string]pathCite {
 	if len(cands) == 0 {
 		return nil
 	}
-	hits, err := index.PhraseNotes(context.Background(), dbPath, slices.Sorted(maps.Keys(cands)))
+	phrases := slices.Sorted(maps.Keys(cands)) // in order: the reason of a tie is the first, every run
+	hits, err := index.PhraseNotes(context.Background(), dbPath, phrases)
 	if err != nil {
 		return nil
 	}
 	out := map[string]pathCite{}
 	for _, h := range hits {
-		for p, sc := range cands {
-			if sc > out[h.ID].score && (citesPath(h.Body, p) || citesPath(h.Title, p)) {
+		for _, p := range phrases {
+			if sc := cands[p]; sc > out[h.ID].score && (citesPath(h.Body, p) || citesPath(h.Title, p)) {
 				out[h.ID] = pathCite{p, sc}
 			}
 		}

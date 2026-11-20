@@ -88,7 +88,7 @@ func contextFixture(t *testing.T) string {
 	note("N-0002", domain.NoteActive, "", []string{"T-0002"}, nil, "Plain words.")
 	note("N-0003", domain.NoteActive, "", nil, []string{"edit:internal/hooks/**"}, "Plain words.")
 	note("N-0004", domain.NoteActive, "", nil, nil, "Plain words.")
-	note("N-0005", domain.NoteActive, "", nil, nil, "Mind internal/cli/contextcmd.go before editing.")
+	note("N-0005", domain.NoteActive, "", nil, nil, "Mind internal/hooks/rules.go and internal/cli/contextcmd.go before editing.")
 	note("N-0006", domain.NoteActive, "", nil, nil, "Plain words.", "hooks")
 	note("N-0007", domain.NoteActive, "", nil, nil, "Plain words.", "cli")
 	note("N-0008", domain.NoteActive, "", nil, nil, "Plain words.", "cli", "hooks")
@@ -353,5 +353,18 @@ func TestTaskContextPointsAtTheEpicPlan(t *testing.T) {
 	own, err := TaskContext(repo, "T-0002", DefaultContextBudget)
 	if err != nil || own.EpicPlan != "" {
 		t.Fatalf("a task with its own plan: %q %v", own.EpicPlan, err)
+	}
+}
+
+// Critic L9: a note citing two paths of the same tier says the same one every
+// time (the first in order), never the one a map iteration happened on.
+func TestNotesCitingPathsIsStable(t *testing.T) {
+	repo := contextFixture(t)
+	db := filepath.Join(filepath.Dir(repo), "index.db")
+	for range 30 {
+		got := notesCitingPaths(db, []string{"internal/hooks/rules.go", "internal/cli/contextcmd.go"})
+		if c := got["N-0005"]; c.why != "internal/cli/contextcmd.go" || c.score != 3 {
+			t.Fatalf("N-0005 = %+v, want the first whole path in order", c)
+		}
 	}
 }
