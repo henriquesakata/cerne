@@ -16,6 +16,7 @@ import (
 	"github.com/henriquesakata/cerne/internal/hooks"
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/selfupdate"
+	"github.com/henriquesakata/cerne/internal/server"
 	"github.com/henriquesakata/cerne/internal/skills"
 	"github.com/henriquesakata/cerne/internal/version"
 )
@@ -25,6 +26,25 @@ var (
 	updateExecutable = os.Executable
 	brewCommand      = "brew"
 )
+
+// The panel's Update button (F-0480) swaps the binary with this file's own
+// code; the server package cannot import this one, so it is injected here,
+// where the version check lives (F-0476 crit. 11).
+func init() {
+	// F-0480: the panel's Update button swaps the binary with cerne update's
+	// own code, which lives here.
+	server.PlanBinary = func(exe string) (bool, string, string) {
+		resolved, why, fix := binaryRefusal(exe)
+		if why == "" && selfupdate.Detect(exe, resolved, version.Version, selfupdate.GoBins()) == selfupdate.Script {
+			why, fix = writableRefusal(resolved)
+		}
+		return why == "", why, fix
+	}
+	server.ReplaceBinary = func(w io.Writer, exe string) server.BinaryOutcome {
+		p, newExe := replaceBinary(w, w, exe)
+		return server.BinaryOutcome{State: p.state, Detail: p.detail, Fix: p.fix, NewExe: newExe}
+	}
+}
 
 // errUpdateNotDone is the non-zero exit of an update that left a part not
 // done (F-0476 crit. 2); the parts already said why.
@@ -232,29 +252,59 @@ func installScriptCmd() string {
 
 // updateBinary brings the binary to the latest release the way it was
 // installed, and returns its line plus the new executable when it changed.
+// An agent never does it (crit. 10): the binary belongs to the machine.
 func updateBinary(cmd *cobra.Command) (part, string) {
-	notDone := func(why, fix string) (part, string) {
-		return part{name: "binary", state: stNotDone, detail: why, fix: fix}, ""
-	}
 	if app.AgentEnv() { // crit. 10
-		return notDone("replacing the binary is the human's part: it belongs to the machine, not to the project", "cerne update, in your own terminal")
+		return part{name: "binary", state: stNotDone, detail: "replacing the binary is the human's part: it belongs to the machine, not to the project", fix: "cerne update, in your own terminal"}, ""
 	}
 	exe, err := updateExecutable()
 	if err != nil {
-		return notDone("cannot locate the running executable: "+err.Error(), installScriptCmd())
+		return part{name: "binary", state: stNotDone, detail: "cannot locate the running executable: " + err.Error(), fix: installScriptCmd()}, ""
 	}
+	return replaceBinary(cmd.OutOrStdout(), cmd.ErrOrStderr(), exe)
+}
+
+// binaryRefusal says why exe cannot be replaced from inside, and the command
+// that replaces it, without the network; both empty when it can be. A folder
+// that cannot be written refuses only a script install: Homebrew writes its
+// own.
+func binaryRefusal(exe string) (resolved, why, fix string) {
 	resolved, err := filepath.EvalSymlinks(exe)
 	if err != nil {
 		resolved = exe
 	}
-	cur := version.Version
-	switch selfupdate.Detect(exe, resolved, cur, selfupdate.GoBins()) {
+	switch selfupdate.Detect(exe, resolved, version.Version, selfupdate.GoBins()) {
 	case selfupdate.Dev:
-		return notDone("this is a local build (version dev), not a release: it is not replaced", `go build -ldflags="-s -w" -o `+exe+" ./cmd/cerne, in your cerne clone")
+		return resolved, "this is a local build (version dev), not a release: it is not replaced", `go build -ldflags="-s -w" -o ` + exe + " ./cmd/cerne, in your cerne clone"
 	case selfupdate.GoInstall:
-		return notDone("installed by go install ("+filepath.Dir(exe)+"): go install replaces it", "go install github.com/henriquesakata/cerne/cmd/cerne@latest")
-	case selfupdate.Homebrew:
-		return brewUpgrade(cmd, resolved)
+		return resolved, "installed by go install (" + filepath.Dir(exe) + "): go install replaces it", "go install github.com/henriquesakata/cerne/cmd/cerne@latest"
+	}
+	return resolved, "", ""
+}
+
+// writableRefusal is the script install's check on the folder it writes.
+func writableRefusal(resolved string) (why, fix string) {
+	dir := filepath.Dir(resolved)
+	if err := selfupdate.Writable(dir); err != nil {
+		return "cannot write " + dir + " to replace " + resolved + ": " + err.Error(), installScriptCmd()
+	}
+	return "", ""
+}
+
+// replaceBinary is the swap itself, for cerne update and for the panel's
+// Update button (F-0480): Homebrew through Homebrew, a script install by the
+// verified download. out and errOut receive Homebrew's own output.
+func replaceBinary(out, errOut io.Writer, exe string) (part, string) {
+	notDone := func(why, fix string) (part, string) {
+		return part{name: "binary", state: stNotDone, detail: why, fix: fix}, ""
+	}
+	resolved, why, fix := binaryRefusal(exe)
+	if why != "" {
+		return notDone(why, fix)
+	}
+	cur := version.Version
+	if selfupdate.Detect(exe, resolved, cur, selfupdate.GoBins()) == selfupdate.Homebrew {
+		return brewUpgrade(out, errOut, resolved)
 	}
 
 	base := os.Getenv("CERNE_BASE_URL")
@@ -272,9 +322,8 @@ func updateBinary(cmd *cobra.Command) (part, string) {
 		}
 		return part{name: "binary", state: stCurrent, detail: detail}, ""
 	}
-	dir := filepath.Dir(resolved)
-	if err := selfupdate.Writable(dir); err != nil {
-		return notDone("cannot write "+dir+" to replace "+resolved+": "+err.Error(), installScriptCmd())
+	if why, fix := writableRefusal(resolved); why != "" {
+		return notDone(why, fix)
 	}
 	data, err := selfupdate.Fetch(base, latest, runtime.GOOS, runtime.GOARCH)
 	if err != nil {
@@ -288,9 +337,9 @@ func updateBinary(cmd *cobra.Command) (part, string) {
 
 // brewUpgrade leaves the replacement to Homebrew, so its records stay right
 // (crit. 6); the binary changed when <prefix>/bin/cerne now points elsewhere.
-func brewUpgrade(cmd *cobra.Command, resolved string) (part, string) {
+func brewUpgrade(out, errOut io.Writer, resolved string) (part, string) {
 	c := exec.Command(brewCommand, "upgrade", brewFormula)
-	c.Stdout, c.Stderr = cmd.OutOrStdout(), cmd.ErrOrStderr()
+	c.Stdout, c.Stderr = out, errOut
 	if err := c.Run(); err != nil {
 		return part{name: "binary", state: stNotDone, detail: "brew upgrade failed: " + err.Error(), fix: "brew upgrade " + brewFormula}, ""
 	}
