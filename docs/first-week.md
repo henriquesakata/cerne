@@ -22,6 +22,7 @@ Next steps:
   3. Approve the spec on the dashboard.
 Agents connected: claude. To connect cursor, codex, gemini, copilot: cerne hook install --provider <name>, then cerne skill install
 Commit .cernerc, docs.lock, .gitattributes and .gitignore to your project repository.
+First week: https://github.com/henriquesakata/cerne/blob/main/docs/first-week.md
 ```
 
 Commit the four files it names. Then ask `cerne next` where you are:
@@ -92,7 +93,23 @@ FEATURES (1)
   F-0001  candidate  Sign in with Google
 ```
 
-Before you approve, read the spec in the dashboard (Kanban, then the card) or in `.docs/current/features/F-0001-…/spec.md` after `cerne pull`. A spec must be written and tagged before it can be approved. `--check` tells you what is missing, and changes nothing:
+Before you approve, read the spec in the dashboard (Kanban, then the card) or in `.docs/current/features/F-0001-…/spec.md` after `cerne pull`. A spec must be written and tagged before it can be approved. `--check` tells you what is missing, and changes nothing. Right after `feature new` it refuses (exit 1):
+
+```text
+$ cerne feature approve F-0001 --check
+Check: F-0001 is not approvable yet — 1 impediment(s) (nothing approved, nothing written):
+  - untagged: no tag (facet/component) — classify it with 'cerne feature retag F-0001 --facet <f> --component <c>' ...
+Complete the card with the commands above, then check again.
+Error: approve check found impediments: F-0001 has 1 (0 hard)
+```
+
+What makes it approvable: the spec is really written (your agent does this), it carries the `Bar:` line when the Gauntlet is on (a new project starts in light mode, which asks for no bar), and the card is tagged, with `--facet`/`--component` at creation or afterwards:
+
+```bash
+cerne feature retag F-0001 --facet code --component auth
+```
+
+Then the check passes:
 
 ```text
 $ cerne feature approve F-0001 --check
@@ -154,7 +171,7 @@ cerne compile
 Contract in .docs/wiki/.pending/manifest.json: write each response_path (echoing run_id: <id> in the frontmatter) and run 'cerne compile --ingest'.
 ```
 
-With no model configured, `compile` only writes prompts. Your agent answers them, then you run `cerne compile --ingest`. Running it again only redoes the pages whose inputs changed.
+Whether `compile` calls a model itself depends on `llm.mode`. With none set, it uses the first subscription CLI it finds on your `PATH` (`claude`, `codex`, `gemini`, then `cursor-agent`), or the API key set in Settings, and writes the pages itself; if that CLI is not logged in, it fails and says so. With `llm.mode` set to `delegation` (`cerne settings set llm.mode delegation --scope host`), or no CLI and no key, it only writes the prompts, as above. Your agent answers them, then you run `cerne compile --ingest`. Running it again only redoes the pages whose inputs changed.
 
 ## Create and work the backlog
 
@@ -192,7 +209,7 @@ cerne work done W-0001 --note "button shipped"
 
 1. Start with `cerne next`: what needs a spec, an approval, work, or your accept. Below it are the documentation debts.
 2. Approve the candidates whose spec you read, in the dashboard or with `cerne feature approve <id>`.
-3. Let the agent work. When it completes a feature, review it and accept it (`cerne accept` lists the queue).
+3. Let the agent work. When it completes a feature, review it and accept it (`cerne accept queue` lists them).
 4. When something changes your plan, reject or supersede with a reason.
 5. `cerne sync` brings in what others changed and sends your own edits. `cerne lint` lists stale documentation.
 
