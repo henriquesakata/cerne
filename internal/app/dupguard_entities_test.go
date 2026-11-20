@@ -85,7 +85,7 @@ func TestCreateNoteGuardIgnoresRetiredAndOtherTypes(t *testing.T) {
 	if _, err := CreateExternalReference(repoDir, projDir, "Gate humano remoto procuração in-band", "http://a", "c", nil, nil, nil, false); err != nil {
 		t.Fatalf("other type: %v", err)
 	}
-	if _, err := CreateDecision(repoDir, projDir, "Gate humano remoto procuração in-band", "c", nil, nil, false); err != nil {
+	if _, err := CreateDecision(repoDir, projDir, "Gate humano remoto procuração in-band", "c", nil, nil, nil, false); err != nil {
 		t.Fatalf("other type: %v", err)
 	}
 }
@@ -116,11 +116,11 @@ func TestCreateNoteForceRecordsGuard(t *testing.T) {
 // Crit. 3, 4, 5, 8 for decisions.
 func TestCreateDecisionGuard(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	first, err := CreateDecision(repoDir, projDir, "Usar Keycloak para OIDC", "c", nil, nil, false)
+	first, err := CreateDecision(repoDir, projDir, "Usar Keycloak para OIDC", "c", nil, nil, nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = CreateDecision(repoDir, projDir, "Usar Keycloak para OIDC", "c", nil, nil, false)
+	_, err = CreateDecision(repoDir, projDir, "Usar Keycloak para OIDC", "c", nil, nil, nil, false)
 	if !errors.Is(err, ErrSimilarExists) {
 		t.Fatalf("err = %v, want ErrSimilarExists", err)
 	}
@@ -139,7 +139,7 @@ func TestCreateDecisionGuard(t *testing.T) {
 	if ds, _ := store.LoadAllDecisions(repoDir); len(ds) != 1 {
 		t.Fatalf("decisions = %d, want 1", len(ds))
 	}
-	d, err := CreateDecision(repoDir, projDir, "Usar Keycloak para OIDC", "c", nil, nil, true)
+	d, err := CreateDecision(repoDir, projDir, "Usar Keycloak para OIDC", "c", nil, nil, nil, true)
 	if err != nil {
 		t.Fatalf("forced: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestCreateDecisionGuard(t *testing.T) {
 		}
 	}
 	commitBackend(t, repoDir)
-	if _, err := CreateDecision(repoDir, projDir, "Usar Keycloak para OIDC", "c", nil, nil, false); err != nil {
+	if _, err := CreateDecision(repoDir, projDir, "Usar Keycloak para OIDC", "c", nil, nil, nil, false); err != nil {
 		t.Fatalf("after supersede: %v", err)
 	}
 }

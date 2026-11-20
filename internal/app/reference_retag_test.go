@@ -107,7 +107,7 @@ func TestRetagReferenceNotFoundOrObsolete(t *testing.T) {
 // TestRetagReferencePreservesURLInforms: retag touches only tags, not URL/External/Informs/body.
 func TestRetagReferencePreservesURLInforms(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	d, err := CreateDecision(repoDir, projDir, "Decisão", "corpo", nil, nil, false)
+	d, err := CreateDecision(repoDir, projDir, "Decisão", "corpo", nil, nil, nil, false)
 	if err != nil {
 		t.Fatalf("CreateDecision: %v", err)
 	}

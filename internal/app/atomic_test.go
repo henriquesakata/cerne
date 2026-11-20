@@ -27,7 +27,7 @@ func TestConcurrentCreationsDistinctIDs(t *testing.T) {
 			return n.ID, err
 		}, func(id string) string { return "content/notes/" + id + ".md" }},
 		{"decision", func(r, p string, i int) (string, error) {
-			d, err := CreateDecision(r, p, fmt.Sprintf("Decisão %d", i), fmt.Sprintf("corpo %d\n", i), nil, nil, false)
+			d, err := CreateDecision(r, p, fmt.Sprintf("Decisão %d", i), fmt.Sprintf("corpo %d\n", i), nil, nil, nil, false)
 			return d.ID, err
 		}, func(id string) string { return "content/decisions/" + id + ".md" }},
 		{"reference", func(r, p string, i int) (string, error) {

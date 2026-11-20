@@ -10,6 +10,7 @@ import (
 
 	"github.com/henriquesakata/cerne/internal/dectmpl"
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -28,8 +29,9 @@ type DecisionOutcome struct {
 // content, no draft+push needed. facets/components tag the decision on the
 // shared D-0002 axes (facet closed-set, component curated), like a note. A live
 // decision with a similar title refuses the creation (F-0324); force overrides
-// it and records guard=forced on decision.created.
-func CreateDecision(repoDir, projDir, title, body string, facets, components []string, force bool) (store.Decision, error) {
+// it and records guard=forced on decision.created. informs links it at birth
+// to the entities it informs (E-0005 criterion 22), validated like a note's.
+func CreateDecision(repoDir, projDir, title, body string, informs, facets, components []string, force bool) (store.Decision, error) {
 	// Validate/normalize tags before any side effect (NextID, save): an unknown
 	// facet must abort without minting an id or writing a file.
 	normFacets, err := domain.NormalizeFacets(facets)
@@ -41,6 +43,10 @@ func CreateDecision(repoDir, projDir, title, body string, facets, components []s
 	// (F-0122): concurrent creations serialize instead of minting the same id.
 	var d store.Decision
 	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		cleaned, err := validateInforms(repoDir, informs)
+		if err != nil {
+			return "", err
+		}
 		// Duplicate guard (F-0324): before the id mint and any write.
 		forced, err := guardDecision(repoDir, title, tagSet{facets: normFacets, components: normComponents}, force)
 		if err != nil {
@@ -60,6 +66,7 @@ func CreateDecision(repoDir, projDir, title, body string, facets, components []s
 			ID:         id,
 			Title:      title,
 			State:      domain.DecisionActive,
+			Informs:    cleaned,
 			Facets:     normFacets,
 			Components: normComponents,
 			CreatedAt:  now,
@@ -74,6 +81,9 @@ func CreateDecision(repoDir, projDir, title, body string, facets, components []s
 		payload := map[string]string{"title": title}
 		if forced {
 			payload["guard"] = "forced"
+		}
+		if len(cleaned) > 0 {
+			payload["informs"] = strings.Join(cleaned, ",")
 		}
 		ev := domain.NewEvent(id, "decision.created", payload, EventActor())
 		if err := store.AppendEvent(repoDir, ev); err != nil {
@@ -264,6 +274,52 @@ func RetagDecision(repoDir, projDir, id string, facets, components []string, set
 		return store.Decision{}, err
 	}
 	return d, nil
+}
+
+// LinkDecision adds (add) and removes (remove) the entities an active
+// decision informs, the mirror of LinkNote (E-0005 criterion 22): a decision
+// linked to a task reaches its package in ring (a), with its body. It returns
+// the decision and the removed ids that were not there; a change of nothing
+// commits nothing.
+func LinkDecision(repoDir, projDir, id string, add, remove []string) (store.Decision, []string, error) {
+	id = domain.CanonicalID(id) // N-0061: file names and events by the canonical id
+	var d store.Decision
+	var absent []string
+	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		absent = nil // the mutation may run again
+		var err error
+		d, err = store.LoadDecision(repoDir, id)
+		if errors.Is(err, store.ErrNotFound) {
+			return "", fmt.Errorf("decision %s not found in backend", id)
+		}
+		if err != nil {
+			return "", err
+		}
+		if d.State != domain.DecisionActive {
+			return "", fmt.Errorf("decision %s is not active (it is %s) — link only applies to an active decision", id, d.State)
+		}
+		cleaned, err := validateInforms(repoDir, add)
+		if err != nil {
+			return "", err
+		}
+		var added, removed []string
+		d.Informs, added, removed, absent, err = relink(d.Informs, cleaned, remove)
+		if err != nil || len(added)+len(removed) == 0 {
+			return "", err
+		}
+		d.UpdatedAt = time.Now().UTC()
+		if err := store.SaveDecision(repoDir, d); err != nil {
+			return "", err
+		}
+		if err := appendLinkEvents(repoDir, "decision", id, added, removed, ""); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: link %s", id), nil
+	})
+	if err != nil && !errors.Is(err, gitback.ErrNothingToCommit) { // unchanged: nothing to link
+		return store.Decision{}, nil, err
+	}
+	return d, absent, nil
 }
 
 // DecisionDocPath returns the backend path of a decision's content document.

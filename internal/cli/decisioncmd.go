@@ -208,7 +208,7 @@ func runDecisionNew(cmd *cobra.Command, dir string, args []string, file, facet, 
 		return err
 	}
 	notice := componentNotice(cmd, ctx.repoDir, component)
-	d, err := app.CreateDecision(ctx.repoDir, ctx.projDir, title, body, splitInforms(facet), splitInforms(component), force)
+	d, err := app.CreateDecision(ctx.repoDir, ctx.projDir, title, body, nil, splitInforms(facet), splitInforms(component), force)
 	if err != nil {
 		return err
 	}

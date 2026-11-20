@@ -365,7 +365,7 @@ func relink(informs, add, remove []string) (out, added, removed, absent []string
 	return out, added, removed, absent, nil
 }
 
-// appendLinkEvents records <kind>.linked / <kind>.unlinked (kind reference or
+// appendLinkEvents records <kind>.linked / <kind>.unlinked (kind reference, decision or
 // note); via names the path that linked (promote) when not a direct link.
 func appendLinkEvents(repoDir, kind, id string, added, removed []string, via string) error {
 	for _, e := range []struct {
