@@ -261,7 +261,7 @@ func TestAmendDocArchivesRevisionWithEvent(t *testing.T) {
 	before, _ := os.ReadFile(FeatureDocPath(repoDir, "F-0001", "spec.md"))
 	head0, _ := gitback.HeadSHA(origin)
 
-	f, rev, changed, err := AmendFeatureDoc(repoDir, projDir, "F-0001", "spec", amendedSpec, "prefixo mudou")
+	f, rev, changed, _, err := AmendFeatureDoc(repoDir, projDir, "F-0001", "spec", amendedSpec, "prefixo mudou", false)
 	if err != nil || !changed || rev != 1 || f.State != domain.StateApproved {
 		t.Fatalf("AmendFeatureDoc = %s, rev %d, changed %v, err %v", f.State, rev, changed, err)
 	}
@@ -285,10 +285,10 @@ func TestAmendDocArchivesRevisionWithEvent(t *testing.T) {
 		t.Fatalf("persisted state = %s", loaded.State)
 	}
 
-	if _, rev, _, err := AmendFeatureDoc(repoDir, projDir, "F-0001", "spec", amendedSpec+"\nMais.\n", "segunda"); err != nil || rev != 2 {
+	if _, rev, _, _, err := AmendFeatureDoc(repoDir, projDir, "F-0001", "spec", amendedSpec+"\nMais.\n", "segunda", false); err != nil || rev != 2 {
 		t.Fatalf("second spec amend: rev %d, err %v — want 2", rev, err)
 	}
-	f, rev, changed, err = AmendFeatureDoc(repoDir, projDir, "F-0002", "plan", "# Plano\n\n1. Tarefa reescrita.\n", "auditoria")
+	f, rev, changed, _, err = AmendFeatureDoc(repoDir, projDir, "F-0002", "plan", "# Plano\n\n1. Tarefa reescrita.\n", "auditoria", false)
 	if err != nil || !changed || rev != 1 || f.State != domain.StateInDevelopment {
 		t.Fatalf("plan amend = %s, rev %d, changed %v, err %v", f.State, rev, changed, err)
 	}
@@ -311,7 +311,7 @@ func TestAmendDocRefusesStates(t *testing.T) {
 		id := fmt.Sprintf("F-%04d", i+1)
 		for _, doc := range []string{"spec", "plan"} {
 			before, _ := os.ReadFile(FeatureDocPath(repoDir, id, doc+".md"))
-			_, _, _, err := AmendFeatureDoc(repoDir, projDir, id, doc, amendedSpec, "corrigir")
+			_, _, _, _, err := AmendFeatureDoc(repoDir, projDir, id, doc, amendedSpec, "corrigir", false)
 			want := DocFixPhrase(id, doc, s)
 			if s == domain.StateCandidate {
 				want = "'cerne feature spec " + id + "'"
@@ -354,7 +354,7 @@ func TestAmendDocInputAndNoOp(t *testing.T) {
 		{"result", "result", amendedSpec, "r", ErrUnknownDoc, ""},
 		{"appended amendment", "spec", amendedSpec + "\n## Emenda (2026-11-10)\n\nTroca o prefixo.\n", "r", ErrAppendedAmendment, "line 36"},
 	} {
-		_, _, _, err := AmendFeatureDoc(repoDir, projDir, "F-0001", tc.doc, tc.body, tc.reason)
+		_, _, _, _, err := AmendFeatureDoc(repoDir, projDir, "F-0001", tc.doc, tc.body, tc.reason, false)
 		if err == nil || (tc.want != nil && !errors.Is(err, tc.want)) || !strings.Contains(err.Error(), tc.text) {
 			t.Fatalf("%s: err = %v, want %v containing %q", tc.name, err, tc.want, tc.text)
 		}
@@ -366,7 +366,7 @@ func TestAmendDocInputAndNoOp(t *testing.T) {
 	stored, _ := os.ReadFile(FeatureDocPath(repoDir, "F-0001", "spec.md"))
 	same := strings.ReplaceAll(strings.TrimPrefix(string(stored), "---\ncerne_id: F-0001\n---\n"), "\n", "  \r\n") + "\n\n"
 	evsBefore, _ := store.ReadEvents(repoDir)
-	_, rev, changed, err := AmendFeatureDoc(repoDir, projDir, "F-0001", "spec", same, "igual")
+	_, rev, changed, _, err := AmendFeatureDoc(repoDir, projDir, "F-0001", "spec", same, "igual", false)
 	if err != nil || changed || rev != 0 {
 		t.Fatalf("same body: rev %d, changed %v, err %v — want a no-op", rev, changed, err)
 	}
@@ -395,10 +395,10 @@ func TestAmendDocStalesApprovalOnlyForSpec(t *testing.T) {
 	if _, err := gitback.CommitAndPush(repoDir, "seed approved copies"); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := AmendFeatureDoc(repoDir, projDir, "F-0001", "spec", amendedSpec, "spec"); err != nil {
+	if _, _, _, _, err := AmendFeatureDoc(repoDir, projDir, "F-0001", "spec", amendedSpec, "spec", false); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := AmendFeatureDoc(repoDir, projDir, "F-0002", "plan", "# Plano\n\n1. Outra tarefa.\n", "plano"); err != nil {
+	if _, _, _, _, err := AmendFeatureDoc(repoDir, projDir, "F-0002", "plan", "# Plano\n\n1. Outra tarefa.\n", "plano", false); err != nil {
 		t.Fatal(err)
 	}
 	for id, want := range map[string]bool{"F-0001": true, "F-0002": false} {
@@ -427,7 +427,7 @@ func TestAmendDocRefusesMissingDoc(t *testing.T) {
 	}
 	head0, _ := gitback.HeadSHA(origin)
 	for _, id := range []string{"F-0001", "F-0002"} {
-		_, _, _, err := AmendFeatureDoc(repoDir, projDir, id, "plan", "# Plano\n\n1. Tarefa.\n", "primeiro plano")
+		_, _, _, _, err := AmendFeatureDoc(repoDir, projDir, id, "plan", "# Plano\n\n1. Tarefa.\n", "primeiro plano", false)
 		if !errors.Is(err, ErrAmendNoDoc) || !strings.Contains(err.Error(), "cerne push") {
 			t.Fatalf("%s: err = %v, want ErrAmendNoDoc pointing to .docs/ + cerne push", id, err)
 		}
@@ -461,7 +461,7 @@ func TestAmendDocRefusesBodyWithoutRealContent(t *testing.T) {
 		{"reason with LF", amendedSpec, "a\n## x", "one line"},
 		{"reason with CR", amendedSpec, "a\rb", "one line"},
 	} {
-		_, _, _, err := AmendFeatureDoc(repoDir, projDir, "F-0001", "spec", tc.body, tc.reason)
+		_, _, _, _, err := AmendFeatureDoc(repoDir, projDir, "F-0001", "spec", tc.body, tc.reason, false)
 		if err == nil || !strings.Contains(err.Error(), tc.text) {
 			t.Fatalf("%s: err = %v, want %q", tc.name, err, tc.text)
 		}
