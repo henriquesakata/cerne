@@ -86,9 +86,8 @@ alone.`,
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	cmd.Flags().BoolVar(&check, "check", false, "only report which project files would be renewed: writes nothing, uses no network, exits non-zero when something is out of date")
-	// The new binary renews the files after a swap (crit. 8).
+	// Also how the new binary renews the files after a swap (crit. 8).
 	cmd.Flags().BoolVar(&filesOnly, "files-only", false, "renew the project files only, leaving the binary alone")
-	cmd.Flags().MarkHidden("files-only")
 	return cmd
 }
 
