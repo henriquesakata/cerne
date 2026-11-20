@@ -108,6 +108,10 @@ function ChannelLine({ m }: { m: ChannelMessage }) {
     if (tg.state === 'delivered') return t.channel.targetDelivered(tg.work)
     return t.channel.targetNotDelivered(tg.work)
   }
+  // B-0054: say why — a session hears the channel only at a contact point.
+  // A message whose every target closed will never arrive: no hint.
+  const targets = m.targets ?? []
+  const pending = m.state === 'not_delivered' && !(targets.length > 0 && targets.every((tg) => tg.closed))
   return (
     <div className="backlog-chat-msg">
       <p>
@@ -126,6 +130,7 @@ function ChannelLine({ m }: { m: ChannelMessage }) {
             </span>
           ))}
       </p>
+      {pending && <p className="muted">{t.channel.notDeliveredHint}</p>}
     </div>
   )
 }
