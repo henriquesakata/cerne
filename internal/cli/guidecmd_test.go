@@ -146,3 +146,40 @@ func TestGuideDefinesCerneFirst(t *testing.T) {
 		}
 	}
 }
+
+// F-0468 crit. 1 and 2: asked how to mirror cards to any of the five
+// trackers, the guide answers first with the mirror FAQ, and its text (cut
+// at maxText) names that tracker's kind and where its credential lives.
+func TestGuideMirrorNamesEachTrackerCredential(t *testing.T) {
+	const want = "How do I mirror cards to GitHub, GitLab, Gitea, Jira or Trello? Which credential does each tracker use?"
+	for _, c := range []struct {
+		q    string
+		text []string
+	}{
+		{"how do I mirror cards to a Jira project?", []string{"`jira`", "/browse/", "git credential", "API token"}},
+		{"how do I mirror cards to GitHub?", []string{"`github`", "gh auth login"}},
+		{"how do I mirror cards to GitLab?", []string{"`gitlab`", "glab auth login"}},
+		{"how do I mirror cards to Gitea?", []string{"`gitea`", "git credential"}},
+		{"how do I mirror cards to Trello?", []string{"`trello`", "api.trello.com"}},
+	} {
+		out, err := execGuide(t, "--json", "--limit", "1", c.q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got struct {
+			Sections []struct{ Title, Source, Text string } `json:"sections"`
+		}
+		if err := json.Unmarshal([]byte(out), &got); err != nil {
+			t.Fatalf("%q: %v\n%s", c.q, err, out)
+		}
+		if len(got.Sections) != 1 || got.Sections[0].Title != want || got.Sections[0].Source != "faq" {
+			t.Errorf("%q: first section = %+v, want the FAQ %q", c.q, got.Sections, want)
+			continue
+		}
+		for _, s := range c.text {
+			if !strings.Contains(got.Sections[0].Text, s) {
+				t.Errorf("%q: answer misses %q:\n%s", c.q, s, got.Sections[0].Text)
+			}
+		}
+	}
+}

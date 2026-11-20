@@ -112,6 +112,15 @@ No. The `new` commands of notes, decisions, runbooks, references, features and b
 ## Q: cerne runs gh or glab for another host and my GITLAB_TOKEN or GH_ENTERPRISE_TOKEN is not used. Why?
 The committed `.cernerc` names the host (a `mirror.trackers` url, the `delivery.commit_url`), and gh and glab would send a token variable to whatever host they are pointed at, so cerne passes each one only to the host it belongs to. `GH_TOKEN` and `GITHUB_TOKEN` go only to github.com. `GH_ENTERPRISE_TOKEN` and `GITHUB_ENTERPRISE_TOKEN` go only to the host in `GH_HOST`. `GITLAB_TOKEN`, `GITLAB_ACCESS_TOKEN` and `OAUTH_TOKEN` go only to the host in `GITLAB_HOST`, else `GL_HOST`, else gitlab.com. Host names compare without case, scheme or port. Any other host gets the CLI's own login: run `gh auth login --hostname <host>` or `glab auth login --hostname <host>`, or set the host variable to that host, then run `cerne mirror sync` again.
 
+## Q: How do I mirror cards to GitHub, GitLab, Gitea, Jira or Trello? Which credential does each tracker use?
+A human adds the tracker to `mirror.trackers` (name, kind, url, label) and turns on `mirror.enabled` in the Settings screen of `cerne ui`; `cerne feature mirror <id> --title <title> --summary <summary>` then publishes a card, and `cerne mirror sync` keeps its issue in step. The url and the credential of each kind (no credential goes in `.cernerc`):
+- `github`: `https://<host>/<owner>/<repo>`; the gh login, `gh auth login --hostname <host>`.
+- `gitlab`: `https://<host>/<group>/<project>`; the glab login, `glab auth login --hostname <host>`.
+- `gitea`: `https://<host>/<owner>/<repo>`; an access token in git credential for the host.
+- `jira`: `https://<site>/browse/<PROJECT KEY>`; git credential for the site: the account e-mail and an API token on Cloud, a personal access token on Data Center.
+- `trello`: `https://trello.com/b/<boardId>/<slug>`; git credential for `api.trello.com`: the API key as the username, the token as the password.
+Store one with `printf 'protocol=https\nhost=<host>\nusername=<user>\npassword=<token>\n\n' | git credential approve`.
+
 ## Q: What does cerne next show on a new project? What are the first steps?
 Until the first feature is accepted, `cerne next` opens with a FIRST STEPS block: ask your agent for a feature, approve its spec (`cerne ui` or `cerne feature approve <id>`), accept the delivery (`cerne feature accept <id>`). Each step is ticked from the project event log, nothing is stored, and the block links the first-week guide. The usual sections stay below it; after the first accept the block is gone.
 
