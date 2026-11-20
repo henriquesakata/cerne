@@ -27,7 +27,7 @@ func TestComponentTagFindings(t *testing.T) {
 
 	got := componentTagFindings(componentUses(features, notes, decisions, nil, nil, nil))
 	want := map[string]string{
-		RuleComponentSingleUse: "5 components are carried by a single entity: legacy (N-0004), skill (N-0002), skills (N-0003), testing (F-0001), tests (F-0002)",
+		RuleComponentSingleUse: "5 components are carried by a single entity: legacy (N-0004: legacy,gitea), skill (N-0002: kpack,skill), skills (N-0003: skills), testing (F-0001: gitea,testing), tests (F-0002: gitea,tests)",
 		RuleComponentSameRoot:  "2 groups of components share a root: skill/skills, testing/tests",
 		RuleComponentNoteOnly:  "3 components are on active notes and on no feature: kpack, skill, skills",
 	}
@@ -44,6 +44,9 @@ func TestComponentTagFindings(t *testing.T) {
 		}
 		if !strings.Contains(f.Detail, "cerne tags") || !strings.Contains(f.Detail, "retag") || f.Fix != "cerne tags" {
 			t.Errorf("%s does not carry the list and retag commands: %+v", f.Rule, f)
+		}
+		if f.Rule == RuleComponentSingleUse && !strings.Contains(f.Detail, "'cerne note retag N-0004 --component gitea,<existing>'") {
+			t.Errorf("the single-use hint does not pass the carrier's whole list: %q", f.Detail)
 		}
 		if Blocking(f) {
 			t.Errorf("%s blocks the lint; it is informational", f.Rule)

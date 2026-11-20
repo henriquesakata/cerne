@@ -53,3 +53,23 @@ func TestComponentCheckOnWrite(t *testing.T) {
 	refused("note", "new", "Gamma probe", "--component", "doclangs")
 	ok("note", "new", "Gamma probe", "--component", "doclangs", "--force")
 }
+
+// E-0005 critic V4: the tag-cleanup findings are the curator's, so `cerne
+// next` — where every session starts — leaves them to `cerne lint`.
+func TestNextLeavesTagCleanupToLint(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	if out, err := execCerne(t, "note", "new", "Lone tag", "--component", "solo", "--dir", projDir); err != nil {
+		t.Fatalf("note new: %v\n%s", err, out)
+	}
+	lintOut, _ := execCerne(t, "lint", "--json", "--dir", projDir)
+	if !strings.Contains(lintOut, "component-single-use") {
+		t.Fatalf("lint does not report the single-use component:\n%s", lintOut)
+	}
+	nextOut, err := execCerne(t, "next", "--json", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("next: %v\n%s", err, nextOut)
+	}
+	if strings.Contains(nextOut, "component-") {
+		t.Fatalf("next lists the tag cleanup as a session debt:\n%s", nextOut)
+	}
+}

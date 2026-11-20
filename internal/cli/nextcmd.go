@@ -208,9 +208,11 @@ func runNext(cmd *cobra.Command, dir string, asJSON bool) error {
 
 	// A stale pending is already in OPEN PENDINGS with its age, and a stale
 	// approval on its feature's line (F-0318): not twice. Wiki debt with the
-	// wiki off is nobody's work (F-0316): lint still shows it.
+	// wiki off is nobody's work (F-0316), and the tag cleanup is the
+	// curator's, not a session's (E-0005): lint still shows both.
 	findings = slices.DeleteFunc(findings, func(f lint.Finding) bool {
-		return f.Rule == lint.RuleStalePending || f.Rule == lint.RuleSpecChangedAfterApproval || f.Downgraded
+		return f.Rule == lint.RuleStalePending || f.Rule == lint.RuleSpecChangedAfterApproval || f.Downgraded ||
+			f.Rule == lint.RuleComponentSingleUse || f.Rule == lint.RuleComponentSameRoot || f.Rule == lint.RuleComponentNoteOnly
 	})
 	for _, f := range findings {
 		q.Debts = append(q.Debts, newNextFinding(f))

@@ -33,6 +33,7 @@ const shownComponents = 10
 // componentUse is where one component is used across the backend.
 type componentUse struct {
 	ids        []string // every entity carrying it, any kind and state
+	carrier    []string // the components of the first carrier, for the retag hint
 	onFeature  bool     // carried by a feature (F-/E-/T-/B-), any state
 	onLiveNote bool     // carried by an active note
 }
@@ -44,7 +45,7 @@ func componentUses(features []store.Feature, notes []store.Note, decisions []sto
 	add := func(id string, comps []string) {
 		for _, c := range comps {
 			if use[c] == nil {
-				use[c] = &componentUse{}
+				use[c] = &componentUse{carrier: comps}
 			}
 			use[c].ids = append(use[c].ids, id)
 		}
@@ -82,9 +83,14 @@ func componentUses(features []store.Feature, notes []store.Note, decisions []sto
 func componentTagFindings(use map[string]*componentUse) []Finding {
 	names := slices.Sorted(maps.Keys(use))
 	var single, noteOnly []string
+	example := ""
 	for _, c := range names {
-		if len(use[c].ids) == 1 {
-			single = append(single, fmt.Sprintf("%s (%s)", c, use[c].ids[0]))
+		if u := use[c]; len(u.ids) == 1 {
+			single = append(single, fmt.Sprintf("%s (%s: %s)", c, u.ids[0], strings.Join(u.carrier, ",")))
+			if example == "" {
+				rest := slices.DeleteFunc(slices.Clone(u.carrier), func(x string) bool { return x == c })
+				example = fmt.Sprintf("'cerne %s retag %s --component %s'", retagKind(u.ids[0]), u.ids[0], strings.Join(append(rest, "<existing>"), ","))
+			}
 		}
 		if use[c].onLiveNote && !use[c].onFeature {
 			noteOnly = append(noteOnly, c)
@@ -109,24 +115,44 @@ func componentTagFindings(use map[string]*componentUse) []Finding {
 			groups = append(groups, strings.Join(g, "/"))
 		}
 	}
-	const retag = "'cerne <kind> retag <id> --component <c>'"
+	// A retag replaces the whole list (and works in any state, F-0482), so
+	// every hint passes the carrier's whole new list.
 	var out []Finding
 	if len(single) > 0 {
 		out = append(out, Finding{Rule: RuleComponentSingleUse, Fix: componentFix, Detail: fmt.Sprintf(
-			"%d components are carried by a single entity: %s — compare with 'cerne tags' and move each to an existing one with %s, or keep it",
-			len(single), capNames(single), retag)})
+			"%d components are carried by a single entity: %s — compare with 'cerne tags'; to move one to an existing name, retag its carrier with its whole new list, e.g. %s, or keep it",
+			len(single), capNames(single), example)})
 	}
 	if len(groups) > 0 {
 		out = append(out, Finding{Rule: RuleComponentSameRoot, Fix: componentFix, Detail: fmt.Sprintf(
-			"%d groups of components share a root: %s — pick one name per group ('cerne tags' counts them) and retag the rest with %s",
-			len(groups), capNames(groups), retag)})
+			"%d groups of components share a root: %s — pick one name per group ('cerne tags' counts them) and retag each carrier of the others with its whole list, the chosen name in place: 'cerne <kind> retag <id> --component <list>'",
+			len(groups), capNames(groups))})
 	}
 	if len(noteOnly) > 0 {
 		out = append(out, Finding{Rule: RuleComponentNoteOnly, Fix: componentFix, Detail: fmt.Sprintf(
-			"%d components are on active notes and on no feature: %s — a feature's components never reach these notes; see 'cerne tags' and add a feature component with 'cerne note retag <id> --component <c>'",
+			"%d components are on active notes and on no feature: %s — a feature's components never reach these notes; see 'cerne tags' and retag each note with its whole list plus a feature component: 'cerne note retag <id> --component <current>,<c>'",
 			len(noteOnly), capNames(noteOnly))})
 	}
 	return out
+}
+
+// retagKind is the command group that retags an entity of id's kind.
+func retagKind(id string) string {
+	switch {
+	case strings.HasPrefix(id, "RB-"):
+		return "runbook"
+	case strings.HasPrefix(id, "N-"):
+		return "note"
+	case strings.HasPrefix(id, "D-"):
+		return "decision"
+	case strings.HasPrefix(id, "R-"):
+		return "reference"
+	case strings.HasPrefix(id, "P-"):
+		return "pending"
+	case strings.HasPrefix(id, "I-"):
+		return "idea"
+	}
+	return "feature" // F-, E-, T-, B-
 }
 
 // capNames joins up to shownComponents names and counts the rest.
