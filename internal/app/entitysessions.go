@@ -118,7 +118,18 @@ func EntitySessions(cacheDir, repoDir, id string, roots []string) ([]EntitySessi
 				s.Roles[i].AgentType = s.Info.Agents[r.Agent]
 			}
 		}
-		slices.SortStableFunc(s.Roles, func(a, b EntityRole) int { return a.At.Compare(b.At) })
+		// Opening the card is a session's first touch, whatever the clock says:
+		// `feature new --file` records its spec a moment before the hook
+		// records the opening.
+		slices.SortStableFunc(s.Roles, func(a, b EntityRole) int {
+			if (a.Kind == RoleOpened) != (b.Kind == RoleOpened) {
+				if a.Kind == RoleOpened {
+					return -1
+				}
+				return 1
+			}
+			return a.At.Compare(b.At)
+		})
 		out = append(out, *s)
 	}
 	first := func(s EntitySession) time.Time { return s.Roles[0].At }

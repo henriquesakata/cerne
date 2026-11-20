@@ -724,7 +724,7 @@ const ptBR = {
     localOnly: 'O painel de agentes só existe no cerne ui local: ele mostra pastas e sessões desta máquina.',
     none: 'Nenhuma sessão desta máquina trabalhou neste card.',
     noTranscript: (session: string, harness: string) => `Sessão ${session} (${harness}) — transcript não encontrado nesta máquina`,
-    untitled: 'Sessão sem título',
+    untitled: (short: string) => `Sessão ${short} (sem título)`,
     role: (kind: string, work: string, workTitle: string) =>
       ({
         opened: 'abriu',
@@ -2325,7 +2325,7 @@ const en: Messages = {
     localOnly: 'The agents panel exists only in the local cerne ui: it shows this machine\'s folders and sessions.',
     none: 'No session on this machine worked on this card.',
     noTranscript: (session: string, harness: string) => `Session ${session} (${harness}) — transcript not found on this machine`,
-    untitled: 'Untitled session',
+    untitled: (short: string) => `Session ${short} (untitled)`,
     role: (kind: string, work: string, workTitle: string) =>
       ({
         opened: 'opened it',

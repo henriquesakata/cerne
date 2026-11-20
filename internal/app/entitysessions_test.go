@@ -65,8 +65,8 @@ func TestEntitySessions(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	mark("s-tl", "F-0001", RoleOpened, at(0))
-	mark("s-tl", "F-0001", "spec", at(0))
+	mark("s-tl", "F-0001", "spec", at(0)) // feature new --file: the spec lands just before the opening
+	mark("s-tl", "F-0001", RoleOpened, at(0).Add(time.Second))
 	mark("s-other", "F-0002", RoleOpened, at(0))
 	mark("s-plan", "F-0001", "plan", at(3)) // another session planned it
 	mark("s-plan", "F-0001", "plan", at(4)) // a second push: one role
@@ -99,7 +99,7 @@ func TestEntitySessions(t *testing.T) {
 		t.Fatalf("s-tl info = %+v", tl.Info)
 	}
 	wantTL := []EntityRole{
-		{Kind: RoleOpened, At: at(0)},
+		{Kind: RoleOpened, At: at(0).Add(time.Second)},
 		{Kind: "spec", At: at(0)},
 		{Kind: RoleImplemented, Agent: "a-dev", AgentType: "dev", At: at(5)},
 		{Kind: "critic", Agent: "a-crit", AgentType: "code-reviewer", At: at(9)},

@@ -76,6 +76,7 @@ describe('FeatureAgents (F-0486)', () => {
     expect(screen.getByText(`cd "/w/tl" && claude --resume ${tl.session}`)).toBeInTheDocument()
     expect(screen.getByText(/trabalho W-0010 — revisão/)).toBeInTheDocument()
     expect(screen.getByText(/transcript não encontrado nesta máquina/)).toBeInTheDocument()
+    expect(screen.getByText('Sessão c0dexc0d (sem título)')).toBeInTheDocument()
     expect(screen.queryByText(/claude --resume c0dex/)).toBeNull() // not a Claude Code session
   })
 

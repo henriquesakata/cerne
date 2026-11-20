@@ -86,6 +86,10 @@ func newMsgSendCmd(dir, session *string) *cobra.Command {
 				return msgIdentityErr(sess, err)
 			}
 			out := cmd.OutOrStdout()
+			if m.Ref != "" { // F-0486: an answer to the human on a card's page
+				fmt.Fprintf(out, "sent #%d — on %s's thread: the human reads it on the card's page in cerne ui (it expires after 24h)\n", m.Seq, m.Ref)
+				return nil
+			}
 			switch len(to) {
 			case 0:
 				fmt.Fprintf(out, "sent #%d — no live session right now; it stays in the channel until it expires (24h, or when %s closes)\n", m.Seq, m.Nick)

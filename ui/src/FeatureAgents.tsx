@@ -72,8 +72,11 @@ export default function FeatureAgents({ id }: { id: string }) {
   )
 }
 
-function sessionTitle(s: AgentSession, untitled: string): string {
-  return s.info.title || (s.info.found ? untitled : s.session.slice(0, 8))
+// sessionTitle is the title the Claude Code app shows; a session with none
+// (`claude -p`, another harness) is named by its id's first 8 characters, so
+// two of them never read the same.
+function sessionTitle(s: AgentSession, untitled: (short: string) => string): string {
+  return s.info.title || untitled(s.session.slice(0, 8))
 }
 
 // resumeCommand opens the session again from its folder. Only a Claude Code
