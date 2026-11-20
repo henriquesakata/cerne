@@ -69,6 +69,10 @@ type updater struct {
 	err     string
 	running bool
 	last    *BinaryOutcome
+	// plan is PlanBinary's answer, read at each check and after a swap, not
+	// on every GET: for a script install it writes a probe file in the folder.
+	swappable bool
+	why, fix  string
 }
 
 // installed is the version of the binary on disk: the running one until the
@@ -82,14 +86,22 @@ func (u *updater) installed() string {
 
 func (u *updater) state() updateState {
 	u.mu.Lock()
-	st := updateState{Latest: u.latest, Error: u.err, Running: u.running, Last: u.last}
+	st := updateState{Latest: u.latest, Error: u.err, Running: u.running, Last: u.last,
+		Swappable: u.swappable, Why: u.why, Fix: u.fix}
 	u.mu.Unlock()
 	st.Current = u.installed()
 	st.Newer = st.Latest != "" && selfupdate.Newer(st.Latest, st.Current)
-	if PlanBinary != nil {
-		st.Swappable, st.Why, st.Fix = PlanBinary(u.cmd)
-	}
 	return st
+}
+
+func (u *updater) plan() {
+	if PlanBinary == nil {
+		return
+	}
+	ok, why, fix := PlanBinary(u.cmd)
+	u.mu.Lock()
+	u.swappable, u.why, u.fix = ok, why, fix
+	u.mu.Unlock()
 }
 
 // check asks for the latest release, unless ui.update_check is off: the
@@ -107,6 +119,7 @@ func (u *updater) check() {
 		base = selfupdate.DefaultBaseURL
 	}
 	latest, err := selfupdate.Latest(base)
+	u.plan()
 	u.mu.Lock()
 	if err != nil {
 		u.latest, u.err = "", err.Error()
@@ -157,6 +170,7 @@ func (u *updater) start() (int, error) {
 				out.Detail += "; the panel did not restart: " + err.Error()
 			}
 		}
+		u.plan()
 		u.mu.Lock()
 		u.running, u.last = false, &out
 		u.mu.Unlock()
