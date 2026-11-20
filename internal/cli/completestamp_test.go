@@ -117,6 +117,7 @@ func TestCompleteStampLine(t *testing.T) {
 		{"unchanged", stampOutcome{report: rep, kind: stampUnchanged}, nil, "cost already stamped"},
 		{"lower", stampOutcome{kind: stampLowerRefused}, nil, "warning: cost not stamped: the stamped total is higher than this machine's sessions; nothing written"},
 		{"nothing", stampOutcome{}, cost.ErrNothingToStamp, "warning: cost not stamped: no session on this machine is bound to F-0001; stamp it from the machine that ran the work: cerne cost F-0001 --stamp"},
+		{"unsupported harness", stampOutcome{}, errors.Join(cost.ErrUnsupportedHarness, errors.New("codex")), "warning: cost not stamped: this session ran under a harness cerne cost cannot read (Claude Code transcripts only); nothing to run"},
 		{"other", stampOutcome{}, errors.New("push refused"), "warning: cost not stamped: push refused; run 'cerne cost F-0001 --stamp'"},
 		{"multi-line error", stampOutcome{}, errors.New("push refused:\n  remote: rejected\n"), "warning: cost not stamped: push refused: remote: rejected; run 'cerne cost F-0001 --stamp'"},
 		{"epic: no shares on a mixed base", stampOutcome{report: cost.Report{ID: "E-0001", Counters: cost.Counters{Input: 100}, Total: &cost.Counters{Input: 400}, ByRole: map[string]cost.Counters{"main": {Input: 60}, "critic": {Input: 40}}}, kind: stampWritten}, nil, "cost stamped: 400 weighted tokens"},

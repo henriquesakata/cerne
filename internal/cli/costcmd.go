@@ -614,6 +614,9 @@ func completeStampLine(id string, o stampOutcome, err error) string {
 	switch {
 	case errors.Is(err, cost.ErrNothingToStamp):
 		return fmt.Sprintf("warning: cost not stamped: no session on this machine is bound to %s; stamp it from the machine that ran the work: cerne cost %s --stamp", id, id)
+	case errors.Is(err, cost.ErrUnsupportedHarness):
+		// --stamp would fail the same way (B-0055): advise no command.
+		return "warning: cost not stamped: this session ran under a harness cerne cost cannot read (Claude Code transcripts only); nothing to run"
 	case err != nil:
 		return fmt.Sprintf("warning: cost not stamped: %s; run 'cerne cost %s --stamp'", strings.Join(strings.Fields(err.Error()), " "), id)
 	case o.kind == stampLowerRefused:
