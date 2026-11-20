@@ -143,8 +143,13 @@ codex: the project's default_permissions = "cerne" replaces your own default pro
 codex: to check it, inside a Codex session run "printenv CERNE_ACTOR" (it prints agent) and "cerne next" (it runs with no permission error).
 `, dir)
 	// F-0484: the sandbox cuts the network; only an explicit --network opens it.
-	if network {
-		fmt.Fprintln(out, "codex: --network: the whole network is open to the agent in this project (the profile has no domain list). To turn it off, set enabled = false (or delete the table) under [permissions.cerne.network] in .codex/config.toml.")
+	// The line follows what the project file holds, not what was asked.
+	switch {
+	case hooks.CodexNetworkOpen(dir):
+		fmt.Fprintln(out, "codex: the whole network is open to the agent in this project (the profile has no domain list). To turn it off, set enabled = false (or delete the table) under [permissions.cerne.network] in .codex/config.toml.")
+		return
+	case network:
+		fmt.Fprintln(out, "codex: --network: the network was NOT opened in the project file; use the profile snippet printed above (or the note on the sandbox line) to open it by hand.")
 		return
 	}
 	fmt.Fprintln(out, "codex: the sandbox cuts the network, so inside Codex pull and push with a remote backend and the AI layer (plan draft, result draft, ask, compile) stay broken. To open the whole network to the agent in this project, run: cerne hook install --provider codex --network")
