@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -18,6 +19,8 @@ type WorkOutcome struct {
 	ID   string
 	From domain.WorkState
 	To   domain.WorkState
+	// AlreadyDone: a done request on a work that was already done — nothing written.
+	AlreadyDone bool
 }
 
 // StartedWork is what StartWork did: the new work, plus the planning works of
@@ -264,7 +267,8 @@ func supersedePlanning(repoDir string, works []store.Work, refs []string, newID 
 // active -> abandoned (reason required) when abandon is true. A terminal work
 // refuses with domain.ErrInvalidTransition — the record stays as history.
 // Appends the matching work.done/work.abandoned event and commits+pushes,
-// refreshing the docs.lock snapshot in projDir.
+// refreshing the docs.lock snapshot in projDir. A done request on a work that
+// is already done is a no-op (AlreadyDone, nothing written); abandoned stays refused.
 func FinishWork(repoDir, projDir, id, note string, abandon bool, reason string) (WorkOutcome, error) {
 	if abandon && strings.TrimSpace(reason) == "" {
 		return WorkOutcome{}, fmt.Errorf("--reason is required to abandon")
@@ -280,6 +284,10 @@ func FinishWork(repoDir, projDir, id, note string, abandon bool, reason string) 
 			return "", err
 		}
 
+		if !abandon && w.State == domain.WorkDone {
+			out = WorkOutcome{ID: id, From: w.State, To: w.State, AlreadyDone: true}
+			return "", nil // idempotent (B-0057): writes nothing, surfaces as ErrNothingToCommit
+		}
 		action := domain.ActionComplete
 		closingNote := strings.TrimSpace(note)
 		if abandon {
@@ -302,6 +310,9 @@ func FinishWork(repoDir, projDir, id, note string, abandon bool, reason string) 
 		out = WorkOutcome{ID: id, From: oldState, To: newState}
 		return fmt.Sprintf("cerne: finish %s", id), nil
 	})
+	if out.AlreadyDone && errors.Is(err, gitback.ErrNothingToCommit) {
+		return out, nil
+	}
 	if err != nil {
 		return WorkOutcome{}, err
 	}

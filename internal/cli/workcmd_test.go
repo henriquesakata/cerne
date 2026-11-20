@@ -121,6 +121,26 @@ func TestWorkDoneTransition(t *testing.T) {
 	}
 }
 
+func TestWorkDoneTwiceIsIdempotent(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	if out, err := execCerne(t, "work", "start", "Investigar erro X", "--dir", projDir); err != nil {
+		t.Fatalf("work start: %v\noutput: %s", err, out)
+	}
+	if out, err := execCerne(t, "work", "done", "W-0001", "--dir", projDir); err != nil {
+		t.Fatalf("work done: %v\noutput: %s", err, out)
+	}
+	out, err := execCerne(t, "work", "done", "W-0001", "--note", "late", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("second work done: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, "W-0001 was already done") || !strings.Contains(out, "note was not recorded") {
+		t.Fatalf("output = %q, want already-done line naming W-0001 and the unrecorded note", out)
+	}
+	if w, _ := store.LoadWork(repoDir, "W-0001"); w.Note != "" {
+		t.Fatalf("note = %q, want untouched", w.Note)
+	}
+}
+
 func TestWorkAbandonTransition(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
 	if out, err := execCerne(t, "work", "start", "Investigar erro X", "--dir", projDir); err != nil {
