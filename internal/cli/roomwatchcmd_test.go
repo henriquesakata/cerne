@@ -3,7 +3,6 @@ package cli
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -323,10 +322,44 @@ func waitOutput(t *testing.T, out *syncBuf, want string) {
 	}
 }
 
-func assertNoLock(t *testing.T, cpPath string) {
+// assertLockFree checks that no process holds the checkpoint lock: a fresh
+// lockCheckpoint on the same path succeeds. The .lock file may stay on disk;
+// the OS lock on it, not the file, marks it held (F-0472).
+func assertLockFree(t *testing.T, cpPath string) {
 	t.Helper()
-	if _, err := os.Stat(cpPath + ".lock"); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("checkpoint lock still on disk after the signal (stat err %v)", err)
+	release, err := lockCheckpoint(cpPath)
+	if err != nil {
+		t.Fatalf("checkpoint lock still held after the signal: %v", err)
+	}
+	release()
+}
+
+// F-0472 criterion 3: a .lock file an earlier version left on disk, with no
+// live process holding it, does not block the watch.
+func TestRoomWatchIgnoresLeftoverLockFile(t *testing.T) {
+	dir, port := newRoomTestServer(t, "proj-watch-leftover")
+	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
+	runRoom(t, append([]string{"open", "topic"}, dirFlag...)...)
+	sessA := joinRoomAs(t, dirFlag, "R1", "ana")
+	sessB := joinRoomAs(t, dirFlag, "R1", "bob") // R1 now at seq 3 (open, 2 joins)
+	c, err := newRoomClient(dir, port)
+	if err != nil {
+		t.Fatalf("newRoomClient: %v", err)
+	}
+	cpPath := filepath.Join(t.TempDir(), "cursor.json")
+	if err := os.WriteFile(cpPath+".lock", nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.say(context.Background(), "R1", sessB, "depois da queda"); err != nil {
+		t.Fatalf("say: %v", err)
+	}
+
+	out, err := runRoom(t, append([]string{"watch", "R1", "--session", sessA, "--once", "--since", "3", "--cursor-file", cpPath}, dirFlag...)...)
+	if err != nil {
+		t.Fatalf("watch with a leftover .lock file: %v", err)
+	}
+	if !strings.Contains(out, "depois da queda") {
+		t.Fatalf("watch output = %q, want bob's line", out)
 	}
 }
 
@@ -355,7 +388,7 @@ func TestRoomWatchSIGTERMReleasesLock(t *testing.T) {
 
 	sendSelf(t, syscall.SIGTERM)
 	waitExit(t, done, "room watch")
-	assertNoLock(t, cpPath)
+	assertLockFree(t, cpPath)
 
 	if _, err := c.say(context.Background(), "R1", sessB, "segunda"); err != nil {
 		t.Fatalf("say: %v", err)
@@ -402,5 +435,5 @@ func TestRoomWatchSignalDuringStartReleasesLock(t *testing.T) {
 
 	sendSelf(t, syscall.SIGTERM)
 	waitExit(t, done, "room watch")
-	assertNoLock(t, cpPath)
+	assertLockFree(t, cpPath)
 }
