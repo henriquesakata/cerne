@@ -285,6 +285,41 @@ describe('Mirror — Check now (F-0465 crit. 2)', () => {
   })
 })
 
+describe('Mirror — list cap in Check now (F-0469 crits. 3 and 4)', () => {
+  const capped: MirrorCheckOutcome = {
+    kind: 'ok',
+    results: [
+      { id: 'F-0001', status: 'unchecked', reason: 'list-capped' },
+      { id: 'F-0003', status: 'unchecked', reason: 'list-capped' },
+      { id: 'F-0002', status: 'ok' },
+    ],
+  }
+
+  it('names the tracker, the 100 cap and the count, in English', async () => {
+    api.postMirrorCheck.mockResolvedValue(capped)
+    renderMirror()
+    fireEvent.click(await screen.findByRole('button', { name: 'Check now' }))
+    const line = await screen.findByText(/alpha: .*100.* 2 cards/)
+    expect(line).toBeInTheDocument()
+    expect(screen.queryByText(/beta: .*100/)).toBeNull()
+  })
+
+  it('names the tracker, the 100 cap and the count, in pt-BR', async () => {
+    api.postMirrorCheck.mockResolvedValue(capped)
+    renderMirror('pt-BR')
+    fireEvent.click(await screen.findByRole('button', { name: 'Conferir agora' }))
+    expect(await screen.findByText(/alpha: .*100.* 2 cards/)).toBeInTheDocument()
+    expect(screen.queryByText(/beta: .*100/)).toBeNull()
+  })
+
+  it('shows no line when no result is list-capped', async () => {
+    renderMirror()
+    fireEvent.click(await screen.findByRole('button', { name: 'Check now' }))
+    await screen.findAllByText('drifted')
+    expect(screen.queryByText(/100/)).toBeNull()
+  })
+})
+
 describe('Mirror — commits of a card (F-0465 crit. 3)', () => {
   it('opens by a native button: one fetch on first open, none when it closes and opens again', async () => {
     renderMirror()

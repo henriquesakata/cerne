@@ -52,6 +52,7 @@ export default function Mirror() {
   const [checking, setChecking] = useState(false)
   const [checks, setChecks] = useState<ReadonlyMap<string, MirrorCheck>>(new Map())
   const [status, setStatus] = useState('')
+  const [cappedLines, setCappedLines] = useState<string[]>([])
   const [commits, setCommits] = useState<Readonly<Record<string, CommitsState>>>({})
   const asked = useRef(new Set<string>())
 
@@ -91,6 +92,13 @@ export default function Mirror() {
     setChecks(new Map(out.results.map((r) => [r.id, r])))
     const n = (s: MirrorCheck['status']) => out.results.filter((r) => r.status === s).length
     const time = new Date().toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+    const byTracker = new Map(data?.cards.map((c) => [c.id, c.tracker]))
+    const capped = new Map<string, number>()
+    for (const r of out.results) {
+      const tr = byTracker.get(r.id)
+      if (r.reason === 'list-capped' && tr !== undefined) capped.set(tr, (capped.get(tr) ?? 0) + 1)
+    }
+    setCappedLines([...capped].map(([tr, c]) => t.mirror.listCapped(tr, c)))
     setStatus(t.mirror.checkDone(time, n('ok'), n('drift'), n('unchecked')))
   }
 
@@ -128,6 +136,11 @@ export default function Mirror() {
                       {checking ? t.mirror.checking : t.mirror.check}
                     </button>
                     <p role="status">{status}</p>
+                    {cappedLines.map((l) => (
+                      <p key={l} className="muted">
+                        {l}
+                      </p>
+                    ))}
                   </div>
                   <p className="muted mirror-check-hint">{t.mirror.checkHint}</p>
                 </>
