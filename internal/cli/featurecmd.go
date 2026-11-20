@@ -217,7 +217,7 @@ func newFeatureRetagCmd(dir *string) *cobra.Command {
 		Long: "Sets or replaces a feature's tag axes without touching the lifecycle — preserves state, " +
 			"module, epic and docs. Changes only the axis passed: 'retag F-0001 --component gitback' keeps the facets; " +
 			"'--facet \"\"' clears the facets. A facet outside the closed set (infra,code,data,process,auth) is rejected. " +
-			"Applies to a live or implemented feature; a terminal feature (superseded/rejected) is frozen history.",
+			"Applies in any state, closed ones included: a closed feature changes only its tags, its body only by erratum.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runFeatureRetag(cmd, *dir, args[0], facet, component,

@@ -126,8 +126,8 @@ func newDecisionRetagCmd(dir *string) *cobra.Command {
 	var facet, component string
 	cmd := &cobra.Command{
 		Use:   "retag <id>",
-		Short: "Reset the tags (facet/component) of an active decision",
-		Long: "Sets or replaces the tag axes of an active decision, without superseding — preserves state and body. " +
+		Short: "Reset the tags (facet/component) of a decision",
+		Long: "Sets or replaces the tag axes of a decision in any state, without superseding — preserves state and body. " +
 			"Changes only the axis passed: 'retag D-0001 --component keycloak' keeps the facets; '--facet \"\"' clears the " +
 			"facets. A facet outside the closed set (infra,code,data,process,auth) is rejected.",
 		Args: cobra.ExactArgs(1),

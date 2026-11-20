@@ -212,7 +212,7 @@ func KeepNote(repoDir, projDir, id string) (store.Note, error) {
 	return n, nil
 }
 
-// RetagNote sets the tag axes of an active note in the backend clone at repoDir.
+// RetagNote sets the tag axes of a note, in any state, in the backend clone at repoDir.
 // Each axis is replaced only when its set flag is true, so a caller can update
 // facets without touching components (or clear an axis by passing an empty slice
 // with set=true); state, durable, informs and the body are preserved. Facets are
@@ -229,9 +229,6 @@ func RetagNote(repoDir, projDir, id string, facets, components []string, setFace
 		}
 		if err != nil {
 			return "", err
-		}
-		if n.State != domain.NoteActive {
-			return "", fmt.Errorf("note %s is not active (it is %s) — retag only applies to an active note", id, n.State)
 		}
 		if setFacets {
 			nf, err := domain.NormalizeFacets(facets)

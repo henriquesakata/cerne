@@ -106,7 +106,7 @@ func TestRetagNotePreservesDurableInforms(t *testing.T) {
 	}
 }
 
-// TestRetagNoteNotFoundOrSuperseded: missing id and superseded note both error.
+// TestRetagNoteNotFoundOrSuperseded: missing id and superseded note errors, a superseded one is accepted (F-0482).
 func TestRetagNoteNotFoundOrSuperseded(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	if _, err := RetagNote(repoDir, projDir, "N-9999", []string{"infra"}, nil, true, false); err == nil {
@@ -117,7 +117,7 @@ func TestRetagNoteNotFoundOrSuperseded(t *testing.T) {
 	if _, err := TransitionNote(repoDir, projDir, n.ID, n2.ID, "obsoleta"); err != nil {
 		t.Fatalf("TransitionNote: %v", err)
 	}
-	if _, err := RetagNote(repoDir, projDir, n.ID, []string{"infra"}, nil, true, false); err == nil {
-		t.Fatalf("retag of superseded note should error")
+	if _, err := RetagNote(repoDir, projDir, n.ID, []string{"infra"}, nil, true, false); err != nil {
+		t.Fatalf("retag of a superseded note refused: %v", err)
 	}
 }

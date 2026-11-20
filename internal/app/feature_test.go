@@ -687,8 +687,7 @@ func TestCreateFeatureTags(t *testing.T) {
 }
 
 // TestRetagFeature pins RetagFeature: per-axis update via the set flags, facet
-// validation, and the gate (retaggable while live/implemented, frozen once
-// superseded/rejected).
+// validation, and every state retaggable, rejected/superseded included (F-0482).
 func TestRetagFeature(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	if _, err := CreateFeature(repoDir, projDir, "Feat", "", "", nil, nil); err != nil {
@@ -724,13 +723,14 @@ func TestRetagFeature(t *testing.T) {
 		t.Fatalf("err = %v, want ErrUnknownFacet", err)
 	}
 
-	// Gate: a rejected feature is frozen history — retag refused.
+	// A rejected feature is frozen history for its body only — retag accepted (F-0482).
 	rej := store.Feature{ID: "F-0002", Title: "Morta", State: domain.StateRejected}
 	if err := store.SaveFeature(repoDir, rej); err != nil {
 		t.Fatalf("SaveFeature rejected: %v", err)
 	}
-	if _, err := RetagFeature(repoDir, projDir, "F-0002", []string{"code"}, nil, true, false); err == nil {
-		t.Fatalf("retag of rejected feature succeeded, want error")
+	commitBackend(t, repoDir)
+	if _, err := RetagFeature(repoDir, projDir, "F-0002", []string{"code"}, nil, true, false); err != nil {
+		t.Fatalf("retag of rejected feature refused: %v", err)
 	}
 }
 

@@ -35,8 +35,8 @@ func newReferenceRetagCmd(dir *string) *cobra.Command {
 	var facet, component string
 	cmd := &cobra.Command{
 		Use:   "retag <id>",
-		Short: "Reset the tags (facet/component) of a current reference",
-		Long: "Sets or replaces the tag axes of a current reference, without making it obsolete — preserves url, " +
+		Short: "Reset the tags (facet/component) of a reference",
+		Long: "Sets or replaces the tag axes of a reference in any state, without making it obsolete — preserves url, " +
 			"informs and body. Changes only the axis passed: 'retag R-0001 --component gitea' keeps the facets; '--facet \"\"' " +
 			"clears the facets. A facet outside the closed set (infra,code,data,process,auth) is rejected.",
 		Args: cobra.ExactArgs(1),

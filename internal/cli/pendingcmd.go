@@ -36,6 +36,7 @@ func newPendingCmd() *cobra.Command {
 	cmd.AddCommand(verbs.MarkLocal(newPendingPromoteCmd(&dir)))
 	cmd.AddCommand(verbs.MarkLocal(newPendingLinkCmd(&dir)))
 	cmd.AddCommand(verbs.MarkLocal(newPendingUnlinkCmd(&dir)))
+	cmd.AddCommand(verbs.MarkLocal(newPendingRetagCmd(&dir)))
 	return cmd
 }
 
@@ -294,4 +295,36 @@ func printMovedPendings(w io.Writer, lines []string) {
 	for _, l := range lines {
 		fmt.Fprintln(w, "  ↳ "+l)
 	}
+}
+
+func newPendingRetagCmd(dir *string) *cobra.Command {
+	var facet, component string
+	cmd := &cobra.Command{
+		Use:   "retag <id>",
+		Short: "Reset the tags (facet/component) of a pending, in any state",
+		Long: "Sets or replaces the tag axes of a pending in any state, closed ones included; state and links stay as they were. " +
+			"Changes only the axis passed: 'retag P-0001 --component gitea' keeps the facets; '--facet \"\"' clears the facets. " +
+			"A facet outside the closed set (infra,code,data,process,auth) is rejected.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			setFacets, setComponents := cmd.Flags().Changed("facet"), cmd.Flags().Changed("component")
+			if !setFacets && !setComponents {
+				return fmt.Errorf("provide at least --facet or --component")
+			}
+			ctx, err := resolveProject(*dir)
+			if err != nil {
+				return err
+			}
+			e, err := app.RetagPending(ctx.repoDir, ctx.projDir, args[0], splitInforms(facet), splitInforms(component), setFacets, setComponents)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%s retagged — facets: [%s] · components: [%s]\n",
+				e.ID, strings.Join(e.Facets, ", "), strings.Join(e.Components, ", "))
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&facet, "facet", "", "new facets (CSV; closed set) — empty clears")
+	cmd.Flags().StringVar(&component, "component", "", "new components (CSV) — empty clears")
+	return cmd
 }

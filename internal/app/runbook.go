@@ -119,7 +119,7 @@ func TransitionRunbook(repoDir, projDir, id, by, reason string) (RunbookOutcome,
 	return out, nil
 }
 
-// RetagRunbook sets the tag axes of an active runbook in the backend clone at
+// RetagRunbook sets the tag axes of a runbook, in any state, in the backend clone at
 // repoDir. Each axis is replaced only when its set flag is true, so a caller can
 // update facets without touching components (or clear an axis by passing an empty
 // slice with set=true); state, superseded_by, reason and the content doc are
@@ -136,9 +136,6 @@ func RetagRunbook(repoDir, projDir, id string, facets, components []string, setF
 		}
 		if err != nil {
 			return "", err
-		}
-		if rb.State != domain.RunbookActive {
-			return "", fmt.Errorf("runbook %s is not active (it is %s) — retag only applies to an active runbook", id, rb.State)
 		}
 		if setFacets {
 			nf, err := domain.NormalizeFacets(facets)

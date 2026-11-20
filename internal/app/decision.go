@@ -211,7 +211,7 @@ func RetireDecision(repoDir, projDir, id, reason string) (DecisionOutcome, error
 	return out, nil
 }
 
-// RetagDecision sets the tag axes of an active decision in the backend clone at
+// RetagDecision sets the tag axes of a decision, in any state, in the backend clone at
 // repoDir. Each axis is replaced only when its set flag is true, so a caller can
 // update facets without touching components (or clear an axis by passing an empty
 // slice with set=true); state, superseded_by, reason and the ADR body are
@@ -228,9 +228,6 @@ func RetagDecision(repoDir, projDir, id string, facets, components []string, set
 		}
 		if err != nil {
 			return "", err
-		}
-		if d.State != domain.DecisionActive {
-			return "", fmt.Errorf("decision %s is not active (it is %s) — retag only applies to an active decision", id, d.State)
 		}
 		if setFacets {
 			nf, err := domain.NormalizeFacets(facets)
