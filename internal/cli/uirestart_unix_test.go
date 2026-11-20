@@ -17,6 +17,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 type lockedBuffer struct {
@@ -159,5 +161,40 @@ func TestUIRestartKeepsPortAndProjects(t *testing.T) {
 		host.done <- nil // for the cleanup
 	case <-time.After(10 * time.Second):
 		t.Fatal("the restarted host did not exit on Ctrl+C")
+	}
+}
+
+// Critic 4 (F-0478): handing the socket over must leave the listener that is
+// still serving in non-blocking mode (os.File.Fd would switch the shared open
+// file description to blocking, and a blocked Accept stalls the shutdown),
+// and the copy must survive exec (no close-on-exec).
+func TestDupListenerKeepsListenerNonBlocking(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	f, fd, err := dupListener(ln)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	rc, err := ln.(*net.TCPListener).SyscallConn()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var flags int
+	if err := rc.Control(func(p uintptr) { flags, _ = unix.FcntlInt(p, unix.F_GETFL, 0) }); err != nil {
+		t.Fatal(err)
+	}
+	if flags&unix.O_NONBLOCK == 0 {
+		t.Fatal("the serving listener became blocking")
+	}
+	fdFlags, err := unix.FcntlInt(uintptr(fd), unix.F_GETFD, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fdFlags&unix.FD_CLOEXEC != 0 {
+		t.Fatal("the handed-down copy is close-on-exec")
 	}
 }

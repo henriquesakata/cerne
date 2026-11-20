@@ -91,6 +91,10 @@ func newUICmd() *cobra.Command {
 // version serving, on the same socket where the platform kept it.
 func runUI(cmd *cobra.Command, dir string, port int, noBrowser bool, pullInterval time.Duration) error {
 	uiCommand = commandPath()
+	// The running binary is the file as it was when this process started: a
+	// panel built later (a takeover after an upgrade, a failed restart that
+	// keeps serving) must still see a newer file on disk as new.
+	uiStart = server.StampCommand(uiCommand)
 	for {
 		err := serveUI(cmd, dir, port, noBrowser, pullInterval)
 		var rr *restartRequest
@@ -100,9 +104,7 @@ func runUI(cmd *cobra.Command, dir string, port int, noBrowser bool, pullInterva
 		fmt.Fprintf(cmd.OutOrStdout(), "restarting the panel into %s\n", rr.path)
 		restartErr := restartUI(rr) // returns only when the restart failed
 		fmt.Fprintf(cmd.OutOrStdout(), "warning: could not restart into %s: %v; this version keeps serving\n", rr.path, restartErr)
-		if rr.file != nil {
-			os.Setenv(listenFDEnv, strconv.Itoa(int(rr.file.Fd())))
-		}
+		keepForRetry(rr) // the same socket serves again, when the platform kept it
 		os.Setenv(restartedEnv, "1")
 	}
 }
@@ -125,7 +127,11 @@ var uiResolve server.Resolver = uiResolver
 
 // uiCommand is the command that started this process, as an absolute path;
 // empty outside runUI, which leaves the panel without restart (F-0478).
-var uiCommand string
+// uiStart is its file as it was at process start.
+var (
+	uiCommand string
+	uiStart   server.CommandStamp
+)
 
 // The restart hands the next process the panel's socket and tells it that it
 // is a restart, so it opens no browser tab (F-0478 criterion 4).
@@ -135,9 +141,11 @@ const (
 )
 
 // restartRequest ends host mode for a restart into path. file is the socket
-// kept open across the restart (nil where the platform cannot keep it).
+// kept open across the restart and fd its descriptor (nil and -1 where the
+// platform cannot keep it).
 type restartRequest struct {
 	file *os.File
+	fd   int
 	path string
 }
 
@@ -267,7 +275,7 @@ func hostUI(ctx context.Context, out io.Writer, ln net.Listener, addr, dir strin
 	restartCh := make(chan struct{}, 1)
 	var host server.UIHost
 	if uiCommand != "" {
-		host = server.UIHost{Command: uiCommand, Restart: func() {
+		host = server.UIHost{Command: uiCommand, Start: uiStart, Restart: func() {
 			select {
 			case restartCh <- struct{}{}:
 			default:
@@ -292,11 +300,11 @@ func hostUI(ctx context.Context, out io.Writer, ln net.Listener, addr, dir strin
 		select {
 		case <-srvCtx.Done():
 		case <-restartCh:
-			f, err := dupListener(ln)
+			f, fd, err := dupListener(ln)
 			if err != nil {
 				fmt.Fprintf(out, "warning: the port cannot be kept across the restart (%v); it is free for a moment\n", err)
 			}
-			rr = &restartRequest{file: f, path: uiCommand}
+			rr = &restartRequest{file: f, fd: fd, path: uiCommand}
 		}
 		cancel() // ends the SSE streams (multiHub.done) and the watchers
 		shutCtx, cancelShut := context.WithTimeout(context.Background(), 5*time.Second)
