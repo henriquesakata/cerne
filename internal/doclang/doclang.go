@@ -146,6 +146,17 @@ func IsVerificationSection(heading string) bool { return IsSection(Spec, specVer
 // numbered items are the acceptance contract, in any language.
 func IsCriteriaSection(heading string) bool { return IsSection(Spec, specCriteria, heading) }
 
+// IsBugSection reports whether heading is one of the three sections of the
+// bug report, in any language.
+func IsBugSection(heading string) bool {
+	for i := range sections[Bug][PT] {
+		if IsSection(Bug, i, heading) {
+			return true
+		}
+	}
+	return false
+}
+
 // sections holds, per kind and language, the canonical level-2 headings in
 // template order. Every language lists the same sections in the same order.
 var sections = map[Kind]map[Lang][]string{

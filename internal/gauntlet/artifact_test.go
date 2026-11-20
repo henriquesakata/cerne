@@ -167,3 +167,23 @@ func TestAssembleEvidenceKeptWhole(t *testing.T) {
 		}
 	}
 }
+
+// A bug card has no criteria section: its report is the critic's bar (B-0037).
+func TestAssembleBugReport(t *testing.T) {
+	for _, l := range doclang.Langs() {
+		s := doclang.Sections(doclang.Bug, l)
+		spec := "# B\n\n## " + s[0] + "\n\nctx\n\n## " + s[1] + "\n\nrepro\n\n## " + s[2] + "\n\nbar\n\n## Outra\n\nfora\n"
+		out, err := Assemble(Input{Lang: l, Spec: spec, Diff: "d\n"})
+		if err != nil {
+			t.Fatalf("%s: %v", l, err)
+		}
+		for _, want := range []string{"## " + s[0], "ctx", "## " + s[1], "repro", "## " + s[2], "bar"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("%s: bundle lacks %q", l, want)
+			}
+		}
+		if strings.Contains(out, "fora") {
+			t.Errorf("%s: bundle carries a section outside the report", l)
+		}
+	}
+}

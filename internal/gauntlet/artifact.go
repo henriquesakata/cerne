@@ -90,7 +90,8 @@ func Assemble(in Input) (string, error) {
 	}
 	var parts []string
 	for _, s := range splitSections(in.Spec) {
-		if doclang.IsCriteriaSection(s.heading) {
+		// A bug card has no criteria section: its report is the bar (B-0037).
+		if doclang.IsCriteriaSection(s.heading) || doclang.IsBugSection(s.heading) {
 			parts = append(parts, strings.TrimSpace(s.text))
 		}
 	}
