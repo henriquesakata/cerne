@@ -119,15 +119,17 @@ type jiraFake struct {
 	host, root string
 	deployment string // serverInfo's deploymentType; "" = not served
 	basicOnly  bool   // a Data Center that refuses the Bearer token
+	infoLogin  int    // serverInfo's status for a request with no login (401, 403); 0 = it answers anonymous
 	user       string // the login the emulator accepts with jiraSecret, on Basic
 	statuses   []jiraStatus
 	moves      []jiraMove
 	types      []jiraType
 	required   map[string]string // create fields the project demands -> Jira's message
 	issues     map[string]*jiraFakeIssue
-	order      []string // keys, in creation order
-	jql        []string // every JQL searched
-	moved      []string // every transition id applied
+	order      []string          // keys, in creation order
+	jql        []string          // every JQL searched
+	moved      []string          // every transition id applied
+	alias      map[string]string // a key an issue answers to -> the issue's current key (a move to another project)
 	reqs       *[]jiraReq
 }
 
@@ -213,6 +215,10 @@ func (f *jiraFake) handler() http.Handler {
 			http.Error(w, "unknown host", http.StatusBadGateway)
 		case r.Header.Get("User-Agent") != "cerne/"+version.Version:
 			http.Error(w, "error code: 1010", http.StatusForbidden)
+		case strings.HasSuffix(r.URL.Path, "/rest/api/2/serverInfo") && (f.infoLogin == 0 || f.authorized(r)):
+			mux.ServeHTTP(w, r)
+		case strings.HasSuffix(r.URL.Path, "/rest/api/2/serverInfo") && r.Header.Get("Authorization") == "":
+			http.Error(w, "login required", f.infoLogin)
 		case !f.authorized(r):
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 		default:
@@ -323,7 +329,11 @@ func (f *jiraFake) create(w http.ResponseWriter, r *http.Request) {
 
 func (f *jiraFake) issue(h func(http.ResponseWriter, *http.Request, *jiraFakeIssue)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		iss, ok := f.issues[r.PathValue("key")]
+		key := r.PathValue("key")
+		if to, moved := f.alias[key]; moved {
+			key = to
+		}
+		iss, ok := f.issues[key]
 		if !ok {
 			jiraReply(w, http.StatusNotFound, map[string]any{"errorMessages": []string{"Issue does not exist"}})
 			return
@@ -655,7 +665,7 @@ func TestJiraCredentialFromHelper(t *testing.T) {
 		if _, err := newJiraTracker(t, jiraDC).ListOpen(ctx, ""); err != nil {
 			t.Fatalf("ListOpen: %v", err)
 		}
-		check(t, *f.reqs, "Bearer "+jiraSecret, "Bearer "+jiraSecret)
+		check(t, *f.reqs, "", "Bearer "+jiraSecret)
 	})
 
 	t.Run("data center: Basic after a 401, then Basic only", func(t *testing.T) {
@@ -664,7 +674,7 @@ func TestJiraCredentialFromHelper(t *testing.T) {
 		if _, err := newJiraTracker(t, jiraDC).ListOpen(ctx, ""); err != nil {
 			t.Fatalf("ListOpen: %v", err)
 		}
-		check(t, *f.reqs, "Bearer "+jiraSecret, basic("admin"), basic("admin"))
+		check(t, *f.reqs, "", "Bearer "+jiraSecret, basic("admin"))
 	})
 }
 
@@ -1422,5 +1432,91 @@ func TestJiraOwnsRefusesQueryFragmentAndEscapedSeparators(t *testing.T) {
 		if dc.Owns(ref(u)) {
 			t.Errorf("Owns accepted %s", u)
 		}
+	}
+}
+
+// F-0470 crit. 1: serverInfo needs no login, so the probe carries none; the
+// calls after it do.
+func TestJiraServerInfoProbeIsAnonymous(t *testing.T) {
+	f := newJiraDCFake(t)
+	if _, err := newJiraTracker(t, jiraDC).ListOpen(context.Background(), ""); err != nil {
+		t.Fatalf("ListOpen: %v", err)
+	}
+	reqs := *f.reqs
+	if len(reqs) != 2 || !strings.HasSuffix(reqs[0].url, "/rest/api/2/serverInfo") {
+		t.Fatalf("requests %v, want serverInfo then the search", reqs)
+	}
+	if auth := reqs[0].header.Get("Authorization"); auth != "" {
+		t.Fatalf("serverInfo Authorization = %q, want none", auth)
+	}
+	if ua := reqs[0].header.Get("User-Agent"); ua != "cerne/"+version.Version {
+		t.Fatalf("serverInfo User-Agent = %q", ua)
+	}
+	if auth := reqs[1].header.Get("Authorization"); auth != "Bearer "+jiraSecret {
+		t.Fatalf("search Authorization = %q, want the Bearer token", auth)
+	}
+}
+
+// F-0470 crit. 2: a site that closes serverInfo to anonymous gets one more
+// probe with the login.
+func TestJiraServerInfoRetriesWithLogin(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			f := newJiraDCFake(t)
+			f.infoLogin = status
+			if _, err := newJiraTracker(t, jiraDC).ListOpen(context.Background(), ""); err != nil {
+				t.Fatalf("ListOpen: %v", err)
+			}
+			var probes []string
+			for _, req := range *f.reqs {
+				if strings.HasSuffix(req.url, "/rest/api/2/serverInfo") {
+					probes = append(probes, req.header.Get("Authorization"))
+				}
+			}
+			if want := []string{"", "Bearer " + jiraSecret}; !slices.Equal(probes, want) {
+				t.Fatalf("serverInfo Authorization headers %q, want %q", probes, want)
+			}
+			if last := (*f.reqs)[len(*f.reqs)-1]; !strings.Contains(last.url, "/rest/api/2/search") {
+				t.Fatalf("last request %s, want the v2 search", last.url)
+			}
+		})
+	}
+}
+
+// F-0470 crit. 4: Jira resolves a moved issue by its old key; the card is not
+// written into an issue that left the project.
+func TestJiraUpdateRefusesMovedIssue(t *testing.T) {
+	for _, c := range []struct {
+		name, key, want string
+	}{
+		{"another key", "OTHER-7", "OTHER-7"},
+		{"no key", "", "unreadable answer"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := newJiraDCFake(t)
+			r := f.seed("Old", "")
+			f.issues[r.ID].key = c.key
+			f.alias = map[string]string{r.ID: r.ID}
+			before := len(*f.reqs)
+			err := newJiraTracker(t, jiraDC).Update(context.Background(), r, tracker.Item{CardID: "F-0001", State: domain.StateApproved, Title: "New"})
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("Update = %v, want an error with %q", err, c.want)
+			}
+			if c.key != "" {
+				for _, w := range []string{r.ID, "PROJ"} {
+					if !strings.Contains(err.Error(), w) {
+						t.Fatalf("error %q does not name %s", err, w)
+					}
+				}
+				if !errors.Is(err, tracker.ErrJiraMoved) {
+					t.Fatalf("error %v is not errJiraMoved", err)
+				}
+			}
+			for _, req := range (*f.reqs)[before:] {
+				if req.method != http.MethodGet {
+					t.Fatalf("%s %s after a moved answer, want no write", req.method, req.url)
+				}
+			}
+		})
 	}
 }
