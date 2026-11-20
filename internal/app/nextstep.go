@@ -41,17 +41,21 @@ type Step struct {
 // ImplementedOwes lists what an implemented feature still owes the agent
 // (F-0371): the exact commands — the cost stamp when `cerne cost --stamp` would
 // run (cost.PrecheckStamp, the command's own precheck), the delivery link when
-// neither commit nor MR is recorded. A non-nil problem is a cost check that
-// failed for a reason other than "nothing to stamp" (an unreadable ledger): it
-// must show, never fall through to the human accept. Empty and nil means the
-// feature waits on the accept. The project queue and NextStep share it.
+// neither commit nor MR is recorded. "Nothing to stamp" and a session bound
+// under a harness without a cost reader (B-0053) owe nothing: no command could
+// pay them. A non-nil problem is a cost check that failed for any other reason
+// (an unreadable ledger): it must show, never fall through to the human
+// accept. Empty and nil means the feature waits on the accept. The project
+// queue and NextStep share it.
 func ImplementedOwes(repoDir string, f store.Feature) (cmds []string, problem error) {
 	if !cost.Stamped(repoDir, f.ID) {
 		_, err := cost.PrecheckStamp(cost.Inputs{CacheDir: filepath.Dir(repoDir), RepoDir: repoDir, Roots: CostRoots()}, f.State, f.ID)
 		switch {
 		case err == nil:
 			cmds = append(cmds, "cerne cost "+f.ID+" --stamp")
-		case !errors.Is(err, cost.ErrNothingToStamp):
+		case errors.Is(err, cost.ErrNothingToStamp), errors.Is(err, cost.ErrUnsupportedHarness):
+			// nothing to stamp, or no cost reader for that harness: no debt the agent can pay (B-0053)
+		default:
 			problem = fmt.Errorf("cost check failed: %w", err)
 		}
 	}
