@@ -1,15 +1,19 @@
 package cli
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/henriquesakata/cerne/internal/hooks"
+	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/refresh"
 	"github.com/henriquesakata/cerne/internal/skills"
 )
@@ -96,7 +100,7 @@ func TestAutoRefreshNextRenewsOnce(t *testing.T) {
 		t.Errorf("the update line stays with nothing left:\n%s", out)
 	}
 	for _, p := range refresh.Connected(projDir) {
-		if v := refresh.Classify(projDir, p); v.State != refresh.UpToDate {
+		if v := refresh.Classify(projDir, p, true); v.State != refresh.UpToDate {
 			t.Errorf("%s not up to date after the refresh: %+v", p, v)
 		}
 	}
@@ -270,5 +274,188 @@ func TestAutoRefreshWhileTheReminderScriptRuns(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "cerne: renewed claude") {
 		t.Fatalf("no renewal line:\n%s", out)
+	}
+}
+
+// snapshot reads every file under dir/rel (or the file itself) as bytes.
+func snapshot(t *testing.T, dir string, rels ...string) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	for _, rel := range rels {
+		_ = filepath.WalkDir(filepath.Join(dir, rel), func(p string, e os.DirEntry, err error) error {
+			if err == nil && !e.IsDir() {
+				b, _ := os.ReadFile(p)
+				r, _ := filepath.Rel(dir, p)
+				out[r] = string(b)
+			}
+			return nil
+		})
+	}
+	return out
+}
+
+// C1: an edit in Claude's script leaves every Claude byte as it was, while the
+// other agents of the same project are renewed.
+func TestAutoRefreshEditedClaudeLeavesClaudeAloneAndRenewsTheOthers(t *testing.T) {
+	projDir := oldProject(t, append(claudeOnly(), ".cursor", ".codex", ".agents", "AGENTS.md")...)
+	appendTo(t, filepath.Join(projDir, ".claude", "hooks", "cerne-work-gate.sh"), "\n# mine\n")
+	before := snapshot(t, projDir, ".claude")
+	cursorBefore := snapshot(t, projDir, ".cursor", ".codex", ".agents")
+	out, err := execCerne(t, "next", "--dir", projDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, content := range snapshot(t, projDir, ".claude") {
+		if before[path] != content {
+			t.Errorf("%s changed although Claude has an edit", path)
+		}
+	}
+	if len(snapshot(t, projDir, ".claude")) != len(before) {
+		t.Error("a Claude file was created or removed")
+	}
+	if !strings.Contains(out, "renewed cursor, codex") {
+		t.Errorf("Cursor and Codex were not renewed:\n%s", out)
+	}
+	for _, p := range []hooks.Provider{hooks.ProviderCursor, hooks.ProviderCodex} {
+		if v := refresh.Classify(projDir, p, true); v.State == refresh.Unrecognized {
+			t.Errorf("%s: %+v", p, v)
+		}
+	}
+	after := snapshot(t, projDir, ".cursor", ".codex", ".agents")
+	changed := false
+	for k, v := range after {
+		changed = changed || cursorBefore[k] != v
+	}
+	if !changed {
+		t.Error("nothing of Cursor or Codex changed")
+	}
+}
+
+// C6: a second run prints nothing even for the agents whose old cerne entries
+// the append-only merge cannot replace (an old fail-open body, an old .mcp.json
+// server), and no entry is doubled (C8).
+func TestAutoRefreshSecondRunIsSilentAndNothingIsDoubled(t *testing.T) {
+	projDir := oldProject(t, append(claudeOnly(), ".cursor", ".codex", ".gemini", ".github", ".mcp.json")...)
+	if out, err := execCerne(t, "next", "--dir", projDir); err != nil || !strings.Contains(out, "cerne: renewed") {
+		t.Fatalf("first run: %v\n%s", err, out)
+	}
+	for i := 0; i < 2; i++ {
+		out, _ := execCerne(t, "next", "--dir", projDir)
+		if strings.Contains(out, "renewed") {
+			t.Fatalf("run %d prints a renewal again:\n%s", i+2, out)
+		}
+		if n := staleManagedNotice(projDir, false); strings.Contains(n, "renewed") {
+			t.Fatalf("session notice %d renews again: %s", i+2, n)
+		}
+	}
+	for _, f := range []string{".claude/settings.json", ".codex/hooks.json", ".gemini/settings.json", ".cursor/hooks.json"} {
+		seen := map[string]int{}
+		raw, err := os.ReadFile(filepath.Join(projDir, f))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var doc struct {
+			Hooks map[string][]map[string]any `json:"hooks"`
+		}
+		if err := json.Unmarshal(raw, &doc); err != nil {
+			t.Fatal(err)
+		}
+		for event, groups := range doc.Hooks {
+			for _, g := range groups {
+				leaves, _ := g["hooks"].([]any)
+				if leaves == nil {
+					leaves = []any{g}
+				}
+				for _, l := range leaves {
+					cmd, _ := l.(map[string]any)["command"].(string)
+					core := cmd
+					if i := strings.Index(cmd, "cerne hook"); i >= 0 {
+						core = strings.SplitN(cmd[i:], " 2>", 2)[0]
+					}
+					seen[event+"|"+fmt.Sprint(g["matcher"])+"|"+core]++
+				}
+			}
+		}
+		for k, n := range seen {
+			if n > 1 {
+				t.Errorf("%s: %d copies of %s", f, n, k)
+			}
+		}
+	}
+}
+
+// C2: a live lock held by another session skips the renewal silently; a dead
+// one (older than 30 s) is taken over.
+func TestAutoRefreshLock(t *testing.T) {
+	projDir := oldProject(t, claudeOnly()...)
+	cfg, _, err := project.LoadConfig(projDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache, err := project.CacheDir(cfg.ProjectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock := filepath.Join(cache, "refresh.lock")
+	if err := os.MkdirAll(cache, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(lock, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshot(t, projDir, ".claude")
+	if line, _ := autoRefresh(projDir); line != "" {
+		t.Fatalf("renewed under another session's lock: %s", line)
+	}
+	for p, c := range snapshot(t, projDir, ".claude") {
+		if before[p] != c {
+			t.Fatalf("%s changed under another session's lock", p)
+		}
+	}
+	old := time.Now().Add(-time.Minute)
+	if err := os.Chtimes(lock, old, old); err != nil {
+		t.Fatal(err)
+	}
+	if line, _ := autoRefresh(projDir); !strings.Contains(line, "renewed claude") {
+		t.Fatalf("a dead lock was not taken over: %q", line)
+	}
+	if _, err := os.Stat(lock); err == nil {
+		t.Error("the lock outlived the renewal")
+	}
+}
+
+// Decision 2: a missing managed item is recreated, with its wiring.
+func TestAutoRefreshRecreatesWhatIsMissing(t *testing.T) {
+	projDir := oldProject(t, claudeOnly()...)
+	script := filepath.Join(projDir, ".claude", "hooks", "cerne-tool-notes.sh")
+	os.Remove(script) // not in v0.14.3 either way
+	settings := filepath.Join(projDir, ".claude", "settings.json")
+	raw, _ := os.ReadFile(settings)
+	if strings.Contains(string(raw), "cerne-tool-notes.sh") {
+		t.Fatal("the v0.14.3 fixture already wires the script")
+	}
+	if _, err := execCerne(t, "next", "--dir", projDir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(script); err != nil {
+		t.Fatalf("the missing script was not recreated: %v", err)
+	}
+	if raw, _ = os.ReadFile(settings); !strings.Contains(string(raw), "cerne-tool-notes.sh") {
+		t.Fatal("the recreated script has no wiring in settings.json")
+	}
+}
+
+// Decision 3: with sync_skills on, an edited guide neither blocks the hooks'
+// renewal nor is looked at by the rule.
+func TestAutoRefreshLeavesTheGuideToSyncSkills(t *testing.T) {
+	projDir := oldProject(t, claudeOnly()...)
+	setSyncSkills(t, projDir, true)
+	appendTo(t, filepath.Join(projDir, ".claude", "skills", "cerne-authoring", "SKILL.md"), "\nedited\n")
+	out := staleManagedNotice(projDir, true)
+	if !strings.Contains(out, "updated canonical skill") || !strings.Contains(out, "cerne: renewed claude") {
+		t.Fatalf("want the sync line and the renewal line:\n%s", out)
+	}
+	if h, g := hooks.Stale(projDir), skills.Stale(projDir); len(h)+len(g) > 0 {
+		t.Fatalf("stale after both: %v %v", h, g)
 	}
 }
