@@ -103,6 +103,8 @@ type TaskPack struct {
 	Omitted    map[string]int `json:"omitted,omitempty"`
 	// OmittedBodies counts the ring (a) bodies the budget left out.
 	OmittedBodies int `json:"omitted_bodies,omitempty"`
+
+	demand onDemandSet // what OnDemand counts, recounted at each cut
 }
 
 // TaskContext assembles the package of id within budget tokens (<= 0: the
@@ -152,9 +154,10 @@ func taskContext(repoDir, id string, budget int, content bool) (TaskPack, error)
 	if name := StageDoc(t.f.State, slices.Collect(maps.Keys(t.docs))); name != "" {
 		p.Doc = ContextDoc{Name: name, Body: t.docs[name]}
 	}
-	if p.OnDemand, err = onDemand(repoDir, t.f.Components, refs, decs, p.Items); err != nil {
+	if p.demand, err = onDemand(repoDir, t.f.Components, refs, decs); err != nil {
 		return TaskPack{}, err
 	}
+	p.OnDemand = p.demand.counts(p.Items)
 	p.fit(budget)
 	return p, nil
 }
@@ -523,70 +526,91 @@ func problemParagraph(spec string) string {
 // shownIDs caps the ids an on-demand line lists itself.
 const shownIDs = 10
 
-// onDemand counts the decisions, references and runbooks in force, and the
-// rejected or superseded proposals, sharing a component with the task
-// (criterion 19). A count leaves out what the rings already show (T-0018) and
-// Listed says how many those are: together, exactly what its command lists. A
-// kind no command lists by component and state (runbooks, proposals) names
-// its ids instead.
-func onDemand(repoDir string, comps []string, refs []store.Reference, ds []store.Decision, items []ContextItem) ([]OnDemand, error) {
-	listed := map[string]bool{}
-	for _, it := range items {
-		listed[it.ID] = true
+// onDemandSet is what shares a component with the task and may stay on
+// demand (criterion 19), by kind in close order — decisions, references and
+// runbooks in force, rejected or superseded proposals — with the components
+// the list commands take.
+type onDemandSet struct {
+	comps string
+	ids   [4][]string
+}
+
+// onDemandKinds name the kinds of an onDemandSet, in order.
+var onDemandKinds = [4]string{"decisions", "references", "runbooks", "rejected or superseded proposals"}
+
+// onDemand gathers the onDemandSet of a task with components comps.
+func onDemand(repoDir string, comps []string, refs []store.Reference, ds []store.Decision) (onDemandSet, error) {
+	set := onDemandSet{comps: strings.Join(comps, ",")}
+	if len(comps) == 0 {
+		return set, nil
 	}
 	shares := func(cs []string) bool {
 		return slices.ContainsFunc(cs, func(c string) bool { return slices.Contains(comps, c) })
 	}
-	decs, rfs := OnDemand{What: "decisions"}, OnDemand{What: "references"}
-	rbs, props := OnDemand{What: "runbooks"}, OnDemand{What: "rejected or superseded proposals"}
-	var rbIDs, propIDs []string
-	count := func(o *OnDemand, id string) bool { // false: shown above
-		if listed[id] {
-			o.Listed++
-			return false
-		}
-		o.Count++
-		return true
-	}
-	if len(comps) > 0 {
-		for _, d := range ds {
-			if d.State == domain.DecisionActive && shares(d.Components) {
-				count(&decs, d.ID)
-			}
-		}
-		for _, r := range refs {
-			if r.State == domain.ReferenceCurrent && shares(r.Components) {
-				count(&rfs, r.ID)
-			}
-		}
-		runbooks, err := store.LoadAllRunbooks(repoDir)
-		if err != nil {
-			return nil, err
-		}
-		for _, rb := range runbooks {
-			if rb.State == domain.RunbookActive && shares(rb.Components) && count(&rbs, rb.ID) {
-				rbIDs = append(rbIDs, rb.ID)
-			}
-		}
-		feats, err := store.LoadAllFeatures(repoDir)
-		if err != nil {
-			return nil, err
-		}
-		for _, f := range feats {
-			if (f.State == domain.StateRejected || f.State == domain.StateSuperseded) && shares(f.Components) && count(&props, f.ID) {
-				propIDs = append(propIDs, f.ID)
-			}
+	for _, d := range ds {
+		if d.State == domain.DecisionActive && shares(d.Components) {
+			set.ids[0] = append(set.ids[0], d.ID)
 		}
 	}
-	csv := strings.Join(comps, ",")
-	if decs.Count > 0 {
-		decs.Command = "cerne decision list --component " + csv
+	for _, r := range refs {
+		if r.State == domain.ReferenceCurrent && shares(r.Components) {
+			set.ids[1] = append(set.ids[1], r.ID)
+		}
 	}
-	if rfs.Count > 0 {
-		rfs.Command = "cerne reference list --component " + csv
+	runbooks, err := store.LoadAllRunbooks(repoDir)
+	if err != nil {
+		return set, err
 	}
-	rbs.Command, props.Command = showIDs(rbIDs), showIDs(propIDs)
-	return []OnDemand{decs, rfs, rbs, props}, nil
+	for _, rb := range runbooks {
+		if rb.State == domain.RunbookActive && shares(rb.Components) {
+			set.ids[2] = append(set.ids[2], rb.ID)
+		}
+	}
+	feats, err := store.LoadAllFeatures(repoDir)
+	if err != nil {
+		return set, err
+	}
+	for _, f := range feats {
+		if (f.State == domain.StateRejected || f.State == domain.StateSuperseded) && shares(f.Components) {
+			set.ids[3] = append(set.ids[3], f.ID)
+		}
+	}
+	return set, nil
+}
+
+// counts is the close against the items the package keeps: a count leaves
+// out what they show (T-0018) and Listed says how many those are — together,
+// exactly what its command lists. A kind no command lists by component and
+// state (runbooks, proposals) names its ids instead. Recounted at each cut of
+// the budget, so a cut item returns to its count (critic M1).
+func (s onDemandSet) counts(items []ContextItem) []OnDemand {
+	listed := map[string]bool{}
+	for _, it := range items {
+		listed[it.ID] = true
+	}
+	out := make([]OnDemand, len(onDemandKinds))
+	for k, ids := range s.ids {
+		o := OnDemand{What: onDemandKinds[k]}
+		var rest []string
+		for _, id := range ids {
+			if listed[id] {
+				o.Listed++
+			} else {
+				rest = append(rest, id)
+			}
+		}
+		o.Count = len(rest)
+		switch {
+		case k == 0 && o.Count > 0:
+			o.Command = "cerne decision list --component " + s.comps
+		case k == 1 && o.Count > 0:
+			o.Command = "cerne reference list --component " + s.comps
+		case k >= 2:
+			o.Command = showIDs(rest)
+		}
+		out[k] = o
+	}
+	return out
 }
 
 // showIDs is the command that reads ids, the first shownIDs of them named.
@@ -625,6 +649,7 @@ func (p *TaskPack) fit(budget int) {
 	p.Compact = true
 	keep := func(n int) bool {
 		p.Items, p.Omitted, p.OmittedBodies = items[:n], ringCounts(items[n:]), bodies
+		p.OnDemand = p.demand.counts(p.Items)
 		for _, it := range p.Items {
 			if it.Body != "" {
 				p.OmittedBodies--

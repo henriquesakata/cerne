@@ -366,6 +366,20 @@ func TestTaskContextCutOrder(t *testing.T) {
 				t.Fatalf("budget %d: last line %q lacks %q", budget, lastLine(p.Text()), want)
 			}
 		}
+		// Critic M1: the close counts against the items kept — a cut item
+		// returns to the count, which still adds up to what the command lists.
+		kinds := map[string]int{}
+		for _, it := range p.Items {
+			kinds[it.Kind]++
+		}
+		for i, o := range p.OnDemand {
+			if f := full.OnDemand[i]; o.Count+o.Listed != f.Count+f.Listed {
+				t.Fatalf("budget %d: %s %d+%d, want %d in all", budget, o.What, o.Count, o.Listed, f.Count+f.Listed)
+			}
+			if kind := strings.TrimSuffix(o.What, "s"); o.Listed > kinds[kind] {
+				t.Fatalf("budget %d: %s says %d listed above, %d kept", budget, o.What, o.Listed, kinds[kind])
+			}
+		}
 		switch {
 		case outer > 0 && outer < len(full.Items)-ringA:
 			seen["outer"] = true
