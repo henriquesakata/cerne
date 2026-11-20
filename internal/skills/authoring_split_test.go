@@ -153,6 +153,10 @@ var rewritten = []string{
 	// B-0054: the prompt and every shell command became channel contact
 	// points, and a human message is addressed to every live work.
 	"Pending messages reach you on their own at session start, in subagents, in `cerne next`",
+	// E-0005: a session starts from cerne next; CONTEXT.md is the map of what
+	// is live, not the first read.
+	"Read current state from .docs/CONTEXT.md and `cerne status`.",
+	"Read current state from `.docs/CONTEXT.md` and `cerne status` (or `cerne brief`",
 }
 
 // b0015Renames maps the pt-BR names and placeholders the 2026-11-13 snapshot
