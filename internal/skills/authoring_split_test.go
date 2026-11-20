@@ -160,6 +160,8 @@ var rewritten = []string{
 	// E-0005: CONTEXT.md counts the notes and lists their components.
 	"Active notes also appear in the `## Conhecimento` section of `.docs/CONTEXT.md`",
 	"Tags render inline in `note list`/`note show`, fold into the FTS body",
+	// E-0005 (T-0017): the MCP server serves the context tool too.
+	"An MCP client without a shell reads the same surface through **`cerne mcp`** (F-0363): a stdio MCP server whose read-only tools",
 }
 
 // b0015Renames maps the pt-BR names and placeholders the 2026-11-13 snapshot

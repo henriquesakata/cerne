@@ -30,6 +30,7 @@ func newNoteCmd() *cobra.Command {
 	cmd.AddCommand(verbs.MarkChat(newNoteShowCmd(&dir)))
 	cmd.AddCommand(verbs.MarkChat(newNoteRetagCmd(&dir)))
 	cmd.AddCommand(verbs.MarkChat(newNoteWhenCmd(&dir)))
+	cmd.AddCommand(verbs.MarkChat(newNoteLinkCmd(&dir)))
 	cmd.AddCommand(verbs.MarkChat(newNoteGistCmd(&dir)))
 	cmd.AddCommand(verbs.MarkChat(newNoteKeepCmd(&dir)))
 	cmd.AddCommand(newNoteRetireCmd(&dir))
@@ -501,6 +502,47 @@ func newNoteWhenCmd(dir *string) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&clear, "clear", false, "remove every trigger")
+	return cmd
+}
+
+// newNoteLinkCmd is reference link for a note (E-0005 criterion 14): a note
+// with no trigger and no link reaches an agent only through a shared
+// component, a file both cite or a search.
+func newNoteLinkCmd(dir *string) *cobra.Command {
+	var informs, unlink string
+	cmd := &cobra.Command{
+		Use:   "link <id>",
+		Short: "Add or remove the entities an active note informs",
+		Long: "Adds (--informs) or removes (--unlink) the F-/E-/T-/B-/D-/RB-/N-/I- targets of an active note, without " +
+			"duplicating the ones already there. A linked note reaches the agent of the task it informs: the task " +
+			"package (cerne context) and the index printed at feature start, work start --ref and handoff take list " +
+			"it. Prints the final list.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if strings.TrimSpace(informs) == "" && strings.TrimSpace(unlink) == "" {
+				return fmt.Errorf("provide at least --informs or --unlink")
+			}
+			ctx, err := resolveProject(*dir)
+			if err != nil {
+				return err
+			}
+			n, absent, err := app.LinkNote(ctx.repoDir, ctx.projDir, args[0], splitInforms(informs), splitInforms(unlink))
+			if err != nil {
+				return err
+			}
+			if len(absent) > 0 {
+				fmt.Fprintf(cmd.ErrOrStderr(), "not present: %s\n", strings.Join(absent, ", "))
+			}
+			list := "(none)"
+			if len(n.Informs) > 0 {
+				list = strings.Join(n.Informs, ", ")
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%s informs: %s\n", n.ID, list)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&informs, "informs", "", "comma-separated F-/E-/T-/B-/D-/RB-/N-/I- ids to add")
+	cmd.Flags().StringVar(&unlink, "unlink", "", "comma-separated ids to remove")
 	return cmd
 }
 

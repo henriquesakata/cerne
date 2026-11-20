@@ -315,37 +315,15 @@ func LinkReference(repoDir, projDir, id string, add, remove []string) (store.Ref
 			return "", err
 		}
 		var added, removed []string
-		for _, t := range cleaned {
-			if slices.Contains(remove, t) {
-				return "", fmt.Errorf("--informs and --unlink both name %s", t)
-			}
-			if !slices.Contains(r.Informs, t) {
-				r.Informs = append(r.Informs, t)
-				added = append(added, t)
-			}
-		}
-		seen := map[string]bool{}
-		for _, t := range remove {
-			t = strings.TrimSpace(t)
-			if t == "" || seen[t] {
-				continue
-			}
-			seen[t] = true
-			if slices.Contains(r.Informs, t) {
-				r.Informs = slices.DeleteFunc(r.Informs, func(x string) bool { return x == t })
-				removed = append(removed, t)
-			} else {
-				absent = append(absent, t)
-			}
-		}
-		if len(added)+len(removed) == 0 {
-			return "", nil
+		r.Informs, added, removed, absent, err = relink(r.Informs, cleaned, remove)
+		if err != nil || len(added)+len(removed) == 0 {
+			return "", err
 		}
 		r.UpdatedAt = time.Now().UTC()
 		if err := store.SaveReference(repoDir, r); err != nil {
 			return "", err
 		}
-		if err := appendLinkEvents(repoDir, id, added, removed, ""); err != nil {
+		if err := appendLinkEvents(repoDir, "reference", id, added, removed, ""); err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("cerne: link %s", id), nil
@@ -356,13 +334,44 @@ func LinkReference(repoDir, projDir, id string, add, remove []string) (store.Ref
 	return r, absent, nil
 }
 
-// appendLinkEvents records reference.linked / reference.unlinked; via names
-// the path that linked (promote) when not a direct reference link.
-func appendLinkEvents(repoDir, id string, added, removed []string, via string) error {
+// relink applies add (validated) and remove to informs: added and removed are
+// what changed, absent the removed ids that were not there. An id in both
+// lists is refused; the remove list is deduped.
+func relink(informs, add, remove []string) (out, added, removed, absent []string, err error) {
+	out = informs
+	for _, t := range add {
+		if slices.Contains(remove, t) {
+			return nil, nil, nil, nil, fmt.Errorf("--informs and --unlink both name %s", t)
+		}
+		if !slices.Contains(out, t) {
+			out = append(out, t)
+			added = append(added, t)
+		}
+	}
+	seen := map[string]bool{}
+	for _, t := range remove {
+		t = strings.TrimSpace(t)
+		if t == "" || seen[t] {
+			continue
+		}
+		seen[t] = true
+		if slices.Contains(out, t) {
+			out = slices.DeleteFunc(out, func(x string) bool { return x == t })
+			removed = append(removed, t)
+		} else {
+			absent = append(absent, t)
+		}
+	}
+	return out, added, removed, absent, nil
+}
+
+// appendLinkEvents records <kind>.linked / <kind>.unlinked (kind reference or
+// note); via names the path that linked (promote) when not a direct link.
+func appendLinkEvents(repoDir, kind, id string, added, removed []string, via string) error {
 	for _, e := range []struct {
 		typ string
 		ids []string
-	}{{"reference.linked", added}, {"reference.unlinked", removed}} {
+	}{{kind + ".linked", added}, {kind + ".unlinked", removed}} {
 		if len(e.ids) == 0 {
 			continue
 		}

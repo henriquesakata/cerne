@@ -54,7 +54,7 @@ func TestMCP_ListsTools(t *testing.T) {
 			t.Errorf("tool %s is not annotated read-only", tool.Name)
 		}
 	}
-	for _, want := range []string{"status", "brief", "next", "search", "show", "ask", "guide"} {
+	for _, want := range []string{"status", "brief", "next", "search", "show", "context", "ask", "guide"} {
 		if !got[want] {
 			t.Errorf("tools/list lacks %q; got %v", want, got)
 		}

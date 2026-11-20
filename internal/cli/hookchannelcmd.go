@@ -168,7 +168,44 @@ func runHookChannel(cmd *cobra.Command, point string) {
 	if consume {
 		fmt.Fprint(cmd.OutOrStdout(), sessionBoard(cfg.ProjectID, cfg.RecentWorkWindowDays()))
 	}
-	fmt.Fprint(cmd.OutOrStdout(), channelBlock(cfg.ProjectID, in.SessionID, consume))
+	block := channelBlock(cfg.ProjectID, in.SessionID, consume)
+	if point == "subagent" {
+		if task := sessionTask(cfg.ProjectID, in.SessionID, in.AgentID); task != "" {
+			if block != "" {
+				task += "\n"
+			}
+			block = task + block
+		}
+	}
+	fmt.Fprint(cmd.OutOrStdout(), block)
+}
+
+// sessionTask is what a subagent learns of its session's task (E-0005
+// criterion 10): the task the session is bound to — a feature-family id, or
+// the first one a bound work refs — the index of the notes that inform it and
+// the package command. "" without such a binding or on any error (fail-open).
+func sessionTask(projectID, sess, agent string) string {
+	cacheDir, err := project.CacheDir(projectID)
+	if err != nil {
+		return ""
+	}
+	repoDir := filepath.Join(cacheDir, "repo")
+	bound, ok, err := app.CurrentBinding(cacheDir, repoDir, sess, agent)
+	if err != nil || !ok {
+		return ""
+	}
+	id, through := bound, ""
+	if w, err := store.LoadWork(repoDir, bound); err == nil {
+		id, through = taskRef(w.Refs), " (bound through "+bound+")"
+	}
+	f, err := store.LoadFeature(repoDir, id)
+	if id == "" || err != nil {
+		return ""
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "THIS SESSION'S TASK: %s — %s [%s]%s\n", f.ID, f.Title, f.State, through)
+	printTaskIndex(&b, repoDir, f.ID, "")
+	return b.String()
 }
 
 // staleManagedNotice is the session-start check of the managed assets the

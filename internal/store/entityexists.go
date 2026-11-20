@@ -1,11 +1,61 @@
 package store
 
 import (
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
 )
+
+// Meta is what every entity file carries whatever its kind: what a list of
+// mixed kinds shows (the task package, E-0005).
+type Meta struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	State string `json:"state"`
+}
+
+// metaFile is an entity file as LoadMeta reads it: the title and what labels
+// an entity without one.
+type metaFile struct {
+	Meta
+	Name string `json:"name"` // a historical
+	Body string `json:"body"` // an idea, a pending
+	Next string `json:"next"` // a handoff
+}
+
+// LoadMeta reads the id, title and state of the entity id of any kind, by its
+// prefix; ErrNotFound for an unknown prefix or a missing file. An entity
+// without a title is labelled by its name, the first line of its body, its
+// next step, or "(untitled)". kind is the singular of its entity dir
+// ("feature" for E-/T-/B- too).
+func LoadMeta(backendDir, id string) (m Meta, kind string, err error) {
+	prefix, _, _ := strings.Cut(id, "-")
+	sub, ok := idSubdirs[prefix]
+	if !ok {
+		return Meta{}, "", fmt.Errorf("%s: %w", id, ErrNotFound)
+	}
+	f, err := loadEntity[metaFile](backendDir, sub, id)
+	m = f.Meta
+	first, _, _ := strings.Cut(strings.TrimSpace(f.Body), "\n")
+	switch {
+	case m.Title != "":
+	case f.Name != "":
+		m.Title = f.Name
+	case first != "":
+		m.Title = first
+	case f.Next != "":
+		m.Title = "next: " + f.Next
+	default:
+		m.Title = "(untitled)"
+	}
+	kind = strings.TrimSuffix(path.Base(sub), "s")
+	if kind == "capabilitie" {
+		kind = "capability"
+	}
+	return m, kind, err
+}
 
 // EntityExists reports whether the backend holds an entity with this id
 // (F-/T-/E-/D-/R-/RB-/N-/H-/W-/C-/P-/I-/HO-), by its entity file. Read-only; an

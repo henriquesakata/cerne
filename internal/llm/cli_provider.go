@@ -436,7 +436,7 @@ func scratchDir() (string, func(), error) {
 
 // cerneReadTools are the read-only tools of `cerne mcp` the Codex chat turn
 // approves; a test keeps the list equal to mcp.ToolNames.
-var cerneReadTools = []string{"status", "brief", "next", "search", "show", "ask", "guide"}
+var cerneReadTools = []string{"status", "brief", "next", "search", "show", "context", "ask", "guide"}
 
 // cerneEnvVars are the locations a fixture or a user points cerne at.
 var cerneEnvVars = []string{"CERNE_CACHE_DIR", "CERNE_DATA_DIR", "CERNE_CONFIG_DIR"}

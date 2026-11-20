@@ -230,6 +230,7 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 		fmt.Fprintln(w, "  - mark each proving test with a comment `"+id+" crit. N` (a bug: `"+id+"`), or end an untested criterion with \"(manual verification)\" — complete refuses unmarked criteria")
 		fmt.Fprintln(w, "  - keep progress real-time: tick finished tasks in plan.md, gather evidence in result.md, cerne sync at each milestone")
 		fmt.Fprintf(w, "  - when done: fill in the result at content/features/%s/result.md ('cerne result draft %s' scaffolds it) and run 'cerne push' before 'cerne feature complete'\n", id, id)
+		printTaskIndex(w, ctx.repoDir, id, "") // E-0005 criterion 9: the session binds here
 	}
 	// Completing the last alive child of an epic scaffolds the epic's result
 	// (F-0214): point the author at it so the closure isn't left to be noticed

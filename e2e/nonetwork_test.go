@@ -12,8 +12,9 @@ import (
 	"github.com/henriquesakata/cerne/internal/gitback"
 )
 
-// E-0005 criterion 11: the map (the CONTEXT.md a pull writes), cerne tags and
-// the group search call no model and no network. Each command runs as a fresh
+// E-0005 criterion 11: the map (the CONTEXT.md a pull writes), cerne tags, the
+// group search (T-0014), the task package and the index a work start --ref
+// prints (T-0017) call no model and no network. Each command runs as a fresh
 // cerne process (this binary, CERNE_TEST_RUN_CLI) whose every HTTP(S) request
 // goes through a proxy that fails the test, with an ssh that fails it too and
 // no AI provider configured. The probe's limit: Go never proxies a loopback
@@ -28,6 +29,8 @@ func TestMapAndTagsNeverTouchTheNetwork(t *testing.T) {
 	mustCerne(t, "init", "--name", "Demo", "--backend", origin, "--dir", proj)
 	mustCerne(t, "note", "new", "Seed vocabulary", "--component", "gitea,kpack", "--dir", proj)
 	mustCerne(t, "decision", "new", "Forge choice", "--component", "gitea", "--dir", proj)
+	mustCerne(t, "feature", "new", "Forge probe", "--context", "why", "--component", "gitea", "--dir", proj)
+	mustCerne(t, "note", "link", "N-0001", "--informs", "F-0001", "--dir", proj)
 
 	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Errorf("network call through the proxy: %s %s", r.Method, r.URL)
@@ -57,11 +60,18 @@ func TestMapAndTagsNeverTouchTheNetwork(t *testing.T) {
 		{"note", "list", "--component", "gitea,kpack"},
 		{"decision", "list", "--component", "gitea,kpack"},
 		{"reference", "list", "--component", "gitea,kpack"},
+		{"context", "F-0001"},
+		{"context", "F-0001", "--json"},
+		{"work", "start", "Probe the package", "--ref", "F-0001"},
 	} {
 		cmd := exec.Command(self, append(args, "--dir", proj)...)
 		cmd.Env = env
-		if out, err := cmd.CombinedOutput(); err != nil {
+		out, err := cmd.CombinedOutput()
+		if err != nil {
 			t.Fatalf("cerne %s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+		if strings.Contains(strings.Join(args, " "), "F-0001") && !strings.Contains(string(out), "N-0001") {
+			t.Fatalf("cerne %s did not list the note that informs F-0001:\n%s", strings.Join(args, " "), out)
 		}
 	}
 	if _, err := os.Stat(sshCalled); err == nil {

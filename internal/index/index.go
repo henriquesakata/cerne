@@ -677,14 +677,30 @@ func openDB(dbPath string) (*sql.DB, error) {
 	return sql.Open("sqlite", dsn(dbPath))
 }
 
+// openReadOnly opens an existing index for reading only, with the short busy
+// timeout of the hooks: nil, nil when there is no index — it never creates one.
+func openReadOnly(dbPath string) (*sql.DB, error) {
+	if _, err := os.Stat(dbPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return sql.Open("sqlite", dsnQuery(dbPath, "mode=ro&_pragma=busy_timeout(50)"))
+}
+
 // dsn is the sqlite URI for dbPath. A Windows drive path (C:\x\index.db) must
 // become file:///C:/x/index.db: url.URL alone would read "C:" as a host.
 func dsn(dbPath string) string {
+	return dsnQuery(dbPath, "_pragma=busy_timeout(5000)&_txlock=immediate")
+}
+
+func dsnQuery(dbPath, query string) string {
 	p := dbPath
 	if len(p) >= 3 && p[1] == ':' && (p[2] == '\\' || p[2] == '/') && (p[0]|0x20 >= 'a' && p[0]|0x20 <= 'z') {
 		p = "/" + strings.ReplaceAll(p, `\`, "/")
 	}
-	u := url.URL{Scheme: "file", Path: p, RawQuery: "_pragma=busy_timeout(5000)&_txlock=immediate"}
+	u := url.URL{Scheme: "file", Path: p, RawQuery: query}
 	return u.String()
 }
 

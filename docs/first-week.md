@@ -4,6 +4,8 @@ You installed cerne and ran `cerne init` (or imported existing docs). This page 
 
 The shortest path: ask your agent for a small feature, approve its spec, accept the delivery. `cerne next` and the dashboard tick those three steps for you until the first accept.
 
+What your agent reads: it starts a session with `cerne next`, and a task with that task's package, `cerne context <id>`. `.docs/CONTEXT.md` stays as the map of what is live, for when it needs the whole picture.
+
 ## After init and after an import
 
 Inside your project's repository (skip this if you already ran it):
@@ -213,7 +215,7 @@ cerne task new "<step>" --parent F-0001 --context "<what this step does>"
 cerne bug new "<what breaks>" --context "<what happens, where>" --on-behalf "<your words>"
 ```
 
-To work one: ask your agent to start it. The agent runs `cerne feature start <id>` and, for work that is not a card (a review, an investigation), `cerne work start "<what>" --ref <id>`. That registers what is in progress, so two agents do not do the same thing:
+To work one: ask your agent to start it. The agent runs `cerne feature start <id>` and, for work that is not a card (a review, an investigation), `cerne work start "<what>" --ref <id>`. Both end with the index of the notes that inform that task and the command of its package, `cerne context <id>`: the task's document of the stage, its epic and the notes, decisions and sources that inform it, as id, title and a one-line gist, within a token budget; the agent opens a body with `cerne show <id>` when it needs it. Starting a task also registers what is in progress, so two agents do not do the same thing:
 
 <!-- quickstart -->
 ```bash
@@ -224,7 +226,7 @@ cerne work done W-0001 --note "button shipped"
 
 ## The daily routine
 
-1. Start with `cerne next`: what needs a spec, an approval, work, or your accept. Below it are the documentation debts.
+1. Start with `cerne next`: what needs a spec, an approval, work, or your accept. Below it are the documentation debts. Your agent starts each task from its package, `cerne context <id>`; `.docs/CONTEXT.md` is the map of what is live, not its first read.
 2. Approve the candidates whose spec you read, in the dashboard or with `cerne feature approve <id>`.
 3. Let the agent work. When it completes a feature, review it and accept it (`cerne accept queue` lists them).
 4. When something changes your plan, reject or supersede with a reason.

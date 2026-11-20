@@ -377,7 +377,7 @@ func carryReferenceLinks(repoDir, ideaID, fID string) error {
 		if err := store.SaveReference(repoDir, r); err != nil {
 			return err
 		}
-		if err := appendLinkEvents(repoDir, r.ID, []string{fID}, nil, "promote"); err != nil {
+		if err := appendLinkEvents(repoDir, "reference", r.ID, []string{fID}, nil, "promote"); err != nil {
 			return err
 		}
 	}

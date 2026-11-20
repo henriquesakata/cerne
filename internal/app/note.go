@@ -428,3 +428,49 @@ func writeNoteStub(repoDir, id, title string) error {
 		"and the why. Free text — no required sections. Replace this line. -->\n"
 	return os.WriteFile(path, []byte(content), 0o644)
 }
+
+// LinkNote adds (add) and removes (remove) the entities an active note informs,
+// the mirror of LinkReference (E-0005 criterion 14: a note without trigger and
+// without link reaches an agent only through a shared component, a file both
+// cite or a search). It returns the note and
+// the removed ids that were not there; a change of nothing commits nothing.
+func LinkNote(repoDir, projDir, id string, add, remove []string) (store.Note, []string, error) {
+	id = domain.CanonicalID(id) // N-0061: file names and events by the canonical id
+	var n store.Note
+	var absent []string
+	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		absent = nil // the mutation may run again
+		var err error
+		n, err = store.LoadNote(repoDir, id)
+		if errors.Is(err, store.ErrNotFound) {
+			return "", fmt.Errorf("note %s not found in backend", id)
+		}
+		if err != nil {
+			return "", err
+		}
+		if n.State != domain.NoteActive {
+			return "", fmt.Errorf("note %s is not active (it is %s) — link only applies to an active note", id, n.State)
+		}
+		cleaned, err := validateInforms(repoDir, add)
+		if err != nil {
+			return "", err
+		}
+		var added, removed []string
+		n.Informs, added, removed, absent, err = relink(n.Informs, cleaned, remove)
+		if err != nil || len(added)+len(removed) == 0 {
+			return "", err
+		}
+		n.UpdatedAt = time.Now().UTC()
+		if err := store.SaveNote(repoDir, n); err != nil {
+			return "", err
+		}
+		if err := appendLinkEvents(repoDir, "note", id, added, removed, ""); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: link %s", id), nil
+	})
+	if err != nil && !errors.Is(err, gitback.ErrNothingToCommit) { // unchanged: nothing to link
+		return store.Note{}, nil, err
+	}
+	return n, absent, nil
+}
