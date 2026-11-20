@@ -416,15 +416,19 @@ func TestOnlyUpdateChecksForVersions(t *testing.T) {
 		if d.IsDir() && (d.Name() == "node_modules" || d.Name() == ".git" || d.Name() == "dist") {
 			return filepath.SkipDir
 		}
-		if d.IsDir() || !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
+		slash := filepath.ToSlash(p)
+		// The binary's own code, its hook scripts and the UI; the install
+		// scripts are the installer, not cerne.
+		code := strings.HasSuffix(p, ".go") || (strings.Contains(slash, "/internal/") && strings.HasSuffix(p, ".sh")) ||
+			(strings.Contains(slash, "/ui/src/") && (strings.HasSuffix(p, ".ts") || strings.HasSuffix(p, ".tsx")))
+		if d.IsDir() || !code || strings.HasSuffix(p, "_test.go") || strings.Contains(p, ".test.") {
 			return nil
 		}
-		slash := filepath.ToSlash(p)
 		if strings.Contains(slash, "internal/selfupdate/") || strings.HasSuffix(slash, "internal/cli/updatecmd.go") {
 			return nil
 		}
 		b, _ := os.ReadFile(p)
-		for _, s := range []string{"releases/latest", "internal/selfupdate", "api.github.com/repos/henriquesakata/cerne"} {
+		for _, s := range []string{"releases/latest", "releases.atom", "internal/selfupdate", "api.github.com/repos/henriquesakata/cerne", "github.com/henriquesakata/cerne/tags"} {
 			if strings.Contains(string(b), s) {
 				t.Errorf("%s references %q: only cerne update may check for a new version", p, s)
 			}
@@ -466,5 +470,38 @@ func TestCopilotStaleNoticeSendsToUpdate(t *testing.T) {
 	out := copilotStaleNotice(proj)
 	if !strings.Contains(out, "run `cerne update`") || strings.Contains(out, "install") {
 		t.Fatalf("copilot notice = %q", out)
+	}
+}
+
+// Critic finding (F-0476 crit. 2): a .cernerc that does not load still runs
+// the binary part and closes with the project parts not done.
+func TestUpdateBrokenCernercStillCloses(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	currentBinary(t)
+	mustWrite(t, filepath.Join(projDir, ".cernerc"), "not = [valid toml")
+	t.Chdir(projDir)
+	out, err := execCerne(t, "update")
+	if err == nil {
+		t.Fatalf("nil error with a broken .cernerc\n%s", out)
+	}
+	for _, want := range []string{"binary: up to date", "hooks: not done — the project's .cernerc does not load", "guide: not done — "} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+// Critic finding (F-0476 crit. 8): a new binary that fails makes the update
+// fail, naming it.
+func TestUpdateFailingNewBinary(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake binary is a shell script")
+	}
+	projDir, _, _ := setupProject(t)
+	installedBinary(t, "v0.14.3")
+	fakeRelease(t, "v0.15.0", []byte("#!/bin/sh\nexit 3\n"))
+	out, err := execCerne(t, "update", "--dir", projDir)
+	if err == nil || !strings.Contains(err.Error(), "the new binary") || !strings.Contains(err.Error(), "exit status 3") {
+		t.Fatalf("err = %v, want the failing new binary named\n%s", err, out)
 	}
 }

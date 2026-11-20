@@ -100,15 +100,15 @@ func runUpdate(cmd *cobra.Command, dir string, check, filesOnly bool) error {
 		}
 		dir = wd
 	}
-	_, projDir, err := project.LoadConfig(dir)
-	inProject := err == nil
-	if err != nil && !errors.Is(err, project.ErrNoProject) {
-		return err
-	}
+	_, projDir, cfgErr := project.LoadConfig(dir)
+	inProject := cfgErr == nil
+	// A .cernerc that does not load: the binary is still updated (a newer one
+	// may read it), and the project parts close as not done.
+	brokenProject := cfgErr != nil && !errors.Is(cfgErr, project.ErrNoProject)
 	out := cmd.OutOrStdout()
 	if check {
 		if !inProject {
-			return fmt.Errorf("cerne update --check looks at a project's files: %w", err)
+			return fmt.Errorf("cerne update --check looks at a project's files: %w", cfgErr)
 		}
 		return updateCheck(out, projDir)
 	}
@@ -122,9 +122,15 @@ func runUpdate(cmd *cobra.Command, dir string, check, filesOnly bool) error {
 			return reexecFiles(cmd, newExe, projDir)
 		}
 	}
-	if !inProject {
+	switch {
+	case brokenProject:
+		for _, name := range []string{"hooks", "guide"} {
+			fmt.Fprintln(out, part{name: name, state: stNotDone, detail: "the project's .cernerc does not load: " + cfgErr.Error(), fix: "cerne update, after fixing .cernerc"})
+		}
+		notDone = true
+	case !inProject:
 		fmt.Fprintln(out, "no cerne project here (no .cernerc from "+dir+" up): only the binary was looked at, no project was touched")
-	} else {
+	default:
 		hookPart, guidePart := renewHooks(projDir), renewGuide(projDir)
 		fmt.Fprintln(out, hookPart)
 		fmt.Fprintln(out, guidePart)
@@ -177,7 +183,7 @@ func renewHooks(projDir string) part {
 	if err != nil {
 		return part{name: "hooks", state: stNotDone, detail: err.Error(), fix: "cerne hook install"}
 	}
-	if left := hooks.Stale(projDir); len(left) > 0 {
+	if left, _ := staleManaged(projDir); len(left) > 0 {
 		return part{name: "hooks", state: stNotDone, detail: "still out of date: " + strings.Join(left, ", "), fix: "cerne hook install"}
 	}
 	var changed []string
@@ -197,7 +203,7 @@ func renewGuide(projDir string) part {
 	if err != nil {
 		return part{name: "guide", state: stNotDone, detail: err.Error(), fix: "cerne skill install"}
 	}
-	if left := skills.Stale(projDir); len(left) > 0 {
+	if _, left := staleManaged(projDir); len(left) > 0 {
 		return part{name: "guide", state: stNotDone, detail: "still out of date: " + strings.Join(left, ", "), fix: "cerne skill install"}
 	}
 	var changed []string
@@ -261,7 +267,11 @@ func updateBinary(cmd *cobra.Command) (part, string) {
 		return notDone("could not resolve the latest release: "+err.Error(), installScriptCmd())
 	}
 	if !selfupdate.Newer(latest, cur) {
-		return part{name: "binary", state: stCurrent, detail: cur + " is the latest release"}, ""
+		detail := cur + " is the latest release"
+		if cur != latest {
+			detail = cur + " is not older than the latest release, " + latest
+		}
+		return part{name: "binary", state: stCurrent, detail: detail}, ""
 	}
 	dir := filepath.Dir(resolved)
 	if err := selfupdate.Writable(dir); err != nil {
@@ -299,12 +309,7 @@ func reexecFiles(cmd *cobra.Command, newExe, projDir string) error {
 	c := exec.Command(newExe, "update", "--files-only", "--dir", projDir)
 	c.Stdout, c.Stderr = cmd.OutOrStdout(), cmd.ErrOrStderr()
 	if err := c.Run(); err != nil {
-		var ee *exec.ExitError
-		if errors.As(err, &ee) {
-			return errUpdateNotDone
-		}
-		fmt.Fprintln(cmd.OutOrStdout(), part{name: "hooks", state: stNotDone, detail: "the new binary did not run: " + err.Error(), fix: "cerne update"})
-		return errUpdateNotDone
+		return fmt.Errorf("cerne update: the new binary (%s) did not finish renewing the project files (%v) — run: cerne update", newExe, err)
 	}
 	return nil
 }

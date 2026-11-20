@@ -44,10 +44,19 @@ var (
 	ErrChecksum  = errors.New("checksum does not match the release's SHA256SUMS")
 )
 
+// releaseTagRe is a release tag as the release workflow stamps it; a
+// `git describe` string (commits after a tag, -dirty) is not one.
+var (
+	releaseTagRe = regexp.MustCompile(`^v\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$`)
+	describeRe   = regexp.MustCompile(`-\d+-g[0-9a-f]+(-dirty)?$|-dirty$`)
+)
+
 // Detect names the install method from the executable path as invoked, its
-// symlink-resolved form, the build version and the Go bin folders.
+// symlink-resolved form, the build version and the Go bin folders. Any
+// version that is not a release tag ("dev", a describe string) is a local
+// build, never replaced by a release.
 func Detect(exe, resolved, version string, gobins []string) Method {
-	if version == "dev" {
+	if !releaseTagRe.MatchString(version) || describeRe.MatchString(version) {
 		return Dev
 	}
 	if strings.Contains(filepath.ToSlash(resolved), "/Cellar/cerne/") {
@@ -55,7 +64,9 @@ func Detect(exe, resolved, version string, gobins []string) Method {
 	}
 	for _, p := range []string{exe, resolved} {
 		for _, b := range gobins {
-			if b != "" && filepath.Clean(filepath.Dir(p)) == filepath.Clean(b) {
+			// Case-insensitive: Windows and macOS folders are, and a false
+			// match only keeps the binary, the safe side.
+			if b != "" && strings.EqualFold(filepath.Clean(filepath.Dir(p)), filepath.Clean(b)) {
 				return GoInstall
 			}
 		}
@@ -212,6 +223,24 @@ func get(url string) ([]byte, error) {
 	return io.ReadAll(resp.Body)
 }
 
+// writeSynced writes data and flushes it to disk, so a crash right after the
+// rename never leaves a truncated cerne.
+func writeSynced(path string, data []byte) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
+}
+
 // Writable reports whether a file can be created in dir, by creating and
 // removing one: checked before any download.
 func Writable(dir string) error {
@@ -235,12 +264,12 @@ func Replace(target string, data []byte, goos string) error {
 	if goos == "windows" {
 		staged += ".exe"
 	}
-	if err := os.WriteFile(staged, data, 0o755); err != nil {
+	if err := writeSynced(staged, data); err != nil {
 		os.Remove(staged)
 		return err
 	}
 	defer os.Remove(staged) // a no-op after a successful rename
-	// WriteFile's mode is cut by the umask.
+	// The create mode is cut by the umask.
 	if err := os.Chmod(staged, 0o755); err != nil {
 		return err
 	}

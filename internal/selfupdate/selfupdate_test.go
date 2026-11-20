@@ -29,6 +29,10 @@ func TestDetect(t *testing.T) {
 		{"go install", filepath.Join(gobin, "cerne"), filepath.Join(gobin, "cerne"), "v0.14.3", GoInstall},
 		{"local build", "/work/cerne/bin/cerne", "/work/cerne/bin/cerne", "dev", Dev},
 		{"go install of a dev build", filepath.Join(gobin, "cerne"), filepath.Join(gobin, "cerne"), "dev", Dev},
+		{"describe-stamped local build", "/usr/local/bin/cerne", "/usr/local/bin/cerne", "v0.14.3-5-gabc1234", Dev},
+		{"dirty local build", "/usr/local/bin/cerne", "/usr/local/bin/cerne", "v0.14.3-dirty", Dev},
+		{"prerelease tag", "/usr/local/bin/cerne", "/usr/local/bin/cerne", "v0.15.0-rc.1", Script},
+		{"go bin in another case", filepath.Join("/HOME", "Me", "go", "bin", "cerne"), filepath.Join("/HOME", "Me", "go", "bin", "cerne"), "v0.14.3", GoInstall},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
