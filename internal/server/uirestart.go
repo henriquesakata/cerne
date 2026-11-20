@@ -21,15 +21,22 @@ import (
 // the binary that command now resolves to. The zero value turns both off.
 type UIHost struct {
 	Command string
+	// Start is the command's file when the process started (StampCommand,
+	// taken at process start): the binary that is running. Zero stamps the
+	// file when the server is built.
+	Start   CommandStamp
 	Restart func()
 }
 
 // Identity is a binary's version and embedded UI, as `cerne ui --identity`
-// prints it. Error says why the binary on disk could not be read.
+// prints it. Error says why the binary on disk could not be read; Changed
+// that the file on disk is not the one the process started from (a new local
+// build may report the same version and UI).
 type Identity struct {
 	Version string `json:"version"`
 	UI      string `json:"ui"`
 	Error   string `json:"error,omitempty"`
+	Changed bool   `json:"changed,omitempty"`
 }
 
 func runningIdentity() Identity { return Identity{Version: version.Version, UI: UIIdentity()} }
@@ -38,25 +45,32 @@ func runningIdentity() Identity { return Identity{Version: version.Version, UI: 
 // a stat, plus one run of the binary only when the file changed.
 var binaryPollInterval = 30 * time.Second
 
-// fileStamp tells two files apart without reading them: the real path (a
+// CommandStamp tells two files apart without reading them: the real path (a
 // Homebrew link points at a new Cellar), size and modification time (the
 // install script and a local build replace the file in place).
-type fileStamp struct {
+type CommandStamp struct {
 	path string
 	size int64
 	mod  time.Time
 }
 
-func stampOf(cmd string) (fileStamp, error) {
+// StampCommand stamps the file cmd resolves to now; zero when it cannot be
+// read.
+func StampCommand(cmd string) CommandStamp {
+	st, _ := stampOf(cmd)
+	return st
+}
+
+func stampOf(cmd string) (CommandStamp, error) {
 	real, err := filepath.EvalSymlinks(cmd)
 	if err != nil {
-		return fileStamp{}, err
+		return CommandStamp{}, err
 	}
 	fi, err := os.Stat(real)
 	if err != nil {
-		return fileStamp{}, err
+		return CommandStamp{}, err
 	}
-	return fileStamp{real, fi.Size(), fi.ModTime()}, nil
+	return CommandStamp{real, fi.Size(), fi.ModTime()}, nil
 }
 
 // readIdentity runs `<cmd> ui --identity` in dir. It is also the restart's
@@ -84,14 +98,17 @@ type binaryWatch struct {
 	restart  func()
 
 	mu         sync.Mutex
-	start      fileStamp
-	seen       fileStamp
+	start      CommandStamp
+	seen       CommandStamp
 	disk       Identity
 	restarting bool
 }
 
 func newBinaryWatch(host UIHost, dir string) *binaryWatch {
-	st, _ := stampOf(host.Command) // unreadable now: every later stamp reads as a change
+	st := host.Start
+	if st == (CommandStamp{}) {
+		st = StampCommand(host.Command) // unreadable now: every later stamp reads as a change
+	}
 	return &binaryWatch{cmd: host.Command, dir: dir, restart: host.Restart, start: st, seen: st, disk: runningIdentity()}
 }
 
@@ -121,6 +138,7 @@ func (b *binaryWatch) check() bool {
 		if id, err = readIdentity(b.cmd, b.dir); err != nil {
 			id = Identity{Error: err.Error()}
 		}
+		id.Changed = true
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -147,14 +165,14 @@ func (b *binaryWatch) run(ctx context.Context, every time.Duration, onChange fun
 	}
 }
 
-var (
-	errSameBinary = errors.New("the binary on disk is the one running: nothing to restart into")
-	errRestarting = errors.New("the panel is already restarting")
-)
+var errSameBinary = errors.New("the binary on disk is the one running: nothing to restart into")
 
 // requestRestart checks the command on disk right now (not on the last tick):
 // another file than the running one, that answers --identity. Only then the
-// host restarts; the caller has already answered the request by then.
+// host restarts, once: a request while the restart is under way (another tab,
+// a racing joiner) is accepted again and triggers nothing more. The host's
+// graceful shutdown waits for the calling handler, so the answer still
+// reaches the caller.
 func (b *binaryWatch) requestRestart() (int, error) {
 	if b == nil || b.restart == nil {
 		return http.StatusConflict, errors.New("this panel cannot restart itself")
@@ -167,7 +185,7 @@ func (b *binaryWatch) requestRestart() (int, error) {
 	isStart, busy := st == b.start, b.restarting
 	b.mu.Unlock()
 	if busy {
-		return http.StatusConflict, errRestarting
+		return http.StatusAccepted, nil
 	}
 	if isStart {
 		return http.StatusConflict, errSameBinary
@@ -176,8 +194,10 @@ func (b *binaryWatch) requestRestart() (int, error) {
 	if err != nil {
 		return http.StatusUnprocessableEntity, fmt.Errorf("the cerne on disk does not run: %w", err)
 	}
+	id.Changed = true
 	b.mu.Lock()
 	b.seen, b.disk, b.restarting = st, id, true
 	b.mu.Unlock()
+	go b.restart()
 	return http.StatusAccepted, nil
 }

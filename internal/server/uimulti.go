@@ -384,9 +384,6 @@ func NewUIMultiHost(ctx context.Context, resolve Resolver, pullInterval time.Dur
 		}
 		writeJSON(w, code, map[string]bool{"restarting": true})
 		hub.broadcast(liveEvent{kind: "projects"})
-		// The host shuts the server down gracefully, which waits for this
-		// handler to return: the answer reaches the caller before the restart.
-		go watch.restart()
 	})
 	mux.HandleFunc("POST /api/projects", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {

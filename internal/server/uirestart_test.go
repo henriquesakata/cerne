@@ -196,3 +196,96 @@ func TestRestartRouteWithoutHost(t *testing.T) {
 		t.Fatalf("restart without a host: %d, want 409", r.StatusCode)
 	}
 }
+
+// Critic 1/2 (F-0478): the running binary is the file the process started
+// from, stamped at process start — not the file on disk when the server is
+// built. An old attached process that takes the port over after an upgrade
+// already landed on disk must still see the new binary.
+func TestBinaryWatchStartsFromProcessStamp(t *testing.T) {
+	t.Setenv("CERNE_TEST_FAKE_IDENTITY", "1")
+	cmd := filepath.Join(t.TempDir(), "cerne")
+	t0 := time.Now().Add(-time.Hour)
+	installFake(t, cmd, identityJSON(version.Version, UIIdentity()), t0)
+	started := StampCommand(cmd) // the process started from this file
+	installFake(t, cmd, identityJSON("v9.9.9", "newui"), t0.Add(time.Minute))
+
+	hub := newMultiHub(nil)
+	sub := hub.subscribe()
+	w := newBinaryWatch(UIHost{Command: cmd, Start: started}, t.TempDir())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go w.run(ctx, 10*time.Millisecond, func() { hub.broadcast(liveEvent{kind: "projects"}) })
+	select {
+	case <-sub:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the binary upgraded before the server was built went unnoticed")
+	}
+	if got := w.installed(); got.Version != "v9.9.9" || !got.Changed {
+		t.Fatalf("installed = %+v, want v9.9.9 changed", got)
+	}
+}
+
+// Critic 3 (F-0478 criterion 1): a new local build may report the same
+// version and UI; the file is what changed, and that is announced too.
+func TestBinaryWatchSameIdentityOtherFile(t *testing.T) {
+	t.Setenv("CERNE_TEST_FAKE_IDENTITY", "1")
+	cmd := filepath.Join(t.TempDir(), "cerne")
+	t0 := time.Now().Add(-time.Hour)
+	same := identityJSON(version.Version, UIIdentity())
+	installFake(t, cmd, same, t0)
+	hub := newMultiHub(nil)
+	sub := hub.subscribe()
+	w := newBinaryWatch(UIHost{Command: cmd}, t.TempDir())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go w.run(ctx, 10*time.Millisecond, func() { hub.broadcast(liveEvent{kind: "projects"}) })
+
+	installFake(t, cmd, same, t0.Add(time.Minute))
+	select {
+	case <-sub:
+	case <-time.After(5 * time.Second):
+		t.Fatal("a rebuilt binary with the same identity went unnoticed")
+	}
+	if got := w.installed(); !got.Changed || got.Version != version.Version {
+		t.Fatalf("installed = %+v, want the same identity marked changed", got)
+	}
+}
+
+// Critic 7: a second restart request while one is under way is accepted
+// again (another tab, a racing joiner) and restarts nothing more.
+func TestRestartRouteIsIdempotent(t *testing.T) {
+	t.Setenv("CERNE_TEST_FAKE_IDENTITY", "1")
+	repoA, projA, _ := newGitBackendNoClean(t)
+	resolve := func(string) (string, string, string, string, error) {
+		return repoA, projA, "proj-a", "Projeto A", nil
+	}
+	cmd := filepath.Join(t.TempDir(), "cerne")
+	t0 := time.Now().Add(-time.Hour)
+	installFake(t, cmd, identityJSON(version.Version, UIIdentity()), t0)
+	restarts := make(chan struct{}, 4)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	h, err := NewUIMultiHost(ctx, resolve, 0, "A", UIHost{Command: cmd, Restart: func() { restarts <- struct{}{} }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	installFake(t, cmd, identityJSON("v9.9.9", "newui"), t0.Add(time.Minute))
+	for i := 0; i < 2; i++ {
+		r, err := http.Post(srv.URL+"/api/restart", "application/json", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.Body.Close()
+		if r.StatusCode != http.StatusAccepted {
+			t.Fatalf("restart request %d: %d, want 202", i+1, r.StatusCode)
+		}
+	}
+	<-restarts
+	select {
+	case <-restarts:
+		t.Fatal("the second request restarted again")
+	case <-time.After(100 * time.Millisecond):
+	}
+}
