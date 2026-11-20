@@ -58,7 +58,9 @@ func copyFixtureTree(t *testing.T, src, dst string) {
 	}
 }
 
-func claudeOnly() []string { return []string{".claude/hooks", ".claude/skills", ".claude/settings.json"} }
+func claudeOnly() []string {
+	return []string{".claude/hooks", ".claude/skills", ".claude/settings.json"}
+}
 
 func countLines(out, sub string) int {
 	n := 0

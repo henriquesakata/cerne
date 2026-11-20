@@ -88,3 +88,26 @@ func TestReadmeNamesTheVersionChecks(t *testing.T) {
 		t.Error("README data table lacks the panel's row")
 	}
 }
+
+// F-0477 crit. 11: the three places that tell how the project files catch up
+// say when the renewal is automatic, when it is only a warning, and how to
+// turn it off.
+func TestDocsSayWhenTheFilesRenewThemselves(t *testing.T) {
+	for _, path := range []string{"../../INSTALL.md", "faq.md", "../../docs/first-week.md"} {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		doc := string(raw)
+		for _, want := range []string{
+			"renew by themselves",
+			"edited",
+			"only warns",
+			"cerne settings set hooks.auto_refresh false",
+		} {
+			if !strings.Contains(doc, want) {
+				t.Errorf("%s does not say %q", path, want)
+			}
+		}
+	}
+}
