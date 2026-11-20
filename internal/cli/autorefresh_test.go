@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -244,5 +245,30 @@ func TestAutoRefreshKeepsSyncSkills(t *testing.T) {
 	}
 	if s := skills.Stale(projDir); len(s) > 0 {
 		t.Fatalf("guide still stale: %v", s)
+	}
+}
+
+// Blocker: the refresh at session start rewrites the very script the shell is
+// running. Through the real reminder script and a real binary, the session
+// start must exit 0 and say what it renewed.
+func TestAutoRefreshWhileTheReminderScriptRuns(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds the binary")
+	}
+	bin := filepath.Join(t.TempDir(), "cerne")
+	if out, err := exec.Command("go", "build", "-o", bin, "../../cmd/cerne").CombinedOutput(); err != nil {
+		t.Fatalf("build: %v\n%s", err, out)
+	}
+	projDir := oldProject(t, claudeOnly()...)
+	script := filepath.Join(projDir, ".claude", "hooks", "cerne-register-reminder.sh")
+	cmd := exec.Command("bash", script)
+	cmd.Stdin = strings.NewReader(`{"cwd":"` + projDir + `","session_id":"s1"}`)
+	cmd.Env = append(os.Environ(), "PATH="+filepath.Dir(bin)+string(os.PathListSeparator)+os.Getenv("PATH"), "CLAUDE_PROJECT_DIR="+projDir, "HOME="+t.TempDir())
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("the session-start script failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "cerne: renewed claude") {
+		t.Fatalf("no renewal line:\n%s", out)
 	}
 }

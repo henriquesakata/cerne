@@ -98,7 +98,7 @@ func mergeProviderJSON(path string, base map[string]any, wanted map[string][]map
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return Result{Asset: asset, Status: StatusSkipped, Note: "cannot create directory: " + err.Error()}
 	}
-	if err := os.WriteFile(path, append(out, '\n'), 0o644); err != nil {
+	if err := writeFileAtomic(path, append(out, '\n'), 0o644); err != nil {
 		return Result{Asset: asset, Status: StatusSkipped, Note: "cannot write: " + err.Error()}
 	}
 	if exists {
@@ -271,7 +271,7 @@ func ensureLineFile(path, asset, marker, content string, appendable bool) Result
 		if !strings.HasSuffix(out, "\n") {
 			out += "\n"
 		}
-		if wErr := os.WriteFile(path, []byte(out+content), 0o644); wErr != nil {
+		if wErr := writeFileAtomic(path, []byte(out+content), 0o644); wErr != nil {
 			return Result{Asset: asset, Status: StatusSkipped, Note: "cannot write: " + wErr.Error()}
 		}
 		return Result{Asset: asset, Status: StatusUpdated}
@@ -281,7 +281,7 @@ func ensureLineFile(path, asset, marker, content string, appendable bool) Result
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return Result{Asset: asset, Status: StatusSkipped, Note: "cannot create directory: " + err.Error()}
 	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := writeFileAtomic(path, []byte(content), 0o644); err != nil {
 		return Result{Asset: asset, Status: StatusSkipped, Note: "cannot write: " + err.Error()}
 	}
 	return Result{Asset: asset, Status: StatusCreated}
@@ -421,7 +421,7 @@ func copilotMCP(projDir string) (Result, string) {
 	if err != nil {
 		return skip("cannot render config: " + err.Error())
 	}
-	if err := os.WriteFile(path, append(out, '\n'), 0o644); err != nil {
+	if err := writeFileAtomic(path, append(out, '\n'), 0o644); err != nil {
 		return skip("cannot write: " + err.Error())
 	}
 	if exists {
