@@ -635,6 +635,66 @@ func TestMirrorSyncImportsIdeas(t *testing.T) {
 	}
 }
 
+// F-0469 crit. 1 and 2: a tracker list that reaches the 100-issue cap earns a
+// note (never a warning); 99 issues, or a failed list, earn none.
+func TestSyncMirrorNotesListCap(t *testing.T) {
+	cases := []struct {
+		name     string
+		n        int
+		label    string
+		listFail bool
+		want     []string // substrings of the single cap note; nil = no note
+	}{
+		{"at the cap", 100, "", false, []string{"pub", "100", "not imported", "label"}},
+		{"under the cap", 99, "", false, nil},
+		{"with label", 100, "bug", false, []string{"pub", `"bug"`, "not imported"}},
+		{"list fails", 100, "", true, nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			asHuman(t)
+			repoDir, projDir, _ := newFeatureBackend(t)
+			pub := &trackertest.Fake{Name: "pub"}
+			mirrorProject(t, projDir, mirrorConf{labels: map[string]string{"pub": c.label}}, pub)
+			for i := 0; i < c.n; i++ {
+				pub.Open("Issue "+strconv.Itoa(i), "", c.label)
+			}
+			if c.listFail {
+				pub.Err = errors.New("boom")
+			}
+			rep, err := SyncMirror(repoDir, projDir)
+			if err != nil {
+				t.Fatalf("SyncMirror: %v", err)
+			}
+			var notes []string
+			for _, n := range rep.Notes {
+				if strings.Contains(n, "not imported") {
+					notes = append(notes, n)
+				}
+			}
+			for _, w := range rep.Warnings {
+				if strings.Contains(w, "not imported") {
+					t.Fatalf("cap note leaked into warnings: %q", rep.Warnings)
+				}
+			}
+			if c.want == nil {
+				if len(notes) != 0 {
+					t.Fatalf("notes = %q, want no cap note", notes)
+				}
+				return
+			}
+			if len(notes) != 1 {
+				t.Fatalf("cap notes = %q, want exactly one", notes)
+			}
+			for _, w := range c.want {
+				if !strings.Contains(notes[0], w) {
+					t.Errorf("note %q lacks %q", notes[0], w)
+				}
+			}
+		})
+	}
+}
+
 // F-0449 crit. 6: a second sync imports nothing and commits nothing — not even
 // an issue whose idea a human dropped.
 func TestMirrorSyncIdempotent(t *testing.T) {
