@@ -56,6 +56,11 @@ type Config struct {
 	// path globs, matching a feature through its Components. It is what makes the
 	// drift rule work in a moduleless project. Same opt-in stance as ModulePaths.
 	ComponentPaths map[string][]string `toml:"component_paths,omitempty"`
+	// TestRoots are extra directories (relative to the project) scanned for test
+	// files beside the project root, and TestPatterns replace the default test
+	// file name patterns (F-0473). Both empty = the defaults.
+	TestRoots    []string `toml:"test_roots,omitempty"`
+	TestPatterns []string `toml:"test_patterns,omitempty"`
 	// StaleReadyDays is the window (days) an implemented ("Ready") feature may
 	// wait for human acceptance before the stale-ready lint flags it (F-0131).
 	// 0 (absent) means the 14-day default — read it via StaleReadyWindowDays.
@@ -491,6 +496,8 @@ func SaveConfig(dir string, c Config) error {
 		UnregisteredSourceIgnore []string            `toml:"unregistered_source_ignore,omitempty"`
 		ModulePaths              map[string][]string `toml:"module_paths,omitempty"`
 		ComponentPaths           map[string][]string `toml:"component_paths,omitempty"`
+		TestRoots                []string            `toml:"test_roots,omitempty"`
+		TestPatterns             []string            `toml:"test_patterns,omitempty"`
 		StaleReadyDays           int                 `toml:"stale_ready_days,omitzero"`
 		StaleWorkHours           int                 `toml:"stale_work_hours,omitzero"`
 		StaleDecisionDays        int                 `toml:"stale_decision_days,omitzero"`
@@ -504,7 +511,7 @@ func SaveConfig(dir string, c Config) error {
 		Agent                    *AgentConfig        `toml:"agent,omitempty"`
 		Guard                    *GuardConfig        `toml:"guard,omitempty"`
 	}
-	w := wire{ProjectID: c.ProjectID, Backend: c.Backend, DefaultScope: c.DefaultScope, OKF: c.OKF, SyncSkills: c.SyncSkills, AutocommitLock: c.AutocommitLock, PinBranch: c.PinBranch, PushPin: c.PushPin, PinWriter: c.PinWriter, CompileOnPush: c.CompileOnPush, UnregisteredSourceIgnore: c.UnregisteredSourceIgnore, ModulePaths: c.ModulePaths, ComponentPaths: c.ComponentPaths, StaleReadyDays: c.StaleReadyDays, StaleWorkHours: c.StaleWorkHours, StaleDecisionDays: c.StaleDecisionDays, RecentWorkDays: c.RecentWorkDays}
+	w := wire{ProjectID: c.ProjectID, Backend: c.Backend, DefaultScope: c.DefaultScope, OKF: c.OKF, SyncSkills: c.SyncSkills, AutocommitLock: c.AutocommitLock, PinBranch: c.PinBranch, PushPin: c.PushPin, PinWriter: c.PinWriter, CompileOnPush: c.CompileOnPush, UnregisteredSourceIgnore: c.UnregisteredSourceIgnore, ModulePaths: c.ModulePaths, ComponentPaths: c.ComponentPaths, TestRoots: c.TestRoots, TestPatterns: c.TestPatterns, StaleReadyDays: c.StaleReadyDays, StaleWorkHours: c.StaleWorkHours, StaleDecisionDays: c.StaleDecisionDays, RecentWorkDays: c.RecentWorkDays}
 	if !c.Gates.isZero() {
 		gates := c.Gates
 		w.Gates = &gates

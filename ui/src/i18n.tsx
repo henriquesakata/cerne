@@ -1506,6 +1506,9 @@ const ptBR = {
       'CLI output language': 'Idioma da saída da CLI',
       "Set to en when the project's CLI prints English: lint then warns when a spec criterion quotes a CLI message that reads Portuguese. Empty turns the check off.":
         "Defina como en quando a CLI do projeto imprime inglês: o lint passa a avisar quando um critério da spec cita uma mensagem da CLI que está em português. Vazio desliga a verificação.",
+      'Criterion tests': 'Teste por critério',
+      "Charges every numbered spec criterion with a test that marks it (a comment such as F-0473 crit. 2) and every bug with a B-NNNN test: lint reports criterion-without-test and orphan-criterion-test, and complete refuses while they stand. Off stops both. Independent of light mode; test_roots and test_patterns in .cernerc say where the tests are.":
+        "Cobra de cada critério numerado da spec um teste que o marque (um comentário como F-0473 crit. 2) e de cada bug um teste B-NNNN: o lint acusa criterion-without-test e orphan-criterion-test, e o complete recusa enquanto existirem. Desligada, para as duas coisas. Independe do modo leve; test_roots e test_patterns no .cernerc dizem onde estão os testes.",
       'Stale decision window': 'Prazo de decisão parada',
       'Days an active decision may go unreviewed, cited only by rejected or superseded features and by nothing live, before lint flags it as stale-decision. In .cernerc, [lint] stale_decision_days wins over a top-level stale_decision_days.':
         'Dias que uma decisão ativa pode ficar sem revisão, citada só por features rejeitadas ou substituídas e por nada vivo, antes de o lint acusá-la como stale-decision. No .cernerc, [lint] stale_decision_days vence um stale_decision_days de topo.',

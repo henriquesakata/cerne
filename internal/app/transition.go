@@ -279,6 +279,9 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 			if err := CheckCompleteResult(repoDir, f, gates); err != nil {
 				return "", err
 			}
+			if err := CheckCriterionTests(repoDir, projDir, f); err != nil {
+				return "", err
+			}
 		}
 
 		oldState := f.State

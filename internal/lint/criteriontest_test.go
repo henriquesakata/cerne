@@ -212,3 +212,58 @@ func TestCheckCriterionTests_GateFindings(t *testing.T) {
 		t.Errorf("empty scan refused: %v", got)
 	}
 }
+
+// F-0473 crit. 13
+func TestCriterionTests_UnnumberedSpecIsNoContract(t *testing.T) {
+	repo := ctRepo(t, "F-9001", "## Objetivo e critérios de aceitação\n\nprosa sem lista\n")
+	got := CriterionTestFindings(repo, []store.Feature{ctFeat("F-9001", domain.StateInDevelopment)},
+		[]domain.Event{ctStarted("F-9001", ctAfter)}, ctIdx(TestMark{ID: "F-9001", Nums: []int{1}, File: "a", Line: 1}))
+	if len(got) != 0 {
+		t.Errorf("unnumbered spec charged: %v", got)
+	}
+}
+
+// F-0473 crit. 9
+func TestScanTestMarks_RootsAndPatterns(t *testing.T) {
+	proj := t.TempDir()
+	extra := t.TempDir()
+	w := func(dir, name, body string) {
+		t.Helper()
+		p := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w(proj, "a_test.go", "// F-9001 crit. 1\n")
+	w(proj, "node_modules/x/b.test.js", "// F-9001 crit. 2\n")
+	w(proj, "check.t", "# F-9001 crit. 3\n")
+	w(extra, "sub/c.spec.ts", "// F-9001 crit. 4\n")
+	def := ScanTestMarks(proj, []string{extra}, nil)
+	if def.Files != 2 || len(def.Marks) != 2 {
+		t.Errorf("default patterns: files=%d marks=%v, want a_test.go and the extra root's spec", def.Files, def.Marks)
+	}
+	custom := ScanTestMarks(proj, nil, []string{"*.t"})
+	if custom.Files != 1 || len(custom.Marks) != 1 || custom.Marks[0].File != "check.t" {
+		t.Errorf("custom patterns replace the defaults: %+v", custom)
+	}
+	if empty := ScanTestMarks(t.TempDir(), nil, nil); empty.Files != 0 {
+		t.Errorf("empty project scanned %d files", empty.Files)
+	}
+}
+
+// F-0473 crit. 11
+func TestCriterionFindingsScopeByEntity(t *testing.T) {
+	repo := ctRepo(t, "F-9001", ctSpec)
+	got := CriterionTestFindings(repo, []store.Feature{ctFeat("F-9001", domain.StateInDevelopment)},
+		[]domain.Event{ctStarted("F-9001", ctAfter)}, ctIdx(TestMark{ID: "F-9001", Nums: []int{9}, File: "pkg/a_test.go", Line: 1}))
+	in, out := Scope(got, map[string]bool{"F-9001": true})
+	if len(in) != len(got) || out != 0 {
+		t.Errorf("scope by feature dropped criterion findings (file is a test path): in=%d out=%d", len(in), out)
+	}
+	if in, _ := Scope(got, map[string]bool{"F-0000": true}); len(in) != 0 {
+		t.Errorf("scope leaked another feature's findings: %v", in)
+	}
+}

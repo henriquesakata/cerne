@@ -163,6 +163,11 @@ var settingsRegistry = []Setting{
 		Description: "Set to en when the project's CLI prints English: lint then warns when a spec criterion quotes a CLI message that reads Portuguese. Empty turns the check off.",
 	},
 	{
+		ID: "lint.criterion_tests", Group: "process", Title: "Criterion tests", Type: "bool", Default: true,
+		Scopes:      []string{ScopeProject},
+		Description: "Charges every numbered spec criterion with a test that marks it (a comment such as F-0473 crit. 2) and every bug with a B-NNNN test: lint reports criterion-without-test and orphan-criterion-test, and complete refuses while they stand. Off stops both. Independent of light mode; test_roots and test_patterns in .cernerc say where the tests are.",
+	},
+	{
 		ID: "lint.stale_decision_days", Group: "process", Title: "Stale decision window", Type: "int", Default: int64(180),
 		Scopes: []string{ScopeProject}, TopLevel: "stale_decision_days",
 		Description: "Days an active decision may go unreviewed, cited only by rejected or superseded features and by nothing live, before lint flags it as stale-decision. In .cernerc, [lint] stale_decision_days wins over a top-level stale_decision_days.",
@@ -426,6 +431,19 @@ func CLIOutputLanguage(projDir string) string {
 		}
 	}
 	return ""
+}
+
+// CriterionTestsEnabled is lint.criterion_tests for the project at (or above)
+// projDir (F-0473): on unless a scope turns it off.
+func CriterionTestsEnabled(projDir string) bool {
+	for _, s := range ResolveSettings(projDir).Settings {
+		if s.ID == "lint.criterion_tests" {
+			if v, ok := s.Value.(bool); ok {
+				return v
+			}
+		}
+	}
+	return true
 }
 
 // StaleDecisionDays is lint.stale_decision_days for the project at (or above)

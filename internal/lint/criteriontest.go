@@ -226,6 +226,9 @@ func CriterionTestFindings(repoDir string, features []store.Feature, events []do
 			continue
 		}
 		nums, text, dispensed := specCriterionTexts(spec)
+		if len(nums) == 0 {
+			continue // no numbered criteria = no contract to cross-check (as F-0272)
+		}
 		covered := map[int]bool{}
 		for _, m := range marks {
 			for _, n := range m.Nums {
