@@ -119,6 +119,22 @@ describe('Channel (F-0325)', () => {
     expect(screen.getByText('W-0004 encerrado — não vai receber')).toBeInTheDocument()
   })
 
+  it('não entregue diz por quê — a sessão viva só recebe num ponto de contato (B-0054)', async () => {
+    snapshot = {
+      messages: [
+        msg({ nick: 'Henrique', human: true, body: 'alguém aí?', directed: true, targets: [{ work: 'W-0291', state: 'not_delivered' }] }),
+        msg({ seq: 2, directed: true, targets: [{ work: 'W-0004', state: 'not_delivered', closed: true }] }),
+        msg({ seq: 3, body: 'já chegou', state: 'delivered' }),
+      ],
+      version: 4,
+    }
+    render(<Channel />)
+    await waitFor(() => expect(screen.getByText('alguém aí?')).toBeInTheDocument())
+    // Only the message a live session can still receive: a closed work never will.
+    expect(screen.getAllByText(/só recebe ao passar por um ponto de contato/i)).toHaveLength(1)
+    expect(screen.getByText(/próximo prompt, comando, edição ou início de sessão do agente/i)).toBeInTheDocument()
+  })
+
   it('a versão ao vivo (F-0031) também refaz a carga — some a mensagem de um work fechado (critério 24)', async () => {
     const projects: ProjectInfo[] = [
       { pid: 'p1', name: 'P1' },

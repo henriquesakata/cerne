@@ -171,6 +171,17 @@ var parityTable = []ParityRow{
 		Copilot:    "after the tool: PostToolUse, matchers Bash and Edit|Write → top-level additionalContext",
 	},
 	{
+		// B-0054: every contact point the harness documents context on, past
+		// session start (the board row), so a session that only talks or only
+		// runs shell commands still hears the project channel.
+		Capability: "Project channel mid-session (F-0325, B-0054)",
+		Claude:     "UserPromptSubmit (cerne-prompt-notes.sh), PreToolUse/Bash (cerne-tool-notes.sh) and the work gate on Edit|Write → additionalContext; Stop reminder for what is addressed and unanswered",
+		Cursor:     "after the tool: .claude PostToolUse/Bash|Edit|Write (cerne-after-tool-notes.sh), via the third-party import → additional_context",
+		Codex:      "before the tool: PreToolUse, matchers Bash (tool-notes) and Edit|Write (work gate) → additionalContext",
+		Gemini:     "after the tool: AfterTool, matcher run_shell_command|write_file|replace → additionalContext (documented envelope, not validated live)",
+		Copilot:    "after the tool: PostToolUse, matchers Bash and Edit|Write → top-level additionalContext",
+	},
+	{
 		Capability: "CERNE_ACTOR=agent (human gates)",
 		Claude:     "settings.json env block + CLAUDECODE=1 on every shell Claude Code runs (B-0030) — no install",
 		Cursor:     "CURSOR_AGENT=1 on Cursor's agent shells (seen in 3.25.6, undocumented) — no install",

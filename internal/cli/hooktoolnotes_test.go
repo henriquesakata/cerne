@@ -392,3 +392,50 @@ func TestNoteWhenAfterOldIndex(t *testing.T) {
 		t.Fatalf("after --clear: err %v, out %q", err, out)
 	}
 }
+
+// TestHookToolNotesDeliversChannel (B-0054 crit. 1): a Bash call is a channel
+// contact point — before the tool on Claude Code and Codex, after it on
+// Cursor, Gemini and Copilot, in each one's documented envelope — and a
+// session gets its pending messages once.
+func TestHookToolNotesDeliversChannel(t *testing.T) {
+	projDir, _, block := channelContactFixture(t)
+	for _, tc := range []struct{ sess, format string }{{"sess-a", "claude"}, {"sess-x", "codex"}} {
+		in := bashJSON(t, tc.sess, projDir, "go test ./...")
+		out, err := execCerneStdin(t, in, "hook", "tool-notes", "--format", tc.format)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c := channelEnvelope(t, out); c.HookSpecificOutput.HookEventName != "PreToolUse" || c.HookSpecificOutput.AdditionalContext != block {
+			t.Fatalf("%s: envelope = %+v, want the channel block %q", tc.format, c, block)
+		}
+		if out, err := execCerneStdin(t, in, "hook", "tool-notes", "--format", tc.format); err != nil || out != "" {
+			t.Fatalf("%s second call: %v %q, want zero bytes", tc.format, err, out)
+		}
+	}
+	gem := hookJSON(t, "sess-gem", projDir, "run_shell_command", map[string]any{"command": "go test ./..."}, map[string]any{"llmContent": "ok"})
+	out, err := execCerneStdin(t, gem, "hook", "tool-notes", "--after", "--format", "gemini")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := channelEnvelope(t, out); c.HookSpecificOutput.HookEventName != "AfterTool" || c.HookSpecificOutput.AdditionalContext != block {
+		t.Fatalf("gemini: %s", out)
+	}
+	// The Copilot CLI also runs the .claude work gate and ignores its output:
+	// it must leave the channel to Copilot's own post-tool hook.
+	t.Setenv("COPILOT_CLI", "1")
+	edit := hookJSON(t, "sess-cop", projDir, "Edit", map[string]any{"file_path": filepath.Join(projDir, "a.go")}, nil)
+	if out, err := execCerneStdin(t, edit, "hook", "work-gate"); err != nil || out != "" {
+		t.Fatalf(".claude gate under the Copilot CLI: %v %q, want silence", err, out)
+	}
+	res := `,"tool_result":{"result_type":"success","text_result_for_llm":"ok"}`
+	cop := copilotPayload("sess-cop", projDir, "PostToolUse", "Bash", `{"command":"go test ./..."}`, res)
+	if out, err = execCerneStdin(t, cop, "hook", "tool-notes", "--after", "--format", "copilot"); err != nil || decodeTop(t, out)["additionalContext"] != block {
+		t.Fatalf("copilot: %v %s", err, out)
+	}
+	t.Setenv("COPILOT_CLI", "")
+	shell := cursorFixture(t, "post-tool-use-terminals-cwd.json", projDir)
+	shell["tool_input"] = map[string]any{"command": "go test ./...", "cwd": projDir}
+	if out, err = execCerneStdin(t, payloadString(t, shell), "hook", "tool-notes", "--after"); err != nil || decodeTop(t, out)["additional_context"] != block {
+		t.Fatalf("cursor: %v %s", err, out)
+	}
+}

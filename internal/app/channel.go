@@ -66,13 +66,20 @@ var (
 	channelLineRe = regexp.MustCompile(`(:\d+)+$`)
 )
 
-// directedTo reports whether m is addressed to id (criterion 9): it names
-// id's work or one of its refs, or a path inside id's declared scope. A
-// session's own message is never addressed to it.
+// directedTo reports whether m is addressed to id (criterion 9): a human's
+// message is addressed to every live work (B-0054) — the person asked the
+// room, so every session with work answers or acks it — and an agent's when
+// it names id (namedTo). A session's own message is never addressed to it.
 func directedTo(m room.Message, id channelIdentity) bool {
 	if id.Work == "" || m.Nick == id.Work {
 		return false
 	}
+	return m.Human || namedTo(m, id)
+}
+
+// namedTo reports whether m names id's work or one of its refs, or a path
+// inside id's declared scope.
+func namedTo(m room.Message, id channelIdentity) bool {
 	for _, ref := range channelRefRe.FindAllString(m.Body, -1) {
 		if ref == id.Work || slices.Contains(id.Refs, ref) {
 			return true
@@ -167,6 +174,7 @@ type injItem struct {
 	m        room.Message
 	group    int
 	directed bool // addressed to the session — a human message can be too
+	shown    bool // already shown inline to the session: ranks after the unseen
 }
 
 func (it injItem) prefix() string {
@@ -289,7 +297,7 @@ func ChannelInject(cacheDir, repoDir, sess string, consume bool, now time.Time) 
 			case directed:
 				group = groupDirected
 			}
-			pending = append(pending, injItem{m: m, group: group, directed: directed})
+			pending = append(pending, injItem{m: m, group: group, directed: directed, shown: cs.shownTo(m, sess)})
 		}
 		if len(pending) == 0 {
 			return nil, nil
@@ -313,7 +321,9 @@ func ChannelInject(cacheDir, repoDir, sess string, consume bool, now time.Time) 
 
 // renderInjection picks and formats the inline set within the budget. Human
 // messages are always inline (they pierce the cap); the rest fill up to the
-// cap by priority, newest first within a group. Every body is cut to
+// cap by priority, within a group the ones not shown yet first (an addressed
+// message repeats until answered: it must not starve an unseen one, critic
+// C6), then newest first. Every body is cut to
 // min(280 runes, its equal share of the remaining bytes), which holds the
 // whole block under channelBudgetBytes by construction.
 func renderInjection(pending []injItem, header string) (string, []room.Message) {
@@ -321,6 +331,12 @@ func renderInjection(pending []injItem, header string) (string, []room.Message) 
 	slices.SortStableFunc(ranked, func(a, b injItem) int {
 		if a.group != b.group {
 			return a.group - b.group
+		}
+		if a.shown != b.shown {
+			if a.shown {
+				return 1
+			}
+			return -1
 		}
 		return b.m.Seq - a.m.Seq
 	})
@@ -331,12 +347,17 @@ func renderInjection(pending []injItem, header string) (string, []room.Message) 
 		}
 	}
 	sel := ranked[:min(len(ranked), max(humans, channelInlineCap))]
-	anyDirected := slices.ContainsFunc(pending, func(it injItem) bool { return it.directed })
+	directedPending := 0
+	for _, it := range pending {
+		if it.directed {
+			directedPending++
+		}
+	}
 
 	var tail string
 	per := 0
 	for {
-		tail = injectionTail(sel, len(pending)-len(sel), anyDirected)
+		tail = injectionTail(sel, len(pending)-len(sel), directedPending)
 		used := len(header) + len(tail)
 		for _, it := range sel {
 			used += len(it.prefix()) + 1
@@ -372,8 +393,10 @@ func renderInjection(pending []injItem, header string) (string, []room.Message) 
 }
 
 // injectionTail is the count line for what did not fit inline, plus the
-// protocol line when anything addressed is pending (criterion 17).
-func injectionTail(sel []injItem, more int, anyDirected bool) string {
+// protocol line when anything addressed is pending (criterion 17) — of
+// directedPending addressed messages, it names for an ack only the inline ones
+// and points at the read for the rest (critic C15).
+func injectionTail(sel []injItem, more, directedPending int) string {
 	var b strings.Builder
 	if more > 0 {
 		fmt.Fprintf(&b, "+%d more — cerne msg read\n", more)
@@ -389,7 +412,10 @@ func injectionTail(sel []injItem, more int, anyDirected bool) string {
 	case len(directed) > 0:
 		fmt.Fprintf(&b, "↳ addressed to you: answer with cerne msg send \"<text>\" (any later message of yours counts) or cerne msg ack %s\n",
 			strings.Trim(fmt.Sprint(directed), "[]"))
-	case anyDirected: // only in the count line: never an ack the reader cannot see (critic C15)
+		if directedPending > len(directed) {
+			b.WriteString("↳ more addressed to you, not shown above: read them with cerne msg read\n")
+		}
+	case directedPending > 0: // only in the count line: never an ack the reader cannot see (critic C15)
 		b.WriteString("↳ addressed to you, not shown above: read it with cerne msg read\n")
 	}
 	return b.String()
@@ -600,23 +626,30 @@ func ChannelRead(cacheDir, repoDir, sess string, now time.Time) ([]ChannelMessag
 		}
 	}
 	cs := channelState{msgs: msgs, dels: dels}
+	roster := channelRoster(cacheDir, active)
+	live := map[string]bool{}
+	for _, r := range roster {
+		live[r.Work] = r.Live
+	}
 	var out []ChannelMessage
 	for _, m := range liveMessages(repoDir, msgs, now) {
-		out = append(out, cs.derive(m, works))
+		out = append(out, cs.derive(m, works, live))
 	}
-	return out, channelRoster(cacheDir, active), nil
+	return out, roster, nil
 }
 
 // derive computes m's targets and state against the works: addressed to an
-// active work by id, ref or path; to a closed one only by its W- id (its old
-// paths would match half the channel) — that target is marked Closed.
-func (cs channelState) derive(m room.Message, works []store.Work) ChannelMessage {
+// active work by id, ref or path, and a human's message to every live one
+// (B-0054: an active work with no session here is no target — nobody would
+// receive it); to a closed one only by its W- id (its old paths would match
+// half the channel) — that target is marked Closed.
+func (cs channelState) derive(m room.Message, works []store.Work, live map[string]bool) ChannelMessage {
 	cm := ChannelMessage{Message: m}
 	cm.Session = "" // a session id lets `msg send --session` speak as its work: never served
 	named := channelRefRe.FindAllString(m.Body, -1)
 	for _, w := range works {
 		switch {
-		case w.State == domain.WorkActive && directedTo(m, identityOf(w)):
+		case w.State == domain.WorkActive && w.ID != m.Nick && (m.Human && live[w.ID] || namedTo(m, identityOf(w))):
 			cm.Targets = append(cm.Targets, ChannelTarget{Work: w.ID})
 		case w.State != domain.WorkActive && w.ID != m.Nick && slices.Contains(named, w.ID):
 			cm.Targets = append(cm.Targets, ChannelTarget{Work: w.ID, Closed: true})

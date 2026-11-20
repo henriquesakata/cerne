@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -15,11 +16,13 @@ import (
 	"github.com/henriquesakata/cerne/internal/project"
 )
 
-// Prompt notes (B-0020). The UserPromptSubmit hook matches the user's prompt
-// against the titles of the active notes and runbooks in the local index and
-// hands the agent up to 3 `id — title` lines, never the body, never twice in
-// one session (the seen list is shared with the notes-on-edit block). Local
-// only — it never pulls or reindexes — and fail-open: any error is silence.
+// Prompt notes (B-0020) and the project channel (B-0054). The UserPromptSubmit
+// hook delivers the session's pending channel messages, then matches the
+// user's prompt against the titles of the active notes and runbooks in the
+// local index and hands the agent up to 3 `id — title` lines, never the body,
+// never twice in one session (the seen list is shared with the notes-on-edit
+// block). Local only — it never pulls or reindexes — and fail-open: any error
+// is silence.
 
 // promptNotesBudget is the hard deadline of the lookup: a prompt is never held.
 const promptNotesBudget = 200 * time.Millisecond
@@ -40,10 +43,10 @@ func newHookPromptNotesCmd() *cobra.Command {
 			in, err := decodeHookInput(cmd.InOrStdin())
 			// Cursor runs the .claude hooks but discards their context: nothing to
 			// print, and no id may be marked as shown (B-0020).
-			if err != nil || in.cursor() || in.SessionID == "" || strings.TrimSpace(in.Prompt) == "" {
+			if err != nil || in.cursor() || in.SessionID == "" {
 				return nil
 			}
-			block := promptNotesBlock(in.CWD, in.SessionID, in.Prompt)
+			block := promptChannel(in.CWD, in.SessionID, promptNotesBlock(in.CWD, in.SessionID, in.Prompt))
 			if block == "" {
 				return nil
 			}
@@ -56,8 +59,34 @@ func newHookPromptNotesCmd() *cobra.Command {
 	}
 }
 
+// promptChannel puts the session's pending channel messages ahead of block:
+// the user's prompt is a contact point (B-0054), so a session that only
+// converses still hears the channel. The Copilot CLI also runs this hook and
+// ignores its output, so there it consumes nothing.
+func promptChannel(dir, sess, block string) string {
+	if os.Getenv("COPILOT_CLI") == "1" {
+		return block
+	}
+	cfg, projDir, err := project.LoadConfig(dir)
+	if err != nil {
+		return block
+	}
+	cacheDir, err := project.CacheDir(cfg.ProjectID)
+	if err != nil {
+		return block
+	}
+	repoDir, err := guardedRepoDir(cacheDir, cfg, projDir)
+	if err != nil {
+		return block // F-0434
+	}
+	return channelThen(cacheDir, repoDir, sess, block)
+}
+
 // promptNotesBlock is the reminder for prompt in the project at dir, or "".
 func promptNotesBlock(dir, sess, prompt string) string {
+	if strings.TrimSpace(prompt) == "" {
+		return ""
+	}
 	cfg, projDir, err := project.LoadConfig(dir)
 	if err != nil || !project.PromptNotes(projDir) || !cloneIsOurs(cfg, projDir) {
 		return ""

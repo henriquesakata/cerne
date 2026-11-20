@@ -16,7 +16,8 @@ import (
 )
 
 // Tool notes (F-0457): the notes whose declared trigger matches a tool call,
-// shown to the agent through the context channel its harness documents —
+// plus the session's pending project-channel messages (B-0054), shown to the
+// agent through the context channel its harness documents —
 // before the tool on Claude Code and Codex (PreToolUse additionalContext),
 // right after it on Cursor, Gemini and Copilot, whose pre-tool hooks can only
 // deny. Local only and fail-open like every hook subcommand: any error is
@@ -118,6 +119,9 @@ func runHookToolNotes(cmd *cobra.Command, format string, after bool) {
 	default:
 		block = notesOnEditBlock(cacheDir, repoDir, projDir, in.SessionID, edited, " (after this edit)")
 	}
+	// A shell command is a channel contact point too (B-0054): a session that
+	// works only through Bash would otherwise hear the channel only at start.
+	block = channelThen(cacheDir, repoDir, in.SessionID, block)
 	if block == "" {
 		return
 	}

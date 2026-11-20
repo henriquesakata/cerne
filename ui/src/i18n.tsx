@@ -704,6 +704,8 @@ const ptBR = {
       answered: 'respondida',
     } satisfies Record<ChannelState, string>,
     targetNotDelivered: (work: string) => `${work} ainda não recebeu`,
+    notDeliveredHint:
+      'Ainda não recebida: uma sessão viva só recebe ao passar por um ponto de contato — o próximo prompt, comando, edição ou início de sessão do agente.',
     targetDelivered: (work: string) => `${work} recebeu — sem resposta`,
     targetAnswered: (work: string) => `${work} respondeu`,
     targetAcked: (work: string) => `${work} reconheceu`,
@@ -2243,6 +2245,8 @@ const en: Messages = {
       answered: 'answered',
     },
     targetNotDelivered: (work: string) => `${work} has not received it yet`,
+    notDeliveredHint:
+      'Not received yet: a live session gets it only at a contact point — the agent\'s next prompt, command, edit or session start.',
     targetDelivered: (work: string) => `${work} received it — no reply yet`,
     targetAnswered: (work: string) => `${work} replied`,
     targetAcked: (work: string) => `${work} acked`,
