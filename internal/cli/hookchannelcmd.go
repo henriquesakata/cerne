@@ -246,6 +246,20 @@ func channelBlock(projectID, sess string, consume bool) string {
 	return block
 }
 
+// channelThen puts session sess's pending channel block (F-0325) ahead of
+// block, consuming it, at a mid-session contact point: an edit, a shell
+// command, a prompt (B-0054). Fail-open: any error is no channel.
+func channelThen(cacheDir, repoDir, sess, block string) string {
+	ch, err := app.ChannelInject(cacheDir, repoDir, sess, true, time.Now().UTC())
+	switch {
+	case err != nil || ch == "":
+		return block
+	case block == "":
+		return ch
+	}
+	return ch + "\n\n" + block
+}
+
 // exportSession appends `export CERNE_SESSION=<id>` to CLAUDE_ENV_FILE, which
 // Claude Code sources before every Bash call of the session (R-0034): the
 // agent's own `cerne msg|next|status` then know which session they run in.

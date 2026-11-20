@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/henriquesakata/cerne/internal/room"
 )
 
 func promptJSON(t *testing.T, sess, cwd, prompt string) string {
@@ -153,5 +155,39 @@ func TestPromptNotesTitleCap(t *testing.T) {
 	out, _ := execCerneStdin(t, promptJSON(t, "s", projDir, "webhook cliente timeout palavra"), "hook", "prompt-notes")
 	if !strings.Contains(out, "N-0001") || len(out) > 600 || !strings.Contains(out, "…") {
 		t.Fatalf("title not capped (%d bytes): %s", len(out), out)
+	}
+}
+
+// TestPromptDeliversChannel (B-0054 crit. 1): the user's prompt is a channel
+// contact point — a session that only converses gets its pending messages in
+// the UserPromptSubmit envelope, once. Cursor discards this context and the
+// Copilot CLI ignores it, so neither consumes anything.
+func TestPromptDeliversChannel(t *testing.T) {
+	projDir, repoDir, block := channelContactFixture(t)
+	chDir := filepath.Join(filepath.Dir(repoDir), "rooms")
+	t.Setenv("COPILOT_CLI", "1")
+	if out, err := execCerneStdin(t, promptJSON(t, "sess-a", projDir, "oi"), "hook", "prompt-notes"); err != nil || out != "" {
+		t.Fatalf("copilot cli: %v %q, want silence", err, out)
+	}
+	t.Setenv("COPILOT_CLI", "")
+	cursor, err := json.Marshal(map[string]any{"session_id": "sess-a", "cwd": projDir, "prompt": "oi", "cursor_version": "3.25.6"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, err := execCerneStdin(t, string(cursor), "hook", "prompt-notes"); err != nil || out != "" {
+		t.Fatalf("cursor: %v %q, want silence", err, out)
+	}
+	if dels, _ := room.OpenChannel(chDir).Deliveries(); len(dels) != 0 {
+		t.Fatalf("a host that drops the context consumed the channel: %+v", dels)
+	}
+	out, err := execCerneStdin(t, promptJSON(t, "sess-a", projDir, "oi"), "hook", "prompt-notes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := channelEnvelope(t, out); c.HookSpecificOutput.HookEventName != "UserPromptSubmit" || c.HookSpecificOutput.AdditionalContext != block {
+		t.Fatalf("envelope = %+v, want the channel block %q", c, block)
+	}
+	if out, err := execCerneStdin(t, promptJSON(t, "sess-a", projDir, "oi"), "hook", "prompt-notes"); err != nil || out != "" {
+		t.Fatalf("second prompt: %v %q, want zero bytes", err, out)
 	}
 }
