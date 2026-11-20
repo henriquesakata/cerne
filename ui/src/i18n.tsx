@@ -219,6 +219,8 @@ const ptBR = {
     checkHint: 'Consulta cada tracker só para leitura; leva até 5 s por tracker.',
     checkDone: (time: string, ok: number, drift: number, unchecked: number) =>
       `Conferido às ${time}: ${ok} em dia, ${drift} divergentes, ${unchecked} não conferidos.`,
+    listCapped: (tracker: string, n: number) =>
+      `${tracker}: a lista parou no teto de 100 issues abertas; ${n} ${n === 1 ? 'card não pôde' : 'cards não puderam'} ser conferido${n === 1 ? '' : 's'}.`,
     checkOff: 'O espelho está desligado: não há o que conferir.',
     checkError: (msg: string) => `A conferência falhou: ${msg}`,
     count: (n: number) => `${n} ${n === 1 ? 'card espelhado' : 'cards espelhados'}`,
@@ -1755,6 +1757,8 @@ const en: Messages = {
     checkHint: 'Asks each tracker, read-only; takes up to 5 s per tracker.',
     checkDone: (time: string, ok: number, drift: number, unchecked: number) =>
       `Checked at ${time}: ${ok} up to date, ${drift} drifted, ${unchecked} not checked.`,
+    listCapped: (tracker: string, n: number) =>
+      `${tracker}: the list stopped at the 100-open-issue cap; ${n} ${n === 1 ? 'card' : 'cards'} could not be checked.`,
     checkOff: 'The mirror is off: there is nothing to check.',
     checkError: (msg: string) => `The check failed: ${msg}`,
     count: (n: number) => `${n} mirrored ${n === 1 ? 'card' : 'cards'}`,

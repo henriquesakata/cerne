@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -116,6 +117,23 @@ func TestMirrorSyncCmd(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "F-0001") || !strings.Contains(stderr, "tracker pub not configured") {
 		t.Fatalf("stderr lacks F-0001's warning:\n%s", stderr)
+	}
+}
+
+// F-0469 crit. 1: a tracker list at the 100-issue cap is noted on stderr and
+// the sync still exits 0.
+func TestMirrorSyncCmdNotesListCap(t *testing.T) {
+	pub := &trackertest.Fake{Name: "pub"}
+	projDir, _ := mirrorCLIProject(t, pub)
+	for i := 0; i < 100; i++ {
+		pub.Open("Issue "+strconv.Itoa(i), "", "")
+	}
+	stdout, stderr, err := execCerneSplit(t, "mirror", "sync", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("mirror sync: %v\n%s%s", err, stdout, stderr)
+	}
+	if !strings.Contains(stderr, "pub") || !strings.Contains(stderr, "not imported") {
+		t.Fatalf("stderr lacks the cap note:\n%s", stderr)
 	}
 }
 

@@ -251,6 +251,9 @@ func SyncMirror(repoDir, projDir string) (MirrorSyncReport, error) {
 			runs[tc.Name].Errors = append(runs[tc.Name].Errors, err.Error())
 			continue
 		}
+		if len(remotes) >= mirrorListCap {
+			rep.Notes = append(rep.Notes, listCapNote(tc))
+		}
 		for _, r := range remotes {
 			if !linked[r.URL] {
 				linked[r.URL] = true
@@ -320,6 +323,15 @@ func linkedURLs(repoDir string) (map[string]bool, error) {
 
 // listOpen lists tc's open issues carrying its label, under mirrorTimeout.
 func listOpen(tc tracker.Config) ([]tracker.Remote, error) { return listOpenLabeled(tc, tc.Label) }
+
+// listCapNote tells that tc's list stopped at the cap, so issues past it were
+// not read, and what to do about it (F-0469).
+func listCapNote(tc tracker.Config) string {
+	if tc.Label != "" {
+		return fmt.Sprintf("cerne: mirror sync <- %s: %d or more open issues carry label %q; issues past the first %d were not imported. They are imported once fewer than %d open issues carry it.", tc.Name, mirrorListCap, tc.Label, mirrorListCap, mirrorListCap)
+	}
+	return fmt.Sprintf("cerne: mirror sync <- %s: listed %d open issues, the most one sync reads; issues past them were not imported. Set a label on the tracker record so only the issues to import are listed.", tc.Name, mirrorListCap)
+}
 
 // listOpenLabeled lists tc's open issues carrying label ("" = every one), under mirrorTimeout.
 func listOpenLabeled(tc tracker.Config, label string) ([]tracker.Remote, error) {
