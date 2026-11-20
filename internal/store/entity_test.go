@@ -115,6 +115,41 @@ func TestDecisionRoundTrip(t *testing.T) {
 	}
 }
 
+// E-0005 criterion 22 (T-0018): a decision carries what it informs, and a
+// decision saved before the field loads and saves unchanged.
+func TestDecisionInforms(t *testing.T) {
+	dir := t.TempDir()
+	legacy := `{"id":"D-0001","title":"Use Quarkus","state":"active","created_at":"2026-05-01T09:00:00Z","updated_at":"2026-05-01T09:00:00Z"}`
+	p := filepath.Join(dir, "entities", "decisions", "D-0001.json")
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old, err := LoadDecision(dir, "D-0001")
+	if err != nil || old.Informs != nil || old.Title != "Use Quarkus" || old.State != domain.DecisionActive {
+		t.Fatalf("legacy decision = %+v, %v", old, err)
+	}
+	if err := SaveDecision(dir, old); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(p); strings.Contains(string(data), "informs") {
+		t.Fatalf("a decision with no link stores an informs key:\n%s", data)
+	}
+	old.Informs = []string{"F-0001", "T-0002"}
+	if err := SaveDecision(dir, old); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(p); !strings.Contains(string(data), `"informs"`) {
+		t.Fatalf("informs not stored:\n%s", data)
+	}
+	got, err := LoadDecision(dir, "D-0001")
+	if err != nil || len(got.Informs) != 2 || got.Informs[0] != "F-0001" || got.Informs[1] != "T-0002" {
+		t.Fatalf("informs = %v, %v, want [F-0001 T-0002]", got.Informs, err)
+	}
+}
+
 func TestReferenceRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	want := Reference{

@@ -85,6 +85,7 @@ type Decision struct {
 	Reason       string               `json:"reason,omitempty"`
 	Facets       []string             `json:"facets,omitempty"`     // closed-set axis (D-0002): infra/code/data/process/auth
 	Components   []string             `json:"components,omitempty"` // curated subsystem/tool axis (D-0002): gitea, kpack, …
+	Informs      []string             `json:"informs,omitempty"`    // F-/E-/T-/B-/D-/RB-/N-/I- ids this decision informs (E-0005)
 	// ReviewedAt: the last 'cerne decision keep' (F-0385) — lint's
 	// stale-decision counts its signals from here instead of CreatedAt.
 	ReviewedAt *time.Time `json:"reviewed_at,omitempty"`
