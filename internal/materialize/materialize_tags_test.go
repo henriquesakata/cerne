@@ -10,8 +10,8 @@ import (
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
-// TestMaterializeNoteTags: an active note's facets/components render in its
-// CONTEXT.md "Conhecimento" bullet.
+// TestMaterializeNoteTags: an active note's components render, with their
+// counts, in the CONTEXT.md Knowledge section (E-0005 criterion 2).
 func TestMaterializeNoteTags(t *testing.T) {
 	backend := seedBackend(t)
 	n := store.Note{
@@ -36,7 +36,7 @@ func TestMaterializeNoteTags(t *testing.T) {
 		t.Fatalf("Materialize: %v", err)
 	}
 	ctx := readContext(t, docsDir)
-	if !strings.Contains(ctx, "facet infra") || !strings.Contains(ctx, "comp gitea,kpack") {
+	if !strings.Contains(ctx, "Components of the active notes: gitea (1), kpack (1).") {
 		t.Fatalf("CONTEXT.md missing note tags:\n%s", ctx)
 	}
 }

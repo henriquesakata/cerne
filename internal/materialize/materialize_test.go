@@ -14,7 +14,7 @@ import (
 )
 
 // seedBackend creates a plain backend dir (no git) with project.json.
-func seedBackend(t *testing.T, modules ...string) string {
+func seedBackend(t testing.TB, modules ...string) string {
 	t.Helper()
 	dir := t.TempDir()
 	if err := store.InitLayout(dir, store.Project{Name: "Demo", Modules: modules}); err != nil {
@@ -54,7 +54,7 @@ func addDecision(t *testing.T, backendDir, id, title string, state domain.Decisi
 	}
 }
 
-func addReference(t *testing.T, backendDir, id, title string, state domain.ReferenceState, body string) {
+func addReference(t testing.TB, backendDir, id, title string, state domain.ReferenceState, body string) {
 	t.Helper()
 	r := store.Reference{ID: id, Title: title, State: state, CreatedAt: seedTime, UpdatedAt: seedTime}
 	if err := store.SaveReference(backendDir, r); err != nil {
@@ -184,11 +184,11 @@ func TestMaterializeStateProjection(t *testing.T) {
 	}
 }
 
-// TestMaterializeDoneNotMaterializedButListed (F-0131 crit. 5): a done
-// feature yields no .docs/ content files (same as implemented) yet still
-// appears in the CONTEXT.md roster, so the guardian doesn't hide accepted
-// work from the map.
-func TestMaterializeDoneNotMaterializedButListed(t *testing.T) {
+// TestMaterializeDoneNotMaterializedButCounted (F-0131 crit. 5, revised by
+// E-0005 criterion 1): a done feature yields no .docs/ content files (same as
+// implemented) and no roster row — what it delivered is in the code — but the
+// map still counts it, with the command that lists it.
+func TestMaterializeDoneNotMaterializedButCounted(t *testing.T) {
 	backend := seedBackend(t, "core")
 	addFeature(t, backend, "F-0001", "Tema escuro", "core", domain.StateDone,
 		map[string]string{"spec.md": "spec F-0001\n", "plan.md": "plan F-0001\n", "result.md": "result F-0001\n"})
@@ -207,8 +207,8 @@ func TestMaterializeDoneNotMaterializedButListed(t *testing.T) {
 	}
 
 	ctx := readContext(t, docsDir)
-	if !strings.Contains(ctx, "| F-0001 | done |  | core | Tema escuro |  |") {
-		t.Errorf("CONTEXT.md missing done row without docs:\n%s", ctx)
+	if strings.Contains(ctx, "F-0001") || !strings.Contains(ctx, "Not listed: 1 done — 'cerne feature list --state <state>' lists them.") {
+		t.Errorf("CONTEXT.md lists the done feature, or does not count it:\n%s", ctx)
 	}
 }
 
@@ -266,11 +266,15 @@ func TestMaterializeScope(t *testing.T) {
 	if strings.Contains(ctx, "F-0002") || strings.Contains(ctx, "Tema escuro") {
 		t.Errorf("CONTEXT.md leaks out-of-scope feature:\n%s", ctx)
 	}
-	// Decisions and references are project-wide: always included.
-	for _, want := range []string{"D-0001", "R-0001"} {
+	// Decisions and references are project-wide: always included (a
+	// reference as a count since E-0005, its file still materialized).
+	for _, want := range []string{"D-0001", "1 current reference"} {
 		if !strings.Contains(ctx, want) {
 			t.Errorf("CONTEXT.md missing project-wide entry %s:\n%s", want, ctx)
 		}
+	}
+	if _, ok := manifest["current/references/R-0001-mapa-do-dominio.md"]; !ok {
+		t.Errorf("project-wide reference not materialized: %v", manifest)
 	}
 }
 
@@ -369,10 +373,6 @@ _None._
 ## Knowledge
 
 _None._
-
-## References
-
-_None._
 `
 	if got := readContext(t, docsDir); got != want {
 		t.Errorf("CONTEXT.md mismatch\n--- got ---\n%s\n--- want ---\n%s", got, want)
@@ -424,7 +424,7 @@ func TestMaterializeContextEpics(t *testing.T) {
 	}
 }
 
-func addNote(t *testing.T, backendDir, id, title string, state domain.NoteState, body string) {
+func addNote(t testing.TB, backendDir, id, title string, state domain.NoteState, body string) {
 	t.Helper()
 	n := store.Note{ID: id, Title: title, State: state, CreatedAt: seedTime, UpdatedAt: seedTime}
 	if err := store.SaveNote(backendDir, n); err != nil {
@@ -450,9 +450,10 @@ func TestMaterializeNotes(t *testing.T) {
 	}
 	ctx := readContext(t, docsDir)
 
-	// Active note is materialized and linked under the Conhecimento section.
-	if !strings.Contains(ctx, "## Knowledge\n\n- [N-0001 — go-git ignora ssh config](current/notes/N-0001-go-git-ignora-ssh-config.md)\n") {
-		t.Errorf("CONTEXT.md missing active note under Conhecimento:\n%s", ctx)
+	// Active note is materialized and counted under Knowledge (E-0005: no
+	// line per note, the group search instead).
+	if !strings.Contains(ctx, "## Knowledge\n\n1 active note, 0 current references.\nPull the notes of a group: cerne note list --component a,b,c") {
+		t.Errorf("CONTEXT.md missing the active note count under Knowledge:\n%s", ctx)
 	}
 	rel := "current/notes/N-0001-go-git-ignora-ssh-config.md"
 	if _, ok := manifest[rel]; !ok {
@@ -484,7 +485,6 @@ func TestMaterializeEmptyBackend(t *testing.T) {
 		"## Epics\n\n_None._\n",
 		"## Active decisions\n\n_None._\n",
 		"## Knowledge\n\n_None._\n",
-		"## References\n\n_None._\n",
 	} {
 		if !strings.Contains(ctx, want) {
 			t.Errorf("CONTEXT.md missing empty section %q:\n%s", want, ctx)

@@ -54,7 +54,7 @@ func TestNoteTagsGoldenPath(t *testing.T) {
 	// CONTEXT.md surfaces the tags after a pull.
 	mustCerne(t, "pull", "--dir", proj)
 	ctx := mustRead(t, filepath.Join(proj, ".docs", "CONTEXT.md"))
-	if !strings.Contains(ctx, "facet infra") || !strings.Contains(ctx, "comp gitea") {
+	if !strings.Contains(ctx, "Components of the active notes: gitea (1).") {
 		t.Fatalf("CONTEXT.md missing note tags:\n%s", ctx)
 	}
 
