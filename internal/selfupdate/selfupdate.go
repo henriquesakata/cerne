@@ -3,7 +3,8 @@
 // /releases/latest redirect, download the asset and SHA256SUMS, verify, then
 // stage next to the executable and rename. Its callers are `cerne update` and
 // the cerne ui panel's release check and Update button (F-0480, behind
-// ui.update_check): the binary's only version checks (F-0476 crit. 11).
+// ui.update_check) and the session-start notice (F-0479, behind update.notify):
+// the binary's only version checks (F-0476 crit. 11).
 package selfupdate
 
 import (
@@ -156,8 +157,10 @@ var client = &http.Client{
 
 // Latest resolves the latest release tag from the /releases/latest redirect,
 // which ends at /releases/tag/<tag>: no API call, so no anonymous rate limit.
-func Latest(base string) (string, error) {
-	resp, err := client.Head(strings.TrimRight(base, "/") + "/releases/latest")
+func Latest(base string) (string, error) { return latestWith(client, base) }
+
+func latestWith(c *http.Client, base string) (string, error) {
+	resp, err := c.Head(strings.TrimRight(base, "/") + "/releases/latest")
 	if err != nil {
 		return "", err
 	}
