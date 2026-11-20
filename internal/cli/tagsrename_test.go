@@ -98,17 +98,61 @@ func TestTagsRenameWritesAndMerges(t *testing.T) {
 	}
 }
 
+// The --json report keeps its field names in both modes: read as a plain map,
+// not through the struct that writes it.
 func TestTagsRenameJSON(t *testing.T) {
 	projDir := seedTagsRename(t)
-	js, err := execCerne(t, "tags", "rename", "old", "gitea", "--dry-run", "--json", "--dir", projDir)
-	if err != nil {
-		t.Fatalf("tags rename --json: %v\n%s", err, js)
+	for _, tc := range []struct {
+		args          []string
+		dryRun, merge bool
+	}{
+		{[]string{"old", "gitea", "--dry-run"}, true, true},
+		{[]string{"old", "fresh"}, false, false},
+	} {
+		js, _, err := execCerneSplit(t, append(append([]string{"tags", "rename"}, tc.args...), "--json", "--dir", projDir)...)
+		if err != nil {
+			t.Fatalf("tags rename %v --json: %v\n%s", tc.args, err, js)
+		}
+		var rep map[string]any
+		if err := json.Unmarshal([]byte(js), &rep); err != nil {
+			t.Fatalf("tags rename %v --json: %v\n%s", tc.args, err, js)
+		}
+		ents, _ := rep["entities"].([]any)
+		if rep["from"] != "old" || rep["to"] != tc.args[1] || rep["dry_run"] != tc.dryRun || rep["merge"] != tc.merge || len(ents) != 3 {
+			t.Fatalf("tags rename %v --json = %s", tc.args, js)
+		}
+		if _, ok := rep["to_count"]; !ok {
+			t.Errorf("no to_count in %s", js)
+		}
+		first, _ := ents[0].(map[string]any)
+		for _, k := range []string{"kind", "id", "state", "title", "before", "after"} {
+			if _, ok := first[k]; !ok {
+				t.Errorf("entity has no %q: %v", k, first)
+			}
+		}
 	}
-	var rep app.RenameReport
-	if err := json.Unmarshal([]byte(js), &rep); err != nil {
-		t.Fatalf("tags rename --json: %v\n%s", err, js)
+	var rep app.RenameReport // the Go shape still decodes the output
+	js, _, _ := execCerneSplit(t, "tags", "rename", "fresh", "ci", "--dry-run", "--json", "--dir", projDir)
+	if err := json.Unmarshal([]byte(js), &rep); err != nil || rep.From != "fresh" || len(rep.Entities) != 3 {
+		t.Fatalf("report = %+v, %v", rep, err)
 	}
-	if !rep.DryRun || !rep.Merge || rep.ToCount != 1 || len(rep.Entities) != 3 || rep.Entities[0].ID != "F-0001" {
-		t.Fatalf("report = %+v", rep)
+}
+
+// L5 (critic round 1): --force passes a new name near an existing one, and the
+// dry run's Apply line carries it.
+func TestTagsRenameForce(t *testing.T) {
+	projDir := seedTagsRename(t)
+	if out, err := execCerne(t, "tags", "rename", "old", "gitee", "--dry-run", "--dir", projDir); err == nil {
+		t.Fatalf("near name accepted without --force:\n%s", out)
+	}
+	out, err := execCerne(t, "tags", "rename", "old", "gitee", "--dry-run", "--force", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "Apply: cerne tags rename old gitee --force\n") {
+		t.Fatalf("dry run with --force: %v\n%s", err, out)
+	}
+	if out, err := execCerne(t, "tags", "rename", "old", "gitee", "--force", "--dir", projDir); err != nil {
+		t.Fatalf("write with --force: %v\n%s", err, out)
+	}
+	if tags, _ := execCerne(t, "tags", "--dir", projDir); !strings.Contains(tags, "  gitee (3)") {
+		t.Fatalf("after the forced rename:\n%s", tags)
 	}
 }
