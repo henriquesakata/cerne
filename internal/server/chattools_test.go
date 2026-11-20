@@ -699,7 +699,7 @@ func TestChatRefusesCrossOrigin(t *testing.T) {
 			{"Origin": "https://evil.example", "Content-Type": "application/json"},
 			{"Content-Type": "text/plain;charset=UTF-8"},
 		} {
-			req := httptest.NewRequest(http.MethodPost, route, strings.NewReader(confirmedBody))
+			req := localRequest(http.MethodPost, route, strings.NewReader(confirmedBody))
 			for k, v := range hdr {
 				req.Header.Set(k, v)
 			}

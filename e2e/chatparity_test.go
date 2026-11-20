@@ -185,7 +185,9 @@ func confirmedChat(t *testing.T, p parityProject, steps []parityStep) parityTerm
 		"confirm":         true,
 	})
 	rec := httptest.NewRecorder()
-	server.New(p.repo, p.proj, p.pid).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/chat", bytes.NewReader(body)))
+	req := httptest.NewRequest(http.MethodPost, "/api/chat", bytes.NewReader(body))
+	req.Host = "127.0.0.1:7717" // the local ui: its writes need a loopback Host (B-0043)
+	server.New(p.repo, p.proj, p.pid).ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("POST /api/chat = %d: %s", rec.Code, rec.Body.String())
 	}

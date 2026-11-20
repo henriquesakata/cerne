@@ -132,9 +132,9 @@ func doJSON(t *testing.T, h http.Handler, method, target, body string, out any) 
 	t.Helper()
 	var req *http.Request
 	if body == "" {
-		req = httptest.NewRequest(method, target, nil)
+		req = localRequest(method, target, nil)
 	} else {
-		req = httptest.NewRequest(method, target, strings.NewReader(body))
+		req = localRequest(method, target, strings.NewReader(body))
 	}
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -1065,6 +1065,20 @@ func TestFeatureDocPutUnknownFeature(t *testing.T) {
 	}
 	if got["error"] != "feature not found" {
 		t.Fatalf("error = %q, want 'feature not found'", got["error"])
+	}
+}
+
+// TestFeatureDocPutRefusesEncodedTraversal pins B-0034: the mux decodes %2F
+// inside a segment, so the id reaches the core as "../../entities/features/F-0001".
+// It names no feature: 404, and nothing is written in the backend clone.
+func TestFeatureDocPutRefusesEncodedTraversal(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	rec := doLocal(t, New(repoDir, projDir, ""), http.MethodPut, "/api/features/..%2F..%2Fentities%2Ffeatures%2FF-0001/docs/spec", "x", &map[string]any{})
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404; body: %s", rec.Code, rec.Body.String())
+	}
+	if _, err := os.Stat(filepath.Join(repoDir, "entities", "features", "F-0001", "spec.md")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the write landed outside content/features: stat err = %v", err)
 	}
 }
 

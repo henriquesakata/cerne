@@ -165,7 +165,7 @@ func TestIdeaCaptureConcurrentAcrossSurfaces(t *testing.T) {
 				return
 			}
 			rec := httptest.NewRecorder()
-			h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/ideas", strings.NewReader(fmt.Sprintf(`{"title":%q}`, text))))
+			h.ServeHTTP(rec, localRequest(http.MethodPost, "/api/ideas", strings.NewReader(fmt.Sprintf(`{"title":%q}`, text))))
 			var got struct {
 				Idea store.Idea `json:"idea"`
 			}
@@ -252,7 +252,7 @@ func TestIdeaWriteRoutesRefuseCrossOrigin(t *testing.T) {
 			{"Origin": "https://evil.example", "Content-Type": "application/json"},
 			{"Content-Type": "text/plain"},
 		} {
-			req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"title":"plantada"}`))
+			req := localRequest(http.MethodPost, path, strings.NewReader(`{"title":"plantada"}`))
 			for k, v := range hdr {
 				req.Header.Set(k, v)
 			}

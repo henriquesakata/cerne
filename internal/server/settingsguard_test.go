@@ -2,11 +2,21 @@ package server
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
+
+// localRequest is httptest.NewRequest as the local ui sends it: a loopback
+// Host, which every write to it requires (B-0043) — httptest's own is
+// example.com.
+func localRequest(method, target string, body io.Reader) *http.Request {
+	req := httptest.NewRequest(method, target, body)
+	req.Host = "127.0.0.1:7717"
+	return req
+}
 
 // doLocal is doJSON from the local ui: a loopback Host, as the browser sends
 // to cerne ui, which the settings writes require (F-0449).
@@ -18,7 +28,7 @@ func doLocal(t *testing.T, h http.Handler, method, target, body string, out any)
 // doJSONWith is doJSON with request headers; "Host" sets the request's host.
 func doJSONWith(t *testing.T, h http.Handler, method, target, body string, headers map[string]string, out any) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(method, target, strings.NewReader(body))
+	req := localRequest(method, target, strings.NewReader(body))
 	for k, v := range headers {
 		if k == "Host" {
 			req.Host = v

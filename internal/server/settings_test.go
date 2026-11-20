@@ -609,7 +609,7 @@ func TestProjectNamePutRefusesCrossOrigin(t *testing.T) {
 		{"Origin": "https://evil.example", "Content-Type": "application/json"},
 		{"Content-Type": "text/plain"},
 	} {
-		req := httptest.NewRequest(http.MethodPut, "/api/project/name", strings.NewReader(`{"name":"Plantado"}`))
+		req := localRequest(http.MethodPut, "/api/project/name", strings.NewReader(`{"name":"Plantado"}`))
 		for k, v := range hdr {
 			req.Header.Set(k, v)
 		}

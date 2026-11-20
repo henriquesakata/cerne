@@ -18,6 +18,12 @@ import (
 // ErrNotFound is the sentinel for an entity file missing from the backend.
 var ErrNotFound = errors.New("entity not found")
 
+// errInvalidID is an id that is not PREFIX-NNNN (ValidEntityID), refused before
+// it reaches a path: an id decoded from a URL may carry "../" (B-0034). It
+// wraps ErrNotFound — no entity has that id — so every caller that answers a
+// missing entity answers this one the same way.
+var errInvalidID = fmt.Errorf("%w: invalid id", ErrNotFound)
+
 // Feature is the persisted form of a feature entity. Parent, when set, is the
 // ID of the feature this one decomposes: a feature referenced as a Parent is an
 // epic (the role is inferred from the link, never a separate flag).
@@ -444,14 +450,31 @@ func LoadAllIdeas(backendDir string) ([]Idea, error) {
 	return loadAllEntities[Idea](backendDir, ideasSubdir)
 }
 
+// entityFile is <backendDir>/<subdir>/<id>.json, or errInvalidID for an id
+// that is not PREFIX-NNNN: the one place an entity id becomes a path (B-0034).
+func entityFile(backendDir, subdir, id string) (string, error) {
+	if !ValidEntityID(id) {
+		return "", fmt.Errorf("%w: %q", errInvalidID, id)
+	}
+	return filepath.Join(backendDir, filepath.FromSlash(subdir), id+".json"), nil
+}
+
 // saveEntity writes the entity to <backendDir>/<subdir>/<id>.json.
 func saveEntity(backendDir, subdir, id string, e any) error {
-	return writeJSONFile(filepath.Join(backendDir, filepath.FromSlash(subdir)), id+".json", e)
+	path, err := entityFile(backendDir, subdir, id)
+	if err != nil {
+		return err
+	}
+	return writeJSONFile(filepath.Dir(path), filepath.Base(path), e)
 }
 
 // deleteEntity removes <backendDir>/<subdir>/<id>.json; ErrNotFound when absent.
 func deleteEntity(backendDir, subdir, id string) error {
-	err := os.Remove(filepath.Join(backendDir, filepath.FromSlash(subdir), id+".json"))
+	path, err := entityFile(backendDir, subdir, id)
+	if err != nil {
+		return err
+	}
+	err = os.Remove(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("%w: %s", ErrNotFound, id)
 	}
@@ -490,8 +513,18 @@ func writeJSONFile(dir, filename string, e any) error {
 }
 
 func loadEntity[T any](backendDir, subdir, id string) (T, error) {
+	path, err := entityFile(backendDir, subdir, id)
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	return readEntity[T](path, id)
+}
+
+// readEntity decodes the entity file at path; id names it in ErrNotFound.
+func readEntity[T any](path, id string) (T, error) {
 	var e T
-	data, err := os.ReadFile(filepath.Join(backendDir, filepath.FromSlash(subdir), id+".json"))
+	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return e, fmt.Errorf("%w: %s", ErrNotFound, id)
 	}
@@ -523,7 +556,7 @@ func loadAllEntities[T any](backendDir, subdir string) ([]T, error) {
 	sort.Strings(ids)
 	entities := make([]T, 0, len(ids))
 	for _, id := range ids {
-		e, err := loadEntity[T](backendDir, subdir, id)
+		e, err := readEntity[T](filepath.Join(dir, id+".json"), id) // a listed name has no separator
 		if err != nil {
 			return nil, err
 		}

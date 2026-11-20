@@ -238,7 +238,7 @@ func TestChatRegisterRemoteNeverCreditsLocalOnlyProvider(t *testing.T) {
 	stubInstalledCLIs(t, "claude", "codex")
 	repoDir, projDir := claudeProject(t, "claude-cli", "")
 	spec := "# Exportar CSV\\n\\n## Problema\\nFalta.\\n\\n## Objetivo e critérios de aceitação\\n\\nX.\\n\\n## Decisões do design\\n\\nX.\\n\\n## Desenho\\n\\nX.\\n\\n## Verificação\\n\\nX.\\n\\n## Execução recomendada (agente)\\n\\nX.\\n\\n## Fora de escopo\\n\\nX.\\n"
-	req := httptest.NewRequest(http.MethodPost, "/api/chat/register", strings.NewReader(`{"title":"Exportar CSV","provider":"openai","model":"gpt-x","spec_body":"`+spec+`"}`))
+	req := localRequest(http.MethodPost, "/api/chat/register", strings.NewReader(`{"title":"Exportar CSV","provider":"openai","model":"gpt-x","spec_body":"`+spec+`"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req = req.WithContext(context.WithValue(req.Context(), remoteKey{}, true))
 	rec := httptest.NewRecorder()
@@ -326,7 +326,7 @@ func TestChatReplyNamesWhoAnswered(t *testing.T) {
 		}
 	}
 	post := func(body string) string {
-		req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(body))
+		req := localRequest(http.MethodPost, "/api/chat", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		New(repoDir, projDir, "p").ServeHTTP(rec, req)

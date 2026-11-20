@@ -64,7 +64,7 @@ func aiResult(t *testing.T, body string) (bool, string) {
 
 func aiDo(t *testing.T, h http.Handler, method, path, body string) (int, string) {
 	t.Helper()
-	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	req := localRequest(method, path, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)

@@ -29,7 +29,7 @@ func TestCreateFeatureDup(t *testing.T) {
 	h := New(repoDir, projDir, "proj")
 	rec := httptest.NewRecorder()
 	body := `{"title":"Corrigir o bug do lock do push urgente"}`
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/features", strings.NewReader(body)))
+	h.ServeHTTP(rec, localRequest(http.MethodPost, "/api/features", strings.NewReader(body)))
 
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want 409: %s", rec.Code, rec.Body.String())
