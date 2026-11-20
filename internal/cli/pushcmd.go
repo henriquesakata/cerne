@@ -101,14 +101,16 @@ func runPush(cmd *cobra.Command, dir string, dryRun, force bool) error {
 	// snapshot we pulled: a remote advance on a DIFFERENT document never blocks
 	// this push (auto-rebase + retry); only the SAME document changed both ways
 	// is a real conflict. Each document carries the version .docs/ last
-	// received (B-0041): the snapshot may be past it. Not under OKF, whose
-	// .docs/ form never hashes like the backend file (index.md marks it).
+	// received (B-0041): the snapshot may be past it. Its hash is not checked
+	// under OKF, whose .docs/ form never hashes like the backend file (index.md
+	// marks it); a document .docs/ never received must be absent there anyway.
 	_, okf := manifest["index.md"]
 	changes := make([]app.FileChange, len(docs))
 	for i, d := range docs {
-		changes[i] = app.FileChange{Path: d.backendRel, Content: d.body}
-		if !okf {
-			changes[i].BaseSum = manifest[d.rel]
+		sum, tracked := manifest[d.rel]
+		changes[i] = app.FileChange{Path: d.backendRel, Content: d.body, New: !tracked}
+		if tracked && !okf {
+			changes[i].BaseSum = sum
 		}
 	}
 	staleBefore := pushedSpecStaleness(ctx.repoDir, docs)

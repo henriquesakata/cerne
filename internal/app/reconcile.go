@@ -27,6 +27,9 @@ type FileChange struct {
 	// sit past a remote edit this document never got: a base blob that hashes
 	// otherwise makes the write a conflict instead of an overwrite.
 	BaseSum string
+	// New marks a document the caller never received: it must be absent at
+	// the base, so one that exists there is a conflict, not an overwrite.
+	New bool
 }
 
 // Conflict names a document whose change collides with a different remote change
@@ -635,8 +638,9 @@ func confirmElidedHead(op *telemetry.Op, repoDir, theirs string) (bool, error) {
 func plan3Way(repoDir, base, theirs string, changes []FileChange) (apply []FileChange, conflicts []Conflict, err error) {
 	for _, ch := range changes {
 		var baseBlob []byte
+		var baseExists bool
 		if base != "" {
-			baseBlob, _, err = gitback.FileBlobAt(repoDir, base, ch.Path)
+			baseBlob, baseExists, err = gitback.FileBlobAt(repoDir, base, ch.Path)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -663,7 +667,8 @@ func plan3Way(repoDir, base, theirs string, changes []FileChange) (apply []FileC
 		default: // whole-file write
 			switch {
 			case theirsExists && bytes.Equal(ch.Content, theirsBlob): // already there
-			case ch.BaseSum != "" && ContentHash(baseBlob) != ch.BaseSum: // base is past my copy
+			case ch.BaseSum != "" && ContentHash(baseBlob) != ch.BaseSum, // base is past my copy
+				ch.New && baseExists: // base has a document I never received
 				conflicts = append(conflicts, Conflict{Path: ch.Path, Diff: shortDiff(ch.Content, theirsBlob)})
 			case bytes.Equal(theirsBlob, baseBlob): // remote untouched: take mine
 				apply = append(apply, FileChange{Path: ch.Path, Content: ch.Content})

@@ -640,3 +640,46 @@ func TestPushRefusesUnreconciledConflict(t *testing.T) {
 		t.Fatalf("push --force left the stash: %v", err)
 	}
 }
+
+// TestNewDocAfterSnapshotMovedIsAConflict (B-0041 review, round 2): B creates
+// F-0001's result.md and pushes; A runs note new, which moves A's snapshot
+// past B's file; A then writes its own result.md. A document .docs/ never
+// received must be absent at the base: A's push conflicts, B's result stays.
+func TestNewDocAfterSnapshotMovedIsAConflict(t *testing.T) {
+	projA, origin, _, specA := pulledFeatureProject(t, "Conteúdo original.")
+	cacheA := os.Getenv("CERNE_CACHE_DIR")
+	projB, cacheB := t.TempDir(), t.TempDir()
+	cfg, err := os.ReadFile(filepath.Join(projA, ".cernerc"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(projB, ".cernerc"), string(cfg))
+	run := func(proj, cache string, args ...string) (string, error) {
+		t.Setenv("CERNE_CACHE_DIR", cache)
+		defer t.Setenv("CERNE_CACHE_DIR", cacheA)
+		return execCerne(t, append(args, "--dir", proj)...)
+	}
+	if out, err := run(projB, cacheB, "pull"); err != nil {
+		t.Fatalf("B pull: %v\n%s", err, out)
+	}
+	result := func(proj string) string {
+		return filepath.Join(proj, ".docs", "current", "features", "F-0001-parcelamento", "result.md")
+	}
+	theirs := "---\ncerne_id: F-0001\n---\n\n# Resultado\n\nResultado de B.\n"
+	mustWrite(t, result(projB), theirs)
+	if out, err := run(projB, cacheB, "push"); err != nil {
+		t.Fatalf("B push: %v\n%s", err, out)
+	}
+	if out, err := run(projA, cacheA, "note", "new", "Nota de A"); err != nil {
+		t.Fatalf("A note new: %v\n%s", err, out)
+	}
+	mustWrite(t, filepath.Join(filepath.Dir(specA), "result.md"), "---\ncerne_id: F-0001\n---\n\n# Resultado\n\nResultado de A.\n")
+
+	if out, err := run(projA, cacheA, "push"); err == nil || !strings.Contains(out, "Conflict in 1") {
+		t.Fatalf("A's push of a result.md B already created must conflict: %v\n%s", err, out)
+	}
+	head, _ := gitback.HeadSHA(origin)
+	if stored, _, _ := gitback.FileBlobAt(origin, head, "content/features/F-0001/result.md"); string(stored) != theirs {
+		t.Fatalf("backend result.md = %q, want B's", stored)
+	}
+}
