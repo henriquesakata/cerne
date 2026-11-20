@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/verbs"
 )
 
 // newTagsCmd is the tag vocabulary group (E-0005 criterion 21): run bare, it
@@ -32,6 +33,7 @@ func newTagsCmd() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.PersistentFlags().MarkHidden("dir")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output")
+	cmd.AddCommand(verbs.MarkChat(newTagsRenameCmd(&dir)))
 	return cmd
 }
 
