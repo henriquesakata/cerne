@@ -99,6 +99,12 @@ type TaskPack struct {
 // TaskContext assembles the package of id within budget tokens (<= 0: the
 // default).
 func TaskContext(repoDir, id string, budget int) (TaskPack, error) {
+	return taskContext(repoDir, id, budget, true)
+}
+
+// taskContext is TaskContext, ring (d) only with content: the benchmark of
+// criterion 15 times the package with and without it.
+func taskContext(repoDir, id string, budget int, content bool) (TaskPack, error) {
 	if budget <= 0 {
 		budget = DefaultContextBudget
 	}
@@ -114,7 +120,7 @@ func TaskContext(repoDir, id string, budget int) (TaskPack, error) {
 	if err != nil {
 		return TaskPack{}, err
 	}
-	p := TaskPack{ID: t.f.ID, Title: t.f.Title, State: string(t.f.State), Items: t.neighbourhood(repoDir, notes, refs, true),
+	p := TaskPack{ID: t.f.ID, Title: t.f.Title, State: string(t.f.State), Items: t.neighbourhood(repoDir, notes, refs, true, content),
 		Components: t.f.Components, Budget: budget}
 	if p.Components == nil {
 		p.Components = []string{}
@@ -143,7 +149,7 @@ func TaskIndex(repoDir, id string) ([]ContextItem, error) {
 	if err != nil {
 		return nil, err
 	}
-	return t.neighbourhood(repoDir, notes, nil, false), nil
+	return t.neighbourhood(repoDir, notes, nil, false, false), nil
 }
 
 // StageDoc is the document of a feature's stage (F-0338) among the real ones
@@ -205,9 +211,9 @@ func realDocs(repoDir, id string) map[string]string {
 	return out
 }
 
-// neighbourhood lists rings (a) to (c), and (d) when full; without full only
+// neighbourhood lists rings (a) to (c), and (d) with content; without full only
 // notes are listed and no other entity is loaded.
-func (t task) neighbourhood(repoDir string, notes []store.Note, refs []store.Reference, full bool) []ContextItem {
+func (t task) neighbourhood(repoDir string, notes []store.Note, refs []store.Reference, full, content bool) []ContextItem {
 	byID := make(map[string]store.Note, len(notes))
 	for _, n := range notes {
 		byID[n.ID] = n
@@ -362,7 +368,7 @@ func (t task) neighbourhood(repoDir string, notes []store.Note, refs []store.Ref
 	}
 
 	// (d) the index, by the title and the problem.
-	if full {
+	if content {
 		listed := 0
 		for id := range seen {
 			if strings.HasPrefix(id, "N-") {
