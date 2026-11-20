@@ -555,3 +555,31 @@ func execFetch(workdir string) error {
 	markSynced(workdir)
 	return nil
 }
+
+// MergeFile is a line-level 3-way merge of mine and theirs over base (B-0041),
+// run by `git merge-file`. ok is false when the hunks overlap, and also when
+// there is no git binary or the merge cannot run: the caller then keeps its
+// non-merging path, so a missing git costs a conflict, never a wrong merge.
+func MergeFile(base, mine, theirs []byte) (merged []byte, ok bool) {
+	if gitBin() == "" {
+		return nil, false
+	}
+	dir, err := os.MkdirTemp("", "cerne-merge-")
+	if err != nil {
+		return nil, false
+	}
+	defer os.RemoveAll(dir)
+	files := map[string][]byte{"mine": mine, "base": base, "theirs": theirs}
+	for name, body := range files {
+		if os.WriteFile(filepath.Join(dir, name), body, 0o600) != nil {
+			return nil, false
+		}
+	}
+	// Exit 0 is a clean merge; a positive exit counts the conflicting hunks.
+	// Not gitRun: it trims the trailing newline off the document.
+	cmd := newGitCmd(context.Background(), dir, "merge-file", "-p", "mine", "base", "theirs")
+	if cmd.Run() != nil {
+		return nil, false
+	}
+	return []byte(builderText(cmd.Stdout)), true
+}

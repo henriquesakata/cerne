@@ -369,6 +369,88 @@ func TestPullSameDocConflictNonDestructive(t *testing.T) {
 	}
 }
 
+// TestTwoAuthorsDisjointParagraphsBothSurvive (B-0041) runs the bug's seven
+// steps: A and B, each with its own clone of one backend, edit different
+// paragraphs of the same note. A's push conflicts; A's pull must merge the two
+// edits line by line, and A's next push must keep B's paragraph in the backend.
+func TestTwoAuthorsDisjointParagraphsBothSurvive(t *testing.T) {
+	projA, origin, _ := setupProject(t)
+	cacheA := os.Getenv("CERNE_CACHE_DIR")
+	body := filepath.Join(t.TempDir(), "n.md")
+	mustWrite(t, body, "Paragrafo um.\n\nParagrafo dois.\n\nParagrafo tres.\n")
+	rb(t, projA, "note", "new", "Nota compartilhada", "--file", body)
+	rb(t, projA, "pull")
+
+	// 1. B: a second project on the same backend, with its own cache clone.
+	projB, cacheB := t.TempDir(), t.TempDir()
+	cfg, err := os.ReadFile(filepath.Join(projA, ".cernerc"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(projB, ".cernerc"), string(cfg))
+	run := func(proj, cache string, args ...string) (string, error) {
+		t.Setenv("CERNE_CACHE_DIR", cache)
+		defer t.Setenv("CERNE_CACHE_DIR", cacheA)
+		return execCerne(t, append(args, "--dir", proj)...)
+	}
+	if out, err := run(projB, cacheB, "pull"); err != nil {
+		t.Fatalf("B pull: %v\n%s", err, out)
+	}
+	note := func(proj string) string {
+		m, _ := filepath.Glob(filepath.Join(proj, ".docs", "current", "notes", "N-0001-*.md"))
+		if len(m) != 1 {
+			t.Fatalf("materialized N-0001 in %s: %v", proj, m)
+		}
+		return m[0]
+	}
+	edit := func(p, from, to string) {
+		got, err := os.ReadFile(p)
+		if err != nil || !strings.Contains(string(got), from) {
+			t.Fatalf("%s lacks %q (err %v):\n%s", p, from, err, got)
+		}
+		mustWrite(t, p, strings.Replace(string(got), from, to, 1))
+	}
+
+	// 2. A edits paragraph 2 and does not send. 3. B edits paragraph 3 and pushes.
+	edit(note(projA), "Paragrafo dois.", "Paragrafo dois, de A.")
+	edit(note(projB), "Paragrafo tres.", "Paragrafo tres, de B.")
+	if out, err := run(projB, cacheB, "push"); err != nil {
+		t.Fatalf("B push: %v\n%s", err, out)
+	}
+	// 4. A's push conflicts.
+	if out, err := run(projA, cacheA, "push"); err == nil || !strings.Contains(out, "Conflict in 1") {
+		t.Fatalf("A push should conflict: %v\n%s", err, out)
+	}
+	// 5. A's pull merges the disjoint paragraphs.
+	if out, err := run(projA, cacheA, "pull"); err != nil {
+		t.Fatalf("A pull should merge disjoint paragraphs: %v\n%s", err, out)
+	}
+	both := []string{"Paragrafo dois, de A.", "Paragrafo tres, de B."}
+	got, _ := os.ReadFile(note(projA))
+	for _, want := range both {
+		if !strings.Contains(string(got), want) {
+			t.Fatalf("A's .docs/ after pull lacks %q:\n%s", want, got)
+		}
+	}
+	// 6. A pushes. 7. The backend HEAD keeps both paragraphs.
+	if out, err := run(projA, cacheA, "push"); err != nil {
+		t.Fatalf("A push after merge: %v\n%s", err, out)
+	}
+	head, err := gitback.HeadSHA(origin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, _, err := gitback.FileBlobAt(origin, head, "content/notes/N-0001.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range both {
+		if !strings.Contains(string(stored), want) {
+			t.Fatalf("backend HEAD lost %q:\n%s", want, stored)
+		}
+	}
+}
+
 // --force keeps its meaning: discard unsent edits and restore from the backend.
 func TestPullForceDiscardsUnpushedEdits(t *testing.T) {
 	projDir, _, _, specPath := pulledFeatureProject(t, "Conteúdo original.")
