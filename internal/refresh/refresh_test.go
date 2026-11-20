@@ -82,7 +82,7 @@ func TestClassify(t *testing.T) {
 			if tc.change != nil {
 				tc.change(t, dir)
 			}
-			v := Classify(dir, tc.agent)
+			v := Classify(dir, tc.agent, true)
 			if v.State != tc.want {
 				t.Fatalf("state = %v (unknown %v), want %v", v.State, v.Unknown, tc.want)
 			}
@@ -102,7 +102,7 @@ func TestClassifyUnconnectedAgentIsLeftAlone(t *testing.T) {
 	if _, err := hooks.Install(dir, hooks.ProviderClaude); err != nil {
 		t.Fatal(err)
 	}
-	if v := Classify(dir, hooks.ProviderCodex); v.State != UpToDate || len(v.Unknown) != 0 {
+	if v := Classify(dir, hooks.ProviderCodex, true); v.State != UpToDate || len(v.Unknown) != 0 {
 		t.Fatalf("an unconnected Codex must not be classified, got %+v", v)
 	}
 	if slices.Contains(Connected(dir), hooks.ProviderCodex) {
@@ -114,8 +114,37 @@ func TestClassifyUnconnectedAgentIsLeftAlone(t *testing.T) {
 func TestKnownRecognizesWhatThisBuildWrites(t *testing.T) {
 	dir := currentProject(t)
 	for _, p := range AllProviders {
-		if v := Classify(dir, p); v.State != UpToDate {
+		if v := Classify(dir, p, true); v.State != UpToDate {
 			t.Errorf("%s: %v, unknown %v", p, v.State, v.Unknown)
 		}
+	}
+}
+
+// C12: one leftover file of a retired release does not make an agent connected.
+func TestClassifyLoneLeftoverIsNotAConnection(t *testing.T) {
+	dir := t.TempDir()
+	rel := ".claude/hooks/cerne-lifecycle-reminder.sh"
+	if err := os.MkdirAll(filepath.Join(dir, ".claude", "hooks"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, rel), []byte("edited leftover\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if v := Classify(dir, hooks.ProviderClaude, true); v.State != UpToDate || len(v.Unknown) != 0 {
+		t.Fatalf("a lone leftover file connected Claude: %+v", v)
+	}
+}
+
+// Decision 3: with sync_skills on, the guide is left out of the verdict.
+func TestClassifyWithoutTheGuide(t *testing.T) {
+	dir := fixtureV0143(t)
+	if err := os.WriteFile(filepath.Join(dir, ".claude/skills/cerne-authoring/SKILL.md"), []byte("edited guide\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if v := Classify(dir, hooks.ProviderClaude, true); v.State != Unrecognized {
+		t.Fatalf("with the guide: %+v, want unrecognized", v)
+	}
+	if v := Classify(dir, hooks.ProviderClaude, false); v.State != Renewable || len(v.Unknown) != 0 {
+		t.Fatalf("without the guide: %+v, want renewable", v)
 	}
 }

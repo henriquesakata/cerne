@@ -27,9 +27,6 @@ var known = func() Contents {
 // Known reports whether some release wrote sha at slot.
 func Known(slot, sha string) bool { return slices.Contains(known.Known[slot], sha) }
 
-// knownSlot reports whether any release wrote the slot.
-func knownSlot(slot string) bool { _, ok := known.Known[slot]; return ok }
-
 // missingContent names the slots whose current content the list lacks.
 func missingContent(cur map[string]string, c Contents) []string {
 	var out []string
