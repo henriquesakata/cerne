@@ -3694,6 +3694,8 @@ button.clarify-chip { cursor: pointer; font: inherit; }
 .agents-row code { overflow-wrap: anywhere; }
 .agents-chat { margin-top: 0.5rem; }
 .agents-unreached { margin-top: 0.25rem; }
+.agents .harness-fix { max-width: none; }
+.agents .harness-fix pre { padding-right: 5rem; overflow-x: auto; }
 .harness-fix pre {
   margin: 0;
   padding: 0.35rem 0.6rem;
