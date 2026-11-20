@@ -243,7 +243,10 @@ func TestUpdatePost(t *testing.T) {
 	}
 	got := ""
 	deadline := time.After(5 * time.Second)
-	for !strings.Contains(got, "event: update\ndata: downloading v0.15.0\n") {
+	// The panel's own line first (a script install prints nothing by itself),
+	// then the swap's.
+	for !strings.Contains(got, "event: update\ndata: installing v0.15.0 over v0.14.3\n") ||
+		!strings.Contains(got, "event: update\ndata: downloading v0.15.0\n") {
 		select {
 		case s := <-lines:
 			got += s

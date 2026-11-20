@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -187,8 +188,15 @@ func (u *updater) start() (int, error) {
 	u.announce(liveEvent{kind: "projects"})
 	go func() {
 		lines := &eventLines{announce: u.announce}
+		// A script install prints nothing while it downloads and checks: the
+		// panel says what it installs, then how it ended (criterion 3).
+		st := u.state()
+		fmt.Fprintf(lines, "installing %s over %s\n", st.Latest, st.Current)
 		out := ReplaceBinary(lines, u.cmd)
 		lines.Flush()
+		if out.Detail != "" {
+			fmt.Fprintln(lines, out.Detail)
+		}
 		if out.State == "updated" {
 			u.watch.check()
 			if _, err := u.watch.requestRestart(); err != nil {
