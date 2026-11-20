@@ -4,9 +4,11 @@ import (
 	"context"
 	"maps"
 	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"strconv"
 	"testing"
+	"time"
 )
 
 // writeRoutes lists every data route that is not a read, under prefix, its
@@ -131,17 +133,39 @@ func readRoutes(prefix string) []string {
 	return out
 }
 
-// assertForeignReadsRefused sends GET and HEAD with a rebound name's Host to
+// foreignHosts are Host headers a page that is not the local ui can send: a
+// rebound name, names that only start or end like the loopback, a bare name
+// and none at all.
+var foreignHosts = []string{"evil.example:7741", "localhost.evil.example:7717", "127.0.0.1.nip.io:7717", "evil.example", ""}
+
+// assertForeignReadsRefused sends GET and HEAD with every foreign Host to
 // every route: each is a 403.
 func assertForeignReadsRefused(t *testing.T, h http.Handler, routes []string) {
 	t.Helper()
 	for _, method := range []string{http.MethodGet, http.MethodHead} {
-		for _, target := range routes {
-			hdr := map[string]string{"Host": "evil.example:7741"}
-			if rec := doJSONWith(t, h, method, target, "", hdr, nil); rec.Code != http.StatusForbidden {
-				t.Errorf("%s %s (foreign host) = %d, want 403", method, target, rec.Code)
+		for _, host := range foreignHosts {
+			for _, target := range routes {
+				if rec := doJSONWith(t, h, method, target, "", map[string]string{"Host": host}, nil); rec.Code != http.StatusForbidden {
+					t.Errorf("%s %s (Host %q) = %d, want 403", method, target, host, rec.Code)
+				}
 			}
 		}
+	}
+}
+
+// assertForeignStreamRefused: the live stream refuses a foreign Host too. The
+// request carries a deadline, so a stream that answers ends the test in
+// seconds instead of hanging it.
+func assertForeignStreamRefused(t *testing.T, h http.Handler, target string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	req := localRequest(http.MethodGet, target, nil).WithContext(ctx)
+	req.Host = "evil.example:7741"
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("GET %s (foreign host) = %d, want 403", target, rec.Code)
 	}
 }
 
@@ -151,16 +175,16 @@ func assertForeignReadsRefused(t *testing.T, h http.Handler, routes []string) {
 func TestEveryReadRouteRefusesForeignHost(t *testing.T) {
 	repoDir, projDir, _ := newGitBackend(t)
 	isolatedWriteDirs(t)
+	t.Setenv("CERNE_PPROF", "1") // mount /debug/pprof/ too
 	routes := readRoutes("")
 	if len(routes) < 30 {
 		t.Fatalf("found %d read routes, the table has at least 30", len(routes))
 	}
-	assertForeignReadsRefused(t, New(repoDir, projDir, ""), routes)
+	assertForeignReadsRefused(t, New(repoDir, projDir, ""), append(routes, "/debug/pprof/"))
 }
 
 // TestUIMultiReadRoutesRefuseForeignHost: the same for `cerne ui`'s handler,
-// its project registry included. The live stream is left out: before the
-// guard it streams forever, and the guard sits on the router, not per route.
+// its project registry and live stream included.
 func TestUIMultiReadRoutesRefuseForeignHost(t *testing.T) {
 	repoDir, projDir, _ := newGitBackendNoClean(t)
 	isolatedWriteDirs(t)
@@ -173,6 +197,7 @@ func TestUIMultiReadRoutesRefuseForeignHost(t *testing.T) {
 		t.Fatalf("NewUIMulti: %v", err)
 	}
 	assertForeignReadsRefused(t, h, append(readRoutes("/projects/proj-a"), "/api/projects"))
+	assertForeignStreamRefused(t, h, "/api/stream")
 }
 
 // TestLocalUIReadsPass: a loopback Host reads, whatever the Origin — the
