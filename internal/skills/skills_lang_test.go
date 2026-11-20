@@ -6,12 +6,14 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/henriquesakata/cerne/internal/doclang"
 )
 
 // protocolPairs pairs each pt-BR literal of the protocol with its English
 // form (internal/doclang): a block of the skill that names the first must
 // name the second too (F-0418 crit. 7).
-var protocolPairs = []struct{ pt, en *regexp.Regexp }{
+var protocolPairs = []pair{
 	{regexp.MustCompile(`Barra:`), regexp.MustCompile(`Bar:`)},
 	{regexp.MustCompile(`Método:`), regexp.MustCompile(`Method:`)},
 	{regexp.MustCompile(`Saída:`), regexp.MustCompile(`Exit:`)},
@@ -24,6 +26,29 @@ var protocolPairs = []struct{ pt, en *regexp.Regexp }{
 	{regexp.MustCompile(`critério N`), regexp.MustCompile(`criterion N`)},
 	{regexp.MustCompile(`\[ESCLARECER`), regexp.MustCompile(`\[CLARIFY`)},
 	{regexp.MustCompile(`Verificação`), regexp.MustCompile(`Verification`)},
+}
+
+// word matches s as a whole word; Go's \b is ASCII-only, so a letter on
+// either side (accented included) means it is part of a longer word.
+func word(s string) *regexp.Regexp {
+	return regexp.MustCompile(`(^|[^\p{L}])` + regexp.QuoteMeta(s) + `($|[^\p{L}])`)
+}
+
+type pair struct{ pt, en *regexp.Regexp }
+
+// sectionPairs pairs every section name of every templated document in pt-BR
+// with its English name, straight from internal/doclang (F-0475).
+func sectionPairs() []pair {
+	var out []pair
+	for _, k := range []doclang.Kind{doclang.Spec, doclang.Plan, doclang.Result, doclang.Decision, doclang.Runbook} {
+		pt, en := doclang.Sections(k, doclang.PT), doclang.Sections(k, doclang.EN)
+		for i := range pt {
+			if pt[i] != en[i] {
+				out = append(out, pair{word(pt[i]), word(en[i])})
+			}
+		}
+	}
+	return out
 }
 
 var listItemRe = regexp.MustCompile(`^\s*(?:[-*+]|\d+[.)])\s`)
@@ -80,9 +105,13 @@ func TestSkill_ProtocolFormsBilingual(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, b := range blocks(string(data)) {
-			for _, p := range protocolPairs {
-				if p.pt.MatchString(b) && !p.en.MatchString(b) {
+			for _, p := range allPairs() {
+				pt, en := p.pt.FindStringIndex(b), p.en.FindStringIndex(b)
+				switch {
+				case pt != nil && en == nil:
 					t.Errorf("%s: block names %q without %q:\n%s\n", f, p.pt, p.en, b)
+				case pt != nil && en[0] > pt[0]:
+					t.Errorf("%s: block names %q before %q (English first):\n%s\n", f, p.pt, p.en, b)
 				}
 			}
 		}
@@ -93,5 +122,26 @@ func TestSkill_ProtocolFormsBilingual(t *testing.T) {
 	}
 	if strings.Contains(string(g), "pt-BR, because they are written inside the spec") {
 		t.Error("reference/gauntlet.md still says the forms are pt-BR")
+	}
+}
+
+func allPairs() []pair { return append(append([]pair{}, protocolPairs...), sectionPairs()...) }
+
+// TestSkill_TopSaysHowToFindTheLanguage (F-0475 crit. 2): before any protocol
+// form, the skill says how the agent learns the project's documentation
+// language.
+func TestSkill_TopSaysHowToFindTheLanguage(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("cerne-authoring", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(data)
+	if i := strings.Index(body, "\n## "); i >= 0 {
+		body = body[:i]
+	}
+	for _, want := range []string{"DOCS LANGUAGE", "headings of the stub"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("top of SKILL.md lacks %q", want)
+		}
 	}
 }
