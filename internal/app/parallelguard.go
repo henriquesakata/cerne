@@ -26,16 +26,24 @@ import (
 // session or actor already has active work on the feature.
 var ErrActiveWorkElsewhere = errors.New("another session is already working on this feature")
 
-// parallelWork names one active work that collides with a start.
+// parallelWork names one active work that collides with a start or an amend.
+// Session is the newest other session bound to it ("" without session
+// evidence, as in the start) and Signal the age of its last signal (F-0485).
 type parallelWork struct {
-	ID    string
-	Actor string
-	Title string
-	Age   time.Duration
+	ID      string
+	Actor   string
+	Title   string
+	Age     time.Duration
+	Session string
+	Signal  time.Duration
 }
 
 func (p parallelWork) line() string {
-	return fmt.Sprintf("  %s  actor: %s  age: %s  %s", p.ID, p.Actor, shortAge(p.Age), p.Title)
+	s := fmt.Sprintf("  %s  actor: %s  age: %s", p.ID, p.Actor, shortAge(p.Age))
+	if p.Session != "" {
+		s += fmt.Sprintf("  session: %s signal %s ago", p.Session, shortAge(p.Signal))
+	}
+	return s + "  " + p.Title
 }
 
 // shortAge renders a work's age the way `cerne work list` does.
@@ -65,23 +73,35 @@ func myActors() []string {
 // classifyParallelWorks partitions the active works referencing featureID:
 // foreign ones (provably another session, or another actor) refuse the start,
 // ambiguous ones (one of my own actor identities, with no session evidence
-// either way) only warn. Works bound to mySession are this session's own and
-// never surface.
-func classifyParallelWorks(works []store.Work, featureID string, mine []string, mySession string, bindings map[string]string, now time.Time) (foreign, ambiguous []parallelWork) {
+// either way) only warn. Works a session of mine (main thread or subagent)
+// holds are this session's own and never surface. sessions maps a work to the
+// sessions bound to it (WorkSessions, newest signal first): a W- binding and a
+// card binding after `feature start` alike (F-0485).
+func classifyParallelWorks(works []store.Work, featureID string, mine []string, mySession string, sessions map[string][]SessionSignal, now time.Time) (foreign, ambiguous []parallelWork) {
 	for _, w := range works {
 		if w.State != domain.WorkActive || !slices.Contains(w.Refs, featureID) {
 			continue
 		}
+		pw := toParallelWork(w, now)
 		if mySession != "" {
-			if boundHere(bindings, w.ID, mySession) {
+			var other *SessionSignal
+			mineHere := false
+			for i, s := range sessions[w.ID] {
+				if s.Session == mySession {
+					mineHere = true
+				} else if other == nil {
+					other = &sessions[w.ID][i]
+				}
+			}
+			if mineHere {
 				continue // this session's own registration (F-0208 pickup)
 			}
-			if boundElsewhere(bindings, w.ID, mySession) {
-				foreign = append(foreign, toParallelWork(w, now))
+			if other != nil {
+				pw.Session, pw.Signal = other.Session[:min(8, len(other.Session))], now.Sub(other.LastSignal)
+				foreign = append(foreign, pw)
 				continue
 			}
 		}
-		pw := toParallelWork(w, now)
 		// A pre-F-0350 work carries the bare "agent", shared by every agent on
 		// every machine: it proves nothing either way, so it only warns.
 		if !slices.Contains(mine, w.Actor) && w.Actor != legacyAgentActor {

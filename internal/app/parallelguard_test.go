@@ -112,6 +112,11 @@ func TestClassifyParallelWorks(t *testing.T) {
 	work := func(id, actor string) store.Work {
 		return store.Work{ID: id, Title: "atividade", State: domain.WorkActive, Actor: actor, Refs: []string{"F-0001"}, CreatedAt: now.Add(-90 * time.Minute)}
 	}
+	autoWork := func(id, actor string) store.Work {
+		w := work(id, actor)
+		w.Auto = true
+		return w
+	}
 	cases := []struct {
 		name          string
 		works         []store.Work
@@ -155,6 +160,21 @@ func TestClassifyParallelWorks(t *testing.T) {
 			wantForeign: []string{"W-0001"},
 		},
 		{
+			// F-0485: after `feature start` a session is bound to the card, and
+			// the auto work on it is that session's (WorkSessions, F-0361).
+			name:        "a feature bound to another session owns its auto work",
+			works:       []store.Work{autoWork("W-0001", "eu@maquina")},
+			session:     "sess-a",
+			bindings:    map[string]string{"sess-b": "F-0001"},
+			wantForeign: []string{"W-0001"},
+		},
+		{
+			name:     "a feature bound to my session owns its auto work",
+			works:    []store.Work{autoWork("W-0001", "outro@maquina")},
+			session:  "sess-a",
+			bindings: map[string]string{"sess-a": "F-0001"},
+		},
+		{
 			name:        "different actor is foreign even without bindings",
 			works:       []store.Work{work("W-0001", "outro@maquina")},
 			wantForeign: []string{"W-0001"},
@@ -191,7 +211,7 @@ func TestClassifyParallelWorks(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			foreign, ambiguous := classifyParallelWorks(tc.works, "F-0001", []string{"eu@maquina", "agent:eu@maquina"}, tc.session, tc.bindings, now)
+			foreign, ambiguous := classifyParallelWorks(tc.works, "F-0001", []string{"eu@maquina", "agent:eu@maquina"}, tc.session, sessionsOf(tc.works, tc.bindings), now)
 			if got := ids(foreign); !equal(got, tc.wantForeign) {
 				t.Fatalf("foreign = %v, want %v", got, tc.wantForeign)
 			}
@@ -200,6 +220,17 @@ func TestClassifyParallelWorks(t *testing.T) {
 			}
 		})
 	}
+}
+
+// sessionsOf turns binding files (name → bound id) into the per-work sessions
+// the guard reads, the way `cerne work list` attributes them.
+func sessionsOf(works []store.Work, bindings map[string]string) map[string][]SessionSignal {
+	var sigs []SessionSignal
+	for name, id := range bindings {
+		sess, agent := splitBindingName(name)
+		sigs = append(sigs, SessionSignal{Session: sess, Agent: agent, Entity: id})
+	}
+	return WorkSessions(works, sigs)
 }
 
 func ids(ps []parallelWork) []string {
