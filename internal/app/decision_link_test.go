@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -25,7 +26,7 @@ func TestCreateDecisionInforms(t *testing.T) {
 	if p := createdPayload(t, repoDir, d.ID, "decision.created"); p["informs"] != f.ID {
 		t.Fatalf("decision.created payload = %v", p)
 	}
-	if _, err := CreateDecision(repoDir, projDir, "Outra decisão", "corpo", []string{"F-0999"}, nil, nil, false); err == nil || !strings.Contains(err.Error(), "F-0999 not found") {
+	if _, err := CreateDecision(repoDir, projDir, "Outra decisão", "corpo", []string{"F-0999"}, nil, nil, false); !errors.Is(err, store.ErrNotFound) || !strings.Contains(err.Error(), "F-0999") {
 		t.Fatalf("unknown target: %v", err)
 	}
 	if ds, _ := store.LoadAllDecisions(repoDir); len(ds) != 1 {
@@ -58,13 +59,13 @@ func TestLinkDecision(t *testing.T) {
 	if after, _ := gitback.HeadSHA(repoDir); after != before {
 		t.Fatal("a no-op link committed")
 	}
-	if _, _, err := LinkDecision(repoDir, projDir, d.ID, []string{"F-0999"}, nil); err == nil || !strings.Contains(err.Error(), "F-0999 not found") {
+	if _, _, err := LinkDecision(repoDir, projDir, d.ID, []string{"F-0999"}, nil); !errors.Is(err, store.ErrNotFound) || !strings.Contains(err.Error(), "F-0999") {
 		t.Fatalf("unknown target: %v", err)
 	}
 	if _, _, err := LinkDecision(repoDir, projDir, d.ID, []string{f.ID}, []string{f.ID}); err == nil || !strings.Contains(err.Error(), "both name") {
 		t.Fatalf("both lists: %v", err)
 	}
-	if _, _, err := LinkDecision(repoDir, projDir, "D-0999", []string{f.ID}, nil); err == nil || !strings.Contains(err.Error(), "D-0999 not found") {
+	if _, _, err := LinkDecision(repoDir, projDir, "D-0999", []string{f.ID}, nil); !errors.Is(err, store.ErrNotFound) || !strings.Contains(err.Error(), "D-0999") {
 		t.Fatalf("unknown decision: %v", err)
 	}
 	got, _, err = LinkDecision(repoDir, projDir, d.ID, nil, []string{f.ID})
@@ -81,7 +82,7 @@ func TestLinkDecision(t *testing.T) {
 	if _, err := TransitionDecision(repoDir, projDir, d.ID, other.ID, "trocou"); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := LinkDecision(repoDir, projDir, d.ID, []string{f.ID}, nil); err == nil || !strings.Contains(err.Error(), "not active") {
+	if _, _, err := LinkDecision(repoDir, projDir, d.ID, []string{f.ID}, nil); !errors.Is(err, ErrEntityNotLive) {
 		t.Fatalf("superseded decision: %v", err)
 	}
 }

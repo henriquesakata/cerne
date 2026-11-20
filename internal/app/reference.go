@@ -169,26 +169,26 @@ func validateInforms(repoDir string, informs []string) ([]string, error) {
 		switch {
 		case domain.IsFeatureID(id):
 			if _, err := store.LoadFeature(repoDir, id); errors.Is(err, store.ErrNotFound) {
-				return nil, fmt.Errorf("--informs: feature %s not found in backend", id)
+				return nil, fmt.Errorf("--informs: feature %s not found in backend: %w", id, store.ErrNotFound)
 			} else if err != nil {
 				return nil, err
 			}
 		case strings.HasPrefix(id, "D-"):
 			if _, err := store.LoadDecision(repoDir, id); errors.Is(err, store.ErrNotFound) {
-				return nil, fmt.Errorf("--informs: decision %s not found in backend", id)
+				return nil, fmt.Errorf("--informs: decision %s not found in backend: %w", id, store.ErrNotFound)
 			} else if err != nil {
 				return nil, err
 			}
 		case strings.HasPrefix(id, "RB-"):
 			if _, err := store.LoadRunbook(repoDir, id); errors.Is(err, store.ErrNotFound) {
-				return nil, fmt.Errorf("--informs: runbook %s not found in backend", id)
+				return nil, fmt.Errorf("--informs: runbook %s not found in backend: %w", id, store.ErrNotFound)
 			} else if err != nil {
 				return nil, err
 			}
 		case strings.HasPrefix(id, "I-"):
 			idea, err := store.LoadIdea(repoDir, id)
 			if errors.Is(err, store.ErrNotFound) {
-				return nil, fmt.Errorf("--informs: idea %s not found in backend", id)
+				return nil, fmt.Errorf("--informs: idea %s not found in backend: %w", id, store.ErrNotFound)
 			} else if err != nil {
 				return nil, err
 			}
@@ -197,7 +197,7 @@ func validateInforms(repoDir string, informs []string) ([]string, error) {
 			}
 		case strings.HasPrefix(id, "N-"):
 			if _, err := store.LoadNote(repoDir, id); errors.Is(err, store.ErrNotFound) {
-				return nil, fmt.Errorf("--informs: note %s not found in backend", id)
+				return nil, fmt.Errorf("--informs: note %s not found in backend: %w", id, store.ErrNotFound)
 			} else if err != nil {
 				return nil, err
 			}

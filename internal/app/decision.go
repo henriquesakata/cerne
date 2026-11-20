@@ -290,13 +290,13 @@ func LinkDecision(repoDir, projDir, id string, add, remove []string) (store.Deci
 		var err error
 		d, err = store.LoadDecision(repoDir, id)
 		if errors.Is(err, store.ErrNotFound) {
-			return "", fmt.Errorf("decision %s not found in backend", id)
+			return "", fmt.Errorf("decision %s not found in backend: %w", id, store.ErrNotFound)
 		}
 		if err != nil {
 			return "", err
 		}
 		if d.State != domain.DecisionActive {
-			return "", fmt.Errorf("decision %s is not active (it is %s) — link only applies to an active decision", id, d.State)
+			return "", fmt.Errorf("decision %s is not active (it is %s) — link only applies to an active decision: %w", id, d.State, ErrEntityNotLive)
 		}
 		cleaned, err := validateInforms(repoDir, add)
 		if err != nil {
