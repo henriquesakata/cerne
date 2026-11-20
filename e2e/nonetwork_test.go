@@ -16,7 +16,8 @@ import (
 // the group search call no model and no network. Each command runs as a fresh
 // cerne process (this binary, CERNE_TEST_RUN_CLI) whose every HTTP(S) request
 // goes through a proxy that fails the test, with an ssh that fails it too and
-// no AI provider configured.
+// no AI provider configured. The probe's limit: Go never proxies a loopback
+// address nor a client with its own Transport, so those would go unseen.
 func TestMapAndTagsNeverTouchTheNetwork(t *testing.T) {
 	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
 	origin := filepath.Join(t.TempDir(), "origin.git")
@@ -42,7 +43,9 @@ func TestMapAndTagsNeverTouchTheNetwork(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A fresh HOME and config dir: no user setting may name a provider.
 	env := append(os.Environ(), "CERNE_TEST_RUN_CLI=1", "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"HOME="+t.TempDir(), "CERNE_CONFIG_DIR="+t.TempDir(),
 		"NO_PROXY=", "no_proxy=", "ANTHROPIC_API_KEY=", "OPENAI_API_KEY=", "GEMINI_API_KEY=", "OPENROUTER_API_KEY=")
 	for _, k := range []string{"HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY"} {
 		env = append(env, k+"="+proxy.URL)
