@@ -404,6 +404,32 @@ func TestTaskContextCutOrder(t *testing.T) {
 	}
 }
 
+// Critic L5: a linked body the package cannot read is not passed off as an
+// index line: the item says so and how to read it; a stub is no body at all.
+func TestTaskContextUnreadableLinkedBody(t *testing.T) {
+	repo := contextFixture(t)
+	file := filepath.Join(repo, "content", "notes", "N-0002.md")
+	if err := os.Chmod(file, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(file, 0o644) })
+	if _, err := os.ReadFile(file); err == nil {
+		t.Skip("running as a user that reads mode 000 files (root)")
+	}
+	p, err := TaskContext(repo, "T-0002", DefaultContextBudget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range p.Items {
+		if want := it.ID == "N-0002"; it.Unreadable != want {
+			t.Errorf("%s unreadable = %v, want %v", it.ID, it.Unreadable, want)
+		}
+	}
+	if !strings.Contains(p.Text(), "[a] N-0002  note  Note N-0002\n  (body unreadable: cerne show N-0002)\n") {
+		t.Fatalf("the unreadable body is not named:\n%s", p.Text())
+	}
+}
+
 // Verification 11, second half (criterion 16): the package comes out the same
 // with every other entity's body unreadable — it reads the bodies of the task,
 // its epic and the notes and decisions in force of ring (a) only (T-0018); the

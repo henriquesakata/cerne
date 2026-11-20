@@ -63,6 +63,8 @@ type ContextItem struct {
 	Why     string   `json:"why,omitempty"`
 	Sources []string `json:"sources,omitempty"`
 	Body    string   `json:"body,omitempty"`
+	// Unreadable: a linked body the package could not read (critic L5).
+	Unreadable bool `json:"unreadable,omitempty"`
 }
 
 // ContextRef names the epic of the package.
@@ -140,7 +142,8 @@ func taskContext(repoDir, id string, budget int, content bool) (TaskPack, error)
 		Components: t.f.Components, Budget: budget}
 	for i, it := range p.Items { // ring (a) holds only what is in force
 		if it.Ring == "a" && (it.Kind == "note" || it.Kind == "decision") {
-			p.Items[i].Body = linkedBody(filepath.Join(repoDir, "content", it.Kind+"s", it.ID+".md"))
+			body, err := linkedBody(filepath.Join(repoDir, "content", it.Kind+"s", it.ID+".md"))
+			p.Items[i].Body, p.Items[i].Unreadable = body, err != nil
 		}
 	}
 	if p.Components == nil {
@@ -238,11 +241,11 @@ func realDocs(repoDir, id string) map[string]string {
 
 // linkedBody is the content of a linked note or decision without its
 // frontmatter and its title heading, which the item line already carries; ""
-// for a stub or a file it cannot read.
-func linkedBody(file string) string {
+// for a stub, an error for a file it cannot read.
+func linkedBody(file string) (string, error) {
 	data, err := os.ReadFile(file)
 	if err != nil || !doccheck.HasRealContent(data) {
-		return ""
+		return "", err
 	}
 	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
 	if _, rest, opens, closed := doccheck.LeadingBlock(lines); opens && closed {
@@ -252,7 +255,7 @@ func linkedBody(file string) string {
 	if strings.HasPrefix(body, "# ") {
 		_, body, _ = strings.Cut(body, "\n")
 	}
-	return strings.TrimSpace(body)
+	return strings.TrimSpace(body), nil
 }
 
 // neighbourhood lists rings (a) to (c), and (d) with content; without full only
@@ -709,6 +712,9 @@ func inForce(kind, state string) bool {
 // line is the item as the package prints it, its body right under it,
 // indented.
 func (it ContextItem) line(compact bool) string {
+	if it.Unreadable && !compact {
+		return it.head(false) + "  (body unreadable: cerne show " + it.ID + ")\n"
+	}
 	if it.Body == "" {
 		return it.head(compact)
 	}
