@@ -2,6 +2,8 @@ package cli
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -67,5 +69,31 @@ func TestListByComponentGroup(t *testing.T) {
 	out = run("reference", "list", "--component", "gitea,kpack")
 	if got := strings.Join(listIDs(out), " "); got != "R-0002 R-0001" || !strings.Contains(out, "matched gitea,kpack") {
 		t.Fatalf("reference list order = %s, want R-0002 R-0001 with what matched\n%s", got, out)
+	}
+}
+
+// E-0005 critic L5: with --path the group still decides the order: the note
+// with both components comes first, though the path order puts the newest
+// first.
+func TestListByComponentGroupWithPath(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	body := filepath.Join(t.TempDir(), "body.md")
+	if err := os.WriteFile(body, []byte("Run infra/release.sh with care.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"note", "new", "Kilo", "--file", body, "--component", "gitea,kpack"}, // N-0001: both
+		{"note", "new", "Lima", "--file", body, "--component", "gitea"},       // N-0002: one, newer
+	} {
+		if out, err := execCerne(t, append(args, "--dir", projDir)...); err != nil {
+			t.Fatalf("%v: %v\n%s", args, err, out)
+		}
+	}
+	out, err := execCerne(t, "note", "list", "--component", "gitea,kpack", "--path", "infra/release.sh", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("note list: %v\n%s", err, out)
+	}
+	if got := strings.Join(listIDs(out), " "); got != "N-0001 N-0002" {
+		t.Fatalf("order with --path = %s, want N-0001 N-0002 (the group ranks last)\n%s", got, out)
 	}
 }

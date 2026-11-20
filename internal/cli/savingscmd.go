@@ -84,7 +84,7 @@ func renderSavings(out io.Writer, s materialize.Stats, mapBytes int64) {
 	fmt.Fprintf(out, "Reduced: %d bytes (~%d tokens) — %.1f%% of the corpus stays in history, outside the folder the agent searches\n",
 		s.SavedBytes, s.SavedTokensEst, s.SavedPct)
 	if mapBytes > 0 {
-		fmt.Fprintf(out, "Map: .docs/CONTEXT.md is %d bytes (~%d tokens), the map a session starts from.\n", mapBytes, mapBytes/4)
+		fmt.Fprintf(out, "Map: .docs/CONTEXT.md is %d bytes (~%d tokens), the map of what is live.\n", mapBytes, mapBytes/4)
 	} else {
 		fmt.Fprintln(out, "Map: .docs/CONTEXT.md is not materialized yet — run 'cerne pull'.")
 	}

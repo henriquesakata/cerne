@@ -117,14 +117,15 @@ func runNoteList(cmd *cobra.Command, dir string, all, asJSON bool, facet, compon
 		}
 		shown = append(shown, n)
 	}
-	var matched map[string][]string
-	if len(compQ) > 0 {
-		shown, matched = rankByComponents(shown, func(n store.Note) (string, []string) { return n.ID, n.Components }, compQ)
-	}
 	if onPath != "" {
 		if shown, err = notesCitingPath(ctx, shown, onPath); err != nil {
 			return err
 		}
+	}
+	// The group ranks last, so with --path its order is the final one.
+	var matched map[string][]string
+	if len(compQ) > 0 {
+		shown, matched = rankByComponents(shown, func(n store.Note) (string, []string) { return n.ID, n.Components }, compQ)
 	}
 
 	if asJSON {
