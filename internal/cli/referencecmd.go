@@ -10,7 +10,6 @@ import (
 
 	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/domain"
-	"github.com/henriquesakata/cerne/internal/slug"
 	"github.com/henriquesakata/cerne/internal/store"
 	"github.com/henriquesakata/cerne/internal/verbs"
 )
@@ -164,7 +163,7 @@ func newReferenceListCmd(dir *string) *cobra.Command {
 		Long: "Lists references read straight from the backend (store). By default shows only the " +
 			"current ones; --all includes the obsolete. Each line carries id, state, title and markers " +
 			"(external, facet/component, informs F-/E-/T-/B-/D-/RB-/N-/I-, URL). Filter by --facet and/or --component " +
-			"(logical AND). --json for structured output.",
+			"(logical AND); --component takes a group (a,b,c), any of them, most matches first. --json for structured output.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runReferenceList(cmd, *dir, all, asJSON, facet, component)
@@ -173,7 +172,7 @@ func newReferenceListCmd(dir *string) *cobra.Command {
 	cmd.Flags().BoolVar(&all, "all", false, "include obsolete references")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output")
 	cmd.Flags().StringVar(&facet, "facet", "", "filter by facet (e.g. infra)")
-	cmd.Flags().StringVar(&component, "component", "", "filter by component (e.g. gitea)")
+	cmd.Flags().StringVar(&component, "component", "", "filter by components, any of them (CSV, e.g. gitea,kpack)")
 	return cmd
 }
 
@@ -189,7 +188,7 @@ func runReferenceList(cmd *cobra.Command, dir string, all, asJSON bool, facet, c
 	// Normalize the filters to the stored form so '--facet Infra'/'--component
 	// Gitea' match the lower/slug values persisted on the reference.
 	facetQ := strings.ToLower(strings.TrimSpace(facet))
-	compQ := slug.Make(component)
+	compQ := domain.NormalizeComponents(splitInforms(component))
 	w := cmd.OutOrStdout()
 	shown := make([]store.Reference, 0, len(refs))
 	for _, r := range refs {
@@ -199,18 +198,20 @@ func runReferenceList(cmd *cobra.Command, dir string, all, asJSON bool, facet, c
 		if facetQ != "" && !slices.Contains(r.Facets, facetQ) {
 			continue
 		}
-		if compQ != "" && !slices.Contains(r.Components, compQ) {
-			continue
-		}
 		shown = append(shown, r)
+	}
+	var matched map[string][]string
+	if len(compQ) > 0 {
+		shown, matched = rankByComponents(shown, func(x store.Reference) (string, []string) { return x.ID, x.Components }, compQ)
 	}
 
 	if asJSON {
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
 		return enc.Encode(struct {
-			References []store.Reference `json:"references"`
-		}{shown})
+			References []store.Reference   `json:"references"`
+			Matched    map[string][]string `json:"matched,omitempty"`
+		}{shown, matched})
 	}
 
 	for _, r := range shown {
@@ -230,6 +231,9 @@ func runReferenceList(cmd *cobra.Command, dir string, all, asJSON bool, facet, c
 		}
 		if r.URL != "" {
 			tags = append(tags, r.URL)
+		}
+		if m := matched[r.ID]; m != nil {
+			tags = append(tags, "matched "+strings.Join(m, ","))
 		}
 		if len(tags) > 0 {
 			line += "  · " + strings.Join(tags, " · ")

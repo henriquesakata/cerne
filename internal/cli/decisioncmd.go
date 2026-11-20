@@ -14,7 +14,6 @@ import (
 	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/llm"
-	"github.com/henriquesakata/cerne/internal/slug"
 	"github.com/henriquesakata/cerne/internal/store"
 	"github.com/henriquesakata/cerne/internal/verbs"
 )
@@ -46,7 +45,7 @@ func newDecisionListCmd(dir *string) *cobra.Command {
 		Short: "List decisions (ADRs) — active by default; --all includes history",
 		Long: "Lists decisions read straight from the backend (store), not from the '.docs/' projection. By default shows only " +
 			"the active ones; --all includes the superseded and retired (history). Each line carries id, state, title and markers " +
-			"(facet/component, successor). Filter by --facet and/or --component (logical AND). --json for structured output.",
+			"(facet/component, successor). Filter by --facet and/or --component (logical AND); --component takes a group (a,b,c), any of them, most matches first. --json for structured output.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDecisionList(cmd, *dir, all, asJSON, facet, component)
@@ -55,7 +54,7 @@ func newDecisionListCmd(dir *string) *cobra.Command {
 	cmd.Flags().BoolVar(&all, "all", false, "include superseded and retired decisions (history)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output")
 	cmd.Flags().StringVar(&facet, "facet", "", "filter by facet (e.g. auth)")
-	cmd.Flags().StringVar(&component, "component", "", "filter by component (e.g. keycloak)")
+	cmd.Flags().StringVar(&component, "component", "", "filter by components, any of them (CSV, e.g. keycloak,gitea)")
 	return cmd
 }
 
@@ -71,7 +70,7 @@ func runDecisionList(cmd *cobra.Command, dir string, all, asJSON bool, facet, co
 	// Normalize the filters to the stored form so '--facet Auth'/'--component
 	// Keycloak' match the lower/slug values persisted on the decision.
 	facetQ := strings.ToLower(strings.TrimSpace(facet))
-	compQ := slug.Make(component)
+	compQ := domain.NormalizeComponents(splitInforms(component))
 	w := cmd.OutOrStdout()
 	shown := make([]store.Decision, 0, len(decisions))
 	for _, d := range decisions {
@@ -81,18 +80,20 @@ func runDecisionList(cmd *cobra.Command, dir string, all, asJSON bool, facet, co
 		if facetQ != "" && !slices.Contains(d.Facets, facetQ) {
 			continue
 		}
-		if compQ != "" && !slices.Contains(d.Components, compQ) {
-			continue
-		}
 		shown = append(shown, d)
+	}
+	var matched map[string][]string
+	if len(compQ) > 0 {
+		shown, matched = rankByComponents(shown, func(x store.Decision) (string, []string) { return x.ID, x.Components }, compQ)
 	}
 
 	if asJSON {
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
 		return enc.Encode(struct {
-			Decisions []store.Decision `json:"decisions"`
-		}{shown})
+			Decisions []store.Decision    `json:"decisions"`
+			Matched   map[string][]string `json:"matched,omitempty"`
+		}{shown, matched})
 	}
 
 	for _, d := range shown {
@@ -106,6 +107,9 @@ func runDecisionList(cmd *cobra.Command, dir string, all, asJSON bool, facet, co
 		}
 		if d.SupersededBy != "" {
 			tags = append(tags, "→ "+d.SupersededBy)
+		}
+		if m := matched[d.ID]; m != nil {
+			tags = append(tags, "matched "+strings.Join(m, ","))
 		}
 		if len(tags) > 0 {
 			line += "  · " + strings.Join(tags, " · ")
