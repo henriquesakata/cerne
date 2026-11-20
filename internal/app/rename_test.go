@@ -2,6 +2,8 @@ package app
 
 import (
 	"errors"
+	"io/fs"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
@@ -211,6 +213,38 @@ func TestRenameComponentNearNameCheck(t *testing.T) {
 				t.Fatalf("T-0002 components = %v, want [%s]", got, tc.to)
 			}
 		})
+	}
+}
+
+// M1 (critic round 1): a save that fails mid-way (the features are written
+// and their events appended, then the notes directory refuses the write)
+// leaves the backend as it was: HEAD, events, tags and a clean worktree.
+func TestRenameComponentMidwayFailureWritesNothing(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes into a read-only directory")
+	}
+	repoDir, projDir, _ := newFeatureBackend(t)
+	seedRename(t, repoDir)
+	commits, events, tags := commitCount(t, repoDir), eventCount(t, repoDir), componentsOf(t, repoDir)
+	notes := filepath.Join(repoDir, "entities", "notes")
+	if err := os.Chmod(notes, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(notes, 0o755) })
+
+	if _, err := RenameComponent(repoDir, projDir, "old", "fresh", false, false); !errors.Is(err, fs.ErrPermission) {
+		t.Fatalf("err = %v, want the notes save to fail", err)
+	}
+	if commitCount(t, repoDir) != commits || eventCount(t, repoDir) != events {
+		t.Fatalf("wrote: commits %d -> %d, events %d -> %d", commits, commitCount(t, repoDir), events, eventCount(t, repoDir))
+	}
+	for id, c := range componentsOf(t, repoDir) {
+		if !slices.Equal(c, tags[id]) {
+			t.Errorf("%s components %v -> %v: the saves before the failure stayed", id, tags[id], c)
+		}
+	}
+	if out, _ := exec.Command("git", "-C", repoDir, "status", "--porcelain").Output(); len(out) != 0 {
+		t.Errorf("worktree dirty after a failed rename:\n%s", out)
 	}
 }
 
