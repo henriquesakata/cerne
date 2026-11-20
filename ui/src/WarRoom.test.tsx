@@ -98,6 +98,9 @@ describe('WarRoom (T-0003)', () => {
     await waitFor(() => expect(screen.getByText('Fila serial')).toBeInTheDocument())
     expect(screen.getByText('Já resolvido')).toBeInTheDocument()
     expect(screen.getAllByRole('link')).toHaveLength(2)
+    // B-0050: the header counts the rooms; each card counts its participants.
+    expect(screen.getByText('2 sala(s)')).toBeInTheDocument()
+    expect(screen.getByText('1 participante(s)')).toBeInTheDocument()
   })
 
   it('fixa o canal permanente no topo, com selo, fora da contagem e do vazio (F-0325 critério 21)', async () => {
@@ -111,7 +114,8 @@ describe('WarRoom (T-0003)', () => {
     expect(links[0]).toHaveAttribute('href', '#/rooms/channel')
     expect(links[0]).toHaveTextContent(/permanente/i)
     expect(screen.getByText(/nenhuma sala aberta/i)).toBeInTheDocument()
-    expect(screen.getByText('0 participante(s)')).toBeInTheDocument()
+    // B-0050: the header counts rooms, so it says rooms, not participants.
+    expect(screen.getByText('0 sala(s)')).toBeInTheDocument()
   })
 
   it('canal ilegível aparece com o erro e as salas formais continuam (crítico C8)', async () => {

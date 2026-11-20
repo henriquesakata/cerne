@@ -98,7 +98,7 @@ export default function WarRoom() {
     <main className="kanban">
       <header className="kanban-header">
         <h1>{t.warRoom.title}</h1>
-        {formal && <p className="counts">{t.warRoom.participants(formal.length)}</p>}
+        {formal && <p className="counts">{t.warRoom.roomsCount(formal.length)}</p>}
       </header>
       <form className="backlog-chat-form" onSubmit={open}>
         <input
