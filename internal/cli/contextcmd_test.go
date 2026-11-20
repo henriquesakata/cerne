@@ -55,7 +55,7 @@ func TestContextCmdText(t *testing.T) {
 		t.Fatalf("context --budget 1: %v\n%s", err, small)
 	}
 	if !strings.Contains(small, "Abrir conta sem agência.") || strings.Contains(small, "N-0001") ||
-		!strings.Contains(small, "left out: a 1 · b 0 · c 1 · d 0") {
+		!strings.Contains(small, "left out every neighbourhood item: a 1 · b 0 · c 1 · d 0") {
 		t.Fatalf("context --budget 1 keeps the document and says what it left out:\n%s", small)
 	}
 	if _, err := execCerne(t, "context", "N-0001", "--dir", projDir); err == nil || !strings.Contains(err.Error(), "feature, epic, task or bug") {

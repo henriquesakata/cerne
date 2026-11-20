@@ -68,6 +68,9 @@ func contextFixture(t *testing.T) string {
 
 	feat("E-0001", "Epic of the package", "", domain.StateInDevelopment, "ui")
 	write("content/features/E-0001/spec.md", "# Epic\n\n## Problem\n\nThe epic cites [[D-0001]] and [[N-0004]].\n")
+	write("content/features/E-0001/plan.md", "# Epic plan\n\nTask 2 has no plan of its own.\n")
+	feat("T-0003", "A task planned in its epic", "E-0001", domain.StateInDevelopment)
+	write("content/features/T-0003/spec.md", "# Task 3\n\n## Problem\n\nThe how is the epic's plan.\n")
 	feat("T-0002", "Assemble the package of a task", "E-0001", domain.StateInDevelopment, "cli", "hooks")
 	write("content/features/T-0002/spec.md", "# Task\n\n## Problem\n\nThe package gathers what informs a task from the search index.\n\n"+
 		"It follows [[N-0001]], not the done [[F-0009]], next to the live [[F-0010]], the source [[R-0001]] and the runbook [[RB-0001]]; "+
@@ -235,7 +238,7 @@ func TestTaskContextBudget(t *testing.T) {
 	if len(tiny.Items) != 0 || tiny.Doc != full.Doc || !reflect.DeepEqual(tiny.Omitted, map[string]int{"a": 10, "b": 2, "c": 4, "d": 1}) {
 		t.Fatalf("budget 1: items %v, omitted %v, doc kept %v", ringIDs(tiny.Items), tiny.Omitted, tiny.Doc == full.Doc)
 	}
-	if last := lastLine(tiny.Text()); !strings.Contains(last, "a 10 · b 2 · c 4 · d 1") || !strings.Contains(last, "cerne show <id>") {
+	if last := lastLine(tiny.Text()); !strings.Contains(last, "left out every neighbourhood item: a 10 · b 2 · c 4 · d 1") || !strings.Contains(last, "cerne show <id>") || strings.Contains(last, "cut the list") {
 		t.Fatalf("last line %q does not say what was omitted and how to read it", last)
 	}
 	// A budget that holds the fixed part and a few short lines.
@@ -334,4 +337,21 @@ func TestTaskIndexNotesOfRingsAToC(t *testing.T) {
 func lastLine(s string) string {
 	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
 	return lines[len(lines)-1]
+}
+
+// Critic L3: a task whose plan is its epic's says where the plan is; a task
+// with its own plan does not.
+func TestTaskContextPointsAtTheEpicPlan(t *testing.T) {
+	repo := contextFixture(t)
+	p, err := TaskContext(repo, "T-0003", DefaultContextBudget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.EpicPlan != "cerne show E-0001 --doc plan" || !strings.Contains(p.Text(), "the plan is the epic's: cerne show E-0001 --doc plan\n") {
+		t.Fatalf("epic plan = %q:\n%s", p.EpicPlan, p.Text())
+	}
+	own, err := TaskContext(repo, "T-0002", DefaultContextBudget)
+	if err != nil || own.EpicPlan != "" {
+		t.Fatalf("a task with its own plan: %q %v", own.EpicPlan, err)
+	}
 }

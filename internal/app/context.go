@@ -89,6 +89,7 @@ type TaskPack struct {
 	Title      string         `json:"title"`
 	State      string         `json:"state"`
 	Epic       *ContextRef    `json:"epic,omitempty"`
+	EpicPlan   string         `json:"epic_plan,omitempty"` // the command that reads the epic's plan, when the task has none
 	Doc        ContextDoc     `json:"doc"`
 	Items      []ContextItem  `json:"items"`
 	Components []string       `json:"components"`
@@ -129,6 +130,9 @@ func taskContext(repoDir, id string, budget int, content bool) (TaskPack, error)
 	}
 	if t.epic != nil {
 		p.Epic = &ContextRef{ID: t.epic.ID, Title: t.epic.Title}
+		if _, own := t.docs["plan"]; !own && t.epicDocs["plan"] != "" {
+			p.EpicPlan = "cerne show " + t.epic.ID + " --doc plan" // the task's how is the epic's plan
+		}
 	}
 	if name := StageDoc(t.f.State, slices.Collect(maps.Keys(t.docs))); name != "" {
 		p.Doc = ContextDoc{Name: name, Body: t.docs[name]}
@@ -641,6 +645,9 @@ func (p TaskPack) Text() string {
 	if p.Epic != nil {
 		fmt.Fprintf(&b, "epic: %s  %s\n", p.Epic.ID, p.Epic.Title)
 	}
+	if p.EpicPlan != "" {
+		fmt.Fprintf(&b, "the plan is the epic's: %s\n", p.EpicPlan)
+	}
 	if p.Doc.Name != "" {
 		fmt.Fprintf(&b, "\n## %s\n%s\n", p.Doc.Name, p.Doc.Body)
 	}
@@ -668,8 +675,12 @@ func (p TaskPack) Text() string {
 	}
 	if p.Compact {
 		o := p.Omitted
-		fmt.Fprintf(&b, "the budget of %d tokens cut the list to id and title and left out: a %d · b %d · c %d · d %d — raise --budget, or read one: cerne show <id>\n",
-			p.Budget, o["a"], o["b"], o["c"], o["d"])
+		what := "cut the list to id and title and left out"
+		if len(p.Items) == 0 { // the document alone fills the budget
+			what = "left out every neighbourhood item"
+		}
+		fmt.Fprintf(&b, "the budget of %d tokens %s: a %d · b %d · c %d · d %d — raise --budget, or read one: cerne show <id>\n",
+			p.Budget, what, o["a"], o["b"], o["c"], o["d"])
 	}
 	return b.String()
 }
