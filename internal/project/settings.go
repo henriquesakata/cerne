@@ -239,6 +239,11 @@ var settingsRegistry = []Setting{
 		Description: "On, the cerne ui panel asks GitHub for the latest release when it starts and every 24 hours while it is open, and shows an Update button when a newer one exists. Off, the panel never asks; cerne update still checks when you run it. It applies to every project on this machine.",
 	},
 	{
+		ID: "update.notify", Group: "integrations", Title: "New release notice", Type: "bool", Default: false,
+		Scopes:      []string{ScopeHost},
+		Description: "On, an agent's session start asks GitHub for the latest release at most once a day, and tells one agent per machine, once per version, to ask you to run cerne update. Off, no session asks. CERNE_NO_UPDATE_NOTIFIER or CI turns it off whatever this says. It applies to every project on this machine.",
+	},
+	{
 		ID: "wiki.enabled", Group: "interface", Title: "Wiki", Type: "bool", Default: true,
 		Scopes:      []string{ScopeProject, ScopeHost},
 		Description: "On keeps the wiki live: when compile_on_push is set, a push recompiles the dirty pages, and wiki lint debt counts as pending work in 'cerne next'. Off stops both; the wiki stays readable, with a stale banner and an on-demand recompile.",
@@ -311,6 +316,17 @@ func UpdateCheck(projDir string) bool {
 		}
 	}
 	return true
+}
+
+// UpdateNotify is update.notify (F-0479), a host setting: true only when it
+// resolves to true.
+func UpdateNotify(projDir string) bool {
+	for _, s := range ResolveSettings(projDir).Settings {
+		if s.ID == "update.notify" {
+			return s.Value == true
+		}
+	}
+	return false
 }
 
 // NotesOnEdit is hooks.notes_on_edit for the project at (or above) projDir
