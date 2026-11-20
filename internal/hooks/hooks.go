@@ -171,6 +171,12 @@ var ErrUnknownProvider = errors.New("unknown provider")
 // manual step as the note). A corrupt config file is a fail-closed error for
 // Claude Code; other providers degrade to skipped, never clobbering.
 func Install(projDir string, providers ...Provider) ([]Result, error) {
+	return InstallNetwork(projDir, false, providers...)
+}
+
+// InstallNetwork is Install plus the F-0484 request: with network, the Codex
+// sandbox profile also opens the whole network (no domain list exists).
+func InstallNetwork(projDir string, network bool, providers ...Provider) ([]Result, error) {
 	if len(providers) == 0 {
 		providers = []Provider{ProviderClaude}
 	}
@@ -186,7 +192,7 @@ func Install(projDir string, providers ...Provider) ([]Result, error) {
 		case ProviderCursor:
 			rs = installCursor(projDir)
 		case ProviderCodex:
-			rs = installCodex(projDir)
+			rs = installCodex(projDir, network)
 		case ProviderGemini:
 			rs = installGemini(projDir)
 		case ProviderCopilot:
