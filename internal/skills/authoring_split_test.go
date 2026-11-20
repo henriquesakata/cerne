@@ -128,6 +128,11 @@ func TestSkillMdKeepsTheRules(t *testing.T) {
 // `cerne feature complete` itself; F-0418's bar forms follow the project's
 // documentation language instead of being pt-BR only.
 var rewritten = []string{
+	// F-0482: a retag is accepted in any state, so the "active only" wording went.
+	"Re-tag in place — any state except terminal history",
+	"Re-tag an active decision in place with",
+	"Re-tag an active note in place with",
+	"Re-tag a current reference in place with",
 	"`cerne guide \"<question>\"` answers about any cerne feature",
 	"Between the two, run `cerne cost F-NNNN --stamp`",
 	// F-0418: the forms follow the project's documentation language.
