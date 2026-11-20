@@ -79,7 +79,7 @@ func TestInitVerboseBringsPerFileDetailBack(t *testing.T) {
 	}
 }
 
-func TestInitAgentsConnectedShowsDetectedCodex(t *testing.T) {
+func TestInitAgentsConnectedListsOnlyWhatInitWires(t *testing.T) {
 	gitignoreEnv(t)
 	localBackendEnv(t)
 	proj := gitRepoDir(t)
@@ -90,10 +90,10 @@ func TestInitAgentsConnectedShowsDetectedCodex(t *testing.T) {
 	if err != nil {
 		t.Fatalf("init: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "Agents connected: claude, codex.") {
-		t.Errorf("codex not connected:\n%s", out)
+	if !strings.Contains(out, "Agents connected: claude.") || strings.Contains(out, "Agents connected: claude, codex") {
+		t.Errorf("codex got only the guide, not hooks; it must not be connected:\n%s", out)
 	}
-	if !strings.Contains(out, "cursor, gemini, copilot: cerne hook install --provider <name>") {
+	if !strings.Contains(out, "To connect cursor, codex, gemini, copilot: cerne hook install --provider <name>") {
 		t.Errorf("others line wrong:\n%s", out)
 	}
 }

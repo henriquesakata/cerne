@@ -459,18 +459,18 @@ func TestAgentLinesKeepSkipReason(t *testing.T) {
 	}
 }
 
-// T-0009: init summarizes the agents as connected (claude always, the detected
-// ones whose delivery was not skipped) or not detected.
+// T-0009/T-0013: init summarizes the agents as connected (claude only: the one
+// init wires with guide and hooks) or still to connect (every other agent).
 func TestAgentSummary(t *testing.T) {
 	dir := t.TempDir()
 	det := []hooks.Provider{hooks.ProviderCodex}
 	rs, _ := Install(dir, det...)
 	connected, missing := AgentSummary(rs, det)
-	if got := strings.Join(connected, ","); got != "claude,codex" {
-		t.Errorf("connected = %q, want claude,codex", got)
+	if got := strings.Join(connected, ","); got != "claude" {
+		t.Errorf("connected = %q, want claude", got)
 	}
-	if got := strings.Join(missing, ","); got != "cursor,gemini,copilot" {
-		t.Errorf("missing = %q, want cursor,gemini,copilot", got)
+	if got := strings.Join(missing, ","); got != "cursor,codex,gemini,copilot" {
+		t.Errorf("missing = %q, want cursor,codex,gemini,copilot", got)
 	}
 
 	c2, m2 := AgentSummary(nil, nil)
