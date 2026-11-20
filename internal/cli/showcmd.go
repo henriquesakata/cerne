@@ -648,6 +648,9 @@ func (r showResult) renderText(w io.Writer) {
 		writeDocWriters(w, r.writes)
 	case store.Decision:
 		fmt.Fprintf(w, "%s  %s  [%s]  %s\n", e.ID, r.kind, e.State, e.Title)
+		if len(e.Informs) > 0 {
+			fmt.Fprintf(w, "informs: %s\n", strings.Join(e.Informs, ", "))
+		}
 		writeSuccession(w, e.SupersededBy, e.Reason)
 	case store.Reference:
 		fmt.Fprintf(w, "%s  %s  [%s]  %s\n", e.ID, r.kind, e.State, e.Title)
