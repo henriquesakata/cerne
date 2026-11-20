@@ -358,7 +358,7 @@ export async function fetchState(): Promise<StateResponse> {
   return (await r.json()) as StateResponse
 }
 
-// Métrica de economia de contexto (F-0127): acervo completo vs projeção
+// Métrica de redução do acervo (F-0127): acervo completo vs projeção
 // corrente, por tipo e no total — espelho de materialize.Stats.
 export type KindStats = {
   count: number
