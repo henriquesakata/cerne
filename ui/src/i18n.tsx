@@ -1560,6 +1560,9 @@ const ptBR = {
       'Notes on prompt': 'Notas ao enviar o prompt',
       "On shows the agent up to 3 active notes or runbooks whose titles match the words of the user's prompt, once per session, through the prompt hook. Off stops showing them.":
         'Ligado, o gancho do prompt mostra ao agente até 3 notas ou runbooks ativos cujos títulos casam com as palavras do prompt do usuário, uma vez por sessão. Desligado, deixa de mostrá-los.',
+      'Refresh hooks and guide': 'Renovar ganchos e guia',
+      "On renews an agent's hooks and authoring guide by themselves, at the session start and in cerne next, when every managed file is one a past cerne release wrote and none was edited; the change applies from the next session. Off leaves them alone and only warns that they are out of date (cerne update renews them).":
+        'Ligado, renova sozinho os ganchos e o guia de um agente, no início da sessão e no cerne next, quando todo arquivo gerenciado é um que uma release anterior do cerne gravou e nenhum foi editado; a mudança vale a partir da próxima sessão. Desligado, não mexe em nada e só avisa que estão desatualizados (o cerne update os renova).',
       'Commit URL': 'URL do commit',
       'The template that turns a bare commit SHA into a link, with a {sha} placeholder, for example https://github.com/owner/repo/commit/{sha}. Empty accepts only full commit URLs.':
         'O modelo que transforma um SHA solto em link, com o marcador {sha}, por exemplo https://github.com/owner/repo/commit/{sha}. Vazio aceita só URLs completas de commit.',

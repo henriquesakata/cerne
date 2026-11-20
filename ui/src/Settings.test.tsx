@@ -1684,3 +1684,37 @@ describe('Settings — integration keys (F-0449)', () => {
     ).toBeInTheDocument()
   })
 })
+
+// F-0477 crit. 12: the registry's hooks.auto_refresh shows in the integrations
+// group with its title in both languages, and the switch writes it.
+describe('Settings — hooks.auto_refresh (F-0477)', () => {
+  const autoRefresh = key({
+    id: 'hooks.auto_refresh',
+    title: 'Refresh hooks and guide',
+    group: 'integrations',
+    description:
+      "On renews an agent's hooks and authoring guide by themselves, at the session start and in cerne next, when every managed file is one a past cerne release wrote and none was edited; the change applies from the next session. Off leaves them alone and only warns that they are out of date (cerne update renews them).",
+  })
+  const view = (k = autoRefresh): SettingsView => ({ files: { project: '/repo/.cernerc', host: '/h/settings.toml' }, settings: [k] })
+
+  it('appears in the integrations group in pt-BR and in English', async () => {
+    fetchSettings.mockResolvedValue(view())
+    render(<Settings group="integrations" />)
+    expect(await screen.findByRole('listitem', { name: 'Renovar ganchos e guia' })).toBeInTheDocument()
+    cleanup()
+    render(
+      <I18nProvider>
+        <Settings group="integrations" />
+      </I18nProvider>,
+    )
+    expect(await screen.findByRole('listitem', { name: 'Refresh hooks and guide' })).toBeInTheDocument()
+  })
+
+  it('toggling it off writes the key to the selected scope', async () => {
+    fetchSettings.mockResolvedValue(view())
+    putSetting.mockResolvedValue(view({ ...autoRefresh, value: false, origin: 'project', stored: { project: false } }))
+    render(<Settings group="integrations" />)
+    fireEvent.click(within(await screen.findByRole('listitem', { name: 'Renovar ganchos e guia' })).getByRole('checkbox'))
+    await waitFor(() => expect(putSetting).toHaveBeenCalledWith('hooks.auto_refresh', 'project', false))
+  })
+})
