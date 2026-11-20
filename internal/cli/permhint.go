@@ -6,6 +6,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/henriquesakata/cerne/internal/llm"
 )
 
 // cacheRefreshError explains why touching the cache clone at repoDir failed.
@@ -15,6 +17,9 @@ import (
 func cacheRefreshError(what, repoDir, backend string, err error) error {
 	if errors.Is(err, fs.ErrPermission) {
 		return notWritableError(repoDir, backend, err)
+	}
+	if os.Getenv("CODEX_THREAD_ID") != "" { // F-0484: the sandbox cut the network; deleting the cache will not help
+		return fmt.Errorf("%s at %s failed (%s): %w", what, repoDir, llm.CodexSandboxHint, err)
 	}
 	return fmt.Errorf("%s at %s failed (delete that directory and re-run the command to force a fresh clone): %w", what, repoDir, err)
 }

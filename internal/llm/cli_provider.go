@@ -151,6 +151,18 @@ func cliFailure(ctx context.Context, start time.Time, sentinel error, what strin
 // on stdout with an empty stderr (F-0183); before the fallback, the error
 // ended in a dangling colon and hid the one line naming the cause.
 func describeExit(name, state string, stdout, stderr []byte) string {
+	msg := describeExitBase(name, state, stdout, stderr)
+	if os.Getenv("CODEX_THREAD_ID") != "" {
+		msg += " — " + CodexSandboxHint
+	}
+	return msg
+}
+
+// CodexSandboxHint (F-0484) is appended, inside a Codex session, to errors the
+// sandbox's cut network can cause; cli.cacheRefreshError shares it.
+const CodexSandboxHint = "the Codex sandbox may be cutting the network; to open it for this project, run: cerne hook install --provider codex --network"
+
+func describeExitBase(name, state string, stdout, stderr []byte) string {
 	// The Copilot CLI's JSON mode reports a failure as a session.error event on
 	// stdout; stderr noise (an update notice) must not hide it.
 	if msg := copilotSessionError(stdout); msg != "" {
