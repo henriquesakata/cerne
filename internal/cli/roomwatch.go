@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/henriquesakata/cerne/internal/project"
@@ -161,19 +162,25 @@ func newRoomWatchCmd() *cobra.Command {
 					return err
 				}
 			}
+			// Trap the signals before taking the lock: a watch killed while it
+			// holds the lock leaves it on disk, and nothing ever steals it, so
+			// the session could not watch again (F-0467). SIGTERM is how an
+			// agent harness or a supervisor stops a watcher.
+			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
 			release, err := lockCheckpoint(cpPath)
 			if err != nil {
 				return err
 			}
 			defer release()
 
-			start, err := resolveWatchStart(cmd.Context(), c, roomID, session, cpPath, since, cmd.Flags().Changed("since"))
+			start, err := resolveWatchStart(ctx, c, roomID, session, cpPath, since, cmd.Flags().Changed("since"))
 			if err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
 				return err
 			}
-
-			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt)
-			defer stop()
 			return roomWatchLoop(ctx, cmd.OutOrStdout(), c, roomID, session, cpPath, start, once)
 		},
 	}
