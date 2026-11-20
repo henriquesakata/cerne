@@ -118,6 +118,17 @@ func Install(projDir string, providers ...hooks.Provider) ([]Result, error) {
 	return results, nil
 }
 
+// InstallProviders delivers the authoring guide to the given non-Claude
+// providers only, leaving .claude/skills untouched (F-0477: an agent whose
+// files cannot be renewed must not be rewritten by another's renewal).
+func InstallProviders(projDir string, providers ...hooks.Provider) ([]Result, error) {
+	var results []Result
+	for _, p := range providers {
+		results = append(results, installProvider(projDir, p)...)
+	}
+	return results, nil
+}
+
 // writeSkillFiles writes SKILL.md at dst and the skill's reference files in
 // the reference/ folder beside it. The status is SKILL.md's, except that an
 // unchanged SKILL.md with a reference created or repaired reads as updated.
