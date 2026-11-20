@@ -24,8 +24,7 @@ func newSavingsCmd() *cobra.Command {
 		Long: "Measures how much documentation the backend holds (every entity, every state) against " +
 			"the entity documents the current .docs/ projection delivers to an agent — per kind and in total, " +
 			"as counts, bytes and an estimated token figure (bytes/4). The difference is the context " +
-			"left out of .docs/, the folder the agent reads — not a measure of what the agent ends up reading. The generated " +
-			".docs/CONTEXT.md is not counted on either side; its size is printed apart, since every session starts from it. " +
+			"the agent never has to read. The generated .docs/CONTEXT.md roster is not counted on either side. " +
 			"--json emits the full object for machine consumption.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -69,7 +68,7 @@ func runSavings(cmd *cobra.Command, dir string, asJSON bool) error {
 // corpus vs the current projection, then the saved line with the percentage
 // and the size of the map (mapBytes 0: not materialized).
 func renderSavings(out io.Writer, s materialize.Stats, mapBytes int64) {
-	fmt.Fprintln(out, "Context savings — full corpus vs current .docs/ projection")
+	fmt.Fprintln(out, "Corpus reduction — full corpus vs current .docs/ projection")
 	fmt.Fprintln(out)
 	fmt.Fprintf(out, "%-10s  %28s    %28s\n", "", "CORPUS (all states)", "CURRENT (projected)")
 	fmt.Fprintf(out, "%-10s  %6s  %9s  %9s    %6s  %9s  %9s\n",
@@ -82,7 +81,7 @@ func renderSavings(out io.Writer, s materialize.Stats, mapBytes int64) {
 	fmt.Fprintf(out, "%-10s  %6d  %9d  %9d    %6d  %9d  %9d\n",
 		"TOTAL", s.TotalCount, s.TotalBytes, s.TotalTokensEst, s.CurrentCount, s.CurrentBytes, s.CurrentTokensEst)
 	fmt.Fprintln(out)
-	fmt.Fprintf(out, "Saved: %d bytes (~%d tokens) — %.1f%% of the corpus stays out of .docs/, the folder the agent reads (what the agent reads from it is not measured)\n",
+	fmt.Fprintf(out, "Reduced: %d bytes (~%d tokens) — %.1f%% of the corpus stays in history, outside the folder the agent searches\n",
 		s.SavedBytes, s.SavedTokensEst, s.SavedPct)
 	if mapBytes > 0 {
 		fmt.Fprintf(out, "Map: .docs/CONTEXT.md is %d bytes (~%d tokens), the map a session starts from.\n", mapBytes, mapBytes/4)

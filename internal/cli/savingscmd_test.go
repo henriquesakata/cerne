@@ -69,7 +69,8 @@ func TestSavings(t *testing.T) {
 		"KIND", "CORPUS", "CURRENT",
 		"feature", "decision",
 		"TOTAL", "1000", "250",
-		"Saved: 750 bytes", "~187 tokens", "75.0%",
+		"Corpus reduction — full corpus vs current .docs/ projection",
+		"Reduced: 750 bytes", "~187 tokens", "75.0%",
 		"CONTEXT.md is not counted",
 	} {
 		if !strings.Contains(out, want) {
@@ -132,7 +133,7 @@ func TestSavingsSaysWhatItMeasures(t *testing.T) {
 	if strings.Contains(out, "stays out of the agent's context") {
 		t.Fatalf("savings still claims to measure the agent's context:\n%s", out)
 	}
-	for _, want := range []string{"stays out of .docs/, the folder the agent reads", "Map: .docs/CONTEXT.md is 4000 bytes (~1000 tokens)"} {
+	for _, want := range []string{"of the corpus stays in history, outside the folder the agent searches", "Map: .docs/CONTEXT.md is 4000 bytes (~1000 tokens)"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("savings output missing %q:\n%s", want, out)
 		}

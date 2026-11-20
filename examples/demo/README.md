@@ -38,7 +38,7 @@ cerne ui                      # dashboard and kanban at http://localhost:7717
 cat .docs/CONTEXT.md          # what an AI agent reads: only the current state
 cerne search facebook         # the rejected proposal is history, one search away
 cerne show D-0001             # the superseded decision, and what replaced it
-cerne savings                 # how much of the corpus stays out of .docs/
+cerne savings                 # how much of the corpus stays out of the agent's context
 cerne feature accept F-0005   # accepting a delivery is a human act: try it
 ```
 
