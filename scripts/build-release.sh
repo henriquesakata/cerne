@@ -22,6 +22,10 @@ TARGETS=(
   "windows/amd64"
 )
 
+# F-0477: the contents every release wrote, for the automatic refresh. Only the
+# tags the list does not have yet are built (git, go and a few minutes each).
+go run ./tools/knowncontents
+
 rm -rf "${OUT}"
 mkdir -p "${OUT}"
 
