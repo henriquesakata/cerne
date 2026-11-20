@@ -57,14 +57,19 @@ func newUICmd() *cobra.Command {
 	var port int
 	var noBrowser bool
 	var pullInterval time.Duration
+	var identity bool
 	cmd := &cobra.Command{
 		Use:   "ui",
 		Short: "Serve the local web dashboard",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if identity {
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(hostInfo{Version: version.Version, UI: server.UIIdentity()})
+			}
 			return runUI(cmd, dir, port, noBrowser, pullInterval)
 		},
 	}
+	cmd.Flags().BoolVar(&identity, "identity", false, "print this binary's version and UI identity as JSON and exit")
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
 	cmd.Flags().IntVar(&port, "port", 7717, "port for the local UI server")
@@ -338,8 +343,12 @@ var probeClient = &http.Client{Timeout: 2 * time.Second}
 // app holding the port) by confirming GET /api/projects returns the expected
 // shape.
 // hostInfo is what a cerne ui reports about itself on the probe; both fields
-// are empty on a panel older than F-0373.
-type hostInfo struct{ Version, UI string }
+// are empty on a panel older than F-0373. `cerne ui --identity` prints the
+// same pair as JSON (F-0478).
+type hostInfo struct {
+	Version string `json:"version"`
+	UI      string `json:"ui"`
+}
 
 func probeCerneUI(base string) (info hostInfo, ok bool) {
 	r, err := probeClient.Get(base + "/api/projects")
