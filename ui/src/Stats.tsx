@@ -2,7 +2,7 @@ import { fetchSavings } from './api'
 import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
 import { useT } from './i18n'
 
-// Página #/stats (F-0127): a economia de contexto que o cerne entrega — o
+// Página #/stats (F-0127): a redução do acervo que o agente pesquisa — o
 // acervo completo do backend vs a projeção corrente que um agente lê.
 
 // Ordem fixa das linhas da tabela por tipo (mesma do CLI `cerne stats`).

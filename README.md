@@ -36,7 +36,7 @@
   <a href="INSTALL.md">Install guide</a>
 </p>
 
-![cerne's own dashboard: features by state, a calendar of project activity, open lint debts and the share of the documentation kept out of the agent's context](docs/assets/ui-dashboard.png)
+![cerne's own dashboard: features by state, a calendar of project activity, open lint debts and the corpus reduction: the share of the documentation the agent does not have to search](docs/assets/ui-dashboard.png)
 
 *cerne's own dashboard, captured in November 2026 when the project had 403 features. cerne is developed with cerne, and the open lint debts on screen are real. The figures elsewhere in this README were measured later, on 2026-11-16.*
 
@@ -275,8 +275,8 @@ Clients that install MCP Bundles (MCPB) can take the server straight from a rele
 | **Search and Q&A over history** | Full-text search (SQLite FTS5) over everything, rejected and superseded included. `cerne ask` answers with citations, or returns only the sources. `cerne graph` exports the relationships between entities. |
 | **Deterministic lint** | Rules over state, not prose: references to superseded decisions, broken links, orphans, missing gate documents, results without evidence, unregistered sources, stale decisions and notes, duplicate live features, epics out of step with their children. `cerne drift` flags implemented features whose code changed since. |
 | **Parallel agents** | Per-document 3-way merge on `pull`, auto-rebase on `push`, `cerne sync` as one forward path, a conflict-free `docs.lock` across branches and worktrees, work entries and handoffs, commit-message checks through git hooks. |
-| **Dashboard** | `cerne ui`: what waits on you, the kanban board, epics, decisions, conventions, agent activity, flow metrics, token costs, lint debts, context savings, settings. English and Portuguese. |
-| **Measurement** | `cerne savings` (what the projection keeps out), `cerne stats` (lead time, cycle time, throughput from the event log), `cerne cost` (tokens a feature consumed, read from Claude Code transcripts). |
+| **Dashboard** | `cerne ui`: what waits on you, the kanban board, epics, decisions, conventions, agent activity, flow metrics, token costs, lint debts, corpus reduction, settings. English and Portuguese. |
+| **Measurement** | `cerne savings` (the corpus reduction: full corpus vs the documents the agent searches), `cerne stats` (lead time, cycle time, throughput from the event log), `cerne cost` (tokens a feature consumed, read from Claude Code transcripts). |
 | **Adoption** | `cerne init`, `cerne import --agent`, `cerne demo`, documents in English or Portuguese, an optional Open Knowledge Format–compatible projection (`cerne pull --okf`). |
 
 ## Agent integrations
@@ -364,7 +364,7 @@ A tool is often easier to judge by what it leaves out. The first list is by desi
 - **It does not approve or accept on the agent's behalf.** Both are human acts by default (see [the lifecycle](#the-lifecycle-and-where-the-human-decides)); a project can opt into `auto`.
 - **It does not rewrite history.** A wrong conclusion gets an erratum appended. Superseded and rejected documents leave the agent's path and stay searchable.
 - **It does not replace `CLAUDE.md` or `AGENTS.md`.** Fixed rules still belong there. cerne handles what has a lifecycle: work, decisions, and knowledge that can go stale.
-- **It does not shrink the conversation.** Most of an agent's tokens are the conversation re-read at every step, with or without cerne; on one feature measured from its transcripts, cerne accounted for about 5% of what the agent re-read. What it saves is the documentation it keeps out of reach, which `cerne savings` measures.
+- **It does not shrink the conversation.** Most of an agent's tokens are the conversation re-read at every step, with or without cerne; on one feature measured from its transcripts, cerne accounted for about 5% of what the agent re-read. What it reduces is the corpus the agent has to search, from every document to the current ones, which `cerne savings` measures.
 - **It does not check your code against your decisions.** Lint checks the documentation. The closest it comes is `drift-suspect`: with module or component paths configured, it flags a shipped feature whose code changed since, so its spec may be stale.
 
 **Not yet**
@@ -388,7 +388,7 @@ cerne is young and pre-1.0: commands and file formats can still change between r
 - Token figures in `cerne savings` are bytes/4 estimates, and they leave out the generated `CONTEXT.md`.
 - Without a `git` executable, the built-in fallback is much slower.
 
-**What is measured, and what is not.** `cerne savings` measures what the projection keeps out of reach. `cerne cost <id>` measures what a feature consumed, documents included. There is no side-by-side run of the same work with and without cerne, so the claim that reviewing a one-page spec before the build avoids rework is reasoning, not a measurement.
+**What is measured, and what is not.** `cerne savings` measures the corpus reduction: the documents the agent searches against the full corpus. `cerne cost <id>` measures what a feature consumed, documents included. There is no side-by-side run of the same work with and without cerne, so the claim that reviewing a one-page spec before the build avoids rework is reasoning, not a measurement.
 
 Feedback from early users shapes what comes next: please [open an issue](https://github.com/henriquesakata/cerne/issues) when you hit a rough edge.
 
