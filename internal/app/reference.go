@@ -161,7 +161,7 @@ func validateInforms(repoDir string, informs []string) ([]string, error) {
 	var out []string
 	seen := map[string]bool{}
 	for _, raw := range informs {
-		id := strings.TrimSpace(raw)
+		id := domain.CanonicalID(raw) // N-0061: stored by the canonical id
 		if id == "" || seen[id] {
 			continue
 		}
@@ -336,11 +336,16 @@ func LinkReference(repoDir, projDir, id string, add, remove []string) (store.Ref
 
 // relink applies add (validated) and remove to informs: added and removed are
 // what changed, absent the removed ids that were not there. An id in both
-// lists is refused; the remove list is deduped.
+// lists is refused; the remove list is deduped and compared by the canonical
+// id (N-0061).
 func relink(informs, add, remove []string) (out, added, removed, absent []string, err error) {
 	out = informs
+	canon := make([]string, 0, len(remove))
+	for _, t := range remove {
+		canon = append(canon, domain.CanonicalID(t))
+	}
 	for _, t := range add {
-		if slices.Contains(remove, t) {
+		if slices.Contains(canon, t) {
 			return nil, nil, nil, nil, fmt.Errorf("--informs and --unlink both name %s", t)
 		}
 		if !slices.Contains(out, t) {
@@ -349,14 +354,14 @@ func relink(informs, add, remove []string) (out, added, removed, absent []string
 		}
 	}
 	seen := map[string]bool{}
-	for _, t := range remove {
-		t = strings.TrimSpace(t)
+	for _, t := range canon {
 		if t == "" || seen[t] {
 			continue
 		}
 		seen[t] = true
-		if slices.Contains(out, t) {
-			out = slices.DeleteFunc(out, func(x string) bool { return x == t })
+		same := func(x string) bool { return domain.CanonicalID(x) == t }
+		if slices.ContainsFunc(out, same) {
+			out = slices.DeleteFunc(out, same)
 			removed = append(removed, t)
 		} else {
 			absent = append(absent, t)

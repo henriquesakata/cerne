@@ -85,3 +85,18 @@ func TestLinkDecision(t *testing.T) {
 		t.Fatalf("superseded decision: %v", err)
 	}
 }
+
+// N-0061: the targets of --informs and --unlink are ids in any case, stored
+// and removed by the canonical id.
+func TestLinkDecisionTargetsInAnyCase(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	f, _ := CreateFeature(repoDir, projDir, "Uma feature", "", "", nil, nil)
+	d, err := CreateDecision(repoDir, projDir, "Usar Keycloak", "corpo", []string{strings.ToLower(f.ID)}, nil, nil, false)
+	if err != nil || !slices.Equal(d.Informs, []string{f.ID}) {
+		t.Fatalf("create with a lowercase target: %v %v", d.Informs, err)
+	}
+	got, _, err := LinkDecision(repoDir, projDir, d.ID, nil, []string{strings.ToLower(f.ID)})
+	if err != nil || len(got.Informs) != 0 {
+		t.Fatalf("unlink a lowercase target: %v %v", got.Informs, err)
+	}
+}
