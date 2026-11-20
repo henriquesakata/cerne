@@ -30,14 +30,14 @@ func Known(slot, sha string) bool { return slices.Contains(known.Known[slot], sh
 // knownSlot reports whether any release wrote the slot.
 func knownSlot(slot string) bool { _, ok := known.Known[slot]; return ok }
 
-// missingRelease says why the list does not cover tag, "" when it does.
-func missingRelease(c Contents, tag string) string {
-	reason, ok := c.Tags[tag]
-	switch {
-	case !ok:
-		return "known_contents.json has no entry for " + tag + ": run `go run ./tools/knowncontents`"
-	case reason != "":
-		return tag + " is in known_contents.json as skipped: " + reason
+// missingContent names the slots whose current content the list lacks.
+func missingContent(cur map[string]string, c Contents) []string {
+	var out []string
+	for slot, sha := range cur {
+		if !slices.Contains(c.Known[slot], sha) {
+			out = append(out, pathOf(slot))
+		}
 	}
-	return ""
+	slices.Sort(out)
+	return slices.Compact(out)
 }

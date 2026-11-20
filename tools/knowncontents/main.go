@@ -1,14 +1,24 @@
-// Command knowncontents regenerates internal/refresh/known_contents.json: for
-// every release tag it builds that release's binary, installs the agents into
-// a throwaway project and records the hash of every managed item (F-0477).
-// Run it from the repository root; a tag already in the file is not redone, and
-// one that cannot be built or installed is recorded as skipped with the reason.
+// Command knowncontents maintains internal/refresh/known_contents.json, the
+// hash of every managed item some release wrote (F-0477). Run it from the
+// repository root.
+//
+//	go run ./tools/knowncontents          appends what THIS build writes (run it
+//	                                      whenever a managed file changes, and commit)
+//	go run ./tools/knowncontents tags     the one-time backfill: for every release
+//	                                      tag in this clone, builds that release,
+//	                                      installs the agents in a throwaway project
+//	                                      and records the hashes; a tag already in
+//	                                      the file is not redone, one that cannot be
+//	                                      built is recorded as skipped with the reason
+//	go run ./tools/knowncontents fixture <tag> <dest>   a release's install, as test data
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,13 +41,41 @@ func main() {
 		}
 		return
 	}
-	if err := run(); err != nil {
+	var err error
+	switch {
+	case len(os.Args) == 1:
+		err = update(appendCurrent)
+	case len(os.Args) == 2 && os.Args[1] == "tags":
+		err = update(appendTags)
+	default:
+		err = errors.New("usage: knowncontents [tags | fixture <tag> <dest>]")
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "knowncontents:", err)
 		os.Exit(1)
 	}
 }
 
-func run() error {
+// appendCurrent adds what this build installs.
+func appendCurrent(list *refresh.Contents) error {
+	items := refresh.Current()
+	if len(items) == 0 {
+		return errors.New("this build's install read back no managed item")
+	}
+	add(list, items)
+	fmt.Fprintf(os.Stderr, "current build: %d items\n", len(items))
+	return nil
+}
+
+func add(list *refresh.Contents, items map[string]string) {
+	for slot, sha := range items {
+		if !contains(list.Known[slot], sha) {
+			list.Known[slot] = append(list.Known[slot], sha)
+		}
+	}
+}
+
+func update(fill func(*refresh.Contents) error) error {
 	var list refresh.Contents
 	if raw, err := os.ReadFile(listPath); err == nil {
 		if err := json.Unmarshal(raw, &list); err != nil {
@@ -50,6 +88,21 @@ func run() error {
 	if list.Known == nil {
 		list.Known = map[string][]string{}
 	}
+	if err := fill(&list); err != nil {
+		return err
+	}
+	for _, shas := range list.Known {
+		sort.Strings(shas)
+	}
+	raw, err := json.MarshalIndent(list, "", " ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(listPath, append(raw, '\n'), 0o644)
+}
+
+// appendTags is the one-time backfill over the release tags of this clone.
+func appendTags(list *refresh.Contents) error {
 	out, err := exec.Command("git", "tag", "-l", "v*").Output()
 	if err != nil {
 		return err
@@ -65,21 +118,10 @@ func run() error {
 			continue
 		}
 		list.Tags[tag] = ""
-		for slot, sha := range items {
-			if !contains(list.Known[slot], sha) {
-				list.Known[slot] = append(list.Known[slot], sha)
-			}
-		}
+		add(list, items)
 		fmt.Fprintf(os.Stderr, "%s: %d items\n", tag, len(items))
 	}
-	for _, shas := range list.Known {
-		sort.Strings(shas)
-	}
-	raw, err := json.MarshalIndent(list, "", " ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(listPath, append(raw, '\n'), 0o644)
+	return nil
 }
 
 func contains(s []string, v string) bool {
@@ -130,11 +172,51 @@ func fixture(tag, dest string) error {
 	if err := os.MkdirAll(dest, 0o755); err != nil {
 		return err
 	}
-	out, err := sh("", nil, "sh", "-c", "tar -C "+proj+" --exclude=.git --exclude=.cernerc -cf - . | tar -C "+dest+" -xf -")
+	return filepath.WalkDir(proj, func(p string, e fs.DirEntry, err error) error {
+		rel, _ := filepath.Rel(proj, p)
+		switch {
+		case err != nil:
+			return err
+		case rel == ".git" || rel == ".cernerc":
+			if e.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		case e.IsDir():
+			return os.MkdirAll(filepath.Join(dest, rel), 0o755)
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(dest, rel), b, 0o644)
+	})
+}
+
+// archive extracts tag's tree into dir with git's tar piped to tar, through
+// pipes and argument lists, never a shell.
+func archive(tag, dir string) (string, error) {
+	gitCmd := exec.Command("git", "archive", "--format=tar", tag)
+	tarCmd := exec.Command("tar", "-x", "-C", dir)
+	pipe, err := gitCmd.StdoutPipe()
 	if err != nil {
-		return fmt.Errorf("copy: %s", out)
+		return "", err
 	}
-	return nil
+	tarCmd.Stdin = pipe
+	var gitErr, tarErr bytes.Buffer
+	gitCmd.Stderr, tarCmd.Stderr = &gitErr, &tarErr
+	if err := tarCmd.Start(); err != nil {
+		return "", err
+	}
+	if err := gitCmd.Run(); err != nil {
+		_ = tarCmd.Process.Kill()
+		_ = tarCmd.Wait()
+		return gitErr.String(), err
+	}
+	if err := tarCmd.Wait(); err != nil {
+		return tarErr.String(), err
+	}
+	return "", nil
 }
 
 // installTag builds tag's binary in tmp and installs every agent it knows into
@@ -147,7 +229,7 @@ func installTag(tag, tmp string) (string, error) {
 		}
 	}
 	// git archive: the tag's tree without touching this worktree.
-	if out, err := sh("", nil, "sh", "-c", "git archive "+tag+" | tar -x -C "+src); err != nil {
+	if out, err := archive(tag, src); err != nil {
 		return "", fmt.Errorf("cannot extract %s: %s", tag, out)
 	}
 	bin := filepath.Join(tmp, "cerne")
