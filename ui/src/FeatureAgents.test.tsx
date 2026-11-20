@@ -153,8 +153,7 @@ describe('FeatureAgents (F-0486)', () => {
     postChannel.mockResolvedValue({ seq: 9, type: 'message', nick: 'Henrique', body: 'x', time: '', state: 'not_delivered' })
     renderPanel()
     await waitFor(() => expect(screen.getByText('HO-0008')).toBeInTheDocument())
-    const row = screen.getByText('HO-0008').closest('li') as HTMLElement
-    fireEvent.click(within(row).getByRole('button', { name: /mensagem só para esta sessão/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Mensagem só para HO-0008' }))
     expect(screen.getByRole('checkbox', { name: /mandar para TL do lote/i })).not.toBeChecked()
     expect(screen.getByRole('checkbox', { name: /mandar para HO-0008/i })).toBeChecked()
     fireEvent.change(screen.getByPlaceholderText(/sessões marcadas/i), { target: { value: 'corrige?' } })

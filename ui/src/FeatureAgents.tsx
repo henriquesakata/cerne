@@ -135,7 +135,7 @@ function AgentRow({
         <input type="checkbox" checked={checked} onChange={onToggle} aria-label={t.agents.pick(title)} />{' '}
         <strong>{title}</strong>
       </label>{' '}
-      <button type="button" className="queue-btn" onClick={onOnly}>
+      <button type="button" className="queue-btn" onClick={onOnly} aria-label={t.agents.messageThisLabel(title)}>
         {t.agents.messageThis}
       </button>
       <p>{s.roles.map(role).join(' · ')}</p>

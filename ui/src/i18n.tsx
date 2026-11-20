@@ -755,6 +755,7 @@ const ptBR = {
     notReachedOther: (title: string) =>
       `${title} só lê a mensagem quando rodar um comando. Parada esperando você? Abra essa sessão no agente dela e mande qualquer prompt.`,
     messageThis: 'Mensagem só para esta sessão',
+    messageThisLabel: (title: string) => `Mensagem só para ${title}`,
   },
   warRoom: {
     title: 'War Room',
@@ -2359,6 +2360,7 @@ const en: Messages = {
     notReachedOther: (title: string) =>
       `${title} reads the message only when it runs a command. Waiting for you? Open that session in its agent and send any prompt.`,
     messageThis: 'Message this session only',
+    messageThisLabel: (title: string) => `Message ${title} only`,
   },
   warRoom: {
     title: 'War Room',
