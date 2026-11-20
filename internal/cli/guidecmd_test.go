@@ -34,7 +34,7 @@ func TestGuideMessageTheAgent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Agents panel", "claude --resume", `cerne msg send "<text>"`, "no live work"} {
+	for _, want := range []string{"Agents panel", "claude --resume", `cerne msg send --ref F-NNNN "<text>"`, "no live work"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("guide answer lacks %q:\n%s", want, out)
 		}
