@@ -3,10 +3,12 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sync"
 	"time"
 
@@ -33,10 +35,22 @@ func NewMultiProject(secret string) http.Handler {
 	return s.requireSecret(s.mux())
 }
 
+// pidRe is the shape of a project id: cerne init's slug ([a-z0-9-]) or a
+// host's own id, such as the hub's UUID. No dot, slash or backslash, so a pid
+// is always one directory under the cache root (B-0045).
+var pidRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
+
+// errBadPID is a {pid} outside pidRe: it names no project, so a 404.
+var errBadPID = errors.New("not a project id")
+
 // projectPaths resolves the per-project cache locations for pid: the backend
 // clone (repo/) and the project dir holding docs.lock (proj/), both under
-// CacheDir(pid) so the index (CacheDir/index.db) is their sibling.
+// CacheDir(pid) so the index (CacheDir/index.db) is their sibling. The mux
+// decodes %2F inside a segment, so pid is checked before it becomes a path.
 func projectPaths(pid string) (repoDir, projDir string, err error) {
+	if !pidRe.MatchString(pid) {
+		return "", "", fmt.Errorf("%w: %q", errBadPID, pid)
+	}
 	cache, err := project.CacheDir(pid)
 	if err != nil {
 		return "", "", err
@@ -81,7 +95,7 @@ func (s *MultiServer) mux() http.Handler {
 			pid := r.PathValue("pid")
 			repoDir, projDir, err := projectPaths(pid)
 			if err != nil {
-				writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+				writePathsError(w, err)
 				return
 			}
 			// A clone lost with the cache (emptyDir + pod reschedule) is
@@ -142,7 +156,7 @@ func (s *MultiServer) handleRegister(w http.ResponseWriter, r *http.Request, pid
 	}
 	repoDir, projDir, err := projectPaths(pid)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		writePathsError(w, err)
 		return
 	}
 	// A freshly provisioned backend has no cerne layout yet; name (fallback pid)
@@ -160,6 +174,16 @@ func (s *MultiServer) handleRegister(w http.ResponseWriter, r *http.Request, pid
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"project": pid, "backend": req.Backend})
+}
+
+// writePathsError answers a projectPaths failure: 404 for a malformed pid,
+// 500 for a cache dir the OS cannot give.
+func writePathsError(w http.ResponseWriter, err error) {
+	if errors.Is(err, errBadPID) {
+		writeJSON(w, http.StatusNotFound, errorBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 }
 
 // ensureProjectClone clones backend into repoDir when absent, initializes the
