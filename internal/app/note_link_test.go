@@ -53,3 +53,21 @@ func TestLinkNote(t *testing.T) {
 		t.Fatalf("superseded note: %v", err)
 	}
 }
+
+// Critic L6 (N-0061): a lowercase id links the canonical note, and the event
+// names it canonically.
+func TestLinkNoteCanonicalID(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	f, _ := CreateFeature(repoDir, projDir, "Uma feature", "", "", nil, nil)
+	n, err := CreateNote(repoDir, projDir, "Uma regra", "", nil, nil, nil, nil, "", false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := LinkNote(repoDir, projDir, strings.ToLower(n.ID), []string{f.ID}, nil)
+	if err != nil || got.ID != n.ID {
+		t.Fatalf("lowercase link: %+v %v", got, err)
+	}
+	if p := createdPayload(t, repoDir, n.ID, "note.linked"); p["informs"] != f.ID {
+		t.Fatalf("note.linked payload = %v", p)
+	}
+}

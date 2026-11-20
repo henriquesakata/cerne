@@ -435,6 +435,7 @@ func writeNoteStub(repoDir, id, title string) error {
 // cite or a search). It returns the note and
 // the removed ids that were not there; a change of nothing commits nothing.
 func LinkNote(repoDir, projDir, id string, add, remove []string) (store.Note, []string, error) {
+	id = domain.CanonicalID(id) // N-0061: file names and events by the canonical id
 	var n store.Note
 	var absent []string
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
