@@ -68,6 +68,10 @@ The Gauntlet replaces self-scoring with a comparison against a real artifact tha
 
 Phases in full, the exemptions, when the tests suffice, cost per role: `reference/gauntlet.md` (`cerne guide "gauntlet"`).
 
+## Criteria and tests: mark the test that proves each criterion
+
+Every numbered criterion of a feature or task, and every bug, closes with a test that says so. The mark is a comment in the test file, in any language: `// F-0123 crit. 2` (also `crit. 2, 3`, `criterion 2`, `critério 2`; the same with `T-0123`). A bug takes `// B-0123` with no number, on its regression test. One line may cite several criteria. A criterion that is not tested ends with `(verificação manual)` (`(manual verification)` in an English project) and is no longer charged. `cerne lint` reports `criterion-without-test` for an unmarked criterion and `orphan-criterion-test` for a mark whose criterion was removed or renumbered, and `cerne feature complete` refuses while either stands. It reads the mark, never runs the test: whether it passes is the CI's job. Only entities started after the rule shipped are charged; `.cernerc` `test_roots` / `test_patterns` say where the tests are, and the setting `lint.criterion_tests` turns the rule off.
+
 ## Errata: a concluded entity is history
 
 A concluded entity — a `done`/`rejected`/`superseded` feature, a `superseded`/`obsolete` decision, runbook or note — is **history: its body is immutable**. When such a record carries a stale reference or needs a clarification, do **not** rewrite it and do **not** reopen it. Append an **errata** instead: `cerne <kind> errata <id> "<text>"` (kind: feature, decision, runbook, note). Until the human `accept`, the result of an `implemented` feature is corrected in place with `cerne feature amend F-NNNN --file result.md --reason "<why>"`. The marker for an intentional mention of a superseded entity, the runbook errata and the rest: `reference/errata.md`.

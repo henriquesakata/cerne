@@ -129,6 +129,18 @@ func runLint(cmd *cobra.Command, dir string, fixTasks, staged, all, scoped bool,
 			return err
 		}
 		findings = append(findings, cites...)
+		// Criterion tests (F-0473) read the project's test files: default mode only.
+		if project.CriterionTestsEnabled(driftCtx.projDir) {
+			features, err := store.LoadAllFeatures(repoDir)
+			if err != nil {
+				return err
+			}
+			events, err := store.ReadEvents(repoDir)
+			if err != nil {
+				return err
+			}
+			findings = append(findings, lint.CriterionTestFindings(repoDir, features, events, app.ScanProjectTests(driftCtx.projDir, cfg))...)
+		}
 		lint.Sort(findings)
 	}
 	// Spec CLI literals in pt-BR (F-0353): only a project that declares its CLI

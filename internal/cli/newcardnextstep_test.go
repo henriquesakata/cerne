@@ -250,6 +250,7 @@ func TestFeatureStartNextStep(t *testing.T) {
 	}
 	wantInOrder(t, stepBlock(out),
 		"before the code: consult the active notes (cerne note list, filter with --facet/--component) and cite the applicable conventions in plan.md",
+		"mark each proving test with a comment `F-0001 crit. N`", // F-0473 crit. 12
 		"keep progress real-time: tick finished tasks in plan.md, gather evidence in result.md, cerne sync at each milestone",
 		"when done: fill in the result at content/features/F-0001/result.md")
 }

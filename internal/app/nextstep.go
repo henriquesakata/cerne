@@ -167,6 +167,10 @@ func NextStep(repoDir, projDir, id string) (Step, error) {
 		if err := CheckCompleteResult(repoDir, f, gates); err != nil {
 			return edit("the complete would refuse: "+err.Error(), "result.md")
 		}
+		if err := CheckCriterionTests(repoDir, projDir, f); err != nil {
+			s.Step = "the complete would refuse: " + err.Error()
+			return s, nil
+		}
 		s.Step, s.Command = "complete the feature", "cerne feature complete "+id
 	case domain.StateImplemented:
 		cmds, problem := ImplementedOwes(repoDir, f)
