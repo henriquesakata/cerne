@@ -78,14 +78,15 @@ flowchart LR
 
 - **History: the backend.** A plain git repository you own, separate from your code's: a folder on your machine, a git server you run, or a private repository on GitHub or GitLab. Entities are JSON, document content is markdown, and every state transition is an event in an NDJSON log. Nothing is deleted: rejected features and superseded decisions stay, with the reason they left.
 - **State: lifecycle data.** Every feature, decision, note, runbook and reference has a state that only a gated command can change (`cerne feature approve`, `cerne decision supersede`…). A document never declares its own status.
-- **Context: the `.docs/` projection.** `cerne pull` writes a gitignored `.docs/` folder with a generated `CONTEXT.md` (the roster of features and their states, the work in progress, the active decisions, notes, runbooks and references) and the documents of live entities only: features still in candidate, approved or in development, active decisions, runbooks and notes, current references. Implemented and done features keep one line in the roster; their documents stay in the backend. Rejected and superseded work does not appear at all.
+- **Context: the `.docs/` projection and the task package.** `cerne pull` writes a gitignored `.docs/` folder with a generated `CONTEXT.md`, the map of what is live (features not yet done, epics with a live child, active decisions and runbooks, the work in progress, and the components of the active notes, within 16 KB; done features are a count), and the documents of live entities only: features still in candidate, approved or in development, active decisions, runbooks and notes, current references. The documents of implemented and done features stay in the backend. Rejected and superseded work does not appear at all. For one task, `cerne context <id>` is its package: its stage document whole, its epic, and the notes, decisions and sources that inform it (linked, matching a path its plan cites, sharing a component, or ranked by the search index), each as id, title and one-line gist, within a token budget.
 
 Keeping history does not mean the agent reads it. This is what reaches an agent, and how:
 
 | Layer | What it holds | How the agent gets it |
 |---|---|---|
 | Backend | Everything ever written, in every state | Never automatically. On demand, through `cerne search`, `cerne ask` and `cerne show <id>` |
-| `.docs/` | The current state only | Files on disk. The installed skill tells the agent to start at `CONTEXT.md` and open what its task needs |
+| `.docs/` | The current state only | Files on disk. The installed skill tells the agent to start with `cerne next` and keeps `CONTEXT.md` as the map of what is live, read when it needs the map |
+| Task package | One task's document, its epic and what informs it, as id, title and gist | `cerne context <id>` on demand. Starting a task (`cerne feature start`, `cerne work start --ref`, `cerne handoff take`) prints the index of the notes that inform it and that command, and a subagent of the session gets the same; a body comes with `cerne show <id>` |
 | Session start (hooks) | A short block of workflow rules and the board of work in progress | Injected automatically by the hooks `cerne init` installs |
 
 Measured with `cerne savings` on this repository on 2026-11-16, when its backend held 459 features (439 of them done):
@@ -95,7 +96,7 @@ Measured with `cerne savings` on this repository on 2026-11-16, when its backend
 | Everything in the backend, all states | 663 | 2,193,000 |
 | Projected into `.docs/` | 206 | 79,000 |
 
-96.4% of the stored documentation stays out of the projection, and none of it is lost. Two caveats. Token figures are a bytes/4 estimate, not a tokenizer count. And the projected figure counts entity documents only, not the generated `CONTEXT.md`, which was about 100 KB here on the same day, mostly one roster line per feature. It is what the projection makes available, not what a session loads. Run `cerne savings` on your own project to get your numbers.
+96.4% of the stored documentation stays out of the projection, and none of it is lost. Two caveats. Token figures are a bytes/4 estimate, not a tokenizer count. And the projected figure counts entity documents only, not the generated `CONTEXT.md`, which was about 100 KB here on the same day, mostly one roster line per feature; the map now lists only what is live, within 16 KB, and `cerne savings` prints its size. It is what the projection makes available, not what a session loads. Run `cerne savings` on your own project to get your numbers.
 
 ### The lifecycle, and where the human decides
 
@@ -271,7 +272,7 @@ Clients that install MCP Bundles (MCPB) can take the server straight from a rele
 |---|---|
 | **Lifecycle and governance** | Gated feature lifecycle with human approve and accept; epics, tasks and bug reports on the same lifecycle; ideas (`I-`) triaged before they become demand; pendings (`P-`) for known delivery debts; a capability taxonomy (`C-`) of what the product does; the optional Gauntlet. |
 | **Decisions and knowledge** | ADRs with supersession and periodic review, notes and conventions, runbooks, references as provenance, errata on concluded work. |
-| **Context for agents** | The `.docs/` projection and `CONTEXT.md`; cheap views for priming (`cerne brief`, `cerne status --active`, `cerne next`); `cerne show <id>` for any entity, projected or not. |
+| **Context for agents** | The `.docs/` projection and `CONTEXT.md`, the map of what is live; cheap views for priming (`cerne brief`, `cerne status --active`, `cerne next`); `cerne context <id>`, the package of one task within a token budget; `cerne show <id>` for any entity, projected or not. |
 | **Search and Q&A over history** | Full-text search (SQLite FTS5) over everything, rejected and superseded included. `cerne ask` answers with citations, or returns only the sources. `cerne graph` exports the relationships between entities. |
 | **Deterministic lint** | Rules over state, not prose: references to superseded decisions, broken links, orphans, missing gate documents, results without evidence, unregistered sources, stale decisions and notes, duplicate live features, epics out of step with their children. `cerne drift` flags implemented features whose code changed since. |
 | **Parallel agents** | Per-document 3-way merge on `pull`, auto-rebase on `push`, `cerne sync` as one forward path, a conflict-free `docs.lock` across branches and worktrees, work entries and handoffs, commit-message checks through git hooks. |
@@ -385,7 +386,7 @@ cerne is young and pre-1.0: commands and file formats can still change between r
 - The human gate keeps the configured agent from approving its own work; it is not access control. It refuses a process that carries `CERNE_ACTOR=agent`, which cerne sets up for agent sessions. A process without it, human or not, passes.
 - Outside Claude Code, some hooks are degraded or missing (handoff through compaction, subagent context, the stop closeout on Gemini). The [parity matrix](docs/provider-parity.md) lists each one.
 - `cerne cost` reads Claude Code transcripts only.
-- Token figures in `cerne savings` are bytes/4 estimates, and they leave out the generated `CONTEXT.md`.
+- Token figures in `cerne savings` and the budget of `cerne context` are bytes/4 estimates, not a tokenizer count.
 - Without a `git` executable, the built-in fallback is much slower.
 
 **What is measured, and what is not.** `cerne savings` measures the corpus reduction: the documents the agent searches against the full corpus. `cerne cost <id>` measures what a feature consumed, documents included. There is no side-by-side run of the same work with and without cerne, so the claim that reviewing a one-page spec before the build avoids rework is reasoning, not a measurement.
