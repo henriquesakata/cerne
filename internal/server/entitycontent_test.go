@@ -126,7 +126,7 @@ func contentFixture(t *testing.T) (repoDir, projDir string) {
 // ifMatch is not nil.
 func putContent(t *testing.T, h http.Handler, target, body string, ifMatch *string) (*httptest.ResponseRecorder, map[string]any) {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPut, target, strings.NewReader(body))
+	req := localRequest(http.MethodPut, target, strings.NewReader(body))
 	req.Host = "127.0.0.1:7717" // the local ui (audit A4: the writes need a loopback Host)
 	req.Header.Set("Content-Type", "text/markdown")
 	if ifMatch != nil {

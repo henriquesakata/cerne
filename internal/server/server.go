@@ -66,7 +66,7 @@ func newMux(repoDir, projDir, projectID string) http.Handler {
 		writeJSON(w, http.StatusNotFound, errorBody("route not found"))
 	})
 	mux.Handle("/", spaHandler())
-	return localWrites(mux)
+	return localOnly(mux)
 }
 
 // handleVersion returns the binary's build version (F-0129) — the same

@@ -27,7 +27,7 @@ func TestWorkEndpoint(t *testing.T) {
 
 	h := New(repoDir, projDir, "proj")
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/work", nil))
+	h.ServeHTTP(rec, localRequest(http.MethodGet, "/api/work", nil))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
@@ -53,7 +53,7 @@ func TestWorkEndpointEmptyBackend(t *testing.T) {
 
 	h := New(repoDir, projDir, "proj")
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/work", nil))
+	h.ServeHTTP(rec, localRequest(http.MethodGet, "/api/work", nil))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())

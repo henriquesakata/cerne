@@ -117,3 +117,77 @@ func TestLocalUIWritesPass(t *testing.T) {
 		}
 	}
 }
+
+// readRoutes lists every GET data route under prefix, its {params} filled as
+// writeRoutes does, plus the routes mounted outside the data table.
+func readRoutes(prefix string) []string {
+	param := regexp.MustCompile(`\{[^}]+\}`)
+	out := []string{"/", "/metrics", "/api/debug/timings"}
+	for _, rt := range dataRoutes() {
+		if rt.method == http.MethodGet {
+			out = append(out, "/api"+prefix+param.ReplaceAllString(rt.pattern, "F-0001"))
+		}
+	}
+	return out
+}
+
+// assertForeignReadsRefused sends GET and HEAD with a rebound name's Host to
+// every route: each is a 403.
+func assertForeignReadsRefused(t *testing.T, h http.Handler, routes []string) {
+	t.Helper()
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		for _, target := range routes {
+			hdr := map[string]string{"Host": "evil.example:7741"}
+			if rec := doJSONWith(t, h, method, target, "", hdr, nil); rec.Code != http.StatusForbidden {
+				t.Errorf("%s %s (foreign host) = %d, want 403", method, target, rec.Code)
+			}
+		}
+	}
+}
+
+// TestEveryReadRouteRefusesForeignHost pins B-0044: a name rebound to
+// 127.0.0.1 reads nothing from the local ui — every GET and HEAD with a Host
+// that is not the loopback is a 403, like the writes (B-0043).
+func TestEveryReadRouteRefusesForeignHost(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	isolatedWriteDirs(t)
+	routes := readRoutes("")
+	if len(routes) < 30 {
+		t.Fatalf("found %d read routes, the table has at least 30", len(routes))
+	}
+	assertForeignReadsRefused(t, New(repoDir, projDir, ""), routes)
+}
+
+// TestUIMultiReadRoutesRefuseForeignHost: the same for `cerne ui`'s handler,
+// its project registry included. The live stream is left out: before the
+// guard it streams forever, and the guard sits on the router, not per route.
+func TestUIMultiReadRoutesRefuseForeignHost(t *testing.T) {
+	repoDir, projDir, _ := newGitBackendNoClean(t)
+	isolatedWriteDirs(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	h, err := NewUIMulti(ctx, func(string) (string, string, string, string, error) {
+		return repoDir, projDir, "proj-a", "Projeto A", nil
+	}, 0, "A")
+	if err != nil {
+		t.Fatalf("NewUIMulti: %v", err)
+	}
+	assertForeignReadsRefused(t, h, append(readRoutes("/projects/proj-a"), "/api/projects"))
+}
+
+// TestLocalUIReadsPass: a loopback Host reads, whatever the Origin — the
+// Origin check stays on the writes (B-0044), a cross-site read is the
+// browser's CORS to refuse.
+func TestLocalUIReadsPass(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	h := New(repoDir, projDir, "")
+	for _, hdr := range []map[string]string{
+		{"Host": "localhost:7717"},
+		{"Host": "127.0.0.1:7717", "Origin": "http://evil.example"},
+		{"Host": "[::1]:7717"},
+	} {
+		if rec := doJSONWith(t, h, http.MethodGet, "/api/state", "", hdr, nil); rec.Code != http.StatusOK {
+			t.Errorf("GET /api/state %v = %d %s, want 200", hdr, rec.Code, rec.Body.String())
+		}
+	}
+}

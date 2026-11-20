@@ -11,7 +11,7 @@ import (
 // SPA fallback must serve it as an image, not answer with index.html.
 func TestSPAHandlerServesFavicon(t *testing.T) {
 	rec := httptest.NewRecorder()
-	spaHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/favicon.svg", nil))
+	spaHandler().ServeHTTP(rec, localRequest(http.MethodGet, "/favicon.svg", nil))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET /favicon.svg: status %d, want 200", rec.Code)

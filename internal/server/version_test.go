@@ -24,7 +24,7 @@ func TestVersionEndpoint(t *testing.T) {
 		version.Version = tt.stamped
 		h := New(repoDir, projDir, "proj")
 		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/version", nil))
+		h.ServeHTTP(rec, localRequest(http.MethodGet, "/api/version", nil))
 		version.Version = orig
 
 		if rec.Code != http.StatusOK {

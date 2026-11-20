@@ -355,7 +355,7 @@ func TestAIStatusModelIsTheOneTheModeUses(t *testing.T) {
 func TestAIStatusOmitsKeysAndCLIsWhenServedRemotely(t *testing.T) {
 	_, dir := aiServer(t, "claude")
 	t.Setenv("OPENAI_API_KEY", aiSecret)
-	req := httptest.NewRequest(http.MethodGet, "/api/config/llm", nil)
+	req := localRequest(http.MethodGet, "/api/config/llm", nil)
 	req = req.WithContext(context.WithValue(req.Context(), remoteKey{}, true))
 	rec := httptest.NewRecorder()
 	handleLLMConfigGet(rec, req, dir)

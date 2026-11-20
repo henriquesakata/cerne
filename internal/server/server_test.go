@@ -198,7 +198,7 @@ func TestStateEndpointNoModules(t *testing.T) {
 		t.Fatalf("InitLayout: %v", err)
 	}
 	rec := httptest.NewRecorder()
-	New(repoDir, t.TempDir(), "").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/state", nil))
+	New(repoDir, t.TempDir(), "").ServeHTTP(rec, localRequest(http.MethodGet, "/api/state", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
 	}
@@ -356,7 +356,7 @@ func TestFeatureDetailNoArtifactsDir(t *testing.T) {
 	seedFeature(t, repoDir, "F-0001", "Feature A", domain.StateCandidate)
 
 	rec := httptest.NewRecorder()
-	New(repoDir, projDir, "").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/features/F-0001", nil))
+	New(repoDir, projDir, "").ServeHTTP(rec, localRequest(http.MethodGet, "/api/features/F-0001", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
 	}
@@ -661,7 +661,7 @@ func TestStaticIndexAndSPAFallback(t *testing.T) {
 
 	for _, target := range []string{"/", "/features/F-0001"} {
 		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
+		h.ServeHTTP(rec, localRequest(http.MethodGet, target, nil))
 		if rec.Code != http.StatusOK {
 			t.Fatalf("GET %s status = %d, want 200", target, rec.Code)
 		}

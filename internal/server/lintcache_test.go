@@ -53,7 +53,7 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 func getLint(t *testing.T, h http.Handler) *httptest.ResponseRecorder {
 	t.Helper()
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/lint", nil))
+	h.ServeHTTP(rec, localRequest(http.MethodGet, "/api/lint", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("lint status = %d", rec.Code)
 	}

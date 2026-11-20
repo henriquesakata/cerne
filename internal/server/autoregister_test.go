@@ -44,7 +44,7 @@ func TestServeAutoRegistersConfiguredProject(t *testing.T) {
 	t.Setenv(serveProjectsEnv, "acme-hub="+origin)
 	t.Setenv("CERNE_SERVE_PULL_TTL", "0") // the clone is fresh; skip the refresh
 
-	req := httptest.NewRequest(http.MethodGet, "/api/projects/acme-hub/conventions-export", nil)
+	req := localRequest(http.MethodGet, "/api/projects/acme-hub/conventions-export", nil)
 	req.Header.Set("Authorization", "Bearer s3cret")
 	rec := httptest.NewRecorder()
 	NewMultiProject("s3cret").ServeHTTP(rec, req)
@@ -67,7 +67,7 @@ func TestServeStill404sUndeclaredProject(t *testing.T) {
 	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
 	t.Setenv(serveProjectsEnv, "")
 
-	req := httptest.NewRequest(http.MethodGet, "/api/projects/ghost/conventions-export", nil)
+	req := localRequest(http.MethodGet, "/api/projects/ghost/conventions-export", nil)
 	req.Header.Set("Authorization", "Bearer s3cret")
 	rec := httptest.NewRecorder()
 	NewMultiProject("s3cret").ServeHTTP(rec, req)

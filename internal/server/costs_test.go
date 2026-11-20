@@ -129,7 +129,7 @@ func seedCostsFixture(t *testing.T, repoDir string) {
 func getCosts(t *testing.T, repoDir, projDir, query string) app.CostsReport {
 	t.Helper()
 	rec := httptest.NewRecorder()
-	New(repoDir, projDir, "proj").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/costs"+query, nil))
+	New(repoDir, projDir, "proj").ServeHTTP(rec, localRequest(http.MethodGet, "/api/costs"+query, nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET /api/costs%s = %d: %s", query, rec.Code, rec.Body.String())
 	}
@@ -297,7 +297,7 @@ func TestCostsEmpty(t *testing.T) {
 	repoDir, projDir := newBackend(t)
 	seedCosts(t, repoDir, []costSeed{{id: "F-0001", completed: costDay(10, 1)}})
 	rec := httptest.NewRecorder()
-	New(repoDir, projDir, "proj").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/costs"+costsPeriod, nil))
+	New(repoDir, projDir, "proj").ServeHTTP(rec, localRequest(http.MethodGet, "/api/costs"+costsPeriod, nil))
 	body := rec.Body.String()
 	for _, want := range []string{`"features":\s*\[\]`, `"weeks":\s*\[\]`, `"markers":\s*\[\]`, `"delivered":\s*1,`, `"stamped":\s*0,`, `"mean":\s*0,`} {
 		if !regexp.MustCompile(want).MatchString(body) {
@@ -310,7 +310,7 @@ func TestCostsBadPeriod(t *testing.T) {
 	repoDir, projDir := newBackend(t)
 	for _, q := range []string{"?since=2026-13-01", "?until=ontem", "?since=2026-10-02&until=2026-10-01"} {
 		rec := httptest.NewRecorder()
-		New(repoDir, projDir, "proj").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/costs"+q, nil))
+		New(repoDir, projDir, "proj").ServeHTTP(rec, localRequest(http.MethodGet, "/api/costs"+q, nil))
 		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"error"`) {
 			t.Errorf("%s = %d %s, want 400 with a body", q, rec.Code, rec.Body.String())
 		}
@@ -324,7 +324,7 @@ func TestCostDetail(t *testing.T) {
 	repoDir, projDir := newBackend(t)
 	seedCostsFixture(t, repoDir)
 	rec := httptest.NewRecorder()
-	New(repoDir, projDir, "proj").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/costs/F-0001", nil))
+	New(repoDir, projDir, "proj").ServeHTTP(rec, localRequest(http.MethodGet, "/api/costs/F-0001", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
 	}
@@ -341,7 +341,7 @@ func TestCostDetail(t *testing.T) {
 	}
 	for id, want := range map[string]string{"bogus": "not a feature id", "F-9999": "not found", "F-0004": "cerne cost F-0004 --stamp"} {
 		rec := httptest.NewRecorder()
-		New(repoDir, projDir, "proj").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/costs/"+id, nil))
+		New(repoDir, projDir, "proj").ServeHTTP(rec, localRequest(http.MethodGet, "/api/costs/"+id, nil))
 		if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), want) {
 			t.Errorf("%s = %d %s, want 404 naming %q", id, rec.Code, rec.Body.String(), want)
 		}
@@ -370,7 +370,7 @@ func TestCostsVendorIsTheCostsModel(t *testing.T) {
 		t.Errorf("vendor=openai = %v (vendor coverage %d), want none: no feature spent on OpenAI", costIDs(r), r.Coverage.Vendor)
 	}
 	rec := httptest.NewRecorder()
-	New(repoDir, projDir, "proj").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/costs/F-0002", nil))
+	New(repoDir, projDir, "proj").ServeHTTP(rec, localRequest(http.MethodGet, "/api/costs/F-0002", nil))
 	var d app.CostDetail
 	if err := json.Unmarshal(rec.Body.Bytes(), &d); err != nil {
 		t.Fatalf("decode: %v", err)
@@ -387,7 +387,7 @@ func TestCostsUnknownModel(t *testing.T) {
 	seedCosts(t, repoDir, []costSeed{{id: "F-0001", completed: costDay(10, 1),
 		report: &cost.Report{ID: "F-0001", Counters: cost.Counters{Input: 10}, Messages: 1, Sessions: 1, ByModel: map[string]cost.Counters{}}}})
 	rec := httptest.NewRecorder()
-	New(repoDir, projDir, "proj").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/costs/F-0001", nil))
+	New(repoDir, projDir, "proj").ServeHTTP(rec, localRequest(http.MethodGet, "/api/costs/F-0001", nil))
 	var d app.CostDetail
 	if err := json.Unmarshal(rec.Body.Bytes(), &d); err != nil {
 		t.Fatalf("decode: %v (%s)", err, rec.Body.String())
@@ -413,7 +413,7 @@ func TestCostDetailReportIsTheStamp(t *testing.T) {
 			t.Fatalf("Marshal: %v", err)
 		}
 		rec := httptest.NewRecorder()
-		New(repoDir, projDir, "proj").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/costs/"+id, nil))
+		New(repoDir, projDir, "proj").ServeHTTP(rec, localRequest(http.MethodGet, "/api/costs/"+id, nil))
 		var got struct {
 			Report json.RawMessage `json:"report"`
 		}
@@ -438,7 +438,7 @@ func TestCostDetailWithoutCompletion(t *testing.T) {
 	seedCosts(t, repoDir, []costSeed{{id: "F-0001",
 		report: &cost.Report{ID: "F-0001", Counters: cost.Counters{Input: 10}, Messages: 1, Sessions: 1, ByModel: map[string]cost.Counters{}}}})
 	rec := httptest.NewRecorder()
-	New(repoDir, projDir, "proj").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/costs/F-0001", nil))
+	New(repoDir, projDir, "proj").ServeHTTP(rec, localRequest(http.MethodGet, "/api/costs/F-0001", nil))
 	if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), "completed_at") {
 		t.Errorf("status %d, body %s; want 200 without completed_at", rec.Code, rec.Body.String())
 	}
@@ -464,7 +464,7 @@ func TestCostsReadTheErratumAnchor(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	New(repoDir, projDir, "proj").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/costs/F-0001", nil))
+	New(repoDir, projDir, "proj").ServeHTTP(rec, localRequest(http.MethodGet, "/api/costs/F-0001", nil))
 	var d app.CostDetail
 	if err := json.Unmarshal(rec.Body.Bytes(), &d); err != nil {
 		t.Fatalf("decode %d: %v", rec.Code, err)
