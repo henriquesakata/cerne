@@ -35,6 +35,7 @@ var handWrittenAllowed = []struct{ file, contains, reason string }{
 	{"internal/cli/epictaskcmd.go", `strings.HasPrefix(id, "T-")`, "tests one kind of the family (a bug or a task), not the family"},
 	{"internal/cli/transitioncmd.go", `strings.HasPrefix(id, "T-")`, "tests one kind of the family (a bug or a task), not the family"},
 	{"internal/lint/lint.go", `strings.HasPrefix(f.ID, "B-")`, "tests one kind of the family (a bug or a task), not the family"},
+	{"internal/lint/criteriontest.go", `strings.HasPrefix(f.ID, "B-")`, "tests one kind of the family (a bug or a task), not the family"},
 	{"internal/lint/resultgauntlet.go", `strings.HasPrefix(f.ID, "T-")`, "tests one kind of the family (a bug or a task), not the family"},
 	{"internal/lint/resultgauntlet.go", `strings.HasPrefix(c.ID, "T-")`, "tests one kind of the family (a bug or a task), not the family"},
 }

@@ -50,7 +50,7 @@ type TestIndex struct {
 
 var (
 	// "F-0473 crit. 3", "crit. 1, 2", "criterion 4", "critério 5", "criteria 1 and 2".
-	critMarkRe = regexp.MustCompile(`\b([FT]-\d{4,})\s+crit(?:\.|erion|eria|érios?|erios?|ério)?\s*(\d+(?:\s*(?:,|e|and|&)\s*\d+)*)`)
+	critMarkRe = regexp.MustCompile(`\b(` + domain.FeatureIDPrefix() + `-\d{4,})\s+crit(?:\.|erion|eria|érios?|erios?|ério)?\s*(\d+(?:\s*(?:,|e|and|&)\s*\d+)*)`)
 	bugMarkRe  = regexp.MustCompile(`\bB-\d{4,}\b`)
 	numRe      = regexp.MustCompile(`\d+`)
 	// first comment opener on a line; marks only count after it
@@ -141,6 +141,8 @@ func matchesAny(patterns []string, name string) bool {
 
 // manualVerificationRe is the dispensing suffix of a criterion, in either
 // documentation language.
+const manualVerificationPT = "verificação manual"
+
 var manualVerificationRe = regexp.MustCompile(`(?i)\((?:verificação manual|manual verification)\)\s*\.?\s*$`)
 
 // underCriterionRule reports whether an entity is charged: in development or
@@ -245,7 +247,7 @@ func CriterionTestFindings(repoDir string, features []store.Feature, events []do
 				continue
 			}
 			out = append(out, Finding{Rule: RuleCriterionWithoutTest, Entity: f.ID,
-				Detail: fmt.Sprintf(`%s %d of %s has no test marked "%s crit. %d" (%s) — comment the test that proves it, or end the criterion with "(manual verification)" / "(verificação manual)" if it is not tested`, cite, n, f.ID, f.ID, n, text[n])})
+				Detail: fmt.Sprintf(`%s %d of %s has no test marked "%s crit. %d" (%s) — comment the test that proves it, or end the criterion with "(manual verification)" / "(%s)" if it is not tested`, cite, n, f.ID, f.ID, n, text[n], manualVerificationPT)})
 		}
 	}
 	return out
