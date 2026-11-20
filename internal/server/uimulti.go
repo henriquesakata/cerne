@@ -32,7 +32,7 @@ import (
 // "projects") or a model catalog refresh that changed it (kind "models", with
 // the JSON diff in data — F-0311).
 type liveEvent struct {
-	kind string // "change" | "projects" | "models"
+	kind string // "change" | "projects" | "models" | "update" (a line of the panel's binary swap, F-0480)
 	pid  string
 	sha  string
 	data string
@@ -136,6 +136,8 @@ func (h *multiHub) handleStream(w http.ResponseWriter, r *http.Request) {
 				fmt.Fprint(w, "event: projects\ndata: \n\n")
 			case "models":
 				fmt.Fprintf(w, "event: models\ndata: %s\n\n", ev.data)
+			case "update":
+				fmt.Fprintf(w, "event: update\ndata: %s\n\n", ev.data)
 			}
 			flusher.Flush()
 		case <-keepalive.C:
@@ -360,9 +362,13 @@ func NewUIMultiHost(ctx context.Context, resolve Resolver, pullInterval time.Dur
 	// F-0478: a new binary on disk shows on every tab through the projects
 	// event, which makes each one re-read the list and its installed field.
 	var watch *binaryWatch
+	var upd *updater
 	if host.Command != "" {
 		watch = newBinaryWatch(host, reg.projDir(pid))
 		go watch.run(ctx, binaryPollInterval, func() { hub.broadcast(liveEvent{kind: "projects"}) })
+		// F-0480: the release check and the Update button's swap.
+		upd = &updater{cmd: host.Command, projDir: reg.projDir(pid), watch: watch, announce: hub.broadcast}
+		go upd.run(ctx)
 	}
 
 	mux := http.NewServeMux()
@@ -375,6 +381,25 @@ func NewUIMultiHost(ctx context.Context, resolve Resolver, pullInterval time.Dur
 			body["installed"] = watch.installed()
 		}
 		writeJSON(w, http.StatusOK, body)
+	})
+	mux.HandleFunc("GET /api/update", func(w http.ResponseWriter, r *http.Request) {
+		if upd == nil {
+			writeJSON(w, http.StatusNotFound, errorBody("this panel does not check for updates"))
+			return
+		}
+		writeJSON(w, http.StatusOK, upd.state())
+	})
+	mux.HandleFunc("POST /api/update", func(w http.ResponseWriter, r *http.Request) {
+		if upd == nil {
+			writeJSON(w, http.StatusConflict, errorBody("this panel cannot update itself"))
+			return
+		}
+		code, err := upd.start()
+		if err != nil {
+			writeJSON(w, code, errorBody(err.Error()))
+			return
+		}
+		writeJSON(w, code, map[string]bool{"updating": true})
 	})
 	mux.HandleFunc("POST /api/restart", func(w http.ResponseWriter, r *http.Request) {
 		code, err := watch.requestRestart()

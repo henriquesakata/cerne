@@ -1,6 +1,20 @@
 package server
 
-import "io"
+import (
+	"bytes"
+	"context"
+	"errors"
+	"io"
+	"net/http"
+	"os"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/henriquesakata/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/selfupdate"
+	"github.com/henriquesakata/cerne/internal/version"
+)
 
 // The panel's Update button (F-0480) swaps the binary with cerne update's own
 // code (F-0476), which lives in the CLI package this one cannot import: the
@@ -22,4 +36,153 @@ type BinaryOutcome struct {
 	Detail string `json:"detail,omitempty"`
 	Fix    string `json:"fix,omitempty"`
 	NewExe string `json:"new_exe,omitempty"`
+}
+
+// updateCheckInterval is how often an open panel asks for the latest
+// release, after the check at start (F-0480 criterion 1). Besides cerne
+// update, this is the one place cerne asks the network for a version.
+var updateCheckInterval = 24 * time.Hour
+
+// updateState is GET /api/update. Current is the binary installed on disk
+// (after a swap, the new one even before the restart), so the button goes
+// away once there is nothing newer to install.
+type updateState struct {
+	Current   string         `json:"current"`
+	Latest    string         `json:"latest,omitempty"`
+	Newer     bool           `json:"newer"`
+	Swappable bool           `json:"swappable"`
+	Why       string         `json:"why,omitempty"`
+	Fix       string         `json:"fix,omitempty"`
+	Running   bool           `json:"running"`
+	Error     string         `json:"error,omitempty"`
+	Last      *BinaryOutcome `json:"last,omitempty"`
+}
+
+// updater checks for a newer release and runs the swap for the panel.
+type updater struct {
+	cmd, projDir string
+	watch        *binaryWatch
+	announce     func(liveEvent)
+
+	mu      sync.Mutex
+	latest  string
+	err     string
+	running bool
+	last    *BinaryOutcome
+}
+
+// installed is the version of the binary on disk: the running one until the
+// watch sees another file.
+func (u *updater) installed() string {
+	if id := u.watch.installed(); id.Version != "" {
+		return id.Version
+	}
+	return version.Version
+}
+
+func (u *updater) state() updateState {
+	u.mu.Lock()
+	st := updateState{Latest: u.latest, Error: u.err, Running: u.running, Last: u.last}
+	u.mu.Unlock()
+	st.Current = u.installed()
+	st.Newer = st.Latest != "" && selfupdate.Newer(st.Latest, st.Current)
+	if PlanBinary != nil {
+		st.Swappable, st.Why, st.Fix = PlanBinary(u.cmd)
+	}
+	return st
+}
+
+// check asks for the latest release, unless ui.update_check is off: the
+// setting is read on every check, so turning it off takes effect without a
+// restart, and a panel with it off never opens a connection for this.
+func (u *updater) check() {
+	if !project.UpdateCheck(u.projDir) {
+		u.mu.Lock()
+		u.latest, u.err = "", ""
+		u.mu.Unlock()
+		return
+	}
+	base := os.Getenv("CERNE_BASE_URL")
+	if base == "" {
+		base = selfupdate.DefaultBaseURL
+	}
+	latest, err := selfupdate.Latest(base)
+	u.mu.Lock()
+	if err != nil {
+		u.latest, u.err = "", err.Error()
+	} else {
+		u.latest, u.err = latest, ""
+	}
+	u.mu.Unlock()
+	u.announce(liveEvent{kind: "projects"})
+}
+
+func (u *updater) run(ctx context.Context) {
+	u.check()
+	t := time.NewTicker(updateCheckInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			u.check()
+		}
+	}
+}
+
+var errUpdateRunning = errors.New("an update is already running")
+
+// start runs the swap in the background: its lines go out as "update"
+// events, and a swap that lands restarts the panel into the new binary
+// (F-0478) with no other click. A failed swap keeps the old executable
+// (cerne update's guarantee) and leaves the reason and the command in Last.
+func (u *updater) start() (int, error) {
+	if ReplaceBinary == nil {
+		return http.StatusConflict, errors.New("this panel cannot update itself")
+	}
+	u.mu.Lock()
+	if u.running {
+		u.mu.Unlock()
+		return http.StatusConflict, errUpdateRunning
+	}
+	u.running, u.last = true, nil
+	u.mu.Unlock()
+	u.announce(liveEvent{kind: "projects"})
+	go func() {
+		out := ReplaceBinary(&eventLines{announce: u.announce}, u.cmd)
+		if out.State == "updated" {
+			u.watch.check()
+			if _, err := u.watch.requestRestart(); err != nil {
+				out.Detail += "; the panel did not restart: " + err.Error()
+			}
+		}
+		u.mu.Lock()
+		u.running, u.last = false, &out
+		u.mu.Unlock()
+		u.announce(liveEvent{kind: "projects"})
+	}()
+	return http.StatusAccepted, nil
+}
+
+// eventLines turns the swap's output into one "update" event per line (an
+// SSE data field holds one line).
+type eventLines struct {
+	announce func(liveEvent)
+	buf      bytes.Buffer
+}
+
+func (e *eventLines) Write(p []byte) (int, error) {
+	e.buf.Write(p)
+	for {
+		line, err := e.buf.ReadString('\n')
+		if err != nil { // no newline yet: keep the rest for the next write
+			e.buf.Reset()
+			e.buf.WriteString(line)
+			return len(p), nil
+		}
+		if line = strings.TrimRight(line, "\r\n"); line != "" {
+			e.announce(liveEvent{kind: "update", data: line})
+		}
+	}
 }

@@ -406,7 +406,9 @@ func TestUpdateOutsideProject(t *testing.T) {
 }
 
 // F-0476 crit. 11: cerne update is the only place that asks for a new
-// version — no other code reaches the releases endpoint or selfupdate.
+// version — no other code reaches the releases endpoint or selfupdate. F-0480
+// adds exactly one more: the panel's release check (internal/server/uiupdate.go),
+// behind ui.update_check.
 func TestOnlyUpdateChecksForVersions(t *testing.T) {
 	root := filepath.Join("..", "..")
 	filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
@@ -424,7 +426,8 @@ func TestOnlyUpdateChecksForVersions(t *testing.T) {
 		if d.IsDir() || !code || strings.HasSuffix(p, "_test.go") || strings.Contains(p, ".test.") {
 			return nil
 		}
-		if strings.Contains(slash, "internal/selfupdate/") || strings.HasSuffix(slash, "internal/cli/updatecmd.go") {
+		if strings.Contains(slash, "internal/selfupdate/") || strings.HasSuffix(slash, "internal/cli/updatecmd.go") ||
+			strings.HasSuffix(slash, "internal/server/uiupdate.go") {
 			return nil
 		}
 		b, _ := os.ReadFile(p)
