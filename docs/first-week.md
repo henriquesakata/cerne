@@ -86,7 +86,9 @@ Codex runs every command in a sandbox that writes only your project, `/tmp` and 
 trust_level = "trusted"
 ```
 
-Check it from inside a Codex session: `printenv CERNE_ACTOR` prints `agent`, and `cerne next` runs with no permission error. With a remote backend (SSH or HTTPS), the sandbox may still block the network for `cerne pull` and `cerne push`.
+Check it from inside a Codex session: `printenv CERNE_ACTOR` prints `agent`, and `cerne next` runs with no permission error.
+
+The sandbox also cuts the network, because `:workspace` has none. Inside Codex, `cerne pull` and `cerne push` with a remote backend (SSH or HTTPS) and the AI layer (`plan draft`, `result draft`, `ask`, `compile`, which call your subscription CLI and fail with `Not logged in`) fail, and cerne's error says the Codex sandbox may be cutting the network. To open it, run `cerne hook install --provider codex --network`: it adds `[permissions.cerne.network]` with `enabled = true` to the profile, also in a project that already has it. This opens the whole network to the agent in this project, because Codex has no domain list. That is why it is never the default, and `cerne init` never suggests it. To turn it off, set `enabled = false` (or delete the table) in `.codex/config.toml`.
 
 ## Ask for the first feature and approve it
 
