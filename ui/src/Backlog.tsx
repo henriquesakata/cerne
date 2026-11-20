@@ -129,7 +129,7 @@ export default function Backlog() {
             type="button"
             className="backlog-toggle"
             aria-expanded={listOpen}
-            aria-controls="backlog-list"
+            aria-controls={listOpen ? 'backlog-list' : undefined}
             title={listOpen ? t.backlog.collapseList : t.backlog.expandList}
             onClick={toggleList}
           >
@@ -155,7 +155,6 @@ export default function Backlog() {
                 type="button"
                 className="backlog-chat-new"
                 aria-expanded={false}
-                aria-controls="backlog-chat-rail"
                 onClick={toggleRail}
               >
                 {t.backlogChat.showConversations}

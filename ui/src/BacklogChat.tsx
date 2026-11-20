@@ -839,9 +839,6 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
   // F-0328: aviso neutro (não erro) — a spec confirmada já era a gravada.
   const [notice, setNotice] = useState<string | null>(null)
   const [failedMessages, setFailedMessages] = useState<ChatMsg[] | null>(null)
-  // B-0049: what the human sent while the agent was still working. Ephemeral
-  // on purpose — it is not part of the transcript until it goes out.
-  const [queued, setQueued] = useState<string[]>([])
   const [needsProvider, setNeedsProvider] = useState(false)
   // F-0255: o rascunho não é estado próprio — as revisões saem do transcript
   // (abaixo). O que se guarda é quantas revisões já foram registradas, para o
@@ -878,6 +875,9 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
 
   const requestStatus = chatRequest.status(conversation.id)
   const busy = requestStatus.pending
+  // B-0049: the queue lives in chatRequest (it outlives this component, which
+  // remounts per conversation); every change notifies and re-renders here.
+  const queuedNow = chatRequest.queued(conversation.id)
 
   // Critério 5: sem [llm] configurado, o chat nasce desabilitado — nenhuma
   // chamada ao provider é feita nem esperando o usuário digitar algo.
@@ -914,6 +914,14 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
   // enquanto eu estava montado" (via subscribe).
   useEffect(() => {
     const id = conversation.id
+    // B-0049: a turn that failed or needs a provider does not send the queue;
+    // its text goes back to the composer so nothing typed is lost.
+    const restoreQueue = () => {
+      const q = chatRequest.takeQueue(id)
+      if (q.length === 0) return
+      setInput((cur) => [cur.trim(), ...q].filter((l) => l !== '').join('\n\n'))
+      requestAnimationFrame(autoExpand)
+    }
     const reconcile = () => {
       forceTick((n) => n + 1)
       if (chatRequest.status(id).pending) {
@@ -933,12 +941,18 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
         if (fresh?.messages.at(-1)?.runs) {
           setMessages(fresh.messages)
           setFailedMessages(null)
+        } else {
+          // B-0049: what was actually sent — a turn the queue started never
+          // went through sendMessages, so this is its only retry payload.
+          setFailedMessages(chatRequest.lastSent(id) ?? null)
         }
         setError(outcome.message)
+        restoreQueue()
         return
       }
       if (outcome.kind === 'needs_provider') {
         setNeedsProvider(true)
+        restoreQueue()
         return
       }
       const fresh = chatRequest.getConversation(id)
@@ -989,7 +1003,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
     const el = historyRef.current
     if (!el || !stuckRef.current) return
     el.scrollTop = el.scrollHeight
-  }, [messages, busy])
+  }, [messages, busy, queuedNow.length])
 
   const autoExpand = () => {
     const el = textareaRef.current
@@ -1067,27 +1081,14 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
     if (textareaRef.current) textareaRef.current.style.height = ''
     // B-0049: with the agent working, the message waits in the queue instead
     // of opening a second request (F-0230: one request per conversation).
+    // chatRequest sends the queue as one user turn when this turn succeeds,
+    // like Claude Code delivers input typed mid-turn.
     if (busy) {
-      setQueued((q) => [...q, content])
+      chatRequest.enqueue(conversation.id, content)
       return
     }
     sendContent(content)
   }
-
-  // B-0049: when the turn ends, the queue goes out as one user turn — the
-  // agent reads it all before answering, like Claude Code delivers queued
-  // input. A failed turn sends nothing: the queue returns to the composer so
-  // the human decides (retry, edit, resend).
-  useEffect(() => {
-    if (busy || queued.length === 0) return
-    setQueued([])
-    if (error) {
-      setInput((cur) => [cur.trim(), ...queued].filter((l) => l !== '').join('\n\n'))
-      return
-    }
-    sendContent(queued.join('\n\n'))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [busy, queued, error])
 
   const retry = () => {
     if (busy || !failedMessages) return
@@ -1361,7 +1362,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
             )}
           </p>
         )}
-        {queued.map((q, k) => (
+        {queuedNow.map((q, k) => (
           <div key={k} className="backlog-chat-msg backlog-chat-msg-user backlog-chat-msg-queued">
             <p>{q}</p>
             <p className="backlog-chat-queued-meta">
@@ -1369,7 +1370,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
               <button
                 type="button"
                 className="backlog-chat-queued-cancel"
-                onClick={() => setQueued((cur) => cur.filter((_, i) => i !== k))}
+                onClick={() => chatRequest.unqueue(conversation.id, k)}
               >
                 {t.backlogChat.unqueue}
               </button>

@@ -15,6 +15,10 @@ const IDLE: RequestStatus = { pending: false, startedAt: 0, model: '', effort: '
 const statuses = new Map<string, RequestStatus>()
 const outcomes = new Map<string, Outcome>()
 const listeners = new Map<string, Set<() => void>>()
+// B-0049: what the human sent while a turn was in flight, and the transcript
+// each request actually sent (the retry payload of a turn the queue started).
+const queues = new Map<string, string[]>()
+const sent = new Map<string, ChatMsg[]>()
 
 export function status(convId: string): RequestStatus {
   return statuses.get(convId) ?? IDLE
@@ -44,6 +48,34 @@ function notify(convId: string) {
   listeners.get(convId)?.forEach((cb) => cb())
 }
 
+// B-0049: the queue lives here, beside the request, not in BacklogChat — the
+// chat remounts on every conversation switch (key) and the turn outlives it.
+export function queued(convId: string): string[] {
+  return queues.get(convId) ?? []
+}
+
+export function enqueue(convId: string, content: string) {
+  queues.set(convId, [...queued(convId), content])
+  notify(convId)
+}
+
+export function unqueue(convId: string, index: number) {
+  queues.set(convId, queued(convId).filter((_, i) => i !== index))
+  notify(convId)
+}
+
+// takeQueue empties the queue and returns it — the caller puts the text back
+// in the composer after a turn that failed or needs a provider.
+export function takeQueue(convId: string): string[] {
+  const q = queued(convId)
+  queues.delete(convId)
+  return q
+}
+
+export function lastSent(convId: string): ChatMsg[] | undefined {
+  return sent.get(convId)
+}
+
 // patchMessages (F-0248) aplica `update` sobre o valor CORRENTE da conversa no
 // storage, lido no instante da escrita. Gravar um array capturado antes (o
 // snapshot preso no closure do envio) apagava em silêncio todo turno que
@@ -66,6 +98,7 @@ export function send(convId: string, messages: ChatMsg[], override: ChatOverride
   if (status(convId).pending) return
   statuses.set(convId, { pending: true, startedAt: Date.now(), model: override.model ?? '', effort: override.effort ?? '' })
   outcomes.delete(convId)
+  sent.set(convId, messages)
   patchMessages(convId, () => messages)
   notify(convId)
   let partial = ''
@@ -112,7 +145,17 @@ export function send(convId: string, messages: ChatMsg[], override: ChatOverride
         outcomes.set(convId, { kind: 'success' })
       }
       notify(convId)
-      if (!res.needs_provider) summarizeFirstPair(convId)
+      if (res.needs_provider) return
+      summarizeFirstPair(convId)
+      // B-0049: a successful turn hands the queue to the agent as the next
+      // turn, one user message, mounted or not. The click-born write
+      // permission (F-0260) never carries over: the queue is typed text.
+      const q = takeQueue(convId)
+      const current = getConversation(convId)?.messages
+      if (q.length > 0 && current) {
+        const next: ChatMsg[] = [...current, { role: 'user', content: q.join('\n\n') }]
+        send(convId, next, { ...override, confirm: undefined, confirmTurn: undefined })
+      }
     })
     .catch((err: unknown) => {
       statuses.set(convId, IDLE)

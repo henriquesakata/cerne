@@ -1011,6 +1011,23 @@ describe('BacklogChat — fila durante o processamento (B-0049)', () => {
     expect(streamChat).toHaveBeenCalledTimes(1)
   })
 
+  it('sair da conversa com mensagem na fila não a perde: ela vai quando o turno termina', async () => {
+    const stream = pendingStream()
+    const { unmount } = renderChat()
+    type('primeira')
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+    await screen.findByText(/processando/i)
+    type('vai depois')
+    fireEvent.click(screen.getByRole('button', { name: /pôr na fila/i }))
+    unmount()
+
+    const first = stream.resolve!
+    await act(async () => first({ answered: true, reply: 'resposta um' }))
+    await waitFor(() => expect(streamChat).toHaveBeenCalledTimes(2))
+    const sent = streamChat.mock.calls[1][0] as { role: string; content: string }[]
+    expect(sent.at(-1)).toEqual({ role: 'user', content: 'vai depois' })
+  })
+
   it('se o turno falhar, a fila volta ao compositor em vez de sumir', async () => {
     let reject!: (e: Error) => void
     streamChat.mockImplementation(() => new Promise((_r, j) => (reject = j)))
