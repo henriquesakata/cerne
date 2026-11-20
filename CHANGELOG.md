@@ -87,6 +87,23 @@ While cerne is below 1.0.0, a minor version may change behavior: read the
   is. `mirror.trackers` is a list of trackers, edited as a table in the UI and as
   JSON in `cerne settings set`.
 
+- `cerne update` (F-0476): one command, run inside a project, updates the
+  binary and the project's cerne files. The binary goes to the latest release
+  the way it was installed: through `brew upgrade henriquesakata/tap/cerne`
+  under Homebrew; otherwise it downloads the release file, checks it against
+  `SHA256SUMS` and swaps the executable in place, keeping the old one when the
+  check or the swap fails. A local build, a `go install`, a folder you cannot
+  write or an agent session leave the binary alone and print the command to
+  run. Then the new binary renews the hooks and the authoring guide of the
+  agents already connected, like `cerne hook install` plus `cerne skill
+  install`. It ends with one line per part (binary, hooks, guide) and exits
+  non-zero when a part was not done. `cerne update --check` lists what is out
+  of date without writing or using the network. `cerne next` and the
+  session-start notices now ask for `cerne update`. It is the only version
+  check cerne makes, and only when you run it; the README's "Where your data
+  goes" says so. On a version without the command, update the binary with
+  your package manager or the install script first.
+
 ### Changed
 
 - A human-only switch in Settings asks before it moves away from its default:
