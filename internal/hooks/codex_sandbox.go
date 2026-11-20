@@ -64,7 +64,7 @@ func codexSandboxPaths(projDir string) (portable, machine []string, err error) {
 			b = filepath.Join(projDir, b)
 		}
 		b = filepath.Clean(b)
-		if rel, rErr := filepath.Rel(projDir, b); rErr == nil && !strings.HasPrefix(rel, "..") {
+		if rel, rErr := filepath.Rel(projDir, b); rErr == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 			return portable, machine, nil // inside the project: already writable
 		}
 		if t, ok := tilde(b); ok {
@@ -91,8 +91,12 @@ func codexProfileTables(paths []string) string {
 // the install cannot (or must not) write it into the project.
 func codexSandboxSnippet(paths []string) string {
 	var b strings.Builder
+	home, _ := os.UserHomeDir()
 	b.WriteString("start Codex with: codex")
 	for _, p := range paths {
+		if strings.HasPrefix(p, "~/") && home != "" {
+			p = filepath.Join(home, p[2:])
+		}
 		b.WriteString(" --add-dir " + strconv.Quote(p))
 	}
 	b.WriteString("\nor add to your ~/.codex/config.toml:\ndefault_permissions = \"cerne\"\n\n")
@@ -108,11 +112,14 @@ func installCodexSandbox(projDir string) []Result {
 	if err != nil {
 		return []Result{{Asset: codexSandboxAsset, Status: StatusSkipped, Note: "cannot resolve cerne's folders (" + err.Error() + ") — run from a project with a .cernerc"}}
 	}
-	var results []Result
 	if len(machine) > 0 {
-		results = append(results, Result{Asset: "codex: config.toml (sandbox, this machine)", Status: StatusSkipped,
-			Note: "these folders are specific to this machine, so they are not written to the project file; " + codexSandboxSnippet(machine)})
+		// Any machine-specific folder: write nothing to the versioned file and
+		// print ONE snippet with every folder (two layers defining the same
+		// profile is unverified).
+		return []Result{{Asset: codexSandboxAsset, Status: StatusSkipped,
+			Note: "some of cerne's folders are specific to this machine, so nothing is written to the project file; " + codexSandboxSnippet(append(append([]string(nil), portable...), machine...))}}
 	}
+	var results []Result
 	if len(portable) == 0 {
 		return results
 	}
