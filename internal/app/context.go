@@ -78,6 +78,7 @@ type ContextDoc struct {
 type OnDemand struct {
 	What    string `json:"what"`
 	Count   int    `json:"count"`
+	Listed  int    `json:"listed,omitempty"`
 	Command string `json:"command,omitempty"`
 }
 
@@ -475,32 +476,44 @@ func problemParagraph(spec string) string {
 	return strings.Join(para, " ")
 }
 
+// shownIDs caps the ids an on-demand line lists itself.
+const shownIDs = 10
+
 // onDemand counts the decisions, references and runbooks in force, and the
-// rejected or superseded proposals, sharing a component with the task and
-// left out of the package (criterion 19).
+// rejected or superseded proposals, sharing a component with the task
+// (criterion 19). Each count is exactly what its command lists — Listed says
+// how many of them the rings already show — and a kind no command lists by
+// component and state (runbooks, proposals) names its ids instead.
 func onDemand(repoDir string, comps []string, refs []store.Reference, items []ContextItem) ([]OnDemand, error) {
 	listed := map[string]bool{}
 	for _, it := range items {
 		listed[it.ID] = true
 	}
-	shares := func(id string, cs []string) bool {
-		return !listed[id] && slices.ContainsFunc(cs, func(c string) bool { return slices.Contains(comps, c) })
+	shares := func(cs []string) bool {
+		return slices.ContainsFunc(cs, func(c string) bool { return slices.Contains(comps, c) })
 	}
-	var decs, rfs, props int
-	var rbs []string
+	decs, rfs := OnDemand{What: "decisions"}, OnDemand{What: "references"}
+	rbs, props := OnDemand{What: "runbooks"}, OnDemand{What: "rejected or superseded proposals"}
+	var rbIDs, propIDs []string
+	count := func(o *OnDemand, id string) {
+		o.Count++
+		if listed[id] {
+			o.Listed++
+		}
+	}
 	if len(comps) > 0 {
 		ds, err := store.LoadAllDecisions(repoDir)
 		if err != nil {
 			return nil, err
 		}
 		for _, d := range ds {
-			if d.State == domain.DecisionActive && shares(d.ID, d.Components) {
-				decs++
+			if d.State == domain.DecisionActive && shares(d.Components) {
+				count(&decs, d.ID)
 			}
 		}
 		for _, r := range refs {
-			if r.State == domain.ReferenceCurrent && shares(r.ID, r.Components) {
-				rfs++
+			if r.State == domain.ReferenceCurrent && shares(r.Components) {
+				count(&rfs, r.ID)
 			}
 		}
 		runbooks, err := store.LoadAllRunbooks(repoDir)
@@ -508,8 +521,9 @@ func onDemand(repoDir string, comps []string, refs []store.Reference, items []Co
 			return nil, err
 		}
 		for _, rb := range runbooks {
-			if rb.State == domain.RunbookActive && shares(rb.ID, rb.Components) {
-				rbs = append(rbs, rb.ID)
+			if rb.State == domain.RunbookActive && shares(rb.Components) {
+				count(&rbs, rb.ID)
+				rbIDs = append(rbIDs, rb.ID)
 			}
 		}
 		feats, err := store.LoadAllFeatures(repoDir)
@@ -517,28 +531,34 @@ func onDemand(repoDir string, comps []string, refs []store.Reference, items []Co
 			return nil, err
 		}
 		for _, f := range feats {
-			if (f.State == domain.StateRejected || f.State == domain.StateSuperseded) && shares(f.ID, f.Components) {
-				props++
+			if (f.State == domain.StateRejected || f.State == domain.StateSuperseded) && shares(f.Components) {
+				count(&props, f.ID)
+				propIDs = append(propIDs, f.ID)
 			}
 		}
 	}
 	csv := strings.Join(comps, ",")
-	cmd := func(n int, c string) string {
-		if n == 0 {
-			return ""
-		}
-		return c
+	if decs.Count > 0 {
+		decs.Command = "cerne decision list --component " + csv
 	}
-	show := "cerne show " + strings.Join(rbs, "")
-	if len(rbs) > 1 {
-		show = "cerne show <id>: " + strings.Join(rbs, ", ")
+	if rfs.Count > 0 {
+		rfs.Command = "cerne reference list --component " + csv
 	}
-	return []OnDemand{
-		{What: "decisions", Count: decs, Command: cmd(decs, "cerne decision list --component "+csv)},
-		{What: "references", Count: rfs, Command: cmd(rfs, "cerne reference list --component "+csv)},
-		{What: "runbooks", Count: len(rbs), Command: cmd(len(rbs), show)},
-		{What: "rejected or superseded proposals", Count: props, Command: cmd(props, `cerne search "`+strings.Join(comps, " ")+`"`)},
-	}, nil
+	rbs.Command, props.Command = showIDs(rbIDs), showIDs(propIDs)
+	return []OnDemand{decs, rfs, rbs, props}, nil
+}
+
+// showIDs is the command that reads ids, the first shownIDs of them named.
+func showIDs(ids []string) string {
+	switch {
+	case len(ids) == 0:
+		return ""
+	case len(ids) == 1:
+		return "cerne show " + ids[0]
+	case len(ids) > shownIDs:
+		return fmt.Sprintf("cerne show <id>: %s and %d more", strings.Join(ids[:shownIDs], ", "), len(ids)-shownIDs)
+	}
+	return "cerne show <id>: " + strings.Join(ids, ", ")
 }
 
 // fit applies the budget (criterion 7): when the text passes it, every item
@@ -636,11 +656,14 @@ func (p TaskPack) Text() string {
 	} else {
 		fmt.Fprintf(&b, "\n## on demand (components %s)\n", strings.Join(p.Components, ", "))
 		for _, o := range p.OnDemand {
-			if o.Command == "" {
-				fmt.Fprintf(&b, "%s: %d\n", o.What, o.Count)
-			} else {
-				fmt.Fprintf(&b, "%s: %d — %s\n", o.What, o.Count, o.Command)
+			fmt.Fprintf(&b, "%s: %d", o.What, o.Count)
+			if o.Listed > 0 {
+				fmt.Fprintf(&b, " (%d of them listed above)", o.Listed)
 			}
+			if o.Command != "" {
+				b.WriteString(" — " + o.Command)
+			}
+			b.WriteString("\n")
 		}
 	}
 	if p.Compact {

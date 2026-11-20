@@ -113,9 +113,9 @@ func contextFixture(t *testing.T) string {
 	note("N-0010", domain.NoteSuperseded, "", nil, nil, "The package of a task from the search index.", "cli")
 	ref("R-0001", domain.ReferenceCurrent, nil)
 	ref("R-0002", domain.ReferenceCurrent, []string{"N-0001"})
-	ref("R-0003", domain.ReferenceCurrent, []string{"T-0002"})
+	ref("R-0003", domain.ReferenceCurrent, []string{"T-0002"}, "hooks") // in ring (a) and on demand
 	ref("R-0004", domain.ReferenceCurrent, nil, "hooks")
-	dec("D-0001", domain.DecisionActive)
+	dec("D-0001", domain.DecisionActive, "cli") // in ring (a) and on demand
 	dec("D-0003", domain.DecisionActive, "cli")
 	dec("D-0004", domain.DecisionSuperseded, "cli")
 	rb("RB-0001", domain.RunbookActive)
@@ -176,17 +176,22 @@ func TestTaskContextRings(t *testing.T) {
 	if byID["N-0003"].Why != "edit:internal/hooks/**" || byID["N-0005"].Why != "internal/cli/contextcmd.go" || byID["N-0006"].Why != "hooks" {
 		t.Fatalf("why: %+v %+v %+v", byID["N-0003"], byID["N-0005"], byID["N-0006"])
 	}
+	// Each count is what its command lists (critic M3), saying how many of
+	// them ring (a) already listed; with no list command, the ids themselves.
 	wantOnDemand := []OnDemand{
-		{What: "decisions", Count: 1, Command: "cerne decision list --component cli,hooks"},
-		{What: "references", Count: 1, Command: "cerne reference list --component cli,hooks"},
+		{What: "decisions", Count: 2, Listed: 1, Command: "cerne decision list --component cli,hooks"},
+		{What: "references", Count: 2, Listed: 1, Command: "cerne reference list --component cli,hooks"},
 		{What: "runbooks", Count: 1, Command: "cerne show RB-0002"},
-		{What: "rejected or superseded proposals", Count: 2, Command: `cerne search "cli hooks"`},
+		{What: "rejected or superseded proposals", Count: 2, Command: "cerne show <id>: F-0011, F-0012"},
 	}
 	if !reflect.DeepEqual(p.OnDemand, wantOnDemand) {
 		t.Fatalf("on demand:\n got %+v\nwant %+v", p.OnDemand, wantOnDemand)
 	}
 	text := p.Text()
-	for _, gone := range []string{"F-0009", "F-0011", "F-0012", "N-0010", "D-0004", "done body", "reference body", "Plain words"} {
+	if !strings.Contains(text, "decisions: 2 (1 of them listed above) — cerne decision list --component cli,hooks\n") {
+		t.Fatalf("the close does not say what ring (a) already listed:\n%s", text)
+	}
+	for _, gone := range []string{"F-0009", "] F-0011", "] F-0012", "N-0010", "D-0004", "done body", "reference body", "Plain words"} { // the proposals only as ids of the close
 		if strings.Contains(text, gone) {
 			t.Errorf("the package shows %q:\n%s", gone, text)
 		}
