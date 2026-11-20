@@ -83,3 +83,13 @@ func TestApplyDeliveredDoneStillWritesOnlyImportedEvents(t *testing.T) {
 		}
 	}
 }
+
+func TestSetPlanDeliveredTreatsAgentDoneAsDelivered(t *testing.T) {
+	for _, tt := range []struct{ choice, want string }{{"implemented", "implemented"}, {"done", "done"}} {
+		items := []PlanItem{{Kind: "feature", State: "done"}, {Kind: "feature", State: "implemented"}, {Kind: "feature", State: "candidate"}}
+		SetPlanDelivered(items, tt.choice)
+		if items[0].State != tt.want || items[1].State != tt.want || items[2].State != "candidate" {
+			t.Errorf("choice %q: states = %q %q %q, want %q %q candidate", tt.choice, items[0].State, items[1].State, items[2].State, tt.want, tt.want)
+		}
+	}
+}

@@ -31,10 +31,16 @@ func SetDelivered(cands []Candidate, state string) {
 	}
 }
 
+// IsPlanDelivered reports whether an agent plan item is a delivered feature:
+// the agent may map one straight to "done" as well as to "implemented".
+func IsPlanDelivered(it PlanItem) bool {
+	return it.Kind == "feature" && (it.State == "implemented" || it.State == "done")
+}
+
 // SetPlanDelivered is SetDelivered for agent plan items.
 func SetPlanDelivered(items []PlanItem, state string) {
 	for i := range items {
-		if items[i].Kind == "feature" && items[i].State == "implemented" {
+		if IsPlanDelivered(items[i]) {
 			items[i].State = state
 		}
 	}

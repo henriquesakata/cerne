@@ -60,3 +60,22 @@ func TestImportDeliveredStateInvalid(t *testing.T) {
 		t.Fatalf("invalid value still imported %d feature(s)", len(fs))
 	}
 }
+
+func TestImportAgentDoneItemDefaultsToImplemented(t *testing.T) {
+	const plan = `{"items":[{"kind":"feature","title":"Shipped thing","state":"done","body":"# Shipped\n\nx","source":"HISTORY.md#shipped"}]}`
+	for _, tt := range []struct {
+		args []string
+		want domain.FeatureState
+	}{{nil, domain.StateImplemented}, {[]string{"--delivered-state", "done"}, domain.StateDone}} {
+		projDir, _, repoDir := setupProject(t)
+		writeAgentPlan(t, projDir, plan)
+		args := append([]string{"import", "--agent", "--ingest", "--yes", "--dir", projDir}, tt.args...)
+		if out, err := execCerne(t, args...); err != nil {
+			t.Fatalf("ingest: %v\n%s", err, out)
+		}
+		fs, _ := store.LoadAllFeatures(repoDir)
+		if len(fs) != 1 || fs[0].State != tt.want {
+			t.Fatalf("args %v: features = %+v, want state %s", tt.args, fs, tt.want)
+		}
+	}
+}

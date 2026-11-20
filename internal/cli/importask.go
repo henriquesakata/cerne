@@ -58,7 +58,7 @@ func countDelivered(cands []importer.Candidate) int {
 func countPlanDelivered(items []importer.PlanItem) int {
 	n := 0
 	for _, it := range items {
-		if it.Kind == "feature" && it.State == "implemented" {
+		if importer.IsPlanDelivered(it) {
 			n++
 		}
 	}
