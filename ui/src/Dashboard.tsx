@@ -169,13 +169,14 @@ export function FirstStepsBlock({ steps }: { steps?: { key: string; done: boolea
   return (
     <section className="dash-attention">
       <h2>{d.firstSteps}</h2>
-      <ul className="dash-attention-list">
+      <ol className="dash-first-steps">
         {steps.map((s) => (
           <li key={s.key}>
-            <span aria-label={s.done ? d.firstStepsDone : undefined}>{s.done ? '✓' : '○'}</span> {text[s.key]}
+            <span aria-hidden="true">{s.done ? '✓' : '○'}</span>
+            <span className="sr-only">{s.done ? d.firstStepsDone : d.firstStepsTodo}</span> {text[s.key]}
           </li>
         ))}
-      </ul>
+      </ol>
       <p className="dash-light-mode">
         <a href="https://github.com/henriquesakata/cerne/blob/main/docs/first-week.md">{d.firstStepsGuide}</a>
       </p>
@@ -194,8 +195,8 @@ export default function Dashboard() {
     <main className="page">
       <h1>{t.dashboard.title}</h1>
       <p className="counts">{t.dashboard.subtitle}</p>
-      <LightModeBand />
       <FirstStepsBand />
+      <LightModeBand />
       <AttentionBand />
       {/* Composição (F-0233): a faixa de gates lidera fora do grid — é o único
           trabalho que a CLI não faz por você. No grid, largura segue densidade:
