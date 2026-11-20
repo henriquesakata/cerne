@@ -1,11 +1,41 @@
 package store
 
 import (
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
 )
+
+// Meta is what every entity file carries whatever its kind: what a list of
+// mixed kinds shows (the task package, E-0005).
+type Meta struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	State string `json:"state"`
+	Name  string `json:"name"` // a historical's title
+}
+
+// LoadMeta reads the id, title and state of the entity id of any kind, by its
+// prefix; ErrNotFound for an unknown prefix or a missing file. kind is the
+// singular of its entity dir ("feature" for E-/T-/B- too).
+func LoadMeta(backendDir, id string) (m Meta, kind string, err error) {
+	prefix, _, _ := strings.Cut(id, "-")
+	sub, ok := idSubdirs[prefix]
+	if !ok {
+		return Meta{}, "", fmt.Errorf("%s: %w", id, ErrNotFound)
+	}
+	m, err = loadEntity[Meta](backendDir, sub, id)
+	if m.Title == "" {
+		m.Title = m.Name
+	}
+	kind = strings.TrimSuffix(path.Base(sub), "s")
+	if kind == "capabilitie" {
+		kind = "capability"
+	}
+	return m, kind, err
+}
 
 // EntityExists reports whether the backend holds an entity with this id
 // (F-/T-/E-/D-/R-/RB-/N-/H-/W-/C-/P-/I-/HO-), by its entity file. Read-only; an
