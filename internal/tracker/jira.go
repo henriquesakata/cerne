@@ -252,6 +252,10 @@ type jiraTransition struct {
 // the transition of the card stands.
 var errJiraNoTransition = errors.New("no transition to the status category")
 
+// errJiraMoved is an issue the link names that now has a key of another
+// project: Jira still resolves the old key, but the card must not write there.
+var errJiraMoved = errors.New("issue moved out of the project")
+
 // jiraCategory is the status category every Jira workflow has for a card
 // state: To Do (new) until work starts, In Progress (indeterminate) through
 // review, Done (done) for every state that closes an issue.
@@ -418,6 +422,13 @@ func (j jira) Update(ctx context.Context, r Ref, it Item) error {
 	cur, err := c.issue(ctx, r.ID)
 	if err != nil {
 		return err
+	}
+	switch cur.Key {
+	case r.ID:
+	case "":
+		return fmt.Errorf("jira %s: unreadable answer", j.host)
+	default:
+		return fmt.Errorf("jira %s: issue %s is now %s, outside project %s; move it back or re-link the card: %w", j.host, r.ID, cur.Key, j.project, errJiraMoved)
 	}
 	return c.apply(ctx, r.ID, cur, it)
 }
