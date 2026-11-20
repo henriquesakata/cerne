@@ -21,9 +21,10 @@ const titleWeight = 4.0
 const maxCoverageTerms = 8
 
 // entityRowsSQL ranks matching documents by bm25 over the columns entity_id,
-// kind, doc, state, title, body, superseded_by (index.go createTableSQL).
+// kind, doc, state, title, body, superseded_by (index.go createTableSQL); %%s
+// takes a filter ("" or an "AND …" suffix).
 var entityRowsSQL = fmt.Sprintf(`SELECT rowid, entity_id, kind, doc, state, title, superseded_by
-	FROM docs WHERE docs MATCH ? ORDER BY bm25(docs, 1.0, 0, 0, 0, %g, 1.0, 0)`, titleWeight)
+	FROM docs WHERE docs MATCH ?%%s ORDER BY bm25(docs, 1.0, 0, 0, 0, %g, 1.0, 0)`, titleWeight)
 
 const (
 	rowidsSQL     = `SELECT rowid FROM docs WHERE docs MATCH ?`
@@ -107,14 +108,42 @@ func RankEntities(dbPath, query string, limit int) ([]EntityResult, error) {
 	return res, fillSnippets(db, match, res)
 }
 
+// activeNotes narrows a ranking to the documents of active notes.
+const activeNotes = ` AND kind = 'note' AND state = 'active'`
+
+// RankActiveNotes is the coverage ranking of RankEntities over the active
+// notes only, filtered before the cut (E-0005 ring d): the ids of the first
+// limit. The index is opened read-only, never built: a missing one answers
+// nil, nil, and a busy one ErrBusy.
+func RankActiveNotes(dbPath, query string, limit int) ([]string, error) {
+	terms := keywordTerms(query)
+	if len(terms) == 0 {
+		return nil, nil
+	}
+	db, err := openReadOnly(dbPath)
+	if db == nil || err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	res, _, err := coverageRank(db, terms, activeNotes)
+	if err != nil {
+		return nil, wrapBusy(err)
+	}
+	var ids []string
+	for _, r := range truncate(res, limit) {
+		ids = append(ids, r.EntityID)
+	}
+	return ids, nil
+}
+
 // exactRows matches query as given, retried as one quoted phrase when FTS5
 // rejects it (the Search fallback); it returns the MATCH string that worked.
 func exactRows(db *sql.DB, query string) ([]rankedRow, string, error) {
-	if hits, err := entityRows(db, query); err == nil {
+	if hits, err := entityRows(db, query, ""); err == nil {
 		return hits, query, nil
 	}
 	match := quotePhrase(query)
-	hits, err := entityRows(db, match)
+	hits, err := entityRows(db, match, "")
 	return hits, match, err
 }
 
@@ -122,6 +151,18 @@ func exactRows(db *sql.DB, query string) ([]rankedRow, string, error) {
 // entities by how many distinct terms their documents cover plus how many
 // are in their title, bm25 order breaking ties.
 func coverageEntities(db *sql.DB, terms []string, limit int) ([]EntityResult, error) {
+	res, match, err := coverageRank(db, terms, "")
+	if err != nil {
+		return nil, err
+	}
+	res = truncate(res, limit)
+	return res, fillSnippets(db, match, res)
+}
+
+// coverageRank is coverageEntities without the cut and the snippets, over the
+// documents filter (an SQL "AND …" suffix, "" for all) admits; it returns the
+// MATCH string the snippets need.
+func coverageRank(db *sql.DB, terms []string, filter string) ([]EntityResult, string, error) {
 	if len(terms) > maxCoverageTerms {
 		terms = terms[:maxCoverageTerms]
 	}
@@ -130,9 +171,9 @@ func coverageEntities(db *sql.DB, terms []string, limit int) ([]EntityResult, er
 		parts[i] = termQuery(t)
 	}
 	match := strings.Join(parts, " OR ")
-	hits, err := entityRows(db, match)
+	hits, err := entityRows(db, match, filter)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	entityOf := make(map[int64]string, len(hits))
 	for _, h := range hits {
@@ -141,7 +182,7 @@ func coverageEntities(db *sql.DB, terms []string, limit int) ([]EntityResult, er
 	covered := map[string]map[int]bool{} // entity -> indexes of the terms it covers
 	for i, p := range parts {
 		if err := markCoverage(db, p, i, entityOf, covered); err != nil {
-			return nil, err
+			return nil, "", err
 		}
 	}
 	res := groupRows(hits)
@@ -152,8 +193,7 @@ func coverageEntities(db *sql.DB, terms []string, limit int) ([]EntityResult, er
 		score[res[i].EntityID] = res[i].Coverage + titleHits(res[i].Title, terms)
 	}
 	sort.SliceStable(res, func(i, j int) bool { return score[res[i].EntityID] > score[res[j].EntityID] })
-	res = truncate(res, limit)
-	return res, fillSnippets(db, match, res)
+	return res, match, nil
 }
 
 // titleHits counts the terms whose word, or stem as a prefix, is in title
@@ -191,8 +231,8 @@ type rankedRow struct {
 	Result
 }
 
-func entityRows(db *sql.DB, match string) ([]rankedRow, error) {
-	rows, err := db.Query(entityRowsSQL, match)
+func entityRows(db *sql.DB, match, filter string) ([]rankedRow, error) {
+	rows, err := db.Query(fmt.Sprintf(entityRowsSQL, filter), match)
 	if err != nil {
 		return nil, err
 	}
