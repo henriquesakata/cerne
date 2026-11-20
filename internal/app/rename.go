@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/slug"
 	"github.com/henriquesakata/cerne/internal/store"
 )
@@ -96,12 +97,17 @@ func RenameComponent(repoDir, projDir, from, to string, force, dryRun bool) (Ren
 		return hits, nil
 	}
 	if dryRun {
-		if _, err := plan(); err != nil {
+		err := readLatest(repoDir, func() error {
+			_, err := plan()
+			return err
+		})
+		if err != nil {
 			return RenameReport{}, err
 		}
 		return rep, nil
 	}
-	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+	// Latest: the set renamed is the backend's, not a clone that trails it.
+	err := mutateAndSnapshotLatest(repoDir, projDir, func() (string, error) {
 		hits, err := plan()
 		if err != nil {
 			return "", err
@@ -125,6 +131,28 @@ func RenameComponent(repoDir, projDir, from, to string, force, dryRun bool) (Ren
 		return RenameReport{}, err
 	}
 	return rep, nil
+}
+
+// readLatest runs read on the tree mutateAndSnapshotLatest's mutate sees — the
+// clone reset to its HEAD and fast-forwarded to origin, under the backend lock
+// — and commits nothing: a dry run lists what the apply would change.
+func readLatest(repoDir string, read func() error) error {
+	return gitback.WithLock(gitback.LockPath(repoDir), func() error {
+		base, err := gitback.HeadSHA(repoDir)
+		if errors.Is(err, gitback.ErrNoCommits) {
+			return read()
+		}
+		if err != nil {
+			return err
+		}
+		if err := gitback.ResetHard(repoDir, base); err != nil {
+			return err
+		}
+		if _, err := fastForwardToOrigin(nil, repoDir, base); err != nil {
+			return err
+		}
+		return read()
+	})
 }
 
 // replaceComponent is comps with from replaced by to in place, to kept once.

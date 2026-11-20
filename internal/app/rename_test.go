@@ -3,11 +3,13 @@ package app
 import (
 	"errors"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -207,6 +209,44 @@ func TestRenameComponentNearNameCheck(t *testing.T) {
 			}
 			if got := componentsOf(t, repoDir)["T-0002"]; !slices.Equal(got, []string{tc.to}) {
 				t.Fatalf("T-0002 components = %v, want [%s]", got, tc.to)
+			}
+		})
+	}
+}
+
+// pushFromOtherClone tags N-0099 with "old" from a second clone of origin, so
+// the local clone trails the backend by one entity carrying the component.
+func pushFromOtherClone(t *testing.T, origin string) {
+	t.Helper()
+	other := filepath.Join(t.TempDir(), "other")
+	if err := gitback.Clone(origin, other); err != nil {
+		t.Fatalf("Clone: %v", err)
+	}
+	if err := store.SaveNote(other, store.Note{ID: "N-0099", Title: "Remote note", State: domain.NoteState("active"), Components: []string{"old"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitback.CommitAndPush(other, "remote: tag N-0099"); err != nil {
+		t.Fatalf("CommitAndPush: %v", err)
+	}
+}
+
+// M4 (critic round 1): the dry run and the write read the same tree, the
+// backend's latest, so the dry run lists what the apply will change.
+func TestRenameComponentReadsTheBackendLatest(t *testing.T) {
+	for _, dryRun := range []bool{true, false} {
+		t.Run(map[bool]string{true: "dry run", false: "write"}[dryRun], func(t *testing.T) {
+			repoDir, projDir, origin := newFeatureBackend(t)
+			seedRename(t, repoDir)
+			pushFromOtherClone(t, origin)
+			rep, err := RenameComponent(repoDir, projDir, "old", "fresh", false, dryRun)
+			if err != nil {
+				t.Fatalf("RenameComponent: %v", err)
+			}
+			if len(rep.Entities) != 9 || !slices.ContainsFunc(rep.Entities, func(e RenamedEntity) bool { return e.ID == "N-0099" }) {
+				t.Fatalf("listed %d entities, want 9 with N-0099, only on origin: %+v", len(rep.Entities), rep.Entities)
+			}
+			if !dryRun && !slices.Equal(componentsOf(t, repoDir)["N-0099"], []string{"fresh"}) {
+				t.Fatalf("N-0099 components = %v after the write", componentsOf(t, repoDir)["N-0099"])
 			}
 		})
 	}
