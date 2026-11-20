@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -288,6 +289,93 @@ func TestTaskContextBudget(t *testing.T) {
 		if strings.Contains(mid.Text(), it.ID+"  note  ") || strings.Contains(mid.Text(), "gist one") {
 			t.Fatalf("compact lines keep only id and title:\n%s", mid.Text())
 		}
+	}
+}
+
+// E-0005 verification 16 (criterion 7, T-0018): over every budget from the
+// document alone to the whole package, the cut goes in order — the items of
+// (d), (c) and (b) leave first, then the ring (a) bodies, the longest first,
+// and only then the ring (a) items — within the budget, the document whole,
+// and the last line counts the bodies that left.
+func TestTaskContextCutOrder(t *testing.T) {
+	repo := contextFixture(t)
+	full, err := TaskContext(repo, "T-0002", DefaultContextBudget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bodies, ringA := 0, 0
+	for _, it := range full.Items {
+		if it.Body != "" {
+			bodies++
+		}
+		if it.Ring == "a" {
+			ringA++
+		}
+	}
+	if full.Compact || bodies != 4 {
+		t.Fatalf("the whole package: compact=%v, %d bodies", full.Compact, bodies)
+	}
+	bodyLen := map[string]int{}
+	for _, it := range full.Items {
+		bodyLen[it.ID] = len(it.Body)
+	}
+	seen := map[string]bool{}
+	for budget := 1; budget <= (len(full.Text())+3)/4; budget++ {
+		p := full
+		p.Items = slices.Clone(full.Items)
+		p.fit(budget)
+		if p.Doc != full.Doc {
+			t.Fatalf("budget %d cut the document", budget)
+		}
+		if !reflect.DeepEqual(ringIDs(p.Items), ringIDs(full.Items)[:len(p.Items)]) {
+			t.Fatalf("budget %d: the items left are not a prefix: %v", budget, ringIDs(p.Items))
+		}
+		if len(p.Items) > 0 && len(p.Text()) > budget*4 {
+			t.Fatalf("budget %d: %d bytes", budget, len(p.Text()))
+		}
+		shown, keptA, outer := 0, 0, 0
+		minDropped, maxShown := 1<<30, 0
+		for _, it := range p.Items {
+			switch {
+			case it.Ring != "a":
+				outer++
+			case it.Body != "":
+				shown++
+				maxShown = max(maxShown, len(it.Body))
+			case bodyLen[it.ID] > 0:
+				minDropped = min(minDropped, bodyLen[it.ID])
+			}
+			if it.Ring == "a" {
+				keptA++
+			}
+		}
+		if p.OmittedBodies != bodies-shown {
+			t.Fatalf("budget %d: omitted bodies %d, want %d", budget, p.OmittedBodies, bodies-shown)
+		}
+		switch {
+		case outer > 0 && (shown < bodies || keptA < ringA):
+			t.Fatalf("budget %d: a ring (a) body or item left before the outer rings: %v", budget, ringIDs(p.Items))
+		case keptA < ringA && shown > 0:
+			t.Fatalf("budget %d: a ring (a) item left before every body did", budget)
+		case maxShown > minDropped:
+			t.Fatalf("budget %d: a body of %d bytes stayed while one of %d left", budget, maxShown, minDropped)
+		}
+		if p.Compact {
+			if want := fmt.Sprintf(", and %d ring (a) bodies — ", p.OmittedBodies); !strings.Contains(lastLine(p.Text()), want) {
+				t.Fatalf("budget %d: last line %q lacks %q", budget, lastLine(p.Text()), want)
+			}
+		}
+		switch {
+		case outer > 0 && outer < len(full.Items)-ringA:
+			seen["outer"] = true
+		case outer == 0 && keptA == ringA && shown > 0 && shown < bodies:
+			seen["bodies"] = true
+		case keptA > 0 && keptA < ringA:
+			seen["ring a"] = true
+		}
+	}
+	if len(seen) != 3 {
+		t.Fatalf("the sweep did not reach every phase of the cut: %v", seen)
 	}
 }
 
