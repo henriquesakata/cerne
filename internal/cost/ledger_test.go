@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/henriquesakata/cerne/internal/domain"
 )
 
 // TestCurrentHarness (F-0309 crit. 13): a bind is marked claude-code only
@@ -83,5 +85,34 @@ func TestBindWithoutRoleKeepsTheOldLine(t *testing.T) {
 	binds, _, err := readLedger(cache)
 	if err != nil || len(binds) != 1 || binds[0].Role != "" || binds[0].Retro {
 		t.Fatalf("binds = %+v, %v", binds, err)
+	}
+}
+
+// TestAppendMarkSeparateFile (F-0486 crit. 1): the session that opens a card
+// is recorded in its own file, which the cost ledger never reads — so a card's
+// cost is the same with or without the mark, under this binary or an older one.
+func TestAppendMarkSeparateFile(t *testing.T) {
+	in := fixture(t)
+	saveFeature(t, in.RepoDir, "F-0001", domain.StateInDevelopment)
+	writeSession(t, in.Roots[0], "s",
+		tmsg{ts: at(1), id: "m1", req: "r1", c: cc(1, 2, 3, 4)},
+		tmsg{ts: at(3), id: "m3", req: "r3", c: cc(5, 6, 7, 8)})
+	bindAt(t, in.CacheDir, "s", "", "F-0001", at(2))
+	before := compute(t, in, "F-0001")
+
+	if err := AppendMark(in.CacheDir, Bind{Session: "s", Entity: "F-0001", Role: "opened", Harness: HarnessClaudeCode, TS: at(0)}); err != nil {
+		t.Fatal(err)
+	}
+	after := compute(t, in, "F-0001")
+	if after.Counters != before.Counters || after.Unattributed != before.Unattributed || after.Messages != before.Messages {
+		t.Fatalf("cost changed by the session mark: before %+v, after %+v", before, after)
+	}
+	binds, _, err := readLedger(in.CacheDir)
+	if err != nil || len(binds) != 1 {
+		t.Fatalf("ledger = %+v (%v), want the one bind only", binds, err)
+	}
+	opened, err := ReadMarks(in.CacheDir)
+	if err != nil || len(opened) != 1 || opened[0].Session != "s" || opened[0].Entity != "F-0001" {
+		t.Fatalf("ReadMarks = %+v (%v), want s opened F-0001", opened, err)
 	}
 }

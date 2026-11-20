@@ -50,14 +50,42 @@ func CurrentHarness() string {
 	return "other"
 }
 
+// marksFile records what each session did on a card besides binding to it
+// (F-0486): opened it, wrote its spec, plan or result — Role names which.
+// Same line shape as the ledger, its own file, so no cost reader — this
+// binary's or an older one's — ever attributes tokens through it.
+const marksFile = "sessionmarks.ndjson"
+
 // AppendBind appends b as one JSON line to the ledger, creating it on first
 // use. One Write of the whole line keeps concurrent appends from interleaving.
 func AppendBind(cacheDir string, b Bind) error {
+	return appendLine(cacheDir, ledgerFile, b)
+}
+
+// AppendMark records that b.Session (b.Agent inside a subagent) did b.Role on
+// the card b.Entity (F-0486).
+func AppendMark(cacheDir string, b Bind) error {
+	return appendLine(cacheDir, marksFile, b)
+}
+
+// ReadBinds is every ledger line, in file order (F-0486: who worked where).
+func ReadBinds(cacheDir string) ([]Bind, error) {
+	binds, _, err := readLedger(cacheDir)
+	return binds, err
+}
+
+// ReadMarks is every session mark, in file order.
+func ReadMarks(cacheDir string) ([]Bind, error) {
+	binds, _, err := readBindFile(cacheDir, marksFile)
+	return binds, err
+}
+
+func appendLine(cacheDir, name string, b Bind) error {
 	line, err := json.Marshal(b)
 	if err != nil {
 		return err
 	}
-	f, err := os.OpenFile(filepath.Join(cacheDir, ledgerFile), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(filepath.Join(cacheDir, name), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err
 	}
@@ -71,7 +99,11 @@ func AppendBind(cacheDir string, b Bind) error {
 // readLedger reads every well-formed ledger line in file order; a malformed
 // line (a write cut short) is skipped. A missing ledger is (nil, false, nil).
 func readLedger(cacheDir string) (binds []Bind, exists bool, err error) {
-	raw, err := os.ReadFile(filepath.Join(cacheDir, ledgerFile))
+	return readBindFile(cacheDir, ledgerFile)
+}
+
+func readBindFile(cacheDir, name string) (binds []Bind, exists bool, err error) {
+	raw, err := os.ReadFile(filepath.Join(cacheDir, name))
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, false, nil
 	}

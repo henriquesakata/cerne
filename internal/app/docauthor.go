@@ -110,6 +110,21 @@ func (a DocAuthor) docEdited(id, doc string, state domain.FeatureState, extra ma
 	return domain.NewEvent(id, "feature.doc_edited", p, EventActor())
 }
 
+// recordDocEdited appends the feature.doc_edited event of a write of doc by a
+// and, for an agent session's write, marks the session as the doc's writer on
+// this machine (F-0486: the agent that wrote the spec is often not the one
+// that wrote the plan or the result). The mark is local and best-effort: a
+// write never fails on it.
+func (a DocAuthor) recordDocEdited(repoDir, id, doc string, state domain.FeatureState, extra map[string]string) error {
+	if err := store.AppendEvent(repoDir, a.docEdited(id, doc, state, extra)); err != nil {
+		return err
+	}
+	if sess := os.Getenv("CERNE_SESSION"); a.Source != "human" && os.Getenv("CERNE_ORIGIN") != "chat" && safeSessionID(sess) == nil {
+		_ = RecordMark(filepath.Dir(repoDir), sess, "", cost.CurrentHarness(), id, doc)
+	}
+	return nil
+}
+
 // planSpecDigest is what a write of feature id's doc adds to its
 // feature.doc_edited payload (F-0377): for a plan (body) with real content,
 // spec_digest — lint.SpecDigest of the spec it was written against: spec when
@@ -137,7 +152,7 @@ func RecordDocWrite(repoDir, id, doc string, a DocAuthor) error {
 		return err
 	}
 	body, _ := os.ReadFile(FeatureDocPath(repoDir, id, featureDocFilenames[doc]))
-	return store.AppendEvent(repoDir, a.docEdited(id, doc, f.State, planSpecDigest(repoDir, id, doc, body, nil)))
+	return a.recordDocEdited(repoDir, id, doc, f.State, planSpecDigest(repoDir, id, doc, body, nil))
 }
 
 // pushedFeatureDoc maps a pushed path to its feature and lifecycle document
@@ -183,7 +198,7 @@ func RecordPushedDocs(repoDir string, changes []FileChange, by DocAuthor) error 
 		if err != nil {
 			continue
 		}
-		if err := store.AppendEvent(repoDir, by.docEdited(id, doc, f.State, planSpecDigest(repoDir, id, doc, ch.Content, pushedSpec(changes, id)))); err != nil {
+		if err := by.recordDocEdited(repoDir, id, doc, f.State, planSpecDigest(repoDir, id, doc, ch.Content, pushedSpec(changes, id))); err != nil {
 			return err
 		}
 	}

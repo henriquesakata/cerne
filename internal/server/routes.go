@@ -77,6 +77,11 @@ func dataRoutes() []dataRoute {
 		{"GET", "/features/{id}", true, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
 			handleFeatureDetail(w, repoDir, projDir, r.PathValue("id"))
 		}},
+		// F-0486: the card's agent sessions — ids, folders, resume commands:
+		// this machine's, so never remote.
+		{"GET", "/features/{id}/agents", false, func(w http.ResponseWriter, r *http.Request, repoDir, _, projectID string) {
+			handleFeatureAgents(w, repoDir, projectID, r.PathValue("id"))
+		}},
 		{"POST", "/features", true, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
 			handleCreateFeature(w, r, repoDir, projDir)
 		}},

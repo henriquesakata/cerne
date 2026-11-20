@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/henriquesakata/cerne/internal/app"
 )
@@ -63,6 +64,34 @@ func TestMsgSendToNobodySaysSo(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
 		}
+	}
+}
+
+// TestMsgSendReplyOnCardThread (F-0486 crit. 10): a session the human
+// addressed from a card's page answers with no live work, and the send says
+// the answer goes to the card's page — not that nobody will get it.
+func TestMsgSendReplyOnCardThread(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	cacheDir := filepath.Dir(repoDir)
+	if _, err := app.ChannelPost(cacheDir, "Henrique", "F-0001", []string{"sess-dev"}, "corrige?", time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	out, err := execCerne(t, "msg", "send", "corrigido", "--ref", "F-0001", "--session", "sess-dev", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("reply: %v\n%s", err, out)
+	}
+	if want := "sent #2 — on F-0001's thread: the human reads it on the card's page in cerne ui (it expires after 24h)\n"; out != want {
+		t.Fatalf("output = %q, want %q", out, want)
+	}
+	if out, err := execCerne(t, "msg", "send", "x", "--ref", "F-0099", "--session", "sess-dev", "--dir", projDir); err == nil || !strings.Contains(err.Error(), "no live message about that card") {
+		t.Fatalf("--ref of another card: %v\n%s", err, out)
+	}
+	// crit. 8: the addressed session may ack with no live work.
+	if _, err := app.ChannelPost(cacheDir, "Henrique", "F-0001", []string{"sess-dev"}, "e o teste?", time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := execCerne(t, "msg", "ack", "3", "--session", "sess-dev", "--dir", projDir); err != nil || !strings.Contains(out, "3") {
+		t.Fatalf("ack by an addressed session with no work: %v\n%s", err, out)
 	}
 }
 

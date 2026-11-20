@@ -71,21 +71,29 @@ func msgIdentityErr(sess string, err error) error {
 }
 
 func newMsgSendCmd(dir, session *string) *cobra.Command {
-	return &cobra.Command{
+	var ref string
+	cmd := &cobra.Command{
 		Use:   "send <text>",
 		Short: "Post to the permanent channel as your session's work",
-		Args:  cobra.ExactArgs(1),
+		Long: "Post to the permanent channel as your session's work. --ref F-NNNN answers the human's message " +
+			"from that card's page: the answer goes to the card's thread, and no other agent receives it. " +
+			"A session with no live work answers the card message it was shown even without --ref.",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cacheDir, repoDir, err := msgProject(*dir)
 			if err != nil {
 				return err
 			}
 			sess := msgSession(*session)
-			m, to, err := app.ChannelSend(cacheDir, repoDir, sess, args[0], time.Now().UTC())
+			m, to, err := app.ChannelSend(cacheDir, repoDir, sess, ref, args[0], time.Now().UTC())
 			if err != nil {
 				return msgIdentityErr(sess, err)
 			}
 			out := cmd.OutOrStdout()
+			if m.Ref != "" { // F-0486: an answer to the human on a card's page
+				fmt.Fprintf(out, "sent #%d — on %s's thread: the human reads it on the card's page in cerne ui (it expires after 24h)\n", m.Seq, m.Ref)
+				return nil
+			}
 			switch len(to) {
 			case 0:
 				fmt.Fprintf(out, "sent #%d — no live session right now; it stays in the channel until it expires (24h, or when %s closes)\n", m.Seq, m.Nick)
@@ -97,6 +105,8 @@ func newMsgSendCmd(dir, session *string) *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&ref, "ref", "", "answer the human's message from this card's page (F-NNNN): the answer goes to the card's thread only")
+	return cmd
 }
 
 func newMsgReadCmd(dir, session *string) *cobra.Command {

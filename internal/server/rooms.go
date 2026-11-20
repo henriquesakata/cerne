@@ -115,10 +115,11 @@ type channelRoomView struct {
 // war room read. With follow=1 it long-polls: on ?version=V until the channel
 // changes at all (a delivery a hook recorded counts — that is how the UI sees
 // "delivered"), without a version until a message past since arrives.
-// Reading never records a delivery.
+// ?ref=F-… keeps one card's thread (F-0486). Reading never records a delivery.
 func handleChannelRead(w http.ResponseWriter, r *http.Request, repoDir, projectID string) {
 	q := r.URL.Query()
 	since, _ := strconv.Atoi(q.Get("since"))
+	ref := q.Get("ref") // F-0486: one card's thread
 	follow := q.Get("follow") == "1"
 	want, err := strconv.ParseInt(q.Get("version"), 10, 64)
 	hasVersion := err == nil
@@ -138,7 +139,7 @@ func handleChannelRead(w http.ResponseWriter, r *http.Request, repoDir, projectI
 		}
 		out := []app.ChannelMessage{}
 		for _, m := range all {
-			if m.Seq > since {
+			if m.Seq > since && (ref == "" || m.Ref == ref) {
 				out = append(out, m)
 			}
 		}
@@ -252,6 +253,9 @@ func handleRoomResume(w http.ResponseWriter, r *http.Request, projectID, id stri
 type sayRequest struct {
 	SessionID string `json:"session_id"`
 	Body      string `json:"body"`
+	// F-0486: a post from a card's page — the card and the sessions it is for.
+	Ref string   `json:"ref"`
+	To  []string `json:"to"`
 }
 
 func handleRoomSay(w http.ResponseWriter, r *http.Request, repoDir, projDir, projectID, id string) {
@@ -280,10 +284,17 @@ func handleRoomSay(w http.ResponseWriter, r *http.Request, repoDir, projDir, pro
 		now := time.Now().UTC()
 		var msg room.Message
 		if req.SessionID != "" {
-			msg, _, err = app.ChannelSend(cacheDir, repoDir, req.SessionID, req.Body, now)
+			msg, _, err = app.ChannelSend(cacheDir, repoDir, req.SessionID, req.Ref, req.Body, now)
 			msg.Session = "" // a session id is never served
 		} else {
-			msg, err = app.ChannelPost(cacheDir, app.ChannelHumanName(projDir), req.Body, now)
+			if req.Ref != "" || len(req.To) > 0 {
+				if err := checkCardRecipients(repoDir, projectID, req.Ref, req.To); err != nil {
+					writeJSON(w, http.StatusBadRequest, errorBody(err.Error()))
+					return
+				}
+			}
+			msg, err = app.ChannelPost(cacheDir, app.ChannelHumanName(projDir), req.Ref, req.To, req.Body, now)
+			msg.To = nil // session ids are never served
 		}
 		if err != nil {
 			writeRoomErr(w, err)

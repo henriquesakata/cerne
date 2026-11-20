@@ -51,6 +51,13 @@ beforeEach(() => {
 })
 
 describe('Channel (F-0325)', () => {
+  it('mensagem da página de um card aparece marcada com o card (F-0486 critério 12)', async () => {
+    snapshot = { messages: [msg({ human: true, nick: 'Henrique', body: 'corrige?', ref: 'F-0486', directed: true })], version: 2 }
+    render(<Channel />)
+    const link = await screen.findByRole('link', { name: 'F-0486' })
+    expect(link).toHaveAttribute('href', '#/f/F-0486')
+  })
+
   it('abre transcrição e compositor, sem os painéis de objetivo e ata (critério 21)', async () => {
     snapshot = { messages: [msg()], version: 10 }
     render(<Channel />)

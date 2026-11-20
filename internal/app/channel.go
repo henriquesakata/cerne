@@ -110,14 +110,16 @@ const channelTTL = 24 * time.Hour
 
 // channelLive returns the liveness test at now: a message is alive while
 // younger than 24h and, for an agent's message, while its sender's work is
-// live (each sender's work is loaded once).
+// live (each sender's work is loaded once). A reply on a card's thread
+// (F-0486) lives like the human's message it answers: its sender may have no
+// work at all.
 func channelLive(repoDir string, now time.Time) func(room.Message) bool {
 	senderLive := map[string]bool{}
 	return func(m room.Message) bool {
 		if now.Sub(m.Time) > channelTTL {
 			return false
 		}
-		if m.Human {
+		if m.Human || m.Ref != "" {
 			return true
 		}
 		live, seen := senderLive[m.Nick]
@@ -186,9 +188,93 @@ func (it injItem) prefix() string {
 	}
 	if it.directed {
 		who += " → you"
+		if len(it.m.To) > 0 {
+			who += ", about " + it.m.Ref
+		}
 	}
 	return fmt.Sprintf("#%d %s: ", it.m.Seq, who)
 }
+
+// F-0486: a human's message from a card's page goes to the sessions in its To
+// and nobody else, and its state is theirs, keyed by session — such a session
+// may have no live work to key it by.
+
+// entityNick is how a session with no live work answers on a card's thread.
+func entityNick(ref, sess string) string { return ref + "·" + shortSession(sess) }
+
+func shortSession(sess string) string {
+	if len(sess) > 8 {
+		return sess[:8]
+	}
+	return sess
+}
+
+// answeredBySession reports whether session sess acked m, or posted after m
+// was delivered to it (the same rule as answered, by session).
+func (cs channelState) answeredBySession(m room.Message, sess string) bool {
+	if cs.ackedBySession(m, sess) {
+		return true
+	}
+	for _, d := range cs.dels {
+		if d.Session != sess || d.Peek || !slices.Contains(d.Seqs, m.Seq) {
+			continue
+		}
+		for _, later := range cs.msgs {
+			if later.Seq > m.Seq && later.Session == sess && !later.Time.Before(d.At) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (cs channelState) ackedBySession(m room.Message, sess string) bool {
+	for _, d := range cs.dels {
+		if d.Session == sess && slices.Contains(d.Ack, m.Seq) {
+			return true
+		}
+	}
+	return false
+}
+
+// pendingRef is the card of the newest live message addressed to sess, shown
+// to it and still unanswered: what a post of a session with no live work
+// answers. "" when none.
+// ponytail: with pending messages about two cards, the newest wins.
+func pendingRef(ch room.Channel, repoDir, sess string, now time.Time) string {
+	msgs, err := ch.Messages()
+	if err != nil {
+		return ""
+	}
+	dels, err := ch.Deliveries()
+	if err != nil {
+		return ""
+	}
+	cs := channelState{msgs: msgs, dels: dels}
+	live := liveMessages(repoDir, msgs, now)
+	for i := len(live) - 1; i >= 0; i-- {
+		if m := live[i]; slices.Contains(m.To, sess) && cs.shownTo(m, sess) && !cs.answeredBySession(m, sess) {
+			return m.Ref
+		}
+	}
+	return ""
+}
+
+// addressedAbout reports whether a live message about card ref is addressed
+// to session sess: what `cerne msg send --ref` answers.
+func addressedAbout(ch room.Channel, repoDir, sess, ref string, now time.Time) bool {
+	msgs, err := ch.Messages()
+	if err != nil {
+		return false
+	}
+	return slices.ContainsFunc(liveMessages(repoDir, msgs, now), func(m room.Message) bool {
+		return m.Ref == ref && slices.Contains(m.To, sess)
+	})
+}
+
+// ErrNoCardMessage is the sentinel for `cerne msg send --ref` with no live
+// message about that card addressed to the session.
+var ErrNoCardMessage = errors.New("no live message about that card is addressed to this session")
 
 // channelState is the derived view of the channel for one identity.
 type channelState struct {
@@ -281,6 +367,17 @@ func ChannelInject(cacheDir, repoDir, sess string, consume bool, now time.Time) 
 		for _, m := range live {
 			through = max(through, m.Seq)
 			if m.Session == sess { // own message; another session of the work still gets it (critic C12)
+				continue
+			}
+			// F-0486: a card's thread is between the human and the sessions
+			// addressed — a reply to the page is nobody's background.
+			if len(m.To) > 0 {
+				if slices.Contains(m.To, sess) && !cs.answeredBySession(m, sess) {
+					pending = append(pending, injItem{m: m, group: groupHuman, directed: true, shown: cs.shownTo(m, sess)})
+				}
+				continue
+			}
+			if m.Ref != "" && !m.Human {
 				continue
 			}
 			// Addressed: pending until answered. Human: pending until shown
@@ -418,6 +515,15 @@ func injectionTail(sel []injItem, more, directedPending int) string {
 	case directedPending > 0: // only in the count line: never an ack the reader cannot see (critic C15)
 		b.WriteString("↳ addressed to you, not shown above: read it with cerne msg read\n")
 	}
+	var refs []string // F-0486: a card's page waits for the answer
+	for _, it := range sel {
+		if it.directed && len(it.m.To) > 0 && !slices.Contains(refs, it.m.Ref) {
+			refs = append(refs, it.m.Ref)
+		}
+	}
+	for _, ref := range refs {
+		fmt.Fprintf(&b, "↳ about %s: answer it on the card's page with cerne msg send --ref %s \"<text>\"\n", ref, ref)
+	}
 	return b.String()
 }
 
@@ -460,6 +566,9 @@ type ChannelTarget struct {
 	Acked bool `json:"acked,omitempty"`
 	// Closed: the work closed — it will never receive the message.
 	Closed bool `json:"closed,omitempty"`
+	// Session: for a message from a card's page (F-0486), the addressed
+	// session's first 8 characters — enough for the page to name its row.
+	Session string `json:"session,omitempty"`
 }
 
 // ChannelMessage is a live channel message with its derived state: the worst
@@ -487,24 +596,42 @@ func channelOf(cacheDir string) room.Channel {
 
 // ChannelSend posts body as session sess's work, creating the channel on
 // demand (criterion 1), and returns the open works with another live session
-// that will receive it (criterion 12) — empty when nobody is around.
-func ChannelSend(cacheDir, repoDir, sess, body string, now time.Time) (room.Message, []string, error) {
+// that will receive it (criterion 12) — empty when nobody is around. A post
+// with ref answers the human on that card's thread (F-0486) and reaches nobody
+// else: a session with live work names the card (`--ref`), so its peer
+// messages stay peer messages; one with no live work answers the message it
+// was shown, as <card>·<session>, even without naming it.
+func ChannelSend(cacheDir, repoDir, sess, ref, body string, now time.Time) (room.Message, []string, error) {
 	if strings.TrimSpace(body) == "" {
 		return room.Message{}, nil, errors.New("the message cannot be empty")
 	}
 	if safeSessionID(sess) != nil {
 		return room.Message{}, nil, ErrNoChannelIdentity
 	}
-	id, ok := sessionWork(cacheDir, repoDir, sess)
-	if !ok {
-		return room.Message{}, nil, ErrNoChannelIdentity
-	}
 	ch := channelOf(cacheDir)
-	m, err := ch.Append(room.Message{Type: "message", Nick: id.Work, Session: sess, Body: body, Time: now})
+	id, ok := sessionWork(cacheDir, repoDir, sess)
+	switch {
+	case ref != "":
+		if !addressedAbout(ch, repoDir, sess, ref, now) {
+			return room.Message{}, nil, fmt.Errorf("%w (%s)", ErrNoCardMessage, ref)
+		}
+	case !ok:
+		if ref = pendingRef(ch, repoDir, sess, now); ref == "" {
+			return room.Message{}, nil, ErrNoChannelIdentity
+		}
+	}
+	nick := id.Work
+	if !ok {
+		nick = entityNick(ref, sess)
+	}
+	m, err := ch.Append(room.Message{Type: "message", Nick: nick, Session: sess, Body: body, Time: now, Ref: ref})
 	if err != nil {
 		return room.Message{}, nil, err
 	}
 	compactChannel(ch, repoDir, now)
+	if ref != "" {
+		return m, nil, nil
+	}
 	// Each other session counts as the open work it answers as, once: a
 	// sibling session of the sender's own work receives it too (critic
 	// C10/C12). ponytail: a session file outlives its Claude session, so a
@@ -525,12 +652,17 @@ func ChannelSend(cacheDir, repoDir, sess, body string, now time.Time) (room.Mess
 	return m, to, nil
 }
 
-// ChannelPost posts body as the human named name (criterion 22).
-func ChannelPost(cacheDir, name, body string, now time.Time) (room.Message, error) {
+// ChannelPost posts body as the human named name (criterion 22). From a card's
+// page (F-0486) it is about card ref and for sessions to only; with no to it
+// goes to every live work, as always (B-0054).
+func ChannelPost(cacheDir, name, ref string, to []string, body string, now time.Time) (room.Message, error) {
 	if strings.TrimSpace(body) == "" {
 		return room.Message{}, errors.New("the message cannot be empty")
 	}
-	return channelOf(cacheDir).Append(room.Message{Type: "message", Nick: name, Body: body, Human: true, Time: now})
+	if len(to) > 0 && ref == "" {
+		return room.Message{}, errors.New("a message to sessions must name the card it is about")
+	}
+	return channelOf(cacheDir).Append(room.Message{Type: "message", Nick: name, Body: body, Human: true, Time: now, Ref: ref, To: to})
 }
 
 // ErrNoSuchMessage is the sentinel for an ack of a seq that is not a live
@@ -546,9 +678,12 @@ func ChannelAck(cacheDir, repoDir, sess string, seqs []int, now time.Time) (acke
 	if safeSessionID(sess) != nil {
 		return nil, nil, ErrNoChannelIdentity
 	}
-	id, ok := sessionWork(cacheDir, repoDir, sess)
-	if !ok {
-		return nil, nil, ErrNoChannelIdentity
+	// F-0486: a session the human addressed from a card's page may ack that
+	// message with no live work; for anything else it still needs one.
+	id, registered := sessionWork(cacheDir, repoDir, sess)
+	who := id.Work
+	if !registered {
+		who = "this session"
 	}
 	err = channelOf(cacheDir).Update(func(msgs []room.Message, dels []room.Delivery) (*room.Delivery, error) {
 		live := map[int]room.Message{}
@@ -556,18 +691,28 @@ func ChannelAck(cacheDir, repoDir, sess string, seqs []int, now time.Time) (acke
 			live[m.Seq] = m
 		}
 		cs := channelState{msgs: msgs, dels: dels}
+		addressedHere := false
 		for _, seq := range seqs {
 			m, ok := live[seq]
+			toMe := slices.Contains(m.To, sess)
+			addressedHere = addressedHere || toMe
 			switch {
 			case !ok:
 				return nil, fmt.Errorf("%w #%d (unknown, not sent yet, or expired)", ErrNoSuchMessage, seq)
-			case !directedTo(m, id):
-				notes = append(notes, fmt.Sprintf("#%d is not addressed to %s — nothing to ack", seq, id.Work))
+			case toMe && cs.answeredBySession(m, sess):
+				notes = append(notes, fmt.Sprintf("#%d is already answered", seq))
+			case toMe:
+				acked = append(acked, seq)
+			case len(m.To) > 0 || !registered || !directedTo(m, id):
+				notes = append(notes, fmt.Sprintf("#%d is not addressed to %s — nothing to ack", seq, who))
 			case cs.answered(m, id.Work):
 				notes = append(notes, fmt.Sprintf("#%d is already answered", seq))
 			default:
 				acked = append(acked, seq)
 			}
+		}
+		if !registered && !addressedHere {
+			return nil, ErrNoChannelIdentity
 		}
 		if len(acked) == 0 {
 			return nil, nil
@@ -646,6 +791,26 @@ func ChannelRead(cacheDir, repoDir, sess string, now time.Time) ([]ChannelMessag
 func (cs channelState) derive(m room.Message, works []store.Work, live map[string]bool) ChannelMessage {
 	cm := ChannelMessage{Message: m}
 	cm.Session = "" // a session id lets `msg send --session` speak as its work: never served
+	cm.To = nil
+	if len(m.To) > 0 { // F-0486: one target per addressed session, its state by session
+		for _, sess := range m.To {
+			t := ChannelTarget{Work: entityNick(m.Ref, sess), Session: shortSession(sess), State: ChannelNotDelivered}
+			switch {
+			case cs.answeredBySession(m, sess):
+				t.State, t.Acked = ChannelAnswered, cs.ackedBySession(m, sess)
+			case cs.shownTo(m, sess):
+				t.State = ChannelDelivered
+			}
+			cm.Targets = append(cm.Targets, t)
+		}
+		cm.Directed = true
+		cm.State = worstState(cm.Targets)
+		return cm
+	}
+	if m.Ref != "" && !m.Human { // a reply on a card's thread is for the page: it got there
+		cm.State = ChannelDelivered
+		return cm
+	}
 	named := channelRefRe.FindAllString(m.Body, -1)
 	for _, w := range works {
 		switch {
@@ -665,8 +830,6 @@ func (cs channelState) derive(m room.Message, works []store.Work, live map[strin
 			}
 		}
 	}
-	rank := map[string]int{ChannelNotDelivered: 0, ChannelDelivered: 1, ChannelAnswered: 2}
-	cm.State = ChannelAnswered
 	for i, t := range cm.Targets {
 		switch {
 		case cs.answered(m, t.Work):
@@ -678,14 +841,25 @@ func (cs channelState) derive(m room.Message, works []store.Work, live map[strin
 			t.State = ChannelNotDelivered
 		}
 		cm.Targets[i] = t
-		if rank[t.State] < rank[cm.State] {
-			cm.State = t.State
+	}
+	cm.State = worstState(cm.Targets)
+	return cm
+}
+
+// worstState is a message's state: its least advanced target's, and
+// not_delivered with no target.
+func worstState(targets []ChannelTarget) string {
+	if len(targets) == 0 {
+		return ChannelNotDelivered
+	}
+	rank := map[string]int{ChannelNotDelivered: 0, ChannelDelivered: 1, ChannelAnswered: 2}
+	worst := ChannelAnswered
+	for _, t := range targets {
+		if rank[t.State] < rank[worst] {
+			worst = t.State
 		}
 	}
-	if len(cm.Targets) == 0 {
-		cm.State = ChannelNotDelivered
-	}
-	return cm
+	return worst
 }
 
 // delivered reports whether m was ever shown to a session working as work (a
@@ -732,10 +906,7 @@ func ChannelStopReminder(cacheDir, repoDir, sess string, now time.Time) (string,
 	if err != nil || len(msgs) == 0 {
 		return "", noop
 	}
-	id, ok := sessionWork(cacheDir, repoDir, sess)
-	if !ok {
-		return "", noop
-	}
+	id, registered := sessionWork(cacheDir, repoDir, sess)
 	dels, err := ch.Deliveries()
 	if err != nil {
 		return "", noop
@@ -748,7 +919,14 @@ func ChannelStopReminder(cacheDir, repoDir, sess string, now time.Time) (string,
 	var seqs []string
 	for _, m := range liveMessages(repoDir, msgs, now) {
 		seq := strconv.Itoa(m.Seq)
-		if slices.Contains(reminded, seq) || !directedTo(m, id) || cs.answered(m, id.Work) {
+		if slices.Contains(reminded, seq) || m.Session == sess {
+			continue
+		}
+		if len(m.To) > 0 { // F-0486: a card's page addressed this session, work or not
+			if !slices.Contains(m.To, sess) || cs.answeredBySession(m, sess) {
+				continue
+			}
+		} else if !registered || !directedTo(m, id) || cs.answered(m, id.Work) || m.Ref != "" && !m.Human {
 			continue
 		}
 		group := groupDirected

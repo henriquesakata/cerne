@@ -602,7 +602,7 @@ func TestChannelInjectWorstCaseWithin400Tokens(t *testing.T) {
 func (f *chanFixture) send(sess, body string) (room.Message, []string) {
 	f.t.Helper()
 	f.at = f.at.Add(time.Second)
-	m, to, err := ChannelSend(f.cacheDir, f.repoDir, sess, body, f.at)
+	m, to, err := ChannelSend(f.cacheDir, f.repoDir, sess, "", body, f.at)
 	if err != nil {
 		f.t.Fatalf("ChannelSend(%s): %v", sess, err)
 	}
@@ -636,7 +636,7 @@ func TestChannelSendCreatesRoomOnDemand(t *testing.T) {
 // has no identity to speak as, and writes nothing.
 func TestChannelSendRequiresRegistration(t *testing.T) {
 	f := newChanFixture(t)
-	_, _, err := ChannelSend(f.cacheDir, f.repoDir, "s-unbound", "oi", f.at)
+	_, _, err := ChannelSend(f.cacheDir, f.repoDir, "s-unbound", "", "oi", f.at)
 	if !errors.Is(err, ErrNoChannelIdentity) {
 		t.Fatalf("err = %v, want ErrNoChannelIdentity", err)
 	}

@@ -44,6 +44,7 @@ vi.mock('./api', async (importOriginal) => ({
   fetchFeature: vi.fn(async () => payload),
   fetchLLMMode: vi.fn(async () => llmMode),
   fetchPendings: vi.fn(async () => pendings),
+  fetchFeatureAgents: vi.fn(async () => ({ sessions: [] })),
   generateDiagram: vi.fn(async () => ({ ok: false as const, error: 'boom' })),
   postTransition: vi.fn(async () => ({
     ok: true as const,
