@@ -189,6 +189,10 @@ var (
 	// startedIDRe is the id a confirmed `feature start` binds: a feature-family id,
 	// the same kinds bindingLive accepts (F-0309).
 	startedIDRe = regexp.MustCompile(`\b` + domain.FeatureIDPrefix() + `-\d{4,}\b`)
+	// cardCreatedRe is the line every card-creating command prints for the id
+	// it minted ("F-0486 created (candidate) …", F-0486). No leading \b, as in
+	// workCreatedRe: in the raw JSON the line may follow a literal `\n`.
+	cardCreatedRe = regexp.MustCompile(`(` + domain.FeatureIDPrefix() + `-\d{4,}) created \(`)
 )
 
 var (
@@ -197,6 +201,7 @@ var (
 	cerneStartRe        = regexp.MustCompile(`^(?:\w+=\S*\s+)*(?:\S*/)?cerne\s+(?:-\S+\s+)*work\s+start\b`)
 	cerneTakeRe         = regexp.MustCompile(`^(?:\w+=\S*\s+)*(?:\S*/)?cerne\s+(?:-\S+\s+)*handoff\s+take\b`)
 	cerneFeatureStartRe = regexp.MustCompile(`^(?:\w+=\S*\s+)*(?:\S*/)?cerne\s+(?:-\S+\s+)*feature\s+start\b`)
+	cerneCardNewRe      = regexp.MustCompile(`^(?:\w+=\S*\s+)*(?:\S*/)?cerne\s+(?:-\S+\s+)*(?:feature|task|bug|epic)\s+new\b`)
 	helpFlagRe          = regexp.MustCompile(`(^|\s)(-h|--help)(\s|$)`)
 )
 
@@ -307,6 +312,23 @@ func runHookBindWork(cmd *cobra.Command, format string) {
 	if !strings.Contains(ti.Command, "cerne") {
 		return
 	}
+	// The cost ledger trusts the delivering contract first: only a Claude Code
+	// payload can be a claude-code bind, and only under its CLAUDECODE marker.
+	harness := cost.CurrentHarness()
+	if format != "claude" {
+		harness = "other"
+	}
+	// F-0486: a card the session created records it as the card's opener — a
+	// mark of its own, never a binding (a candidate is no live binding, and a
+	// bind would move the session's cost to the new card).
+	if cerneRun(ti.Command, cerneCardNewRe) != "" {
+		if m := cardCreatedRe.FindStringSubmatch(string(in.ToolResponse)); m != nil {
+			if err := app.RecordOpened(cacheDir, in.SessionID, in.AgentID, harness, m[1]); err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: card opener not recorded: %v\n", err)
+			}
+		}
+		return
+	}
 	var id string
 	switch {
 	case workStartRe.MatchString(ti.Command):
@@ -345,12 +367,6 @@ func runHookBindWork(cmd *cobra.Command, format string) {
 	}
 	if id == "" {
 		return
-	}
-	// The cost ledger trusts the delivering contract first: only a Claude Code
-	// payload can be a claude-code bind, and only under its CLAUDECODE marker.
-	harness := cost.CurrentHarness()
-	if format != "claude" {
-		harness = "other"
 	}
 	// Still exit 0 (fail-open), but a bind that cannot be recorded — e.g. a
 	// dotted session id (F-0376) — must not vanish without a word.

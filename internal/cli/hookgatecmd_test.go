@@ -493,3 +493,49 @@ func TestHookWorkGateChannelFailOpen(t *testing.T) {
 	}
 	run("corrupt")
 }
+
+// TestHookBindRecordsOpenedFromCardNew (F-0486 crit. 1): a card created by
+// `cerne feature|task|bug|epic new` records the session as its opener, in the
+// opening file only — the session's live binding and the cost ledger are
+// untouched. A mention of the command, or a refused creation, records nothing.
+func TestHookBindRecordsOpenedFromCardNew(t *testing.T) {
+	t.Setenv("CLAUDECODE", "1")
+	projDir, _, repoDir := setupProject(t)
+	cacheDir := filepath.Dir(repoDir)
+	run := func(command, stdout string) {
+		t.Helper()
+		stdin := hookJSON(t, "sess-open", projDir, "Bash", map[string]any{"command": command}, map[string]any{"stdout": stdout})
+		if out, err := execCerneStdin(t, stdin, "hook", "bind-work"); err != nil {
+			t.Fatalf("hook bind-work: %v\noutput: %s", err, out)
+		}
+	}
+	run(`cerne feature new "X" --context "why"`, "✓ F-0001 created (candidate) with spec — already synced.")
+	run(`cerne task new "X" --parent E-0004`, "T-0002 created (approved) with its context seeded into the spec.")
+	run(`./bin/cerne bug new "X" 2>&1`, "B-0003 created (approved) with its report as the spec.")
+	run(`CERNE_ACTOR=agent cerne epic new "X" --context "why"`, "E-0004 created (candidate) with its context seeded into the spec.")
+	// Not a creation: a mention, a help page, a refusal.
+	run(`grep -n "feature new" notes.md`, "F-0009 created (candidate)")
+	run(`cerne feature new --help`, "F-0010 created (candidate)")
+	run(`cerne feature new "Dup" --context "y"`, "Error: a similar live feature exists: F-0001")
+
+	opened, err := cost.ReadOpened(cacheDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, b := range opened {
+		if b.Session != "sess-open" || b.Harness != cost.HarnessClaudeCode {
+			t.Fatalf("opening mark %+v, want session sess-open under claude-code", b)
+		}
+		got = append(got, b.Entity)
+	}
+	if want := []string{"F-0001", "T-0002", "B-0003", "E-0004"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("opened = %v, want %v", got, want)
+	}
+	if id, ok, err := app.CurrentBinding(cacheDir, repoDir, "sess-open", ""); err != nil || ok {
+		t.Fatalf("live binding = (%q, %v, %v), want none: opening a card binds nothing", id, ok, err)
+	}
+	if _, err := os.Stat(filepath.Join(cacheDir, "costbind.ndjson")); !os.IsNotExist(err) {
+		t.Fatalf("cost ledger written by a card creation (stat err %v)", err)
+	}
+}
