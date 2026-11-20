@@ -132,12 +132,13 @@ func TestRunLifecycleStates(t *testing.T) {
 	if out, err := execCerne(t, "runbook", "step", id, "S5", "--ok", "vai", "--dir", projDir); err == nil || !strings.Contains(err.Error(), "concluida") {
 		t.Fatalf("step on a closed run must be refused (err %v):\n%s", err, out)
 	}
-	// closing twice is refused, and leaves the run closed
-	if out, err := execCerne(t, "work", "done", id, "--dir", projDir); err == nil {
-		t.Fatalf("closing twice must be refused:\n%s", out)
+	// closing twice is a no-op (B-0057: work done on a done work exits 0 and
+	// writes nothing), and leaves the run closed
+	if out, err := execCerne(t, "work", "done", id, "--dir", projDir); err != nil || !strings.Contains(out, id) {
+		t.Fatalf("closing twice must be a no-op naming the run (err %v):\n%s", err, out)
 	}
 	if s := state(); s != store.RunClosed {
-		t.Fatalf("after a refused second close = %q", s)
+		t.Fatalf("after a second close = %q", s)
 	}
 }
 
