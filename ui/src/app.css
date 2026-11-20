@@ -1244,20 +1244,257 @@ h2 {
 
 /* open_items é a exceção que o --allow-open-items existe para registrar
    (F-0291 critério 4): achatá-la com as outras listas apagaria justamente a
-   diferença. Barra de aviso, não mais uma lista. */
+   diferença. B-0046: a moldura inteira de 1px na cor semântica, não a faixa
+   lateral de 3px (a mesma troca do F-0234 em .errata-section). */
 .room-minutes-open-items {
-  border-left: 3px solid var(--danger);
-  padding-left: 0.6rem;
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+  padding: 0 0.6rem 0.5rem;
   margin-top: 0.7rem;
 }
 
 .room-roster {
   list-style: none;
-  margin: 0.5rem 0 0;
+  margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.5rem;
+}
+
+.room-roster li { display: flex; flex-direction: column; gap: 0.1rem; }
+.room-roster-nick { font-weight: 600; overflow-wrap: anywhere; }
+.room-roster-nick .room-side-muted { font-weight: 400; }
+.room-roster-bio { font-size: 0.85rem; line-height: 1.4; color: var(--muted); }
+
+/* ---- sala (B-0046): grid próprio ----
+
+   A sala pegava emprestado o .backlog-layout. Quando o F-0431 fixou as células
+   daquele grid nos filhos do Backlog (lista na linha 2, chat em
+   .backlog-chat-shell na coluna 2), o <aside> da sala ficou sem célula e o
+   auto-placement o jogou na linha 1/coluna 1, em cima da coluna lateral, com a
+   metade direita da tela vazia. Grid próprio: o layout do Backlog pode mudar
+   sem derrubar a sala.
+
+   Leitura: cabeçalho em largura total; a conversa é a coluna principal (como
+   no Claude Code, Codex, Cursor e Gemini) e o painel de 20rem à direita guarda
+   o que apoia a conversa — entrada, participantes, facilitação, ata. As
+   primitivas do chat (.backlog-chat-history, -composer, -send) continuam
+   compartilhadas: o que se reusa é o componente, não a página. */
+.room-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 20rem;
+  /* Mesma contenção do F-0241: a linha precisa ser declarada para o histórico
+     rolar por dentro em vez de empurrar a página. */
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 1rem 1.5rem;
+  flex: 1;
+  min-height: 0;
+}
+
+.room-layout ::placeholder { color: var(--muted); opacity: 1; }
+
+.room-head { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 0.25rem; }
+.room-head .back { margin-bottom: 0; font-size: 0.9rem; }
+.room-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.4rem 0.6rem; }
+.room-title h1 { min-width: 0; overflow-wrap: anywhere; }
+
+.room-chat {
+  grid-column: 1;
+  grid-row: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 1rem;
+  background: var(--surface-2);
+}
+
+/* O ritmo da transcrição vem das margens: grupo novo respira, continuação do
+   mesmo autor encosta. */
+.room-transcript { gap: 0; }
+
+.room-empty { margin: auto; max-width: 40ch; text-align: center; color: var(--muted); }
+.room-empty p { margin: 0; }
+.room-empty p + p { margin-top: 0.25rem; font-size: 0.85rem; }
+
+/* Mensagem dos outros: texto corrido, sem balão, com autor e hora em cima
+   (como a resposta do agente no Claude Code ou no Cursor). A sua: balão à
+   direita na superfície recuada, o mesmo tratamento da mensagem do usuário no
+   chat do Backlog (F-0241: nunca tinta cheia em prosa). */
+.room-msg { align-self: flex-start; max-width: min(72ch, 85%); margin-top: 1rem; }
+/* Poucas mensagens assentam junto ao compositor, como num terminal ou num
+   chat em grupo: a margem automática empurra a primeira para baixo e vira 0
+   quando a transcrição transborda, então a rolagem não perde o topo (o que
+   justify-content: flex-end faria). */
+.room-msg:first-child { margin-top: auto; }
+.room-msg-cont { margin-top: 0.25rem; }
+
+.room-msg-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0 0 0.2rem;
+  font-size: 0.85rem;
+}
+
+.room-msg-head strong { font-weight: 600; color: var(--fg); }
+.room-msg-head time { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.room-msg-body { margin: 0; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.room-msg-own { align-self: flex-end; }
+.room-msg-own .room-msg-head { justify-content: flex-end; }
+
+.room-msg-own .room-msg-body {
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-3);
+}
+
+.room-composer { gap: 0.35rem; }
+.room-composer-hint { margin: 0; font-size: 0.85rem; color: var(--muted); }
+
+.room-notice,
+.room-error { margin: 0; font-size: 0.9rem; }
+.room-notice { color: var(--muted); }
+.room-error { color: var(--danger); }
+
+/* Quem ainda não entrou vê a faixa de entrada no lugar do compositor, como o
+   "entrar no canal" de um chat: o histórico já é legível antes. */
+.room-join { display: flex; flex-direction: column; gap: 0.4rem; flex-shrink: 0; }
+.room-join-title { margin: 0; font-size: 0.9rem; font-weight: 600; }
+
+.room-inline-form { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.room-inline-form input { flex: 1 1 10rem; }
+.room-inline-form .room-join-nick { flex: 0 1 12rem; }
+
+.room-layout input:not([type='checkbox']),
+.room-close-form textarea {
+  box-sizing: border-box;
+  min-width: 0;
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.4rem 0.6rem;
+  /* F-0413: a borda é a única pista de que o campo é editável. */
+  border: 1px solid var(--border-field);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg);
+}
+
+.room-close-form textarea { resize: vertical; }
+
+.room-btn,
+.room-btn-primary {
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.4rem 0.8rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.room-btn { border: 1px solid var(--border); background: var(--surface); color: var(--fg); }
+.room-btn:hover:not(:disabled) { border-color: var(--border-strong); background: var(--surface-2); }
+.room-btn-primary { padding: 0.4rem 1.1rem; border: 1px solid var(--fg); background: var(--fg); color: var(--bg); }
+
+.room-btn:disabled,
+.room-btn-primary:disabled { opacity: 0.5; cursor: default; }
+
+.room-layout input:focus-visible,
+.room-close-form textarea:focus-visible,
+.room-btn:focus-visible,
+.room-btn-primary:focus-visible,
+.room-close summary:focus-visible { outline: 2px solid var(--fg); outline-offset: 1px; }
+
+.room-side {
+  grid-column: 2;
+  grid-row: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.room-side-section { display: flex; flex-direction: column; gap: 0.5rem; }
+.room-side-section h2 { margin: 0; display: flex; align-items: center; gap: 0.4rem; }
+.room-side-section > .room-btn { align-self: flex-start; }
+.room-side-text { margin: 0; font-size: 0.9rem; line-height: 1.45; overflow-wrap: anywhere; }
+.room-side-muted { margin: 0; font-size: 0.85rem; color: var(--muted); }
+
+/* O comando é o que se cola num terminal: mono, com a cópia ao lado. */
+.room-command { display: flex; align-items: flex-start; gap: 0.4rem; }
+
+.room-command code {
+  flex: 1;
+  min-width: 0;
+  padding: 0.4rem 0.55rem;
+  font-family: ui-monospace, monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--fg);
+  background: var(--surface-3);
+  border-radius: 6px;
+  overflow-wrap: anywhere;
+}
+
+.room-command .room-btn { flex-shrink: 0; font-size: 0.85rem; padding: 0.3rem 0.7rem; }
+
+.room-field { display: flex; flex-direction: column; gap: 0.3rem; }
+.room-field label { font-size: 0.85rem; color: var(--muted); }
+
+.room-pending { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+
+.room-pending-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border-card);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+/* No painel de 20rem o campo ganha a linha inteira e o botão desce: lado a
+   lado, o placeholder da capability era cortado no meio da frase. */
+.room-side .room-inline-form input { flex-basis: 100%; }
+
+/* Encerrar é o último ato do facilitador: recolhido até ser pedido, para os
+   seis campos da ata não ocuparem o painel a reunião inteira. */
+.room-close { display: block; padding-top: 1rem; border-top: 1px solid var(--border-soft); }
+
+.room-close summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.room-close summary:hover,
+.room-close[open] summary { color: var(--fg); }
+
+.room-close-form { display: flex; flex-direction: column; gap: 0.6rem; margin-top: 0.75rem; }
+.room-close-form label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.85rem; color: var(--muted); }
+.room-close-form .room-check { flex-direction: row; align-items: center; gap: 0.4rem; color: var(--fg); }
+.room-close-form .room-btn-primary { align-self: flex-start; }
+
+@media (max-width: 60rem) {
+  /* Uma coluna: conversa primeiro, painel embaixo, página volta a rolar e a
+     conversa ganha altura própria (o mesmo recuo do Backlog, F-0241). */
+  .room-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; flex: none; }
+  .room-head,
+  .room-chat,
+  .room-side { grid-column: auto; grid-row: auto; }
+  .room-chat { height: 70dvh; min-height: 20rem; }
+  .room-side { overflow-y: visible; }
 }
 
 .card {
