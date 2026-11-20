@@ -1384,6 +1384,13 @@ const ptBR = {
     refreshError: (e: string) => `Não foi possível atualizar a lista de projetos: ${e}`,
     retry: 'Tentar de novo',
     noProjects: 'Nenhum projeto registrado.',
+    restartAvailable: (installed: string, running: string) =>
+      `O cerne ${installed} está instalado; este painel ainda roda o ${running}.`,
+    restartPanel: 'Reiniciar o painel',
+    restarting: 'Reiniciando o painel…',
+    restartFailed: (e: string) => `O painel não reiniciou: ${e}`,
+    panelUpdated: (v: string) => `O painel agora roda o cerne ${v}. Recarregue a página para ver a versão nova.`,
+    reloadPage: 'Recarregar',
   },
   settings: {
     title: 'Configurações',
@@ -2920,6 +2927,13 @@ const en: Messages = {
     refreshError: (e: string) => `Could not refresh the project list: ${e}`,
     retry: 'Try again',
     noProjects: 'No projects registered.',
+    restartAvailable: (installed: string, running: string) =>
+      `cerne ${installed} is installed; this panel still runs ${running}.`,
+    restartPanel: 'Restart the panel',
+    restarting: 'Restarting the panel…',
+    restartFailed: (e: string) => `The panel did not restart: ${e}`,
+    panelUpdated: (v: string) => `The panel now runs cerne ${v}. Reload the page to see the new version.`,
+    reloadPage: 'Reload',
   },
   settings: {
     title: 'Settings',

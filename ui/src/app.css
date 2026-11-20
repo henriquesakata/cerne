@@ -3296,6 +3296,10 @@ h2 {
 }
 .manage-action-error .manage-action-error-msg { margin: 0.35rem 0 0.5rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 .load-notice .form-error { margin: 0 0 0.5rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* F-0478: o aviso de binário novo é informativo (Notice Gold, como o .ask-notice);
+   só a falha do reinício fica na borda de perigo do .load-notice */
+.load-notice.advisory { border-color: var(--gold); background: var(--gold-bg); color: var(--gold-fg); }
+.load-notice.advisory p { margin: 0 0 0.5rem; }
 .manage-action-error button,
 .load-notice button,
 .ask-notice button {

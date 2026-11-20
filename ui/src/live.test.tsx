@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, act, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
-import { LiveProvider, useProjects } from './live'
-import { fetchProjects, HTTPError, renameProject, subscribeLive } from './api'
+import { LiveProvider, pageReload, useProjects } from './live'
+import { fetchProjects, HTTPError, renameProject, restartPanel, subscribeLive } from './api'
 import type { ProjectInfo } from './api'
 import Nav from './Nav'
 import { navAllowed, setNavGuard } from './navGuard'
@@ -24,6 +24,7 @@ vi.mock('./api', async (importOriginal) => ({
   fetchVersion: vi.fn(async () => ''),
   fetchSettings: vi.fn(async () => ({ settings: [], files: {} })),
   renameProject: vi.fn(),
+  restartPanel: vi.fn(),
 }))
 
 vi.mock('./NotificationBell', () => ({ default: () => null }))
@@ -419,5 +420,121 @@ describe('LiveProvider — nome do projeto ao vivo (F-0331)', () => {
     expect(input).toHaveValue('Núcleo')
     expect(screen.getByRole('option', { name: 'P1' })).toBeInTheDocument()
     expect(within(region).getByRole('alert')).toBeInTheDocument()
+  })
+})
+
+// F-0478: o painel avisa do binário novo no disco, reinicia nele pelo botão e
+// cada aba recarrega quando o painel volta com outra identidade.
+describe('LiveProvider — reinício no binário novo (F-0478)', () => {
+  const running = { version: 'v0.14.3', ui: 'old' }
+  const listWith = (installed: { version: string; ui: string; error?: string }, id = running) => async () => ({
+    projects: mockProjects,
+    default: 'p1',
+    ...id,
+    installed,
+  })
+  let onProjects = () => {}
+  beforeEach(() => {
+    vi.mocked(subscribeLive).mockImplementation((h) => {
+      onProjects = h.onProjects
+      return () => {}
+    })
+    vi.mocked(restartPanel).mockReset()
+    pageReload.run = vi.fn()
+  })
+
+  it('critérios 1 e 2: avisa só quando o disco tem outro binário', async () => {
+    vi.mocked(fetchProjects).mockImplementation(listWith(running))
+    render(
+      <LiveProvider>
+        <Probe />
+      </LiveProvider>,
+    )
+    await screen.findByText('p1')
+    expect(screen.queryByRole('button', { name: 'Reiniciar o painel' })).not.toBeInTheDocument()
+
+    vi.mocked(fetchProjects).mockImplementation(listWith({ version: 'v0.15.0', ui: 'new' }))
+    await act(async () => onProjects())
+    expect(screen.getByRole('status')).toHaveTextContent('O cerne 0.15.0 está instalado; este painel ainda roda o 0.14.3.')
+    expect(screen.getByRole('button', { name: 'Reiniciar o painel' })).toHaveAttribute('aria-disabled', 'false')
+    expect(screen.getByRole('status')).toHaveClass('advisory')
+  })
+
+  it('o binário do disco que não responde não vira aviso', async () => {
+    vi.mocked(fetchProjects).mockImplementation(listWith({ version: '', ui: '', error: 'exit status 3' }))
+    render(
+      <LiveProvider>
+        <Probe />
+      </LiveProvider>,
+    )
+    await screen.findByText('p1')
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+
+  it('o clique pede o reinício e mostra que está reiniciando', async () => {
+    vi.mocked(fetchProjects).mockImplementation(listWith({ version: 'v0.15.0', ui: 'new' }))
+    vi.mocked(restartPanel).mockImplementation(() => new Promise(() => {}))
+    render(
+      <LiveProvider>
+        <Probe />
+      </LiveProvider>,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: 'Reiniciar o painel' }))
+    expect(restartPanel).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('status')).toHaveTextContent('Reiniciando o painel…')
+    const btn = screen.getByRole('button', { name: 'Reiniciar o painel' })
+    expect(btn).toHaveAttribute('aria-disabled', 'true')
+    fireEvent.click(btn)
+    expect(restartPanel).toHaveBeenCalledTimes(1) // o segundo clique não pede de novo
+  })
+
+  it('critério 6: a recusa do servidor aparece no aviso', async () => {
+    vi.mocked(fetchProjects).mockImplementation(listWith({ version: 'v0.15.0', ui: 'new' }))
+    vi.mocked(restartPanel).mockRejectedValue(new Error('the cerne on disk does not run'))
+    render(
+      <LiveProvider>
+        <Probe />
+      </LiveProvider>,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: 'Reiniciar o painel' }))
+    expect(await screen.findByText('O painel não reiniciou: the cerne on disk does not run')).toBeInTheDocument()
+  })
+
+  it('critério 5: o painel volta com outra identidade e a aba recarrega', async () => {
+    vi.mocked(fetchProjects).mockImplementation(listWith({ version: 'v0.15.0', ui: 'new' }))
+    render(
+      <LiveProvider>
+        <Probe />
+      </LiveProvider>,
+    )
+    await screen.findByText('p1')
+    expect(pageReload.run).not.toHaveBeenCalled()
+
+    const upgraded = { version: 'v0.15.0', ui: 'new' }
+    vi.mocked(fetchProjects).mockImplementation(listWith(upgraded, upgraded))
+    await act(async () => onProjects())
+    expect(pageReload.run).toHaveBeenCalledTimes(1)
+  })
+
+  it('critério 5 com rascunho aberto: a trava recusa e o aviso oferece recarregar', async () => {
+    vi.mocked(fetchProjects).mockImplementation(listWith(running))
+    render(
+      <LiveProvider>
+        <Probe />
+      </LiveProvider>,
+    )
+    await screen.findByText('p1')
+    setNavGuard(() => false)
+    try {
+      const upgraded = { version: 'v0.15.0', ui: 'new' }
+      vi.mocked(fetchProjects).mockImplementation(listWith(upgraded, upgraded))
+      await act(async () => onProjects())
+      expect(pageReload.run).not.toHaveBeenCalled()
+      expect(screen.getByRole('status')).toHaveTextContent('O painel agora roda o cerne 0.15.0.')
+      fireEvent.click(screen.getByRole('button', { name: 'Recarregar' }))
+      expect(pageReload.run).toHaveBeenCalledTimes(1)
+    } finally {
+      setNavGuard(null)
+    }
   })
 })

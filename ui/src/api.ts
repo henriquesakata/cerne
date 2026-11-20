@@ -287,14 +287,36 @@ function base(): string {
   return `/api/projects/${encodeURIComponent(activePid)}`
 }
 
-// fetchProjects lista os projetos registrados (rota global, não escopada).
+// PanelIdentity é a versão e a UI de um binário do cerne (F-0478); error diz
+// por que o binário no disco não pôde ser lido.
+export type PanelIdentity = { version: string; ui: string; error?: string }
+
+// fetchProjects lista os projetos registrados (rota global, não escopada),
+// com a identidade do binário que serve o painel e a do binário que o comando
+// dele resolve hoje no disco (installed, F-0478; ausente num painel antigo).
 export async function fetchProjects(): Promise<{
   projects: ProjectInfo[]
   default: string
+  version?: string
+  ui?: string
+  installed?: PanelIdentity
 }> {
   const r = await fetch('/api/projects')
   if (!r.ok) throw new Error(await errorMessage(r))
-  return (await r.json()) as { projects: ProjectInfo[]; default: string }
+  return (await r.json()) as {
+    projects: ProjectInfo[]
+    default: string
+    version?: string
+    ui?: string
+    installed?: PanelIdentity
+  }
+}
+
+// restartPanel pede ao painel que reinicie no binário do disco (F-0478):
+// 202 aceito; 409/422 trazem o motivo.
+export async function restartPanel(): Promise<void> {
+  const r = await fetch('/api/restart', { method: 'POST' })
+  if (!r.ok) throw new Error(await errorMessage(r))
 }
 
 export async function fetchState(): Promise<StateResponse> {
