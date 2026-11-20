@@ -298,6 +298,8 @@ func runHookSessionContext(cmd *cobra.Command, format string) {
 	stale := ""
 	if format == "copilot" {
 		stale = copilotStaleNotice(projDir)
+	} else { // F-0477: every agent's session start renews its untouched files
+		stale, _ = autoRefresh(projDir)
 	}
 	ours := cloneIsOurs(cfg, projDir) // F-0434: never list another backend's work
 	work := "- none"

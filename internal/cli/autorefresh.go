@@ -28,23 +28,7 @@ func autoRefresh(projDir string) (line string, leftover []string) {
 	}
 	// With sync_skills on the guide is sync_skills' own (decision 3).
 	withGuide := !cfg.SyncSkills
-	classify := func() (renewable []hooks.Provider, leftover []string) {
-		for _, p := range refresh.Connected(projDir) {
-			// The plugin delivers Claude Code's hooks and guide: absent copies are
-			// not stale there, and creating them would run every hook twice.
-			if p == hooks.ProviderClaude && fromPlugin() {
-				continue
-			}
-			switch v := refresh.Classify(projDir, p, withGuide); v.State {
-			case refresh.Renewable:
-				renewable = append(renewable, p)
-			case refresh.Unrecognized:
-				leftover = append(leftover, v.Unknown...)
-			}
-		}
-		slices.Sort(leftover)
-		return renewable, slices.Compact(leftover)
-	}
+	classify := func() ([]hooks.Provider, []string) { return classifyAgents(projDir, withGuide) }
 	renewable, leftover := classify()
 	if len(renewable) == 0 {
 		return "", leftover
@@ -78,6 +62,26 @@ func autoRefresh(projDir string) (line string, leftover []string) {
 		line += " Codex asks to review changed hooks again (/hooks)."
 	}
 	return line, leftover
+}
+
+// classifyAgents is the rule over every connected agent: the ones to renew and
+// the paths of the ones it must leave (sorted, once each).
+func classifyAgents(projDir string, withGuide bool) (renewable []hooks.Provider, leftover []string) {
+	for _, p := range refresh.Connected(projDir) {
+		// The plugin delivers Claude Code's hooks and guide: absent copies are
+		// not stale there, and creating them would run every hook twice.
+		if p == hooks.ProviderClaude && fromPlugin() {
+			continue
+		}
+		switch v := refresh.Classify(projDir, p, withGuide); v.State {
+		case refresh.Renewable:
+			renewable = append(renewable, p)
+		case refresh.Unrecognized:
+			leftover = append(leftover, v.Unknown...)
+		}
+	}
+	slices.Sort(leftover)
+	return renewable, slices.Compact(leftover)
 }
 
 // refreshLockStale is how long a lock file is believed: a renewal takes well
