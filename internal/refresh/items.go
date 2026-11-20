@@ -161,3 +161,11 @@ func Collect(dir string) map[string]string {
 	}
 	return out
 }
+
+// cutHash splits a slot of one hook of a configuration; ok is false for a file.
+func cutHash(slot string) (path string, ok bool) {
+	path, _, ok = strings.Cut(slot, "#")
+	return path, ok
+}
+
+func pathOf(slot string) string { p, _ := cutHash(slot); return p }

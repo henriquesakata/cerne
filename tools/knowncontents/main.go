@@ -7,6 +7,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -17,9 +18,19 @@ import (
 	"github.com/henriquesakata/cerne/internal/refresh"
 )
 
+// errNoHooks marks a release from before the hooks existed (v0.4.0): nothing to hash.
+var errNoHooks = errors.New("this release has no hook command")
+
 const listPath = "internal/refresh/known_contents.json"
 
 func main() {
+	if len(os.Args) == 4 && os.Args[1] == "fixture" { // fixture <tag> <dest>: the tag's install, kept as test data
+		if err := fixture(os.Args[2], os.Args[3]); err != nil {
+			fmt.Fprintln(os.Stderr, "knowncontents:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "knowncontents:", err)
 		os.Exit(1)
@@ -87,49 +98,87 @@ func itemsOf(tag string) (map[string]string, error) {
 		return nil, err
 	}
 	defer os.RemoveAll(tmp)
+	proj, err := installTag(tag, tmp)
+	if errors.Is(err, errNoHooks) {
+		return map[string]string{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	items := refresh.Collect(proj)
+	if len(items) == 0 {
+		return nil, fmt.Errorf("the install wrote no managed item")
+	}
+	return items, nil
+}
+
+// fixture leaves in dest the managed files tag installs: test data that comes
+// from the release itself, not from a hand copy.
+func fixture(tag, dest string) error {
+	tmp, err := os.MkdirTemp("", "knowncontents-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmp)
+	proj, err := installTag(tag, tmp)
+	if err != nil {
+		return err
+	}
+	if err := os.RemoveAll(dest); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		return err
+	}
+	out, err := sh("", nil, "sh", "-c", "tar -C "+proj+" --exclude=.git --exclude=.cernerc -cf - . | tar -C "+dest+" -xf -")
+	if err != nil {
+		return fmt.Errorf("copy: %s", out)
+	}
+	return nil
+}
+
+// installTag builds tag's binary in tmp and installs every agent it knows into
+// a throwaway project, returned.
+func installTag(tag, tmp string) (string, error) {
 	src, proj, home := filepath.Join(tmp, "src"), filepath.Join(tmp, "proj"), filepath.Join(tmp, "home")
 	for _, d := range []string{src, proj, home} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
-			return nil, err
+			return "", err
 		}
 	}
 	// git archive: the tag's tree without touching this worktree.
 	if out, err := sh("", nil, "sh", "-c", "git archive "+tag+" | tar -x -C "+src); err != nil {
-		return nil, fmt.Errorf("cannot extract %s: %s", tag, out)
+		return "", fmt.Errorf("cannot extract %s: %s", tag, out)
 	}
 	bin := filepath.Join(tmp, "cerne")
 	if out, err := sh(src, nil, "go", "build", "-o", bin, "./cmd/cerne"); err != nil {
-		return nil, fmt.Errorf("does not build: %s", tail(out))
+		return "", fmt.Errorf("does not build: %s", tail(out))
 	}
 	env := []string{"HOME=" + home, "CERNE_CACHE_DIR=" + filepath.Join(tmp, "cache"), "CERNE_CONFIG_DIR=" + filepath.Join(tmp, "config"), "XDG_CONFIG_HOME=" + filepath.Join(tmp, "xdg")}
 	for _, d := range []string{".cursor", ".codex", ".gemini", ".github/skills"} {
 		if err := os.MkdirAll(filepath.Join(proj, d), 0o755); err != nil {
-			return nil, err
+			return "", err
 		}
 	}
 	if out, err := sh(proj, env, "git", "init", "-q"); err != nil {
-		return nil, fmt.Errorf("git init: %s", out)
+		return "", fmt.Errorf("git init: %s", out)
 	}
 	// A project root the old installers accept: none of them reads the backend.
 	if err := os.WriteFile(filepath.Join(proj, ".cernerc"), []byte("project_id = \"probe\"\nbackend = \""+filepath.Join(tmp, "backend.git")+"\"\n"), 0o644); err != nil {
-		return nil, err
+		return "", err
 	}
 	if out, err := sh(proj, env, bin, "hook", "install", "--dir", proj); err != nil {
 		if strings.Contains(out, `unknown command "hook"`) {
-			return map[string]string{}, nil // before v0.4.0 there were no hooks to hash
+			return "", errNoHooks
 		}
-		return nil, fmt.Errorf("hook install fails: %s", tail(out))
+		return "", fmt.Errorf("hook install fails: %s", tail(out))
 	}
 	// An older release does not know every agent: its refusal means it wrote nothing for it.
 	for _, p := range []string{"cursor", "codex", "gemini", "copilot"} {
 		_, _ = sh(proj, env, bin, "hook", "install", "--dir", proj, "--provider", p)
 	}
 	_, _ = sh(proj, env, bin, "skill", "install", "--dir", proj) // no guide before the skill existed
-	items := refresh.Collect(proj)
-	if len(items) == 0 {
-		return nil, fmt.Errorf("the install wrote no managed item")
-	}
-	return items, nil
+	return proj, nil
 }
 
 func sh(dir string, env []string, name string, args ...string) (string, error) {

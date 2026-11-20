@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "cerne": {
+      "args": [
+        "mcp"
+      ],
+      "command": "cerne",
+      "tools": [
+        "status",
+        "brief",
+        "next",
+        "search",
+        "show",
+        "ask",
+        "guide"
+      ],
+      "type": "stdio"
+    }
+  }
+}

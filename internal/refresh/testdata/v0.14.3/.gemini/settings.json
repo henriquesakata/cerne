@@ -1,0 +1,36 @@
+{
+  "hooks": {
+    "AfterTool": [
+      {
+        "hooks": [
+          {
+            "command": "sh -c 'command -v cerne >/dev/null 2>&1 || PATH=\"${PATH:+$PATH:}$HOME/go/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin\"; command -v cerne >/dev/null 2>&1 || exit 0; cerne hook bind-work --format gemini 2>/dev/null || true'",
+            "type": "command"
+          }
+        ],
+        "matcher": "run_shell_command"
+      }
+    ],
+    "BeforeTool": [
+      {
+        "hooks": [
+          {
+            "command": "sh -c 'command -v cerne >/dev/null 2>&1 || PATH=\"${PATH:+$PATH:}$HOME/go/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin\"; command -v cerne >/dev/null 2>&1 || exit 0; cerne hook work-gate --format gemini 2>/dev/null || true'",
+            "type": "command"
+          }
+        ],
+        "matcher": "write_file|replace"
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "sh -c 'command -v cerne >/dev/null 2>&1 || PATH=\"${PATH:+$PATH:}$HOME/go/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin\"; command -v cerne >/dev/null 2>&1 || exit 0; cerne hook session-context --format gemini 2>/dev/null || true'",
+            "type": "command"
+          }
+        ]
+      }
+    ]
+  }
+}
