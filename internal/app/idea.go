@@ -613,3 +613,47 @@ func UnlinkIdea(repoDir, projDir, id string) (store.Idea, error) {
 	}
 	return i, nil
 }
+
+// RetagIdea sets the tag axes of an idea, in any state, in the backend clone at
+// repoDir (F-0482). Each axis is replaced only when its set flag is true (an
+// empty slice with set=true clears it); everything else is preserved. An
+// unknown facet aborts with nothing written. Appends idea.retagged.
+func RetagIdea(repoDir, projDir, id string, facets, components []string, setFacets, setComponents bool) (store.Idea, error) {
+	id, err := CanonicalIdeaID(id)
+	if err != nil {
+		return store.Idea{}, err
+	}
+	var i store.Idea
+	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		var err error
+		if i, err = store.LoadIdea(repoDir, id); err != nil {
+			return "", err
+		}
+		if setFacets {
+			nf, err := domain.NormalizeFacets(facets)
+			if err != nil {
+				return "", err // unknown facet: idea untouched
+			}
+			i.Facets = nf
+		}
+		if setComponents {
+			i.Components = domain.NormalizeComponents(components)
+		}
+		i.UpdatedAt = time.Now().UTC()
+		if err := store.SaveIdea(repoDir, i); err != nil {
+			return "", err
+		}
+		ev := domain.NewEvent(id, "idea.retagged", map[string]string{
+			"facets":     strings.Join(i.Facets, ","),
+			"components": strings.Join(i.Components, ","),
+		}, EventActor())
+		if err := store.AppendEvent(repoDir, ev); err != nil {
+			return "", err
+		}
+		return "cerne: retag " + id, nil
+	})
+	if err != nil {
+		return store.Idea{}, err
+	}
+	return i, nil
+}

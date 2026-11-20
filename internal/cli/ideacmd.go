@@ -39,6 +39,7 @@ func newIdeaCmd() *cobra.Command {
 	cmd.AddCommand(verbs.MarkLocal(newIdeaUnlinkCmd(&dir)))
 	cmd.AddCommand(verbs.MarkLocal(newIdeaMigrateCmd(&dir)))
 	cmd.AddCommand(verbs.MarkLocal(newIdeaPromoteCmd(&dir)))
+	cmd.AddCommand(verbs.MarkLocal(newIdeaRetagCmd(&dir)))
 	return cmd
 }
 
@@ -340,5 +341,37 @@ func newIdeaPromoteCmd(dir *string) *cobra.Command {
 	cmd.Flags().StringVar(&title, "title", "", "the feature's title (default: the idea's title) — for an idea that reads exactly like a live feature")
 	cmd.Flags().StringVar(&module, "module", "", "module of the created feature (required when the project has 2+ modules)")
 	cmd.Flags().BoolVar(&force, "force", false, "bypass the created feature's duplicate-registration guard (F-0147)")
+	return cmd
+}
+
+func newIdeaRetagCmd(dir *string) *cobra.Command {
+	var facet, component string
+	cmd := &cobra.Command{
+		Use:   "retag <id>",
+		Short: "Reset the tags (facet/component) of an idea, in any state",
+		Long: "Sets or replaces the tag axes of an idea in any state, closed ones included; state and links stay as they were. " +
+			"Changes only the axis passed: 'retag I-0001 --component gitea' keeps the facets; '--facet \"\"' clears the facets. " +
+			"A facet outside the closed set (infra,code,data,process,auth) is rejected.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			setFacets, setComponents := cmd.Flags().Changed("facet"), cmd.Flags().Changed("component")
+			if !setFacets && !setComponents {
+				return fmt.Errorf("provide at least --facet or --component")
+			}
+			ctx, err := resolveProject(*dir)
+			if err != nil {
+				return err
+			}
+			e, err := app.RetagIdea(ctx.repoDir, ctx.projDir, args[0], splitInforms(facet), splitInforms(component), setFacets, setComponents)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%s retagged — facets: [%s] · components: [%s]\n",
+				e.ID, strings.Join(e.Facets, ", "), strings.Join(e.Components, ", "))
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&facet, "facet", "", "new facets (CSV; closed set) — empty clears")
+	cmd.Flags().StringVar(&component, "component", "", "new components (CSV) — empty clears")
 	return cmd
 }

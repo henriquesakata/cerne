@@ -619,3 +619,46 @@ func closePending(repoDir, projDir, id string, action domain.Action, reason stri
 	}
 	return p, nil
 }
+
+// RetagPending sets the tag axes of a pending, in any state, in the backend
+// clone at repoDir (F-0482), with the semantics of RetagIdea. Appends
+// pending.retagged.
+func RetagPending(repoDir, projDir, id string, facets, components []string, setFacets, setComponents bool) (store.Pending, error) {
+	id, err := canonPendingID(id)
+	if err != nil {
+		return store.Pending{}, err
+	}
+	var p store.Pending
+	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		var err error
+		if p, err = store.LoadPending(repoDir, id); err != nil {
+			return "", err
+		}
+		if setFacets {
+			nf, err := domain.NormalizeFacets(facets)
+			if err != nil {
+				return "", err // unknown facet: pending untouched
+			}
+			p.Facets = nf
+		}
+		if setComponents {
+			p.Components = domain.NormalizeComponents(components)
+		}
+		p.UpdatedAt = time.Now().UTC()
+		if err := store.SavePending(repoDir, p); err != nil {
+			return "", err
+		}
+		ev := domain.NewEvent(id, "pending.retagged", map[string]string{
+			"facets":     strings.Join(p.Facets, ","),
+			"components": strings.Join(p.Components, ","),
+		}, EventActor())
+		if err := store.AppendEvent(repoDir, ev); err != nil {
+			return "", err
+		}
+		return "cerne: retag " + id, nil
+	})
+	if err != nil {
+		return store.Pending{}, err
+	}
+	return p, nil
+}
