@@ -81,7 +81,13 @@ func (j jira) call(ctx context.Context) (*jiraCall, error) {
 		var info struct {
 			DeploymentType string `json:"deploymentType"`
 		}
-		if err := c.do(ctx, http.MethodGet, "/rest/api/2/serverInfo", nil, &info); err != nil {
+		// serverInfo answers without a login: ask it with none, and only a
+		// site that closes it to anonymous gets the credential.
+		err := (&jiraCall{j: j}).do(ctx, http.MethodGet, "/rest/api/2/serverInfo", nil, &info)
+		if errors.Is(err, errJiraLoginRequired) {
+			err = c.do(ctx, http.MethodGet, "/rest/api/2/serverInfo", nil, &info)
+		}
+		if err != nil {
 			return nil, err
 		}
 		if info.DeploymentType == "" {
@@ -97,6 +103,9 @@ func (j jira) call(ctx context.Context) (*jiraCall, error) {
 	}
 	return c, nil
 }
+
+// errJiraLoginRequired is a 401 or 403 to a call that carried no login.
+var errJiraLoginRequired = errors.New("login required")
 
 // api is path under the REST API of the deployment.
 func (c *jiraCall) api(path string) string {
@@ -129,9 +138,11 @@ func (c *jiraCall) do(ctx context.Context, method, path string, in, out any) err
 		if err != nil {
 			return fmt.Errorf("jira %s: bad request", host)
 		}
-		if bearer {
+		switch { // an anonymous call (no secret) sends no Authorization at all
+		case c.secret == "":
+		case bearer:
 			req.Header.Set("Authorization", "Bearer "+c.secret)
-		} else {
+		default:
 			req.SetBasicAuth(c.user, c.secret)
 		}
 		req.Header.Set("User-Agent", "cerne/"+version.Version)
@@ -155,9 +166,11 @@ func (c *jiraCall) do(ctx context.Context, method, path string, in, out any) err
 		}
 		resp.Body.Close()
 		switch {
-		case status == http.StatusUnauthorized && bearer && c.user != "":
+		case status == http.StatusUnauthorized && bearer && c.user != "" && c.secret != "":
 			bearer = false
 			continue
+		case c.secret == "" && (status == http.StatusUnauthorized || status == http.StatusForbidden):
+			return fmt.Errorf("jira %s: HTTP %d: %w", host, status, errJiraLoginRequired)
 		case status/100 != 2: // a 3xx too: forge.HTTPDo did not follow it, and neither does this
 			return fmt.Errorf("jira %s: HTTP %d%s", host, status, fields)
 		case err != nil:
