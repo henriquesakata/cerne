@@ -51,9 +51,9 @@ func contextFixture(t *testing.T) string {
 		}
 		write("content/references/"+id+".md", "# Source "+id+"\n\nreference body\n")
 	}
-	dec := func(id string, st domain.DecisionState, comps ...string) {
+	dec := func(id string, st domain.DecisionState, informs []string, comps ...string) {
 		t.Helper()
-		if err := store.SaveDecision(repo, store.Decision{ID: id, Title: "Decision " + id, State: st, Components: comps, CreatedAt: now, UpdatedAt: now}); err != nil {
+		if err := store.SaveDecision(repo, store.Decision{ID: id, Title: "Decision " + id, State: st, Informs: informs, Components: comps, CreatedAt: now, UpdatedAt: now}); err != nil {
 			t.Fatal(err)
 		}
 		write("content/decisions/"+id+".md", "# Decision "+id+"\n\ndecision body\n")
@@ -118,9 +118,11 @@ func contextFixture(t *testing.T) string {
 	ref("R-0002", domain.ReferenceCurrent, []string{"N-0001"})
 	ref("R-0003", domain.ReferenceCurrent, []string{"T-0002"}, "hooks") // in ring (a) and on demand
 	ref("R-0004", domain.ReferenceCurrent, nil, "hooks")
-	dec("D-0001", domain.DecisionActive, "cli") // in ring (a) and on demand
-	dec("D-0003", domain.DecisionActive, "cli")
-	dec("D-0004", domain.DecisionSuperseded, "cli")
+	dec("D-0001", domain.DecisionActive, nil, "cli") // in ring (a) and on demand
+	dec("D-0003", domain.DecisionActive, nil, "cli")
+	dec("D-0004", domain.DecisionSuperseded, nil, "cli")
+	dec("D-0005", domain.DecisionActive, []string{"T-0002"}) // informs the task (T-0018)
+	dec("D-0006", domain.DecisionSuperseded, []string{"T-0002"})
 	rb("RB-0001", domain.RunbookActive)
 	rb("RB-0002", domain.RunbookActive, "cli")
 	if err := index.Rebuild(repo, filepath.Join(filepath.Dir(repo), "index.db"), time.Time{}); err != nil {
@@ -151,7 +153,7 @@ func TestTaskContextRings(t *testing.T) {
 	want := []ringID{
 		{"a", "N-0001"}, {"a", "F-0010"}, {"a", "R-0001"}, {"a", "RB-0001"}, // the task's spec cites them, in order
 		{"a", "P-0002"}, {"a", "I-0002"}, // in force; the superseded note, the resolved pending, the promoted idea and the done work are not
-		{"a", "N-0002"}, {"a", "R-0003"}, // they inform the task (the superseded N-0014 does not count)
+		{"a", "N-0002"}, {"a", "D-0005"}, {"a", "R-0003"}, // they inform the task (the superseded N-0014 and D-0006 do not count)
 		{"a", "D-0001"}, {"a", "N-0004"}, // the epic's spec cites them
 		{"b", "N-0003"}, {"b", "N-0005"}, // a trigger, then a citation, of a path the plan cites
 		{"c", "N-0006"}, {"c", "N-0008"}, {"c", "N-0007"}, {"c", "N-0011"}, // hooks (2 active notes) before cli (3); N-0008 enters by hooks
@@ -194,7 +196,7 @@ func TestTaskContextRings(t *testing.T) {
 	if !strings.Contains(text, "decisions: 2 (1 of them listed above) — cerne decision list --component cli,hooks\n") {
 		t.Fatalf("the close does not say what ring (a) already listed:\n%s", text)
 	}
-	for _, gone := range []string{"F-0009", "] F-0011", "] F-0012", "N-0010", "D-0004", "done body", "reference body", "Plain words"} { // the proposals only as ids of the close
+	for _, gone := range []string{"F-0009", "] F-0011", "] F-0012", "N-0010", "D-0004", "D-0006", "done body", "reference body", "Plain words"} { // the proposals only as ids of the close
 		if strings.Contains(text, gone) {
 			t.Errorf("the package shows %q:\n%s", gone, text)
 		}
@@ -235,10 +237,10 @@ func TestTaskContextBudget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(tiny.Items) != 0 || tiny.Doc != full.Doc || !reflect.DeepEqual(tiny.Omitted, map[string]int{"a": 10, "b": 2, "c": 4, "d": 1}) {
+	if len(tiny.Items) != 0 || tiny.Doc != full.Doc || !reflect.DeepEqual(tiny.Omitted, map[string]int{"a": 11, "b": 2, "c": 4, "d": 1}) {
 		t.Fatalf("budget 1: items %v, omitted %v, doc kept %v", ringIDs(tiny.Items), tiny.Omitted, tiny.Doc == full.Doc)
 	}
-	if last := lastLine(tiny.Text()); !strings.Contains(last, "left out every neighbourhood item: a 10 · b 2 · c 4 · d 1") || !strings.Contains(last, "cerne show <id>") || strings.Contains(last, "cut the list") {
+	if last := lastLine(tiny.Text()); !strings.Contains(last, "left out every neighbourhood item: a 11 · b 2 · c 4 · d 1") || !strings.Contains(last, "cerne show <id>") || strings.Contains(last, "cut the list") {
 		t.Fatalf("last line %q does not say what was omitted and how to read it", last)
 	}
 	// A budget that holds the fixed part and a few short lines.

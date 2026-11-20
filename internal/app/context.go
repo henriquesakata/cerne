@@ -23,7 +23,8 @@ import (
 // within a budget — its stage document whole, its epic, and its neighbourhood
 // in four rings, each item an id, a title and a one-line gist, never a body:
 //
-//	(a) what its documents and its epic's cite by [[id]], or what informs them;
+//	(a) what its documents and its epic's cite by [[id]], or what informs them
+//	    (a note, a decision or a reference);
 //	(b) active notes whose edit: trigger, or whose cited file, matches a path
 //	    its spec or plan cites;
 //	(c) active notes sharing a component with it, the least used one first;
@@ -123,7 +124,11 @@ func taskContext(repoDir, id string, budget int, content bool) (TaskPack, error)
 	if err != nil {
 		return TaskPack{}, err
 	}
-	p := TaskPack{ID: t.f.ID, Title: t.f.Title, State: string(t.f.State), Items: t.neighbourhood(repoDir, notes, refs, true, content),
+	decs, err := store.LoadAllDecisions(repoDir)
+	if err != nil {
+		return TaskPack{}, err
+	}
+	p := TaskPack{ID: t.f.ID, Title: t.f.Title, State: string(t.f.State), Items: t.neighbourhood(repoDir, notes, refs, decs, true, content),
 		Components: t.f.Components, Budget: budget}
 	if p.Components == nil {
 		p.Components = []string{}
@@ -137,7 +142,7 @@ func taskContext(repoDir, id string, budget int, content bool) (TaskPack, error)
 	if name := StageDoc(t.f.State, slices.Collect(maps.Keys(t.docs))); name != "" {
 		p.Doc = ContextDoc{Name: name, Body: t.docs[name]}
 	}
-	if p.OnDemand, err = onDemand(repoDir, t.f.Components, refs, p.Items); err != nil {
+	if p.OnDemand, err = onDemand(repoDir, t.f.Components, refs, decs, p.Items); err != nil {
 		return TaskPack{}, err
 	}
 	p.fit(budget)
@@ -155,7 +160,7 @@ func TaskIndex(repoDir, id string) ([]ContextItem, error) {
 	if err != nil {
 		return nil, err
 	}
-	return t.neighbourhood(repoDir, notes, nil, false, false), nil
+	return t.neighbourhood(repoDir, notes, nil, nil, false, false), nil
 }
 
 // StageDoc is the document of a feature's stage (F-0338) among the real ones
@@ -219,7 +224,7 @@ func realDocs(repoDir, id string) map[string]string {
 
 // neighbourhood lists rings (a) to (c), and (d) with content; without full only
 // notes are listed and no other entity is loaded.
-func (t task) neighbourhood(repoDir string, notes []store.Note, refs []store.Reference, full, content bool) []ContextItem {
+func (t task) neighbourhood(repoDir string, notes []store.Note, refs []store.Reference, decs []store.Decision, full, content bool) []ContextItem {
 	byID := make(map[string]store.Note, len(notes))
 	for _, n := range notes {
 		byID[n.ID] = n
@@ -291,6 +296,11 @@ func (t task) neighbourhood(repoDir string, notes []store.Note, refs []store.Ref
 		for _, n := range notes {
 			if slices.Contains(n.Informs, o.id) {
 				add(n.ID, "a", "")
+			}
+		}
+		for _, d := range decs {
+			if slices.Contains(d.Informs, o.id) {
+				add(d.ID, "a", "")
 			}
 		}
 		for _, r := range refs {
@@ -489,7 +499,7 @@ const shownIDs = 10
 // (criterion 19). Each count is exactly what its command lists — Listed says
 // how many of them the rings already show — and a kind no command lists by
 // component and state (runbooks, proposals) names its ids instead.
-func onDemand(repoDir string, comps []string, refs []store.Reference, items []ContextItem) ([]OnDemand, error) {
+func onDemand(repoDir string, comps []string, refs []store.Reference, ds []store.Decision, items []ContextItem) ([]OnDemand, error) {
 	listed := map[string]bool{}
 	for _, it := range items {
 		listed[it.ID] = true
@@ -507,10 +517,6 @@ func onDemand(repoDir string, comps []string, refs []store.Reference, items []Co
 		}
 	}
 	if len(comps) > 0 {
-		ds, err := store.LoadAllDecisions(repoDir)
-		if err != nil {
-			return nil, err
-		}
 		for _, d := range ds {
 			if d.State == domain.DecisionActive && shares(d.Components) {
 				count(&decs, d.ID)
