@@ -34,6 +34,28 @@ function useWide(): boolean {
   return wide
 }
 
+// B-0048: recolher a coluna de candidatas e a de conversas é preferência de
+// quem olha, por navegador — o mesmo contrato da coluna Backlog do kanban
+// (F-0342). Storage inacessível cai no padrão expandido e nunca quebra a página.
+const LIST_OPEN_KEY = 'cerne.backlog.listOpen'
+const RAIL_OPEN_KEY = 'cerne.backlog.railOpen'
+
+function readOpen(key: string): boolean {
+  try {
+    return localStorage.getItem(key) !== 'false'
+  } catch {
+    return true
+  }
+}
+
+function writeOpen(key: string, open: boolean) {
+  try {
+    localStorage.setItem(key, String(open))
+  } catch {
+    // preferência não persistida; o toggle da sessão continua valendo
+  }
+}
+
 export default function Backlog() {
   const [features, setFeatures] = useState<Feature[] | null>(null)
   // F-0195: contagem de [ESCLARECER] abertos, mesma fonte do kanban. Servidor
@@ -45,6 +67,19 @@ export default function Backlog() {
   const { t } = useT()
   const chats = useBacklogChats()
   const wide = useWide()
+  const [listOpen, setListOpen] = useState(() => readOpen(LIST_OPEN_KEY))
+  const toggleList = () => {
+    setListOpen(!listOpen)
+    writeOpen(LIST_OPEN_KEY, !listOpen)
+  }
+  // Rail recolhido = o layout largo usa o menu da barra do layout estreito:
+  // "Nova conversa" e o histórico continuam a um clique, só a coluna sai.
+  const [railOpen, setRailOpen] = useState(() => readOpen(RAIL_OPEN_KEY))
+  const toggleRail = () => {
+    setRailOpen(!railOpen)
+    writeOpen(RAIL_OPEN_KEY, !railOpen)
+  }
+  const railed = wide && railOpen
   // Trocar de conversa remonta o chat (key): depois de escolher ou criar, o
   // foco vai para o compositor da nova conversa.
   const focusComposer = useRef(false)
@@ -85,26 +120,71 @@ export default function Backlog() {
   }, [version, refreshKey])
 
   return (
-    <main className="kanban backlog-layout">
+    <main className={listOpen ? 'kanban backlog-layout' : 'kanban backlog-layout backlog-layout-collapsed'}>
       <header className="backlog-head">
-        <h1>{t.nav.backlog}</h1>
-        {features && <p className="backlog-count">{t.backlog.count(features.length)}</p>}
+        {/* B-0048: o título é o controle, como o <summary> da coluna Backlog
+            do kanban; botão dentro do h1 (o inverso seria inválido). */}
+        <h1>
+          <button
+            type="button"
+            className="backlog-toggle"
+            aria-expanded={listOpen}
+            aria-controls={listOpen ? 'backlog-list' : undefined}
+            title={listOpen ? t.backlog.collapseList : t.backlog.expandList}
+            onClick={toggleList}
+          >
+            {t.nav.backlog}
+          </button>
+        </h1>
+        {features && (
+          <p className="backlog-count" title={t.backlog.count(features.length)}>
+            {listOpen ? t.backlog.count(features.length) : features.length}
+          </p>
+        )}
       </header>
       {/* DOM: o painel do chat vem antes das candidatas (ordem de Tab e de
           leitura iguais à visual abaixo de 60rem); acima, o grid posiciona. A
           coluna de histórico fica fora do key, para manter rolagem e foco ao
           trocar de conversa. */}
-      <div className={wide ? 'backlog-chat-shell' : 'backlog-chat-shell backlog-chat-shell-stack'}>
-        {!wide && (
+      <div className={railed ? 'backlog-chat-shell' : 'backlog-chat-shell backlog-chat-shell-stack'}>
+        {!railed && (
           <ChatToolbar refineId={chats.active.featureId ?? ''}>
             <HistoryMenu history={history} />
+            {wide && (
+              <button
+                type="button"
+                className="backlog-chat-new"
+                aria-expanded={false}
+                onClick={toggleRail}
+              >
+                {t.backlogChat.showConversations}
+              </button>
+            )}
           </ChatToolbar>
         )}
-        {wide && (
-          <div className="backlog-chat-rail" role="region" aria-label={t.backlogChat.conversationsTitle}>
-            <button type="button" className="backlog-chat-new" onClick={history.onNew}>
-              {t.backlogChat.newConversation}
-            </button>
+        {railed && (
+          <div
+            className="backlog-chat-rail"
+            id="backlog-chat-rail"
+            role="region"
+            aria-label={t.backlogChat.conversationsTitle}
+          >
+            <div className="backlog-chat-rail-head">
+              <button type="button" className="backlog-chat-new" onClick={history.onNew}>
+                {t.backlogChat.newConversation}
+              </button>
+              <button
+                type="button"
+                className="backlog-chat-new backlog-chat-rail-hide"
+                aria-expanded={true}
+                aria-controls="backlog-chat-rail"
+                aria-label={t.backlogChat.hideConversations}
+                title={t.backlogChat.hideConversations}
+                onClick={toggleRail}
+              >
+                <span aria-hidden="true">‹</span>
+              </button>
+            </div>
             <ConversationList
               conversations={history.conversations}
               activeId={history.activeId}
@@ -118,30 +198,32 @@ export default function Backlog() {
           key={chats.active.id}
           conversation={chats.active}
           onUpdate={chats.updateActive}
-          toolbarOutside={!wide}
+          toolbarOutside={!railed}
           onRegistered={(feature) => {
             chats.appendRegisteredId(feature.id)
             setRefreshKey((k) => k + 1)
           }}
         />
       </div>
-      <div className="backlog-list-col">
-        {error && <p className="backlog-note backlog-note-error">{t.backlog.loadError(error)}</p>}
-        {!error && !features && <p className="backlog-note">{t.common.loading}</p>}
-        {features && features.length === 0 && <p className="backlog-note">{t.backlog.empty}</p>}
-        {features && features.length > 0 && (
-          <div className="backlog-roster">
-            {sortByPriority(features).map((f) => (
-              <BacklogCard
-                key={f.id}
-                feature={f}
-                pending={openClarifications[f.id] ?? 0}
-                onRefine={() => chats.refineFeature(f.id)}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+      {listOpen && (
+        <div className="backlog-list-col" id="backlog-list">
+          {error && <p className="backlog-note backlog-note-error">{t.backlog.loadError(error)}</p>}
+          {!error && !features && <p className="backlog-note">{t.common.loading}</p>}
+          {features && features.length === 0 && <p className="backlog-note">{t.backlog.empty}</p>}
+          {features && features.length > 0 && (
+            <div className="backlog-roster">
+              {sortByPriority(features).map((f) => (
+                <BacklogCard
+                  key={f.id}
+                  feature={f}
+                  pending={openClarifications[f.id] ?? 0}
+                  onRefine={() => chats.refineFeature(f.id)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </main>
   )
 }

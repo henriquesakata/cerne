@@ -930,14 +930,117 @@ describe('BacklogChat (F-0230: resposta em voo sobrevive à navegação)', () =>
     expect(streamChat).toHaveBeenCalledTimes(2)
   })
 
-  it('critério 5: um segundo envio na mesma conversa é bloqueado enquanto a primeira segue pendente', async () => {
+  // B-0049 replaced the block: a second send while the first is in flight is
+  // queued, never a concurrent request (the F-0230 invariant still holds).
+  it('critério 5: um segundo envio com a primeira pendente não abre outra requisição', async () => {
     streamChat.mockReturnValue(new Promise(() => {}))
     renderChat()
 
     fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'Oi' } })
     fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+    fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: 'E mais isto' } })
+    fireEvent.click(screen.getByRole('button', { name: /pôr na fila/i }))
 
-    expect(screen.getByRole('button', { name: /enviar/i })).toBeDisabled()
+    expect(streamChat).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('E mais isto')).toBeInTheDocument()
+  })
+})
+
+// B-0049: the composer stays open while the agent works, the way Claude Code,
+// Codex and Cursor take a message mid-turn: it waits in a visible queue and
+// goes out as the next turn when the current one ends.
+describe('BacklogChat — fila durante o processamento (B-0049)', () => {
+  const pendingStream = () => {
+    const box: { resolve: ((v: ChatAnswer) => void) | null } = { resolve: null }
+    streamChat.mockImplementation(() => new Promise((r) => (box.resolve = r)))
+    return box
+  }
+  const type = (text: string) => fireEvent.change(screen.getByPlaceholderText(/descreva/i), { target: { value: text } })
+
+  it('Enter com o agente ocupado enfileira, limpa o compositor e mostra a mensagem na fila', async () => {
+    pendingStream()
+    renderChat()
+    type('primeira')
+    fireEvent.keyDown(screen.getByPlaceholderText(/descreva/i), { key: 'Enter' })
+    await screen.findByText(/processando/i)
+
+    type('segunda')
+    fireEvent.keyDown(screen.getByPlaceholderText(/descreva/i), { key: 'Enter' })
+
+    expect(screen.getByPlaceholderText(/descreva/i)).toHaveValue('')
+    expect(screen.getByText('segunda')).toBeInTheDocument()
+    expect(screen.getByText(/na fila/i)).toBeInTheDocument()
+    expect(streamChat).toHaveBeenCalledTimes(1)
+  })
+
+  it('ao terminar o turno, a fila vai como um único turno seguinte', async () => {
+    const stream = pendingStream()
+    renderChat()
+    type('primeira')
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+    await screen.findByText(/processando/i)
+    type('segunda')
+    fireEvent.click(screen.getByRole('button', { name: /pôr na fila/i }))
+    type('terceira')
+    fireEvent.click(screen.getByRole('button', { name: /pôr na fila/i }))
+
+    const first = stream.resolve!
+    await act(async () => first({ answered: true, reply: 'resposta um' }))
+
+    await waitFor(() => expect(streamChat).toHaveBeenCalledTimes(2))
+    const sent = streamChat.mock.calls[1][0] as { role: string; content: string }[]
+    expect(sent.map((m) => m.role)).toEqual(['user', 'assistant', 'user'])
+    expect(sent[2].content).toBe('segunda\n\nterceira')
+    expect(screen.queryByText(/na fila/i)).not.toBeInTheDocument()
+  })
+
+  it('tirar da fila remove a mensagem e nada é enviado depois', async () => {
+    const stream = pendingStream()
+    renderChat()
+    type('primeira')
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+    await screen.findByText(/processando/i)
+    type('arrependi')
+    fireEvent.click(screen.getByRole('button', { name: /pôr na fila/i }))
+    fireEvent.click(screen.getByRole('button', { name: /tirar da fila/i }))
+    expect(screen.queryByText('arrependi')).not.toBeInTheDocument()
+
+    const first = stream.resolve!
+    await act(async () => first({ answered: true, reply: 'resposta um' }))
+    await screen.findByText('resposta um')
+    expect(streamChat).toHaveBeenCalledTimes(1)
+  })
+
+  it('sair da conversa com mensagem na fila não a perde: ela vai quando o turno termina', async () => {
+    const stream = pendingStream()
+    const { unmount } = renderChat()
+    type('primeira')
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+    await screen.findByText(/processando/i)
+    type('vai depois')
+    fireEvent.click(screen.getByRole('button', { name: /pôr na fila/i }))
+    unmount()
+
+    const first = stream.resolve!
+    await act(async () => first({ answered: true, reply: 'resposta um' }))
+    await waitFor(() => expect(streamChat).toHaveBeenCalledTimes(2))
+    const sent = streamChat.mock.calls[1][0] as { role: string; content: string }[]
+    expect(sent.at(-1)).toEqual({ role: 'user', content: 'vai depois' })
+  })
+
+  it('se o turno falhar, a fila volta ao compositor em vez de sumir', async () => {
+    let reject!: (e: Error) => void
+    streamChat.mockImplementation(() => new Promise((_r, j) => (reject = j)))
+    renderChat()
+    type('primeira')
+    fireEvent.click(screen.getByRole('button', { name: /enviar/i }))
+    await screen.findByText(/processando/i)
+    type('não perca isto')
+    fireEvent.click(screen.getByRole('button', { name: /pôr na fila/i }))
+
+    await act(async () => reject(new Error('rede caiu')))
+    await screen.findByText('rede caiu')
+    expect(screen.getByPlaceholderText(/descreva/i)).toHaveValue('não perca isto')
     expect(streamChat).toHaveBeenCalledTimes(1)
   })
 })
@@ -1643,49 +1746,28 @@ describe('cartão de pergunta (F-0437)', () => {
     streamChat.mockResolvedValueOnce({ answered: true, reply: two })
     renderChat()
     send('Oi')
-    await screen.findByText('Pergunta 1 de 2')
+    await screen.findByRole('group', { name: 'Qual canal?' })
   }
 
-  it('numbers the cards "Pergunta 1 de 2" and marks the answered ones after the round is sent', async () => {
+  // B-0047: one question at a time. A turn that still carries several cards
+  // shows only the first open one; answering it sends at once, and the rest of
+  // that turn never shows — the analyst asks again knowing the answer.
+  it('a turn with several questions shows only the first one, with no round button', async () => {
     await askTwo()
-    expect(screen.getByText('Pergunta 2 de 2')).toBeInTheDocument()
-    streamChat.mockResolvedValueOnce({ answered: true, reply: 'Ok.' })
-    fireEvent.click(screen.getByRole('button', { name: /Push/ }))
-    fireEvent.click(screen.getByRole('button', { name: /Amanhã/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'Enviar respostas (2/2)' }))
-    await screen.findByText(/Pergunta 1 de 2 · Respondida/)
-    expect(screen.getByText(/Pergunta 2 de 2 · Respondida/)).toBeInTheDocument()
-  })
-
-  // B-0023: a round of several cards (F-0443) is answered as a whole — the
-  // first click used to send the turn and leave the other cards dead.
-  it('in a round, a click only picks: nothing is sent and the other card stays live', async () => {
-    await askTwo()
-    fireEvent.click(screen.getByRole('button', { name: /Push/ }))
-    expect(streamChat).toHaveBeenCalledTimes(1)
-    expect(screen.getByRole('button', { name: /Push/ })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: /Hoje/ })).toBeEnabled()
-    expect(screen.getByRole('button', { name: /Amanhã/ })).toBeEnabled()
-    expect(screen.getByRole('button', { name: 'Enviar respostas (1/2)' })).toBeDisabled()
-  })
-
-  it('the round goes out as one turn, one line per question, and a pick can change before sending', async () => {
-    await askTwo()
-    fireEvent.click(screen.getByRole('button', { name: /Email/ }))
-    fireEvent.click(screen.getByRole('button', { name: /Push/ }))
-    fireEvent.change(within(screen.getByRole('group', { name: 'Quando?' })).getByLabelText('Outra resposta'), {
-      target: { value: 'Sexta' },
-    })
-    fireEvent.click(within(screen.getByRole('group', { name: 'Quando?' })).getByRole('button', { name: 'Responder' }))
-    expect(streamChat).toHaveBeenCalledTimes(1)
-    streamChat.mockResolvedValueOnce({ answered: true, reply: 'Anotado.' })
-    fireEvent.click(screen.getByRole('button', { name: 'Enviar respostas (2/2)' }))
-    await waitFor(() => expect(streamChat).toHaveBeenCalledTimes(2))
-    expect(lastTurn()).toBe('**Qual canal?** → Push (recomendação aceita)\n**Quando?** → Sexta (resposta livre)')
-    await screen.findByText('Anotado.')
-    expect(screen.getByRole('button', { name: /Push/ })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: /Email/ })).toBeDisabled()
+    expect(screen.getByText('Pergunta 1 de 1')).toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Quando?' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Enviar respostas/ })).not.toBeInTheDocument()
+  })
+
+  it('answering the first question sends it at once and the rest of that turn stays hidden', async () => {
+    await askTwo()
+    streamChat.mockResolvedValueOnce({ answered: true, reply: 'Anotado.' })
+    fireEvent.click(screen.getByRole('button', { name: /Push/ }))
+    await waitFor(() => expect(streamChat).toHaveBeenCalledTimes(2))
+    expect(lastTurn()).toBe('**Qual canal?** → Push (recomendação aceita)')
+    await screen.findByText('Anotado.')
+    expect(screen.getByText(/Pergunta 1 de 1 · Respondida/)).toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Quando?' })).not.toBeInTheDocument()
   })
 
   it('a combined answer turn spends every card of the round (also after a reload) and renders one line per question', () => {
@@ -1740,8 +1822,10 @@ describe('cartão de pergunta (F-0437)', () => {
         { role: 'user', content: '**Qual canal?** → Push (recomendação aceita)' },
       ],
     })
-    expect(screen.getByText(/Pergunta 1 de 2 · Respondida/)).toBeInTheDocument()
-    expect(screen.getByText('Pergunta 2 de 2')).toBeInTheDocument()
+    // B-0047: the spent card shows; the second copy is the rest of the turn,
+    // hidden once one card of it was answered.
+    expect(screen.getByText(/Pergunta 1 de 1 · Respondida/)).toBeInTheDocument()
+    expect(screen.getAllByRole('group', { name: 'Qual canal?' })).toHaveLength(1)
   })
 
   it('the answer turn renders the question in <strong> with no asterisks; other user text stays literal', () => {

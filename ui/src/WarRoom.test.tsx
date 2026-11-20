@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import WarRoom, { WarRoomDetail } from './WarRoom'
 import { I18nProvider } from './i18n'
@@ -98,6 +98,9 @@ describe('WarRoom (T-0003)', () => {
     await waitFor(() => expect(screen.getByText('Fila serial')).toBeInTheDocument())
     expect(screen.getByText('Já resolvido')).toBeInTheDocument()
     expect(screen.getAllByRole('link')).toHaveLength(2)
+    // B-0050: the header counts the rooms; each card counts its participants.
+    expect(screen.getByText('2 sala(s)')).toBeInTheDocument()
+    expect(screen.getByText('1 participante(s)')).toBeInTheDocument()
   })
 
   it('fixa o canal permanente no topo, com selo, fora da contagem e do vazio (F-0325 critério 21)', async () => {
@@ -111,7 +114,8 @@ describe('WarRoom (T-0003)', () => {
     expect(links[0]).toHaveAttribute('href', '#/rooms/channel')
     expect(links[0]).toHaveTextContent(/permanente/i)
     expect(screen.getByText(/nenhuma sala aberta/i)).toBeInTheDocument()
-    expect(screen.getByText('0 participante(s)')).toBeInTheDocument()
+    // B-0050: the header counts rooms, so it says rooms, not participants.
+    expect(screen.getByText('0 sala(s)')).toBeInTheDocument()
   })
 
   it('canal ilegível aparece com o erro e as salas formais continuam (crítico C8)', async () => {
@@ -179,8 +183,10 @@ describe('WarRoomDetail (T-0003)', () => {
     render(<WarRoomDetail id="R1" />)
 
     await waitFor(() => expect(screen.getByText(/Fila serial/)).toBeInTheDocument())
-    expect(screen.getByText('ana')).toBeInTheDocument()
-    expect(screen.getByText('pessimista', { exact: false })).toBeInTheDocument()
+    const roster = screen.getByRole('region', { name: /participantes/i })
+    expect(within(roster).getByText('ana')).toBeInTheDocument()
+    expect(within(roster).getByText('pessimista', { exact: false })).toBeInTheDocument()
+    expect(within(screen.getByRole('log')).getByText('ana')).toBeInTheDocument()
     expect(screen.getByText(/oi pessoal/)).toBeInTheDocument()
   })
 
@@ -754,5 +760,129 @@ describe('painel da ata (F-0291)', () => {
     expect(block).toMatch(/min-height: 0/)
     expect(block).toMatch(/overflow-y: auto/)
     expect(css).toMatch(/\.room-minutes-open-items \{/)
+  })
+})
+
+// B-0046: the room borrowed .backlog-layout and broke when F-0431 pinned that
+// grid's cells to the Backlog's own children — the room's chat fell into the
+// first free cell, on top of the side column. The room now owns its grid, and
+// the chat follows the conventions of the chats its users already know.
+describe('layout e conversa da sala (B-0046)', () => {
+  const open: RoomMessage = { seq: 1, type: 'open', topic: 'Fila serial', time: '2026-08-06T00:00:00Z' }
+  const say = (seq: number, nick: string, body: string, time: string): RoomMessage => ({
+    seq,
+    type: 'message',
+    nick,
+    body,
+    time,
+  })
+
+  const joinedAs = (nick: string) => {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session({ nick })))
+    resumeRoomSession.mockResolvedValue(session({ nick }))
+  }
+
+  it('a sala tem grid próprio, independente do grid do Backlog (critério de regressão)', async () => {
+    readRoomMessages.mockImplementationOnce(() => Promise.resolve([open]))
+    const { container } = render(<WarRoomDetail id="R1" />)
+    await waitFor(() => expect(screen.getByText(/Fila serial/)).toBeInTheDocument())
+
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
+    const main = container.querySelector('main')
+    expect(main).toHaveClass('room-layout')
+    expect(main).not.toHaveClass('backlog-layout')
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
+    expect(container.querySelector('.room-chat')).not.toBeNull()
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
+    expect(container.querySelector('.room-side')).not.toBeNull()
+
+    // Cada região tem célula declarada: nenhuma depende do auto-placement.
+    const css = readFileSync('src/app.css', 'utf8')
+    const rule = (sel: string) => new RegExp(`\\n${sel.replace('.', '\\.')} \\{[^}]*\\}`).exec(css)?.[0] ?? ''
+    expect(rule('.room-chat')).toMatch(/grid-column: 1;[\s\S]*grid-row: 2;/)
+    expect(rule('.room-side')).toMatch(/grid-column: 2;[\s\S]*grid-row: 2;/)
+    expect(rule('.room-head')).toMatch(/grid-column: 1 \/ -1/)
+  })
+
+  it('Enter envia e Shift+Enter não (padrão Claude Code / Cursor / Gemini)', async () => {
+    joinedAs('ana')
+    readRoomMessages.mockImplementationOnce(() => Promise.resolve([open]))
+    sayRoom.mockResolvedValue(say(2, 'ana', 'oi', '2026-08-06T00:00:02Z'))
+    render(<WarRoomDetail id="R1" />)
+
+    const box = await screen.findByPlaceholderText(/escreva uma mensagem/i)
+    fireEvent.change(box, { target: { value: 'linha 1' } })
+    fireEvent.keyDown(box, { key: 'Enter', shiftKey: true })
+    expect(sayRoom).not.toHaveBeenCalled()
+
+    fireEvent.keyDown(box, { key: 'Enter' })
+    await waitFor(() => expect(sayRoom).toHaveBeenCalledWith('R1', 'cafebabecafebabecafebabecafebabe', 'linha 1'))
+    await waitFor(() => expect(box).toHaveValue(''))
+  })
+
+  it('Enter durante composição de IME não envia', async () => {
+    joinedAs('ana')
+    readRoomMessages.mockImplementationOnce(() => Promise.resolve([open]))
+    render(<WarRoomDetail id="R1" />)
+
+    const box = await screen.findByPlaceholderText(/escreva uma mensagem/i)
+    fireEvent.change(box, { target: { value: 'にほ' } })
+    fireEvent.keyDown(box, { key: 'Enter', isComposing: true })
+    expect(sayRoom).not.toHaveBeenCalled()
+  })
+
+  it('mensagens seguidas do mesmo autor mostram o autor uma vez só', async () => {
+    readRoomMessages.mockImplementationOnce(() =>
+      Promise.resolve([
+        open,
+        say(2, 'bia', 'primeira', '2026-08-06T00:00:02Z'),
+        say(3, 'bia', 'segunda', '2026-08-06T00:01:00Z'),
+        say(4, 'caio', 'outra pessoa', '2026-08-06T00:01:30Z'),
+        say(5, 'bia', 'de volta', '2026-08-06T00:02:00Z'),
+        say(6, 'bia', 'bem depois', '2026-08-06T00:30:00Z'),
+      ]),
+    )
+    render(<WarRoomDetail id="R1" />)
+    await waitFor(() => expect(screen.getByText('bem depois')).toBeInTheDocument())
+
+    const log = screen.getByRole('log')
+    // primeira, de volta (outro autor no meio), bem depois (janela passou)
+    expect(within(log).getAllByText('bia')).toHaveLength(3)
+    expect(within(log).getAllByText('caio')).toHaveLength(1)
+  })
+
+  it('a própria mensagem fica à direita sem repetir o apelido; a dos outros traz o autor', async () => {
+    joinedAs('ana')
+    readRoomMessages.mockImplementationOnce(() =>
+      Promise.resolve([
+        open,
+        say(2, 'ana', 'minha', '2026-08-06T00:00:02Z'),
+        say(3, 'bia', 'dela', '2026-08-06T00:00:03Z'),
+      ]),
+    )
+    render(<WarRoomDetail id="R1" />)
+    await waitFor(() => expect(screen.getByText('dela')).toBeInTheDocument())
+
+    // eslint-disable-next-line testing-library/no-node-access
+    const mine = screen.getByText('minha').closest('.room-msg')
+    // eslint-disable-next-line testing-library/no-node-access
+    const theirs = screen.getByText('dela').closest('.room-msg')
+    expect(mine).toHaveClass('room-msg-own')
+    expect(theirs).not.toHaveClass('room-msg-own')
+    expect(within(screen.getByRole('log')).queryByText('ana')).not.toBeInTheDocument()
+    expect(within(theirs as HTMLElement).getByText('bia')).toBeInTheDocument()
+    expect(screen.getByText(/falando como ana/i)).toBeInTheDocument()
+  })
+
+  it('o encerramento com ata fica recolhido até ser pedido', async () => {
+    localStorage.setItem('warroom-facilitator--R1', 'facfacfacfacfacfacfacfacfacfacfa')
+    readRoomMessages.mockImplementationOnce(() => Promise.resolve([open]))
+    render(<WarRoomDetail id="R1" />)
+
+    const summary = await screen.findByText(/encerrar sala com ata/i)
+    // eslint-disable-next-line testing-library/no-node-access
+    const details = summary.closest('details')
+    expect(details).not.toBeNull()
+    expect(details).not.toHaveAttribute('open')
   })
 })

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { consumeOutcome, send, status } from './chatRequest'
+import { consumeOutcome, enqueue, lastSent, queued, send, status, takeQueue, unqueue } from './chatRequest'
 import { act, renderHook } from '@testing-library/react'
 import { getConversation, readChats, useBacklogChats, writeChats } from './useBacklogChats'
 import { ChatRunsError, setApiProject, type ChatAnswer, type ChatTitle } from './api'
@@ -385,5 +385,70 @@ describe('chatRequest (F-0310): resumo do primeiro par', () => {
     await vi.waitFor(() => expect(status('c10').pending).toBe(false))
 
     expect(readChats().chats.find((c) => c.id === 'c10')?.messages.at(-1)).toEqual({ role: 'assistant', content: 'Ok.', answeredBy: answered_by })
+  })
+})
+
+// B-0049: the queue lives with the request, outside React, so a message
+// queued mid-turn survives switching conversation or leaving the screen.
+describe('chatRequest — fila durante o turno (B-0049)', () => {
+  it('sem ninguém montado, o sucesso despacha a fila como o turno seguinte, sem a permissão de escrita', async () => {
+    seedConversation('q1')
+    const resolvers: ((v: ChatAnswer) => void)[] = []
+    streamChat.mockImplementation(() => new Promise((r) => resolvers.push(r)))
+
+    send('q1', [{ role: 'user', content: 'primeira' }], { model: 'm', confirm: true, confirmTurn: 3 })
+    enqueue('q1', 'segunda')
+    enqueue('q1', 'terceira')
+    expect(queued('q1')).toEqual(['segunda', 'terceira'])
+
+    resolvers[0]({ answered: true, reply: 'resposta um' })
+    await vi.waitFor(() => expect(streamChat).toHaveBeenCalledTimes(2))
+    expect(queued('q1')).toEqual([])
+    expect(streamChat.mock.calls[1][0]).toEqual([
+      { role: 'user', content: 'primeira' },
+      { role: 'assistant', content: 'resposta um' },
+      { role: 'user', content: 'segunda\n\nterceira' },
+    ])
+    const override = streamChat.mock.calls[1][1] as Record<string, unknown>
+    expect(override.model).toBe('m')
+    expect(override.confirm).toBeUndefined()
+    expect(override.confirmTurn).toBeUndefined()
+    expect(lastSent('q1')?.at(-1)).toEqual({ role: 'user', content: 'segunda\n\nterceira' })
+  })
+
+  it('um turno que falha não despacha a fila; ela espera quem a devolva ao compositor', async () => {
+    seedConversation('q2')
+    let reject!: (e: Error) => void
+    streamChat.mockImplementation(() => new Promise((_r, j) => (reject = j)))
+    send('q2', [{ role: 'user', content: 'primeira' }], {})
+    enqueue('q2', 'guardada')
+
+    reject(new Error(''))
+    await vi.waitFor(() => expect(status('q2').pending).toBe(false))
+    expect(streamChat).toHaveBeenCalledTimes(1)
+    expect(consumeOutcome('q2')?.kind).toBe('error')
+    expect(takeQueue('q2')).toEqual(['guardada'])
+    expect(queued('q2')).toEqual([])
+  })
+
+  it('needs_provider também segura a fila', async () => {
+    seedConversation('q3')
+    let resolve!: (v: ChatAnswer) => void
+    streamChat.mockImplementation(() => new Promise((r) => (resolve = r)))
+    send('q3', [{ role: 'user', content: 'primeira' }], {})
+    enqueue('q3', 'guardada')
+    resolve({ answered: false, needs_provider: true } as ChatAnswer)
+    await vi.waitFor(() => expect(status('q3').pending).toBe(false))
+    expect(streamChat).toHaveBeenCalledTimes(1)
+    expect(queued('q3')).toEqual(['guardada'])
+  })
+
+  it('unqueue tira só o item escolhido', () => {
+    enqueue('q4', 'a')
+    enqueue('q4', 'b')
+    enqueue('q4', 'c')
+    unqueue('q4', 1)
+    expect(queued('q4')).toEqual(['a', 'c'])
+    takeQueue('q4')
   })
 })

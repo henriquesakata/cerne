@@ -875,6 +875,9 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
 
   const requestStatus = chatRequest.status(conversation.id)
   const busy = requestStatus.pending
+  // B-0049: the queue lives in chatRequest (it outlives this component, which
+  // remounts per conversation); every change notifies and re-renders here.
+  const queuedNow = chatRequest.queued(conversation.id)
 
   // Critério 5: sem [llm] configurado, o chat nasce desabilitado — nenhuma
   // chamada ao provider é feita nem esperando o usuário digitar algo.
@@ -911,6 +914,14 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
   // enquanto eu estava montado" (via subscribe).
   useEffect(() => {
     const id = conversation.id
+    // B-0049: a turn that failed or needs a provider does not send the queue;
+    // its text goes back to the composer so nothing typed is lost.
+    const restoreQueue = () => {
+      const q = chatRequest.takeQueue(id)
+      if (q.length === 0) return
+      setInput((cur) => [cur.trim(), ...q].filter((l) => l !== '').join('\n\n'))
+      requestAnimationFrame(autoExpand)
+    }
     const reconcile = () => {
       forceTick((n) => n + 1)
       if (chatRequest.status(id).pending) {
@@ -930,12 +941,18 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
         if (fresh?.messages.at(-1)?.runs) {
           setMessages(fresh.messages)
           setFailedMessages(null)
+        } else {
+          // B-0049: what was actually sent — a turn the queue started never
+          // went through sendMessages, so this is its only retry payload.
+          setFailedMessages(chatRequest.lastSent(id) ?? null)
         }
         setError(outcome.message)
+        restoreQueue()
         return
       }
       if (outcome.kind === 'needs_provider') {
         setNeedsProvider(true)
+        restoreQueue()
         return
       }
       const fresh = chatRequest.getConversation(id)
@@ -986,7 +1003,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
     const el = historyRef.current
     if (!el || !stuckRef.current) return
     el.scrollTop = el.scrollHeight
-  }, [messages, busy])
+  }, [messages, busy, queuedNow.length])
 
   const autoExpand = () => {
     const el = textareaRef.current
@@ -1044,21 +1061,33 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
     onUpdate({ messages: next })
   }
 
-  const submitMessage = () => {
-    const content = input.trim()
-    if (content === '' || busy) return
+  const sendContent = (content: string) => {
     const next = [...messages, { role: 'user' as const, content }]
     setMessages(next)
-    setInput('')
-    // F-0246: limpar o valor não desfaz a altura — o autoExpand deixou um
-    // style.height inline, e sem removê-lo o campo fica alto e vazio até o
-    // próximo caractere. Limpar o inline devolve a altura ao CSS (rows=1).
-    if (textareaRef.current) textareaRef.current.style.height = ''
     sendMessages(next)
     // F-0310 crit. 14: o título truncado nasce com a primeira mensagem; antes
     // do primeiro delta não há escritor concorrente (F-0248 crit. 8), e chamar
     // depois do send deixa o carimbo local ≥ o do storage.
     onUpdate({ messages: next })
+  }
+
+  const submitMessage = () => {
+    const content = input.trim()
+    if (content === '') return
+    setInput('')
+    // F-0246: limpar o valor não desfaz a altura — o autoExpand deixou um
+    // style.height inline, e sem removê-lo o campo fica alto e vazio até o
+    // próximo caractere. Limpar o inline devolve a altura ao CSS (rows=1).
+    if (textareaRef.current) textareaRef.current.style.height = ''
+    // B-0049: with the agent working, the message waits in the queue instead
+    // of opening a second request (F-0230: one request per conversation).
+    // chatRequest sends the queue as one user turn when this turn succeeds,
+    // like Claude Code delivers input typed mid-turn.
+    if (busy) {
+      chatRequest.enqueue(conversation.id, content)
+      return
+    }
+    sendContent(content)
   }
 
   const retry = () => {
@@ -1333,6 +1362,21 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
             )}
           </p>
         )}
+        {queuedNow.map((q, k) => (
+          <div key={k} className="backlog-chat-msg backlog-chat-msg-user backlog-chat-msg-queued">
+            <p>{q}</p>
+            <p className="backlog-chat-queued-meta">
+              {t.backlogChat.queued}
+              <button
+                type="button"
+                className="backlog-chat-queued-cancel"
+                onClick={() => chatRequest.unqueue(conversation.id, k)}
+              >
+                {t.backlogChat.unqueue}
+              </button>
+            </p>
+          </div>
+        ))}
       </div>
       {notice && (
         <p className="status backlog-chat-notice" role="status">
@@ -1391,9 +1435,9 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
           <button
             type="submit"
             className="backlog-chat-send"
-            aria-label={t.backlogChat.send}
-            title={t.backlogChat.send}
-            disabled={busy || input.trim() === ''}
+            aria-label={busy ? t.backlogChat.queue : t.backlogChat.send}
+            title={busy ? t.backlogChat.queue : t.backlogChat.send}
+            disabled={input.trim() === ''}
           >
             <span aria-hidden="true">↵</span>
           </button>

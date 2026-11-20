@@ -18,9 +18,6 @@ type Props = {
   total: number
   // answer: the user turn that answered this question, when one exists.
   answer?: string
-  // picked: the choice marked in a round not sent yet (B-0023) — shown as
-  // chosen, still changeable.
-  picked?: string
   busy: boolean
   // stale: the question sits in an earlier assistant turn and was never
   // answered — the analyst moved on, so the card is locked.
@@ -34,13 +31,13 @@ function chosenOf(answer: string, question: string): string {
   return rest.replace(/\s*\([^()]*\)$/, '')
 }
 
-export default function QuestionCard({ q, index, total, answer, picked, busy, stale, onAnswer }: Props) {
+export default function QuestionCard({ q, index, total, answer, busy, stale, onAnswer }: Props) {
   const { t } = useT()
   const [free, setFree] = useState('')
   const answered = answer !== undefined
   const dead = stale && !answered
   const locked = answered || busy || !!dead
-  const shown = answer ?? picked
+  const shown = answer
   const chosen = shown !== undefined ? chosenOf(shown, q.question) : ''
   const matched = q.options.some((o) => o.label === chosen)
   const reply = (choice: string, origin: string) => onAnswer(`**${q.question}** → ${choice} (${origin})`)
@@ -122,42 +119,32 @@ type RoundProps = {
   onAnswer: (turn: string) => void
 }
 
-// QuestionRound (B-0023) draws the cards of one assistant turn. A round of
-// several open cards (F-0443 asks up to 3 per turn) is answered as a whole: a
-// click only picks, and "Send answers" sends one turn with one line per
-// question once every open card has a pick. A single open card keeps sending
-// on click (F-0437).
+// QuestionRound draws the cards of one assistant turn, one question at a time
+// (B-0047). The analyst asks one per turn; when a turn still carries several,
+// only the first open card shows and a click sends it at once. Once any card
+// of the turn is answered, its other open cards never show: the analyst asks
+// again in the next turn, knowing the answer. Cards answered together in an
+// older combined turn (B-0023) still all show, spent.
 export function QuestionRound({ questions, answers, busy, stale, onAnswer }: RoundProps) {
-  const { t } = useT()
-  const [picks, setPicks] = useState<Record<number, string>>({})
-  const open = questions.map((_, k) => k).filter((k) => answers[k] === undefined)
-  const batch = !stale && open.length > 1
-  const count = open.filter((k) => picks[k] !== undefined).length
+  const anyAnswered = answers.some((a) => a !== undefined)
+  const firstOpen = answers.findIndex((a) => a === undefined)
+  const shown = questions
+    .map((_, k) => k)
+    .filter((k) => answers[k] !== undefined || (!anyAnswered && k === firstOpen))
   return (
     <>
-      {questions.map((q, k) => (
+      {shown.map((k, i) => (
         <QuestionCard
           key={k}
-          q={q}
-          index={k + 1}
-          total={questions.length}
+          q={questions[k]}
+          index={i + 1}
+          total={shown.length}
           answer={answers[k]}
-          picked={batch ? picks[k] : undefined}
           busy={busy}
           stale={stale}
-          onAnswer={batch ? (line) => setPicks((p) => ({ ...p, [k]: line })) : onAnswer}
+          onAnswer={onAnswer}
         />
       ))}
-      {batch && (
-        <button
-          type="button"
-          className="question-round-send"
-          disabled={busy || count < open.length}
-          onClick={() => onAnswer(open.map((k) => picks[k]).join('\n'))}
-        >
-          {t.questionCard.sendAll(count, open.length)}
-        </button>
-      )}
     </>
   )
 }

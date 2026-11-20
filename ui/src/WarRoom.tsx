@@ -1,4 +1,12 @@
-import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type UIEvent } from 'react'
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+  type UIEvent,
+} from 'react'
 import { isAtBottom } from './BacklogChat'
 import {
   fetchRoomPending,
@@ -90,7 +98,7 @@ export default function WarRoom() {
     <main className="kanban">
       <header className="kanban-header">
         <h1>{t.warRoom.title}</h1>
-        {formal && <p className="counts">{t.warRoom.participants(formal.length)}</p>}
+        {formal && <p className="counts">{t.warRoom.roomsCount(formal.length)}</p>}
       </header>
       <form className="backlog-chat-form" onSubmit={open}>
         <input
@@ -139,6 +147,14 @@ export default function WarRoom() {
 
 type Roster = { nick: string; bio?: string }[]
 
+// B-0046: a message from the same author within this window continues the
+// previous one (no repeated name/time header), the way Slack and Discord group
+// a burst of lines from one person.
+const GROUP_MS = 5 * 60 * 1000
+
+const continuesPrevious = (prev: RoomMessage | undefined, m: RoomMessage) =>
+  prev !== undefined && prev.nick === m.nick && Date.parse(m.time) - Date.parse(prev.time) < GROUP_MS
+
 export function WarRoomDetail({ id }: { id: string }) {
   const [topic, setTopic] = useState('')
   const [roster, setRoster] = useState<Roster>([])
@@ -156,8 +172,9 @@ export function WarRoomDetail({ id }: { id: string }) {
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [copied, setCopied] = useState(false)
-  const { t } = useT()
+  const { t, lang } = useT()
   const version = useLiveVersion()
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Facilitação (F-0228): capability separada da sessão, guardada por sala,
   // nunca exibida no transcript. pendingTick força um refetch da fila
@@ -480,8 +497,17 @@ export function WarRoomDetail({ id }: { id: string }) {
       .catch(() => {})
   }
 
-  const send = (e: FormEvent) => {
-    e.preventDefault()
+
+  // B-0046: the composer grows with what is typed, like the Backlog chat's;
+  // clearing the inline height after a send hands it back to the CSS (rows=1).
+  const autoExpand = () => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }
+
+  const submitMessage = () => {
     const body = input.trim()
     if (body === '' || sending || !session) return
     setSending(true)
@@ -490,6 +516,7 @@ export function WarRoomDetail({ id }: { id: string }) {
       .then(() => {
         setSending(false)
         setInput('')
+        if (textareaRef.current) textareaRef.current.style.height = ''
       })
       .catch((e: unknown) => {
         setSending(false)
@@ -497,128 +524,42 @@ export function WarRoomDetail({ id }: { id: string }) {
       })
   }
 
+  // Enter sends, Shift+Enter breaks the line (the Claude Code / Cursor /
+  // Gemini convention, same as the Backlog chat). An IME composition's Enter
+  // confirms the candidate and must not send half a word.
+  const onComposerKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+      e.preventDefault()
+      submitMessage()
+    }
+  }
+
+  const clock = (iso: string) => {
+    const d = new Date(iso)
+    return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit' })
+  }
+
+  const ownNick = session?.nick
+
+  // B-0046: the room owns its grid. It used to borrow .backlog-layout, and
+  // when F-0431 pinned that grid's cells to the Backlog's own children the
+  // room's chat fell into the first free cell, on top of the side column.
   return (
-    <main className="kanban backlog-layout">
-      <div className="backlog-list-col">
-        <header className="kanban-header">
-          <a className="back" href="#/rooms">
-            {t.warRoom.backToList}
-          </a>
-          <h1>
-            {id} {topic && `— ${topic}`}
-          </h1>
-          {closed && <span className="badge room-badge-closed">{t.warRoom.closedBadge}</span>}
-          {!closed && (
-            <p className="muted">
-              {t.warRoom.entryCommand(entryCommand)}{' '}
-              <button type="button" onClick={copyEntryCommand}>
-                {copied ? t.warRoom.copied : t.warRoom.copyCommand}
-              </button>
-            </p>
-          )}
-          {!closed && facilitatorId && !transferredToken && (
-            <p className="muted">
-              {t.warRoom.facilitatorYouAre}{' '}
-              <button type="button" onClick={transferFacilitator} disabled={transferring}>
-                {transferring ? t.warRoom.facilitatorTransferring : t.warRoom.facilitatorTransfer}
-              </button>
-            </p>
-          )}
-          {transferredToken && (
-            <p className="muted">
-              {t.warRoom.facilitatorNewCapability(transferredToken)}
-              <br />
-              {t.warRoom.facilitatorTransferHint}
-            </p>
-          )}
-          {!closed && !facilitatorId && (
-            <form className="backlog-chat-form" onSubmit={claimFacilitator}>
-              <label>
-                {t.warRoom.facilitatorClaimTitle}
-                <input
-                  value={facilitatorInput}
-                  onChange={(e) => setFacilitatorInput(e.target.value)}
-                  placeholder={t.warRoom.facilitatorClaimPlaceholder}
-                />
-              </label>
-              <button type="submit" disabled={claiming || facilitatorInput.trim() === ''}>
-                {claiming ? t.warRoom.facilitatorClaiming : t.warRoom.facilitatorClaim}
-              </button>
-            </form>
-          )}
-        </header>
-        <h2>{t.warRoom.roster}</h2>
-        {roster.length === 0 && <p className="muted">{t.warRoom.noParticipants}</p>}
-        <ul className="room-roster">
-          {roster.map((p) => (
-            <li key={p.nick}>
-              <strong>{p.nick}</strong>
-              {p.bio && <span className="muted"> — {p.bio}</span>}
-            </li>
-          ))}
-        </ul>
-        {!closed && facilitatorId && (
-          <>
-            <h2>{t.warRoom.pendingTitle}</h2>
-            {pending.length === 0 && <p className="muted">{t.warRoom.pendingEmpty}</p>}
-            <ul className="room-roster">
-              {pending.map((it) => (
-                <li key={it.id}>
-                  <strong>{it.title}</strong> <span className="muted">({it.kind}, {it.author})</span>
-                  <p className="muted">{it.body}</p>
-                  <input
-                    value={resolveDrafts[it.id] ?? ''}
-                    onChange={(e) => setResolveDrafts((prev) => ({ ...prev, [it.id]: e.target.value }))}
-                    placeholder={t.warRoom.resolvePlaceholder}
-                  />
-                  <button type="button" onClick={() => resolveItem(it.id)} disabled={resolvingId === it.id}>
-                    {resolvingId === it.id ? t.warRoom.resolving : t.warRoom.resolve}
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <form className="backlog-chat-form" onSubmit={doClose}>
-              <h2>{t.warRoom.closeFormTitle}</h2>
-              <label>
-                {t.warRoom.minutesConclusion}
-                <input value={minutesConclusion} onChange={(e) => setMinutesConclusion(e.target.value)} />
-              </label>
-              <label>
-                {t.warRoom.minutesRationale}
-                <input value={minutesRationale} onChange={(e) => setMinutesRationale(e.target.value)} />
-              </label>
-              <label>
-                {t.warRoom.minutesDiscarded}
-                <textarea value={minutesDiscarded} onChange={(e) => setMinutesDiscarded(e.target.value)} rows={2} />
-              </label>
-              <label>
-                {t.warRoom.minutesOwners}
-                <textarea value={minutesOwners} onChange={(e) => setMinutesOwners(e.target.value)} rows={2} />
-              </label>
-              <label>
-                {t.warRoom.minutesNextSteps}
-                <textarea value={minutesNextSteps} onChange={(e) => setMinutesNextSteps(e.target.value)} rows={2} />
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={allowOpenItems}
-                  onChange={(e) => setAllowOpenItems(e.target.checked)}
-                />
-                {t.warRoom.allowOpenItems}
-              </label>
-              <button
-                type="submit"
-                disabled={closing || minutesConclusion.trim() === '' || minutesRationale.trim() === ''}
-              >
-                {closing ? t.warRoom.closing : t.warRoom.closeRoom}
-              </button>
-            </form>
-          </>
-        )}
-      </div>
-      <aside className="backlog-chat">
-        <h2>{t.warRoom.title}</h2>
+    <main className="kanban room-layout">
+      <header className="room-head">
+        <a className="back" href="#/rooms">
+          {t.warRoom.backToList}
+        </a>
+        <div className="room-title">
+          {topic && <span className="card-id">{id}</span>}
+          <h1>{topic || id}</h1>
+          <span className={`badge ${closed ? 'room-badge-closed' : 'room-badge-open'}`}>
+            {closed ? t.warRoom.closedBadge : t.warRoom.openBadge}
+          </span>
+        </div>
+      </header>
+
+      <section className="room-chat" aria-label={t.warRoom.title}>
         {closed && minutes && (
           <div className="room-minutes">
             <h2>{t.warRoom.minutesTitle}</h2>
@@ -648,53 +589,250 @@ export function WarRoomDetail({ id }: { id: string }) {
             )}
           </div>
         )}
-        <div className="backlog-chat-history" ref={historyRef} onScroll={onHistoryScroll}>
-          {!ready && <p className="status">{t.common.loading}</p>}
-          {ready && messages.length === 0 && <p className="muted">{t.warRoom.noMessages}</p>}
-          {messages.map((m) => (
-            <div key={m.seq} className="backlog-chat-msg">
-              <p>
-                <strong>{m.nick}:</strong> {m.body}
-              </p>
+        <div
+          className="backlog-chat-history room-transcript"
+          ref={historyRef}
+          onScroll={onHistoryScroll}
+          role="log"
+        >
+          {!ready && <p className="room-empty">{t.common.loading}</p>}
+          {ready && messages.length === 0 && (
+            <div className="room-empty">
+              <p>{t.warRoom.noMessages}</p>
+              <p>{t.warRoom.noMessagesHint}</p>
             </div>
-          ))}
+          )}
+          {messages.map((m, i) => {
+            const own = ownNick !== undefined && m.nick === ownNick
+            const cont = continuesPrevious(messages[i - 1], m)
+            return (
+              <div
+                key={m.seq}
+                className={`room-msg${own ? ' room-msg-own' : ''}${cont ? ' room-msg-cont' : ''}`}
+              >
+                {!cont && (
+                  <p className="room-msg-head">
+                    {!own && <strong>{m.nick}</strong>}
+                    <time dateTime={m.time} title={new Date(m.time).toLocaleString(lang)}>
+                      {clock(m.time)}
+                    </time>
+                  </p>
+                )}
+                <p className="room-msg-body">{m.body}</p>
+              </div>
+            )
+          })}
         </div>
-        {error && <p className="status error">{error}</p>}
-        {closed && <p className="status">{t.warRoom.closedNotice}</p>}
+        {error && (
+          <p className="room-error" role="alert">
+            {error}
+          </p>
+        )}
+        {closed && <p className="room-notice">{t.warRoom.closedNotice}</p>}
         {!closed && !joined && (
-          <form className="backlog-chat-form" onSubmit={doJoin}>
-            <label>
-              {t.warRoom.joinTitle}
+          <form className="room-join" onSubmit={doJoin}>
+            <p className="room-join-title">{t.warRoom.joinTitle}</p>
+            <div className="room-inline-form">
               <input
+                className="room-join-nick"
                 value={nick}
                 onChange={(e) => setNick(e.target.value)}
                 placeholder={t.warRoom.nickPlaceholder}
+                aria-label={t.warRoom.nickPlaceholder}
               />
-            </label>
-            <label>
               <input
                 value={bio}
                 onChange={(e) => setBio(e.target.value)}
                 placeholder={t.warRoom.bioPlaceholder}
+                aria-label={t.warRoom.bioPlaceholder}
               />
-            </label>
-            <button type="submit" disabled={joining || nick.trim() === ''}>
-              {joining ? t.warRoom.joining : t.warRoom.join}
-            </button>
+              <button type="submit" className="room-btn-primary" disabled={joining || nick.trim() === ''}>
+                {joining ? t.warRoom.joining : t.warRoom.join}
+              </button>
+            </div>
           </form>
         )}
         {!closed && joined && (
-          <form className="backlog-chat-form" onSubmit={send}>
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder={t.warRoom.messagePlaceholder}
-              rows={3}
-            />
-            <button type="submit" disabled={sending || input.trim() === ''}>
-              {sending ? t.warRoom.sending : t.warRoom.send}
-            </button>
+          <form
+            className="backlog-chat-form room-composer"
+            onSubmit={(e) => {
+              e.preventDefault()
+              submitMessage()
+            }}
+          >
+            <div className="backlog-chat-composer">
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => {
+                  setInput(e.target.value)
+                  autoExpand()
+                }}
+                onKeyDown={onComposerKeyDown}
+                placeholder={t.warRoom.messagePlaceholder}
+                aria-label={t.warRoom.messagePlaceholder}
+                rows={1}
+                autoFocus
+              />
+              <button
+                type="submit"
+                className="backlog-chat-send"
+                aria-label={sending ? t.warRoom.sending : t.warRoom.send}
+                title={t.warRoom.send}
+                disabled={sending || input.trim() === ''}
+              >
+                <span aria-hidden="true">↵</span>
+              </button>
+            </div>
+            <p className="room-composer-hint">{t.warRoom.composerHint(session.nick)}</p>
           </form>
+        )}
+      </section>
+
+      <aside className="room-side">
+        {!closed && (
+          <section className="room-side-section">
+            <h2>{t.warRoom.entryCommandTitle}</h2>
+            <div className="room-command">
+              <code>{entryCommand}</code>
+              <button type="button" className="room-btn" onClick={copyEntryCommand}>
+                {copied ? t.warRoom.copied : t.warRoom.copyCommand}
+              </button>
+            </div>
+          </section>
+        )}
+
+        <section className="room-side-section" aria-labelledby="room-roster-title">
+          <h2 id="room-roster-title">
+            {t.warRoom.roster} <span className="badge">{roster.length}</span>
+          </h2>
+          {roster.length === 0 && <p className="room-side-muted">{t.warRoom.noParticipants}</p>}
+          <ul className="room-roster">
+            {roster.map((p) => (
+              <li key={p.nick}>
+                <span className="room-roster-nick">
+                  {p.nick}
+                  {p.nick === ownNick && <span className="room-side-muted"> ({t.warRoom.you})</span>}
+                </span>
+                {p.bio && <span className="room-roster-bio">{p.bio}</span>}
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        {(!closed || transferredToken) && (
+          <section className="room-side-section">
+            <h2>{t.warRoom.facilitationTitle}</h2>
+            {!closed && facilitatorId && !transferredToken && (
+              <>
+                <p className="room-side-text">{t.warRoom.facilitatorYouAre}</p>
+                <button type="button" className="room-btn" onClick={transferFacilitator} disabled={transferring}>
+                  {transferring ? t.warRoom.facilitatorTransferring : t.warRoom.facilitatorTransfer}
+                </button>
+              </>
+            )}
+            {transferredToken && (
+              <>
+                <p className="room-side-text">{t.warRoom.facilitatorNewCapability(transferredToken)}</p>
+                <p className="room-side-muted">{t.warRoom.facilitatorTransferHint}</p>
+              </>
+            )}
+            {!closed && !facilitatorId && (
+              <form className="room-field" onSubmit={claimFacilitator}>
+                <label htmlFor="room-claim">{t.warRoom.facilitatorClaimTitle}</label>
+                <div className="room-inline-form">
+                  <input
+                    id="room-claim"
+                    value={facilitatorInput}
+                    onChange={(e) => setFacilitatorInput(e.target.value)}
+                    placeholder={t.warRoom.facilitatorClaimPlaceholder}
+                  />
+                  <button type="submit" className="room-btn" disabled={claiming || facilitatorInput.trim() === ''}>
+                    {claiming ? t.warRoom.facilitatorClaiming : t.warRoom.facilitatorClaim}
+                  </button>
+                </div>
+              </form>
+            )}
+          </section>
+        )}
+
+        {!closed && facilitatorId && (
+          <section className="room-side-section">
+            <h2>
+              {t.warRoom.pendingTitle} <span className="badge">{pending.length}</span>
+            </h2>
+            {pending.length === 0 && <p className="room-side-muted">{t.warRoom.pendingEmpty}</p>}
+            <ul className="room-pending">
+              {pending.map((it) => (
+                <li key={it.id} className="room-pending-item">
+                  <strong>{it.title}</strong>
+                  <span className="room-side-muted">
+                    {it.kind} · {it.author}
+                  </span>
+                  {it.body && <p className="room-side-text">{it.body}</p>}
+                  <div className="room-inline-form">
+                    <input
+                      value={resolveDrafts[it.id] ?? ''}
+                      onChange={(e) => setResolveDrafts((prev) => ({ ...prev, [it.id]: e.target.value }))}
+                      placeholder={t.warRoom.resolvePlaceholder}
+                      aria-label={t.warRoom.resolvePlaceholder}
+                    />
+                    <button
+                      type="button"
+                      className="room-btn"
+                      onClick={() => resolveItem(it.id)}
+                      disabled={resolvingId === it.id}
+                    >
+                      {resolvingId === it.id ? t.warRoom.resolving : t.warRoom.resolve}
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {!closed && facilitatorId && (
+          <details className="room-side-section room-close">
+            <summary>{t.warRoom.closeFormTitle}</summary>
+            <form className="room-close-form" onSubmit={doClose}>
+              <label>
+                {t.warRoom.minutesConclusion}
+                <input value={minutesConclusion} onChange={(e) => setMinutesConclusion(e.target.value)} />
+              </label>
+              <label>
+                {t.warRoom.minutesRationale}
+                <input value={minutesRationale} onChange={(e) => setMinutesRationale(e.target.value)} />
+              </label>
+              <label>
+                {t.warRoom.minutesDiscarded}
+                <textarea value={minutesDiscarded} onChange={(e) => setMinutesDiscarded(e.target.value)} rows={2} />
+              </label>
+              <label>
+                {t.warRoom.minutesOwners}
+                <textarea value={minutesOwners} onChange={(e) => setMinutesOwners(e.target.value)} rows={2} />
+              </label>
+              <label>
+                {t.warRoom.minutesNextSteps}
+                <textarea value={minutesNextSteps} onChange={(e) => setMinutesNextSteps(e.target.value)} rows={2} />
+              </label>
+              <label className="room-check">
+                <input
+                  type="checkbox"
+                  checked={allowOpenItems}
+                  onChange={(e) => setAllowOpenItems(e.target.checked)}
+                />
+                {t.warRoom.allowOpenItems}
+              </label>
+              <button
+                type="submit"
+                className="room-btn-primary"
+                disabled={closing || minutesConclusion.trim() === '' || minutesRationale.trim() === ''}
+              >
+                {closing ? t.warRoom.closing : t.warRoom.closeRoom}
+              </button>
+            </form>
+          </details>
         )}
       </aside>
     </main>
