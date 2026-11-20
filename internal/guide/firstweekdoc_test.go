@@ -32,7 +32,11 @@ func TestFirstWeekGuideIsLinkedAndOrdered(t *testing.T) {
 			t.Fatalf("README has no %q", anchor)
 		}
 		rest := string(readme)[i+len(anchor):]
-		if j := strings.Index(rest, "\n## "); j >= 0 {
+		end := "\n## "
+		if anchor == "## Quickstart" {
+			end = "\n### Already have a project?" // the subsection's own link does not count
+		}
+		if j := strings.Index(rest, end); j >= 0 {
 			rest = rest[:j]
 		}
 		if !strings.Contains(rest, "(docs/first-week.md)") {
