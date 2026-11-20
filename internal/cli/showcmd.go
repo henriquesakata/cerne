@@ -408,25 +408,16 @@ func runShow(cmd *cobra.Command, dir, id, doc string, asJSON, all bool) error {
 	return nil
 }
 
-// stageView narrows a feature's documents to the one of its stage (F-0338):
-// the most advanced real document up to the state's — the plan in
-// development, the result once implemented or done, the spec otherwise. The
-// blocks stay; the documents left out close the show as one line, with their
-// sizes and how to read them.
+// stageView narrows a feature's documents to the one of its stage (F-0338,
+// app.StageDoc, the rule cerne context shares). The blocks stay; the
+// documents left out close the show as one line, with their sizes and how to
+// read them.
 func (r *showResult) stageView(state domain.FeatureState, id string) {
-	upTo := 0 // spec
-	switch state {
-	case domain.StateInDevelopment:
-		upTo = 1
-	case domain.StateImplemented, domain.StateDone:
-		upTo = 2
+	var present []string
+	for _, d := range r.content {
+		present = append(present, d.name)
 	}
-	pick := ""
-	for _, d := range r.content { // the documents come in featureDocNames order
-		if i := slices.Index(featureDocNames, d.name); i >= 0 && i <= upTo {
-			pick = d.name
-		}
-	}
+	pick := app.StageDoc(state, present)
 	var kept []showDoc
 	var others []string
 	for _, d := range r.content {
