@@ -8,8 +8,9 @@ import (
 )
 
 // RuleNoteUnreachable: active notes with no trigger and no link (E-0005
-// criterion 14) — rules that reach an agent only if it searches: no edit or
-// command shows them, and no task package or binding index lists them.
+// criterion 14): no edit or command shows them by declaration and no task
+// links them, so they reach an agent only through a component it shares with
+// the task, a file both cite, or a search.
 // Advisory, one line with the count; the triage is the curator's.
 const RuleNoteUnreachable = "note-unreachable"
 
@@ -26,7 +27,7 @@ func noteReachFindings(notes []store.Note) []Finding {
 		return nil
 	}
 	return []Finding{{Rule: RuleNoteUnreachable, Fix: "cerne note link <id> --informs <F-…>", Detail: fmt.Sprintf(
-		"%d active notes have no trigger and no link, so they reach an agent only if it searches: %s — give one a trigger "+
+		"%d active notes have no trigger and no link, so they reach an agent only through a shared component, a file both cite or a search: %s — give one a trigger "+
 			"('cerne note when <id> edit:<path>|bash:<words>') or link it to the work it informs ('cerne note link <id> --informs <F-…>')",
 		len(ids), capNames(ids))}}
 }

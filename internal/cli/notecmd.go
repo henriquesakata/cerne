@@ -506,7 +506,8 @@ func newNoteWhenCmd(dir *string) *cobra.Command {
 }
 
 // newNoteLinkCmd is reference link for a note (E-0005 criterion 14): a note
-// with no trigger and no link reaches an agent only if it searches.
+// with no trigger and no link reaches an agent only through a shared
+// component, a file both cite or a search.
 func newNoteLinkCmd(dir *string) *cobra.Command {
 	var informs, unlink string
 	cmd := &cobra.Command{

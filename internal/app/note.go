@@ -431,7 +431,8 @@ func writeNoteStub(repoDir, id, title string) error {
 
 // LinkNote adds (add) and removes (remove) the entities an active note informs,
 // the mirror of LinkReference (E-0005 criterion 14: a note without trigger and
-// without link reaches an agent only if it searches). It returns the note and
+// without link reaches an agent only through a shared component, a file both
+// cite or a search). It returns the note and
 // the removed ids that were not there; a change of nothing commits nothing.
 func LinkNote(repoDir, projDir, id string, add, remove []string) (store.Note, []string, error) {
 	var n store.Note
