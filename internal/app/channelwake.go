@@ -26,7 +26,7 @@ import (
 //
 // It never gets around the harness's hold: a session in bypassPermissions holds
 // a message with no from-mode, and cerne neither declares one nor presents the
-// session's child token (CLAUDE_CODE_MESSAGING_TOKEN), which it never reads.
+// session's child messaging token, which it never reads.
 // Such a session — and one whose mode cerne does not know — is not written to;
 // it hears the channel at its next contact point, and the UI says why.
 
