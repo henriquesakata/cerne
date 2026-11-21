@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import FeatureAgents from './FeatureAgents'
@@ -45,6 +45,11 @@ const codex: AgentSession = {
 
 let thread: ChannelSnapshot = { messages: [], version: 1 }
 
+afterEach(() => {
+  vi.restoreAllMocks()
+  localStorage.removeItem('cerne-time-zone')
+})
+
 beforeEach(() => {
   cleanup()
   localStorage.setItem('cerne-lang', 'pt-BR')
@@ -78,6 +83,18 @@ describe('FeatureAgents (F-0486)', () => {
     expect(screen.getByText(/transcript não encontrado nesta máquina/)).toBeInTheDocument()
     expect(screen.getByText('Sessão c0dexc0d (sem título)')).toBeInTheDocument()
     expect(screen.queryByText(/claude --resume c0dex/)).toBeNull() // not a Claude Code session
+  })
+
+  // F-0493 crit. 1, 2
+  it('F-0493 crit. 1: a última atividade segue o locale do navegador, no fuso escolhido, e diz o fuso', async () => {
+    localStorage.setItem('cerne-time-zone', 'UTC')
+    vi.spyOn(navigator, 'languages', 'get').mockReturnValue(['en-US'])
+    vi.spyOn(navigator, 'language', 'get').mockReturnValue('en-US')
+    fetchFeatureAgents.mockResolvedValue({ sessions: [tl] })
+    renderPanel()
+    await waitFor(() => expect(screen.getByText('TL do lote')).toBeInTheDocument())
+    // A interface está em pt-BR (o texto), o computador diz en-US (a data).
+    expect(screen.getByText(/última atividade 11\/20\/2026, 12:00:00 PM UTC/)).toBeInTheDocument()
   })
 
   it('sem sessão: diz isso e não deixa enviar, com o motivo (critério 6)', async () => {

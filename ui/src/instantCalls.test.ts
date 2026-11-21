@@ -27,6 +27,10 @@ const swept = readdirSync(__dirname, { recursive: true, encoding: 'utf8' }).filt
   (f) => /\.tsx?$/.test(f) && !/\.test\.tsx?$/.test(f) && !/\.d\.ts$/.test(f) && f !== 'datetime.ts',
 )
 
+// A time of day read off a Date by hand is the same defect as a hand-built
+// formatter: the hour a viewer sees must come from datetime.ts.
+const HAND_BUILT = /\.(getHours|getMinutes|getSeconds|toTimeString|toDateString)\(/
+
 type Call = { name: string; args: string; line: number }
 
 // callsOf lists each locale-formatting call with the text of its arguments,
@@ -71,6 +75,11 @@ describe('instants with a time of day (F-0493 crit. 3)', () => {
   })
 
   // F-0493 crit. 3
+  it.each(swept)('F-0493 crit. 3: %s reads no hour off a Date by hand', (f) => {
+    expect(source(f).split('\n').filter((l) => HAND_BUILT.test(l))).toEqual([])
+  })
+
+  // F-0493 crit. 3
   it.each(LISTED)('F-0493 crit. 3: %s reaches the formatter through useInstant', (f) => {
     expect(source(f)).toMatch(/useInstant\(\)/)
   })
@@ -84,6 +93,8 @@ describe('instants with a time of day (F-0493 crit. 3)', () => {
     expect(flagged('d.toLocaleDateString(lang)')).toEqual(['formats a local date outside the accepted limit'])
     // A call that spans lines is read to its closing parenthesis.
     expect(callsOf("x.toLocaleString(lang, {\n  hour: 'numeric',\n})")[0].args).toContain("hour: 'numeric'")
+    expect(HAND_BUILT.test('const h = d.getHours()')).toBe(true)
+    expect(HAND_BUILT.test("d.toISOString().slice(0, 10)")).toBe(false)
     // What stays: a date pinned to UTC, and a number in a numbers file.
     expect(flagged("d.toLocaleDateString(lang, { timeZone: 'UTC' })")).toEqual([''])
     expect(problem('Stats.tsx', callsOf('n.toLocaleString(lang, { maximumFractionDigits: 1 })')[0])).toBe('')

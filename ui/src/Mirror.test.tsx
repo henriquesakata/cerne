@@ -71,6 +71,14 @@ const checked: MirrorCheckOutcome = {
   ],
 }
 
+// F-0493 crit. 1: a browser that reports a 12h locale. The check's clock must
+// follow it whatever the PT/EN switch says: under the old code the interface
+// language decided (24h in both), so a 24h expectation could not tell them apart.
+const useClock12h = () => {
+  vi.spyOn(navigator, 'languages', 'get').mockReturnValue(['en-US'])
+  vi.spyOn(navigator, 'language', 'get').mockReturnValue('en-US')
+}
+
 beforeEach(() => {
   cleanup()
   localStorage.clear()
@@ -252,6 +260,7 @@ describe('Mirror — Check now (F-0465 crit. 2)', () => {
   })
 
   it('is busy and disabled while it runs, then shows the three verdicts and the status', async () => {
+    useClock12h()
     const d = deferred<MirrorCheckOutcome>()
     api.postMirrorCheck.mockReturnValue(d.promise)
     renderMirror()
@@ -267,7 +276,7 @@ describe('Mirror — Check now (F-0465 crit. 2)', () => {
     expect(done).toBeEnabled()
     expect(done).not.toHaveAttribute('aria-busy', 'true')
     await waitFor(() =>
-      expect(screen.getByRole('status')).toHaveTextContent(/^Checked at \d\d:\d\d: 1 up to date, 1 drifted, 1 not checked\.$/),
+      expect(screen.getByRole('status')).toHaveTextContent(/^Checked at \d\d:\d\d [AP]M: 1 up to date, 1 drifted, 1 not checked\.$/),
     )
 
     const ok = within(toggle('F-0001').closest('li')!)
@@ -469,6 +478,7 @@ describe('Mirror — commits of a card (F-0465 crit. 3)', () => {
 
 describe('Mirror — both languages (F-0465 crit. 6)', () => {
   it('renders in pt-BR', async () => {
+    useClock12h()
     renderMirror('pt-BR')
     expect(await screen.findByRole('heading', { level: 1, name: 'Espelho' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Conferir agora' })).toBeInTheDocument()
@@ -478,7 +488,7 @@ describe('Mirror — both languages (F-0465 crit. 6)', () => {
     fireEvent.click(screen.getByRole('button', { name: /^F-0001/ }))
     expect(await screen.findByRole('heading', { name: 'Commits que citam F-0001' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Conferir agora' }))
-    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/^Conferido às \d\d:\d\d: 1 em dia, 1 divergentes, 1 não conferidos\.$/))
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/^Conferido às \d\d:\d\d [AP]M: 1 em dia, 1 divergentes, 1 não conferidos\.$/))
     expect(screen.getByText('divergente')).toHaveClass('chip-lint')
   })
 
