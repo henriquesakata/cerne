@@ -538,6 +538,41 @@ describe('LiveProvider — reinício no binário novo (F-0478)', () => {
     expect(await screen.findByText('O painel não reiniciou: the cerne on disk does not run')).toBeInTheDocument()
   })
 
+  // F-0492 crit. 4: o aviso de reinício, normal ou em falha, sai com "Mais
+  // tarde" e só volta quando o disco tem outro binário.
+  it('F-0492 critério 4: Mais tarde esconde o aviso até o disco mudar de novo', async () => {
+    vi.mocked(fetchProjects).mockImplementation(listWith({ version: 'v0.15.0', ui: 'new' }))
+    render(
+      <LiveProvider>
+        <Probe />
+      </LiveProvider>,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: 'Mais tarde' }))
+    expect(screen.queryByRole('button', { name: 'Reiniciar o painel' })).not.toBeInTheDocument()
+    await act(async () => onProjects())
+    expect(screen.queryByRole('button', { name: 'Reiniciar o painel' })).not.toBeInTheDocument()
+
+    vi.mocked(fetchProjects).mockImplementation(listWith({ version: 'v0.15.1', ui: 'newer' }))
+    await act(async () => onProjects())
+    expect(screen.getByRole('button', { name: 'Reiniciar o painel' })).toBeInTheDocument()
+    expect(restartPanel).not.toHaveBeenCalled()
+  })
+
+  it('F-0492 critério 4: o aviso de falha do reinício também sai com Mais tarde', async () => {
+    vi.mocked(fetchProjects).mockImplementation(listWith({ version: 'v0.15.0', ui: 'new' }))
+    vi.mocked(restartPanel).mockRejectedValue(new Error('the cerne on disk does not run'))
+    render(
+      <LiveProvider>
+        <Probe />
+      </LiveProvider>,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: 'Reiniciar o painel' }))
+    expect(await screen.findByText('O painel não reiniciou: the cerne on disk does not run')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Mais tarde' }))
+    expect(screen.queryByText(/O painel não reiniciou/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+
   it('critério 5: o painel volta com outra identidade e a aba recarrega', async () => {
     vi.mocked(fetchProjects).mockImplementation(listWith({ version: 'v0.15.0', ui: 'new' }))
     render(
@@ -670,6 +705,7 @@ describe('Nav — botão Atualizar (F-0480)', () => {
     vi.mocked(startUpdate).mockImplementation(() => new Promise(() => {}))
     renderNav()
     fireEvent.click(await screen.findByRole('button', { name: 'Atualizar para 0.15.0' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Atualizar agora' })) // F-0492: a troca passa pela confirmação
     expect(startUpdate).toHaveBeenCalledTimes(1)
     await act(async () => onUpdate('==> Upgrading henriquesakata/tap/cerne'))
     expect(screen.getByRole('status')).toHaveTextContent('Atualizando o cerne… ==> Upgrading henriquesakata/tap/cerne')
@@ -729,6 +765,42 @@ describe('Nav — botão Atualizar (F-0480)', () => {
     }))
     renderNav()
     expect(await screen.findByText(/O cerne foi atualizado, mas o painel não reiniciou: the cerne on disk does not run/)).toBeInTheDocument()
+  })
+
+  // F-0492 crit. 1: o clique só abre a confirmação, com as duas versões.
+  it('F-0492 critério 1: o clique pergunta antes de trocar', async () => {
+    vi.mocked(fetchUpdate).mockImplementation(async () => base)
+    renderNav()
+    fireEvent.click(await screen.findByRole('button', { name: 'Atualizar para 0.15.0' }))
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Atualizar o cerne do 0.14.3 para o 0.15.0? O painel reinicia na versão nova e recarrega as abas abertas.',
+    )
+    expect(screen.getByRole('button', { name: 'Atualizar agora' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Mais tarde' })).toBeInTheDocument()
+    expect(startUpdate).not.toHaveBeenCalled()
+  })
+
+  // F-0492 crit. 2: "Atualizar agora" troca como antes e fecha a confirmação.
+  it('F-0492 critério 2: Atualizar agora inicia a troca e fecha a pergunta', async () => {
+    vi.mocked(fetchUpdate).mockImplementation(async () => base)
+    vi.mocked(startUpdate).mockImplementation(() => new Promise(() => {}))
+    renderNav()
+    fireEvent.click(await screen.findByRole('button', { name: 'Atualizar para 0.15.0' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Atualizar agora' }))
+    expect(startUpdate).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('button', { name: 'Mais tarde' })).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Atualizando o cerne…')
+  })
+
+  // F-0492 crit. 3: "Mais tarde" fecha sem chamar a API; o botão fica na barra.
+  it('F-0492 critério 3: Mais tarde fecha a pergunta e mantém o botão', async () => {
+    vi.mocked(fetchUpdate).mockImplementation(async () => base)
+    renderNav()
+    fireEvent.click(await screen.findByRole('button', { name: 'Atualizar para 0.15.0' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Mais tarde' }))
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    expect(startUpdate).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Atualizar para 0.15.0' })).toBeInTheDocument()
   })
 
   it('critério 6: sem troca por dentro, mostra a versão nova e o comando, sem botão de troca', async () => {

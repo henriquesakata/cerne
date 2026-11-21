@@ -232,17 +232,18 @@ function NavVersion() {
 }
 
 // Botão Atualizar (F-0480): só com release mais nova que o binário instalado.
-// Trocável por dentro, o clique troca o binário e o painel reinicia nele
+// Trocável por dentro, o clique pergunta no topo (F-0492: "Atualizar agora"
+// ou "Mais tarde") e só então troca o binário e reinicia o painel nele
 // (F-0478); não trocável (build local, go install, pasta sem escrita), o
 // botão mostra a versão nova e abre o aviso com o comando a rodar. Durante a
 // troca some daqui: o andamento fica no aviso do topo.
 function NavUpdate() {
   const { t } = useT()
-  const { update, beginUpdate, toggleUpdateFix } = useProjects()
+  const { update, askUpdate, toggleUpdateFix } = useProjects()
   if (!update?.newer || !update.latest || update.running) return null
   const v = update.latest.replace(/^v/, '')
   return update.swappable ? (
-    <button type="button" className="theme-toggle nav-update" onClick={beginUpdate}>
+    <button type="button" className="theme-toggle nav-update" onClick={askUpdate}>
       {t.live.updateTo(v)}
     </button>
   ) : (
