@@ -558,6 +558,21 @@ describe('LiveProvider — reinício no binário novo (F-0478)', () => {
     expect(restartPanel).not.toHaveBeenCalled()
   })
 
+  // F-0492 crit. 4, crítico 1: durante o reinício não há "Mais tarde", que
+  // apagaria o prazo que detecta a falha.
+  it('F-0492 critério 4: sem Mais tarde enquanto reinicia', async () => {
+    vi.mocked(fetchProjects).mockImplementation(listWith({ version: 'v0.15.0', ui: 'new' }))
+    vi.mocked(restartPanel).mockImplementation(() => new Promise(() => {}))
+    render(
+      <LiveProvider>
+        <Probe />
+      </LiveProvider>,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: 'Reiniciar o painel' }))
+    expect(screen.getByRole('status')).toHaveTextContent('Reiniciando o painel…')
+    expect(screen.queryByRole('button', { name: 'Mais tarde' })).not.toBeInTheDocument()
+  })
+
   it('F-0492 critério 4: o aviso de falha do reinício também sai com Mais tarde', async () => {
     vi.mocked(fetchProjects).mockImplementation(listWith({ version: 'v0.15.0', ui: 'new' }))
     vi.mocked(restartPanel).mockRejectedValue(new Error('the cerne on disk does not run'))
@@ -803,6 +818,24 @@ describe('Nav — botão Atualizar (F-0480)', () => {
     expect(screen.getByRole('button', { name: 'Atualizar para 0.15.0' })).toBeInTheDocument()
   })
 
+  // F-0492 crit. 1 e 3, crítico 3: a pergunta aberta fecha quando a troca
+  // começa por outro caminho e não volta sozinha quando ela acaba.
+  it('F-0492 critério 3: a pergunta fecha com uma troca em curso e não reaparece', async () => {
+    vi.mocked(fetchUpdate).mockImplementation(async () => base)
+    renderNav()
+    fireEvent.click(await screen.findByRole('button', { name: 'Atualizar para 0.15.0' }))
+    expect(screen.getByRole('button', { name: 'Atualizar agora' })).toBeInTheDocument()
+
+    vi.mocked(fetchUpdate).mockImplementation(async () => ({ ...base, running: true }))
+    await act(async () => onProjects())
+    expect(screen.queryByRole('button', { name: 'Atualizar agora' })).not.toBeInTheDocument()
+
+    vi.mocked(fetchUpdate).mockImplementation(async () => ({ ...base, last: { state: 'not done', detail: 'checksum mismatch' } }))
+    await act(async () => onProjects())
+    expect(screen.queryByRole('button', { name: 'Atualizar agora' })).not.toBeInTheDocument()
+    expect(startUpdate).not.toHaveBeenCalled()
+  })
+
   it('critério 6: sem troca por dentro, mostra a versão nova e o comando, sem botão de troca', async () => {
     vi.mocked(fetchUpdate).mockImplementation(async () => ({
       ...base,
@@ -815,6 +848,7 @@ describe('Nav — botão Atualizar (F-0480)', () => {
     expect(screen.queryByRole('button', { name: /Atualizar para/ })).not.toBeInTheDocument()
     fireEvent.click(chip)
     expect(screen.getByText('go install github.com/henriquesakata/cerne/cmd/cerne@latest')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Atualizar agora' })).not.toBeInTheDocument() // F-0492 crit. 1: só quem troca por dentro pergunta
     expect(startUpdate).not.toHaveBeenCalled()
   })
 })

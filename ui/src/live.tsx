@@ -146,8 +146,16 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   // ready=true renderiza a mensagem de zero-projetos em vez dos children.
   const reload = () => {
     void fetchUpdate()
-      .then(setUpdate)
-      .catch(() => setUpdate(null)) // sem estado, sem botão: a falha não vira erro de UI
+      .then((u) => {
+        setUpdate(u)
+        // F-0492: uma troca começada por outro caminho (ou a versão nova que
+        // sumiu) fecha a pergunta, que não volta sozinha quando ela acaba.
+        if (!u?.newer || !u.swappable || u.running || !u.latest) setConfirmUpdate(false)
+      })
+      .catch(() => {
+        setUpdate(null) // sem estado, sem botão: a falha não vira erro de UI
+        setConfirmUpdate(false)
+      })
     return loadProjects()
   }
   const loadProjects = () =>
@@ -394,9 +402,12 @@ export function LiveProvider({ children }: { children: ReactNode }) {
             <button type="button" onClick={doRestart} aria-disabled={restart.state === 'restarting'}>
               {t.live.restartPanel}
             </button>
-            <button type="button" onClick={postponeRestart}>
-              {t.live.later}
-            </button>
+            {/* durante o reinício não: apagaria o prazo que detecta a falha */}
+            {restart.state !== 'restarting' && (
+              <button type="button" onClick={postponeRestart}>
+                {t.live.later}
+              </button>
+            )}
           </div>
         )
       )}
