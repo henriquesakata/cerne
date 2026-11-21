@@ -168,6 +168,7 @@ func installCursor(projDir string) []Result {
 		Result{Asset: "cursor: CERNE_PROVIDER", Status: StatusSkipped, Note: "no documented per-project session env — documents written from Cursor record their author as unknown unless CERNE_PROVIDER/CERNE_MODEL are exported in its shell"},
 		Result{Asset: "cursor: subagent-context", Status: StatusSkipped, Note: "subagentStart output has no additional_context — subagents start without the live board"},
 		Result{Asset: "cursor: prompt-notes", Status: StatusSkipped, Note: "notes matching the prompt are only injected on Claude Code (UserPromptSubmit); no verified equivalent prompt-submit event that adds context is wired here (B-0020)"},
+		Result{Asset: "cursor: wake", Status: StatusSkipped, Note: "an idle session is not woken by a channel message addressed to it (F-0491): no documented way to open a turn in it — the message waits for the next contact point"},
 	)
 	return results
 }
@@ -197,6 +198,9 @@ func installCodex(projDir string, network bool) []Result {
 		map[string]any{},
 		map[string][]map[string]any{
 			"SessionStart": {eventGroup("", "cerne hook session-context --format codex")},
+			// F-0491: Codex documents additionalContext on UserPromptSubmit, in
+			// Claude Code's envelope (R-0035): the channel and the prompt notes.
+			"UserPromptSubmit": {eventGroup("", "cerne hook prompt-notes")},
 			"PreToolUse": {
 				eventGroup("Edit|Write", "cerne hook work-gate"),
 				eventGroup("Bash", "cerne hook tool-notes --format codex"), // F-0457
@@ -219,7 +223,7 @@ func installCodex(projDir string, network bool) []Result {
 	results = append(results, installCodexSandbox(projDir, network)...)
 
 	results = append(results, Result{Asset: "codex: subagent-context", Status: StatusSkipped, Note: "SubagentStart wiring pending live validation of its context envelope"})
-	results = append(results, Result{Asset: "codex: prompt-notes", Status: StatusSkipped, Note: "notes matching the prompt are only injected on Claude Code (UserPromptSubmit); no verified equivalent prompt-submit event that adds context is wired here (B-0020)"})
+	results = append(results, Result{Asset: "codex: wake", Status: StatusSkipped, Note: "an idle session is not woken by a channel message addressed to it (F-0491): only the app-server connection's owner starts a turn, and cerne does not own the TUI's — the message waits for the next contact point"})
 	return results
 }
 
@@ -254,6 +258,7 @@ func installGemini(projDir string) []Result {
 		Result{Asset: "gemini: lifecycle/provenance reminders", Status: StatusSkipped, Note: "AfterTool context envelope pending live validation"},
 		Result{Asset: "gemini: subagent-context", Status: StatusSkipped, Note: "subagents are a preview feature — hook reach unvalidated"},
 		Result{Asset: "gemini: prompt-notes", Status: StatusSkipped, Note: "notes matching the prompt are only injected on Claude Code (UserPromptSubmit); no verified equivalent prompt-submit event that adds context is wired here (B-0020)"},
+		Result{Asset: "gemini: wake", Status: StatusSkipped, Note: "an idle session is not woken by a channel message addressed to it (F-0491): no documented way to open a turn in it — the message waits for the next contact point"},
 	)
 	return results
 }
@@ -360,6 +365,7 @@ func installCopilot(projDir string) []Result {
 		{Asset: "copilot: precompact", Status: StatusSkipped, Note: "Copilot's preCompact hook is notification-only — the handoff code is not kept through compaction"},
 		{Asset: "copilot: CERNE_PROVIDER", Status: StatusSkipped, Note: "CERNE_PROVIDER=copilot reaches the hook processes only, not the bash tool shell — documents written from the shell record their author as unknown unless it is exported there"},
 		{Asset: "copilot: prompt-notes", Status: StatusSkipped, Note: "notes matching the prompt are only injected on Claude Code (UserPromptSubmit); no verified equivalent prompt-submit event that adds context is wired here (B-0020)"},
+		{Asset: "copilot: wake", Status: StatusSkipped, Note: "an idle session is not woken by a channel message addressed to it (F-0491): no documented way to open a turn in it — the message waits for the next contact point"},
 		{Asset: "copilot: subagent-context", Status: StatusSkipped, Note: "no subagent hook is wired — subagents start without the live board"},
 	}
 }
