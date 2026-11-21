@@ -3304,7 +3304,7 @@ type I18n = {
   // What the viewer picked; a missing field is automatic (the computer's).
   dateChoice: StoredDatePrefs
   // undefined goes back to automatic and clears the key; a value the browser
-  // does not know, or a storage that refuses the write, changes nothing.
+  // does not know, or one a storage refuses to keep, changes nothing.
   setDateChoice: (field: DateField, value: string | undefined) => void
 }
 
@@ -3332,7 +3332,10 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   const setDateChoice = useCallback((field: DateField, value: string | undefined) => {
     if (value !== undefined && !DATE_VALID[field](value)) return
-    if (!writeStored(DATE_KEYS[field], value)) return
+    // A value the storage refuses is not applied (back to automatic, crit. 9);
+    // going back to automatic is applied even when the old key cannot be
+    // erased, or the field would stay on a choice the person just left.
+    if (!writeStored(DATE_KEYS[field], value) && value !== undefined) return
     setDateChoiceState((c) => ({ ...c, [field]: value }))
   }, [])
 

@@ -371,6 +371,20 @@ describe('useInstant e as preferências de data e hora (F-0493)', () => {
   })
 
   // F-0493 crit. 9
+  it('F-0493 crit. 9: voltar a "Automático" mostra o automático mesmo que o storage não consiga apagar a chave', () => {
+    browser(['pt-BR'])
+    localStorage.setItem('cerne-date-locale', 'en-GB')
+    const { result } = render()
+    expect(result.current.i18n.dateChoice).toEqual({ locale: 'en-GB' })
+    vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
+      throw new DOMException('negado', 'SecurityError')
+    })
+    act(() => result.current.i18n.setDateChoice('locale', undefined))
+    expect(result.current.i18n.dateChoice).toEqual({})
+    expect(result.current.prefs.locale).toBe('pt-BR')
+  })
+
+  // F-0493 crit. 9
   it('F-0493 crit. 9: localStorage que lança na leitura e na gravação dá o automático, sem erro', () => {
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
       throw new DOMException('negado', 'SecurityError')

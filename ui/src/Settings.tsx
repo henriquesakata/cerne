@@ -313,8 +313,9 @@ export default function Settings({ group: asked = 'general' }: { group?: Setting
           )}
           {group === 'general' && <ProjectName key={activePid} name={name} />}
           {/* A viewer's choice kept in the browser, outside the registry and
-              outside the Project | Host selector below (F-0493). */}
-          {group === 'interface' && q === '' && <DateTimePrefs />}
+              outside the Project | Host selector below (F-0493). It is no
+              registry key, so a search finds it by its own texts. */}
+          {(q === '' ? group === 'interface' : dateTimeMatches(q, ts.datetime)) && <DateTimePrefs />}
           {view ? (
           <>
           {aiPage ? (
@@ -486,6 +487,12 @@ function languageName(code: string, ui: string): string {
   }
 }
 
+// dateTimeMatches: does the search text (already normalized) hit the section's
+// own title or descriptions? The registry search cannot see it.
+function dateTimeMatches(q: string, td: Texts['datetime']): boolean {
+  return norm(`${td.title} ${td.hint} ${td.format.title} ${td.format.description} ${td.zone.title} ${td.zone.description}`).includes(q)
+}
+
 // DateTimePrefs is the "Data e hora" section of the Interface group (F-0493):
 // the locale and the time zone every instant in the UI shows in. Automatic
 // follows the computer; a choice is kept in this browser's localStorage, like
@@ -498,8 +505,9 @@ function DateTimePrefs() {
   const prefs = useDatePrefs()
   const uid = useId()
   const titleId = `${uid}-title`
-  // One instant for the whole section, so every sample and the preview agree.
-  const [now] = useState(() => new Date().toISOString())
+  // One instant per render, so every sample and the preview agree; a choice
+  // renders again, which brings the preview to the instant of that choice.
+  const now = new Date().toISOString()
 
   const detectedLocale = languageName(detectLocale(lang), lang)
   const detectedZone = detectTimeZone() ?? ''
@@ -534,12 +542,12 @@ function DateTimePrefs() {
     return (
       <li className="settings-row" aria-labelledby={rowTitle}>
         <div className="settings-row-text">
-          <h3 className="settings-title">
+          <h4 className="settings-title">
             <span id={rowTitle}>{title}</span>
             <span className="badge" title={td.browserOnlyTitle}>
               {td.browserOnly}
             </span>
-          </h3>
+          </h4>
           <p id={descId} className="settings-desc">
             {description}
           </p>
@@ -590,7 +598,7 @@ function DateTimePrefs() {
           td.zone.title,
           td.zone.description,
           'cerne-time-zone',
-          (dateChoice.timeZone ? td.effectiveChosen : td.effectiveAuto)(prefs.timeZone ?? 'UTC'),
+          (dateChoice.timeZone ? td.effectiveChosen : td.effectiveAuto)(prefs.timeZone ?? '—'),
           (ids) => (
             <select
               className="settings-select"

@@ -64,6 +64,14 @@ describe('formatInstant (F-0493)', () => {
     )
   })
 
+  // F-0493 crit. 2
+  it('F-0493 crit. 2: o full enche a hora como o short e o time, em 24h e em 12h', () => {
+    const early = '2026-09-30T00:05:09Z'
+    expect(formatInstant(early, 'full', { locale: 'pt-BR', timeZone: 'UTC' })).toBe('30/09/2026, 00:05:09 UTC')
+    expect(formatInstant(early, 'full', { locale: 'en-GB', timeZone: 'UTC' })).toBe('30/09/2026, 00:05:09 UTC')
+    expect(formatInstant('2026-11-21T14:43:37Z', 'full', { locale: 'en-US', timeZone: 'UTC' })).toBe('11/21/2026, 02:43:37 PM UTC')
+  })
+
   // F-0493 crit. 5
   it('F-0493 crit. 5: instante vazio ou inválido dá texto vazio, sem lançar', () => {
     const p = { locale: 'pt-BR', timeZone: 'UTC' }

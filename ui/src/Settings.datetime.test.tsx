@@ -306,7 +306,7 @@ describe('Settings — prévia (F-0493 crit. 10)', () => {
     expect(preview()).toHaveAttribute('datetime', NOW.toISOString())
 
     fireEvent.change(field('Formato'), { target: { value: 'en-US' } })
-    expect(preview()).toHaveTextContent('11/21/2026, 2:43:37 PM UTC')
+    expect(preview()).toHaveTextContent('11/21/2026, 02:43:37 PM UTC')
 
     fireEvent.change(field('Fuso horário'), { target: { value: 'Asia/Tokyo' } })
     expect(preview()).toHaveTextContent('11/21/2026, 11:43:37 PM GMT+9')
@@ -314,6 +314,60 @@ describe('Settings — prévia (F-0493 crit. 10)', () => {
     fireEvent.change(field('Formato'), { target: { value: 'en-GB' } })
     fireEvent.change(field('Fuso horário'), { target: { value: 'Europe/Lisbon' } })
     expect(preview()).toHaveTextContent('21/11/2026, 14:43:37 WET')
+  })
+})
+
+describe('Settings — prévia e linha Efetivo, casos de borda (F-0493 crit. 6, 10)', () => {
+  // F-0493 crit. 10
+  it('F-0493 crit. 10: a prévia é o instante de agora a cada escolha, não o do primeiro render', async () => {
+    computer(['pt-BR'], 'UTC')
+    open()
+    const region = await section()
+    const preview = () => within(region).getByText(/\d{4}.*\d:\d{2}:\d{2}/, { selector: 'time' })
+    expect(preview()).toHaveTextContent('21/11/2026, 14:43:37 UTC')
+    vi.setSystemTime(new Date(NOW.getTime() + 5000))
+    fireEvent.change(field('Fuso horário'), { target: { value: 'UTC' } })
+    expect(preview()).toHaveTextContent('21/11/2026, 14:43:42 UTC')
+  })
+
+  // F-0493 crit. 6
+  it('F-0493 crit. 6: sem fuso do navegador, "Efetivo" não inventa um (nem UTC)', async () => {
+    const real = Intl.DateTimeFormat.prototype.resolvedOptions
+    vi.spyOn(navigator, 'languages', 'get').mockReturnValue(['pt-BR'])
+    vi.spyOn(navigator, 'language', 'get').mockReturnValue('pt-BR')
+    vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockImplementation(function (this: Intl.DateTimeFormat) {
+      const { timeZone: _omit, ...rest } = real.call(this)
+      return rest as Intl.ResolvedDateTimeFormatOptions
+    })
+    open()
+    const region = await section()
+    expect(within(region).getByText('Efetivo: —, do computador')).toBeInTheDocument()
+    expect(within(region).queryByText(/Efetivo: UTC/)).toBeNull()
+  })
+
+  // F-0493 crit. 6
+  it('F-0493 crit. 6: o título da seção é um nível acima dos títulos das linhas', async () => {
+    computer()
+    open()
+    const region = await section()
+    expect(within(region).getByRole('heading', { level: 3, name: 'Data e hora' })).toBeInTheDocument()
+    expect(within(region).getByRole('heading', { level: 4, name: /^Formato/ })).toBeInTheDocument()
+    expect(within(region).getByRole('heading', { level: 4, name: /^Fuso horário/ })).toBeInTheDocument()
+  })
+})
+
+describe('Settings — busca (F-0493 crit. 6)', () => {
+  // F-0493 crit. 6
+  it('F-0493 crit. 6: a busca das Configurações acha a seção, de qualquer grupo, e some quando não casa', async () => {
+    computer()
+    open(undefined, 'general')
+    await screen.findByRole('heading', { name: 'Geral' })
+    const box = screen.getByRole('searchbox', { name: 'Buscar configurações' })
+    expect(screen.queryByRole('region', { name: 'Data e hora' })).toBeNull()
+    fireEvent.change(box, { target: { value: 'fuso' } })
+    expect(await screen.findByRole('region', { name: 'Data e hora' })).toBeInTheDocument()
+    fireEvent.change(box, { target: { value: 'nome do projeto zzz' } })
+    expect(screen.queryByRole('region', { name: 'Data e hora' })).toBeNull()
   })
 })
 

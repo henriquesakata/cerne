@@ -95,7 +95,7 @@ describe('History — hora do evento (F-0493)', () => {
     browser(['pt-BR'])
     const { container } = inUTC()
     await waitFor(() => expect(screen.getByText('F-0300')).toBeInTheDocument())
-    expect(container.querySelector('.history-at')).toHaveTextContent('30/09/2026, 0:00:00 UTC')
+    expect(container.querySelector('.history-at')).toHaveTextContent('30/09/2026, 00:00:00 UTC')
   })
 
   // F-0493 crit. 5
