@@ -2062,6 +2062,8 @@ export type Idea = {
   promoted_to?: string
   // F-0389: fontes externas que informam a ideia (GET /api/ideas).
   informed_by?: { id: string; title: string; url?: string; state?: string }[]
+  // F-0449: the outside issue `cerne mirror sync` imported this idea from.
+  mirror?: { tracker: string; kind: string; id: string; url: string }
 }
 
 // fetchIdeas lista as ideias ativas, mais novas primeiro; 'all' (F-0416)

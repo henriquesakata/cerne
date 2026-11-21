@@ -4,6 +4,7 @@ import { Chevron, ExpandAll, useExpanded } from './Expand'
 import { useT, type Messages } from './i18n'
 import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
 import Markdown from './Markdown'
+import MirrorBadge from './MirrorBadge'
 import Tag from './Tag'
 
 // A submission keeps the fields as typed (raw), so success clears only what
@@ -242,7 +243,7 @@ export default function IdeasPanel({ modules, onPromoted, hash }: { modules: str
               const summary = ideaSummary(i, open)
               const detailId = `${detailPrefix}-${i.id}`
               return (
-                <li key={i.id} className="queue-item">
+                <li key={i.id} className={i.mirror ? 'queue-item ideas-item-mirror' : 'queue-item'}>
                   <div className="queue-row">
                     <button type="button" className="queue-toggle" aria-expanded={open} aria-controls={detailId} onClick={() => x.toggle(i.id)}>
                       <Chevron />
@@ -250,6 +251,7 @@ export default function IdeasPanel({ modules, onPromoted, hash }: { modules: str
                       <span className="queue-title">{summary}</span>
                     </button>
                     <span className="queue-meta">
+                      {i.mirror && <MirrorBadge mirror={i.mirror} link />}
                       {i.state !== 'active' && <span className={`chip ${CHIP[i.state]}`}>{t.ideas.stateChip[i.state]}</span>}
                       {(i.components ?? []).map((c) => (
                         <Tag key={c} axis="component" value={c} />

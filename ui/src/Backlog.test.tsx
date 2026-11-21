@@ -738,3 +738,18 @@ describe('Backlog — coluna de conversas recolhível (B-0048)', () => {
     expect(screen.getByRole('button', { name: /mostrar conversas/i })).toHaveAttribute('aria-expanded', 'false')
   })
 })
+
+describe('Backlog — card ligado a uma issue (B-0063)', () => {
+  // B-0063
+  it('a candidata com mirror mostra a etiqueta da issue, sem link dentro do card', async () => {
+    payload = state([
+      feature('F-0001', { mirror: { tracker: 'github', kind: 'github', id: '4', url: 'https://example.test/4' } }),
+      feature('F-0002'),
+    ])
+    render(<Backlog />)
+    const badge = await screen.findByText('issue do GitHub #4')
+    expect(badge.closest('a')).toHaveAttribute('href', '#/f/F-0001')
+    expect(badge).toHaveClass('badge-mirror')
+    expect(screen.getByText('F-0002').closest('a')?.querySelector('.badge-mirror')).toBeNull()
+  })
+})

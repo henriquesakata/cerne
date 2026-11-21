@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { fetchState, type Feature } from './api'
 import Tag from './Tag'
+import MirrorBadge from './MirrorBadge'
 import BacklogChat, { ChatToolbar, HistoryMenu } from './BacklogChat'
 import ConversationList from './ConversationList'
 import { useBacklogChats } from './useBacklogChats'
@@ -256,6 +257,7 @@ function BacklogCard({
           )}
           {feature.module && <span className="badge">{feature.module}</span>}
           {feature.priority && <span className="badge badge-priority">{feature.priority}</span>}
+          {feature.mirror && <MirrorBadge mirror={feature.mirror} />}
         </span>
         <span className="card-title">{feature.title}</span>
         {feature.owner && <span className="card-owner">@{feature.owner}</span>}
