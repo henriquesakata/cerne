@@ -3755,6 +3755,23 @@ button.clarify-chip { cursor: pointer; font: inherit; }
   border-radius: 8px;
   background: var(--surface-2);
 }
+/* F-0494: starts collapsed to its title row; the marker and focus ring follow
+   the Backlog column's summary. */
+.agents:not([open]) { padding-bottom: 0.6rem; }
+.agents > summary { cursor: pointer; width: fit-content; list-style: none; }
+.agents > summary::-webkit-details-marker { display: none; }
+.agents > summary > h2 { display: inline; margin: 0; }
+.agents > summary > .column-count { margin-left: 0.4rem; font-size: 0.85rem; }
+.agents > summary::before {
+  content: '▼';
+  content: '▼' / '';
+  display: inline-block;
+  margin-right: 0.4rem;
+  font-size: 0.7em;
+  color: var(--muted);
+}
+.agents:not([open]) > summary::before { content: '▶'; content: '▶' / ''; }
+.agents > summary:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; border-radius: 6px; }
 .agents > p { margin: 0.25rem 0 0; font-size: 0.85rem; }
 .agents-list { list-style: none; padding: 0; margin: 0.6rem 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.75rem; }
 .agents-row { min-width: 0; }

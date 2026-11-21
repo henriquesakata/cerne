@@ -187,6 +187,38 @@ describe('FeatureAgents (F-0486)', () => {
     expect(within(hint).queryByText(/claude --resume/)).toBeNull()
   })
 
+  // F-0494 crit. 1, 2
+  it('abre recolhido, com a contagem de sessões no título (F-0494)', async () => {
+    fetchFeatureAgents.mockResolvedValue({ sessions: [tl, dev] })
+    const { container } = renderPanel()
+    const panel = container.querySelector('details.agents') as HTMLDetailsElement
+    expect(panel).not.toBeNull()
+    expect(panel.open).toBe(false)
+    const summary = panel.querySelector('summary') as HTMLElement
+    await waitFor(() => expect(within(summary).getByText('2')).toBeInTheDocument())
+    expect(within(summary).getByRole('heading', { name: 'Agentes' })).toBeInTheDocument()
+  })
+
+  // F-0494 crit. 3, 4
+  it('o título abre e fecha o painel e o que foi marcado e digitado fica (F-0494)', async () => {
+    fetchFeatureAgents.mockResolvedValue({ sessions: [tl, dev] })
+    const { container } = renderPanel()
+    const panel = container.querySelector('details.agents') as HTMLDetailsElement
+    const summary = panel.querySelector('summary') as HTMLElement
+    await waitFor(() => expect(screen.getByText('HO-0008')).toBeInTheDocument())
+    fireEvent.click(summary)
+    expect(panel.open).toBe(true)
+    fireEvent.click(screen.getByRole('checkbox', { name: /mandar para TL do lote/i }))
+    fireEvent.click(screen.getByRole('button', { name: /mandar mensagem aos agentes/i }))
+    fireEvent.change(screen.getByPlaceholderText(/sessões marcadas/i), { target: { value: 'rascunho' } })
+    fireEvent.click(summary)
+    expect(panel.open).toBe(false)
+    fireEvent.click(summary)
+    expect(panel.open).toBe(true)
+    expect(screen.getByRole('checkbox', { name: /mandar para TL do lote/i })).not.toBeChecked()
+    expect(screen.getByPlaceholderText(/sessões marcadas/i)).toHaveValue('rascunho')
+  })
+
   it('fala inglês quando o leitor escolheu inglês (critério 15)', async () => {
     localStorage.setItem('cerne-lang', 'en')
     fetchFeatureAgents.mockResolvedValue({ sessions: [tl] })

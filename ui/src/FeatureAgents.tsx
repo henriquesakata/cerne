@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import {
   fetchFeatureAgents,
   postChannel,
@@ -25,18 +25,16 @@ export default function FeatureAgents({ id }: { id: string }) {
 
   if (load.data === null) {
     return (
-      <section className="agents">
-        <h2>{t.agents.title}</h2>
+      <Panel>
         <LoadPending load={load} message={t.agents.loadError} />
-      </section>
+      </Panel>
     )
   }
   if ('unavailable' in load.data) {
     return (
-      <section className="agents">
-        <h2>{t.agents.title}</h2>
+      <Panel>
         <p className="muted">{t.agents.localOnly}</p>
-      </section>
+      </Panel>
     )
   }
   const sessions = load.data.sessions
@@ -55,8 +53,7 @@ export default function FeatureAgents({ id }: { id: string }) {
   }
 
   return (
-    <section className="agents">
-      <h2>{t.agents.title}</h2>
+    <Panel count={sessions.length}>
       <LoadNotice load={load} />
       {sessions.length === 0 ? (
         <p className="muted">{t.agents.none}</p>
@@ -80,7 +77,25 @@ export default function FeatureAgents({ id }: { id: string }) {
         {open ? t.agents.closeChat : t.agents.openChat}
       </button>
       {open && <AgentChat id={id} sessions={sessions} selected={selected} />}
-    </section>
+    </Panel>
+  )
+}
+
+// Panel (F-0494) starts collapsed: most visits come to read the documents
+// below it. A native <details> gives the click, the keyboard and the expanded
+// state, and keeps its content mounted, so checks and a draft survive a
+// collapse. Every branch renders it at the root, so the open state the
+// viewer chose outlives the load.
+function Panel({ count, children }: { count?: number; children: ReactNode }) {
+  const { t } = useT()
+  return (
+    <details className="agents">
+      <summary>
+        <h2>{t.agents.title}</h2>
+        {count !== undefined && <span className="column-count">{count}</span>}
+      </summary>
+      {children}
+    </details>
   )
 }
 
