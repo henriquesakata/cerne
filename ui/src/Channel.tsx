@@ -1,5 +1,14 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+  type UIEvent,
+} from 'react'
 import { postChannel, readChannel, type ChannelMessage, type ChannelTarget } from './api'
+import { isAtBottom } from './BacklogChat'
 import { useT } from './i18n'
 import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
 
@@ -7,17 +16,36 @@ import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
 // only. No objective, minutes, join or facilitator: the human posts as
 // themself (the server names them), agents post through `cerne msg`. Every
 // message carries the delivery state the server derives; nobody types it.
+//
+// F-0489: the page holds the viewport like the War Room's room does — only the
+// transcript scrolls, the composer stays at the bottom — built from the same
+// chat primitives, not from the room's grid (B-0046).
 export default function Channel() {
   const { t } = useT()
   const load = useLiveLoad(() => readChannel(false, 0))
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useChannelFollow(load.data?.version, load.reload)
 
-  const send = (e: FormEvent) => {
-    e.preventDefault()
+  // Auto-scroll (F-0489 crit. 2), the War Room's glue-scroll (F-0292): it is
+  // on while the reader is at the end; scrolling up turns it off, and only
+  // scrolling back to the end — or sending — turns it on again.
+  const historyRef = useRef<HTMLDivElement>(null)
+  const stuckRef = useRef(true)
+  const onHistoryScroll = (e: UIEvent<HTMLDivElement>) => {
+    stuckRef.current = isAtBottom(e.currentTarget)
+  }
+  const messages = load.data?.messages
+  useLayoutEffect(() => {
+    const el = historyRef.current
+    if (!el || !stuckRef.current) return
+    el.scrollTop = el.scrollHeight
+  }, [messages])
+
+  const submitMessage = () => {
     const body = input.trim()
     if (body === '' || sending) return
     setSending(true)
@@ -25,46 +53,102 @@ export default function Channel() {
     postChannel(body)
       .then(() => {
         setInput('')
+        if (textareaRef.current) textareaRef.current.style.height = ''
+        stuckRef.current = true // whoever sends sees their message land
         return load.reload()
       })
       .catch((err: unknown) => setSendError(err instanceof Error ? err.message : String(err)))
       .finally(() => setSending(false))
   }
 
+  // The composer grows with the text, like the War Room's (B-0046); clearing
+  // the inline height after a send hands it back to the CSS (rows=1).
+  const autoExpand = () => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }
+
+  // Enter sends, Shift+Enter breaks the line; an IME composition's Enter
+  // confirms the candidate and must not send half a word.
+  const onComposerKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+      e.preventDefault()
+      submitMessage()
+    }
+  }
+
   return (
-    <main className="kanban">
-      <header className="kanban-header">
+    <main className="kanban channel-layout">
+      <header className="room-head">
         <a className="back" href="#/rooms">
           {t.channel.backToList}
         </a>
-        <h1>{t.channel.title}</h1>
-        <span className="badge room-badge-open">{t.channel.pinnedBadge}</span>
+        <div className="room-title">
+          <h1>{t.channel.title}</h1>
+          <span className="badge room-badge-open">{t.channel.pinnedBadge}</span>
+        </div>
+        <p className="channel-intro">{t.channel.intro}</p>
       </header>
-      <p className="muted">{t.channel.intro}</p>
       {load.data === null ? (
         <LoadPending load={load} message={t.channel.loadError} />
       ) : (
-        <>
+        <section className="room-chat" aria-label={t.channel.title}>
           <LoadNotice load={load} />
-          <div className="backlog-chat-history">
-            {load.data.messages.length === 0 && <p className="muted">{t.channel.empty}</p>}
+          <div
+            className="backlog-chat-history room-transcript"
+            ref={historyRef}
+            onScroll={onHistoryScroll}
+            role="log"
+          >
+            {load.data.messages.length === 0 && (
+              <div className="room-empty">
+                <p>{t.channel.empty}</p>
+              </div>
+            )}
             {load.data.messages.map((m) => (
               <ChannelLine key={m.seq} m={m} />
             ))}
           </div>
-          <form className="backlog-chat-form" onSubmit={send}>
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder={t.channel.placeholder}
-              rows={3}
-            />
-            <button type="submit" disabled={sending || input.trim() === ''}>
-              {sending ? t.channel.sending : t.channel.send}
-            </button>
+          {sendError && (
+            <p className="room-error" role="alert">
+              {t.channel.sendError(sendError)}
+            </p>
+          )}
+          <form
+            className="backlog-chat-form room-composer"
+            onSubmit={(e) => {
+              e.preventDefault()
+              submitMessage()
+            }}
+          >
+            <div className="backlog-chat-composer">
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => {
+                  setInput(e.target.value)
+                  autoExpand()
+                }}
+                onKeyDown={onComposerKeyDown}
+                placeholder={t.channel.placeholder}
+                aria-label={t.channel.placeholder}
+                rows={1}
+              />
+              <button
+                type="submit"
+                className="backlog-chat-send"
+                aria-label={sending ? t.channel.sending : t.channel.send}
+                title={t.channel.send}
+                disabled={sending || input.trim() === ''}
+              >
+                <span aria-hidden="true">↵</span>
+              </button>
+            </div>
+            <p className="room-composer-hint">{t.channel.composerHint}</p>
           </form>
-          {sendError && <p className="status error">{t.channel.sendError(sendError)}</p>}
-        </>
+        </section>
       )}
     </main>
   )
@@ -104,7 +188,23 @@ export function useChannelFollow(version: number | undefined, reload: () => Prom
   }, [version])
 }
 
-// ChannelLine is one message with its delivery state. The card's page
+// Stamp is when something happened, short — day, month, hour and minute,
+// since the channel keeps 24h and one screen spans two days — with the full
+// instant in the title (F-0489 crit. 5 and 7).
+function Stamp({ iso }: { iso: string }) {
+  const { lang } = useT()
+  const d = new Date(iso)
+  if (iso === '' || Number.isNaN(d.getTime())) return null
+  return (
+    <time dateTime={iso} title={d.toLocaleString(lang)}>
+      {d.toLocaleString(lang, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+    </time>
+  )
+}
+
+// ChannelLine is one message with its delivery state, laid out as a War Room
+// message (F-0489 crit. 4): an agent's as running text under its id and time,
+// the human's — the single operator's — as their own bubble. The card's page
 // (F-0486) names each target by its session (targetName) and adds where a
 // not-yet-reached session is (extra).
 export function ChannelLine({
@@ -117,45 +217,58 @@ export function ChannelLine({
   extra?: ReactNode
 }) {
   const { t } = useT()
-  const target = (tg: ChannelTarget) => {
-    const name = targetName(tg)
-    if (tg.closed) return t.channel.targetClosed(name)
-    if (tg.acked) return t.channel.targetAcked(name)
-    if (tg.state === 'answered') return t.channel.targetAnswered(name)
-    if (tg.state === 'delivered') return t.channel.targetDelivered(name)
-    return t.channel.targetNotDelivered(name)
+  const label = (tg: ChannelTarget) => {
+    if (tg.closed) return t.channel.targetClosed
+    if (tg.acked) return t.channel.targetAcked
+    if (tg.state === 'answered') return t.channel.targetAnswered
+    if (tg.state === 'delivered') return t.channel.targetDelivered
+    return t.channel.targetNotDelivered
   }
   // B-0054: say why — a session hears the channel only at a contact point.
   // A message whose every target closed will never arrive: no hint.
   const targets = m.targets ?? []
   const pending = m.state === 'not_delivered' && !(targets.length > 0 && targets.every((tg) => tg.closed))
   return (
-    <div className="backlog-chat-msg">
-      <p>
-        <strong>
-          {m.human ? `${m.nick} (${t.channel.human})` : m.nick}:
-        </strong>{' '}
-        {m.body}
-      </p>
-      <p className="muted">
-        <span className="card-id">#{m.seq}</span> <span className="badge">{t.channel.state[m.state]}</span>
-        {m.ref && (
-          <>
-            {' '}
-            <a className="badge" href={`#/f/${encodeURIComponent(m.ref)}`} title={t.channel.aboutCard(m.ref)}>
-              {m.ref}
-            </a>
-          </>
+    <div className={`room-msg${m.human ? ' room-msg-own' : ''}`}>
+      <p className="room-msg-head">
+        {m.human ? (
+          <strong className="sr-only">{`${m.nick} (${t.channel.human})`}</strong>
+        ) : (
+          <strong className="channel-id">{m.nick}</strong>
         )}
-        {m.directed &&
-          (m.targets ?? []).map((tg) => (
-            <span key={tg.work}>
-              {' · '}
-              <span>{target(tg)}</span>
-            </span>
-          ))}
+        <Stamp iso={m.time} />
       </p>
-      {pending && <p className="muted">{t.channel.notDeliveredHint}</p>}
+      <p className="room-msg-body">{m.body}</p>
+      <p className="channel-meta">
+        <span className="card-id">#{m.seq}</span>
+        <span className="badge">{t.channel.state[m.state]}</span>
+        {m.ref && (
+          <a className="channel-id" href={`#/f/${encodeURIComponent(m.ref)}`} title={t.channel.aboutCard(m.ref)}>
+            {m.ref}
+          </a>
+        )}
+      </p>
+      {m.directed && targets.length > 0 && (
+        <ul className="channel-targets">
+          {targets.map((tg) => {
+            // A name that is the target's id (a work, a card·session) is
+            // machine truth and takes mono; a session's title is prose.
+            const name = targetName(tg)
+            return (
+              <li key={tg.work}>
+                <span className={name === tg.work ? 'channel-id' : undefined}>{name}</span> {label(tg)}
+                {tg.answered_at && (
+                  <>
+                    {' '}
+                    <Stamp iso={tg.answered_at} />
+                  </>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+      {pending && <p className="channel-hint">{t.channel.notDeliveredHint}</p>}
       {extra}
     </div>
   )

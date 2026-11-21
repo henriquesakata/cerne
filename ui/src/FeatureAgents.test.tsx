@@ -129,15 +129,17 @@ describe('FeatureAgents (F-0486)', () => {
             { work: 'F-0486·b3847c8c', session: 'b3847c8c', state: 'not_delivered' },
           ],
         },
-        { seq: 5, type: 'message', nick: 'F-0486·3af179af', body: 'foi o HO-0008', time: '', state: 'delivered', ref: 'F-0486' },
+        { seq: 5, type: 'message', nick: 'F-0486·3af179af', body: 'foi o HO-0008', time: '2026-11-21T15:00:00Z', state: 'delivered', ref: 'F-0486' },
       ],
     }
     renderPanel()
     await waitFor(() => expect(screen.getByText('HO-0008')).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: /mandar mensagem aos agentes/i }))
     expect(await screen.findByText('quem escreveu o plano?')).toBeInTheDocument()
-    expect(screen.getByText('TL do lote recebeu — sem resposta')).toBeInTheDocument()
-    expect(screen.getByText('HO-0008 ainda não recebeu')).toBeInTheDocument()
+    expect(screen.getByText((_, el) => el?.tagName === 'LI' && el.textContent?.trim() === 'TL do lote recebeu — sem resposta')).toBeInTheDocument()
+    expect(screen.getByText((_, el) => el?.tagName === 'LI' && el.textContent?.trim() === 'HO-0008 ainda não recebeu')).toBeInTheDocument()
+    // F-0489 crit. 8: the card's thread shares the channel line, with when each message was sent.
+    expect(document.querySelector('.room-msg time[datetime="2026-11-21T15:00:00Z"]')).not.toBeNull()
     const hint = screen.getByText(/HO-0008 só lê a mensagem quando rodar um comando/).closest('.agents-unreached') as HTMLElement
     expect(within(hint).getByText(/abra-a no app e mande qualquer prompt/i)).toBeInTheDocument()
     expect(

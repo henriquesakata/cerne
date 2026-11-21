@@ -1964,7 +1964,15 @@ export type ChannelState = 'not_delivered' | 'delivered' | 'answered'
 // acked: answered by `cerne msg ack`, not by a reply; closed: the work closed
 // and will never receive it; session: for a message from a card's page
 // (F-0486), the first 8 characters of the addressed session.
-export type ChannelTarget = { work: string; state: ChannelState; acked?: boolean; closed?: boolean; session?: string }
+// answered_at (F-0489): when the target first answered — reply or ack.
+export type ChannelTarget = {
+  work: string
+  state: ChannelState
+  acked?: boolean
+  closed?: boolean
+  session?: string
+  answered_at?: string
+}
 
 // ChannelMessage espelha app.ChannelMessage: a mensagem viva com o estado
 // dela e, para uma dirigida, cada work destinatário com o seu.
