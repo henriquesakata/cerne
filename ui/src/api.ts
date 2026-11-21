@@ -1697,11 +1697,24 @@ const LIVE_EVENTS: LiveEvent['type'][] = ['models', 'change', 'projects', 'updat
 
 // openStream abre o EventSource e entrega cada evento a onEvent.
 function openStream(onEvent: (ev: LiveEvent) => void): () => void {
-  const es = new EventSource('/api/stream')
-  for (const type of LIVE_EVENTS) {
-    es.addEventListener(type, (e) => onEvent({ type, data: String((e as MessageEvent).data ?? '') }))
+  let es: EventSource
+  let retry: ReturnType<typeof setTimeout> | undefined
+  const connect = () => {
+    es = new EventSource('/api/stream')
+    for (const type of LIVE_EVENTS) {
+      es.addEventListener(type, (e) => onEvent({ type, data: String((e as MessageEvent).data ?? '') }))
+    }
+    // Uma resposta que não é stream (um erro no meio de uma troca do binário)
+    // fecha o EventSource de vez. Este stream serve todas as abas: tenta de novo.
+    es.onerror = () => {
+      if (es.readyState === EventSource.CLOSED) retry = setTimeout(connect, 3000)
+    }
   }
-  return () => es.close()
+  connect()
+  return () => {
+    clearTimeout(retry)
+    es.close()
+  }
 }
 
 // Uma conexão de /api/stream por navegador, não por aba (B-0068): o navegador
@@ -1765,6 +1778,7 @@ export function subscribeLive(handlers: {
   let leader = false
   channel.onmessage = (e: MessageEvent<LiveEvent | { type: 'hello' }>) => {
     const ev = e.data
+    if (!ev) return
     if (ev.type !== 'hello') dispatch(ev)
     else if (leader && lastModels) channel.postMessage(lastModels)
   }

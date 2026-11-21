@@ -6,9 +6,12 @@ import { subscribeLive } from './api'
 // browser and the board froze. The tabs of one browser now share one stream.
 
 class FakeEventSource {
+  static CLOSED = 2
   static open: FakeEventSource[] = []
   listeners = new Map<string, ((e: MessageEvent) => void)[]>()
   closed = false
+  readyState = 1
+  onerror: (() => void) | null = null
   constructor(public url: string) {
     FakeEventSource.open.push(this)
   }
@@ -76,8 +79,10 @@ function fakeLocks() {
 const tab = () => {
   const onChange = vi.fn<(pid: string) => void>()
   const onModels = vi.fn()
-  const dispose = subscribeLive({ onChange, onProjects: () => {}, onModels })
-  return { onChange, onModels, dispose }
+  const onProjects = vi.fn()
+  const onUpdate = vi.fn()
+  const dispose = subscribeLive({ onChange, onProjects, onModels, onUpdate })
+  return { onChange, onModels, onProjects, onUpdate, dispose }
 }
 
 const flush = () => new Promise((r) => setTimeout(r, 0))
@@ -130,6 +135,57 @@ describe('subscribeLive across tabs (B-0068)', () => {
     expect(late.onModels).toHaveBeenCalledWith(expect.objectContaining({ added: ['m'] }))
     expect(first.onModels).toHaveBeenCalledTimes(1)
     expect(second.onModels).toHaveBeenCalledTimes(1)
+  })
+
+  it('projects and update events reach every tab', async () => {
+    const tabs = Array.from({ length: 3 }, tab)
+    await flush()
+    FakeEventSource.open[0].emit('projects', '')
+    FakeEventSource.open[0].emit('update', 'downloading')
+    await flush()
+    for (const t of tabs) {
+      expect(t.onProjects).toHaveBeenCalledTimes(1)
+      expect(t.onUpdate).toHaveBeenCalledWith('downloading')
+    }
+  })
+
+  it('a queued tab that closes never opens a stream, and the next one still takes over', async () => {
+    const [first, queued, last] = Array.from({ length: 3 }, tab)
+    await flush()
+    queued.dispose()
+    first.dispose()
+    await flush()
+    expect(FakeEventSource.open).toHaveLength(1)
+    FakeEventSource.open[0].emit('change', 'p4 y')
+    await flush()
+    expect(last.onChange).toHaveBeenCalledWith('p4')
+    expect(queued.onChange).not.toHaveBeenCalled()
+  })
+
+  it('a stream the browser gave up on reopens, still for every tab', async () => {
+    const tabs = Array.from({ length: 2 }, tab)
+    await flush()
+    vi.useFakeTimers()
+    try {
+      const dead = FakeEventSource.open[0]
+      dead.readyState = FakeEventSource.CLOSED
+      dead.onerror?.()
+      await vi.advanceTimersByTimeAsync(3000)
+      expect(FakeEventSource.open.filter((s) => s !== dead)).toHaveLength(1)
+      FakeEventSource.open.at(-1)!.emit('change', 'p5 z')
+      await vi.advanceTimersByTimeAsync(0)
+      for (const t of tabs) expect(t.onChange).toHaveBeenCalledWith('p5')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a stray message on the channel is ignored', async () => {
+    const t = tab()
+    await flush()
+    new FakeChannel('cerne-live').postMessage(null)
+    await flush()
+    expect(t.onChange).not.toHaveBeenCalled()
   })
 
   it('without Web Locks each tab keeps its own stream', async () => {
