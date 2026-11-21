@@ -1108,6 +1108,9 @@ describe('FeaturePage gate safety (F-0498)', () => {
     render(<FeaturePage id="F-0221" />)
     fireEvent.click(await screen.findByRole('button', { name: label }))
     expect(postTransition).not.toHaveBeenCalled()
+    // One filled control at a time: the confirmation, not its opener.
+    expect(screen.getByRole('button', { name: label })).not.toHaveClass('queue-btn-primary')
+    expect(screen.getByRole('button', { name: confirm })).toHaveClass('queue-btn-primary')
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
     expect(screen.queryByRole('button', { name: confirm })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: label }))

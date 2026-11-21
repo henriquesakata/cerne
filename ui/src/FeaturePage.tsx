@@ -1240,7 +1240,9 @@ function ActionsPanel({
         {actions.map((a) => (
           <button
             key={a.action}
-            className={a.action === primary ? 'queue-btn-primary' : undefined}
+            // While its confirmation is open, the confirm button is the one
+            // filled control; the opener steps back to the outline.
+            className={a.action === primary && openForm !== a.action ? 'queue-btn-primary' : undefined}
             disabled={
               busy !== null || (a.action === 'approve' && blocked) || (a.action === 'start' && staleApproval)
             }
