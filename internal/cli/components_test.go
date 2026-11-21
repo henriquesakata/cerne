@@ -73,3 +73,30 @@ func TestNextLeavesTagCleanupToLint(t *testing.T) {
 		t.Fatalf("next lists the tag cleanup as a session debt:\n%s", nextOut)
 	}
 }
+
+// B-0061 regression: component-note-only charges the note that shares no
+// component with any feature, by id, never the golden-path marker, and the
+// retag its hint teaches clears it.
+func TestLintNoteOnlyChargesNoteNotMarker(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	for _, args := range [][]string{
+		{"feature", "new", "Board polish", "--context", "why", "--component", "ui"},
+		{"note", "new", "Skill path", "--component", "golden-path"},
+		{"note", "new", "Shared", "--component", "ui,react"},
+		{"note", "new", "Lonely", "--component", "react"},
+	} {
+		if out, err := execCerne(t, append(args, "--dir", projDir)...); err != nil {
+			t.Fatalf("%v: %v\n%s", args, err, out)
+		}
+	}
+	lintOut, _ := execCerne(t, "lint", "--json", "--dir", projDir)
+	if !strings.Contains(lintOut, "1 active notes share no component with any feature: N-0003 (react)") || strings.Contains(lintOut, "golden-path") {
+		t.Fatalf("lint does not charge only N-0003:\n%s", lintOut)
+	}
+	if out, err := execCerne(t, "note", "retag", "N-0003", "--component", "react,ui", "--dir", projDir); err != nil {
+		t.Fatalf("note retag: %v\n%s", err, out)
+	}
+	if lintOut, _ := execCerne(t, "lint", "--json", "--dir", projDir); strings.Contains(lintOut, "component-note-only") {
+		t.Fatalf("the retag did not clear the finding:\n%s", lintOut)
+	}
+}

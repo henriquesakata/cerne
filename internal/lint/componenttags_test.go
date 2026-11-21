@@ -25,11 +25,11 @@ func TestComponentTagFindings(t *testing.T) {
 	}
 	decisions := []store.Decision{{ID: "D-0001", State: domain.DecisionActive, Components: []string{"gitea"}}}
 
-	got := componentTagFindings(componentUses(features, notes, decisions, nil, nil, nil))
+	got := componentTagFindings(componentUses(features, notes, decisions, nil, nil, nil), notes)
 	want := map[string]string{
 		RuleComponentSingleUse: "5 components are carried by a single entity: legacy (N-0004: legacy,gitea), skill (N-0002: kpack,skill), skills (N-0003: skills), testing (F-0001: gitea,testing), tests (F-0002: gitea,tests)",
 		RuleComponentSameRoot:  "2 groups of components share a root: skill/skills, testing/tests",
-		RuleComponentNoteOnly:  "3 components are on active notes and on no feature: kpack, skill, skills",
+		RuleComponentNoteOnly:  "2 active notes share no component with any feature: N-0002 (kpack,skill), N-0003 (skills)",
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %d findings, want one per rule: %+v", len(got), got)
@@ -55,7 +55,40 @@ func TestComponentTagFindings(t *testing.T) {
 			t.Errorf("%s missing from RuleOrder", f.Rule)
 		}
 	}
-	if got := componentTagFindings(componentUses(features[:1], nil, nil, nil, nil, nil)); len(got) != 1 || got[0].Rule != RuleComponentSingleUse {
+	if got := componentTagFindings(componentUses(features[:1], nil, nil, nil, nil, nil), nil); len(got) != 1 || got[0].Rule != RuleComponentSingleUse {
 		t.Fatalf("a clean vocabulary reports only what applies: %+v", got)
+	}
+}
+
+// B-0061: component-note-only counts the note, not the component. A marker
+// cerne itself asks for (golden-path) is charged by no tag rule, a note that
+// shares one component with a feature is reached, and the hint's retag clears it.
+func TestComponentNoteOnlyCountsNotes(t *testing.T) {
+	features := []store.Feature{{ID: "F-0001", State: domain.StateImplemented, Components: []string{"ui"}}}
+	notes := []store.Note{
+		{ID: "N-0001", State: domain.NoteActive, Components: []string{"golden-path"}},
+		{ID: "N-0002", State: domain.NoteActive, Components: []string{"ui", "react"}},
+		{ID: "N-0003", State: domain.NoteActive, Components: []string{"react"}},
+	}
+	noteOnly := func() []Finding {
+		return slices.DeleteFunc(componentTagFindings(componentUses(features, notes, nil, nil, nil, nil), notes), func(f Finding) bool {
+			return f.Rule != RuleComponentNoteOnly
+		})
+	}
+	for _, f := range componentTagFindings(componentUses(features, notes, nil, nil, nil, nil), notes) {
+		if strings.Contains(f.Detail, "golden-path") {
+			t.Errorf("%s charges the golden-path marker: %q", f.Rule, f.Detail)
+		}
+	}
+	got := noteOnly()
+	if len(got) != 1 || !strings.HasPrefix(got[0].Detail, "1 active notes share no component with any feature: N-0003 (react)") {
+		t.Fatalf("findings = %+v, want only N-0003", got)
+	}
+	if !strings.Contains(got[0].Detail, "'cerne note retag N-0003 --component react,<feature component>'") {
+		t.Errorf("the hint does not retag the charged note with its whole list: %q", got[0].Detail)
+	}
+	notes[2].Components = []string{"react", "ui"} // cerne note retag N-0003 --component react,ui
+	if got := noteOnly(); len(got) != 0 {
+		t.Fatalf("the retag the hint teaches did not clear the finding: %+v", got)
 	}
 }
