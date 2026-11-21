@@ -175,3 +175,18 @@ func TestWaitForgeErrorKeepsWaiting(t *testing.T) {
 		})
 	}
 }
+
+// show names the merge that accepted the card; an accept by hand adds nothing.
+// F-0488 crit. 11
+func TestShowAcceptedOnMerge(t *testing.T) {
+	projDir, _ := mergeGateProject(t, &cliFakeForge{},
+		store.Feature{ID: "F-0001", State: domain.StateDone, DeliveryMRURL: "https://github.com/o/r/pull/12", AcceptedVia: "merge"},
+		store.Feature{ID: "F-0002", State: domain.StateDone, DeliveryMRURL: "https://github.com/o/r/pull/13"})
+	out, err := execCerne(t, "show", "F-0001", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "\naccepted: on merge of https://github.com/o/r/pull/12\n") {
+		t.Fatalf("show F-0001: %v\n%s", err, out)
+	}
+	if out, _ := execCerne(t, "show", "F-0002", "--dir", projDir); strings.Contains(out, "accepted:") {
+		t.Fatalf("show F-0002 must not claim a merge acceptance:\n%s", out)
+	}
+}

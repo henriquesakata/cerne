@@ -186,8 +186,8 @@ function DocAuthors({ writes }: { writes: DocWrite[] }) {
 type OpenDiagram = { name: string }
 
 // DeliveryLinks (F-0179): clickable commit/MR links of the delivery, shown in
-// the feature header; hidden when the feature carries none. Exported for the
-// component test.
+// the feature header; hidden when the feature carries none. A card accepted on
+// the merge of its PR says so (F-0488). Exported for the component test.
 export function DeliveryLinks({ feature }: { feature: Feature }) {
   const { t } = useT()
   if (!feature.delivery_commit_url && !feature.delivery_mr_url) return null
@@ -205,8 +205,21 @@ export function DeliveryLinks({ feature }: { feature: Feature }) {
           MR
         </a>
       )}
+      {feature.accepted_via === 'merge' && feature.delivery_mr_url && (
+        <>
+          {' · '}
+          <span className="feature-accepted-merge">
+            {t.feature.acceptedOnMerge(prNumber(feature.delivery_mr_url))}
+          </span>
+        </>
+      )}
     </p>
   )
+}
+
+// prNumber is the trailing number of a PR/MR URL (F-0488), or the URL itself.
+function prNumber(url: string): string {
+  return url.match(/(\d+)\/?$/)?.[1] ?? url
 }
 
 export default function FeaturePage({ id }: { id: string }) {
