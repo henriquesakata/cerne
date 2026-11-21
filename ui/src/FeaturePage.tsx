@@ -115,8 +115,22 @@ function TitleEditor({
     <h1>
       <span className="feature-id">{feature.id}</span> {feature.title}
       {titleEditable(feature.state) && (
-        <button className="title-edit-btn" onClick={start} title={t.feature.editTitle}>
-          ✎
+        <button
+          className="title-edit-btn"
+          onClick={start}
+          title={t.feature.editTitle}
+          aria-label={t.feature.editTitle}
+        >
+          {/* B-0064: ícone desenhado, não o glifo ✎ da fonte do sistema. */}
+          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+            <path
+              d="M11.5 2.5l2 2L5 13H3v-2l8.5-8.5z"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinejoin="round"
+            />
+          </svg>
         </button>
       )}
     </h1>
