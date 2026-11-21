@@ -230,6 +230,9 @@ func (r *registry) add(dir string) (pid, name string, err error) {
 
 	baseline, _ := gitback.HeadSHA(repoDir)
 	go watchHeadMulti(ctx, r.hub, projectID, repoDir, interval, baseline)
+	go mirrorSyncLoop(ctx, repoDir, projDir, mirrorImportInterval, mirrorSyncInterval, func() {
+		r.hub.broadcast(liveEvent{kind: "change", pid: projectID})
+	})
 	if r.pull > 0 {
 		go pullLoop(ctx, repoDir, r.pull)
 	}

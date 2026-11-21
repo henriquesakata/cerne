@@ -228,6 +228,18 @@ type MirrorSyncReport struct {
 // sync imports nothing. A tracker or card that fails is a warning, not an
 // error. ponytail: sequential, one card at a time; parallelize if a sync gets slow.
 func SyncMirror(repoDir, projDir string) (MirrorSyncReport, error) {
+	return syncMirror(repoDir, projDir, true)
+}
+
+// ImportMirror is SyncMirror's quick half (F-0487): it only imports new outside
+// issues as ideas, so cerne ui can look for them every few seconds without
+// touching each mirrored card's issue. It leaves the last-sync record alone:
+// that record is the full sync's.
+func ImportMirror(repoDir, projDir string) (MirrorSyncReport, error) {
+	return syncMirror(repoDir, projDir, false)
+}
+
+func syncMirror(repoDir, projDir string, cards bool) (MirrorSyncReport, error) {
 	var rep MirrorSyncReport
 	cfg := project.MirrorSettings(projDir)
 	if !cfg.Enabled {
@@ -267,6 +279,14 @@ func SyncMirror(repoDir, projDir string) (MirrorSyncReport, error) {
 		if rep.Ideas, err = saveImportedIdeas(repoDir, projDir, fresh); err != nil {
 			return rep, err
 		}
+	}
+	if !cards {
+		if len(rep.Ideas) > 0 {
+			if err := recordImport(repoDir, rep); err != nil {
+				rep.Notes = append(rep.Notes, fmt.Sprintf("cerne: mirror sync: last sync not recorded: %v", err))
+			}
+		}
+		return rep, nil
 	}
 	features, err := store.LoadAllFeatures(repoDir)
 	if err != nil {

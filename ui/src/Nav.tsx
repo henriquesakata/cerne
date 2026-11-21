@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { useProjects } from './live'
+import { useLiveVersion, useProjects } from './live'
 import { useTheme } from './theme'
 import { useT, type Lang, type Messages } from './i18n'
-import { fetchVersion } from './api'
+import { fetchIdeas, fetchVersion, type Idea } from './api'
+import { isImported, readSeen, SEEN_EVENT } from './ideasSeen'
 import NotificationBell from './NotificationBell'
 
 type NavItem = { href: string; key: keyof Messages['nav'] }
@@ -129,6 +130,7 @@ function NavLinks({ active, hash }: { active: string; hash: string }) {
   // desligado por flag ainda diz em que grupo se está.
   const activeGroup = GROUPS.find((g) => g.items.some((l) => l.href === active))?.key
   const [open, setOpen] = useState<string | null>(null)
+  const unread = useUnreadImported(activePid)
   // Apontam para o grupo aberto: "fora" é fora dele, não fora da barra inteira.
   const openRef = useRef<HTMLDivElement>(null)
   const openBtnRef = useRef<HTMLButtonElement>(null)
@@ -189,6 +191,13 @@ function NavLinks({ active, hash }: { active: string; hash: string }) {
             >
               {t.nav[g.key]} <span aria-hidden="true">▾</span>
             </button>
+            {/* F-0487: the count is a direct link to Ideas, one click from anywhere. */}
+            {g.key === 'groupWork' && unread > 0 && (
+              <a href="#/ideas" className="nav-count nav-count-link" title={t.ideas.unread(unread)}>
+                <span aria-hidden="true">{unread}</span>
+                <span className="sr-only">{t.ideas.unread(unread)}</span>
+              </a>
+            )}
             {isOpen && (
               <div className="nav-group-menu" role="menu" aria-label={t.nav[g.key]}>
                 {items.map((l) => (
@@ -201,6 +210,7 @@ function NavLinks({ active, hash }: { active: string; hash: string }) {
                     onClick={() => setOpen(null)}
                   >
                     {t.nav[l.key]}
+                    {l.key === 'ideas' && <NavCount n={unread} />}
                   </a>
                 ))}
               </div>
@@ -209,6 +219,52 @@ function NavLinks({ active, hash }: { active: string; hash: string }) {
         )
       })}
     </div>
+  )
+}
+
+// useUnreadImported (F-0487 crit. 6) counts the active ideas from a tracker
+// this browser has not seen, again on every backend advance (an automatic
+// sync commits) and whenever the ideas screen marks some as seen. 0 while
+// loading, on a failure and when the storage cannot be read (crit. 8).
+function useUnreadImported(pid: string): number {
+  const version = useLiveVersion()
+  const [ideas, setIdeas] = useState<Idea[]>([])
+  const [, setSeenTick] = useState(0)
+  useEffect(() => {
+    const on = () => setSeenTick((n) => n + 1)
+    window.addEventListener(SEEN_EVENT, on)
+    window.addEventListener('storage', on) // another tab marked them
+    return () => {
+      window.removeEventListener(SEEN_EVENT, on)
+      window.removeEventListener('storage', on)
+    }
+  }, [])
+  useEffect(() => {
+    if (!pid) return
+    let current = true
+    fetchIdeas()
+      .then((xs) => current && setIdeas(xs))
+      .catch(() => current && setIdeas([]))
+    return () => {
+      current = false
+    }
+  }, [pid, version])
+  const seen = readSeen(pid)
+  return seen ? ideas.filter((i) => isImported(i) && !seen.has(i.id)).length : 0
+}
+
+// NavCount is the unread count: the number for the eye, the sentence for a screen reader.
+function NavCount({ n }: { n: number }) {
+  const { t } = useT()
+  if (n === 0) return null
+  return (
+    <>
+      {' '}
+      <span className="nav-count" aria-hidden="true">
+        {n}
+      </span>
+      <span className="sr-only">{t.ideas.unread(n)}</span>
+    </>
   )
 }
 

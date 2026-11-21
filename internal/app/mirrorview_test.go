@@ -51,6 +51,44 @@ func TestMirrorSyncRecordsLastRun(t *testing.T) {
 	}
 }
 
+// A quick import that brought ideas in updates the record, so the line never
+// says 0 ideas next to new ones; it keeps the full sync's card counts. One that
+// brought nothing leaves the record alone.
+// F-0487 crit. 4
+func TestImportMirrorRecordsOnlyWhenItImports(t *testing.T) {
+	asHuman(t)
+	repoDir, projDir, _ := newFeatureBackend(t)
+	good := &trackertest.Fake{Name: "good"}
+	mirrorProject(t, projDir, mirrorConf{}, good)
+	r := issueOn(t, good, "F-0001", domain.StateCandidate)
+	seedMirrored(t, repoDir, "F-0001", domain.StateCandidate, r)
+	if _, err := SyncMirror(repoDir, projDir); err != nil {
+		t.Fatalf("SyncMirror: %v", err)
+	}
+	full := LastMirrorSync(repoDir)
+	if _, err := ImportMirror(repoDir, projDir); err != nil {
+		t.Fatalf("ImportMirror: %v", err)
+	}
+	if got := LastMirrorSync(repoDir); !got.At.Equal(full.At) {
+		t.Fatalf("an import of nothing rewrote the record: %v -> %v", full.At, got.At)
+	}
+	good.Open("Crash on start", "Steps", "")
+	good.Calls = nil
+	rep, err := ImportMirror(repoDir, projDir)
+	if err != nil || len(rep.Ideas) != 1 {
+		t.Fatalf("ImportMirror = %+v, %v; want one idea", rep, err)
+	}
+	for _, c := range good.Calls {
+		if c.Op != "ListOpen" {
+			t.Fatalf("the quick import called %s; it only lists", c.Op)
+		}
+	}
+	got := LastMirrorSync(repoDir)
+	if g := got.Trackers[0]; !got.At.After(full.At) || g.Imported != 1 || g.Synced != 1 {
+		t.Fatalf("record after the import = %+v, want a newer time, 1 imported and the full sync's 1 synced", got)
+	}
+}
+
 // F-0465 crit. 4: a record that cannot be written is a warning, never a failure.
 func TestMirrorSyncRecordWriteFailureWarns(t *testing.T) {
 	asHuman(t)

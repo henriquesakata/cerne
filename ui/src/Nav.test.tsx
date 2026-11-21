@@ -1,14 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import Nav from './Nav'
+import { markSeen } from './ideasSeen'
 import { I18nProvider } from './i18n'
-import type { ProjectInfo } from './api'
+import type { Idea, ProjectInfo } from './api'
 
 // F-0187 critério 4: com mindmap.enabled = false no projeto ativo, o item some do
 // menu ("não deve nem aparecer"). O flag viaja em ProjectInfo (GET /api/projects).
 
 let mockProjects: ProjectInfo[] = []
+let navIdeas: Idea[] = []
 
 vi.mock('./live', () => ({
   useProjects: () => ({
@@ -27,6 +29,7 @@ vi.mock('./NotificationBell', () => ({ default: () => null }))
 vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api')>()),
   fetchVersion: vi.fn(async () => ''),
+  fetchIdeas: vi.fn(async () => navIdeas),
 }))
 
 // F-0332 critério 8: sem stub de ResizeObserver — jsdom não tem um, então a nav
@@ -34,6 +37,7 @@ vi.mock('./api', async (importOriginal) => ({
 beforeEach(() => {
   cleanup()
   mockProjects = [{ pid: 'p1', name: 'P1' }]
+  navIdeas = []
 })
 
 afterEach(() => localStorage.clear())
@@ -377,5 +381,70 @@ describe('Mark in the wordmark (F-0462)', () => {
     expect(brand!.firstElementChild).toBe(mark)
     // The text right after the mark is the name itself; the version tag is a separate element.
     expect((mark!.nextSibling?.textContent ?? '').trim()).toBe('cerne')
+  })
+})
+
+describe('Nav — ideias importadas não lidas (F-0487)', () => {
+  const idea = (id: string, extra: Partial<Idea> = {}): Idea => ({
+    id,
+    title: id,
+    state: 'active',
+    created_at: '2026-11-21T10:00:00Z',
+    updated_at: '2026-11-21T10:00:00Z',
+    ...extra,
+  })
+  const gh = (n: string) => ({ tracker: 'gh', kind: 'github', id: n, url: `https://example.test/${n}` })
+  const work = () => screen.getByRole('button', { name: /^Trabalho/ })
+  const countLink = () => screen.queryByRole('link', { name: /ideias? importadas? não lidas?/ })
+
+  // F-0487 crit. 6
+  it('ao lado do grupo Trabalho, a contagem é um link direto para Ideias; o item Ideias também conta', async () => {
+    localStorage.setItem('cerne.ideas.seen.p1', JSON.stringify(['I-0003']))
+    navIdeas = [
+      idea('I-0001', { mirror: gh('1') }),
+      idea('I-0002', { mirror: gh('2') }),
+      idea('I-0003', { mirror: gh('3') }), // already seen
+      idea('I-0004'), // not imported
+      idea('I-0005', { mirror: gh('5'), state: 'promoted' }),
+    ]
+    render(<Nav hash="#/" />)
+    await waitFor(() => expect(countLink()).toHaveAccessibleName('2 ideias importadas não lidas'))
+    expect(countLink()).toHaveAttribute('href', '#/ideas')
+    expect(countLink()).toHaveTextContent('2')
+    expect(work()).toHaveAccessibleName('Trabalho')
+    const item = within(openGroup('Trabalho')).getByRole('menuitem', { name: /^Ideias/ })
+    expect(item).toHaveAccessibleName(/2 ideias importadas não lidas/)
+  })
+
+  // F-0487 crit. 6
+  it('sem não lida, sem contagem; e a contagem cai quando a tela marca como vistas', async () => {
+    navIdeas = [idea('I-0001', { mirror: gh('1') })]
+    render(<Nav hash="#/" />)
+    await waitFor(() => expect(countLink()).toHaveTextContent('1'))
+    act(() => markSeen('p1', ['I-0001']))
+    await waitFor(() => expect(countLink()).toBeNull())
+  })
+
+  // F-0487 crit. 9
+  it('em inglês, o rótulo acessível da contagem', async () => {
+    localStorage.setItem('cerne-lang', 'en')
+    navIdeas = [idea('I-0001', { mirror: gh('1') })]
+    render(<Nav hash="#/" />, { wrapper: I18nProvider })
+    await waitFor(() => expect(screen.getByRole('link', { name: '1 unread imported idea' })).toHaveAttribute('href', '#/ideas'))
+  })
+
+  // F-0487 crit. 8
+  it('storage inacessível: nenhuma contagem', async () => {
+    const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('denied')
+    })
+    try {
+      navIdeas = [idea('I-0001', { mirror: gh('1') })]
+      render(<Nav hash="#/" />)
+      await new Promise((r) => setTimeout(r, 50))
+      expect(countLink()).toBeNull()
+    } finally {
+      get.mockRestore()
+    }
   })
 })

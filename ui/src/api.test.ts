@@ -4,6 +4,7 @@ import {
   fetchPendings,
   fetchSettings,
   HTTPError,
+  postMirrorSync,
   putSetting,
   recompileWiki,
   registerChatCandidate,
@@ -317,5 +318,15 @@ describe('content saves (F-0464 critério 6)', () => {
       ok: false,
       error: 'entity is not live — append an errata instead',
     })
+  })
+})
+
+describe('postMirrorSync (F-0487)', () => {
+  // F-0487 crit. 3
+  it('separa o 409 de sync em andamento do 409 de espelho desligado pelo reason, não pelo texto', async () => {
+    const reply = (reason: string) => new Response(JSON.stringify({ error: 'qualquer texto', reason }), { status: 409 })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(reply('running')).mockResolvedValueOnce(reply('off')))
+    expect(await postMirrorSync()).toEqual({ kind: 'busy' })
+    expect(await postMirrorSync()).toEqual({ kind: 'off' })
   })
 })

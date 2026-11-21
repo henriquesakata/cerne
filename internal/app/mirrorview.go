@@ -53,6 +53,26 @@ func recordLastSync(repoDir string, rep MirrorSyncReport) error {
 	return project.WriteFileAtomic(filepath.Dir(p), filepath.Base(p), data)
 }
 
+// recordImport writes the record of a quick import that brought ideas in
+// (F-0487): the time and the ideas are this run's, the card counts and the
+// failures the last full sync's too, so the line never says 0 ideas next to
+// new ones nor forgets a card that failed.
+func recordImport(repoDir string, rep MirrorSyncReport) error {
+	runs := make([]MirrorTrackerRun, len(rep.Trackers))
+	copy(runs, rep.Trackers)
+	if prev := LastMirrorSync(repoDir); prev != nil {
+		for i := range runs {
+			for _, p := range prev.Trackers {
+				if p.Name == runs[i].Name {
+					runs[i].Synced = p.Synced
+					runs[i].Errors = append(append([]string{}, p.Errors...), runs[i].Errors...)
+				}
+			}
+		}
+	}
+	return recordLastSync(repoDir, MirrorSyncReport{Trackers: runs})
+}
+
 // LastMirrorSync reads the record; nil when there is none or it is unreadable.
 func LastMirrorSync(repoDir string) *MirrorLastSync {
 	b, err := os.ReadFile(lastSyncPath(repoDir))

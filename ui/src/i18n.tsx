@@ -202,7 +202,7 @@ const ptBR = {
   mirror: {
     title: 'Espelho',
     subtitle:
-      'O que está publicado nos trackers, em que estado está lá fora e que commits citam cada card. Só leitura: publicar e sincronizar continuam na CLI.',
+      'O que está publicado nos trackers, em que estado está lá fora e que commits citam cada card. Publicar continua na CLI; o sync roda sozinho no cerne ui a cada 5 minutos e no botão Sincronizar da tela de Ideias.',
     loadError: (_e: string) => 'Não foi possível carregar o espelho.',
     lastSync: (when: ReactNode, cards: string, ideas: string) => (
       <>
@@ -550,6 +550,18 @@ const ptBR = {
     stateChip: { resolved: 'Resolvida', promoted: 'Promovida', dropped: 'Descartada' },
     // B-0063: a ideia (ou o card) ligada a uma issue de tracker.
     issueBadge: (kind: string, ref: string) => `issue do ${kind} ${ref}`,
+    // F-0487: a importada que este navegador ainda não tinha visto.
+    newChip: 'nova',
+    unread: (n: number) => `${n} ${n === 1 ? 'ideia importada não lida' : 'ideias importadas não lidas'}`,
+    sync: {
+      button: 'Sincronizar',
+      running: 'Sincronizando…',
+      never: 'O sync ainda não rodou neste computador.',
+      busy: 'Já há um sync rodando; a lista atualiza quando ele terminar.',
+      off: 'O espelho foi desligado; nada foi sincronizado.',
+      failed: (e: string) => `O sync falhou: ${e}`,
+      trackerFailed: (name: string, e: string) => `O tracker ${name} falhou no último sync: ${e}`,
+    },
     sources: { label: 'Fontes', retired: '(aposentada)' },
     loadError: (e: string) => `Erro ao carregar as ideias: ${e}`,
     captureError: (e: string) => `A ideia não foi registrada: ${e}`,
@@ -1825,7 +1837,7 @@ const en: Messages = {
   mirror: {
     title: 'Mirror',
     subtitle:
-      'What is published on the trackers, its state out there, and which commits cite each card. Read-only: publishing and syncing stay in the CLI.',
+      'What is published on the trackers, its state out there, and which commits cite each card. Publishing stays in the CLI; cerne ui syncs by itself every 5 minutes and on the Sync button of the Ideas screen.',
     loadError: (_e: string) => 'Could not load the mirror.',
     lastSync: (when: ReactNode, cards: string, ideas: string) => (
       <>
@@ -2162,6 +2174,17 @@ const en: Messages = {
     states: { active: 'Active', resolved: 'Resolved', dropped: 'Dropped', promoted: 'Promoted', all: 'All' },
     stateChip: { resolved: 'Resolved', promoted: 'Promoted', dropped: 'Dropped' },
     issueBadge: (kind: string, ref: string) => `${kind} issue ${ref}`,
+    newChip: 'new',
+    unread: (n: number) => `${n} unread imported ${n === 1 ? 'idea' : 'ideas'}`,
+    sync: {
+      button: 'Sync',
+      running: 'Syncing…',
+      never: 'Sync has not run on this computer yet.',
+      busy: 'A sync is already running; the list updates when it ends.',
+      off: 'The mirror was turned off; nothing was synced.',
+      failed: (e: string) => `The sync failed: ${e}`,
+      trackerFailed: (name: string, e: string) => `Tracker ${name} failed in the last sync: ${e}`,
+    },
     sources: { label: 'Sources', retired: '(retired)' },
     loadError: (e: string) => `Could not load the ideas: ${e}`,
     captureError: (e: string) => `The idea was not saved: ${e}`,
