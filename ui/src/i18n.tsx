@@ -548,6 +548,8 @@ const ptBR = {
     states: { active: 'Ativas', resolved: 'Resolvidas', dropped: 'Descartadas', promoted: 'Promovidas', all: 'Todas' },
     // Chip de uma linha fechada (a ativa não leva chip): singular.
     stateChip: { resolved: 'Resolvida', promoted: 'Promovida', dropped: 'Descartada' },
+    // B-0063: a ideia (ou o card) ligada a uma issue de tracker.
+    issueBadge: (kind: string, ref: string) => `issue do ${kind} ${ref}`,
     sources: { label: 'Fontes', retired: '(aposentada)' },
     loadError: (e: string) => `Erro ao carregar as ideias: ${e}`,
     captureError: (e: string) => `A ideia não foi registrada: ${e}`,
@@ -2159,6 +2161,7 @@ const en: Messages = {
     stateFilter: 'State',
     states: { active: 'Active', resolved: 'Resolved', dropped: 'Dropped', promoted: 'Promoted', all: 'All' },
     stateChip: { resolved: 'Resolved', promoted: 'Promoted', dropped: 'Dropped' },
+    issueBadge: (kind: string, ref: string) => `${kind} issue ${ref}`,
     sources: { label: 'Sources', retired: '(retired)' },
     loadError: (e: string) => `Could not load the ideas: ${e}`,
     captureError: (e: string) => `The idea was not saved: ${e}`,

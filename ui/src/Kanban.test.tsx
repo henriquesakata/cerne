@@ -427,3 +427,16 @@ describe('Kanban — coluna Backlog recolhível (F-0342)', () => {
     await waitFor(() => expect(backlog()).toBeNull())
   })
 })
+
+describe('Kanban — card ligado a uma issue (B-0063)', () => {
+  // B-0063
+  it('o card com mirror mostra a etiqueta da issue; o card comum não', async () => {
+    payload = {
+      ...state(),
+      features: [feature('F-0001', { mirror: { tracker: 'gl', kind: 'gitlab', id: '7', url: 'https://example.test/7' } }), feature('F-0002')],
+    }
+    render(<Kanban />)
+    await waitFor(() => expect(cardOf('F-0001')?.querySelector('.badge-mirror')).toHaveTextContent('issue do GitLab #7'))
+    expect(cardOf('F-0002')?.querySelector('.badge-mirror')).toBeNull()
+  })
+})
