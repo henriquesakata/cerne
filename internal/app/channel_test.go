@@ -1169,6 +1169,10 @@ func TestChannelTargetAnsweredAt(t *testing.T) {
 	}
 	reply, _ := f.send("s1", "ok, seguro")
 	f.send("s1", "mais uma") // a later reply does not move the first
+	// an ack after the reply moves nothing either, and the answer stays a reply
+	if _, _, err := ChannelAck(f.cacheDir, f.repoDir, "s1", []int{byReply.Seq}, f.at.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
 	f.at = f.at.Add(time.Second)
 	devReply, _, err := ChannelSend(f.cacheDir, f.repoDir, "s-dev", "F-0001", "corrigido", f.at)
 	if err != nil {
@@ -1177,17 +1181,19 @@ func TestChannelTargetAnsweredAt(t *testing.T) {
 
 	msgs, _ := f.read("")
 	for _, c := range []struct {
-		name string
-		seq  int
-		want time.Time
+		name  string
+		seq   int
+		want  time.Time
+		acked bool // the ack, not a reply, is what answered first
 	}{
-		{"answered by a reply", byReply.Seq, reply.Time},
-		{"acked before replying", byAck.Seq, ackAt},
-		{"session-addressed reply", bySession, devReply.Time},
+		{"replied, then acked", byReply.Seq, reply.Time, false},
+		{"acked before replying", byAck.Seq, ackAt, true},
+		{"session-addressed reply", bySession, devReply.Time, false},
 	} {
 		got := stateOf(t, msgs, c.seq)
-		if len(got.Targets) != 1 || got.Targets[0].State != ChannelAnswered || !got.Targets[0].AnsweredAt.Equal(c.want) {
-			t.Errorf("%s: targets = %+v, want answered at %v", c.name, got.Targets, c.want)
+		if len(got.Targets) != 1 || got.Targets[0].State != ChannelAnswered ||
+			!got.Targets[0].AnsweredAt.Equal(c.want) || got.Targets[0].Acked != c.acked {
+			t.Errorf("%s: targets = %+v, want answered at %v, acked %v", c.name, got.Targets, c.want, c.acked)
 		}
 	}
 	unanswered := stateOf(t, msgs, open.Seq)
