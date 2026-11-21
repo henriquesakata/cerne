@@ -614,7 +614,7 @@ describe('FeaturePage plan roast (F-0275)', () => {
   })
 
   it('com plano real: o botão dispara roastPlan', async () => {
-    payload = { ...detail('in_development'), docs_real: { spec: true, plan: true, result: false } }
+    payload = { ...detail('approved'), docs_real: { spec: true, plan: true, result: false } }
     render(<FeaturePage id="F-0221" />)
     await waitFor(() =>
       expect(screen.getByText('Rodar roast do plano')).toBeEnabled(),
@@ -625,7 +625,7 @@ describe('FeaturePage plan roast (F-0275)', () => {
 
   it('rodadas do plano listam separadas das da spec, com badge por documento', async () => {
     payload = {
-      ...detail('in_development'),
+      ...detail('approved'),
       docs_real: { spec: true, plan: true, result: false },
       plan_roast_rounds: [
         {
@@ -647,7 +647,7 @@ describe('FeaturePage plan roast (F-0275)', () => {
 
   it('plano mudou depois da rodada: badge própria', async () => {
     payload = {
-      ...detail('in_development'),
+      ...detail('approved'),
       docs_real: { spec: true, plan: true, result: false },
       plan_roast_rounds: [
         {
@@ -930,5 +930,75 @@ describe('acabamento da página (B-0064)', () => {
     const btn = await screen.findByRole('button', { name: 'Editar título' })
     expect(btn.querySelector('svg')).not.toBeNull()
     expect(btn).not.toHaveTextContent('✎')
+  })
+})
+
+// F-0495: the forward action is the page's primary control, and a closed
+// record shows no live control besides what it already holds.
+describe('FeaturePage gate hierarchy (F-0495)', () => {
+  // F-0495 crit. 1
+  it.each<[FeatureState, string, string[]]>([
+    ['candidate', 'Aprovar', ['Rejeitar', 'Substituir']],
+    ['approved', 'Iniciar', ['Reverter', 'Substituir']],
+    ['in_development', 'Concluir', ['Substituir']],
+    ['implemented', 'Aceitar', ['Substituir']],
+  ])('em %s, %s é o primário e o resto fica no contorno', async (state, primary, others) => {
+    payload = detail(state)
+    render(<FeaturePage id="F-0221" />)
+    expect(await screen.findByRole('button', { name: primary })).toHaveClass('queue-btn-primary')
+    for (const o of others) expect(screen.getByRole('button', { name: o })).not.toHaveClass('queue-btn-primary')
+  })
+
+  // F-0495 crit. 1
+  it('aprovação vencida: Reaprovar é o primário, não o Iniciar', async () => {
+    payload = { ...detail('approved'), spec_changed_after_approval: true }
+    render(<FeaturePage id="F-0221" />)
+    expect(await screen.findByRole('button', { name: 'Reaprovar' })).toHaveClass('queue-btn-primary')
+    expect(screen.getByRole('button', { name: 'Iniciar' })).not.toHaveClass('queue-btn-primary')
+  })
+
+  // F-0495 crit. 3
+  it.each<[FeatureState, boolean]>([
+    ['candidate', true],
+    ['approved', true],
+    ['in_development', false],
+    ['implemented', false],
+    ['done', false],
+  ])('em %s o cartão Roast aparece: %s', async (state, shown) => {
+    payload = detail(state)
+    render(<FeaturePage id="F-0221" />)
+    await screen.findByRole('heading', { name: 'Ações' })
+    expect(screen.queryByText('Rodar roast') !== null).toBe(shown)
+  })
+
+  // F-0495 crit. 4
+  it('concluída sem pai nem filhos: sem cartão Épico', async () => {
+    payload = detail('done')
+    render(<FeaturePage id="F-0221" />)
+    await screen.findByText('Feature de teste')
+    expect(screen.queryByRole('heading', { name: 'Épico' })).toBeNull()
+  })
+
+  // F-0495 crit. 5
+  it('concluída: épico em leitura, diagramas existentes abrem, nada novo se cria', async () => {
+    payload = {
+      ...detail('done'),
+      children: [{ ...detail('done').feature, id: 'F-0222', title: 'Filha' }],
+      artifacts: [{ name: 'fluxo.mmd', path: 'content/artifacts/F-0221/fluxo.mmd' }],
+    }
+    render(<FeaturePage id="F-0221" />)
+    expect(await screen.findByRole('heading', { name: 'Épico' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'F-0222' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /definir épico|trocar épico/i })).toBeNull()
+    expect(screen.getByRole('button', { name: 'fluxo.mmd' })).toBeInTheDocument()
+    expect(screen.queryByText('Gerar com IA')).toBeNull()
+  })
+
+  // F-0495 crit. 5
+  it('concluída sem diagrama: sem cartão Diagramas', async () => {
+    payload = detail('done')
+    render(<FeaturePage id="F-0221" />)
+    await screen.findByText('Feature de teste')
+    expect(screen.queryByRole('heading', { name: 'Diagramas' })).toBeNull()
   })
 })
