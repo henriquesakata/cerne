@@ -23,6 +23,9 @@ func uiHelperMain() int {
 		version.Version = strings.TrimSpace(string(v))
 	}
 	uiResolve = func(dir string) (string, string, string, string, error) {
+		if os.Getenv("CERNE_TEST_UI_STUCK") == "1" {
+			time.Sleep(time.Hour) // B-0067: a start that never serves (a backend lock wait)
+		}
 		if dir == "" {
 			dir, _ = os.Getwd()
 		}

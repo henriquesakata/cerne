@@ -164,6 +164,40 @@ func TestUIRestartKeepsPortAndProjects(t *testing.T) {
 	}
 }
 
+// B-0067: a panel stuck before it serves (in the field, the wait for a backend
+// lock) has bound the port, and signal.NotifyContext swallows Ctrl+C and
+// SIGTERM while nothing watches the context. A second signal must end the
+// process, so nobody needs kill -9 to free the port.
+func TestUISecondSignalEndsStuckStart(t *testing.T) {
+	t.Setenv("CERNE_TEST_UI_STUCK", "1")
+	cmdPath := filepath.Join(t.TempDir(), "cerne")
+	installUIHelper(t, cmdPath, "v0.0.1-a", time.Now())
+	port := freePort(t)
+	p := startUIHelper(t, cmdPath, port, superviseDirs(t, "proj-a")[0])
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	for deadline := time.Now().Add(15 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		if c, err := net.Dial("tcp", addr); err == nil {
+			c.Close()
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the stuck panel never bound the port")
+		}
+	}
+	for range 2 {
+		if err := p.cmd.Process.Signal(syscall.SIGTERM); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(300 * time.Millisecond) // let the first one be handled
+	}
+	select {
+	case <-p.done:
+		p.done <- nil // for the cleanup
+	case <-time.After(5 * time.Second):
+		t.Fatal("a second SIGTERM did not end a panel stuck before serving")
+	}
+}
+
 // Critic 4 (F-0478): handing the socket over must leave the listener that is
 // still serving in non-blocking mode (os.File.Fd would switch the shared open
 // file description to blocking, and a blocked Accept stalls the shutdown),

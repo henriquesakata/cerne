@@ -4,6 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
+	"sync"
 	"time"
 )
 
@@ -52,22 +55,42 @@ func WithLockWait(lockPath string, wait time.Duration, fn func() error) error {
 	return fn()
 }
 
+// held is the lockfiles this process image holds, guarded by heldMu together
+// with their create and remove. A lockfile naming this PID that is not in held
+// was left by the image before an exec: the cerne ui restart (F-0478) execs
+// with a pull in flight and no deferred release runs, so the new image must
+// not wait lockStaleAfter for its own predecessor (B-0067).
+var (
+	heldMu sync.Mutex
+	held   = map[string]bool{}
+)
+
 // acquireLock blocks until it creates lockPath exclusively (or steals a stale
 // one), returning a release func that removes it. ErrLockTimeout when a live
 // holder keeps it past lockAcquireTimeout.
 func acquireLock(lockPath string, wait time.Duration) (func(), error) {
 	deadline := time.Now().Add(wait)
 	for {
+		heldMu.Lock()
 		f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 		if err == nil {
+			held[lockPath] = true
 			_, _ = fmt.Fprintf(f, "%d\n%d\n", os.Getpid(), time.Now().UnixNano())
 			_ = f.Close()
-			return func() { _ = os.Remove(lockPath) }, nil
+		}
+		heldMu.Unlock()
+		if err == nil {
+			return func() {
+				heldMu.Lock()
+				defer heldMu.Unlock()
+				_ = os.Remove(lockPath)
+				delete(held, lockPath)
+			}, nil
 		}
 		if !isContendedCreateErr(err) {
 			return nil, err
 		}
-		if stealStaleLock(lockPath) {
+		if stealOrphanedLock(lockPath) || stealStaleLock(lockPath) {
 			continue // stale or vanished: retry the create immediately
 		}
 		if time.Now().After(deadline) {
@@ -75,6 +98,26 @@ func acquireLock(lockPath string, wait time.Duration) (func(), error) {
 		}
 		time.Sleep(lockPollInterval)
 	}
+}
+
+// stealOrphanedLock removes lockPath when it names this PID and this image
+// does not hold it (see held). Returns true when the caller should retry the
+// create, as stealStaleLock.
+func stealOrphanedLock(lockPath string) bool {
+	heldMu.Lock()
+	defer heldMu.Unlock()
+	if held[lockPath] {
+		return false
+	}
+	b, err := os.ReadFile(lockPath)
+	if err != nil {
+		return errors.Is(err, os.ErrNotExist)
+	}
+	if pid, _, _ := strings.Cut(string(b), "\n"); pid != strconv.Itoa(os.Getpid()) {
+		return false
+	}
+	_ = os.Remove(lockPath)
+	return true
 }
 
 // stealStaleLock removes lockPath when it is older than lockStaleAfter (a

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -65,6 +66,27 @@ func TestWithLockStealsStale(t *testing.T) {
 	}
 	if !ran {
 		t.Fatal("fn did not run after stealing stale lock")
+	}
+}
+
+// B-0067: a lockfile naming this very PID that no goroutine of this process
+// holds was left by the image before an exec (the cerne ui restart runs no
+// deferred release). It is taken at once, not after lockStaleAfter.
+func TestWithLockTakesOwnPIDOrphanAtOnce(t *testing.T) {
+	defer swapLockTiming(t, time.Hour, 200*time.Millisecond, time.Millisecond)()
+	lockPath := filepath.Join(t.TempDir(), "repo.lock")
+	if err := os.WriteFile(lockPath, []byte(strconv.Itoa(os.Getpid())+"\n0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ran := false
+	if err := WithLock(lockPath, func() error { ran = true; return nil }); err != nil {
+		t.Fatalf("WithLock waited on the lockfile its own pre-exec image left: %v", err)
+	}
+	if !ran {
+		t.Fatal("fn did not run")
+	}
+	if _, err := os.Stat(lockPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("lockfile not released after fn: %v", err)
 	}
 }
 
