@@ -117,6 +117,10 @@ func serveUI(cmd *cobra.Command, dir string, port int, noBrowser bool, pullInter
 	// project from the host's panel (F-0466).
 	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// The first signal asks for the graceful exit; a start that is not
+	// serving yet (a backend lock wait) never sees it, so the second one gets
+	// the default action and ends the process (B-0067).
+	context.AfterFunc(sigCtx, stop)
 	defer initServerTelemetry(sigCtx, dir)()
 	return superviseUI(sigCtx, cmd.OutOrStdout(), dir, port, noBrowser, pullInterval, uiResolve)
 }
