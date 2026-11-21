@@ -119,9 +119,15 @@ export default function Mirror() {
         <Empty title={t.mirror.emptyOffTitle} body={t.mirror.emptyOffBody} />
       ) : (
         <>
-          <p className="mirror-sync">{syncLine()}</p>
+          {/* No tracker: the sync has nothing to run against (B-0062). Cards of a
+              removed tracker still show below, in their own group. */}
+          {data.trackers.length === 0 ? (
+            <Empty title={t.mirror.emptyNoTrackerTitle} body={t.mirror.emptyNoTrackerBody} />
+          ) : (
+            <p className="mirror-sync">{syncLine()}</p>
+          )}
           {data.cards.length === 0 && data.ideas.length === 0 ? (
-            <Empty title={t.mirror.emptyNoneTitle} body={t.mirror.emptyNoneBody} />
+            data.trackers.length > 0 && <Empty title={t.mirror.emptyNoneTitle} body={t.mirror.emptyNoneBody} />
           ) : (
             <>
               {data.cards.length > 0 && (

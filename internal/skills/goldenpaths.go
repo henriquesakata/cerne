@@ -9,7 +9,7 @@ import (
 
 // GoldenPathComponent marks a note/runbook for materialization as a generated
 // agent skill (F-0178).
-const GoldenPathComponent = "golden-path"
+const GoldenPathComponent = domain.GoldenPathComponent
 
 // LoadGoldenPaths collects the active notes and runbooks tagged golden-path,
 // with their bodies stripped of the entity frontmatter — the input SyncLearned

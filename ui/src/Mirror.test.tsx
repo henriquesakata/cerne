@@ -143,6 +143,18 @@ describe('Mirror — the list (F-0465 crit. 1)', () => {
     expect(screen.queryByRole('button', { name: 'Check now' })).toBeNull()
   })
 
+  // B-0062
+  it('mirror on with no tracker: says the mirror does nothing and points to Integrations', async () => {
+    api.fetchMirror.mockResolvedValue({ enabled: true, trackers: [], cards: [], ideas: [], lastSync: null })
+    renderMirror()
+    expect(await screen.findByText('No tracker registered.')).toBeInTheDocument()
+    expect(screen.getByText(/the mirror does nothing/)).toBeInTheDocument()
+    expect(screen.getByText('mirror.trackers').tagName).toBe('CODE')
+    expect(screen.getByRole('link', { name: 'Open Integrations' })).toHaveAttribute('href', '#/settings/integrations')
+    expect(screen.queryByText('No card published yet.')).toBeNull()
+    expect(screen.queryByText(/Sync has never run/)).toBeNull()
+  })
+
   it('a failed load with nothing on screen shows the error with a retry', async () => {
     api.fetchMirror.mockRejectedValue(new Error('down'))
     renderMirror()
@@ -473,6 +485,15 @@ describe('Mirror — both languages (F-0465 crit. 6)', () => {
     api.fetchMirror.mockResolvedValue({ enabled: false, trackers: [], cards: [], ideas: [], lastSync: null })
     renderMirror('pt-BR')
     expect(await screen.findByText('O espelho está desligado.')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Abrir Integrações' })).toBeInTheDocument()
+  })
+
+  // B-0062
+  it('pt-BR: mirror on with no tracker', async () => {
+    api.fetchMirror.mockResolvedValue({ enabled: true, trackers: [], cards: [], ideas: [], lastSync: null })
+    renderMirror('pt-BR')
+    expect(await screen.findByText('Nenhum tracker cadastrado.')).toBeInTheDocument()
+    expect(screen.getByText(/Configurações → Integrações → Trackers de issues/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Abrir Integrações' })).toBeInTheDocument()
   })
 })

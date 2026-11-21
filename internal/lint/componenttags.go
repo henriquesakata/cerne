@@ -19,10 +19,16 @@ const (
 	// RuleComponentSameRoot: groups of components of the same root
 	// (domain.SameComponentRoot), e.g. testing and tests.
 	RuleComponentSameRoot = "component-same-root"
-	// RuleComponentNoteOnly: components on active notes and on no feature, so
-	// a feature's components never reach those notes.
+	// RuleComponentNoteOnly: active notes that share no component with any
+	// feature, so a task's components never reach them (B-0061: the note is
+	// counted, not the component, and the markers cerne asks for are not).
 	RuleComponentNoteOnly = "component-note-only"
 )
+
+// markerComponents are the reserved slugs cerne itself asks a note to carry
+// (a skill, a convention, war-room minutes); no feature carries them, so they
+// never count as a note's subject.
+var markerComponents = map[string]bool{domain.GoldenPathComponent: true, domain.ConventionComponent: true, domain.AtaComponent: true}
 
 // componentFix is the command every tag-cleanup finding points at.
 const componentFix = "cerne tags"
@@ -32,10 +38,9 @@ const shownComponents = 10
 
 // componentUse is where one component is used across the backend.
 type componentUse struct {
-	ids        []string // every entity carrying it, any kind and state
-	carrier    []string // the components of the first carrier, for the retag hint
-	onFeature  bool     // carried by a feature (F-/E-/T-/B-), any state
-	onLiveNote bool     // carried by an active note
+	ids       []string // every entity carrying it, any kind and state
+	carrier   []string // the components of the first carrier, for the retag hint
+	onFeature bool     // carried by a feature (F-/E-/T-/B-), any state
 }
 
 // componentUses indexes the components of every entity, any kind and state,
@@ -58,11 +63,6 @@ func componentUses(features []store.Feature, notes []store.Note, decisions []sto
 	}
 	for _, n := range notes {
 		add(n.ID, n.Components)
-		if n.State == domain.NoteActive {
-			for _, c := range n.Components {
-				use[c].onLiveNote = true
-			}
-		}
 	}
 	for _, d := range decisions {
 		add(d.ID, d.Components)
@@ -80,20 +80,27 @@ func componentUses(features []store.Feature, notes []store.Note, decisions []sto
 }
 
 // componentTagFindings is the one line per tag-cleanup rule that applies.
-func componentTagFindings(use map[string]*componentUse) []Finding {
+func componentTagFindings(use map[string]*componentUse, notes []store.Note) []Finding {
 	names := slices.Sorted(maps.Keys(use))
 	var single, noteOnly []string
-	example := ""
+	example, noteExample := "", ""
 	for _, c := range names {
-		if u := use[c]; len(u.ids) == 1 {
+		if u := use[c]; len(u.ids) == 1 && !markerComponents[c] {
 			single = append(single, fmt.Sprintf("%s (%s: %s)", c, u.ids[0], strings.Join(u.carrier, ",")))
 			if example == "" {
 				rest := slices.DeleteFunc(slices.Clone(u.carrier), func(x string) bool { return x == c })
 				example = fmt.Sprintf("'cerne %s retag %s --component %s'", retagKind(u.ids[0]), u.ids[0], strings.Join(append(rest, "<existing>"), ","))
 			}
 		}
-		if use[c].onLiveNote && !use[c].onFeature {
-			noteOnly = append(noteOnly, c)
+	}
+	for _, n := range notes {
+		subject := slices.DeleteFunc(slices.Clone(n.Components), func(c string) bool { return markerComponents[c] })
+		if n.State != domain.NoteActive || len(subject) == 0 || slices.ContainsFunc(subject, func(c string) bool { return use[c].onFeature }) {
+			continue
+		}
+		noteOnly = append(noteOnly, fmt.Sprintf("%s (%s)", n.ID, strings.Join(n.Components, ",")))
+		if noteExample == "" {
+			noteExample = fmt.Sprintf("'cerne note retag %s --component %s,<feature component>'", n.ID, strings.Join(n.Components, ","))
 		}
 	}
 	// ponytail: O(n²) over the vocabulary (hundreds of names); a root index
@@ -130,8 +137,8 @@ func componentTagFindings(use map[string]*componentUse) []Finding {
 	}
 	if len(noteOnly) > 0 {
 		out = append(out, Finding{Rule: RuleComponentNoteOnly, Fix: componentFix, Detail: fmt.Sprintf(
-			"%d components are on active notes and on no feature: %s — a feature's components never reach these notes; see 'cerne tags' and retag each note with its whole list plus a feature component: 'cerne note retag <id> --component <current>,<c>'",
-			len(noteOnly), capNames(noteOnly))})
+			"%d active notes share no component with any feature: %s — a task's components never reach them; pick a component features carry ('cerne tags') and retag each note with its whole list plus it, e.g. %s",
+			len(noteOnly), capNames(noteOnly), noteExample)})
 	}
 	return out
 }
