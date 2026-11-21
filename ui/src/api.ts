@@ -1692,6 +1692,25 @@ export async function fetchGraph(): Promise<Graph> {
 // global de modelos que mudou algo — já aplicado, só avisado (D-0005).
 export type ModelsChange = { at: string; added: string[]; delisted: string[]; relisted?: string[] }
 
+type LiveEvent = { type: 'models' | 'change' | 'projects' | 'update'; data: string }
+const LIVE_EVENTS: LiveEvent['type'][] = ['models', 'change', 'projects', 'update']
+
+// openStream abre o EventSource e entrega cada evento a onEvent.
+function openStream(onEvent: (ev: LiveEvent) => void): () => void {
+  const es = new EventSource('/api/stream')
+  for (const type of LIVE_EVENTS) {
+    es.addEventListener(type, (e) => onEvent({ type, data: String((e as MessageEvent).data ?? '') }))
+  }
+  return () => es.close()
+}
+
+// Uma conexão de /api/stream por navegador, não por aba (B-0068): o navegador
+// abre no máximo 6 conexões HTTP/1.1 por host e cada EventSource segura uma,
+// então com 6 abas do painel nenhum fetch saía. A aba que ganha a trava (Web
+// Locks) abre o stream e repassa cada evento às outras por BroadcastChannel;
+// quando ela fecha, a trava passa para a próxima, cujo stream novo começa com
+// o "projects" de ressincronia. Sem Web Locks ou BroadcastChannel, cada aba
+// abre o próprio stream, como antes.
 export function subscribeLive(handlers: {
   onChange: (pid: string) => void
   onProjects: () => void
@@ -1699,29 +1718,77 @@ export function subscribeLive(handlers: {
   // Uma linha do andamento da troca do binário pelo painel (F-0480).
   onUpdate?: (line: string) => void
 }): () => void {
-  const es = new EventSource('/api/stream')
-  es.addEventListener('models', (e) => {
-    try {
-      const c = JSON.parse(String((e as MessageEvent).data)) as Partial<ModelsChange>
-      handlers.onModels?.({
-        at: c.at ?? '',
-        added: c.added ?? [],
-        delisted: c.delisted ?? [],
-        relisted: c.relisted ?? [],
-      })
-    } catch {
-      // evento ilegível: o sino só fica quieto
+  // O servidor repete o último "models" a cada conexão, e a dona do stream o
+  // repete a cada aba nova ("hello"): um anúncio já entregue a esta aba não
+  // vira segundo aviso no sino.
+  let lastModels: LiveEvent | null = null
+  const dispatch = (ev: LiveEvent) => {
+    const { type, data } = ev
+    if (type === 'models') {
+      if (lastModels?.data === data) return
+      lastModels = ev
     }
-  })
-  es.addEventListener('change', (e) => {
-    const pid = String((e as MessageEvent).data ?? '')
-      .trim()
-      .split(' ')[0]
-    if (pid) handlers.onChange(pid)
-  })
-  es.addEventListener('projects', () => handlers.onProjects())
-  es.addEventListener('update', (e) => handlers.onUpdate?.(String((e as MessageEvent).data ?? '')))
-  return () => es.close()
+    switch (type) {
+      case 'models':
+        try {
+          const c = JSON.parse(data) as Partial<ModelsChange>
+          handlers.onModels?.({
+            at: c.at ?? '',
+            added: c.added ?? [],
+            delisted: c.delisted ?? [],
+            relisted: c.relisted ?? [],
+          })
+        } catch {
+          // evento ilegível: o sino só fica quieto
+        }
+        break
+      case 'change': {
+        const pid = data.trim().split(' ')[0]
+        if (pid) handlers.onChange(pid)
+        break
+      }
+      case 'projects':
+        handlers.onProjects()
+        break
+      case 'update':
+        handlers.onUpdate?.(data)
+        break
+    }
+  }
+  const locks = typeof navigator === 'undefined' ? undefined : navigator.locks
+  if (!locks || typeof BroadcastChannel === 'undefined') return openStream(dispatch)
+
+  const channel = new BroadcastChannel('cerne-live')
+  const done = new AbortController()
+  // O servidor só repete o último "models" a quem conecta; a aba que abre
+  // depois pede ("hello") e a dona do stream repete o que guardou.
+  let leader = false
+  channel.onmessage = (e: MessageEvent<LiveEvent | { type: 'hello' }>) => {
+    const ev = e.data
+    if (ev.type !== 'hello') dispatch(ev)
+    else if (leader && lastModels) channel.postMessage(lastModels)
+  }
+  locks
+    .request('cerne-live', { signal: done.signal }, () => {
+      if (done.signal.aborted) return Promise.resolve()
+      leader = true
+      const close = openStream((ev) => {
+        channel.postMessage(ev)
+        dispatch(ev)
+      })
+      return new Promise<void>((release) =>
+        done.signal.addEventListener('abort', () => {
+          close()
+          release()
+        }),
+      )
+    })
+    .catch(() => {}) // a aba fechou antes de chegar a vez dela (AbortError)
+  channel.postMessage({ type: 'hello' })
+  return () => {
+    done.abort()
+    channel.close()
+  }
 }
 
 // ---- lint stale-while-revalidate (F-0155) ----
