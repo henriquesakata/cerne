@@ -259,6 +259,13 @@ type sayRequest struct {
 }
 
 func handleRoomSay(w http.ResponseWriter, r *http.Request, repoDir, projDir, projectID, id string) {
+	// F-0491: a post opens a turn in an idle session it cites — refuse the
+	// cross-site simple request (text/plain, no preflight) another origin's
+	// page can fire, like every other write route (F-0323 C2).
+	if !sameOriginJSON(r) {
+		writeJSON(w, http.StatusForbidden, errorBody("cross-origin or non-JSON request refused"))
+		return
+	}
 	var req sayRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))

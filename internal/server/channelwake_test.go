@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/room"
 )
 
 // serverInbox is a Unix socket standing in for an idle Claude Code session's
@@ -128,5 +129,49 @@ func TestChannelPostWakes(t *testing.T) {
 		if tg.Work == "W-0002" && (tg.State != "not_delivered" || tg.Reason != app.WakeSocketMissing) {
 			t.Fatalf("W-0002 target = %+v, want not delivered with %s", tg, app.WakeSocketMissing)
 		}
+	}
+}
+
+// TestRoomSayRefusesCrossOrigin (F-0491 review, security high): a page of
+// another origin can fire a text/plain POST with no preflight; since a post
+// now opens a turn in an idle session, the say route refuses it with 403 —
+// no message, no wake — while the UI's own JSON post still goes through.
+func TestRoomSayRefusesCrossOrigin(t *testing.T) {
+	h, _, cacheDir := newChannelServer(t, "proj-channel-csrf")
+	if err := app.BindSession(cacheDir, "sess-b", "W-0002"); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.RecordSessionMode(cacheDir, "sess-b", "", "claude-code", "auto"); err != nil {
+		t.Fatal(err)
+	}
+	inbox := newServerInbox(t)
+	registerClaudeSession(t, "sess-b", inbox.path)
+	for _, tc := range []struct {
+		name    string
+		headers map[string]string
+	}{
+		{"text/plain from another origin", map[string]string{"Origin": "http://evil.example", "Content-Type": "text/plain;charset=UTF-8"}},
+		{"JSON from another origin", map[string]string{"Origin": "http://evil.example", "Content-Type": "application/json"}},
+		{"text/plain from this origin", map[string]string{"Origin": "http://127.0.0.1:7717", "Content-Type": "text/plain"}},
+	} {
+		for _, target := range []string{"/api/rooms/channel/messages", "/api/rooms/R1/messages"} {
+			var refused map[string]string
+			rec := doJSONWith(t, h, http.MethodPost, target, `{"body":"W-0002 rode isto"}`, tc.headers, &refused)
+			if rec.Code != http.StatusForbidden {
+				t.Fatalf("%s to %s = %d %s, want 403", tc.name, target, rec.Code, rec.Body.String())
+			}
+		}
+	}
+	msgs, _ := room.OpenChannel(filepath.Join(cacheDir, "rooms")).Messages()
+	if len(msgs) != 0 || len(inbox.writes()) != 0 {
+		t.Fatalf("a refused post left messages %+v or wrote %q", msgs, inbox.writes())
+	}
+	var ok map[string]any
+	if rec := doJSONWith(t, h, http.MethodPost, "/api/rooms/channel/messages", `{"body":"W-0002 rode isto"}`,
+		map[string]string{"Origin": "http://127.0.0.1:7717", "Content-Type": "application/json"}, &ok); rec.Code != http.StatusCreated {
+		t.Fatalf("the UI's own post = %d %s, want 201", rec.Code, rec.Body.String())
+	}
+	if got := inbox.writes(); len(got) != 1 {
+		t.Fatalf("the UI's own post woke %d times, want 1", len(got))
 	}
 }
