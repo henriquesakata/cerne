@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import History from './History'
+import { I18nProvider } from './i18n'
 import type { LifecycleEvent } from './api'
 
 const api = vi.hoisted(() => ({
@@ -68,28 +69,33 @@ describe('History — hora do evento (F-0493)', () => {
     vi.spyOn(navigator, 'languages', 'get').mockReturnValue(list)
     vi.spyOn(navigator, 'language', 'get').mockReturnValue(list[0])
   }
-  const zoneName = (iso: string, locale: string) =>
-    new Intl.DateTimeFormat(locale, { timeZoneName: 'short' }).formatToParts(new Date(iso)).find((p) => p.type === 'timeZoneName')!.value
+  // The zone is pinned to UTC by the viewer's choice, so the expected text does
+  // not depend on the zone of the machine running the test.
+  const inUTC = () => {
+    localStorage.setItem('cerne-time-zone', 'UTC')
+    return render(
+      <I18nProvider>
+        <History />
+      </I18nProvider>,
+    )
+  }
+  afterEach(() => localStorage.clear())
 
   // F-0493 crit. 1
   it('F-0493 crit. 1: a hora segue o locale do navegador, e não o PT/EN da interface', async () => {
     browser(['en-US'])
-    const at = events[0].at
-    const { container } = render(<History />)
+    // A interface está em pt-BR (o padrão); o computador diz en-US.
+    const { container } = inUTC()
     await waitFor(() => expect(screen.getByText('F-0300')).toBeInTheDocument())
-    // Sem provider a interface está em pt-BR; o computador diz en-US.
-    const text = container.querySelector('.history-at')!.textContent
-    expect(text).toBe(`${new Date(at).toLocaleString('en-US')} ${zoneName(at, 'en-US')}`)
-    expect(text).not.toBe(new Date(at).toLocaleString('pt-BR'))
+    expect(container.querySelector('.history-at')).toHaveTextContent('9/30/2026, 12:00:00 AM UTC')
   })
 
   // F-0493 crit. 2
   it('F-0493 crit. 2: a hora diz o fuso', async () => {
     browser(['pt-BR'])
-    const at = events[0].at
-    const { container } = render(<History />)
+    const { container } = inUTC()
     await waitFor(() => expect(screen.getByText('F-0300')).toBeInTheDocument())
-    expect(container.querySelector('.history-at')).toHaveTextContent(`${new Date(at).toLocaleString('pt-BR')} ${zoneName(at, 'pt-BR')}`)
+    expect(container.querySelector('.history-at')).toHaveTextContent('30/09/2026, 0:00:00 UTC')
   })
 
   // F-0493 crit. 5

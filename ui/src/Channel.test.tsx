@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import Channel from './Channel'
+import { I18nProvider } from './i18n'
 import { LiveProvider, useProjects } from './live'
 import { fetchProjects, type ChannelMessage, type ChannelSnapshot, type ProjectInfo } from './api'
 
@@ -55,11 +56,10 @@ const browser = (list: string[]) => {
   vi.spyOn(navigator, 'language', 'get').mockReturnValue(list[0])
 }
 
-// The zone name the formatter adds to the full instant, read from Intl.
-const zoneName = (iso: string, locale: string) =>
-  new Intl.DateTimeFormat(locale, { timeZoneName: 'short' }).formatToParts(new Date(iso)).find((p) => p.type === 'timeZoneName')!.value
-
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => {
+  vi.restoreAllMocks()
+  localStorage.clear()
+})
 
 beforeEach(() => {
   cleanup()
@@ -210,16 +210,23 @@ describe('Channel (F-0325)', () => {
 
   // F-0489 crit. 5
   it('cada mensagem mostra data e hora de envio, com o instante completo no title (F-0489 crit. 5)', async () => {
-    browser(['pt-BR'])
+    // F-0493: the viewer's choice pins the locale and the zone, so what is
+    // expected does not depend on the zone of the machine running the test.
+    localStorage.setItem('cerne-date-locale', 'pt-BR')
+    localStorage.setItem('cerne-time-zone', 'UTC')
     const iso = '2026-11-21T14:43:37Z'
     snapshot = { messages: [msg({ time: iso })], version: 1 }
-    const { container } = render(<Channel />)
+    const { container } = render(
+      <I18nProvider>
+        <Channel />
+      </I18nProvider>,
+    )
     await waitFor(() => expect(screen.getByText(/vou mexer em internal\/server/)).toBeInTheDocument())
     const stamp = container.querySelector(`time[datetime="${iso}"]`)
     expect(stamp).not.toBeNull()
-    expect(stamp).toHaveTextContent(new Date(iso).toLocaleString('pt-BR', SHORT))
+    expect(stamp).toHaveTextContent('21/11, 14:43')
     // F-0493 crit. 2: the title says the zone.
-    expect(stamp).toHaveAttribute('title', `${new Date(iso).toLocaleString('pt-BR')} ${zoneName(iso, 'pt-BR')}`)
+    expect(stamp).toHaveAttribute('title', '21/11/2026, 14:43:37 UTC')
   })
 
   // F-0493 crit. 1
