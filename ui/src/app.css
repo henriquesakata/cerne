@@ -3756,17 +3756,20 @@ button.clarify-chip { cursor: pointer; font: inherit; }
   background: var(--surface-2);
 }
 /* F-0494: starts collapsed to its title row; the marker and focus ring follow
-   the Backlog column's summary. */
+   the Backlog column's summary. The whole row is the click target, and the
+   latest activity is cut with an ellipsis before it wraps the row. */
 .agents:not([open]) { padding-bottom: 0.6rem; }
-.agents > summary { cursor: pointer; width: fit-content; list-style: none; }
+.agents > summary { cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: 0.4rem; min-width: 0; }
 .agents > summary::-webkit-details-marker { display: none; }
-.agents > summary > h2 { display: inline; margin: 0; }
-.agents > summary > .column-count { margin-left: 0.4rem; font-size: 0.85rem; }
+.agents > summary > h2 { margin: 0; flex: none; }
+.agents > summary > .column-count { font-size: 0.85rem; flex: none; }
+.agents-latest { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.85rem; color: var(--muted); }
+.agents-latest::before { content: '· '; content: '· ' / ''; }
 .agents > summary::before {
   content: '▼';
   content: '▼' / '';
   display: inline-block;
-  margin-right: 0.4rem;
+  flex: none;
   font-size: 0.7em;
   color: var(--muted);
 }
