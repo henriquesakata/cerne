@@ -3318,6 +3318,8 @@ a.badge-mirror:hover, a.badge-mirror:focus-visible { text-decoration: underline;
   background: var(--surface);
   cursor: pointer;
 }
+/* F-0492: "Atualizar agora" e "Mais tarde" lado a lado, sem bordas coladas */
+.load-notice button + button { margin-left: 0.5rem; }
 /* travado durante a tentativa (F-0302): aria-disabled mantém o foco no botão */
 .load-notice button[aria-disabled="true"],
 .ask-notice button[aria-disabled="true"] { opacity: 0.6; cursor: default; }
