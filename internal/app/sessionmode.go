@@ -42,6 +42,9 @@ func RecordSessionMode(cacheDir, sess, agent, harness, mode string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil { // the user's own sessions: nobody else reads them
 		return err
 	}
+	if err := os.Chmod(dir, 0o700); err != nil { // MkdirAll leaves an existing dir as it was
+		return err
+	}
 	// Parallel tool calls record at once: a reader never sees half a file.
 	tmp, err := os.CreateTemp(dir, ".mode-*")
 	if err != nil {
