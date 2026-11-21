@@ -237,3 +237,27 @@ describe('vault.editor copy (F-0464 critério 11)', () => {
     }
   })
 })
+
+// F-0489 crit. 9: the channel's new texts — the composer hint and the
+// name-free target labels the line puts after a mono id — exist in both
+// languages, and differ.
+describe('t.channel do compositor e dos destinatários (F-0489)', () => {
+  const channel = (lang: Lang) => {
+    localStorage.setItem('cerne-lang', lang)
+    const { result } = renderHook(() => useT(), { wrapper: I18nProvider })
+    return result.current.t.channel
+  }
+
+  it('pt-BR e en têm a dica do compositor e os rótulos de destinatário, com textos diferentes', () => {
+    const pt = channel('pt-BR')
+    const en = channel('en')
+    const keys = ['composerHint', 'targetNotDelivered', 'targetDelivered', 'targetAnswered', 'targetAcked', 'targetClosed'] as const
+    for (const k of keys) {
+      expect(typeof pt[k], k).toBe('string')
+      expect(typeof en[k], k).toBe('string')
+      expect(pt[k], k).not.toBe(en[k])
+    }
+    expect(pt.composerHint).toBe('Enter envia · Shift+Enter quebra linha')
+    expect(en.composerHint).toBe('Enter to send · Shift+Enter for a new line')
+  })
+})
