@@ -473,6 +473,22 @@ h2 {
 .ideas-panel > h2 + .muted { margin: 0 0 0.5rem; }
 .backlog-list-col .ideas-panel { padding-bottom: 0.75rem; border-bottom: 1px solid var(--border); }
 .backlog-list-col .ideas-list { max-height: 40vh; overflow-y: auto; }
+/* F-0487: o botão Sincronizar e a linha do último sync. */
+.ideas-sync { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: 0.5rem 0 0; }
+/* F-0487: a importada ainda não vista e a contagem do menu. Ênfase em tinta
+   cheia, sem matiz (DESIGN.md, No Brand Accent Rule): o elemento é pequeno. */
+.chip-new,
+.nav-count { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.nav-count {
+  display: inline-block;
+  min-width: 1.2rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  line-height: 1.2rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
 .ideas-capture { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1rem 0 0; }
 .ideas-capture > input { flex: 1 1 16rem; min-width: 0; }
 .ideas-capture input,

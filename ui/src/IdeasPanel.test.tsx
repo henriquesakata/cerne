@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import IdeasPanel from './IdeasPanel'
-import { HTTPError, SimilarExists, type Feature, type Idea } from './api'
+import { HTTPError, SimilarExists, setApiProject, type Feature, type Idea, type MirrorOverview, type MirrorSyncOutcome } from './api'
 
 const idea = (id: string, title: string, body?: string): Idea => ({
   id,
@@ -19,6 +19,9 @@ const fetchIdeas = vi.fn(async (_state?: 'all') => ideas)
 const createIdea = vi.fn<(title: string, body: string, facets: string[], components: string[], token: string) => Promise<Idea>>()
 const dropIdea = vi.fn<(id: string, reason: string) => Promise<Idea>>()
 const promoteIdea = vi.fn<(id: string, module: string, force?: boolean) => Promise<{ idea: Idea; feature: Feature }>>()
+const mirrorOff: MirrorOverview = { enabled: false, trackers: [], cards: [], ideas: [], lastSync: null }
+let mirror: MirrorOverview = mirrorOff
+const postMirrorSync = vi.fn<() => Promise<MirrorSyncOutcome>>()
 
 vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api')>()),
@@ -27,6 +30,8 @@ vi.mock('./api', async (importOriginal) => ({
     createIdea(title, body, facets, components, token),
   dropIdea: (id: string, reason: string) => dropIdea(id, reason),
   promoteIdea: (...a: [string, string, boolean?]) => promoteIdea(...a),
+  fetchMirror: async () => mirror,
+  postMirrorSync: () => postMirrorSync(),
 }))
 
 beforeEach(() => {
@@ -36,6 +41,9 @@ beforeEach(() => {
   createIdea.mockReset()
   dropIdea.mockReset()
   promoteIdea.mockReset()
+  mirror = mirrorOff
+  postMirrorSync.mockReset()
+  localStorage.clear()
 })
 
 const input = () => screen.getByRole('textbox', { name: 'Nova ideia' }) as HTMLInputElement
@@ -497,5 +505,101 @@ describe('IdeasPanel — ideia importada de um tracker (B-0063)', () => {
     expect(await screen.findByRole('link', { name: 'issue do GitLab #3' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'issue do Jira PROJ-12' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'issue do forgejo #9' })).toBeInTheDocument()
+  })
+})
+
+describe('IdeasPanel — sync e ideias não lidas (F-0487)', () => {
+  const imported = (id: string, title: string, issue: string): Idea => ({
+    ...idea(id, title),
+    mirror: { tracker: 'gh', kind: 'github', id: issue, url: `https://example.test/issues/${issue}` },
+  })
+  const on = (lastSync: MirrorOverview['lastSync'] = null): MirrorOverview => ({
+    enabled: true,
+    trackers: [{ name: 'gh', kind: 'github', url: 'https://example.test' }],
+    cards: [],
+    ideas: [],
+    lastSync,
+  })
+  const KEY = 'cerne.ideas.seen.p1'
+  beforeEach(() => setApiProject('p1'))
+  const page = () => render(<IdeasPanel modules={[]} onPromoted={() => {}} hash="#/ideas" />)
+
+  // F-0487 crit. 4
+  it('com o espelho ligado, Sincronizar roda o sync, trava enquanto roda e recarrega a lista', async () => {
+    mirror = on({ at: '2026-11-21T10:00:00Z', trackers: [{ name: 'gh', synced: 0, imported: 2, errors: [] }] })
+    let finish: (o: MirrorSyncOutcome) => void = () => {}
+    postMirrorSync.mockImplementation(() => new Promise((r) => (finish = r)))
+    page()
+    expect(await screen.findByText(/2 ideias importadas/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Sincronizar' }))
+    const running = await screen.findByRole('button', { name: 'Sincronizando…' })
+    expect(running).toBeDisabled()
+    const before = fetchIdeas.mock.calls.length
+    ideas = [imported('I-0009', 'issue nova', '12')]
+    finish({ kind: 'ok', ideas: ['I-0009'] })
+    expect(await screen.findByText('issue nova')).toBeInTheDocument()
+    expect(fetchIdeas.mock.calls.length).toBeGreaterThan(before)
+    expect(await screen.findByRole('button', { name: 'Sincronizar' })).toBeEnabled()
+  })
+
+  // F-0487 crit. 4
+  it('com o espelho desligado, nem botão nem linha do sync', async () => {
+    ideas = [idea('I-0001', 'comum')]
+    page()
+    await screen.findByText('comum')
+    expect(screen.queryByRole('button', { name: 'Sincronizar' })).toBeNull()
+    expect(screen.queryByText(/sync/i)).toBeNull()
+  })
+
+  // F-0487 crit. 4
+  it('um sync já em andamento vira aviso, não erro', async () => {
+    mirror = on()
+    postMirrorSync.mockResolvedValue({ kind: 'busy' })
+    page()
+    fireEvent.click(await screen.findByRole('button', { name: 'Sincronizar' }))
+    expect(await screen.findByRole('status')).toHaveTextContent(/já há um sync rodando/i)
+  })
+
+  // F-0487 crit. 5
+  it('o tracker que falhou aparece num alerta com o nome e o erro, e a lista continua', async () => {
+    mirror = on({ at: '2026-11-21T10:00:00Z', trackers: [{ name: 'gh', synced: 0, imported: 0, errors: ['gh: not logged in'] }] })
+    ideas = [imported('I-0053', 'Linux packaging', '4')]
+    page()
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('gh')
+    expect(alert).toHaveTextContent('not logged in')
+    expect(screen.getByText('Linux packaging')).toBeInTheDocument()
+  })
+
+  // F-0487 crit. 7
+  it('abrir a tela marca como vistas as importadas e põe "nova" nas que não tinham sido vistas', async () => {
+    localStorage.setItem(KEY, JSON.stringify(['I-0053']))
+    ideas = [imported('I-0053', 'vista antes', '4'), imported('I-0054', 'chegou agora', '3'), idea('I-0001', 'comum')]
+    page()
+    await screen.findByText('chegou agora')
+    await waitFor(() => expect(row('chegou agora').getByText('nova')).toBeInTheDocument())
+    expect(row('vista antes').queryByText('nova')).toBeNull()
+    expect(row('comum').queryByText('nova')).toBeNull()
+    expect(JSON.parse(localStorage.getItem(KEY)!).sort()).toEqual(['I-0053', 'I-0054'])
+    // Back on the screen later, nothing is new any more.
+    cleanup()
+    page()
+    await screen.findByText('chegou agora')
+    expect(screen.queryByText('nova')).toBeNull()
+  })
+
+  // F-0487 crit. 8
+  it('storage inacessível: sem "nova" e a tela não quebra', async () => {
+    const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('denied')
+    })
+    try {
+      ideas = [imported('I-0054', 'chegou agora', '3')]
+      page()
+      expect(await screen.findByText('chegou agora')).toBeInTheDocument()
+      expect(screen.queryByText('nova')).toBeNull()
+    } finally {
+      get.mockRestore()
+    }
   })
 })

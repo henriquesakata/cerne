@@ -697,6 +697,28 @@ export async function postMirrorCheck(): Promise<MirrorCheckOutcome> {
   }
 }
 
+// F-0487: the Sync button of the ideas screen. Never throws: 409 is the mirror
+// being off or another sync running (told apart by the server's message).
+export type MirrorSyncOutcome =
+  | { kind: 'ok'; ideas: string[] }
+  | { kind: 'off' }
+  | { kind: 'busy' }
+  | { kind: 'error'; message: string }
+
+export async function postMirrorSync(): Promise<MirrorSyncOutcome> {
+  try {
+    const r = await fetch(`${base()}/mirror/sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    })
+    if (r.status === 409) return (await errorMessage(r)).includes('already running') ? { kind: 'busy' } : { kind: 'off' }
+    if (!r.ok) return { kind: 'error', message: await errorMessage(r) }
+    return { kind: 'ok', ideas: ((await r.json()) as { ideas: string[] | null }).ideas ?? [] }
+  } catch (e) {
+    return { kind: 'error', message: e instanceof Error ? e.message : String(e) }
+  }
+}
+
 export async function fetchMirrorCommits(id: string): Promise<MirrorCommits> {
   const r = await fetch(`${base()}/mirror/commits/${encodeURIComponent(id)}`)
   if (!r.ok) throw new Error(await errorMessage(r))
