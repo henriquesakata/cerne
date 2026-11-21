@@ -179,20 +179,71 @@ type injItem struct {
 	shown    bool // already shown inline to the session: ranks after the unseen
 }
 
+// prefix opens the message's line. A human's reads as a report (F-0490): who
+// wrote, where and when, then the text in quotes (closing ends it) — never an
+// instruction-shaped tag; the reply it expects is humanReplies' sentence.
 func (it injItem) prefix() string {
-	who := it.m.Nick
-	if it.m.Human {
-		// channel.human_name may be 64 wide runes: cut, so a long name can't
-		// starve the inline set (critic C6).
-		who = TruncateBody(who, channelNameRunes, 1<<10) + " (human)"
+	if !it.m.Human {
+		who := it.m.Nick
+		if it.directed {
+			who += " → you"
+		}
+		return fmt.Sprintf("#%d %s: ", it.m.Seq, who)
 	}
-	if it.directed {
-		who += " → you"
+	where := "in the project channel"
+	if len(it.m.To) > 0 {
+		where = "to this session from the page of " + it.m.Ref
+	}
+	return fmt.Sprintf("#%d %s (human) wrote %s %s local time: \"", it.m.Seq, it.humanName(), where, it.m.Time.Local().Format("on 2006-01-02 at 15:04"))
+}
+
+// humanName is the human's nick cut to channelNameRunes: channel.human_name may
+// be 64 wide runes, and a long name must not starve the inline set (critic C6).
+func (it injItem) humanName() string { return TruncateBody(it.m.Nick, channelNameRunes, 1<<10) }
+
+func (it injItem) closing() string {
+	if it.m.Human {
+		return "\""
+	}
+	return ""
+}
+
+// humanReplies is the sentence that follows the human reports (F-0490): who
+// expects a reply from this session and through which command — one per
+// place asked (the channel, or a card's page), naming the inline seqs only.
+func humanReplies(shown []injItem) string {
+	var places []string // "" is the channel, else the card's ref
+	names, seqs := map[string][]string{}, map[string][]int{}
+	for _, it := range shown {
+		if !it.m.Human || !it.directed {
+			continue
+		}
+		place := ""
 		if len(it.m.To) > 0 {
-			who += ", about " + it.m.Ref
+			place = it.m.Ref
+		}
+		if !slices.Contains(places, place) {
+			places = append(places, place)
+		}
+		if n := it.humanName(); !slices.Contains(names[place], n) {
+			names[place] = append(names[place], n)
+		}
+		seqs[place] = append(seqs[place], it.m.Seq)
+	}
+	var b strings.Builder
+	for _, place := range places {
+		verb := "expects"
+		if len(names[place]) > 1 {
+			verb = "expect"
+		}
+		who, ack := strings.Join(names[place], " and "), strings.Trim(fmt.Sprint(seqs[place]), "[]")
+		if place == "" {
+			fmt.Fprintf(&b, "%s %s a reply from this session through cerne msg send \"<text>\" or cerne msg ack %s.\n", who, verb, ack)
+		} else {
+			fmt.Fprintf(&b, "%s %s a reply on the page of %s through cerne msg send --ref %s \"<text>\" or cerne msg ack %s.\n", who, verb, place, place, ack)
 		}
 	}
-	return fmt.Sprintf("#%d %s: ", it.m.Seq, who)
+	return b.String()
 }
 
 // F-0486: a human's message from a card's page goes to the sessions in its To
@@ -490,9 +541,9 @@ func renderInjection(pending []injItem, header string) (string, []room.Message) 
 	per := 0
 	for {
 		tail = injectionTail(sel, len(pending)-len(sel), directedPending)
-		used := len(header) + len(tail)
+		used := len(header) + len(humanReplies(sel)) + len(tail)
 		for _, it := range sel {
-			used += len(it.prefix()) + 1
+			used += len(it.prefix()) + len(it.closing()) + 1
 		}
 		if len(sel) == 0 {
 			break
@@ -513,10 +564,15 @@ func renderInjection(pending []injItem, header string) (string, []room.Message) 
 	var b strings.Builder
 	b.WriteString(header)
 	inline := make([]room.Message, 0, len(shown))
-	for _, it := range shown {
+	replies := humanReplies(shown)
+	for i, it := range shown {
 		b.WriteString(it.prefix())
 		b.WriteString(TruncateBody(it.m.Body, channelBodyRunes, per))
+		b.WriteString(it.closing())
 		b.WriteByte('\n')
+		if it.group == groupHuman && (i+1 == len(shown) || shown[i+1].group != groupHuman) {
+			b.WriteString(replies) // right under the reports it answers
+		}
 		inline = append(inline, it.m)
 	}
 	b.WriteString(tail)
@@ -525,39 +581,36 @@ func renderInjection(pending []injItem, header string) (string, []room.Message) 
 }
 
 // injectionTail is the count line for what did not fit inline, plus the
-// protocol line when anything addressed is pending (criterion 17) — of
-// directedPending addressed messages, it names for an ack only the inline ones
-// and points at the read for the rest (critic C15).
+// protocol line when an agent's addressed message is inline (criterion 17) —
+// a human's has its own sentence (humanReplies). Of directedPending addressed
+// messages, it names for an ack only the inline ones and points at the read
+// for the rest (critic C15).
 func injectionTail(sel []injItem, more, directedPending int) string {
 	var b strings.Builder
 	if more > 0 {
 		fmt.Fprintf(&b, "+%d more — cerne msg read\n", more)
 	}
-	var directed []int
+	var agents []int
+	inline := 0
 	for _, it := range sel {
-		if it.directed {
-			directed = append(directed, it.m.Seq)
+		if !it.directed {
+			continue
+		}
+		inline++
+		if !it.m.Human {
+			agents = append(agents, it.m.Seq)
 		}
 	}
-	slices.Sort(directed)
-	switch {
-	case len(directed) > 0:
+	slices.Sort(agents)
+	if len(agents) > 0 {
 		fmt.Fprintf(&b, "↳ addressed to you: answer with cerne msg send \"<text>\" (any later message of yours counts) or cerne msg ack %s\n",
-			strings.Trim(fmt.Sprint(directed), "[]"))
-		if directedPending > len(directed) {
-			b.WriteString("↳ more addressed to you, not shown above: read them with cerne msg read\n")
-		}
-	case directedPending > 0: // only in the count line: never an ack the reader cannot see (critic C15)
+			strings.Trim(fmt.Sprint(agents), "[]"))
+	}
+	switch {
+	case directedPending > inline && inline > 0:
+		b.WriteString("↳ more addressed to you, not shown above: read them with cerne msg read\n")
+	case directedPending > 0 && inline == 0: // only in the count line: never an ack the reader cannot see (critic C15)
 		b.WriteString("↳ addressed to you, not shown above: read it with cerne msg read\n")
-	}
-	var refs []string // F-0486: a card's page waits for the answer
-	for _, it := range sel {
-		if it.directed && len(it.m.To) > 0 && !slices.Contains(refs, it.m.Ref) {
-			refs = append(refs, it.m.Ref)
-		}
-	}
-	for _, ref := range refs {
-		fmt.Fprintf(&b, "↳ about %s: answer it on the card's page with cerne msg send --ref %s \"<text>\"\n", ref, ref)
 	}
 	return b.String()
 }

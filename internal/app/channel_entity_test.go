@@ -44,7 +44,7 @@ func TestChannelToSessionDeliveredWithoutLiveBinding(t *testing.T) {
 	withDoneSession(t, f)
 	seq := f.postTo("F-0001", []string{"s-dev"}, "o teste do canal quebrou, corrige?")
 
-	want := fmt.Sprintf("#%d Henrique (human) → you, about F-0001: o teste do canal quebrou", seq)
+	want := fmt.Sprintf("#%d Henrique (human) wrote to this session from the page of F-0001 %s local time: \"o teste do canal quebrou", seq, f.at.Local().Format("on 2006-01-02 at 15:04"))
 	for i := range 2 {
 		out := f.inject("s-dev", true)
 		if !strings.Contains(out, want) || !strings.Contains(out, `cerne msg send --ref F-0001 "<text>"`) {
@@ -151,7 +151,7 @@ func TestChannelToSessionAckAndStop(t *testing.T) {
 	seq := f.postTo("F-0001", []string{"s-dev"}, "viu o comentário do PR?")
 	f.at = f.at.Add(time.Second)
 	text, mark := ChannelStopReminder(f.cacheDir, f.repoDir, "s-dev", f.at)
-	if !strings.Contains(text, fmt.Sprintf("#%d Henrique (human) → you, about F-0001", seq)) {
+	if !strings.Contains(text, fmt.Sprintf("#%d Henrique (human) wrote to this session from the page of F-0001 ", seq)) {
 		t.Fatalf("Stop reminder = %q, want the addressed message", text)
 	}
 	mark()
@@ -212,7 +212,7 @@ func TestChannelWakeOnlyAddressed(t *testing.T) {
 
 	seq := f.postTo("F-0001", []string{"s-dev"}, "corrige o conflito?")
 	out := wake("s-dev")
-	want := fmt.Sprintf("#%d Henrique (human) → you, about F-0001: corrige o conflito?", seq)
+	want := fmt.Sprintf("#%d Henrique (human) wrote to this session from the page of F-0001 %s local time: \"corrige o conflito?\"", seq, f.at.Local().Format("on 2006-01-02 at 15:04"))
 	if !strings.Contains(out, want) || !strings.Contains(out, `cerne msg send --ref F-0001 "<text>"`) || strings.Contains(out, "chatter") || strings.Contains(out, "oi geral") {
 		t.Fatalf("s-dev wake = %q, want only the card message and how to answer", out)
 	}

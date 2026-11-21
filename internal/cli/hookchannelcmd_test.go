@@ -702,7 +702,7 @@ func TestHookChannelReachesNeverBoundSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	out, err := execCerneStdin(t, sessionStartJSON(t, "sess-opener", projDir), "hook", "channel", "--point", "session-start")
-	if err != nil || !strings.Contains(out, "Henrique (human) → you, about F-0001: o plano está certo?") || !strings.Contains(out, "cerne msg send --ref F-0001") {
+	if err != nil || !strings.Contains(out, "Henrique (human) wrote to this session from the page of F-0001 ") || !strings.Contains(out, `local time: "o plano está certo?"`) || !strings.Contains(out, "cerne msg send --ref F-0001") {
 		t.Fatalf("session start of a never-bound addressed session: %v\n%q", err, out)
 	}
 	if out, err := execCerneStdin(t, sessionStartJSON(t, "sess-other", projDir), "hook", "channel", "--point", "session-start"); err != nil || strings.Contains(out, "plano") {

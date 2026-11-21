@@ -114,8 +114,8 @@ func TestChannelDirectedTo(t *testing.T) {
 func TestChannelHumanAddressedToEveryLiveWork(t *testing.T) {
 	f := newChanFixture(t)
 	seq := f.post("Henrique", "se receberem esta mensagem, podem dizer qual atividade estão fazendo?", true)
-	want := fmt.Sprintf("#%d Henrique (human) → you: se receberem", seq)
-	ack := fmt.Sprintf(" or cerne msg ack %d\n", seq)
+	want := fmt.Sprintf("#%d Henrique (human) wrote in the project channel %s local time: \"se receberem", seq, f.at.Local().Format("on 2006-01-02 at 15:04"))
+	ack := fmt.Sprintf(" or cerne msg ack %d.\n", seq)
 	for i := range 2 {
 		for _, sess := range []string{"s1", "s2"} {
 			if out := f.inject(sess, true); !strings.Contains(out, want) || !strings.HasSuffix(out, ack) {
@@ -134,7 +134,7 @@ func TestChannelHumanAddressedToEveryLiveWork(t *testing.T) {
 	if out := f.inject("s1", true); out != "" {
 		t.Fatalf("after the answer: %q, want zero bytes", out)
 	}
-	if out := f.inject("s-none", true); !strings.Contains(out, fmt.Sprintf("#%d Henrique (human): se", seq)) || strings.Contains(out, "→ you") {
+	if out := f.inject("s-none", true); !strings.Contains(out, want) || strings.Contains(out, "expects a reply") {
 		t.Fatalf("session with no work = %q, want the human message once, unaddressed", out)
 	}
 	if out := f.inject("s-none", true); strings.Contains(out, "Henrique") {
@@ -314,6 +314,43 @@ func TestChannelToolPointShowsAddressedOncePerTurn(t *testing.T) {
 	f.post("W-0001", "ok, seguro", false) // the answer (F-0325 crit. 10) silences the turn start too
 	if out := f.inject("s1", true); out != "" {
 		t.Fatalf("turn start after the answer:\n%s", out)
+	}
+}
+
+// TestChannelHumanMessageReadsAsReport (F-0490 crit. 4): a human message
+// arrives as a report — who wrote it, when (local time), that it was in the
+// project channel, the text in quotes, and that the person expects a reply by
+// cerne msg send or cerne msg ack — with no system-instruction tone; an
+// agent's message keeps its form.
+func TestChannelHumanMessageReadsAsReport(t *testing.T) {
+	f := newChanFixture(t)
+	h := f.post("Henrique", "pode confirmar com um ok?", true)
+	when := f.at.Local().Format("on 2006-01-02 at 15:04")
+	a := f.post("W-0002", "W-0001 segura o rooms.go", false)
+	out := f.inject("s1", true)
+	for _, want := range []string{
+		fmt.Sprintf("#%d Henrique (human) wrote in the project channel %s local time: \"pode confirmar com um ok?\"\n", h, when),
+		fmt.Sprintf("Henrique expects a reply from this session through cerne msg send \"<text>\" or cerne msg ack %d.\n", h),
+		fmt.Sprintf("#%d W-0002 → you: W-0001 segura o rooms.go\n", a),
+		fmt.Sprintf("↳ addressed to you: answer with cerne msg send \"<text>\" (any later message of yours counts) or cerne msg ack %d\n", a),
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in:\n%s", want, out)
+		}
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if !strings.Contains(line, "Henrique") {
+			continue
+		}
+		if strings.Contains(line, "→ you") || strings.Contains(line, "answer with") || strings.ToUpper(line) == line {
+			t.Fatalf("human line in a system-instruction tone: %q", line)
+		}
+	}
+	// A session with no work gets the report as background: no reply sentence.
+	out = f.inject("s-none", true)
+	if !strings.Contains(out, fmt.Sprintf("#%d Henrique (human) wrote in the project channel %s local time: \"pode", h, when)) ||
+		strings.Contains(out, "expects a reply") {
+		t.Fatalf("session with no work = %q, want the report without a reply sentence", out)
 	}
 }
 
@@ -522,8 +559,8 @@ func TestChannelInjectProtocolLineOnlyWithDirected(t *testing.T) {
 		t.Fatalf("empty injection = %q", out)
 	}
 	hs := f.post("Henrique", "W-0001, para tudo", true)
-	if out := f.inject("s1", true); !strings.Contains(out, fmt.Sprintf("#%d Henrique (human) → you: ", hs)) || !strings.Contains(out, "↳") {
-		t.Fatalf("addressed human message without protocol line:\n%s", out)
+	if out := f.inject("s1", true); !strings.Contains(out, fmt.Sprintf("#%d Henrique (human) wrote", hs)) || !strings.Contains(out, fmt.Sprintf("or cerne msg ack %d.\n", hs)) {
+		t.Fatalf("addressed human message without its reply sentence:\n%s", out)
 	}
 }
 
@@ -600,7 +637,7 @@ func TestChannelInjectWorstCaseWithin400Tokens(t *testing.T) {
 				t.Fatalf("human #%d not inline:\n%s", seq, out)
 			}
 		}
-		if !strings.Contains(out, "\n+26 more — cerne msg read\n") || !strings.Contains(out, "↳ addressed to you") {
+		if !strings.Contains(out, "\n+26 more — cerne msg read\n") || !strings.Contains(out, "↳ more addressed to you, not shown above") {
 			t.Fatalf("count or protocol line missing:\n%s", out)
 		}
 		t.Logf("worst case: %d bytes, %d tokens", len(out), (len(out)+3)/4)
@@ -986,7 +1023,7 @@ func TestChannelLongHumanNameKeepsTheCap(t *testing.T) {
 	if n := len(injectedBodies(out)); n < 5 {
 		t.Fatalf("%d inline with a long human name, want >= 5:\n%s", n, out)
 	}
-	if (len(out)+3)/4 > 400 || !strings.Contains(out, strings.Repeat("𝕳", 24)+"… (human) → you: ") {
+	if (len(out)+3)/4 > 400 || !strings.Contains(out, strings.Repeat("𝕳", 24)+"… (human) wrote ") {
 		t.Fatalf("name not cut to 24 runes, or over budget:\n%s", out)
 	}
 }
@@ -1006,7 +1043,7 @@ func TestChannelProtocolLineTruthful(t *testing.T) {
 	}
 	// The inline humans are addressed too (B-0054): the ack names only them,
 	// and one more line points at the read for the counted one.
-	if !strings.Contains(out, "cerne msg ack 2 3 4 5 6\n") ||
+	if !strings.Contains(out, "cerne msg ack 2 3 4 5 6.\n") ||
 		!strings.HasSuffix(out, "↳ more addressed to you, not shown above: read them with cerne msg read\n") {
 		t.Fatalf("protocol lines not truthful about the counted message:\n%s", out)
 	}

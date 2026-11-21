@@ -270,7 +270,7 @@ func TestFeatureWaitMessageCommand(t *testing.T) {
 	}
 	t.Setenv("CERNE_SESSION", "sess-dev")
 	out, err := execCerne(t, "feature", "wait", id, "--for", "done", "--timeout", "0", "--dir", projDir)
-	for _, want := range []string{id + ": still candidate", "#1 Henrique (human) → you, about " + id + ": pode arrumar os conflitos?", "cerne msg send --ref " + id, "cerne feature wait " + id + " --for done"} {
+	for _, want := range []string{id + ": still candidate", "#1 Henrique (human) wrote to this session from the page of " + id + " ", `local time: "pode arrumar os conflitos?"`, "cerne msg send --ref " + id, "cerne feature wait " + id + " --for done"} {
 		if ExitCode(err) != 4 || !strings.Contains(out, want) {
 			t.Fatalf("addressed message: code %d, want 4 and %q\n%s", ExitCode(err), want, out)
 		}
