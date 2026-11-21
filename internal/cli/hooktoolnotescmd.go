@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -21,7 +22,8 @@ import (
 // before the tool on Claude Code and Codex (PreToolUse additionalContext),
 // right after it on Cursor, Gemini and Copilot, whose pre-tool hooks can only
 // deny. Local only and fail-open like every hook subcommand: any error is
-// silence, and the hook never decides on the tool.
+// silence, and the hook decides on the tool only under [gates] accept =
+// "merge", where it denies an agent's PR merge (F-0488).
 
 func newHookToolNotesCmd() *cobra.Command {
 	var format string
@@ -60,7 +62,13 @@ func toolNotesEmits(after bool, format string, cursor, copilotCLI bool) bool {
 
 func runHookToolNotes(cmd *cobra.Command, format string, after bool) {
 	in, err := decodeHookInput(cmd.InOrStdin())
-	if err != nil || !toolNotesEmits(after, format, in.cursor(), os.Getenv("COPILOT_CLI") == "1") {
+	if err != nil {
+		return
+	}
+	if !after && denyAgentMerge(cmd, in, format) {
+		return
+	}
+	if !toolNotesEmits(after, format, in.cursor(), os.Getenv("COPILOT_CLI") == "1") {
 		return
 	}
 	if in.cursor() {
@@ -189,4 +197,38 @@ func commandNotesBlock(cacheDir, repoDir, projDir, sess, command, suffix string)
 		b.WriteString(noteLine(n.ID, n.Title, n.Gist))
 	}
 	return b.String()
+}
+
+// mergeCmdRe matches a PR/MR merge at a command position (line start, or
+// after ; & | ( or $( , past env assignments): gh pr merge, glab mr merge,
+// tea pulls/pr merge, and a gh/glab api call to a merge endpoint. A mention
+// inside an argument (a commit message) is not at a command position.
+var mergeCmdRe = regexp.MustCompile(`(?m)(?:^|[;&|(]|\$\()\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*(?:(?:gh|glab|tea)\s[^;&|\n]*?\b(?:pr|mr|pulls?)\s+merge\b|(?:gh|glab)\s[^;&|\n]*?\bapi\b[^;&|\n]*?/(?:pulls|merge_requests)/[0-9]+/merge\b)`)
+
+// mergeDenyReason is what the agent reads when its merge is refused.
+const mergeDenyReason = "this project accepts a card on the merge of its PR ([gates] accept = \"merge\", F-0488): the merge is the human's acceptance, so an agent never merges — ask a human to merge the PR, then record it with 'cerne feature accept --merged'"
+
+// denyAgentMerge refuses, before the tool, an agent's PR merge in a project
+// under the merge gate (F-0488 crit. 10), in the envelope of the harness that
+// runs the hook. Fail-open like every hook: no project, no gate, no match is
+// a pass. It reports whether it denied.
+func denyAgentMerge(cmd *cobra.Command, in hookInput, format string) bool {
+	var ti struct {
+		Command string `json:"command"`
+	}
+	if json.Unmarshal(in.ToolInput, &ti) != nil || !mergeCmdRe.MatchString(ti.Command) {
+		return false
+	}
+	if in.cursor() {
+		format = "cursor"
+	}
+	cwd := in.CWD
+	if cwd == "" && format == "copilot" {
+		cwd = os.Getenv("COPILOT_PROJECT_DIR")
+	}
+	cfg, _, err := project.LoadConfig(cwd)
+	if err != nil || cfg.Gates.AcceptGate() != project.GateMerge {
+		return false
+	}
+	return encodeDeny(cmd.OutOrStdout(), format, mergeDenyReason) == nil
 }

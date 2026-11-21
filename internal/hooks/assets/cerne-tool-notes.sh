@@ -4,9 +4,10 @@
 # project-channel messages (B-0054: a shell command is a contact point) and
 # matches the command against the bash: triggers declared on the active notes
 # (local index, no LLM, no network), adding up to 3 `id — title` lines to the
-# agent's context, each note once per session. Never blocks or alters the
-# command: degrades silently (exit 0) when the cerne binary is absent or
-# fails. Tool-managed — do not edit; fix it upstream in internal/hooks/assets/
+# agent's context, each note once per session. It blocks a command only in a
+# project under [gates] accept = "merge", where it denies the agent's PR merge
+# (F-0488); it never alters one, and degrades silently (exit 0) when the cerne
+# binary is absent or fails. Tool-managed — do not edit; fix it upstream in internal/hooks/assets/
 # and re-run `cerne hook install`.
 # To turn it off for a process (eval, CI), set CERNE_NO_AGENT_HOOKS=1; to turn
 # the notes off for a project, set hooks.notes_on_bash = false (cerne
