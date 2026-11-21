@@ -67,7 +67,8 @@ func TestCloseFeatureInOneCommand(t *testing.T) {
 	for _, want := range []string{
 		"F-0001: in_development → implemented\n",
 		"cost stamped: ",
-		"Next step:\n  - human accept: cerne feature accept F-0001 (or drag the card to Done)\n",
+		// B-0070: no delivery link yet, so the block asks for it before the accept.
+		"Next step:\n  - record the delivery PR: cerne feature deliver F-0001 --mr <url>\n  - human accept: cerne feature accept F-0001 (or drag the card to Done)\n",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("complete output lacks %q:\n%s", want, out)

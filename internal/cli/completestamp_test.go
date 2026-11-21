@@ -73,12 +73,12 @@ func TestCompleteRefusedDoesNotStamp(t *testing.T) {
 
 // F-0402 crit. 3, the outcomes a project can reach end to end.
 func TestCompleteStampOutcomes(t *testing.T) {
-	t.Run("nothing to stamp", func(t *testing.T) {
+	t.Run("nothing to stamp", func(t *testing.T) { // B-0070: the warning says how a session binds
 		projDir, _, repoDir := setupProject(t)
 		seedResultFeatures(t, repoDir, domain.StateInDevelopment)
 		t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
 		out, err := execCerne(t, "feature", "complete", "F-0001", "--dir", projDir)
-		want := "warning: cost not stamped: no session on this machine is bound to F-0001; stamp it from the machine that ran the work: cerne cost F-0001 --stamp\n"
+		want := "warning: cost not stamped: no session on this machine is bound to F-0001. A session binds with its 'cerne feature start F-0001', or, when it continues work another session started, with 'cerne work start \"F-0001: <what>\" --ref F-0001' before working; work done on another machine is stamped there: cerne cost F-0001 --stamp\n"
 		if err != nil || !strings.Contains(out, want) {
 			t.Fatalf("err=%v, want line %q in:\n%s", err, want, out)
 		}
@@ -116,7 +116,7 @@ func TestCompleteStampLine(t *testing.T) {
 		{"kept higher", stampOutcome{report: rep, kind: stampKeptHigher}, nil, "cost already stamped"},
 		{"unchanged", stampOutcome{report: rep, kind: stampUnchanged}, nil, "cost already stamped"},
 		{"lower", stampOutcome{kind: stampLowerRefused}, nil, "warning: cost not stamped: the stamped total is higher than this machine's sessions; nothing written"},
-		{"nothing", stampOutcome{}, cost.ErrNothingToStamp, "warning: cost not stamped: no session on this machine is bound to F-0001; stamp it from the machine that ran the work: cerne cost F-0001 --stamp"},
+		{"nothing", stampOutcome{}, cost.ErrNothingToStamp, "warning: cost not stamped: no session on this machine is bound to F-0001. A session binds with its 'cerne feature start F-0001', or, when it continues work another session started, with 'cerne work start \"F-0001: <what>\" --ref F-0001' before working; work done on another machine is stamped there: cerne cost F-0001 --stamp"},
 		{"unsupported harness", stampOutcome{}, errors.Join(cost.ErrUnsupportedHarness, errors.New("codex")), "warning: cost not stamped: this session ran under a harness cerne cost cannot read (Claude Code transcripts only); nothing to run"},
 		{"other", stampOutcome{}, errors.New("push refused"), "warning: cost not stamped: push refused; run 'cerne cost F-0001 --stamp'"},
 		{"multi-line error", stampOutcome{}, errors.New("push refused:\n  remote: rejected\n"), "warning: cost not stamped: push refused: remote: rejected; run 'cerne cost F-0001 --stamp'"},
@@ -174,8 +174,10 @@ func TestCompleteEndsWithOneNextStepBlock(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		// B-0070: with no link the block asks for it before the accept, the
+		// same command 'cerne next' gives.
 		block := nextStepBlock(t, out)
-		if len(block) != 2 || block[0] != "  - human accept: cerne feature accept F-0001 (or drag the card to Done)" || !strings.Contains(block[1], "cerne feature wait F-0001 --for done") {
+		if len(block) != 3 || block[0] != "  - record the delivery PR: cerne feature deliver F-0001 --mr <url>" || block[1] != "  - human accept: cerne feature accept F-0001 (or drag the card to Done)" || !strings.Contains(block[2], "cerne feature wait F-0001 --for done") {
 			t.Errorf("block = %q", block)
 		}
 		if strings.Count(out, "Next step") != 1 || strings.Contains(out, "delivery:") {
@@ -225,8 +227,8 @@ func TestCompleteEndsWithOneNextStepBlock(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		block := nextStepBlock(t, out)
-		if len(block) != 3 || !strings.Contains(block[0], "cerne cost F-0001 --stamp") || !strings.Contains(block[1], "human accept") || !strings.Contains(block[2], "cerne feature wait") {
+		block := nextStepBlock(t, out) // B-0070: the owed PR link rides between the stamp and the accept
+		if len(block) != 4 || !strings.Contains(block[0], "cerne cost F-0001 --stamp") || !strings.Contains(block[1], "cerne feature deliver F-0001 --mr <url>") || !strings.Contains(block[2], "human accept") || !strings.Contains(block[3], "cerne feature wait") {
 			t.Errorf("block = %q", block)
 		}
 	})

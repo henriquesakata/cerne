@@ -613,7 +613,9 @@ const (
 func completeStampLine(id string, o stampOutcome, err error) string {
 	switch {
 	case errors.Is(err, cost.ErrNothingToStamp):
-		return fmt.Sprintf("warning: cost not stamped: no session on this machine is bound to %s; stamp it from the machine that ran the work: cerne cost %s --stamp", id, id)
+		// B-0070: name how a session binds; "another machine" alone sent the
+		// agent away from an unbound session that ran right here.
+		return fmt.Sprintf("warning: cost not stamped: no session on this machine is bound to %s. A session binds with its 'cerne feature start %s', or, when it continues work another session started, with 'cerne work start \"%s: <what>\" --ref %s' before working; work done on another machine is stamped there: cerne cost %s --stamp", id, id, id, id, id)
 	case errors.Is(err, cost.ErrUnsupportedHarness):
 		// --stamp would fail the same way (B-0055): advise no command.
 		return "warning: cost not stamped: this session ran under a harness cerne cost cannot read (Claude Code transcripts only); nothing to run"
