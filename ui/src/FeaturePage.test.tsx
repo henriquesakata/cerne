@@ -107,12 +107,16 @@ describe('FeaturePage back link (F-0221)', () => {
 // F-0262: reverter a aprovação é a saída deliberada de approved (F-0169) e
 // precisa de botão; a spec editada depois de aprovada precisa de aviso.
 describe('FeaturePage revert action (F-0262)', () => {
-  it('oferece Reverter apenas em approved', async () => {
-    payload = detail('approved')
-    render(<FeaturePage id="F-0221" />)
-    await waitFor(() => expect(screen.getByText('Reverter')).toBeInTheDocument())
+  // F-0499 crit. 10: também em Pronta e Concluída, um passo para trás.
+  it('oferece Reverter em approved, implemented e done', async () => {
+    for (const state of ['approved', 'implemented', 'done'] as FeatureState[]) {
+      cleanup()
+      payload = detail(state)
+      render(<FeaturePage id="F-0221" />)
+      await waitFor(() => expect(screen.getByText('Reverter')).toBeInTheDocument())
+    }
 
-    for (const state of ['candidate', 'in_development', 'implemented', 'done'] as FeatureState[]) {
+    for (const state of ['candidate', 'in_development'] as FeatureState[]) {
       cleanup()
       payload = detail(state)
       render(<FeaturePage id="F-0221" />)

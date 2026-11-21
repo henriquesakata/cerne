@@ -399,7 +399,7 @@ function Columns({
     const rule = DROPS[s]
     if (!inFlight || rule?.from !== inFlight.state) return null
     if (dragClass(s) === 'drop-blocked') return t.kanban.drag.pending(pendingClarify(inFlight.id))
-    return rule.action === 'approve' ? t.kanban.drag.hintApprove : t.kanban.drag.hintAccept
+    return { approve: t.kanban.drag.hintApprove, accept: t.kanban.drag.hintAccept, revert: t.kanban.drag.hintRevert }[rule.action]
   }
   const dropProps = (target: FeatureState) => {
     const rule = DROPS[target]
@@ -440,7 +440,14 @@ function Columns({
           setNotice({ id: f.id, text: t.kanban.drag.pending(n), refused: true })
           return
         }
-        void postTransition(f.id, transitionBody(rule.action))
+        // Voltar um passo (F-0499) leva o porquê: arrastar não tem onde
+        // escrever, então o soltar pergunta. Cancelar ou deixar em branco não faz nada.
+        let reason: string | undefined
+        if (rule.action === 'revert') {
+          reason = window.prompt(t.kanban.drag.revertReason(f.id))?.trim()
+          if (!reason) return
+        }
+        void postTransition(f.id, transitionBody(rule.action, undefined, reason))
           .then((res) =>
             setNotice(
               res.ok
@@ -537,7 +544,7 @@ function Columns({
                       pending={pendingClarify(f.id)}
                       activeWork={activeWorkFor(f.id)}
                       rolledUp={rolled.get(f.id) ?? 0}
-                      onDragStart={s === 'implemented' ? beginGesture : undefined}
+                      onDragStart={isDragSource(s) ? beginGesture : undefined}
                       ghost={ghost === f.id}
                     />
                   ))}
@@ -566,10 +573,18 @@ function Columns({
 }
 
 // Destinos do arraste (F-0388): cada coluna aceita só o seu par origem→destino.
-const DROPS: Partial<Record<FeatureState, { from: FeatureState; action: 'approve' | 'accept' }>> = {
+// A ordem conta: a faixa fora da tela (F-0420) aponta o primeiro destino da
+// origem, e o de uma Pronta é Concluída, à direita.
+const DROPS: Partial<Record<FeatureState, { from: FeatureState; action: 'approve' | 'accept' | 'revert' }>> = {
   approved: { from: 'candidate', action: 'approve' },
   done: { from: 'implemented', action: 'accept' },
+  // F-0499: um passo para trás depois da entrega.
+  implemented: { from: 'done', action: 'revert' },
+  in_development: { from: 'implemented', action: 'revert' },
 }
+
+// Coluna cujos cards se arrastam: a origem de algum par.
+const isDragSource = (s: FeatureState) => Object.values(DROPS).some((r) => r.from === s)
 
 // F-0420: o destino está fora da vista, pela direita, quando passa da borda
 // direita do board e menos da metade da largura dele cabe na área visível.
