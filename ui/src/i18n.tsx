@@ -1,10 +1,25 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
   type ReactNode,
 } from 'react'
+import {
+  DATE_LOCALE_KEY,
+  TIME_ZONE_KEY,
+  formatInstant,
+  isValidLocale,
+  isValidTimeZone,
+  readStored,
+  resolvePrefs,
+  writeStored,
+  type DatePrefs,
+  type InstantStyle,
+  type StoredDatePrefs,
+} from './datetime'
 import type {
   ApproveAdvice,
   ApproveImpediment,
@@ -3233,29 +3248,63 @@ const STORAGE_KEY = 'cerne-lang'
 const DICTS: Record<Lang, Messages> = { 'pt-BR': ptBR, en }
 
 function detectLang(): Lang {
-  const saved = localStorage.getItem(STORAGE_KEY)
+  // A storage that throws (blocked site data) reads as nothing saved (F-0493
+  // crit. 9): the page must open anyway.
+  let saved: string | null = null
+  try {
+    saved = localStorage.getItem(STORAGE_KEY)
+  } catch {
+    saved = null
+  }
   if (saved === 'pt-BR' || saved === 'en') return saved
   return navigator.language.toLowerCase().startsWith('pt') ? 'pt-BR' : 'en'
 }
 
-type I18n = { t: Messages; lang: Lang; setLang: (l: Lang) => void }
+// The two date and time choices a viewer can make by hand (F-0493): kept in
+// this browser like the language, never in the server's settings.
+type DateField = keyof StoredDatePrefs
 
-const Ctx = createContext<I18n>({ t: ptBR, lang: 'pt-BR', setLang: () => {} })
+type I18n = {
+  t: Messages
+  lang: Lang
+  setLang: (l: Lang) => void
+  // What the viewer picked; a missing field is automatic (the computer's).
+  dateChoice: StoredDatePrefs
+  // undefined goes back to automatic and clears the key; a value the browser
+  // does not know, or a storage that refuses the write, changes nothing.
+  setDateChoice: (field: DateField, value: string | undefined) => void
+}
+
+const Ctx = createContext<I18n>({ t: ptBR, lang: 'pt-BR', setLang: () => {}, dateChoice: {}, setDateChoice: () => {} })
+
+const DATE_KEYS: Record<DateField, string> = { locale: DATE_LOCALE_KEY, timeZone: TIME_ZONE_KEY }
+const DATE_VALID: Record<DateField, (v: string) => boolean> = { locale: isValidLocale, timeZone: isValidTimeZone }
 
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>(detectLang)
+  const [dateChoice, setDateChoiceState] = useState<StoredDatePrefs>(readStored)
 
   useEffect(() => {
     document.documentElement.lang = lang
   }, [lang])
 
   const setLang = (l: Lang) => {
-    localStorage.setItem(STORAGE_KEY, l)
+    try {
+      localStorage.setItem(STORAGE_KEY, l)
+    } catch {
+      // Not saved, still applied: the choice lasts until the page closes.
+    }
     setLangState(l)
   }
 
+  const setDateChoice = useCallback((field: DateField, value: string | undefined) => {
+    if (value !== undefined && !DATE_VALID[field](value)) return
+    if (!writeStored(DATE_KEYS[field], value)) return
+    setDateChoiceState((c) => ({ ...c, [field]: value }))
+  }, [])
+
   return (
-    <Ctx.Provider value={{ t: DICTS[lang], lang, setLang }}>
+    <Ctx.Provider value={{ t: DICTS[lang], lang, setLang, dateChoice, setDateChoice }}>
       {children}
     </Ctx.Provider>
   )
@@ -3263,4 +3312,18 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
 export function useT(): I18n {
   return useContext(Ctx)
+}
+
+// The locale and zone every instant shows in: the viewer's choice, else the
+// computer's, else the interface language and the zone the browser assumes.
+export function useDatePrefs(): DatePrefs {
+  const { lang, dateChoice } = useT()
+  return useMemo(() => resolvePrefs(dateChoice, lang), [lang, dateChoice])
+}
+
+// useInstant is the one way a screen shows an instant with a time of day: it
+// renders again when the choice changes, with no reload (F-0493 crit. 3, 8).
+export function useInstant(): (iso: string, style: InstantStyle) => string {
+  const prefs = useDatePrefs()
+  return useCallback((iso: string, style: InstantStyle) => formatInstant(iso, style, prefs), [prefs])
 }

@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it } from 'vitest'
-import { renderHook } from '@testing-library/react'
-import { I18nProvider, useT, type Lang } from './i18n'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { act, renderHook } from '@testing-library/react'
+import { I18nProvider, useDatePrefs, useInstant, useT, type Lang } from './i18n'
 
 // age devolve o formatador t.notif.age da tabela do idioma, pelo provider
 // real (sem export novo): o idioma vem do localStorage, como no app.
@@ -10,7 +10,10 @@ function age(lang: Lang): (min: number) => string {
   return result.current.t.notif.age
 }
 
-afterEach(() => localStorage.clear())
+afterEach(() => {
+  vi.restoreAllMocks()
+  localStorage.clear()
+})
 
 const DAY = 1440
 
@@ -281,5 +284,107 @@ describe('t.channel do compositor e dos destinatários (F-0489)', () => {
     }
     expect(pt.composerHint).toBe('Enter envia · Shift+Enter quebra linha')
     expect(en.composerHint).toBe('Enter to send · Shift+Enter for a new line')
+  })
+})
+
+// F-0493: as preferências de data e hora vivem no provider, ao lado do idioma:
+// o PT/EN decide os textos, o locale e o fuso decidem as horas.
+describe('useInstant e as preferências de data e hora (F-0493)', () => {
+  const ISO = '2026-11-21T14:43:37Z'
+  const SHORT: Intl.DateTimeFormatOptions = { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }
+  const browser = (list: string[]) => {
+    vi.spyOn(navigator, 'languages', 'get').mockReturnValue(list)
+    vi.spyOn(navigator, 'language', 'get').mockReturnValue(list[0] ?? '')
+  }
+  const render = (lang: Lang = 'pt-BR') => {
+    localStorage.setItem('cerne-lang', lang)
+    return renderHook(() => ({ i18n: useT(), instant: useInstant(), prefs: useDatePrefs() }), {
+      wrapper: I18nProvider,
+    })
+  }
+
+  // F-0493 crit. 1
+  it('F-0493 crit. 1: automático formata no locale do navegador, não no idioma da UI', () => {
+    browser(['en-GB'])
+    const { result } = render('pt-BR')
+    expect(result.current.prefs.locale).toBe('en-GB')
+    expect(result.current.instant(ISO, 'short')).toBe(new Date(ISO).toLocaleString('en-GB', SHORT))
+    // a UI segue em português: o idioma não mudou.
+    expect(result.current.i18n.lang).toBe('pt-BR')
+  })
+
+  // F-0493 crit. 1
+  it('F-0493 crit. 1: automático usa o fuso do computador', () => {
+    const { result } = render()
+    expect(result.current.prefs.timeZone).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone)
+  })
+
+  // F-0493 crit. 8
+  it('F-0493 crit. 8: um valor guardado vale, e escolher à mão grava e aplica sem recarregar', () => {
+    browser(['pt-BR'])
+    localStorage.setItem('cerne-date-locale', 'en-GB')
+    const { result } = render('pt-BR')
+    expect(result.current.prefs.locale).toBe('en-GB')
+
+    act(() => result.current.i18n.setDateChoice('locale', 'en-US'))
+    expect(localStorage.getItem('cerne-date-locale')).toBe('en-US')
+    expect(result.current.prefs.locale).toBe('en-US')
+    expect(result.current.instant(ISO, 'short')).toBe(new Date(ISO).toLocaleString('en-US', SHORT))
+
+    act(() => result.current.i18n.setDateChoice('timeZone', 'Asia/Tokyo'))
+    expect(localStorage.getItem('cerne-time-zone')).toBe('Asia/Tokyo')
+    expect(result.current.instant(ISO, 'time')).toBe('11:43 PM')
+  })
+
+  // F-0493 crit. 8
+  it('F-0493 crit. 8: voltar a automático apaga a chave', () => {
+    browser(['pt-BR'])
+    localStorage.setItem('cerne-date-locale', 'en-GB')
+    localStorage.setItem('cerne-time-zone', 'Europe/Lisbon')
+    const { result } = render()
+    act(() => result.current.i18n.setDateChoice('locale', undefined))
+    act(() => result.current.i18n.setDateChoice('timeZone', undefined))
+    expect(localStorage.getItem('cerne-date-locale')).toBeNull()
+    expect(localStorage.getItem('cerne-time-zone')).toBeNull()
+    expect(result.current.prefs.locale).toBe('pt-BR')
+    expect(result.current.i18n.dateChoice).toEqual({})
+  })
+
+  // F-0493 crit. 9
+  it('F-0493 crit. 9: valor guardado inválido cai no automático', () => {
+    browser(['pt-BR'])
+    localStorage.setItem('cerne-date-locale', 'xx-INVALID')
+    localStorage.setItem('cerne-time-zone', 'Lua/Base')
+    const { result } = render()
+    expect(result.current.i18n.dateChoice).toEqual({})
+    expect(result.current.prefs.locale).toBe('pt-BR')
+    expect(result.current.prefs.timeZone).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone)
+  })
+
+  // F-0493 crit. 9
+  it('F-0493 crit. 9: escolher um valor que o navegador não conhece não muda nada', () => {
+    const { result } = render()
+    act(() => result.current.i18n.setDateChoice('locale', 'xx-INVALID'))
+    act(() => result.current.i18n.setDateChoice('timeZone', 'Lua/Base'))
+    expect(result.current.i18n.dateChoice).toEqual({})
+    expect(localStorage.getItem('cerne-date-locale')).toBeNull()
+  })
+
+  // F-0493 crit. 9
+  it('F-0493 crit. 9: localStorage que lança na leitura e na gravação dá o automático, sem erro', () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('negado', 'SecurityError')
+    })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('cheio', 'QuotaExceededError')
+    })
+    browser(['en-GB'])
+    const { result } = renderHook(() => ({ i18n: useT(), prefs: useDatePrefs() }), { wrapper: I18nProvider })
+    expect(result.current.prefs.locale).toBe('en-GB')
+    act(() => result.current.i18n.setDateChoice('locale', 'pt-BR'))
+    expect(result.current.i18n.dateChoice).toEqual({})
+    expect(result.current.prefs.locale).toBe('en-GB')
+    act(() => result.current.i18n.setLang('en'))
+    expect(result.current.i18n.lang).toBe('en')
   })
 })
