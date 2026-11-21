@@ -11,6 +11,7 @@ import (
 	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/cost"
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/store"
 	"github.com/henriquesakata/cerne/internal/verbs"
 )
@@ -108,6 +109,11 @@ func runFeatureAcceptMerged(cmd *cobra.Command, dir string, args []string, reaso
 	ctx, err := resolveProject(dir)
 	if err != nil {
 		return err
+	}
+	// The sweep catches up on merges: a card completed on another machine
+	// must be in the list. A failed refresh still examines the local clone.
+	if err := gitback.SafePullNow(ctx.repoDir); err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: cannot refresh the backend (%v); examining the local clone\n", err)
 	}
 	checks, err := app.AcceptMerged(ctx.repoDir, ctx.projDir, ctx.cfg, args)
 	if err != nil {

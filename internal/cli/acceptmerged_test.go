@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -188,5 +190,32 @@ func TestShowAcceptedOnMerge(t *testing.T) {
 	}
 	if out, _ := execCerne(t, "show", "F-0002", "--dir", projDir); strings.Contains(out, "accepted:") {
 		t.Fatalf("show F-0002 must not claim a merge acceptance:\n%s", out)
+	}
+}
+
+// The sweep refreshes the backend first: a card completed on another machine
+// (pushed to the backend, not yet in this clone) is examined too.
+// F-0488 crit. 3
+func TestAcceptMergedRefreshesFirst(t *testing.T) {
+	projDir, repoDir := mergeGateProject(t, &cliFakeForge{pr: cliMergedPR})
+	origin, err := exec.Command("git", "-C", repoDir, "remote", "get-url", "origin").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(t.TempDir(), "other")
+	if out, err := exec.Command("git", "clone", "-q", strings.TrimSpace(string(origin)), other).CombinedOutput(); err != nil {
+		t.Fatalf("clone: %v\n%s", err, out)
+	}
+	if err := store.SaveFeature(other, store.Feature{ID: "F-0009", Title: "Elsewhere", State: domain.StateImplemented, DeliveryMRURL: "https://github.com/o/r/pull/12"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "-A"}, {"-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-qm", "elsewhere"}, {"push", "-q", "origin", "HEAD"}} {
+		if out, err := exec.Command("git", append([]string{"-C", other}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	out, err := execCerne(t, "feature", "accept", "--merged", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "F-0009: implemented → done") {
+		t.Fatalf("sweep: %v\n%s", err, out)
 	}
 }
