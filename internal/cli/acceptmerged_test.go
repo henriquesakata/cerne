@@ -101,3 +101,33 @@ func TestAcceptMergedFlagsExclusive(t *testing.T) {
 		}
 	}
 }
+
+// Under the merge gate, next lists the delivered cards as waiting for the
+// merge, each with its PR; a card with no PR to ask about owes the link in
+// FINISH DELIVERY. No forge is asked.
+// F-0488 crit. 8
+func TestNextWaitingForMerge(t *testing.T) {
+	f := &cliFakeForge{pr: cliMergedPR}
+	projDir, _ := mergeGateProject(t, f,
+		store.Feature{ID: "F-0001", State: domain.StateImplemented, DeliveryMRURL: "https://github.com/o/r/pull/12"},
+		store.Feature{ID: "B-0002", State: domain.StateImplemented, DeliveryCommitURL: "https://github.com/o/r/commit/abc1234"})
+	out, err := execCerne(t, "next", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("next: %v\n%s", err, out)
+	}
+	blk := nextBlock(out, "WAITING FOR THE MERGE (1)")
+	if blk == "" || strings.Contains(out, "WAITING FOR HUMAN ACCEPT") {
+		t.Fatalf("want WAITING FOR THE MERGE (1) in place of WAITING FOR HUMAN ACCEPT:\n%s", out)
+	}
+	for _, want := range []string{"cerne feature accept --merged", "F-0001", "    https://github.com/o/r/pull/12"} {
+		if !strings.Contains(blk, want) {
+			t.Errorf("group lacks %q:\n%s", want, blk)
+		}
+	}
+	if fin := nextBlock(out, "FINISH DELIVERY (1)"); !strings.Contains(fin, "    cerne feature deliver B-0002 --mr <url>") {
+		t.Errorf("B-0002 must owe the PR link in FINISH DELIVERY:\n%s", out)
+	}
+	if f.calls != 0 {
+		t.Fatalf("next asked the forge %d times, want none", f.calls)
+	}
+}

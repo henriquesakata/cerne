@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -262,5 +264,37 @@ func TestAcceptMergedCascadesTasks(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(checks[0].Outcome.Cascade, "\n"), "T-0002") {
 		t.Fatalf("cascade lines = %q, want T-0002", checks[0].Outcome.Cascade)
+	}
+}
+
+// Under the merge gate the next step of a delivered card is the agent's
+// --merged, with the PR named; without a PR it is the link. No forge call.
+// F-0488 crit. 8
+func TestNextStepMergeGate(t *testing.T) {
+	old := NewDeliveryForge
+	t.Cleanup(func() { NewDeliveryForge = old })
+	NewDeliveryForge = func(string, string) (forge.DeliveryForge, error) {
+		t.Fatal("NextStep asked the forge")
+		return nil, nil
+	}
+	proj, repo := nextStepRepo(t)
+	if err := os.WriteFile(filepath.Join(proj, ".cernerc"), []byte("project_id = \"demo\"\nbackend = \"b\"\n\n[gates]\naccept = \"merge\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []store.Feature{
+		{ID: "F-0001", Title: "t", State: domain.StateImplemented, DeliveryMRURL: prURL("12")},
+		{ID: "F-0002", Title: "t", State: domain.StateImplemented, DeliveryCommitURL: "https://github.com/o/r/commit/abc1234"},
+	} {
+		if err := store.SaveFeature(repo, f); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s, err := NextStep(repo, proj, "F-0001")
+	if err != nil || s.Actor != ActorAgent || s.Command != "cerne feature accept F-0001 --merged" || !strings.Contains(s.Step, prURL("12")) {
+		t.Fatalf("F-0001 step = %+v, %v", s, err)
+	}
+	s, err = NextStep(repo, proj, "F-0002")
+	if err != nil || s.Actor != ActorAgent || s.Command != "cerne feature deliver F-0002 --mr <url>" {
+		t.Fatalf("F-0002 step = %+v, %v", s, err)
 	}
 }
