@@ -29,6 +29,16 @@ func decodeSync(t *testing.T, body []byte) syncBody {
 	return out
 }
 
+// reasonOf is the 409's reason, which the screen reads instead of the message.
+func reasonOf(t *testing.T, body []byte) string {
+	t.Helper()
+	var b struct{ Reason string }
+	if err := json.Unmarshal(body, &b); err != nil {
+		t.Fatalf("body = %s (%v)", body, err)
+	}
+	return b.Reason
+}
+
 // F-0487 crit. 2
 func TestMirrorSyncRoute(t *testing.T) {
 	h, repoDir, _, fakes := mirrorFixture(t, true)
@@ -85,7 +95,7 @@ func TestMirrorSyncRouteTrackerFails(t *testing.T) {
 func TestMirrorSyncRouteOff(t *testing.T) {
 	h, _, _, fakes := mirrorFixture(t, false)
 	rec := do(h, "POST", "/api/mirror/sync", nil)
-	if rec.Code != 409 || !strings.Contains(rec.Body.String(), "mirror is off") {
+	if rec.Code != 409 || !strings.Contains(rec.Body.String(), "mirror is off") || reasonOf(t, rec.Body.Bytes()) != "off" {
 		t.Fatalf("sync off = %d: %s", rec.Code, rec.Body)
 	}
 	if n := len(fakes[0].Calls) + len(fakes[1].Calls); n != 0 {
@@ -100,7 +110,7 @@ func TestMirrorSyncRouteBusy(t *testing.T) {
 	mu.Lock() // a sync in flight
 	rec := do(h, "POST", "/api/mirror/sync", nil)
 	mu.Unlock()
-	if rec.Code != 409 || !strings.Contains(rec.Body.String(), "already running") {
+	if rec.Code != 409 || !strings.Contains(rec.Body.String(), "already running") || reasonOf(t, rec.Body.Bytes()) != "running" {
 		t.Fatalf("busy sync = %d: %s", rec.Code, rec.Body)
 	}
 	if n := len(fakes[0].Calls) + len(fakes[1].Calls); n != 0 {
@@ -114,38 +124,77 @@ func TestMirrorSyncRouteBusy(t *testing.T) {
 // runLoop runs mirrorSyncLoop for d and returns how many rounds synced; it
 // waits for the loop to stop, so the fakes can be read without a race.
 func runLoop(t *testing.T, repoDir, projDir string, every, d time.Duration) int {
+	return runLoopFull(t, repoDir, projDir, every, every, d)
+}
+
+func runLoopFull(t *testing.T, repoDir, projDir string, every, full, d time.Duration) int {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), d)
 	defer cancel()
 	rounds := 0
 	done := make(chan struct{})
 	go func() {
-		mirrorSyncLoop(ctx, repoDir, projDir, every, func() { rounds++ })
+		mirrorSyncLoop(ctx, repoDir, projDir, every, full, func() { rounds++ })
 		close(done)
 	}()
 	<-done
 	return rounds
 }
 
+// The loop does a full sync at once, then only imports between full syncs: a
+// new outside issue arrives on the next quick round, and no quick round
+// touches a mirrored card's issue.
 // F-0487 crit. 1
 func TestMirrorSyncLoop(t *testing.T) {
 	_, repoDir, projDir, fakes := mirrorFixture(t, true)
 	fakes[0].Open("Crash on save", "", "")
-	if rounds := runLoop(t, repoDir, projDir, 150*time.Millisecond, 2*time.Second); rounds < 2 {
-		t.Fatalf("loop synced %d round(s), want one at start and one per interval", rounds)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	rounds := make(chan int, 8)
+	n := 0
+	done := make(chan struct{})
+	go func() {
+		mirrorSyncLoop(ctx, repoDir, projDir, 50*time.Millisecond, time.Hour, func() {
+			n++
+			if n == 1 { // between rounds, on the loop's goroutine: no race with the fake
+				fakes[1].Open("Export the board as CSV", "", "")
+			}
+			rounds <- n
+		})
+		close(done)
+	}()
+	for want := 1; want <= 2; want++ {
+		select {
+		case <-rounds:
+		case <-time.After(20 * time.Second):
+			t.Fatalf("round %d never synced", want)
+		}
 	}
+	cancel()
+	<-done
 	ideas, err := store.LoadAllIdeas(repoDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	imported := 0
+	from := map[string]int{}
 	for _, i := range ideas {
-		if i.Mirror != nil && i.Mirror.Tracker == "a" {
-			imported++
+		if i.Mirror != nil {
+			from[i.Mirror.Tracker]++
 		}
 	}
-	if imported != 1 {
-		t.Fatalf("loop imported %d idea(s) from a, want 1", imported)
+	if from["a"] != 1 || from["b"] != 2 { // b already had I-0001 in the fixture
+		t.Fatalf("imported by tracker = %v, want a:1 (full round) and b:2 (quick round)", from)
+	}
+	updates := 0
+	for _, f := range fakes {
+		for _, c := range f.Calls {
+			if c.Op == "Update" {
+				updates++
+			}
+		}
+	}
+	if updates != 2 {
+		t.Fatalf("card issues updated %d time(s), want 2: only the full round touches the two mirrored cards", updates)
 	}
 }
 

@@ -395,9 +395,10 @@ describe('Nav — ideias importadas não lidas (F-0487)', () => {
   })
   const gh = (n: string) => ({ tracker: 'gh', kind: 'github', id: n, url: `https://example.test/${n}` })
   const work = () => screen.getByRole('button', { name: /^Trabalho/ })
+  const countLink = () => screen.queryByRole('link', { name: /ideias? importadas? não lidas?/ })
 
   // F-0487 crit. 6
-  it('conta no grupo Trabalho e no item Ideias as importadas ativas que este navegador não viu', async () => {
+  it('ao lado do grupo Trabalho, a contagem é um link direto para Ideias; o item Ideias também conta', async () => {
     localStorage.setItem('cerne.ideas.seen.p1', JSON.stringify(['I-0003']))
     navIdeas = [
       idea('I-0001', { mirror: gh('1') }),
@@ -407,8 +408,10 @@ describe('Nav — ideias importadas não lidas (F-0487)', () => {
       idea('I-0005', { mirror: gh('5'), state: 'promoted' }),
     ]
     render(<Nav hash="#/" />)
-    await waitFor(() => expect(work()).toHaveAccessibleName(/2 ideias importadas não lidas/))
-    expect(work().querySelector('.nav-count')).toHaveTextContent('2')
+    await waitFor(() => expect(countLink()).toHaveAccessibleName('2 ideias importadas não lidas'))
+    expect(countLink()).toHaveAttribute('href', '#/ideas')
+    expect(countLink()).toHaveTextContent('2')
+    expect(work()).toHaveAccessibleName('Trabalho')
     const item = within(openGroup('Trabalho')).getByRole('menuitem', { name: /^Ideias/ })
     expect(item).toHaveAccessibleName(/2 ideias importadas não lidas/)
   })
@@ -417,10 +420,9 @@ describe('Nav — ideias importadas não lidas (F-0487)', () => {
   it('sem não lida, sem contagem; e a contagem cai quando a tela marca como vistas', async () => {
     navIdeas = [idea('I-0001', { mirror: gh('1') })]
     render(<Nav hash="#/" />)
-    await waitFor(() => expect(work().querySelector('.nav-count')).toHaveTextContent('1'))
+    await waitFor(() => expect(countLink()).toHaveTextContent('1'))
     act(() => markSeen('p1', ['I-0001']))
-    await waitFor(() => expect(work().querySelector('.nav-count')).toBeNull())
-    expect(work()).toHaveAccessibleName('Trabalho')
+    await waitFor(() => expect(countLink()).toBeNull())
   })
 
   // F-0487 crit. 9
@@ -428,8 +430,7 @@ describe('Nav — ideias importadas não lidas (F-0487)', () => {
     localStorage.setItem('cerne-lang', 'en')
     navIdeas = [idea('I-0001', { mirror: gh('1') })]
     render(<Nav hash="#/" />, { wrapper: I18nProvider })
-    const btn = screen.getByRole('button', { name: /^Work/ })
-    await waitFor(() => expect(btn).toHaveAccessibleName(/1 unread imported idea$/))
+    await waitFor(() => expect(screen.getByRole('link', { name: '1 unread imported idea' })).toHaveAttribute('href', '#/ideas'))
   })
 
   // F-0487 crit. 8
@@ -441,7 +442,7 @@ describe('Nav — ideias importadas não lidas (F-0487)', () => {
       navIdeas = [idea('I-0001', { mirror: gh('1') })]
       render(<Nav hash="#/" />)
       await new Promise((r) => setTimeout(r, 50))
-      expect(work().querySelector('.nav-count')).toBeNull()
+      expect(countLink()).toBeNull()
     } finally {
       get.mockRestore()
     }

@@ -189,9 +189,15 @@ function NavLinks({ active, hash }: { active: string; hash: string }) {
               aria-expanded={isOpen}
               onClick={() => setOpen(isOpen ? null : g.key)}
             >
-              {t.nav[g.key]}
-              {g.key === 'groupWork' && <NavCount n={unread} />} <span aria-hidden="true">▾</span>
+              {t.nav[g.key]} <span aria-hidden="true">▾</span>
             </button>
+            {/* F-0487: the count is a direct link to Ideas, one click from anywhere. */}
+            {g.key === 'groupWork' && unread > 0 && (
+              <a href="#/ideas" className="nav-count nav-count-link" title={t.ideas.unread(unread)}>
+                <span aria-hidden="true">{unread}</span>
+                <span className="sr-only">{t.ideas.unread(unread)}</span>
+              </a>
+            )}
             {isOpen && (
               <div className="nav-group-menu" role="menu" aria-label={t.nav[g.key]}>
                 {items.map((l) => (

@@ -70,14 +70,18 @@ func mirrorSyncLock(repoDir string) *sync.Mutex {
 
 var errMirrorSyncRunning = errors.New("a mirror sync is already running for this project")
 
-// trySyncMirror runs one sync, or refuses when one is already running.
-func trySyncMirror(repoDir, projDir string) (app.MirrorSyncReport, error) {
+// trySyncMirror runs one sync (full: cards too; otherwise only the import),
+// or refuses when one is already running.
+func trySyncMirror(repoDir, projDir string, full bool) (app.MirrorSyncReport, error) {
 	mu := mirrorSyncLock(repoDir)
 	if !mu.TryLock() {
 		return app.MirrorSyncReport{}, errMirrorSyncRunning
 	}
 	defer mu.Unlock()
-	return app.SyncMirror(repoDir, projDir)
+	if full {
+		return app.SyncMirror(repoDir, projDir)
+	}
+	return app.ImportMirror(repoDir, projDir)
 }
 
 // handleMirrorSync is the Sync button of the ideas screen (F-0487). A tracker
@@ -87,10 +91,13 @@ func handleMirrorSync(w http.ResponseWriter, r *http.Request, repoDir, projDir s
 		writeJSON(w, http.StatusForbidden, errorBody("cross-origin or non-JSON request refused"))
 		return
 	}
-	rep, err := trySyncMirror(repoDir, projDir)
+	rep, err := trySyncMirror(repoDir, projDir, true)
 	switch {
-	case errors.Is(err, app.ErrMirrorOff), errors.Is(err, errMirrorSyncRunning):
-		writeJSON(w, http.StatusConflict, errorBody(err.Error()))
+	// reason tells the two 409s apart without the client reading the message.
+	case errors.Is(err, app.ErrMirrorOff):
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error(), "reason": "off"})
+	case errors.Is(err, errMirrorSyncRunning):
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error(), "reason": "running"})
 	case err != nil:
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 	default:
@@ -101,21 +108,35 @@ func handleMirrorSync(w http.ResponseWriter, r *http.Request, repoDir, projDir s
 	}
 }
 
-// mirrorSyncInterval is how often the panel syncs each project's mirror (F-0487).
-const mirrorSyncInterval = 5 * time.Minute
+// How often the panel looks at each project's mirror (F-0487): new outside
+// issues every 15 s (one list call per tracker, ~240 an hour), and the full
+// sync, which also brings each mirrored card's issue to its state, every 5 min.
+const (
+	mirrorImportInterval = 15 * time.Second
+	mirrorSyncInterval   = 5 * time.Minute
+)
 
-// mirrorSyncLoop syncs the project's mirror at once and then every interval
-// while ctx lives, so a new outside issue becomes an idea with nobody running
-// `cerne mirror sync`. A round with the mirror off, or with a sync already
-// running, does nothing; after runs when a round synced, so the panel can tell
-// the open screens to reread the last sync even when no idea came in.
-func mirrorSyncLoop(ctx context.Context, repoDir, projDir string, every time.Duration, after func()) {
+// mirrorSyncLoop syncs the project's mirror at once, then only imports new
+// outside issues every interval and runs the full sync again once full has
+// passed, while ctx lives: a new outside issue becomes an idea within seconds,
+// with nobody running `cerne mirror sync`. A round with the mirror off, or with
+// a sync already running, does nothing (a full round skipped is retried on the
+// next tick). after runs when a full round synced or a round imported ideas, so
+// the panel tells the open screens to reread, without waking them every tick.
+func mirrorSyncLoop(ctx context.Context, repoDir, projDir string, every, full time.Duration, after func()) {
 	t := time.NewTicker(every)
 	defer t.Stop()
+	var lastFull time.Time
 	for {
 		if project.MirrorSettings(projDir).Enabled {
-			if _, err := trySyncMirror(repoDir, projDir); err == nil {
-				after()
+			isFull := lastFull.IsZero() || time.Since(lastFull) >= full
+			if rep, err := trySyncMirror(repoDir, projDir, isFull); err == nil {
+				if isFull {
+					lastFull = time.Now()
+				}
+				if isFull || len(rep.Ideas) > 0 {
+					after()
+				}
 			}
 		}
 		select {

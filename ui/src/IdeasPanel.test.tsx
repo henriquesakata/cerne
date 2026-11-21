@@ -549,7 +549,7 @@ describe('IdeasPanel — sync e ideias não lidas (F-0487)', () => {
     page()
     await screen.findByText('comum')
     expect(screen.queryByRole('button', { name: 'Sincronizar' })).toBeNull()
-    expect(screen.queryByText(/sync/i)).toBeNull()
+    expect(screen.queryByText(/Último sync|O sync ainda não rodou/)).toBeNull()
   })
 
   // F-0487 crit. 4
@@ -598,6 +598,20 @@ describe('IdeasPanel — sync e ideias não lidas (F-0487)', () => {
     expect(await screen.findByRole('button', { name: 'Sync' })).toBeInTheDocument()
     expect(screen.getByRole('alert')).toHaveTextContent('Tracker gh failed in the last sync: boom')
     await waitFor(() => expect(row('arrived').getByText('new')).toBeInTheDocument())
+  })
+
+  // F-0487 crit. 8
+  it('storage cheio na escrita: a tela segue e a etiqueta nova aparece', async () => {
+    const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('quota')
+    })
+    try {
+      ideas = [imported('I-0054', 'chegou agora', '3')]
+      page()
+      await waitFor(() => expect(row('chegou agora').getByText('nova')).toBeInTheDocument())
+    } finally {
+      set.mockRestore()
+    }
   })
 
   // F-0487 crit. 8

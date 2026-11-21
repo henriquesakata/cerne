@@ -2123,7 +2123,10 @@ a.badge-mirror:hover, a.badge-mirror:focus-visible { text-decoration: underline;
 .nav-link.active { background: var(--fg); color: var(--bg); }
 
 /* botão de grupo + menu do grupo */
-.nav-group { position: relative; }
+.nav-group { position: relative; display: flex; align-items: center; }
+/* F-0487: a contagem de importadas não lidas, link direto para Ideias ao lado do grupo. */
+.nav-count-link { margin-left: 0.1rem; text-decoration: none; }
+.nav-count-link:hover, .nav-count-link:focus-visible { outline: 2px solid var(--fg); outline-offset: 1px; }
 .nav-group-btn {
   cursor: pointer;
   border: none;
