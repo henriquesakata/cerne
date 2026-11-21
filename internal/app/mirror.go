@@ -281,6 +281,11 @@ func syncMirror(repoDir, projDir string, cards bool) (MirrorSyncReport, error) {
 		}
 	}
 	if !cards {
+		if len(rep.Ideas) > 0 {
+			if err := recordImport(repoDir, rep); err != nil {
+				rep.Notes = append(rep.Notes, fmt.Sprintf("cerne: mirror sync: last sync not recorded: %v", err))
+			}
+		}
 		return rep, nil
 	}
 	features, err := store.LoadAllFeatures(repoDir)
