@@ -4215,54 +4215,85 @@ button.clarify-chip { cursor: pointer; font: inherit; }
 }
 .question-card-free button:disabled { opacity: 0.5; cursor: default; }
 
-/* Cofre (F-0463): árvore | documento | sumário e backlinks. */
-.page.vault { display: grid; grid-template-columns: minmax(14rem, 20rem) minmax(0, 1fr) minmax(12rem, 16rem); gap: 1.25rem; max-width: none; width: 100%; align-items: start; }
-.vault-tree, .vault-side { position: sticky; top: 1rem; max-height: calc(100vh - 6rem); overflow: auto; font-size: 0.9rem; }
+/* Cofre (F-0463, B-0060): árvore | documento | sumário e backlinks. As três
+   colunas se separam por filete, não por caixa; a árvore e o trilho grudam logo
+   abaixo da nav (49px) e rolam por dentro. */
+.page.vault { display: grid; grid-template-columns: clamp(15rem, 22vw, 22rem) minmax(0, 1fr) clamp(12rem, 16vw, 15rem); gap: 2rem; max-width: none; width: 100%; align-items: start; }
+.vault-tree, .vault-side { position: sticky; top: 4rem; max-height: calc(100dvh - 5rem); overflow: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.vault-tree { font-size: 0.9rem; padding-right: 1rem; border-right: 1px solid var(--border-soft); }
+.vault-tree-head { position: sticky; top: 0; z-index: 1; display: flex; flex-direction: column; gap: 0.5rem; padding-bottom: 0.75rem; background: var(--bg); }
 .vault-tree input[type='search'] { width: 100%; box-sizing: border-box; font: inherit; font-size: 0.95rem; padding: 0.45rem 0.6rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: inherit; }
+.vault-tree input[type='search']::placeholder { color: var(--faint); }
 .vault-tree input[type='search']:focus-visible,
 .vault-tree a:focus-visible,
-.vault-tree summary:focus-visible,
 .vault-twist:focus-visible,
 .vault-side button:focus-visible,
-.vault-doc-tabs a:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
-.vault-history { display: flex; align-items: center; gap: 0.4rem; margin: 0.5rem 0; color: var(--muted); }
-.vault-tree ul, .vault-side ul { list-style: none; margin: 0; padding-left: 0.9rem; }
-.vault-tree > ul { padding-left: 0; }
-.vault-tree li { padding: 0.1rem 0; }
-.vault-tree summary { cursor: pointer; list-style: none; display: flex; align-items: flex-start; flex-wrap: nowrap; gap: 0.25rem; }
-.vault-tree summary > a { flex: 1 1 auto; min-width: 0; }
-.vault-tree summary > .chip, .vault-tree summary > .badge { flex-shrink: 0; }
-/* leaf rows reserve the twist column so their text lines up with rows that have one */
-.vault-tree details > ul > li > a:first-child, .vault-tree details > ul > li > span:first-child { margin-left: 24px; }
+.vault-doc-tabs a:focus-visible { outline: 2px solid var(--fg); outline-offset: 1px; }
+.vault-tree summary:focus-visible { outline: 2px solid var(--fg); outline-offset: -2px; border-radius: 6px; }
+.vault-history { display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; color: var(--muted); cursor: pointer; }
+.vault-history input { margin: 0; accent-color: var(--fg); }
+.vault-status { margin: 0.5rem 0; color: var(--muted); }
+.vault-tree ul, .vault-side ul { list-style: none; margin: 0; padding: 0; }
+.vault-tree summary { list-style: none; }
 .vault-tree summary::-webkit-details-marker { display: none; }
-.vault-tree a { color: var(--link); text-decoration: none; }
-.vault-tree a:hover { text-decoration: underline; }
-.vault-tree a[aria-current='page'] { font-weight: 600; }
-.vault-tree .chip, .vault-tree .badge { margin-left: 0.3rem; }
-.vault-twist { border: 0; background: none; min-width: 24px; min-height: 24px; padding: 0; cursor: pointer; color: var(--muted); font: inherit; }
-.vault-doc { min-width: 0; }
-.vault-doc-header { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
-.vault-doc-header h1 { margin: 0; }
-.vault-doc-actions { margin-left: auto; }
-.vault-doc-tabs { flex-basis: 100%; display: flex; gap: 1rem; border-bottom: 1px solid var(--border-soft); }
-.vault-doc-tabs a { color: var(--link); text-decoration: none; padding: 0.35rem 0; border-bottom: 2px solid transparent; }
+/* Grupo: rótulo de seção (o h2 do sistema), não mais um link entre os itens. */
+.vault-group { display: flex; align-items: center; gap: 0.15rem; min-height: 1.9rem; cursor: pointer; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+div.vault-group { cursor: default; }
+summary.vault-group:hover { color: var(--fg); }
+.vault-group-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vault-count { flex: none; font-size: 0.78rem; font-variant-numeric: tabular-nums; letter-spacing: 0; color: var(--faint); }
+.vault-tree > ul > li > details > ul { margin: 0.1rem 0 0.75rem; }
+/* Linha: uma linha só, título inteiro no title; selecionada = tinta cheia. */
+.vault-row { display: flex; align-items: center; gap: 0.15rem; min-height: 1.75rem; }
+.vault-row > a, .vault-label { flex: 1 1 auto; min-width: 0; padding: 0.2rem 0.45rem; border-radius: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vault-row > a { color: var(--fg); text-decoration: none; }
+.vault-row > a:hover { background: var(--surface-3); }
+.vault-row > a[aria-current='page'] { background: var(--fg); color: var(--bg); font-weight: 600; }
+.vault-row > a[aria-current='page'] .card-id { color: var(--dim-inverse); }
+.vault-label { color: var(--muted); }
+.vault-row > .chip, .vault-row > .badge { flex: none; }
+.vault-row > .chip { font-size: 0.72rem; padding: 0.05rem 0.45rem; }
+/* filhos de uma entidade (docs da feature, features do épico): guia de 1px sob o chevron */
+.vault-row + ul { margin-left: 0.75rem; padding-left: 0.25rem; border-left: 1px solid var(--border-soft); }
+.vault-twist { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--faint); cursor: pointer; font: inherit; }
+button.vault-twist:hover { color: var(--fg); background: var(--surface-3); }
+.vault-tree details[open] > summary .vault-chevron { transform: rotate(90deg); }
+.vault-doc { width: 100%; max-width: 52rem; min-width: 0; justify-self: center; }
+.vault-empty { padding-top: 0.25rem; }
+.vault-empty p { margin: 0.5rem 0 0; color: var(--muted); }
+.vault-doc-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 1rem; row-gap: 0.6rem; align-items: start; margin-bottom: 1.5rem; }
+.vault-doc-header h1 { grid-column: 1; line-height: 1.25; text-wrap: balance; }
+.vault-doc-header > .chip { grid-column: 1; justify-self: start; }
+.vault-doc-actions { grid-column: 2; grid-row: 1; }
+.vault-doc-tabs { grid-column: 1 / -1; display: flex; gap: 1.25rem; border-bottom: 1px solid var(--border-soft); }
+.vault-doc-tabs a { margin-bottom: -1px; padding: 0.45rem 0; font-size: 0.9rem; color: var(--muted); text-decoration: none; border-bottom: 2px solid transparent; }
+.vault-doc-tabs a:hover { color: var(--fg); }
 .vault-doc-tabs a[aria-current='page'] { color: var(--fg); border-bottom-color: var(--fg); font-weight: 600; }
 .wikilink-broken { color: var(--muted); text-decoration: underline dotted; cursor: help; }
-.vault-side h2 { font-size: 0.85rem; text-transform: uppercase; color: var(--muted); }
-.vault-side button { border: 0; background: none; padding: 0.1rem 0; text-align: left; cursor: pointer; color: var(--link); font: inherit; }
-.vault-outline-sub { padding-left: 0.9rem; }
+/* Trilho: sumário e backlinks são o mesmo tipo de seção; o backlink perde a
+   caixa da página da feature para não pesar ao lado do sumário. */
+.vault-side { display: flex; flex-direction: column; gap: 1.75rem; padding-left: 1rem; border-left: 1px solid var(--border-soft); font-size: 0.85rem; }
+.vault-side button { display: block; width: 100%; border: 0; background: none; padding: 0.2rem 0; text-align: left; line-height: 1.35; cursor: pointer; color: var(--muted); font: inherit; }
+.vault-side button:hover { color: var(--fg); }
+.vault-outline-sub { padding-left: 0.75rem; }
+.vault-side .backlinks-section { margin: 0; padding: 0; border: 0; border-radius: 0; background: none; }
+.vault-side .backlinks-title { margin: 0 0 0.5rem; font-size: 0.85rem; font-weight: 700; }
+.vault-side .backlinks-list { gap: 0.5rem; }
+.vault-side .backlinks-list a { color: var(--fg); line-height: 1.35; }
 @media (max-width: 60rem) {
-  .page.vault { grid-template-columns: minmax(12rem, 18rem) minmax(0, 1fr); }
-  .vault-side { grid-column: 1 / -1; position: static; max-height: none; }
+  .page.vault { grid-template-columns: minmax(13rem, 17rem) minmax(0, 1fr); }
+  .vault-tree { grid-row: span 2; }
+  .vault-side { grid-column: 2; position: static; max-height: none; padding: 1.25rem 0 0; border-left: 0; border-top: 1px solid var(--border-soft); }
 }
 @media (max-width: 720px) {
   .page.vault { grid-template-columns: minmax(0, 1fr); }
-  .vault-tree { position: static; max-height: 40vh; }
+  .vault-tree { grid-row: auto; position: static; max-height: 40vh; padding: 0 0 0.75rem; border-right: 0; border-bottom: 1px solid var(--border-soft); }
+  .vault-side { grid-column: 1; }
 }
 /* Vault editor (F-0464): editing, the document takes the rail's column too; the
    markdown and its preview sit side by side at one height, and stack by the
    editor's own width, not the viewport's. */
-.page.vault.vault-editing .vault-doc { grid-column: 2 / -1; }
+.page.vault.vault-editing .vault-doc { grid-column: 2 / -1; max-width: none; }
 .vault-editor { display: flex; flex-direction: column; gap: 0.75rem; container-type: inline-size; }
 .vault-editor-panes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; height: 65vh; min-height: 20rem; }
 .vault-editor-source { position: relative; min-width: 0; min-height: 0; }

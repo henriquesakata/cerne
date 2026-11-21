@@ -102,19 +102,32 @@ describe('Vault (F-0463)', () => {
 
   it('B6: a árvore abre recolhida, só Em andamento aberto, com defeito/tarefa rotulados', async () => {
     await open('#/vault')
-    expect(within(tree()).getByText(/^Em andamento \(/)).toBeInTheDocument()
+    expect(within(tree()).getByText('Em andamento')).toBeInTheDocument()
     expect(within(tree()).getByRole('link', { name: /F-0001/ })).toBeInTheDocument()
     expect(within(tree()).getByText('defeito')).toBeInTheDocument()
     // os seis grupos ficam fechados: nada de D-0001 até abrir
     expect(within(tree()).queryByRole('link', { name: /D-0001/ })).toBeNull()
-    expect(within(tree()).getByText(/^Decisões \(1\)/)).toBeInTheDocument()
-    group(/^Decisões \(/)
+    expect(within(tree()).getByText('Decisões').nextElementSibling).toHaveTextContent(/^1$/)
+    group(/^Decisões$/)
     expect(within(tree()).getByRole('link', { name: /D-0001/ })).toBeInTheDocument()
+  })
+
+  // B-0060
+  it('B-0060: grupo é rótulo de seção com contagem à parte, vazio tem h1, chevron desenhado', async () => {
+    await open('#/vault')
+    expect(screen.getByRole('heading', { level: 1, name: 'Cofre' })).toBeInTheDocument()
+    const label = within(tree()).getByText('Decisões')
+    expect(label.closest('summary')).toHaveClass('vault-group')
+    expect(label.nextElementSibling).toHaveClass('vault-count')
+    expect(tree().textContent).not.toMatch(/[▸▾]/)
+    expect(within(tree()).getByRole('button', { name: 'Expandir F-0001' }).querySelector('svg')).not.toBeNull()
+    // a linha corta com reticências: o título inteiro fica no title
+    expect(within(tree()).getByRole('link', { name: /F-0001/ })).toHaveAttribute('title', 'F-0001 Primeira')
   })
 
   it('hash: clicar num nó escreve o hash da seleção', async () => {
     await open('#/vault')
-    group(/^Decisões \(/)
+    group(/^Decisões$/)
     fireEvent.click(within(tree()).getByRole('link', { name: /D-0001/ }))
     await waitFor(() => expect(window.location.hash).toBe('#/vault/D-0001'))
     // a feature expande para spec/plan/result
@@ -155,7 +168,7 @@ describe('Vault (F-0463)', () => {
 
   it('histórico: oculto por padrão, o controle mostra', async () => {
     await open('#/vault')
-    group(/^Decisões \(/)
+    group(/^Decisões$/)
     expect(within(tree()).queryByRole('link', { name: /D-0002/ })).toBeNull()
     fireEvent.click(screen.getByRole('checkbox', { name: 'Mostrar histórico' }))
     expect(within(tree()).getByRole('link', { name: /D-0002/ })).toBeInTheDocument()
@@ -164,12 +177,12 @@ describe('Vault (F-0463)', () => {
   it('B4: com o histórico ligado, só o item histórico leva selo, em português', async () => {
     await open('#/vault')
     fireEvent.click(screen.getByRole('checkbox', { name: 'Mostrar histórico' }))
-    group(/^Decisões \(/)
+    group(/^Decisões$/)
     const row = (id: string) => within(tree()).getByRole('link', { name: new RegExp(id) }).closest('li')!
     expect(row('D-0002')).toHaveTextContent('Substituída')
     expect(row('D-0002')).not.toHaveTextContent('superseded')
     expect(row('D-0001').querySelector('.chip')).toBeNull()
-    group(/^Páginas da wiki \(/)
+    group(/^Páginas da wiki$/)
     expect(within(tree()).getByRole('link', { name: 'Projeto' })).toBeInTheDocument()
   })
 
@@ -202,7 +215,7 @@ describe('Vault (F-0463)', () => {
     expect(document.querySelector('.vault-doc-header .chip')).toHaveTextContent('Substituída')
     expect(container.querySelector('.vault-doc-actions')).toBeEmptyDOMElement()
     expect(screen.getByRole('checkbox', { name: 'Mostrar histórico' })).not.toBeChecked()
-    expect(within(tree()).getByText(/^Visitando \(1\)/)).toBeInTheDocument()
+    expect(within(tree()).getByText('Visitando').nextElementSibling).toHaveTextContent(/^1$/)
     expect(within(tree()).getByRole('link', { name: /D-0002/ })).toHaveAttribute('aria-current', 'page')
     // ao ir para um doc vivo o visitante some, e o controle segue desligado
     rerender(<Vault hash="#/vault/D-0001" />)
