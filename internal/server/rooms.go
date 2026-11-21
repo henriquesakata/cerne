@@ -285,6 +285,9 @@ func handleRoomSay(w http.ResponseWriter, r *http.Request, repoDir, projDir, pro
 		var msg room.Message
 		if req.SessionID != "" {
 			msg, _, err = app.ChannelSend(cacheDir, repoDir, req.SessionID, req.Ref, req.Body, now)
+			if err == nil {
+				app.ChannelWakeIdle(cacheDir, repoDir, msg, time.Now().UTC()) // F-0491: never fails the post
+			}
 			msg.Session = "" // a session id is never served
 		} else {
 			if req.Ref != "" || len(req.To) > 0 {
@@ -294,6 +297,9 @@ func handleRoomSay(w http.ResponseWriter, r *http.Request, repoDir, projDir, pro
 				}
 			}
 			msg, err = app.ChannelPost(cacheDir, app.ChannelHumanName(projDir), req.Ref, req.To, req.Body, now)
+			if err == nil {
+				app.ChannelWakeIdle(cacheDir, repoDir, msg, time.Now().UTC()) // F-0491: never fails the post
+			}
 			msg.To = nil // session ids are never served
 		}
 		if err != nil {

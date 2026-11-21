@@ -370,3 +370,50 @@ func TestChannelWakeCitation(t *testing.T) {
 	expect("page message to s3", map[string]int{"s1": 1, "s2": 1, "s3": 2})
 }
 
+
+// TestChannelReadReason (F-0491 crit. 2 and 7): the state served to the UI
+// says why an idle session was not woken — bypass, or a harness that cannot
+// wake — while the target is not delivered; a later contact point delivers
+// it and the reason goes.
+func TestChannelReadReason(t *testing.T) {
+	f := newChanFixture(t)
+	_, register := fakeRegistry(t)
+	inbox := newFakeInbox(t)
+	register(20, "s2", inbox.path, "idle")
+	f.mode("s2", "claude-code", "bypassPermissions")
+	f.mode("s3", "other", "default")
+	seq := f.wake("W-0001", "W-0002 e W-0003 revisem", false)
+
+	reasons := func() map[string]ChannelTarget {
+		msgs, _ := f.read("")
+		out := map[string]ChannelTarget{}
+		for _, tg := range stateOf(t, msgs, seq).Targets {
+			out[tg.Work] = tg
+		}
+		return out
+	}
+	got := reasons()
+	if got["W-0002"].State != ChannelNotDelivered || got["W-0002"].Reason != WakeBypass {
+		t.Fatalf("W-0002 = %+v, want not delivered because of bypass", got["W-0002"])
+	}
+	if got["W-0003"].State != ChannelNotDelivered || got["W-0003"].Reason != WakeNoWake {
+		t.Fatalf("W-0003 = %+v, want not delivered because its harness cannot wake", got["W-0003"])
+	}
+	f.inject("s2", true) // its next contact point
+	if got := reasons()["W-0002"]; got.State != ChannelDelivered || got.Reason != "" {
+		t.Fatalf("W-0002 after a contact point = %+v, want delivered with no reason", got)
+	}
+
+	// A page message's target is a session (F-0486): its reason is by session.
+	f.at = f.at.Add(time.Second)
+	m, err := ChannelPost(f.cacheDir, "Henrique", "F-0001", []string{"s2"}, "confere a spec", f.at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.at = f.at.Add(time.Second)
+	ChannelWakeIdle(f.cacheDir, f.repoDir, m, f.at)
+	msgs, _ := f.read("")
+	if tg := stateOf(t, msgs, m.Seq).Targets; len(tg) != 1 || tg[0].Reason != WakeBypass {
+		t.Fatalf("page target = %+v, want the bypass reason", tg)
+	}
+}

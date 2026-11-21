@@ -722,6 +722,9 @@ type ChannelTarget struct {
 	Session string `json:"session,omitempty"`
 	// AnsweredAt: when the target first answered — reply or ack (F-0489).
 	AnsweredAt time.Time `json:"answered_at,omitzero"`
+	// Reason: why an idle session of the target was not woken for the
+	// message (F-0491, a Wake* code), while it is not delivered.
+	Reason string `json:"reason,omitempty"`
 }
 
 // ChannelMessage is a live channel message with its derived state: the worst
@@ -954,6 +957,8 @@ func (cs channelState) derive(m room.Message, works []store.Work, live map[strin
 				t.State, t.Acked, t.AnsweredAt = ChannelAnswered, cs.ackedBySession(m, sess), at
 			case cs.shownTo(m, sess):
 				t.State = ChannelDelivered
+			default:
+				t.Reason = cs.unwokenWhy(m, func(d room.Delivery) bool { return d.Session == sess })
 			}
 			cm.Targets = append(cm.Targets, t)
 		}
@@ -995,6 +1000,7 @@ func (cs channelState) derive(m room.Message, works []store.Work, live map[strin
 			t.State = ChannelDelivered
 		default:
 			t.State = ChannelNotDelivered
+			t.Reason = cs.unwokenWhy(m, func(d room.Delivery) bool { return d.Work == t.Work })
 		}
 		cm.Targets[i] = t
 	}
@@ -1016,6 +1022,17 @@ func worstState(targets []ChannelTarget) string {
 		}
 	}
 	return worst
+}
+
+// unwokenWhy is the newest reason an idle session matching of was not woken
+// for m (F-0491); "" when none was recorded.
+func (cs channelState) unwokenWhy(m room.Message, of func(room.Delivery) bool) string {
+	for i := len(cs.dels) - 1; i >= 0; i-- {
+		if d := cs.dels[i]; d.Reason != "" && of(d) && slices.Contains(d.Unwoken, m.Seq) {
+			return d.Reason
+		}
+	}
+	return ""
 }
 
 // delivered reports whether m was ever shown to a session working as work (a
