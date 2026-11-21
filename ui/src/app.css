@@ -1654,11 +1654,58 @@ h2 {
    fit-content — uma aba vazia (result/plan sem conteúdo) encolhia a página
    inteira e a recentralizava. */
 .feature { width: 100%; max-width: 70rem; margin: 0 auto; padding: 1.5rem; box-sizing: border-box; }
+
+/* B-0064: o controle-base da página. Os dois :where zeram a especificidade,
+   então toda regra com classe (.tab, .diagram-link, .code-copy, .queue-btn,
+   .tag…) continua vencendo; este bloco cobre o botão e o select sem classe, que
+   caíam no estilo do navegador, e dá a tinta do sistema a quem não a pedia
+   (o texto dos botões saía em preto puro). Um tamanho só para a página: label. */
+:where(.feature) :where(button, select) {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg);
+  cursor: pointer;
+}
+:where(.feature) :where(button:hover:not(:disabled)) { background: var(--surface-3); }
+:where(.feature) :where(button:disabled, select:disabled) { opacity: 0.6; cursor: default; }
+:where(.feature) :where(button:focus-visible, select:focus-visible) { outline: 2px solid var(--fg); outline-offset: 1px; }
+
 .back { display: inline-block; margin-bottom: 0.75rem; color: var(--muted); text-decoration: none; }
 .back:hover { text-decoration: underline; }
+/* O cabeçalho é a identidade do card: um filete o separa do que vem depois. */
+.feature-header { padding-bottom: 1rem; margin-bottom: 1rem; border-bottom: 1px solid var(--border-soft); }
 .feature-id { font-family: ui-monospace, monospace; color: var(--muted); }
-.feature-meta { display: flex; align-items: center; gap: 0.5rem; margin: 0.5rem 0 0; }
+.feature-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.5rem; margin: 0.6rem 0 0; }
 .feature-note { margin: 0.4rem 0 0; font-size: 0.85rem; color: var(--muted); }
+/* Lápis do título: botão fantasma, desenhado, na tinta apagada até o hover. */
+.feature .title-edit-btn {
+  display: inline-flex;
+  margin-left: 0.4rem;
+  padding: 0.25rem;
+  border: none;
+  background: none;
+  color: var(--faint);
+  vertical-align: middle;
+}
+.feature .title-edit-btn:hover { color: var(--fg); background: var(--surface-3); }
+.title-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.title-input {
+  flex: 1;
+  min-width: 12rem;
+  font: inherit;
+  font-size: 1.25rem;
+  font-weight: 600;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border-field);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg);
+}
+.title-input:focus-visible { outline: 2px solid var(--fg); outline-offset: 1px; }
 
 .notice {
   display: inline-block;
@@ -1697,8 +1744,10 @@ h2 {
   margin-top: 1.25rem;
 }
 
+/* minmax(0, 1fr), não 1fr: 1fr não encolhe abaixo do min-content, e um bloco
+   de código do doc empurrava a página para 755px num telefone (B-0064). */
 @media (max-width: 720px) {
-  .feature-body { grid-template-columns: 1fr; }
+  .feature-body { grid-template-columns: minmax(0, 1fr); }
 }
 
 .tabs { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--border-soft); }
@@ -1712,6 +1761,7 @@ h2 {
   color: var(--muted);
   cursor: pointer;
   border-bottom: 2px solid transparent;
+  border-radius: 0;
 }
 
 .tab.active { color: var(--fg); border-bottom-color: var(--fg); }
@@ -1846,26 +1896,16 @@ h2 {
 .artifacts { margin-top: 1rem; }
 .epic { margin-top: 1rem; }
 .approval { margin-top: 1rem; }
-.epic > h2 { margin: 0 0 0.5rem; font-size: 0.95rem; }
+/* O botão de cada seção do trilho respira do conteúdo acima, e o segundo
+   título do card do roast (o do plano) abre um bloco novo (B-0064). */
+.epic > button, .artifacts > button { margin-top: 0.6rem; }
+.artifacts > h2:not(:first-child) { margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--border-card); }
 .epic-progress { margin: 0 0 0.4rem; font-size: 0.85rem; color: var(--muted); }
 .epic-children ul { list-style: none; margin: 0 0 0.6rem; padding: 0; }
 .epic-children li { display: flex; align-items: center; flex-wrap: wrap; gap: 0.35rem; font-size: 0.85rem; margin: 0.2rem 0; overflow-wrap: anywhere; }
 .epic-edit { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.5rem; }
 .artifacts ul { margin: 0; padding-left: 1.1rem; font-size: 0.88rem; }
 .action-buttons { display: flex; flex-wrap: wrap; gap: 0.5rem; }
-
-.actions button {
-  font: inherit;
-  font-size: 0.88rem;
-  padding: 0.35rem 0.8rem;
-  border: 1px solid var(--border-strong);
-  border-radius: 6px;
-  background: var(--surface);
-  cursor: pointer;
-}
-
-.actions button:hover:not(:disabled) { background: var(--surface-3); }
-.actions button:disabled { opacity: 0.6; cursor: default; }
 
 .action-form {
   display: flex;
@@ -1880,20 +1920,24 @@ h2 {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  font-size: 0.82rem;
+  font-size: 0.85rem;
   color: var(--muted);
 }
 
 .action-form input,
 .action-form textarea {
   font: inherit;
-  font-size: 0.88rem;
+  font-size: 0.85rem;
   padding: 0.35rem 0.5rem;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-field);
   border-radius: 6px;
   background: var(--surface);
+  color: var(--fg);
   resize: vertical;
 }
+
+.action-form input:focus-visible,
+.action-form textarea:focus-visible { outline: 2px solid var(--fg); outline-offset: 1px; }
 
 .form-error { margin: 0.6rem 0 0; font-size: 0.85rem; }
 
@@ -1928,41 +1972,12 @@ h2 {
   text-decoration: underline;
 }
 
-.diagram-actions button,
-.diagram-name-form button {
-  font: inherit;
-  font-size: 0.85rem;
-  padding: 0.3rem 0.7rem;
-  border: 1px solid var(--border-strong);
-  border-radius: 6px;
-  background: var(--surface);
-  cursor: pointer;
-}
-
 .diagram-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
   margin-top: 0.6rem;
-}
-
-.diagram-actions button:hover:not(:disabled),
-.diagram-name-form button:hover:not(:disabled) { background: var(--surface-3); }
-.diagram-actions button:disabled,
-.diagram-name-form button:disabled { opacity: 0.6; cursor: default; }
-
-.diagram-name-form { display: flex; gap: 0.4rem; }
-
-.diagram-name-form input {
-  font: inherit;
-  font-size: 0.85rem;
-  padding: 0.3rem 0.5rem;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface);
-  min-width: 0;
-  flex: 1;
 }
 
 .diagram-panel { margin-top: 1.25rem; }
@@ -3123,20 +3138,8 @@ h2 {
 /* edição de docs na página da feature */
 .doc-view { position: relative; }
 
-.doc-edit-toggle {
-  position: absolute;
-  top: 0.4rem;
-  right: 0;
-  font: inherit;
-  font-size: 0.82rem;
-  padding: 0.2rem 0.6rem;
-  border: 1px solid var(--border-strong);
-  border-radius: 6px;
-  background: var(--surface);
-  cursor: pointer;
-}
-
-.doc-edit-toggle:hover { background: var(--surface-3); }
+/* O resto do botão vem do controle-base da página (B-0064). */
+.doc-edit-toggle { position: absolute; top: 0.4rem; right: 0; }
 
 /* "Atualizado há …" — discreto, no topo da visualização, sem encostar no
    botão Editar (que flutua à direita). */
@@ -3149,11 +3152,14 @@ h2 {
   font-size: 0.85rem;
   line-height: 1.5;
   padding: 0.7rem;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-field);
   border-radius: 6px;
   background: var(--surface);
+  color: var(--fg);
   resize: vertical;
 }
+
+.doc-textarea:focus-visible { outline: 2px solid var(--fg); outline-offset: 1px; }
 
 .doc-edit-actions {
   display: flex;
@@ -3161,19 +3167,6 @@ h2 {
   gap: 0.5rem;
   margin-top: 0.6rem;
 }
-
-.doc-edit-actions button {
-  font: inherit;
-  font-size: 0.88rem;
-  padding: 0.35rem 0.9rem;
-  border: 1px solid var(--border-strong);
-  border-radius: 6px;
-  background: var(--surface);
-  cursor: pointer;
-}
-
-.doc-edit-actions button:hover:not(:disabled) { background: var(--surface-3); }
-.doc-edit-actions button:disabled { opacity: 0.6; cursor: default; }
 
 /* nova feature */
 .new-feature-form {
@@ -3688,15 +3681,29 @@ button.clarify-chip { cursor: pointer; font: inherit; }
 .harness-outside { color: var(--accent); border-color: var(--accent); }
 
 .harness-fix { margin-top: 0.35rem; max-width: 28rem; }
-/* F-0486: the card's agent sessions and its chat. */
-.agents-list { list-style: none; padding: 0; margin: 0.5rem 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.75rem; }
+/* F-0486: the card's agent sessions and its chat. B-0064: a section of the
+   same kind as its siblings above the documents (backlinks, pendings), in the
+   neutral rule, with a rule between sessions. */
+.agents {
+  margin: 0.75rem 0;
+  padding: 0.6rem 0.9rem 0.75rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+.agents > p { margin: 0.25rem 0 0; font-size: 0.85rem; }
+.agents-list { list-style: none; padding: 0; margin: 0.6rem 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.75rem; }
 .agents-row { min-width: 0; }
-.agents-row p { margin: 0.2rem 0; }
+.agents-row + .agents-row { padding-top: 0.75rem; border-top: 1px solid var(--border-soft); }
+.agents-row > label { margin-right: 0.35rem; }
+.agents-row p { margin: 0.2rem 0; font-size: 0.85rem; }
 .agents-row code { overflow-wrap: anywhere; }
 .agents-chat { margin-top: 0.5rem; }
 .agents-unreached { margin-top: 0.25rem; }
 .agents .harness-fix { max-width: none; }
-.agents .harness-fix pre { padding-right: 5rem; overflow-x: auto; }
+/* The command wraps instead of scrolling under the copy button: the whole
+   line stays readable, and the padding keeps the button's lane clear. */
+.agents .harness-fix pre { padding-right: 5rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 .harness-fix pre {
   margin: 0;
   padding: 0.35rem 0.6rem;
@@ -3758,14 +3765,17 @@ button.clarify-chip { cursor: pointer; font: inherit; }
 /* F-0277 — roast: a lateral lista rodadas; a leitura acontece num modal em
    largura de leitura (o relatório não cabe na coluna estreita). Mesmo z-index
    da palette para cobrir o Nav. */
+/* A rodada ficou para trás da spec: aviso âmbar, pílula de classificação
+   (B-0064 — antes, cores literais de fallback fora dos dois blocos de tema). */
 .roast-stale {
   margin-left: 0.4rem;
   font-size: 0.72rem;
+  font-weight: 600;
   padding: 0.05rem 0.4rem;
-  border-radius: 0.5rem;
-  background: var(--yellow-bg, rgba(214, 158, 46, 0.15));
-  border: 1px solid var(--yellow-border, rgba(214, 158, 46, 0.4));
-  color: var(--fg);
+  border-radius: 999px;
+  background: var(--amber-bg);
+  border: 1px solid var(--amber-border);
+  color: var(--amber);
   white-space: nowrap;
 }
 .roast-overlay {

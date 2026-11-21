@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
@@ -907,5 +908,27 @@ describe('FeaturePage issue link (F-0449)', () => {
     render(<FeaturePage id="F-0221" />)
     await waitFor(() => expect(screen.getByText('F-0221')).toBeInTheDocument())
     expect(screen.queryAllByRole('link').filter((a) => (a.getAttribute('href') ?? '').includes('/issues/'))).toHaveLength(0)
+  })
+})
+
+// B-0064: a página não tinha botão-base — cada seção estilizava o seu, e as
+// que esqueceram ("Definir épico", os dois roasts, o lápis do título) caíam no
+// estilo do navegador (fundo #efefef, borda 2px outset, raio 0).
+describe('acabamento da página (B-0064)', () => {
+  it('B-0064: todo botão da página herda o botão-base do sistema', () => {
+    const css = readFileSync('src/app.css', 'utf8')
+    const base = /:where\(\.feature\) :where\(button, select\) \{[^}]*\}/.exec(css)?.[0] ?? ''
+    expect(base).toMatch(/font: inherit/)
+    expect(base).toMatch(/color: var\(--fg\)/)
+    expect(base).toMatch(/border: 1px solid var\(--border-strong\)/)
+    expect(base).toMatch(/border-radius: 6px/)
+  })
+
+  it('B-0064: o lápis do título é um ícone desenhado com nome acessível', async () => {
+    payload = detail('candidate')
+    render(<FeaturePage id="F-0221" />)
+    const btn = await screen.findByRole('button', { name: 'Editar título' })
+    expect(btn.querySelector('svg')).not.toBeNull()
+    expect(btn).not.toHaveTextContent('✎')
   })
 })
