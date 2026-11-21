@@ -261,6 +261,10 @@ func (a ActivityConfig) AutoEnabled() bool {
 const (
 	GateHuman = "human"
 	GateAuto  = "auto"
+	// GateMerge (F-0488, accept only): the human's merge of the delivery PR
+	// into the default branch is the acceptance; the accept typed by hand
+	// stays human.
+	GateMerge = "merge"
 )
 
 // GatesConfig is the optional [gates] block of .cernerc (F-0131): approve is
@@ -273,7 +277,7 @@ const (
 // .claude/**, paths outside the project) with project-specific globs.
 type GatesConfig struct {
 	Approve       string   `toml:"approve,omitempty"`         // "human" (default) | "auto"
-	Accept        string   `toml:"accept,omitempty"`          // "human" (default) | "auto"
+	Accept        string   `toml:"accept,omitempty"`          // "human" (default) | "auto" | "merge" (F-0488)
 	Revert        string   `toml:"revert,omitempty"`          // "human" (default) | "auto" — F-0169: undo of an approval
 	WorkGate      string   `toml:"work_gate,omitempty"`       // "on" | anything else = off (default)
 	WorkGateAllow []string `toml:"work_gate_allow,omitempty"` // extra allowlist globs for the gate
@@ -315,10 +319,11 @@ func (g GatesConfig) ApproveGate() string {
 	return GateHuman
 }
 
-// AcceptGate resolves the end gate: auto only when explicitly configured.
+// AcceptGate resolves the end gate: auto or merge only when explicitly
+// configured, by the exact literal.
 func (g GatesConfig) AcceptGate() string {
-	if g.Accept == GateAuto {
-		return GateAuto
+	if g.Accept == GateAuto || g.Accept == GateMerge {
+		return g.Accept
 	}
 	return GateHuman
 }

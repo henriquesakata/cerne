@@ -93,6 +93,9 @@ func TestCheckHumanGate(t *testing.T) {
 		{"human gate passes human", project.GateHuman, "", false},
 		{"human gate passes other actor", project.GateHuman, "local", false},
 		{"auto gate passes agent", project.GateAuto, "agent", false},
+		// F-0488 crit. 5: under the merge gate the accept typed by hand stays human.
+		{"merge gate blocks agent", project.GateMerge, "agent", true},
+		{"merge gate passes human", project.GateMerge, "", false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
