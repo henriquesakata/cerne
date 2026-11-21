@@ -114,6 +114,7 @@ func runHookToolNotes(cmd *cobra.Command, format string, after bool) {
 	if err != nil {
 		return
 	}
+	recordSessionMode(cacheDir, in)
 	repoDir, err := guardedRepoDir(cacheDir, cfg, projDir)
 	if err != nil {
 		return // F-0434

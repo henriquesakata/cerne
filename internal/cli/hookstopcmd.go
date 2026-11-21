@@ -83,6 +83,7 @@ func runHookStopCheck(cmd *cobra.Command) {
 		return // F-0434
 	}
 	_ = app.TouchBinding(cacheDir, in.SessionID, "") // F-0361: sign of life, one stat + one chtimes, local
+	recordSessionMode(cacheDir, in) // the mode the session goes idle in (F-0491)
 
 	// F-0309: keep the session's live features' cost snapshot current, so a
 	// pruned transcript does not lose it before the stamp. Silent, fail-open.
