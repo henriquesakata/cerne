@@ -972,17 +972,26 @@ describe('FeaturePage gate hierarchy (F-0495)', () => {
   })
 
   // F-0495 crit. 4
-  it('concluída sem pai nem filhos: sem cartão Épico', async () => {
-    payload = detail('done')
+  it.each<FeatureState>(['done', 'rejected', 'superseded'])('%s sem pai nem filhos: sem cartão Épico', async (state) => {
+    payload = detail(state)
     render(<FeaturePage id="F-0221" />)
     await screen.findByText('Feature de teste')
     expect(screen.queryByRole('heading', { name: 'Épico' })).toBeNull()
   })
 
+  // F-0495 crit. 4, 5
+  it('concluída só com pai: o cartão Épico fica, em leitura', async () => {
+    payload = { ...detail('done'), feature: { ...detail('done').feature, parent: 'F-0200' } }
+    render(<FeaturePage id="F-0221" />)
+    expect(await screen.findByRole('heading', { name: 'Épico' })).toBeInTheDocument()
+    expect(screen.queryByText('Sem filhos.')).toBeNull()
+    expect(screen.queryByRole('button', { name: /definir épico|trocar épico/i })).toBeNull()
+  })
+
   // F-0495 crit. 5
-  it('concluída: épico em leitura, diagramas existentes abrem, nada novo se cria', async () => {
+  it.each<FeatureState>(['done', 'rejected', 'superseded'])('%s: épico em leitura, diagramas existentes abrem, nada novo se cria', async (state) => {
     payload = {
-      ...detail('done'),
+      ...detail(state),
       children: [{ ...detail('done').feature, id: 'F-0222', title: 'Filha' }],
       artifacts: [{ name: 'fluxo.mmd', path: 'content/artifacts/F-0221/fluxo.mmd' }],
     }
@@ -995,8 +1004,8 @@ describe('FeaturePage gate hierarchy (F-0495)', () => {
   })
 
   // F-0495 crit. 5
-  it('concluída sem diagrama: sem cartão Diagramas', async () => {
-    payload = detail('done')
+  it.each<FeatureState>(['done', 'rejected', 'superseded'])('%s sem diagrama: sem cartão Diagramas', async (state) => {
+    payload = detail(state)
     render(<FeaturePage id="F-0221" />)
     await screen.findByText('Feature de teste')
     expect(screen.queryByRole('heading', { name: 'Diagramas' })).toBeNull()

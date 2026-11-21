@@ -242,15 +242,22 @@ export default function FeaturePage({ id }: { id: string }) {
   }
 
   // F-0495: the sticky rail sits below the nav, whose height changes as it
-  // wraps with the width (and the nav itself never measures, F-0332 crit. 8).
+  // wraps (width, language, a new item). The page watches it from outside:
+  // the nav itself never measures (F-0332 crit. 8).
   useEffect(() => {
-    const publish = () => {
-      const nav = document.querySelector<HTMLElement>('.nav')
-      if (nav) document.documentElement.style.setProperty('--nav-h', `${nav.offsetHeight}px`)
-    }
+    const nav = document.querySelector<HTMLElement>('.nav')
+    if (!nav) return
+    const root = document.documentElement
+    const publish = () => root.style.setProperty('--nav-h', `${nav.offsetHeight}px`)
     publish()
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(publish)
+    ro?.observe(nav)
     window.addEventListener('resize', publish)
-    return () => window.removeEventListener('resize', publish)
+    return () => {
+      ro?.disconnect()
+      window.removeEventListener('resize', publish)
+      root.style.removeProperty('--nav-h')
+    }
   }, [])
 
   // Lê o modo de IA uma vez (para o gating do botão "Gerar com IA").
