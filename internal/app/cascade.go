@@ -74,7 +74,7 @@ func cascadeApprove(repoDir, projDir, parentID string, gauntletOn bool) (cascade
 				payload["judge_question"] = q
 			}
 		}
-		if err := moveChild(repoDir, &c, domain.ActionApprove, payload); err != nil {
+		if err := moveChild(repoDir, &c, domain.ActionApprove, payload, EventActor()); err != nil {
 			return out, err
 		}
 		if err := writePlanStub(repoDir, c.ID, c.Title); err != nil {
@@ -94,18 +94,25 @@ func cascadeApprove(repoDir, projDir, parentID string, gauntletOn bool) (cascade
 // its own, so the human who accepts the parent accepts it — its event carries
 // cascade_from, and its pendings and ideas follow it like a manual accept.
 // An F- child had its own approve and keeps its own accept; an actor the
-// accept's human gate refuses takes no task along.
-func cascadeAccept(repoDir, projDir, parentID string) (cascaded, error) {
+// accept's human gate refuses takes no task along. An accept on merge (m,
+// F-0488) is the human's whoever records it: the tasks ride it, marked alike.
+func cascadeAccept(repoDir, projDir, parentID string, m *mergeAccept) (cascaded, error) {
 	children, err := childrenOf(repoDir, parentID, func(c store.Feature) bool { return isTask(c.ID) && c.State == cascadeFrom[domain.ActionAccept] })
 	if err != nil {
 		return cascaded{}, err
 	}
-	if CheckHumanGate(projectGates(projDir).AcceptGate()) != nil {
+	if m == nil && CheckHumanGate(projectGates(projDir).AcceptGate()) != nil {
 		return keptByHumanGate(parentID, children), nil
 	}
 	var out cascaded
 	for _, c := range children {
-		if err := moveChild(repoDir, &c, domain.ActionAccept, map[string]string{"cascade_from": parentID}); err != nil {
+		payload, actor := map[string]string{"cascade_from": parentID}, EventActor()
+		if m != nil {
+			payload, actor = m.payload(), mergeActor
+			payload["cascade_from"] = parentID
+			c.AcceptedVia = "merge"
+		}
+		if err := moveChild(repoDir, &c, domain.ActionAccept, payload, actor); err != nil {
 			return out, err
 		}
 		out.moved = append(out.moved, c)
@@ -180,7 +187,7 @@ func keptByHumanGate(parentID string, waiting []store.Feature) cascaded {
 
 // moveChild applies action to child c through the FSM, persists it and
 // appends its lifecycle event.
-func moveChild(repoDir string, c *store.Feature, action domain.Action, payload map[string]string) error {
+func moveChild(repoDir string, c *store.Feature, action domain.Action, payload map[string]string, actor string) error {
 	to, err := domain.Transition(c.State, action)
 	if err != nil {
 		return err
@@ -190,5 +197,5 @@ func moveChild(repoDir string, c *store.Feature, action domain.Action, payload m
 	if err := store.SaveFeature(repoDir, *c); err != nil {
 		return err
 	}
-	return store.AppendEvent(repoDir, domain.NewEvent(c.ID, eventTypes[action], payload, EventActor()))
+	return store.AppendEvent(repoDir, domain.NewEvent(c.ID, eventTypes[action], payload, actor))
 }

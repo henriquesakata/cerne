@@ -160,6 +160,29 @@ func TransitionFeatureOp(op *telemetry.Op, repoDir, projDir, id string, action d
 // TransitionFeatureOpForce is TransitionFeatureOp carrying the F-0257 guard
 // override.
 func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, action domain.Action, by, reason string, d *Delivery, force bool) (TransitionOutcome, error) {
+	return transitionFeature(op, repoDir, projDir, id, action, by, reason, d, force, nil)
+}
+
+// mergeAccept is an accept that transcribes the human's merge of the delivery
+// PR (F-0488): the actor is the human, the shell that recorded it goes apart.
+type mergeAccept struct {
+	PRURL, MergedAt, RecordedBy string
+}
+
+// payload is the record of the merge on the accept event.
+func (m *mergeAccept) payload() map[string]string {
+	return map[string]string{"via": "merge", "pr": m.PRURL, "merged_at": m.MergedAt, "recorded_by": m.RecordedBy}
+}
+
+// mergeActor is the actor of an accept on merge: the merge was the human's.
+const mergeActor = "human"
+
+// transitionFeature is the one transition path; m is non-nil only for an
+// accept on merge (F-0488).
+func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action domain.Action, by, reason string, d *Delivery, force bool, m *mergeAccept) (TransitionOutcome, error) {
+	if m != nil && action != domain.ActionAccept {
+		return TransitionOutcome{}, fmt.Errorf("an acceptance on merge is an accept, not %s", action)
+	}
 	var out TransitionOutcome
 	var title string
 	var casc cascaded
@@ -310,6 +333,9 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 				return "", err
 			}
 		}
+		if m != nil {
+			f.AcceptedVia = "merge"
+		}
 		if err := store.SaveFeature(repoDir, f); err != nil {
 			return "", err
 		}
@@ -367,7 +393,11 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 				}
 			}
 		}
-		if err := store.AppendEvent(repoDir, domain.NewEvent(id, eventType, payload, EventActor())); err != nil {
+		actor := EventActor()
+		if m != nil {
+			payload, actor = m.payload(), mergeActor
+		}
+		if err := store.AppendEvent(repoDir, domain.NewEvent(id, eventType, payload, actor)); err != nil {
 			return "", err
 		}
 		// End-of-flow bypass (F-0131): with [gates] accept = "auto" the complete
@@ -402,7 +432,7 @@ func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, act
 		}
 		// So do its implemented tasks (T-0007).
 		if action == domain.ActionAccept {
-			if casc, err = cascadeAccept(repoDir, projDir, id); err != nil {
+			if casc, err = cascadeAccept(repoDir, projDir, id, m); err != nil {
 				return "", err
 			}
 		}
