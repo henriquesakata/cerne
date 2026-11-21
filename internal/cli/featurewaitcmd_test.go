@@ -259,9 +259,11 @@ func TestFeatureWaitWakesOnMessage(t *testing.T) {
 // page ends the session's wait with exit 4, the message, how to answer and
 // how to wait again; without a session, or once seen (B-0066), it does not.
 func TestFeatureWaitMessageCommand(t *testing.T) {
+	when := pinLocal(t)
 	projDir, _, repoDir := setupProject(t)
 	id := newFeature(t, projDir, "Feature esperada", 1)
-	if _, err := app.ChannelPost(filepath.Dir(repoDir), "Henrique", id, []string{"sess-dev"}, "pode arrumar os conflitos?", time.Now().UTC()); err != nil {
+	at := time.Now().UTC()
+	if _, err := app.ChannelPost(filepath.Dir(repoDir), "Henrique", id, []string{"sess-dev"}, "pode arrumar os conflitos?", at); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("CERNE_SESSION", "")
@@ -270,7 +272,7 @@ func TestFeatureWaitMessageCommand(t *testing.T) {
 	}
 	t.Setenv("CERNE_SESSION", "sess-dev")
 	out, err := execCerne(t, "feature", "wait", id, "--for", "done", "--timeout", "0", "--dir", projDir)
-	for _, want := range []string{id + ": still candidate", "#1 Henrique (human) → you, about " + id + ": pode arrumar os conflitos?", "cerne msg send --ref " + id, "cerne feature wait " + id + " --for done"} {
+	for _, want := range []string{id + ": still candidate", "#1 Henrique (human) wrote to this session from the page of " + id + " " + when(at) + ` local time: "pode arrumar os conflitos?"` /* F-0490 crit. 4 */, "cerne msg send --ref " + id, "cerne feature wait " + id + " --for done"} {
 		if ExitCode(err) != 4 || !strings.Contains(out, want) {
 			t.Fatalf("addressed message: code %d, want 4 and %q\n%s", ExitCode(err), want, out)
 		}

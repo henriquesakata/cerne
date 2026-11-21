@@ -299,9 +299,17 @@ func channelBlock(projectID, sess string, consume bool) string {
 
 // channelThen puts session sess's pending channel block (F-0325) ahead of
 // block, consuming it, at a mid-session contact point: an edit, a shell
-// command, a prompt (B-0054). Fail-open: any error is no channel.
-func channelThen(cacheDir, repoDir, sess, block string) string {
-	ch, err := app.ChannelInject(cacheDir, repoDir, sess, true, time.Now().UTC())
+// command, a prompt (B-0054). tool marks a tool call (an edit, a shell
+// command), where an addressed message already shown waits for the next turn
+// (F-0490). Fail-open: any error is no channel.
+func channelThen(cacheDir, repoDir, sess, block string, tool bool) string {
+	var ch string
+	var err error
+	if tool {
+		ch, err = app.ChannelInjectTool(cacheDir, repoDir, sess, time.Now().UTC())
+	} else {
+		ch, err = app.ChannelInject(cacheDir, repoDir, sess, true, time.Now().UTC())
+	}
 	switch {
 	case err != nil || ch == "":
 		return block

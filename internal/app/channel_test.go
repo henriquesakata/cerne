@@ -113,10 +113,11 @@ func TestChannelDirectedTo(t *testing.T) {
 // repeats with the protocol line until that work answers or acks — and reaches
 // a session with no work once, unaddressed.
 func TestChannelHumanAddressedToEveryLiveWork(t *testing.T) {
+	pinLocal(t)
 	f := newChanFixture(t)
 	seq := f.post("Henrique", "se receberem esta mensagem, podem dizer qual atividade estão fazendo?", true)
-	want := fmt.Sprintf("#%d Henrique (human) → you: se receberem", seq)
-	ack := fmt.Sprintf(" or cerne msg ack %d\n", seq)
+	want := fmt.Sprintf("#%d Henrique (human) wrote in the project channel on 2026-11-05 at 07:00 local time: \"se receberem", seq)
+	ack := fmt.Sprintf(" or cerne msg ack %d.\n", seq)
 	for i := range 2 {
 		for _, sess := range []string{"s1", "s2"} {
 			if out := f.inject(sess, true); !strings.Contains(out, want) || !strings.HasSuffix(out, ack) {
@@ -135,7 +136,7 @@ func TestChannelHumanAddressedToEveryLiveWork(t *testing.T) {
 	if out := f.inject("s1", true); out != "" {
 		t.Fatalf("after the answer: %q, want zero bytes", out)
 	}
-	if out := f.inject("s-none", true); !strings.Contains(out, fmt.Sprintf("#%d Henrique (human): se", seq)) || strings.Contains(out, "→ you") {
+	if out := f.inject("s-none", true); !strings.Contains(out, want) || strings.Contains(out, "expects a reply") {
 		t.Fatalf("session with no work = %q, want the human message once, unaddressed", out)
 	}
 	if out := f.inject("s-none", true); strings.Contains(out, "Henrique") {
@@ -147,7 +148,7 @@ func TestChannelHumanAddressedToEveryLiveWork(t *testing.T) {
 	}
 }
 
-// TestChannelHumanTargetsLiveWorks (B-0054 crit. 2/3): a human broadcast
+// TestChannelHumanTargetsLiveWorks (B-0054 crit. 2/3; F-0490 crit. 5, unchanged): a human broadcast
 // targets every live work — not an active work with no session here — and is
 // not_delivered until each was shown it, answered once each answered or acked.
 func TestChannelHumanTargetsLiveWorks(t *testing.T) {
@@ -261,6 +262,109 @@ func (f *chanFixture) inject(sess string, consume bool) string {
 		f.t.Fatalf("ChannelInject(%s): %v", sess, err)
 	}
 	return out
+}
+
+// pinLocal fixes time.Local at UTC-3 for the test, so the local time of a
+// human's report is a literal clock, not the expression the code uses
+// (F-0490 crit. 4). Safe: no test in this package runs in parallel.
+func pinLocal(t *testing.T) {
+	t.Helper()
+	old := time.Local
+	time.Local = time.FixedZone("UTC-3", -3*60*60)
+	t.Cleanup(func() { time.Local = old })
+}
+
+// injectTool is a tool contact point (F-0490): PreToolUse, PostToolUse or the
+// work gate.
+func (f *chanFixture) injectTool(sess string) string {
+	f.t.Helper()
+	f.at = f.at.Add(time.Second)
+	out, err := ChannelInjectTool(f.cacheDir, f.repoDir, sess, f.at)
+	if err != nil {
+		f.t.Fatalf("ChannelInjectTool(%s): %v", sess, err)
+	}
+	return out
+}
+
+// TestChannelToolPointShowsAddressedOncePerTurn (F-0490 crit. 1, 2 and 3): at a tool
+// contact point an addressed message already shown to the session stays out;
+// one reaching it for the first time is inline; the turn start shows every
+// unanswered one again; background is still delivered once.
+func TestChannelToolPointShowsAddressedOncePerTurn(t *testing.T) {
+	f := newChanFixture(t)
+	h := f.post("Henrique", "pode confirmar com um ok?", true)
+	d := f.post("W-0002", "W-0001 segura o rooms.go", false)
+	inline := func(out string, want ...int) {
+		t.Helper()
+		bodies := injectedBodies(out)
+		for _, seq := range want {
+			if _, ok := bodies[seq]; !ok {
+				t.Fatalf("#%d not inline:\n%s", seq, out)
+			}
+		}
+		if len(bodies) != len(want) {
+			t.Fatalf("%d inline, want %v:\n%s", len(bodies), want, out)
+		}
+	}
+	inline(f.injectTool("s1"), h, d) // F-0490 crit. 3: first arrival at a tool point
+	for i := range 3 {               // F-0490 crit. 1
+		if out := f.injectTool("s1"); out != "" {
+			t.Fatalf("tool point %d repeated what the session was shown:\n%s", i+2, out)
+		}
+	}
+	d2 := f.post("W-0003", "W-0001 o contrato mudou", false)
+	inline(f.injectTool("s1"), d2)            // F-0490 crit. 3: a new one, alone
+	inline(f.inject("s1", true), h, d, d2)    // F-0490 crit. 2: the turn start repeats them
+	if out := f.injectTool("s1"); out != "" { // and the turn's tool points are quiet again
+		t.Fatalf("tool point after the turn start:\n%s", out)
+	}
+	bg := f.post("W-0003", "build verde", false)
+	inline(f.injectTool("s1"), bg)
+	if out := f.injectTool("s1"); out != "" {
+		t.Fatalf("background repeated at a tool point:\n%s", out)
+	}
+	f.post("W-0001", "ok, seguro", false) // the answer (F-0325 crit. 10) silences the turn start too
+	if out := f.inject("s1", true); out != "" {
+		t.Fatalf("turn start after the answer:\n%s", out)
+	}
+}
+
+// TestChannelHumanMessageReadsAsReport (F-0490 crit. 4): a human message
+// arrives as a report — who wrote it, when (local time), that it was in the
+// project channel, the text in quotes, and that the person expects a reply by
+// cerne msg send or cerne msg ack — with no system-instruction tone; an
+// agent's message keeps its form.
+func TestChannelHumanMessageReadsAsReport(t *testing.T) {
+	pinLocal(t)
+	f := newChanFixture(t)
+	h := f.post("Henrique", "pode confirmar com um ok?", true) // 10:00:01 UTC
+	when := "on 2026-11-05 at 07:00"
+	a := f.post("W-0002", "W-0001 segura o rooms.go", false)
+	out := f.inject("s1", true)
+	for _, want := range []string{
+		fmt.Sprintf("#%d Henrique (human) wrote in the project channel %s local time: \"pode confirmar com um ok?\"\n", h, when),
+		fmt.Sprintf("Henrique expects a reply from this session through cerne msg send \"<text>\" or cerne msg ack %d.\n", h),
+		fmt.Sprintf("#%d W-0002 → you: W-0001 segura o rooms.go\n", a),
+		fmt.Sprintf("↳ addressed to you: answer with cerne msg send \"<text>\" (any later message of yours counts) or cerne msg ack %d\n", a),
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in:\n%s", want, out)
+		}
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if !strings.Contains(line, "Henrique") {
+			continue
+		}
+		if strings.Contains(line, "→ you") || strings.Contains(line, "answer with") || strings.ToUpper(line) == line {
+			t.Fatalf("human line in a system-instruction tone: %q", line)
+		}
+	}
+	// A session with no work gets the report as background: no reply sentence.
+	out = f.inject("s-none", true)
+	if !strings.Contains(out, fmt.Sprintf("#%d Henrique (human) wrote in the project channel %s local time: \"pode", h, when)) ||
+		strings.Contains(out, "expects a reply") {
+		t.Fatalf("session with no work = %q, want the report without a reply sentence", out)
+	}
 }
 
 func (f *chanFixture) deliveries() []room.Delivery {
@@ -468,8 +572,8 @@ func TestChannelInjectProtocolLineOnlyWithDirected(t *testing.T) {
 		t.Fatalf("empty injection = %q", out)
 	}
 	hs := f.post("Henrique", "W-0001, para tudo", true)
-	if out := f.inject("s1", true); !strings.Contains(out, fmt.Sprintf("#%d Henrique (human) → you: ", hs)) || !strings.Contains(out, "↳") {
-		t.Fatalf("addressed human message without protocol line:\n%s", out)
+	if out := f.inject("s1", true); !strings.Contains(out, fmt.Sprintf("#%d Henrique (human) wrote", hs)) || !strings.Contains(out, fmt.Sprintf("or cerne msg ack %d.\n", hs)) {
+		t.Fatalf("addressed human message without its reply sentence:\n%s", out)
 	}
 }
 
@@ -546,7 +650,7 @@ func TestChannelInjectWorstCaseWithin400Tokens(t *testing.T) {
 				t.Fatalf("human #%d not inline:\n%s", seq, out)
 			}
 		}
-		if !strings.Contains(out, "\n+26 more — cerne msg read\n") || !strings.Contains(out, "↳ addressed to you") {
+		if !strings.Contains(out, "\n+26 more — cerne msg read\n") || !strings.Contains(out, "↳ more addressed to you, not shown above") {
 			t.Fatalf("count or protocol line missing:\n%s", out)
 		}
 		t.Logf("worst case: %d bytes, %d tokens", len(out), (len(out)+3)/4)
@@ -680,7 +784,7 @@ func stateOf(t *testing.T, msgs []ChannelMessage, seq int) ChannelMessage {
 	return ChannelMessage{}
 }
 
-// TestChannelStatesDerived (crit. 13/14): an addressed message moves
+// TestChannelStatesDerived (crit. 13/14; F-0490 crit. 5, unchanged): an addressed message moves
 // not_delivered -> delivered -> answered from the injection and the target's
 // own later post alone — no receipt typed by anyone, and an anonymous read
 // changes nothing.
@@ -795,7 +899,7 @@ func (f *chanFixture) postAs(sess, nick, body string) int {
 	return m.Seq
 }
 
-// TestChannelPeekIsNoDelivery (critic C2, PEEK-PROBE): a subagent's peek is
+// TestChannelPeekIsNoDelivery (critic C2, PEEK-PROBE; F-0490 crit. 5, unchanged): a subagent's peek is
 // recorded but is no delivery — the parent's next post, about anything, must
 // not answer an addressed message only the subagent saw; neither may a post
 // from another session of the same work.
@@ -935,7 +1039,7 @@ func TestChannelLongHumanNameKeepsTheCap(t *testing.T) {
 	if n := len(injectedBodies(out)); n < 5 {
 		t.Fatalf("%d inline with a long human name, want >= 5:\n%s", n, out)
 	}
-	if (len(out)+3)/4 > 400 || !strings.Contains(out, strings.Repeat("𝕳", 24)+"… (human) → you: ") {
+	if (len(out)+3)/4 > 400 || !strings.Contains(out, strings.Repeat("𝕳", 24)+"… (human) wrote ") {
 		t.Fatalf("name not cut to 24 runes, or over budget:\n%s", out)
 	}
 }
@@ -955,7 +1059,7 @@ func TestChannelProtocolLineTruthful(t *testing.T) {
 	}
 	// The inline humans are addressed too (B-0054): the ack names only them,
 	// and one more line points at the read for the counted one.
-	if !strings.Contains(out, "cerne msg ack 2 3 4 5 6\n") ||
+	if !strings.Contains(out, "cerne msg ack 2 3 4 5 6.\n") ||
 		!strings.HasSuffix(out, "↳ more addressed to you, not shown above: read them with cerne msg read\n") {
 		t.Fatalf("protocol lines not truthful about the counted message:\n%s", out)
 	}

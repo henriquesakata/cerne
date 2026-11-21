@@ -577,7 +577,7 @@ func injectGateChannel(cmd *cobra.Command, format, cacheDir, repoDir, projDir, s
 	if format != "claude" && format != "codex" || os.Getenv("COPILOT_CLI") == "1" {
 		return
 	}
-	block := channelThen(cacheDir, repoDir, sess, notesOnEditBlock(cacheDir, repoDir, projDir, sess, filePath, ""))
+	block := channelThen(cacheDir, repoDir, sess, notesOnEditBlock(cacheDir, repoDir, projDir, sess, filePath, ""), true)
 	if block == "" {
 		return
 	}

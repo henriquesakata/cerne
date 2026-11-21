@@ -713,7 +713,7 @@ func TestRoomListPinsChannel(t *testing.T) {
 	}
 }
 
-// TestChannelReadServesStates (crit. 13/20): the channel read carries each
+// TestChannelReadServesStates (crit. 13/20; F-0490 crit. 5, unchanged): the channel read carries each
 // live message's derived state and targets, and drops what expired.
 func TestChannelReadServesStates(t *testing.T) {
 	h, _, cacheDir := newChannelServer(t, "proj-channel-read")
