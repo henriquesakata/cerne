@@ -262,6 +262,61 @@ func (f *chanFixture) inject(sess string, consume bool) string {
 	return out
 }
 
+// injectTool is a tool contact point (F-0490): PreToolUse, PostToolUse or the
+// work gate.
+func (f *chanFixture) injectTool(sess string) string {
+	f.t.Helper()
+	f.at = f.at.Add(time.Second)
+	out, err := ChannelInjectTool(f.cacheDir, f.repoDir, sess, f.at)
+	if err != nil {
+		f.t.Fatalf("ChannelInjectTool(%s): %v", sess, err)
+	}
+	return out
+}
+
+// TestChannelToolPointShowsAddressedOncePerTurn (F-0490 crit. 1-3): at a tool
+// contact point an addressed message already shown to the session stays out;
+// one reaching it for the first time is inline; the turn start shows every
+// unanswered one again; background is still delivered once.
+func TestChannelToolPointShowsAddressedOncePerTurn(t *testing.T) {
+	f := newChanFixture(t)
+	h := f.post("Henrique", "pode confirmar com um ok?", true)
+	d := f.post("W-0002", "W-0001 segura o rooms.go", false)
+	inline := func(out string, want ...int) {
+		t.Helper()
+		bodies := injectedBodies(out)
+		for _, seq := range want {
+			if _, ok := bodies[seq]; !ok {
+				t.Fatalf("#%d not inline:\n%s", seq, out)
+			}
+		}
+		if len(bodies) != len(want) {
+			t.Fatalf("%d inline, want %v:\n%s", len(bodies), want, out)
+		}
+	}
+	inline(f.injectTool("s1"), h, d) // F-0490 crit. 3: first arrival at a tool point
+	for i := range 3 {               // F-0490 crit. 1
+		if out := f.injectTool("s1"); out != "" {
+			t.Fatalf("tool point %d repeated what the session was shown:\n%s", i+2, out)
+		}
+	}
+	d2 := f.post("W-0003", "W-0001 o contrato mudou", false)
+	inline(f.injectTool("s1"), d2)            // F-0490 crit. 3: a new one, alone
+	inline(f.inject("s1", true), h, d, d2)    // F-0490 crit. 2: the turn start repeats them
+	if out := f.injectTool("s1"); out != "" { // and the turn's tool points are quiet again
+		t.Fatalf("tool point after the turn start:\n%s", out)
+	}
+	bg := f.post("W-0003", "build verde", false)
+	inline(f.injectTool("s1"), bg)
+	if out := f.injectTool("s1"); out != "" {
+		t.Fatalf("background repeated at a tool point:\n%s", out)
+	}
+	f.post("W-0001", "ok, seguro", false) // the answer (F-0325 crit. 10) silences the turn start too
+	if out := f.inject("s1", true); out != "" {
+		t.Fatalf("turn start after the answer:\n%s", out)
+	}
+}
+
 func (f *chanFixture) deliveries() []room.Delivery {
 	f.t.Helper()
 	dels, err := f.ch.Deliveries()

@@ -370,6 +370,37 @@ func TestHookWorkGateInjectsChannel(t *testing.T) {
 	}
 }
 
+// TestHookToolPointsAddressedOncePerTurn (F-0490 crit. 1/2): the work gate and
+// the Bash hook are tool contact points — an addressed message already shown
+// to the session stays out of them — and the next prompt shows it again.
+func TestHookToolPointsAddressedOncePerTurn(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	enableWorkGate(t, projDir)
+	startBoundWork(t, projDir, repoDir, "sess-a", "Mexer no servidor", "--paths", "internal/server/**")
+	b := startBoundWork(t, projDir, repoDir, "sess-b", "Revisar a interface")
+	seedChannel(t, repoDir, b, "vou mexer em internal/server/rooms.go, segura")
+	edit := hookJSON(t, "sess-a", projDir, "Edit", map[string]any{"file_path": filepath.Join(projDir, "internal", "a.go")}, nil)
+	for i, step := range []struct {
+		stdin string
+		args  []string
+		want  bool
+	}{
+		{edit, []string{"hook", "work-gate"}, true},
+		{edit, []string{"hook", "work-gate"}, false},
+		{bashJSON(t, "sess-a", projDir, "go test ./..."), []string{"hook", "tool-notes"}, false},
+		{promptJSON(t, "sess-a", projDir, "e agora?"), []string{"hook", "prompt-notes"}, true},
+		{edit, []string{"hook", "work-gate"}, false},
+	} {
+		out, err := execCerneStdin(t, step.stdin, step.args...)
+		if err != nil {
+			t.Fatalf("step %d %v: %v\n%s", i+1, step.args, err, out)
+		}
+		if got := strings.Contains(out, "vou mexer"); got != step.want {
+			t.Fatalf("step %d %v carries the addressed message = %v, want %v:\n%s", i+1, step.args, got, step.want, out)
+		}
+	}
+}
+
 // TestHookWorkGateInjectsWithGateOff: the channel rides the gate hook even when
 // the gate itself is off, and for codex too (same envelope, R-0035).
 func TestHookWorkGateInjectsWithGateOff(t *testing.T) {

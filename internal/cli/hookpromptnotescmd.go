@@ -79,7 +79,7 @@ func promptChannel(dir, sess, block string) string {
 	if err != nil {
 		return block // F-0434
 	}
-	return channelThen(cacheDir, repoDir, sess, block)
+	return channelThen(cacheDir, repoDir, sess, block, false)
 }
 
 // promptNotesBlock is the reminder for prompt in the project at dir, or "".

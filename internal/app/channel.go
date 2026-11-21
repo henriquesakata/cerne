@@ -347,20 +347,35 @@ func (cs channelState) watermark(sess string) int {
 // write. consume=false is a peek (subagents): it records what was shown but
 // leaves the watermark, so the parent session still gets the background.
 func ChannelInject(cacheDir, repoDir, sess string, consume bool, now time.Time) (string, error) {
-	return channelInject(cacheDir, repoDir, sess, consume, false, now)
+	return channelInject(cacheDir, repoDir, sess, consume, injTurn, now)
+}
+
+// ChannelInjectTool is ChannelInject at a tool contact point (F-0490):
+// PreToolUse, PostToolUse, the work gate. An addressed message already shown
+// to sess stays out — it comes back at the next turn start, not at every tool
+// call of this one — while one reaching sess for the first time is inline.
+func ChannelInjectTool(cacheDir, repoDir, sess string, now time.Time) (string, error) {
+	return channelInject(cacheDir, repoDir, sess, true, injTool, now)
 }
 
 // ChannelWake is what ends an idle session's `cerne feature wait` (B-0065):
 // only the messages addressed to sess, still unanswered and never shown to it,
 // recorded as delivered — the waking agent reads them — without touching the
 // background watermark. A seen one wakes no more (B-0066: a wait re-run
-// without an answer would wake a turn per loop); the hooks keep repeating it
-// in-turn. Nothing to wake for is "".
+// without an answer would wake a turn per loop); the hooks repeat it at each
+// turn start (F-0490). Nothing to wake for is "".
 func ChannelWake(cacheDir, repoDir, sess string, now time.Time) (string, error) {
-	return channelInject(cacheDir, repoDir, sess, true, true, now)
+	return channelInject(cacheDir, repoDir, sess, true, injWake, now)
 }
 
-func channelInject(cacheDir, repoDir, sess string, consume, addressedOnly bool, now time.Time) (string, error) {
+// Where a session meets the channel, which decides what repeats there.
+const (
+	injTurn = iota // a turn start (SessionStart, UserPromptSubmit) or an asked-for view
+	injTool        // a tool call (F-0490): an addressed message shown to the session waits for the next turn
+	injWake        // an idle session's wait (B-0065): only addressed messages never shown
+)
+
+func channelInject(cacheDir, repoDir, sess string, consume bool, mode int, now time.Time) (string, error) {
 	if safeSessionID(sess) != nil {
 		return "", nil
 	}
@@ -410,8 +425,11 @@ func channelInject(cacheDir, repoDir, sess string, consume, addressedOnly bool, 
 			}
 			pending = append(pending, injItem{m: m, group: group, directed: directed, shown: cs.shownTo(m, sess)})
 		}
-		if addressedOnly {
+		switch mode {
+		case injWake:
 			pending = slices.DeleteFunc(pending, func(it injItem) bool { return !it.directed || it.shown })
+		case injTool:
+			pending = slices.DeleteFunc(pending, func(it injItem) bool { return it.directed && it.shown })
 		}
 		if len(pending) == 0 {
 			return nil, nil
@@ -422,7 +440,7 @@ func channelInject(cacheDir, repoDir, sess string, consume, addressedOnly bool, 
 		for _, m := range inline {
 			d.Seqs = append(d.Seqs, m.Seq)
 		}
-		if consume && !addressedOnly {
+		if consume && mode != injWake {
 			d.Through = through
 		}
 		return d, nil
