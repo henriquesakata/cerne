@@ -33,6 +33,17 @@ While cerne is below 1.0.0, a minor version may change behavior: read the
   `golden-path`, `convention` and `ata` no longer count as a note's subject,
   and `component-single-use` no longer suggests renaming them.
   ([#158](https://github.com/henriquesakata/cerne/pull/158))
+- The feature page gives every button and select one style: *Set epic*,
+  *Run roast*, *Run plan roast* and the title pencil no longer fall back to the
+  browser's default look. The Agents panel is a section like Backlinks, and on
+  a phone a code block no longer makes the page wider than the screen.
+  ([#160](https://github.com/henriquesakata/cerne/pull/160))
+- `cerne feature wait` also ends when the project channel has a message for
+  the session that nobody answered yet, such as one sent from the card's page.
+  It exits 4 with the message, how to answer it and the wait to run again, so
+  an idle agent waiting in the background wakes up for it. A state that was
+  reached still wins, and the check needs `CERNE_SESSION`.
+  ([#161](https://github.com/henriquesakata/cerne/pull/161))
 
 ### Upgrading
 
@@ -43,6 +54,9 @@ Everything not listed here needs no action.
   `go install github.com/henriquesakata/cerne/cmd/cerne@v0.15.1` (details in
   INSTALL.md, *Updating*). `cerne --version` then prints `cerne 0.15.1`. A
   `cerne ui` that is already open offers to restart into the new binary.
+- **The authoring guide teaches exit 4 of `cerne feature wait`.** It renews on
+  its own at the next agent session start when nobody edited it; if you did,
+  run `cerne skill install`.
 
 **Full changelog:** [v0.15.0...v0.15.1](https://github.com/henriquesakata/cerne/compare/v0.15.0...v0.15.1)
 
