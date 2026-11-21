@@ -207,7 +207,9 @@ func TestMirrorCommitsRoute(t *testing.T) {
 	}
 }
 
-// The tab reads: no mirror route but GET and the check, and none on the remote server.
+// The tab reads: no mirror route but GET, the check and the sync (F-0487, the
+// one write), and none on the remote server.
+// F-0487 crit. 2
 func TestMirrorRoutesReadOnly(t *testing.T) {
 	seen := 0
 	for _, r := range dataRoutes() {
@@ -218,11 +220,11 @@ func TestMirrorRoutesReadOnly(t *testing.T) {
 		if r.remote {
 			t.Errorf("%s %s is remote, want local-only", r.method, r.pattern)
 		}
-		if r.method != "GET" && !(r.method == "POST" && r.pattern == "/mirror/check") {
-			t.Errorf("%s %s writes; the Mirror tab is read-only", r.method, r.pattern)
+		if r.method != "GET" && !(r.method == "POST" && (r.pattern == "/mirror/check" || r.pattern == "/mirror/sync")) {
+			t.Errorf("%s %s writes; only the sync may", r.method, r.pattern)
 		}
 	}
-	if seen != 3 {
-		t.Errorf("mirror routes = %d, want 3", seen)
+	if seen != 4 {
+		t.Errorf("mirror routes = %d, want 4", seen)
 	}
 }
