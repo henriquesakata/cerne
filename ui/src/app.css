@@ -1413,7 +1413,9 @@ h2 {
    (como a resposta do agente no Claude Code ou no Cursor). A sua: balão à
    direita na superfície recuada, o mesmo tratamento da mensagem do usuário no
    chat do Backlog (F-0241: nunca tinta cheia em prosa). */
-.room-msg { align-self: flex-start; max-width: min(72ch, 85%); margin-top: 1rem; }
+/* position: relative contém o .sr-only do nome (F-0489): absoluto sem ancestral
+   posicionado, ele escapa da transcrição que rola e estica a página. */
+.room-msg { position: relative; align-self: flex-start; max-width: min(72ch, 85%); margin-top: 1rem; }
 /* Poucas mensagens assentam junto ao compositor, como num terminal ou num
    chat em grupo: a margem automática empurra a primeira para baixo e vira 0
    quando a transcrição transborda, então a rolagem não perde o topo (o que
@@ -1446,6 +1448,59 @@ h2 {
 
 .room-composer { gap: 0.35rem; }
 .room-composer-hint { margin: 0; font-size: 0.85rem; color: var(--muted); }
+
+/* F-0489: o canal do projeto segura a janela como a sala — só a transcrição
+   rola e o compositor fica no rodapé —, montado com as primitivas da sala
+   (.room-head, .room-chat, .room-msg, compositor), não com o grid dela
+   (B-0046): uma coluna, sem painel lateral, então não há quebra a fazer em
+   tela estreita. */
+.channel-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  flex: 1;
+  min-height: 0;
+  box-sizing: border-box;
+}
+
+.channel-layout .room-chat { flex: 1; }
+.channel-intro { margin: 0; max-width: 75ch; color: var(--muted); }
+
+/* Id é a voz da máquina: mono no tamanho de id (regra das duas vozes). */
+.channel-id { font-family: ui-monospace, monospace; font-size: 0.78rem; }
+
+.channel-meta,
+.channel-targets,
+.channel-hint { font-size: 0.85rem; color: var(--muted); }
+
+.channel-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin: 0.3rem 0 0;
+}
+
+.channel-meta a.channel-id { color: var(--link); text-decoration: none; }
+.channel-meta a.channel-id:hover { text-decoration: underline; }
+
+.channel-targets {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  margin: 0.2rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.channel-targets .channel-id { color: var(--fg); }
+.channel-targets time { font-variant-numeric: tabular-nums; }
+.channel-hint { margin: 0.2rem 0 0; color: var(--faint); }
+
+/* A sua mensagem assenta à direita: os metadados dela seguem o balão. */
+.room-msg-own .channel-meta { justify-content: flex-end; }
+.room-msg-own .channel-targets,
+.room-msg-own .channel-hint { text-align: right; }
 
 .room-notice,
 .room-error { margin: 0; font-size: 0.9rem; }
