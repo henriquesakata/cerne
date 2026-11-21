@@ -1032,7 +1032,7 @@ describe('FeaturePage repeated document title (F-0497)', () => {
   it('não renderiza o # título igual ao da feature, e mantém um título diferente', async () => {
     payload = {
       ...detail('approved'),
-      docs: { spec: '# Feature  de TESTE\n\nCorpo da spec.', plan: '', result: '' },
+      docs: { spec: '---\ncerne_id: F-0221\n---\n\n# Feature  de TESTE\n\nCorpo da spec.', plan: '', result: '' },
       docs_real: { spec: true, plan: false, result: false },
     }
     const { container } = render(<FeaturePage id="F-0221" />)

@@ -461,10 +461,13 @@ export default function FeaturePage({ id }: { id: string }) {
 // it. cut is how many characters went, so a clarification marker's offset in
 // the rendered text maps back to the stored document.
 function stripRepeatedTitle(content: string, title: string): { body: string; cut: number } {
-  const m = /^\s*#[ \t]+(.+?)[ \t]*(?:\r?\n|$)/.exec(content)
+  // A stored doc opens with its cerne_id frontmatter; the heading follows it.
+  const fm = /^---\r?\n[\s\S]*?\r?\n---[ \t]*\r?\n/.exec(content)?.[0] ?? ''
+  const m = /^\s*#[ \t]+(.+?)[ \t]*(?:\r?\n|$)/.exec(content.slice(fm.length))
   const norm = (x: string) => x.toLowerCase().replace(/\s+/g, ' ').trim()
   if (!m || norm(m[1]) !== norm(title)) return { body: content, cut: 0 }
-  return { body: content.slice(m[0].length), cut: m[0].length }
+  // Markers never sit in the frontmatter, so every offset shifts by the cut.
+  return { body: fm + content.slice(fm.length + m[0].length), cut: m[0].length }
 }
 
 function DocEditor({

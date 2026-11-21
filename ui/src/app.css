@@ -1934,7 +1934,9 @@ a.badge-mirror:hover, a.badge-mirror:focus-visible { text-decoration: underline;
 .doc p { margin: 0 0 0.85em; }
 /* F-0497: prose reads at a comfortable measure; tables and code keep the
    whole column. */
-.doc p, .doc li, .doc blockquote { max-width: 72ch; }
+/* 60ch is ~72 characters of this sans (a "0" is wider than the average
+   letter): measured on a real spec at 15.2px. */
+.doc p, .doc li, .doc blockquote { max-width: 60ch; }
 
 .doc ul, .doc ol { margin: 0 0 0.85em; padding-left: 1.5rem; }
 .doc li { margin: 0.2em 0; }
