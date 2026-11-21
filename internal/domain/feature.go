@@ -24,15 +24,16 @@ const (
 )
 
 const (
-	ActionApprove   Action = "approve"
-	ActionStart     Action = "start"
-	ActionComplete  Action = "complete"
+	ActionApprove  Action = "approve"
+	ActionStart    Action = "start"
+	ActionComplete Action = "complete"
 	// ActionAccept is the human validation gate (F-0131): implemented → done.
 	ActionAccept    Action = "accept"
 	ActionReject    Action = "reject"
 	ActionSupersede Action = "supersede"
-	// ActionRevert walks one step back in the approval flow (F-0169). v1 covers
-	// only approved → candidate; future reverse steps reuse this action.
+	// ActionRevert walks one step back (F-0169): approved → candidate, and after
+	// the delivery (F-0499) implemented → in_development (the human rejects the
+	// delivery or finds a bug) and done → implemented (an acceptance undone).
 	ActionRevert Action = "revert"
 )
 
@@ -63,10 +64,14 @@ var transitions = map[FeatureState]map[Action]FeatureState{
 	StateImplemented: {
 		ActionAccept:    StateDone,
 		ActionSupersede: StateSuperseded,
+		ActionRevert:    StateInDevelopment,
+	},
+	// Done leaves only by undoing its acceptance (F-0499).
+	StateDone: {
+		ActionRevert: StateImplemented,
 	},
 	// Terminal states: explicitly present with no actions, so they report
 	// ErrInvalidTransition rather than ErrUnknownState.
-	StateDone:       {},
 	StateRejected:   {},
 	StateSuperseded: {},
 }

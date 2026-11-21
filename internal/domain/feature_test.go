@@ -34,8 +34,9 @@ func TestFeatureTransitions(t *testing.T) {
 		{"revert approved", StateApproved, ActionRevert, StateCandidate, false},
 		{"cannot revert candidate", StateCandidate, ActionRevert, "", true},
 		{"cannot revert in-dev", StateInDevelopment, ActionRevert, "", true},
-		{"cannot revert implemented", StateImplemented, ActionRevert, "", true},
-		{"cannot revert done", StateDone, ActionRevert, "", true},
+		// F-0499 crit. 1, 2, 3: after the delivery, revert walks one step back.
+		{"revert implemented", StateImplemented, ActionRevert, StateInDevelopment, false},
+		{"revert done", StateDone, ActionRevert, StateImplemented, false},
 		{"cannot revert rejected", StateRejected, ActionRevert, "", true},
 		{"cannot revert superseded", StateSuperseded, ActionRevert, "", true},
 	}
