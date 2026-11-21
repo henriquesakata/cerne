@@ -1441,6 +1441,10 @@ const ptBR = {
     reloadPage: 'Recarregar',
     updating: 'Atualizando o cerne…',
     updateTo: (v: string) => `Atualizar para ${v}`,
+    updateConfirm: (from: string, to: string) =>
+      `Atualizar o cerne do ${from} para o ${to}? O painel reinicia na versão nova e recarrega as abas abertas.`,
+    updateNow: 'Atualizar agora',
+    later: 'Mais tarde',
     updateAvailable: (v: string) => `${v} disponível`,
     updateFailed: (e: string) => `A atualização não terminou: ${e}`,
     updateNoRestart: (e: string) =>
@@ -3045,6 +3049,10 @@ const en: Messages = {
     reloadPage: 'Reload',
     updating: 'Updating cerne…',
     updateTo: (v: string) => `Update to ${v}`,
+    updateConfirm: (from: string, to: string) =>
+      `Update cerne from ${from} to ${to}? The panel restarts on the new version and reloads its open tabs.`,
+    updateNow: 'Update now',
+    later: 'Later',
     updateAvailable: (v: string) => `${v} available`,
     updateFailed: (e: string) => `The update did not finish: ${e}`,
     updateNoRestart: (e: string) =>

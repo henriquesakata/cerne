@@ -54,7 +54,8 @@ type ProjectsState = {
   modelsChange: ModelsChange | null
   // F-0480: a release nova e a troca do binário pelo painel (o botão mora no Nav).
   update: UpdateState | null
-  beginUpdate: () => void
+  // F-0492: o botão da barra só pergunta; a troca começa no "Atualizar agora".
+  askUpdate: () => void
   toggleUpdateFix: () => void
 }
 
@@ -91,6 +92,10 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const [updateLine, setUpdateLine] = useState('')
   const [updateError, setUpdateError] = useState('')
   const [showUpdateFix, setShowUpdateFix] = useState(false)
+  // F-0492: a pergunta antes da troca, e o binário do disco cujo aviso de
+  // reinício a pessoa adiou nesta aba ("Mais tarde"; nada é gravado).
+  const [confirmUpdate, setConfirmUpdate] = useState(false)
+  const [restartLater, setRestartLater] = useState('')
   // Prazo da recarga pendente: o painel volta antes de os processos acoplados
   // registrarem de novo os seus projetos.
   const reloadBy = useRef(0)
@@ -141,8 +146,16 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   // ready=true renderiza a mensagem de zero-projetos em vez dos children.
   const reload = () => {
     void fetchUpdate()
-      .then(setUpdate)
-      .catch(() => setUpdate(null)) // sem estado, sem botão: a falha não vira erro de UI
+      .then((u) => {
+        setUpdate(u)
+        // F-0492: uma troca começada por outro caminho (ou a versão nova que
+        // sumiu) fecha a pergunta, que não volta sozinha quando ela acaba.
+        if (!u?.newer || !u.swappable || u.running || !u.latest) setConfirmUpdate(false)
+      })
+      .catch(() => {
+        setUpdate(null) // sem estado, sem botão: a falha não vira erro de UI
+        setConfirmUpdate(false)
+      })
     return loadProjects()
   }
   const loadProjects = () =>
@@ -258,6 +271,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     })
   }
   const beginUpdate = () => {
+    setConfirmUpdate(false)
     if (update?.running) return
     setUpdateError('')
     setUpdateLine('')
@@ -275,7 +289,14 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const installed = panel?.installed
   // Pelo arquivo, não pela versão: um build local novo pode ter a mesma versão
   // e a mesma UI (critério 1).
-  const newBinary = !!installed?.changed && !!installed.version && !installed.error
+  const installedKey = installed ? `${installed.version}|${installed.ui}` : ''
+  const newBinary = !!installed?.changed && !!installed.version && !installed.error && installedKey !== restartLater
+  const askingUpdate = confirmUpdate && !!update?.newer && update.swappable && !update.running && !!update.latest
+  const postponeRestart = () => {
+    clearTimeout(restartTimer.current)
+    setRestart({ state: 'idle' })
+    setRestartLater(installedKey)
+  }
 
   if (!ready) return <p className="status">{t.live.loading}</p>
   if (projects.length === 0) return <p className="status">{t.live.noProjects}</p>
@@ -291,10 +312,21 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         lastChange,
         modelsChange,
         update,
-        beginUpdate,
+        askUpdate: () => setConfirmUpdate(true),
         toggleUpdateFix: () => setShowUpdateFix((v) => !v),
       }}
     >
+      {askingUpdate && (
+        <div className="load-notice live-refresh-notice advisory" role="status">
+          <p>{t.live.updateConfirm(shortVersion(update.current), shortVersion(update.latest ?? ''))}</p>
+          <button type="button" onClick={beginUpdate}>
+            {t.live.updateNow}
+          </button>
+          <button type="button" onClick={() => setConfirmUpdate(false)}>
+            {t.live.later}
+          </button>
+        </div>
+      )}
       {update?.running && (
         <div className="load-notice live-refresh-notice advisory" role="status">
           <p>
@@ -370,6 +402,12 @@ export function LiveProvider({ children }: { children: ReactNode }) {
             <button type="button" onClick={doRestart} aria-disabled={restart.state === 'restarting'}>
               {t.live.restartPanel}
             </button>
+            {/* durante o reinício não: apagaria o prazo que detecta a falha */}
+            {restart.state !== 'restarting' && (
+              <button type="button" onClick={postponeRestart}>
+                {t.live.later}
+              </button>
+            )}
           </div>
         )
       )}

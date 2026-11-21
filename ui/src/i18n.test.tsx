@@ -238,6 +238,28 @@ describe('vault.editor copy (F-0464 critério 11)', () => {
   })
 })
 
+// F-0492 crit. 5: a confirmação do Atualizar e o "Mais tarde" existem nas duas
+// línguas, com os rótulos das janelas de atualização ("Update now"/"Later").
+describe('t.live — Mais tarde (F-0492 crit. 5)', () => {
+  const live = (lang: Lang) => {
+    localStorage.setItem('cerne-lang', lang)
+    const { result } = renderHook(() => useT(), { wrapper: I18nProvider })
+    return result.current.t.live
+  }
+  afterEach(() => localStorage.removeItem('cerne-lang'))
+
+  it('Atualizar agora e Mais tarde em pt-BR, Update now e Later em en', () => {
+    expect(live('pt-BR')).toMatchObject({ updateNow: 'Atualizar agora', later: 'Mais tarde' })
+    expect(live('en')).toMatchObject({ updateNow: 'Update now', later: 'Later' })
+    expect(live('pt-BR').updateConfirm('0.14.3', '0.15.0')).toBe(
+      'Atualizar o cerne do 0.14.3 para o 0.15.0? O painel reinicia na versão nova e recarrega as abas abertas.',
+    )
+    expect(live('en').updateConfirm('0.14.3', '0.15.0')).toBe(
+      'Update cerne from 0.14.3 to 0.15.0? The panel restarts on the new version and reloads its open tabs.',
+    )
+  })
+})
+
 // F-0489 crit. 9: the channel's new texts — the composer hint and the
 // name-free target labels the line puts after a mono id — exist in both
 // languages, and differ.
