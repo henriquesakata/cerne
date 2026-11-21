@@ -45,10 +45,24 @@ const MermaidView = lazy(() => import('./MermaidView'))
 function titleEditable(state: FeatureState): boolean {
   return (
     state !== 'implemented' &&
+    state !== 'done' &&
     state !== 'rejected' &&
     state !== 'superseded'
   )
 }
+
+// stageTab (F-0498) is the document a person judges at this point, the same
+// rule as `cerne show`: the spec before the work, the plan during it, the
+// result once implemented. A stage doc not written yet falls back to the spec.
+function stageTab(state: FeatureState, real: Record<DocTab, boolean>): DocTab {
+  const stage: DocTab =
+    state === 'in_development' ? 'plan' : state === 'implemented' || state === 'done' ? 'result' : 'spec'
+  return real[stage] ? stage : 'spec'
+}
+
+// Draft (F-0498) is an edit in progress on one tab: the text and the version
+// of the document it started from, so a change underneath is noticed.
+type Draft = { text: string; base: string }
 
 // TitleEditor renderiza o título da feature com edição inline. O controle de
 // edição só aparece em estados vivos (titleEditable); em estados terminais o
@@ -227,7 +241,9 @@ export default function FeaturePage({ id }: { id: string }) {
   // troca a página; o sujeito é o id, então outra feature nunca aparece sob este.
   const live = useLiveLoad(() => fetchFeature(id), [id])
   const detail = live.data
-  const [tab, setTab] = useState<DocTab>('spec')
+  // F-0498: null until the person picks a tab; until then the stage decides.
+  const [picked, setPicked] = useState<DocTab | null>(null)
+  const [drafts, setDrafts] = useState<Partial<Record<DocTab, Draft>>>({})
   const [notice, setNotice] = useState<string | null>(null)
   // F-0449: what did not block the last transition (the mirror's tracker round).
   const [warnings, setWarnings] = useState<string[]>([])
@@ -260,6 +276,15 @@ export default function FeaturePage({ id }: { id: string }) {
     }
   }, [])
 
+  // F-0498: another feature starts on its own stage tab, with no draft or
+  // notice carried over from the last one.
+  useEffect(() => {
+    setPicked(null)
+    setDrafts({})
+    setNotice(null)
+    setWarnings([])
+  }, [id])
+
   // Lê o modo de IA uma vez (para o gating do botão "Gerar com IA").
   useEffect(() => {
     fetchLLMMode()
@@ -270,6 +295,7 @@ export default function FeaturePage({ id }: { id: string }) {
   if (!detail) return <LoadPending load={live} message={t.feature.loadError} />
 
   const f = detail.feature
+  const tab = picked ?? stageTab(f.state, detail.docs_real)
 
   return (
     <main className="feature">
@@ -332,12 +358,6 @@ export default function FeaturePage({ id }: { id: string }) {
             ))}
           </p>
         )}
-        {notice && <p className="notice">{notice}</p>}
-        {warnings.map((w) => (
-          <p key={w} className="notice notice-warning">
-            {t.common.warning} <code>{w}</code>
-          </p>
-        ))}
       </header>
       <ErrataSection content={detail.errata} />
       {/* F-0497: the reference panels share one row while collapsed; an open
@@ -365,7 +385,7 @@ export default function FeaturePage({ id }: { id: string }) {
                   <button
                     key={d}
                     className={d === tab ? 'tab active' : 'tab'}
-                    onClick={() => setTab(d)}
+                    onClick={() => setPicked(d)}
                   >
                     {t.feature.tabs[d]}
                     {open > 0 && (
@@ -384,6 +404,8 @@ export default function FeaturePage({ id }: { id: string }) {
               content={detail.docs[tab]}
               hasRealContent={detail.docs_real[tab]}
               updatedAt={detail.docs_updated[tab]}
+              draft={drafts[tab]}
+              onDraft={(d) => setDrafts((all) => ({ ...all, [tab]: d }))}
               onSaved={load}
             />
             <DocAuthors writes={(detail.writes ?? []).filter((w) => w.doc === tab)} />
@@ -395,6 +417,8 @@ export default function FeaturePage({ id }: { id: string }) {
               staleApproval={detail.spec_changed_after_approval}
               baselineMissing={detail.approval_baseline_missing === true}
               readiness={detail.approve_readiness}
+              notice={notice}
+              warnings={warnings}
               onRefresh={load}
               onDone={(r: TransitionResult) => {
                 // F-0318: approve numa aprovada diz o que fez — "Aprovada →
@@ -481,6 +505,8 @@ function DocEditor({
   content,
   hasRealContent,
   updatedAt,
+  draft,
+  onDraft,
   onSaved,
 }: {
   featureId: string
@@ -489,28 +515,38 @@ function DocEditor({
   content: string
   hasRealContent: boolean
   updatedAt: string | null
+  // F-0498: the edit in progress lives in the page, one per tab, so a tab
+  // switch or a live reload never drops it; undefined means not editing.
+  draft: Draft | undefined
+  onDraft: (d: Draft | undefined) => void
   onSaved: () => void
 }) {
   const { t, lang } = useT()
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(content)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Reset quando o doc ou o conteúdo muda (troca de aba, reload após salvar).
   useEffect(() => {
-    setDraft(content)
-    setEditing(false)
     setError(null)
-  }, [content, doc])
+  }, [doc])
 
-  if (editing) {
+  if (draft) {
+    // The document moved under the edit (an agent pushed it): keep the draft
+    // and say so; the person chooses to keep writing or take the new version.
+    const changed = draft.base !== content
     return (
       <div className="doc-edit">
+        {changed && (
+          <p className="notice notice-warning" role="status">
+            {t.feature.docChanged}{' '}
+            <button type="button" onClick={() => onDraft(undefined)}>
+              {t.feature.discardDraft}
+            </button>
+          </p>
+        )}
         <textarea
           className="doc-textarea"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+          value={draft.text}
+          onChange={(e) => onDraft({ ...draft, text: e.target.value })}
           rows={22}
         />
         <div className="doc-edit-actions">
@@ -519,10 +555,10 @@ function DocEditor({
             onClick={() => {
               setSaving(true)
               setError(null)
-              void saveFeatureDoc(featureId, doc, draft).then((res) => {
+              void saveFeatureDoc(featureId, doc, draft.text).then((res) => {
                 setSaving(false)
                 if (res.ok) {
-                  setEditing(false)
+                  onDraft(undefined)
                   onSaved()
                 } else {
                   setError(res.error)
@@ -532,7 +568,7 @@ function DocEditor({
           >
             {t.common.save}
           </button>
-          <button disabled={saving} onClick={() => setEditing(false)}>
+          <button disabled={saving} onClick={() => onDraft(undefined)}>
             {t.common.cancel}
           </button>
           {error && <span className="form-error">{error}</span>}
@@ -586,7 +622,7 @@ function DocEditor({
 
   return (
     <div className="doc-view">
-      <button className="doc-edit-toggle" onClick={() => setEditing(true)}>
+      <button className="doc-edit-toggle" onClick={() => onDraft({ text: content, base: content })}>
         {t.feature.edit}
       </button>
       {updatedAt && (
@@ -959,7 +995,7 @@ Barra: dispensada por decisão humana (<citação curta da fala que dispensou>)`
 
 type ActionSpec = {
   action: TransitionAction
-  form: 'none' | 'reason' | 'supersede'
+  form: 'none' | 'reason' | 'supersede' | 'confirm'
 }
 
 // Espelha exatamente a máquina de estados de internal/domain/feature.go.
@@ -980,12 +1016,13 @@ const ACTIONS_BY_STATE: Record<FeatureState, ActionSpec[]> = {
     { action: 'supersede', form: 'supersede' },
   ],
   in_development: [
-    { action: 'complete', form: 'none' },
+    // F-0498: leaving development cannot be walked back from here: confirm.
+    { action: 'complete', form: 'confirm' },
     { action: 'supersede', form: 'supersede' },
   ],
   implemented: [
     // Accept é o gate humano (F-0131): valida o implementado → done.
-    { action: 'accept', form: 'none' },
+    { action: 'accept', form: 'confirm' },
     { action: 'supersede', form: 'supersede' },
   ],
   done: [],
@@ -1110,6 +1147,8 @@ function ActionsPanel({
   staleApproval,
   baselineMissing = false,
   readiness = [],
+  notice = null,
+  warnings = [],
   onDone,
   onRefresh,
 }: {
@@ -1118,6 +1157,8 @@ function ActionsPanel({
   staleApproval: boolean
   baselineMissing?: boolean
   readiness?: ApproveImpediment[]
+  notice?: string | null
+  warnings?: string[]
   onDone: (r: TransitionResult) => void
   onRefresh: () => void
 }) {
@@ -1130,27 +1171,40 @@ function ActionsPanel({
   const [by, setBy] = useState('')
   const [reason, setReason] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useState<TransitionAction | null>(null)
 
   // F-0318: em approved, o approve é o Reaprovar (aprovação vencida) ou o
   // Gravar linha de base (aprovação anterior à versão aprovada, crit. 14).
   const actions = ACTIONS_BY_STATE[state].filter(
     (a) => !(state === 'approved' && a.action === 'approve' && !staleApproval && !baselineMissing),
   )
+  // F-0498: the result of the last transition is said here, next to the
+  // button that caused it, and announced.
+  const status = (notice || warnings.length > 0) && (
+    <div role="status" className="actions-status">
+      {notice && <p className="notice">{notice}</p>}
+      {warnings.map((w) => (
+        <p key={w} className="notice notice-warning">
+          {t.common.warning} <code>{w}</code>
+        </p>
+      ))}
+    </div>
+  )
   if (actions.length === 0) {
     return (
       <section className="actions">
         <h2>{t.feature.actions}</h2>
         <p className="muted">{t.feature.closed}</p>
+        {status}
       </section>
     )
   }
 
   const submit = (action: TransitionAction, by?: string, reason?: string) => {
-    setBusy(true)
+    setBusy(action)
     setFormError(null)
     void postTransition(id, transitionBody(action, by, reason)).then((res) => {
-      setBusy(false)
+      setBusy(null)
       if (res.ok) {
         setOpenForm(null)
         setBy('')
@@ -1188,7 +1242,7 @@ function ActionsPanel({
             key={a.action}
             className={a.action === primary ? 'queue-btn-primary' : undefined}
             disabled={
-              busy || (a.action === 'approve' && blocked) || (a.action === 'start' && staleApproval)
+              busy !== null || (a.action === 'approve' && blocked) || (a.action === 'start' && staleApproval)
             }
             title={
               a.action === 'approve' && blocked
@@ -1203,15 +1257,34 @@ function ActionsPanel({
               a.form === 'none' ? submit(a.action) : toggleForm(a.action)
             }
           >
-            {state === 'approved' && a.action === 'approve'
-              ? baselineMissing
-                ? t.feature.recordBaseline
-                : t.feature.reapprove
-              : t.feature.actionLabels[a.action]}
+            {busy === a.action && a.form !== 'confirm'
+              ? t.feature.busyLabels[a.action]
+              : state === 'approved' && a.action === 'approve'
+                ? baselineMissing
+                  ? t.feature.recordBaseline
+                  : t.feature.reapprove
+                : t.feature.actionLabels[a.action]}
           </button>
         ))}
       </div>
-      {spec && spec.form !== 'none' && (
+      {spec && spec.form === 'confirm' && (
+        <div className="action-form">
+          <button
+            type="button"
+            className="queue-btn-primary"
+            disabled={busy !== null}
+            onClick={() => submit(spec.action)}
+          >
+            {busy === spec.action
+              ? t.feature.busyLabels[spec.action]
+              : t.feature.confirmFinal[spec.action as 'complete' | 'accept']}
+          </button>
+          <button type="button" disabled={busy !== null} onClick={() => toggleForm(spec.action)}>
+            {t.common.cancel}
+          </button>
+        </div>
+      )}
+      {spec && spec.form !== 'none' && spec.form !== 'confirm' && (
         <form
           className="action-form"
           onSubmit={(e) => {
@@ -1242,7 +1315,7 @@ function ActionsPanel({
             />
           </label>
           {/* Razão é obrigatória no backend (422); bloquear aqui evita a ida perdida. */}
-          <button type="submit" disabled={busy || reason.trim() === ''}>
+          <button type="submit" disabled={busy !== null || reason.trim() === ''}>
             {t.feature.confirmAction(t.feature.actionLabels[spec.action])}
           </button>
         </form>
@@ -1250,6 +1323,7 @@ function ActionsPanel({
       {formError && !(refused === 'approve' && blocked) && (
         <p className="form-error">{formError}</p>
       )}
+      {status}
     </section>
   )
 }
