@@ -1,16 +1,12 @@
 import { fetchEvents } from './api'
 import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
-import { useT } from './i18n'
-
-function formatAt(at: string, lang: string): string {
-  const d = new Date(at)
-  return isNaN(d.getTime()) ? at : d.toLocaleString(lang)
-}
+import { useInstant, useT } from './i18n'
 
 export default function History() {
   const load = useLiveLoad(fetchEvents)
   const events = load.data
-  const { t, lang } = useT()
+  const { t } = useT()
+  const instant = useInstant()
 
   if (!events) return <LoadPending load={load} message={t.history.error} />
 
@@ -23,7 +19,7 @@ export default function History() {
       <ul className="history-list">
         {events.map((ev) => (
           <li key={ev.id} className="history-item">
-            <span className="history-at">{formatAt(ev.at, lang)}</span>
+            <span className="history-at">{instant(ev.at, 'full') || ev.at}</span>
             <a className="card-id" href={`#/f/${encodeURIComponent(ev.entity_id)}`}>
               {ev.entity_id}
             </a>

@@ -4,9 +4,9 @@ import { describe, expect, it } from 'vitest'
 
 // F-0493 crit. 3: the screens that show an instant with a time of day go
 // through useInstant (datetime.ts), none builds the format itself. The files
-// are the ones the spec's Problem lists. A date with no time stays as it is
+// are the ones the spec's Problem lists (History.tsx joined it by amendment). A date with no time stays as it is
 // when it is pinned to UTC (crit. 4).
-const FILES = ['Channel.tsx', 'WarRoom.tsx', 'FeatureAgents.tsx', 'FeaturePage.tsx', 'Mirror.tsx']
+const FILES = ['Channel.tsx', 'WarRoom.tsx', 'FeatureAgents.tsx', 'FeaturePage.tsx', 'Mirror.tsx', 'History.tsx']
 
 const source = (f: string) => readFileSync(resolve(__dirname, f), 'utf8')
 
