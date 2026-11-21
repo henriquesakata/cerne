@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, act, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
-import { LiveProvider, pageReload, useProjects } from './live'
+import { LiveProvider, pageReload, useLiveVersion, useProjects } from './live'
 import { fetchProjects, fetchUpdate, HTTPError, renameProject, restartPanel, startUpdate, subscribeLive } from './api'
 import type { UpdateState } from './api'
 import type { ProjectInfo } from './api'
@@ -285,6 +285,30 @@ describe('LiveProvider — projeto ativo por aba (F-0288)', () => {
 // a aba relê /api/projects e a nav esconde/reexibe o Grafo sem reload.
 // Desde o F-0332 o Grafo mora no grupo Explorar: o teste abre o grupo, que fica
 // aberto enquanto a lista de projetos é relida (só fecha ao navegar).
+// B-0068: the stream the tabs share passes to another tab when its tab closes,
+// and a change emitted in that gap is lost. Every new connection starts with
+// "projects", so that event re-fetches the screens, not only the list.
+describe('LiveProvider — projects event re-fetches the screens (B-0068)', () => {
+  it('bumps the live version', async () => {
+    let onProjects = () => {}
+    vi.mocked(subscribeLive).mockImplementation((h) => {
+      onProjects = h.onProjects
+      return () => {}
+    })
+    function Version() {
+      return <span data-testid="v">{useLiveVersion()}</span>
+    }
+    render(
+      <LiveProvider>
+        <Version />
+      </LiveProvider>,
+    )
+    const before = Number((await screen.findByTestId('v')).textContent)
+    await act(async () => onProjects())
+    await waitFor(() => expect(Number(screen.getByTestId('v').textContent)).toBeGreaterThan(before))
+  })
+})
+
 describe('LiveProvider — gate do Grafo ao vivo (F-0315)', () => {
   it('evento projects com graph desligado tira a aba Grafo; religado, ela volta', async () => {
     let onProjects = () => {}

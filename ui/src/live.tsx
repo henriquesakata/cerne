@@ -227,7 +227,13 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         // the list too, or the selector and the name field go stale.
         void reload()
       },
-      onProjects: () => void reload(),
+      // Every stream connection starts with "projects". A change emitted while
+      // the shared stream passed to another tab is lost (B-0068): re-fetch the
+      // screens too, not only the list.
+      onProjects: () => {
+        setVersion((v) => v + 1)
+        void reload()
+      },
       onModels: setModelsChange,
       onUpdate: setUpdateLine,
     })
