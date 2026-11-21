@@ -748,3 +748,30 @@ func TestChannelAgentBodyQuoted(t *testing.T) {
 		t.Fatalf("seqs read back = %v, want only #%d", got, seq)
 	}
 }
+
+// TestChannelOrphanWakeClaimHidesNothing (F-0491 review): a waking claim left
+// by a crash between the claim and its record never stops the message from
+// reaching the session at its next contact point — a claim shows nothing,
+// it only keeps another post from waking the session for that seq again.
+func TestChannelOrphanWakeClaimHidesNothing(t *testing.T) {
+	f := newChanFixture(t)
+	seq := f.post("W-0001", "W-0002 libera o rooms.go?", false)
+	if err := f.ch.Update(func([]room.Message, []room.Delivery) (*room.Delivery, error) {
+		return &room.Delivery{Session: "s2", Work: "W-0002", Waking: []int{seq}, At: f.at}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	msgs, _ := f.read("")
+	if got := stateOf(t, msgs, seq); got.State != ChannelNotDelivered || got.Targets[0].Reason != "" {
+		t.Fatalf("an orphan claim reads as %+v, want not delivered with no reason", got)
+	}
+	if out := f.injectTool("s2"); !strings.Contains(out, "libera o rooms.go?") {
+		t.Fatalf("a tool point missed the message behind an orphan claim: %q", out)
+	}
+	if out := f.inject("s2", true); !strings.Contains(out, "libera o rooms.go?") {
+		t.Fatalf("a turn start missed the message behind an orphan claim: %q", out)
+	}
+	if msgs, _ := f.read(""); stateOf(t, msgs, seq).State != ChannelDelivered {
+		t.Fatalf("the contact point did not record the delivery")
+	}
+}
