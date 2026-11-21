@@ -1,6 +1,21 @@
 import { useEffect, useId, useState, type FormEvent } from 'react'
-import { createIdea, dropIdea, fetchIdeas, HTTPError, promoteIdea, SimilarExists, type DupMatch, type Idea } from './api'
+import {
+  createIdea,
+  dropIdea,
+  fetchIdeas,
+  fetchMirror,
+  getApiProject,
+  HTTPError,
+  postMirrorSync,
+  promoteIdea,
+  SimilarExists,
+  type DupMatch,
+  type Idea,
+  type MirrorOverview,
+} from './api'
 import { Chevron, ExpandAll, useExpanded } from './Expand'
+import { When } from './Handoffs'
+import { isImported, markSeen, readSeen } from './ideasSeen'
 import { useT, type Messages } from './i18n'
 import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
 import Markdown from './Markdown'
@@ -100,6 +115,41 @@ export default function IdeasPanel({ modules, onPromoted, hash }: { modules: str
   const needsModule = modules.length >= 2
   const date = (iso: string) => new Date(iso).toLocaleDateString(lang)
 
+  // F-0487: the mirror's state for the Sync button and the last-sync line; a
+  // failure to read it only hides them (the Mirror tab reports it).
+  const mirror = useLiveLoad<MirrorOverview | null>(() => (page ? fetchMirror() : Promise.resolve(null)), [page])
+  const [syncing, setSyncing] = useState(false)
+  const [syncNote, setSyncNote] = useState<{ alert: boolean; text: string } | null>(null)
+  const runSync = () => {
+    if (syncing) return
+    setSyncing(true)
+    setSyncNote(null)
+    postMirrorSync()
+      .then((o) => {
+        if (o.kind === 'busy') setSyncNote({ alert: false, text: t.ideas.sync.busy })
+        if (o.kind === 'off') setSyncNote({ alert: false, text: t.ideas.sync.off })
+        if (o.kind === 'error') setSyncNote({ alert: true, text: t.ideas.sync.failed(o.message) })
+        return Promise.all([load.reload(), mirror.reload()])
+      })
+      .finally(() => setSyncing(false))
+  }
+
+  // F-0487 crit. 7: the imported ideas on screen count as seen; the ones not
+  // seen before keep the "new" chip while the screen stays open.
+  const [fresh, setFresh] = useState<ReadonlySet<string>>(new Set())
+  useEffect(() => {
+    if (!page || load.data === null) return
+    const pid = getApiProject()
+    const seen = readSeen(pid)
+    if (!seen) return
+    const live = new Set(load.data.filter(isImported).map((i) => i.id))
+    const onScreen = shown.filter((i) => live.has(i.id)).map((i) => i.id)
+    const unseen = onScreen.filter((id) => !seen.has(id))
+    if (unseen.length > 0) setFresh((prev) => new Set([...prev, ...unseen]))
+    const next = new Set([...[...seen].filter((id) => live.has(id)), ...onScreen])
+    if (next.size !== seen.size || unseen.length > 0) markSeen(pid, [...next])
+  }, [page, load.data, state]) // shown derives from load.data and state
+
   const send = (sub: Submission) => {
     if (sending) return
     setSending(true)
@@ -164,6 +214,27 @@ export default function IdeasPanel({ modules, onPromoted, hash }: { modules: str
     <section className="ideas-panel">
       <Heading>{t.ideas.title}</Heading>
       <p className="muted">{t.ideas.intro}</p>
+      {mirror.data?.enabled && (
+        <div className="ideas-sync">
+          <button type="button" className="queue-btn" disabled={syncing} onClick={runSync}>
+            {syncing ? t.ideas.sync.running : t.ideas.sync.button}
+          </button>
+          <span className="muted">{syncLine(mirror.data, t)}</span>
+        </div>
+      )}
+      {mirror.data?.enabled &&
+        mirror.data.lastSync?.trackers
+          .filter((r) => r.errors.length > 0)
+          .map((r) => (
+            <p key={r.name} className="form-error" role="alert">
+              {t.ideas.sync.trackerFailed(r.name, r.errors.join('; '))}
+            </p>
+          ))}
+      {syncNote && (
+        <p className={syncNote.alert ? 'form-error' : 'muted'} role={syncNote.alert ? 'alert' : 'status'}>
+          {syncNote.text}
+        </p>
+      )}
       <form className="ideas-capture" onSubmit={submit}>
         <input
           type="text"
@@ -252,6 +323,7 @@ export default function IdeasPanel({ modules, onPromoted, hash }: { modules: str
                     </button>
                     <span className="queue-meta">
                       {i.mirror && <MirrorBadge mirror={i.mirror} link />}
+                      {fresh.has(i.id) && <span className="chip chip-new">{t.ideas.newChip}</span>}
                       {i.state !== 'active' && <span className={`chip ${CHIP[i.state]}`}>{t.ideas.stateChip[i.state]}</span>}
                       {(i.components ?? []).map((c) => (
                         <Tag key={c} axis="component" value={c} />
@@ -406,4 +478,12 @@ export default function IdeasPanel({ modules, onPromoted, hash }: { modules: str
       )}
     </section>
   )
+}
+
+// syncLine is the last sync on this computer, with the strings of the Mirror tab.
+function syncLine(m: MirrorOverview, t: Messages) {
+  const last = m.lastSync
+  if (!last) return t.ideas.sync.never
+  const sum = (f: 'synced' | 'imported') => last.trackers.reduce((n, r) => n + r[f], 0)
+  return t.mirror.lastSync(<When iso={last.at} />, t.mirror.syncedCards(sum('synced')), t.mirror.importedIdeas(sum('imported')))
 }
