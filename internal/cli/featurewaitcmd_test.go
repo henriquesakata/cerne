@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/store"
 )
@@ -228,6 +229,58 @@ func TestFeatureWaitCommand(t *testing.T) {
 		t.Fatalf("unreachable: code %d\n%s", ExitCode(err), out)
 	}
 
+}
+
+// TestFeatureWaitWakesOnMessage (B-0065): a message addressed to the
+// session ends the wait — an idle session wakes only when a background
+// command ends — but a reached state still wins.
+func TestFeatureWaitWakesOnMessage(t *testing.T) {
+	f := newFakeWait(domain.StateImplemented)
+	env := f.env()
+	env.inbox = func() (string, error) {
+		if f.calls < 2 {
+			return "", nil
+		}
+		return "cerne channel:\n#19 Henrique (human) → you: corrige?\n", nil
+	}
+	r, err := waitFeature(context.Background(), env, domain.StateDone, time.Hour, 30*time.Second)
+	if err != nil || r.code != waitMessage || !strings.Contains(r.inbox, "#19") || f.calls != 2 {
+		t.Fatalf("got %+v, %v after %d refreshes; want code %d with the message on the 2nd", r, err, f.calls, waitMessage)
+	}
+	f = newFakeWait(domain.StateDone)
+	env = f.env()
+	env.inbox = func() (string, error) { return "cerne channel:\n#19 x\n", nil }
+	if r, err := waitFeature(context.Background(), env, domain.StateDone, time.Hour, 30*time.Second); err != nil || r.code != 0 {
+		t.Fatalf("reached and a message: %+v, %v; want code 0", r, err)
+	}
+}
+
+// TestFeatureWaitMessageCommand (B-0065): the human's message from the card's
+// page ends the session's wait with exit 4, the message, how to answer and
+// how to wait again; without a session, or once acked, it does not.
+func TestFeatureWaitMessageCommand(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	id := newFeature(t, projDir, "Feature esperada", 1)
+	if _, err := app.ChannelPost(filepath.Dir(repoDir), "Henrique", id, []string{"sess-dev"}, "pode arrumar os conflitos?", time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CERNE_SESSION", "")
+	if out, err := execCerne(t, "feature", "wait", id, "--for", "done", "--timeout", "0", "--dir", projDir); ExitCode(err) != 3 {
+		t.Fatalf("no session: code %d, want 3 (timeout)\n%s", ExitCode(err), out)
+	}
+	t.Setenv("CERNE_SESSION", "sess-dev")
+	out, err := execCerne(t, "feature", "wait", id, "--for", "done", "--timeout", "0", "--dir", projDir)
+	for _, want := range []string{id + ": still candidate", "#1 Henrique (human) → you, about " + id + ": pode arrumar os conflitos?", "cerne msg send --ref " + id, "cerne feature wait " + id + " --for done"} {
+		if ExitCode(err) != 4 || !strings.Contains(out, want) {
+			t.Fatalf("addressed message: code %d, want 4 and %q\n%s", ExitCode(err), want, out)
+		}
+	}
+	if out, err := execCerne(t, "msg", "ack", "1", "--dir", projDir); err != nil {
+		t.Fatalf("ack: %v\n%s", err, out)
+	}
+	if out, err := execCerne(t, "feature", "wait", id, "--for", "done", "--timeout", "0", "--dir", projDir); ExitCode(err) != 3 {
+		t.Fatalf("acked: code %d, want 3\n%s", ExitCode(err), out)
+	}
 }
 
 // Critic finding 1 (criterion 6): a read of the clone that fails after the

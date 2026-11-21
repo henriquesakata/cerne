@@ -347,6 +347,18 @@ func (cs channelState) watermark(sess string) int {
 // write. consume=false is a peek (subagents): it records what was shown but
 // leaves the watermark, so the parent session still gets the background.
 func ChannelInject(cacheDir, repoDir, sess string, consume bool, now time.Time) (string, error) {
+	return channelInject(cacheDir, repoDir, sess, consume, false, now)
+}
+
+// ChannelWake is what ends an idle session's `cerne feature wait` (B-0065):
+// only the messages addressed to sess and still unanswered, recorded as
+// delivered — the waking agent reads them — without touching the background
+// watermark. Nothing addressed is "".
+func ChannelWake(cacheDir, repoDir, sess string, now time.Time) (string, error) {
+	return channelInject(cacheDir, repoDir, sess, true, true, now)
+}
+
+func channelInject(cacheDir, repoDir, sess string, consume, addressedOnly bool, now time.Time) (string, error) {
 	if safeSessionID(sess) != nil {
 		return "", nil
 	}
@@ -396,6 +408,9 @@ func ChannelInject(cacheDir, repoDir, sess string, consume bool, now time.Time) 
 			}
 			pending = append(pending, injItem{m: m, group: group, directed: directed, shown: cs.shownTo(m, sess)})
 		}
+		if addressedOnly {
+			pending = slices.DeleteFunc(pending, func(it injItem) bool { return !it.directed })
+		}
 		if len(pending) == 0 {
 			return nil, nil
 		}
@@ -405,7 +420,7 @@ func ChannelInject(cacheDir, repoDir, sess string, consume bool, now time.Time) 
 		for _, m := range inline {
 			d.Seqs = append(d.Seqs, m.Seq)
 		}
-		if consume {
+		if consume && !addressedOnly {
 			d.Through = through
 		}
 		return d, nil

@@ -18,6 +18,7 @@ import (
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/lint"
+	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -31,6 +32,7 @@ import (
 const (
 	waitUnreachable = 2
 	waitTimedOut    = 3
+	waitMessage     = 4 // B-0065: a channel message addressed to the session
 )
 
 // waitMaxBackoff caps the wait between refreshes after a transient error.
@@ -56,8 +58,9 @@ func newFeatureWaitCmd(dir *string) *cobra.Command {
 			"is not approved until a human re-approves it. Exit 2: the state became unreachable (e.g. rejected while waiting " +
 			"for approved). Exit 3: --timeout ran out (--timeout 0 checks once). It refreshes the backend clone every " +
 			"--interval (fetch + fast-forward, no pull: .docs/ and docs.lock are never written) and backs off on network " +
-			"errors. Run it in the background after asking a human to approve or accept, if your harness wakes you when a " +
-			"background command ends; the gate stays human.",
+			"errors. Exit 4: a channel message addressed to your session ($CERNE_SESSION) arrived first — e.g. the human's, " +
+			"from the card's page; it prints the message and how to answer, then wait again. Run it in the background after " +
+			"asking a human to approve or accept, if your harness wakes you when a background command ends; the gate stays human.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runFeatureWait(cmd, *dir, args[0], forState, timeout, interval)
@@ -77,6 +80,7 @@ type waitEnv struct {
 	sleep   func(context.Context, time.Duration) error
 	now     func() time.Time
 	warn    io.Writer
+	inbox   func() (string, error) // B-0065: addressed messages; nil: no session
 }
 
 // waitResult is how a wait ended: code 0 reached, 2 unreachable, 3 timed out.
@@ -85,6 +89,7 @@ type waitResult struct {
 	startStale bool
 	code       int
 	waited     time.Duration
+	inbox      string // the addressed messages that ended the wait (code 4)
 }
 
 // waitRefreshCap bounds the one refresh of a --timeout 0 check.
@@ -132,6 +137,14 @@ func waitFeature(ctx context.Context, env waitEnv, target domain.FeatureState, t
 				return r, nil
 			case !domain.FeatureReachable(f.State, target):
 				r.code = waitUnreachable
+				return r, nil
+			}
+		}
+		if env.inbox != nil {
+			if msg, err := env.inbox(); err != nil {
+				fmt.Fprintf(env.warn, "warning: cannot read the channel (%v)\n", err)
+			} else if msg != "" {
+				r.code, r.inbox = waitMessage, msg
 				return r, nil
 			}
 		}
@@ -258,6 +271,13 @@ func runFeatureWait(cmd *cobra.Command, dir, id, forState string, timeout, inter
 		now:  time.Now,
 		warn: cmd.ErrOrStderr(),
 	}
+	if sess := os.Getenv("CERNE_SESSION"); sess != "" {
+		cacheDir, err := project.CacheDir(ctx.cfg.ProjectID)
+		if err != nil {
+			return err
+		}
+		env.inbox = func() (string, error) { return app.ChannelWake(cacheDir, ctx.repoDir, sess, time.Now().UTC()) }
+	}
 	r, err := waitFeature(sigCtx, env, target, timeout, interval)
 	if err != nil {
 		select {
@@ -274,6 +294,9 @@ func runFeatureWait(cmd *cobra.Command, dir, id, forState string, timeout, inter
 		return err
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), waitLine(ctx, id, target, r))
+	if r.code == waitMessage {
+		fmt.Fprintf(cmd.OutOrStdout(), "%s↳ then wait again: cerne feature wait %s --for %s\n", r.inbox, id, target)
+	}
 	if r.code != 0 {
 		cmd.SilenceErrors = true // the line above is the message
 		return exitError{code: r.code}
@@ -293,6 +316,9 @@ func waitLine(ctx projCtx, id string, target domain.FeatureState, r waitResult) 
 	switch {
 	case r.code == waitTimedOut:
 		fmt.Fprintf(&b, "still %s after %s waiting for %s", r.end.State, r.waited.Round(time.Second), target)
+		return b.String()
+	case r.code == waitMessage:
+		fmt.Fprintf(&b, "still %s — a message addressed to you arrived while waiting for %s:", r.end.State, target)
 		return b.String()
 	case r.start.State != r.end.State:
 		fmt.Fprintf(&b, "%s → %s", r.start.State, r.end.State)
