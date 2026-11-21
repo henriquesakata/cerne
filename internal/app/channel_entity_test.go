@@ -223,4 +223,16 @@ func TestChannelWakeOnlyAddressed(t *testing.T) {
 	if out := f.inject("s-dev", true); !strings.Contains(out, "background chatter") {
 		t.Fatalf("the wake advanced the background watermark: next injection %q", out)
 	}
+	// B-0066: a message the session already saw — by a wake or by a hook —
+	// wakes it no more, answered or not; the hook keeps repeating it in-turn.
+	if out := wake("s-dev"); out != "" {
+		t.Fatalf("woken again by a message it already saw: %q", out)
+	}
+	f.postTo("F-0001", []string{"s-dev"}, "e o teste?")
+	if out := f.inject("s-dev", true); !strings.Contains(out, "e o teste?") || !strings.Contains(out, "corrige o conflito?") {
+		t.Fatalf("the hook stopped repeating the unanswered messages: %q", out)
+	}
+	if out := wake("s-dev"); out != "" {
+		t.Fatalf("woken by a message a hook already showed: %q", out)
+	}
 }

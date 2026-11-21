@@ -257,7 +257,7 @@ func TestFeatureWaitWakesOnMessage(t *testing.T) {
 
 // TestFeatureWaitMessageCommand (B-0065): the human's message from the card's
 // page ends the session's wait with exit 4, the message, how to answer and
-// how to wait again; without a session, or once acked, it does not.
+// how to wait again; without a session, or once seen (B-0066), it does not.
 func TestFeatureWaitMessageCommand(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
 	id := newFeature(t, projDir, "Feature esperada", 1)
@@ -275,11 +275,17 @@ func TestFeatureWaitMessageCommand(t *testing.T) {
 			t.Fatalf("addressed message: code %d, want 4 and %q\n%s", ExitCode(err), want, out)
 		}
 	}
-	if out, err := execCerne(t, "msg", "ack", "1", "--dir", projDir); err != nil {
-		t.Fatalf("ack: %v\n%s", err, out)
-	}
+	// B-0066: waiting again without answering does not wake on the message
+	// already shown — no turn-per-loop; a new one still wakes.
 	if out, err := execCerne(t, "feature", "wait", id, "--for", "done", "--timeout", "0", "--dir", projDir); ExitCode(err) != 3 {
-		t.Fatalf("acked: code %d, want 3\n%s", ExitCode(err), out)
+		t.Fatalf("seen, unanswered: code %d, want 3 (no wake loop)\n%s", ExitCode(err), out)
+	}
+	if _, err := app.ChannelPost(filepath.Dir(repoDir), "Henrique", id, []string{"sess-dev"}, "e o teste?", time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	out, err = execCerne(t, "feature", "wait", id, "--for", "done", "--timeout", "0", "--dir", projDir)
+	if ExitCode(err) != 4 || !strings.Contains(out, "#2 ") || strings.Contains(out, "#1 ") {
+		t.Fatalf("a new message: code %d, want 4 with #2 only\n%s", ExitCode(err), out)
 	}
 }
 

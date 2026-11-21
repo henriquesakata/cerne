@@ -351,9 +351,11 @@ func ChannelInject(cacheDir, repoDir, sess string, consume bool, now time.Time) 
 }
 
 // ChannelWake is what ends an idle session's `cerne feature wait` (B-0065):
-// only the messages addressed to sess and still unanswered, recorded as
-// delivered — the waking agent reads them — without touching the background
-// watermark. Nothing addressed is "".
+// only the messages addressed to sess, still unanswered and never shown to it,
+// recorded as delivered — the waking agent reads them — without touching the
+// background watermark. A seen one wakes no more (B-0066: a wait re-run
+// without an answer would wake a turn per loop); the hooks keep repeating it
+// in-turn. Nothing to wake for is "".
 func ChannelWake(cacheDir, repoDir, sess string, now time.Time) (string, error) {
 	return channelInject(cacheDir, repoDir, sess, true, true, now)
 }
@@ -409,7 +411,7 @@ func channelInject(cacheDir, repoDir, sess string, consume, addressedOnly bool, 
 			pending = append(pending, injItem{m: m, group: group, directed: directed, shown: cs.shownTo(m, sess)})
 		}
 		if addressedOnly {
-			pending = slices.DeleteFunc(pending, func(it injItem) bool { return !it.directed })
+			pending = slices.DeleteFunc(pending, func(it injItem) bool { return !it.directed || it.shown })
 		}
 		if len(pending) == 0 {
 			return nil, nil
