@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import Backlinks from './Backlinks'
-import type { Graph } from './api'
+import { fetchGraph, type Graph } from './api'
 
 const graph: Graph = {
   nodes: [
@@ -60,8 +60,13 @@ describe('Backlinks', () => {
     expect(screen.queryByText('R-0001')).toBeNull()
     cleanup()
     graph.edges = graph.edges.filter((e) => e.type === 'informs' || e.to !== 'F-0001')
+    vi.mocked(fetchGraph).mockClear()
     const { container } = render(<Backlinks id="F-0001" exclude={['R-0001']} />)
-    await waitFor(() => expect(container).toBeEmptyDOMElement())
+    // Wait for the graph to arrive: an empty container before it proves nothing.
+    await act(async () => {
+      await vi.mocked(fetchGraph).mock.results[0].value
+    })
+    expect(container).toBeEmptyDOMElement()
   })
 
   // F-0497 crit. 2
@@ -85,4 +90,3 @@ describe('Backlinks', () => {
     expect(container.querySelector('section.backlinks-section')).not.toBeNull()
   })
 })
-

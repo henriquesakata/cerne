@@ -104,7 +104,7 @@ export default function Backlinks({
     )
   }
   return (
-    <details className="backlinks-section">
+    <details key={id} className="backlinks-section">
       <summary>
         <h2 className="backlinks-title">{t.backlinks.title}</h2>
         <span className="column-count">{shown.length}</span>

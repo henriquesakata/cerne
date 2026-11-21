@@ -222,9 +222,13 @@ export function DeliveryPendings({ id }: { id: string }) {
   const { t } = useT()
   const load = useLiveLoad(() => fetchPendings({ from: id }), [id])
   if (!load.data?.length) return null
+  // F-0497: collapsed to one line with its count, like Backlinks beside it.
   return (
-    <section className="backlinks-section">
-      <h2 className="backlinks-title">{t.pendings.deliveryTitle}</h2>
+    <details className="backlinks-section">
+      <summary>
+        <h2 className="backlinks-title">{t.pendings.deliveryTitle}</h2>
+        <span className="column-count">{load.data.length}</span>
+      </summary>
       <ul className="backlinks-list">
         {load.data.map((p) => (
           <li key={p.id}>
@@ -233,6 +237,6 @@ export function DeliveryPendings({ id }: { id: string }) {
         ))}
       </ul>
       <a href={`#/pendings?from=${encodeURIComponent(id)}`}>{t.pendings.seeAll}</a>
-    </section>
+    </details>
   )
 }

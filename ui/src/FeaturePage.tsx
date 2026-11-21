@@ -340,9 +340,13 @@ export default function FeaturePage({ id }: { id: string }) {
         ))}
       </header>
       <ErrataSection content={detail.errata} />
-      <Backlinks id={id} exclude={detail.informed_by.map((r) => r.id)} />
-      <DeliveryPendings id={id} />
-      <FeatureAgents id={id} />
+      {/* F-0497: the reference panels share one row while collapsed; an open
+          one takes the whole width below the others. */}
+      <div className="feature-refs">
+        <Backlinks id={id} exclude={detail.informed_by.map((r) => r.id)} />
+        <DeliveryPendings id={id} />
+        <FeatureAgents id={id} />
+      </div>
       {diagram ? (
         <Suspense fallback={<p className="status">{t.common.loading}</p>}>
           <MermaidView
