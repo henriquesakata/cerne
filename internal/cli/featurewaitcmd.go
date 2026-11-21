@@ -60,7 +60,9 @@ func newFeatureWaitCmd(dir *string) *cobra.Command {
 			"--interval (fetch + fast-forward, no pull: .docs/ and docs.lock are never written) and backs off on network " +
 			"errors. Exit 4: a channel message addressed to your session ($CERNE_SESSION), not yet shown to it, arrived first — e.g. the human's, " +
 			"from the card's page; it prints the message and how to answer, then wait again. Run it in the background after " +
-			"asking a human to approve or accept, if your harness wakes you when a background command ends; the gate stays human.",
+			"asking a human to approve or accept, if your harness wakes you when a background command ends; the gate stays human. " +
+			"Under [gates] accept = \"merge\" (F-0488), --for done also asks the forge each round and, once the card's PR merged " +
+			"into the default branch, records that merge as the human's acceptance (the one write it makes).",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runFeatureWait(cmd, *dir, args[0], forState, timeout, interval)
@@ -255,9 +257,13 @@ func runFeatureWait(cmd *cobra.Command, dir, id, forState string, timeout, inter
 		}
 	}()
 
+	load := func() (store.Feature, error) { return store.LoadFeature(ctx.repoDir, id) }
+	if target == domain.StateDone && ctx.cfg.Gates.AcceptGate() == project.GateMerge {
+		load = mergeAwareLoad(ctx, id, load, cmd.OutOrStdout(), cmd.ErrOrStderr())
+	}
 	env := waitEnv{
 		refresh: refresh,
-		load:    func() (store.Feature, error) { return store.LoadFeature(ctx.repoDir, id) },
+		load:    load,
 		stale: func(f store.Feature) bool {
 			s, _, _ := lint.SpecChangedAfterApproval(ctx.repoDir, f)
 			return s
@@ -302,6 +308,36 @@ func runFeatureWait(cmd *cobra.Command, dir, id, forState string, timeout, inter
 		return exitError{code: r.code}
 	}
 	return nil
+}
+
+// mergeAwareLoad is the wait's load under the merge gate (F-0488): before the
+// state is judged, an implemented card with a delivery PR asks the forge and
+// records the merge, printing its line on out. Anything but the open PR (the
+// normal wait) is a warning, once per distinct line; the wait goes on.
+func mergeAwareLoad(ctx projCtx, id string, load func() (store.Feature, error), out, warn io.Writer) func() (store.Feature, error) {
+	last := ""
+	return func() (store.Feature, error) {
+		f, err := load()
+		if err != nil || f.State != domain.StateImplemented || f.DeliveryMRURL == "" {
+			return f, err
+		}
+		checks, err := app.AcceptMerged(ctx.repoDir, ctx.projDir, ctx.cfg, []string{id})
+		line := ""
+		switch {
+		case err != nil:
+			line = err.Error()
+		case checks[0].Accepted:
+			fmt.Fprintln(out, checks[0].Line)
+			return load()
+		case !checks[0].Waiting:
+			line = checks[0].Line
+		}
+		if line != "" && line != last {
+			fmt.Fprintf(warn, "warning: %s\n", line)
+		}
+		last = line
+		return f, nil
+	}
 }
 
 var mainPathAndTerminals = []domain.FeatureState{

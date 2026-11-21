@@ -131,3 +131,47 @@ func TestNextWaitingForMerge(t *testing.T) {
 		t.Fatalf("next asked the forge %d times, want none", f.calls)
 	}
 }
+
+// Waiting for done under the merge gate records the merge as soon as the
+// forge reports it, and the wait ends as it does on any done.
+// F-0488 crit. 9
+func TestWaitRecordsMergeAccept(t *testing.T) {
+	projDir, repoDir := mergeGateProject(t, &cliFakeForge{pr: cliMergedPR},
+		store.Feature{ID: "F-0001", State: domain.StateImplemented, DeliveryMRURL: "https://github.com/o/r/pull/12"})
+	t.Setenv("CERNE_ACTOR", "agent")
+	out, err := execCerne(t, "feature", "wait", "F-0001", "--for", "done", "--timeout", "0", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "F-0001: implemented → done (accepted on merge of https://github.com/o/r/pull/12)") || !strings.Contains(out, "F-0001: done by human") {
+		t.Fatalf("wait: %v\n%s", err, out)
+	}
+	if f, _ := store.LoadFeature(repoDir, "F-0001"); f.State != domain.StateDone || f.AcceptedVia != "merge" {
+		t.Fatalf("card = %+v, want done on merge", f)
+	}
+}
+
+// A forge that fails is a warning and the wait goes on; an open PR is the
+// normal wait, with no warning.
+// F-0488 crit. 9
+func TestWaitForgeErrorKeepsWaiting(t *testing.T) {
+	for name, tc := range map[string]struct {
+		f    *cliFakeForge
+		warn string
+	}{
+		"forge error": {&cliFakeForge{err: errTestForge}, "forge unavailable"},
+		"open PR":     {&cliFakeForge{pr: forge.PullRequest{Base: "main", DefaultBranch: "main"}}, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			projDir, repoDir := mergeGateProject(t, tc.f,
+				store.Feature{ID: "F-0001", State: domain.StateImplemented, DeliveryMRURL: "https://github.com/o/r/pull/12"})
+			_, stderr, err := execCerneSplit(t, "feature", "wait", "F-0001", "--for", "done", "--timeout", "0", "--dir", projDir)
+			if ExitCode(err) != waitTimedOut {
+				t.Fatalf("code = %d, want %d (still waiting)", ExitCode(err), waitTimedOut)
+			}
+			if gotWarn := strings.Contains(stderr, "warning:"); gotWarn != (tc.warn != "") || !strings.Contains(stderr, tc.warn) {
+				t.Fatalf("stderr = %q, want warning %q", stderr, tc.warn)
+			}
+			if f, _ := store.LoadFeature(repoDir, "F-0001"); f.State != domain.StateImplemented {
+				t.Fatalf("state = %s, want implemented", f.State)
+			}
+		})
+	}
+}

@@ -28,6 +28,7 @@ var ErrMergeGateNoForge = errors.New("no [delivery] forge to ask")
 type MergeCheck struct {
 	ID       string
 	Accepted bool
+	Waiting  bool // the PR is still open: the normal wait for the human's merge
 	Line     string
 	Outcome  TransitionOutcome // the accept's outcome, when Accepted
 }
@@ -68,9 +69,9 @@ func AcceptMerged(repoDir, projDir string, cfg project.Config, ids []string) ([]
 	checks := make([]MergeCheck, 0, len(cards))
 	for _, f := range cards {
 		c := MergeCheck{ID: f.ID}
-		m, why := mergeOf(cfg, projDir, f)
+		m, why, open := mergeOf(cfg, projDir, f)
 		if m == nil {
-			c.Line = f.ID + ": " + why
+			c.Line, c.Waiting = f.ID+": "+why, open
 			checks = append(checks, c)
 			continue
 		}
@@ -91,34 +92,35 @@ func AcceptMerged(repoDir, projDir string, cfg project.Config, ids []string) ([]
 }
 
 // mergeOf asks the forge about f's delivery PR: the merge to record, or why
-// there is none (and what to do). In doubt, never a merge.
-func mergeOf(cfg project.Config, projDir string, f store.Feature) (*mergeAccept, string) {
+// there is none (and what to do), and whether the PR is simply still open.
+// In doubt, never a merge.
+func mergeOf(cfg project.Config, projDir string, f store.Feature) (m *mergeAccept, why string, open bool) {
 	if f.State != domain.StateImplemented {
-		return nil, fmt.Sprintf("is %s, not implemented: nothing to accept", f.State)
+		return nil, fmt.Sprintf("is %s, not implemented: nothing to accept", f.State), false
 	}
 	url := f.DeliveryMRURL
 	if url == "" {
-		return nil, fmt.Sprintf("no delivery PR to ask about: link it with 'cerne feature deliver %s --mr <url>'", f.ID)
+		return nil, fmt.Sprintf("no delivery PR to ask about: link it with 'cerne feature deliver %s --mr <url>'", f.ID), false
 	}
 	repo, n, ok := forge.ParsePRURL(url)
 	if !ok {
-		return nil, fmt.Sprintf("%s is not a PR URL: link the PR with 'cerne feature deliver %s --mr <url>'", url, f.ID)
+		return nil, fmt.Sprintf("%s is not a PR URL: link the PR with 'cerne feature deliver %s --mr <url>'", url, f.ID), false
 	}
 	fg, reason := forgeOnOrigin(cfg, projDir, repo, "the PR")
 	if fg == nil {
-		return nil, "not asked: " + reason
+		return nil, "not asked: " + reason, false
 	}
 	pr, err := fg.PullRequest(context.Background(), n)
 	if err != nil {
-		return nil, fmt.Sprintf("the forge did not answer (%s); nothing accepted", reasonOf(err))
+		return nil, fmt.Sprintf("the forge did not answer (%s); nothing accepted", reasonOf(err)), false
 	}
 	switch {
 	case !pr.Closed:
-		return nil, fmt.Sprintf("%s is still open: the human's merge into %s is the acceptance", url, pr.DefaultBranch)
+		return nil, fmt.Sprintf("%s is still open: the human's merge into %s is the acceptance", url, pr.DefaultBranch), true
 	case !pr.Merged:
-		return nil, fmt.Sprintf("%s was closed without merge: a human accepts with 'cerne feature accept %s', or reopens and merges the PR", url, f.ID)
+		return nil, fmt.Sprintf("%s was closed without merge: a human accepts with 'cerne feature accept %s', or reopens and merges the PR", url, f.ID), false
 	case pr.DefaultBranch == "" || pr.Base != pr.DefaultBranch:
-		return nil, fmt.Sprintf("%s merged into %s, not into %s: a human accepts with 'cerne feature accept %s' once the work reaches %s", url, pr.Base, pr.DefaultBranch, f.ID, pr.DefaultBranch)
+		return nil, fmt.Sprintf("%s merged into %s, not into %s: a human accepts with 'cerne feature accept %s' once the work reaches %s", url, pr.Base, pr.DefaultBranch, f.ID, pr.DefaultBranch), false
 	}
-	return &mergeAccept{PRURL: url, MergedAt: pr.MergedAt, RecordedBy: EventActor()}, ""
+	return &mergeAccept{PRURL: url, MergedAt: pr.MergedAt, RecordedBy: EventActor()}, "", false
 }
