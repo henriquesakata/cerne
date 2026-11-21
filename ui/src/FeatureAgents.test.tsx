@@ -205,10 +205,14 @@ describe('FeatureAgents (F-0486)', () => {
     const { container } = renderPanel()
     const panel = container.querySelector('details.agents') as HTMLDetailsElement
     const summary = panel.querySelector('summary') as HTMLElement
+    fireEvent.click(summary) // opened while still loading
     await waitFor(() => expect(screen.getByText('HO-0008')).toBeInTheDocument())
-    fireEvent.click(summary)
+    expect(container.querySelector('details.agents')).toBe(panel) // same node: the choice outlives the load
     expect(panel.open).toBe(true)
-    fireEvent.click(screen.getByRole('checkbox', { name: /mandar para TL do lote/i }))
+    const tlBox = screen.getByRole('checkbox', { name: /mandar para TL do lote/i })
+    expect(tlBox).toBeChecked() // every session starts checked
+    fireEvent.click(tlBox)
+    expect(tlBox).not.toBeChecked()
     fireEvent.click(screen.getByRole('button', { name: /mandar mensagem aos agentes/i }))
     fireEvent.change(screen.getByPlaceholderText(/sessões marcadas/i), { target: { value: 'rascunho' } })
     fireEvent.click(summary)
