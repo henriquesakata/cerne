@@ -9,7 +9,7 @@ import {
 } from './api'
 import { ChannelLine, useChannelFollow } from './Channel'
 import { FixBlock } from './Harness'
-import { useT } from './i18n'
+import { useInstant, useT } from './i18n'
 import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
 
 // FeatureAgents (F-0486): the sessions of this machine that worked on the card
@@ -152,7 +152,8 @@ function AgentRow({
   onToggle: () => void
   onOnly: () => void
 }) {
-  const { t, lang } = useT()
+  const { t } = useT()
+  const instant = useInstant()
   const title = sessionTitle(s, t.agents.untitled)
   const role = (r: AgentRole) => {
     const what = t.agents.role(r.kind, r.work ?? '', r.work_title ?? '')
@@ -189,7 +190,7 @@ function AgentRow({
           {s.info.last && (
             <>
               {' · '}
-              {t.agents.lastActivity(new Date(s.info.last).toLocaleString(lang))}
+              {t.agents.lastActivity(instant(s.info.last, 'full'))}
             </>
           )}
         </p>

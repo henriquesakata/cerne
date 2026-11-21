@@ -74,11 +74,18 @@ const checked: MirrorCheckOutcome = {
 beforeEach(() => {
   cleanup()
   localStorage.clear()
+  // F-0493 crit. 1: the check's clock follows the browser's locale, not the
+  // PT/EN switch; a 24h one keeps the HH:MM the tests read.
+  vi.spyOn(navigator, 'languages', 'get').mockReturnValue(['en-GB'])
+  vi.spyOn(navigator, 'language', 'get').mockReturnValue('en-GB')
   api.fetchMirror.mockReset().mockResolvedValue(overview)
   api.postMirrorCheck.mockReset().mockResolvedValue(checked)
   api.fetchMirrorCommits.mockReset().mockResolvedValue({ repo: true, commits: [] })
 })
-afterEach(() => localStorage.clear())
+afterEach(() => {
+  vi.restoreAllMocks()
+  localStorage.clear()
+})
 
 describe('Mirror — the list (F-0465 crit. 1)', () => {
   it('groups the cards and the imported ideas by tracker', async () => {

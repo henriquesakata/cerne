@@ -48,6 +48,19 @@ const targetLine = (text: string) => (_: string, el: Element | null) =>
 
 const SHORT: Intl.DateTimeFormatOptions = { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }
 
+// F-0493 crit. 1: the stamps follow the browser's locale, not the PT/EN
+// switch: each test says which locale the computer reports.
+const browser = (list: string[]) => {
+  vi.spyOn(navigator, 'languages', 'get').mockReturnValue(list)
+  vi.spyOn(navigator, 'language', 'get').mockReturnValue(list[0])
+}
+
+// The zone name the formatter adds to the full instant, read from Intl.
+const zoneName = (iso: string, locale: string) =>
+  new Intl.DateTimeFormat(locale, { timeZoneName: 'short' }).formatToParts(new Date(iso)).find((p) => p.type === 'timeZoneName')!.value
+
+afterEach(() => vi.restoreAllMocks())
+
 beforeEach(() => {
   cleanup()
   readChannel.mockReset()
@@ -197,6 +210,7 @@ describe('Channel (F-0325)', () => {
 
   // F-0489 crit. 5
   it('cada mensagem mostra data e hora de envio, com o instante completo no title (F-0489 crit. 5)', async () => {
+    browser(['pt-BR'])
     const iso = '2026-11-21T14:43:37Z'
     snapshot = { messages: [msg({ time: iso })], version: 1 }
     const { container } = render(<Channel />)
@@ -204,11 +218,26 @@ describe('Channel (F-0325)', () => {
     const stamp = container.querySelector(`time[datetime="${iso}"]`)
     expect(stamp).not.toBeNull()
     expect(stamp).toHaveTextContent(new Date(iso).toLocaleString('pt-BR', SHORT))
-    expect(stamp).toHaveAttribute('title', new Date(iso).toLocaleString('pt-BR'))
+    // F-0493 crit. 2: the title says the zone.
+    expect(stamp).toHaveAttribute('title', `${new Date(iso).toLocaleString('pt-BR')} ${zoneName(iso, 'pt-BR')}`)
+  })
+
+  // F-0493 crit. 1
+  it('F-0493 crit. 1: o carimbo segue o locale do navegador, e não o PT/EN da interface', async () => {
+    browser(['en-US'])
+    const iso = '2026-11-21T14:43:37Z'
+    snapshot = { messages: [msg({ time: iso })], version: 1 }
+    // Sem provider a interface está em pt-BR; o computador diz en-US.
+    const { container } = render(<Channel />)
+    await waitFor(() => expect(screen.getByText(/vou mexer em internal\/server/)).toBeInTheDocument())
+    const stamp = container.querySelector(`time[datetime="${iso}"]`)!
+    expect(stamp).toHaveTextContent(new Date(iso).toLocaleString('en-US', SHORT))
+    expect(stamp.textContent).not.toBe(new Date(iso).toLocaleString('pt-BR', SHORT))
   })
 
   // F-0489 crit. 7
   it('destinatário que respondeu mostra quando (F-0489 crit. 7)', async () => {
+    browser(['pt-BR'])
     const at = '2026-11-21T14:50:00Z'
     snapshot = {
       messages: [msg({ directed: true, state: 'answered', targets: [{ work: 'W-0291', state: 'answered', answered_at: at }] })],
