@@ -184,3 +184,43 @@ func TestChannelSendWithoutWorkNorAddressRefused(t *testing.T) {
 		t.Fatalf("unshown: err = %v, want ErrNoChannelIdentity", err)
 	}
 }
+
+// TestChannelWakeOnlyAddressed (B-0065): what wakes an idle session's
+// feature wait is only what is addressed to it — a card message, or a human
+// broadcast while it has live work — never background traffic; the wake
+// counts as a delivery and leaves the background watermark alone.
+func TestChannelWakeOnlyAddressed(t *testing.T) {
+	f := newChanFixture(t)
+	withDoneSession(t, f)
+	wake := func(sess string) string {
+		t.Helper()
+		f.at = f.at.Add(time.Second)
+		out, err := ChannelWake(f.cacheDir, f.repoDir, sess, f.at)
+		if err != nil {
+			t.Fatalf("ChannelWake(%s): %v", sess, err)
+		}
+		return out
+	}
+	f.post("W-0002", "background chatter", false)
+	f.post("Henrique", "oi geral", true)
+	if out := wake("s-dev"); out != "" {
+		t.Fatalf("s-dev (no live work) woken by traffic not addressed to it: %q", out)
+	}
+	if out := wake("s1"); !strings.Contains(out, "oi geral") || strings.Contains(out, "background chatter") {
+		t.Fatalf("s1 (live work) wake = %q, want the human broadcast only", out)
+	}
+
+	seq := f.postTo("F-0001", []string{"s-dev"}, "corrige o conflito?")
+	out := wake("s-dev")
+	want := fmt.Sprintf("#%d Henrique (human) → you, about F-0001: corrige o conflito?", seq)
+	if !strings.Contains(out, want) || !strings.Contains(out, `cerne msg send --ref F-0001 "<text>"`) || strings.Contains(out, "chatter") || strings.Contains(out, "oi geral") {
+		t.Fatalf("s-dev wake = %q, want only the card message and how to answer", out)
+	}
+	msgs, _ := f.read("")
+	if got := stateOf(t, msgs, seq); got.State != ChannelDelivered {
+		t.Fatalf("after the wake = %+v, want delivered", got)
+	}
+	if out := f.inject("s-dev", true); !strings.Contains(out, "background chatter") {
+		t.Fatalf("the wake advanced the background watermark: next injection %q", out)
+	}
+}
