@@ -5,7 +5,7 @@ colors:
   paper: "#faf7f2"
   ink: "#1f2421"
   ink-muted: "#5c635e"
-  ink-faint: "#8a8f8b"
+  ink-faint: "#676d68"
   ink-dim: "#c4bfb4"
   leaf: "#ffffff"
   surface-sunk: "#f3efe7"
@@ -556,7 +556,7 @@ readable; the strikethrough is that thesis rendered.
   forms). Textareas add `resize: vertical`.
 - **Field edge (`--border-field`, F-0413):** `rule` measures 1.41:1 (light) and 1.77:1
   (dark) against the page, below the 3:1 a control's boundary needs (WCAG 1.4.11).
-  `--border-field` aliases `ink-faint` (3.08:1 light, 4.46:1 dark) and is the border
+  `--border-field` keeps the pre-F-0496 `ink-faint` tones (#8a8f8b light, #7d8178 dark: 3.08:1 and 4.46:1) and is the border
   of a field whose edge is the only cue that it is editable. Today only the Settings
   screen's fields use it; adopting it app-wide is a follow-up.
 - **Focus:** `2px solid` ink outline, `1px` offset. No glow, no colour shift.

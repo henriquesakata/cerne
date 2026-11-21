@@ -248,6 +248,9 @@ describe('FeaturePage aprovação vencida (F-0318)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Reaprovar' }))
     expect(await screen.findByText('Aprovação renovada')).toBeInTheDocument()
     expect(screen.getByText(w)).toBeInTheDocument()
+    // F-0496 crit. 4: a warning wears the amber notice, the success stays green.
+    expect(screen.getByText(w).closest('.notice')).toHaveClass('notice-warning')
+    expect(screen.getByText('Aprovação renovada').closest('.notice')).not.toHaveClass('notice-warning')
   })
 
   // Critério 14: aprovação anterior à F-0318 (sem versão aprovada) nunca vence;
@@ -1009,5 +1012,17 @@ describe('FeaturePage gate hierarchy (F-0495)', () => {
     render(<FeaturePage id="F-0221" />)
     await screen.findByText('Feature de teste')
     expect(screen.queryByRole('heading', { name: 'Diagramas' })).toBeNull()
+  })
+})
+
+// F-0496 crit. 6: the state leads the meta row, ahead of the tags.
+describe('FeaturePage meta row (F-0496)', () => {
+  it('o chip de estado é o primeiro item, antes das tags', async () => {
+    payload = { ...detail('approved'), feature: { ...detail('approved').feature, facets: ['code'], components: ['ui'] } }
+    const { container } = render(<FeaturePage id="F-0221" />)
+    await screen.findByText('Feature de teste')
+    const meta = container.querySelector('.feature-meta') as HTMLElement
+    expect(meta.firstElementChild).toHaveClass('chip', 'chip-approved')
+    expect(meta.firstElementChild).toHaveClass('feature-state')
   })
 })
