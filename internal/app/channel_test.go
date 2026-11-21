@@ -344,7 +344,7 @@ func TestChannelHumanMessageReadsAsReport(t *testing.T) {
 	for _, want := range []string{
 		fmt.Sprintf("#%d Henrique (human) wrote in the project channel %s local time: \"pode confirmar com um ok?\"\n", h, when),
 		fmt.Sprintf("Henrique expects a reply from this session through cerne msg send \"<text>\" or cerne msg ack %d.\n", h),
-		fmt.Sprintf("#%d W-0002 → you: W-0001 segura o rooms.go\n", a),
+		fmt.Sprintf("#%d W-0002 → you: \"W-0001 segura o rooms.go\"\n", a),
 		fmt.Sprintf("↳ addressed to you: answer with cerne msg send \"<text>\" (any later message of yours counts) or cerne msg ack %d\n", a),
 	} {
 		if !strings.Contains(out, want) {
@@ -401,15 +401,15 @@ func TestChannelInjectSilentWhenNothingNew(t *testing.T) {
 func TestChannelInjectWatermark(t *testing.T) {
 	f := newChanFixture(t)
 	f.post("W-0002", "primeira", false)
-	if out := f.inject("s1", true); !strings.Contains(out, "#1 W-0002: primeira") {
+	if out := f.inject("s1", true); !strings.Contains(out, `#1 W-0002: "primeira"`) {
 		t.Fatalf("s1 injection = %q", out)
 	}
-	if out := f.inject("s3", true); !strings.Contains(out, "#1 W-0002: primeira") {
+	if out := f.inject("s3", true); !strings.Contains(out, `#1 W-0002: "primeira"`) {
 		t.Fatalf("new session s3 did not get #1: %q", out)
 	}
 	f.post("W-0002", "segunda", false)
 	out := f.inject("s1", true)
-	if !strings.Contains(out, "#2 W-0002: segunda") || strings.Contains(out, "#1") {
+	if !strings.Contains(out, `#2 W-0002: "segunda"`) || strings.Contains(out, "#1") {
 		t.Fatalf("s1 second injection = %q, want only #2", out)
 	}
 	if out := f.inject("s2", true); out != "" {
@@ -425,7 +425,7 @@ func TestChannelInjectDirectedRepeatsUntilAnswered(t *testing.T) {
 		f := newChanFixture(t)
 		f.post("W-0002", "vou mexer em internal/server/rooms.go, segura", false)
 		for i := range 3 {
-			if out := f.inject("s1", true); !strings.Contains(out, "#1 W-0002 → you: vou mexer") {
+			if out := f.inject("s1", true); !strings.Contains(out, `#1 W-0002 → you: "vou mexer`) {
 				t.Fatalf("injection %d = %q, want the addressed message", i+1, out)
 			}
 		}
@@ -480,7 +480,8 @@ func injectedBodies(out string) map[int]string {
 		if _, err := fmt.Sscanf(line, "#%d ", &seq); err != nil {
 			continue
 		}
-		bodies[seq] = line[strings.Index(line, ": ")+2:]
+		// Every body is quoted (F-0490 humans, F-0491 agents).
+		bodies[seq] = strings.TrimSuffix(strings.TrimPrefix(line[strings.Index(line, ": ")+2:], `"`), `"`)
 	}
 	return bodies
 }
@@ -602,13 +603,13 @@ func TestChannelInjectRecordsDeliveries(t *testing.T) {
 func TestChannelInjectPeekKeepsWatermark(t *testing.T) {
 	f := newChanFixture(t)
 	f.post("W-0002", "build verde", false)
-	if out := f.inject("s1", false); !strings.Contains(out, "#1 W-0002: build verde") {
+	if out := f.inject("s1", false); !strings.Contains(out, `#1 W-0002: "build verde"`) {
 		t.Fatalf("peek = %q", out)
 	}
 	if d := f.deliveries(); len(d) != 1 || d[0].Through != 0 || !slices.Equal(d[0].Seqs, []int{1}) {
 		t.Fatalf("peek delivery = %+v", d)
 	}
-	if out := f.inject("s1", true); !strings.Contains(out, "#1 W-0002: build verde") {
+	if out := f.inject("s1", true); !strings.Contains(out, `#1 W-0002: "build verde"`) {
 		t.Fatalf("parent lost the background after a peek: %q", out)
 	}
 }
@@ -920,7 +921,7 @@ func TestChannelPeekIsNoDelivery(t *testing.T) {
 	if got := stateOf(t, msgs, seq); got.State != ChannelNotDelivered {
 		t.Fatalf("after a peek and an unrelated post: %+v, want not_delivered", got)
 	}
-	if out := f.inject("s2", true); !strings.Contains(out, "#1 W-0001 → you: W-0002 PEEK-PROBE") {
+	if out := f.inject("s2", true); !strings.Contains(out, `#1 W-0001 → you: "W-0002 PEEK-PROBE`) {
 		t.Fatalf("parent never got the message the subagent peeked: %q", out)
 	}
 	f.postAs("s2b", "W-0002", "outra sessão do mesmo work")
@@ -1074,7 +1075,7 @@ func TestChannelSameWorkSessionsSeeEachOther(t *testing.T) {
 		t.Fatal(err)
 	}
 	seq := f.postAs("s2", "W-0002", "SAME-WORK-PROBE: I take internal/app, you take ui")
-	if out := f.inject("s2b", true); !strings.Contains(out, fmt.Sprintf("#%d W-0002: SAME-WORK-PROBE", seq)) {
+	if out := f.inject("s2b", true); !strings.Contains(out, fmt.Sprintf("#%d W-0002: \"SAME-WORK-PROBE", seq)) {
 		t.Fatalf("the other session of the work did not get it: %q", out)
 	}
 	if out := f.inject("s2", true); out != "" {
@@ -1174,7 +1175,7 @@ func TestChannelCompactsWhenLarge(t *testing.T) {
 	if err != nil || len(msgs) != 2 || msgs[0].Seq != live || m.Seq != live+1 {
 		t.Fatalf("after compaction: %+v (new #%d), want only #%d and the new one", msgs, m.Seq, live)
 	}
-	if out := f.inject("s1", true); out != fmt.Sprintf("cerne channel:\n#%d W-0002: nova\n", m.Seq) {
+	if out := f.inject("s1", true); out != fmt.Sprintf("cerne channel:\n#%d W-0002: \"nova\"\n", m.Seq) {
 		t.Fatalf("old session after compaction = %q, want only the new message", out)
 	}
 }

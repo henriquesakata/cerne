@@ -195,14 +195,16 @@ type injItem struct {
 
 // prefix opens the message's line. A human's reads as a report (F-0490): who
 // wrote, where and when, then the text in quotes (closing ends it) — never an
-// instruction-shaped tag; the reply it expects is humanReplies' sentence.
+// instruction-shaped tag; the reply it expects is humanReplies' sentence. An
+// agent's body is quoted too (F-0491): unquoted, it could imitate a human's
+// report line.
 func (it injItem) prefix() string {
 	if !it.m.Human {
 		who := it.m.Nick
 		if it.directed {
 			who += " → you"
 		}
-		return fmt.Sprintf("#%d %s: ", it.m.Seq, who)
+		return fmt.Sprintf("#%d %s: \"", it.m.Seq, who)
 	}
 	where := "in the project channel"
 	if len(it.m.To) > 0 {
@@ -215,12 +217,7 @@ func (it injItem) prefix() string {
 // be 64 wide runes, and a long name must not starve the inline set (critic C6).
 func (it injItem) humanName() string { return TruncateBody(it.m.Nick, channelNameRunes, 1<<10) }
 
-func (it injItem) closing() string {
-	if it.m.Human {
-		return "\""
-	}
-	return ""
-}
+func (it injItem) closing() string { return "\"" }
 
 // humanReplies is the sentence that follows the human reports (F-0490): who
 // expects a reply from this session and through which command — one per
