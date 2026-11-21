@@ -187,6 +187,58 @@ describe('FeatureAgents (F-0486)', () => {
     expect(within(hint).queryByText(/claude --resume/)).toBeNull()
   })
 
+  // F-0494 crit. 1, 2
+  it('abre recolhido, com a contagem de sessões no título (F-0494)', async () => {
+    fetchFeatureAgents.mockResolvedValue({ sessions: [tl, dev] })
+    const { container } = renderPanel()
+    const panel = container.querySelector('details.agents') as HTMLDetailsElement
+    expect(panel).not.toBeNull()
+    expect(panel.open).toBe(false)
+    const summary = panel.querySelector('summary') as HTMLElement
+    await waitFor(() => expect(within(summary).getByText('2')).toBeInTheDocument())
+    expect(within(summary).getByRole('heading', { name: 'Agentes' })).toBeInTheDocument()
+    expect(within(summary).getByText(/^última atividade .+: TL do lote$/)).toBeInTheDocument()
+  })
+
+  // F-0494 crit. 2
+  it('a última atividade do título é a da sessão mais recente, e some sem atividade registrada (F-0494)', async () => {
+    const later = { ...dev, info: { ...dev.info, last: '2026-11-20T13:00:00Z' } }
+    fetchFeatureAgents.mockResolvedValue({ sessions: [tl, later] })
+    const { container, unmount } = renderPanel()
+    const summary = () => container.querySelector('details.agents summary') as HTMLElement
+    await waitFor(() => expect(within(summary()).getByText(/^última atividade .+: HO-0008$/)).toBeInTheDocument())
+    unmount()
+    fetchFeatureAgents.mockResolvedValue({ sessions: [dev, codex] })
+    const again = renderPanel()
+    const s2 = again.container.querySelector('details.agents summary') as HTMLElement
+    await waitFor(() => expect(within(s2).getByText('2')).toBeInTheDocument())
+    expect(within(s2).queryByText(/última atividade/)).toBeNull()
+  })
+
+  // F-0494 crit. 3, 4
+  it('o título abre e fecha o painel e o que foi marcado e digitado fica (F-0494)', async () => {
+    fetchFeatureAgents.mockResolvedValue({ sessions: [tl, dev] })
+    const { container } = renderPanel()
+    const panel = container.querySelector('details.agents') as HTMLDetailsElement
+    const summary = panel.querySelector('summary') as HTMLElement
+    fireEvent.click(summary) // opened while still loading
+    await waitFor(() => expect(screen.getByText('HO-0008')).toBeInTheDocument())
+    expect(container.querySelector('details.agents')).toBe(panel) // same node: the choice outlives the load
+    expect(panel.open).toBe(true)
+    const tlBox = screen.getByRole('checkbox', { name: /mandar para TL do lote/i })
+    expect(tlBox).toBeChecked() // every session starts checked
+    fireEvent.click(tlBox)
+    expect(tlBox).not.toBeChecked()
+    fireEvent.click(screen.getByRole('button', { name: /mandar mensagem aos agentes/i }))
+    fireEvent.change(screen.getByPlaceholderText(/sessões marcadas/i), { target: { value: 'rascunho' } })
+    fireEvent.click(summary)
+    expect(panel.open).toBe(false)
+    fireEvent.click(summary)
+    expect(panel.open).toBe(true)
+    expect(screen.getByRole('checkbox', { name: /mandar para TL do lote/i })).not.toBeChecked()
+    expect(screen.getByPlaceholderText(/sessões marcadas/i)).toHaveValue('rascunho')
+  })
+
   it('fala inglês quando o leitor escolheu inglês (critério 15)', async () => {
     localStorage.setItem('cerne-lang', 'en')
     fetchFeatureAgents.mockResolvedValue({ sessions: [tl] })

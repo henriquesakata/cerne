@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import {
   fetchFeatureAgents,
   postChannel,
@@ -25,18 +25,16 @@ export default function FeatureAgents({ id }: { id: string }) {
 
   if (load.data === null) {
     return (
-      <section className="agents">
-        <h2>{t.agents.title}</h2>
+      <Panel>
         <LoadPending load={load} message={t.agents.loadError} />
-      </section>
+      </Panel>
     )
   }
   if ('unavailable' in load.data) {
     return (
-      <section className="agents">
-        <h2>{t.agents.title}</h2>
+      <Panel>
         <p className="muted">{t.agents.localOnly}</p>
-      </section>
+      </Panel>
     )
   }
   const sessions = load.data.sessions
@@ -54,9 +52,18 @@ export default function FeatureAgents({ id }: { id: string }) {
     setOpen(true)
   }
 
+  // The collapsed line says when the latest session acted and which one it
+  // was, so the viewer can tell whether opening is worth it (F-0494 crit. 2).
+  const latest = sessions.reduce<AgentSession | null>(
+    (a, s) => (s.info.last && (!a || Date.parse(s.info.last) > Date.parse(a.info.last ?? '')) ? s : a),
+    null,
+  )
+  const note = latest?.info.last
+    ? t.agents.latest(t.notif.age((Date.now() - Date.parse(latest.info.last)) / 60000), sessionTitle(latest, t.agents.untitled))
+    : undefined
+
   return (
-    <section className="agents">
-      <h2>{t.agents.title}</h2>
+    <Panel count={sessions.length} note={note}>
       <LoadNotice load={load} />
       {sessions.length === 0 ? (
         <p className="muted">{t.agents.none}</p>
@@ -80,7 +87,30 @@ export default function FeatureAgents({ id }: { id: string }) {
         {open ? t.agents.closeChat : t.agents.openChat}
       </button>
       {open && <AgentChat id={id} sessions={sessions} selected={selected} />}
-    </section>
+    </Panel>
+  )
+}
+
+// Panel (F-0494) starts collapsed: most visits come to read the documents
+// below it. A native <details> gives the click, the keyboard and the expanded
+// state, and keeps its content mounted, so checks and a draft survive a
+// collapse. Every branch renders it at the root, so the open state the
+// viewer chose outlives the load.
+function Panel({ count, note, children }: { count?: number; note?: string; children: ReactNode }) {
+  const { t } = useT()
+  return (
+    <details className="agents">
+      <summary>
+        <h2>{t.agents.title}</h2>
+        {count !== undefined && <span className="column-count">{count}</span>}
+        {note && (
+          <span className="agents-latest" title={note}>
+            {note}
+          </span>
+        )}
+      </summary>
+      {children}
+    </details>
   )
 }
 
