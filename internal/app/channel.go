@@ -631,7 +631,10 @@ func renderInjection(pending []injItem, header string) (string, []room.Message) 
 	replies := humanReplies(shown)
 	for i, it := range shown {
 		b.WriteString(it.prefix())
-		b.WriteString(TruncateBody(it.m.Body, channelBodyRunes, per))
+		// An inner " would close the body's quote and let it imitate a report
+		// on the same line (F-0491): swapped for ” before the cut, so the
+		// budget counts the wider rune.
+		b.WriteString(TruncateBody(strings.ReplaceAll(it.m.Body, `"`, "”"), channelBodyRunes, per))
 		b.WriteString(it.closing())
 		b.WriteByte('\n')
 		if it.group == groupHuman && (i+1 == len(shown) || shown[i+1].group != groupHuman) {
