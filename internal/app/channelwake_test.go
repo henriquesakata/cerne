@@ -370,7 +370,6 @@ func TestChannelWakeCitation(t *testing.T) {
 	expect("page message to s3", map[string]int{"s1": 1, "s2": 1, "s3": 2})
 }
 
-
 // TestChannelReadReason (F-0491 crit. 2 and 7): the state served to the UI
 // says why an idle session was not woken — bypass, or a harness that cannot
 // wake — while the target is not delivered; a later contact point delivers
