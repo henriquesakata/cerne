@@ -4,8 +4,9 @@
 // interface language (PT/EN) only decides the texts, never the date format.
 // UTC-pinned dates (Costs, the dashboard windows) do not come through here.
 
+// The 12 or 24 hour clock is not a style: it comes from the locale.
 export type InstantStyle =
-  | 'short' // day, month, hour, minute: the channel keeps 24h
+  | 'short' // day, month, hour, minute: the channel holds 24 h of messages, so the day tells them apart
   | 'datetime' // short date and time, the year included
   | 'time' // hour and minute
   | 'full' // whole date and time, with the zone (titles, the preview)
