@@ -2426,6 +2426,9 @@ details.backlinks-section > summary .backlinks-title { margin: 0; }
 .feature-refs { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0.5rem; margin: 0.75rem 0; }
 .feature-refs:empty { display: none; }
 .feature-refs > details { margin: 0; flex: 0 1 auto; min-width: 0; }
+/* The agents card takes what the row has left; its latest-activity line
+   wraps inside the card, never cut (F-0494). */
+.feature-refs > details.agents { flex: 1 1 20rem; }
 .feature-refs > details[open] { flex-basis: 100%; }
 
 .backlinks-list {
