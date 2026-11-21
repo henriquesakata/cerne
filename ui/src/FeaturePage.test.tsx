@@ -755,12 +755,14 @@ describe('FeaturePage — falha de carga (F-0300)', () => {
     vi.mocked(fetchFeature).mockRejectedValueOnce(new Error('HTTP 502'))
     live.version = 1
     rerender(<FeaturePage id="F-0221" />)
-    const notice = await screen.findByRole('status')
-    expect(notice).toHaveTextContent('Não foi possível atualizar: HTTP 502')
+    // The actions card keeps its own (empty) status region since F-0498, so
+    // the load notice is found by its text, then checked as a status region.
+    const notice = await screen.findByText(/Não foi possível atualizar: HTTP 502/)
+    expect(notice.closest('[role="status"]')).not.toBeNull()
     expect(screen.getByText('Feature de teste')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
-    await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
+    await waitFor(() => expect(screen.queryByText(/Não foi possível atualizar/)).toBeNull())
     expect(screen.getByText('Feature de teste')).toBeInTheDocument()
   })
 
@@ -1184,6 +1186,37 @@ describe('FeaturePage gate safety (F-0498)', () => {
     expect(await screen.findByText('Corpo do plano.')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Spec' }))
     expect(screen.getByRole('textbox')).toHaveValue('rascunho da spec')
+  })
+
+  // F-0498 crit. 1, 3: the confirm button itself says it is working; a refused
+  // final gate asks both clicks again.
+  it('na confirmação: rótulo de espera no botão de confirmar, e uma recusa fecha a confirmação', async () => {
+    payload = detail('implemented')
+    let finish: (v: Awaited<ReturnType<typeof postTransition>>) => void = () => {}
+    vi.mocked(postTransition).mockImplementationOnce(() => new Promise((r) => (finish = r)))
+    render(<FeaturePage id="F-0221" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Aceitar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar aceite (final)' }))
+    expect(await screen.findByRole('button', { name: 'Aceitando…' })).toBeDisabled()
+    finish({ ok: false, error: 'recusado pelo gate' })
+    expect(await screen.findByText('recusado pelo gate')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Confirmar aceite (final)' })).toBeNull()
+  })
+
+  // F-0498 crit. 2, 6: an open draft pins its tab against a live state change,
+  // and another feature starts clean.
+  it('um rascunho aberto prende a aba quando o estado muda, e outra feature começa limpa', async () => {
+    payload = withDocs('in_development', { spec: true, plan: true })
+    const { rerender } = render(<FeaturePage id="F-0221" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar' }))
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'rascunho do plano' } })
+    payload = { ...withDocs('implemented', { spec: true, plan: true, result: true }), docs: { spec: 'Corpo da spec.', plan: 'Corpo do plano.', result: 'Corpo do result.' } }
+    live.version = 1
+    rerender(<FeaturePage id="F-0221" />)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Aceitar' })).toBeInTheDocument())
+    expect(screen.getByRole('textbox')).toHaveValue('rascunho do plano')
+    rerender(<FeaturePage id="F-0222" />)
+    await waitFor(() => expect(screen.queryByRole('textbox')).toBeNull())
   })
 
   // F-0498 crit. 7

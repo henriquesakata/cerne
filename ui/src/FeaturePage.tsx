@@ -236,7 +236,13 @@ function prNumber(url: string): string {
   return url.match(/(\d+)\/?$/)?.[1] ?? url
 }
 
+// F-0498: one instance per feature, so a tab choice, a draft or a notice
+// never carries over to the next feature, not even for one render.
 export default function FeaturePage({ id }: { id: string }) {
+  return <FeatureView key={id} id={id} />
+}
+
+function FeatureView({ id }: { id: string }) {
   // Carga compartilhada (F-0300): falha com a página já na tela vira aviso, não
   // troca a página; o sujeito é o id, então outra feature nunca aparece sob este.
   const live = useLiveLoad(() => fetchFeature(id), [id])
@@ -275,15 +281,6 @@ export default function FeaturePage({ id }: { id: string }) {
       root.style.removeProperty('--nav-h')
     }
   }, [])
-
-  // F-0498: another feature starts on its own stage tab, with no draft or
-  // notice carried over from the last one.
-  useEffect(() => {
-    setPicked(null)
-    setDrafts({})
-    setNotice(null)
-    setWarnings([])
-  }, [id])
 
   // Lê o modo de IA uma vez (para o gating do botão "Gerar com IA").
   useEffect(() => {
@@ -405,7 +402,12 @@ export default function FeaturePage({ id }: { id: string }) {
               hasRealContent={detail.docs_real[tab]}
               updatedAt={detail.docs_updated[tab]}
               draft={drafts[tab]}
-              onDraft={(d) => setDrafts((all) => ({ ...all, [tab]: d }))}
+              onDraft={(d) => {
+                // An open draft pins its tab: a live state change must not
+                // move the page away from what the person is writing.
+                if (d) setPicked(tab)
+                setDrafts((all) => ({ ...all, [tab]: d }))
+              }}
               onSaved={load}
             />
             <DocAuthors writes={(detail.writes ?? []).filter((w) => w.doc === tab)} />
@@ -1172,6 +1174,11 @@ function ActionsPanel({
   const [reason, setReason] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
   const [busy, setBusy] = useState<TransitionAction | null>(null)
+  // A form opened for another state (complete open when the card moved on)
+  // closes with it.
+  useEffect(() => {
+    setOpenForm(null)
+  }, [state])
 
   // F-0318: em approved, o approve é o Reaprovar (aprovação vencida) ou o
   // Gravar linha de base (aprovação anterior à versão aprovada, crit. 14).
@@ -1180,7 +1187,9 @@ function ActionsPanel({
   )
   // F-0498: the result of the last transition is said here, next to the
   // button that caused it, and announced.
-  const status = (notice || warnings.length > 0) && (
+  // The region stays mounted, empty, so a screen reader announces what
+  // arrives in it.
+  const status = (
     <div role="status" className="actions-status">
       {notice && <p className="notice">{notice}</p>}
       {warnings.map((w) => (
@@ -1214,6 +1223,8 @@ function ActionsPanel({
       } else {
         setFormError(res.error)
         setRefused(action)
+        // A refused final gate asks both clicks again.
+        if (ACTIONS_BY_STATE[state].find((a) => a.action === action)?.form === 'confirm') setOpenForm(null)
         // Recusa do approve: recarrega para a lista de impedimentos falar no
         // lugar do texto cru do erro.
         if (action === 'approve') onRefresh()
@@ -1259,7 +1270,7 @@ function ActionsPanel({
               a.form === 'none' ? submit(a.action) : toggleForm(a.action)
             }
           >
-            {busy === a.action && a.form !== 'confirm'
+            {busy === a.action && a.form === 'none'
               ? t.feature.busyLabels[a.action]
               : state === 'approved' && a.action === 'approve'
                 ? baselineMissing
@@ -1318,7 +1329,9 @@ function ActionsPanel({
           </label>
           {/* Razão é obrigatória no backend (422); bloquear aqui evita a ida perdida. */}
           <button type="submit" disabled={busy !== null || reason.trim() === ''}>
-            {t.feature.confirmAction(t.feature.actionLabels[spec.action])}
+            {busy === spec.action
+              ? t.feature.busyLabels[spec.action]
+              : t.feature.confirmAction(t.feature.actionLabels[spec.action])}
           </button>
         </form>
       )}
