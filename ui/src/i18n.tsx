@@ -257,6 +257,9 @@ const ptBR = {
     emptyOffTitle: 'O espelho está desligado.',
     emptyOffBody:
       'Ligue o espelho e cadastre os trackers em Configurações → Integrações. Ligar é um ato humano.',
+    emptyNoTrackerTitle: 'Nenhum tracker cadastrado.',
+    emptyNoTrackerBody:
+      'Sem tracker em `mirror.trackers`, o espelho não faz nada. Cadastre um em Configurações → Integrações → Trackers de issues.',
     emptyNoneTitle: 'Nenhum card publicado ainda.',
     emptyNoneBody:
       'Um humano publica um card com `cerne feature mirror F-…`; as issues de fora chegam como ideias com `cerne mirror sync`.',
@@ -1874,6 +1877,9 @@ const en: Messages = {
     ideaOrigin: (label: string) => `from ${label}`,
     emptyOffTitle: 'The mirror is off.',
     emptyOffBody: 'Turn the mirror on and add the trackers in Settings → Integrations. Turning it on is a human act.',
+    emptyNoTrackerTitle: 'No tracker registered.',
+    emptyNoTrackerBody:
+      'With no tracker in `mirror.trackers`, the mirror does nothing. Add one in Settings → Integrations → Issue trackers.',
     emptyNoneTitle: 'No card published yet.',
     emptyNoneBody:
       'A human publishes a card with `cerne feature mirror F-…`; outside issues arrive as ideas with `cerne mirror sync`.',
