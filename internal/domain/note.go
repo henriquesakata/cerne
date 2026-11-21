@@ -52,6 +52,10 @@ const ConventionComponent = "convention"
 // the open component axis, same as ConventionComponent.
 const AtaComponent = "ata"
 
+// GoldenPathComponent is the reserved component slug that marks a note or
+// runbook for materialization as a generated agent skill (F-0178).
+const GoldenPathComponent = "golden-path"
+
 // ErrUnknownFacet is returned by NormalizeFacets for a value not in ValidFacets.
 var ErrUnknownFacet = errors.New("facet desconhecida")
 
