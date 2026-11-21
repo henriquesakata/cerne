@@ -3750,21 +3750,35 @@ button.clarify-chip { cursor: pointer; font: inherit; }
    neutral rule, with a rule between sessions. */
 .agents {
   margin: 0.75rem 0;
-  padding: 0.6rem 0.9rem 0.75rem;
+  padding: 0 0.9rem 0.75rem;
   border: 1px solid var(--border-soft);
   border-radius: 8px;
   background: var(--surface-2);
 }
-/* F-0494: starts collapsed to its title row; the marker and focus ring follow
-   the Backlog column's summary. The whole row is the click target, and the
-   latest activity is cut with an ellipsis before it wraps the row. */
-.agents:not([open]) { padding-bottom: 0.6rem; }
-.agents > summary { cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: 0.4rem; min-width: 0; }
+/* F-0494: starts collapsed to its title row; the marker follows the Backlog
+   column's summary. The summary carries the card's padding, so the whole
+   collapsed card is the click target, at least 44 px tall; the latest
+   activity wraps under the title on a narrow screen instead of being cut. */
+.agents:not([open]) { padding-bottom: 0; }
+.agents > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 0.4rem;
+  min-height: 2.75rem;
+  box-sizing: border-box;
+  margin: 0 -0.9rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 8px;
+}
+.agents > summary:hover { background: var(--surface-3); }
 .agents > summary::-webkit-details-marker { display: none; }
 .agents > summary > h2 { margin: 0; flex: none; }
 .agents > summary > .column-count { font-size: 0.85rem; flex: none; }
-.agents-latest { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.85rem; color: var(--muted); }
-.agents-latest::before { content: '· '; content: '· ' / ''; }
+.agents-latest { min-width: 0; font-size: 0.85rem; color: var(--fg); }
+.agents-latest::before { content: '· '; content: '· ' / ''; color: var(--muted); }
 .agents > summary::before {
   content: '▼';
   content: '▼' / '';
@@ -3774,7 +3788,7 @@ button.clarify-chip { cursor: pointer; font: inherit; }
   color: var(--muted);
 }
 .agents:not([open]) > summary::before { content: '▶'; content: '▶' / ''; }
-.agents > summary:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; border-radius: 6px; }
+.agents > summary:focus-visible { outline: 2px solid var(--fg); outline-offset: -2px; }
 .agents > p { margin: 0.25rem 0 0; font-size: 0.85rem; }
 .agents-list { list-style: none; padding: 0; margin: 0.6rem 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.75rem; }
 .agents-row { min-width: 0; }
