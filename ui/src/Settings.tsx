@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   fetchSettings,
   HTTPError,
@@ -504,10 +504,18 @@ function DateTimePrefs() {
   const detectedLocale = languageName(detectLocale(lang), lang)
   const detectedZone = detectTimeZone() ?? ''
   const locales = dateChoice.locale && !DATE_LOCALES.includes(dateChoice.locale) ? [...DATE_LOCALES, dateChoice.locale] : DATE_LOCALES
-  const { zones, complete } = listTimeZones(detectedZone, dateChoice.timeZone)
-  const regionOf = (z: string) => (z.includes('/') ? z.split('/')[0] : td.other)
-  const regions = new Map<string, string[]>()
-  if (complete) for (const z of zones) regions.set(regionOf(z), [...(regions.get(regionOf(z)) ?? []), z])
+  // The list is ~420 zones: built again only when the zone in use changes.
+  const { zones, complete } = useMemo(() => listTimeZones(detectedZone, dateChoice.timeZone), [detectedZone, dateChoice.timeZone])
+  const regions = useMemo(() => {
+    const byRegion = new Map<string, string[]>()
+    if (complete) {
+      for (const z of zones) {
+        const region = z.includes('/') ? z.split('/')[0] : td.other
+        byRegion.set(region, [...(byRegion.get(region) ?? []), z])
+      }
+    }
+    return byRegion
+  }, [zones, complete, td.other])
   const option = (z: string) => (
     <option key={z} value={z}>
       {z}
