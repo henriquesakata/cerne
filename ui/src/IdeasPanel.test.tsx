@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import IdeasPanel from './IdeasPanel'
+import { I18nProvider } from './i18n'
 import { HTTPError, SimilarExists, setApiProject, type Feature, type Idea, type MirrorOverview, type MirrorSyncOutcome } from './api'
 
 const idea = (id: string, title: string, body?: string): Idea => ({
@@ -586,6 +587,17 @@ describe('IdeasPanel — sync e ideias não lidas (F-0487)', () => {
     page()
     await screen.findByText('chegou agora')
     expect(screen.queryByText('nova')).toBeNull()
+  })
+
+  // F-0487 crit. 9
+  it('em inglês: o botão, o aviso do tracker e a etiqueta nova', async () => {
+    localStorage.setItem('cerne-lang', 'en')
+    mirror = on({ at: '2026-11-21T10:00:00Z', trackers: [{ name: 'gh', synced: 0, imported: 1, errors: ['boom'] }] })
+    ideas = [imported('I-0054', 'arrived', '3')]
+    render(<IdeasPanel modules={[]} onPromoted={() => {}} hash="#/ideas" />, { wrapper: I18nProvider })
+    expect(await screen.findByRole('button', { name: 'Sync' })).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent('Tracker gh failed in the last sync: boom')
+    await waitFor(() => expect(row('arrived').getByText('new')).toBeInTheDocument())
   })
 
   // F-0487 crit. 8

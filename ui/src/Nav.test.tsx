@@ -423,6 +423,15 @@ describe('Nav — ideias importadas não lidas (F-0487)', () => {
     expect(work()).toHaveAccessibleName('Trabalho')
   })
 
+  // F-0487 crit. 9
+  it('em inglês, o rótulo acessível da contagem', async () => {
+    localStorage.setItem('cerne-lang', 'en')
+    navIdeas = [idea('I-0001', { mirror: gh('1') })]
+    render(<Nav hash="#/" />, { wrapper: I18nProvider })
+    const btn = screen.getByRole('button', { name: /^Work/ })
+    await waitFor(() => expect(btn).toHaveAccessibleName(/1 unread imported idea$/))
+  })
+
   // F-0487 crit. 8
   it('storage inacessível: nenhuma contagem', async () => {
     const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
