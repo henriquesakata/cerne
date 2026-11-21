@@ -316,6 +316,11 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 			f.Reason = reason
 		case domain.ActionReject:
 			f.Reason = reason
+		case domain.ActionRevert:
+			// An acceptance undone (F-0499) is no longer an acceptance on merge.
+			if oldState == domain.StateDone {
+				f.AcceptedVia = ""
+			}
 		}
 		// Delivery links (F-0179): captured in the same write as the complete,
 		// so entity, event and state land in one backend commit.
