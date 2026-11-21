@@ -467,3 +467,35 @@ describe('IdeasPanel — título longo (F-0419 crit. 6)', () => {
     expect(t.textContent).toContain('FIM')
   })
 })
+
+describe('IdeasPanel — ideia importada de um tracker (B-0063)', () => {
+  const mirrored = (id: string, title: string, kind: string, issue: string): Idea => ({
+    ...idea(id, title),
+    mirror: { tracker: kind, kind, id: issue, url: `https://example.test/${kind}/${issue}` },
+  })
+
+  // B-0063
+  it('a ideia com mirror leva a etiqueta da issue com link, e a linha se destaca das comuns', async () => {
+    ideas = [mirrored('I-0053', 'Linux packaging', 'github', '4'), idea('I-0001', 'ideia comum')]
+    render(<IdeasPanel modules={[]} onPromoted={() => {}} hash="#/ideas" />)
+    const link = await screen.findByRole('link', { name: 'issue do GitHub #4' })
+    expect(link).toHaveAttribute('href', 'https://example.test/github/4')
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link.closest('li')).toHaveClass('ideas-item-mirror')
+    expect(screen.getByText('ideia comum').closest('li')).not.toHaveClass('ideas-item-mirror')
+    expect(row('ideia comum').queryByRole('link')).toBeNull()
+  })
+
+  // B-0063
+  it('outros kinds levam o nome do kind; id que não é número vai sem #', async () => {
+    ideas = [
+      mirrored('I-0002', 'a', 'gitlab', '3'),
+      mirrored('I-0003', 'b', 'jira', 'PROJ-12'),
+      mirrored('I-0004', 'c', 'forgejo', '9'),
+    ]
+    render(<IdeasPanel modules={[]} onPromoted={() => {}} hash="#/ideas" />)
+    expect(await screen.findByRole('link', { name: 'issue do GitLab #3' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'issue do Jira PROJ-12' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'issue do forgejo #9' })).toBeInTheDocument()
+  })
+})

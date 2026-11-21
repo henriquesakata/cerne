@@ -17,6 +17,7 @@ import {
   type FeatureState,
 } from './api'
 import Tag, { tagCounts } from './Tag'
+import MirrorBadge from './MirrorBadge'
 import { sortByPriority } from './priority'
 import { useLiveVersion } from './live'
 import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
@@ -893,6 +894,7 @@ function Card({
             {t.kanban.originLabels[feature.origin]}
           </span>
         )}
+        {feature.mirror && <MirrorBadge mirror={feature.mirror} />}
       </span>
       <span className="card-title">{feature.title}</span>
       {feature.owner && <span className="card-owner">@{feature.owner}</span>}

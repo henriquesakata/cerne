@@ -1626,6 +1626,13 @@ h2 {
 /* F-0318: aprovação vencida — bloqueia o Iniciar, então tem a cor de erro,
    distinta de todo aviso informativo do card. */
 .badge-stale { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); border-color: var(--danger); }
+/* B-0063: ligado a uma issue de tracker. A etiqueta é um link para a issue, então
+   leva o Ledger Blue (--link), a cor dos links (DESIGN.md: o teal é só do grafo). */
+.badge-mirror { background: color-mix(in srgb, var(--link) 10%, transparent); color: var(--link); border-color: var(--link); }
+a.badge-mirror { text-decoration: none; }
+a.badge-mirror:hover, a.badge-mirror:focus-visible { text-decoration: underline; }
+/* A faixa é sombra, não borda: as regras de hover e de linha aberta trocam a cor da borda. */
+.ideas-item-mirror { box-shadow: inset 3px 0 0 var(--link); }
 .card-parent {
   display: block;
   margin-top: 0.2rem;
