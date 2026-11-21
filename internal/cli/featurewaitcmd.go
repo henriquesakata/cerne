@@ -58,7 +58,7 @@ func newFeatureWaitCmd(dir *string) *cobra.Command {
 			"is not approved until a human re-approves it. Exit 2: the state became unreachable (e.g. rejected while waiting " +
 			"for approved). Exit 3: --timeout ran out (--timeout 0 checks once). It refreshes the backend clone every " +
 			"--interval (fetch + fast-forward, no pull: .docs/ and docs.lock are never written) and backs off on network " +
-			"errors. Exit 4: a channel message addressed to your session ($CERNE_SESSION) arrived first — e.g. the human's, " +
+			"errors. Exit 4: a channel message addressed to your session ($CERNE_SESSION), not yet shown to it, arrived first — e.g. the human's, " +
 			"from the card's page; it prints the message and how to answer, then wait again. Run it in the background after " +
 			"asking a human to approve or accept, if your harness wakes you when a background command ends; the gate stays human.",
 		Args: cobra.ExactArgs(1),
