@@ -75,12 +75,15 @@ func promptChannel(in hookInput, block string) string {
 	if err != nil {
 		return block
 	}
-	recordSessionMode(cacheDir, in)
 	repoDir, err := guardedRepoDir(cacheDir, cfg, projDir)
 	if err != nil {
 		return block // F-0434
 	}
-	return channelThen(cacheDir, repoDir, in.SessionID, block, false)
+	recordSessionMode(cacheDir, in)
+	// F-0491 crit. 5: a turn a wake opened has the written envelope as its
+	// prompt — what it shows is not repeated here.
+	ch, err := app.ChannelInjectPrompt(cacheDir, repoDir, in.SessionID, in.Prompt, time.Now().UTC())
+	return withChannel(ch, err, block)
 }
 
 // promptNotesBlock is the reminder for prompt in the project at dir, or "".

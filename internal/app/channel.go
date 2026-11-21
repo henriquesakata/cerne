@@ -446,6 +446,14 @@ func ChannelInject(cacheDir, repoDir, sess string, consume bool, now time.Time) 
 	return channelInject(cacheDir, repoDir, sess, injectOpts{consume: consume, mode: injTurn}, now)
 }
 
+// ChannelInjectPrompt is ChannelInject at a UserPromptSubmit (F-0491 crit. 5):
+// a turn opened by a wake has the written envelope as its prompt, so the seqs
+// it carries — those the channel recorded as shown to sess — are not repeated
+// there.
+func ChannelInjectPrompt(cacheDir, repoDir, sess, prompt string, now time.Time) (string, error) {
+	return channelInject(cacheDir, repoDir, sess, injectOpts{consume: true, mode: injTurn, skip: wokenSeqs(prompt)}, now)
+}
+
 // ChannelInjectTool is ChannelInject at a tool contact point (F-0490):
 // PreToolUse, PostToolUse, the work gate. An addressed message already shown
 // to sess stays out — it comes back at the next turn start, not at every tool
@@ -479,6 +487,7 @@ const (
 type injectOpts struct {
 	consume bool
 	mode    int
+	skip    []int // shown by the prompt itself (F-0491 crit. 5)
 	deliver func(text string) (reason string)
 }
 
@@ -533,6 +542,7 @@ func channelInject(cacheDir, repoDir, sess string, o injectOpts, now time.Time) 
 			}
 			pending = append(pending, injItem{m: m, group: group, directed: directed, shown: cs.shownTo(m, sess)})
 		}
+		pending = slices.DeleteFunc(pending, func(it injItem) bool { return it.shown && slices.Contains(o.skip, it.m.Seq) })
 		switch mode {
 		case injWake:
 			pending = slices.DeleteFunc(pending, func(it injItem) bool { return !it.directed || it.shown })

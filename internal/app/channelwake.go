@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -213,6 +214,27 @@ func wakeEnvelope(text string) string {
 	text = envelopeTagRe.ReplaceAllString(strings.TrimRight(text, "\n"), "‹$1")
 	text = fromModeRe.ReplaceAllString(text, "from_mode")
 	return "<cross-session-message from-name=\"" + wakeSender + "\">\n" + text + "\n</cross-session-message>"
+}
+
+// wokenRe finds the channel's envelope in a prompt — Claude Code may add
+// attributes (from=) — and wokenSeqRe the report lines' seqs inside it.
+var (
+	wokenRe    = regexp.MustCompile(`(?s)<cross-session-message\b[^>]*\bfrom-name="` + wakeSender + `"[^>]*>(.*?)</cross-session-message>`)
+	wokenSeqRe = regexp.MustCompile(`(?m)^#([0-9]+) `)
+)
+
+// wokenSeqs are the seqs a woken turn's prompt shows (criterion 5): every
+// report line of every cerne channel envelope in it.
+func wokenSeqs(prompt string) []int {
+	var out []int
+	for _, env := range wokenRe.FindAllStringSubmatch(prompt, -1) {
+		for _, m := range wokenSeqRe.FindAllStringSubmatch(env[1], -1) {
+			if n, err := strconv.Atoi(m[1]); err == nil {
+				out = append(out, n)
+			}
+		}
+	}
+	return out
 }
 
 // writeReason is the reason a failed write leaves on the target; "" for none.

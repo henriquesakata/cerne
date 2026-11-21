@@ -114,11 +114,11 @@ func runHookToolNotes(cmd *cobra.Command, format string, after bool) {
 	if err != nil {
 		return
 	}
-	recordSessionMode(cacheDir, in)
 	repoDir, err := guardedRepoDir(cacheDir, cfg, projDir)
 	if err != nil {
 		return // F-0434
 	}
+	recordSessionMode(cacheDir, in)
 	var block string
 	switch {
 	case ti.Command != "" && after:
@@ -130,7 +130,7 @@ func runHookToolNotes(cmd *cobra.Command, format string, after bool) {
 	}
 	// A shell command is a channel contact point too (B-0054): a session that
 	// works only through Bash would otherwise hear the channel only at start.
-	block = channelThen(cacheDir, repoDir, in.SessionID, block, true)
+	block = channelThen(cacheDir, repoDir, in.SessionID, block)
 	if block == "" {
 		return
 	}
