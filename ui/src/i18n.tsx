@@ -1594,6 +1594,23 @@ const ptBR = {
       busy: 'O backend está ocupado ou mudou por outro caminho. Tente de novo.',
       failed: (e: string) => `Não foi possível gravar o nome: ${e}`,
     },
+    // F-0493: preferência de quem olha, guardada neste navegador (fora do registro).
+    datetime: {
+      title: 'Data e hora',
+      hint: 'Como a interface mostra data e hora. A escolha vale só para este navegador: não vai para o servidor nem para o .cernerc.',
+      browserOnly: 'este navegador',
+      browserOnlyTitle: 'Guardado neste navegador, como o idioma PT/EN',
+      format: {
+        title: 'Formato',
+        description: 'A ordem do dia e do mês e o relógio de 12 ou 24 horas. O idioma da interface continua à parte.',
+      },
+      zone: { title: 'Fuso horário', description: 'O fuso em que as horas aparecem.' },
+      auto: (detected: string) => (detected === '' ? 'Automático (do computador)' : `Automático (do computador) — ${detected}`),
+      effectiveAuto: (v: string) => `Efetivo: ${v}, do computador`,
+      effectiveChosen: (v: string) => `Efetivo: ${v}, neste navegador`,
+      preview: 'Prévia',
+      other: 'Outros',
+    },
     // Títulos e descrições do registro chegam em inglês (D-0006); a tradução é
     // indexada pelo texto-fonte (estilo gettext): texto novo ou alterado no
     // servidor cai no inglês, nunca numa tradução velha. Chaves SEMPRE entre
@@ -3216,6 +3233,22 @@ const en: Messages = {
       },
       busy: 'The backend is busy or changed elsewhere. Try again.',
       failed: (e: string) => `Could not save the name: ${e}`,
+    },
+    datetime: {
+      title: 'Date and time',
+      hint: 'How the interface shows date and time. The choice applies to this browser only: it does not go to the server or the .cernerc.',
+      browserOnly: 'this browser',
+      browserOnlyTitle: 'Kept in this browser, like the PT/EN language',
+      format: {
+        title: 'Format',
+        description: 'The order of day and month and the 12 or 24 hour clock. The interface language stays separate.',
+      },
+      zone: { title: 'Time zone', description: 'The zone the times are shown in.' },
+      auto: (detected: string) => (detected === '' ? 'Automatic (from this computer)' : `Automatic (from this computer) — ${detected}`),
+      effectiveAuto: (v: string) => `Effective: ${v}, from this computer`,
+      effectiveChosen: (v: string) => `Effective: ${v}, this browser`,
+      preview: 'Preview',
+      other: 'Other',
     },
     text: {},
     options: { accept: 'on human accept', merge: 'on PR merge' },

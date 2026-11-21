@@ -3985,6 +3985,12 @@ details.backlinks-section > summary:focus-visible { outline: 2px solid var(--fg)
 .settings-project { margin: 0.25rem 0 0; color: var(--muted); }
 /* General page header: the project name, ruled off from the scoped list. */
 .settings-name { padding: 1rem 0; border-bottom: 1px solid var(--border); }
+/* Interface page header (F-0493): the viewer's date and time choice, kept in
+   this browser. The registry's own ledger rows, ruled off from the scoped list
+   like the project name; the preview reads as a value, not as a card. */
+.settings-datetime { padding: 1rem 0; border-bottom: 1px solid var(--border); }
+.settings-preview { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.75rem; margin: 0.75rem 0 0; font-size: 0.95rem; color: var(--fg); font-variant-numeric: tabular-nums; }
+.settings-preview-label { font-size: 0.85rem; color: var(--muted); }
 .settings-search {
   display: block;
   width: 100%;

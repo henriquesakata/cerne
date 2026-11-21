@@ -34,6 +34,10 @@ const OPTIONS: Record<InstantStyle, Intl.DateTimeFormatOptions> = {
   },
 }
 
+// The formats the Settings list offers (F-0493 crit. 7): a short, named set,
+// not every locale the browser has.
+export const DATE_LOCALES = ['pt-BR', 'pt-PT', 'en-US', 'en-GB', 'es-ES', 'es-MX', 'fr-FR', 'de-DE', 'it-IT', 'ja-JP', 'zh-CN']
+
 export function isValidLocale(locale: string): boolean {
   try {
     return Intl.DateTimeFormat.supportedLocalesOf([locale]).length > 0
@@ -66,6 +70,23 @@ export function detectTimeZone(): string | undefined {
   } catch {
     return undefined
   }
+}
+
+// The zones the Settings list offers: every one the browser knows plus UTC
+// (the browser's own list leaves it out) and the one in use; a browser that
+// cannot list them offers only the detected zone and UTC (crit. 7). complete
+// tells the list apart: only a full one is worth grouping by region.
+export function listTimeZones(detected?: string, chosen?: string): { zones: string[]; complete: boolean } {
+  let known: string[] = []
+  try {
+    known = typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : []
+  } catch {
+    known = []
+  }
+  const zones = new Set(known.length > 0 ? known : detected ? [detected] : [])
+  zones.add('UTC')
+  if (chosen) zones.add(chosen)
+  return { zones: [...zones].sort(), complete: known.length > 0 }
 }
 
 export function resolvePrefs(stored: StoredDatePrefs, lang: string): DatePrefs {

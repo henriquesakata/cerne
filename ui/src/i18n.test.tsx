@@ -388,3 +388,32 @@ describe('useInstant e as preferências de data e hora (F-0493)', () => {
     expect(result.current.i18n.lang).toBe('en')
   })
 })
+
+// F-0493 crit. 12: os textos da seção Data e hora existem nas duas línguas,
+// com as mesmas chaves e textos diferentes.
+describe('t.settings.datetime (F-0493 crit. 12)', () => {
+  const datetime = (lang: Lang) => {
+    localStorage.setItem('cerne-lang', lang)
+    const { result } = renderHook(() => useT(), { wrapper: I18nProvider })
+    return result.current.t.settings.datetime
+  }
+
+  // F-0493 crit. 12
+  it('F-0493 crit. 12: mesmas chaves e textos diferentes em pt-BR e en', () => {
+    const lp = leaves(datetime('pt-BR'))
+    const le = leaves(datetime('en'))
+    expect(Object.keys(lp).length).toBeGreaterThanOrEqual(10)
+    expect(Object.keys(lp).sort()).toEqual(Object.keys(le).sort())
+    for (const k of Object.keys(lp)) {
+      expect(lp[k], k).toBeTruthy()
+      expect(le[k], k).toBeTruthy()
+      expect(lp[k], k).not.toBe(le[k])
+    }
+  })
+
+  // F-0493 crit. 12
+  it('F-0493 crit. 12: o título da seção e o selo existem nas duas línguas', () => {
+    expect(datetime('pt-BR')).toMatchObject({ title: 'Data e hora', browserOnly: 'este navegador' })
+    expect(datetime('en')).toMatchObject({ title: 'Date and time', browserOnly: 'this browser' })
+  })
+})
