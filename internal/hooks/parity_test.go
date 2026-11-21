@@ -83,16 +83,24 @@ func TestParityCopilotStatesTheProbedLimits(t *testing.T) {
 
 // TestParityWakeRow (F-0491 crit. 7): the matrix says which harness wakes an
 // idle session — Claude Code, with the bypass caveat — and every other one is
-// degraded with its reason; the Codex channel row includes the prompt.
+// degraded with its reason; the Codex channel and prompt-notes rows include
+// the prompt hook.
 func TestParityWakeRow(t *testing.T) {
-	var wake, channel ParityRow
+	var wake, channel, notes ParityRow
 	for _, r := range ParityRows() {
 		switch r.Capability {
 		case "Wake an idle session (F-0491)":
 			wake = r
 		case "Project channel mid-session (F-0325, B-0054)":
 			channel = r
+		case "Notes matching the prompt (B-0020)":
+			notes = r
 		}
+	}
+	// The Codex prompt hook carries the prompt notes too (a deliberate side
+	// effect): that row must not still say it is not wired.
+	if d, _ := notes.Degraded(ProviderCodex); d || !strings.Contains(notes.Codex, "UserPromptSubmit") {
+		t.Errorf("Codex prompt-notes cell = %q, want the wired UserPromptSubmit hook", notes.Codex)
 	}
 	if wake.Capability == "" {
 		t.Fatal("no wake row in the parity matrix")
