@@ -112,9 +112,10 @@ func TestChannelDirectedTo(t *testing.T) {
 // repeats with the protocol line until that work answers or acks — and reaches
 // a session with no work once, unaddressed.
 func TestChannelHumanAddressedToEveryLiveWork(t *testing.T) {
+	pinLocal(t)
 	f := newChanFixture(t)
 	seq := f.post("Henrique", "se receberem esta mensagem, podem dizer qual atividade estão fazendo?", true)
-	want := fmt.Sprintf("#%d Henrique (human) wrote in the project channel %s local time: \"se receberem", seq, f.at.Local().Format("on 2006-01-02 at 15:04"))
+	want := fmt.Sprintf("#%d Henrique (human) wrote in the project channel on 2026-11-05 at 07:00 local time: \"se receberem", seq)
 	ack := fmt.Sprintf(" or cerne msg ack %d.\n", seq)
 	for i := range 2 {
 		for _, sess := range []string{"s1", "s2"} {
@@ -146,7 +147,7 @@ func TestChannelHumanAddressedToEveryLiveWork(t *testing.T) {
 	}
 }
 
-// TestChannelHumanTargetsLiveWorks (B-0054 crit. 2/3): a human broadcast
+// TestChannelHumanTargetsLiveWorks (B-0054 crit. 2/3; F-0490 crit. 5, unchanged): a human broadcast
 // targets every live work — not an active work with no session here — and is
 // not_delivered until each was shown it, answered once each answered or acked.
 func TestChannelHumanTargetsLiveWorks(t *testing.T) {
@@ -262,6 +263,16 @@ func (f *chanFixture) inject(sess string, consume bool) string {
 	return out
 }
 
+// pinLocal fixes time.Local at UTC-3 for the test, so the local time of a
+// human's report is a literal clock, not the expression the code uses
+// (F-0490 crit. 4). Safe: no test in this package runs in parallel.
+func pinLocal(t *testing.T) {
+	t.Helper()
+	old := time.Local
+	time.Local = time.FixedZone("UTC-3", -3*60*60)
+	t.Cleanup(func() { time.Local = old })
+}
+
 // injectTool is a tool contact point (F-0490): PreToolUse, PostToolUse or the
 // work gate.
 func (f *chanFixture) injectTool(sess string) string {
@@ -274,7 +285,7 @@ func (f *chanFixture) injectTool(sess string) string {
 	return out
 }
 
-// TestChannelToolPointShowsAddressedOncePerTurn (F-0490 crit. 1-3): at a tool
+// TestChannelToolPointShowsAddressedOncePerTurn (F-0490 crit. 1, 2 and 3): at a tool
 // contact point an addressed message already shown to the session stays out;
 // one reaching it for the first time is inline; the turn start shows every
 // unanswered one again; background is still delivered once.
@@ -323,9 +334,10 @@ func TestChannelToolPointShowsAddressedOncePerTurn(t *testing.T) {
 // cerne msg send or cerne msg ack — with no system-instruction tone; an
 // agent's message keeps its form.
 func TestChannelHumanMessageReadsAsReport(t *testing.T) {
+	pinLocal(t)
 	f := newChanFixture(t)
-	h := f.post("Henrique", "pode confirmar com um ok?", true)
-	when := f.at.Local().Format("on 2006-01-02 at 15:04")
+	h := f.post("Henrique", "pode confirmar com um ok?", true) // 10:00:01 UTC
+	when := "on 2026-11-05 at 07:00"
 	a := f.post("W-0002", "W-0001 segura o rooms.go", false)
 	out := f.inject("s1", true)
 	for _, want := range []string{
@@ -771,7 +783,7 @@ func stateOf(t *testing.T, msgs []ChannelMessage, seq int) ChannelMessage {
 	return ChannelMessage{}
 }
 
-// TestChannelStatesDerived (crit. 13/14): an addressed message moves
+// TestChannelStatesDerived (crit. 13/14; F-0490 crit. 5, unchanged): an addressed message moves
 // not_delivered -> delivered -> answered from the injection and the target's
 // own later post alone — no receipt typed by anyone, and an anonymous read
 // changes nothing.
@@ -883,7 +895,7 @@ func (f *chanFixture) postAs(sess, nick, body string) int {
 	return m.Seq
 }
 
-// TestChannelPeekIsNoDelivery (critic C2, PEEK-PROBE): a subagent's peek is
+// TestChannelPeekIsNoDelivery (critic C2, PEEK-PROBE; F-0490 crit. 5, unchanged): a subagent's peek is
 // recorded but is no delivery — the parent's next post, about anything, must
 // not answer an addressed message only the subagent saw; neither may a post
 // from another session of the same work.

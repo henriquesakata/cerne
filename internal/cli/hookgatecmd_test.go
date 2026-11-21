@@ -370,7 +370,7 @@ func TestHookWorkGateInjectsChannel(t *testing.T) {
 	}
 }
 
-// TestHookToolPointsAddressedOncePerTurn (F-0490 crit. 1/2): the work gate and
+// TestHookToolPointsAddressedOncePerTurn (F-0490 crit. 1 and 2): the work gate and
 // the Bash hook are tool contact points — an addressed message already shown
 // to the session stays out of them — and the next prompt shows it again.
 func TestHookToolPointsAddressedOncePerTurn(t *testing.T) {

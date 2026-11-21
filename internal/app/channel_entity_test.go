@@ -41,10 +41,11 @@ func withDoneSession(t *testing.T, f *chanFixture) {
 // and stays on the thread.
 func TestChannelToSessionDeliveredWithoutLiveBinding(t *testing.T) {
 	f := newChanFixture(t)
+	pinLocal(t)
 	withDoneSession(t, f)
 	seq := f.postTo("F-0001", []string{"s-dev"}, "o teste do canal quebrou, corrige?")
 
-	want := fmt.Sprintf("#%d Henrique (human) wrote to this session from the page of F-0001 %s local time: \"o teste do canal quebrou", seq, f.at.Local().Format("on 2006-01-02 at 15:04"))
+	want := fmt.Sprintf("#%d Henrique (human) wrote to this session from the page of F-0001 on 2026-11-05 at 07:00 local time: \"o teste do canal quebrou", seq)
 	for i := range 2 {
 		out := f.inject("s-dev", true)
 		if !strings.Contains(out, want) || !strings.Contains(out, `cerne msg send --ref F-0001 "<text>"`) {
@@ -210,9 +211,10 @@ func TestChannelWakeOnlyAddressed(t *testing.T) {
 		t.Fatalf("s1 (live work) wake = %q, want the human broadcast only", out)
 	}
 
+	pinLocal(t)
 	seq := f.postTo("F-0001", []string{"s-dev"}, "corrige o conflito?")
 	out := wake("s-dev")
-	want := fmt.Sprintf("#%d Henrique (human) wrote to this session from the page of F-0001 %s local time: \"corrige o conflito?\"", seq, f.at.Local().Format("on 2006-01-02 at 15:04"))
+	want := fmt.Sprintf("#%d Henrique (human) wrote to this session from the page of F-0001 on 2026-11-05 at 07:00 local time: \"corrige o conflito?\"", seq)
 	if !strings.Contains(out, want) || !strings.Contains(out, `cerne msg send --ref F-0001 "<text>"`) || strings.Contains(out, "chatter") || strings.Contains(out, "oi geral") {
 		t.Fatalf("s-dev wake = %q, want only the card message and how to answer", out)
 	}

@@ -215,6 +215,17 @@ func TestStatusActiveLeadsWithChannel(t *testing.T) {
 	assertLeadsWithChannel(t, repoDir, block, "status", "--active", "--dir", projDir)
 }
 
+// pinLocal fixes time.Local at UTC-3 for the test and returns how a report
+// writes an instant in that zone, computed without time.Local — so a report in
+// UTC fails (F-0490 crit. 4). Safe: no test in this package runs in parallel.
+func pinLocal(t *testing.T) func(time.Time) string {
+	t.Helper()
+	zone, old := time.FixedZone("UTC-3", -3*60*60), time.Local
+	time.Local = zone
+	t.Cleanup(func() { time.Local = old })
+	return func(at time.Time) string { return at.In(zone).Format("on 2006-01-02 at 15:04") }
+}
+
 // TestHookEnvelopeEscapesControlChars (F-0325, critic C1): the subagent hook
 // builds its JSON envelope in Go, so a channel message carrying ESC or other
 // control characters (pasted ANSI build output) still yields valid JSON that
@@ -696,13 +707,17 @@ func TestHookChannelPluginMode(t *testing.T) {
 // session start, naming the card and how to answer.
 func TestHookChannelReachesNeverBoundSession(t *testing.T) {
 	boardOff(t)
+	when := pinLocal(t)
 	projDir, _, repoDir := setupProject(t)
 	t.Setenv("CLAUDE_ENV_FILE", "")
-	if _, err := app.ChannelPost(filepath.Dir(repoDir), "Henrique", "F-0001", []string{"sess-opener"}, "o plano está certo?", time.Now().UTC()); err != nil {
+	at := time.Now().UTC()
+	if _, err := app.ChannelPost(filepath.Dir(repoDir), "Henrique", "F-0001", []string{"sess-opener"}, "o plano está certo?", at); err != nil {
 		t.Fatal(err)
 	}
 	out, err := execCerneStdin(t, sessionStartJSON(t, "sess-opener", projDir), "hook", "channel", "--point", "session-start")
-	if err != nil || !strings.Contains(out, "Henrique (human) wrote to this session from the page of F-0001 ") || !strings.Contains(out, `local time: "o plano está certo?"`) || !strings.Contains(out, "cerne msg send --ref F-0001") {
+	// F-0490 crit. 4: the report, with the clock in the human's local zone.
+	report := "Henrique (human) wrote to this session from the page of F-0001 " + when(at) + ` local time: "o plano está certo?"`
+	if err != nil || !strings.Contains(out, report) || !strings.Contains(out, "cerne msg send --ref F-0001") {
 		t.Fatalf("session start of a never-bound addressed session: %v\n%q", err, out)
 	}
 	if out, err := execCerneStdin(t, sessionStartJSON(t, "sess-other", projDir), "hook", "channel", "--point", "session-start"); err != nil || strings.Contains(out, "plano") {
