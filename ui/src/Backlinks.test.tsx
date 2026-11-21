@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import Backlinks from './Backlinks'
 import type { Graph } from './api'
@@ -23,7 +23,11 @@ vi.mock('./api', async (importOriginal) => ({
   fetchGraph: vi.fn(async () => graph),
 }))
 
-beforeEach(cleanup)
+const baseEdges = [...graph.edges]
+beforeEach(() => {
+  cleanup()
+  graph.edges = [...baseEdges]
+})
 
 describe('Backlinks', () => {
   // F-0167 C6: painel lista as arestas de ENTRADA (quem cita/informa a
@@ -48,4 +52,37 @@ describe('Backlinks', () => {
     render(<Backlinks id="F-0001" href={(_k, i) => `#/vault/${i}`} />)
     expect((await screen.findByText('N-0001')).closest('a')).toHaveAttribute('href', '#/vault/N-0001')
   })
+
+  // F-0497 crit. 1
+  it('exclude tira a aresta informs de uma fonte já listada, e sem aresta a seção some', async () => {
+    render(<Backlinks id="F-0001" exclude={['R-0001']} />)
+    expect(await screen.findByText('N-0001')).toBeInTheDocument()
+    expect(screen.queryByText('R-0001')).toBeNull()
+    cleanup()
+    graph.edges = graph.edges.filter((e) => e.type === 'informs' || e.to !== 'F-0001')
+    const { container } = render(<Backlinks id="F-0001" exclude={['R-0001']} />)
+    await waitFor(() => expect(container).toBeEmptyDOMElement())
+  })
+
+  // F-0497 crit. 2
+  it('abre recolhido, com a contagem no título, e alterna no clique', async () => {
+    const { container } = render(<Backlinks id="F-0001" />)
+    await screen.findByText('N-0001')
+    const panel = container.querySelector('details.backlinks-section') as HTMLDetailsElement
+    expect(panel.open).toBe(false)
+    const summary = panel.querySelector('summary') as HTMLElement
+    expect(summary).toHaveTextContent('Backlinks')
+    expect(summary).toHaveTextContent('2')
+    fireEvent.click(summary)
+    expect(panel.open).toBe(true)
+  })
+
+  // F-0497 crit. 2
+  it('no Cofre (collapsible desligado) a seção fica aberta, sem <details>', async () => {
+    const { container } = render(<Backlinks id="F-0001" collapsible={false} />)
+    await screen.findByText('N-0001')
+    expect(container.querySelector('details')).toBeNull()
+    expect(container.querySelector('section.backlinks-section')).not.toBeNull()
+  })
 })
+

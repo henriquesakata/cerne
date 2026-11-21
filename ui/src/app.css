@@ -1932,6 +1932,9 @@ a.badge-mirror:hover, a.badge-mirror:focus-visible { text-decoration: underline;
 .doc h6 { font-size: 0.85rem; color: var(--muted); }
 
 .doc p { margin: 0 0 0.85em; }
+/* F-0497: prose reads at a comfortable measure; tables and code keep the
+   whole column. */
+.doc p, .doc li, .doc blockquote { max-width: 72ch; }
 
 .doc ul, .doc ol { margin: 0 0 0.85em; padding-left: 1.5rem; }
 .doc li { margin: 0.2em 0; }
@@ -2408,6 +2411,12 @@ a.badge-mirror:hover, a.badge-mirror:focus-visible { text-decoration: underline;
   font-size: 0.9rem;
   font-weight: 700;
 }
+
+/* F-0497: collapsed to one line with its count, the same summary as the
+   agents panel (F-0494), so the document starts sooner. */
+details.backlinks-section { padding: 0 0.9rem 0.6rem; }
+details.backlinks-section:not([open]) { padding-bottom: 0; }
+details.backlinks-section > summary .backlinks-title { margin: 0; }
 
 .backlinks-list {
   margin: 0;
@@ -3790,7 +3799,8 @@ button.clarify-chip { cursor: pointer; font: inherit; }
    collapsed card is the click target, at least 44 px tall; the latest
    activity wraps under the title on a narrow screen instead of being cut. */
 .agents:not([open]) { padding-bottom: 0; }
-.agents > summary {
+.agents > summary,
+details.backlinks-section > summary {
   cursor: pointer;
   list-style: none;
   display: flex;
@@ -3803,13 +3813,17 @@ button.clarify-chip { cursor: pointer; font: inherit; }
   padding: 0.75rem 0.9rem;
   border-radius: 8px;
 }
-.agents > summary:hover { background: var(--surface-3); }
-.agents > summary::-webkit-details-marker { display: none; }
+.agents > summary:hover,
+details.backlinks-section > summary:hover { background: var(--surface-3); }
+.agents > summary::-webkit-details-marker,
+details.backlinks-section > summary::-webkit-details-marker { display: none; }
 .agents > summary > h2 { margin: 0; flex: none; }
-.agents > summary > .column-count { font-size: 0.85rem; flex: none; }
+.agents > summary > .column-count,
+details.backlinks-section > summary > .column-count { font-size: 0.85rem; flex: none; }
 .agents-latest { min-width: 0; font-size: 0.85rem; color: var(--fg); }
 .agents-latest::before { content: '· '; content: '· ' / ''; color: var(--muted); }
-.agents > summary::before {
+.agents > summary::before,
+details.backlinks-section > summary::before {
   content: '▼';
   content: '▼' / '';
   display: inline-block;
@@ -3817,8 +3831,10 @@ button.clarify-chip { cursor: pointer; font: inherit; }
   font-size: 0.7em;
   color: var(--muted);
 }
-.agents:not([open]) > summary::before { content: '▶'; content: '▶' / ''; }
-.agents > summary:focus-visible { outline: 2px solid var(--fg); outline-offset: -2px; }
+.agents:not([open]) > summary::before,
+details.backlinks-section:not([open]) > summary::before { content: '▶'; content: '▶' / ''; }
+.agents > summary:focus-visible,
+details.backlinks-section > summary:focus-visible { outline: 2px solid var(--fg); outline-offset: -2px; }
 .agents > p { margin: 0.25rem 0 0; font-size: 0.85rem; }
 .agents-list { list-style: none; padding: 0; margin: 0.6rem 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.75rem; }
 .agents-row { min-width: 0; }

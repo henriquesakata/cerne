@@ -33,12 +33,20 @@ function entityHref(kind: GraphKind, id: string): string {
 
 // href overrides where a backlink points (the vault keeps readers inside it);
 // the default is the entity's own page.
+// exclude (F-0497) names the sources a page already lists (the feature's
+// Fontes), so their `informs` edges are not said twice. collapsible (F-0497)
+// starts the section as one line with its count, like the agents panel; the
+// vault turns it off because there the side panel is the content.
 export default function Backlinks({
   id,
   href: hrefOf = entityHref,
+  exclude = [],
+  collapsible = true,
 }: {
   id: string
   href?: (kind: GraphKind, id: string) => string
+  exclude?: string[]
+  collapsible?: boolean
 }) {
   const [links, setLinks] = useState<Backlink[]>([])
   const version = useLiveVersion()
@@ -66,27 +74,42 @@ export default function Backlinks({
     }
   }, [id, version])
 
-  if (links.length === 0) return null
+  const shown = links.filter((b) => !(b.type === 'informs' && exclude.includes(b.from.id)))
+  if (shown.length === 0) return null
+  const list = (
+    <ul className="backlinks-list">
+      {shown.map((b) => {
+        const href = hrefOf(b.from.kind, b.from.id)
+        const label = (
+          <>
+            <span className="card-id">{b.from.id}</span>{' '}
+            <span className="backlinks-entity">{b.from.title}</span>
+          </>
+        )
+        return (
+          <li key={`${b.from.id}-${b.type}`}>
+            {href ? <a href={href}>{label}</a> : label}{' '}
+            <span className="backlinks-type">{t.backlinks.types[b.type]}</span>
+          </li>
+        )
+      })}
+    </ul>
+  )
+  if (!collapsible) {
+    return (
+      <section className="backlinks-section">
+        <h2 className="backlinks-title">{t.backlinks.title}</h2>
+        {list}
+      </section>
+    )
+  }
   return (
-    <section className="backlinks-section">
-      <h2 className="backlinks-title">{t.backlinks.title}</h2>
-      <ul className="backlinks-list">
-        {links.map((b) => {
-          const href = hrefOf(b.from.kind, b.from.id)
-          const label = (
-            <>
-              <span className="card-id">{b.from.id}</span>{' '}
-              <span className="backlinks-entity">{b.from.title}</span>
-            </>
-          )
-          return (
-            <li key={`${b.from.id}-${b.type}`}>
-              {href ? <a href={href}>{label}</a> : label}{' '}
-              <span className="backlinks-type">{t.backlinks.types[b.type]}</span>
-            </li>
-          )
-        })}
-      </ul>
-    </section>
+    <details className="backlinks-section">
+      <summary>
+        <h2 className="backlinks-title">{t.backlinks.title}</h2>
+        <span className="column-count">{shown.length}</span>
+      </summary>
+      {list}
+    </details>
   )
 }

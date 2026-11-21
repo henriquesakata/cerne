@@ -1026,3 +1026,26 @@ describe('FeaturePage meta row (F-0496)', () => {
     expect(meta.firstElementChild).toHaveClass('feature-state')
   })
 })
+
+// F-0497 crit. 3: the document's own title repeats the page's h1, so it goes.
+describe('FeaturePage repeated document title (F-0497)', () => {
+  it('não renderiza o # título igual ao da feature, e mantém um título diferente', async () => {
+    payload = {
+      ...detail('approved'),
+      docs: { spec: '# Feature  de TESTE\n\nCorpo da spec.', plan: '', result: '' },
+      docs_real: { spec: true, plan: false, result: false },
+    }
+    const { container } = render(<FeaturePage id="F-0221" />)
+    expect(await screen.findByText('Corpo da spec.')).toBeInTheDocument()
+    expect(container.querySelector('.doc h1')).toBeNull()
+    cleanup()
+    payload = {
+      ...detail('approved'),
+      docs: { spec: '# Outro título\n\nCorpo.', plan: '', result: '' },
+      docs_real: { spec: true, plan: false, result: false },
+    }
+    const second = render(<FeaturePage id="F-0221" />)
+    expect(await screen.findByText('Corpo.')).toBeInTheDocument()
+    expect(second.container.querySelector('.doc h1')).toHaveTextContent('Outro título')
+  })
+})
