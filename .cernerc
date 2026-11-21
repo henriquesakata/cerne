@@ -42,3 +42,15 @@ gitback = ["internal/gitback/**"]
 # `cerne drift --auto` (automatic errata, D-0005) and direct `cerne ask`.
 [llm]
 mode = "claude-cli"
+
+[graph]
+enabled = false
+
+[mindmap]
+enabled = false
+
+# F-0449: cards mirror to this repo's GitHub issues (published by a human with
+# `cerne feature mirror`); `cerne mirror sync` imports open issues as ideas.
+[mirror]
+enabled = true
+trackers = [{name = "github", kind = "github", url = "https://github.com/henriquesakata/cerne"}]
