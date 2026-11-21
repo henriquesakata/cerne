@@ -42,3 +42,19 @@ func TestSessionModeRecordsTheLastMode(t *testing.T) {
 		t.Fatalf("sessions/ touched: %v", err)
 	}
 }
+
+// TestSessionModeDirIsPrivate (F-0491 review item 6): the mode files live in
+// a directory only the user can read.
+func TestSessionModeDirIsPrivate(t *testing.T) {
+	cache := t.TempDir()
+	if err := RecordSessionMode(cache, "s1", "", "claude-code", "auto"); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(filepath.Join(cache, sessionModesSubdir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o700 {
+		t.Fatalf("session-modes is %o, want 700", perm)
+	}
+}

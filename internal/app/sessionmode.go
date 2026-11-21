@@ -39,7 +39,7 @@ func RecordSessionMode(cacheDir, sess, agent, harness, mode string) error {
 	if old, err := os.ReadFile(path); err == nil && bytes.Equal(old, raw) {
 		return nil // every tool call passes here: no rewrite when nothing changed
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil { // the user's own sessions: nobody else reads them
 		return err
 	}
 	// Parallel tool calls record at once: a reader never sees half a file.
