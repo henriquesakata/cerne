@@ -195,6 +195,7 @@ describe('Channel (F-0325)', () => {
     await waitFor(() => expect(screen.getByText(/canal vazio/i)).toBeInTheDocument())
   })
 
+  // F-0489 crit. 5
   it('cada mensagem mostra data e hora de envio, com o instante completo no title (F-0489 crit. 5)', async () => {
     const iso = '2026-11-21T14:43:37Z'
     snapshot = { messages: [msg({ time: iso })], version: 1 }
@@ -206,6 +207,7 @@ describe('Channel (F-0325)', () => {
     expect(stamp).toHaveAttribute('title', new Date(iso).toLocaleString('pt-BR'))
   })
 
+  // F-0489 crit. 7
   it('destinatário que respondeu mostra quando (F-0489 crit. 7)', async () => {
     const at = '2026-11-21T14:50:00Z'
     snapshot = {
@@ -218,6 +220,7 @@ describe('Channel (F-0325)', () => {
     expect(line).toHaveTextContent(`W-0291 respondeu ${new Date(at).toLocaleString('pt-BR', SHORT)}`)
   })
 
+  // F-0489 crit. 4
   it('mensagem do humano é o balão próprio; autor e destinatário id saem em mono (F-0489 crit. 4)', async () => {
     snapshot = {
       messages: [
@@ -235,6 +238,7 @@ describe('Channel (F-0325)', () => {
     expect(screen.getByText('W-0291')).toHaveClass('channel-id')
   })
 
+  // F-0489 crit. 3
   it('Enter envia, Shift+Enter e composição de IME não (F-0489 crit. 3)', async () => {
     snapshot = { messages: [], version: 1 }
     postChannel.mockResolvedValue(msg({ seq: 2, human: true, nick: 'Henrique', body: 'oi' }))
