@@ -35,13 +35,24 @@ func TestToolNotesDeniesMergeUnderGate(t *testing.T) {
 		"glab mr merge 7",
 		"tea pulls merge 3",
 		"gh api -X PUT repos/o/r/pulls/12/merge",
+		"gh api repos/o/r/pulls/12/merge --method PUT",
 		"glab api --method PUT projects/1/merge_requests/7/merge",
+		`bash -c "gh pr merge 1"`,
+		"sudo gh pr merge 1",
+		"env GH_TOKEN=x gh pr merge 1",
+		"command gh pr merge 1",
+		"if gh pr merge 1; then echo ok; fi",
+		"{ gh pr merge 1; }",
+		`gh api graphql -f query='mutation { mergePullRequest(input:{pullRequestId:"x"}) { clientMutationId } }'`,
+		`gh api graphql -f query='mutation { enablePullRequestAutoMerge(input:{pullRequestId:"x"}) { clientMutationId } }'`,
 	}
 	allowed := []string{
 		"gh pr view 12",
 		"gh pr list --state merged",
 		`git commit -m "docs: explain gh pr merge"`,
 		"gh api repos/o/r/pulls/12",
+		"gh api repos/o/r/pulls/12/merge", // GET: GitHub's read-only "is it merged?" check
+		`gh api graphql -f query='{ viewer { login } }'`,
 		"echo merge",
 	}
 	for _, format := range []string{"claude", "codex"} {

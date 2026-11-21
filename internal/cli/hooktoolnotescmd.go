@@ -199,11 +199,22 @@ func commandNotesBlock(cacheDir, repoDir, projDir, sess, command, suffix string)
 	return b.String()
 }
 
-// mergeCmdRe matches a PR/MR merge at a command position (line start, or
-// after ; & | ( or $( , past env assignments): gh pr merge, glab mr merge,
-// tea pulls/pr merge, and a gh/glab api call to a merge endpoint. A mention
-// inside an argument (a commit message) is not at a command position.
-var mergeCmdRe = regexp.MustCompile(`(?m)(?:^|[;&|(]|\$\()\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*(?:(?:gh|glab|tea)\s[^;&|\n]*?\b(?:pr|mr|pulls?)\s+merge\b|(?:gh|glab)\s[^;&|\n]*?\bapi\b[^;&|\n]*?/(?:pulls|merge_requests)/[0-9]+/merge\b)`)
+// mergeCmdRe matches a PR/MR merge at a command position: line start, after
+// ; & | ( $( or a quoted sh -c, past env assignments and the wrappers and
+// keywords that run a command (sudo, env, command, exec, if, then, { …).
+// The forms: gh pr merge, glab mr merge, tea pulls/pr merge, a gh/glab api
+// PUT to a merge endpoint (the GET of the same path only reads), and the
+// GraphQL merge mutations. A mention inside an argument (a commit message)
+// is not at a command position. Known ceilings: a heredoc line that starts
+// with a merge command is denied, and a merge through git push, curl or a
+// non-shell tool is not seen (F-0488).
+var mergeCmdRe = regexp.MustCompile(`(?m)(?:^|[;&|(]|\$\(|\b(?:ba|z)?sh\s+-c\s+["'])\s*` +
+	`(?:(?:[A-Za-z_][A-Za-z0-9_]*=\S*|sudo|env|command|exec|time|nohup|xargs|if|elif|then|else|do|while|until|!|\{)\s+)*` +
+	`(?:` +
+	`(?:gh|glab|tea)\s[^;&|\n]*?\b(?:pr|mr|pulls?)\s+merge\b` +
+	`|(?:gh|glab)\s[^;&|\n]*?\bapi\b[^;&|\n]*?(?:(?:-X\s*|--method[\s=]+)(?i:put)\b[^;&|\n]*?/(?:pulls|merge_requests)/[0-9]+/merge\b|/(?:pulls|merge_requests)/[0-9]+/merge\b[^;&|\n]*?(?:-X\s*|--method[\s=]+)(?i:put)\b)` +
+	`|gh\s[^;&|\n]*?\bapi\s+graphql\b[^\n]*?\b(?:mergePullRequest|enablePullRequestAutoMerge)\b` +
+	`)`)
 
 // mergeDenyReason is what the agent reads when its merge is refused.
 const mergeDenyReason = "this project accepts a card on the merge of its PR ([gates] accept = \"merge\", F-0488): the merge is the human's acceptance, so an agent never merges — ask a human to merge the PR, then record it with 'cerne feature accept --merged'"

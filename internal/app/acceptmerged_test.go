@@ -294,7 +294,29 @@ func TestNextStepMergeGate(t *testing.T) {
 		t.Fatalf("F-0001 step = %+v, %v", s, err)
 	}
 	s, err = NextStep(repo, proj, "F-0002")
-	if err != nil || s.Actor != ActorAgent || s.Command != "cerne feature deliver F-0002 --mr <url>" {
+	if err != nil || s.Actor != ActorAgent || s.Command != "cerne feature deliver F-0002 --mr <url>" || !strings.Contains(s.Step, "a human runs 'cerne feature accept F-0002'") {
 		t.Fatalf("F-0002 step = %+v, %v", s, err)
+	}
+}
+
+// A task the parent's acceptance carried along earlier in the same sweep is
+// not examined again: no false "accept failed" line for a card already done.
+// F-0488 crit. 3, 7
+func TestAcceptMergedSweepSkipsCascaded(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	seedCards(t, repoDir,
+		store.Feature{ID: "E-0001", State: domain.StateImplemented, DeliveryMRURL: prURL("1")},
+		store.Feature{ID: "T-0002", Parent: "E-0001", State: domain.StateImplemented, DeliveryMRURL: prURL("2")},
+	)
+	useFakeForge(t, &fakeForge{pr: mergedPR})
+	checks, err := AcceptMerged(repoDir, projDir, mergeCfg(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(checks) != 1 || checks[0].ID != "E-0001" || !checks[0].Accepted {
+		t.Fatalf("checks = %+v, want only E-0001, accepted (T-0002 rides its cascade)", checks)
+	}
+	if got := reload(t, repoDir, "T-0002").State; got != domain.StateDone {
+		t.Fatalf("T-0002 state = %s, want done", got)
 	}
 }

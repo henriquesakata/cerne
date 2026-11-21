@@ -68,6 +68,13 @@ func AcceptMerged(repoDir, projDir string, cfg project.Config, ids []string) ([]
 	}
 	checks := make([]MergeCheck, 0, len(cards))
 	for _, f := range cards {
+		// A parent accepted earlier in this sweep may have carried this task
+		// along (its line already says so): not examined again.
+		if len(ids) == 0 {
+			if cur, err := store.LoadFeature(repoDir, f.ID); err == nil && cur.State != domain.StateImplemented {
+				continue
+			}
+		}
 		c := MergeCheck{ID: f.ID}
 		m, why, open := mergeOf(cfg, projDir, f)
 		if m == nil {
