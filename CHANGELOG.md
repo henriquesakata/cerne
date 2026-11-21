@@ -9,6 +9,43 @@ While cerne is below 1.0.0, a minor version may change behavior: read the
 
 ## [Unreleased]
 
+## [0.15.1] - 2026-11-21
+
+### Fixed
+
+- The Vault screen has a real structure: group headings with their counts,
+  one line per document with the full title on hover, a filter that stays at
+  the top of the tree, a heading on the empty state, and a tree and side rail
+  that no longer slide under the top bar.
+  ([#154](https://github.com/henriquesakata/cerne/pull/154))
+- With the mirror on and no tracker set, the Mirror tab says the mirror needs
+  a tracker and links to Settings › Integrations. Before, it only said no card
+  was published yet.
+  ([#156](https://github.com/henriquesakata/cerne/pull/156))
+- Ideas imported from a tracker, and cards linked to an issue, show a badge
+  with the tracker and the issue number ("GitHub issue #4"). On Work › Ideas
+  the badge links to the issue; on the Backlog and kanban cards it is a label,
+  since the whole card is already a link.
+  ([#157](https://github.com/henriquesakata/cerne/pull/157))
+- The `component-note-only` finding of `cerne lint` names each active note
+  that shares no component with any feature, with the `cerne note retag` that
+  clears it, instead of charging each component. The reserved markers
+  `golden-path`, `convention` and `ata` no longer count as a note's subject,
+  and `component-single-use` no longer suggests renaming them.
+  ([#158](https://github.com/henriquesakata/cerne/pull/158))
+
+### Upgrading
+
+Everything not listed here needs no action.
+
+- **Update the binary.** Run `cerne update` in a project, or
+  `brew upgrade henriquesakata/tap/cerne`, or run the install script again, or
+  `go install github.com/henriquesakata/cerne/cmd/cerne@v0.15.1` (details in
+  INSTALL.md, *Updating*). `cerne --version` then prints `cerne 0.15.1`. A
+  `cerne ui` that is already open offers to restart into the new binary.
+
+**Full changelog:** [v0.15.0...v0.15.1](https://github.com/henriquesakata/cerne/compare/v0.15.0...v0.15.1)
+
 ## [0.15.0] - 2026-11-20
 
 ### Highlights
@@ -826,7 +863,8 @@ Everything not listed here needs no action.
 First release published on GitHub. Versions 0.1.0 to 0.12.0 were released
 before the move and have no public release notes.
 
-[Unreleased]: https://github.com/henriquesakata/cerne/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/henriquesakata/cerne/compare/v0.15.1...HEAD
+[0.15.1]: https://github.com/henriquesakata/cerne/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/henriquesakata/cerne/compare/v0.14.3...v0.15.0
 [0.14.3]: https://github.com/henriquesakata/cerne/compare/v0.14.2...v0.14.3
 [0.14.2]: https://github.com/henriquesakata/cerne/compare/v0.14.1...v0.14.2
