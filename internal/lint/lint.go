@@ -441,7 +441,7 @@ func RunConfig(repoDir string, staleReadyDays, staleWorkHours, staleDecisionDays
 	findings = append(findings, stalled...)
 
 	findings = append(findings, untaggedLiveFindings(features, decisions, references, notes, runbooks)...)
-	findings = append(findings, componentTagFindings(componentUses(features, notes, decisions, references, runbooks, pendings))...)
+	findings = append(findings, componentTagFindings(componentUses(features, notes, decisions, references, runbooks, pendings), notes)...)
 	findings = append(findings, noteReachFindings(notes)...)
 
 	capabilities, err := store.LoadAllCapabilities(repoDir)
