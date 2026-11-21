@@ -320,3 +320,44 @@ func TestAcceptMergedSweepSkipsCascaded(t *testing.T) {
 		t.Fatalf("T-0002 state = %s, want done", got)
 	}
 }
+
+// An acceptance on merge the human reverted is not recorded again from the
+// same merge, by id or by the sweep; a new delivery PR is accepted on its own
+// merge.
+// F-0499 crit. 5
+func TestAcceptMergedSkipsRevertedMerge(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	seedCards(t, repoDir, store.Feature{ID: "F-0001", State: domain.StateImplemented, DeliveryMRURL: prURL("1")})
+	useFakeForge(t, &fakeForge{pr: mergedPR})
+	if _, err := AcceptMerged(repoDir, projDir, mergeCfg(), []string{"F-0001"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionRevert, "", "bug depois do merge", nil); err != nil {
+		t.Fatalf("revert: %v", err)
+	}
+
+	for _, ids := range [][]string{{"F-0001"}, nil} {
+		checks, err := AcceptMerged(repoDir, projDir, mergeCfg(), ids)
+		if err != nil {
+			t.Fatalf("AcceptMerged(%v): %v", ids, err)
+		}
+		c := checkFor(t, checks, "F-0001")
+		if c.Accepted || !strings.Contains(c.Line, "already recorded") || !strings.Contains(c.Line, "cerne feature deliver F-0001 --mr <url>") {
+			t.Fatalf("AcceptMerged(%v) check = %+v, want the reverted merge refused with the way out", ids, c)
+		}
+		if got := reload(t, repoDir, "F-0001").State; got != domain.StateImplemented {
+			t.Fatalf("state = %s, want implemented", got)
+		}
+	}
+
+	f := reload(t, repoDir, "F-0001")
+	f.DeliveryMRURL = prURL("2")
+	seedCards(t, repoDir, f)
+	checks, err := AcceptMerged(repoDir, projDir, mergeCfg(), []string{"F-0001"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := checkFor(t, checks, "F-0001"); !c.Accepted {
+		t.Fatalf("check = %+v, want the new PR's merge accepted", c)
+	}
+}
