@@ -78,7 +78,7 @@ func TestCompleteStampOutcomes(t *testing.T) {
 		seedResultFeatures(t, repoDir, domain.StateInDevelopment)
 		t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
 		out, err := execCerne(t, "feature", "complete", "F-0001", "--dir", projDir)
-		want := "warning: cost not stamped: no session on this machine is bound to F-0001. A session binds with its 'cerne feature start F-0001', or, when it continues work another session started, with 'cerne work start \"F-0001: <what>\" --ref F-0001' before working; work done on another machine is stamped there: cerne cost F-0001 --stamp\n"
+		want := "warning: cost not stamped: no session on this machine is bound to F-0001, so the work done here is not counted. A session binds when it starts: 'cerne feature start F-0001', or 'cerne work start \"F-0001: <what>\" --ref F-0001' when it continues another session's work. Work done on another machine is stamped there: cerne cost F-0001 --stamp\n"
 		if err != nil || !strings.Contains(out, want) {
 			t.Fatalf("err=%v, want line %q in:\n%s", err, want, out)
 		}
@@ -116,7 +116,7 @@ func TestCompleteStampLine(t *testing.T) {
 		{"kept higher", stampOutcome{report: rep, kind: stampKeptHigher}, nil, "cost already stamped"},
 		{"unchanged", stampOutcome{report: rep, kind: stampUnchanged}, nil, "cost already stamped"},
 		{"lower", stampOutcome{kind: stampLowerRefused}, nil, "warning: cost not stamped: the stamped total is higher than this machine's sessions; nothing written"},
-		{"nothing", stampOutcome{}, cost.ErrNothingToStamp, "warning: cost not stamped: no session on this machine is bound to F-0001. A session binds with its 'cerne feature start F-0001', or, when it continues work another session started, with 'cerne work start \"F-0001: <what>\" --ref F-0001' before working; work done on another machine is stamped there: cerne cost F-0001 --stamp"},
+		{"nothing", stampOutcome{}, cost.ErrNothingToStamp, "warning: cost not stamped: no session on this machine is bound to F-0001, so the work done here is not counted. A session binds when it starts: 'cerne feature start F-0001', or 'cerne work start \"F-0001: <what>\" --ref F-0001' when it continues another session's work. Work done on another machine is stamped there: cerne cost F-0001 --stamp"},
 		{"unsupported harness", stampOutcome{}, errors.Join(cost.ErrUnsupportedHarness, errors.New("codex")), "warning: cost not stamped: this session ran under a harness cerne cost cannot read (Claude Code transcripts only); nothing to run"},
 		{"other", stampOutcome{}, errors.New("push refused"), "warning: cost not stamped: push refused; run 'cerne cost F-0001 --stamp'"},
 		{"multi-line error", stampOutcome{}, errors.New("push refused:\n  remote: rejected\n"), "warning: cost not stamped: push refused: remote: rejected; run 'cerne cost F-0001 --stamp'"},

@@ -134,7 +134,9 @@ func TestBindThroughWrapper(t *testing.T) {
 			t.Errorf("%q: not seen as a cerne run", c)
 		}
 	}
-	for _, c := range []string{"echo rtk proxy cerne feature start F-0001", "git commit -m x && time echo cerne feature start F-0001", "rtk grep cerne feature start"} {
+	// Mentions the widened prefix could misread: a wrapper must be followed by
+	// cerne itself, never by another command or a lookalike binary.
+	for _, c := range []string{"echo rtk proxy cerne feature start F-0001", "rtk grep cerne feature start", "command -v cerne feature start", "env cerne-x feature start F-0001", "time rtk proxy echo cerne feature start", `rtk proxy git commit -m "cerne feature start F-0001"`} {
 		if runsCerne(c, cerneFeatureStartRe) {
 			t.Errorf("%q: a mention read as a run", c)
 		}
