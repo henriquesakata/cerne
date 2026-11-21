@@ -75,7 +75,7 @@ func acquireLock(lockPath string, wait time.Duration) (func(), error) {
 		f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 		if err == nil {
 			held[lockPath] = true
-			_, _ = fmt.Fprintf(f, "%d\n%d\n", os.Getpid(), time.Now().UnixNano())
+			_, _ = fmt.Fprintf(f, "%d\n%d\n%s\n", os.Getpid(), time.Now().UnixNano(), lockHost())
 			_ = f.Close()
 		}
 		heldMu.Unlock()
@@ -100,9 +100,18 @@ func acquireLock(lockPath string, wait time.Duration) (func(), error) {
 	}
 }
 
-// stealOrphanedLock removes lockPath when it names this PID and this image
-// does not hold it (see held). Returns true when the caller should retry the
-// create, as stealStaleLock.
+// lockHost names the machine in the lockfile: two containers sharing a cache
+// volume can both be PID 1, and an exec keeps the hostname.
+func lockHost() string {
+	h, _ := os.Hostname()
+	return h
+}
+
+// stealOrphanedLock removes lockPath when it names this PID on this host and
+// this image does not hold it (see held). A lockfile with no host line comes
+// from a release before B-0067, which is what the image before an upgrade
+// runs. Returns true when the caller should retry the create, as
+// stealStaleLock.
 func stealOrphanedLock(lockPath string) bool {
 	heldMu.Lock()
 	defer heldMu.Unlock()
@@ -113,7 +122,11 @@ func stealOrphanedLock(lockPath string) bool {
 	if err != nil {
 		return errors.Is(err, os.ErrNotExist)
 	}
-	if pid, _, _ := strings.Cut(string(b), "\n"); pid != strconv.Itoa(os.Getpid()) {
+	lines := strings.Split(string(b), "\n")
+	if len(lines) < 2 || lines[0] != strconv.Itoa(os.Getpid()) {
+		return false
+	}
+	if len(lines) > 2 && lines[2] != "" && lines[2] != lockHost() {
 		return false
 	}
 	_ = os.Remove(lockPath)

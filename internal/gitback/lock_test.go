@@ -90,6 +90,21 @@ func TestWithLockTakesOwnPIDOrphanAtOnce(t *testing.T) {
 	}
 }
 
+// B-0067 critic 1: two containers sharing a cache volume both run as PID 1. A
+// lockfile with this PID written on another host is a live peer, never taken.
+func TestWithLockKeepsSamePIDFromAnotherHost(t *testing.T) {
+	defer swapLockTiming(t, time.Hour, 100*time.Millisecond, time.Millisecond)()
+	lockPath := filepath.Join(t.TempDir(), "repo.lock")
+	body := strconv.Itoa(os.Getpid()) + "\n0\nnot-" + lockHost() + "\n"
+	if err := os.WriteFile(lockPath, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := WithLock(lockPath, func() error { t.Error("ran under a peer's live lock"); return nil })
+	if !errors.Is(err, ErrLockTimeout) {
+		t.Fatalf("err = %v, want ErrLockTimeout", err)
+	}
+}
+
 // A live holder that keeps the lock past the acquire timeout yields ErrLockTimeout.
 func TestWithLockTimeout(t *testing.T) {
 	defer swapLockTiming(t, time.Hour, 40*time.Millisecond, 5*time.Millisecond)()
