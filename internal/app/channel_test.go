@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -690,6 +691,9 @@ func TestChannelStatesDerived(t *testing.T) {
 		t.Helper()
 		msgs, _ := f.read("")
 		got := stateOf(t, msgs, m.Seq)
+		if len(got.Targets) == 1 {
+			got.Targets[0].AnsweredAt = time.Time{} // when: TestChannelTargetAnsweredAt
+		}
 		if got.State != state || !got.Directed || len(got.Targets) != 1 ||
 			got.Targets[0] != (ChannelTarget{Work: "W-0001", State: state}) {
 			t.Fatalf("#%d = %+v, want directed to W-0001 in %s", m.Seq, got, state)
@@ -1142,5 +1146,56 @@ func TestChannelDirectedToFeatureFamily(t *testing.T) {
 		if !directedTo(room.Message{Nick: "W-0291", Body: "corrigi " + id + " agora"}, me) {
 			t.Errorf("a mention of %s does not reach the work that refs it", id)
 		}
+	}
+}
+
+// TestChannelTargetAnsweredAt (F-0489 crit. 6): a target that answered
+// carries when — its first counting reply or its ack, whichever came first —
+// and one that did not has no answered_at at all; a session-addressed target
+// (F-0486) too.
+func TestChannelTargetAnsweredAt(t *testing.T) {
+	f := newChanFixture(t)
+	withDoneSession(t, f)
+	byReply, _ := f.send("s2", "W-0001 segura o rooms.go")
+	byAck, _ := f.send("s2", "W-0001 pode consumir")
+	open, _ := f.send("s2", "W-0003 revisa?")
+	bySession := f.postTo("F-0001", []string{"s-dev"}, "corrige o teste?")
+	f.inject("s1", true)
+	f.inject("s-dev", true)
+	f.at = f.at.Add(time.Second)
+	ackAt := f.at
+	if _, _, err := ChannelAck(f.cacheDir, f.repoDir, "s1", []int{byAck.Seq}, ackAt); err != nil {
+		t.Fatal(err)
+	}
+	reply, _ := f.send("s1", "ok, seguro")
+	f.send("s1", "mais uma") // a later reply does not move the first
+	f.at = f.at.Add(time.Second)
+	devReply, _, err := ChannelSend(f.cacheDir, f.repoDir, "s-dev", "F-0001", "corrigido", f.at)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	msgs, _ := f.read("")
+	for _, c := range []struct {
+		name string
+		seq  int
+		want time.Time
+	}{
+		{"answered by a reply", byReply.Seq, reply.Time},
+		{"acked before replying", byAck.Seq, ackAt},
+		{"session-addressed reply", bySession, devReply.Time},
+	} {
+		got := stateOf(t, msgs, c.seq)
+		if len(got.Targets) != 1 || got.Targets[0].State != ChannelAnswered || !got.Targets[0].AnsweredAt.Equal(c.want) {
+			t.Errorf("%s: targets = %+v, want answered at %v", c.name, got.Targets, c.want)
+		}
+	}
+	unanswered := stateOf(t, msgs, open.Seq)
+	if len(unanswered.Targets) != 1 || !unanswered.Targets[0].AnsweredAt.IsZero() {
+		t.Fatalf("unanswered targets = %+v, want no answer time", unanswered.Targets)
+	}
+	raw, err := json.Marshal(unanswered)
+	if err != nil || strings.Contains(string(raw), "answered_at") {
+		t.Fatalf("unanswered JSON = %s (%v), want no answered_at", raw, err)
 	}
 }

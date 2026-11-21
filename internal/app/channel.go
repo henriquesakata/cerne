@@ -212,20 +212,40 @@ func shortSession(sess string) string {
 // answeredBySession reports whether session sess acked m, or posted after m
 // was delivered to it (the same rule as answered, by session).
 func (cs channelState) answeredBySession(m room.Message, sess string) bool {
-	if cs.ackedBySession(m, sess) {
-		return true
-	}
+	return !cs.answeredBySessionAt(m, sess).IsZero()
+}
+
+// answeredBySessionAt is when session sess first answered m — its ack or its
+// first post after a delivery of m, whichever came first (F-0489); zero when
+// it has not.
+func (cs channelState) answeredBySessionAt(m room.Message, sess string) time.Time {
+	var first time.Time
 	for _, d := range cs.dels {
-		if d.Session != sess || d.Peek || !slices.Contains(d.Seqs, m.Seq) {
+		if d.Session != sess {
+			continue
+		}
+		if slices.Contains(d.Ack, m.Seq) {
+			first = earliest(first, d.At)
+		}
+		if d.Peek || !slices.Contains(d.Seqs, m.Seq) {
 			continue
 		}
 		for _, later := range cs.msgs {
 			if later.Seq > m.Seq && later.Session == sess && !later.Time.Before(d.At) {
-				return true
+				first = earliest(first, later.Time)
+				break
 			}
 		}
 	}
-	return false
+	return first
+}
+
+// earliest is the earlier of first and t, a zero first meaning none yet.
+func earliest(first, t time.Time) time.Time {
+	if first.IsZero() || t.Before(first) {
+		return t
+	}
+	return first
 }
 
 func (cs channelState) ackedBySession(m room.Message, sess string) bool {
@@ -288,23 +308,34 @@ type channelState struct {
 // (a subagent's discarded context) or another session's post answers nothing:
 // each would silence exactly the message the session has not seen.
 func (cs channelState) answered(m room.Message, work string) bool {
+	return !cs.answeredAt(m, work).IsZero()
+}
+
+// answeredAt is when work first answered m — its ack or the first counting
+// post, whichever came first (F-0489); zero when it has not.
+func (cs channelState) answeredAt(m room.Message, work string) time.Time {
+	var first time.Time
 	if work == "" {
-		return false
-	}
-	if cs.acked(m, work) {
-		return true
+		return first
 	}
 	for _, d := range cs.dels {
-		if d.Work != work || d.Peek || !slices.Contains(d.Seqs, m.Seq) {
+		if d.Work != work {
+			continue
+		}
+		if slices.Contains(d.Ack, m.Seq) {
+			first = earliest(first, d.At)
+		}
+		if d.Peek || !slices.Contains(d.Seqs, m.Seq) {
 			continue
 		}
 		for _, later := range cs.msgs {
 			if later.Seq > m.Seq && later.Nick == work && later.Session == d.Session && !later.Time.Before(d.At) {
-				return true
+				first = earliest(first, later.Time)
+				break
 			}
 		}
 	}
-	return false
+	return first
 }
 
 // acked reports whether work explicitly acked m (`cerne msg ack`).
@@ -584,6 +615,8 @@ type ChannelTarget struct {
 	// Session: for a message from a card's page (F-0486), the addressed
 	// session's first 8 characters — enough for the page to name its row.
 	Session string `json:"session,omitempty"`
+	// AnsweredAt: when the target first answered — reply or ack (F-0489).
+	AnsweredAt time.Time `json:"answered_at,omitzero"`
 }
 
 // ChannelMessage is a live channel message with its derived state: the worst
@@ -810,9 +843,10 @@ func (cs channelState) derive(m room.Message, works []store.Work, live map[strin
 	if len(m.To) > 0 { // F-0486: one target per addressed session, its state by session
 		for _, sess := range m.To {
 			t := ChannelTarget{Work: entityNick(m.Ref, sess), Session: shortSession(sess), State: ChannelNotDelivered}
+			at := cs.answeredBySessionAt(m, sess)
 			switch {
-			case cs.answeredBySession(m, sess):
-				t.State, t.Acked = ChannelAnswered, cs.ackedBySession(m, sess)
+			case !at.IsZero():
+				t.State, t.Acked, t.AnsweredAt = ChannelAnswered, cs.ackedBySession(m, sess), at
 			case cs.shownTo(m, sess):
 				t.State = ChannelDelivered
 			}
@@ -846,10 +880,12 @@ func (cs channelState) derive(m room.Message, works []store.Work, live map[strin
 		}
 	}
 	for i, t := range cm.Targets {
+		at := cs.answeredAt(m, t.Work)
 		switch {
-		case cs.answered(m, t.Work):
+		case !at.IsZero():
 			t.State = ChannelAnswered
 			t.Acked = cs.acked(m, t.Work)
+			t.AnsweredAt = at
 		case cs.delivered(m, t.Work):
 			t.State = ChannelDelivered
 		default:
