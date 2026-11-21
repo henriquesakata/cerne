@@ -143,6 +143,8 @@ func TestSessionRules_LightMode(t *testing.T) {
 var handoffRuleLines = []string{
 	"Passing the baton? `cerne work handoff W-… --next …` and pass only the HO- code.",
 	"Received an HO-? First action: `cerne handoff take HO-…`.",
+	// B-0070: a session that continues a card without an HO- binds itself.
+	"with no HO- (a fork, an app handoff)? First action: `cerne work start \"F-NNNN: <what>\" --ref F-NNNN` — it binds your session to the card's cost.",
 }
 
 // TestRegisterRulesHandoff (F-0368 crit. 14): both session-start copies, with
