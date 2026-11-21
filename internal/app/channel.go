@@ -80,11 +80,25 @@ func directedTo(m room.Message, id channelIdentity) bool {
 // namedTo reports whether m names id's work or one of its refs, or a path
 // inside id's declared scope.
 func namedTo(m room.Message, id channelIdentity) bool {
+	return citesWork(m, id) || namesScope(m, id)
+}
+
+// citesWork reports whether m names id's work or one of its refs — what a
+// human's message wakes a session by (F-0491 crit. 6).
+func citesWork(m room.Message, id channelIdentity) bool {
+	if id.Work == "" || m.Nick == id.Work {
+		return false
+	}
 	for _, ref := range channelRefRe.FindAllString(m.Body, -1) {
 		if ref == id.Work || slices.Contains(id.Refs, ref) {
 			return true
 		}
 	}
+	return false
+}
+
+// namesScope reports whether m names a path inside id's declared scope.
+func namesScope(m room.Message, id channelIdentity) bool {
 	if len(id.Paths) == 0 {
 		return false
 	}
@@ -429,7 +443,7 @@ func (cs channelState) watermark(sess string) int {
 // write. consume=false is a peek (subagents): it records what was shown but
 // leaves the watermark, so the parent session still gets the background.
 func ChannelInject(cacheDir, repoDir, sess string, consume bool, now time.Time) (string, error) {
-	return channelInject(cacheDir, repoDir, sess, consume, injTurn, now)
+	return channelInject(cacheDir, repoDir, sess, injectOpts{consume: consume, mode: injTurn}, now)
 }
 
 // ChannelInjectTool is ChannelInject at a tool contact point (F-0490):
@@ -437,7 +451,7 @@ func ChannelInject(cacheDir, repoDir, sess string, consume bool, now time.Time) 
 // to sess stays out — it comes back at the next turn start, not at every tool
 // call of this one — while one reaching sess for the first time is inline.
 func ChannelInjectTool(cacheDir, repoDir, sess string, now time.Time) (string, error) {
-	return channelInject(cacheDir, repoDir, sess, true, injTool, now)
+	return channelInject(cacheDir, repoDir, sess, injectOpts{consume: true, mode: injTool}, now)
 }
 
 // ChannelWake is what ends an idle session's `cerne feature wait` (B-0065):
@@ -447,7 +461,7 @@ func ChannelInjectTool(cacheDir, repoDir, sess string, now time.Time) (string, e
 // without an answer would wake a turn per loop); the hooks repeat it at each
 // turn start (F-0490). Nothing to wake for is "".
 func ChannelWake(cacheDir, repoDir, sess string, now time.Time) (string, error) {
-	return channelInject(cacheDir, repoDir, sess, true, injWake, now)
+	return channelInject(cacheDir, repoDir, sess, injectOpts{consume: true, mode: injWake}, now)
 }
 
 // Where a session meets the channel, which decides what repeats there.
@@ -457,7 +471,19 @@ const (
 	injWake        // an idle session's wait (B-0065): only addressed messages never shown
 )
 
-func channelInject(cacheDir, repoDir, sess string, consume bool, mode int, now time.Time) (string, error) {
+// injectOpts is how a contact point meets the channel. consume=false is a peek
+// (subagents); mode decides what repeats there. deliver, when set, hands the
+// rendered text to the session another way (F-0491: its inbox socket) inside
+// the channel lock, before anything is recorded: "" records the delivery, a
+// reason records instead that the session was not reached, and why.
+type injectOpts struct {
+	consume bool
+	mode    int
+	deliver func(text string) (reason string)
+}
+
+func channelInject(cacheDir, repoDir, sess string, o injectOpts, now time.Time) (string, error) {
+	consume, mode := o.consume, o.mode
 	if safeSessionID(sess) != nil {
 		return "", nil
 	}
@@ -524,6 +550,12 @@ func channelInject(cacheDir, repoDir, sess string, consume bool, mode int, now t
 		}
 		if consume && mode != injWake {
 			d.Through = through
+		}
+		if o.deliver != nil {
+			if why := o.deliver(out); why != "" {
+				out = ""
+				return &room.Delivery{Session: sess, Work: id.Work, At: now, Unwoken: d.Seqs, Reason: why}, nil
+			}
 		}
 		return d, nil
 	})
