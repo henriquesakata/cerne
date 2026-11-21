@@ -67,6 +67,33 @@ func TestGatesConfigBypass(t *testing.T) {
 	}
 }
 
+// TestAcceptGateMerge: "merge" is a third accept value, only as that literal;
+// the other values keep their meaning and a near miss still reads as human.
+// F-0488 crit. 1
+func TestAcceptGateMerge(t *testing.T) {
+	cases := []struct {
+		accept string
+		want   string
+	}{
+		{"merge", GateMerge},
+		{"Merge", GateHuman},
+		{"merged", GateHuman},
+		{"auto", GateAuto},
+		{"human", GateHuman},
+		{"", GateHuman},
+	}
+	for _, tc := range cases {
+		if got := (GatesConfig{Accept: tc.accept}).AcceptGate(); got != tc.want {
+			t.Errorf("AcceptGate() with accept = %q: got %q, want %q", tc.accept, got, tc.want)
+		}
+	}
+	// The other ends never read "merge".
+	g := GatesConfig{Approve: "merge", Revert: "merge"}
+	if g.ApproveGate() != GateHuman || g.RevertGate() != GateHuman {
+		t.Errorf("approve/revert = merge must read as human, got %q/%q", g.ApproveGate(), g.RevertGate())
+	}
+}
+
 // TestStaleReadyDaysConfigured: stale_ready_days overrides the 14-day default.
 func TestStaleReadyDaysConfigured(t *testing.T) {
 	dir := t.TempDir()

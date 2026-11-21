@@ -15,6 +15,7 @@ import (
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/guide"
 	"github.com/henriquesakata/cerne/internal/lint"
+	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -46,6 +47,10 @@ var nextGroups = []nextGroup{
 	// F-0371: nothing left for the agent — cost and delivery are in; the accept is a human act (F-0131).
 	{domain.StateImplemented, false, "awaiting_accept", "WAITING FOR HUMAN ACCEPT", "ask a human to run 'cerne feature accept <id>' (a human act)"},
 }
+
+// awaitingMerge replaces awaiting_accept under [gates] accept = "merge"
+// (F-0488): the human acts on the forge, the agent records the merge after.
+var awaitingMerge = nextGroup{domain.StateImplemented, false, "awaiting_merge", "WAITING FOR THE MERGE", "the human's merge of the PR into the default branch is the acceptance — after it, run 'cerne feature accept --merged'"}
 
 // nextPendingCap bounds the open-pendings block of cerne next; the rest is
 // counted and left to 'cerne pending list'.
@@ -148,8 +153,12 @@ func runNext(cmd *cobra.Command, dir string, asJSON bool) error {
 		return err
 	}
 
+	mergeGate := ctx.cfg.Gates.AcceptGate() == project.GateMerge
 	q := nextJSON{Groups: []nextGroupJSON{}, EpicsReadyToClose: []store.Feature{}, OpenPendings: []store.Pending{}, Debts: []nextFinding{}}
 	for _, g := range nextGroups {
+		if g.queue == "awaiting_accept" && mergeGate {
+			g = awaitingMerge
+		}
 		var fs []nextFeature
 		for _, f := range features {
 			if f.State != g.state {
@@ -285,6 +294,9 @@ func runNext(cmd *cobra.Command, dir string, asJSON bool) error {
 			if f.ApprovalStale {
 				fmt.Fprintln(out, "    "+approvalStaleLine(f.ID))
 			}
+			if g.Queue == awaitingMerge.queue && f.DeliveryMRURL != "" {
+				fmt.Fprintln(out, "    "+f.DeliveryMRURL)
+			}
 			for _, c := range f.Commands {
 				fmt.Fprintln(out, "    "+c)
 			}
@@ -376,6 +388,8 @@ func implementedMissing(repoDir, projDir string, features []store.Feature) (map[
 		}
 		switch {
 		case st.Actor != app.ActorAgent:
+		// The merge record waits on the human's merge (F-0488): not a delivery debt.
+		case st.Command == "cerne feature accept "+f.ID+" --merged":
 		case len(st.Commands) > 0:
 			missing[f.ID] = st.Commands
 		case st.Command != "":

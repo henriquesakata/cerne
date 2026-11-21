@@ -67,6 +67,31 @@ func (g github) OnDefaultBranch(ctx context.Context, sha string) (bool, string, 
 	return inBase(c.Status), r.DefaultBranch, nil
 }
 
+// hubPull is a pull request as GitHub and Gitea return it.
+type hubPull struct {
+	State    string `json:"state"`
+	Merged   bool   `json:"merged"`
+	MergedAt string `json:"merged_at"`
+	Base     struct {
+		Ref  string `json:"ref"`
+		Repo struct {
+			DefaultBranch string `json:"default_branch"`
+		} `json:"repo"`
+	} `json:"base"`
+}
+
+func (p hubPull) pullRequest() PullRequest {
+	return PullRequest{Merged: p.Merged, Closed: p.State == "closed", MergedAt: p.MergedAt, Base: p.Base.Ref, DefaultBranch: p.Base.Repo.DefaultBranch}
+}
+
+func (g github) PullRequest(ctx context.Context, n int) (PullRequest, error) {
+	var p hubPull
+	if err := g.api(ctx, &p, fmt.Sprintf("/pulls/%d", n)); err != nil {
+		return PullRequest{}, err
+	}
+	return p.pullRequest(), nil
+}
+
 // gitlab talks to GitLab through glab; the project path is url-encoded.
 type gitlab struct{ repo Repo }
 
@@ -106,4 +131,23 @@ func (g gitlab) OnDefaultBranch(ctx context.Context, sha string) (bool, string, 
 		return false, "", err
 	}
 	return mb.ID != "" && strings.HasPrefix(mb.ID, strings.ToLower(sha)), r.DefaultBranch, nil
+}
+
+func (g gitlab) PullRequest(ctx context.Context, n int) (PullRequest, error) {
+	var mr struct {
+		State        string `json:"state"`
+		MergedAt     string `json:"merged_at"`
+		TargetBranch string `json:"target_branch"`
+	}
+	if err := g.api(ctx, &mr, fmt.Sprintf("/merge_requests/%d", n)); err != nil {
+		return PullRequest{}, err
+	}
+	var r struct {
+		DefaultBranch string `json:"default_branch"`
+	}
+	if err := g.api(ctx, &r, ""); err != nil {
+		return PullRequest{}, err
+	}
+	merged := mr.State == "merged"
+	return PullRequest{Merged: merged, Closed: merged || mr.State == "closed", MergedAt: mr.MergedAt, Base: mr.TargetBranch, DefaultBranch: r.DefaultBranch}, nil
 }

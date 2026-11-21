@@ -49,6 +49,9 @@ type Feature struct {
 	// provenance. Always stored as full URLs (a bare SHA is resolved at capture).
 	DeliveryCommitURL string `json:"delivery_commit_url,omitempty"`
 	DeliveryMRURL     string `json:"delivery_mr_url,omitempty"`
+	// AcceptedVia (F-0488) is "merge" when the human's merge of the delivery PR
+	// was the acceptance; empty for an accept typed or dragged by hand.
+	AcceptedVia string `json:"accepted_via,omitempty"`
 	// Capabilities lists the product-capability nodes (C-…) this feature
 	// contributes to (F-0188) — the functional axis, N:N, validated on link.
 	Capabilities []string `json:"capabilities,omitempty"`

@@ -59,20 +59,32 @@ func deliveryForge(cfg project.Config, projDir, commitURL string) (f forge.Deliv
 	if cfg.Delivery.Forge == "" || commitURL == "" {
 		return nil, "", ""
 	}
-	want, _, okT := forge.ParseCommitURL(cfg.Delivery.CommitURL)
 	got, tail, okC := forge.ParseCommitURL(commitURL)
-	if !okT || !okC || want != got || !shaRe.MatchString(tail) {
+	if !okC || !shaRe.MatchString(tail) {
 		return nil, "", "the commit is not in the [delivery] commit_url repository"
+	}
+	f, reason = forgeOnOrigin(cfg, projDir, got, "the commit")
+	return f, tail, reason
+}
+
+// forgeOnOrigin returns the configured forge when repo is the [delivery]
+// commit_url repository and its host is the checkout's origin remote (the
+// credential guard), or the reason it must not be asked; what names the
+// object asked about in that reason.
+func forgeOnOrigin(cfg project.Config, projDir string, repo forge.Repo, what string) (forge.DeliveryForge, string) {
+	want, _, ok := forge.ParseCommitURL(cfg.Delivery.CommitURL)
+	if !ok || want != repo {
+		return nil, what + " is not in the [delivery] commit_url repository"
 	}
 	host := strings.ToLower(strings.SplitN(want.Host, ":", 2)[0])
 	if remoteHost(originRemote(projDir)) != host {
-		return nil, "", fmt.Sprintf("host %s is not the origin remote", host)
+		return nil, fmt.Sprintf("host %s is not the origin remote", host)
 	}
 	f, err := NewDeliveryForge(cfg.Delivery.Forge, cfg.Delivery.CommitURL)
 	if err != nil {
-		return nil, "", err.Error()
+		return nil, err.Error()
 	}
-	return f, tail, ""
+	return f, ""
 }
 
 // DiscoverPR fills d.MRURL with the single PR/MR the forge says contains the

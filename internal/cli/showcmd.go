@@ -644,6 +644,9 @@ func (r showResult) renderText(w io.Writer) {
 		if e.DeliveryMRURL != "" {
 			fmt.Fprintf(w, "delivery mr: %s\n", e.DeliveryMRURL)
 		}
+		if e.AcceptedVia == "merge" { // F-0488: the human's merge was the acceptance
+			fmt.Fprintf(w, "accepted: on merge of %s\n", e.DeliveryMRURL)
+		}
 		writeSuccession(w, e.SupersededBy, e.Reason)
 		writeDocWriters(w, r.writes)
 	case store.Decision:

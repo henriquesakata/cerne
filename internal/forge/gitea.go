@@ -155,3 +155,11 @@ func (g gitea) OnDefaultBranch(ctx context.Context, sha string) (bool, string, e
 	}
 	return c.TotalCommits == 0, r.DefaultBranch, nil
 }
+
+func (g gitea) PullRequest(ctx context.Context, n int) (PullRequest, error) {
+	var p hubPull
+	if err := g.get(ctx, &p, fmt.Sprintf("/pulls/%d", n)); err != nil {
+		return PullRequest{}, err
+	}
+	return p.pullRequest(), nil
+}

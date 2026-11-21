@@ -23,6 +23,7 @@ type cliFakeForge struct {
 	err   error
 	on    bool
 	calls int
+	pr    forge.PullRequest // F-0488: what PullRequest answers
 }
 
 func (f *cliFakeForge) PRForCommit(context.Context, string) (string, int, error) {
@@ -33,6 +34,11 @@ func (f *cliFakeForge) PRForCommit(context.Context, string) (string, int, error)
 func (f *cliFakeForge) OnDefaultBranch(context.Context, string) (bool, string, error) {
 	f.calls++
 	return f.on, "main", f.err
+}
+
+func (f *cliFakeForge) PullRequest(context.Context, int) (forge.PullRequest, error) {
+	f.calls++
+	return f.pr, f.err
 }
 
 // forgeProject is setupProject with a [delivery] block (forge optional) and the

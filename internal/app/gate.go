@@ -18,13 +18,15 @@ var ErrHumanGate = errors.New("human gate")
 // not its move.
 const humanEscape = ". A human in an agent's shell runs the command in their own terminal, or prefixes it with CERNE_ACTOR=human; an agent never sets it"
 
-// CheckHumanGate refuses when gate is human and the caller is an agent
+// CheckHumanGate refuses when gate is not auto and the caller is an agent
 // (CERNE_ACTOR=agent, stamped into agent sessions by `cerne hook install`, or
-// an agent-shell marker with no CERNE_ACTOR — see actorEnv).
+// an agent-shell marker with no CERNE_ACTOR — see actorEnv). Every gate but
+// auto keeps the typed act human: under merge (F-0488) only the forge's
+// merge, recorded by AcceptMerged, crosses it.
 // Anything else passes — fail-open by design: the gate exists to stop the
 // *configured* agent from approving its own spec, not to authenticate humans.
 func CheckHumanGate(gate string) error {
-	if gate == project.GateHuman && isAgentActor(actorEnv()) {
+	if gate != project.GateAuto && isAgentActor(actorEnv()) {
 		return fmt.Errorf("%w: this transition is a human act in this project — ask a human for the approval/acceptance (or configure [gates] in .cernerc for an explicit bypass)%s", ErrHumanGate, humanEscape)
 	}
 	return nil

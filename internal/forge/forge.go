@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -28,6 +29,36 @@ type DeliveryForge interface {
 	// OnDefaultBranch reports whether sha is reachable from the repository's
 	// default branch, and names that branch.
 	OnDefaultBranch(ctx context.Context, sha string) (ok bool, branch string, err error)
+	// PullRequest reads PR/MR n: merged or not, its base and the repository's
+	// default branch (F-0488).
+	PullRequest(ctx context.Context, n int) (PullRequest, error)
+}
+
+// PullRequest is a PR/MR as the forge reports it (F-0488). Closed is true for
+// a merged PR too; Closed && !Merged is a PR closed without merge.
+type PullRequest struct {
+	Merged        bool
+	Closed        bool
+	MergedAt      string // as the forge wrote it (RFC 3339)
+	Base          string // the branch the PR targets
+	DefaultBranch string // the repository's default branch
+}
+
+// prURLRe reads the PR URL each forge writes: GitHub /pull/<n>, GitLab
+// /-/merge_requests/<n>, Gitea /pulls/<n>. The host follows commitURLRe.
+var prURLRe = regexp.MustCompile(`^https?://([A-Za-z0-9.-]+(?::[0-9]{1,5})?)/([A-Za-z0-9._/-]+?)/(?:pull|pulls|-/merge_requests)/([0-9]+)/?$`)
+
+// ParsePRURL splits a PR/MR URL into the repository and the number.
+func ParsePRURL(u string) (Repo, int, bool) {
+	m := prURLRe.FindStringSubmatch(u)
+	if m == nil {
+		return Repo{}, 0, false
+	}
+	n, err := strconv.Atoi(m[3])
+	if err != nil || n <= 0 {
+		return Repo{}, 0, false
+	}
+	return Repo{Host: m[1], Path: m[2]}, n, true
 }
 
 // ErrNoSinglePR is the sentinel for a commit that no PR contains, or several do.

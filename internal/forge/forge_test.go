@@ -366,3 +366,114 @@ func TestDeliveryLookupNamesDefaultHostDespiteEnv(t *testing.T) {
 		}
 	}
 }
+
+// F-0488 crit. 2: the PR URL each forge writes reads back as the repository
+// and the number; anything else does not parse.
+func TestParsePRURL(t *testing.T) {
+	cases := []struct {
+		in, host, path string
+		n              int
+	}{
+		{"https://github.com/henriquesakata/cerne/pull/158", "github.com", "henriquesakata/cerne", 158},
+		{"https://gitlab.com/g/sub/repo/-/merge_requests/7", "gitlab.com", "g/sub/repo", 7},
+		{"https://git.example.com/acme/hub/pulls/3", "git.example.com", "acme/hub", 3},
+		{"https://github.com/o/r/pull/12/", "github.com", "o/r", 12},
+	}
+	for _, c := range cases {
+		r, n, ok := ParsePRURL(c.in)
+		if !ok || r.Host != c.host || r.Path != c.path || n != c.n {
+			t.Errorf("%s: got %+v %d %v", c.in, r, n, ok)
+		}
+	}
+	for _, bad := range []string{"https://github.com/o/r/commit/abc1234", "https://github.com/o/r/pull/x", "https://u@github.com/o/r/pull/1", "github.com/o/r/pull/1"} {
+		if _, _, ok := ParsePRURL(bad); ok {
+			t.Errorf("%s must not parse as a PR URL", bad)
+		}
+	}
+}
+
+// F-0488 crit. 2: GitHub answers merged, base and default branch in one call
+// to gh api repos/<path>/pulls/<n>.
+func TestGitHubPullRequest(t *testing.T) {
+	for name, tc := range map[string]struct {
+		reply string
+		want  PullRequest
+	}{
+		"merged":        {`{"state":"closed","merged":true,"merged_at":"2026-11-21T14:38:57Z","base":{"ref":"main","repo":{"default_branch":"main"}}}`, PullRequest{Merged: true, Closed: true, MergedAt: "2026-11-21T14:38:57Z", Base: "main", DefaultBranch: "main"}},
+		"open":          {`{"state":"open","merged":false,"merged_at":null,"base":{"ref":"main","repo":{"default_branch":"main"}}}`, PullRequest{Base: "main", DefaultBranch: "main"}},
+		"closed":        {`{"state":"closed","merged":false,"merged_at":null,"base":{"ref":"main","repo":{"default_branch":"main"}}}`, PullRequest{Closed: true, Base: "main", DefaultBranch: "main"}},
+		"stacked merge": {`{"state":"closed","merged":true,"merged_at":"2026-11-21T10:00:00Z","base":{"ref":"feat/a","repo":{"default_branch":"main"}}}`, PullRequest{Merged: true, Closed: true, MergedAt: "2026-11-21T10:00:00Z", Base: "feat/a", DefaultBranch: "main"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := &fakeCLI{reply: func([]string) (string, error) { return tc.reply, nil }}
+			f.install(t)
+			g, _ := New("github", "https://github.com/o/r/commit/{sha}")
+			got, err := g.PullRequest(context.Background(), 158)
+			if err != nil || got != tc.want {
+				t.Fatalf("got %+v %v, want %+v", got, err, tc.want)
+			}
+			if argv, want := strings.Join(f.calls[0], " "), "gh api --hostname github.com repos/o/r/pulls/158"; argv != want {
+				t.Fatalf("argv = %q, want %q", argv, want)
+			}
+		})
+	}
+}
+
+// F-0488 crit. 2: GitLab reads the MR, then the project's default branch.
+func TestGitLabPullRequest(t *testing.T) {
+	for name, tc := range map[string]struct {
+		reply string
+		want  PullRequest
+	}{
+		"merged":        {`{"state":"merged","merged_at":"2026-11-21T14:38:57Z","target_branch":"main"}`, PullRequest{Merged: true, Closed: true, MergedAt: "2026-11-21T14:38:57Z", Base: "main", DefaultBranch: "main"}},
+		"opened":        {`{"state":"opened","merged_at":null,"target_branch":"main"}`, PullRequest{Base: "main", DefaultBranch: "main"}},
+		"closed":        {`{"state":"closed","merged_at":null,"target_branch":"main"}`, PullRequest{Closed: true, Base: "main", DefaultBranch: "main"}},
+		"stacked merge": {`{"state":"merged","merged_at":"2026-11-21T10:00:00Z","target_branch":"feat/a"}`, PullRequest{Merged: true, Closed: true, MergedAt: "2026-11-21T10:00:00Z", Base: "feat/a", DefaultBranch: "main"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := &fakeCLI{reply: func(args []string) (string, error) {
+				if strings.HasSuffix(args[len(args)-1], "/merge_requests/7") {
+					return tc.reply, nil
+				}
+				return `{"default_branch":"main"}`, nil
+			}}
+			f.install(t)
+			g, _ := New("gitlab", "https://gitlab.com/acme/cerne/-/commit/{sha}")
+			got, err := g.PullRequest(context.Background(), 7)
+			if err != nil || got != tc.want {
+				t.Fatalf("got %+v %v, want %+v", got, err, tc.want)
+			}
+			if argv, want := strings.Join(f.calls[0], " "), "glab api --hostname gitlab.com projects/acme%2Fcerne/merge_requests/7"; argv != want {
+				t.Fatalf("argv = %q, want %q", argv, want)
+			}
+		})
+	}
+}
+
+// F-0488 crit. 2: Gitea answers like GitHub, over its HTTP API.
+func TestGiteaPullRequest(t *testing.T) {
+	for name, tc := range map[string]struct {
+		reply string
+		want  PullRequest
+	}{
+		"merged":        {`{"state":"closed","merged":true,"merged_at":"2026-11-21T14:38:57Z","base":{"ref":"main","repo":{"default_branch":"main"}}}`, PullRequest{Merged: true, Closed: true, MergedAt: "2026-11-21T14:38:57Z", Base: "main", DefaultBranch: "main"}},
+		"open":          {`{"state":"open","merged":false,"base":{"ref":"main","repo":{"default_branch":"main"}}}`, PullRequest{Base: "main", DefaultBranch: "main"}},
+		"closed":        {`{"state":"closed","merged":false,"base":{"ref":"main","repo":{"default_branch":"main"}}}`, PullRequest{Closed: true, Base: "main", DefaultBranch: "main"}},
+		"stacked merge": {`{"state":"closed","merged":true,"merged_at":"2026-11-21T10:00:00Z","base":{"ref":"feat/a","repo":{"default_branch":"main"}}}`, PullRequest{Merged: true, Closed: true, MergedAt: "2026-11-21T10:00:00Z", Base: "feat/a", DefaultBranch: "main"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			giteaServer(t, "tok", func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/api/v1/repos/acme/hub/pulls/3" {
+					http.NotFound(w, r)
+					return
+				}
+				fmt.Fprint(w, tc.reply)
+			})
+			g, _ := New("gitea", "https://git.example.com/acme/hub/commit/{sha}")
+			got, err := g.PullRequest(context.Background(), 3)
+			if err != nil || got != tc.want {
+				t.Fatalf("got %+v %v, want %+v", got, err, tc.want)
+			}
+		})
+	}
+}

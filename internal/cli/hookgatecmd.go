@@ -499,7 +499,13 @@ func runHookWorkGate(cmd *cobra.Command, format string) {
 	if hint := cfg.Gates.WorkGateHint; hint != "" {
 		reason += " — " + hint
 	}
-	enc := json.NewEncoder(cmd.OutOrStdout())
+	if err := encodeDeny(cmd.OutOrStdout(), format, reason); err != nil {
+		fmt.Fprintln(cmd.ErrOrStderr(), err)
+	}
+}
+
+// encodeDeny writes the pre-tool deny decision in the envelope of format.
+func encodeDeny(w io.Writer, format, reason string) error {
 	var payload any
 	switch format {
 	case "cursor":
@@ -515,9 +521,7 @@ func runHookWorkGate(cmd *cobra.Command, format string) {
 		d.HookSpecificOutput.PermissionDecisionReason = reason
 		payload = d
 	}
-	if err := enc.Encode(payload); err != nil {
-		fmt.Fprintln(cmd.ErrOrStderr(), err)
-	}
+	return json.NewEncoder(w).Encode(payload)
 }
 
 // patchFileRe matches the file lines of an apply_patch text.

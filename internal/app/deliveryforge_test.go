@@ -19,6 +19,9 @@ type fakeForge struct {
 	on     bool
 	branch string
 	calls  int
+	pr     forge.PullRequest         // F-0488: what PullRequest answers
+	prs    map[int]forge.PullRequest // per PR number, over pr
+	prN    int                       // the last PR number asked
 }
 
 func (f *fakeForge) PRForCommit(context.Context, string) (string, int, error) {
@@ -29,6 +32,15 @@ func (f *fakeForge) PRForCommit(context.Context, string) (string, int, error) {
 func (f *fakeForge) OnDefaultBranch(context.Context, string) (bool, string, error) {
 	f.calls++
 	return f.on, f.branch, f.err
+}
+
+func (f *fakeForge) PullRequest(_ context.Context, n int) (forge.PullRequest, error) {
+	f.calls++
+	f.prN = n
+	if p, ok := f.prs[n]; ok {
+		return p, f.err
+	}
+	return f.pr, f.err
 }
 
 func useFakeForge(t *testing.T, f *fakeForge) {
