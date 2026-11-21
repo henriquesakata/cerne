@@ -74,6 +74,13 @@ function stateText(t: Messages, kind: VaultKind, state: string): string {
 
 const wikiLabel = (t: Messages, name: string) => (t.wiki.topLabels as Record<string, string>)[name] ?? name
 
+// The disclosure mark: one drawn chevron, turned by CSS when its <details> is open.
+const Chevron = () => (
+  <svg className="vault-chevron" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">
+    <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+)
+
 function TreeNode({
   node,
   open,
@@ -90,16 +97,53 @@ function TreeNode({
   const { t } = useT()
   const isOpen = forceOpen || open.has(node.key)
   const kindTag = node.id?.startsWith('B-') ? t.vault.kinds.bug : node.id?.startsWith('T-') ? t.vault.kinds.task : null
-  const text =
-    node.kind === 'group'
-      ? `${t.vault.groups[node.title as keyof typeof t.vault.groups]} (${node.count})`
-      : node.doc
-        ? t.vault.docs[node.doc]
-        : node.kind === 'wiki'
-          ? wikiLabel(t, node.title)
-          : null
+  if (node.kind === 'group') {
+    const head = (
+      <>
+        <span className="vault-twist" aria-hidden="true">
+          {node.children.length > 0 && <Chevron />}
+        </span>
+        <span className="vault-group-label">{t.vault.groups[node.title as keyof typeof t.vault.groups]}</span>
+        <span className="vault-count">{node.count}</span>
+      </>
+    )
+    if (node.children.length === 0)
+      return (
+        <li>
+          <div className="vault-group">{head}</div>
+        </li>
+      )
+    return (
+      <li>
+        <details open={isOpen}>
+          <summary
+            className="vault-group"
+            onClick={(e) => {
+              e.preventDefault()
+              toggle(node.key)
+            }}
+          >
+            {head}
+          </summary>
+          {isOpen && (
+            <ul>
+              {node.children.map((c) => (
+                <TreeNode key={c.key} node={c} open={open} toggle={toggle} forceOpen={forceOpen} selected={selected} />
+              ))}
+            </ul>
+          )}
+        </details>
+      </li>
+    )
+  }
+  const text = node.doc ? t.vault.docs[node.doc] : node.kind === 'wiki' ? wikiLabel(t, node.title) : null
   const link = node.id ? (
-    <a href={vaultHref(node.id, node.doc)} aria-current={selected(node) ? 'page' : undefined}>
+    <a
+      href={vaultHref(node.id, node.doc)}
+      aria-current={selected(node) ? 'page' : undefined}
+      // Rows hold one line; the full title is a hover away.
+      title={text ? undefined : `${node.id} ${node.title}`}
+    >
       {text ?? (
         <>
           <span className="card-id">{node.id}</span> {node.title}
@@ -107,9 +151,9 @@ function TreeNode({
       )}
     </a>
   ) : (
-    <span>{text}</span>
+    <span className="vault-label">{text}</span>
   )
-  const extras = node.kind !== 'group' && !node.doc && (
+  const extras = !node.doc && (
     <>
       {kindTag && <span className="badge">{kindTag}</span>}
       {node.state && isHistorical(node.kind, node.state) && (
@@ -120,7 +164,11 @@ function TreeNode({
   if (node.children.length === 0) {
     return (
       <li>
-        {link} {extras}
+        <div className="vault-row">
+          <span className="vault-twist" aria-hidden="true" />
+          {link}
+          {extras}
+        </div>
       </li>
     )
   }
@@ -128,6 +176,7 @@ function TreeNode({
     <li>
       <details open={isOpen}>
         <summary
+          className="vault-row"
           onClick={(e) => {
             // The link inside the summary navigates; anywhere else toggles.
             if ((e.target as HTMLElement).closest('a')) return
@@ -135,26 +184,21 @@ function TreeNode({
             toggle(node.key)
           }}
         >
-          {node.kind === 'group' ? (
-            <span>{text}</span>
-          ) : (
-            <>
-              <button
-                type="button"
-                className="vault-twist"
-                aria-expanded={isOpen}
-                aria-label={`${isOpen ? t.vault.collapse : t.vault.expand} ${node.id}`}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  e.preventDefault()
-                  toggle(node.key)
-                }}
-              >
-                {isOpen ? '▾' : '▸'}
-              </button>
-              {link} {extras}
-            </>
-          )}
+          <button
+            type="button"
+            className="vault-twist"
+            aria-expanded={isOpen}
+            aria-label={`${isOpen ? t.vault.collapse : t.vault.expand} ${node.id}`}
+            onClick={(e) => {
+              e.stopPropagation()
+              e.preventDefault()
+              toggle(node.key)
+            }}
+          >
+            <Chevron />
+          </button>
+          {link}
+          {extras}
         </summary>
         {isOpen && (
           <ul>
@@ -290,19 +334,21 @@ export default function Vault({ hash }: { hash: string }) {
             docRef.current?.scrollIntoView({ block: 'start' })
         }}
       >
-        <input
-          type="search"
-          aria-label={t.vault.filterLabel}
-          placeholder={t.vault.filterPlaceholder}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-        <label className="vault-history">
-          <input type="checkbox" checked={history} onChange={(e) => setHistory(e.target.checked)} />
-          {t.vault.showHistory}
-        </label>
+        <div className="vault-tree-head">
+          <input
+            type="search"
+            aria-label={t.vault.filterLabel}
+            placeholder={t.vault.filterPlaceholder}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          <label className="vault-history">
+            <input type="checkbox" checked={history} onChange={(e) => setHistory(e.target.checked)} />
+            {t.vault.showHistory}
+          </label>
+        </div>
         {query && shown.length === 0 ? (
-          <p className="status">
+          <p className="vault-status">
             {t.vault.noMatches} <a href={`#/search/${encodeURIComponent(query.trim())}`}>{t.vault.searchAll}</a>
           </p>
         ) : (
@@ -315,11 +361,14 @@ export default function Vault({ hash }: { hash: string }) {
       </nav>
       <article className="vault-doc" ref={docRef}>
         {!sel.id ? (
-          <p className="status">{t.vault.empty}</p>
+          <div className="vault-empty">
+            <h1>{t.nav.vault}</h1>
+            <p>{t.vault.empty}</p>
+          </div>
         ) : docLoad.error !== null && !isEditing ? (
           <Notice message={t.vault.docLoadError(docLoad.error)} onRetry={docLoad.retry} busy={docLoad.retrying} />
         ) : !viewed ? (
-          <p className="status">{t.vault.loading}</p>
+          <p className="vault-status">{t.vault.loading}</p>
         ) : (
           <>
             <header className="vault-doc-header">
