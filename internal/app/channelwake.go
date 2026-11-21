@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -38,6 +39,9 @@ const (
 	WakeNoRegistry        = "no_registry"        // Claude Code's session registry has no usable entry: ended, or no cross-session messaging
 	WakeSocketMissing     = "socket_missing"     // ENOENT
 	WakeConnectionRefused = "connection_refused" // ECONNREFUSED
+	WakeUntrustedSocket   = "untrusted_socket"   // not a socket of this user's, in a directory of this user's
+	WakeCooldown          = "cooldown"           // woken less than wakeCooldown ago (criterion 9)
+	WakeCap               = "cap"                // the post already woke wakeCap sessions (criterion 9)
 	WakeWriteFailed       = "write_failed"
 )
 
@@ -46,32 +50,135 @@ const (
 // is available, which cerne cannot tell.
 var wakeModes = []string{"default", "acceptEdits", "auto", "dontAsk"}
 
-// wakeTimeout bounds the connect and the write: the channel lock is held
-// meanwhile, and a hook waiting on it gives up after 300 ms (fail-open).
-var wakeTimeout = 500 * time.Millisecond
+// Criterion 9: two agents citing each other must not ping-pong turns, and one
+// post must not open a turn in every session. Vars so tests can lower them.
+var (
+	wakeCooldown = 2 * time.Minute // a session gets at most one wake attempt per window
+	wakeCap      = 5               // sessions one post may wake
+)
+
+// wakeBudget is the one deadline every write of a post shares: the writes run
+// outside the channel lock, so a hung peer delays only the post.
+var wakeBudget = time.Second
+
+// wakeWrite writes to an inbox; tests stand in a slow or hung peer.
+var wakeWrite = writeInbox
 
 // wakeSender names the channel in the envelope: the model sees who wrote, and
 // the terminal shows a one-line notice instead of the whole text (N-0139).
 const wakeSender = "cerne channel"
 
+// wakeClaim is one wake decided under the lock and written after it.
+type wakeClaim struct {
+	sess, work, socket, text string
+	seqs                     []int
+}
+
 // ChannelWakeIdle wakes the idle sessions message m is addressed to (criteria
-// 1, 2, 4 and 6). Each one gets ChannelWake's text — what is addressed to it,
-// unanswered and never shown, in F-0490's report form — and the write is a
-// delivery; a session that cannot be woken gets a reason row instead. It never
-// fails a post: every error is a reason.
+// 1, 2, 4, 6 and 9). In three steps, so the channel lock is never held across
+// a socket: under the lock each session's text — what is addressed to it,
+// unanswered, never shown and never claimed, in F-0490's report form — is
+// rendered and claimed (a concurrent post leaves a claimed seq alone); then
+// every write runs at once under one deadline; then the write is recorded as
+// a delivery, or its failure as a reason row. A session that cannot be woken
+// gets a reason row for m alone. It never fails a post.
 func ChannelWakeIdle(cacheDir, repoDir string, m room.Message, now time.Time) {
+	ch := channelOf(cacheDir)
+	var claims []wakeClaim
 	for _, sess := range wakeTargets(cacheDir, repoDir, m) {
+		id, _ := sessionWork(cacheDir, repoDir, sess)
 		socket, reason := wakeRoute(cacheDir, sess)
 		if socket == "" && reason == "" {
 			continue // busy: it hears the channel at its next tool call or its Stop
 		}
-		_, _ = channelInject(cacheDir, repoDir, sess, injectOpts{consume: true, mode: injWake, deliver: func(text string) string {
-			if reason != "" {
-				return reason
+		if reason == "" {
+			var c *wakeClaim
+			c, reason = claimWake(ch, repoDir, sess, id, m, len(claims), now)
+			if c != nil {
+				c.socket = socket
+				claims = append(claims, *c)
+				continue
 			}
-			return writeReason(writeInbox(socket, sess, text))
-		}}, now)
+		}
+		if reason != "" {
+			recordUnwoken(ch, sess, id.Work, m.Seq, reason, now)
+		}
 	}
+	deadline := time.Now().Add(wakeBudget)
+	errs := make([]error, len(claims))
+	var wg sync.WaitGroup
+	for i, c := range claims {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs[i] = wakeWrite(deadline, c.socket, c.sess, c.text)
+		}()
+	}
+	wg.Wait()
+	for i, c := range claims {
+		if why := writeReason(errs[i]); why != "" {
+			recordUnwoken(ch, c.sess, c.work, m.Seq, why, now)
+			continue
+		}
+		_ = ch.Update(func([]room.Message, []room.Delivery) (*room.Delivery, error) {
+			return &room.Delivery{Session: c.sess, Work: c.work, Seqs: c.seqs, At: now}, nil
+		})
+	}
+}
+
+// claimWake renders and claims, under the channel lock, the wake of session
+// sess for m: nil and "" when m is no longer due to it (shown, answered,
+// claimed), nil and a reason when the cooldown or the post's cap stops it.
+func claimWake(ch room.Channel, repoDir, sess string, id channelIdentity, m room.Message, claimed int, now time.Time) (*wakeClaim, string) {
+	var c *wakeClaim
+	var why string
+	_ = ch.Update(func(msgs []room.Message, dels []room.Delivery) (*room.Delivery, error) {
+		cs := channelState{msgs: msgs, dels: dels}
+		pending, _ := cs.pending(liveMessages(repoDir, msgs, now), sess, id)
+		pending = slices.DeleteFunc(pending, func(it injItem) bool { return !it.directed || it.shown || cs.claimed(sess, it.m.Seq) })
+		if !slices.ContainsFunc(pending, func(it injItem) bool { return it.m.Seq == m.Seq }) {
+			return nil, nil
+		}
+		switch {
+		case cs.claimedSince(sess, now.Add(-wakeCooldown)):
+			why = WakeCooldown
+			return nil, nil
+		case claimed >= wakeCap:
+			why = WakeCap
+			return nil, nil
+		}
+		text, inline := renderInjection(pending, "cerne channel:\n")
+		seqs := make([]int, len(inline))
+		for i, im := range inline {
+			seqs[i] = im.Seq
+		}
+		if !slices.Contains(seqs, m.Seq) {
+			return nil, nil // m did not fit inline: it waits for a contact point
+		}
+		c = &wakeClaim{sess: sess, work: id.Work, text: text, seqs: seqs}
+		return &room.Delivery{Session: sess, Work: id.Work, Waking: seqs, At: now}, nil
+	})
+	return c, why
+}
+
+// recordUnwoken records that session sess was not woken for seq, and why.
+func recordUnwoken(ch room.Channel, sess, work string, seq int, why string, now time.Time) {
+	_ = ch.Update(func([]room.Message, []room.Delivery) (*room.Delivery, error) {
+		return &room.Delivery{Session: sess, Work: work, Unwoken: []int{seq}, Reason: why, At: now}, nil
+	})
+}
+
+// claimed reports whether a wake of session sess ever claimed seq: each
+// (session, seq) gets one wake attempt; a failed one waits for a contact point.
+func (cs channelState) claimed(sess string, seq int) bool {
+	return slices.ContainsFunc(cs.dels, func(d room.Delivery) bool { return d.Session == sess && slices.Contains(d.Waking, seq) })
+}
+
+// claimedSince reports a wake attempt on session sess after since.
+func (cs channelState) claimedSince(sess string, since time.Time) bool {
+	return slices.ContainsFunc(cs.dels, func(d room.Delivery) bool {
+		return d.Session == sess && len(d.Waking) > 0 && d.At.After(since)
+	})
 }
 
 // wakeTargets are the sessions m may wake (criterion 6): the sessions a card's
@@ -120,6 +227,9 @@ func wakeRoute(cacheDir, sess string) (socket, reason string) {
 	case !slices.Contains(wakeModes, mode.Mode):
 		return "", WakeUnknownMode
 	}
+	if why := socketTrust(reg.Socket); why != "" {
+		return "", why
+	}
 	return reg.Socket, ""
 }
 
@@ -131,11 +241,25 @@ type claudeSession struct {
 	Socket    string `json:"messagingSocketPath"`
 	Status    string `json:"status"`
 	UpdatedAt int64  `json:"updatedAt"`
+	pid       int
+	mtime     time.Time
+}
+
+// newerThan orders two entries of one session: newest updatedAt, then newest
+// file mtime, then highest pid — never the directory's order.
+func (s claudeSession) newerThan(o claudeSession) bool {
+	switch {
+	case s.UpdatedAt != o.UpdatedAt:
+		return s.UpdatedAt > o.UpdatedAt
+	case !s.mtime.Equal(o.mtime):
+		return s.mtime.After(o.mtime)
+	}
+	return s.pid > o.pid
 }
 
 // registryFileRe admits <pid>.json only: the <pid>.<hash>.key files beside the
 // entries are the sessions' credentials and are never opened.
-var registryFileRe = regexp.MustCompile(`^[0-9]+\.json$`)
+var registryFileRe = regexp.MustCompile(`^([0-9]+)\.json$`)
 
 // registeredSession is sess's newest entry in the registry of every Claude
 // Code config dir (CostRoots: $CLAUDE_CONFIG_DIR, ~/.config/claude, ~/.claude).
@@ -148,10 +272,12 @@ func registeredSession(sess string) (claudeSession, bool) {
 			continue
 		}
 		for _, e := range entries {
-			if e.IsDir() || !registryFileRe.MatchString(e.Name()) {
+			name := registryFileRe.FindStringSubmatch(e.Name())
+			if e.IsDir() || name == nil {
 				continue
 			}
-			raw, err := os.ReadFile(filepath.Join(root, "sessions", e.Name()))
+			path := filepath.Join(root, "sessions", e.Name())
+			raw, err := os.ReadFile(path)
 			if err != nil {
 				continue
 			}
@@ -159,7 +285,11 @@ func registeredSession(sess string) (claudeSession, bool) {
 			if json.Unmarshal(raw, &s) != nil || s.SessionID != sess {
 				continue
 			}
-			if !found || s.UpdatedAt > best.UpdatedAt {
+			s.pid, _ = strconv.Atoi(name[1])
+			if info, err := os.Stat(path); err == nil {
+				s.mtime = info.ModTime()
+			}
+			if !found || s.newerThan(best) {
 				best, found = s, true
 			}
 		}
@@ -181,19 +311,20 @@ type inboxMessage struct {
 	Content string `json:"content"`
 }
 
-// writeInbox writes text to the inbox at socket, for session sess. The inbox
-// never answers on the connection, so a nil error is the whole receipt.
-func writeInbox(socket, sess, text string) error {
+// writeInbox writes text to the inbox at socket, for session sess, by
+// deadline. The inbox never answers on the connection, so a nil error is the
+// whole receipt.
+func writeInbox(deadline time.Time, socket, sess, text string) error {
 	line, err := json.Marshal(inboxLine{Type: "user", SessionID: sess, Message: inboxMessage{Role: "user", Content: wakeEnvelope(text)}})
 	if err != nil {
 		return err
 	}
-	conn, err := net.DialTimeout("unix", socket, wakeTimeout)
+	conn, err := net.DialTimeout("unix", socket, time.Until(deadline))
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
-	if err := conn.SetWriteDeadline(time.Now().Add(wakeTimeout)); err != nil {
+	if err := conn.SetWriteDeadline(deadline); err != nil {
 		return err
 	}
 	_, err = conn.Write(append(line, '\n'))

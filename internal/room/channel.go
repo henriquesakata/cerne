@@ -51,7 +51,9 @@ var (
 // explicit acknowledgements instead (`cerne msg ack`). Unwoken (F-0491) says
 // the idle session was not woken for those seqs, and Reason why: it shows the
 // session nothing, so every other reader — this binary's and the release's
-// (N-0134) — passes over it.
+// (N-0134) — passes over it. Waking (F-0491) claims seqs for a wake of the
+// session under way: a concurrent post leaves them alone, and each (session,
+// seq) gets one attempt; it shows nothing either.
 type Delivery struct {
 	Session string    `json:"session"`
 	Work    string    `json:"work,omitempty"`
@@ -61,6 +63,7 @@ type Delivery struct {
 	Ack     []int     `json:"ack,omitempty"`
 	Unwoken []int     `json:"unwoken,omitempty"`
 	Reason  string    `json:"reason,omitempty"`
+	Waking  []int     `json:"waking,omitempty"`
 	At      time.Time `json:"at"`
 }
 
@@ -179,7 +182,8 @@ func (c Channel) Compact(keep func(Message) bool) error {
 			d.Seqs = slices.DeleteFunc(d.Seqs, func(seq int) bool { return !kept[seq] })
 			d.Ack = slices.DeleteFunc(d.Ack, func(seq int) bool { return !kept[seq] })
 			d.Unwoken = slices.DeleteFunc(d.Unwoken, func(seq int) bool { return !kept[seq] })
-			if len(d.Seqs) == 0 && len(d.Ack) == 0 && len(d.Unwoken) == 0 {
+			d.Waking = slices.DeleteFunc(d.Waking, func(seq int) bool { return !kept[seq] })
+			if len(d.Seqs) == 0 && len(d.Ack) == 0 && len(d.Unwoken) == 0 && len(d.Waking) == 0 {
 				continue
 			}
 			d.Through = 0 // carried by the session's mark row

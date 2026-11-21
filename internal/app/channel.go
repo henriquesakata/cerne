@@ -480,15 +480,50 @@ const (
 )
 
 // injectOpts is how a contact point meets the channel. consume=false is a peek
-// (subagents); mode decides what repeats there. deliver, when set, hands the
-// rendered text to the session another way (F-0491: its inbox socket) inside
-// the channel lock, before anything is recorded: "" records the delivery, a
-// reason records instead that the session was not reached, and why.
+// (subagents); mode decides what repeats there.
 type injectOpts struct {
 	consume bool
 	mode    int
 	skip    []int // shown by the prompt itself (F-0491 crit. 5)
-	deliver func(text string) (reason string)
+}
+
+// pending is what session sess, answering as id, has due on the live channel,
+// before any contact point's filter, and the highest live seq.
+func (cs channelState) pending(live []room.Message, sess string, id channelIdentity) (pending []injItem, through int) {
+	wm := cs.watermark(sess)
+	for _, m := range live {
+		through = max(through, m.Seq)
+		if m.Session == sess { // own message; another session of the work still gets it (critic C12)
+			continue
+		}
+		// F-0486: a card's thread is between the human and the sessions
+		// addressed — a reply to the page is nobody's background.
+		if len(m.To) > 0 {
+			if slices.Contains(m.To, sess) && !cs.answeredBySession(m, sess) {
+				pending = append(pending, injItem{m: m, group: groupHuman, directed: true, shown: cs.shownTo(m, sess)})
+			}
+			continue
+		}
+		if m.Ref != "" && !m.Human {
+			continue
+		}
+		// Addressed: pending until answered. Human: pending until shown
+		// inline to this session — never folded into the count line and
+		// consumed (critic C6). Background: once, by the watermark.
+		directed := directedTo(m, id) && !cs.answered(m, id.Work)
+		if !directed && (cs.shownTo(m, sess) || !m.Human && m.Seq <= wm) {
+			continue
+		}
+		group := groupBackground
+		switch {
+		case m.Human:
+			group = groupHuman
+		case directed:
+			group = groupDirected
+		}
+		pending = append(pending, injItem{m: m, group: group, directed: directed, shown: cs.shownTo(m, sess)})
+	}
+	return pending, through
 }
 
 func channelInject(cacheDir, repoDir, sess string, o injectOpts, now time.Time) (string, error) {
@@ -506,42 +541,7 @@ func channelInject(cacheDir, repoDir, sess string, o injectOpts, now time.Time) 
 	var out string
 	err = ch.Update(func(msgs []room.Message, dels []room.Delivery) (*room.Delivery, error) {
 		cs := channelState{msgs: msgs, dels: dels}
-		live := liveMessages(repoDir, msgs, now)
-		wm := cs.watermark(sess)
-		var pending []injItem
-		through := 0
-		for _, m := range live {
-			through = max(through, m.Seq)
-			if m.Session == sess { // own message; another session of the work still gets it (critic C12)
-				continue
-			}
-			// F-0486: a card's thread is between the human and the sessions
-			// addressed — a reply to the page is nobody's background.
-			if len(m.To) > 0 {
-				if slices.Contains(m.To, sess) && !cs.answeredBySession(m, sess) {
-					pending = append(pending, injItem{m: m, group: groupHuman, directed: true, shown: cs.shownTo(m, sess)})
-				}
-				continue
-			}
-			if m.Ref != "" && !m.Human {
-				continue
-			}
-			// Addressed: pending until answered. Human: pending until shown
-			// inline to this session — never folded into the count line and
-			// consumed (critic C6). Background: once, by the watermark.
-			directed := directedTo(m, id) && !cs.answered(m, id.Work)
-			if !directed && (cs.shownTo(m, sess) || !m.Human && m.Seq <= wm) {
-				continue
-			}
-			group := groupBackground
-			switch {
-			case m.Human:
-				group = groupHuman
-			case directed:
-				group = groupDirected
-			}
-			pending = append(pending, injItem{m: m, group: group, directed: directed, shown: cs.shownTo(m, sess)})
-		}
+		pending, through := cs.pending(liveMessages(repoDir, msgs, now), sess, id)
 		pending = slices.DeleteFunc(pending, func(it injItem) bool { return it.shown && slices.Contains(o.skip, it.m.Seq) })
 		switch mode {
 		case injWake:
@@ -560,12 +560,6 @@ func channelInject(cacheDir, repoDir, sess string, o injectOpts, now time.Time) 
 		}
 		if consume && mode != injWake {
 			d.Through = through
-		}
-		if o.deliver != nil {
-			if why := o.deliver(out); why != "" {
-				out = ""
-				return &room.Delivery{Session: sess, Work: id.Work, At: now, Unwoken: d.Seqs, Reason: why}, nil
-			}
 		}
 		return d, nil
 	})

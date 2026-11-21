@@ -103,9 +103,14 @@ func TestChannelPostWakes(t *testing.T) {
 	if rec := doJSON(t, h, http.MethodPost, "/api/rooms/channel/messages", `{"session_id":"sess-a","body":"W-0002 libera o rooms.go"}`, &map[string]any{}); rec.Code != http.StatusCreated {
 		t.Fatalf("agent post = %d %s", rec.Code, rec.Body.String())
 	}
+	// The second post lands inside the cooldown (criterion 9): it waits for
+	// sess-b's next contact point, and the target says so.
 	got := inbox.writes()
-	if len(got) != 2 || !strings.Contains(got[0], `"session_id":"sess-b"`) || !strings.Contains(got[0], "pode confirmar?") || !strings.Contains(got[1], "libera o rooms.go") {
-		t.Fatalf("inbox = %q, want one line per post for sess-b", got)
+	if len(got) != 1 || !strings.Contains(got[0], `"session_id":"sess-b"`) || !strings.Contains(got[0], "pode confirmar?") {
+		t.Fatalf("inbox = %q, want one wake for sess-b", got)
+	}
+	if reason := lastTargetReason(t, h, "W-0002"); reason != app.WakeCooldown {
+		t.Fatalf("second post's W-0002 reason = %q, want %s", reason, app.WakeCooldown)
 	}
 
 	// The socket is gone: the post still succeeds, and the target says why.
@@ -113,9 +118,17 @@ func TestChannelPostWakes(t *testing.T) {
 	if rec := doJSON(t, h, http.MethodPost, "/api/rooms/channel/messages", `{"body":"W-0002 e agora?"}`, &map[string]any{}); rec.Code != http.StatusCreated {
 		t.Fatalf("post with a dead inbox = %d %s, want 201", rec.Code, rec.Body.String())
 	}
+	if reason := lastTargetReason(t, h, "W-0002"); reason != app.WakeSocketMissing {
+		t.Fatalf("W-0002 reason = %q, want %s", reason, app.WakeSocketMissing)
+	}
+}
+
+// lastTargetReason is the served reason on work's target of the newest
+// channel message, "" when it is not a not-delivered target.
+func lastTargetReason(t *testing.T, h http.Handler, work string) string {
+	t.Helper()
 	var read struct {
 		Messages []struct {
-			Seq     int `json:"seq"`
 			Targets []struct {
 				Work   string `json:"work"`
 				State  string `json:"state"`
@@ -124,12 +137,12 @@ func TestChannelPostWakes(t *testing.T) {
 		} `json:"messages"`
 	}
 	doJSON(t, h, http.MethodGet, "/api/rooms/channel/messages", "", &read)
-	last := read.Messages[len(read.Messages)-1]
-	for _, tg := range last.Targets {
-		if tg.Work == "W-0002" && (tg.State != "not_delivered" || tg.Reason != app.WakeSocketMissing) {
-			t.Fatalf("W-0002 target = %+v, want not delivered with %s", tg, app.WakeSocketMissing)
+	for _, tg := range read.Messages[len(read.Messages)-1].Targets {
+		if tg.Work == work && tg.State == "not_delivered" {
+			return tg.Reason
 		}
 	}
+	return ""
 }
 
 // TestRoomSayRefusesCrossOrigin (F-0491 review, security high): a page of
