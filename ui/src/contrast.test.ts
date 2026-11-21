@@ -6,7 +6,10 @@ import { describe, expect, it } from 'vitest'
 const css = readFileSync('src/app.css', 'utf8')
 
 function block(selector: string): string {
-  const start = css.indexOf(`${selector} {`)
+  // The theme blocks open at the start of a line; a later rule that starts
+  // with the same selector (`[data-theme='dark'] .x {`) never matches.
+  const start = css.indexOf(`\n${selector} {`)
+  if (start < 0) throw new Error(`theme block ${selector} not found`)
   return css.slice(start, css.indexOf('\n}', start))
 }
 
