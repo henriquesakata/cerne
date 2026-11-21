@@ -3991,6 +3991,13 @@ details.backlinks-section > summary:focus-visible { outline: 2px solid var(--fg)
 .settings-datetime { padding: 1rem 0; border-bottom: 1px solid var(--border); }
 .settings-preview { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.75rem; margin: 0.75rem 0 0; font-size: 0.95rem; color: var(--fg); font-variant-numeric: tabular-nums; }
 .settings-preview-label { font-size: 0.85rem; color: var(--muted); }
+/* The closed select shows its chosen option: "Automático (do computador) —
+   <detected>" needs about 26rem not to clip the detected value. Only here, and
+   only when the page is wide enough for two columns. */
+@container (min-width: 40rem) {
+  .settings-datetime .settings-row { grid-template-columns: minmax(0, 1fr) minmax(12rem, 26rem); }
+  .settings-datetime .settings-select { max-width: 26rem; }
+}
 .settings-search {
   display: block;
   width: 100%;

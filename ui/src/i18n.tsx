@@ -1495,7 +1495,7 @@ const ptBR = {
     groups: {
       general: { title: 'Geral', description: 'Nome do projeto e identidade no canal.' },
       process: { title: 'Processo', description: 'Portões do ciclo de vida e regras do lint.' },
-      interface: { title: 'Interface', description: 'Abas e recursos que a UI mostra.' },
+      interface: { title: 'Interface', description: 'Abas e recursos que a UI mostra, e como ela mostra data e hora.' },
       integrations: { title: 'Integrações', description: 'Hooks e ligações com outras ferramentas.' },
       ai: { title: 'IA', description: 'O agente de IA e seus modos.' },
     },
@@ -3139,7 +3139,7 @@ const en: Messages = {
     groups: {
       general: { title: 'General', description: 'Project name and your identity in the channel.' },
       process: { title: 'Process', description: 'Lifecycle gates and lint rules.' },
-      interface: { title: 'Interface', description: 'Tabs and features the UI shows.' },
+      interface: { title: 'Interface', description: 'Tabs and features the UI shows, and how it shows date and time.' },
       integrations: { title: 'Integrations', description: 'Hooks and links to other tools.' },
       ai: { title: 'AI', description: 'The AI agent and its modes.' },
     },
