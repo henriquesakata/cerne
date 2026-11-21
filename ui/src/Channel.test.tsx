@@ -248,6 +248,7 @@ describe('Channel (F-0325)', () => {
     fireEvent.keyDown(box, { key: 'Enter' })
     await waitFor(() => expect(postChannel).toHaveBeenCalledWith('oi'))
     expect(screen.getByRole('button', { name: /enviar/i }).closest('.backlog-chat-composer')).not.toBeNull()
+    expect(screen.getByText('Enter envia · Shift+Enter quebra linha')).toHaveClass('room-composer-hint')
   })
 })
 

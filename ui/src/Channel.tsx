@@ -146,6 +146,7 @@ export default function Channel() {
                 <span aria-hidden="true">↵</span>
               </button>
             </div>
+            <p className="room-composer-hint">{t.channel.composerHint}</p>
           </form>
         </section>
       )}
