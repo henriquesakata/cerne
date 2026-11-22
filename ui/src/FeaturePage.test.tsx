@@ -755,12 +755,14 @@ describe('FeaturePage — falha de carga (F-0300)', () => {
     vi.mocked(fetchFeature).mockRejectedValueOnce(new Error('HTTP 502'))
     live.version = 1
     rerender(<FeaturePage id="F-0221" />)
-    const notice = await screen.findByRole('status')
-    expect(notice).toHaveTextContent('Não foi possível atualizar: HTTP 502')
+    // The actions card keeps its own (empty) status region since F-0498, so
+    // the load notice is found by its text, then checked as a status region.
+    const notice = await screen.findByText(/Não foi possível atualizar: HTTP 502/)
+    expect(notice.closest('[role="status"]')).not.toBeNull()
     expect(screen.getByText('Feature de teste')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
-    await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
+    await waitFor(() => expect(screen.queryByText(/Não foi possível atualizar/)).toBeNull())
     expect(screen.getByText('Feature de teste')).toBeInTheDocument()
   })
 
@@ -835,7 +837,7 @@ describe('FeaturePage — pendências desta entrega (F-0334)', () => {
 describe('FeaturePage doc authors (F-0375)', () => {
   it('mostra primeiro autor e última alteração por documento', async () => {
     payload = {
-      ...detail('in_development'),
+      ...detail('approved'),
       docs: { spec: '# Spec\n\nCorpo.', plan: '# Plano\n\nCorpo.', result: '# Resultado\n\nCorpo.' },
       docs_real: { spec: true, plan: true, result: true },
       writes: [
@@ -1087,5 +1089,141 @@ describe('FeaturePage reference row (F-0497)', () => {
     const row = container.querySelector('.feature-refs') as HTMLElement
     expect(row).toContainElement(panel)
     expect(row).toContainElement(container.querySelector('details.agents') as HTMLElement)
+  })
+})
+
+// F-0498: the final gates confirm, the page opens on the evidence, and what
+// the person wrote is never dropped in silence.
+describe('FeaturePage gate safety (F-0498)', () => {
+  const withDocs = (state: FeatureState, real: Partial<Record<'spec' | 'plan' | 'result', boolean>>): FeatureDetail => ({
+    ...detail(state),
+    docs: { spec: 'Corpo da spec.', plan: 'Corpo do plano.', result: 'Corpo do result.' },
+    docs_real: { spec: false, plan: false, result: false, ...real },
+  })
+
+  // F-0498 crit. 1
+  it.each([
+    ['implemented', 'Aceitar', 'Confirmar aceite (final)'],
+    ['in_development', 'Concluir', 'Confirmar conclusão'],
+  ] as [FeatureState, string, string][])('%s: %s só envia na confirmação, e Cancelar volta', async (state, label, confirm) => {
+    payload = detail(state)
+    render(<FeaturePage id="F-0221" />)
+    fireEvent.click(await screen.findByRole('button', { name: label }))
+    expect(postTransition).not.toHaveBeenCalled()
+    // One filled control at a time: the confirmation, not its opener.
+    expect(screen.getByRole('button', { name: label })).not.toHaveClass('queue-btn-primary')
+    expect(screen.getByRole('button', { name: confirm })).toHaveClass('queue-btn-primary')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+    expect(screen.queryByRole('button', { name: confirm })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: label }))
+    fireEvent.click(screen.getByRole('button', { name: confirm }))
+    await waitFor(() => expect(postTransition).toHaveBeenCalledTimes(1))
+  })
+
+  // F-0498 crit. 2
+  it.each([
+    ['candidate', { spec: true }, 'Spec'],
+    ['approved', { spec: true, plan: true }, 'Spec'],
+    ['in_development', { spec: true, plan: true }, 'Plano'],
+    ['implemented', { spec: true, plan: true, result: true }, 'Resultado'],
+    ['done', { spec: true, plan: true, result: true }, 'Resultado'],
+    ['implemented', { spec: true, plan: true }, 'Spec'],
+  ] as [FeatureState, Partial<Record<'spec' | 'plan' | 'result', boolean>>, string][])(
+    '%s abre na aba do estágio (%o → %s)',
+    async (state, real, tab) => {
+      payload = withDocs(state, real)
+      const { container } = render(<FeaturePage id="F-0221" />)
+      await screen.findByText('Feature de teste')
+      expect(container.querySelector('.tab.active')).toHaveTextContent(tab)
+    },
+  )
+
+  // F-0498 crit. 3
+  it('durante a transição o botão clicado diz que está trabalhando', async () => {
+    payload = detail('approved')
+    vi.mocked(postTransition).mockImplementationOnce(() => new Promise(() => {}))
+    render(<FeaturePage id="F-0221" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Iniciar' }))
+    expect(await screen.findByRole('button', { name: 'Iniciando…' })).toBeDisabled()
+  })
+
+  // F-0498 crit. 4
+  it('o aviso do resultado aparece no card Ações, numa região de status', async () => {
+    payload = detail('approved')
+    const { container } = render(<FeaturePage id="F-0221" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Iniciar' }))
+    const status = await waitFor(() => {
+      const el = container.querySelector('.actions [role="status"]')
+      expect(el).toHaveTextContent('Aprovada → Candidata')
+      return el
+    })
+    expect(status).not.toBeNull()
+    expect(container.querySelector('.feature-header .notice')).toBeNull()
+  })
+
+  // F-0498 crit. 5
+  it('conteúdo novo durante a edição mantém o rascunho e avisa; descartar carrega a versão nova', async () => {
+    payload = withDocs('approved', { spec: true })
+    const { rerender } = render(<FeaturePage id="F-0221" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar' }))
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'meu rascunho' } })
+    payload = { ...withDocs('approved', { spec: true }), docs: { spec: 'Versão nova do agente.', plan: '', result: '' } }
+    live.version = 1
+    rerender(<FeaturePage id="F-0221" />)
+    expect(await screen.findByText(/o documento mudou enquanto você editava/i)).toBeInTheDocument()
+    expect(screen.getByRole('textbox')).toHaveValue('meu rascunho')
+    fireEvent.click(screen.getByRole('button', { name: /descartar o rascunho/i }))
+    expect(await screen.findByText('Versão nova do agente.')).toBeInTheDocument()
+  })
+
+  // F-0498 crit. 6
+  it('trocar de aba guarda o rascunho e volta em edição', async () => {
+    payload = withDocs('approved', { spec: true, plan: true })
+    render(<FeaturePage id="F-0221" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar' }))
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'rascunho da spec' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Plano' }))
+    expect(await screen.findByText('Corpo do plano.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Spec' }))
+    expect(screen.getByRole('textbox')).toHaveValue('rascunho da spec')
+  })
+
+  // F-0498 crit. 1, 3: the confirm button itself says it is working; a refused
+  // final gate asks both clicks again.
+  it('na confirmação: rótulo de espera no botão de confirmar, e uma recusa fecha a confirmação', async () => {
+    payload = detail('implemented')
+    let finish: (v: Awaited<ReturnType<typeof postTransition>>) => void = () => {}
+    vi.mocked(postTransition).mockImplementationOnce(() => new Promise((r) => (finish = r)))
+    render(<FeaturePage id="F-0221" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Aceitar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar aceite (final)' }))
+    expect(await screen.findByRole('button', { name: 'Aceitando…' })).toBeDisabled()
+    finish({ ok: false, error: 'recusado pelo gate' })
+    expect(await screen.findByText('recusado pelo gate')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Confirmar aceite (final)' })).toBeNull()
+  })
+
+  // F-0498 crit. 2, 6: an open draft pins its tab against a live state change,
+  // and another feature starts clean.
+  it('um rascunho aberto prende a aba quando o estado muda, e outra feature começa limpa', async () => {
+    payload = withDocs('in_development', { spec: true, plan: true })
+    const { rerender } = render(<FeaturePage id="F-0221" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar' }))
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'rascunho do plano' } })
+    payload = { ...withDocs('implemented', { spec: true, plan: true, result: true }), docs: { spec: 'Corpo da spec.', plan: 'Corpo do plano.', result: 'Corpo do result.' } }
+    live.version = 1
+    rerender(<FeaturePage id="F-0221" />)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Aceitar' })).toBeInTheDocument())
+    expect(screen.getByRole('textbox')).toHaveValue('rascunho do plano')
+    rerender(<FeaturePage id="F-0222" />)
+    await waitFor(() => expect(screen.queryByRole('textbox')).toBeNull())
+  })
+
+  // F-0498 crit. 7
+  it.each(['implemented', 'done', 'rejected', 'superseded'] as FeatureState[])('%s: sem lápis no título', async (state) => {
+    payload = detail(state)
+    render(<FeaturePage id="F-0221" />)
+    await screen.findByText('Feature de teste')
+    expect(screen.queryByRole('button', { name: 'Editar título' })).toBeNull()
   })
 })
