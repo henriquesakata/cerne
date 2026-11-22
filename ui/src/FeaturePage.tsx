@@ -340,9 +340,13 @@ export default function FeaturePage({ id }: { id: string }) {
         ))}
       </header>
       <ErrataSection content={detail.errata} />
-      <Backlinks id={id} />
-      <DeliveryPendings id={id} />
-      <FeatureAgents id={id} />
+      {/* F-0497: the reference panels share one row while collapsed; an open
+          one takes the whole width below the others. */}
+      <div className="feature-refs">
+        <Backlinks id={id} exclude={detail.informed_by.map((r) => r.id)} />
+        <DeliveryPendings id={id} />
+        <FeatureAgents id={id} />
+      </div>
       {diagram ? (
         <Suspense fallback={<p className="status">{t.common.loading}</p>}>
           <MermaidView
@@ -375,6 +379,7 @@ export default function FeaturePage({ id }: { id: string }) {
             </nav>
             <DocEditor
               featureId={f.id}
+              title={f.title}
               doc={tab}
               content={detail.docs[tab]}
               hasRealContent={detail.docs_real[tab]}
@@ -455,8 +460,23 @@ export default function FeaturePage({ id }: { id: string }) {
 // saveFeatureDoc (o servidor commita+empurra) e recarrega a feature.
 // Marcadores [ESCLARECER] do doc viram chips respondíveis (F-0175): a
 // resposta reescreve só aquele marcador e salva pelo mesmo caminho.
+// stripRepeatedTitle (F-0497) drops a leading level-1 heading that repeats the
+// feature's title (ignoring case and spacing): the page's own h1 already says
+// it. cut is how many characters went, so a clarification marker's offset in
+// the rendered text maps back to the stored document.
+function stripRepeatedTitle(content: string, title: string): { body: string; cut: number } {
+  // A stored doc opens with its cerne_id frontmatter; the heading follows it.
+  const fm = /^---\r?\n[\s\S]*?\r?\n---[ \t]*\r?\n/.exec(content)?.[0] ?? ''
+  const m = /^\s*#[ \t]+(.+?)[ \t]*(?:\r?\n|$)/.exec(content.slice(fm.length))
+  const norm = (x: string) => x.toLowerCase().replace(/\s+/g, ' ').trim()
+  if (!m || norm(m[1]) !== norm(title)) return { body: content, cut: 0 }
+  // Markers never sit in the frontmatter, so every offset shifts by the cut.
+  return { body: fm + content.slice(fm.length + m[0].length), cut: m[0].length }
+}
+
 function DocEditor({
   featureId,
+  title,
   doc,
   content,
   hasRealContent,
@@ -464,6 +484,7 @@ function DocEditor({
   onSaved,
 }: {
   featureId: string
+  title: string
   doc: DocTab
   content: string
   hasRealContent: boolean
@@ -524,6 +545,7 @@ function DocEditor({
   // offset e salva o doc inteiro pelo caminho existente. resolveMarker
   // devolve null quando o conteúdo mudou sob os pés — recarrega em vez de
   // salvar por cima.
+  const shown = stripRepeatedTitle(content, title)
   const answerClarification = (raw: string, offset: number, answer: string) => {
     const next = resolveMarker(content, raw, offset, answer)
     if (next === null) {
@@ -576,10 +598,10 @@ function DocEditor({
       {hasRealContent ? (
         <article className="doc">
           <Markdown
-            onAnswer={saving ? undefined : answerClarification}
-            onCorrect={saving ? undefined : correctClarification}
+            onAnswer={saving ? undefined : (raw, off, a) => answerClarification(raw, off + shown.cut, a)}
+            onCorrect={saving ? undefined : (raw, off, a) => correctClarification(raw, off + shown.cut, a)}
           >
-            {content}
+            {shown.body}
           </Markdown>
         </article>
       ) : (

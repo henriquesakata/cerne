@@ -13,6 +13,7 @@ import {
   postTransition,
   roastPlan,
   roastSpec,
+  saveFeatureDoc,
 } from './api'
 
 const detail = (state: FeatureState): FeatureDetail => ({
@@ -46,6 +47,7 @@ vi.mock('./api', async (importOriginal) => ({
   fetchLLMMode: vi.fn(async () => llmMode),
   fetchPendings: vi.fn(async () => pendings),
   fetchFeatureAgents: vi.fn(async () => ({ sessions: [] })),
+  saveFeatureDoc: vi.fn(async () => ({ ok: true as const })),
   generateDiagram: vi.fn(async () => ({ ok: false as const, error: 'boom' })),
   postTransition: vi.fn(async () => ({
     ok: true as const,
@@ -799,7 +801,7 @@ describe('FeaturePage — pendências desta entrega (F-0334)', () => {
     pendings = [pending('P-0007', 'Cobrir caso X')]
     render(<FeaturePage id="F-0221" />)
     const heading = await screen.findByRole('heading', { name: 'Pendências desta entrega' })
-    const section = heading.closest('section')!
+    const section = (heading.closest('.backlinks-section') as HTMLElement)
     expect(section).toHaveTextContent('P-0007')
     expect(section).toHaveTextContent('Cobrir caso X')
     expect(screen.getByRole('link', { name: 'Ver na tela de pendências' })).toHaveAttribute('href', '#/pendings?from=F-0221')
@@ -823,7 +825,7 @@ describe('FeaturePage — pendências desta entrega (F-0334)', () => {
     live.version = 1
     rerender(<FeaturePage id="F-0221" />)
     const heading = await screen.findByRole('heading', { name: 'Pendências desta entrega' })
-    expect(heading.closest('section')).toHaveTextContent('P-0008')
+    expect(heading.closest('.backlinks-section')).toHaveTextContent('P-0008')
   })
 })
 
@@ -1024,5 +1026,66 @@ describe('FeaturePage meta row (F-0496)', () => {
     const meta = container.querySelector('.feature-meta') as HTMLElement
     expect(meta.firstElementChild).toHaveClass('chip', 'chip-approved')
     expect(meta.firstElementChild).toHaveClass('feature-state')
+  })
+})
+
+// F-0497 crit. 3: the document's own title repeats the page's h1, so it goes.
+describe('FeaturePage repeated document title (F-0497)', () => {
+  it('não renderiza o # título igual ao da feature, e mantém um título diferente', async () => {
+    payload = {
+      ...detail('approved'),
+      docs: { spec: '---\ncerne_id: F-0221\n---\n\n# Feature  de TESTE\n\nCorpo da spec.', plan: '', result: '' },
+      docs_real: { spec: true, plan: false, result: false },
+    }
+    const { container } = render(<FeaturePage id="F-0221" />)
+    expect(await screen.findByText('Corpo da spec.')).toBeInTheDocument()
+    expect(container.querySelector('.doc h1')).toBeNull()
+    cleanup()
+    payload = {
+      ...detail('approved'),
+      docs: { spec: '# Outro título\n\nCorpo.', plan: '', result: '' },
+      docs_real: { spec: true, plan: false, result: false },
+    }
+    const second = render(<FeaturePage id="F-0221" />)
+    expect(await screen.findByText('Corpo.')).toBeInTheDocument()
+    expect(second.container.querySelector('.doc h1')).toHaveTextContent('Outro título')
+  })
+})
+
+// F-0497 crit. 3: cutting the repeated title must not move a clarification:
+// the answer lands on the stored marker, frontmatter and title intact.
+describe('FeaturePage answer after the cut title (F-0497)', () => {
+  it.each([
+    ['LF', '\n'],
+    ['CRLF', '\r\n'],
+  ])('%s: a resposta resolve o marcador no documento guardado', async (_, nl) => {
+    const spec = ['---', 'cerne_id: F-0221', '---', '', '# Feature de teste', '', 'Texto [ESCLARECER: qual formato?] fim.', ''].join(nl)
+    payload = { ...detail('approved'), docs: { spec, plan: '', result: '' }, docs_real: { spec: true, plan: false, result: false } }
+    vi.mocked(saveFeatureDoc).mockClear()
+    render(<FeaturePage id="F-0221" />)
+    fireEvent.click(await screen.findByRole('button', { name: /qual formato\?/ }))
+    fireEvent.change(screen.getByPlaceholderText('Escreva a resposta…'), { target: { value: 'tabela' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Responder' }))
+    await waitFor(() => expect(saveFeatureDoc).toHaveBeenCalled())
+    const saved = vi.mocked(saveFeatureDoc).mock.calls[0][2]
+    expect(saved).toBe(spec.replace('[ESCLARECER: qual formato?]', '[ESCLARECIDO: qual formato? → tabela]'))
+  })
+})
+
+// F-0497 crit. 5, 6: the delivery's pendings collapse like Backlinks, and the
+// collapsed reference panels share one row.
+describe('FeaturePage reference row (F-0497)', () => {
+  it('pendências abrem recolhidas com a contagem, e os painéis ficam na mesma linha', async () => {
+    payload = detail('implemented')
+    const p = (id: string, title: string): Pending => ({ id, title, from: 'F-0221', state: 'open' }) as Pending
+    pendings = [p('P-0007', 'Cobrir caso X'), p('P-0009', 'Outro')]
+    const { container } = render(<FeaturePage id="F-0221" />)
+    const heading = await screen.findByRole('heading', { name: 'Pendências desta entrega' })
+    const panel = heading.closest('details') as HTMLDetailsElement
+    expect(panel.open).toBe(false)
+    expect(panel.querySelector('summary')).toHaveTextContent('2')
+    const row = container.querySelector('.feature-refs') as HTMLElement
+    expect(row).toContainElement(panel)
+    expect(row).toContainElement(container.querySelector('details.agents') as HTMLElement)
   })
 })

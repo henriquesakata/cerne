@@ -445,7 +445,7 @@ export default function Vault({ hash }: { hash: string }) {
               </ul>
             </nav>
           )}
-          {doc.kind !== 'wiki' && <Backlinks id={doc.id} href={backlinkHref} />}
+          {doc.kind !== 'wiki' && <Backlinks id={doc.id} href={backlinkHref} collapsible={false} />}
         </aside>
       )}
     </main>
