@@ -2941,6 +2941,17 @@ details.backlinks-section > summary .backlinks-title { margin: 0; }
   color: var(--fg);
 }
 
+/* Phone width (B-0069): the bar does not fit one row. Without wrapping, the
+   links (min-width: 0) shrank to a single column and the row ran past the
+   viewport, so "Knowledge" sat on the project label. Wrap instead: the mark,
+   the links on a full row of their own, then the project and the controls.
+   Same 720px as the rest of the app; wider screens keep the single row. */
+@media (max-width: 720px) {
+  .nav { flex-wrap: wrap; gap: 0.5rem 1rem; }
+  .nav-links { flex-basis: 100%; }
+  .nav-project-wrap { margin-left: 0; }
+}
+
 /* ---- páginas de leitura (decisions, references, search, lint, history) ---- */
 
 /* mesma armadilha do .feature: sem width/box-sizing a página encolhe para o

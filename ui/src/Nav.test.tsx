@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
+import { readFileSync } from 'node:fs'
 import Nav from './Nav'
 import { I18nProvider } from './i18n'
 import type { ProjectInfo } from './api'
@@ -377,5 +378,33 @@ describe('Mark in the wordmark (F-0462)', () => {
     expect(brand!.firstElementChild).toBe(mark)
     // The text right after the mark is the name itself; the version tag is a separate element.
     expect((mark!.nextSibling?.textContent ?? '').trim()).toBe('cerne')
+  })
+})
+
+// B-0069: at 375 px the bar overlapped itself. .nav is one flex row that never
+// wrapped and .nav-links (min-width: 0) shrank to a single column, so the row
+// ran past the viewport and "Knowledge ▾" landed on the project label. jsdom
+// does no layout, so this pins the cause in the stylesheet: inside the phone
+// breakpoint (720px, the one the rest of the app uses) the bar wraps and the
+// links take a row of their own. The overlap itself was measured in the browser.
+describe('Header at phone width (B-0069)', () => {
+  const css = readFileSync('src/app.css', 'utf8')
+  const phone = [...css.matchAll(/@media \(max-width: 720px\) \{((?:[^{}]*\{[^}]*\})*)[^{}]*\}/g)]
+    .map((m) => m[1])
+    .join('\n')
+  const decls = (selector: string, from: string) =>
+    [...from.matchAll(/([^{}]+)\{([^}]*)\}/g)]
+      .filter((m) => m[1].trim() === selector)
+      .map((m) => m[2])
+      .join(';')
+
+  it('wraps the bar and gives .nav-links its own row at 720px and below', () => {
+    expect(decls('.nav', phone)).toMatch(/flex-wrap:\s*wrap/)
+    expect(decls('.nav-links', phone)).toMatch(/flex-basis:\s*100%/)
+  })
+
+  it('leaves the bar a single row above 720px (768 and 1440 unchanged)', () => {
+    const outside = css.replace(/@media[^{]*\{(?:[^{}]*\{[^}]*\})*[^{}]*\}/g, '')
+    expect(decls('.nav', outside)).not.toMatch(/flex-wrap/)
   })
 })
