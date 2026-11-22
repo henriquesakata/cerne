@@ -2047,8 +2047,8 @@ export type ChannelState = 'not_delivered' | 'delivered' | 'answered'
 // and will never receive it; session: for a message from a card's page
 // (F-0486), the first 8 characters of the addressed session.
 // answered_at (F-0489): when the target first answered — reply or ack.
-// WAKE_REASONS espelha os códigos Wake* de internal/app/channelwake.go: por
-// que uma sessão parada não foi acordada (F-0491). O rótulo vive no i18n.
+// WAKE_REASONS mirrors the Wake* codes of internal/app/channelwake.go: why an
+// idle session was not woken (F-0491). The labels live in i18n.
 export const WAKE_REASONS = [
   'bypass',
   'unknown_mode',
@@ -2071,7 +2071,7 @@ export type ChannelTarget = {
   closed?: boolean
   session?: string
   answered_at?: string
-  // F-0491: enquanto não entregue, por que a sessão parada não foi acordada.
+  // F-0491: while not delivered, why the idle session was not woken.
   reason?: WakeReason
 }
 
