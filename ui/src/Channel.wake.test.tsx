@@ -117,3 +117,35 @@ describe('i18n — wake reasons (F-0491)', () => {
     }
   })
 })
+
+// F-0491 (review): the generic contact-point hint repeats what a reason says;
+// it shows only while some pending target has no reason.
+describe('ChannelLine — the generic hint (F-0491)', () => {
+  const hint = 'Ainda não recebida'
+  const render2 = (targets: ChannelTarget[]) => {
+    localStorage.setItem('cerne-lang', 'pt-BR')
+    render(
+      <I18nProvider>
+        <ChannelLine m={message(targets)} />
+      </I18nProvider>,
+    )
+  }
+
+  // F-0491 crit. 2
+  it('F-0491 crit. 2: every pending target with a reason — no generic hint', () => {
+    render2([
+      { work: 'W-0002', state: 'not_delivered', reason: 'bypass' },
+      { work: 'W-0003', state: 'not_delivered', reason: 'no_wake' },
+    ])
+    expect(screen.queryByText(new RegExp(hint))).not.toBeInTheDocument()
+  })
+
+  // F-0491 crit. 2
+  it('F-0491 crit. 2: one pending target with no reason — the generic hint stays', () => {
+    render2([
+      { work: 'W-0002', state: 'not_delivered', reason: 'bypass' },
+      { work: 'W-0003', state: 'not_delivered' },
+    ])
+    expect(screen.getByText(new RegExp(hint))).toBeInTheDocument()
+  })
+})

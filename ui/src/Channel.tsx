@@ -222,15 +222,17 @@ export function ChannelLine({
     if (tg.acked) return t.channel.targetAcked
     if (tg.state === 'answered') return t.channel.targetAnswered
     if (tg.state === 'delivered') return t.channel.targetDelivered
-    // F-0491: why an idle session was not woken; a code this build does not
-    // know reads as before.
-    const why = tg.reason && t.channel.wakeReason[tg.reason]
+    const why = wakeWhy(tg)
     return why ? `${t.channel.targetNotDelivered} — ${why}` : t.channel.targetNotDelivered
   }
+  // F-0491: why an idle session was not woken; a code this build does not
+  // know reads as before.
+  const wakeWhy = (tg: ChannelTarget) => tg.reason && t.channel.wakeReason[tg.reason]
   // B-0054: say why — a session hears the channel only at a contact point.
-  // A message whose every target closed will never arrive: no hint.
+  // A message whose every target closed will never arrive: no hint. Nor one
+  // whose every pending target already says why it was not woken (F-0491).
   const targets = m.targets ?? []
-  const pending = m.state === 'not_delivered' && !(targets.length > 0 && targets.every((tg) => tg.closed))
+  const pending = m.state === 'not_delivered' && (targets.length === 0 || targets.some((tg) => !tg.closed && !wakeWhy(tg)))
   return (
     <div className={`room-msg${m.human ? ' room-msg-own' : ''}`}>
       <p className="room-msg-head">
