@@ -800,3 +800,93 @@ func TestChannelBodyCannotCloseItsQuote(t *testing.T) {
 		t.Fatalf("missing a line:\n%s", out)
 	}
 }
+
+// wokenPrompt is what a woken turn's UserPromptSubmit gets (the probe of
+// 2026-11-21): exactly the content the last write to in carried.
+func wokenPrompt(t *testing.T, in *fakeInbox) string {
+	t.Helper()
+	got := in.writes()
+	if len(got) == 0 {
+		t.Fatal("the session was never woken")
+	}
+	l, _ := parseInbox(t, got[len(got)-1])
+	return l.Message.Content
+}
+
+// TestChannelWakeChainCut (F-0491 crit. 9, owner's call "corta a cadeia"): a
+// post made in a turn an agent's message opened wakes nobody — the target
+// carries chain and still gets the post at its next contact point. A turn the
+// human's message opened, and a normal turn, still wake.
+func TestChannelWakeChainCut(t *testing.T) {
+	f := newChanFixture(t)
+	_, register := fakeRegistry(t)
+	a, b := newFakeInbox(t), newFakeInbox(t)
+	register(90, "s1", a.path, "idle")
+	register(91, "s2", b.path, "idle")
+	f.mode("s1", "claude-code", "auto")
+	f.mode("s2", "claude-code", "auto")
+	prompt := func(sess, text string) {
+		t.Helper()
+		f.at = f.at.Add(time.Second)
+		if _, err := ChannelInjectPrompt(f.cacheDir, f.repoDir, sess, text, f.at); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// 1. A's message wakes B; B's reply citing A wakes nobody.
+	f.wake("W-0001", "W-0002 revisa o contrato?", false)
+	prompt("s2", wokenPrompt(t, b))
+	reply := f.wake("W-0002", "W-0001 revisado, ok", false)
+	if got := a.writes(); len(got) != 0 {
+		t.Fatalf("B's reply in an agent-woken turn woke A: %q", got)
+	}
+	msgs, _ := f.read("")
+	if tg := stateOf(t, msgs, reply).Targets; len(tg) != 1 || tg[0].Work != "W-0001" || tg[0].Reason != WakeChain {
+		t.Fatalf("reply targets = %+v, want W-0001 with %s", tg, WakeChain)
+	}
+	if out := f.inject("s1", true); !strings.Contains(out, "revisado, ok") {
+		t.Fatalf("A missed the reply at its next contact point: %q", out)
+	}
+
+	// 3. B's next normal turn wakes again.
+	prompt("s2", "e agora, mais alguma coisa?")
+	again := f.wake("W-0002", "W-0001 mais uma", false)
+	if got := a.writes(); len(got) != 1 || !strings.Contains(got[0], fmt.Sprintf("#%d ", again)) {
+		t.Fatalf("B's post in a normal turn did not wake A: %q", got)
+	}
+
+	// 2. The human's message wakes B; B's reply citing A wakes A.
+	g := newChanFixture(t)
+	_, register = fakeRegistry(t)
+	a, b = newFakeInbox(t), newFakeInbox(t)
+	register(92, "s1", a.path, "idle")
+	register(93, "s2", b.path, "idle")
+	g.mode("s1", "claude-code", "auto")
+	g.mode("s2", "claude-code", "auto")
+	g.wake("Henrique", "W-0002 pode avisar o W-0001?", true)
+	g.at = g.at.Add(time.Second)
+	if _, err := ChannelInjectPrompt(g.cacheDir, g.repoDir, "s2", wokenPrompt(t, b), g.at); err != nil {
+		t.Fatal(err)
+	}
+	g.wake("W-0002", "W-0001 o Henrique pediu para avisar", false)
+	if got := a.writes(); len(got) != 1 {
+		t.Fatalf("B's reply in a human-woken turn did not wake A: %q", got)
+	}
+}
+
+// TestChannelChainTurnClearsAtANormalTurn (F-0491 crit. 9): a chain state a
+// crash left behind never blocks wakes forever — the next turn start that no
+// agent's message opened clears it, even with nothing on the channel.
+func TestChannelChainTurnClearsAtANormalTurn(t *testing.T) {
+	cache, repo := t.TempDir(), t.TempDir()
+	markChainTurn(cache, "s2", true)
+	if !chainTurn(cache, "s2") {
+		t.Fatal("the chain state was not recorded")
+	}
+	if _, err := ChannelInjectPrompt(cache, repo, "s2", "bom dia", chanT0); err != nil {
+		t.Fatal(err)
+	}
+	if chainTurn(cache, "s2") {
+		t.Fatal("a normal turn start left the chain state behind")
+	}
+}

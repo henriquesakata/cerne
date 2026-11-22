@@ -82,7 +82,7 @@ func TestMsgSendWakes(t *testing.T) {
 	}
 }
 
-// TestHookPromptWokenTurn (F-0491 crit. 5): in the turn a wake opened, the
+// TestHookPromptWokenTurn (F-0491 crit. 5 and 9): in the turn a wake opened, the
 // UserPromptSubmit hook — whose prompt is the envelope written to the inbox —
 // does not repeat what woke the session, and the PreToolUse after it does not
 // either; the next prompt the human types shows it again (F-0490).
@@ -105,11 +105,19 @@ func TestHookPromptWokenTurn(t *testing.T) {
 	if err != nil || strings.Contains(out, "pode revisar o painel?") {
 		t.Fatalf("woken UserPromptSubmit repeated the message: %v %q", err, out)
 	}
+	// Crit. 9: an agent's message opened this turn, so the hook marks it.
+	chain := filepath.Join(cacheDir, "rooms", "channel", "chain-turn", "sess-b")
+	if _, err := os.Stat(chain); err != nil {
+		t.Fatalf("the agent-woken turn was not marked: %v", err)
+	}
 	tool := `{"session_id":"sess-b","cwd":"` + projDir + `","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"ls"}}`
 	if out, err := execCerneStdin(t, tool, "hook", "tool-notes"); err != nil || strings.Contains(out, "pode revisar o painel?") {
 		t.Fatalf("woken PreToolUse repeated the message: %v %q", err, out)
 	}
 	if out, _ := execCerneStdin(t, promptJSON(t, "sess-b", projDir, "e aí?"), "hook", "prompt-notes"); !strings.Contains(out, "pode revisar o painel?") {
 		t.Fatalf("the next typed prompt lost the unanswered message: %q", out)
+	}
+	if _, err := os.Stat(chain); !os.IsNotExist(err) {
+		t.Fatalf("a typed prompt left the chain mark: %v", err)
 	}
 }

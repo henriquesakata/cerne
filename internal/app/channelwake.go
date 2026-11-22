@@ -42,6 +42,7 @@ const (
 	WakeUntrustedSocket   = "untrusted_socket"   // not a socket of this user's, in a directory of this user's
 	WakeCooldown          = "cooldown"           // woken less than wakeCooldown ago (criterion 9)
 	WakeCap               = "cap"                // the post already woke wakeCap sessions (criterion 9)
+	WakeChain             = "chain"              // posted in a turn an agent's message opened: wakes nobody (criterion 9)
 	WakeWriteFailed       = "write_failed"
 )
 
@@ -84,12 +85,19 @@ type wakeClaim struct {
 // gets a reason row for m alone. It never fails a post.
 func ChannelWakeIdle(cacheDir, repoDir string, m room.Message, now time.Time) {
 	ch := channelOf(cacheDir)
+	// The owner's call (criterion 9, "corta a cadeia"): a post made in a
+	// turn an agent's message opened wakes nobody, so two agents citing each
+	// other cannot keep opening turns in each other.
+	chained := !m.Human && chainTurn(cacheDir, m.Session)
 	var claims []wakeClaim
 	for _, sess := range wakeTargets(cacheDir, repoDir, m) {
 		id, _ := sessionWork(cacheDir, repoDir, sess)
 		socket, reason := wakeRoute(cacheDir, sess)
 		if socket == "" && reason == "" {
 			continue // busy: it hears the channel at its next tool call or its Stop
+		}
+		if reason == "" && chained {
+			reason = WakeChain
 		}
 		if reason == "" {
 			var c *wakeClaim
@@ -345,6 +353,65 @@ func wakeEnvelope(text string) string {
 	text = envelopeTagRe.ReplaceAllString(strings.TrimRight(text, "\n"), "‹$1")
 	text = fromModeRe.ReplaceAllString(text, "from_mode")
 	return "<cross-session-message from-name=\"" + wakeSender + "\">\n" + text + "\n</cross-session-message>"
+}
+
+// chainTurnPath marks session sess as in a turn an agent's message opened;
+// beside stop-reminded/, outside sessions/ (N-0134).
+func chainTurnPath(cacheDir, sess string) string {
+	return filepath.Join(cacheDir, "rooms", room.ChannelID, "chain-turn", sess)
+}
+
+// markChainTurn records whether session sess's turn, starting now, was opened
+// by an agent's message; any other turn start clears it, so a state a crash
+// left behind lasts one turn at most.
+func markChainTurn(cacheDir, sess string, on bool) {
+	if safeSessionID(sess) != nil {
+		return
+	}
+	path := chainTurnPath(cacheDir, sess)
+	if !on {
+		_ = os.Remove(path)
+		return
+	}
+	if os.MkdirAll(filepath.Dir(path), 0o700) == nil {
+		_ = os.WriteFile(path, nil, 0o600)
+	}
+}
+
+// chainTurn reports whether session sess is in a turn an agent's message
+// opened.
+func chainTurn(cacheDir, sess string) bool {
+	if safeSessionID(sess) != nil {
+		return false
+	}
+	_, err := os.Stat(chainTurnPath(cacheDir, sess))
+	return err == nil
+}
+
+// agentWoke reports whether the turn whose prompt shows the seqs woke was
+// opened by an agent's message: the newest of them the channel delivered to
+// session sess — the post that woke it — is an agent's.
+func agentWoke(cacheDir, sess string, woke []int) bool {
+	if len(woke) == 0 {
+		return false
+	}
+	ch := channelOf(cacheDir)
+	msgs, err := ch.Messages()
+	if err != nil {
+		return false
+	}
+	dels, err := ch.Deliveries()
+	if err != nil {
+		return false
+	}
+	cs := channelState{msgs: msgs, dels: dels}
+	var newest *room.Message
+	for i, m := range msgs {
+		if slices.Contains(woke, m.Seq) && cs.shownTo(m, sess) && (newest == nil || m.Seq > newest.Seq) {
+			newest = &msgs[i]
+		}
+	}
+	return newest != nil && !newest.Human
 }
 
 // wokenRe finds the channel's envelope in a prompt — Claude Code may add

@@ -446,9 +446,12 @@ func ChannelInject(cacheDir, repoDir, sess string, consume bool, now time.Time) 
 // ChannelInjectPrompt is ChannelInject at a UserPromptSubmit (F-0491 crit. 5):
 // a turn opened by a wake has the written envelope as its prompt, so the seqs
 // it carries — those the channel recorded as shown to sess — are not repeated
-// there.
+// there. It also records whether an agent's message opened the turn, which
+// keeps the session's posts in it from waking anyone (crit. 9).
 func ChannelInjectPrompt(cacheDir, repoDir, sess, prompt string, now time.Time) (string, error) {
-	return channelInject(cacheDir, repoDir, sess, injectOpts{consume: true, mode: injTurn, skip: wokenSeqs(prompt)}, now)
+	woke := wokenSeqs(prompt)
+	markChainTurn(cacheDir, sess, agentWoke(cacheDir, sess, woke)) // criterion 9: the chain cut
+	return channelInject(cacheDir, repoDir, sess, injectOpts{consume: true, mode: injTurn, skip: woke}, now)
 }
 
 // ChannelInjectTool is ChannelInject at a tool contact point (F-0490):
