@@ -9,6 +9,125 @@ While cerne is below 1.0.0, a minor version may change behavior: read the
 
 ## [Unreleased]
 
+## [0.15.2] - 2026-11-22
+
+### Added
+
+- Accept on merge. With `[gates] accept = "merge"` in `.cernerc` and a
+  `[delivery] forge`, the human's merge of a card's delivery PR into the
+  default branch accepts the card, for features, tasks and bugs.
+  `cerne feature accept --merged [<id>]` asks the forge about each implemented
+  card's PR and moves the merged ones to done; a card whose PR is still open,
+  was closed without merge, was merged into another branch or belongs to
+  another repository stays in Ready, with one line saying why. An agent may run
+  `--merged`; a plain `accept` stays human. `cerne feature wait <id> --for done`
+  records the merge as soon as it lands. Under this gate `cerne next` shows
+  `WAITING FOR THE MERGE`, the shell hook refuses an agent's `gh pr merge`,
+  `glab mr merge`, `tea pulls merge` and the merge API calls, and `cerne show`
+  and the feature page say "Accepted on merge · PR #N". Works with GitHub,
+  GitLab and Gitea.
+  ([#172](https://github.com/henriquesakata/cerne/pull/172))
+- `cerne feature revert` also steps back after the delivery: from Ready to In
+  development (the delivery was rejected, or a bug turned up) and from Done to
+  Ready (an acceptance is undone). The reason is required and the human gate
+  applies; spec, plan, result and delivery links stay, and the next `complete`
+  runs every gate again. On the kanban you can drag a card from Done to Ready
+  or from Ready to In development, and the drop asks for the reason. A card
+  accepted on merge and then reverted is not accepted again from the same
+  merge.
+  ([#176](https://github.com/henriquesakata/cerne/pull/176))
+- A channel message for an idle Claude Code session wakes it, through Claude
+  Code's cross-session messaging, when the session's last permission mode is
+  `default`, `acceptEdits`, `auto` or `dontAsk`. A human's message counts for
+  the sessions it names by work or by card. cerne never reads or sends the
+  messaging token and never wakes a session in `bypassPermissions` or `plan`
+  mode; when it does not wake a session, the channel screen says why. Codex now
+  gets the channel and the prompt notes on every prompt.
+  ([#177](https://github.com/henriquesakata/cerne/pull/177))
+- The project channel screen keeps the composer at the bottom while only the
+  messages scroll, follows new messages while you are at the end, and shows
+  when each message was sent and when each target answered.
+  ([#166](https://github.com/henriquesakata/cerne/pull/166))
+- The UI shows dates and times in your computer's locale and time zone, no
+  longer in the PT/EN switch's locale. Settings › Interface › *Date and time*
+  picks another format or zone for this browser.
+  ([#171](https://github.com/henriquesakata/cerne/pull/171))
+
+### Changed
+
+- An addressed channel message shows once per turn, not at every tool call,
+  and a human's message reads as a report from its sender, with the date, the
+  time and how to reply.
+  ([#167](https://github.com/henriquesakata/cerne/pull/167))
+- The **Update** button of `cerne ui` asks before it updates, and both update
+  notices offer **Later**. Nothing is stored: the button stays in the bar.
+  ([#168](https://github.com/henriquesakata/cerne/pull/168))
+- The feature page: the action that moves the card forward is the one filled
+  button, the side rail stays in view, and done, rejected and superseded cards
+  are read-only. Secondary text meets the WCAG AA contrast and links use the
+  theme's colour. The document starts higher, prose lines stop near 72
+  characters, and the Agents panel, Backlinks and the delivery pendings start
+  collapsed to one line. Complete and Accept ask for a second click, the page
+  opens on the stage's document, and an unsaved draft survives a tab switch or
+  a push underneath.
+  ([#170](https://github.com/henriquesakata/cerne/pull/170),
+  [#173](https://github.com/henriquesakata/cerne/pull/173),
+  [#174](https://github.com/henriquesakata/cerne/pull/174),
+  [#178](https://github.com/henriquesakata/cerne/pull/178),
+  [#179](https://github.com/henriquesakata/cerne/pull/179))
+- `cerne feature complete` on a card with no delivery link lists
+  `cerne feature deliver <id> --mr <url>` before the accept, and the warning
+  for an unbound cost says how a session binds.
+  ([#175](https://github.com/henriquesakata/cerne/pull/175))
+
+### Fixed
+
+- `cerne feature wait` wakes only on a channel message the session has not
+  seen yet. Since 0.15.1 an unanswered message woke it again every time the
+  wait was run.
+  ([#164](https://github.com/henriquesakata/cerne/pull/164))
+- **Update** and **Restart the panel** in `cerne ui` no longer leave the panel
+  hung on its own backend lock, with port 7717 taken until `kill -9`. A second
+  Ctrl+C or SIGTERM now ends a panel that is still starting.
+  ([#165](https://github.com/henriquesakata/cerne/pull/165))
+- With six or more `cerne ui` tabs open, the board no longer freezes after a
+  change: the tabs share one live connection.
+  ([#169](https://github.com/henriquesakata/cerne/pull/169))
+- A session's cost binds when `cerne feature start` runs behind `rtk proxy`,
+  `rtk`, `time`, `nice`, `command` or `env`.
+  ([#175](https://github.com/henriquesakata/cerne/pull/175))
+- At phone width the `cerne ui` top bar wraps instead of overlapping itself
+  and pushing its controls off the screen.
+  ([#180](https://github.com/henriquesakata/cerne/pull/180))
+
+### Upgrading
+
+Everything not listed here needs no action.
+
+- **Update the binary.** Run `cerne update` in a project, or
+  `brew upgrade henriquesakata/tap/cerne`, or run the install script again, or
+  `go install github.com/henriquesakata/cerne/cmd/cerne@v0.15.2` (details in
+  INSTALL.md, *Updating*). `cerne --version` then prints `cerne 0.15.2`. A
+  `cerne ui` that is already open offers to restart into the new binary.
+- **Hooks and the authoring guide changed.** They renew on their own at the
+  next agent session start when nobody edited them; if you did, run
+  `cerne hook install` and `cerne skill install`. On Codex,
+  `cerne hook install --provider codex` brings the channel on every prompt.
+- **Accept on merge is opt-in.** Add `accept = "merge"` under `[gates]` in
+  `.cernerc`; it is not on the Settings screen yet.
+- **Dates and times may look different.** They follow your computer's locale
+  and time zone now; Settings › Interface › *Date and time* changes that.
+
+### Known limitations
+
+- The merge guard sees only merges an agent runs through the shell: a merge by
+  `git push`, a raw HTTP call or a tool outside the shell passes. The agent and
+  the human share one forge login, so the guard stops the configured agent but
+  does not prove who merged.
+- Waking an idle session works only on Claude Code, and not on Windows.
+
+**Full changelog:** [v0.15.1...v0.15.2](https://github.com/henriquesakata/cerne/compare/v0.15.1...v0.15.2)
+
 ## [0.15.1] - 2026-11-21
 
 ### Fixed
@@ -877,7 +996,8 @@ Everything not listed here needs no action.
 First release published on GitHub. Versions 0.1.0 to 0.12.0 were released
 before the move and have no public release notes.
 
-[Unreleased]: https://github.com/henriquesakata/cerne/compare/v0.15.1...HEAD
+[Unreleased]: https://github.com/henriquesakata/cerne/compare/v0.15.2...HEAD
+[0.15.2]: https://github.com/henriquesakata/cerne/compare/v0.15.1...v0.15.2
 [0.15.1]: https://github.com/henriquesakata/cerne/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/henriquesakata/cerne/compare/v0.14.3...v0.15.0
 [0.14.3]: https://github.com/henriquesakata/cerne/compare/v0.14.2...v0.14.3
