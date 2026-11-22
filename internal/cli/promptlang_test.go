@@ -249,6 +249,7 @@ var notPrompts = map[string]string{
 	"SeenPromptNotes":     "the hook's seen-notes ledger",
 	"MarkPromptNotesSeen": "the hook's seen-notes ledger",
 	"PromptNotes":         "a settings getter",
+	"ChannelInjectPrompt": "the channel block at a UserPromptSubmit hook (F-0491)",
 	"PromptTitles":        "an index lookup of titles in a prompt the user typed",
 }
 

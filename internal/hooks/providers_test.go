@@ -182,3 +182,45 @@ func TestDetectProviders(t *testing.T) {
 		t.Fatalf("DetectProviders = %v, want [cursor gemini]", got)
 	}
 }
+
+// TestInstallCodexHearsTheChannelAtPrompt (F-0491 crit. 8): Codex documents
+// additionalContext on UserPromptSubmit and SessionStart (R-0035), so the
+// install wires the prompt hook that carries the channel, as on Claude Code;
+// the session start already carries it (session-context).
+func TestInstallCodexHearsTheChannelAtPrompt(t *testing.T) {
+	dir := t.TempDir()
+	results, err := Install(dir, ProviderCodex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, ".codex", "hooks.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg struct {
+		Hooks map[string][]struct {
+			Hooks []struct {
+				Command string `json:"command"`
+			} `json:"hooks"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	wired := func(event, needle string) bool {
+		for _, g := range cfg.Hooks[event] {
+			for _, h := range g.Hooks {
+				if strings.Contains(h.Command, needle) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	if !wired("UserPromptSubmit", "cerne hook prompt-notes") || !wired("SessionStart", "cerne hook session-context --format codex") {
+		t.Fatalf("codex hooks.json lacks the channel at prompt submit or session start:\n%s", raw)
+	}
+	if _, skipped := statuses(results)["codex: prompt-notes"]; skipped {
+		t.Fatalf("prompt-notes is wired now: no skipped line for it: %v", results)
+	}
+}

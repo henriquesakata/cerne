@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -88,5 +89,41 @@ func TestHookInstallCodexTrustHintResolvesSymlinks(t *testing.T) {
 	}
 	if !strings.Contains(out, "[projects.\""+real+"\"]") || strings.Contains(out, link) {
 		t.Errorf("want %q (not the link) in:\n%s", real, out)
+	}
+}
+
+// TestHookSessionContextCodexChannel (F-0491 crit. 8): Codex's SessionStart
+// (session-context --format codex) and UserPromptSubmit (prompt-notes) both
+// hand the session its pending channel messages in Codex's envelope.
+func TestHookSessionContextCodexChannel(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	startBoundWork(t, projDir, repoDir, "sess-a", "Mexer no servidor")
+	b := startBoundWork(t, projDir, repoDir, "sess-b", "Revisar a interface")
+	if out, err := execCerne(t, "msg", "send", b+" confere o deploy", "--session", "sess-a", "--dir", projDir); err != nil {
+		t.Fatalf("msg send: %v\n%s", err, out)
+	}
+	for _, tc := range []struct {
+		event, stdin string
+		args         []string
+	}{
+		{"SessionStart", sessionPayload("sess-b", projDir, "startup"), []string{"hook", "session-context", "--format", "codex"}},
+		{"UserPromptSubmit", promptJSON(t, "sess-b", projDir, "oi"), []string{"hook", "prompt-notes"}},
+	} {
+		out, err := execCerneStdin(t, tc.stdin, tc.args...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var env struct {
+			HookSpecificOutput struct {
+				HookEventName     string `json:"hookEventName"`
+				AdditionalContext string `json:"additionalContext"`
+			} `json:"hookSpecificOutput"`
+		}
+		if err := json.Unmarshal([]byte(out), &env); err != nil {
+			t.Fatalf("%s: not an envelope: %q", tc.event, out)
+		}
+		if env.HookSpecificOutput.HookEventName != tc.event || !strings.Contains(env.HookSpecificOutput.AdditionalContext, "confere o deploy") {
+			t.Fatalf("%s: envelope = %s, want the channel message", tc.event, out)
+		}
 	}
 }

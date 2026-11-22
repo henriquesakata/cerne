@@ -303,3 +303,30 @@ func TestChannelCompact(t *testing.T) {
 		t.Fatalf("seq after compaction = %d (%v), want 4", m.Seq, err)
 	}
 }
+
+// TestChannelCompactKeepsWakeReasons (F-0491 crit. 4): a row saying why an
+// idle session was not woken survives compaction while its message lives, and
+// goes with it.
+func TestChannelCompactKeepsWakeReasons(t *testing.T) {
+	c := OpenChannel(t.TempDir())
+	for _, body := range []string{"velha", "viva"} {
+		if _, err := c.Append(Message{Type: typeMessage, Nick: "W-0001", Body: body}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, d := range []Delivery{
+		{Session: "s1", Work: "W-0002", Unwoken: []int{1, 2}, Reason: "bypass"},
+		{Session: "s2", Work: "W-0003", Unwoken: []int{1}, Reason: "no_registry"},
+	} {
+		if err := c.Update(func([]Message, []Delivery) (*Delivery, error) { return &d, nil }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := c.Compact(func(m Message) bool { return m.Body == "viva" }); err != nil {
+		t.Fatal(err)
+	}
+	dels, _ := c.Deliveries()
+	if len(dels) != 1 || dels[0].Session != "s1" || !slices.Equal(dels[0].Unwoken, []int{2}) || dels[0].Reason != "bypass" {
+		t.Fatalf("deliveries after compaction = %+v, want only s1's reason, for #2", dels)
+	}
+}

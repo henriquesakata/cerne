@@ -80,11 +80,25 @@ func directedTo(m room.Message, id channelIdentity) bool {
 // namedTo reports whether m names id's work or one of its refs, or a path
 // inside id's declared scope.
 func namedTo(m room.Message, id channelIdentity) bool {
+	return citesWork(m, id) || namesScope(m, id)
+}
+
+// citesWork reports whether m names id's work or one of its refs — what a
+// human's message wakes a session by (F-0491 crit. 6).
+func citesWork(m room.Message, id channelIdentity) bool {
+	if id.Work == "" || m.Nick == id.Work {
+		return false
+	}
 	for _, ref := range channelRefRe.FindAllString(m.Body, -1) {
 		if ref == id.Work || slices.Contains(id.Refs, ref) {
 			return true
 		}
 	}
+	return false
+}
+
+// namesScope reports whether m names a path inside id's declared scope.
+func namesScope(m room.Message, id channelIdentity) bool {
 	if len(id.Paths) == 0 {
 		return false
 	}
@@ -181,14 +195,16 @@ type injItem struct {
 
 // prefix opens the message's line. A human's reads as a report (F-0490): who
 // wrote, where and when, then the text in quotes (closing ends it) — never an
-// instruction-shaped tag; the reply it expects is humanReplies' sentence.
+// instruction-shaped tag; the reply it expects is humanReplies' sentence. An
+// agent's body is quoted too (F-0491): unquoted, it could imitate a human's
+// report line.
 func (it injItem) prefix() string {
 	if !it.m.Human {
 		who := it.m.Nick
 		if it.directed {
 			who += " → you"
 		}
-		return fmt.Sprintf("#%d %s: ", it.m.Seq, who)
+		return fmt.Sprintf("#%d %s: \"", it.m.Seq, who)
 	}
 	where := "in the project channel"
 	if len(it.m.To) > 0 {
@@ -201,12 +217,7 @@ func (it injItem) prefix() string {
 // be 64 wide runes, and a long name must not starve the inline set (critic C6).
 func (it injItem) humanName() string { return TruncateBody(it.m.Nick, channelNameRunes, 1<<10) }
 
-func (it injItem) closing() string {
-	if it.m.Human {
-		return "\""
-	}
-	return ""
-}
+func (it injItem) closing() string { return "\"" }
 
 // humanReplies is the sentence that follows the human reports (F-0490): who
 // expects a reply from this session and through which command — one per
@@ -429,7 +440,18 @@ func (cs channelState) watermark(sess string) int {
 // write. consume=false is a peek (subagents): it records what was shown but
 // leaves the watermark, so the parent session still gets the background.
 func ChannelInject(cacheDir, repoDir, sess string, consume bool, now time.Time) (string, error) {
-	return channelInject(cacheDir, repoDir, sess, consume, injTurn, now)
+	return channelInject(cacheDir, repoDir, sess, injectOpts{consume: consume, mode: injTurn}, now)
+}
+
+// ChannelInjectPrompt is ChannelInject at a UserPromptSubmit (F-0491 crit. 5):
+// a turn opened by a wake has the written envelope as its prompt, so the seqs
+// it carries — those the channel recorded as shown to sess — are not repeated
+// there. It also records whether an agent's message opened the turn, which
+// keeps the session's posts in it from waking anyone (crit. 9).
+func ChannelInjectPrompt(cacheDir, repoDir, sess, prompt string, now time.Time) (string, error) {
+	woke := wokenSeqs(prompt)
+	markChainTurn(cacheDir, sess, agentWoke(cacheDir, sess, woke)) // criterion 9: the chain cut
+	return channelInject(cacheDir, repoDir, sess, injectOpts{consume: true, mode: injTurn, skip: woke}, now)
 }
 
 // ChannelInjectTool is ChannelInject at a tool contact point (F-0490):
@@ -437,7 +459,7 @@ func ChannelInject(cacheDir, repoDir, sess string, consume bool, now time.Time) 
 // to sess stays out — it comes back at the next turn start, not at every tool
 // call of this one — while one reaching sess for the first time is inline.
 func ChannelInjectTool(cacheDir, repoDir, sess string, now time.Time) (string, error) {
-	return channelInject(cacheDir, repoDir, sess, true, injTool, now)
+	return channelInject(cacheDir, repoDir, sess, injectOpts{consume: true, mode: injTool}, now)
 }
 
 // ChannelWake is what ends an idle session's `cerne feature wait` (B-0065):
@@ -447,7 +469,7 @@ func ChannelInjectTool(cacheDir, repoDir, sess string, now time.Time) (string, e
 // without an answer would wake a turn per loop); the hooks repeat it at each
 // turn start (F-0490). Nothing to wake for is "".
 func ChannelWake(cacheDir, repoDir, sess string, now time.Time) (string, error) {
-	return channelInject(cacheDir, repoDir, sess, true, injWake, now)
+	return channelInject(cacheDir, repoDir, sess, injectOpts{consume: true, mode: injWake}, now)
 }
 
 // Where a session meets the channel, which decides what repeats there.
@@ -457,7 +479,55 @@ const (
 	injWake        // an idle session's wait (B-0065): only addressed messages never shown
 )
 
-func channelInject(cacheDir, repoDir, sess string, consume bool, mode int, now time.Time) (string, error) {
+// injectOpts is how a contact point meets the channel. consume=false is a peek
+// (subagents); mode decides what repeats there.
+type injectOpts struct {
+	consume bool
+	mode    int
+	skip    []int // shown by the prompt itself (F-0491 crit. 5)
+}
+
+// pending is what session sess, answering as id, has due on the live channel,
+// before any contact point's filter, and the highest live seq.
+func (cs channelState) pending(live []room.Message, sess string, id channelIdentity) (pending []injItem, through int) {
+	wm := cs.watermark(sess)
+	for _, m := range live {
+		through = max(through, m.Seq)
+		if m.Session == sess { // own message; another session of the work still gets it (critic C12)
+			continue
+		}
+		// F-0486: a card's thread is between the human and the sessions
+		// addressed — a reply to the page is nobody's background.
+		if len(m.To) > 0 {
+			if slices.Contains(m.To, sess) && !cs.answeredBySession(m, sess) {
+				pending = append(pending, injItem{m: m, group: groupHuman, directed: true, shown: cs.shownTo(m, sess)})
+			}
+			continue
+		}
+		if m.Ref != "" && !m.Human {
+			continue
+		}
+		// Addressed: pending until answered. Human: pending until shown
+		// inline to this session — never folded into the count line and
+		// consumed (critic C6). Background: once, by the watermark.
+		directed := directedTo(m, id) && !cs.answered(m, id.Work)
+		if !directed && (cs.shownTo(m, sess) || !m.Human && m.Seq <= wm) {
+			continue
+		}
+		group := groupBackground
+		switch {
+		case m.Human:
+			group = groupHuman
+		case directed:
+			group = groupDirected
+		}
+		pending = append(pending, injItem{m: m, group: group, directed: directed, shown: cs.shownTo(m, sess)})
+	}
+	return pending, through
+}
+
+func channelInject(cacheDir, repoDir, sess string, o injectOpts, now time.Time) (string, error) {
+	consume, mode := o.consume, o.mode
 	if safeSessionID(sess) != nil {
 		return "", nil
 	}
@@ -471,42 +541,8 @@ func channelInject(cacheDir, repoDir, sess string, consume bool, mode int, now t
 	var out string
 	err = ch.Update(func(msgs []room.Message, dels []room.Delivery) (*room.Delivery, error) {
 		cs := channelState{msgs: msgs, dels: dels}
-		live := liveMessages(repoDir, msgs, now)
-		wm := cs.watermark(sess)
-		var pending []injItem
-		through := 0
-		for _, m := range live {
-			through = max(through, m.Seq)
-			if m.Session == sess { // own message; another session of the work still gets it (critic C12)
-				continue
-			}
-			// F-0486: a card's thread is between the human and the sessions
-			// addressed — a reply to the page is nobody's background.
-			if len(m.To) > 0 {
-				if slices.Contains(m.To, sess) && !cs.answeredBySession(m, sess) {
-					pending = append(pending, injItem{m: m, group: groupHuman, directed: true, shown: cs.shownTo(m, sess)})
-				}
-				continue
-			}
-			if m.Ref != "" && !m.Human {
-				continue
-			}
-			// Addressed: pending until answered. Human: pending until shown
-			// inline to this session — never folded into the count line and
-			// consumed (critic C6). Background: once, by the watermark.
-			directed := directedTo(m, id) && !cs.answered(m, id.Work)
-			if !directed && (cs.shownTo(m, sess) || !m.Human && m.Seq <= wm) {
-				continue
-			}
-			group := groupBackground
-			switch {
-			case m.Human:
-				group = groupHuman
-			case directed:
-				group = groupDirected
-			}
-			pending = append(pending, injItem{m: m, group: group, directed: directed, shown: cs.shownTo(m, sess)})
-		}
+		pending, through := cs.pending(liveMessages(repoDir, msgs, now), sess, id)
+		pending = slices.DeleteFunc(pending, func(it injItem) bool { return it.shown && slices.Contains(o.skip, it.m.Seq) })
 		switch mode {
 		case injWake:
 			pending = slices.DeleteFunc(pending, func(it injItem) bool { return !it.directed || it.shown })
@@ -598,7 +634,10 @@ func renderInjection(pending []injItem, header string) (string, []room.Message) 
 	replies := humanReplies(shown)
 	for i, it := range shown {
 		b.WriteString(it.prefix())
-		b.WriteString(TruncateBody(it.m.Body, channelBodyRunes, per))
+		// An inner " would close the body's quote and let it imitate a report
+		// on the same line (F-0491): swapped for ” before the cut, so the
+		// budget counts the wider rune.
+		b.WriteString(TruncateBody(strings.ReplaceAll(it.m.Body, `"`, "”"), channelBodyRunes, per))
 		b.WriteString(it.closing())
 		b.WriteByte('\n')
 		if it.group == groupHuman && (i+1 == len(shown) || shown[i+1].group != groupHuman) {
@@ -690,6 +729,9 @@ type ChannelTarget struct {
 	Session string `json:"session,omitempty"`
 	// AnsweredAt: when the target first answered — reply or ack (F-0489).
 	AnsweredAt time.Time `json:"answered_at,omitzero"`
+	// Reason: why an idle session of the target was not woken for the
+	// message (F-0491, a Wake* code), while it is not delivered.
+	Reason string `json:"reason,omitempty"`
 }
 
 // ChannelMessage is a live channel message with its derived state: the worst
@@ -922,6 +964,8 @@ func (cs channelState) derive(m room.Message, works []store.Work, live map[strin
 				t.State, t.Acked, t.AnsweredAt = ChannelAnswered, cs.ackedBySession(m, sess), at
 			case cs.shownTo(m, sess):
 				t.State = ChannelDelivered
+			default:
+				t.Reason = cs.unwokenWhy(m, func(d room.Delivery) bool { return d.Session == sess })
 			}
 			cm.Targets = append(cm.Targets, t)
 		}
@@ -963,6 +1007,7 @@ func (cs channelState) derive(m room.Message, works []store.Work, live map[strin
 			t.State = ChannelDelivered
 		default:
 			t.State = ChannelNotDelivered
+			t.Reason = cs.unwokenWhy(m, func(d room.Delivery) bool { return d.Work == t.Work })
 		}
 		cm.Targets[i] = t
 	}
@@ -984,6 +1029,17 @@ func worstState(targets []ChannelTarget) string {
 		}
 	}
 	return worst
+}
+
+// unwokenWhy is the newest reason an idle session matching of was not woken
+// for m (F-0491); "" when none was recorded.
+func (cs channelState) unwokenWhy(m room.Message, of func(room.Delivery) bool) string {
+	for i := len(cs.dels) - 1; i >= 0; i-- {
+		if d := cs.dels[i]; d.Reason != "" && of(d) && slices.Contains(d.Unwoken, m.Seq) {
+			return d.Reason
+		}
+	}
+	return ""
 }
 
 // delivered reports whether m was ever shown to a session working as work (a

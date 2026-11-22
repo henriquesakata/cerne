@@ -89,6 +89,7 @@ func newMsgSendCmd(dir, session *string) *cobra.Command {
 			if err != nil {
 				return msgIdentityErr(sess, err)
 			}
+			app.ChannelWakeIdle(cacheDir, repoDir, m, time.Now().UTC()) // F-0491: never fails the send
 			out := cmd.OutOrStdout()
 			if m.Ref != "" { // F-0486: an answer to the human on a card's page
 				fmt.Fprintf(out, "sent #%d — on %s's thread: the human reads it on the card's page in cerne ui (it expires after 24h)\n", m.Seq, m.Ref)

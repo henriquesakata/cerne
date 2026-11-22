@@ -362,7 +362,7 @@ func TestHookWorkGateInjectsChannel(t *testing.T) {
 	}
 	c := channelEnvelope(t, out)
 	if c.HookSpecificOutput.HookEventName != "PreToolUse" ||
-		!strings.HasPrefix(c.HookSpecificOutput.AdditionalContext, "cerne channel:\n#1 "+b+" → you: vou mexer") {
+		!strings.HasPrefix(c.HookSpecificOutput.AdditionalContext, "cerne channel:\n#1 "+b+" → you: \"vou mexer") {
 		t.Fatalf("envelope = %+v", c)
 	}
 	if strings.Contains(out, "permissionDecision") {
@@ -419,7 +419,7 @@ func TestHookWorkGateInjectsWithGateOff(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%v: %v\n%s", args, err, out)
 		}
-		if c := channelEnvelope(t, out); !strings.Contains(c.HookSpecificOutput.AdditionalContext, "#1 "+b+": build verde no main") {
+		if c := channelEnvelope(t, out); !strings.Contains(c.HookSpecificOutput.AdditionalContext, "#1 "+b+": \"build verde no main\"") {
 			t.Fatalf("%v: envelope = %+v", args, c)
 		}
 	}

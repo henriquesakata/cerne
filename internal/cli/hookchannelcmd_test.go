@@ -77,7 +77,7 @@ func TestHookChannelSessionStart(t *testing.T) {
 	payload := sessionStartJSON(t, "sess-a", projDir)
 
 	out, err := execCerneStdin(t, payload, "hook", "channel", "--point", "session-start")
-	if err != nil || out != "cerne channel:\n#1 "+b+": terminei o contrato, pode consumir\n" {
+	if err != nil || out != "cerne channel:\n#1 "+b+": \"terminei o contrato, pode consumir\"\n" {
 		t.Fatalf("first session start: %v\n%q", err, out)
 	}
 	if out, err := execCerneStdin(t, payload, "hook", "channel", "--point", "session-start"); err != nil || out != "" {
@@ -109,7 +109,7 @@ func TestHookSessionContextIncludesChannel(t *testing.T) {
 		t.Fatalf("session-context: %v\n%s", err, out)
 	}
 	c := channelEnvelope(t, out)
-	if want := "\n\ncerne channel:\n#1 " + b + ": build verde\n"; !strings.HasSuffix(c.HookSpecificOutput.AdditionalContext, want) {
+	if want := "\n\ncerne channel:\n#1 " + b + ": \"build verde\"\n"; !strings.HasSuffix(c.HookSpecificOutput.AdditionalContext, want) {
 		t.Fatalf("context does not end with the channel block:\n%s", c.HookSpecificOutput.AdditionalContext)
 	}
 	out, err = execCerneStdin(t, hookJSON(t, "sess-a", projDir, "", nil, nil), "hook", "session-context", "--format", "codex")
@@ -130,7 +130,7 @@ func TestHookChannelSubagentPeek(t *testing.T) {
 	seedChannel(t, repoDir, b, "build verde")
 	payload := sessionStartJSON(t, "sess-a", projDir)
 
-	want := "cerne channel:\n#1 " + b + ": build verde\n"
+	want := "cerne channel:\n#1 " + b + ": \"build verde\"\n"
 	for i := range 2 {
 		if out, err := execCerneStdin(t, payload, "hook", "channel", "--point", "subagent"); err != nil || out != want {
 			t.Fatalf("subagent peek %d: %v %q", i+1, err, out)
@@ -153,7 +153,7 @@ func channelContactFixture(t *testing.T) (projDir, repoDir, block string) {
 	startBoundWork(t, projDir, repoDir, "sess-a", "Mexer no servidor")
 	b := startBoundWork(t, projDir, repoDir, "sess-b", "Revisar a interface")
 	seedChannel(t, repoDir, b, "build verde")
-	return projDir, repoDir, "cerne channel:\n#1 " + b + ": build verde\n"
+	return projDir, repoDir, "cerne channel:\n#1 " + b + ": \"build verde\"\n"
 }
 
 // assertLeadsWithChannel runs args with and without CERNE_SESSION: the text

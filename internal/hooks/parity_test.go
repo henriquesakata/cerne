@@ -80,3 +80,40 @@ func TestParityCopilotStatesTheProbedLimits(t *testing.T) {
 		}
 	}
 }
+
+// TestParityWakeRow (F-0491 crit. 7): the matrix says which harness wakes an
+// idle session — Claude Code, with the bypass caveat — and every other one is
+// degraded with its reason; the Codex channel and prompt-notes rows include
+// the prompt hook.
+func TestParityWakeRow(t *testing.T) {
+	var wake, channel, notes ParityRow
+	for _, r := range ParityRows() {
+		switch r.Capability {
+		case "Wake an idle session (F-0491)":
+			wake = r
+		case "Project channel mid-session (F-0325, B-0054)":
+			channel = r
+		case "Notes matching the prompt (B-0020)":
+			notes = r
+		}
+	}
+	// The Codex prompt hook carries the prompt notes too (a deliberate side
+	// effect): that row must not still say it is not wired.
+	if d, _ := notes.Degraded(ProviderCodex); d || !strings.Contains(notes.Codex, "UserPromptSubmit") {
+		t.Errorf("Codex prompt-notes cell = %q, want the wired UserPromptSubmit hook", notes.Codex)
+	}
+	if wake.Capability == "" {
+		t.Fatal("no wake row in the parity matrix")
+	}
+	if d, _ := wake.Degraded(ProviderClaude); d || !strings.Contains(wake.Claude, "bypassPermissions") || !strings.Contains(wake.Claude, "next contact point") {
+		t.Errorf("Claude Code cell = %q, want the inbox wake with the bypass caveat", wake.Claude)
+	}
+	for _, p := range []Provider{ProviderCursor, ProviderCodex, ProviderGemini, ProviderCopilot} {
+		if d, reason := wake.Degraded(p); !d || reason == "" {
+			t.Errorf("%s cell = %q, want degraded with a reason", p, wake.For(p))
+		}
+	}
+	if !strings.Contains(channel.Codex, "UserPromptSubmit") {
+		t.Errorf("Codex channel cell = %q, want the prompt hook", channel.Codex)
+	}
+}

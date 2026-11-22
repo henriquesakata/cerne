@@ -157,7 +157,7 @@ var parityTable = []ParityRow{
 		Capability: "Notes matching the prompt (B-0020)",
 		Claude:     "UserPromptSubmit hook (cerne-prompt-notes.sh) → additionalContext",
 		Cursor:     degraded + ": no verified prompt-submit hook that adds context",
-		Codex:      degraded + ": prompt-submit event not verified here — not wired",
+		Codex:      "UserPromptSubmit hook (prompt-notes) → additionalContext (F-0491)",
 		Gemini:     degraded + ": prompt-submit event not verified here — not wired",
 		Copilot:    degraded + ": prompt-submit event not verified here — not wired",
 	},
@@ -177,9 +177,18 @@ var parityTable = []ParityRow{
 		Capability: "Project channel mid-session (F-0325, B-0054)",
 		Claude:     "UserPromptSubmit (cerne-prompt-notes.sh), PreToolUse/Bash (cerne-tool-notes.sh) and the work gate on Edit|Write → additionalContext; Stop reminder for what is addressed and unanswered",
 		Cursor:     "after the tool: .claude PostToolUse/Bash|Edit|Write (cerne-after-tool-notes.sh), via the third-party import → additional_context",
-		Codex:      "before the tool: PreToolUse, matchers Bash (tool-notes) and Edit|Write (work gate) → additionalContext",
+		Codex:      "UserPromptSubmit (prompt-notes) and, before the tool, PreToolUse, matchers Bash (tool-notes) and Edit|Write (work gate) → additionalContext",
 		Gemini:     "after the tool: AfterTool, matcher run_shell_command|write_file|replace → additionalContext (documented envelope, not validated live)",
 		Copilot:    "after the tool: PostToolUse, matchers Bash and Edit|Write → top-level additionalContext",
+	},
+	{
+		// F-0491: a session waiting for its user passes no contact point.
+		Capability: "Wake an idle session (F-0491)",
+		Claude:     "after a post, one line to the idle session's inbox socket (cross-session messaging, Claude Code 2.1.224 or later) when its last mode is default, acceptEdits, auto or dontAsk; a session in bypassPermissions or an unknown mode holds such a message, so it is not written to and gets it at its next contact point; not on Windows, whose inbox needs the session's token",
+		Cursor:     degraded + ": no documented way to open a turn in an idle session — the message waits for the next contact point",
+		Codex:      degraded + ": only the app-server connection's owner starts a turn, and cerne does not own the TUI's — the message waits for the next contact point",
+		Gemini:     degraded + ": no documented way to open a turn in an idle session — the message waits for the next contact point",
+		Copilot:    degraded + ": no documented way to open a turn in an idle session — the message waits for the next contact point",
 	},
 	{
 		Capability: "CERNE_ACTOR=agent (human gates)",

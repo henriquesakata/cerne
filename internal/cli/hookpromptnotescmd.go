@@ -46,7 +46,7 @@ func newHookPromptNotesCmd() *cobra.Command {
 			if err != nil || in.cursor() || in.SessionID == "" {
 				return nil
 			}
-			block := promptChannel(in.CWD, in.SessionID, promptNotesBlock(in.CWD, in.SessionID, in.Prompt))
+			block := promptChannel(in, promptNotesBlock(in.CWD, in.SessionID, in.Prompt))
 			if block == "" {
 				return nil
 			}
@@ -63,11 +63,11 @@ func newHookPromptNotesCmd() *cobra.Command {
 // the user's prompt is a contact point (B-0054), so a session that only
 // converses still hears the channel. The Copilot CLI also runs this hook and
 // ignores its output, so there it consumes nothing.
-func promptChannel(dir, sess, block string) string {
+func promptChannel(in hookInput, block string) string {
 	if os.Getenv("COPILOT_CLI") == "1" {
 		return block
 	}
-	cfg, projDir, err := project.LoadConfig(dir)
+	cfg, projDir, err := project.LoadConfig(in.CWD)
 	if err != nil {
 		return block
 	}
@@ -79,7 +79,11 @@ func promptChannel(dir, sess, block string) string {
 	if err != nil {
 		return block // F-0434
 	}
-	return channelThen(cacheDir, repoDir, sess, block, false)
+	recordSessionMode(cacheDir, in)
+	// F-0491 crit. 5: a turn a wake opened has the written envelope as its
+	// prompt — what it shows is not repeated here.
+	ch, err := app.ChannelInjectPrompt(cacheDir, repoDir, in.SessionID, in.Prompt, time.Now().UTC())
+	return withChannel(ch, err, block)
 }
 
 // promptNotesBlock is the reminder for prompt in the project at dir, or "".

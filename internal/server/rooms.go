@@ -259,6 +259,13 @@ type sayRequest struct {
 }
 
 func handleRoomSay(w http.ResponseWriter, r *http.Request, repoDir, projDir, projectID, id string) {
+	// F-0491: a post opens a turn in an idle session it cites — refuse the
+	// cross-site simple request (text/plain, no preflight) another origin's
+	// page can fire, like every other write route (F-0323 C2).
+	if !sameOriginJSON(r) {
+		writeJSON(w, http.StatusForbidden, errorBody("cross-origin or non-JSON request refused"))
+		return
+	}
 	var req sayRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
@@ -285,6 +292,9 @@ func handleRoomSay(w http.ResponseWriter, r *http.Request, repoDir, projDir, pro
 		var msg room.Message
 		if req.SessionID != "" {
 			msg, _, err = app.ChannelSend(cacheDir, repoDir, req.SessionID, req.Ref, req.Body, now)
+			if err == nil {
+				app.ChannelWakeIdle(cacheDir, repoDir, msg, time.Now().UTC()) // F-0491: never fails the post
+			}
 			msg.Session = "" // a session id is never served
 		} else {
 			if req.Ref != "" || len(req.To) > 0 {
@@ -294,6 +304,9 @@ func handleRoomSay(w http.ResponseWriter, r *http.Request, repoDir, projDir, pro
 				}
 			}
 			msg, err = app.ChannelPost(cacheDir, app.ChannelHumanName(projDir), req.Ref, req.To, req.Body, now)
+			if err == nil {
+				app.ChannelWakeIdle(cacheDir, repoDir, msg, time.Now().UTC()) // F-0491: never fails the post
+			}
 			msg.To = nil // session ids are never served
 		}
 		if err != nil {

@@ -57,6 +57,10 @@ type hookInput struct {
 	Prompt string `json:"prompt"`
 	// Source is the SessionStart origin; "compact" after a compaction (F-0368).
 	Source string `json:"source"`
+	// PermissionMode is the session's mode on every turn and tool event
+	// (R-0034; not on SessionStart): what decides whether an idle session
+	// takes a cross-session message (F-0491).
+	PermissionMode string `json:"permission_mode"`
 
 	// Cursor is set when Cursor sent the payload (F-0428).
 	Cursor *cursorInput `json:"-"`
@@ -79,6 +83,17 @@ type cursorInput struct {
 // cursor reports a payload delivered by Cursor, which is answered in Cursor's
 // native envelope whatever --format says (F-0428).
 func (in hookInput) cursor() bool { return in.Cursor != nil }
+
+// recordSessionMode keeps the session's last permission mode (F-0491): the
+// channel wakes an idle session only in a mode that takes a cross-session
+// message. Fail-open.
+func recordSessionMode(cacheDir string, in hookInput) {
+	harness := cost.CurrentHarness()
+	if in.cursor() {
+		harness = "cursor"
+	}
+	_ = app.RecordSessionMode(cacheDir, in.SessionID, in.AgentID, harness, in.PermissionMode)
+}
 
 func decodeHookInput(r io.Reader) (hookInput, error) {
 	var raw json.RawMessage
@@ -466,6 +481,7 @@ func runHookWorkGate(cmd *cobra.Command, format string) {
 		return // F-0434
 	}
 	_ = app.TouchBinding(cacheDir, in.SessionID, in.AgentID) // F-0361: sign of life
+	recordSessionMode(cacheDir, in)
 	paths := editedPaths(in.ToolInput)
 	for i, p := range paths { // Copilot's patch paths are relative to its cwd
 		if !filepath.IsAbs(p) {
@@ -584,7 +600,7 @@ func injectGateChannel(cmd *cobra.Command, format, cacheDir, repoDir, projDir, s
 	if format != "claude" && format != "codex" || os.Getenv("COPILOT_CLI") == "1" {
 		return
 	}
-	block := channelThen(cacheDir, repoDir, sess, notesOnEditBlock(cacheDir, repoDir, projDir, sess, filePath, ""), true)
+	block := channelThen(cacheDir, repoDir, sess, notesOnEditBlock(cacheDir, repoDir, projDir, sess, filePath, ""))
 	if block == "" {
 		return
 	}
