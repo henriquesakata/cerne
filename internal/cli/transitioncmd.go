@@ -255,6 +255,13 @@ func printCompleteNextStep(w io.Writer, repoDir, id string, noStamp bool) {
 		fmt.Fprintf(w, "  - record its token cost: cerne cost %s --stamp, before the human accept (F-0309)\n", id)
 	}
 	f, err := store.LoadFeature(repoDir, id)
+	// B-0070: the link 'cerne next' asks for comes before the accept, or the
+	// card closes with no PR on it.
+	if err == nil {
+		if owed := app.DeliveryOwed(f); owed != "" {
+			fmt.Fprintf(w, "  - record the delivery PR: %s\n", owed)
+		}
+	}
 	task := err == nil && strings.HasPrefix(id, "T-") && f.Parent != ""
 	if task {
 		// A task rides its parent's accept (T-0007): one human act for all.

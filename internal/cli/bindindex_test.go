@@ -107,6 +107,42 @@ func TestBindIndexOnFeatureStart(t *testing.T) {
 	bindsTo(t, projDir, repoDir, "sess-start-tail", "cerne feature start "+id+" | tail -1", outLines(out)[len(outLines(out))-1], id)
 }
 
+// B-0070: a wrapper in front of cerne (rtk proxy, time, nice, command, env)
+// still runs cerne, so a truncated start still binds through the clone, and
+// a wrapper never turns a mention into a run.
+func TestBindThroughWrapper(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	id := approvedWithPlan(t, projDir, repoDir)
+	out := stdoutOf(t, "feature", "start", id, "--dir", projDir)
+	last := outLines(out)[len(outLines(out))-1]
+	for i, wrap := range []string{"rtk proxy ", "rtk ", "time ", "nice ", "command ", "env FOO=1 ", "rtk proxy /opt/homebrew/bin/"} {
+		bindsTo(t, projDir, repoDir, fmt.Sprintf("sess-wrap-%d", i), wrap+"cerne feature start "+id+" 2>&1 | tail -1", last, id)
+	}
+	for _, c := range []string{"rtk proxy cerne work start x", "time cerne handoff take HO-0001", "env A=1 cerne bug new x", "nice cerne feature start F-0001"} {
+		var re *regexp.Regexp
+		switch {
+		case strings.Contains(c, "work start"):
+			re = cerneStartRe
+		case strings.Contains(c, "handoff take"):
+			re = cerneTakeRe
+		case strings.Contains(c, "bug new"):
+			re = cerneCardNewRe
+		default:
+			re = cerneFeatureStartRe
+		}
+		if !runsCerne(c, re) {
+			t.Errorf("%q: not seen as a cerne run", c)
+		}
+	}
+	// Mentions the widened prefix could misread: a wrapper must be followed by
+	// cerne itself, never by another command or a lookalike binary.
+	for _, c := range []string{"echo rtk proxy cerne feature start F-0001", "rtk grep cerne feature start", "command -v cerne feature start", "env cerne-x feature start F-0001", "time rtk proxy echo cerne feature start", `rtk proxy git commit -m "cerne feature start F-0001"`} {
+		if runsCerne(c, cerneFeatureStartRe) {
+			t.Errorf("%q: a mention read as a run", c)
+		}
+	}
+}
+
 func TestBindIndexWithNoNote(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
 	id := approvedWithPlan(t, projDir, repoDir)

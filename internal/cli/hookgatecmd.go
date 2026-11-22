@@ -195,13 +195,20 @@ var (
 	cardCreatedRe = regexp.MustCompile(`(` + domain.FeatureIDPrefix() + `-\d{4,}) created \(`)
 )
 
+// cerneRunPrefix is what may stand before a cerne verb in a segment that runs
+// it: VAR=x assignments, a wrapper that runs the rest as its command (rtk
+// proxy, rtk, time, nice, command, env), a path to the binary, and cerne's
+// global flags (B-0070: `rtk proxy cerne feature start … | tail` bound nothing).
+// ponytail: literal wrapper list; one with value flags (`nice -n 5`) is not seen.
+const cerneRunPrefix = `^(?:\w+=\S*\s+)*(?:(?:rtk(?:\s+proxy)?|time|nice|command|env)\s+(?:\w+=\S*\s+)*)*(?:\S*/)?cerne\s+(?:-\S+\s+)*`
+
 var (
 	shellSepRe          = regexp.MustCompile(`&&|\|\||[;|&\n]`)
 	quotedRe            = regexp.MustCompile(`"[^"]*"|'[^']*'`)
-	cerneStartRe        = regexp.MustCompile(`^(?:\w+=\S*\s+)*(?:\S*/)?cerne\s+(?:-\S+\s+)*work\s+start\b`)
-	cerneTakeRe         = regexp.MustCompile(`^(?:\w+=\S*\s+)*(?:\S*/)?cerne\s+(?:-\S+\s+)*handoff\s+take\b`)
-	cerneFeatureStartRe = regexp.MustCompile(`^(?:\w+=\S*\s+)*(?:\S*/)?cerne\s+(?:-\S+\s+)*feature\s+start\b`)
-	cerneCardNewRe      = regexp.MustCompile(`^(?:\w+=\S*\s+)*(?:\S*/)?cerne\s+(?:-\S+\s+)*(?:feature|task|bug|epic)\s+new\b`)
+	cerneStartRe        = regexp.MustCompile(cerneRunPrefix + `work\s+start\b`)
+	cerneTakeRe         = regexp.MustCompile(cerneRunPrefix + `handoff\s+take\b`)
+	cerneFeatureStartRe = regexp.MustCompile(cerneRunPrefix + `feature\s+start\b`)
+	cerneCardNewRe      = regexp.MustCompile(cerneRunPrefix + `(?:feature|task|bug|epic)\s+new\b`)
 	helpFlagRe          = regexp.MustCompile(`(^|\s)(-h|--help)(\s|$)`)
 )
 
