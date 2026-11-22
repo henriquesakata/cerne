@@ -282,7 +282,7 @@ export default function FeaturePage({ id }: { id: string }) {
       <header className="feature-header">
         <TitleEditor feature={f} onSaved={load} />
         <p className="feature-meta">
-          <span className={`chip chip-${f.state}`}>{t.state[f.state]}</span>
+          <span className={`chip chip-${f.state} feature-state`}>{t.state[f.state]}</span>
           {/* F-0203: chip de papel — épico estrutural (filhos) ou declarado (E-);
               task pelo prefixo T-. */}
           {(detail.children.length > 0 || f.id.startsWith('E-')) && (
@@ -334,7 +334,7 @@ export default function FeaturePage({ id }: { id: string }) {
         )}
         {notice && <p className="notice">{notice}</p>}
         {warnings.map((w) => (
-          <p key={w} className="notice">
+          <p key={w} className="notice notice-warning">
             {t.common.warning} <code>{w}</code>
           </p>
         ))}

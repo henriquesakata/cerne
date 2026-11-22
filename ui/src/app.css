@@ -9,8 +9,11 @@
   --bg: #faf7f2;
   --fg: #1f2421;
   --muted: #5c635e;
-  --faint: #8a8f8b;
-  --border-field: var(--faint);
+  /* F-0496: 4.6:1 on surface-2, AA on every surface (was #8a8f8b, 2.9:1). */
+  --faint: #676d68;
+  /* The field edge keeps its old tone: a darker --faint must not restyle the
+     fields of other screens (F-0413 measured this one). */
+  --border-field: #8a8f8b;
   --dim: #c4bfb4;
   --dim-inverse: #cbd2cc;
   --surface: #fff;
@@ -83,8 +86,9 @@
   --bg: #191817;
   --fg: #e8e4da;
   --muted: #a9ada3;
-  --faint: #7d8178;
-  --border-field: var(--faint);
+  /* F-0496: 4.6:1 on surface-2 (was #7d8178, 3.7:1). */
+  --faint: #8e9288;
+  --border-field: #7d8178;
   --dim: #55534b;
   --dim-inverse: #4d5148;
   --surface: #232220;
@@ -935,8 +939,9 @@ h2 {
 
 .proposal-draft-diff span { display: block; padding: 0 0.3rem; }
 .diff-same { color: var(--muted); }
-.diff-add { background: color-mix(in srgb, green 18%, transparent); }
-.diff-del { background: color-mix(in srgb, red 18%, transparent); text-decoration: line-through; }
+/* F-0496: theme tokens, not literal green/red (Two-Block Rule). */
+.diff-add { background: color-mix(in srgb, var(--green) 18%, transparent); }
+.diff-del { background: color-mix(in srgb, var(--danger) 18%, transparent); text-decoration: line-through; }
 
 /* F-0318: delta desde a aprovação no painel de ações — o mesmo diff por
    linha, só com as linhas alteradas. */
@@ -1742,6 +1747,8 @@ a.badge-mirror:hover, a.badge-mirror:focus-visible { text-decoration: underline;
 .feature-header { padding-bottom: 1rem; margin-bottom: 1rem; border-bottom: 1px solid var(--border-soft); }
 .feature-id { font-family: ui-monospace, monospace; color: var(--muted); }
 .feature-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.5rem; margin: 0.6rem 0 0; }
+/* F-0496: the state leads the row, set apart from the tags by space, not hue. */
+.feature-meta > .feature-state { margin-right: 0.6rem; }
 .feature-note { margin: 0.4rem 0 0; font-size: 0.85rem; color: var(--muted); }
 /* Lápis do título: botão fantasma, desenhado, na tinta apagada até o hover. */
 .feature .title-edit-btn {
@@ -1778,6 +1785,13 @@ a.badge-mirror:hover, a.badge-mirror:focus-visible { text-decoration: underline;
   border-radius: 6px;
   font-size: 0.85rem;
 }
+/* F-0496: what did not block a transition is a warning, not a success. */
+.notice-warning { background: var(--amber-bg); border-color: var(--amber-border); }
+
+/* F-0496: every link on the page wears the system's link ink. :where keeps it
+   at zero specificity, so a link with its own class (.back, .tag…) keeps its
+   look. */
+:where(.feature) :where(a) { color: var(--link); }
 
 .chip {
   display: inline-block;
@@ -2383,7 +2397,8 @@ a.badge-mirror:hover, a.badge-mirror:focus-visible { text-decoration: underline;
 .backlinks-section {
   margin: 0.75rem 0;
   padding: 0.6rem 0.9rem;
-  border: 1px solid var(--teal);
+  /* F-0496: the neutral rule of its sibling sections; teal is the graph's. */
+  border: 1px solid var(--border-soft);
   border-radius: 8px;
   background: var(--surface-2);
 }
