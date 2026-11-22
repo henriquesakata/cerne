@@ -31,6 +31,7 @@ import type {
   PendingState,
   SettingScope,
   TransitionAction,
+  WakeReason,
 } from './api'
 
 // Hand-rolled i18n (F-0125): the pt-BR dictionary is the source of the
@@ -726,6 +727,20 @@ const ptBR = {
       answered: 'respondida',
     } satisfies Record<ChannelState, string>,
     targetNotDelivered: 'ainda não recebeu',
+    // F-0491: por que a sessão parada não foi acordada (os códigos Wake*).
+    wakeReason: {
+      bypass: 'em modo bypass, recebe no próximo ponto de contato',
+      unknown_mode: 'modo de permissão desconhecido, recebe no próximo ponto de contato',
+      no_wake: 'o harness dela não acorda sessão parada; recebe no próximo ponto de contato',
+      no_registry: 'sessão encerrada',
+      socket_missing: 'sessão encerrada',
+      connection_refused: 'sessão encerrada',
+      untrusted_socket: 'socket de entrada não confiável, não foi acordada; recebe no próximo ponto de contato',
+      cooldown: 'acordada há menos de 2 min; recebe no próximo ponto de contato',
+      cap: 'este post já acordou 5 sessões; recebe no próximo ponto de contato',
+      chain: 'post de um turno que um agente abriu não acorda ninguém; recebe no próximo ponto de contato',
+      write_failed: 'não deu para acordar; recebe no próximo ponto de contato',
+    } satisfies Record<WakeReason, string>,
     notDeliveredHint:
       'Ainda não recebida: uma sessão viva só recebe ao passar por um ponto de contato — o próximo prompt, comando, edição ou início de sessão do agente.',
     targetDelivered: 'recebeu — sem resposta',
@@ -2377,6 +2392,19 @@ const en: Messages = {
       answered: 'answered',
     },
     targetNotDelivered: 'has not received it yet',
+    wakeReason: {
+      bypass: 'in bypass mode, it gets it at its next contact point',
+      unknown_mode: 'permission mode unknown, it gets it at its next contact point',
+      no_wake: "its harness can't wake an idle session; it gets it at its next contact point",
+      no_registry: 'session ended',
+      socket_missing: 'session ended',
+      connection_refused: 'session ended',
+      untrusted_socket: 'untrusted inbox socket, not woken; it gets it at its next contact point',
+      cooldown: 'woken less than 2 min ago; it gets it at its next contact point',
+      cap: 'this post already woke 5 sessions; it gets it at its next contact point',
+      chain: 'a post from a turn an agent opened wakes no one; it gets it at its next contact point',
+      write_failed: "couldn't wake it; it gets it at its next contact point",
+    },
     notDeliveredHint:
       'Not received yet: a live session gets it only at a contact point — the agent\'s next prompt, command, edit or session start.',
     targetDelivered: 'received it — no reply yet',

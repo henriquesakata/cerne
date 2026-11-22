@@ -222,7 +222,10 @@ export function ChannelLine({
     if (tg.acked) return t.channel.targetAcked
     if (tg.state === 'answered') return t.channel.targetAnswered
     if (tg.state === 'delivered') return t.channel.targetDelivered
-    return t.channel.targetNotDelivered
+    // F-0491: why an idle session was not woken; a code this build does not
+    // know reads as before.
+    const why = tg.reason && t.channel.wakeReason[tg.reason]
+    return why ? `${t.channel.targetNotDelivered} — ${why}` : t.channel.targetNotDelivered
   }
   // B-0054: say why — a session hears the channel only at a contact point.
   // A message whose every target closed will never arrive: no hint.

@@ -2047,6 +2047,23 @@ export type ChannelState = 'not_delivered' | 'delivered' | 'answered'
 // and will never receive it; session: for a message from a card's page
 // (F-0486), the first 8 characters of the addressed session.
 // answered_at (F-0489): when the target first answered — reply or ack.
+// WAKE_REASONS espelha os códigos Wake* de internal/app/channelwake.go: por
+// que uma sessão parada não foi acordada (F-0491). O rótulo vive no i18n.
+export const WAKE_REASONS = [
+  'bypass',
+  'unknown_mode',
+  'no_wake',
+  'no_registry',
+  'socket_missing',
+  'connection_refused',
+  'untrusted_socket',
+  'cooldown',
+  'cap',
+  'chain',
+  'write_failed',
+] as const
+export type WakeReason = (typeof WAKE_REASONS)[number]
+
 export type ChannelTarget = {
   work: string
   state: ChannelState
@@ -2054,6 +2071,8 @@ export type ChannelTarget = {
   closed?: boolean
   session?: string
   answered_at?: string
+  // F-0491: enquanto não entregue, por que a sessão parada não foi acordada.
+  reason?: WakeReason
 }
 
 // ChannelMessage espelha app.ChannelMessage: a mensagem viva com o estado
