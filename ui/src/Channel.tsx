@@ -9,7 +9,7 @@ import {
 } from 'react'
 import { postChannel, readChannel, type ChannelMessage, type ChannelTarget } from './api'
 import { isAtBottom } from './BacklogChat'
-import { useT } from './i18n'
+import { useInstant, useT } from './i18n'
 import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
 
 // Channel (F-0325): the project's permanent channel — transcript and composer
@@ -192,12 +192,12 @@ export function useChannelFollow(version: number | undefined, reload: () => Prom
 // since the channel keeps 24h and one screen spans two days — with the full
 // instant in the title (F-0489 crit. 5 and 7).
 function Stamp({ iso }: { iso: string }) {
-  const { lang } = useT()
-  const d = new Date(iso)
-  if (iso === '' || Number.isNaN(d.getTime())) return null
+  const instant = useInstant()
+  const short = instant(iso, 'short')
+  if (short === '') return null
   return (
-    <time dateTime={iso} title={d.toLocaleString(lang)}>
-      {d.toLocaleString(lang, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+    <time dateTime={iso} title={instant(iso, 'full')}>
+      {short}
     </time>
   )
 }

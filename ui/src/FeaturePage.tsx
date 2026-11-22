@@ -34,7 +34,7 @@ import {
   type TransitionResult,
 } from './api'
 import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
-import { useT, type Lang } from './i18n'
+import { useInstant, useT, type Lang } from './i18n'
 
 // Carregados sob demanda: o bundle do mermaid só chega ao
 // navegador quando o usuário abre um diagrama (cada um no seu chunk lazy).
@@ -170,11 +170,6 @@ function formatUpdatedAt(iso: string, lang: Lang): string {
     if (Math.abs(sec) >= secs) return rtf.format(Math.round(sec / secs), unit)
   }
   return rtf.format(sec, 'second')
-}
-
-// dateTooltip é a data/hora absoluta (locale ativo) para o title do rótulo relativo.
-function dateTooltip(iso: string, lang: Lang): string {
-  return new Date(iso).toLocaleString(lang)
 }
 
 // DocAuthors (F-0375): o rodapé do documento — quem o escreveu primeiro e,
@@ -524,6 +519,7 @@ function DocEditor({
   onSaved: () => void
 }) {
   const { t, lang } = useT()
+  const instant = useInstant()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -628,7 +624,7 @@ function DocEditor({
         {t.feature.edit}
       </button>
       {updatedAt && (
-        <p className="doc-updated muted" title={dateTooltip(updatedAt, lang)}>
+        <p className="doc-updated muted" title={instant(updatedAt, 'full')}>
           {t.feature.updatedAgo(formatUpdatedAt(updatedAt, lang))}
         </p>
       )}
@@ -766,7 +762,8 @@ function RoastSection({
   llmMode: LLMMode | null
   onRefresh: () => void
 }) {
-  const { t, lang } = useT()
+  const { t } = useT()
+  const instant = useInstant()
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [partial, setPartial] = useState(false)
@@ -842,12 +839,7 @@ function RoastSection({
                 title={r.name}
                 onClick={() => setOpen(r.name)}
               >
-                {r.at
-                  ? new Date(r.at).toLocaleString(lang, {
-                      dateStyle: 'short',
-                      timeStyle: 'short',
-                    })
-                  : r.name}
+                {(r.at && instant(r.at, 'datetime')) || r.name}
               </button>
               {r.spec_changed && (
                 <span className="roast-stale">{t.feature.roastSpecChanged}</span>
@@ -878,12 +870,7 @@ function RoastSection({
                 title={r.name}
                 onClick={() => setOpen(r.name)}
               >
-                {r.at
-                  ? new Date(r.at).toLocaleString(lang, {
-                      dateStyle: 'short',
-                      timeStyle: 'short',
-                    })
-                  : r.name}
+                {(r.at && instant(r.at, 'datetime')) || r.name}
               </button>
               {r.spec_changed && (
                 <span className="roast-stale">{t.feature.roastSpecChanged}</span>

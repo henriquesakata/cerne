@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   fetchSettings,
   HTTPError,
@@ -13,7 +13,8 @@ import {
 } from './api'
 import { LoadNotice, LoadPending, Notice, useLiveLoad } from './liveLoad'
 import { useProjects } from './live'
-import { useT, type Messages } from './i18n'
+import { DATE_LOCALES, detectLocale, detectTimeZone, formatInstant, listTimeZones } from './datetime'
+import { useDatePrefs, useT, type Messages } from './i18n'
 import { norm } from './Palette'
 import { FixBlock } from './Harness'
 import { checkProjectName } from './projectName'
@@ -311,6 +312,10 @@ export default function Settings({ group: asked = 'general' }: { group?: Setting
             </header>
           )}
           {group === 'general' && <ProjectName key={activePid} name={name} />}
+          {/* A viewer's choice kept in the browser, outside the registry and
+              outside the Project | Host selector below (F-0493). It is no
+              registry key, so a search finds it by its own texts. */}
+          {(q === '' ? group === 'interface' : dateTimeMatches(q, ts.datetime)) && <DateTimePrefs />}
           {view ? (
           <>
           {aiPage ? (
@@ -469,6 +474,155 @@ function ProjectName({ name }: { name: string }) {
           {error}
         </p>
       )}
+    </section>
+  )
+}
+
+// languageName names a locale in the interface language ("português (Brasil)").
+function languageName(code: string, ui: string): string {
+  try {
+    return new Intl.DisplayNames([ui], { type: 'language' }).of(code) ?? code
+  } catch {
+    return code
+  }
+}
+
+// dateTimeMatches: does the search text (already normalized) hit the section's
+// own title or descriptions? The registry search cannot see it.
+function dateTimeMatches(q: string, td: Texts['datetime']): boolean {
+  return norm(`${td.title} ${td.hint} ${td.format.title} ${td.format.description} ${td.zone.title} ${td.zone.description}`).includes(q)
+}
+
+// DateTimePrefs is the "Data e hora" section of the Interface group (F-0493):
+// the locale and the time zone every instant in the UI shows in. Automatic
+// follows the computer; a choice is kept in this browser's localStorage, like
+// the PT/EN switch, and applies at once — so there is no save button, the
+// preview shows the effect. It never writes the server's settings registry:
+// two people on one project may sit in different zones.
+function DateTimePrefs() {
+  const { t, lang, dateChoice, setDateChoice } = useT()
+  const td = t.settings.datetime
+  const prefs = useDatePrefs()
+  const uid = useId()
+  const titleId = `${uid}-title`
+  // One instant per render, so every sample and the preview agree; a choice
+  // renders again, which brings the preview to the instant of that choice.
+  const now = new Date().toISOString()
+
+  const detectedLocale = languageName(detectLocale(lang), lang)
+  const detectedZone = detectTimeZone() ?? ''
+  const locales = dateChoice.locale && !DATE_LOCALES.includes(dateChoice.locale) ? [...DATE_LOCALES, dateChoice.locale] : DATE_LOCALES
+  // The list is ~420 zones: built again only when the zone in use changes.
+  const { zones, complete } = useMemo(() => listTimeZones(detectedZone, dateChoice.timeZone), [detectedZone, dateChoice.timeZone])
+  const regions = useMemo(() => {
+    const byRegion = new Map<string, string[]>()
+    if (complete) {
+      for (const z of zones) {
+        const region = z.includes('/') ? z.split('/')[0] : td.other
+        byRegion.set(region, [...(byRegion.get(region) ?? []), z])
+      }
+    }
+    return byRegion
+  }, [zones, complete, td.other])
+  const option = (z: string) => (
+    <option key={z} value={z}>
+      {z}
+    </option>
+  )
+
+  const row = (
+    field: 'locale' | 'timeZone',
+    title: string,
+    description: string,
+    storageKey: string,
+    effective: string,
+    select: (ids: { labelledBy: string; describedBy: string }) => ReactNode,
+  ) => {
+    const [rowTitle, descId, effId] = [`${uid}-${field}-title`, `${uid}-${field}-desc`, `${uid}-${field}-eff`]
+    return (
+      <li className="settings-row" aria-labelledby={rowTitle}>
+        <div className="settings-row-text">
+          <h4 className="settings-title">
+            <span id={rowTitle}>{title}</span>
+            <span className="badge" title={td.browserOnlyTitle}>
+              {td.browserOnly}
+            </span>
+          </h4>
+          <p id={descId} className="settings-desc">
+            {description}
+          </p>
+          <code className="settings-id">{storageKey}</code>
+        </div>
+        <div className="settings-row-control">
+          <p id={effId} className="settings-effective">
+            {effective}
+          </p>
+          {select({ labelledBy: rowTitle, describedBy: `${descId} ${effId}` })}
+        </div>
+      </li>
+    )
+  }
+
+  return (
+    <section className="settings-datetime" aria-labelledby={titleId}>
+      <h3 id={titleId} className="settings-title">
+        {td.title}
+      </h3>
+      <p className="settings-hint">{td.hint}</p>
+      <ul className="settings-list">
+        {row(
+          'locale',
+          td.format.title,
+          td.format.description,
+          'cerne-date-locale',
+          (dateChoice.locale ? td.effectiveChosen : td.effectiveAuto)(languageName(prefs.locale, lang)),
+          (ids) => (
+            <select
+              className="settings-select"
+              value={dateChoice.locale ?? ''}
+              aria-labelledby={ids.labelledBy}
+              aria-describedby={ids.describedBy}
+              onChange={(e) => setDateChoice('locale', e.target.value || undefined)}
+            >
+              <option value="">{td.auto(detectedLocale)}</option>
+              {locales.map((l) => (
+                <option key={l} value={l}>
+                  {`${languageName(l, lang)} — ${formatInstant(now, 'datetime', { ...prefs, locale: l })}`}
+                </option>
+              ))}
+            </select>
+          ),
+        )}
+        {row(
+          'timeZone',
+          td.zone.title,
+          td.zone.description,
+          'cerne-time-zone',
+          (dateChoice.timeZone ? td.effectiveChosen : td.effectiveAuto)(prefs.timeZone ?? '—'),
+          (ids) => (
+            <select
+              className="settings-select"
+              value={dateChoice.timeZone ?? ''}
+              aria-labelledby={ids.labelledBy}
+              aria-describedby={ids.describedBy}
+              onChange={(e) => setDateChoice('timeZone', e.target.value || undefined)}
+            >
+              <option value="">{td.auto(detectedZone)}</option>
+              {complete
+                ? [...regions].map(([region, list]) => (
+                    <optgroup key={region} label={region}>
+                      {list.map(option)}
+                    </optgroup>
+                  ))
+                : zones.map(option)}
+            </select>
+          ),
+        )}
+      </ul>
+      <p className="settings-preview" aria-live="polite">
+        <span className="settings-preview-label">{td.preview}</span>
+        <time dateTime={now}>{formatInstant(now, 'full', prefs)}</time>
+      </p>
     </section>
   )
 }

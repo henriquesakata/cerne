@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import History from './History'
+import { I18nProvider } from './i18n'
 import type { LifecycleEvent } from './api'
 
 const api = vi.hoisted(() => ({
@@ -22,6 +23,8 @@ const events: LifecycleEvent[] = [
     actor: 'henrique',
   },
 ]
+
+afterEach(() => vi.restoreAllMocks())
 
 beforeEach(() => {
   cleanup()
@@ -55,5 +58,51 @@ describe('History — falha de carga (F-0300)', () => {
     expect(await screen.findByText('Erro ao carregar o histórico: offline')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
     await waitFor(() => expect(screen.getByText('F-0300')).toBeInTheDocument())
+  })
+})
+
+// F-0493: the event's time follows the browser's locale and zone, not the
+// PT/EN switch, and says the zone (History.tsx joined the spec's list by
+// amendment: the same defect as the other call sites).
+describe('History — hora do evento (F-0493)', () => {
+  const browser = (list: string[]) => {
+    vi.spyOn(navigator, 'languages', 'get').mockReturnValue(list)
+    vi.spyOn(navigator, 'language', 'get').mockReturnValue(list[0])
+  }
+  // The zone is pinned to UTC by the viewer's choice, so the expected text does
+  // not depend on the zone of the machine running the test.
+  const inUTC = () => {
+    localStorage.setItem('cerne-time-zone', 'UTC')
+    return render(
+      <I18nProvider>
+        <History />
+      </I18nProvider>,
+    )
+  }
+  afterEach(() => localStorage.clear())
+
+  // F-0493 crit. 1
+  it('F-0493 crit. 1: a hora segue o locale do navegador, e não o PT/EN da interface', async () => {
+    browser(['en-US'])
+    // A interface está em pt-BR (o padrão); o computador diz en-US.
+    const { container } = inUTC()
+    await waitFor(() => expect(screen.getByText('F-0300')).toBeInTheDocument())
+    expect(container.querySelector('.history-at')).toHaveTextContent('9/30/2026, 12:00:00 AM UTC')
+  })
+
+  // F-0493 crit. 2
+  it('F-0493 crit. 2: a hora diz o fuso', async () => {
+    browser(['pt-BR'])
+    const { container } = inUTC()
+    await waitFor(() => expect(screen.getByText('F-0300')).toBeInTheDocument())
+    expect(container.querySelector('.history-at')).toHaveTextContent('30/09/2026, 00:00:00 UTC')
+  })
+
+  // F-0493 crit. 5
+  it('F-0493 crit. 5: instante que não é data aparece como veio, sem lançar', async () => {
+    api.fetchEvents.mockResolvedValue([{ ...events[0], at: 'ontem' }])
+    const { container } = render(<History />)
+    await waitFor(() => expect(screen.getByText('F-0300')).toBeInTheDocument())
+    expect(container.querySelector('.history-at')).toHaveTextContent('ontem')
   })
 })

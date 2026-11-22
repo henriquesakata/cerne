@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import FeaturePage from './FeaturePage'
@@ -77,6 +77,11 @@ vi.mock('./MermaidView', () => ({
 vi.mock('./live', () => ({
   useLiveVersion: () => live.version,
 }))
+
+afterEach(() => {
+  vi.restoreAllMocks()
+  localStorage.removeItem('cerne-time-zone')
+})
 
 beforeEach(() => {
   cleanup()
@@ -588,6 +593,23 @@ describe('FeaturePage roast section (F-0271/F-0277)', () => {
     expect(container.querySelector('.artifacts article.doc')).toBeNull()
     expect(container.querySelector('.roast-overlay')).toBeNull()
     expect(screen.queryByText(/Nenhum roast ainda/i)).not.toBeInTheDocument()
+  })
+
+  // F-0493 crit. 1
+  it('F-0493 crit. 1: o rótulo da rodada segue o locale do navegador, no fuso escolhido', async () => {
+    localStorage.setItem('cerne-time-zone', 'UTC')
+    vi.spyOn(navigator, 'languages', 'get').mockReturnValue(['en-US'])
+    vi.spyOn(navigator, 'language', 'get').mockReturnValue('en-US')
+    payload = {
+      ...detail('candidate'),
+      roast_rounds: [{ name: 'roast-2.md', at: '2026-02-01T13:05:00Z', spec_changed: false, plan_changed: false }],
+    }
+    render(
+      <I18nProvider>
+        <FeaturePage id="F-0221" />
+      </I18nProvider>,
+    )
+    expect(await screen.findByTitle('roast-2.md')).toHaveTextContent('2/1/26, 1:05 PM')
   })
 
   it('clique na rodada abre modal com o markdown; Esc fecha (critério 2)', async () => {

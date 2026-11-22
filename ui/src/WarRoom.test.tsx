@@ -831,6 +831,24 @@ describe('layout e conversa da sala (B-0046)', () => {
     expect(sayRoom).not.toHaveBeenCalled()
   })
 
+  // F-0493 crit. 1, 2
+  it('F-0493 crit. 1: a hora da mensagem segue o locale do navegador, e o title diz o fuso', async () => {
+    localStorage.setItem('cerne-time-zone', 'UTC')
+    vi.spyOn(navigator, 'languages', 'get').mockReturnValue(['en-US'])
+    vi.spyOn(navigator, 'language', 'get').mockReturnValue('en-US')
+    readRoomMessages.mockImplementationOnce(() => Promise.resolve([open, say(2, 'bia', 'primeira', '2026-08-06T00:00:02Z')]))
+    const { container } = render(
+      <I18nProvider>
+        <WarRoomDetail id="R1" />
+      </I18nProvider>,
+    )
+    await waitFor(() => expect(screen.getByText('primeira')).toBeInTheDocument())
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
+    const stamp = container.querySelector('time[datetime="2026-08-06T00:00:02Z"]')
+    expect(stamp).toHaveTextContent('12:00 AM')
+    expect(stamp).toHaveAttribute('title', '8/6/2026, 12:00:02 AM UTC')
+  })
+
   it('mensagens seguidas do mesmo autor mostram o autor uma vez só', async () => {
     readRoomMessages.mockImplementationOnce(() =>
       Promise.resolve([

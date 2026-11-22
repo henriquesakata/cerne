@@ -27,7 +27,7 @@ import {
   type RoomMessage,
   type RoomSession,
 } from './api'
-import { useT } from './i18n'
+import { useInstant, useT } from './i18n'
 import { useLiveVersion } from './live'
 
 const NICK_KEY = 'warroom-nick'
@@ -172,7 +172,8 @@ export function WarRoomDetail({ id }: { id: string }) {
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [copied, setCopied] = useState(false)
-  const { t, lang } = useT()
+  const { t } = useT()
+  const instant = useInstant()
   const version = useLiveVersion()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -534,11 +535,6 @@ export function WarRoomDetail({ id }: { id: string }) {
     }
   }
 
-  const clock = (iso: string) => {
-    const d = new Date(iso)
-    return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit' })
-  }
-
   const ownNick = session?.nick
 
   // B-0046: the room owns its grid. It used to borrow .backlog-layout, and
@@ -613,8 +609,8 @@ export function WarRoomDetail({ id }: { id: string }) {
                 {!cont && (
                   <p className="room-msg-head">
                     {!own && <strong>{m.nick}</strong>}
-                    <time dateTime={m.time} title={new Date(m.time).toLocaleString(lang)}>
-                      {clock(m.time)}
+                    <time dateTime={m.time} title={instant(m.time, 'full')}>
+                      {instant(m.time, 'time')}
                     </time>
                   </p>
                 )}

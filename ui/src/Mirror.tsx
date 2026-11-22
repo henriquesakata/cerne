@@ -13,7 +13,7 @@ import { Chevron, ExpandAll, useExpanded, type Expanded } from './Expand'
 import { entityHref } from './entityRoute'
 import { When } from './Handoffs'
 import { CHIP as IDEA_CHIP } from './IdeasPanel'
-import { useT } from './i18n'
+import { useInstant, useT } from './i18n'
 import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
 
 // Aba Espelho (F-0465): somente leitura. Mostra o que está publicado em cada
@@ -46,7 +46,8 @@ const bare = (url: string) => url.replace(/^https?:\/\//, '')
 const issueLabel = (id: string) => (/^\d+$/.test(id) ? `#${id}` : id)
 
 export default function Mirror() {
-  const { t, lang } = useT()
+  const { t } = useT()
+  const instant = useInstant()
   const load = useLiveLoad(fetchMirror)
   const x = useExpanded()
   const [checking, setChecking] = useState(false)
@@ -92,7 +93,7 @@ export default function Mirror() {
     if (out.kind === 'error') return setStatus(t.mirror.checkError(out.message))
     setChecks(new Map(out.results.map((r) => [r.id, r])))
     const n = (s: MirrorCheck['status']) => out.results.filter((r) => r.status === s).length
-    const time = new Date().toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+    const time = instant(new Date().toISOString(), 'time')
     const byTracker = new Map(data?.cards.map((c) => [c.id, c.tracker]))
     const capped = new Map<string, number>()
     for (const r of out.results) {
