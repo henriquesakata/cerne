@@ -483,10 +483,12 @@ const ptBR = {
     backlogColumnEmpty: 'Nenhuma candidata — criar no Backlog',
     backlogColumnNoMatch: 'Nenhuma candidata no filtro.',
     drag: {
-      cardHint: 'Arrastável: solte em Aprovadas ou Concluída. Aprovar ou aceitar também se faz pela página da feature.',
+      cardHint: 'Arrastável: solte na coluna destacada para aprovar, aceitar ou devolver um passo. Também se faz pela página da feature.',
       pending: (n: number) => `Responda os ${n} esclarecimentos antes de aprovar`,
       hintApprove: 'Solte para aprovar',
       hintAccept: 'Solte para aceitar',
+      hintRevert: 'Solte para devolver',
+      revertReason: (id: string) => `Por que ${id} volta um passo? (obrigatório)`,
     },
   },
   // Linha de fila recolhível (F-0416), compartilhada por Ideias e Pendências.
@@ -2122,10 +2124,12 @@ const en: Messages = {
     backlogColumnEmpty: 'No candidates yet — create one in the Backlog',
     backlogColumnNoMatch: 'No candidate matches the filter.',
     drag: {
-      cardHint: 'Draggable: drop on Approved or Done. Approving or accepting can also be done from the feature page.',
+      cardHint: 'Draggable: drop on the highlighted column to approve, accept or send back one step. Also from the feature page.',
       pending: (n: number) => `Answer the ${n} clarifications before approving`,
       hintApprove: 'Drop to approve',
       hintAccept: 'Drop to accept',
+      hintRevert: 'Drop to send back',
+      revertReason: (id: string) => `Why does ${id} go back one step? (required)`,
     },
   },
   queue: { expandAll: 'Expand all', collapseAll: 'Collapse all' },

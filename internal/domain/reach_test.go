@@ -16,7 +16,9 @@ func TestFeatureReachable(t *testing.T) {
 		{StateInDevelopment, StateRejected, false},
 		{StateInDevelopment, StateApproved, false},
 		{StateImplemented, StateSuperseded, true},
-		{StateDone, StateSuperseded, false},
+		{StateDone, StateSuperseded, true}, // F-0499: revert, then supersede
+		{StateDone, StateInDevelopment, true},
+		{StateDone, StateRejected, false},
 		{StateRejected, StateApproved, false},
 		{StateSuperseded, StateDone, false},
 		{StateApproved, StateApproved, true},

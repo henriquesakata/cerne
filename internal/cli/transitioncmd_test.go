@@ -424,7 +424,7 @@ func TestTransitionRevert(t *testing.T) {
 		t.Fatalf("approve: %v", err)
 	}
 
-	// revert only walks back an approval: in_development and beyond refuse.
+	// revert walks an approval back to candidate.
 	out, err := execCerne(t, "feature", "revert", id, "--reason", "aprovada por engano", "--dir", projDir)
 	if err != nil {
 		t.Fatalf("revert: %v\noutput: %s", err, out)
@@ -465,6 +465,41 @@ func TestTransitionRevert(t *testing.T) {
 	// A reverted candidate refuses a second revert (nothing to walk back).
 	if _, err := execCerne(t, "feature", "revert", id, "--reason", "de novo", "--dir", projDir); err == nil {
 		t.Fatalf("revert from candidate succeeded, want invalid transition")
+	}
+}
+
+// TestTransitionRevertAfterDelivery: the steps back from Done and Ready keep
+// the required reason and the human gate.
+// F-0499 crit. 3
+func TestTransitionRevertAfterDelivery(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	id := newFeature(t, projDir, "Feature A", 1)
+	f, err := store.LoadFeature(repoDir, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.State = domain.StateDone
+	if err := store.SaveFeature(repoDir, f); err != nil {
+		t.Fatal(err)
+	}
+	commitBackend(t, repoDir)
+
+	if _, err := execCerne(t, "feature", "revert", id, "--dir", projDir); err == nil || !strings.Contains(err.Error(), "--reason") {
+		t.Fatalf("revert without --reason: err = %v, want the reason required", err)
+	}
+	t.Setenv("CERNE_ACTOR", "agent")
+	if _, err := execCerne(t, "feature", "revert", id, "--reason", "aceito por engano", "--dir", projDir); err == nil || !strings.Contains(err.Error(), "human") {
+		t.Fatalf("revert as agent: err = %v, want the human gate", err)
+	}
+	if f, _ := store.LoadFeature(repoDir, id); f.State != domain.StateDone {
+		t.Fatalf("state after refused revert = %s, want done (untouched)", f.State)
+	}
+	t.Setenv("CERNE_ACTOR", "human")
+	for _, want := range []string{"done → implemented", "implemented → in_development"} {
+		out, err := execCerne(t, "feature", "revert", id, "--reason", "bug no login", "--dir", projDir)
+		if err != nil || !strings.Contains(out, want) {
+			t.Fatalf("revert: err = %v, output:\n%s\nwant %q", err, out, want)
+		}
 	}
 }
 

@@ -153,7 +153,7 @@ describe('Kanban drag (F-0388)', () => {
     await screen.findByText('F-0001')
     await drag('F-0001', columnOf('Aprovadas'))
     await waitFor(() => expect(post).toHaveBeenCalled())
-    expect(vi.mocked(transitionBody)).toHaveBeenCalledWith('approve')
+    expect(vi.mocked(transitionBody)).toHaveBeenCalledWith('approve', undefined, undefined)
   })
 
   it('arraste cancelado (dragend sem drop): arraste de card nao arrastavel nao aprova', async () => {
@@ -619,5 +619,86 @@ describe('destino fora da tela (F-0420)', () => {
     const rules = [...readFileSync('src/app.css', 'utf8').matchAll(/([^{}]*\.drop-edge[^{}]*)\{([^}]*)\}/g)]
     expect(rules.length).toBeGreaterThan(0)
     for (const [, sel, body] of rules) expect(body, sel.trim()).not.toMatch(/transition/)
+  })
+})
+
+// F-0499: um card volta um passo depois da entrega, com a razão pedida no soltar.
+describe('arrastar para trás (F-0499)', () => {
+  const ask = () => vi.spyOn(window, 'prompt')
+  afterEach(() => vi.restoreAllMocks())
+  const withDone = () => ({ ...mkState(), features: [...mkState().features, feature('F-0005', 'done')] })
+
+  // F-0499 crit. 6
+  it('Concluída -> Prontas pede a razão e reverte com ela', async () => {
+    payload = withDone()
+    ask().mockReturnValue('aceito por engano')
+    post.mockResolvedValue({ ok: true, data: { id: 'F-0005', from: 'done', to: 'implemented' } })
+    render(<Kanban />)
+    await screen.findByText('F-0005')
+    await drag('F-0005', columnOf('Prontas'))
+    await waitFor(() => expect(post).toHaveBeenCalledWith('F-0005', { action: 'revert', sentinel: true }))
+    expect(vi.mocked(transitionBody)).toHaveBeenCalledWith('revert', undefined, 'aceito por engano')
+    expect(window.prompt).toHaveBeenCalledTimes(1)
+    expect(await findNotice()).toHaveTextContent('Concluída → Pronta')
+    // sem mudança otimista: o card só muda quando o servidor muda o estado
+    expect(columnOf('Conclu')).toHaveTextContent('F-0005')
+  })
+
+  // F-0499 crit. 7
+  it('Prontas -> Em desenvolvimento pede a razão e reverte com ela', async () => {
+    ask().mockReturnValue('bug no login')
+    post.mockResolvedValue({ ok: true, data: { id: 'F-0002', from: 'implemented', to: 'in_development' } })
+    render(<Kanban />)
+    await screen.findByText('F-0002')
+    await drag('F-0002', columnOf('Em desenvolvimento'))
+    await waitFor(() => expect(post).toHaveBeenCalledWith('F-0002', { action: 'revert', sentinel: true }))
+    expect(vi.mocked(transitionBody)).toHaveBeenCalledWith('revert', undefined, 'bug no login')
+  })
+
+  // F-0499 crit. 8
+  it('razão cancelada ou em branco: nenhuma chamada, o card fica', async () => {
+    payload = withDone()
+    const prompt = ask()
+    render(<Kanban />)
+    await screen.findByText('F-0005')
+    for (const answer of [null, '   ']) {
+      prompt.mockReturnValueOnce(answer)
+      await drag('F-0005', columnOf('Prontas'))
+    }
+    expect(prompt).toHaveBeenCalledTimes(2)
+    expect(post).not.toHaveBeenCalled()
+    expect(columnOf('Conclu')).toHaveTextContent('F-0005')
+  })
+
+  // F-0499 crit. 9
+  it('a coluna de volta mostra a dica; Pronta ainda aceita; as outras recusam', async () => {
+    payload = withDone()
+    const prompt = ask()
+    render(<Kanban />)
+    await screen.findByText('F-0005')
+    expect(cardOf('F-0005')).toHaveAttribute('draggable', 'true')
+
+    let dataTransfer = dt()
+    fireEvent.dragStart(cardOf('F-0005'), { dataTransfer })
+    expect(columnOf('Prontas')).toHaveClass('drop-ready')
+    expect(columnOf('Prontas')).toHaveTextContent('Solte para devolver')
+    for (const name of ['Aprovadas', 'Em desenvolvimento']) {
+      expect(columnOf(name), name).toHaveClass('drop-off')
+      fireEvent.dragOver(columnOf(name), { dataTransfer })
+      expect(dataTransfer.dropEffect, name).toBe('none')
+    }
+    fireEvent.dragEnd(cardOf('F-0005'))
+
+    dataTransfer = dt()
+    fireEvent.dragStart(cardOf('F-0002'), { dataTransfer })
+    expect(columnOf('Em desenvolvimento')).toHaveClass('drop-ready')
+    expect(columnOf('Em desenvolvimento')).toHaveTextContent('Solte para devolver')
+    expect(columnOf('Conclu')).toHaveTextContent('Solte para aceitar')
+    expect(columnOf('Aprovadas')).toHaveClass('drop-off')
+    fireEvent.dragOver(columnOf('Aprovadas'), { dataTransfer })
+    expect(dataTransfer.dropEffect).toBe('none')
+    fireEvent.dragEnd(cardOf('F-0002'))
+    expect(prompt).not.toHaveBeenCalled()
+    expect(post).not.toHaveBeenCalled()
   })
 })

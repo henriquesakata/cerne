@@ -45,10 +45,12 @@ var transitionSpecs = []transitionSpec{
 			"  # and carry a \"## Gauntlet\" record (cited verdict, or the literal exemption)\n" +
 			"  cerne push && cerne feature complete <id>\n" + lifecycleSeq},
 	{"supersede", "Supersede a feature with another (requires --by and --reason)", domain.ActionSupersede, ""},
-	{"revert", "Send an approved feature back to candidate (requires --reason)", domain.ActionRevert,
-		"  # undo of an approval: state moves back, the event keeps the why,\n" +
-			"  # spec and plan stay intact\n" +
-			"  cerne feature revert <id> --reason \"approved by mistake\"\n" + lifecycleSeq},
+	{"revert", "Walk a feature one step back: approved → candidate, implemented → in_development, done → implemented (requires --reason)", domain.ActionRevert,
+		"  # one step back, a human act: the event keeps the why, the documents\n" +
+			"  # and the delivery links stay intact\n" +
+			"  cerne feature revert <id> --reason \"approved by mistake\"      # approved → candidate\n" +
+			"  cerne feature revert <id> --reason \"login fails on Safari\"    # implemented → in_development\n" +
+			"  cerne feature revert <id> --reason \"accepted by mistake\"      # done → implemented\n" + lifecycleSeq},
 }
 
 func newTransitionCmds(dir *string) []*cobra.Command {

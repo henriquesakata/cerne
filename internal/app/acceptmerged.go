@@ -76,7 +76,7 @@ func AcceptMerged(repoDir, projDir string, cfg project.Config, ids []string) ([]
 			}
 		}
 		c := MergeCheck{ID: f.ID}
-		m, why, open := mergeOf(cfg, projDir, f)
+		m, why, open := mergeOf(cfg, repoDir, projDir, f)
 		if m == nil {
 			c.Line, c.Waiting = f.ID+": "+why, open
 			checks = append(checks, c)
@@ -101,13 +101,23 @@ func AcceptMerged(repoDir, projDir string, cfg project.Config, ids []string) ([]
 // mergeOf asks the forge about f's delivery PR: the merge to record, or why
 // there is none (and what to do), and whether the PR is simply still open.
 // In doubt, never a merge.
-func mergeOf(cfg project.Config, projDir string, f store.Feature) (m *mergeAccept, why string, open bool) {
+func mergeOf(cfg project.Config, repoDir, projDir string, f store.Feature) (m *mergeAccept, why string, open bool) {
 	if f.State != domain.StateImplemented {
 		return nil, fmt.Sprintf("is %s, not implemented: nothing to accept", f.State), false
 	}
 	url := f.DeliveryMRURL
 	if url == "" {
 		return nil, fmt.Sprintf("no delivery PR to ask about: link it with 'cerne feature deliver %s --mr <url>'", f.ID), false
+	}
+	// A merge is transcribed once (F-0499): back on implemented after that
+	// accept, the card was reverted by a human, and the same merge does not
+	// undo the revert.
+	recorded, err := mergeRecorded(repoDir, f.ID, url)
+	if err != nil {
+		return nil, fmt.Sprintf("the event log could not be read (%v); nothing accepted", err), false
+	}
+	if recorded {
+		return nil, fmt.Sprintf("the merge of %s was already recorded as the acceptance and then reverted: link a new delivery with 'cerne feature deliver %s --mr <url>', or a human accepts with 'cerne feature accept %s'", url, f.ID, f.ID), false
 	}
 	repo, n, ok := forge.ParsePRURL(url)
 	if !ok {
@@ -130,4 +140,19 @@ func mergeOf(cfg project.Config, projDir string, f store.Feature) (m *mergeAccep
 		return nil, fmt.Sprintf("%s merged into %s, not into %s: a human accepts with 'cerne feature accept %s' once the work reaches %s", url, pr.Base, pr.DefaultBranch, f.ID, pr.DefaultBranch), false
 	}
 	return &mergeAccept{PRURL: url, MergedAt: pr.MergedAt, RecordedBy: EventActor()}, "", false
+}
+
+// mergeRecorded reports whether the log holds an acceptance of id on the
+// merge of the PR at url.
+func mergeRecorded(repoDir, id, url string) (bool, error) {
+	evs, err := store.ReadEvents(repoDir)
+	if err != nil {
+		return false, err
+	}
+	for _, ev := range evs {
+		if ev.EntityID == id && ev.Type == eventTypes[domain.ActionAccept] && ev.Payload["pr"] == url {
+			return true, nil
+		}
+	}
+	return false, nil
 }

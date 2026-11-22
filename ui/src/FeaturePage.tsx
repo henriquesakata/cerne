@@ -1025,9 +1025,12 @@ const ACTIONS_BY_STATE: Record<FeatureState, ActionSpec[]> = {
   implemented: [
     // Accept é o gate humano (F-0131): valida o implementado → done.
     { action: 'accept', form: 'confirm' },
+    // F-0499: entrega reprovada ou com bug volta ao desenvolvimento.
+    { action: 'revert', form: 'reason' },
     { action: 'supersede', form: 'supersede' },
   ],
-  done: [],
+  // F-0499: desfazer o aceite devolve a Pronta.
+  done: [{ action: 'revert', form: 'reason' }],
   rejected: [],
   superseded: [],
 }

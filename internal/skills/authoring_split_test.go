@@ -162,6 +162,8 @@ var rewritten = []string{
 	"Tags render inline in `note list`/`note show`, fold into the FTS body",
 	// E-0005 (T-0017): the MCP server serves the context tool too.
 	"An MCP client without a shell reads the same surface through **`cerne mcp`** (F-0363): a stdio MCP server whose read-only tools",
+	// F-0499: revert also walks back from Ready and Done.
+	"- `cerne feature revert F-NNNN --reason \"…\"` — undoes an approval, back to `candidate`",
 }
 
 // b0015Renames maps the pt-BR names and placeholders the 2026-11-13 snapshot
