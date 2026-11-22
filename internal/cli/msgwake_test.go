@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -32,31 +31,12 @@ func TestMsgSendWakes(t *testing.T) {
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	sock := filepath.Join(dir, "s.sock")
-	l, err := net.Listen("unix", sock)
+	ln, err := net.Listen("unix", sock)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer l.Close()
-	var mu sync.Mutex
-	var got []string
-	var wg sync.WaitGroup
-	go func() {
-		for {
-			c, err := l.Accept()
-			if err != nil {
-				return
-			}
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				raw, _ := io.ReadAll(c)
-				c.Close()
-				mu.Lock()
-				got = append(got, string(raw))
-				mu.Unlock()
-			}()
-		}
-	}()
+	defer ln.Close()
+	l := ln.(*net.UnixListener)
 	claude := t.TempDir()
 	t.Setenv("CLAUDE_CONFIG_DIR", claude)
 	raw, _ := json.Marshal(map[string]any{"pid": 5, "sessionId": "sess-b", "messagingSocketPath": sock, "status": "idle"})
@@ -70,9 +50,19 @@ func TestMsgSendWakes(t *testing.T) {
 	if out, err := execCerne(t, "msg", "send", b+" pode revisar?", "--session", "sess-a", "--dir", projDir); err != nil {
 		t.Fatalf("msg send: %v\n%s", err, out)
 	}
-	wg.Wait()
-	mu.Lock()
-	defer mu.Unlock()
+	// Drain the backlog: nothing accepts in the background, so this never
+	// races an accept.
+	var got []string
+	for {
+		_ = l.SetDeadline(time.Now().Add(50 * time.Millisecond))
+		c, err := l.Accept()
+		if err != nil {
+			break
+		}
+		raw, _ := io.ReadAll(c)
+		c.Close()
+		got = append(got, string(raw))
+	}
 	if len(got) != 1 || !strings.Contains(got[0], `"session_id":"sess-b"`) || !strings.Contains(got[0], "pode revisar?") {
 		t.Fatalf("inbox = %q, want one line for sess-b", got)
 	}

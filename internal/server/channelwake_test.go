@@ -10,18 +10,21 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/room"
 )
 
 // serverInbox is a Unix socket standing in for an idle Claude Code session's
-// inbox (F-0491); it never answers, like the real one.
+// inbox (F-0491); it never answers, like the real one. Nothing accepts in the
+// background: writes drains the listen backlog, so a check never races an
+// accept (red on CI Linux before).
 type serverInbox struct {
 	path string
+	l    *net.UnixListener
 	mu   sync.Mutex
 	got  []string
-	wg   sync.WaitGroup
 }
 
 func newServerInbox(t *testing.T) *serverInbox {
@@ -36,31 +39,24 @@ func newServerInbox(t *testing.T) *serverInbox {
 	if err != nil {
 		t.Fatal(err)
 	}
+	in.l = l.(*net.UnixListener)
 	t.Cleanup(func() { l.Close() })
-	go func() {
-		for {
-			c, err := l.Accept()
-			if err != nil {
-				return
-			}
-			in.wg.Add(1)
-			go func() {
-				defer in.wg.Done()
-				raw, _ := io.ReadAll(c)
-				c.Close()
-				in.mu.Lock()
-				in.got = append(in.got, string(raw))
-				in.mu.Unlock()
-			}()
-		}
-	}()
 	return in
 }
 
 func (in *serverInbox) writes() []string {
-	in.wg.Wait()
 	in.mu.Lock()
 	defer in.mu.Unlock()
+	for {
+		_ = in.l.SetDeadline(time.Now().Add(50 * time.Millisecond))
+		c, err := in.l.Accept()
+		if err != nil {
+			break
+		}
+		raw, _ := io.ReadAll(c)
+		c.Close()
+		in.got = append(in.got, string(raw))
+	}
 	return append([]string(nil), in.got...)
 }
 

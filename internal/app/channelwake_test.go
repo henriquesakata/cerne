@@ -19,11 +19,13 @@ import (
 
 // fakeInbox is a Unix socket standing in for a Claude Code session's inbox:
 // it keeps every connection's bytes and never writes back, like the real one.
+// Nothing accepts in the background: a finished write waits in the listen
+// backlog, and writes drains it, so a check never races an accept.
 type fakeInbox struct {
 	path string
+	l    *net.UnixListener
 	mu   sync.Mutex
 	got  []string
-	done sync.WaitGroup
 }
 
 // shortDir is a socket directory under the ~104-byte path limit (t.TempDir()
@@ -45,32 +47,26 @@ func newFakeInbox(t *testing.T) *fakeInbox {
 	if err != nil {
 		t.Fatal(err)
 	}
+	in.l = l.(*net.UnixListener)
 	t.Cleanup(func() { l.Close() })
-	go func() {
-		for {
-			c, err := l.Accept()
-			if err != nil {
-				return
-			}
-			in.done.Add(1)
-			go func() {
-				defer in.done.Done()
-				raw, _ := io.ReadAll(c)
-				c.Close()
-				in.mu.Lock()
-				in.got = append(in.got, string(raw))
-				in.mu.Unlock()
-			}()
-		}
-	}()
 	return in
 }
 
-// writes is every connection's bytes so far, once the readers are done.
+// writes drains the connections waiting in the backlog and returns every
+// connection's bytes so far.
 func (in *fakeInbox) writes() []string {
-	in.done.Wait()
 	in.mu.Lock()
 	defer in.mu.Unlock()
+	for {
+		_ = in.l.SetDeadline(time.Now().Add(50 * time.Millisecond))
+		c, err := in.l.Accept()
+		if err != nil {
+			break
+		}
+		raw, _ := io.ReadAll(c)
+		c.Close()
+		in.got = append(in.got, string(raw))
+	}
 	return slices.Clone(in.got)
 }
 
