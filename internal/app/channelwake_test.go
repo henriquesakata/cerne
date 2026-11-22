@@ -890,3 +890,87 @@ func TestChannelChainTurnClearsAtANormalTurn(t *testing.T) {
 		t.Fatal("a normal turn start left the chain state behind")
 	}
 }
+
+// chainFixture is a channel fixture where s1 and s2 sit idle in auto mode,
+// with one fake inbox each.
+func chainFixture(t *testing.T) (f *chanFixture, a, b *fakeInbox) {
+	t.Helper()
+	f = newChanFixture(t)
+	_, register := fakeRegistry(t)
+	a, b = newFakeInbox(t), newFakeInbox(t)
+	register(94, "s1", a.path, "idle")
+	register(95, "s2", b.path, "idle")
+	f.mode("s1", "claude-code", "auto")
+	f.mode("s2", "claude-code", "auto")
+	return f, a, b
+}
+
+// TestChannelChainOnlyForWakeableTargets (F-0491 crit. 9, review): a post in
+// a chained turn records chain only on a target it would otherwise have
+// woken — one whose message is already shown gets no stray row.
+func TestChannelChainOnlyForWakeableTargets(t *testing.T) {
+	f, _, b := chainFixture(t)
+	f.wake("W-0001", "W-0002 revisa?", false)
+	f.at = f.at.Add(time.Second)
+	if _, err := ChannelInjectPrompt(f.cacheDir, f.repoDir, "s2", wokenPrompt(t, b), f.at); err != nil {
+		t.Fatal(err)
+	}
+	reply := f.post("W-0002", "W-0001 revisado", false)
+	f.inject("s1", true) // s1 is shown the reply before the wake runs
+	msgs, _ := f.ch.Messages()
+	ChannelWakeIdle(f.cacheDir, f.repoDir, msgs[len(msgs)-1], f.at.Add(time.Second))
+	for _, d := range f.deliveries() {
+		if d.Reason != "" && slices.Contains(d.Unwoken, reply) {
+			t.Fatalf("a target already shown #%d got the reason row %+v", reply, d)
+		}
+	}
+}
+
+// TestChannelChainAgentNewestCounts (F-0491 crit. 9, review): a wake whose
+// envelope also carries an older human message still pending is agent-opened
+// — the agent's post is the newest — so the session's reply wakes nobody.
+func TestChannelChainAgentNewestCounts(t *testing.T) {
+	f, a, b := chainFixture(t)
+	f.wake("Henrique", "pessoal, bom dia", true) // cites nobody: wakes nobody, stays pending
+	f.wake("W-0001", "W-0002 revisa?", false)
+	prompt := wokenPrompt(t, b)
+	if !strings.Contains(prompt, "bom dia") {
+		t.Fatalf("the older human message did not ride along: %s", prompt)
+	}
+	f.at = f.at.Add(time.Second)
+	if _, err := ChannelInjectPrompt(f.cacheDir, f.repoDir, "s2", prompt, f.at); err != nil {
+		t.Fatal(err)
+	}
+	f.wake("W-0002", "W-0001 revisado", false)
+	if got := a.writes(); len(got) != 0 {
+		t.Fatalf("a reply in an agent-opened turn woke A: %q", got)
+	}
+}
+
+// TestChannelChainSubagentPost (F-0491 crit. 9, review): a subagent posts with
+// its parent's session id (F-0376), so its post in a marked turn wakes nobody
+// either.
+func TestChannelChainSubagentPost(t *testing.T) {
+	f, a, b := chainFixture(t)
+	if err := BindSessionAgent(f.cacheDir, "s2", "agent7", "claude-code", "W-0002"); err != nil {
+		t.Fatal(err)
+	}
+	f.wake("W-0001", "W-0002 revisa?", false)
+	f.at = f.at.Add(time.Second)
+	if _, err := ChannelInjectPrompt(f.cacheDir, f.repoDir, "s2", wokenPrompt(t, b), f.at); err != nil {
+		t.Fatal(err)
+	}
+	f.at = f.at.Add(time.Second)
+	m, _, err := ChannelSend(f.cacheDir, f.repoDir, "s2", "", "W-0001 o subagente revisou", f.at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ChannelWakeIdle(f.cacheDir, f.repoDir, m, f.at.Add(time.Second))
+	if got := a.writes(); len(got) != 0 {
+		t.Fatalf("a subagent's post in a marked turn woke A: %q", got)
+	}
+	msgs, _ := f.read("")
+	if tg := stateOf(t, msgs, m.Seq).Targets; len(tg) != 1 || tg[0].Reason != WakeChain {
+		t.Fatalf("subagent post targets = %+v, want %s", tg, WakeChain)
+	}
+}

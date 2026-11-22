@@ -96,12 +96,9 @@ func ChannelWakeIdle(cacheDir, repoDir string, m room.Message, now time.Time) {
 		if socket == "" && reason == "" {
 			continue // busy: it hears the channel at its next tool call or its Stop
 		}
-		if reason == "" && chained {
-			reason = WakeChain
-		}
 		if reason == "" {
 			var c *wakeClaim
-			c, reason = claimWake(ch, repoDir, sess, id, m, len(claims), now)
+			c, reason = claimWake(ch, repoDir, sess, id, m, chained, len(claims), now)
 			if c != nil {
 				c.socket = socket
 				claims = append(claims, *c)
@@ -136,8 +133,9 @@ func ChannelWakeIdle(cacheDir, repoDir string, m room.Message, now time.Time) {
 
 // claimWake renders and claims, under the channel lock, the wake of session
 // sess for m: nil and "" when m is no longer due to it (shown, answered,
-// claimed), nil and a reason when the cooldown or the post's cap stops it.
-func claimWake(ch room.Channel, repoDir, sess string, id channelIdentity, m room.Message, claimed int, now time.Time) (*wakeClaim, string) {
+// claimed), nil and a reason when the chain cut (chained), the cooldown or the
+// post's cap stops it.
+func claimWake(ch room.Channel, repoDir, sess string, id channelIdentity, m room.Message, chained bool, claimed int, now time.Time) (*wakeClaim, string) {
 	var c *wakeClaim
 	var why string
 	_ = ch.Update(func(msgs []room.Message, dels []room.Delivery) (*room.Delivery, error) {
@@ -148,6 +146,9 @@ func claimWake(ch room.Channel, repoDir, sess string, id channelIdentity, m room
 			return nil, nil
 		}
 		switch {
+		case chained:
+			why = WakeChain
+			return nil, nil
 		case cs.claimedSince(sess, now.Add(-wakeCooldown)):
 			why = WakeCooldown
 			return nil, nil
@@ -362,8 +363,9 @@ func chainTurnPath(cacheDir, sess string) string {
 }
 
 // markChainTurn records whether session sess's turn, starting now, was opened
-// by an agent's message; any other turn start clears it, so a state a crash
-// left behind lasts one turn at most.
+// by an agent's message; the next prompt that is not such a turn clears it. A
+// turn that starts without a prompt (a resume, a background task) keeps the
+// mark until then — it over-suppresses, and the post still arrives.
 func markChainTurn(cacheDir, sess string, on bool) {
 	if safeSessionID(sess) != nil {
 		return
