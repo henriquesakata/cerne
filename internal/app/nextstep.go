@@ -59,10 +59,20 @@ func ImplementedOwes(repoDir string, f store.Feature) (cmds []string, problem er
 			problem = fmt.Errorf("cost check failed: %w", err)
 		}
 	}
-	if f.DeliveryCommitURL == "" && f.DeliveryMRURL == "" {
-		cmds = append(cmds, "cerne feature deliver "+f.ID+" --mr <url>")
+	if cmd := DeliveryOwed(f); cmd != "" {
+		cmds = append(cmds, cmd)
 	}
 	return cmds, problem
+}
+
+// DeliveryOwed is the command that records a missing delivery link, or "" when
+// a commit or MR is already on the card. The complete's Next step and
+// ImplementedOwes share it (B-0070), so the two never ask different things.
+func DeliveryOwed(f store.Feature) string {
+	if f.DeliveryCommitURL != "" || f.DeliveryMRURL != "" {
+		return ""
+	}
+	return "cerne feature deliver " + f.ID + " --mr <url>"
 }
 
 // docRef names the file the agent edits: the materialized copy under .docs/

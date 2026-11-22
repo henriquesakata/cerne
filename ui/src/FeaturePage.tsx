@@ -45,10 +45,24 @@ const MermaidView = lazy(() => import('./MermaidView'))
 function titleEditable(state: FeatureState): boolean {
   return (
     state !== 'implemented' &&
+    state !== 'done' &&
     state !== 'rejected' &&
     state !== 'superseded'
   )
 }
+
+// stageTab (F-0498) is the document a person judges at this point, the same
+// rule as `cerne show`: the spec before the work, the plan during it, the
+// result once implemented. A stage doc not written yet falls back to the spec.
+function stageTab(state: FeatureState, real: Record<DocTab, boolean>): DocTab {
+  const stage: DocTab =
+    state === 'in_development' ? 'plan' : state === 'implemented' || state === 'done' ? 'result' : 'spec'
+  return real[stage] ? stage : 'spec'
+}
+
+// Draft (F-0498) is an edit in progress on one tab: the text and the version
+// of the document it started from, so a change underneath is noticed.
+type Draft = { text: string; base: string }
 
 // TitleEditor renderiza o título da feature com edição inline. O controle de
 // edição só aparece em estados vivos (titleEditable); em estados terminais o
@@ -222,12 +236,20 @@ function prNumber(url: string): string {
   return url.match(/(\d+)\/?$/)?.[1] ?? url
 }
 
+// F-0498: one instance per feature, so a tab choice, a draft or a notice
+// never carries over to the next feature, not even for one render.
 export default function FeaturePage({ id }: { id: string }) {
+  return <FeatureView key={id} id={id} />
+}
+
+function FeatureView({ id }: { id: string }) {
   // Carga compartilhada (F-0300): falha com a página já na tela vira aviso, não
   // troca a página; o sujeito é o id, então outra feature nunca aparece sob este.
   const live = useLiveLoad(() => fetchFeature(id), [id])
   const detail = live.data
-  const [tab, setTab] = useState<DocTab>('spec')
+  // F-0498: null until the person picks a tab; until then the stage decides.
+  const [picked, setPicked] = useState<DocTab | null>(null)
+  const [drafts, setDrafts] = useState<Partial<Record<DocTab, Draft>>>({})
   const [notice, setNotice] = useState<string | null>(null)
   // F-0449: what did not block the last transition (the mirror's tracker round).
   const [warnings, setWarnings] = useState<string[]>([])
@@ -241,6 +263,25 @@ export default function FeaturePage({ id }: { id: string }) {
     void live.reload()
   }
 
+  // F-0495: the sticky rail sits below the nav, whose height changes as it
+  // wraps (width, language, a new item). The page watches it from outside:
+  // the nav itself never measures (F-0332 crit. 8).
+  useEffect(() => {
+    const nav = document.querySelector<HTMLElement>('.nav')
+    if (!nav) return
+    const root = document.documentElement
+    const publish = () => root.style.setProperty('--nav-h', `${nav.offsetHeight}px`)
+    publish()
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(publish)
+    ro?.observe(nav)
+    window.addEventListener('resize', publish)
+    return () => {
+      ro?.disconnect()
+      window.removeEventListener('resize', publish)
+      root.style.removeProperty('--nav-h')
+    }
+  }, [])
+
   // Lê o modo de IA uma vez (para o gating do botão "Gerar com IA").
   useEffect(() => {
     fetchLLMMode()
@@ -251,6 +292,7 @@ export default function FeaturePage({ id }: { id: string }) {
   if (!detail) return <LoadPending load={live} message={t.feature.loadError} />
 
   const f = detail.feature
+  const tab = picked ?? stageTab(f.state, detail.docs_real)
 
   return (
     <main className="feature">
@@ -263,7 +305,7 @@ export default function FeaturePage({ id }: { id: string }) {
       <header className="feature-header">
         <TitleEditor feature={f} onSaved={load} />
         <p className="feature-meta">
-          <span className={`chip chip-${f.state}`}>{t.state[f.state]}</span>
+          <span className={`chip chip-${f.state} feature-state`}>{t.state[f.state]}</span>
           {/* F-0203: chip de papel — épico estrutural (filhos) ou declarado (E-);
               task pelo prefixo T-. */}
           {(detail.children.length > 0 || f.id.startsWith('E-')) && (
@@ -313,17 +355,15 @@ export default function FeaturePage({ id }: { id: string }) {
             ))}
           </p>
         )}
-        {notice && <p className="notice">{notice}</p>}
-        {warnings.map((w) => (
-          <p key={w} className="notice">
-            {t.common.warning} <code>{w}</code>
-          </p>
-        ))}
       </header>
       <ErrataSection content={detail.errata} />
-      <Backlinks id={id} />
-      <DeliveryPendings id={id} />
-      <FeatureAgents id={id} />
+      {/* F-0497: the reference panels share one row while collapsed; an open
+          one takes the whole width below the others. */}
+      <div className="feature-refs">
+        <Backlinks id={id} exclude={detail.informed_by.map((r) => r.id)} />
+        <DeliveryPendings id={id} />
+        <FeatureAgents id={id} />
+      </div>
       {diagram ? (
         <Suspense fallback={<p className="status">{t.common.loading}</p>}>
           <MermaidView
@@ -342,7 +382,7 @@ export default function FeaturePage({ id }: { id: string }) {
                   <button
                     key={d}
                     className={d === tab ? 'tab active' : 'tab'}
-                    onClick={() => setTab(d)}
+                    onClick={() => setPicked(d)}
                   >
                     {t.feature.tabs[d]}
                     {open > 0 && (
@@ -356,10 +396,18 @@ export default function FeaturePage({ id }: { id: string }) {
             </nav>
             <DocEditor
               featureId={f.id}
+              title={f.title}
               doc={tab}
               content={detail.docs[tab]}
               hasRealContent={detail.docs_real[tab]}
               updatedAt={detail.docs_updated[tab]}
+              draft={drafts[tab]}
+              onDraft={(d) => {
+                // An open draft pins its tab: a live state change must not
+                // move the page away from what the person is writing.
+                if (d) setPicked(tab)
+                setDrafts((all) => ({ ...all, [tab]: d }))
+              }}
               onSaved={load}
             />
             <DocAuthors writes={(detail.writes ?? []).filter((w) => w.doc === tab)} />
@@ -371,6 +419,8 @@ export default function FeaturePage({ id }: { id: string }) {
               staleApproval={detail.spec_changed_after_approval}
               baselineMissing={detail.approval_baseline_missing === true}
               readiness={detail.approve_readiness}
+              notice={notice}
+              warnings={warnings}
               onRefresh={load}
               onDone={(r: TransitionResult) => {
                 // F-0318: approve numa aprovada diz o que fez — "Aprovada →
@@ -395,22 +445,35 @@ export default function FeaturePage({ id }: { id: string }) {
               judgeQuestion={detail.judge_question}
               advice={detail.approve_advice}
             />
-            <EpicPanel feature={f} childFeatures={detail.children} onChanged={load} />
-            <DiagramsSection
-              featureId={f.id}
-              artifacts={detail.artifacts}
-              llmMode={llmMode}
-              onOpen={(d) => setDiagram(d)}
-              onRefresh={load}
-            />
-            <RoastSection
-              featureId={f.id}
-              rounds={detail.roast_rounds}
-              planRounds={detail.plan_roast_rounds}
-              planReal={!!detail.docs_real?.plan}
-              llmMode={llmMode}
-              onRefresh={load}
-            />
+            {!(isFrozen(f.state) && !f.parent && detail.children.length === 0) && (
+              <EpicPanel
+                feature={f}
+                childFeatures={detail.children}
+                frozen={isFrozen(f.state)}
+                onChanged={load}
+              />
+            )}
+            {!(isFrozen(f.state) && detail.artifacts.length === 0) && (
+              <DiagramsSection
+                featureId={f.id}
+                artifacts={detail.artifacts}
+                llmMode={llmMode}
+                frozen={isFrozen(f.state)}
+                onOpen={(d) => setDiagram(d)}
+                onRefresh={load}
+              />
+            )}
+            {/* F-0495: the roast reviews a spec or a plan before the work starts. */}
+            {(f.state === 'candidate' || f.state === 'approved') && (
+              <RoastSection
+                featureId={f.id}
+                rounds={detail.roast_rounds}
+                planRounds={detail.plan_roast_rounds}
+                planReal={!!detail.docs_real?.plan}
+                llmMode={llmMode}
+                onRefresh={load}
+              />
+            )}
           </aside>
         </div>
       )}
@@ -423,41 +486,69 @@ export default function FeaturePage({ id }: { id: string }) {
 // saveFeatureDoc (o servidor commita+empurra) e recarrega a feature.
 // Marcadores [ESCLARECER] do doc viram chips respondíveis (F-0175): a
 // resposta reescreve só aquele marcador e salva pelo mesmo caminho.
+// stripRepeatedTitle (F-0497) drops a leading level-1 heading that repeats the
+// feature's title (ignoring case and spacing): the page's own h1 already says
+// it. cut is how many characters went, so a clarification marker's offset in
+// the rendered text maps back to the stored document.
+function stripRepeatedTitle(content: string, title: string): { body: string; cut: number } {
+  // A stored doc opens with its cerne_id frontmatter; the heading follows it.
+  const fm = /^---\r?\n[\s\S]*?\r?\n---[ \t]*\r?\n/.exec(content)?.[0] ?? ''
+  const m = /^\s*#[ \t]+(.+?)[ \t]*(?:\r?\n|$)/.exec(content.slice(fm.length))
+  const norm = (x: string) => x.toLowerCase().replace(/\s+/g, ' ').trim()
+  if (!m || norm(m[1]) !== norm(title)) return { body: content, cut: 0 }
+  // Markers never sit in the frontmatter, so every offset shifts by the cut.
+  return { body: fm + content.slice(fm.length + m[0].length), cut: m[0].length }
+}
+
 function DocEditor({
   featureId,
+  title,
   doc,
   content,
   hasRealContent,
   updatedAt,
+  draft,
+  onDraft,
   onSaved,
 }: {
   featureId: string
+  title: string
   doc: DocTab
   content: string
   hasRealContent: boolean
   updatedAt: string | null
+  // F-0498: the edit in progress lives in the page, one per tab, so a tab
+  // switch or a live reload never drops it; undefined means not editing.
+  draft: Draft | undefined
+  onDraft: (d: Draft | undefined) => void
   onSaved: () => void
 }) {
   const { t, lang } = useT()
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(content)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Reset quando o doc ou o conteúdo muda (troca de aba, reload após salvar).
   useEffect(() => {
-    setDraft(content)
-    setEditing(false)
     setError(null)
-  }, [content, doc])
+  }, [doc])
 
-  if (editing) {
+  if (draft) {
+    // The document moved under the edit (an agent pushed it): keep the draft
+    // and say so; the person chooses to keep writing or take the new version.
+    const changed = draft.base !== content
     return (
       <div className="doc-edit">
+        {changed && (
+          <p className="notice notice-warning" role="status">
+            {t.feature.docChanged}{' '}
+            <button type="button" onClick={() => onDraft(undefined)}>
+              {t.feature.discardDraft}
+            </button>
+          </p>
+        )}
         <textarea
           className="doc-textarea"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+          value={draft.text}
+          onChange={(e) => onDraft({ ...draft, text: e.target.value })}
           rows={22}
         />
         <div className="doc-edit-actions">
@@ -466,10 +557,10 @@ function DocEditor({
             onClick={() => {
               setSaving(true)
               setError(null)
-              void saveFeatureDoc(featureId, doc, draft).then((res) => {
+              void saveFeatureDoc(featureId, doc, draft.text).then((res) => {
                 setSaving(false)
                 if (res.ok) {
-                  setEditing(false)
+                  onDraft(undefined)
                   onSaved()
                 } else {
                   setError(res.error)
@@ -479,7 +570,7 @@ function DocEditor({
           >
             {t.common.save}
           </button>
-          <button disabled={saving} onClick={() => setEditing(false)}>
+          <button disabled={saving} onClick={() => onDraft(undefined)}>
             {t.common.cancel}
           </button>
           {error && <span className="form-error">{error}</span>}
@@ -492,6 +583,7 @@ function DocEditor({
   // offset e salva o doc inteiro pelo caminho existente. resolveMarker
   // devolve null quando o conteúdo mudou sob os pés — recarrega em vez de
   // salvar por cima.
+  const shown = stripRepeatedTitle(content, title)
   const answerClarification = (raw: string, offset: number, answer: string) => {
     const next = resolveMarker(content, raw, offset, answer)
     if (next === null) {
@@ -532,7 +624,7 @@ function DocEditor({
 
   return (
     <div className="doc-view">
-      <button className="doc-edit-toggle" onClick={() => setEditing(true)}>
+      <button className="doc-edit-toggle" onClick={() => onDraft({ text: content, base: content })}>
         {t.feature.edit}
       </button>
       {updatedAt && (
@@ -544,10 +636,10 @@ function DocEditor({
       {hasRealContent ? (
         <article className="doc">
           <Markdown
-            onAnswer={saving ? undefined : answerClarification}
-            onCorrect={saving ? undefined : correctClarification}
+            onAnswer={saving ? undefined : (raw, off, a) => answerClarification(raw, off + shown.cut, a)}
+            onCorrect={saving ? undefined : (raw, off, a) => correctClarification(raw, off + shown.cut, a)}
           >
-            {content}
+            {shown.body}
           </Markdown>
         </article>
       ) : (
@@ -564,12 +656,14 @@ function DiagramsSection({
   featureId,
   artifacts,
   llmMode,
+  frozen,
   onOpen,
   onRefresh,
 }: {
   featureId: string
   artifacts: FeatureDetail['artifacts']
   llmMode: LLMMode | null
+  frozen: boolean
   onOpen: (d: OpenDiagram) => void
   onRefresh: () => void
 }) {
@@ -636,15 +730,17 @@ function DiagramsSection({
         </ul>
       )}
       {genError && <p className="form-error">{genError}</p>}
-      <div className="diagram-actions">
-        <button
-          onClick={generate}
-          disabled={generating || delegated}
-          title={delegated ? t.feature.generateDisabledTitle : undefined}
-        >
-          {generating ? t.feature.generating : t.feature.generateWithAI}
-        </button>
-      </div>
+      {!frozen && (
+        <div className="diagram-actions">
+          <button
+            onClick={generate}
+            disabled={generating || delegated}
+            title={delegated ? t.feature.generateDisabledTitle : undefined}
+          >
+            {generating ? t.feature.generating : t.feature.generateWithAI}
+          </button>
+        </div>
+      )}
     </section>
   )
 }
@@ -901,7 +997,7 @@ Barra: dispensada por decisão humana (<citação curta da fala que dispensou>)`
 
 type ActionSpec = {
   action: TransitionAction
-  form: 'none' | 'reason' | 'supersede'
+  form: 'none' | 'reason' | 'supersede' | 'confirm'
 }
 
 // Espelha exatamente a máquina de estados de internal/domain/feature.go.
@@ -922,12 +1018,13 @@ const ACTIONS_BY_STATE: Record<FeatureState, ActionSpec[]> = {
     { action: 'supersede', form: 'supersede' },
   ],
   in_development: [
-    { action: 'complete', form: 'none' },
+    // F-0498: leaving development cannot be walked back from here: confirm.
+    { action: 'complete', form: 'confirm' },
     { action: 'supersede', form: 'supersede' },
   ],
   implemented: [
     // Accept é o gate humano (F-0131): valida o implementado → done.
-    { action: 'accept', form: 'none' },
+    { action: 'accept', form: 'confirm' },
     // F-0499: entrega reprovada ou com bug volta ao desenvolvimento.
     { action: 'revert', form: 'reason' },
     { action: 'supersede', form: 'supersede' },
@@ -936,6 +1033,14 @@ const ACTIONS_BY_STATE: Record<FeatureState, ActionSpec[]> = {
   done: [{ action: 'revert', form: 'reason' }],
   rejected: [],
   superseded: [],
+}
+
+const FORWARD = new Set<TransitionAction>(['approve', 'start', 'complete', 'accept'])
+
+// F-0495: a closed record is history. It keeps what it holds (diagrams, the
+// epic's children) to read, and drops every control that would change it.
+function isFrozen(state: FeatureState): boolean {
+  return state === 'done' || state === 'rejected' || state === 'superseded'
 }
 
 // ApprovalPanel diz se a feature pode ser aprovada, num card logo depois do
@@ -1047,6 +1152,8 @@ function ActionsPanel({
   staleApproval,
   baselineMissing = false,
   readiness = [],
+  notice = null,
+  warnings = [],
   onDone,
   onRefresh,
 }: {
@@ -1055,6 +1162,8 @@ function ActionsPanel({
   staleApproval: boolean
   baselineMissing?: boolean
   readiness?: ApproveImpediment[]
+  notice?: string | null
+  warnings?: string[]
   onDone: (r: TransitionResult) => void
   onRefresh: () => void
 }) {
@@ -1067,27 +1176,47 @@ function ActionsPanel({
   const [by, setBy] = useState('')
   const [reason, setReason] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useState<TransitionAction | null>(null)
+  // A form opened for another state (complete open when the card moved on)
+  // closes with it.
+  useEffect(() => {
+    setOpenForm(null)
+  }, [state])
 
   // F-0318: em approved, o approve é o Reaprovar (aprovação vencida) ou o
   // Gravar linha de base (aprovação anterior à versão aprovada, crit. 14).
   const actions = ACTIONS_BY_STATE[state].filter(
     (a) => !(state === 'approved' && a.action === 'approve' && !staleApproval && !baselineMissing),
   )
+  // F-0498: the result of the last transition is said here, next to the
+  // button that caused it, and announced.
+  // The region stays mounted, empty, so a screen reader announces what
+  // arrives in it.
+  const status = (
+    <div role="status" className="actions-status">
+      {notice && <p className="notice">{notice}</p>}
+      {warnings.map((w) => (
+        <p key={w} className="notice notice-warning">
+          {t.common.warning} <code>{w}</code>
+        </p>
+      ))}
+    </div>
+  )
   if (actions.length === 0) {
     return (
       <section className="actions">
         <h2>{t.feature.actions}</h2>
         <p className="muted">{t.feature.closed}</p>
+        {status}
       </section>
     )
   }
 
   const submit = (action: TransitionAction, by?: string, reason?: string) => {
-    setBusy(true)
+    setBusy(action)
     setFormError(null)
     void postTransition(id, transitionBody(action, by, reason)).then((res) => {
-      setBusy(false)
+      setBusy(null)
       if (res.ok) {
         setOpenForm(null)
         setBy('')
@@ -1097,6 +1226,8 @@ function ActionsPanel({
       } else {
         setFormError(res.error)
         setRefused(action)
+        // A refused final gate asks both clicks again.
+        if (ACTIONS_BY_STATE[state].find((a) => a.action === action)?.form === 'confirm') setOpenForm(null)
         // Recusa do approve: recarrega para a lista de impedimentos falar no
         // lugar do texto cru do erro.
         if (action === 'approve') onRefresh()
@@ -1111,6 +1242,10 @@ function ActionsPanel({
   }
 
   const spec = actions.find((a) => a.action === openForm)
+  // F-0495: the first action that moves the cycle forward is the page's one
+  // primary control; going sideways or back (supersede, revert, reject) stays
+  // in the outline style.
+  const primary = actions.find((a) => FORWARD.has(a.action))?.action
 
   return (
     <section className="actions">
@@ -1119,8 +1254,11 @@ function ActionsPanel({
         {actions.map((a) => (
           <button
             key={a.action}
+            // While its confirmation is open, the confirm button is the one
+            // filled control; the opener steps back to the outline.
+            className={a.action === primary && openForm !== a.action ? 'queue-btn-primary' : undefined}
             disabled={
-              busy || (a.action === 'approve' && blocked) || (a.action === 'start' && staleApproval)
+              busy !== null || (a.action === 'approve' && blocked) || (a.action === 'start' && staleApproval)
             }
             title={
               a.action === 'approve' && blocked
@@ -1135,15 +1273,34 @@ function ActionsPanel({
               a.form === 'none' ? submit(a.action) : toggleForm(a.action)
             }
           >
-            {state === 'approved' && a.action === 'approve'
-              ? baselineMissing
-                ? t.feature.recordBaseline
-                : t.feature.reapprove
-              : t.feature.actionLabels[a.action]}
+            {busy === a.action && a.form === 'none'
+              ? t.feature.busyLabels[a.action]
+              : state === 'approved' && a.action === 'approve'
+                ? baselineMissing
+                  ? t.feature.recordBaseline
+                  : t.feature.reapprove
+                : t.feature.actionLabels[a.action]}
           </button>
         ))}
       </div>
-      {spec && spec.form !== 'none' && (
+      {spec && spec.form === 'confirm' && (
+        <div className="action-form">
+          <button
+            type="button"
+            className="queue-btn-primary"
+            disabled={busy !== null}
+            onClick={() => submit(spec.action)}
+          >
+            {busy === spec.action
+              ? t.feature.busyLabels[spec.action]
+              : t.feature.confirmFinal[spec.action as 'complete' | 'accept']}
+          </button>
+          <button type="button" disabled={busy !== null} onClick={() => toggleForm(spec.action)}>
+            {t.common.cancel}
+          </button>
+        </div>
+      )}
+      {spec && spec.form !== 'none' && spec.form !== 'confirm' && (
         <form
           className="action-form"
           onSubmit={(e) => {
@@ -1174,14 +1331,17 @@ function ActionsPanel({
             />
           </label>
           {/* Razão é obrigatória no backend (422); bloquear aqui evita a ida perdida. */}
-          <button type="submit" disabled={busy || reason.trim() === ''}>
-            {t.feature.confirmAction(t.feature.actionLabels[spec.action])}
+          <button type="submit" disabled={busy !== null || reason.trim() === ''}>
+            {busy === spec.action
+              ? t.feature.busyLabels[spec.action]
+              : t.feature.confirmAction(t.feature.actionLabels[spec.action])}
           </button>
         </form>
       )}
       {formError && !(refused === 'approve' && blocked) && (
         <p className="form-error">{formError}</p>
       )}
+      {status}
     </section>
   )
 }
@@ -1192,10 +1352,12 @@ function ActionsPanel({
 function EpicPanel({
   feature,
   childFeatures,
+  frozen,
   onChanged,
 }: {
   feature: Feature
   childFeatures: Feature[]
+  frozen: boolean
   onChanged: () => void
 }) {
   const { t } = useT()
@@ -1258,10 +1420,10 @@ function EpicPanel({
           </ul>
         </div>
       ) : (
-        <p className="muted">{t.feature.noChildren}</p>
+        !frozen && <p className="muted">{t.feature.noChildren}</p>
       )}
 
-      {editing ? (
+      {frozen ? null : editing ? (
         <div className="epic-edit">
           {features === null ? (
             <p className="muted">{t.common.loading}</p>

@@ -13,6 +13,7 @@ import {
   postTransition,
   roastPlan,
   roastSpec,
+  saveFeatureDoc,
 } from './api'
 
 const detail = (state: FeatureState): FeatureDetail => ({
@@ -46,6 +47,7 @@ vi.mock('./api', async (importOriginal) => ({
   fetchLLMMode: vi.fn(async () => llmMode),
   fetchPendings: vi.fn(async () => pendings),
   fetchFeatureAgents: vi.fn(async () => ({ sessions: [] })),
+  saveFeatureDoc: vi.fn(async () => ({ ok: true as const })),
   generateDiagram: vi.fn(async () => ({ ok: false as const, error: 'boom' })),
   postTransition: vi.fn(async () => ({
     ok: true as const,
@@ -252,6 +254,9 @@ describe('FeaturePage aprovação vencida (F-0318)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Reaprovar' }))
     expect(await screen.findByText('Aprovação renovada')).toBeInTheDocument()
     expect(screen.getByText(w)).toBeInTheDocument()
+    // F-0496 crit. 4: a warning wears the amber notice, the success stays green.
+    expect(screen.getByText(w).closest('.notice')).toHaveClass('notice-warning')
+    expect(screen.getByText('Aprovação renovada').closest('.notice')).not.toHaveClass('notice-warning')
   })
 
   // Critério 14: aprovação anterior à F-0318 (sem versão aprovada) nunca vence;
@@ -618,7 +623,7 @@ describe('FeaturePage plan roast (F-0275)', () => {
   })
 
   it('com plano real: o botão dispara roastPlan', async () => {
-    payload = { ...detail('in_development'), docs_real: { spec: true, plan: true, result: false } }
+    payload = { ...detail('approved'), docs_real: { spec: true, plan: true, result: false } }
     render(<FeaturePage id="F-0221" />)
     await waitFor(() =>
       expect(screen.getByText('Rodar roast do plano')).toBeEnabled(),
@@ -629,7 +634,7 @@ describe('FeaturePage plan roast (F-0275)', () => {
 
   it('rodadas do plano listam separadas das da spec, com badge por documento', async () => {
     payload = {
-      ...detail('in_development'),
+      ...detail('approved'),
       docs_real: { spec: true, plan: true, result: false },
       plan_roast_rounds: [
         {
@@ -651,7 +656,7 @@ describe('FeaturePage plan roast (F-0275)', () => {
 
   it('plano mudou depois da rodada: badge própria', async () => {
     payload = {
-      ...detail('in_development'),
+      ...detail('approved'),
       docs_real: { spec: true, plan: true, result: false },
       plan_roast_rounds: [
         {
@@ -754,12 +759,14 @@ describe('FeaturePage — falha de carga (F-0300)', () => {
     vi.mocked(fetchFeature).mockRejectedValueOnce(new Error('HTTP 502'))
     live.version = 1
     rerender(<FeaturePage id="F-0221" />)
-    const notice = await screen.findByRole('status')
-    expect(notice).toHaveTextContent('Não foi possível atualizar: HTTP 502')
+    // The actions card keeps its own (empty) status region since F-0498, so
+    // the load notice is found by its text, then checked as a status region.
+    const notice = await screen.findByText(/Não foi possível atualizar: HTTP 502/)
+    expect(notice.closest('[role="status"]')).not.toBeNull()
     expect(screen.getByText('Feature de teste')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
-    await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
+    await waitFor(() => expect(screen.queryByText(/Não foi possível atualizar/)).toBeNull())
     expect(screen.getByText('Feature de teste')).toBeInTheDocument()
   })
 
@@ -800,7 +807,7 @@ describe('FeaturePage — pendências desta entrega (F-0334)', () => {
     pendings = [pending('P-0007', 'Cobrir caso X')]
     render(<FeaturePage id="F-0221" />)
     const heading = await screen.findByRole('heading', { name: 'Pendências desta entrega' })
-    const section = heading.closest('section')!
+    const section = (heading.closest('.backlinks-section') as HTMLElement)
     expect(section).toHaveTextContent('P-0007')
     expect(section).toHaveTextContent('Cobrir caso X')
     expect(screen.getByRole('link', { name: 'Ver na tela de pendências' })).toHaveAttribute('href', '#/pendings?from=F-0221')
@@ -824,7 +831,7 @@ describe('FeaturePage — pendências desta entrega (F-0334)', () => {
     live.version = 1
     rerender(<FeaturePage id="F-0221" />)
     const heading = await screen.findByRole('heading', { name: 'Pendências desta entrega' })
-    expect(heading.closest('section')).toHaveTextContent('P-0008')
+    expect(heading.closest('.backlinks-section')).toHaveTextContent('P-0008')
   })
 })
 
@@ -834,7 +841,7 @@ describe('FeaturePage — pendências desta entrega (F-0334)', () => {
 describe('FeaturePage doc authors (F-0375)', () => {
   it('mostra primeiro autor e última alteração por documento', async () => {
     payload = {
-      ...detail('in_development'),
+      ...detail('approved'),
       docs: { spec: '# Spec\n\nCorpo.', plan: '# Plano\n\nCorpo.', result: '# Resultado\n\nCorpo.' },
       docs_real: { spec: true, plan: true, result: true },
       writes: [
@@ -934,5 +941,293 @@ describe('acabamento da página (B-0064)', () => {
     const btn = await screen.findByRole('button', { name: 'Editar título' })
     expect(btn.querySelector('svg')).not.toBeNull()
     expect(btn).not.toHaveTextContent('✎')
+  })
+})
+
+// F-0495: the forward action is the page's primary control, and a closed
+// record shows no live control besides what it already holds.
+describe('FeaturePage gate hierarchy (F-0495)', () => {
+  // F-0495 crit. 1
+  it.each<[FeatureState, string, string[]]>([
+    ['candidate', 'Aprovar', ['Rejeitar', 'Substituir']],
+    ['approved', 'Iniciar', ['Reverter', 'Substituir']],
+    ['in_development', 'Concluir', ['Substituir']],
+    ['implemented', 'Aceitar', ['Substituir']],
+  ])('em %s, %s é o primário e o resto fica no contorno', async (state, primary, others) => {
+    payload = detail(state)
+    render(<FeaturePage id="F-0221" />)
+    expect(await screen.findByRole('button', { name: primary })).toHaveClass('queue-btn-primary')
+    for (const o of others) expect(screen.getByRole('button', { name: o })).not.toHaveClass('queue-btn-primary')
+  })
+
+  // F-0495 crit. 1
+  it('aprovação vencida: Reaprovar é o primário, não o Iniciar', async () => {
+    payload = { ...detail('approved'), spec_changed_after_approval: true }
+    render(<FeaturePage id="F-0221" />)
+    expect(await screen.findByRole('button', { name: 'Reaprovar' })).toHaveClass('queue-btn-primary')
+    expect(screen.getByRole('button', { name: 'Iniciar' })).not.toHaveClass('queue-btn-primary')
+  })
+
+  // F-0495 crit. 3
+  it.each<[FeatureState, boolean]>([
+    ['candidate', true],
+    ['approved', true],
+    ['in_development', false],
+    ['implemented', false],
+    ['done', false],
+  ])('em %s o cartão Roast aparece: %s', async (state, shown) => {
+    payload = detail(state)
+    render(<FeaturePage id="F-0221" />)
+    await screen.findByRole('heading', { name: 'Ações' })
+    expect(screen.queryByText('Rodar roast') !== null).toBe(shown)
+  })
+
+  // F-0495 crit. 4
+  it.each<FeatureState>(['done', 'rejected', 'superseded'])('%s sem pai nem filhos: sem cartão Épico', async (state) => {
+    payload = detail(state)
+    render(<FeaturePage id="F-0221" />)
+    await screen.findByText('Feature de teste')
+    expect(screen.queryByRole('heading', { name: 'Épico' })).toBeNull()
+  })
+
+  // F-0495 crit. 4, 5
+  it('concluída só com pai: o cartão Épico fica, em leitura', async () => {
+    payload = { ...detail('done'), feature: { ...detail('done').feature, parent: 'F-0200' } }
+    render(<FeaturePage id="F-0221" />)
+    expect(await screen.findByRole('heading', { name: 'Épico' })).toBeInTheDocument()
+    expect(screen.queryByText('Sem filhos.')).toBeNull()
+    expect(screen.queryByRole('button', { name: /definir épico|trocar épico/i })).toBeNull()
+  })
+
+  // F-0495 crit. 5
+  it.each<FeatureState>(['done', 'rejected', 'superseded'])('%s: épico em leitura, diagramas existentes abrem, nada novo se cria', async (state) => {
+    payload = {
+      ...detail(state),
+      children: [{ ...detail('done').feature, id: 'F-0222', title: 'Filha' }],
+      artifacts: [{ name: 'fluxo.mmd', path: 'content/artifacts/F-0221/fluxo.mmd' }],
+    }
+    render(<FeaturePage id="F-0221" />)
+    expect(await screen.findByRole('heading', { name: 'Épico' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'F-0222' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /definir épico|trocar épico/i })).toBeNull()
+    expect(screen.getByRole('button', { name: 'fluxo.mmd' })).toBeInTheDocument()
+    expect(screen.queryByText('Gerar com IA')).toBeNull()
+  })
+
+  // F-0495 crit. 5
+  it.each<FeatureState>(['done', 'rejected', 'superseded'])('%s sem diagrama: sem cartão Diagramas', async (state) => {
+    payload = detail(state)
+    render(<FeaturePage id="F-0221" />)
+    await screen.findByText('Feature de teste')
+    expect(screen.queryByRole('heading', { name: 'Diagramas' })).toBeNull()
+  })
+})
+
+// F-0496 crit. 6: the state leads the meta row, ahead of the tags.
+describe('FeaturePage meta row (F-0496)', () => {
+  it('o chip de estado é o primeiro item, antes das tags', async () => {
+    payload = { ...detail('approved'), feature: { ...detail('approved').feature, facets: ['code'], components: ['ui'] } }
+    const { container } = render(<FeaturePage id="F-0221" />)
+    await screen.findByText('Feature de teste')
+    const meta = container.querySelector('.feature-meta') as HTMLElement
+    expect(meta.firstElementChild).toHaveClass('chip', 'chip-approved')
+    expect(meta.firstElementChild).toHaveClass('feature-state')
+  })
+})
+
+// F-0497 crit. 3: the document's own title repeats the page's h1, so it goes.
+describe('FeaturePage repeated document title (F-0497)', () => {
+  it('não renderiza o # título igual ao da feature, e mantém um título diferente', async () => {
+    payload = {
+      ...detail('approved'),
+      docs: { spec: '---\ncerne_id: F-0221\n---\n\n# Feature  de TESTE\n\nCorpo da spec.', plan: '', result: '' },
+      docs_real: { spec: true, plan: false, result: false },
+    }
+    const { container } = render(<FeaturePage id="F-0221" />)
+    expect(await screen.findByText('Corpo da spec.')).toBeInTheDocument()
+    expect(container.querySelector('.doc h1')).toBeNull()
+    cleanup()
+    payload = {
+      ...detail('approved'),
+      docs: { spec: '# Outro título\n\nCorpo.', plan: '', result: '' },
+      docs_real: { spec: true, plan: false, result: false },
+    }
+    const second = render(<FeaturePage id="F-0221" />)
+    expect(await screen.findByText('Corpo.')).toBeInTheDocument()
+    expect(second.container.querySelector('.doc h1')).toHaveTextContent('Outro título')
+  })
+})
+
+// F-0497 crit. 3: cutting the repeated title must not move a clarification:
+// the answer lands on the stored marker, frontmatter and title intact.
+describe('FeaturePage answer after the cut title (F-0497)', () => {
+  it.each([
+    ['LF', '\n'],
+    ['CRLF', '\r\n'],
+  ])('%s: a resposta resolve o marcador no documento guardado', async (_, nl) => {
+    const spec = ['---', 'cerne_id: F-0221', '---', '', '# Feature de teste', '', 'Texto [ESCLARECER: qual formato?] fim.', ''].join(nl)
+    payload = { ...detail('approved'), docs: { spec, plan: '', result: '' }, docs_real: { spec: true, plan: false, result: false } }
+    vi.mocked(saveFeatureDoc).mockClear()
+    render(<FeaturePage id="F-0221" />)
+    fireEvent.click(await screen.findByRole('button', { name: /qual formato\?/ }))
+    fireEvent.change(screen.getByPlaceholderText('Escreva a resposta…'), { target: { value: 'tabela' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Responder' }))
+    await waitFor(() => expect(saveFeatureDoc).toHaveBeenCalled())
+    const saved = vi.mocked(saveFeatureDoc).mock.calls[0][2]
+    expect(saved).toBe(spec.replace('[ESCLARECER: qual formato?]', '[ESCLARECIDO: qual formato? → tabela]'))
+  })
+})
+
+// F-0497 crit. 5, 6: the delivery's pendings collapse like Backlinks, and the
+// collapsed reference panels share one row.
+describe('FeaturePage reference row (F-0497)', () => {
+  it('pendências abrem recolhidas com a contagem, e os painéis ficam na mesma linha', async () => {
+    payload = detail('implemented')
+    const p = (id: string, title: string): Pending => ({ id, title, from: 'F-0221', state: 'open' }) as Pending
+    pendings = [p('P-0007', 'Cobrir caso X'), p('P-0009', 'Outro')]
+    const { container } = render(<FeaturePage id="F-0221" />)
+    const heading = await screen.findByRole('heading', { name: 'Pendências desta entrega' })
+    const panel = heading.closest('details') as HTMLDetailsElement
+    expect(panel.open).toBe(false)
+    expect(panel.querySelector('summary')).toHaveTextContent('2')
+    const row = container.querySelector('.feature-refs') as HTMLElement
+    expect(row).toContainElement(panel)
+    expect(row).toContainElement(container.querySelector('details.agents') as HTMLElement)
+  })
+})
+
+// F-0498: the final gates confirm, the page opens on the evidence, and what
+// the person wrote is never dropped in silence.
+describe('FeaturePage gate safety (F-0498)', () => {
+  const withDocs = (state: FeatureState, real: Partial<Record<'spec' | 'plan' | 'result', boolean>>): FeatureDetail => ({
+    ...detail(state),
+    docs: { spec: 'Corpo da spec.', plan: 'Corpo do plano.', result: 'Corpo do result.' },
+    docs_real: { spec: false, plan: false, result: false, ...real },
+  })
+
+  // F-0498 crit. 1
+  it.each([
+    ['implemented', 'Aceitar', 'Confirmar aceite (final)'],
+    ['in_development', 'Concluir', 'Confirmar conclusão'],
+  ] as [FeatureState, string, string][])('%s: %s só envia na confirmação, e Cancelar volta', async (state, label, confirm) => {
+    payload = detail(state)
+    render(<FeaturePage id="F-0221" />)
+    fireEvent.click(await screen.findByRole('button', { name: label }))
+    expect(postTransition).not.toHaveBeenCalled()
+    // One filled control at a time: the confirmation, not its opener.
+    expect(screen.getByRole('button', { name: label })).not.toHaveClass('queue-btn-primary')
+    expect(screen.getByRole('button', { name: confirm })).toHaveClass('queue-btn-primary')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+    expect(screen.queryByRole('button', { name: confirm })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: label }))
+    fireEvent.click(screen.getByRole('button', { name: confirm }))
+    await waitFor(() => expect(postTransition).toHaveBeenCalledTimes(1))
+  })
+
+  // F-0498 crit. 2
+  it.each([
+    ['candidate', { spec: true }, 'Spec'],
+    ['approved', { spec: true, plan: true }, 'Spec'],
+    ['in_development', { spec: true, plan: true }, 'Plano'],
+    ['implemented', { spec: true, plan: true, result: true }, 'Resultado'],
+    ['done', { spec: true, plan: true, result: true }, 'Resultado'],
+    ['implemented', { spec: true, plan: true }, 'Spec'],
+  ] as [FeatureState, Partial<Record<'spec' | 'plan' | 'result', boolean>>, string][])(
+    '%s abre na aba do estágio (%o → %s)',
+    async (state, real, tab) => {
+      payload = withDocs(state, real)
+      const { container } = render(<FeaturePage id="F-0221" />)
+      await screen.findByText('Feature de teste')
+      expect(container.querySelector('.tab.active')).toHaveTextContent(tab)
+    },
+  )
+
+  // F-0498 crit. 3
+  it('durante a transição o botão clicado diz que está trabalhando', async () => {
+    payload = detail('approved')
+    vi.mocked(postTransition).mockImplementationOnce(() => new Promise(() => {}))
+    render(<FeaturePage id="F-0221" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Iniciar' }))
+    expect(await screen.findByRole('button', { name: 'Iniciando…' })).toBeDisabled()
+  })
+
+  // F-0498 crit. 4
+  it('o aviso do resultado aparece no card Ações, numa região de status', async () => {
+    payload = detail('approved')
+    const { container } = render(<FeaturePage id="F-0221" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Iniciar' }))
+    const status = await waitFor(() => {
+      const el = container.querySelector('.actions [role="status"]')
+      expect(el).toHaveTextContent('Aprovada → Candidata')
+      return el
+    })
+    expect(status).not.toBeNull()
+    expect(container.querySelector('.feature-header .notice')).toBeNull()
+  })
+
+  // F-0498 crit. 5
+  it('conteúdo novo durante a edição mantém o rascunho e avisa; descartar carrega a versão nova', async () => {
+    payload = withDocs('approved', { spec: true })
+    const { rerender } = render(<FeaturePage id="F-0221" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar' }))
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'meu rascunho' } })
+    payload = { ...withDocs('approved', { spec: true }), docs: { spec: 'Versão nova do agente.', plan: '', result: '' } }
+    live.version = 1
+    rerender(<FeaturePage id="F-0221" />)
+    expect(await screen.findByText(/o documento mudou enquanto você editava/i)).toBeInTheDocument()
+    expect(screen.getByRole('textbox')).toHaveValue('meu rascunho')
+    fireEvent.click(screen.getByRole('button', { name: /descartar o rascunho/i }))
+    expect(await screen.findByText('Versão nova do agente.')).toBeInTheDocument()
+  })
+
+  // F-0498 crit. 6
+  it('trocar de aba guarda o rascunho e volta em edição', async () => {
+    payload = withDocs('approved', { spec: true, plan: true })
+    render(<FeaturePage id="F-0221" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar' }))
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'rascunho da spec' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Plano' }))
+    expect(await screen.findByText('Corpo do plano.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Spec' }))
+    expect(screen.getByRole('textbox')).toHaveValue('rascunho da spec')
+  })
+
+  // F-0498 crit. 1, 3: the confirm button itself says it is working; a refused
+  // final gate asks both clicks again.
+  it('na confirmação: rótulo de espera no botão de confirmar, e uma recusa fecha a confirmação', async () => {
+    payload = detail('implemented')
+    let finish: (v: Awaited<ReturnType<typeof postTransition>>) => void = () => {}
+    vi.mocked(postTransition).mockImplementationOnce(() => new Promise((r) => (finish = r)))
+    render(<FeaturePage id="F-0221" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Aceitar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar aceite (final)' }))
+    expect(await screen.findByRole('button', { name: 'Aceitando…' })).toBeDisabled()
+    finish({ ok: false, error: 'recusado pelo gate' })
+    expect(await screen.findByText('recusado pelo gate')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Confirmar aceite (final)' })).toBeNull()
+  })
+
+  // F-0498 crit. 2, 6: an open draft pins its tab against a live state change,
+  // and another feature starts clean.
+  it('um rascunho aberto prende a aba quando o estado muda, e outra feature começa limpa', async () => {
+    payload = withDocs('in_development', { spec: true, plan: true })
+    const { rerender } = render(<FeaturePage id="F-0221" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar' }))
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'rascunho do plano' } })
+    payload = { ...withDocs('implemented', { spec: true, plan: true, result: true }), docs: { spec: 'Corpo da spec.', plan: 'Corpo do plano.', result: 'Corpo do result.' } }
+    live.version = 1
+    rerender(<FeaturePage id="F-0221" />)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Aceitar' })).toBeInTheDocument())
+    expect(screen.getByRole('textbox')).toHaveValue('rascunho do plano')
+    rerender(<FeaturePage id="F-0222" />)
+    await waitFor(() => expect(screen.queryByRole('textbox')).toBeNull())
+  })
+
+  // F-0498 crit. 7
+  it.each(['implemented', 'done', 'rejected', 'superseded'] as FeatureState[])('%s: sem lápis no título', async (state) => {
+    payload = detail(state)
+    render(<FeaturePage id="F-0221" />)
+    await screen.findByText('Feature de teste')
+    expect(screen.queryByRole('button', { name: 'Editar título' })).toBeNull()
   })
 })
