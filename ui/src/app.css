@@ -1812,6 +1812,21 @@ a.badge-mirror:hover, a.badge-mirror:focus-visible { text-decoration: underline;
   .feature-body { grid-template-columns: minmax(0, 1fr); }
 }
 
+/* F-0495: the gate stays in view while the document is read. --nav-h is the
+   nav's real height (Nav.tsx publishes it, since the nav wraps with width); a
+   rail taller than the window scrolls inside itself. */
+@media (min-width: 721px) {
+  .feature-body > .side {
+    position: sticky;
+    top: calc(var(--nav-h, 4rem) + 0.75rem);
+    align-self: start;
+    max-height: calc(100vh - var(--nav-h, 4rem) - 1.5rem);
+    overflow-y: auto;
+  }
+}
+/* Secondary text in the rail never outsizes the document's prose. */
+.side .muted { font-size: 0.85rem; }
+
 .tabs { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--border-soft); }
 
 .tab {

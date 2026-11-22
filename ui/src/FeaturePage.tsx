@@ -241,6 +241,25 @@ export default function FeaturePage({ id }: { id: string }) {
     void live.reload()
   }
 
+  // F-0495: the sticky rail sits below the nav, whose height changes as it
+  // wraps (width, language, a new item). The page watches it from outside:
+  // the nav itself never measures (F-0332 crit. 8).
+  useEffect(() => {
+    const nav = document.querySelector<HTMLElement>('.nav')
+    if (!nav) return
+    const root = document.documentElement
+    const publish = () => root.style.setProperty('--nav-h', `${nav.offsetHeight}px`)
+    publish()
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(publish)
+    ro?.observe(nav)
+    window.addEventListener('resize', publish)
+    return () => {
+      ro?.disconnect()
+      window.removeEventListener('resize', publish)
+      root.style.removeProperty('--nav-h')
+    }
+  }, [])
+
   // Lê o modo de IA uma vez (para o gating do botão "Gerar com IA").
   useEffect(() => {
     fetchLLMMode()
@@ -395,22 +414,35 @@ export default function FeaturePage({ id }: { id: string }) {
               judgeQuestion={detail.judge_question}
               advice={detail.approve_advice}
             />
-            <EpicPanel feature={f} childFeatures={detail.children} onChanged={load} />
-            <DiagramsSection
-              featureId={f.id}
-              artifacts={detail.artifacts}
-              llmMode={llmMode}
-              onOpen={(d) => setDiagram(d)}
-              onRefresh={load}
-            />
-            <RoastSection
-              featureId={f.id}
-              rounds={detail.roast_rounds}
-              planRounds={detail.plan_roast_rounds}
-              planReal={!!detail.docs_real?.plan}
-              llmMode={llmMode}
-              onRefresh={load}
-            />
+            {!(isFrozen(f.state) && !f.parent && detail.children.length === 0) && (
+              <EpicPanel
+                feature={f}
+                childFeatures={detail.children}
+                frozen={isFrozen(f.state)}
+                onChanged={load}
+              />
+            )}
+            {!(isFrozen(f.state) && detail.artifacts.length === 0) && (
+              <DiagramsSection
+                featureId={f.id}
+                artifacts={detail.artifacts}
+                llmMode={llmMode}
+                frozen={isFrozen(f.state)}
+                onOpen={(d) => setDiagram(d)}
+                onRefresh={load}
+              />
+            )}
+            {/* F-0495: the roast reviews a spec or a plan before the work starts. */}
+            {(f.state === 'candidate' || f.state === 'approved') && (
+              <RoastSection
+                featureId={f.id}
+                rounds={detail.roast_rounds}
+                planRounds={detail.plan_roast_rounds}
+                planReal={!!detail.docs_real?.plan}
+                llmMode={llmMode}
+                onRefresh={load}
+              />
+            )}
           </aside>
         </div>
       )}
@@ -564,12 +596,14 @@ function DiagramsSection({
   featureId,
   artifacts,
   llmMode,
+  frozen,
   onOpen,
   onRefresh,
 }: {
   featureId: string
   artifacts: FeatureDetail['artifacts']
   llmMode: LLMMode | null
+  frozen: boolean
   onOpen: (d: OpenDiagram) => void
   onRefresh: () => void
 }) {
@@ -636,15 +670,17 @@ function DiagramsSection({
         </ul>
       )}
       {genError && <p className="form-error">{genError}</p>}
-      <div className="diagram-actions">
-        <button
-          onClick={generate}
-          disabled={generating || delegated}
-          title={delegated ? t.feature.generateDisabledTitle : undefined}
-        >
-          {generating ? t.feature.generating : t.feature.generateWithAI}
-        </button>
-      </div>
+      {!frozen && (
+        <div className="diagram-actions">
+          <button
+            onClick={generate}
+            disabled={generating || delegated}
+            title={delegated ? t.feature.generateDisabledTitle : undefined}
+          >
+            {generating ? t.feature.generating : t.feature.generateWithAI}
+          </button>
+        </div>
+      )}
     </section>
   )
 }
@@ -935,6 +971,14 @@ const ACTIONS_BY_STATE: Record<FeatureState, ActionSpec[]> = {
   superseded: [],
 }
 
+const FORWARD = new Set<TransitionAction>(['approve', 'start', 'complete', 'accept'])
+
+// F-0495: a closed record is history. It keeps what it holds (diagrams, the
+// epic's children) to read, and drops every control that would change it.
+function isFrozen(state: FeatureState): boolean {
+  return state === 'done' || state === 'rejected' || state === 'superseded'
+}
+
 // ApprovalPanel diz se a feature pode ser aprovada, num card logo depois do
 // card Ações (F-0481): o delta da aprovação vencida (F-0318), a barra que o
 // approve aceita e a pergunta ao juiz (F-0308/F-0381), os conselhos (F-0390) e
@@ -1108,6 +1152,10 @@ function ActionsPanel({
   }
 
   const spec = actions.find((a) => a.action === openForm)
+  // F-0495: the first action that moves the cycle forward is the page's one
+  // primary control; going sideways or back (supersede, revert, reject) stays
+  // in the outline style.
+  const primary = actions.find((a) => FORWARD.has(a.action))?.action
 
   return (
     <section className="actions">
@@ -1116,6 +1164,7 @@ function ActionsPanel({
         {actions.map((a) => (
           <button
             key={a.action}
+            className={a.action === primary ? 'queue-btn-primary' : undefined}
             disabled={
               busy || (a.action === 'approve' && blocked) || (a.action === 'start' && staleApproval)
             }
@@ -1189,10 +1238,12 @@ function ActionsPanel({
 function EpicPanel({
   feature,
   childFeatures,
+  frozen,
   onChanged,
 }: {
   feature: Feature
   childFeatures: Feature[]
+  frozen: boolean
   onChanged: () => void
 }) {
   const { t } = useT()
@@ -1255,10 +1306,10 @@ function EpicPanel({
           </ul>
         </div>
       ) : (
-        <p className="muted">{t.feature.noChildren}</p>
+        !frozen && <p className="muted">{t.feature.noChildren}</p>
       )}
 
-      {editing ? (
+      {frozen ? null : editing ? (
         <div className="epic-edit">
           {features === null ? (
             <p className="muted">{t.common.loading}</p>
