@@ -227,9 +227,12 @@ func ArchiveReferences(repoDir, projDir string, ids []string, n ArchiveNet, dryR
 				continue // retired or repointed meanwhile
 			}
 			a := res.ReferenceArchive
-			r.Archive = &a
-			if err := store.SaveReference(repoDir, r); err != nil {
-				return "", err
+			// A failed retry never replaces a good copy: the event alone keeps it.
+			if r.Archive == nil || r.Archive.Status != archiveArchived || a.Status == archiveArchived {
+				r.Archive = &a
+				if err := store.SaveReference(repoDir, r); err != nil {
+					return "", err
+				}
 			}
 			payload := map[string]string{"status": a.Status}
 			for k, v := range map[string]string{"origin": a.Origin, "link": a.URL, "reason": a.Reason} {

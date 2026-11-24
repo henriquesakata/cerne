@@ -279,3 +279,36 @@ func TestArchiveReferencesSendOnlyTheURL(t *testing.T) {
 		}
 	}
 }
+
+// F-0503 crit. 9: rerunning an archived reference whose new attempt fails, at
+// the service or at the gate, keeps the good copy; the run and the event report
+// the new outcome.
+func TestArchiveReferencesKeepsAGoodCopy(t *testing.T) {
+	good := store.ReferenceArchive{URL: "https://web.archive.org/web/20250302080000/https://example.com/1", CapturedAt: existedAt, Origin: "saved", Status: "archived"}
+	for _, tc := range []struct {
+		name, url, status string
+	}{
+		{"service fails", "https://example.com/1", "pending"},
+		{"gate skips", "http://10.0.0.4/wiki", "skipped"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repoDir, projDir := archiveBackend(t, 1, true)
+			setRef(t, repoDir, projDir, "R-0001", func(r *store.Reference) { r.URL, r.Archive = tc.url, &good })
+			c := &scriptClient{save: refuses, closest: noCopy}
+			res, err := ArchiveReferences(repoDir, projDir, []string{"R-0001"}, publicNet(c), false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(res) != 1 || res[0].Status != tc.status {
+				t.Fatalf("res = %+v, want %s", res, tc.status)
+			}
+			if a := loadRef(t, repoDir, "R-0001").Archive; a == nil || *a != good {
+				t.Fatalf("stored %+v, want the good copy kept", a)
+			}
+			evs, _ := store.ReadEvents(repoDir)
+			if last := evs[len(evs)-1]; last.Type != "reference.archived" || last.Payload["status"] != tc.status {
+				t.Errorf("event = %+v, want reference.archived with status %s", last, tc.status)
+			}
+		})
+	}
+}
