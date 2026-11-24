@@ -127,6 +127,10 @@ func CheckReferences(repoDir, projDir string, ids []string, fetch Fetcher) ([]Ch
 	}
 	wg.Wait()
 
+	reached := false // did any reference of this run get an HTTP response?
+	for _, o := range out {
+		reached = reached || (o.err == nil && o.resp.Status > 0)
+	}
 	var results []CheckResult
 	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		results = nil // mutate may rerun
@@ -139,7 +143,7 @@ func CheckReferences(repoDir, projDir string, ids []string, fetch Fetcher) ([]Ch
 			if r.State != domain.ReferenceCurrent || r.URL != out[i].url {
 				continue // retired or repointed meanwhile: the fetch no longer applies
 			}
-			res := classifyCheck(&r, out[i], now)
+			res := classifyCheck(&r, out[i], now, reached)
 			res.ID, res.Informs = r.ID, r.Informs
 			if res.Result != "transient" {
 				r.UpdatedAt = now
@@ -206,10 +210,13 @@ func referencesToCheck(repoDir string, ids []string) ([]store.Reference, error) 
 
 // classifyCheck turns one fetch into a result and, unless it is transient,
 // updates r.Check. Only 404, 410 and a domain that does not exist are gone.
-func classifyCheck(r *store.Reference, f fetched, now time.Time) CheckResult {
+func classifyCheck(r *store.Reference, f fetched, now time.Time, reached bool) CheckResult {
 	var dns *net.DNSError
 	status := f.resp.Status
 	switch {
+	case f.err != nil && errors.As(f.err, &dns) && dns.IsNotFound && !reached:
+		// no source in the run answered: offline or a captive resolver, not a dead domain
+		return CheckResult{Result: "transient", Detail: "domain not found (no source reached: network may be down)"}
 	case f.err != nil && errors.As(f.err, &dns) && dns.IsNotFound:
 		return recordGone(r, 0, "domain not found", now)
 	case f.err != nil:

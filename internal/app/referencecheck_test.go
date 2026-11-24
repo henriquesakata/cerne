@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -157,11 +158,17 @@ func TestCheckReferencesGone(t *testing.T) {
 	cases := map[string]Fetcher{
 		"404": fetchStatus(404),
 		"410": fetchStatus(410),
-		"dns": fetchErr(&net.DNSError{Err: "no such host", Name: "x", IsNotFound: true}),
+		// a sibling that answers proves the network is up, so the DNS miss is real
+		"dns": func(_ context.Context, u string) (FetchResponse, error) {
+			if strings.HasSuffix(u, "/2") {
+				return page("up"), nil
+			}
+			return FetchResponse{}, &net.DNSError{Err: "no such host", Name: "x", IsNotFound: true}
+		},
 	}
 	for name, f := range cases {
 		t.Run(name, func(t *testing.T) {
-			repoDir, projDir := refsBackend(t, 1)
+			repoDir, projDir := refsBackend(t, 2)
 			res, err := CheckReferences(repoDir, projDir, nil, f)
 			if err != nil || res[0].Result != "gone" || len(res[0].Informs) != 1 {
 				t.Fatalf("%+v, %v", res, err)
@@ -170,6 +177,28 @@ func TestCheckReferencesGone(t *testing.T) {
 				t.Fatalf("check = %+v", c)
 			}
 		})
+	}
+}
+
+// F-0501 crit. 3: a run that got no HTTP response from any reference may be
+// offline or behind a captive resolver: every DNS miss is transient and no
+// check is recorded.
+func TestCheckReferencesOfflineRunMarksNothingGone(t *testing.T) {
+	repoDir, projDir := refsBackend(t, 2)
+	dns := fetchErr(&net.DNSError{Err: "no such host", Name: "x", IsNotFound: true})
+	res, err := CheckReferences(repoDir, projDir, nil, dns)
+	if err != nil || len(res) != 2 {
+		t.Fatalf("%+v, %v", res, err)
+	}
+	for _, r := range res {
+		if r.Result != "transient" || r.Detail != "domain not found (no source reached: network may be down)" {
+			t.Errorf("%+v, want transient with the offline detail", r)
+		}
+	}
+	for _, id := range []string{"R-0001", "R-0002"} {
+		if loadRef(t, repoDir, id).Check != nil {
+			t.Errorf("%s got a check from an offline run", id)
+		}
 	}
 }
 
@@ -238,7 +267,7 @@ func TestHTTPFetcherSendsOnlyTheURL(t *testing.T) {
 		_, _ = w.Write([]byte("<p>hi</p>"))
 	}))
 	defer srv.Close()
-	resp, err := NewHTTPFetcher(5 * time.Second)(context.Background(), srv.URL+"/page?x=1")
+	resp, err := NewHTTPFetcher(5*time.Second)(context.Background(), srv.URL+"/page?x=1")
 	if err != nil || resp.Status != 200 || resp.ContentType != "text/html" || string(resp.Body) != "<p>hi</p>" {
 		t.Fatalf("resp = %+v, %v", resp, err)
 	}
@@ -270,7 +299,7 @@ func TestHTTPFetcherTimesOut(t *testing.T) {
 	defer srv.Close()
 	defer close(release)
 	start := time.Now()
-	_, err := NewHTTPFetcher(50 * time.Millisecond)(context.Background(), srv.URL)
+	_, err := NewHTTPFetcher(50*time.Millisecond)(context.Background(), srv.URL)
 	if err == nil || time.Since(start) > 3*time.Second {
 		t.Fatalf("err = %v after %v, want a quick timeout error", err, time.Since(start))
 	}
@@ -285,7 +314,7 @@ func TestHTTPFetcherCapsTheBody(t *testing.T) {
 		_, _ = w.Write(make([]byte, 6<<20))
 	}))
 	defer srv.Close()
-	resp, err := NewHTTPFetcher(10 * time.Second)(context.Background(), srv.URL)
+	resp, err := NewHTTPFetcher(10*time.Second)(context.Background(), srv.URL)
 	if err != nil || len(resp.Body) != 5<<20 {
 		t.Fatalf("len = %d, err = %v, want 5 MiB", len(resp.Body), err)
 	}
