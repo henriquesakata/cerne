@@ -76,3 +76,17 @@ func TestBuildGraphAcceptedLink(t *testing.T) { // F-0502 crit. 6
 		t.Fatal("an accepted suggestion is not an edge")
 	}
 }
+
+// TestBuildGraphSurvivesACorruptLinksQueue: an unreadable queue file leaves
+// the graph without the accepted edges and without an error, like the context.
+func TestBuildGraphSurvivesACorruptLinksQueue(t *testing.T) { // F-0502 crit. 6
+	repo := linksRepo(t)
+	writeDoc(t, repo, "links/suggestions.json", "<<<<<<< HEAD\n[{\"n\": 1\n")
+	g, err := BuildGraph(repo)
+	if err != nil || len(g.Nodes) == 0 {
+		t.Fatalf("BuildGraph = %d nodes, %v; want it to go on", len(g.Nodes), err)
+	}
+	if _, err := TaskContext(repo, "F-0001", DefaultContextBudget); err != nil {
+		t.Errorf("TaskContext: %v", err)
+	}
+}
