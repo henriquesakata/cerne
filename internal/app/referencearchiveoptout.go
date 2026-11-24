@@ -20,12 +20,12 @@ var ErrOptOutNeedsIDs = errors.New("--opt-out needs the ids of the references to
 func optOutKey(raw string) string {
 	n := dupmatch.NormalizeURL(raw)
 	u, err := url.Parse(n)
-	if err != nil || u.RawQuery == "" {
+	if err != nil {
 		return n
 	}
 	q := u.Query()
 	for k := range q {
-		if strings.HasPrefix(strings.ToLower(k), "utm_") {
+		if lk := strings.ToLower(k); strings.HasPrefix(lk, "utm_") || lk == "fbclid" || lk == "gclid" || lk == "mc_cid" {
 			q.Del(k)
 		}
 	}

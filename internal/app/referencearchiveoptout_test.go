@@ -56,6 +56,26 @@ func TestArchiveOptOutKeyDropsUTM(t *testing.T) {
 	}
 }
 
+// F-0503 crit. 7: the key is built the same way with and without a query, so a
+// non-ASCII path matches its tagged copy in both directions; the click ids
+// fbclid, gclid and mc_cid go with utm_*.
+func TestOptOutKeyIsConsistent(t *testing.T) {
+	for _, tc := range []struct{ a, b string }{
+		{"https://example.com/café", "https://example.com/café?utm_source=x"},
+		{"https://example.com/caf%C3%A9", "https://example.com/café?utm_source=x"},
+		{"https://Example.com/p?fbclid=abc", "https://example.com/p"},
+		{"https://example.com/p?gclid=1&mc_cid=2&utm_term=3", "https://www.example.com/p"},
+		{"https://example.com/p?id=7&fbclid=abc", "http://example.com/p?id=7"},
+	} {
+		if optOutKey(tc.a) != optOutKey(tc.b) || optOutKey(tc.b) != optOutKey(tc.a) {
+			t.Errorf("optOutKey(%q) = %q, optOutKey(%q) = %q; want equal", tc.a, optOutKey(tc.a), tc.b, optOutKey(tc.b))
+		}
+	}
+	if optOutKey("https://example.com/p?id=7") == optOutKey("https://example.com/p?id=8") {
+		t.Error("another query is another page")
+	}
+}
+
 // F-0503 crit. 7: the opt-out bars every reference with the same normalized
 // URL (case of scheme and host, fragment), a later one included, in a batch and
 // when named; a different URL is not barred.
