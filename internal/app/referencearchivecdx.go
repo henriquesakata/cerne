@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/henriquesakata/cerne/internal/store"
@@ -70,7 +71,8 @@ func distance(a, b time.Time) time.Duration {
 // otherwise a new copy, and when the service refuses it, that nearest capture.
 // A failed capture list only means there is no capture to choose.
 func chooseCopy(ctx context.Context, r store.Reference, n ArchiveNet) store.ReferenceArchive {
-	caps, _ := n.Client.Captures(ctx, r.URL)
+	target, _, _ := strings.Cut(r.URL, "#") // the fragment is the page's business, never the service's
+	caps, _ := n.Client.Captures(ctx, target)
 	var near *Snapshot
 	for i, c := range caps {
 		if near == nil || distance(c.CapturedAt, r.CreatedAt) < distance(near.CapturedAt, r.CreatedAt) {
@@ -84,7 +86,7 @@ func chooseCopy(ctx context.Context, r store.Reference, n ArchiveNet) store.Refe
 	if near != nil && distance(near.CapturedAt, r.CreatedAt) < distance(now, r.CreatedAt) {
 		return existing(*near)
 	}
-	s, err := n.Client.Save(ctx, r.URL)
+	s, err := n.Client.Save(ctx, target)
 	switch {
 	case err == nil && s.CapturedAt.Before(now.Add(-time.Minute)):
 		return existing(s) // the service reused a copy
