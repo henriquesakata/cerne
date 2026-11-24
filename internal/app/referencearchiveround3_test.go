@@ -52,7 +52,7 @@ func TestArchiveGateShareLinkRound3(t *testing.T) {
 			t.Errorf("%s: %s (%s), want skipped (share link host)", h, st, why)
 		}
 	}
-	for _, h := range []string{"learn.chatgpt.com", "www.chatgpt.com", "help.openai.com", "docs.claude.ai", "developers.openai.com"} {
+	for _, h := range []string{"learn.chatgpt.com", "help.openai.com", "docs.claude.ai", "developers.openai.com"} {
 		if shareLinkHost(h) {
 			t.Errorf("shareLinkHost(%s) = true, want false", h)
 		}

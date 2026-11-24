@@ -400,17 +400,17 @@ var shareLinkDomains = []string{
 	"dropbox.com", "box.com", "gist.github.com", "notion.so", "notion.site", "figma.com",
 	"loom.com", "slack.com", "teams.microsoft.com", "excalidraw.com", "mega.nz", "loca.lt", "app.github.dev", "githubpreview.dev", "webhook.office.com", "hooks.zapier.com", "maker.ifttt.com", "pastebin.com",
 	"photos.google.com", "photos.app.goo.gl", "goo.gl", "canva.com", "miro.com", "hackmd.io", "ngrok.io", "ngrok.app",
-	"ngrok-free.app", "trycloudflare.com",
+	"ngrok-free.app", "trycloudflare.com", "perplexity.ai", "claude.site", "g.co",
 }
 
-// shareLinkExact are share hosts whose subdomains carry public pages
-// (learn.chatgpt.com, the Codex docs): only the exact host is refused.
-var shareLinkExact = []string{"chatgpt.com", "chat.openai.com", "claude.ai"}
+// shareLinkExact are share hosts whose other subdomains carry public pages
+// (learn.chatgpt.com, the Codex docs): only the host itself or its www. is refused.
+var shareLinkExact = []string{"chatgpt.com", "chat.openai.com", "claude.ai", "gemini.google.com"}
 
 // shareLinkHost reports a host that serves documents to anyone with the link.
 func shareLinkHost(host string) bool {
 	host = strings.TrimSuffix(strings.ToLower(host), ".")
-	if slices.Contains(shareLinkExact, host) {
+	if slices.Contains(shareLinkExact, strings.TrimPrefix(host, "www.")) {
 		return true
 	}
 	for _, d := range shareLinkDomains {
