@@ -57,6 +57,7 @@ func TestFilterLinkSuggestions(t *testing.T) { // F-0502 crit. 4, 7
 		{"excerpt under 12 runes", RawLinkSuggestion{"F-0001", "D-0001", "cache  ADR"}, LinkDropShort}, // the importer's minimum
 		{"empty excerpt", RawLinkSuggestion{"F-0001", "D-0001", "  "}, LinkDropShort},
 		{"edge already in the graph", RawLinkSuggestion{"F-0002", "D-0002", "the cache ADR"}, LinkDropEdge},
+		{"edge already in the graph, opposite direction", RawLinkSuggestion{"D-0002", "F-0002", "the cache ADR"}, LinkDropEdge},
 		{"pair already in the queue", RawLinkSuggestion{"F-0001", "D-0003", "cache ADR"}, LinkDropQueued},
 	}
 	for _, tc := range cases {

@@ -36,7 +36,7 @@ type RawLinkSuggestion struct {
 // FilterLinkSuggestions keeps the suggestions that pass the deterministic
 // checks, without any LLM: both ends exist, the excerpt is literally in a
 // content document of the source (doccheck.FindLiteral), no edge of any type
-// already runs from the source to the target, the pair was never suggested
+// already runs between the two, in either direction, the pair was never suggested
 // before (in any status) and it is not repeated in the batch. dropped counts
 // the rest by reason.
 func FilterLinkSuggestions(repoDir string, raw []RawLinkSuggestion) (kept []RawLinkSuggestion, dropped map[string]int, err error) {
@@ -96,7 +96,7 @@ func FilterLinkSuggestions(repoDir string, raw []RawLinkSuggestion) (kept []RawL
 			reason = LinkDropUnknownTarget
 		case r.From == r.To:
 			reason = LinkDropSelf
-		case edges[pair]:
+		case edges[pair] || edges[[2]string{r.To, r.From}]:
 			reason = LinkDropEdge
 		case seen[pair]:
 			reason = LinkDropQueued
