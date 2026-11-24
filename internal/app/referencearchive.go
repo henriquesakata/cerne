@@ -347,6 +347,8 @@ func gateArchive(ctx context.Context, r store.Reference, on bool, ignore []strin
 		return archiveSkipped, "internal host"
 	case shareLinkHost(u.Hostname()):
 		return archiveSkipped, "share link host"
+	case webhookParsed(u):
+		return archiveSkipped, "webhook"
 	case u.User != nil:
 		return archiveSkipped, "credentials in URL"
 	case sourceurl.HasSecret(r.URL):
@@ -518,6 +520,8 @@ func hopRefusal(u *url.URL, ignore []string) string {
 		return "login page"
 	case shareLinkHost(u.Hostname()):
 		return "share link host"
+	case webhookParsed(u):
+		return "webhook"
 	case u.Scheme != "http" && u.Scheme != "https", internalURL(u.String(), ignore), reservedHost(u.Hostname()):
 		return "redirects to an internal host"
 	}
