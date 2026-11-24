@@ -1,6 +1,9 @@
 package sourceurl
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // F-0503 crit. 4: localhost, .local, private and loopback IPs and any
 // configured ignore substring are internal; a public host is not.
@@ -26,6 +29,44 @@ func TestInternal(t *testing.T) {
 	} {
 		if got := Internal(tc.url, ignore); got != tc.want {
 			t.Errorf("Internal(%q) = %v, want %v", tc.url, got, tc.want)
+		}
+	}
+}
+
+// F-0503 crit. 5: a user or password in the URL, or a query (or fragment)
+// parameter named like a secret, marks the URL; a plain one does not.
+func TestHasSecret(t *testing.T) {
+	for _, name := range []string{"token", "key", "secret", "sig", "signature", "auth", "password", "access_token"} {
+		for _, u := range []string{
+			"https://docs.publicsite.org/page?" + name + "=abc",
+			"https://docs.publicsite.org/page?a=1&" + strings.ToUpper(name) + "=abc",
+			"https://docs.publicsite.org/page#" + name + "=abc",
+		} {
+			if !HasSecret(u) {
+				t.Errorf("HasSecret(%q) = false, want true", u)
+			}
+		}
+	}
+	for _, u := range []string{
+		"https://user@docs.publicsite.org/page",
+		"https://user:pass@docs.publicsite.org/page",
+		"https://s3.example.org/f?X-Amz-Signature=abc",
+		"https://api.example.org/f?api_key=abc",
+		"https://api.example.org/f?client_secret=abc",
+		"%zz://bad",
+	} {
+		if !HasSecret(u) {
+			t.Errorf("HasSecret(%q) = false, want true", u)
+		}
+	}
+	for _, u := range []string{
+		"https://docs.publicsite.org/page",
+		"https://docs.publicsite.org/page?q=go&keyword=token-free",
+		"https://docs.publicsite.org/page#section-2",
+		"https://docs.publicsite.org/tokens/auth-guide",
+	} {
+		if HasSecret(u) {
+			t.Errorf("HasSecret(%q) = true, want false", u)
 		}
 	}
 }
