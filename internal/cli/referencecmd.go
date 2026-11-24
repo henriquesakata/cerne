@@ -22,6 +22,10 @@ func newReferenceCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "reference",
 		Short: "Register and manage references in the backend",
+		Long: "Register and manage references in the backend. Three commands reach the network: 'reference check' " +
+			"(one request per source), 'reference archive', and 'reference new' when a human turned references.archive on " +
+			"(it then tries to archive the page it registers; --no-archive keeps one source out). Everything else, " +
+			"lint, pull and push included, reads what is recorded.",
 	}
 	cmd.PersistentFlags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.PersistentFlags().MarkHidden("dir")
@@ -51,8 +55,8 @@ func newReferenceCheckCmd(dir *string) *cobra.Command {
 			"HTTP status and a hash of the visible text. The first check writes the baseline. Later ones report: ok, " +
 			"changed (the text differs from the baseline; confirm with 'cerne reference keep'), gone (404, 410 or a " +
 			"domain that no longer exists; 'cerne lint' then flags reference-gone) or transient (timeout, 5xx, 429 or any " +
-			"other failure: nothing is recorded but the event). With the archive ('cerne reference archive') it is the only command that touches the network; the " +
-			"request carries just the URL and a generic cerne User-Agent.",
+			"other failure: nothing is recorded but the event). Each request carries just the URL and a generic cerne " +
+			"User-Agent. A gone or changed line ends with the archived copy, when the reference has one.",
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := resolveProject(*dir)
