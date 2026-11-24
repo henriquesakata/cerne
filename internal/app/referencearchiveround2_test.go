@@ -45,6 +45,21 @@ func TestLoginPageSegments(t *testing.T) {
 	}
 }
 
+// F-0503 crit. 4: the gate matches the host and an ignore item without regard
+// to case, in either direction.
+func TestArchiveGateIgnoreIsCaseInsensitive(t *testing.T) {
+	for _, tc := range []struct{ u, ignore string }{
+		{"https://GIT.Acme.com/team/repo", "git.acme.com"},
+		{"https://git.acme.com/team/repo", "Git.Acme.COM/Team"},
+		{"HTTPS://Git.ACME.com/Team/Repo", "git.acme.com/team"},
+	} {
+		st, why := gateArchive(context.Background(), extRef(tc.u), true, []string{tc.ignore}, offlineNet(t))
+		if st != archiveSkipped || why != "internal host" {
+			t.Errorf("%s with ignore %q: %s (%s), want skipped (internal host)", tc.u, tc.ignore, st, why)
+		}
+	}
+}
+
 // F-0503 crit. 4: the special-use ranges are not public, as a literal host, as
 // a resolved address, and as an IPv4 address mapped into IPv6.
 func TestArchiveGateSpecialUseRanges(t *testing.T) {

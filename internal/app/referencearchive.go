@@ -325,7 +325,7 @@ func gateArchive(ctx context.Context, r store.Reference, on bool, ignore []strin
 		return archiveSkipped, "not an http(s) URL"
 	}
 	switch {
-	case sourceurl.Internal(r.URL, ignore) || reservedHost(u.Hostname()):
+	case internalURL(r.URL, ignore) || reservedHost(u.Hostname()):
 		return archiveSkipped, "internal host"
 	case shareLinkHost(u.Hostname()):
 		return archiveSkipped, "share link host"
@@ -338,6 +338,16 @@ func gateArchive(ctx context.Context, r store.Reference, on bool, ignore []strin
 		return st, why
 	}
 	return provePublic(ctx, r.URL, ignore, n.Transport, n.LookupIP)
+}
+
+// internalURL is sourceurl.Internal without regard to case, for the archive
+// only: the lint keeps its exact matching.
+func internalURL(raw string, ignore []string) bool {
+	lower := make([]string, len(ignore))
+	for i, s := range ignore {
+		lower[i] = strings.ToLower(s)
+	}
+	return sourceurl.Internal(strings.ToLower(raw), lower)
 }
 
 // reservedSuffixes are names that never resolve on the public Internet.
@@ -466,7 +476,7 @@ func hopRefusal(u *url.URL, ignore []string) string {
 		return "login page"
 	case shareLinkHost(u.Hostname()):
 		return "share link host"
-	case u.Scheme != "http" && u.Scheme != "https", sourceurl.Internal(u.String(), ignore), reservedHost(u.Hostname()):
+	case u.Scheme != "http" && u.Scheme != "https", internalURL(u.String(), ignore), reservedHost(u.Hostname()):
 		return "redirects to an internal host"
 	}
 	return ""
