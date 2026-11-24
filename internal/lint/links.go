@@ -15,7 +15,9 @@ import (
 func acceptedLinkFindings(repoDir string, docs []scannedDoc, needles []needle, textFindings []Finding) ([]Finding, error) {
 	queue, err := store.LoadLinkSuggestions(repoDir)
 	if err != nil {
-		return nil, err
+		// A queue that does not parse (a merge conflict, a cut write) is one
+		// finding; the rest of the lint goes on.
+		return []Finding{{Rule: RuleBrokenLink, Entity: "links", File: "links/suggestions.json", Detail: "links/suggestions.json is unreadable: " + err.Error(), Fix: "repair links/suggestions.json"}}, nil
 	}
 	scanned := map[string]bool{}
 	for _, d := range docs {

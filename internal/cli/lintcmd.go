@@ -398,6 +398,9 @@ func printFixTasks(w io.Writer, findings []lint.Finding) {
 // finding that carries its Fix (an append-only errata, F-0329) is never
 // parsed: its file cannot be edited, so the task is that command.
 func taskAction(f lint.Finding) string {
+	if f.Fix != "" && f.File == "links/suggestions.json" { // F-0502: the queue is data, not an errata target
+		return "run: " + f.Fix
+	}
 	if f.Fix != "" {
 		return "append an errata entry (the errata is append-only): " + f.Fix
 	}

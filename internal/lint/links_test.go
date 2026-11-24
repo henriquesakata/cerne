@@ -74,3 +74,27 @@ func TestRefToSupersededReadsAcceptedLinks(t *testing.T) { // F-0502 crit. 8
 		t.Errorf("text mention + accepted link = %+v, want the one finding of the text", both)
 	}
 }
+
+// TestLintSurvivesACorruptLinksQueue: a links/suggestions.json that does not
+// parse (a merge conflict, a cut write) is one finding with its fix; the rest
+// of the lint runs.
+func TestLintSurvivesACorruptLinksQueue(t *testing.T) { // F-0502 crit. 8
+	dir := linksLintBackend(t, "# Conta\n\nPlain words.\n", store.LinkAccepted)
+	writeDoc(t, dir, "links/suggestions.json", "<<<<<<< HEAD\n[{\"n\": 1\n=======\n")
+	all, err := Run(dir)
+	if err != nil {
+		t.Fatalf("Run failed on a corrupt queue: %v", err)
+	}
+	var got []Finding
+	for _, f := range all {
+		if f.File == "links/suggestions.json" {
+			got = append(got, f)
+		}
+	}
+	if len(got) != 1 || got[0].Fix != "repair links/suggestions.json" || !strings.Contains(got[0].Detail, "unreadable") {
+		t.Fatalf("findings on the queue = %+v", got)
+	}
+	if len(all) < 2 { // the other rules still ran
+		t.Errorf("only the queue finding came out: %+v", all)
+	}
+}
