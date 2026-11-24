@@ -380,7 +380,9 @@ func reservedHost(host string) bool {
 var shareLinkDomains = []string{
 	"docs.google.com", "drive.google.com", "sharepoint.com", "onedrive.live.com", "1drv.ms",
 	"dropbox.com", "box.com", "gist.github.com", "notion.so", "notion.site", "figma.com",
-	"loom.com", "slack.com", "teams.microsoft.com",
+	"loom.com", "slack.com", "teams.microsoft.com", "chatgpt.com", "chat.openai.com", "claude.ai", "pastebin.com",
+	"photos.google.com", "photos.app.goo.gl", "goo.gl", "canva.com", "miro.com", "hackmd.io", "ngrok.io", "ngrok.app",
+	"ngrok-free.app", "trycloudflare.com",
 }
 
 // shareLinkHost reports a host that serves documents to anyone with the link.

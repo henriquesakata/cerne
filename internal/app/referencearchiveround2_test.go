@@ -60,6 +60,22 @@ func TestArchiveGateIgnoreIsCaseInsensitive(t *testing.T) {
 	}
 }
 
+// F-0503 crit. 6: the chat, paste, photo, whiteboard and tunnel hosts that serve
+// a page to anyone holding the link are skipped, subdomains included.
+func TestArchiveGateMoreShareLinkHosts(t *testing.T) {
+	for _, h := range []string{
+		"chatgpt.com", "chat.openai.com", "claude.ai", "pastebin.com", "photos.google.com", "photos.app.goo.gl",
+		"goo.gl", "canva.com", "miro.com", "hackmd.io", "ngrok.io", "ngrok.app", "ngrok-free.app", "trycloudflare.com",
+	} {
+		for _, host := range []string{h, "abc123." + h} {
+			st, why := gateArchive(context.Background(), extRef("https://"+host+"/share/abc"), true, nil, offlineNet(t))
+			if st != archiveSkipped || why != "share link host" {
+				t.Errorf("%s: %s (%s), want skipped (share link host)", host, st, why)
+			}
+		}
+	}
+}
+
 // F-0503 crit. 4: the special-use ranges are not public, as a literal host, as
 // a resolved address, and as an IPv4 address mapped into IPv6.
 func TestArchiveGateSpecialUseRanges(t *testing.T) {
