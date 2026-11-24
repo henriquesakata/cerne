@@ -443,6 +443,33 @@ func TestKeepReference(t *testing.T) {
 	}
 }
 
+// F-0501 crit. 6: keep takes a lowercase id like check does, and refuses a
+// reference that is no longer current.
+func TestKeepReferenceCanonicalizesAndRefusesNonCurrent(t *testing.T) {
+	repoDir, projDir := refsBackend(t, 1)
+	u := "https://example.com/1"
+	if _, err := CheckReferences(repoDir, projDir, nil, fetchMap(map[string]FetchResponse{u: page("a")})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CheckReferences(repoDir, projDir, nil, fetchMap(map[string]FetchResponse{u: page("b")})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := KeepReference(repoDir, projDir, "r-0001"); err != nil {
+		t.Fatalf("lowercase id: %v", err)
+	}
+	// changed again, then retired: keep must refuse on the state, not on the check
+	if _, err := CheckReferences(repoDir, projDir, nil, fetchMap(map[string]FetchResponse{u: page("c")})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RetireReference(repoDir, projDir, "R-0001", "x"); err != nil {
+		t.Fatal(err)
+	}
+	_, err := KeepReference(repoDir, projDir, "R-0001")
+	if err == nil || !strings.Contains(err.Error(), "reference R-0001 is obsolete: only current references are kept") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 // F-0501 crit. 1: an unknown or obsolete id refuses before any fetch.
 func TestCheckReferencesRefusesBadIDs(t *testing.T) {
 	repoDir, projDir := refsBackend(t, 2)

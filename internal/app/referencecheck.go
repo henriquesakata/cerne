@@ -320,11 +320,15 @@ var ErrReferenceNotChanged = errors.New("reference is not in the changed state")
 // KeepReference accepts the current page of a changed reference as its new
 // baseline and clears the changed state (F-0501).
 func KeepReference(repoDir, projDir, id string) (store.Reference, error) {
+	id = domain.CanonicalID(id)
 	var r store.Reference
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		var err error
 		if r, err = store.LoadReference(repoDir, id); err != nil {
 			return "", fmt.Errorf("reference %s: %w", id, err)
+		}
+		if r.State != domain.ReferenceCurrent {
+			return "", fmt.Errorf("reference %s is %s: only current references are kept", id, r.State)
 		}
 		if r.Check == nil || r.Check.Status != "changed" {
 			return "", fmt.Errorf("reference %s: %w", id, ErrReferenceNotChanged)
