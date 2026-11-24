@@ -75,8 +75,7 @@ func TestFilterLinkSuggestions(t *testing.T) { // F-0502 crit. 4, 7
 			}
 		})
 	}
-	t.Run("duplicate in the same batch", func(t *testing.T) {
-		a := RawLinkSuggestion{"F-0001", "D-0001", "cache ADR"}
+	t.Run("duplicate in the same batch", func(t *testing.T) {		a := RawLinkSuggestion{"F-0001", "D-0001", "cache ADR"}
 		kept, dropped, err := FilterLinkSuggestions(linksRepo(t), []RawLinkSuggestion{a, a})
 		if err != nil {
 			t.Fatal(err)
