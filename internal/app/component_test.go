@@ -31,7 +31,7 @@ func TestComponentWritersRefuseNearName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed decision: %v", err)
 	}
-	r, err := CreateExternalReference(repoDir, projDir, "Retag target reference", "http://retag", "c", nil, nil, nil, false)
+	r, err := CreateExternalReference(repoDir, projDir, "Retag target reference", "http://retag", "c", nil, nil, nil, false, false)
 	if err != nil {
 		t.Fatalf("seed reference: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestComponentWritersRefuseNearName(t *testing.T) {
 			return err
 		}},
 		{"reference new", func(c []string, force bool) error {
-			_, err := CreateExternalReference(repoDir, projDir, "Delta writer", "http://delta/"+boolWord(force), "c", nil, nil, c, force)
+			_, err := CreateExternalReference(repoDir, projDir, "Delta writer", "http://delta/"+boolWord(force), "c", nil, nil, c, force, false)
 			return err
 		}},
 		{"reference retag", func(c []string, force bool) error {
@@ -141,7 +141,7 @@ func TestDuplicateGuardRefusesBeforeTheComponentCheck(t *testing.T) {
 	if _, err := CreateDecision(repoDir, projDir, "Same decision title", "", nil, nil, []string{"testing"}, false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := CreateExternalReference(repoDir, projDir, "Some source", "http://same", "c", nil, nil, []string{"testing"}, false); err != nil {
+	if _, err := CreateExternalReference(repoDir, projDir, "Some source", "http://same", "c", nil, nil, []string{"testing"}, false, false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := CreatePending(repoDir, projDir, "Same pending title", "", f.ID, nil, []string{"testing"}, false); err != nil {
@@ -162,7 +162,7 @@ func TestDuplicateGuardRefusesBeforeTheComponentCheck(t *testing.T) {
 			return err
 		},
 		"reference": func() error {
-			_, err := CreateExternalReference(repoDir, projDir, "Some source", "http://same", "c", nil, nil, near, false)
+			_, err := CreateExternalReference(repoDir, projDir, "Some source", "http://same", "c", nil, nil, near, false, false)
 			return err
 		},
 		"pending": func() error {

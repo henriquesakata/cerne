@@ -251,7 +251,7 @@ func TestArchiveReferencesSendOnlyTheURL(t *testing.T) {
 		t.Fatal(err)
 	}
 	const title, summary = "Zephyr confidential roadmap", "classified summary of the vendor deal"
-	if _, err := CreateExternalReference(repoDir, projDir, title, pageURL, summary, []string{"F-0001"}, nil, nil, false); err != nil {
+	if _, err := CreateExternalReference(repoDir, projDir, title, pageURL, summary, []string{"F-0001"}, nil, nil, false, false); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(projDir, ".cernerc"), []byte("project_id = \"p\"\nbackend = \"b\"\n[references]\narchive = true\n"), 0o644); err != nil {

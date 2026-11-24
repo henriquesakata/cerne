@@ -12,7 +12,7 @@ import (
 func mkTaggedReference(t *testing.T, repoDir, projDir string, facets, components []string) store.Reference {
 	t.Helper()
 	r, err := CreateExternalReference(repoDir, projDir,
-		"Artigo", "https://example.com/x", "# corpo", nil, facets, components, true) // fixture helper: several same-URL references on purpose
+		"Artigo", "https://example.com/x", "# corpo", nil, facets, components, true, false) // fixture helper: several same-URL references on purpose
 	if err != nil {
 		t.Fatalf("CreateExternalReference: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestRetagReferencePreservesURLInforms(t *testing.T) {
 		t.Fatalf("CreateDecision: %v", err)
 	}
 	r, err := CreateExternalReference(repoDir, projDir,
-		"Artigo", "https://example.com/ssh", "# corpo", []string{d.ID}, []string{"code"}, nil, false)
+		"Artigo", "https://example.com/ssh", "# corpo", []string{d.ID}, []string{"code"}, nil, false, false)
 	if err != nil {
 		t.Fatalf("CreateExternalReference: %v", err)
 	}

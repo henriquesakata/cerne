@@ -1391,7 +1391,7 @@ func handleCreateReference(w http.ResponseWriter, r *http.Request, repoDir, proj
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
 		return
 	}
-	ref, err := app.CreateExternalReference(repoDir, projDir, req.Title, req.URL, req.Content, req.Informs, req.Facets, req.Components, false)
+	ref, err := app.CreateExternalReference(repoDir, projDir, req.Title, req.URL, req.Content, req.Informs, req.Facets, req.Components, false, false)
 	if errors.Is(err, app.ErrSimilarExists) {
 		writeJSON(w, http.StatusConflict, dupConflictBody(err)) // F-0324: same 409 shape as the feature routes
 		return

@@ -282,7 +282,7 @@ func TestIdeasAPIInformedBy(t *testing.T) {
 	if _, err := app.CreateIdea(repoDir, projDir, "sem fonte", "", nil, nil, "", false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := app.CreateExternalReference(repoDir, projDir, "Artigo", "http://a", "c", []string{i.ID}, nil, nil, false); err != nil {
+	if _, err := app.CreateExternalReference(repoDir, projDir, "Artigo", "http://a", "c", []string{i.ID}, nil, nil, false, false); err != nil {
 		t.Fatal(err)
 	}
 	var list struct {
@@ -325,7 +325,7 @@ func TestIdeasStateFilter(t *testing.T) {
 	}
 	// A source on the idea that gets dropped: state=all must carry the
 	// sources of the closed ones too, not only an empty key (critic F-0416 #4).
-	if _, err := app.CreateExternalReference(repoDir, projDir, "Artigo", "http://a", "c", []string{"I-0002"}, nil, nil, false); err != nil {
+	if _, err := app.CreateExternalReference(repoDir, projDir, "Artigo", "http://a", "c", []string{"I-0002"}, nil, nil, false, false); err != nil {
 		t.Fatal(err)
 	}
 	doJSON(t, h, http.MethodPost, "/api/ideas/I-0002/drop", `{}`, &map[string]any{})
