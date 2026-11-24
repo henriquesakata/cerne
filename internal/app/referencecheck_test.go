@@ -2,13 +2,18 @@ package app
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -318,6 +323,27 @@ func TestHTTPFetcherSendsOnlyTheURL(t *testing.T) {
 	}
 }
 
+// F-0501 crit. 9: the failure recorded in the pushed event is a short class,
+// never the raw error text (it can carry internal IPs or a proxy host).
+func TestTransientReasonIsAClassNotRawText(t *testing.T) {
+	cases := []struct {
+		err  error
+		want string
+	}{
+		{context.DeadlineExceeded, "timeout"},
+		{&url.Error{Op: "Get", URL: "http://10.1.2.3/x", Err: context.DeadlineExceeded}, "timeout"},
+		{&url.Error{Op: "Get", URL: "http://10.1.2.3/x", Err: &net.OpError{Op: "dial", Err: &os.SyscallError{Syscall: "connect", Err: syscall.ECONNREFUSED}}}, "connection refused"},
+		{&url.Error{Op: "Get", URL: "https://10.1.2.3/x", Err: &tls.CertificateVerificationError{Err: x509.UnknownAuthorityError{}}}, "tls"},
+		{&net.DNSError{Err: "server misbehaving", Name: "corp-proxy.internal"}, "dns"},
+		{errors.New("proxyconnect tcp: dial tcp 10.9.9.9:3128: weird"), "network error"},
+	}
+	for _, c := range cases {
+		if got := transientReason(c.err); got != c.want {
+			t.Errorf("transientReason(%v) = %q, want %q", c.err, got, c.want)
+		}
+	}
+}
+
 // F-0501 crit. 9: nothing that identifies the user follows a redirect.
 func TestHTTPFetcherRedirectCarriesNoReferer(t *testing.T) {
 	var seen *http.Request
@@ -330,7 +356,7 @@ func TestHTTPFetcherRedirectCarriesNoReferer(t *testing.T) {
 		http.Redirect(w, r, b.URL+"/final", http.StatusFound)
 	}))
 	defer a.Close()
-	resp, err := NewHTTPFetcher(5 * time.Second)(context.Background(), a.URL+"/start")
+	resp, err := NewHTTPFetcher(5*time.Second)(context.Background(), a.URL+"/start")
 	if err != nil || resp.Status != 200 || seen == nil {
 		t.Fatalf("resp = %+v, %v, seen = %v", resp, err, seen)
 	}

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -15,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"golang.org/x/net/html"
@@ -345,5 +348,22 @@ func transientReason(err error) string {
 	if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &ne) && ne.Timeout()) {
 		return "timeout"
 	}
-	return err.Error()
+	var (
+		dns     *net.DNSError
+		verify  *tls.CertificateVerificationError
+		unknown x509.UnknownAuthorityError
+		host    x509.HostnameError
+		invalid x509.CertificateInvalidError
+		record  tls.RecordHeaderError
+	)
+	switch {
+	case errors.Is(err, syscall.ECONNREFUSED):
+		return "connection refused"
+	case errors.As(err, &verify), errors.As(err, &unknown), errors.As(err, &host), errors.As(err, &invalid), errors.As(err, &record):
+		return "tls"
+	case errors.As(err, &dns):
+		return "dns"
+	}
+	// never err.Error(): it can carry internal IPs or a proxy host, and it is pushed
+	return "network error"
 }
