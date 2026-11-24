@@ -3,8 +3,10 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -27,7 +29,82 @@ func newReferenceCmd() *cobra.Command {
 	cmd.AddCommand(verbs.MarkChat(newReferenceRetagCmd(&dir)))
 	cmd.AddCommand(newReferenceRetireCmd(&dir))
 	cmd.AddCommand(newReferenceLinkCmd(&dir))
+	cmd.AddCommand(newReferenceCheckCmd(&dir))
+	cmd.AddCommand(newReferenceKeepCmd(&dir))
 	return cmd
+}
+
+// referenceCheckTimeout bounds each URL of `reference check` (F-0501).
+const referenceCheckTimeout = 15 * time.Second
+
+func newReferenceCheckCmd(dir *string) *cobra.Command {
+	return verbs.MarkLocal(&cobra.Command{
+		Use:   "check [id...]",
+		Short: "Fetch each current external source and record whether it changed or went away",
+		Long: "Requests the URL of every current external reference (or only the ids given) and records the date, the " +
+			"HTTP status and a hash of the visible text. The first check writes the baseline. Later ones report: ok, " +
+			"changed (the text differs from the baseline; confirm with 'cerne reference keep'), gone (404, 410 or a " +
+			"domain that no longer exists; 'cerne lint' then flags reference-gone) or transient (timeout, 5xx, 429 or any " +
+			"other failure: nothing is recorded but the event). This is the only command that touches the network; the " +
+			"request carries just the URL and a generic cerne User-Agent.",
+		Args: cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, err := resolveProject(*dir)
+			if err != nil {
+				return err
+			}
+			res, err := app.CheckReferences(ctx.repoDir, ctx.projDir, args, app.NewHTTPFetcher(referenceCheckTimeout))
+			if err != nil {
+				return err
+			}
+			printReferenceChecks(cmd.OutOrStdout(), res)
+			return nil
+		},
+	})
+}
+
+// printReferenceChecks writes one line per reference — `R-0012  gone (HTTP
+// 404)  informs F-0003` — and the summary. The line format is stable: later
+// features append columns.
+func printReferenceChecks(w io.Writer, res []app.CheckResult) {
+	n := map[string]int{}
+	for _, r := range res {
+		n[r.Result]++
+		line := r.ID + "  " + r.Result
+		if r.Detail != "" {
+			line += " (" + r.Detail + ")"
+		}
+		if (r.Result == "changed" || r.Result == "gone") && len(r.Informs) > 0 {
+			line += "  informs " + strings.Join(r.Informs, ", ")
+		}
+		fmt.Fprintln(w, line)
+	}
+	fmt.Fprintf(w, "checked %d: %d ok, %d changed, %d gone, %d transient\n",
+		len(res), n["ok"], n["changed"], n["gone"], n["transient"])
+}
+
+func newReferenceKeepCmd(dir *string) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "keep <id>",
+		Short: "Accept the current page of a changed source as its new baseline",
+		Long: "Confirms that a source flagged changed by 'cerne reference check' still supports what it informs: the " +
+			"hash of the current text becomes the baseline and the changed state clears. Refused unless the last check " +
+			"says changed.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, err := resolveProject(*dir)
+			if err != nil {
+				return err
+			}
+			r, err := app.KeepReference(ctx.repoDir, ctx.projDir, args[0])
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%s baseline updated: the current page is accepted\n", r.ID)
+			return nil
+		},
+	}
+	return verbs.MarkLifecycle(cmd)
 }
 
 func newReferenceRetagCmd(dir *string) *cobra.Command {
