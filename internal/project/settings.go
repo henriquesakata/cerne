@@ -234,6 +234,11 @@ var settingsRegistry = []Setting{
 		},
 	},
 	{
+		ID: "references.archive", Group: "integrations", Title: "Archive public sources", Type: "bool", Default: false,
+		Scopes: []string{ScopeProject, ScopeHost}, HumanOnly: true,
+		Description: "On, cerne reference new and cerne reference archive send the URL of an external reference, and nothing else, to the Wayback Machine of the Internet Archive and keep the link of the dated copy. Only a page proven public is sent: never an internal host, an ignored source, a URL with a secret or credentials, or a page an anonymous request cannot read; a reference registered with --no-archive is never sent. Off sends nothing. An agent cannot change this key through cerne settings: it is the project owner's decision.",
+	},
+	{
 		ID: "ui.update_check", Group: "interface", Title: "Check for a new release", Type: "bool", Default: true,
 		Scopes:      []string{ScopeHost},
 		Description: "On, the cerne ui panel asks GitHub for the latest release when it starts and every 24 hours while it is open, and shows an Update button when a newer one exists. Off, the panel never asks; cerne update still checks when you run it. It applies to every project on this machine.",
