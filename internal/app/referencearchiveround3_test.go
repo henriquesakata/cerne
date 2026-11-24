@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/url"
 	"slices"
@@ -61,6 +62,24 @@ func TestArchiveGateShareLinkRound3(t *testing.T) {
 			if st, why := gateArchive(context.Background(), extRef("https://"+host+"/x"), true, nil, offlineNet(t)); st != archiveSkipped || why != "share link host" {
 				t.Errorf("%s: %s (%s), want skipped (share link host)", host, st, why)
 			}
+		}
+	}
+}
+
+// F-0503 crit. 4: an address in 64:ff9b::/96 (NAT64) or 2002::/16 (6to4) is
+// judged by the IPv4 address it embeds, as a literal and as a DNS answer.
+func TestArchiveGateEmbeddedIPv4(t *testing.T) {
+	for _, ip := range []string{"64:ff9b::a00:1", "64:ff9b::7f00:1", "64:ff9b::c000:201", "2002:a00:1::1", "2002:7f00:1::", "2002:c000:201::5", "2002:6440:1::"} {
+		if publicIP(net.ParseIP(ip)) {
+			t.Errorf("publicIP(%s) = true, want false (embedded private IPv4)", ip)
+		}
+		if st, why := gateArchive(context.Background(), extRef("http://["+ip+"]/x"), true, nil, offlineNet(t)); st != archiveSkipped || why != "internal host" {
+			t.Errorf("literal %s: %s (%s), want skipped (internal host)", ip, st, why)
+		}
+	}
+	for _, ip := range []string{"64:ff9b::5db8:d70e", "2002:5db8:d70e::1"} {
+		if !publicIP(net.ParseIP(ip)) {
+			t.Errorf("publicIP(%s) = false, want true (embedded public IPv4)", ip)
 		}
 	}
 }

@@ -433,6 +433,15 @@ var specialUse = func() (nets []*net.IPNet) {
 // publicIP: global unicast (so not multicast or link-local), not private, in
 // no special-use range.
 func publicIP(ip net.IP) bool {
+	if ip.To4() == nil && len(ip) == net.IPv6len {
+		// NAT64 (64:ff9b::/96) and 6to4 (2002::/16) carry an IPv4 address: judge that one.
+		if ip[0] == 0 && ip[1] == 0x64 && ip[2] == 0xff && ip[3] == 0x9b && slices.Equal(ip[4:12], make([]byte, 8)) {
+			return publicIP(net.IP(ip[12:16]))
+		}
+		if ip[0] == 0x20 && ip[1] == 0x02 {
+			return publicIP(net.IP(ip[2:6]))
+		}
+	}
 	return ip.IsGlobalUnicast() && !ip.IsPrivate() && !slices.ContainsFunc(specialUse, func(n *net.IPNet) bool { return n.Contains(ip) })
 }
 
