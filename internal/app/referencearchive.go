@@ -343,7 +343,7 @@ func gateArchive(ctx context.Context, r store.Reference, on bool, ignore []strin
 	if st, why := resolvesPublic(ctx, u.Hostname(), n.LookupIP); st != "" {
 		return st, why
 	}
-	return provePublic(ctx, r.URL, ignore, n.Transport)
+	return provePublic(ctx, r.URL, ignore, n.Transport, n.LookupIP)
 }
 
 // reservedSuffixes are names that never resolve on the public Internet.
@@ -442,11 +442,10 @@ func loginPage(u *url.URL) bool {
 	return false
 }
 
-// refusedHop stops the proof at a redirect that is not public; its text is
-// the reason recorded.
-type refusedHop string
+// refusedHop stops the proof at a redirect: the status and reason to record.
+type refusedHop struct{ status, reason string }
 
-func (e refusedHop) Error() string { return string(e) }
+func (e refusedHop) Error() string { return e.reason }
 
 // hopRefusal judges each URL the proof lands on, the final one included.
 func hopRefusal(u *url.URL, ignore []string) string {
@@ -462,20 +461,26 @@ func hopRefusal(u *url.URL, ignore []string) string {
 }
 
 // provePublic is the anonymous GET (crit. 6): its own client, no cookie jar,
-// no credential, no Referer, redirects followed and each one judged, the body
-// never read. Only a final 200 passes; 429 and 5xx are pending, anything else
-// is not public.
-func provePublic(ctx context.Context, raw string, ignore []string, rt http.RoundTripper) (status, reason string) {
+// no credential, no Referer, redirects followed and each one judged, its name
+// resolved like the first, the body never read. Only a final 200 passes; 429
+// and 5xx are pending, anything else is not public.
+func provePublic(ctx context.Context, raw string, ignore []string, rt http.RoundTripper, lookup func(context.Context, string, string) ([]net.IP, error)) (status, reason string) {
 	client := &http.Client{
 		Transport: rt,
 		Timeout:   proofTimeout,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 10 {
-				return refusedHop("too many redirects")
+				return refusedHop{archiveNotPublic, "too many redirects"}
 			}
 			req.Header.Del("Referer")
 			if why := hopRefusal(req.URL, ignore); why != "" {
-				return refusedHop(why)
+				return refusedHop{archiveNotPublic, why}
+			}
+			switch st, _ := resolvesPublic(req.Context(), req.URL.Hostname(), lookup); st {
+			case archiveSkipped:
+				return refusedHop{archiveNotPublic, "redirects to a private address"}
+			case archivePending:
+				return refusedHop{archivePending, "dns lookup failed"}
 			}
 			return nil
 		},
@@ -488,7 +493,7 @@ func provePublic(ctx context.Context, raw string, ignore []string, rt http.Round
 	resp, err := client.Do(req)
 	var hop refusedHop
 	if errors.As(err, &hop) {
-		return archiveNotPublic, string(hop)
+		return hop.status, hop.reason
 	}
 	if err != nil {
 		return archivePending, "page unreachable: " + transientReason(err)

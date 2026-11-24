@@ -173,6 +173,39 @@ func TestArchiveGateShareLinkHosts(t *testing.T) {
 	}
 }
 
+// F-0503 crit. 6: every redirect hop's name is resolved too; one that resolves
+// to a private address is not public, one that does not resolve is pending,
+// and the archive is never called.
+func TestPublicProofResolvesEveryHop(t *testing.T) {
+	for _, tc := range []struct {
+		hopIP, status, why string
+	}{
+		{"10.20.30.40", archiveNotPublic, "redirects to a private address"},
+		{"", archivePending, "dns lookup failed"},
+	} {
+		var looked []string
+		n := offlineNet(t)
+		n.LookupIP = func(_ context.Context, _, host string) ([]net.IP, error) {
+			looked = append(looked, host)
+			switch {
+			case host == "docs.publicsite.org":
+				return []net.IP{net.ParseIP("93.184.215.14")}, nil
+			case tc.hopIP != "":
+				return []net.IP{net.ParseIP(tc.hopIP)}, nil
+			}
+			return nil, &net.DNSError{Err: "no such host", IsNotFound: true}
+		}
+		n.Transport = handlerTransport(redirectTo("https://wiki.acme-corp.com/x"))
+		st, why := gateArchive(context.Background(), extRef("https://docs.publicsite.org/guide"), true, nil, n)
+		if st != tc.status || why != tc.why {
+			t.Errorf("hop to %q: %s (%s), want %s (%s)", tc.hopIP, st, why, tc.status, tc.why)
+		}
+		if len(looked) != 2 || looked[1] != "wiki.acme-corp.com" {
+			t.Errorf("looked up %v, want the first host then the hop", looked)
+		}
+	}
+}
+
 // F-0503 crit. 6: only a final 200 to an anonymous GET passes; 401, 403, 404
 // and a redirect to a login page or an internal host are not public.
 func TestPublicProofRefusesWhatIsNotPublic(t *testing.T) {
