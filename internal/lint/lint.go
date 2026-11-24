@@ -11,8 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"net"
-	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -28,6 +26,7 @@ import (
 	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/mdlink"
+	"github.com/henriquesakata/cerne/internal/sourceurl"
 	"github.com/henriquesakata/cerne/internal/store"
 	"github.com/henriquesakata/cerne/internal/wiki"
 )
@@ -1495,30 +1494,6 @@ func inUnregisteredSourceScope(rel string) bool {
 	return strings.HasPrefix(rel, "content/features/") || strings.HasPrefix(rel, "content/decisions/")
 }
 
-// ignoredSourceURL reports whether a URL is never an external source and so is
-// skipped by unregistered-source (F-0107): an internal/local host (`.local`,
-// `localhost`, a private or loopback IP) or a URL containing any project-configured
-// ignore substring (e.g. the project's own code repo host).
-func ignoredSourceURL(u string, ignore []string) bool {
-	for _, s := range ignore {
-		if s != "" && strings.Contains(u, s) {
-			return true
-		}
-	}
-	parsed, err := url.Parse(u)
-	if err != nil {
-		return false
-	}
-	host := parsed.Hostname()
-	if host == "localhost" || strings.HasSuffix(host, ".local") {
-		return true
-	}
-	if ip := net.ParseIP(host); ip != nil && (ip.IsPrivate() || ip.IsLoopback()) {
-		return true
-	}
-	return false
-}
-
 // unregisteredSourceFindings reports external http(s) URLs cited in an authored
 // decision or feature doc that no registered reference backs (RuleUnregisteredSource).
 // Backing is the union (D1, F-0103): a *current* reference whose URL matches
@@ -1567,7 +1542,7 @@ func OrphanSourceURLs(entity, text string, refs []store.Reference, ignore []stri
 	}
 	var orphans []string
 	for _, u := range urls {
-		if ignoredSourceURL(u, ignore) || backed[normalizeURL(u)] {
+		if sourceurl.Internal(u, ignore) || backed[normalizeURL(u)] {
 			continue
 		}
 		orphans = append(orphans, u)
