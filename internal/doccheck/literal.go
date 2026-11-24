@@ -5,17 +5,16 @@ import (
 	"unicode"
 )
 
-// FindLiteral looks for snippet in content, comparing with every run of Unicode
-// whitespace collapsed to one space on both sides and the snippet trimmed. It
-// returns the 1-based lines of the original content where the match starts and
-// ends. An empty (or all-whitespace) snippet never matches.
-func FindLiteral(content, snippet string) (start, end int, ok bool) {
-	want := strings.Join(strings.FieldsFunc(snippet, unicode.IsSpace), " ")
-	if want == "" {
-		return 0, 0, false
-	}
-	// norm is content with whitespace runs collapsed; lines[i] is the original
-	// line of norm's byte i.
+// LiteralIndex is a document normalized once for literal searches: every run
+// of Unicode whitespace collapsed to one space, with the original line of each
+// byte kept, so many snippets can be looked up without renormalizing.
+type LiteralIndex struct {
+	norm  string
+	lines []int // lines[i] is the 1-based original line of norm's byte i
+}
+
+// NewLiteralIndex normalizes content for Find.
+func NewLiteralIndex(content string) *LiteralIndex {
 	var norm strings.Builder
 	var lines []int
 	line, inSpace := 1, false
@@ -37,9 +36,29 @@ func FindLiteral(content, snippet string) (start, end int, ok bool) {
 			lines = append(lines, line)
 		}
 	}
-	i := strings.Index(norm.String(), want)
+	return &LiteralIndex{norm: norm.String(), lines: lines}
+}
+
+// Find looks for snippet, trimmed and with whitespace runs collapsed, and
+// returns the 1-based original lines where the match starts and ends. An empty
+// (or all-whitespace) snippet never matches.
+func (x *LiteralIndex) Find(snippet string) (start, end int, ok bool) {
+	want := strings.Join(strings.FieldsFunc(snippet, unicode.IsSpace), " ")
+	if want == "" {
+		return 0, 0, false
+	}
+	i := strings.Index(x.norm, want)
 	if i < 0 {
 		return 0, 0, false
 	}
-	return lines[i], lines[i+len(want)-1], true
+	return x.lines[i], x.lines[i+len(want)-1], true
+}
+
+// FindLiteral looks for snippet in content, comparing with every run of Unicode
+// whitespace collapsed to one space on both sides and the snippet trimmed. It
+// returns the 1-based lines of the original content where the match starts and
+// ends. An empty (or all-whitespace) snippet never matches. To look up several
+// snippets in one document, build a LiteralIndex once.
+func FindLiteral(content, snippet string) (start, end int, ok bool) {
+	return NewLiteralIndex(content).Find(snippet)
 }
