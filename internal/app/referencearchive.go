@@ -465,14 +465,20 @@ var (
 	loginWords    = []string{"login", "logon", "signin", "sign-in", "sign_in"}
 	loginPrefixes = []string{"oauth", "openid", "saml", "sso"}
 	loginExact    = []string{"auth", "authorize", "cas", "sessions"}
+	loginParams   = []string{"starturl", "returnurl", "return_to", "redirect_uri", "samlrequest", "relaystate", "ec"}
 )
 
 func loginPage(u *url.URL) bool {
 	if slices.Contains(loginHosts, strings.ToLower(u.Hostname())) {
 		return true
 	}
+	for k, vs := range u.Query() {
+		if slices.Contains(loginParams, strings.ToLower(k)) || (strings.EqualFold(k, "wa") && slices.ContainsFunc(vs, func(v string) bool { return strings.HasPrefix(strings.ToLower(v), "wsignin") })) {
+			return true
+		}
+	}
 	for _, seg := range strings.Split(strings.ToLower(u.Path), "/") {
-		if slices.Contains(loginExact, seg) ||
+		if strings.Contains(seg, "oauth") || slices.Contains(loginExact, seg) ||
 			slices.ContainsFunc(loginWords, func(w string) bool { return strings.Contains(seg, w) }) ||
 			slices.ContainsFunc(loginPrefixes, func(p string) bool { return strings.HasPrefix(seg, p) }) {
 			return true
