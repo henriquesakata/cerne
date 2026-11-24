@@ -234,7 +234,7 @@ func TestArchiveReferencesDryRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(res) != 2 || res[0].Status != "would_send" || res[0].URL != "https://example.com/1" || res[1].Status != "skipped" || res[1].Reason != "internal host" {
+	if len(res) != 2 || res[0].Status != "would_send" || res[0].Source != "https://example.com/1" || res[1].Status != "skipped" || res[1].Reason != "internal host" {
 		t.Fatalf("res = %+v", res)
 	}
 	if commitCount(t, repoDir) != before || loadRef(t, repoDir, "R-0001").Archive != nil {

@@ -162,11 +162,11 @@ var ErrArchiveOff = errors.New("references.archive is off")
 // is never recorded.
 const archiveWouldSend = "would_send"
 
-// ArchiveResult is one reference's outcome in an archive run; URL is the
-// source's.
+// ArchiveResult is one reference's outcome in an archive run; Source is the
+// reference's URL, ReferenceArchive.URL the copy's.
 type ArchiveResult struct {
-	ID  string
-	URL string
+	ID     string
+	Source string
 	store.ReferenceArchive
 }
 
@@ -197,7 +197,7 @@ func ArchiveReferences(repoDir, projDir string, ids []string, n ArchiveNet, dryR
 	var out []ArchiveResult
 	sent := false
 	for _, r := range refs {
-		res := ArchiveResult{ID: r.ID, URL: r.URL}
+		res := ArchiveResult{ID: r.ID, Source: r.URL}
 		st, why := gateArchive(ctx, r, on, cfg.SourceIgnore(), n)
 		switch {
 		case st != "":
@@ -223,7 +223,7 @@ func ArchiveReferences(repoDir, projDir string, ids []string, n ArchiveNet, dryR
 			if err != nil {
 				return "", err
 			}
-			if r.State != domain.ReferenceCurrent || r.URL != res.URL {
+			if r.State != domain.ReferenceCurrent || r.URL != res.Source {
 				continue // retired or repointed meanwhile
 			}
 			a := res.ReferenceArchive
