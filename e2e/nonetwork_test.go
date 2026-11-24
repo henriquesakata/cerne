@@ -201,10 +201,10 @@ func TestReferenceArchiveNeverTouchesTheNetworkWhenOff(t *testing.T) {
 	}
 
 	strict.Store(true)
-	if out := must("reference", "new", "Public page", "--url", "http://203.0.113.10/a"); strings.Contains(out, "archive") {
+	if out := must("reference", "new", "Public page", "--url", "http://93.184.215.10/a"); strings.Contains(out, "archive") {
 		t.Errorf("reference new spoke of the archive with the setting off:\n%s", out)
 	}
-	must("reference", "new", "Kept page", "--url", "http://203.0.113.11/b", "--no-archive")
+	must("reference", "new", "Kept page", "--url", "http://93.184.215.11/b", "--no-archive")
 	for _, args := range [][]string{{"reference", "archive"}, {"reference", "archive", "--dry-run"}} {
 		if out, err := run(args...); err == nil || !strings.Contains(out, "references.archive is off") {
 			t.Errorf("cerne %s with the setting off: %v\n%s", strings.Join(args, " "), err, out)
@@ -215,7 +215,7 @@ func TestReferenceArchiveNeverTouchesTheNetworkWhenOff(t *testing.T) {
 	if err := os.WriteFile(rc, []byte(mustRead(t, rc)+"\n[references]\narchive = true\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	must("reference", "new", "Kept too", "--url", "http://203.0.113.12/c", "--no-archive")
+	must("reference", "new", "Kept too", "--url", "http://93.184.215.12/c", "--no-archive")
 	if out := must("reference", "archive", "R-0002", "R-0003"); !strings.Contains(out, "R-0002  skipped (no-archive)") || !strings.Contains(out, "R-0003  skipped (no-archive)") {
 		t.Errorf("named no-archive references:\n%s", out)
 	}
@@ -226,11 +226,11 @@ func TestReferenceArchiveNeverTouchesTheNetworkWhenOff(t *testing.T) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if len(seen) == 0 || !strings.Contains(strings.Join(seen, "\n"), "203.0.113.10") {
+	if len(seen) == 0 || !strings.Contains(strings.Join(seen, "\n"), "93.184.215.10") {
 		t.Fatalf("the proof GET never went through the proxy (the probe is blind): %v", seen)
 	}
 	for _, s := range seen {
-		if strings.Contains(s, "203.0.113.11") || strings.Contains(s, "203.0.113.12") || strings.Contains(s, "archive.org") {
+		if strings.Contains(s, "93.184.215.11") || strings.Contains(s, "93.184.215.12") || strings.Contains(s, "archive.org") {
 			t.Errorf("the proxy saw %q", s)
 		}
 	}
