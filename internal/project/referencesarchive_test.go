@@ -20,3 +20,25 @@ func TestReferencesArchiveSettingDeclared(t *testing.T) {
 		t.Error("references.archive must be human-only")
 	}
 }
+
+// F-0503 crit. 2: ReferencesArchive is on only when the setting resolves to
+// true; unset, false or an invalid value is off.
+func TestReferencesArchiveOnlyWhenTrue(t *testing.T) {
+	for _, tc := range []struct {
+		name, project, host string
+		want                bool
+	}{
+		{"unset", "", "", false},
+		{"project on", "[references]\narchive = true\n", "", true},
+		{"host on", "", "[references]\narchive = true\n", true},
+		{"project off over host on", "[references]\narchive = false\n", "[references]\narchive = true\n", false},
+		{"invalid", "[references]\narchive = \"yes\"\n", "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			projDir, _ := settingsFixture(t, tc.project, tc.host, false)
+			if got := ReferencesArchive(projDir); got != tc.want {
+				t.Errorf("ReferencesArchive = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

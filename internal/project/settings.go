@@ -307,6 +307,18 @@ func PromptNotes(projDir string) bool {
 	return true
 }
 
+// ReferencesArchive is references.archive for the project at (or above)
+// projDir (F-0503): true only when it resolves to true, so an invalid stored
+// value sends nothing.
+func ReferencesArchive(projDir string) bool {
+	for _, s := range ResolveSettings(projDir).Settings {
+		if s.ID == "references.archive" {
+			return s.Value == true
+		}
+	}
+	return false
+}
+
 // UpdateCheck is ui.update_check (F-0480), a host setting read through the
 // project at (or above) projDir: false only when it resolves to false.
 func UpdateCheck(projDir string) bool {

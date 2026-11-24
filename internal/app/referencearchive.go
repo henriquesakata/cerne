@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -14,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/sourceurl"
 	"github.com/henriquesakata/cerne/internal/store"
 	"github.com/henriquesakata/cerne/internal/version"
@@ -138,6 +141,151 @@ type ArchiveNet struct {
 	Client    ArchiveClient
 	LookupIP  func(ctx context.Context, network, host string) ([]net.IP, error)
 	Transport http.RoundTripper // the public proof's
+	Pause     time.Duration     // between two requests to the archive service
+}
+
+// NewArchiveNet is the real network: the Wayback Machine, the system
+// resolver, the default transport (environment proxy kept) and a 5 s pause.
+func NewArchiveNet() ArchiveNet {
+	return ArchiveNet{
+		Client:    NewWaybackClient(),
+		LookupIP:  net.DefaultResolver.LookupIP,
+		Transport: http.DefaultTransport.(*http.Transport).Clone(),
+		Pause:     5 * time.Second,
+	}
+}
+
+// ErrArchiveOff refuses an archive run while references.archive is off.
+var ErrArchiveOff = errors.New("references.archive is off")
+
+// archiveWouldSend is a dry run's result for a URL that passed the gate; it
+// is never recorded.
+const archiveWouldSend = "would_send"
+
+// ArchiveResult is one reference's outcome in an archive run; URL is the
+// source's.
+type ArchiveResult struct {
+	ID  string
+	URL string
+	store.ReferenceArchive
+}
+
+// ArchiveReferences archives the named references, or every current external
+// one with no copy yet or a pending one (F-0503). Each URL goes through
+// gateArchive; one that passes is sent to Save, then to Closest when Save
+// fails, one at a time with n.Pause between two. A dry run stops after the
+// gate and records nothing. The network phase runs outside the backend lock;
+// the outcomes are recorded in one mutation with a reference.archived event
+// each. With references.archive off it refuses before anything.
+// ponytail: one commit per run, so a run cut short records nothing (the copies
+// already made are found by Closest next time); commit per reference if
+// batches of hundreds need it.
+func ArchiveReferences(repoDir, projDir string, ids []string, n ArchiveNet, dryRun bool) ([]ArchiveResult, error) {
+	on := project.ReferencesArchive(projDir)
+	if !on {
+		return nil, fmt.Errorf("%w: nothing is sent; a human turns it on in the Settings screen of cerne ui", ErrArchiveOff)
+	}
+	cfg, _, err := project.LoadConfig(projDir)
+	if err != nil {
+		return nil, err // no ignore list, no archive
+	}
+	refs, err := referencesToArchive(repoDir, ids)
+	if err != nil {
+		return nil, err
+	}
+	ctx := context.Background()
+	var out []ArchiveResult
+	sent := false
+	for _, r := range refs {
+		res := ArchiveResult{ID: r.ID, URL: r.URL}
+		st, why := gateArchive(ctx, r, on, cfg.SourceIgnore(), n)
+		switch {
+		case st != "":
+			res.Status, res.Reason = st, why
+		case dryRun:
+			res.Status = archiveWouldSend
+		default:
+			if sent {
+				time.Sleep(n.Pause) // ponytail: fixed pause; back off on 429 if the service asks for it
+			}
+			sent = true
+			res.ReferenceArchive = saveOrClosest(ctx, r.URL, n.Client)
+		}
+		out = append(out, res)
+	}
+	if dryRun || len(out) == 0 {
+		return out, nil
+	}
+	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		recorded := 0
+		for _, res := range out {
+			r, err := store.LoadReference(repoDir, res.ID)
+			if err != nil {
+				return "", err
+			}
+			if r.State != domain.ReferenceCurrent || r.URL != res.URL {
+				continue // retired or repointed meanwhile
+			}
+			a := res.ReferenceArchive
+			r.Archive = &a
+			if err := store.SaveReference(repoDir, r); err != nil {
+				return "", err
+			}
+			payload := map[string]string{"status": a.Status}
+			for k, v := range map[string]string{"origin": a.Origin, "link": a.URL, "reason": a.Reason} {
+				if v != "" {
+					payload[k] = v
+				}
+			}
+			if err := store.AppendEvent(repoDir, domain.NewEvent(r.ID, "reference.archived", payload, EventActor())); err != nil {
+				return "", err
+			}
+			recorded++
+		}
+		return fmt.Sprintf("cerne: archive %d reference(s)", recorded), nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// referencesToArchive is referencesToCheck's targets; with no ids, only the
+// ones with no copy yet or a pending one, never a no-archive one.
+func referencesToArchive(repoDir string, ids []string) ([]store.Reference, error) {
+	refs, err := referencesToCheck(repoDir, ids)
+	if err != nil || len(ids) > 0 {
+		return refs, err
+	}
+	return slices.DeleteFunc(refs, func(r store.Reference) bool {
+		return r.NoArchive || (r.Archive != nil && r.Archive.Status != archivePending)
+	}), nil
+}
+
+// saveOrClosest asks for a new copy and, when that fails for any reason,
+// takes the closest existing one (crit. 10); both failing is pending.
+func saveOrClosest(ctx context.Context, u string, c ArchiveClient) store.ReferenceArchive {
+	s, err := c.Save(ctx, u)
+	if err == nil {
+		return store.ReferenceArchive{URL: s.URL, CapturedAt: s.CapturedAt.UTC(), Origin: "saved", Status: archiveArchived}
+	}
+	if s, cerr := c.Closest(ctx, u); cerr == nil {
+		return store.ReferenceArchive{URL: s.URL, CapturedAt: s.CapturedAt.UTC(), Origin: "existing", Status: archiveArchived}
+	}
+	return store.ReferenceArchive{Status: archivePending, Reason: "save failed: " + saveFailure(err)}
+}
+
+// saveFailure names a Save failure without its raw text, which can carry a
+// proxy host or an internal address.
+func saveFailure(err error) string {
+	var code httpStatusError
+	switch {
+	case errors.As(err, &code):
+		return code.Error()
+	case errors.Is(err, errNoCopyLink):
+		return "no copy link"
+	}
+	return transientReason(err)
 }
 
 // gateArchive is the one door to the archive service (F-0503): nothing reaches
