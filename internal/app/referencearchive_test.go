@@ -2,11 +2,11 @@ package app
 
 import (
 	"context"
-	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -45,7 +45,7 @@ func newFakeWayback(t *testing.T, h http.HandlerFunc) *fakeWayback {
 func (f *fakeWayback) client() WaybackClient {
 	addr := f.srv.Listener.Addr().String()
 	return WaybackClient{
-		SaveURL: f.srv.URL + "/save/", AvailableURL: f.srv.URL + "/wayback/available",
+		SaveURL: f.srv.URL + "/save/", CDXURL: f.srv.URL + "/cdx/search/cdx",
 		Transport: &http.Transport{DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, network, addr)
 		}},
@@ -91,7 +91,7 @@ func TestWaybackSaveReadsTheCopyLink(t *testing.T) {
 }
 
 // F-0503 crit. 10: a refused or linkless Save is an error, so the caller falls
-// back on Closest.
+// back on the nearest capture.
 func TestWaybackSaveFailures(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -117,35 +117,45 @@ func TestWaybackSaveFailures(t *testing.T) {
 	}
 }
 
-// F-0503 crit. 10: Closest reads the availability API's closest copy; no copy
-// is ErrNoSnapshot.
-func TestWaybackClosest(t *testing.T) {
+// F-0503 crit. 10: Captures asks the CDX API for the page's 200 captures, one
+// per day, and reads each row's timestamp into a link and a date; the header
+// row is skipped, and a page with no capture is an empty list.
+func TestWaybackCaptures(t *testing.T) {
 	f := newFakeWayback(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/wayback/available" || r.URL.Query().Get("url") != pageURL {
-			t.Errorf("request = %s, want /wayback/available?url=<page url>", r.URL)
+		q := r.URL.Query()
+		if r.URL.Path != "/cdx/search/cdx" || q.Get("url") != pageURL || q.Get("output") != "json" || q.Get("fl") != "timestamp,original,statuscode" ||
+			q.Get("filter") != "statuscode:200" || q.Get("collapse") != "timestamp:8" {
+			t.Errorf("request = %s, want the CDX query for the page URL", r.URL)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"url":"x","archived_snapshots":{"closest":{"status":"200","available":true,"url":"http://web.archive.org/web/20250302010203/https://docs.publicsite.org/guide","timestamp":"20250302010203"}}}`))
+		_, _ = w.Write([]byte(`[["timestamp","original","statuscode"],
+["20191122194934","http://docs.publicsite.org/guide","200"],
+["20250302010203","https://docs.publicsite.org/guide","200"]]`))
 	})
-	s, err := f.client().Closest(context.Background(), pageURL)
+	got, err := f.client().Captures(context.Background(), pageURL)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// the availability API answers http: the link is kept on https
-	if s.URL != "https://web.archive.org/web/20250302010203/https://docs.publicsite.org/guide" || !s.CapturedAt.Equal(time.Date(2025, 3, 2, 1, 2, 3, 0, time.UTC)) {
-		t.Errorf("closest = %+v", s)
+	want := []Snapshot{
+		{URL: "https://web.archive.org/web/20191122194934/http://docs.publicsite.org/guide", CapturedAt: time.Date(2019, 11, 22, 19, 49, 34, 0, time.UTC)},
+		{URL: "https://web.archive.org/web/20250302010203/https://docs.publicsite.org/guide", CapturedAt: time.Date(2025, 3, 2, 1, 2, 3, 0, time.UTC)},
 	}
-
-	none := newFakeWayback(t, func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"url":"x","archived_snapshots":{}}`))
-	})
-	if _, err := none.client().Closest(context.Background(), pageURL); !errors.Is(err, ErrNoSnapshot) {
-		t.Errorf("no copy: err = %v, want ErrNoSnapshot", err)
+	if !slices.Equal(got, want) {
+		t.Errorf("captures = %+v, want %+v", got, want)
+	}
+	for _, body := range []string{"", "[]", `[["timestamp","original","statuscode"]]`} {
+		none := newFakeWayback(t, func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(body)) })
+		if got, err := none.client().Captures(context.Background(), pageURL); err != nil || len(got) != 0 {
+			t.Errorf("body %q: %+v, %v; want an empty list", body, got, err)
+		}
+	}
+	bad := newFakeWayback(t, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusTooManyRequests) })
+	if _, err := bad.client().Captures(context.Background(), pageURL); err == nil {
+		t.Error("a 429 is an error")
 	}
 }
 
 // F-0503 crit. 10: a copy link that is not https://web.archive.org/web/<timestamp>/
-// counts as no copy, from Save and from Closest.
+// counts as no copy from Save.
 func TestWaybackRefusesAForeignCopyLink(t *testing.T) {
 	for _, loc := range []string{
 		"https://web.archive.org.evil.org/web/20261124120304/x", "https://evil.org/web/20261124120304/x",
@@ -153,18 +163,11 @@ func TestWaybackRefusesAForeignCopyLink(t *testing.T) {
 		"ftp://web.archive.org/web/20261124120304/x", "https://user@web.archive.org/web/20261124120304/x",
 	} {
 		f := newFakeWayback(t, func(w http.ResponseWriter, r *http.Request) {
-			if strings.HasPrefix(r.URL.Path, "/wayback/") {
-				_, _ = w.Write([]byte(`{"archived_snapshots":{"closest":{"available":true,"url":"` + loc + `","timestamp":"20261124120304"}}}`))
-				return
-			}
 			w.Header().Set("Location", loc)
 			w.WriteHeader(http.StatusFound)
 		})
 		if s, err := f.client().Save(context.Background(), pageURL); err == nil {
 			t.Errorf("Save with Location %q = %+v, want an error", loc, s)
-		}
-		if s, err := f.client().Closest(context.Background(), pageURL); !errors.Is(err, ErrNoSnapshot) {
-			t.Errorf("Closest with url %q = %+v, %v; want ErrNoSnapshot", loc, s, err)
 		}
 	}
 }
@@ -179,7 +182,7 @@ func TestWaybackRequestsCarryOnlyTheURL(t *testing.T) {
 	c := f.client()
 	_, _ = c.Save(context.Background(), pageURL)
 	_, _ = c.Save(context.Background(), pageURL)
-	_, _ = c.Closest(context.Background(), pageURL)
+	_, _ = c.Captures(context.Background(), pageURL)
 	if len(f.reqs) != 3 {
 		t.Fatalf("%d requests, want 3", len(f.reqs))
 	}

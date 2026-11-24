@@ -2,10 +2,8 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -29,15 +27,12 @@ type Snapshot struct {
 }
 
 // ArchiveClient is the archive service: Save asks for a new copy of a page,
-// Closest looks up the copy already there nearest to now. Each gets only the
-// page's URL.
+// Captures lists the copies already there (one per day). Each gets only the
+// page's URL; which copy is the right one is chosen locally.
 type ArchiveClient interface {
 	Save(ctx context.Context, url string) (Snapshot, error)
-	Closest(ctx context.Context, url string) (Snapshot, error)
+	Captures(ctx context.Context, url string) ([]Snapshot, error)
 }
-
-// ErrNoSnapshot: the archive holds no copy of the page.
-var ErrNoSnapshot = errors.New("no archived copy")
 
 // errNoCopyLink: Save answered without the link of a copy.
 var errNoCopyLink = errors.New("no copy link")
@@ -49,23 +44,23 @@ type httpStatusError int
 func (e httpStatusError) Error() string { return strconv.Itoa(int(e)) }
 
 // WaybackClient is the real ArchiveClient: the Wayback Machine's Save Page Now
-// and its availability API (R-0140). The endpoints are fields so a test points
-// them at a fake.
+// and its capture list, the CDX API (R-0140). The endpoints are fields so a
+// test points them at a fake.
 type WaybackClient struct {
-	SaveURL      string            // the page URL is appended: https://web.archive.org/save/<url>
-	AvailableURL string            // ?url=<url> is added
-	Transport    http.RoundTripper // nil: the default transport, environment proxy kept
+	SaveURL   string            // the page URL is appended: https://web.archive.org/save/<url>
+	CDXURL    string            // the query is added: https://web.archive.org/cdx/search/cdx
+	Transport http.RoundTripper // nil: the default transport, environment proxy kept
 }
 
 // NewWaybackClient points at the Internet Archive.
 func NewWaybackClient() WaybackClient {
-	return WaybackClient{SaveURL: "https://web.archive.org/save/", AvailableURL: "https://archive.org/wayback/available"}
+	return WaybackClient{SaveURL: "https://web.archive.org/save/", CDXURL: "https://web.archive.org/cdx/search/cdx"}
 }
 
 const (
-	waybackSaveTimeout    = 120 * time.Second
-	waybackClosestTimeout = 20 * time.Second
-	waybackTimestamp      = "20060102150405"
+	waybackSaveTimeout     = 120 * time.Second
+	waybackCapturesTimeout = 20 * time.Second
+	waybackTimestamp       = "20060102150405"
 )
 
 // waybackTransport is the default transport of the Wayback client; the
@@ -153,6 +148,7 @@ type ArchiveNet struct {
 	LookupIP  func(ctx context.Context, network, host string) ([]net.IP, error)
 	Transport http.RoundTripper // the public proof's
 	Pause     time.Duration     // between two requests to the archive service
+	Now       func() time.Time  // nil: time.Now
 }
 
 // NewArchiveNet is the real network: the Wayback Machine, the system
@@ -183,13 +179,13 @@ type ArchiveResult struct {
 
 // ArchiveReferences archives the named references, or every current external
 // one with no copy yet or a pending one (F-0503). Each URL goes through
-// gateArchive; one that passes is sent to Save, then to Closest when Save
-// fails, one at a time with n.Pause between two. A dry run stops after the
+// gateArchive; one that passes gets chooseCopy: the capture list, then Save,
+// one reference at a time with n.Pause between two. A dry run stops after the
 // gate and records nothing. The network phase runs outside the backend lock;
 // the outcomes are recorded in one mutation with a reference.archived event
 // each. With references.archive off it refuses before anything.
 // ponytail: one commit per run, so a run cut short records nothing (the copies
-// already made are found by Closest next time); commit per reference if
+// already made are in the capture list next time); commit per reference if
 // batches of hundreds need it.
 func ArchiveReferences(repoDir, projDir string, ids []string, n ArchiveNet, dryRun bool) ([]ArchiveResult, error) {
 	on := project.ReferencesArchive(projDir)
@@ -220,7 +216,7 @@ func ArchiveReferences(repoDir, projDir string, ids []string, n ArchiveNet, dryR
 				time.Sleep(n.Pause) // ponytail: fixed pause; back off on 429 if the service asks for it
 			}
 			sent = true
-			res.ReferenceArchive = saveOrClosest(ctx, r.URL, n.Client)
+			res.ReferenceArchive = chooseCopy(ctx, r, n)
 		}
 		out = append(out, res)
 	}
@@ -238,8 +234,8 @@ func ArchiveReferences(repoDir, projDir string, ids []string, n ArchiveNet, dryR
 				continue // retired or repointed meanwhile
 			}
 			a := res.ReferenceArchive
-			// A failed retry never replaces a good copy: the event alone keeps it.
-			if r.Archive == nil || r.Archive.Status != archiveArchived || a.Status == archiveArchived {
+			// A failed retry never replaces a good copy, and a new one replaces it only when strictly nearer the registration day: the event alone keeps it.
+			if r.Archive == nil || r.Archive.Status != archiveArchived || (a.Status == archiveArchived && distance(a.CapturedAt, r.CreatedAt) < distance(r.Archive.CapturedAt, r.CreatedAt)) {
 				r.Archive = &a
 				if err := store.SaveReference(repoDir, r); err != nil {
 					return "", err
@@ -298,19 +294,6 @@ func referencesToArchive(repoDir string, ids []string) ([]store.Reference, error
 	}), nil
 }
 
-// saveOrClosest asks for a new copy and, when that fails for any reason,
-// takes the closest existing one (crit. 10); both failing is pending.
-func saveOrClosest(ctx context.Context, u string, c ArchiveClient) store.ReferenceArchive {
-	s, err := c.Save(ctx, u)
-	if err == nil {
-		return store.ReferenceArchive{URL: s.URL, CapturedAt: s.CapturedAt.UTC(), Origin: "saved", Status: archiveArchived}
-	}
-	if s, cerr := c.Closest(ctx, u); cerr == nil {
-		return store.ReferenceArchive{URL: s.URL, CapturedAt: s.CapturedAt.UTC(), Origin: "existing", Status: archiveArchived}
-	}
-	return store.ReferenceArchive{Status: archivePending, Reason: "save failed: " + saveFailure(err)}
-}
-
 // saveFailure names a Save failure without its raw text, which can carry a
 // proxy host or an internal address.
 func saveFailure(err error) string {
@@ -325,7 +308,7 @@ func saveFailure(err error) string {
 }
 
 // gateArchive is the one door to the archive service (F-0503): nothing reaches
-// Save or Closest unless it returns "". The checks run cheapest and offline
+// Save or Captures unless it returns "". The checks run cheapest and offline
 // first — no-archive (crit. 7), the setting (2), internal hosts and ignored
 // sources (4), credentials and secrets (5) — so a refusal there opens no
 // connection; then the DNS answer and the anonymous GET (6). Otherwise it
@@ -521,36 +504,4 @@ func provePublic(ctx context.Context, raw string, ignore []string, rt http.Round
 	default:
 		return archiveNotPublic, "HTTP " + strconv.Itoa(code)
 	}
-}
-
-// Closest asks the availability API for the copy nearest to now.
-func (c WaybackClient) Closest(ctx context.Context, target string) (Snapshot, error) {
-	ctx, cancel := context.WithTimeout(ctx, waybackClosestTimeout)
-	defer cancel()
-	resp, err := c.get(ctx, c.AvailableURL+"?url="+url.QueryEscape(target))
-	if err != nil {
-		return Snapshot{}, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return Snapshot{}, httpStatusError(resp.StatusCode)
-	}
-	var body struct {
-		ArchivedSnapshots struct {
-			Closest struct {
-				Available bool   `json:"available"`
-				URL       string `json:"url"`
-				Timestamp string `json:"timestamp"`
-			} `json:"closest"`
-		} `json:"archived_snapshots"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&body); err != nil {
-		return Snapshot{}, err
-	}
-	cl := body.ArchivedSnapshots.Closest
-	s, ok := copyAt(resp.Request.URL, cl.URL)
-	if !cl.Available || !ok {
-		return Snapshot{}, ErrNoSnapshot
-	}
-	return s, nil
 }

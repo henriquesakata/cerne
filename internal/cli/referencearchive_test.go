@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/store"
@@ -50,12 +51,12 @@ func archiveFixture(t *testing.T, archive bool, saveStatus int) *archiveFake {
 			default:
 				w.WriteHeader(saveStatus)
 			}
-		case r.URL.Path == "/wayback/available":
+		case r.URL.Path == "/cdx/search/cdx":
 			if u := r.URL.Query().Get("url"); strings.HasSuffix(u, "/old") {
-				_, _ = w.Write([]byte(`{"archived_snapshots":{"closest":{"available":true,"url":"https://web.archive.org/web/20250302080000/` + u + `","timestamp":"20250302080000"}}}`))
+				_, _ = w.Write([]byte(`[["timestamp","original","statuscode"],["20250302080000","` + u + `","200"]]`))
 				return
 			}
-			_, _ = w.Write([]byte(`{"archived_snapshots":{}}`))
+			_, _ = w.Write([]byte(`[["timestamp","original","statuscode"]]`))
 		default:
 			t.Errorf("unexpected archive request %s", r.URL)
 		}
@@ -66,7 +67,7 @@ func archiveFixture(t *testing.T, archive bool, saveStatus int) *archiveFake {
 		return app.ArchiveNet{
 			// Every dial goes to the fake: a followed redirect to web.archive.org
 			// never leaves the machine.
-			Client: app.WaybackClient{SaveURL: f.wayback.URL + "/save/", AvailableURL: f.wayback.URL + "/wayback/available",
+			Client: app.WaybackClient{SaveURL: f.wayback.URL + "/save/", CDXURL: f.wayback.URL + "/cdx/search/cdx",
 				Transport: &http.Transport{DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
 					return (&net.Dialer{}).DialContext(ctx, network, f.wayback.Listener.Addr().String())
 				}}},
@@ -83,6 +84,7 @@ func archiveFixture(t *testing.T, archive bool, saveStatus int) *archiveFake {
 				res.Request = r
 				return res, nil
 			}),
+			Now: func() time.Time { return time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC) }, // the fake Save answers a copy made at noon
 		}
 	}
 	t.Cleanup(func() { archiveNet = old })

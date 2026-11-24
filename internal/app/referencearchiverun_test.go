@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -19,10 +20,10 @@ import (
 // scriptClient is an archive service whose answers a test sets; it records the
 // URLs it was asked for.
 type scriptClient struct {
-	mu      sync.Mutex
-	asked   []string
-	save    func(string) (Snapshot, error)
-	closest func(string) (Snapshot, error)
+	mu       sync.Mutex
+	asked    []string
+	save     func(string) (Snapshot, error)
+	captures func(string) ([]Snapshot, error)
 }
 
 func (c *scriptClient) Save(_ context.Context, u string) (Snapshot, error) {
@@ -32,11 +33,11 @@ func (c *scriptClient) Save(_ context.Context, u string) (Snapshot, error) {
 	return c.save(u)
 }
 
-func (c *scriptClient) Closest(_ context.Context, u string) (Snapshot, error) {
+func (c *scriptClient) Captures(_ context.Context, u string) ([]Snapshot, error) {
 	c.mu.Lock()
-	c.asked = append(c.asked, "closest "+u)
+	c.asked = append(c.asked, "captures "+u)
 	c.mu.Unlock()
-	return c.closest(u)
+	return c.captures(u)
 }
 
 var (
@@ -52,11 +53,22 @@ func refuses(string) (Snapshot, error) {
 	return Snapshot{}, httpStatusError(http.StatusTooManyRequests)
 }
 
-func noCopy(string) (Snapshot, error) { return Snapshot{}, ErrNoSnapshot }
+func noCaptures(string) ([]Snapshot, error) { return nil, nil }
 
 // publicNet passes the gate for any URL: public DNS answer, 200 page.
 func publicNet(c ArchiveClient) ArchiveNet {
-	return ArchiveNet{Client: c, LookupIP: publicLookup, Transport: handlerTransport(func(w http.ResponseWriter, _ *http.Request) {})}
+	return ArchiveNet{Client: c, LookupIP: publicLookup, Transport: handlerTransport(func(w http.ResponseWriter, _ *http.Request) {}),
+		Now: func() time.Time { return savedAt }}
+}
+
+// snap is a capture of u at the given time, as the capture list returns it.
+func snap(u string, at time.Time) Snapshot {
+	return Snapshot{URL: "https://web.archive.org/web/" + at.Format(waybackTimestamp) + "/" + u, CapturedAt: at}
+}
+
+// capturesOf is a capture list answer.
+func capturesOf(s ...Snapshot) func(string) ([]Snapshot, error) {
+	return func(string) ([]Snapshot, error) { return s, nil }
 }
 
 // archiveBackend is refsBackend (R-0001..n at https://example.com/<i>) with a
@@ -70,6 +82,23 @@ func archiveBackend(t *testing.T, n int, on bool) (repoDir, projDir string) {
 	}
 	if err := os.WriteFile(filepath.Join(projDir, ".cernerc"), []byte(rc), 0o644); err != nil {
 		t.Fatal(err)
+	}
+	if n > 0 { // registered at the fake clock's now, so a test sets the day it needs
+		if err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+			for i := 1; i <= n; i++ {
+				r, err := store.LoadReference(repoDir, fmt.Sprintf("R-%04d", i))
+				if err != nil {
+					return "", err
+				}
+				r.CreatedAt = savedAt
+				if err := store.SaveReference(repoDir, r); err != nil {
+					return "", err
+				}
+			}
+			return "seed created_at", nil
+		}); err != nil {
+			t.Fatal(err)
+		}
 	}
 	return repoDir, projDir
 }
@@ -108,7 +137,7 @@ func TestArchiveReferencesOffRefuses(t *testing.T) {
 // origin saved, in one commit with a reference.archived event.
 func TestArchiveReferencesRecordsTheCopy(t *testing.T) {
 	repoDir, projDir := archiveBackend(t, 1, true)
-	c := &scriptClient{save: saves, closest: noCopy}
+	c := &scriptClient{save: saves, captures: noCaptures}
 	before := commitCount(t, repoDir)
 	res, err := ArchiveReferences(repoDir, projDir, nil, publicNet(c), false)
 	if err != nil {
@@ -136,13 +165,12 @@ func TestArchiveReferencesRecordsTheCopy(t *testing.T) {
 	}
 }
 
-// F-0503 crit. 10: a refused Save falls back on Closest and records the
-// existing copy.
-func TestArchiveReferencesFallsBackOnClosest(t *testing.T) {
+// F-0503 crit. 10: a refused Save falls back on the capture nearest the
+// registration day and records it as existing.
+func TestArchiveReferencesFallsBackOnTheNearestCapture(t *testing.T) {
 	repoDir, projDir := archiveBackend(t, 1, true)
-	c := &scriptClient{save: refuses, closest: func(u string) (Snapshot, error) {
-		return Snapshot{URL: "https://web.archive.org/web/20250302080000/" + u, CapturedAt: existedAt}, nil
-	}}
+	far := snap("https://example.com/1", existedAt.AddDate(-3, 0, 0))
+	c := &scriptClient{save: refuses, captures: capturesOf(far, snap("https://example.com/1", existedAt))}
 	if _, err := ArchiveReferences(repoDir, projDir, nil, publicNet(c), false); err != nil {
 		t.Fatal(err)
 	}
@@ -150,15 +178,98 @@ func TestArchiveReferencesFallsBackOnClosest(t *testing.T) {
 	if got == nil || got.Status != "archived" || got.Origin != "existing" || !got.CapturedAt.Equal(existedAt) || !strings.Contains(got.URL, "/web/20250302080000/") {
 		t.Fatalf("stored %+v, want the existing copy", got)
 	}
-	if want := []string{"save https://example.com/1", "closest https://example.com/1"}; !slices.Equal(c.asked, want) {
+	if want := []string{"captures https://example.com/1", "save https://example.com/1"}; !slices.Equal(c.asked, want) {
 		t.Errorf("asked %v, want %v", c.asked, want)
 	}
 }
 
-// F-0503 crit. 8: when Save and Closest both fail the reference stays, pending.
+// F-0503 crit. 10: the copy is the capture nearest the registration day, before
+// or after it; one nearer than now is recorded as existing with no Save.
+func TestArchiveReferencesPicksTheCaptureNearestTheRegistration(t *testing.T) {
+	repoDir, projDir := archiveBackend(t, 1, true)
+	day := time.Date(2025, 3, 5, 9, 0, 0, 0, time.UTC)
+	setRef(t, repoDir, projDir, "R-0001", func(r *store.Reference) { r.CreatedAt = day })
+	u := "https://example.com/1"
+	c := &scriptClient{save: saves, captures: capturesOf(snap(u, day.AddDate(0, 0, -4)), snap(u, day.AddDate(0, 0, 2)), snap(u, day.AddDate(0, 0, -30)))}
+	if _, err := ArchiveReferences(repoDir, projDir, nil, publicNet(c), false); err != nil {
+		t.Fatal(err)
+	}
+	got := loadRef(t, repoDir, "R-0001").Archive
+	if got == nil || got.Origin != "existing" || !got.CapturedAt.Equal(day.AddDate(0, 0, 2)) {
+		t.Fatalf("stored %+v, want the capture 2 days after", got)
+	}
+	if want := []string{"captures " + u}; !slices.Equal(c.asked, want) {
+		t.Errorf("asked %v, want only the capture list", c.asked)
+	}
+}
+
+// F-0503 crit. 10: a registration made today asks for a new copy even when
+// older captures exist; a Save that answers with a copy older than the request
+// (the service reused one) is recorded as existing.
+func TestArchiveReferencesSaveForTodayAndReusedCopy(t *testing.T) {
+	u := "https://example.com/1"
+	for _, tc := range []struct {
+		name, origin string
+		save         func(string) (Snapshot, error)
+	}{
+		{"new copy", "saved", saves},
+		{"reused copy", "existing", func(u string) (Snapshot, error) { return snap(u, savedAt.Add(-2*time.Hour)), nil }},
+		{"within a minute", "saved", func(u string) (Snapshot, error) { return snap(u, savedAt.Add(-30*time.Second)), nil }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repoDir, projDir := archiveBackend(t, 1, true)
+			c := &scriptClient{save: tc.save, captures: capturesOf(snap(u, existedAt))}
+			if _, err := ArchiveReferences(repoDir, projDir, nil, publicNet(c), false); err != nil {
+				t.Fatal(err)
+			}
+			if got := loadRef(t, repoDir, "R-0001").Archive; got == nil || got.Origin != tc.origin || got.Status != "archived" {
+				t.Fatalf("stored %+v, want origin %s", got, tc.origin)
+			}
+			if want := []string{"captures " + u, "save " + u}; !slices.Equal(c.asked, want) {
+				t.Errorf("asked %v, want %v", c.asked, want)
+			}
+		})
+	}
+}
+
+// F-0503 crit. 10: running an archived reference again swaps the copy only for
+// one strictly nearer the registration day.
+func TestArchiveReferencesRerunOnlySwapsForANearerCopy(t *testing.T) {
+	u := "https://example.com/1"
+	day := time.Date(2025, 3, 5, 9, 0, 0, 0, time.UTC)
+	cur := snap(u, day.AddDate(0, 0, -3))
+	for _, tc := range []struct {
+		name string
+		got  Snapshot
+		swap bool
+	}{
+		{"nearer", snap(u, day.AddDate(0, 0, 1)), true},
+		{"same distance", snap(u, day.AddDate(0, 0, 3)), false},
+		{"farther", snap(u, day.AddDate(0, 0, -20)), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repoDir, projDir := archiveBackend(t, 1, true)
+			old := store.ReferenceArchive{URL: cur.URL, CapturedAt: cur.CapturedAt, Origin: "existing", Status: "archived"}
+			setRef(t, repoDir, projDir, "R-0001", func(r *store.Reference) { r.CreatedAt, r.Archive = day, &old })
+			c := &scriptClient{save: saves, captures: capturesOf(tc.got)}
+			if _, err := ArchiveReferences(repoDir, projDir, []string{"R-0001"}, publicNet(c), false); err != nil {
+				t.Fatal(err)
+			}
+			want := old
+			if tc.swap {
+				want = store.ReferenceArchive{URL: tc.got.URL, CapturedAt: tc.got.CapturedAt, Origin: "existing", Status: "archived"}
+			}
+			if a := loadRef(t, repoDir, "R-0001").Archive; a == nil || *a != want {
+				t.Errorf("stored %+v, want %+v", a, want)
+			}
+		})
+	}
+}
+
+// F-0503 crit. 8: when Save and the capture list both fail the reference stays, pending.
 func TestArchiveReferencesPendingWhenTheServiceFails(t *testing.T) {
 	repoDir, projDir := archiveBackend(t, 1, true)
-	c := &scriptClient{save: refuses, closest: noCopy}
+	c := &scriptClient{save: refuses, captures: noCaptures}
 	res, err := ArchiveReferences(repoDir, projDir, nil, publicNet(c), false)
 	if err != nil {
 		t.Fatal(err)
@@ -185,7 +296,7 @@ func TestArchiveReferencesBatchTakesUncopiedAndPending(t *testing.T) {
 		setRef(t, repoDir, projDir, id, func(r *store.Reference) { r.Archive = a })
 	}
 	setRef(t, repoDir, projDir, "R-0006", func(r *store.Reference) { r.NoArchive = true })
-	c := &scriptClient{save: saves, closest: noCopy}
+	c := &scriptClient{save: saves, captures: noCaptures}
 	res, err := ArchiveReferences(repoDir, projDir, nil, publicNet(c), false)
 	if err != nil {
 		t.Fatal(err)
@@ -197,7 +308,7 @@ func TestArchiveReferencesBatchTakesUncopiedAndPending(t *testing.T) {
 	if !slices.Equal(ids, []string{"R-0001", "R-0002"}) {
 		t.Fatalf("processed %v, want [R-0001 R-0002]", ids)
 	}
-	if want := []string{"save https://example.com/1", "save https://example.com/2"}; !slices.Equal(c.asked, want) {
+	if want := []string{"captures https://example.com/1", "save https://example.com/1", "captures https://example.com/2", "save https://example.com/2"}; !slices.Equal(c.asked, want) {
 		t.Errorf("asked %v, want %v", c.asked, want)
 	}
 	if a := loadRef(t, repoDir, "R-0003").Archive; a.Status != "not_public" {
@@ -263,7 +374,7 @@ func TestArchiveReferencesSendOnlyTheURL(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(f.reqs) != 2 {
-		t.Fatalf("%d requests to the archive, want 2 (save, then closest)", len(f.reqs))
+		t.Fatalf("%d requests to the archive, want 2 (capture list, then save)", len(f.reqs))
 	}
 	proj, err := store.LoadProject(repoDir)
 	if err != nil {
@@ -282,12 +393,12 @@ func TestArchiveReferencesSendOnlyTheURL(t *testing.T) {
 }
 
 // F-0503 crit. 10: through the real client, a Save whose copy link is foreign
-// falls back on Closest, and a foreign Closest link leaves the archive pending.
+// leaves the archive pending when the capture list has nothing.
 func TestArchiveReferencesForeignCopyIsPending(t *testing.T) {
 	repoDir, projDir := archiveBackend(t, 1, true)
 	f := newFakeWayback(t, func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/wayback/") {
-			_, _ = w.Write([]byte(`{"archived_snapshots":{"closest":{"available":true,"url":"https://evil.org/web/20250302080000/x","timestamp":"20250302080000"}}}`))
+		if r.URL.Path == "/cdx/search/cdx" {
+			_, _ = w.Write([]byte("[]"))
 			return
 		}
 		w.Header().Set("Location", "https://evil.org/web/20261124120000/x")
@@ -300,7 +411,7 @@ func TestArchiveReferencesForeignCopyIsPending(t *testing.T) {
 		t.Fatalf("stored %+v, want pending (save failed: no copy link)", a)
 	}
 	if len(f.reqs) != 2 {
-		t.Errorf("%d archive requests, want save then closest", len(f.reqs))
+		t.Errorf("%d archive requests, want capture list then save", len(f.reqs))
 	}
 }
 
@@ -342,7 +453,7 @@ func TestArchiveReferencesKeepsAGoodCopy(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			repoDir, projDir := archiveBackend(t, 1, true)
 			setRef(t, repoDir, projDir, "R-0001", func(r *store.Reference) { r.URL, r.Archive = tc.url, &good })
-			c := &scriptClient{save: refuses, closest: noCopy}
+			c := &scriptClient{save: refuses, captures: noCaptures}
 			res, err := ArchiveReferences(repoDir, projDir, []string{"R-0001"}, publicNet(c), false)
 			if err != nil {
 				t.Fatal(err)

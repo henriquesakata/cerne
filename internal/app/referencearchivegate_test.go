@@ -38,9 +38,9 @@ func (c failClient) Save(_ context.Context, u string) (Snapshot, error) {
 	return Snapshot{}, errors.New("must not be called")
 }
 
-func (c failClient) Closest(_ context.Context, u string) (Snapshot, error) {
-	c.t.Errorf("Closest(%q) called: the URL reached the archive service", u)
-	return Snapshot{}, errors.New("must not be called")
+func (c failClient) Captures(_ context.Context, u string) ([]Snapshot, error) {
+	c.t.Errorf("Captures(%q) called: the URL reached the archive service", u)
+	return nil, errors.New("must not be called")
 }
 
 // offlineNet fails the test on any network use: archive, DNS or page.
