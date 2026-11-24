@@ -239,6 +239,36 @@ func recordGone(r *store.Reference, status int, detail string, now time.Time) Ch
 	return CheckResult{Result: "gone", Status: status, Detail: detail}
 }
 
+// ErrReferenceNotChanged refuses `reference keep` on a reference whose last
+// check is not `changed`: there is no new version to accept.
+var ErrReferenceNotChanged = errors.New("reference is not in the changed state")
+
+// KeepReference accepts the current page of a changed reference as its new
+// baseline and clears the changed state (F-0501).
+func KeepReference(repoDir, projDir, id string) (store.Reference, error) {
+	var r store.Reference
+	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		var err error
+		if r, err = store.LoadReference(repoDir, id); err != nil {
+			return "", fmt.Errorf("reference %s: %w", id, err)
+		}
+		if r.Check == nil || r.Check.Status != "changed" {
+			return "", fmt.Errorf("reference %s: %w", id, ErrReferenceNotChanged)
+		}
+		r.Check.BaselineHash, r.Check.Status = r.Check.TextHash, "ok"
+		r.UpdatedAt = time.Now().UTC()
+		if err := store.SaveReference(repoDir, r); err != nil {
+			return "", err
+		}
+		ev := domain.NewEvent(id, "reference.kept", map[string]string{"hash": r.Check.TextHash}, EventActor())
+		if err := store.AppendEvent(repoDir, ev); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: keep %s", id), nil
+	})
+	return r, err
+}
+
 func transientReason(err error) string {
 	var ne net.Error
 	if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &ne) && ne.Timeout()) {

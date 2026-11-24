@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -220,6 +221,46 @@ func TestCheckReferencesTransient(t *testing.T) {
 				t.Fatalf("last event = %+v", last)
 			}
 		})
+	}
+}
+
+// F-0501 crit. 6: keep re-baselines a changed reference and logs reference.kept;
+// any other state refuses.
+func TestKeepReference(t *testing.T) {
+	repoDir, projDir := refsBackend(t, 3)
+	u := func(n int) string { return fmt.Sprintf("https://example.com/%d", n) }
+	one := map[string]FetchResponse{u(1): page("a"), u(2): page("a"), u(3): page("a")}
+	if _, err := CheckReferences(repoDir, projDir, nil, fetchMap(one)); err != nil {
+		t.Fatal(err)
+	}
+	// R-0001 changes, R-0002 goes away, R-0003 stays ok.
+	two := map[string]FetchResponse{u(1): page("b"), u(2): {Status: 404}, u(3): page("a")}
+	if _, err := CheckReferences(repoDir, projDir, nil, fetchMap(two)); err != nil {
+		t.Fatal(err)
+	}
+	r, err := KeepReference(repoDir, projDir, "R-0001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := loadRef(t, repoDir, "R-0001").Check
+	if r.Check == nil || c.Status != "ok" || c.BaselineHash != c.TextHash || c.TextHash == "" {
+		t.Fatalf("kept check = %+v", c)
+	}
+	evs, _ := store.ReadEvents(repoDir)
+	if last := evs[len(evs)-1]; last.EntityID != "R-0001" || last.Type != "reference.kept" {
+		t.Fatalf("last event = %+v", last)
+	}
+	// the new baseline holds: the same page is ok on the next check
+	if res, _ := CheckReferences(repoDir, projDir, []string{"R-0001"}, fetchMap(two)); res[0].Result != "ok" {
+		t.Fatalf("after keep: %+v", res)
+	}
+	for _, id := range []string{"R-0001", "R-0002", "R-0003"} {
+		if _, err := KeepReference(repoDir, projDir, id); !errors.Is(err, ErrReferenceNotChanged) {
+			t.Errorf("keep %s: err = %v, want ErrReferenceNotChanged", id, err)
+		}
+	}
+	if _, err := KeepReference(repoDir, projDir, "R-0099"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("keep unknown: err = %v, want ErrNotFound", err)
 	}
 }
 
