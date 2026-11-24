@@ -93,23 +93,36 @@ func printReferenceChecks(w io.Writer, res []app.CheckResult) {
 }
 
 func newReferenceArchiveCmd(dir *string) *cobra.Command {
-	var dryRun bool
+	var dryRun, optOut bool
 	cmd := &cobra.Command{
 		Use:   "archive [id...]",
 		Short: "Keep the link of a dated copy of each public external source (Wayback Machine)",
 		Long: "Sends the URL of each current external reference that has no copy yet, or whose last attempt is " +
 			"pending (or only the ids given), to the Wayback Machine of the Internet Archive, and records the link " +
-			"and date of the copy: a new one (saved) or, when Save Page Now refuses, the closest one already there " +
-			"(existing). Only the URL is sent. Nothing leaves the machine unless a human turned references.archive " +
+			"and date of the copy: the capture nearest the day the reference was registered when the archive has " +
+			"one (existing), else a new one (saved), falling back on that capture when Save Page Now refuses. " +
+			"Only the URL is sent. Nothing leaves the machine unless a human turned references.archive " +
 			"on, and never for an internal host, an unregistered_source_ignore item, a URL with credentials or a " +
 			"secret parameter, a name that resolves to a private address, a page an anonymous GET does not read " +
-			"with a 200, or a reference registered with --no-archive. --dry-run runs every one of those checks and " +
+			"with a 200, or a reference registered with --no-archive: that opt-out holds for the URL, so it bars " +
+			"every reference with the same one. --opt-out marks the ids given the same way, needs ids and reaches " +
+			"no network. --dry-run runs every one of those checks and " +
 			"lists what would be sent, sending nothing to the archive service and recording nothing.",
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := resolveProject(*dir)
 			if err != nil {
 				return err
+			}
+			if optOut {
+				done, err := app.OptOutReferences(ctx.repoDir, ctx.projDir, args)
+				if err != nil {
+					return err
+				}
+				for _, id := range done {
+					fmt.Fprintln(cmd.OutOrStdout(), id+"  no-archive")
+				}
+				return nil
 			}
 			res, err := app.ArchiveReferences(ctx.repoDir, ctx.projDir, args, archiveNet(), dryRun)
 			if err != nil {
@@ -120,6 +133,8 @@ func newReferenceArchiveCmd(dir *string) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "run every check (filters, DNS, anonymous GET) and list what would be sent; send nothing to the archive service")
+	cmd.Flags().BoolVar(&optOut, "opt-out", false, "mark the ids given as never to be archived, them and any reference with the same URL; reaches no network and works with references.archive off")
+	cmd.MarkFlagsMutuallyExclusive("opt-out", "dry-run")
 	return verbs.MarkLocal(cmd)
 }
 

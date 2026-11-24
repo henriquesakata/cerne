@@ -99,7 +99,7 @@ func CreateExternalReference(repoDir, projDir, title, url, content string, infor
 		// The opt-out is also an append-only event (F-0503): a release binary
 		// without the field rewrites the reference, never the log.
 		if noArchive {
-			if err := store.AppendEvent(repoDir, domain.NewEvent(id, archiveOptOutEvent, map[string]string{}, EventActor())); err != nil {
+			if err := store.AppendEvent(repoDir, domain.NewEvent(id, archiveOptOutEvent, map[string]string{"url": url}, EventActor())); err != nil {
 				return "", err
 			}
 		}

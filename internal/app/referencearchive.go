@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/dupmatch"
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/sourceurl"
 	"github.com/henriquesakata/cerne/internal/store"
@@ -277,14 +278,28 @@ func referencesToArchive(repoDir string, ids []string) ([]store.Reference, error
 	if err != nil {
 		return nil, err
 	}
-	optedOut := map[string]bool{}
+	all, err := store.LoadAllReferences(repoDir)
+	if err != nil {
+		return nil, err
+	}
+	urlOf := map[string]string{}
+	for _, r := range all {
+		urlOf[r.ID] = r.URL
+	}
+	optedOutID, optedOutURL := map[string]bool{}, map[string]bool{}
 	for _, e := range events {
 		if e.Type == archiveOptOutEvent {
-			optedOut[e.EntityID] = true
+			optedOutID[e.EntityID] = true
+			// The opt-out is for the URL: an event from before the payload carried it reads the reference's.
+			u := e.Payload["url"]
+			if u == "" {
+				u = urlOf[e.EntityID]
+			}
+			optedOutURL[dupmatch.NormalizeURL(u)] = true
 		}
 	}
-	for i := range refs {
-		refs[i].NoArchive = refs[i].NoArchive || optedOut[refs[i].ID]
+	for i, r := range refs {
+		refs[i].NoArchive = r.NoArchive || optedOutID[r.ID] || optedOutURL[dupmatch.NormalizeURL(r.URL)]
 	}
 	if len(ids) > 0 {
 		return refs, nil
