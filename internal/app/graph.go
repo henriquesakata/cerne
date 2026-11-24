@@ -196,6 +196,18 @@ func BuildGraph(repoDir string) (Graph, error) {
 		}
 	}
 
+	// F-0502: relations a person accepted from a link suggestion are links
+	// edges too, stored as data outside the document body.
+	confirmed, err := store.ConfirmedLinks(repoDir)
+	if err != nil {
+		return Graph{}, err
+	}
+	for from, tos := range confirmed {
+		for _, to := range tos {
+			addEdge(from, to, EdgeLinks, "")
+		}
+	}
+
 	sort.Slice(nodes, func(i, j int) bool { return nodes[i].ID < nodes[j].ID })
 	sort.Slice(edges, func(i, j int) bool {
 		if edges[i].From != edges[j].From {

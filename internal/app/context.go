@@ -274,6 +274,7 @@ func (t task) neighbourhood(repoDir string, notes []store.Note, refs []store.Ref
 			sources[to] = append(sources[to], r.ID)
 		}
 	}
+	confirmed, _ := store.ConfirmedLinks(repoDir) // fail open: the package goes on without them
 	seen := map[string]bool{t.f.ID: true}
 	if t.epic != nil {
 		seen[t.epic.ID] = true
@@ -342,6 +343,17 @@ func (t task) neighbourhood(repoDir string, notes []store.Note, refs []store.Ref
 		for _, r := range refs {
 			if slices.Contains(r.Informs, o.id) {
 				add(r.ID, "a", "")
+			}
+		}
+		// F-0502: relations a person accepted from a link suggestion — what
+		// the owner links out to, then the notes, decisions and references
+		// that link in, like an informs.
+		for _, to := range confirmed[o.id] {
+			add(to, "a", "")
+		}
+		for _, from := range slices.Sorted(maps.Keys(confirmed)) {
+			if slices.Contains(confirmed[from], o.id) && (byID[from].ID != "" || strings.HasPrefix(from, "D-") || strings.HasPrefix(from, "R-")) {
+				add(from, "a", "")
 			}
 		}
 	}

@@ -59,6 +59,16 @@ func EnqueueLinkSuggestions(repoDir string, kept []RawLinkSuggestion, at time.Ti
 	return added, store.SaveLinkSuggestions(repoDir, append(queue, added...))
 }
 
+// CheckHumanLinkDecision refuses an agent actor on accepting or rejecting a
+// link suggestion: turning a suggestion into a relation is a person's call
+// (F-0502). Passes when no agent is declared, like the other human gates.
+func CheckHumanLinkDecision() error {
+	if isAgentActor(actorEnv()) {
+		return fmt.Errorf("%w: accepting or rejecting a suggested link is a human act — ask a human to run it in their own terminal%s", ErrHumanGate, humanEscape)
+	}
+	return nil
+}
+
 // DecideLink moves suggestion n to status (LinkAccepted or LinkRejected) and
 // logs link.accepted or link.rejected on its source. Accepting needs an open
 // suggestion; rejecting also takes an accepted one, which leaves the graph.
