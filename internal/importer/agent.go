@@ -200,7 +200,7 @@ func BuildPlanPrompt(sources []Source) string {
 	b.WriteString("decision/note/feature; current-state doc (e.g. CLAUDE.md) → note/runbook; ")
 	b.WriteString("operational procedure → runbook; external link that informed the project → ")
 	b.WriteString("reference (with url and informs). Synthesize the body in markdown; do not copy the source verbatim in the body.\n")
-	b.WriteString("\nEach item also carries evidence: 1 to 3 snippets copied literally from the source file that support the state you chose ")
+	b.WriteString("\nEach item also carries evidence: 1 to 3 snippets copied literally from the source file that support the state you chose, each a short sentence of at least 12 characters ")
 	b.WriteString("(the title too, when it fits in the same snippet). The no-copy rule is for the body only; evidence must be copied unchanged — ")
 	b.WriteString("cerne checks every snippet against the file (whitespace and line breaks may differ) and leaves out any item whose evidence it cannot find.\n")
 

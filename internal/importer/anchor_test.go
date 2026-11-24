@@ -10,7 +10,7 @@ import (
 // F-0500 crit. 3, 4, 5: classification by literal anchor, with the reason.
 func TestAnchorPlanItems(t *testing.T) {
 	root := t.TempDir()
-	hist := "# History\n\nIntro line.\n\nWe dropped go2rtc\nafter the  proxy   change.\n\nOther text here.\n"
+	hist := "# History\n\nIntro line here.\n\nWe dropped go2rtc\nafter the  proxy   change.\n\nOther text here.\n"
 	if err := os.WriteFile(filepath.Join(root, "HISTORY.md"), []byte(hist), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -30,11 +30,11 @@ func TestAnchorPlanItems(t *testing.T) {
 		{"source escapes root", item("../HISTORY.md", "x"), "source not found: ../HISTORY.md", nil},
 		{"absolute source", item("/etc/passwd", "root"), "source not found: /etc/passwd", nil},
 		{"fragment source", item("HISTORY.md#go2rtc", "We dropped go2rtc"), "", []string{"HISTORY.md:5-5"}},
-		{"one good one bad", item("HISTORY.md", "Intro line.", "never written"), `evidence not found in HISTORY.md: "never written"`, nil},
-		{"empty snippet", item("HISTORY.md", "  "), `evidence not found in HISTORY.md: "  "`, nil},
+		{"one good one bad", item("HISTORY.md", "Intro line here.", "never written"), `evidence not found in HISTORY.md: "never written"`, nil},
+		{"empty snippet", item("HISTORY.md", "  "), `evidence too short: "  "`, nil},
 		{"long failing snippet is cut", item("HISTORY.md", long), `evidence not found in HISTORY.md: "` + strings.Repeat("x", 80) + `…"`, nil},
 		{"different line breaks", item("HISTORY.md", "dropped go2rtc after the proxy change."), "", []string{"HISTORY.md:5-6"}},
-		{"two spans", item("HISTORY.md", "Intro line.", "Other text here."), "", []string{"HISTORY.md:3-3", "HISTORY.md:8-8"}},
+		{"two spans", item("HISTORY.md", "Intro line here.", "Other text here."), "", []string{"HISTORY.md:3-3", "HISTORY.md:8-8"}},
 	}
 	items := make([]PlanItem, len(tests))
 	for i, tt := range tests {

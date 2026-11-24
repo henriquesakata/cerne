@@ -22,7 +22,7 @@ const anchorPlan = `{"items":[
 // fixedPlan is anchorPlan with the evidence corrected, as a human would.
 const fixedPlan = `{"items":[
   {"kind":"feature","title":"Detecção go2rtc","state":"implemented","body":"b1","source":"HISTORY.md#go2rtc","evidence":["MUDANCA_GO2RTC adicionada"]},
-  {"kind":"decision","title":"Adotou Kubernetes","state":"active","body":"b2","source":"HISTORY.md#k8s","evidence":["## 0.13"]},
+  {"kind":"decision","title":"Adotou Kubernetes","state":"active","body":"b2","source":"HISTORY.md#k8s","evidence":["MUDANCA_GO2RTC adicionada"]},
   {"kind":"note","title":"Sem prova","state":"active","body":"b3","source":"CLAUDE.md","evidence":["PROJETO_FRIGATE detecta objetos."]}
 ]}`
 

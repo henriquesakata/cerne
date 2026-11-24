@@ -29,6 +29,7 @@ func TestBuildPlanPromptAsksLiteralEvidence(t *testing.T) {
 		"1 to 3 snippets copied literally from the source",
 		"do not copy the source verbatim in the body",
 		"evidence must be copied unchanged",
+		"a short sentence of at least 12 characters",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("prompt missing %q", want)

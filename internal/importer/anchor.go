@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/henriquesakata/cerne/internal/doccheck"
 )
@@ -18,6 +19,10 @@ const (
 	// the cap keeps a hostile or accidental huge file out of memory). Raise it or
 	// stream the search if a legitimate source ever needs more.
 	maxSourceBytes = 10 << 20
+	// ponytail: a snippet under 12 runes (normalized) is too trivial to be proof.
+	// Heuristic: a short generic snippet of 12+ runes still passes. Upgrade: require
+	// a word boundary, or the chosen state inside the snippet.
+	minEvidenceRunes = 12
 )
 
 // Span is a line range (1-based, inclusive) of a source file.
@@ -84,6 +89,10 @@ func AnchorPlanItems(root string, items []PlanItem) (anchored []AnchoredItem, un
 		a := AnchoredItem{PlanItem: it}
 		reason := ""
 		for _, ev := range it.Evidence {
+			if utf8.RuneCountInString(strings.Join(strings.Fields(ev), " ")) < minEvidenceRunes {
+				reason = fmt.Sprintf("evidence too short: %q", cutRunes(ev, reasonSnippetCap))
+				break
+			}
 			s, e, ok := src.index.Find(ev)
 			if !ok {
 				reason = fmt.Sprintf("evidence not found in %s: %q", file, cutRunes(ev, reasonSnippetCap))
