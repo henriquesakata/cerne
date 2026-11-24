@@ -10,14 +10,17 @@ import (
 // byte kept, so many snippets can be looked up without renormalizing.
 type LiteralIndex struct {
 	norm  string
-	lines []int // lines[i] is the 1-based original line of norm's byte i
+	// ponytail: ~4 bytes of index per source byte (int32 per normalized byte), so a
+	// 10 MiB source costs ~40 MiB while cached. Upgrade: store line offsets and
+	// binary-search them if sources ever grow past the cap.
+	lines []int32 // lines[i] is the 1-based original line of norm's byte i
 }
 
 // NewLiteralIndex normalizes content for Find.
 func NewLiteralIndex(content string) *LiteralIndex {
 	var norm strings.Builder
-	var lines []int
-	line, inSpace := 1, false
+	var lines []int32
+	line, inSpace := int32(1), false
 	for _, r := range content {
 		if unicode.IsSpace(r) {
 			if !inSpace {
@@ -51,7 +54,7 @@ func (x *LiteralIndex) Find(snippet string) (start, end int, ok bool) {
 	if i < 0 {
 		return 0, 0, false
 	}
-	return x.lines[i], x.lines[i+len(want)-1], true
+	return int(x.lines[i]), int(x.lines[i+len(want)-1]), true
 }
 
 // FindLiteral looks for snippet in content, comparing with every run of Unicode
