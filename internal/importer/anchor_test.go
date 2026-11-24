@@ -80,3 +80,47 @@ func TestAnchorPlanItems(t *testing.T) {
 		k++
 	}
 }
+
+// F-0500 crit. 9: a read error of one item is that item's problem, never a
+// global one: the good item next to it stays anchored.
+func TestAnchorPlanItemsUnreadableSourceIsPerItem(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "CLAUDE.md"), []byte("State: the project is active now.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	locked := filepath.Join(root, "locked.md")
+	if err := os.WriteFile(locked, []byte("secret state line here"), 0o000); err != nil {
+		t.Fatal(err)
+	}
+	if f, err := os.Open(locked); err == nil { // running as root: no permission error to test
+		f.Close()
+		os.Remove(locked)
+	}
+	item := func(src string, ev string) PlanItem {
+		return PlanItem{Kind: "note", Title: "T " + src, State: "active", Body: "b", Source: src, Evidence: []string{ev}}
+	}
+	items := []PlanItem{
+		item("CLAUDE.md/x", "anything at all here"), // ENOTDIR
+		item("CLAUDE.md", "the project is active now"),
+	}
+	wantUnreadable := []string{"CLAUDE.md/x"}
+	if _, err := os.Stat(locked); err == nil {
+		items = append(items, item("locked.md", "secret state line here"))
+		wantUnreadable = append(wantUnreadable, "locked.md")
+	}
+	anchored, unanchored, err := AnchorPlanItems(root, items)
+	if err != nil {
+		t.Fatalf("a per-item read error became global: %v", err)
+	}
+	if len(anchored) != 1 || anchored[0].Source != "CLAUDE.md" {
+		t.Fatalf("anchored = %+v, want only CLAUDE.md", anchored)
+	}
+	if len(unanchored) != len(wantUnreadable) {
+		t.Fatalf("unanchored = %+v", unanchored)
+	}
+	for i, u := range unanchored {
+		if u.Reason != "source unreadable: "+wantUnreadable[i] {
+			t.Errorf("reason = %q, want source unreadable: %s", u.Reason, wantUnreadable[i])
+		}
+	}
+}

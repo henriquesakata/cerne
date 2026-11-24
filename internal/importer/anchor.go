@@ -49,8 +49,9 @@ type Unanchored struct {
 
 // AnchorPlanItems splits items by whether their evidence appears literally in
 // the source file under root (the part of Source before any '#'). Order is
-// preserved in both results. err is only for I/O failures other than a missing
-// file; a source outside root counts as not found, never read.
+// preserved in both results. A source that cannot be read is that item's
+// problem (unanchored), never an error of the call; a source outside root counts
+// as not found, never read.
 func AnchorPlanItems(root string, items []PlanItem) (anchored []AnchoredItem, unanchored []Unanchored, err error) {
 	for _, it := range items {
 		switch {
@@ -74,7 +75,9 @@ func AnchorPlanItems(root string, items []PlanItem) (anchored []AnchoredItem, un
 			continue
 		}
 		if err != nil {
-			return nil, nil, fmt.Errorf("reading source %s: %w", file, err)
+			unanchored = append(unanchored, Unanchored{it, "source unreadable: " + file})
+			err = nil
+			continue
 		}
 		a := AnchoredItem{PlanItem: it}
 		reason := ""
