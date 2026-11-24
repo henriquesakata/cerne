@@ -70,7 +70,7 @@ func runImport(cmd *cobra.Command, dir, root, delivered string, yes, agent, inge
 	// deterministic case-folder import below runs exactly as before.
 	if agent {
 		if ingest {
-			return runImportAgentIngest(cmd, ctx, delivered, deliveredState, yes)
+			return runImportAgentIngest(cmd, ctx, root, delivered, deliveredState, yes)
 		}
 		return runImportAgent(cmd, ctx, root)
 	}
@@ -387,8 +387,10 @@ func runImportAgent(cmd *cobra.Command, ctx projCtx, root string) error {
 
 // runImportAgentIngest is phase 2: read the agent's plan.json, validate it
 // against the cerne model (cerne is the authority), drop already-imported items
-// (idempotency), then either print the dry-run plan or apply it (--yes).
-func runImportAgentIngest(cmd *cobra.Command, ctx projCtx, delivered, deliveredState string, yes bool) error {
+// (idempotency), check each item's evidence against its source under root
+// (F-0500), then either print the dry-run plan or apply the anchored items
+// (--yes). Items without an anchor are left out and listed with the reason.
+func runImportAgentIngest(cmd *cobra.Command, ctx projCtx, root, delivered, deliveredState string, yes bool) error {
 	out := cmd.OutOrStdout()
 	planPath := filepath.Join(ctx.projDir, filepath.FromSlash(agentPlanRel))
 	data, err := os.ReadFile(planPath)
@@ -416,19 +418,25 @@ func runImportAgentIngest(cmd *cobra.Command, ctx projCtx, delivered, deliveredS
 		return nil
 	}
 
+	anchored, unanchored, err := importer.AnchorPlanItems(root, kept)
+	if err != nil {
+		return err
+	}
+
 	// Dry-run: show the plan, write nothing.
 	if !yes {
-		importer.SetPlanDelivered(kept, askDeliveredState(cmd, delivered, yes, countPlanDelivered(kept), deliveredState))
-		printAgentPlan(out, kept, skipped)
+		setAnchoredDelivered(anchored, askDeliveredState(cmd, delivered, yes, countAnchoredDelivered(anchored), deliveredState))
+		printAgentPlan(out, anchored, unanchored, skipped, root)
 		return nil
 	}
 
-	importer.SetPlanDelivered(kept, deliveredState)
-	toApply := make([]importer.AnchoredItem, len(kept))
-	for i, it := range kept {
-		toApply[i] = importer.AnchoredItem{PlanItem: it}
+	if len(anchored) == 0 {
+		printLeftOut(out, fmt.Sprintf("Left out %d item(s) without an anchor:", len(unanchored)), unanchored, root)
+		fmt.Fprintln(out, "Nothing applied.")
+		return nil
 	}
-	sum, err := importer.ApplyPlan(ctx.repoDir, toApply, app.EventActor())
+	setAnchoredDelivered(anchored, deliveredState)
+	sum, err := importer.ApplyPlan(ctx.repoDir, anchored, app.EventActor())
 	if err != nil {
 		return err
 	}
@@ -440,20 +448,58 @@ func runImportAgentIngest(cmd *cobra.Command, ctx projCtx, delivered, deliveredS
 	if err := updateLockSnapshot(ctx.projDir, sha); err != nil {
 		return err
 	}
-	_ = os.RemoveAll(filepath.Join(ctx.projDir, filepath.FromSlash(".docs/import/.pending")))
+	// With items left out the plan stays, so fixing its evidence and ingesting
+	// again applies the rest.
+	if len(unanchored) == 0 {
+		_ = os.RemoveAll(filepath.Join(ctx.projDir, filepath.FromSlash(".docs/import/.pending")))
+	}
 	fmt.Fprintf(out, "Imported (agent): %d features, %d decisions, %d references, %d runbooks, %d notes (snapshot %s).\n",
 		sum.Features, sum.Decisions, sum.References, sum.Runbooks, sum.Notes, shortSHA(sha))
 	closing := newImportClosing()
-	for _, it := range kept {
+	for _, it := range anchored {
 		closing.add(it.Kind, it.State, it.Title)
 	}
 	closing.print(out)
+	if len(unanchored) > 0 {
+		printLeftOut(out, fmt.Sprintf("Left out %d item(s) without an anchor:", len(unanchored)), unanchored, root)
+	}
 	return nil
 }
 
-// printAgentPlan writes the agent-import dry-run report: per-kind totals
-// (notes included, unlike the case-folder printer), a small sample, and the --yes hint.
-func printAgentPlan(w io.Writer, items []importer.PlanItem, skipped int) {
+// setAnchoredDelivered sets the delivered state on the anchored items mapped
+// as delivered features.
+func setAnchoredDelivered(items []importer.AnchoredItem, state string) {
+	for i := range items {
+		if importer.IsPlanDelivered(items[i].PlanItem) {
+			items[i].State = state
+		}
+	}
+}
+
+func countAnchoredDelivered(items []importer.AnchoredItem) int {
+	n := 0
+	for _, it := range items {
+		if importer.IsPlanDelivered(it.PlanItem) {
+			n++
+		}
+	}
+	return n
+}
+
+// printLeftOut lists the items without an anchor, one per line with its reason,
+// and says where to fix them.
+func printLeftOut(w io.Writer, header string, items []importer.Unanchored, root string) {
+	fmt.Fprintln(w, header)
+	for _, u := range items {
+		fmt.Fprintf(w, "  %s %s %q ← %s: %s\n", u.Item.Kind, u.Item.State, u.Item.Title, u.Item.Source, u.Reason)
+	}
+	fmt.Fprintf(w, "Sources were resolved against %s. Fix the evidence in %s and run the ingest again.\n", root, agentPlanRel)
+}
+
+// printAgentPlan writes the agent-import dry-run report: the anchored items
+// (per-kind totals, notes included, and a small sample with the evidence
+// positions), the items left out with their reasons, and the --yes hint.
+func printAgentPlan(w io.Writer, items []importer.AnchoredItem, unanchored []importer.Unanchored, skipped int, root string) {
 	counts := map[string]int{}
 	for _, it := range items {
 		counts[it.Kind]++
@@ -462,6 +508,7 @@ func printAgentPlan(w io.Writer, items []importer.PlanItem, skipped int) {
 	if skipped > 0 {
 		fmt.Fprintf(w, "  Already imported (skipped): %d\n", skipped)
 	}
+	fmt.Fprintf(w, "Anchored (will be imported): %d\n", len(items))
 	fmt.Fprintf(w, "  Features: %d\n", counts["feature"])
 	fmt.Fprintf(w, "  Decisions: %d\n", counts["decision"])
 	fmt.Fprintf(w, "  References: %d\n", counts["reference"])
@@ -473,7 +520,10 @@ func printAgentPlan(w io.Writer, items []importer.PlanItem, skipped int) {
 			fmt.Fprintf(w, "  … (+%d)\n", len(items)-8)
 			break
 		}
-		fmt.Fprintf(w, "  %s? %s → %s %s\n", strings.ToUpper(it.Kind[:1]), it.Source, it.Kind, it.State)
+		fmt.Fprintf(w, "  %s? %s → %s %s [%s]\n", strings.ToUpper(it.Kind[:1]), it.Source, it.Kind, it.State, it.AnchorText())
 	}
-	fmt.Fprintln(w, "Run with --yes to apply.")
+	if len(unanchored) > 0 {
+		printLeftOut(w, fmt.Sprintf("Unanchored (left out): %d", len(unanchored)), unanchored, root)
+	}
+	fmt.Fprintln(w, "Run with --yes to apply the anchored items.")
 }

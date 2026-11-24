@@ -259,7 +259,7 @@ func ApplyPlan(repoDir string, items []AnchoredItem, actor string) (Summary, err
 		case "note":
 			sum.Notes++
 		}
-		anchor := it.anchorText()
+		anchor := it.AnchorText()
 		payload := map[string]string{"source": it.Source}
 		if anchor != "" {
 			payload["anchor"] = anchor

@@ -54,6 +54,7 @@ func TestImportCaseFolderClosing(t *testing.T) {
 
 func TestImportAgentIngestClosing(t *testing.T) {
 	projDir, _, _ := setupProject(t)
+	writeTree(t, projDir, frigateTree())
 	writeAgentPlan(t, projDir, gabaritoPlan)
 	out, err := execCerne(t, "import", "--agent", "--ingest", "--yes", "--dir", projDir)
 	if err != nil {

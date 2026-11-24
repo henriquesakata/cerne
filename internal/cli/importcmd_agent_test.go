@@ -33,9 +33,9 @@ func writeAgentPlan(t *testing.T, projDir, json string) {
 }
 
 const gabaritoPlan = `{"items":[
-  {"kind":"feature","title":"Detecção go2rtc","state":"implemented","body":"# go2rtc\n\nDo changelog.","source":"HISTORY.md#go2rtc"},
-  {"kind":"note","title":"Estado atual","state":"active","body":"# Estado\n\nDo CLAUDE.md.","source":"CLAUDE.md","informs":["F-0001"]},
-  {"kind":"reference","title":"RFC 6749","state":"current","url":"https://example.com/rfc","body":"OAuth 2.0","source":"docs/links.md","informs":["F-0001"]}
+  {"kind":"feature","title":"Detecção go2rtc","state":"implemented","body":"# go2rtc\n\nDo changelog.","source":"HISTORY.md#go2rtc","evidence":["MUDANCA_GO2RTC adicionada"]},
+  {"kind":"note","title":"Estado atual","state":"active","body":"# Estado\n\nDo CLAUDE.md.","source":"CLAUDE.md","informs":["F-0001"],"evidence":["PROJETO_FRIGATE detecta objetos."]},
+  {"kind":"reference","title":"RFC 6749","state":"current","url":"https://example.com/rfc","body":"OAuth 2.0","source":"docs/links.md","informs":["F-0001"],"evidence":["https://example.com/rfc"]}
 ]}`
 
 func TestImportAgentEmitsPrompt(t *testing.T) {
@@ -69,6 +69,7 @@ func TestImportAgentEmitsPrompt(t *testing.T) {
 
 func TestImportAgentIngestDryRunThenApply(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
+	writeTree(t, projDir, frigateTree())
 	writeAgentPlan(t, projDir, gabaritoPlan)
 
 	// (crit. 5) dry-run prints the plan and writes nothing.
