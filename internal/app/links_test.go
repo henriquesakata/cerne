@@ -54,7 +54,8 @@ func TestFilterLinkSuggestions(t *testing.T) { // F-0502 crit. 4, 7
 		{"unknown target", RawLinkSuggestion{"F-0001", "D-9999", "cache ADR"}, LinkDropUnknownTarget},
 		{"self link", RawLinkSuggestion{"F-0001", "F-0001", "cache ADR"}, LinkDropSelf},
 		{"excerpt not in the source", RawLinkSuggestion{"F-0001", "D-0001", "the redis ADR"}, LinkDropExcerpt},
-		{"empty excerpt", RawLinkSuggestion{"F-0001", "D-0001", "  "}, LinkDropExcerpt},
+		{"excerpt under 12 runes", RawLinkSuggestion{"F-0001", "D-0001", "cache  ADR"}, LinkDropShort}, // the importer's minimum
+		{"empty excerpt", RawLinkSuggestion{"F-0001", "D-0001", "  "}, LinkDropShort},
 		{"edge already in the graph", RawLinkSuggestion{"F-0002", "D-0002", "the cache ADR"}, LinkDropEdge},
 		{"pair already in the queue", RawLinkSuggestion{"F-0001", "D-0003", "cache ADR"}, LinkDropQueued},
 	}
@@ -75,7 +76,8 @@ func TestFilterLinkSuggestions(t *testing.T) { // F-0502 crit. 4, 7
 			}
 		})
 	}
-	t.Run("duplicate in the same batch", func(t *testing.T) {		a := RawLinkSuggestion{"F-0001", "D-0001", "cache ADR"}
+	t.Run("duplicate in the same batch", func(t *testing.T) {
+		a := RawLinkSuggestion{"F-0001", "D-0001", "in the cache ADR"}
 		kept, dropped, err := FilterLinkSuggestions(linksRepo(t), []RawLinkSuggestion{a, a})
 		if err != nil {
 			t.Fatal(err)

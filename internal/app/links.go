@@ -3,6 +3,8 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/henriquesakata/cerne/internal/doccheck"
 	"github.com/henriquesakata/cerne/internal/store"
@@ -14,10 +16,15 @@ const (
 	LinkDropUnknownTarget = "unknown target"
 	LinkDropSelf          = "source is target"
 	LinkDropExcerpt       = "excerpt not in the source"
+	LinkDropShort         = "excerpt too short"
 	LinkDropEdge          = "edge already exists"
 	LinkDropQueued        = "pair already suggested"
 	LinkDropDuplicate     = "duplicate in the batch"
 )
+
+// minLinkExcerptRunes is the shortest normalized excerpt that justifies a
+// relation, the importer's minimum for evidence (F-0500).
+const minLinkExcerptRunes = 12
 
 // RawLinkSuggestion is one relation as the LLM returned it.
 type RawLinkSuggestion struct {
@@ -57,12 +64,12 @@ func FilterLinkSuggestions(repoDir string, raw []RawLinkSuggestion) (kept []RawL
 	if err != nil {
 		return nil, nil, err
 	}
-	text := map[string][]string{} // source id → its documents, read on demand
-	read := func(id string) ([]string, error) {
+	text := map[string][]*doccheck.LiteralIndex{} // source id → one index per document, built on demand
+	read := func(id string) ([]*doccheck.LiteralIndex, error) {
 		if t, ok := text[id]; ok {
 			return t, nil
 		}
-		var out []string
+		var out []*doccheck.LiteralIndex
 		for _, d := range docs {
 			if d.id != id {
 				continue
@@ -71,7 +78,7 @@ func FilterLinkSuggestions(repoDir string, raw []RawLinkSuggestion) (kept []RawL
 			if err != nil {
 				return nil, err
 			}
-			out = append(out, string(b))
+			out = append(out, doccheck.NewLiteralIndex(string(b)))
 		}
 		text[id] = out
 		return out, nil
@@ -96,6 +103,9 @@ func FilterLinkSuggestions(repoDir string, raw []RawLinkSuggestion) (kept []RawL
 		case batch[pair]:
 			reason = LinkDropDuplicate
 		}
+		if reason == "" && utf8.RuneCountInString(strings.Join(strings.Fields(r.Excerpt), " ")) < minLinkExcerptRunes {
+			reason = LinkDropShort
+		}
 		if reason == "" {
 			found := false
 			contents, err := read(r.From)
@@ -103,7 +113,7 @@ func FilterLinkSuggestions(repoDir string, raw []RawLinkSuggestion) (kept []RawL
 				return nil, nil, err
 			}
 			for _, c := range contents {
-				if _, _, ok := doccheck.FindLiteral(c, r.Excerpt); ok {
+				if _, _, ok := c.Find(r.Excerpt); ok {
 					found = true
 					break
 				}
