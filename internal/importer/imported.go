@@ -2,12 +2,14 @@ package importer
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/henriquesakata/cerne/internal/doccheck"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // ImportedSources returns the set of imported_from sources already present in
@@ -15,9 +17,52 @@ import (
 // without the frontmatter key (hand-authored) contribute nothing; a missing
 // content/ directory yields an empty set.
 func ImportedSources(repoDir string) (map[string]bool, error) {
-	root := filepath.Join(repoDir, "content")
 	sources := map[string]bool{}
-	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+	err := walkImported(repoDir, func(doc []byte) {
+		if src := doccheck.FrontmatterValue(doc, "imported_from"); src != "" {
+			sources[src] = true
+		}
+	})
+	return sources, err
+}
+
+// importedItemKey identifies an agent-imported item by its origin and title.
+func importedItemKey(source, title string) string {
+	return source + "\x00" + normalizeTitle(title)
+}
+
+// importedItems returns the (imported_from, normalized title) keys of every
+// imported entity, the idempotency unit of the agent path: one source may yield
+// several entities, and only some of them may have been applied (F-0500).
+func importedItems(repoDir string) (map[string]bool, error) {
+	items := map[string]bool{}
+	var firstErr error
+	err := walkImported(repoDir, func(doc []byte) {
+		src := doccheck.FrontmatterValue(doc, "imported_from")
+		id := doccheck.FrontmatterValue(doc, "cerne_id")
+		if src == "" || id == "" {
+			return
+		}
+		m, _, err := store.LoadMeta(repoDir, id)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("loading imported entity %s: %w", id, err)
+			}
+			return
+		}
+		items[importedItemKey(src, m.Title)] = true
+	})
+	if err == nil {
+		err = firstErr
+	}
+	return items, err
+}
+
+// walkImported calls fn with every markdown document under the backend's
+// content tree; a missing content/ directory visits nothing.
+func walkImported(repoDir string, fn func(doc []byte)) error {
+	root := filepath.Join(repoDir, "content")
+	return filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
 				return nil
@@ -31,12 +76,9 @@ func ImportedSources(repoDir string) (map[string]bool, error) {
 		if err != nil {
 			return err
 		}
-		if src := doccheck.FrontmatterValue(data, "imported_from"); src != "" {
-			sources[src] = true
-		}
+		fn(data)
 		return nil
 	})
-	return sources, err
 }
 
 // Unimported splits cands into those whose Source is not yet in imported

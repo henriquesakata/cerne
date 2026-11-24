@@ -278,12 +278,13 @@ func ApplyPlan(repoDir string, items []PlanItem, actor string) (Summary, error) 
 
 // FilterPlanItems drops items already represented in the backend so
 // re-ingesting a plan is idempotent — reusing the very predicates the case-folder
-// import uses: an item whose Source was already imported (imported_from, via
-// ImportedSources) and a feature whose title already matches a registered
+// import uses: an item whose Source and title were both already imported
+// (imported_from + the entity's title, via importedItems — one source may yield
+// several items, so the file alone is not the unit) and a feature whose title already matches a registered
 // feature (the F-0045 title guard, via ExistingFeatureTitles + normalizeTitle).
 // Returns the items to apply and the number skipped.
 func FilterPlanItems(repoDir string, items []PlanItem) ([]PlanItem, int, error) {
-	imported, err := ImportedSources(repoDir)
+	imported, err := importedItems(repoDir)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -294,7 +295,7 @@ func FilterPlanItems(repoDir string, items []PlanItem) ([]PlanItem, int, error) 
 	var kept []PlanItem
 	skipped := 0
 	for _, it := range items {
-		if imported[it.Source] {
+		if imported[importedItemKey(it.Source, it.Title)] {
 			skipped++
 			continue
 		}
