@@ -399,7 +399,10 @@ func printFixTasks(w io.Writer, findings []lint.Finding) {
 // parsed: its file cannot be edited, so the task is that command.
 func taskAction(f lint.Finding) string {
 	if f.Fix != "" && f.File == "links/suggestions.json" { // F-0502: the queue is data, not an errata target
-		return "run: " + f.Fix
+		if cmd, ok := strings.CutPrefix(f.Fix, "a person runs: "); ok {
+			return "ask the project owner to run: " + cmd // rejecting a link is a human act
+		}
+		return f.Fix // an instruction, not a command
 	}
 	if f.Fix != "" {
 		return "append an errata entry (the errata is append-only): " + f.Fix

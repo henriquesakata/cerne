@@ -11,7 +11,7 @@ import (
 // accepted from a link suggestion (F-0502): the source cites a terminal entity
 // as data, not in its text. Only sources whose documents the text rules scan,
 // and not a pair the text already flagged. The fix is the command that takes
-// the relation back.
+// the relation back; rejecting is a human act, so the fix says a person runs it.
 func acceptedLinkFindings(repoDir string, docs []scannedDoc, needles []needle, textFindings []Finding) ([]Finding, error) {
 	queue, err := store.LoadLinkSuggestions(repoDir)
 	if err != nil {
@@ -47,7 +47,7 @@ func acceptedLinkFindings(repoDir string, docs []scannedDoc, needles []needle, t
 		if n.use != "" {
 			detail += " — use " + n.use
 		}
-		out = append(out, Finding{Rule: RuleRefToSuperseded, Entity: s.From, File: "links/suggestions.json", Detail: detail, Fix: fmt.Sprintf("cerne links reject %d", s.N)})
+		out = append(out, Finding{Rule: RuleRefToSuperseded, Entity: s.From, File: "links/suggestions.json", Detail: detail, Fix: fmt.Sprintf("a person runs: cerne links reject %d", s.N)})
 	}
 	return out, nil
 }

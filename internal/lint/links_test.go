@@ -60,7 +60,7 @@ func TestRefToSupersededReadsAcceptedLinks(t *testing.T) { // F-0502 crit. 8
 		t.Fatalf("findings = %+v, want 1", got)
 	}
 	f := got[0]
-	if f.File != "links/suggestions.json" || f.Fix != "cerne links reject 4" ||
+	if f.File != "links/suggestions.json" || f.Fix != "a person runs: cerne links reject 4" ||
 		!strings.Contains(f.Detail, "accepted link to D-0002") || !strings.Contains(f.Detail, "superseded") || !strings.Contains(f.Detail, "use D-0003") {
 		t.Errorf("finding = %+v", f)
 	}
