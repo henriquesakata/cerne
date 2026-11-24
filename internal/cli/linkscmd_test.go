@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -11,6 +13,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/project"
@@ -24,6 +27,7 @@ type linksFake struct {
 	prompts []string
 	answers map[string]string // source id → the JSON array it answers
 	usage   string            // the "usage" member of the response, "" for none
+	onCall  func(n int32)     // runs when call n arrives, before it answers
 }
 
 func (f *linksFake) start(t *testing.T) *httptest.Server {
@@ -36,7 +40,10 @@ func (f *linksFake) start(t *testing.T) *httptest.Server {
 		}
 		raw, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(raw, &req)
-		f.calls.Add(1)
+		n := f.calls.Add(1)
+		if f.onCall != nil {
+			f.onCall(n)
+		}
 		prompt := ""
 		if len(req.Messages) > 0 {
 			prompt = req.Messages[0].Content
@@ -335,6 +342,41 @@ func TestLinksDecisionsAreHuman(t *testing.T) { // F-0502 crit. 6
 	if q, _ := store.LoadLinkSuggestions(repoDir); q[0].Status != store.LinkOpen {
 		t.Errorf("status = %s, want open", q[0].Status)
 	}
+}
+
+// TestLinksSuggestKeepsWhatWasPaidForWhenCanceled: a cancel in the middle of
+// the round (Ctrl-C) still queues and logs what the first documents already
+// returned, then reports the cancellation.
+func TestLinksSuggestKeepsWhatWasPaidForWhenCanceled(t *testing.T) { // F-0502 crit. 4
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	fake := &linksFake{answers: map[string]string{"F-0001": linksAnswer}, usage: `{"input_tokens":120,"output_tokens":30}`}
+	fake.onCall = func(n int32) {
+		if n == 2 { // the second document: the user hits Ctrl-C while it is in flight
+			cancel()
+			time.Sleep(300 * time.Millisecond)
+		}
+	}
+	projDir, repoDir := linksProject(t, true, fake)
+	root := Root()
+	out := &bytes.Buffer{}
+	root.SetOut(out)
+	root.SetErr(out)
+	root.SetArgs([]string{"links", "suggest", "--yes", "--dir", projDir})
+	err := root.ExecuteContext(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled\n%s", err, out)
+	}
+	if q, _ := store.LoadLinkSuggestions(repoDir); len(q) != 1 {
+		t.Fatalf("queue = %+v, want the one suggestion of the first document", q)
+	}
+	evs, _ := store.ReadEvents(repoDir)
+	for _, e := range evs {
+		if e.Type == "links.suggested" && e.Payload["documents"] == "1" && e.Payload["input_tokens"] == "120" {
+			return
+		}
+	}
+	t.Errorf("no links.suggested event with the one document and its tokens: %+v", evs)
 }
 
 // TestLinksOnlySuggestAsksForSuggestions: with the switch on and an LLM

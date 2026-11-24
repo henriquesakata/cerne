@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bufio"
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -144,9 +143,9 @@ func runLinksSuggest(cmd *cobra.Command, dir string, ids []string, yes, ingest b
 			reply, err = prov.Complete(cmd.Context(), prompts[i])
 		}
 		if err != nil {
-			if errors.Is(err, context.Canceled) {
-				return err
-			}
+			// A cancel stops the round like a provider error does: what the
+			// earlier documents already returned (and cost) is queued and
+			// logged below, then the error is returned.
 			callErr = fmt.Errorf("%s: %w", s.ID, err)
 			break
 		}
