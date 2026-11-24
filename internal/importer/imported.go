@@ -2,7 +2,6 @@ package importer
 
 import (
 	"errors"
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -34,12 +33,12 @@ func importedItemKey(source, title string) string {
 // importedItems returns the (imported_from, normalized title) keys of every
 // imported entity, the idempotency unit of the agent path: one source may yield
 // several entities, and only some of them may have been applied (F-0500). A
-// doc whose entity cannot be loaded (imported by the case-folder convention, or
-// orphaned) contributes the source-only key, so every item of that source counts
-// as imported: conservative, never duplicates.
+// doc whose entity cannot be loaded for any reason (imported by the case-folder
+// convention, orphaned, malformed id, corrupt JSON) contributes the source-only
+// key, so every item of that source counts as imported: conservative, never
+// duplicates, and the importer never aborts because of it.
 func importedItems(repoDir string) (map[string]bool, error) {
 	items := map[string]bool{}
-	var firstErr error
 	err := walkImported(repoDir, func(doc []byte) {
 		src := doccheck.FrontmatterValue(doc, "imported_from")
 		if src == "" {
@@ -51,21 +50,12 @@ func importedItems(repoDir string) (map[string]bool, error) {
 			return
 		}
 		m, _, err := store.LoadMeta(repoDir, id)
-		if errors.Is(err, store.ErrNotFound) {
-			items[importedItemKey(src, "")] = true
-			return
-		}
 		if err != nil {
-			if firstErr == nil {
-				firstErr = fmt.Errorf("loading imported entity %s: %w", id, err)
-			}
+			items[importedItemKey(src, "")] = true
 			return
 		}
 		items[importedItemKey(src, m.Title)] = true
 	})
-	if err == nil {
-		err = firstErr
-	}
 	return items, err
 }
 
