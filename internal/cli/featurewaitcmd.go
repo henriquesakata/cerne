@@ -53,7 +53,9 @@ func newFeatureWaitCmd(dir *string) *cobra.Command {
 		Use:   "wait <id> --for <state>",
 		Short: "Block until a feature reaches a state (use it in the background after asking a human gate)",
 		Long: "Blocks until the feature reaches --for (approved, in_development, implemented, done, rejected, superseded), " +
-			"then prints one line — the transition, who made it and when, and the next step — and exits 0. A state at or past " +
+			"then prints one line — the transition, who made it and when, and the next step — and exits 0; the wait is what wakes a stopped session. " +
+			"Without it the move still reaches you: a human's approve, accept, reject, revert or supersede leaves that line as a card notice " +
+			"the card's sessions see once, at their next turn or tool call (F-0504). A state at or past " +
 			"--for on the forward path counts as reached; an approved feature whose approval went stale (its spec changed) " +
 			"is not approved until a human re-approves it. Exit 2: the state became unreachable (e.g. rejected while waiting " +
 			"for approved). Exit 3: --timeout ran out (--timeout 0 checks once). It refreshes the backend clone every " +
