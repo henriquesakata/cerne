@@ -1,7 +1,6 @@
 package app
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -96,10 +95,9 @@ func TakeNotices(cacheDir, sess string, now time.Time) string {
 		return ""
 	}
 	var b strings.Builder
-	sc := bufio.NewScanner(bytes.NewReader(data))
-	for sc.Scan() {
+	for _, raw := range bytes.Split(data, []byte("\n")) {
 		var n notice
-		if json.Unmarshal(sc.Bytes(), &n) != nil || now.Sub(n.At) > channelTTL {
+		if json.Unmarshal(raw, &n) != nil || now.Sub(n.At) > channelTTL {
 			continue
 		}
 		b.WriteString("- " + n.Line + "\n")

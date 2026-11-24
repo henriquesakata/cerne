@@ -168,7 +168,7 @@ func runHookChannel(cmd *cobra.Command, point string) {
 	if consume {
 		fmt.Fprint(cmd.OutOrStdout(), sessionBoard(cfg.ProjectID, cfg.RecentWorkWindowDays()))
 	}
-	block := channelBlock(cfg.ProjectID, in.SessionID, consume)
+	block := startBlock(cfg.ProjectID, in.SessionID, consume)
 	if point == "subagent" {
 		if task := sessionTask(cfg.ProjectID, in.SessionID, in.AgentID); task != "" {
 			if block != "" {
@@ -283,23 +283,34 @@ func staleProviders(projDir string, names []string) []hooks.Provider {
 	return ps
 }
 
-// channelBlock is session sess's pending card notices (F-0504) and channel
-// block for the project, "" when there is nothing to deliver or on any error
-// (fail-open, N-0021). A peek (a subagent) leaves the notices to the session.
+// channelBlock is session sess's pending channel block for the project, ""
+// when there is nothing to deliver or on any error (fail-open, N-0021).
 func channelBlock(projectID, sess string, consume bool) string {
 	cacheDir, err := project.CacheDir(projectID)
 	if err != nil {
 		return ""
 	}
-	now := time.Now().UTC()
-	block, err := app.ChannelInject(cacheDir, filepath.Join(cacheDir, "repo"), sess, consume, now)
+	block, err := app.ChannelInject(cacheDir, filepath.Join(cacheDir, "repo"), sess, consume, time.Now().UTC())
 	if err != nil {
-		block = ""
-	}
-	if consume {
-		block = withChannel(app.TakeNotices(cacheDir, sess, now), nil, block)
+		return ""
 	}
 	return block
+}
+
+// startBlock is channelBlock at a hook's session start, led by the session's
+// card notices (F-0504). Only hooks take the notices: a hook tells a subagent
+// apart (its peek, an agent_id), while `cerne next` inside a subagent runs
+// under the parent's CERNE_SESSION and would hand the parent's notices away.
+func startBlock(projectID, sess string, consume bool) string {
+	block := channelBlock(projectID, sess, consume)
+	if !consume {
+		return block
+	}
+	cacheDir, err := project.CacheDir(projectID)
+	if err != nil {
+		return block
+	}
+	return withChannel(app.TakeNotices(cacheDir, sess, time.Now().UTC()), nil, block)
 }
 
 // channelThen puts session sess's card notices (F-0504) and pending channel

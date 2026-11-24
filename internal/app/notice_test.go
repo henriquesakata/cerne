@@ -267,3 +267,20 @@ func TestTransitionNoticeLeavesChannel(t *testing.T) {
 		t.Fatalf("ChannelWake = %q, %v; want nothing", wake, err)
 	}
 }
+
+// TestNoticeTakeLongLine (F-0504 crit. 5): a notice longer than a scanner's
+// 64 KiB token still comes out, and so does the one after it.
+func TestNoticeTakeLongLine(t *testing.T) {
+	cacheDir := t.TempDir()
+	now := time.Now().UTC()
+	long := "F-0001: " + strings.Repeat("x", 70<<10)
+	for _, line := range []string{long, "F-0002: after"} {
+		if err := appendNotice(cacheDir, "s", notice{Entity: line[:6], Line: line, At: now}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := TakeNotices(cacheDir, "s", now)
+	if !strings.Contains(got, long) || !strings.Contains(got, "F-0002: after") {
+		t.Fatalf("TakeNotices dropped a notice (%d bytes back)", len(got))
+	}
+}

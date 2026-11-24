@@ -816,3 +816,24 @@ func TestHookNoticesAtContactPoints(t *testing.T) {
 		}
 	})
 }
+
+// TestNextLeavesCardNotices (F-0504 crit. 5): `cerne next` and `status
+// --active` never take the card notices. A subagent inherits its parent's
+// CERNE_SESSION and the CLI cannot tell it apart, so taking them there would
+// hand the parent's notices to a subagent; the hook before the command shows
+// them to the session instead.
+func TestNextLeavesCardNotices(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	startBoundWork(t, projDir, repoDir, "sess-a", "Mexer no servidor")
+	const line = "F-0001: candidate → approved by local"
+	seedCardNotice(t, repoDir, "sess-a", line)
+	t.Setenv("CERNE_SESSION", "sess-a")
+	for _, args := range [][]string{{"next", "--dir", projDir}, {"status", "--active", "--dir", projDir}} {
+		if out, err := execCerne(t, args...); err != nil || strings.Contains(out, line) {
+			t.Fatalf("%v took the card notice (%v):\n%s", args, err, out)
+		}
+	}
+	if out, err := execCerneStdin(t, bashJSON(t, "sess-a", projDir, "cerne next"), "hook", "tool-notes"); err != nil || !strings.Contains(out, line) {
+		t.Fatalf("the hook before the command lost the notice (%v):\n%s", err, out)
+	}
+}

@@ -319,7 +319,7 @@ func runHookSessionContext(cmd *cobra.Command, format string) {
 		}
 	}
 	if ours {
-		if block := channelBlock(cfg.ProjectID, in.SessionID, true); block != "" {
+		if block := startBlock(cfg.ProjectID, in.SessionID, true); block != "" {
 			text += "\n\n" + block
 		}
 	}
