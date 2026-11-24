@@ -7,8 +7,10 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"mime"
 	"net"
+	"net/http"
 	"slices"
 	"strconv"
 	"strings"
@@ -19,6 +21,7 @@ import (
 
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/version"
 )
 
 // referenceTextHash returns the SHA-256 (hex) of what a reader of the page sees
@@ -237,6 +240,43 @@ func recordGone(r *store.Reference, status int, detail string, now time.Time) Ch
 	}
 	r.Check = &c
 	return CheckResult{Result: "gone", Status: status, Detail: detail}
+}
+
+const maxCheckBody = 5 << 20
+
+// NewHTTPFetcher is the real Fetcher: a plain GET with a generic User-Agent,
+// no cookie jar and no credentials, redirects followed, the body cut at 5 MiB
+// and each call bound by timeout. The environment proxy is kept.
+func NewHTTPFetcher(timeout time.Duration) Fetcher {
+	client := &http.Client{
+		Transport: http.DefaultTransport.(*http.Transport).Clone(),
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return errors.New("stopped after 10 redirects")
+			}
+			req.Header.Del("Referer") // Go adds it on a redirect; send nothing
+			return nil
+		},
+	}
+	return func(ctx context.Context, url string) (FetchResponse, error) {
+		ctx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return FetchResponse{}, err
+		}
+		req.Header.Set("User-Agent", "cerne/"+version.Version)
+		resp, err := client.Do(req)
+		if err != nil {
+			return FetchResponse{}, err
+		}
+		defer resp.Body.Close()
+		body, err := io.ReadAll(io.LimitReader(resp.Body, maxCheckBody))
+		if err != nil {
+			return FetchResponse{}, err
+		}
+		return FetchResponse{Status: resp.StatusCode, ContentType: resp.Header.Get("Content-Type"), Body: body}, nil
+	}
 }
 
 // ErrReferenceNotChanged refuses `reference keep` on a reference whose last

@@ -5,10 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/henriquesakata/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/version"
 )
 
 // F-0501 crit. 4: the hash is of the visible text, not of the raw HTML.
@@ -221,6 +225,69 @@ func TestCheckReferencesTransient(t *testing.T) {
 				t.Fatalf("last event = %+v", last)
 			}
 		})
+	}
+}
+
+// F-0501 crit. 9: the request is a bare GET for the URL with the generic
+// User-Agent and nothing else that identifies the user or the project.
+func TestHTTPFetcherSendsOnlyTheURL(t *testing.T) {
+	var got *http.Request
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte("<p>hi</p>"))
+	}))
+	defer srv.Close()
+	resp, err := NewHTTPFetcher(5 * time.Second)(context.Background(), srv.URL+"/page?x=1")
+	if err != nil || resp.Status != 200 || resp.ContentType != "text/html" || string(resp.Body) != "<p>hi</p>" {
+		t.Fatalf("resp = %+v, %v", resp, err)
+	}
+	if got.Method != "GET" || got.URL.RequestURI() != "/page?x=1" {
+		t.Fatalf("request = %s %s", got.Method, got.URL.RequestURI())
+	}
+	if ua := got.Header.Get("User-Agent"); ua != "cerne/"+version.Version {
+		t.Fatalf("User-Agent = %q", ua)
+	}
+	for _, h := range []string{"Cookie", "Authorization", "Referer"} {
+		if v := got.Header.Get(h); v != "" {
+			t.Errorf("%s = %q, want none", h, v)
+		}
+	}
+	if got.ContentLength > 0 {
+		t.Errorf("request body sent (%d bytes)", got.ContentLength)
+	}
+}
+
+// F-0501 crit. 9: each URL is bound by the timeout.
+func TestHTTPFetcherTimesOut(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	defer srv.Close()
+	defer close(release)
+	start := time.Now()
+	_, err := NewHTTPFetcher(50 * time.Millisecond)(context.Background(), srv.URL)
+	if err == nil || time.Since(start) > 3*time.Second {
+		t.Fatalf("err = %v after %v, want a quick timeout error", err, time.Since(start))
+	}
+	if transientReason(err) != "timeout" {
+		t.Fatalf("reason = %q, want timeout", transientReason(err))
+	}
+}
+
+// F-0501 crit. 9: a body over 5 MiB is cut, not downloaded whole.
+func TestHTTPFetcherCapsTheBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(make([]byte, 6<<20))
+	}))
+	defer srv.Close()
+	resp, err := NewHTTPFetcher(10 * time.Second)(context.Background(), srv.URL)
+	if err != nil || len(resp.Body) != 5<<20 {
+		t.Fatalf("len = %d, err = %v, want 5 MiB", len(resp.Body), err)
 	}
 }
 
