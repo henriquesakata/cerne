@@ -64,7 +64,7 @@ func TestArchiveGateIgnoreIsCaseInsensitive(t *testing.T) {
 // a page to anyone holding the link are skipped, subdomains included.
 func TestArchiveGateMoreShareLinkHosts(t *testing.T) {
 	for _, h := range []string{
-		"chatgpt.com", "chat.openai.com", "claude.ai", "pastebin.com", "photos.google.com", "photos.app.goo.gl",
+		"pastebin.com", "photos.google.com", "photos.app.goo.gl",
 		"goo.gl", "canva.com", "miro.com", "hackmd.io", "ngrok.io", "ngrok.app", "ngrok-free.app", "trycloudflare.com",
 	} {
 		for _, host := range []string{h, "abc123." + h} {

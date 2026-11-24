@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"net/http"
 	"net/url"
 	"slices"
@@ -37,6 +38,29 @@ func TestLoginPageQuery(t *testing.T) {
 		}
 		if got := loginPage(u); got != tc.want {
 			t.Errorf("loginPage(%s) = %v, want %v", tc.u, got, tc.want)
+		}
+	}
+}
+
+// F-0503 crit. 6: the chat-share hosts match exactly, so the public docs on a
+// subdomain (learn.chatgpt.com) pass the share check; the webhook, tunnel,
+// editor and storage hosts match with their subdomains.
+func TestArchiveGateShareLinkRound3(t *testing.T) {
+	for _, h := range []string{"chatgpt.com", "chat.openai.com", "claude.ai"} {
+		if st, why := gateArchive(context.Background(), extRef("https://"+h+"/share/x"), true, nil, offlineNet(t)); st != archiveSkipped || why != "share link host" {
+			t.Errorf("%s: %s (%s), want skipped (share link host)", h, st, why)
+		}
+	}
+	for _, h := range []string{"learn.chatgpt.com", "www.chatgpt.com", "help.openai.com", "docs.claude.ai", "developers.openai.com"} {
+		if shareLinkHost(h) {
+			t.Errorf("shareLinkHost(%s) = true, want false", h)
+		}
+	}
+	for _, h := range []string{"excalidraw.com", "mega.nz", "loca.lt", "app.github.dev", "githubpreview.dev", "webhook.office.com", "hooks.zapier.com", "maker.ifttt.com"} {
+		for _, host := range []string{h, "abc123." + h} {
+			if st, why := gateArchive(context.Background(), extRef("https://"+host+"/x"), true, nil, offlineNet(t)); st != archiveSkipped || why != "share link host" {
+				t.Errorf("%s: %s (%s), want skipped (share link host)", host, st, why)
+			}
 		}
 	}
 }
