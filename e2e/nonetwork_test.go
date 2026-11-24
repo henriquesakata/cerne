@@ -83,8 +83,9 @@ func TestMapAndTagsNeverTouchTheNetwork(t *testing.T) {
 	}
 }
 
-// F-0501 criteria 7 and 8: only `reference check` reaches the network; lint,
-// pull and push read what the last check recorded. The reference URL is plain
+// F-0501 criteria 7 and 8: lint, pull and push make no HTTP(S) request through
+// the environment proxy (the backend is a local bare repo, so git traffic is not
+// covered); only `reference check` is seen going through it. The reference URL is plain
 // http and not loopback, so the proxy sees it (N-0130). Phase 1 is the positive
 // control: the proxy answers 404 and the check goes through it and records gone.
 // Phase 2: the proxy fails the test on any request while lint, pull and push run.
