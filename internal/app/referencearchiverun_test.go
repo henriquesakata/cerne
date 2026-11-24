@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -384,7 +385,12 @@ func TestArchiveReferencesSendOnlyTheURL(t *testing.T) {
 		if !strings.Contains(d, pageURL) && !strings.Contains(d, "url=https%3A%2F%2Fdocs.publicsite.org%2Fguide%3Flang%3Den") {
 			t.Errorf("request %d lacks the page URL:\n%s", i, d)
 		}
-		for _, leak := range []string{title, "Zephyr", summary, "classified", "R-0001", "F-0001", proj.Name, "Cookie", "Authorization", "Referer"} {
+		created := loadRef(t, repoDir, "R-0001").CreatedAt
+		leaks := []string{title, "Zephyr", summary, "classified", "R-0001", "F-0001", proj.Name, "Cookie", "Authorization", "Referer",
+			// F-0503 crit. 3: the registration date, in any format, never reaches the service
+			created.Format("2006-01-02"), created.Format("20060102"), created.Format(time.RFC3339)[:16], created.Format("Jan 2, 2006"),
+			strconv.FormatInt(created.Unix(), 10)[:8], created.Format("02/01/2006"), created.Format("2006/01/02")}
+		for _, leak := range leaks {
 			if strings.Contains(d, leak) {
 				t.Errorf("request %d carries %q:\n%s", i, leak, d)
 			}

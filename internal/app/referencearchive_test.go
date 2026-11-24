@@ -154,6 +154,29 @@ func TestWaybackCaptures(t *testing.T) {
 	}
 }
 
+// F-0503 crit. 3: the capture-list request carries exactly the six expected
+// query parameters, each once, and nothing else: no date, no id, no body.
+func TestWaybackCapturesQueryIsExact(t *testing.T) {
+	f := newFakeWayback(t, func(w http.ResponseWriter, r *http.Request) {})
+	if _, err := f.client().Captures(context.Background(), pageURL); err != nil {
+		t.Fatal(err)
+	}
+	r := f.reqs[0]
+	q := r.URL.Query()
+	want := map[string]string{"url": pageURL, "output": "json", "fl": "timestamp,original,statuscode", "filter": "statuscode:200", "collapse": "timestamp:8"}
+	if len(q) != len(want) {
+		t.Errorf("query has %d parameters (%s), want %d", len(q), r.URL.RawQuery, len(want))
+	}
+	for k, v := range want {
+		if got := q[k]; len(got) != 1 || got[0] != v {
+			t.Errorf("parameter %s = %v, want [%s]", k, got, v)
+		}
+	}
+	if r.Method != http.MethodGet || r.ContentLength > 0 || r.URL.Fragment != "" {
+		t.Errorf("request = %s with %d bytes of body", r.Method, r.ContentLength)
+	}
+}
+
 // F-0503 crit. 10: a copy link that is not https://web.archive.org/web/<timestamp>/
 // counts as no copy from Save.
 func TestWaybackRefusesAForeignCopyLink(t *testing.T) {
