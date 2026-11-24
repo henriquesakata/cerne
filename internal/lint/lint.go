@@ -376,6 +376,12 @@ func RunConfig(repoDir string, staleReadyDays, staleWorkHours, staleDecisionDays
 		}
 	}
 
+	accepted, err := acceptedLinkFindings(repoDir, docs, needles, findings)
+	if err != nil {
+		return nil, err
+	}
+	findings = append(findings, accepted...)
+
 	orphans, err := orphanFindings(repoDir, features, decisions, references, runbooks, notes)
 	if err != nil {
 		return nil, err
