@@ -429,7 +429,7 @@ func shareLinkHost(host string) bool {
 // block. An IPv4 address mapped into IPv6 is judged as IPv4 by Contains.
 var specialUse = func() (nets []*net.IPNet) {
 	for _, c := range []string{"0.0.0.0/8", "100.64.0.0/10", "192.0.0.0/24", "192.0.2.0/24", "198.18.0.0/15",
-		"198.51.100.0/24", "203.0.113.0/24", "240.0.0.0/4", "2001:db8::/32"} {
+		"198.51.100.0/24", "203.0.113.0/24", "240.0.0.0/4", "2001:db8::/32", "2001::/32"} {
 		_, n, _ := net.ParseCIDR(c)
 		nets = append(nets, n)
 	}
@@ -443,6 +443,10 @@ func publicIP(ip net.IP) bool {
 		// NAT64 (64:ff9b::/96) and 6to4 (2002::/16) carry an IPv4 address: judge that one.
 		if ip[0] == 0 && ip[1] == 0x64 && ip[2] == 0xff && ip[3] == 0x9b && slices.Equal(ip[4:12], make([]byte, 8)) {
 			return publicIP(net.IP(ip[12:16]))
+		}
+		// local-use NAT64, 64:ff9b:1::/48: RFC 6052 puts the IPv4 in bytes 6, 7, 9, 10
+		if ip[0] == 0 && ip[1] == 0x64 && ip[2] == 0xff && ip[3] == 0x9b && ip[4] == 0 && ip[5] == 1 {
+			return publicIP(net.IP{ip[6], ip[7], ip[9], ip[10]})
 		}
 		if ip[0] == 0x20 && ip[1] == 0x02 {
 			return publicIP(net.IP(ip[2:6]))
