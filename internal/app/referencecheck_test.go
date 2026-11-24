@@ -318,6 +318,32 @@ func TestHTTPFetcherSendsOnlyTheURL(t *testing.T) {
 	}
 }
 
+// F-0501 crit. 9: nothing that identifies the user follows a redirect.
+func TestHTTPFetcherRedirectCarriesNoReferer(t *testing.T) {
+	var seen *http.Request
+	b := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = r
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer b.Close()
+	a := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, b.URL+"/final", http.StatusFound)
+	}))
+	defer a.Close()
+	resp, err := NewHTTPFetcher(5 * time.Second)(context.Background(), a.URL+"/start")
+	if err != nil || resp.Status != 200 || seen == nil {
+		t.Fatalf("resp = %+v, %v, seen = %v", resp, err, seen)
+	}
+	for _, h := range []string{"Referer", "Cookie", "Authorization"} {
+		if v := seen.Header.Get(h); v != "" {
+			t.Errorf("%s = %q after the redirect, want none", h, v)
+		}
+	}
+	if ua := seen.Header.Get("User-Agent"); ua != "cerne/"+version.Version {
+		t.Errorf("User-Agent = %q after the redirect", ua)
+	}
+}
+
 // F-0501 crit. 9: each URL is bound by the timeout.
 func TestHTTPFetcherTimesOut(t *testing.T) {
 	release := make(chan struct{})
