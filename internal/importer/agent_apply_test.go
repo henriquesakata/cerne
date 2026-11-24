@@ -76,9 +76,9 @@ func TestApplyPlanDeliveredDoneWritesOnlyImportedEvents(t *testing.T) {
 	if err := store.InitLayout(repo, store.Project{Name: "t"}); err != nil {
 		t.Fatal(err)
 	}
-	items := []PlanItem{validItem("feature"), validItem("decision")}
-	SetPlanDelivered(items, "done")
-	if _, err := ApplyPlan(repo, withSpans(items), "tester"); err != nil {
+	items := withSpans([]PlanItem{validItem("feature"), validItem("decision")})
+	SetAnchoredDelivered(items, "done")
+	if _, err := ApplyPlan(repo, items, "tester"); err != nil {
 		t.Fatal(err)
 	}
 	f, err := store.LoadFeature(repo, "F-0001")

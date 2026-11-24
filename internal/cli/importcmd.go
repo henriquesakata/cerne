@@ -425,7 +425,7 @@ func runImportAgentIngest(cmd *cobra.Command, ctx projCtx, root, delivered, deli
 
 	// Dry-run: show the plan, write nothing.
 	if !yes {
-		setAnchoredDelivered(anchored, askDeliveredState(cmd, delivered, yes, countAnchoredDelivered(anchored), deliveredState))
+		importer.SetAnchoredDelivered(anchored, askDeliveredState(cmd, delivered, yes, countAnchoredDelivered(anchored), deliveredState))
 		printAgentPlan(out, anchored, unanchored, skipped, root)
 		return nil
 	}
@@ -435,7 +435,7 @@ func runImportAgentIngest(cmd *cobra.Command, ctx projCtx, root, delivered, deli
 		fmt.Fprintln(out, "Nothing applied.")
 		return nil
 	}
-	setAnchoredDelivered(anchored, deliveredState)
+	importer.SetAnchoredDelivered(anchored, deliveredState)
 	sum, err := importer.ApplyPlan(ctx.repoDir, anchored, app.EventActor())
 	if err != nil {
 		return err
@@ -464,16 +464,6 @@ func runImportAgentIngest(cmd *cobra.Command, ctx projCtx, root, delivered, deli
 		printLeftOut(out, fmt.Sprintf("Left out %d item(s) without an anchor:", len(unanchored)), unanchored, root)
 	}
 	return nil
-}
-
-// setAnchoredDelivered sets the delivered state on the anchored items mapped
-// as delivered features.
-func setAnchoredDelivered(items []importer.AnchoredItem, state string) {
-	for i := range items {
-		if importer.IsPlanDelivered(items[i].PlanItem) {
-			items[i].State = state
-		}
-	}
 }
 
 func countAnchoredDelivered(items []importer.AnchoredItem) int {
