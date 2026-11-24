@@ -236,7 +236,7 @@ var settingsRegistry = []Setting{
 	{
 		ID: "references.archive", Group: "integrations", Title: "Archive public sources", Type: "bool", Default: false,
 		Scopes: []string{ScopeProject, ScopeHost}, HumanOnly: true,
-		Description: "On, cerne reference new and cerne reference archive send the URL of an external reference, and nothing else, to the Wayback Machine of the Internet Archive and keep the link of the dated copy. Only a page proven public is sent: never an internal host, an ignored source, a URL with a secret or credentials, or a page an anonymous request cannot read; a reference registered with --no-archive is never sent. Off sends nothing. An agent cannot change this key through cerne settings: it is the project owner's decision.",
+		Description: "On, cerne reference new and cerne reference archive send the URL of an external reference, and nothing else, to the Wayback Machine of the Internet Archive and keep the link of the dated copy. Only a page that answers 200 to an anonymous request is sent: never an internal host, an ignored source, a share-link host, a URL with a secret or credentials, or a page an anonymous request cannot read; a reference registered with --no-archive is never sent. A private page that answers 200 to anyone holding its link still passes, so review cerne reference archive --dry-run before the first real run. Off sends nothing. An agent cannot change this key through cerne settings: it is the project owner's decision.",
 	},
 	{
 		ID: "ui.update_check", Group: "interface", Title: "Check for a new release", Type: "bool", Default: true,

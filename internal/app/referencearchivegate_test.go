@@ -143,6 +143,36 @@ func TestArchiveGateResolvesTheHost(t *testing.T) {
 	}
 }
 
+// F-0503 crit. 6: a share-link host answers 200 to anyone holding the link, so
+// it is skipped before any network use, and a redirect to one is not public.
+func TestArchiveGateShareLinkHosts(t *testing.T) {
+	for _, u := range []string{
+		"https://docs.google.com/document/d/abc/edit", "https://drive.google.com/file/d/abc/view",
+		"https://acme.sharepoint.com/:w:/s/team/abc", "https://acme-my.sharepoint.com/personal/x",
+		"https://onedrive.live.com/?id=abc", "https://1drv.ms/w/s!abc", "https://dropbox.com/s/abc/f.pdf",
+		"https://www.dropbox.com/scl/fi/abc", "https://box.com/s/abc", "https://app.box.com/s/abc",
+		"https://gist.github.com/someone/abc", "https://notion.so/acme/Plan-abc", "https://www.notion.so/Plan-abc",
+		"https://acme.notion.site/Plan-abc", "https://figma.com/file/abc", "https://www.figma.com/design/abc",
+		"https://loom.com/share/abc", "https://www.loom.com/share/abc", "https://acme.slack.com/archives/C1/p2",
+		"https://teams.microsoft.com/l/message/abc", "https://DOCS.GOOGLE.COM./document/d/abc",
+	} {
+		if st, why := gateArchive(context.Background(), extRef(u), true, nil, offlineNet(t)); st != archiveSkipped || why != "share link host" {
+			t.Errorf("%s: %s (%s), want skipped (share link host)", u, st, why)
+		}
+	}
+	for _, h := range []string{"www.google.com", "github.com", "notion-tips.org", "mybox.com"} {
+		if shareLinkHost(h) {
+			t.Errorf("%s: flagged as a share-link host", h)
+		}
+	}
+	n := offlineNet(t)
+	n.LookupIP = publicLookup
+	n.Transport = handlerTransport(redirectTo("https://docs.google.com/document/d/abc/edit"))
+	if st, why := gateArchive(context.Background(), extRef("https://docs.publicsite.org/guide"), true, nil, n); st != archiveNotPublic || why != "share link host" {
+		t.Errorf("redirect to a share link: %s (%s), want not_public (share link host)", st, why)
+	}
+}
+
 // F-0503 crit. 6: only a final 200 to an anonymous GET passes; 401, 403, 404
 // and a redirect to a login page or an internal host are not public.
 func TestPublicProofRefusesWhatIsNotPublic(t *testing.T) {

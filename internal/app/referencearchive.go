@@ -311,6 +311,8 @@ func gateArchive(ctx context.Context, r store.Reference, on bool, ignore []strin
 	switch {
 	case sourceurl.Internal(r.URL, ignore) || reservedHost(u.Hostname()):
 		return archiveSkipped, "internal host"
+	case shareLinkHost(u.Hostname()):
+		return archiveSkipped, "share link host"
 	case u.User != nil:
 		return archiveSkipped, "credentials in URL"
 	case sourceurl.HasSecret(r.URL):
@@ -337,6 +339,29 @@ func reservedHost(host string) bool {
 	}
 	for _, s := range reservedSuffixes {
 		if strings.HasSuffix(host, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// shareLinkDomains serve documents to anyone holding the link: such a page
+// answers 200 to an anonymous GET and is still private.
+// ponytail: a fixed list, matched with its subdomains (www.figma.com,
+// acme.slack.com; bare slack.com is over-blocked too). An unlisted page on any
+// other host, reachable by link only, still passes the proof; extend the list,
+// and review reference archive --dry-run before a real run.
+var shareLinkDomains = []string{
+	"docs.google.com", "drive.google.com", "sharepoint.com", "onedrive.live.com", "1drv.ms",
+	"dropbox.com", "box.com", "gist.github.com", "notion.so", "notion.site", "figma.com",
+	"loom.com", "slack.com", "teams.microsoft.com",
+}
+
+// shareLinkHost reports a host that serves documents to anyone with the link.
+func shareLinkHost(host string) bool {
+	host = strings.TrimSuffix(strings.ToLower(host), ".")
+	for _, d := range shareLinkDomains {
+		if host == d || strings.HasSuffix(host, "."+d) {
 			return true
 		}
 	}
@@ -406,6 +431,8 @@ func hopRefusal(u *url.URL, ignore []string) string {
 	switch {
 	case loginPage(u):
 		return "login page"
+	case shareLinkHost(u.Hostname()):
+		return "share link host"
 	case u.Scheme != "http" && u.Scheme != "https", sourceurl.Internal(u.String(), ignore), reservedHost(u.Hostname()):
 		return "redirects to an internal host"
 	}
