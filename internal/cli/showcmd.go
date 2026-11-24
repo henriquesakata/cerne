@@ -778,11 +778,9 @@ func (r showResult) renderText(w io.Writer) {
 			fmt.Fprintf(w, "reason: %s\n", e.Reason)
 		}
 	}
-	if from, anchor := importProvenance(r.content); from != "" {
+	if from, anchor := importProvenance(r.content); anchor != "" {
 		fmt.Fprintf(w, "imported from: %s\n", from)
-		if anchor != "" {
-			fmt.Fprintf(w, "anchor: %s\n", anchor)
-		}
+		fmt.Fprintf(w, "anchor: %s\n", anchor)
 	}
 	for _, d := range r.content {
 		if d.name != "" {
@@ -918,11 +916,12 @@ type showDocJSON struct {
 }
 
 // importProvenance reads the imported_from and imported_anchor frontmatter of
-// the entity's content (F-0500); both are empty for an entity not imported.
+// the entity's content (F-0500); both are empty unless the doc carries an
+// anchor, so an entity imported by the case-folder convention shows as before.
 func importProvenance(content []showDoc) (from, anchor string) {
 	for _, d := range content {
-		if from = doccheck.FrontmatterValue([]byte(d.body), "imported_from"); from != "" {
-			return from, doccheck.FrontmatterValue([]byte(d.body), "imported_anchor")
+		if anchor = doccheck.FrontmatterValue([]byte(d.body), "imported_anchor"); anchor != "" {
+			return doccheck.FrontmatterValue([]byte(d.body), "imported_from"), anchor
 		}
 	}
 	return "", ""
