@@ -415,13 +415,17 @@ func resolvesPublic(ctx context.Context, host string, lookup func(context.Contex
 
 const proofTimeout = 15 * time.Second
 
-// loginHosts and loginSegments recognize a login page.
-// ponytail: a handful of hosts and path words; a private page that answers 200
-// without redirecting to one passes. Upgrade path: per-host rules or a
-// login-form sniff of the body.
+// loginHosts and the segment rules recognize a login page: a path segment that
+// contains one of loginWords, starts with one of loginPrefixes or is one of
+// loginExact (wp-login.php, login.jsp, login.action, /oauth2/authorize).
+// ponytail: a handful of hosts and path words, over-blocking on purpose; a
+// private page that answers 200 without redirecting to one passes. Upgrade
+// path: per-host rules or a login-form sniff of the body.
 var (
 	loginHosts    = []string{"accounts.google.com", "login.microsoftonline.com", "login.live.com", "id.atlassian.com"}
-	loginSegments = []string{"login", "signin", "sign_in", "sign-in", "sso", "oauth", "sessions"}
+	loginWords    = []string{"login", "logon", "signin", "sign-in", "sign_in"}
+	loginPrefixes = []string{"oauth", "openid", "saml", "sso"}
+	loginExact    = []string{"auth", "authorize", "cas", "sessions"}
 )
 
 func loginPage(u *url.URL) bool {
@@ -429,7 +433,9 @@ func loginPage(u *url.URL) bool {
 		return true
 	}
 	for _, seg := range strings.Split(strings.ToLower(u.Path), "/") {
-		if slices.Contains(loginSegments, seg) {
+		if slices.Contains(loginExact, seg) ||
+			slices.ContainsFunc(loginWords, func(w string) bool { return strings.Contains(seg, w) }) ||
+			slices.ContainsFunc(loginPrefixes, func(p string) bool { return strings.HasPrefix(seg, p) }) {
 			return true
 		}
 	}
