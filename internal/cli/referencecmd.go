@@ -83,6 +83,9 @@ func printReferenceChecks(w io.Writer, res []app.CheckResult) {
 		if (r.Result == "changed" || r.Result == "gone") && len(r.Informs) > 0 {
 			line += "  informs " + strings.Join(r.Informs, ", ")
 		}
+		if (r.Result == "changed" || r.Result == "gone") && r.Archive != "" {
+			line += "  archive: " + r.Archive
+		}
 		fmt.Fprintln(w, line)
 	}
 	fmt.Fprintf(w, "checked %d: %d ok, %d changed, %d gone, %d transient\n",
@@ -415,6 +418,9 @@ func runReferenceList(cmd *cobra.Command, dir string, all, asJSON bool, facet, c
 		}
 		if r.URL != "" {
 			tags = append(tags, r.URL)
+		}
+		if a := r.Archive; a != nil && a.Status == "archived" {
+			tags = append(tags, "archive "+a.URL+" "+a.CapturedAt.Format(time.DateOnly))
 		}
 		if m := matched[r.ID]; m != nil {
 			tags = append(tags, "matched "+strings.Join(m, ","))
