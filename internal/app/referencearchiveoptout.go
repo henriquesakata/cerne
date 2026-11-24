@@ -3,13 +3,35 @@ package app
 import (
 	"errors"
 	"fmt"
+	"net/url"
+	"strings"
 
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/dupmatch"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // ErrOptOutNeedsIDs refuses `reference archive --opt-out` with no reference named.
 var ErrOptOutNeedsIDs = errors.New("--opt-out needs the ids of the references to keep out of the archive")
+
+// optOutKey is the identity of a URL for the opt-out: the duplicate guard's
+// normalization without the utm_* campaign parameters, so a tagged copy of the
+// link is the same page.
+func optOutKey(raw string) string {
+	n := dupmatch.NormalizeURL(raw)
+	u, err := url.Parse(n)
+	if err != nil || u.RawQuery == "" {
+		return n
+	}
+	q := u.Query()
+	for k := range q {
+		if strings.HasPrefix(strings.ToLower(k), "utm_") {
+			q.Del(k)
+		}
+	}
+	u.RawQuery = q.Encode()
+	return u.String()
+}
 
 // OptOutReferences marks the named external references no-archive (F-0503
 // crit. 7): the field and a reference.archive_opt_out event that carries the

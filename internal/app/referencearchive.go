@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/henriquesakata/cerne/internal/domain"
-	"github.com/henriquesakata/cerne/internal/dupmatch"
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/sourceurl"
 	"github.com/henriquesakata/cerne/internal/store"
@@ -295,11 +294,11 @@ func referencesToArchive(repoDir string, ids []string) ([]store.Reference, error
 			if u == "" {
 				u = urlOf[e.EntityID]
 			}
-			optedOutURL[dupmatch.NormalizeURL(u)] = true
+			optedOutURL[optOutKey(u)] = true
 		}
 	}
 	for i, r := range refs {
-		refs[i].NoArchive = r.NoArchive || optedOutID[r.ID] || optedOutURL[dupmatch.NormalizeURL(r.URL)]
+		refs[i].NoArchive = r.NoArchive || optedOutID[r.ID] || optedOutURL[optOutKey(r.URL)]
 	}
 	if len(ids) > 0 {
 		return refs, nil

@@ -34,6 +34,28 @@ func TestOptOutReferencesMarksExistingOnes(t *testing.T) {
 	}
 }
 
+// F-0503 crit. 7: the opt-out key drops utm_* parameters, so registering the
+// URL again with a campaign tag, or with www., is still barred; another query
+// is another page.
+func TestArchiveOptOutKeyDropsUTM(t *testing.T) {
+	repoDir, projDir := archiveBackend(t, 4, true)
+	if _, err := OptOutReferences(repoDir, projDir, []string{"R-0001"}); err != nil {
+		t.Fatal(err)
+	}
+	setRef(t, repoDir, projDir, "R-0001", func(r *store.Reference) { r.State = domain.ReferenceObsolete })
+	setRef(t, repoDir, projDir, "R-0002", func(r *store.Reference) { r.URL = "https://example.com/1?utm_source=x&UTM_medium=mail" })
+	setRef(t, repoDir, projDir, "R-0003", func(r *store.Reference) { r.URL = "https://www.example.com/1?utm_campaign=c" })
+	setRef(t, repoDir, projDir, "R-0004", func(r *store.Reference) { r.URL = "https://example.com/1?page=2&utm_source=x" })
+	c := &scriptClient{save: saves, captures: noCaptures}
+	res, err := ArchiveReferences(repoDir, projDir, nil, publicNet(c), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res) != 1 || res[0].ID != "R-0004" {
+		t.Errorf("batch took %+v, want only R-0004 (another query)", res)
+	}
+}
+
 // F-0503 crit. 7: the opt-out bars every reference with the same normalized
 // URL (case of scheme and host, fragment), a later one included, in a batch and
 // when named; a different URL is not barred.
