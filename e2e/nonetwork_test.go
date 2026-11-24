@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/gitback"
@@ -79,5 +80,66 @@ func TestMapAndTagsNeverTouchTheNetwork(t *testing.T) {
 	}
 	if ctx := mustRead(t, filepath.Join(proj, ".docs", "CONTEXT.md")); !strings.Contains(ctx, "gitea (1)") {
 		t.Fatalf("the pull did not write the map:\n%s", ctx)
+	}
+}
+
+// F-0501 criteria 7 and 8: only `reference check` reaches the network; lint,
+// pull and push read what the last check recorded. The reference URL is plain
+// http and not loopback, so the proxy sees it (N-0130). Phase 1 is the positive
+// control: the proxy answers 404 and the check goes through it and records gone.
+// Phase 2: the proxy fails the test on any request while lint, pull and push run.
+func TestReferenceGoneLintNeverTouchesTheNetwork(t *testing.T) {
+	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
+	origin := filepath.Join(t.TempDir(), "origin.git")
+	if err := gitback.InitBare(origin); err != nil {
+		t.Fatal(err)
+	}
+	proj := t.TempDir()
+	mustCerne(t, "init", "--name", "Demo", "--backend", origin, "--dir", proj)
+	mustCerne(t, "feature", "new", "Uses a source", "--context", "why", "--component", "gitea", "--dir", proj)
+	mustCerne(t, "reference", "new", "A source", "--url", "http://source.example.test/page", "--informs", "F-0001", "--component", "gitea", "--dir", proj)
+
+	var hits atomic.Int32
+	var strict atomic.Bool
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		if strict.Load() {
+			t.Errorf("network call through the proxy: %s %s", r.Method, r.URL)
+		}
+		http.NotFound(w, r)
+	}))
+	defer proxy.Close()
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := append(os.Environ(), "CERNE_TEST_RUN_CLI=1", "HOME="+t.TempDir(), "CERNE_CONFIG_DIR="+t.TempDir(), "NO_PROXY=", "no_proxy=")
+	for _, k := range []string{"HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY"} {
+		env = append(env, k+"="+proxy.URL)
+	}
+	run := func(args ...string) (string, error) {
+		cmd := exec.Command(self, append(args, "--dir", proj)...)
+		cmd.Env = env
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+
+	out, err := run("reference", "check")
+	if err != nil || !strings.Contains(out, "R-0001  gone (HTTP 404)  informs F-0001") {
+		t.Fatalf("check: %v\n%s", err, out)
+	}
+	if hits.Load() == 0 {
+		t.Fatal("the check never went through the proxy: the probe is blind")
+	}
+
+	strict.Store(true)
+	out, err = run("lint")
+	if err == nil || !strings.Contains(strings.ToLower(out), "reference-gone") || !strings.Contains(out, "F-0001") {
+		t.Fatalf("lint should fail on reference-gone naming F-0001 (err %v):\n%s", err, out)
+	}
+	for _, args := range [][]string{{"pull"}, {"push"}} {
+		if out, err := run(args...); err != nil {
+			t.Fatalf("cerne %s: %v\n%s", args[0], err, out)
+		}
 	}
 }
