@@ -128,11 +128,18 @@ func newReferenceArchiveCmd(dir *string) *cobra.Command {
 				}
 				return nil
 			}
-			res, err := app.ArchiveReferences(ctx.repoDir, ctx.projDir, args, archiveNet(), dryRun)
+			net := archiveNet()
+			if !dryRun {
+				net.Progress = func(r app.ArchiveResult) {
+					line, _ := archiveLine(r, false)
+					fmt.Fprintln(cmd.OutOrStdout(), line)
+				}
+			}
+			res, err := app.ArchiveReferences(ctx.repoDir, ctx.projDir, args, net, dryRun)
 			if err != nil {
 				return err
 			}
-			printReferenceArchives(cmd.OutOrStdout(), res, dryRun)
+			printReferenceArchives(cmd.OutOrStdout(), res, dryRun, !dryRun)
 			return nil
 		},
 	}
@@ -155,38 +162,49 @@ func archiveText(a store.ReferenceArchive) string {
 	return a.Status + " (" + a.Reason + ")"
 }
 
-// printReferenceArchives writes one line per reference — `R-0012  archived
-// <link>  (saved 2026-11-24)`, `R-0013  existing  <link>  (captured
-// 2025-03-02)`, `R-0014  pending  (save failed: 429)`, `R-0015  not public
-// (HTTP 404)`, `R-0016  skipped (internal host)` — and the counts. A dry run
-// ends each line with the source URL and says nothing was sent.
-func printReferenceArchives(w io.Writer, res []app.ArchiveResult, dryRun bool) {
+// archiveLine is one reference's line: `R-0012  archived <link>  (saved
+// 2026-11-24)`, `R-0013  existing  <link>  (captured 2025-03-02)`,
+// `R-0014  pending  (save failed: 429)`, `R-0015  not public (HTTP 404)`,
+// `R-0016  skipped (internal host)`; and the key it is counted under. A dry run
+// ends each line with the source URL.
+func archiveLine(r app.ArchiveResult, dryRun bool) (line, key string) {
+	line = r.ID + "  "
+	key = r.Status
+	switch {
+	case r.Status == "archived" && r.Origin == "existing":
+		key = "existing"
+		line += "existing  " + r.URL + "  (captured " + r.CapturedAt.Format(time.DateOnly) + ")"
+	case r.Status == "archived":
+		line += "archived  " + r.URL + "  (saved " + r.CapturedAt.Format(time.DateOnly) + ")"
+	case r.Status == "pending":
+		line += "pending  (" + r.Reason + ")"
+	case r.Status == "would_send":
+		line += "would send"
+	default:
+		line += archiveText(r.ReferenceArchive)
+	}
+	if dryRun {
+		line += "  " + r.Source
+	}
+	return line, key
+}
+
+// printReferenceArchives writes the archive lines and the counts. A real run
+// has streamed its lines already (streamed), each as soon as it was processed,
+// so only the counts are left; a dry run prints its lines here and says nothing
+// was sent.
+func printReferenceArchives(w io.Writer, res []app.ArchiveResult, dryRun, streamed bool) {
 	if len(res) == 0 {
 		fmt.Fprintln(w, "nothing to archive: every current external reference has a copy, a final outcome or --no-archive")
 		return
 	}
 	n := map[string]int{}
 	for _, r := range res {
-		line := r.ID + "  "
-		key := r.Status
-		switch {
-		case r.Status == "archived" && r.Origin == "existing":
-			key = "existing"
-			line += "existing  " + r.URL + "  (captured " + r.CapturedAt.Format(time.DateOnly) + ")"
-		case r.Status == "archived":
-			line += "archived  " + r.URL + "  (saved " + r.CapturedAt.Format(time.DateOnly) + ")"
-		case r.Status == "pending":
-			line += "pending  (" + r.Reason + ")"
-		case r.Status == "would_send":
-			line += "would send"
-		default:
-			line += archiveText(r.ReferenceArchive)
-		}
-		if dryRun {
-			line += "  " + r.Source
-		}
+		line, key := archiveLine(r, dryRun)
 		n[key]++
-		fmt.Fprintln(w, line)
+		if !streamed {
+			fmt.Fprintln(w, line)
+		}
 	}
 	if dryRun {
 		fmt.Fprintf(w, "dry run, nothing sent: %d would send, %d pending, %d not public, %d skipped\n",

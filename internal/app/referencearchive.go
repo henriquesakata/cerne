@@ -146,9 +146,10 @@ const (
 type ArchiveNet struct {
 	Client    ArchiveClient
 	LookupIP  func(ctx context.Context, network, host string) ([]net.IP, error)
-	Transport http.RoundTripper // the public proof's
-	Pause     time.Duration     // between two requests to the archive service
-	Now       func() time.Time  // nil: time.Now
+	Transport http.RoundTripper   // the public proof's
+	Pause     time.Duration       // between two requests to the archive service
+	Now       func() time.Time    // nil: time.Now
+	Progress  func(ArchiveResult) // nil: silent
 }
 
 // NewArchiveNet is the real network: the Wayback Machine, the system
@@ -219,6 +220,9 @@ func ArchiveReferences(repoDir, projDir string, ids []string, n ArchiveNet, dryR
 			res.ReferenceArchive = chooseCopy(ctx, r, n)
 		}
 		out = append(out, res)
+		if !dryRun && n.Progress != nil {
+			n.Progress(res) // before the commit: a cut-short run still shows what was sent
+		}
 	}
 	if dryRun || len(out) == 0 {
 		return out, nil

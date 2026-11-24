@@ -84,6 +84,35 @@ func TestArchiveGateEmbeddedIPv4(t *testing.T) {
 	}
 }
 
+// F-0503 crit. 9: a real run reports each reference as soon as it is processed,
+// before the single commit, so a run cut short still shows which URLs left the
+// machine; a dry run reports nothing along the way.
+func TestArchiveReferencesStreamsEachResult(t *testing.T) {
+	repoDir, projDir := archiveBackend(t, 3, true)
+	before := commitCount(t, repoDir)
+	var seen []string
+	n := publicNet(&scriptClient{save: saves, captures: noCaptures})
+	n.Progress = func(r ArchiveResult) {
+		if got := commitCount(t, repoDir); got != before {
+			t.Errorf("%s reported after the commit (%d commits, want %d)", r.ID, got, before)
+		}
+		seen = append(seen, r.ID+" "+r.Status)
+	}
+	if _, err := ArchiveReferences(repoDir, projDir, nil, n, false); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"R-0001 archived", "R-0002 archived", "R-0003 archived"}; !slices.Equal(seen, want) {
+		t.Errorf("progress = %v, want %v", seen, want)
+	}
+	seen = nil
+	if _, err := ArchiveReferences(repoDir, projDir, []string{"R-0001"}, n, true); err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 0 {
+		t.Errorf("a dry run reported %v along the way", seen)
+	}
+}
+
 // F-0503 crit. 10: a failed capture list for a reference registered before
 // today saves nothing: it is pending, so a later batch retries it; a reference
 // registered today still asks for a new copy.
