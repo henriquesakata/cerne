@@ -33,6 +33,10 @@ func TestReferencesArchiveOnlyWhenTrue(t *testing.T) {
 		{"host on", "", "[references]\narchive = true\n", true},
 		{"project off over host on", "[references]\narchive = false\n", "[references]\narchive = true\n", false},
 		{"invalid", "[references]\narchive = \"yes\"\n", "", false},
+		// F-0503 crit. 2: a project value that is not true keeps it off, even
+		// one the resolution skips as invalid, and an unreadable project file too.
+		{"invalid project over host on", "[references]\narchive = \"no\"\n", "[references]\narchive = true\n", false},
+		{"unreadable project over host on", "[references\n", "[references]\narchive = true\n", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			projDir, _ := settingsFixture(t, tc.project, tc.host, false)

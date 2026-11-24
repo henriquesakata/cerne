@@ -236,7 +236,7 @@ var settingsRegistry = []Setting{
 	{
 		ID: "references.archive", Group: "integrations", Title: "Archive public sources", Type: "bool", Default: false,
 		Scopes: []string{ScopeProject, ScopeHost}, HumanOnly: true,
-		Description: "On, cerne reference new and cerne reference archive send the URL of an external reference, and nothing else, to the Wayback Machine of the Internet Archive and keep the link of the dated copy. Only a page that answers 200 to an anonymous request is sent: never an internal host, an ignored source, a share-link host, a URL with a secret or credentials, or a page an anonymous request cannot read; a reference registered with --no-archive is never sent. A private page that answers 200 to anyone holding its link still passes, so review cerne reference archive --dry-run before the first real run. Off sends nothing. An agent cannot change this key through cerne settings: it is the project owner's decision.",
+		Description: "On, cerne reference new and cerne reference archive send the URL of an external reference, and nothing else, to the Wayback Machine of the Internet Archive and keep the link of the dated copy. Only a page that answers 200 to an anonymous request is sent: never an internal host, an ignored source, a share-link host, a URL with a secret or credentials, or a page an anonymous request cannot read; a reference registered with --no-archive is never sent. A private page that answers 200 to anyone holding its link still passes, so review cerne reference archive --dry-run before the first real run. Off sends nothing, and a project that stores off (or a value that is not true) stays off whatever the machine scope says. An agent cannot change this key through cerne settings: it is the project owner's decision.",
 	},
 	{
 		ID: "ui.update_check", Group: "interface", Title: "Check for a new release", Type: "bool", Default: true,
@@ -308,13 +308,30 @@ func PromptNotes(projDir string) bool {
 }
 
 // ReferencesArchive is references.archive for the project at (or above)
-// projDir (F-0503): true only when it resolves to true, so an invalid stored
-// value sends nothing.
+// projDir (F-0503): true only when it resolves to true and the project scope
+// says nothing else. A project value that is not true (false, or one the
+// resolution skips as invalid) or an unreadable project file keeps it off,
+// whatever the host scope stores.
 func ReferencesArchive(projDir string) bool {
-	for _, s := range ResolveSettings(projDir).Settings {
-		if s.ID == "references.archive" {
-			return s.Value == true
+	view := ResolveSettings(projDir)
+	for _, p := range view.Errors {
+		if p.Scope == ScopeProject {
+			return false
 		}
+	}
+	for _, s := range view.Settings {
+		if s.ID != "references.archive" {
+			continue
+		}
+		if v, ok := s.Stored[ScopeProject]; ok && v != true {
+			return false
+		}
+		for _, p := range s.Invalid {
+			if p.Scope == ScopeProject {
+				return false
+			}
+		}
+		return s.Value == true
 	}
 	return false
 }
