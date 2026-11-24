@@ -402,3 +402,47 @@ func TestLinksOnlySuggestAsksForSuggestions(t *testing.T) { // F-0502 crit. 9
 		t.Errorf("links suggest sent no marked prompt: %d prompt(s)", n)
 	}
 }
+
+// TestLinksSuggestEstimateIsHonest: a CLI agent adds its own context to every
+// call, so its estimate line says it is not counted; the event records the
+// estimate, and the next round shows how far the last one was off.
+func TestLinksSuggestEstimateIsHonest(t *testing.T) { // F-0502 crit. 3, 10
+	fake := &linksFake{answers: map[string]string{"F-0001": linksAnswer}, usage: `{"input_tokens":120,"output_tokens":30}`}
+	projDir, repoDir := linksProject(t, true, fake)
+
+	out, err := execCerne(t, "links", "suggest", "--yes", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("suggest: %v\n%s", err, out)
+	}
+	if strings.Contains(out, "adds its own context") || strings.Contains(out, "Last round") {
+		t.Errorf("an HTTP mode with no history must print neither note:\n%s", out)
+	}
+	evs, _ := store.ReadEvents(repoDir)
+	est := ""
+	for _, e := range evs {
+		if e.Type == "links.suggested" {
+			est = e.Payload["estimate"]
+		}
+	}
+	if est == "" || est == "0" {
+		t.Fatalf("links.suggested has no estimate: %v", evs)
+	}
+
+	out, err = execCerne(t, "links", "suggest", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "Last round used ") || !strings.Contains(out, "240 in vs "+est+" estimated") {
+		t.Errorf("no last-round ratio (est %s): %v\n%s", est, err, out)
+	}
+
+	cfg, dir, _ := project.LoadConfig(projDir)
+	cfg.LLM = project.LLMConfig{Mode: "claude-cli"}
+	if err := project.SaveConfig(dir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := project.SetSetting(projDir, "links.suggest", project.ScopeProject, "true"); err != nil {
+		t.Fatal(err)
+	}
+	out, err = execCerne(t, "links", "suggest", "--dir", projDir) // not confirmed: nothing is sent
+	if err != nil || !strings.Contains(out, "claude-cli adds its own context to each call, not counted") {
+		t.Errorf("no CLI-agent note: %v\n%s", err, out)
+	}
+}

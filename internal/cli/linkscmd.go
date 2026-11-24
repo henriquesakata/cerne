@@ -105,8 +105,16 @@ func runLinksSuggest(cmd *cobra.Command, dir string, ids []string, yes, ingest b
 	for i, s := range sources {
 		prompts[i] = app.BuildLinkPrompt(s, catalog)
 	}
-	fmt.Fprintf(out, "%d document(s), ~%d tokens (estimate: a quarter of the characters sent, plus room for each answer).\n",
-		len(sources), app.EstimateLinkTokens(prompts))
+	mode := llm.ResolveMode(ctx.cfg.LLM.Mode)
+	estimate := app.EstimateLinkTokens(prompts)
+	fmt.Fprintf(out, "%d document(s), ~%d tokens (estimate: a quarter of the characters sent, plus room for each answer", len(sources), estimate)
+	if linksCLIAgent(mode) {
+		fmt.Fprintf(out, "; %s adds its own context to each call, not counted", mode)
+	}
+	fmt.Fprintln(out, ").")
+	if line := lastRoundRatio(ctx.repoDir); line != "" {
+		fmt.Fprintln(out, line)
+	}
 	if !yes {
 		in := cmd.InOrStdin()
 		if !linksInteractive(in) {
@@ -121,7 +129,6 @@ func runLinksSuggest(cmd *cobra.Command, dir string, ids []string, yes, ingest b
 		}
 	}
 
-	mode := llm.ResolveMode(ctx.cfg.LLM.Mode)
 	if mode == llm.ModeDelegation {
 		return writeLinksPrompt(cmd, ctx, sources, prompts)
 	}
@@ -130,7 +137,7 @@ func runLinksSuggest(cmd *cobra.Command, dir string, ids []string, yes, ingest b
 		return err
 	}
 	usageProv, hasUsage := prov.(llm.UsageCompleter)
-	round := linksRound{mode: mode}
+	round := linksRound{mode: mode, estimate: estimate}
 	var raw []app.RawLinkSuggestion
 	var callErr error
 	for i, s := range sources {
@@ -183,6 +190,7 @@ type linksRound struct {
 	in, out             int
 	model               string
 	reported            bool
+	estimate            int // tokens estimated before sending, 0 when none
 }
 
 // queueLinkSuggestions filters raw, queues what passes, logs links.suggested
@@ -202,6 +210,9 @@ func queueLinkSuggestions(cmd *cobra.Command, ctx projCtx, raw []app.RawLinkSugg
 		payload := map[string]string{
 			"mode": r.mode, "documents": strconv.Itoa(r.documents), "received": strconv.Itoa(r.received),
 			"queued": strconv.Itoa(len(added)), "dropped": droppedText(drop),
+		}
+		if r.estimate > 0 {
+			payload["estimate"] = strconv.Itoa(r.estimate)
 		}
 		if r.reported {
 			payload["input_tokens"], payload["output_tokens"], payload["model"] = strconv.Itoa(r.in), strconv.Itoa(r.out), r.model
@@ -232,6 +243,36 @@ func queueLinkSuggestions(cmd *cobra.Command, ctx projCtx, raw []app.RawLinkSugg
 		fmt.Fprintln(out, "Review them with 'cerne links pending'.")
 	}
 	return nil
+}
+
+// linksCLIAgent is true for the modes that shell to a CLI agent, which adds its
+// own system prompt, tools and user context to every call.
+func linksCLIAgent(mode string) bool {
+	switch mode {
+	case llm.ModeClaudeCLI, llm.ModeCodexCLI, llm.ModeGeminiCLI, llm.ModeCursorCLI, llm.ModeCopilotCLI:
+		return true
+	}
+	return false
+}
+
+// lastRoundRatio compares the real input tokens of the latest links.suggested
+// event that has both numbers with its estimate; "" when there is none.
+func lastRoundRatio(repoDir string) string {
+	evs, err := store.ReadEvents(repoDir)
+	if err != nil {
+		return ""
+	}
+	for i := len(evs) - 1; i >= 0; i-- {
+		if evs[i].Type != "links.suggested" {
+			continue
+		}
+		est, e1 := strconv.Atoi(evs[i].Payload["estimate"])
+		in, e2 := strconv.Atoi(evs[i].Payload["input_tokens"])
+		if e1 == nil && e2 == nil && est > 0 {
+			return fmt.Sprintf("Last round used %.1fx its estimate (%d in vs %d estimated).", float64(in)/float64(est), in, est)
+		}
+	}
+	return ""
 }
 
 // droppedText is "reason: n, reason: n" sorted by reason.
