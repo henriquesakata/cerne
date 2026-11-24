@@ -78,6 +78,9 @@ func ValidatePlan(p Plan) error {
 		if strings.TrimSpace(it.Source) == "" {
 			return fmt.Errorf("%w: item %d (%s): empty source", ErrInvalidPlan, i, it.Kind)
 		}
+		if strings.ContainsAny(it.Source, "\r\n") {
+			return fmt.Errorf("%w: item %d (%s): source has a line break", ErrInvalidPlan, i, it.Kind)
+		}
 		if strings.TrimSpace(it.Body) == "" {
 			return fmt.Errorf("%w: item %d (%s): empty body", ErrInvalidPlan, i, it.Kind)
 		}

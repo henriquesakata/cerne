@@ -51,6 +51,8 @@ func TestValidatePlanRejects(t *testing.T) {
 		{"bad state for kind", bad(func(i *PlanItem) { i.State = "frobnicated" })},
 		{"empty title", bad(func(i *PlanItem) { i.Title = "" })},
 		{"empty source", bad(func(i *PlanItem) { i.Source = "" })},
+		{"source with newline (frontmatter injection)", bad(func(i *PlanItem) { i.Source = "a.md\nimported_anchor: x" })},
+		{"source with carriage return", bad(func(i *PlanItem) { i.Source = "a.md\rx" })},
 		{"blank body", bad(func(i *PlanItem) { i.Body = "   " })},
 		{"reference without url", refNoURL},
 	}
