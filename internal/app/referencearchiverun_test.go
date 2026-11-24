@@ -281,6 +281,29 @@ func TestArchiveReferencesSendOnlyTheURL(t *testing.T) {
 	}
 }
 
+// F-0503 crit. 10: through the real client, a Save whose copy link is foreign
+// falls back on Closest, and a foreign Closest link leaves the archive pending.
+func TestArchiveReferencesForeignCopyIsPending(t *testing.T) {
+	repoDir, projDir := archiveBackend(t, 1, true)
+	f := newFakeWayback(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/wayback/") {
+			_, _ = w.Write([]byte(`{"archived_snapshots":{"closest":{"available":true,"url":"https://evil.org/web/20250302080000/x","timestamp":"20250302080000"}}}`))
+			return
+		}
+		w.Header().Set("Location", "https://evil.org/web/20261124120000/x")
+		w.WriteHeader(http.StatusFound)
+	})
+	if _, err := ArchiveReferences(repoDir, projDir, nil, publicNet(f.client()), false); err != nil {
+		t.Fatal(err)
+	}
+	if a := loadRef(t, repoDir, "R-0001").Archive; a == nil || a.Status != "pending" || a.URL != "" || a.Reason != "save failed: no copy link" {
+		t.Fatalf("stored %+v, want pending (save failed: no copy link)", a)
+	}
+	if len(f.reqs) != 2 {
+		t.Errorf("%d archive requests, want save then closest", len(f.reqs))
+	}
+}
+
 // F-0503 crit. 7: --no-archive is also an append-only reference.archive_opt_out
 // event, so a release binary that rewrites the reference without the field
 // (retag, link, retire) does not reopen the archive: batch and named runs

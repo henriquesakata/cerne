@@ -52,8 +52,9 @@ func (e httpStatusError) Error() string { return strconv.Itoa(int(e)) }
 // and its availability API (R-0140). The endpoints are fields so a test points
 // them at a fake.
 type WaybackClient struct {
-	SaveURL      string // the page URL is appended: https://web.archive.org/save/<url>
-	AvailableURL string // ?url=<url> is added
+	SaveURL      string            // the page URL is appended: https://web.archive.org/save/<url>
+	AvailableURL string            // ?url=<url> is added
+	Transport    http.RoundTripper // nil: the default transport, environment proxy kept
 }
 
 // NewWaybackClient points at the Internet Archive.
@@ -67,20 +68,24 @@ const (
 	waybackTimestamp      = "20060102150405"
 )
 
-// waybackHTTP has no cookie jar and follows no redirect: Save reads the copy's
-// link from the redirect itself. The environment proxy is kept.
-var waybackHTTP = &http.Client{
-	Transport:     http.DefaultTransport.(*http.Transport).Clone(),
-	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-}
+// waybackTransport is the default transport of the Wayback client; the
+// environment proxy is kept.
+var waybackTransport = http.DefaultTransport.(*http.Transport).Clone()
 
-func waybackGet(ctx context.Context, u string) (*http.Response, error) {
+// get sends a GET with no cookie jar that follows no redirect: Save reads the
+// copy's link from the redirect itself.
+func (c WaybackClient) get(ctx context.Context, u string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("User-Agent", "cerne/"+version.Version)
-	return waybackHTTP.Do(req)
+	rt := c.Transport
+	if rt == nil {
+		rt = waybackTransport
+	}
+	client := &http.Client{Transport: rt, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	return client.Do(req)
 }
 
 // Save asks Save Page Now for a new copy and reads its link from Location or
@@ -88,7 +93,7 @@ func waybackGet(ctx context.Context, u string) (*http.Response, error) {
 func (c WaybackClient) Save(ctx context.Context, target string) (Snapshot, error) {
 	ctx, cancel := context.WithTimeout(ctx, waybackSaveTimeout)
 	defer cancel()
-	resp, err := waybackGet(ctx, c.SaveURL+target)
+	resp, err := c.get(ctx, c.SaveURL+target)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -104,10 +109,13 @@ func (c WaybackClient) Save(ctx context.Context, target string) (Snapshot, error
 	return Snapshot{}, errNoCopyLink
 }
 
-var copyPath = regexp.MustCompile(`^/web/(\d{14})`)
+// copyLink is the only shape of a link recorded as a copy.
+var copyLink = regexp.MustCompile(`^https://web\.archive\.org/web/(\d{14})`)
 
 // copyAt resolves a copy link against the request and reads its timestamp;
-// false when it is not a /web/<timestamp>/ link.
+// false unless it is https://web.archive.org/web/<timestamp>/... (an http one
+// on that host is kept on https), so a foreign or relative-to-elsewhere link
+// counts as no copy.
 func copyAt(base *url.URL, link string) (Snapshot, bool) {
 	if link == "" {
 		return Snapshot{}, false
@@ -116,7 +124,10 @@ func copyAt(base *url.URL, link string) (Snapshot, bool) {
 	if err != nil {
 		return Snapshot{}, false
 	}
-	m := copyPath.FindStringSubmatch(u.Path)
+	if u.Scheme == "http" && u.Host == "web.archive.org" {
+		u.Scheme = "https"
+	}
+	m := copyLink.FindStringSubmatch(u.String())
 	if m == nil {
 		return Snapshot{}, false
 	}
@@ -516,7 +527,7 @@ func provePublic(ctx context.Context, raw string, ignore []string, rt http.Round
 func (c WaybackClient) Closest(ctx context.Context, target string) (Snapshot, error) {
 	ctx, cancel := context.WithTimeout(ctx, waybackClosestTimeout)
 	defer cancel()
-	resp, err := waybackGet(ctx, c.AvailableURL+"?url="+url.QueryEscape(target))
+	resp, err := c.get(ctx, c.AvailableURL+"?url="+url.QueryEscape(target))
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -537,9 +548,9 @@ func (c WaybackClient) Closest(ctx context.Context, target string) (Snapshot, er
 		return Snapshot{}, err
 	}
 	cl := body.ArchivedSnapshots.Closest
-	at, err := time.Parse(waybackTimestamp, cl.Timestamp)
-	if !cl.Available || cl.URL == "" || err != nil {
+	s, ok := copyAt(resp.Request.URL, cl.URL)
+	if !cl.Available || !ok {
 		return Snapshot{}, ErrNoSnapshot
 	}
-	return Snapshot{URL: cl.URL, CapturedAt: at}, nil
+	return s, nil
 }

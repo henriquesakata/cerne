@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -39,9 +40,19 @@ func newFakeWayback(t *testing.T, h http.HandlerFunc) *fakeWayback {
 	return f
 }
 
+// client points the real client at the fake, and dials the fake for any host:
+// a followed redirect to web.archive.org never leaves the machine.
 func (f *fakeWayback) client() WaybackClient {
-	return WaybackClient{SaveURL: f.srv.URL + "/save/", AvailableURL: f.srv.URL + "/wayback/available"}
+	addr := f.srv.Listener.Addr().String()
+	return WaybackClient{
+		SaveURL: f.srv.URL + "/save/", AvailableURL: f.srv.URL + "/wayback/available",
+		Transport: &http.Transport{DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, network, addr)
+		}},
+	}
 }
+
+const copyLinkAt = "https://web.archive.org/web/20261124120304/" + pageURL
 
 // F-0503 crit. 8: Save reads the copy's link and capture date from Location
 // (a redirect it does not follow) or from Content-Location.
@@ -59,15 +70,15 @@ func TestWaybackSaveReadsTheCopyLink(t *testing.T) {
 				if strings.HasPrefix(r.URL.Path, "/web/") {
 					t.Error("the client followed the redirect to the copy")
 				}
-				w.Header().Set(tc.header, "/web/20261124120304/"+pageURL)
+				w.Header().Set(tc.header, copyLinkAt)
 				w.WriteHeader(tc.status)
 			})
 			s, err := f.client().Save(context.Background(), pageURL)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if want := f.srv.URL + "/web/20261124120304/" + pageURL; s.URL != want {
-				t.Errorf("link = %q, want %q", s.URL, want)
+			if s.URL != copyLinkAt {
+				t.Errorf("link = %q, want %q", s.URL, copyLinkAt)
 			}
 			if want := time.Date(2026, 11, 24, 12, 3, 4, 0, time.UTC); !s.CapturedAt.Equal(want) {
 				t.Errorf("captured = %v, want %v", s.CapturedAt, want)
@@ -87,7 +98,7 @@ func TestWaybackSaveFailures(t *testing.T) {
 		status int
 		loc    string
 	}{
-		{"rate limited", http.StatusTooManyRequests, "/web/20261124120304/" + pageURL},
+		{"rate limited", http.StatusTooManyRequests, copyLinkAt},
 		{"server error", http.StatusServiceUnavailable, ""},
 		{"no link", http.StatusOK, ""},
 		{"not a copy", http.StatusFound, "/elsewhere"},
@@ -120,7 +131,8 @@ func TestWaybackClosest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.URL != "http://web.archive.org/web/20250302010203/https://docs.publicsite.org/guide" || !s.CapturedAt.Equal(time.Date(2025, 3, 2, 1, 2, 3, 0, time.UTC)) {
+	// the availability API answers http: the link is kept on https
+	if s.URL != "https://web.archive.org/web/20250302010203/https://docs.publicsite.org/guide" || !s.CapturedAt.Equal(time.Date(2025, 3, 2, 1, 2, 3, 0, time.UTC)) {
 		t.Errorf("closest = %+v", s)
 	}
 
@@ -129,6 +141,31 @@ func TestWaybackClosest(t *testing.T) {
 	})
 	if _, err := none.client().Closest(context.Background(), pageURL); !errors.Is(err, ErrNoSnapshot) {
 		t.Errorf("no copy: err = %v, want ErrNoSnapshot", err)
+	}
+}
+
+// F-0503 crit. 10: a copy link that is not https://web.archive.org/web/<timestamp>/
+// counts as no copy, from Save and from Closest.
+func TestWaybackRefusesAForeignCopyLink(t *testing.T) {
+	for _, loc := range []string{
+		"https://web.archive.org.evil.org/web/20261124120304/x", "https://evil.org/web/20261124120304/x",
+		"/web/20261124120304/x", "https://web.archive.org/save/x", "https://web.archive.org/web/2026/x",
+		"ftp://web.archive.org/web/20261124120304/x", "https://user@web.archive.org/web/20261124120304/x",
+	} {
+		f := newFakeWayback(t, func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasPrefix(r.URL.Path, "/wayback/") {
+				_, _ = w.Write([]byte(`{"archived_snapshots":{"closest":{"available":true,"url":"` + loc + `","timestamp":"20261124120304"}}}`))
+				return
+			}
+			w.Header().Set("Location", loc)
+			w.WriteHeader(http.StatusFound)
+		})
+		if s, err := f.client().Save(context.Background(), pageURL); err == nil {
+			t.Errorf("Save with Location %q = %+v, want an error", loc, s)
+		}
+		if s, err := f.client().Closest(context.Background(), pageURL); !errors.Is(err, ErrNoSnapshot) {
+			t.Errorf("Closest with url %q = %+v, %v; want ErrNoSnapshot", loc, s, err)
+		}
 	}
 }
 

@@ -45,7 +45,7 @@ func archiveFixture(t *testing.T, archive bool, saveStatus int) *archiveFake {
 			case strings.HasSuffix(target, "/old"):
 				w.WriteHeader(http.StatusTooManyRequests)
 			case saveStatus == http.StatusFound:
-				w.Header().Set("Location", "/web/20261124120000/"+target)
+				w.Header().Set("Location", "https://web.archive.org/web/20261124120000/"+target)
 				w.WriteHeader(http.StatusFound)
 			default:
 				w.WriteHeader(saveStatus)
@@ -64,7 +64,12 @@ func archiveFixture(t *testing.T, archive bool, saveStatus int) *archiveFake {
 	old := archiveNet
 	archiveNet = func() app.ArchiveNet {
 		return app.ArchiveNet{
-			Client: app.WaybackClient{SaveURL: f.wayback.URL + "/save/", AvailableURL: f.wayback.URL + "/wayback/available"},
+			// Every dial goes to the fake: a followed redirect to web.archive.org
+			// never leaves the machine.
+			Client: app.WaybackClient{SaveURL: f.wayback.URL + "/save/", AvailableURL: f.wayback.URL + "/wayback/available",
+				Transport: &http.Transport{DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+					return (&net.Dialer{}).DialContext(ctx, network, f.wayback.Listener.Addr().String())
+				}}},
 			LookupIP: func(context.Context, string, string) ([]net.IP, error) {
 				return []net.IP{net.ParseIP("93.184.215.14")}, nil
 			},
@@ -123,7 +128,7 @@ func (f *archiveFake) ref(t *testing.T, id string) store.Reference {
 func TestReferenceNewArchivesThePage(t *testing.T) {
 	f := archiveFixture(t, true, http.StatusFound)
 	out := f.cerne(t, "reference", "new", "Guide", "--url", "https://docs.publicsite.org/guide")
-	link := f.wayback.URL + "/web/20261124120000/https://docs.publicsite.org/guide"
+	link := "https://web.archive.org/web/20261124120000/https://docs.publicsite.org/guide"
 	for _, want := range []string{"R-0001 registered (external: https://docs.publicsite.org/guide).\n", "archive: " + link + " (saved 2026-11-24)\n"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
@@ -203,7 +208,7 @@ func TestReferenceArchiveBatchOutput(t *testing.T) {
 	f.cerne(t, "reference", "new", "Kept home", "--url", "https://docs.publicsite.org/home", "--no-archive")
 	f.turnOn(t)
 	out := f.cerne(t, "reference", "archive")
-	want := "R-0001  archived  " + f.wayback.URL + "/web/20261124120000/https://docs.publicsite.org/guide  (saved 2026-11-24)\n" +
+	want := "R-0001  archived  https://web.archive.org/web/20261124120000/https://docs.publicsite.org/guide  (saved 2026-11-24)\n" +
 		"R-0002  not public (HTTP 404)\n" +
 		"R-0003  skipped (internal host)\n" +
 		"R-0004  skipped (secret in query)\n" +
