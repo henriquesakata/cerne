@@ -142,8 +142,20 @@ type Reference struct {
 	Informs    []string              `json:"informs,omitempty"`    // F-/D-/RB-/N-/I- ids this source motivated
 	Facets     []string              `json:"facets,omitempty"`     // closed-set axis (D-0002): infra/code/data/process/auth
 	Components []string              `json:"components,omitempty"` // curated subsystem/tool axis (D-0002): gitea, kpack, …
+	Check      *ReferenceCheck       `json:"check,omitempty"`      // last valid source check (F-0501)
 	CreatedAt  time.Time             `json:"created_at"`
 	UpdatedAt  time.Time             `json:"updated_at"`
+}
+
+// ReferenceCheck is the last check of an external reference's URL that counted
+// (F-0501): a transient failure never overwrites it. Status is ok, changed or
+// gone; BaselineHash is the accepted text hash `changed` is measured against.
+type ReferenceCheck struct {
+	CheckedAt    time.Time `json:"checked_at"`
+	HTTPStatus   int       `json:"http_status,omitempty"`
+	TextHash     string    `json:"text_hash,omitempty"`
+	BaselineHash string    `json:"baseline_hash,omitempty"`
+	Status       string    `json:"status"`
 }
 
 // Historical is the persisted form of a historical entity: something that

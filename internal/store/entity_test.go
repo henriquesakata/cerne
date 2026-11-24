@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -172,6 +173,34 @@ func TestReferenceRoundTrip(t *testing.T) {
 	if !got.CreatedAt.Equal(want.CreatedAt) || !got.UpdatedAt.Equal(want.UpdatedAt) {
 		t.Fatalf("times: got %v / %v, want %v / %v",
 			got.CreatedAt, got.UpdatedAt, want.CreatedAt, want.UpdatedAt)
+	}
+}
+
+// F-0501 crit. 1: the check is persisted; a reference without one stays without.
+func TestReferenceCheckRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	at := time.Date(2026, 11, 24, 9, 0, 0, 0, time.UTC)
+	r := Reference{ID: "R-0001", Title: "x", State: domain.ReferenceCurrent, External: true,
+		Check: &ReferenceCheck{CheckedAt: at, HTTPStatus: 200, TextHash: "aa", BaselineHash: "bb", Status: "changed"}}
+	if err := SaveReference(dir, r); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadReference(dir, "R-0001")
+	if err != nil || got.Check == nil || *got.Check != *r.Check {
+		t.Fatalf("got %+v, %v; want check %+v", got.Check, err, r.Check)
+	}
+	plain := Reference{ID: "R-0002", Title: "y", State: domain.ReferenceCurrent}
+	if err := SaveReference(dir, plain); err != nil {
+		t.Fatal(err)
+	}
+	got, err = LoadReference(dir, "R-0002")
+	if err != nil || got.Check != nil {
+		t.Fatalf("got %+v, %v; want nil check", got.Check, err)
+	}
+	// the JSON of a reference without a check carries no "check" key
+	b, _ := json.Marshal(plain)
+	if strings.Contains(string(b), `"check"`) {
+		t.Fatalf("check marshaled for a reference without one: %s", b)
 	}
 }
 
