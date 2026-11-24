@@ -5,9 +5,7 @@ package sourceurl
 import (
 	"net"
 	"net/url"
-	"slices"
 	"strings"
-	"unicode"
 )
 
 // Internal reports whether a URL is never an external source and so is
@@ -34,25 +32,35 @@ func Internal(u string, ignore []string) bool {
 	return false
 }
 
-// secretWords are the parameter names that carry a secret (F-0503 crit. 5).
-var secretWords = []string{"token", "key", "secret", "sig", "signature", "auth", "password", "access_token"}
+// secretWords mark a parameter as a secret when its lowercased name contains
+// one (F-0503 crit. 5). Matching by substring over-blocks harmless names
+// (barcode, unicode, keyword, author, assess): such a URL is only not archived, the
+// safe side.
+var secretWords = []string{"token", "key", "secret", "sig", "auth", "pass", "pwd", "sess", "jwt", "credential", "bearer", "code"}
 
 // HasSecret reports whether a URL carries credentials or a secret: a user or
-// password before the host, or a query or fragment parameter whose name is,
-// or has as a word (X-Amz-Signature, api_key), one of secretWords. A URL that
-// does not parse counts as carrying one.
+// password before the host, or a query or fragment parameter whose raw or
+// decoded name contains one of secretWords. It fails closed: a URL that does
+// not parse, or a query or fragment with a ';' (which the parser drops with
+// its pair) or that the parser rejects, counts as carrying one.
 func HasSecret(raw string) bool {
 	u, err := url.Parse(raw)
 	if err != nil || u.User != nil {
 		return true
 	}
-	for _, part := range []string{u.RawQuery, u.Fragment} {
-		params, _ := url.ParseQuery(part) // a malformed pair is skipped, the rest still counts
-		for name := range params {
-			name = strings.ToLower(name)
-			words := strings.FieldsFunc(name, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
-			for _, w := range append(words, name) {
-				if slices.Contains(secretWords, w) {
+	for _, part := range []string{u.RawQuery, u.EscapedFragment()} {
+		if strings.Contains(part, ";") {
+			return true
+		}
+		if _, err := url.ParseQuery(part); err != nil {
+			return true
+		}
+		for _, pair := range strings.Split(part, "&") {
+			name, _, _ := strings.Cut(pair, "=")
+			decoded, _ := url.QueryUnescape(name) // ParseQuery accepted it
+			name = strings.ToLower(name + " " + decoded)
+			for _, w := range secretWords {
+				if strings.Contains(name, w) {
 					return true
 				}
 			}

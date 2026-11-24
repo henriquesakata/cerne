@@ -59,9 +59,42 @@ func TestHasSecret(t *testing.T) {
 			t.Errorf("HasSecret(%q) = false, want true", u)
 		}
 	}
+	// F-0503 crit. 5: a secret word anywhere in the name counts, in the query
+	// or the fragment.
+	for _, name := range []string{
+		"apikey", "sessionid", "jwt", "pwd", "passwd", "X-Amz-Credential", "bearer", "code",
+		"client_secret", "accesstoken", "oauth_verifier", "PHPSESSID", "id_token", "auth%5Fcode",
+	} {
+		for _, u := range []string{
+			"https://docs.publicsite.org/page?lang=en&" + name + "=abc",
+			"https://docs.publicsite.org/page#" + name + "=abc",
+		} {
+			if !HasSecret(u) {
+				t.Errorf("HasSecret(%q) = false, want true", u)
+			}
+		}
+	}
+	// F-0503 crit. 5: fail closed on a query the parser would drop or reject.
+	for _, u := range []string{
+		"https://docs.publicsite.org/page?a=1;token=x",
+		"https://docs.publicsite.org/page?a=1;b=2",
+		"https://docs.publicsite.org/page?a=%zz",
+		"https://docs.publicsite.org/page?%zz=1",
+		"https://docs.publicsite.org/page#a=1;b=2",
+	} {
+		if !HasSecret(u) {
+			t.Errorf("HasSecret(%q) = false, want true (fail closed)", u)
+		}
+	}
+	// Accepted over-blocking: a harmless name with a secret word inside.
+	for _, u := range []string{"https://docs.publicsite.org/p?barcode=1", "https://docs.publicsite.org/p?unicode=1", "https://docs.publicsite.org/p?keyword=go"} {
+		if !HasSecret(u) {
+			t.Errorf("HasSecret(%q) = false, want true (substring match over-blocks)", u)
+		}
+	}
 	for _, u := range []string{
 		"https://docs.publicsite.org/page",
-		"https://docs.publicsite.org/page?q=go&keyword=token-free",
+		"https://docs.publicsite.org/page?q=go&lang=en&page=2",
 		"https://docs.publicsite.org/page#section-2",
 		"https://docs.publicsite.org/tokens/auth-guide",
 	} {
