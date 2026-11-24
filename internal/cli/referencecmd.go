@@ -30,7 +30,7 @@ func newReferenceCmd() *cobra.Command {
 	cmd.AddCommand(newReferenceRetireCmd(&dir))
 	cmd.AddCommand(newReferenceLinkCmd(&dir))
 	cmd.AddCommand(newReferenceCheckCmd(&dir))
-	cmd.AddCommand(newReferenceKeepCmd(&dir))
+	cmd.AddCommand(verbs.MarkChat(newReferenceKeepCmd(&dir)))
 	return cmd
 }
 
@@ -104,7 +104,7 @@ func newReferenceKeepCmd(dir *string) *cobra.Command {
 			return nil
 		},
 	}
-	return verbs.MarkLifecycle(cmd)
+	return cmd
 }
 
 func newReferenceRetagCmd(dir *string) *cobra.Command {
