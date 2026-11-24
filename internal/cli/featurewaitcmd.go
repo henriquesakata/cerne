@@ -373,12 +373,7 @@ func waitLine(ctx projCtx, id string, target domain.FeatureState, r waitResult) 
 		}
 		return b.String()
 	}
-	if st, err := app.NextStep(ctx.repoDir, ctx.projDir, id); err == nil {
-		fmt.Fprintf(&b, " — next: %s", st.Step)
-		if st.Command != "" {
-			fmt.Fprintf(&b, " (run: %s)", st.Command)
-		}
-	}
+	b.WriteString(app.NextStepTail(ctx.repoDir, ctx.projDir, id))
 	return b.String()
 }
 

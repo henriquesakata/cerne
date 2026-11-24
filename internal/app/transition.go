@@ -545,6 +545,11 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 		return TransitionOutcome{}, err
 	}
 	dispatchWebhook(projDir, id, "feature", string(action), string(out.From), string(out.To), title)
+	if noticeActions[action] {
+		if err := notifyCardSessions(repoDir, projDir, id, out.From, out.To, time.Now().UTC()); err != nil {
+			out.Warnings = append(out.Warnings, "warning: card notice: "+err.Error())
+		}
+	}
 	for _, c := range casc.moved {
 		dispatchWebhook(projDir, c.ID, "feature", string(action), string(cascadeFrom[action]), string(c.State), c.Title)
 	}

@@ -4,10 +4,14 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/project"
 )
 
 // Card notices (F-0504): when a human moves a card, every session that worked
@@ -19,6 +23,16 @@ import (
 // sweep on write when the notices dir grows.
 
 const noticesDir = "notices"
+
+// noticeActions are the moves someone else makes on a card that change what
+// its agent does next; start and complete are the agent's own.
+var noticeActions = map[domain.Action]bool{
+	domain.ActionApprove:   true,
+	domain.ActionAccept:    true,
+	domain.ActionReject:    true,
+	domain.ActionRevert:    true,
+	domain.ActionSupersede: true,
+}
 
 // notice is one line of <cache>/notices/<session>.ndjson.
 type notice struct {
@@ -94,4 +108,36 @@ func TakeNotices(cacheDir, sess string, now time.Time) string {
 		return ""
 	}
 	return "cerne: card state changed since this session last looked:\n" + b.String()
+}
+
+// notifyCardSessions leaves card id's move from → to in the notice file of
+// every session that worked on it (EntitySessions, the card page's Agents
+// panel), except the one making the move. A project with no .cernerc or no
+// project id is a silent no-op, as for the webhook.
+//
+// ponytail: the actor's session is $CERNE_SESSION, so a `cerne ui` an agent
+// launched from its shell skips that agent; launch the UI from a terminal.
+func notifyCardSessions(repoDir, projDir, id string, from, to domain.FeatureState, now time.Time) error {
+	cfg, _, err := project.LoadConfig(projDir)
+	if err != nil || cfg.ProjectID == "" {
+		return nil
+	}
+	cacheDir, err := project.CacheDir(cfg.ProjectID)
+	if err != nil {
+		return err
+	}
+	sessions, err := EntitySessions(cacheDir, repoDir, id, nil)
+	if err != nil {
+		return err
+	}
+	actor := os.Getenv("CERNE_SESSION")
+	n := notice{Entity: id, At: now, Line: id + ": " + string(from) + " → " + string(to) +
+		" by " + EventActor() + " at " + now.Format(time.RFC3339) + NextStepTail(repoDir, projDir, id)}
+	var errs []error
+	for _, s := range sessions {
+		if s.Session != actor {
+			errs = append(errs, appendNotice(cacheDir, s.Session, n))
+		}
+	}
+	return errors.Join(errs...)
 }

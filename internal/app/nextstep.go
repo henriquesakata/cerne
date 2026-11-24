@@ -89,6 +89,21 @@ func docRef(projDir, id, name string) string {
 	return "content/features/" + id + "/" + name + " (backend)"
 }
 
+// NextStepTail is " — next: <step> (run: <command>)" for id, or "" when the
+// step cannot be read: the end of the wait's line and of a card notice
+// (F-0504), so the two never drift apart.
+func NextStepTail(repoDir, projDir, id string) string {
+	st, err := NextStep(repoDir, projDir, id)
+	if err != nil {
+		return ""
+	}
+	tail := " — next: " + st.Step
+	if st.Command != "" {
+		tail += " (run: " + st.Command + ")"
+	}
+	return tail
+}
+
 // NextStep decides the next step of feature id by CALLING the checks the
 // transitions run (ApproveReadiness, CheckStartNotStale, checkActionDocs,
 // checkTaskBar, guardParallelStart, CheckCompleteResult, PrecheckStamp) — it copies none, so
