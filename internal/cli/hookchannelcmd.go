@@ -283,27 +283,38 @@ func staleProviders(projDir string, names []string) []hooks.Provider {
 	return ps
 }
 
-// channelBlock is session sess's pending channel block for the project, ""
-// when there is nothing to deliver or on any error (fail-open, N-0021).
+// channelBlock is session sess's pending card notices (F-0504) and channel
+// block for the project, "" when there is nothing to deliver or on any error
+// (fail-open, N-0021). A peek (a subagent) leaves the notices to the session.
 func channelBlock(projectID, sess string, consume bool) string {
 	cacheDir, err := project.CacheDir(projectID)
 	if err != nil {
 		return ""
 	}
-	block, err := app.ChannelInject(cacheDir, filepath.Join(cacheDir, "repo"), sess, consume, time.Now().UTC())
+	now := time.Now().UTC()
+	block, err := app.ChannelInject(cacheDir, filepath.Join(cacheDir, "repo"), sess, consume, now)
 	if err != nil {
-		return ""
+		block = ""
+	}
+	if consume {
+		block = withChannel(app.TakeNotices(cacheDir, sess, now), nil, block)
 	}
 	return block
 }
 
-// channelThen puts session sess's pending channel block (F-0325) ahead of
+// channelThen puts session sess's card notices (F-0504) and pending channel
+// block (F-0325) ahead of
 // block, consuming it, at a tool call — an edit, a shell command (B-0054) —
 // where an addressed message already shown waits for the next turn (F-0490).
 // The prompt has its own (promptChannel). Fail-open: any error is no channel.
-func channelThen(cacheDir, repoDir, sess, block string) string {
-	ch, err := app.ChannelInjectTool(cacheDir, repoDir, sess, time.Now().UTC())
-	return withChannel(ch, err, block)
+func channelThen(cacheDir, repoDir, sess, agent, block string) string {
+	now := time.Now().UTC()
+	ch, err := app.ChannelInjectTool(cacheDir, repoDir, sess, now)
+	block = withChannel(ch, err, block)
+	if agent != "" { // a subagent carries its parent's session id: the notices are the parent's
+		return block
+	}
+	return withChannel(app.TakeNotices(cacheDir, sess, now), nil, block)
 }
 
 // withChannel puts the channel block ch ahead of block; an error is no channel.

@@ -497,7 +497,7 @@ func runHookWorkGate(cmd *cobra.Command, format string) {
 		first = paths[0]
 	}
 	if !cfg.Gates.WorkGateEnabled() || first == "" {
-		injectGateChannel(cmd, format, cacheDir, repoDir, projDir, in.SessionID, first)
+		injectGateChannel(cmd, format, cacheDir, repoDir, projDir, in.SessionID, in.AgentID, first)
 		return
 	}
 	allow, reason := true, ""
@@ -514,7 +514,7 @@ func runHookWorkGate(cmd *cobra.Command, format string) {
 		if reason != "" { // allowed by fail-open: say why on stderr (F-0376)
 			fmt.Fprintln(cmd.ErrOrStderr(), "warning: "+reason)
 		}
-		injectGateChannel(cmd, format, cacheDir, repoDir, projDir, in.SessionID, first)
+		injectGateChannel(cmd, format, cacheDir, repoDir, projDir, in.SessionID, in.AgentID, first)
 		return
 	}
 	// F-0170: the deny message is also a teaching moment — append the
@@ -593,14 +593,14 @@ func isPatch(text string) bool {
 // documented for Claude Code (R-0034) and Codex shares the envelope (R-0035);
 // Cursor and Gemini document no context on an allowed preToolUse, so they get
 // none. Fail-open: any error is silence.
-func injectGateChannel(cmd *cobra.Command, format, cacheDir, repoDir, projDir, sess, filePath string) {
+func injectGateChannel(cmd *cobra.Command, format, cacheDir, repoDir, projDir, sess, agent, filePath string) {
 	// The Copilot CLI also runs these .claude hooks (COPILOT_CLI=1) and ignores
 	// their output: consuming the channel or marking the notes seen here would
 	// silence its own post-tool hook, the channel it documents (F-0457, B-0054).
 	if format != "claude" && format != "codex" || os.Getenv("COPILOT_CLI") == "1" {
 		return
 	}
-	block := channelThen(cacheDir, repoDir, sess, notesOnEditBlock(cacheDir, repoDir, projDir, sess, filePath, ""))
+	block := channelThen(cacheDir, repoDir, sess, agent, notesOnEditBlock(cacheDir, repoDir, projDir, sess, filePath, ""))
 	if block == "" {
 		return
 	}
