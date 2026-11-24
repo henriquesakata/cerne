@@ -1,6 +1,8 @@
 package app
 
 import (
+	"context"
+	"net"
 	"net/url"
 	"testing"
 )
@@ -39,6 +41,34 @@ func TestLoginPageSegments(t *testing.T) {
 		}
 		if got := loginPage(u); got != tc.want {
 			t.Errorf("loginPage(%s) = %v, want %v", tc.u, got, tc.want)
+		}
+	}
+}
+
+// F-0503 crit. 4: the special-use ranges are not public, as a literal host, as
+// a resolved address, and as an IPv4 address mapped into IPv6.
+func TestArchiveGateSpecialUseRanges(t *testing.T) {
+	for _, ip := range []string{
+		"0.1.2.3", "192.0.0.8", "192.0.2.10", "198.18.0.1", "198.19.255.1", "198.51.100.7", "203.0.113.9",
+		"240.0.0.1", "255.255.254.1", "224.0.0.251", "2001:db8::1", "ff02::1",
+		"::ffff:10.0.0.1", "::ffff:127.0.0.1", "::ffff:100.64.0.1", "::ffff:192.0.2.1",
+	} {
+		host := ip
+		if net.ParseIP(ip).To4() == nil || ip[0] == ':' {
+			host = "[" + ip + "]"
+		}
+		if st, why := gateArchive(context.Background(), extRef("http://"+host+"/x"), true, nil, offlineNet(t)); st != archiveSkipped || why != "internal host" {
+			t.Errorf("literal %s: %s (%s), want skipped (internal host)", ip, st, why)
+		}
+		n := offlineNet(t)
+		n.LookupIP = func(context.Context, string, string) ([]net.IP, error) { return []net.IP{net.ParseIP(ip)}, nil }
+		if st, why := gateArchive(context.Background(), extRef("https://wiki.acme-corp.com/x"), true, nil, n); st != archiveSkipped || why != "private address" {
+			t.Errorf("resolves to %s: %s (%s), want skipped (private address)", ip, st, why)
+		}
+	}
+	for _, ip := range []string{"93.184.215.14", "198.17.255.1", "2606:2800:220:1::1", "::ffff:93.184.215.14"} {
+		if !publicIP(net.ParseIP(ip)) {
+			t.Errorf("publicIP(%s) = false, want true", ip)
 		}
 	}
 }

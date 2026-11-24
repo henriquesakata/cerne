@@ -384,11 +384,23 @@ func shareLinkHost(host string) bool {
 	return false
 }
 
-var sharedAddressSpace = &net.IPNet{IP: net.IPv4(100, 64, 0, 0), Mask: net.CIDRMask(10, 32)}
+// specialUse are the ranges that global unicast and private leave open: "this
+// network", carrier-grade NAT, IETF protocol assignments, the documentation
+// and benchmarking blocks, the reserved class E and the IPv6 documentation
+// block. An IPv4 address mapped into IPv6 is judged as IPv4 by Contains.
+var specialUse = func() (nets []*net.IPNet) {
+	for _, c := range []string{"0.0.0.0/8", "100.64.0.0/10", "192.0.0.0/24", "192.0.2.0/24", "198.18.0.0/15",
+		"198.51.100.0/24", "203.0.113.0/24", "240.0.0.0/4", "2001:db8::/32"} {
+		_, n, _ := net.ParseCIDR(c)
+		nets = append(nets, n)
+	}
+	return nets
+}()
 
-// publicIP: global unicast, not private, not the carrier-grade NAT range.
+// publicIP: global unicast (so not multicast or link-local), not private, in
+// no special-use range.
 func publicIP(ip net.IP) bool {
-	return ip.IsGlobalUnicast() && !ip.IsPrivate() && !sharedAddressSpace.Contains(ip)
+	return ip.IsGlobalUnicast() && !ip.IsPrivate() && !slices.ContainsFunc(specialUse, func(n *net.IPNet) bool { return n.Contains(ip) })
 }
 
 const dnsTimeout = 10 * time.Second
