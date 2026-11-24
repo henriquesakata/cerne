@@ -36,6 +36,9 @@ type PlanItem struct {
 	URL     string   `json:"url,omitempty"`     // required for reference
 	Informs []string `json:"informs,omitempty"` // F-/D- ids this backlinks (reference/note)
 	Source  string   `json:"source"`            // originating file (provenance + idempotency)
+	// Evidence is 1 to 3 snippets copied literally from Source that support the
+	// chosen state (F-0500); AnchorPlanItems checks them against the file.
+	Evidence []string `json:"evidence"`
 }
 
 // Plan is the agent's full proposal for a doc tree.
@@ -171,7 +174,8 @@ const planSchemaJSON = `{
       "body": "markdown content synthesized from the source(s)",
       "url": "(required when kind=reference) external link",
       "informs": ["F-0001", "D-0002"],
-      "source": "relative/path/to/source.md"
+      "source": "relative/path/to/source.md",
+      "evidence": ["1 to 3 snippets copied unchanged from the source file that support the chosen state"]
     }
   ]
 }`
@@ -195,7 +199,10 @@ func BuildPlanPrompt(sources []Source) string {
 	b.WriteString("\nClassify each source into the right kind: changelog/chronological history → ")
 	b.WriteString("decision/note/feature; current-state doc (e.g. CLAUDE.md) → note/runbook; ")
 	b.WriteString("operational procedure → runbook; external link that informed the project → ")
-	b.WriteString("reference (with url and informs). Synthesize the body in markdown; do not copy the source verbatim.\n")
+	b.WriteString("reference (with url and informs). Synthesize the body in markdown; do not copy the source verbatim in the body.\n")
+	b.WriteString("\nEach item also carries evidence: 1 to 3 snippets copied literally from the source file that support the state you chose ")
+	b.WriteString("(the title too, when it fits in the same snippet). The no-copy rule is for the body only; evidence must be copied unchanged — ")
+	b.WriteString("cerne checks every snippet against the file (whitespace and line breaks may differ) and leaves out any item whose evidence it cannot find.\n")
 
 	b.WriteString("\n## Plan schema (emit ONLY this JSON, no fences, no prose)\n\n```json\n")
 	b.WriteString(planSchemaJSON)
