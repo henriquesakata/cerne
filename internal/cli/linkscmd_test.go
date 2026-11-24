@@ -336,3 +336,27 @@ func TestLinksDecisionsAreHuman(t *testing.T) { // F-0502 crit. 6
 		t.Errorf("status = %s, want open", q[0].Status)
 	}
 }
+
+// TestLinksOnlySuggestAsksForSuggestions: with the switch on and an LLM
+// configured, push, pull, lint, compile and ask never send a link-suggestion
+// prompt; links suggest does (so the marker the test looks for is real).
+func TestLinksOnlySuggestAsksForSuggestions(t *testing.T) { // F-0502 crit. 9
+	fake := &linksFake{}
+	projDir, _ := linksProject(t, true, fake)
+	for _, args := range [][]string{
+		{"push"}, {"pull"}, {"lint"}, {"compile"}, {"ask", "what is the cache layer?"}, {"sync"},
+	} {
+		_, _ = execCerne(t, append(args, "--dir", projDir)...) // their own outcome is not under test
+	}
+	for _, p := range fake.prompts {
+		if strings.Contains(p, app.LinkPromptMarker) {
+			t.Fatalf("a command other than links suggest asked for link suggestions:\n%.300s", p)
+		}
+	}
+	if _, err := execCerne(t, "links", "suggest", "--yes", "--dir", projDir); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(fake.prompts); n == 0 || !strings.Contains(fake.prompts[n-1], app.LinkPromptMarker) {
+		t.Errorf("links suggest sent no marked prompt: %d prompt(s)", n)
+	}
+}
