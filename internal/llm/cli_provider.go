@@ -271,7 +271,21 @@ type cliProvider struct {
 	agentTools  []string // Claude Code permission rules passed via --allowedTools; nil = one-shot
 	deniedTools []string // permission rules passed via --disallowedTools (secret-file denials, F-0258)
 	answered    string   // the model claude reported for the last agentic turn (F-0440)
+	wantUsage   bool     // ask claude for JSON so LastUsage can report the tokens (F-0502)
+	usage       Usage    // the tokens of the last call that reported them
 }
+
+// WantUsage asks p, when it is the claude CLI, to report the tokens of each
+// call through LastUsage (F-0502); any other provider is left alone. The
+// one-shot then runs in JSON output instead of text.
+func WantUsage(p Provider) {
+	if c, ok := p.(*cliProvider); ok && c.kind == "" {
+		c.wantUsage = true
+	}
+}
+
+// LastUsage is the tokens the last claude call reported, zero when none did.
+func (p *cliProvider) LastUsage() Usage { return p.usage }
 
 // AnsweredModel is the model the CLI itself reported for the last turn, "" when
 // it reported none (F-0440): what the chat shows as the model that really ran.
@@ -286,24 +300,30 @@ type claudeJSON struct {
 	Type       string `json:"type"`
 	Result     string `json:"result"`
 	ModelUsage map[string]struct {
-		OutputTokens int `json:"outputTokens"`
+		InputTokens         int `json:"inputTokens"`
+		OutputTokens        int `json:"outputTokens"`
+		CacheReadTokens     int `json:"cacheReadInputTokens"`
+		CacheCreationTokens int `json:"cacheCreationInputTokens"`
 	} `json:"modelUsage"`
 }
 
-// parseClaudeJSON reads the reply and the busiest model of a JSON result; ok is
-// false for anything else (a CLI that ignored the format), kept as plain text.
-func parseClaudeJSON(out string) (reply, model string, ok bool) {
+// parseClaudeJSON reads the reply and the usage of a JSON result — Model is the
+// busiest model, the tokens are summed over every model; ok is false for
+// anything else (a CLI that ignored the format), kept as plain text.
+func parseClaudeJSON(out string) (reply string, u Usage, ok bool) {
 	var r claudeJSON
 	if json.Unmarshal([]byte(out), &r) != nil || r.Type != "result" {
-		return "", "", false
+		return "", Usage{}, false
 	}
 	best := -1
-	for m, u := range r.ModelUsage {
-		if u.OutputTokens > best || (u.OutputTokens == best && m < model) {
-			best, model = u.OutputTokens, m
+	for m, mu := range r.ModelUsage {
+		u.InputTokens += mu.InputTokens + mu.CacheReadTokens + mu.CacheCreationTokens
+		u.OutputTokens += mu.OutputTokens
+		if mu.OutputTokens > best || (mu.OutputTokens == best && m < u.Model) {
+			best, u.Model = mu.OutputTokens, m
 		}
 	}
-	return r.Result, model, true
+	return r.Result, u, true
 }
 
 // oneShotIsolation are the flags that turn `claude -p` back into what the
@@ -378,6 +398,10 @@ func (p *cliProvider) Complete(ctx context.Context, prompt string) (string, erro
 	base := []string{"-p", "--output-format", "text"}
 	args := slices.Clone(base)
 	agentic := len(p.agentTools) > 0
+	p.usage = Usage{}
+	if p.wantUsage {
+		args[2] = "json" // F-0502: the result carries the tokens (a copy; base stays text for the old-CLI retry)
+	}
 	if agentic {
 		args[2] = "json" // F-0440: the result carries the model that ran (a copy; base stays text for the old-CLI retry)
 		// B-0008: keep the project's CLAUDE.md/skills/hooks, drop the user's
@@ -415,9 +439,12 @@ func (p *cliProvider) Complete(ctx context.Context, prompt string) (string, erro
 	if s := strings.TrimSpace(stderr); agentic && s != "" {
 		log.Printf("claude-cli stderr: %s", truncate([]byte(s), maxOutputBytes))
 	}
-	if agentic {
-		if reply, model, ok := parseClaudeJSON(out); ok {
-			p.answered = model
+	if agentic || p.wantUsage {
+		if reply, u, ok := parseClaudeJSON(out); ok {
+			if agentic {
+				p.answered = u.Model
+			}
+			p.usage = u
 			return strings.TrimSpace(reply), nil
 		}
 	}

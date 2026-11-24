@@ -39,6 +39,21 @@ type Streamer interface {
 	Stream(ctx context.Context, prompt string, onDelta func(string) error) (string, error)
 }
 
+// Usage is what one completion consumed, as the provider reported it (F-0502).
+// InputTokens counts every input-side token the provider billed, cache reads
+// and writes included.
+type Usage struct {
+	Model                     string
+	InputTokens, OutputTokens int
+}
+
+// UsageReporter is the optional capability of reporting the consumption of the
+// last Complete; callers discover it by type assertion. A provider that does
+// not report it (delegation, the other CLIs) simply lacks the method.
+type UsageReporter interface {
+	LastUsage() Usage
+}
+
 // ModeCodexCLI, ModeGeminiCLI and ModeCursorCLI are the subscription modes that
 // shell to the Codex CLI, the Gemini CLI (F-0414) and the Cursor CLI (F-0441),
 // like ModeClaudeCLI does for Claude Code.

@@ -48,7 +48,11 @@ type httpProvider struct {
 	maxTokens  int
 	apiKey     string
 	httpClient *http.Client
+	usage      Usage // the tokens of the last Complete (F-0502)
 }
+
+// LastUsage is the tokens the last Complete reported.
+func (p *httpProvider) LastUsage() Usage { return p.usage }
 
 // ConfiguredProviders names the model vendors the project's [llm] config
 // already reaches (F-0311): none in delegation, the Claude Code subscription's
@@ -230,7 +234,14 @@ type toolResultBlock struct {
 
 // messagesResponse is the subset of the response we read: the content blocks.
 type messagesResponse struct {
+	Model   string         `json:"model"`
 	Content []contentBlock `json:"content"`
+	Usage   struct {
+		InputTokens  int `json:"input_tokens"`
+		OutputTokens int `json:"output_tokens"`
+		CacheRead    int `json:"cache_read_input_tokens"`
+		CacheWrite   int `json:"cache_creation_input_tokens"`
+	} `json:"usage"`
 }
 
 type contentBlock struct {
@@ -377,6 +388,8 @@ func (p *httpProvider) Complete(ctx context.Context, prompt string) (string, err
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
 		return "", fmt.Errorf("unreadable API response: %w", err)
 	}
+	u := parsed.Usage
+	p.usage = Usage{Model: parsed.Model, InputTokens: u.InputTokens + u.CacheRead + u.CacheWrite, OutputTokens: u.OutputTokens}
 	var b bytes.Buffer
 	for _, block := range parsed.Content {
 		if block.Type == "text" {
