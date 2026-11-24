@@ -90,3 +90,32 @@ func TestBuildGraphSurvivesACorruptLinksQueue(t *testing.T) { // F-0502 crit. 6
 		t.Errorf("TaskContext: %v", err)
 	}
 }
+
+// TestContextAcceptedLinksBySourceKind: an accepted relation that reaches the
+// task brings its source into ring (a) when it is a decision or a reference,
+// like an informs; a feature as source does not.
+func TestContextAcceptedLinksBySourceKind(t *testing.T) { // F-0502 crit. 6
+	repo := contextFixture(t)
+	err := store.SaveLinkSuggestions(repo, []store.LinkSuggestion{
+		{N: 1, From: "D-0003", To: "T-0002", Status: store.LinkAccepted},
+		{N: 2, From: "R-0004", To: "T-0002", Status: store.LinkAccepted},
+		{N: 3, From: "F-0020", To: "T-0002", Status: store.LinkAccepted},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := TaskContext(repo, "T-0002", DefaultContextBudget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ring := map[string]string{}
+	for _, it := range p.Items {
+		ring[it.ID] = it.Ring
+	}
+	if ring["D-0003"] != "a" || ring["R-0004"] != "a" {
+		t.Errorf("decision %q and reference %q as sources, want ring a for both", ring["D-0003"], ring["R-0004"])
+	}
+	if r, in := ring["F-0020"]; in {
+		t.Errorf("a feature as the source came in ring %q", r)
+	}
+}
