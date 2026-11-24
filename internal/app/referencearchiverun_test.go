@@ -47,7 +47,9 @@ func saves(u string) (Snapshot, error) {
 	return Snapshot{URL: "https://web.archive.org/web/20261124120000/" + u, CapturedAt: savedAt}, nil
 }
 
-func refuses(string) (Snapshot, error) { return Snapshot{}, httpStatusError(http.StatusTooManyRequests) }
+func refuses(string) (Snapshot, error) {
+	return Snapshot{}, httpStatusError(http.StatusTooManyRequests)
+}
 
 func noCopy(string) (Snapshot, error) { return Snapshot{}, ErrNoSnapshot }
 

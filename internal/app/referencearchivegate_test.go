@@ -135,7 +135,9 @@ func TestArchiveGateResolvesTheHost(t *testing.T) {
 		}
 	}
 	n := offlineNet(t)
-	n.LookupIP = func(context.Context, string, string) ([]net.IP, error) { return nil, &net.DNSError{Err: "no such host", IsNotFound: true} }
+	n.LookupIP = func(context.Context, string, string) ([]net.IP, error) {
+		return nil, &net.DNSError{Err: "no such host", IsNotFound: true}
+	}
 	if st, why := gateArchive(context.Background(), extRef("https://gone.publicsite.org/x"), true, nil, n); st != archivePending || why != "dns lookup failed" {
 		t.Errorf("lookup failure: %s (%s), want pending (dns lookup failed)", st, why)
 	}
