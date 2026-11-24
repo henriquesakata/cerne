@@ -47,6 +47,27 @@ func TestReferenceGone(t *testing.T) {
 	if d := got["R-0001"].Detail; !strings.Contains(d, "HTTP 404") || !strings.Contains(d, "F-0001") || !strings.Contains(d, at.Format("2006-01-02")) {
 		t.Errorf("R-0001 detail = %q", d)
 	}
+	// F-0503 crit. 11: a recorded copy rides on the finding, read from the data.
+	if strings.Contains(got["R-0001"].Detail, "archive:") {
+		t.Errorf("R-0001 has no copy but its detail names one: %q", got["R-0001"].Detail)
+	}
+	r5, err := store.LoadReference(dir, "R-0005")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r5.Archive = &store.ReferenceArchive{URL: "https://web.archive.org/web/20250302080000/https://example.com/R-0005", CapturedAt: time.Date(2025, 3, 2, 8, 0, 0, 0, time.UTC), Origin: "existing", Status: "archived"}
+	if err := store.SaveReference(dir, r5); err != nil {
+		t.Fatal(err)
+	}
+	findings, err = Run(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range findings {
+		if f.Rule == RuleReferenceGone && f.Entity == "R-0005" && !strings.HasSuffix(f.Detail, "; archive: https://web.archive.org/web/20250302080000/https://example.com/R-0005 (2025-03-02)") {
+			t.Errorf("R-0005 detail = %q, want it to end with the copy's link and date", f.Detail)
+		}
+	}
 	if d := got["R-0005"].Detail; !strings.Contains(d, "domain not found") {
 		t.Errorf("R-0005 detail = %q", d)
 	}

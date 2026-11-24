@@ -78,19 +78,28 @@ func TestReferenceListShowsTheCopy(t *testing.T) {
 }
 
 // F-0503 crit. 11: the check line of a gone or changed reference ends with the
-// copy's link.
+// copy's link, its origin and its date.
 func TestReferenceCheckShowsTheCopy(t *testing.T) {
-	projDir, repoDir, _ := checkFixture(t)
+	projDir, repoDir, flip := checkFixture(t)
 	seedArchive(t, projDir, repoDir, "R-0003", savedCopy, false)
+	seedArchive(t, projDir, repoDir, "R-0002", savedCopy, false)
 	seedArchive(t, projDir, repoDir, "R-0001", savedCopy, false)
 	out, err := execCerne(t, "reference", "check", "--dir", projDir)
 	if err != nil {
 		t.Fatalf("check: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "R-0003  gone (HTTP 404)  informs F-0001  archive: "+copyLink+"\n") {
+	if !strings.Contains(out, "R-0003  gone (HTTP 404)  informs F-0001  archive: "+copyLink+" (saved 2026-11-24)\n") {
 		t.Errorf("gone line lacks the copy:\n%s", out)
 	}
 	if !strings.Contains(out, "R-0001  ok\n") {
 		t.Errorf("an ok line carries more than its result:\n%s", out)
+	}
+	flip.Store(true)
+	out, err = execCerne(t, "reference", "check", "R-0002", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("check R-0002: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "R-0002  changed  informs F-0001  archive: "+copyLink+" (saved 2026-11-24)\n") {
+		t.Errorf("changed line lacks the copy:\n%s", out)
 	}
 }

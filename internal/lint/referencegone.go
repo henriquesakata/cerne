@@ -29,6 +29,9 @@ func referenceGoneFindings(references []store.Reference) []Finding {
 		if len(r.Informs) > 0 {
 			detail += "; informs " + strings.Join(r.Informs, ", ")
 		}
+		if a := r.Archive; a != nil && a.Status == "archived" {
+			detail += fmt.Sprintf("; archive: %s (%s)", a.URL, a.CapturedAt.Format("2006-01-02"))
+		}
 		out = append(out, Finding{Rule: RuleReferenceGone, Entity: r.ID, Detail: detail})
 	}
 	return out
