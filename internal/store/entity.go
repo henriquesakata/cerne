@@ -143,8 +143,22 @@ type Reference struct {
 	Facets     []string              `json:"facets,omitempty"`     // closed-set axis (D-0002): infra/code/data/process/auth
 	Components []string              `json:"components,omitempty"` // curated subsystem/tool axis (D-0002): gitea, kpack, …
 	Check      *ReferenceCheck       `json:"check,omitempty"`      // last valid source check (F-0501)
+	Archive    *ReferenceArchive     `json:"archive,omitempty"`    // last archive attempt (F-0503)
+	NoArchive  bool                  `json:"no_archive,omitempty"` // never sent to an archive service (F-0503)
 	CreatedAt  time.Time             `json:"created_at"`
 	UpdatedAt  time.Time             `json:"updated_at"`
+}
+
+// ReferenceArchive is the last outcome of archiving a reference's page
+// (F-0503). Status is archived, pending, not_public or skipped; an archived
+// one has URL (the dated copy), CapturedAt and Origin: saved (a new copy) or
+// existing (the closest copy already there). Reason says why for the others.
+type ReferenceArchive struct {
+	URL        string    `json:"url,omitempty"`
+	CapturedAt time.Time `json:"captured_at,omitzero"`
+	Origin     string    `json:"origin,omitempty"`
+	Status     string    `json:"status"`
+	Reason     string    `json:"reason,omitempty"`
 }
 
 // ReferenceCheck is the last check of an external reference's URL that counted
