@@ -424,7 +424,11 @@ func runImportAgentIngest(cmd *cobra.Command, ctx projCtx, delivered, deliveredS
 	}
 
 	importer.SetPlanDelivered(kept, deliveredState)
-	sum, err := importer.ApplyPlan(ctx.repoDir, kept, app.EventActor())
+	toApply := make([]importer.AnchoredItem, len(kept))
+	for i, it := range kept {
+		toApply[i] = importer.AnchoredItem{PlanItem: it}
+	}
+	sum, err := importer.ApplyPlan(ctx.repoDir, toApply, app.EventActor())
 	if err != nil {
 		return err
 	}

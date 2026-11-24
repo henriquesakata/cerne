@@ -20,7 +20,7 @@ func TestApplyPlanCreatesEachKind(t *testing.T) {
 	note.Informs = []string{"F-0001"}
 	items := []PlanItem{validItem("feature"), validItem("decision"), ref, validItem("runbook"), note}
 
-	sum, err := ApplyPlan(repo, items, "tester")
+	sum, err := ApplyPlan(repo, withSpans(items), "tester")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestApplyPlanDeliveredDoneWritesOnlyImportedEvents(t *testing.T) {
 	}
 	items := []PlanItem{validItem("feature"), validItem("decision")}
 	SetPlanDelivered(items, "done")
-	if _, err := ApplyPlan(repo, items, "tester"); err != nil {
+	if _, err := ApplyPlan(repo, withSpans(items), "tester"); err != nil {
 		t.Fatal(err)
 	}
 	f, err := store.LoadFeature(repo, "F-0001")
@@ -101,7 +101,7 @@ func TestApplyPlanUnknownKind(t *testing.T) {
 	if err := store.InitLayout(repo, store.Project{Name: "t"}); err != nil {
 		t.Fatal(err)
 	}
-	_, err := ApplyPlan(repo, []PlanItem{{Kind: "widget", Title: "X", State: "x", Body: "b", Source: "s"}}, "t")
+	_, err := ApplyPlan(repo, withSpans([]PlanItem{{Kind: "widget", Title: "X", State: "x", Body: "b", Source: "s"}}), "t")
 	if err == nil {
 		t.Fatal("ApplyPlan(unknown kind) = nil err, want error")
 	}

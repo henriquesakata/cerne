@@ -31,6 +31,16 @@ type AnchoredItem struct {
 	Spans []Span
 }
 
+// anchorText renders the spans for the frontmatter and the event: a
+// comma-separated "file:start-end" list, empty when there are none.
+func (a AnchoredItem) anchorText() string {
+	parts := make([]string, len(a.Spans))
+	for i, s := range a.Spans {
+		parts[i] = s.String()
+	}
+	return strings.Join(parts, ", ")
+}
+
 // Unanchored is a plan item left out of the import, with the reason.
 type Unanchored struct {
 	Item   PlanItem

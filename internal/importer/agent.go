@@ -239,11 +239,11 @@ func capContent(content string) string {
 // copies no files and rewrites no links — the body is authored against backend
 // ids. Items are expected pre-validated (see ValidatePlan); an unknown kind
 // still aborts. No git interaction happens here.
-func ApplyPlan(repoDir string, items []PlanItem, actor string) (Summary, error) {
+func ApplyPlan(repoDir string, items []AnchoredItem, actor string) (Summary, error) {
 	sum := Summary{ByState: map[string]int{}}
 	now := time.Now().UTC()
 	for _, it := range items {
-		id, contentRel, err := savePlanEntity(repoDir, it, now)
+		id, contentRel, err := savePlanEntity(repoDir, it.PlanItem, now)
 		if err != nil {
 			return Summary{}, err
 		}
@@ -259,7 +259,12 @@ func ApplyPlan(repoDir string, items []PlanItem, actor string) (Summary, error) 
 		case "note":
 			sum.Notes++
 		}
-		ev := domain.NewEvent(id, it.Kind+".imported", map[string]string{"source": it.Source}, actor)
+		anchor := it.anchorText()
+		payload := map[string]string{"source": it.Source}
+		if anchor != "" {
+			payload["anchor"] = anchor
+		}
+		ev := domain.NewEvent(id, it.Kind+".imported", payload, actor)
 		if err := store.AppendEvent(repoDir, ev); err != nil {
 			return Summary{}, err
 		}
@@ -267,7 +272,7 @@ func ApplyPlan(repoDir string, items []PlanItem, actor string) (Summary, error) 
 		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 			return Summary{}, err
 		}
-		stamped := injectFrontmatter([]byte(it.Body), id, it.Source)
+		stamped := injectFrontmatter([]byte(it.Body), id, it.Source, anchor)
 		if err := os.WriteFile(dst, stamped, 0o644); err != nil {
 			return Summary{}, err
 		}
