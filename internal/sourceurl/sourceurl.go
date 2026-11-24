@@ -37,7 +37,7 @@ func Internal(u string, ignore []string) bool {
 // one (F-0503 crit. 5). Matching by substring over-blocks harmless names
 // (barcode, unicode, keyword, author, assess): such a URL is only not archived, the
 // safe side.
-var secretWords = []string{"tok", "mc_eid", "_hsenc", "_hsmi", "key", "secret", "sig", "auth", "pass", "pwd", "sess", "jwt", "credential", "bearer", "code"}
+var secretWords = []string{"tok", "mc_eid", "_hsenc", "_hsmi", "oly_enc_id", "vero_id", "ck_subscriber_id", "email", "key", "secret", "sig", "auth", "pass", "pwd", "sess", "jwt", "credential", "bearer", "code"}
 
 // jwtValue is a JWT under any parameter name: three base64url parts, the first
 // a JSON header ("eyJ"). webhookPath is a Discord webhook (/api/webhooks/<id>/<token>)
@@ -47,6 +47,16 @@ var (
 	webhookPath = regexp.MustCompile(`/api/webhooks/|/bot\d+:`)
 )
 
+// jwtSegment reports a path segment shaped like a JWT.
+func jwtSegment(path string) bool {
+	for _, seg := range strings.Split(path, "/") {
+		if jwtValue.MatchString(seg) {
+			return true
+		}
+	}
+	return false
+}
+
 // HasSecret reports whether a URL carries credentials or a secret: a user or
 // password before the host, or a query or fragment parameter whose raw or
 // decoded name contains one of secretWords. It fails closed: a URL that does
@@ -54,7 +64,7 @@ var (
 // its pair) or that the parser rejects, counts as carrying one.
 func HasSecret(raw string) bool {
 	u, err := url.Parse(raw)
-	if err != nil || u.User != nil || webhookPath.MatchString(u.Path) {
+	if err != nil || u.User != nil || webhookPath.MatchString(u.Path) || jwtSegment(u.Path) {
 		return true
 	}
 	for _, part := range []string{u.RawQuery, u.EscapedFragment()} {
