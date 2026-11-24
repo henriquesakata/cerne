@@ -48,11 +48,7 @@ type httpProvider struct {
 	maxTokens  int
 	apiKey     string
 	httpClient *http.Client
-	usage      Usage // the tokens of the last Complete (F-0502)
 }
-
-// LastUsage is the tokens the last Complete reported.
-func (p *httpProvider) LastUsage() Usage { return p.usage }
 
 // ConfiguredProviders names the model vendors the project's [llm] config
 // already reaches (F-0311): none in delegation, the Claude Code subscription's
@@ -370,33 +366,40 @@ func ListModels(ctx context.Context, cfg project.LLMConfig) ([]models.Entry, err
 // Complete performs one Messages API call and returns the concatenated text of
 // every "text"-type content block.
 func (p *httpProvider) Complete(ctx context.Context, prompt string) (string, error) {
+	s, _, err := p.CompleteUsage(ctx, prompt)
+	return s, err
+}
+
+// CompleteUsage is Complete that also returns the tokens the response reports
+// (F-0502); the usage travels with the call, never in the shared provider.
+func (p *httpProvider) CompleteUsage(ctx context.Context, prompt string) (string, Usage, error) {
 	resp, err := p.post(ctx, messagesRequest{
 		Model:     p.model,
 		MaxTokens: p.maxTokens,
 		Messages:  []messagesMember{{Role: "user", Content: prompt}},
 	})
 	if err != nil {
-		return "", err
+		return "", Usage{}, err
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", err
+		return "", Usage{}, err
 	}
 	var parsed messagesResponse
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
-		return "", fmt.Errorf("unreadable API response: %w", err)
+		return "", Usage{}, fmt.Errorf("unreadable API response: %w", err)
 	}
 	u := parsed.Usage
-	p.usage = Usage{Model: parsed.Model, InputTokens: u.InputTokens + u.CacheRead + u.CacheWrite, OutputTokens: u.OutputTokens}
+	usage := Usage{Model: parsed.Model, InputTokens: u.InputTokens + u.CacheRead + u.CacheWrite, OutputTokens: u.OutputTokens}
 	var b bytes.Buffer
 	for _, block := range parsed.Content {
 		if block.Type == "text" {
 			b.WriteString(block.Text)
 		}
 	}
-	return b.String(), nil
+	return b.String(), usage, nil
 }
 
 // CompleteTools implements ToolCaller over the Messages API (F-0323): while

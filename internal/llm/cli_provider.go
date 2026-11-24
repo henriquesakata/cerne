@@ -271,21 +271,7 @@ type cliProvider struct {
 	agentTools  []string // Claude Code permission rules passed via --allowedTools; nil = one-shot
 	deniedTools []string // permission rules passed via --disallowedTools (secret-file denials, F-0258)
 	answered    string   // the model claude reported for the last agentic turn (F-0440)
-	wantUsage   bool     // ask claude for JSON so LastUsage can report the tokens (F-0502)
-	usage       Usage    // the tokens of the last call that reported them
 }
-
-// WantUsage asks p, when it is the claude CLI, to report the tokens of each
-// call through LastUsage (F-0502); any other provider is left alone. The
-// one-shot then runs in JSON output instead of text.
-func WantUsage(p Provider) {
-	if c, ok := p.(*cliProvider); ok && c.kind == "" {
-		c.wantUsage = true
-	}
-}
-
-// LastUsage is the tokens the last claude call reported, zero when none did.
-func (p *cliProvider) LastUsage() Usage { return p.usage }
 
 // AnsweredModel is the model the CLI itself reported for the last turn, "" when
 // it reported none (F-0440): what the chat shows as the model that really ran.
@@ -395,11 +381,29 @@ func (p *cliProvider) Complete(ctx context.Context, prompt string) (string, erro
 	case ModeCopilotCLI:
 		return p.completeCopilot(ctx, prompt)
 	}
+	s, _, err := p.completeClaude(ctx, prompt, false)
+	return s, err
+}
+
+// CompleteUsage is Complete that also returns the tokens the call used
+// (F-0502). Usage travels with the call, not in the provider: a provider is
+// shared between goroutines. Only the claude CLI reports it, and asks for JSON
+// output to do so; the other CLIs answer with a zero Usage.
+func (p *cliProvider) CompleteUsage(ctx context.Context, prompt string) (string, Usage, error) {
+	if p.kind != "" {
+		s, err := p.Complete(ctx, prompt)
+		return s, Usage{}, err
+	}
+	return p.completeClaude(ctx, prompt, true)
+}
+
+// completeClaude is the `claude -p` call; wantUsage turns the output to JSON
+// so the tokens can be read.
+func (p *cliProvider) completeClaude(ctx context.Context, prompt string, wantUsage bool) (string, Usage, error) {
 	base := []string{"-p", "--output-format", "text"}
 	args := slices.Clone(base)
 	agentic := len(p.agentTools) > 0
-	p.usage = Usage{}
-	if p.wantUsage {
+	if wantUsage {
 		args[2] = "json" // F-0502: the result carries the tokens (a copy; base stays text for the old-CLI retry)
 	}
 	if agentic {
@@ -429,26 +433,25 @@ func (p *cliProvider) Complete(ctx context.Context, prompt string) (string, erro
 	if err != nil && isUnknownFlag(err) {
 		if agentic {
 			// Never retry with less isolation (B-0008, F-0414 rule).
-			return "", fmt.Errorf("%w: this Claude Code does not know a flag cerne needs (isolation, model or effort) — update Claude Code (claude update); cerne will not run the chat with less isolation: %w", ErrClaudeCLI, err)
+			return "", Usage{}, fmt.Errorf("%w: this Claude Code does not know a flag cerne needs (isolation, model or effort) — update Claude Code (claude update); cerne will not run the chat with less isolation: %w", ErrClaudeCLI, err)
 		}
 		out, stderr, err = p.run(ctx, p.dir, p.bin, base, prompt)
 	}
 	if err != nil {
-		return "", cliFailure(ctx, start, ErrClaudeCLI, "Claude Code (claude -p)", err, "check 'claude /login' (subscription) or use [llm] mode=\"byo-key\"")
+		return "", Usage{}, cliFailure(ctx, start, ErrClaudeCLI, "Claude Code (claude -p)", err, "check 'claude /login' (subscription) or use [llm] mode=\"byo-key\"")
 	}
 	if s := strings.TrimSpace(stderr); agentic && s != "" {
 		log.Printf("claude-cli stderr: %s", truncate([]byte(s), maxOutputBytes))
 	}
-	if agentic || p.wantUsage {
+	if agentic || wantUsage {
 		if reply, u, ok := parseClaudeJSON(out); ok {
 			if agentic {
 				p.answered = u.Model
 			}
-			p.usage = u
-			return strings.TrimSpace(reply), nil
+			return strings.TrimSpace(reply), u, nil
 		}
 	}
-	return strings.TrimSpace(out), nil
+	return strings.TrimSpace(out), Usage{}, nil
 }
 
 // scratchDir is the empty directory the Codex and Gemini one-shots run in, so

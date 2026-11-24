@@ -130,12 +130,19 @@ func runLinksSuggest(cmd *cobra.Command, dir string, ids []string, yes, ingest b
 	if err != nil {
 		return err
 	}
-	llm.WantUsage(prov)
+	usageProv, hasUsage := prov.(llm.UsageCompleter)
 	round := linksRound{mode: mode}
 	var raw []app.RawLinkSuggestion
 	var callErr error
 	for i, s := range sources {
-		reply, err := prov.Complete(cmd.Context(), prompts[i])
+		var reply string
+		var u llm.Usage
+		var err error
+		if hasUsage {
+			reply, u, err = usageProv.CompleteUsage(cmd.Context(), prompts[i])
+		} else {
+			reply, err = prov.Complete(cmd.Context(), prompts[i])
+		}
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				return err
@@ -144,13 +151,11 @@ func runLinksSuggest(cmd *cobra.Command, dir string, ids []string, yes, ingest b
 			break
 		}
 		round.documents++
-		if r, ok := prov.(llm.UsageReporter); ok {
-			if u := r.LastUsage(); u.InputTokens+u.OutputTokens > 0 {
-				round.reported = true
-				round.in += u.InputTokens
-				round.out += u.OutputTokens
-				round.model = u.Model
-			}
+		if u.InputTokens+u.OutputTokens > 0 {
+			round.reported = true
+			round.in += u.InputTokens
+			round.out += u.OutputTokens
+			round.model = u.Model
 		}
 		got, err := app.ParseLinkSuggestions(reply)
 		if err != nil {

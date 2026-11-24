@@ -47,11 +47,11 @@ type Usage struct {
 	InputTokens, OutputTokens int
 }
 
-// UsageReporter is the optional capability of reporting the consumption of the
+// UsageCompleter is the optional capability of reporting the consumption of the
 // last Complete; callers discover it by type assertion. A provider that does
 // not report it (delegation, the other CLIs) simply lacks the method.
-type UsageReporter interface {
-	LastUsage() Usage
+type UsageCompleter interface {
+	CompleteUsage(ctx context.Context, prompt string) (string, Usage, error)
 }
 
 // ModeCodexCLI, ModeGeminiCLI and ModeCursorCLI are the subscription modes that
