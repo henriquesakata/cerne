@@ -115,6 +115,9 @@ func CheckReferences(repoDir, projDir string, ids []string, fetch Fetcher) ([]Ch
 	if err != nil {
 		return nil, err
 	}
+	if len(refs) == 0 {
+		return nil, nil // nothing to fetch, nothing to commit
+	}
 	out := make([]fetched, len(refs))
 	sem := make(chan struct{}, checkParallel)
 	var wg sync.WaitGroup
@@ -149,7 +152,6 @@ func CheckReferences(repoDir, projDir string, ids []string, fetch Fetcher) ([]Ch
 			res := classifyCheck(&r, out[i], now, reached)
 			res.ID, res.Informs = r.ID, r.Informs
 			if res.Result != "transient" {
-				r.UpdatedAt = now
 				if err := store.SaveReference(repoDir, r); err != nil {
 					return "", err
 				}

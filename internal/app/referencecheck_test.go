@@ -470,6 +470,31 @@ func TestKeepReferenceCanonicalizesAndRefusesNonCurrent(t *testing.T) {
 	}
 }
 
+// F-0501 crit. 1: a check records a check, it does not edit the entity: UpdatedAt stays.
+func TestCheckReferencesLeavesUpdatedAtAlone(t *testing.T) {
+	repoDir, projDir := refsBackend(t, 1)
+	before := loadRef(t, repoDir, "R-0001").UpdatedAt
+	if _, err := CheckReferences(repoDir, projDir, nil, fetchMap(map[string]FetchResponse{"https://example.com/1": page("a")})); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadRef(t, repoDir, "R-0001").UpdatedAt; !got.Equal(before) {
+		t.Fatalf("UpdatedAt %v -> %v", before, got)
+	}
+}
+
+// F-0501 crit. 1: with nothing to check there is no fetch, no commit, no result.
+func TestCheckReferencesEmptyRunMakesNoCommit(t *testing.T) {
+	repoDir, projDir := refsBackend(t, 0)
+	before := commitCount(t, repoDir)
+	res, err := CheckReferences(repoDir, projDir, nil, fetchErr(errors.New("must not be called")))
+	if err != nil || len(res) != 0 {
+		t.Fatalf("%+v, %v", res, err)
+	}
+	if got := commitCount(t, repoDir); got != before {
+		t.Fatalf("commits %d -> %d", before, got)
+	}
+}
+
 // F-0501 crit. 1: an unknown or obsolete id refuses before any fetch.
 func TestCheckReferencesRefusesBadIDs(t *testing.T) {
 	repoDir, projDir := refsBackend(t, 2)
