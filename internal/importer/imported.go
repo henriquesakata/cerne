@@ -33,17 +33,28 @@ func importedItemKey(source, title string) string {
 
 // importedItems returns the (imported_from, normalized title) keys of every
 // imported entity, the idempotency unit of the agent path: one source may yield
-// several entities, and only some of them may have been applied (F-0500).
+// several entities, and only some of them may have been applied (F-0500). A
+// doc whose entity cannot be loaded (imported by the case-folder convention, or
+// orphaned) contributes the source-only key, so every item of that source counts
+// as imported: conservative, never duplicates.
 func importedItems(repoDir string) (map[string]bool, error) {
 	items := map[string]bool{}
 	var firstErr error
 	err := walkImported(repoDir, func(doc []byte) {
 		src := doccheck.FrontmatterValue(doc, "imported_from")
+		if src == "" {
+			return
+		}
 		id := doccheck.FrontmatterValue(doc, "cerne_id")
-		if src == "" || id == "" {
+		if id == "" {
+			items[importedItemKey(src, "")] = true
 			return
 		}
 		m, _, err := store.LoadMeta(repoDir, id)
+		if errors.Is(err, store.ErrNotFound) {
+			items[importedItemKey(src, "")] = true
+			return
+		}
 		if err != nil {
 			if firstErr == nil {
 				firstErr = fmt.Errorf("loading imported entity %s: %w", id, err)
