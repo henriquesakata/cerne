@@ -253,12 +253,34 @@ func ArchiveReferences(repoDir, projDir string, ids []string, n ArchiveNet, dryR
 	return out, nil
 }
 
+// archiveOptOutEvent records --no-archive in the append-only log (F-0503).
+const archiveOptOutEvent = "reference.archive_opt_out"
+
 // referencesToArchive is referencesToCheck's targets; with no ids, only the
-// ones with no copy yet or a pending one, never a no-archive one.
+// ones with no copy yet or a pending one, never a no-archive one. A reference
+// is no-archive when its field says so or the log holds its opt-out event, so
+// a rewrite that dropped the field does not reopen it. An unreadable log
+// refuses the run.
 func referencesToArchive(repoDir string, ids []string) ([]store.Reference, error) {
 	refs, err := referencesToCheck(repoDir, ids)
-	if err != nil || len(ids) > 0 {
-		return refs, err
+	if err != nil {
+		return nil, err
+	}
+	events, err := store.ReadEvents(repoDir)
+	if err != nil {
+		return nil, err
+	}
+	optedOut := map[string]bool{}
+	for _, e := range events {
+		if e.Type == archiveOptOutEvent {
+			optedOut[e.EntityID] = true
+		}
+	}
+	for i := range refs {
+		refs[i].NoArchive = refs[i].NoArchive || optedOut[refs[i].ID]
+	}
+	if len(ids) > 0 {
+		return refs, nil
 	}
 	return slices.DeleteFunc(refs, func(r store.Reference) bool {
 		return r.NoArchive || (r.Archive != nil && r.Archive.Status != archivePending)

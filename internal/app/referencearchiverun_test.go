@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -277,6 +278,30 @@ func TestArchiveReferencesSendOnlyTheURL(t *testing.T) {
 				t.Errorf("request %d carries %q:\n%s", i, leak, d)
 			}
 		}
+	}
+}
+
+// F-0503 crit. 7: --no-archive is also an append-only reference.archive_opt_out
+// event, so a release binary that rewrites the reference without the field
+// (retag, link, retire) does not reopen the archive: batch and named runs
+// still refuse it.
+func TestArchiveReferencesOptOutSurvivesARewrite(t *testing.T) {
+	repoDir, projDir := archiveBackend(t, 0, true)
+	r, err := CreateExternalReference(repoDir, projDir, "Kept", "https://example.com/kept", "", nil, nil, nil, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evs, _ := store.ReadEvents(repoDir)
+	if !slices.ContainsFunc(evs, func(e domain.Event) bool { return e.EntityID == r.ID && e.Type == "reference.archive_opt_out" }) {
+		t.Fatalf("no reference.archive_opt_out event for %s", r.ID)
+	}
+	setRef(t, repoDir, projDir, r.ID, func(x *store.Reference) { x.NoArchive = false }) // the old binary's rewrite
+	if res, err := ArchiveReferences(repoDir, projDir, nil, offlineNet(t), false); err != nil || len(res) != 0 {
+		t.Errorf("batch: %+v, %v; want nothing taken", res, err)
+	}
+	res, err := ArchiveReferences(repoDir, projDir, []string{r.ID}, offlineNet(t), false)
+	if err != nil || len(res) != 1 || res[0].Status != "skipped" || res[0].Reason != "no-archive" {
+		t.Errorf("named: %+v, %v; want skipped (no-archive)", res, err)
 	}
 }
 
