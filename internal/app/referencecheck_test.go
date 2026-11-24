@@ -184,6 +184,9 @@ func TestCheckReferencesGone(t *testing.T) {
 // offline or behind a captive resolver: every DNS miss is transient and no
 // check is recorded.
 func TestCheckReferencesOfflineRunMarksNothingGone(t *testing.T) {
+	old := networkUp
+	networkUp = func() bool { return false }
+	t.Cleanup(func() { networkUp = old })
 	repoDir, projDir := refsBackend(t, 2)
 	dns := fetchErr(&net.DNSError{Err: "no such host", Name: "x", IsNotFound: true})
 	res, err := CheckReferences(repoDir, projDir, nil, dns)
@@ -199,6 +202,34 @@ func TestCheckReferencesOfflineRunMarksNothingGone(t *testing.T) {
 		if loadRef(t, repoDir, id).Check != nil {
 			t.Errorf("%s got a check from an offline run", id)
 		}
+	}
+}
+
+// F-0501 crit. 3: a lone dead domain is gone while the machine has a usable
+// interface, and transient (Check untouched) when it is offline.
+func TestCheckReferencesSingleDNSMiss(t *testing.T) {
+	dns := fetchErr(&net.DNSError{Err: "no such host", Name: "x", IsNotFound: true})
+	for _, up := range []bool{true, false} {
+		t.Run(fmt.Sprintf("networkUp=%v", up), func(t *testing.T) {
+			old := networkUp
+			networkUp = func() bool { return up }
+			t.Cleanup(func() { networkUp = old })
+			repoDir, projDir := refsBackend(t, 1)
+			res, err := CheckReferences(repoDir, projDir, []string{"R-0001"}, dns)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := "transient"
+			if up {
+				want = "gone"
+			}
+			if res[0].Result != want {
+				t.Fatalf("%+v, want %s", res[0], want)
+			}
+			if got := loadRef(t, repoDir, "R-0001").Check; (got != nil) != up {
+				t.Fatalf("check = %+v with networkUp=%v", got, up)
+			}
+		})
 	}
 }
 

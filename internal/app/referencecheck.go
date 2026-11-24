@@ -214,7 +214,7 @@ func classifyCheck(r *store.Reference, f fetched, now time.Time, reached bool) C
 	var dns *net.DNSError
 	status := f.resp.Status
 	switch {
-	case f.err != nil && errors.As(f.err, &dns) && dns.IsNotFound && !reached:
+	case f.err != nil && errors.As(f.err, &dns) && dns.IsNotFound && !reached && !networkUp():
 		// no source in the run answered: offline or a captive resolver, not a dead domain
 		return CheckResult{Result: "transient", Detail: "domain not found (no source reached: network may be down)"}
 	case f.err != nil && errors.As(f.err, &dns) && dns.IsNotFound:
@@ -250,6 +250,30 @@ func recordGone(r *store.Reference, status int, detail string, now time.Time) Ch
 }
 
 const maxCheckBody = 5 << 20
+
+// networkUp reports whether the machine looks online, without any traffic: some
+// interface is up, not loopback, and holds a global unicast address. A var so
+// tests can pin it.
+var networkUp = hasUsableInterface
+
+func hasUsableInterface() bool {
+	ifs, err := net.Interfaces()
+	if err != nil {
+		return false
+	}
+	for _, i := range ifs {
+		if i.Flags&net.FlagUp == 0 || i.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, _ := i.Addrs()
+		for _, a := range addrs {
+			if ipn, ok := a.(*net.IPNet); ok && ipn.IP.IsGlobalUnicast() {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 // NewHTTPFetcher is the real Fetcher: a plain GET with a generic User-Agent,
 // no cookie jar and no credentials, redirects followed, the body cut at 5 MiB
