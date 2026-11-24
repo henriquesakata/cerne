@@ -303,7 +303,7 @@ func FilterPlanItems(repoDir string, items []PlanItem) ([]PlanItem, int, error) 
 	var kept []PlanItem
 	skipped := 0
 	for _, it := range items {
-		if imported[importedItemKey(it.Source, it.Title)] || imported[importedItemKey(it.Source, "")] {
+		if imported[importedItemKey(it.Source, it.Kind, it.Title)] || imported[importedItemKey(it.Source, "", "")] {
 			skipped++
 			continue
 		}

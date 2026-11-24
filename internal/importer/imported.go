@@ -25,9 +25,10 @@ func ImportedSources(repoDir string) (map[string]bool, error) {
 	return sources, err
 }
 
-// importedItemKey identifies an agent-imported item by its origin and title.
-func importedItemKey(source, title string) string {
-	return source + "\x00" + normalizeTitle(title)
+// importedItemKey identifies an agent-imported item by its origin, kind and
+// title; an empty kind and title is the source-only key.
+func importedItemKey(source, kind, title string) string {
+	return source + "\x00" + kind + "\x00" + normalizeTitle(title)
 }
 
 // importedItems returns the (imported_from, normalized title) keys of every
@@ -46,15 +47,15 @@ func importedItems(repoDir string) (map[string]bool, error) {
 		}
 		id := doccheck.FrontmatterValue(doc, "cerne_id")
 		if id == "" {
-			items[importedItemKey(src, "")] = true
+			items[importedItemKey(src, "", "")] = true
 			return
 		}
-		m, _, err := store.LoadMeta(repoDir, id)
+		m, kind, err := store.LoadMeta(repoDir, id)
 		if err != nil {
-			items[importedItemKey(src, "")] = true
+			items[importedItemKey(src, "", "")] = true
 			return
 		}
-		items[importedItemKey(src, m.Title)] = true
+		items[importedItemKey(src, kind, m.Title)] = true
 	})
 	return items, err
 }

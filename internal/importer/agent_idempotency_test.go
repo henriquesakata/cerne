@@ -99,3 +99,28 @@ func TestFilterPlanItemsRewrittenTitleIsNotDeduped(t *testing.T) {
 		t.Fatalf("kept=%+v skipped=%d, want the rewritten title kept (declared limit)", kept, skipped)
 	}
 }
+
+// F-0500 crit. 7: the key includes the kind, so a decision and a note with the
+// same source and title do not mask each other.
+func TestFilterPlanItemsKindIsPartOfTheKey(t *testing.T) {
+	repo := t.TempDir()
+	if err := store.InitLayout(repo, store.Project{Name: "t"}); err != nil {
+		t.Fatal(err)
+	}
+	seedImportedDoc(t, repo, "CLAUDE.md")
+	now := time.Now().UTC()
+	if err := store.SaveNote(repo, store.Note{ID: "N-0001", Title: "Same", State: "active", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	items := []PlanItem{
+		{Kind: "note", Title: "Same", State: "active", Body: "b", Source: "CLAUDE.md"},
+		{Kind: "decision", Title: "Same", State: "active", Body: "b", Source: "CLAUDE.md"},
+	}
+	kept, skipped, err := FilterPlanItems(repo, items)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if skipped != 1 || len(kept) != 1 || kept[0].Kind != "decision" {
+		t.Fatalf("kept=%+v skipped=%d, want only the decision kept", kept, skipped)
+	}
+}
