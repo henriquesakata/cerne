@@ -39,15 +39,17 @@ func (c WaybackClient) Captures(ctx context.Context, target string) ([]Snapshot,
 		}
 	}
 	var out []Snapshot
+	page, _, _ := strings.Cut(target, "#")
+	base := resp.Request.URL
 	for _, row := range rows {
-		if len(row) < 2 {
+		if len(row) < 1 || len(row[0]) != len(waybackTimestamp) { // 14 digits
 			continue
 		}
-		at, err := time.Parse(waybackTimestamp, row[0])
-		if err != nil { // the header row, or a malformed one
-			continue
+		// The link is built from the timestamp and the reference URL, never from
+		// the service's `original`; copyAt has the last word.
+		if s, ok := copyAt(base, "https://web.archive.org/web/"+row[0]+"/"+page); ok {
+			out = append(out, s)
 		}
-		out = append(out, Snapshot{URL: "https://web.archive.org/web/" + row[0] + "/" + row[1], CapturedAt: at})
 	}
 	return out, nil
 }

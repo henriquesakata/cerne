@@ -136,8 +136,8 @@ func TestWaybackCaptures(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []Snapshot{
-		{URL: "https://web.archive.org/web/20191122194934/http://docs.publicsite.org/guide", CapturedAt: time.Date(2019, 11, 22, 19, 49, 34, 0, time.UTC)},
-		{URL: "https://web.archive.org/web/20250302010203/https://docs.publicsite.org/guide", CapturedAt: time.Date(2025, 3, 2, 1, 2, 3, 0, time.UTC)},
+		{URL: "https://web.archive.org/web/20191122194934/" + pageURL, CapturedAt: time.Date(2019, 11, 22, 19, 49, 34, 0, time.UTC)},
+		{URL: "https://web.archive.org/web/20250302010203/" + pageURL, CapturedAt: time.Date(2025, 3, 2, 1, 2, 3, 0, time.UTC)},
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("captures = %+v, want %+v", got, want)
@@ -151,6 +151,38 @@ func TestWaybackCaptures(t *testing.T) {
 	bad := newFakeWayback(t, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusTooManyRequests) })
 	if _, err := bad.client().Captures(context.Background(), pageURL); err == nil {
 		t.Error("a 429 is an error")
+	}
+}
+
+// F-0503 crit. 8: the copy link of a capture is built from the timestamp and
+// the reference URL, never from the service's `original` field: a hostile
+// original (another host, control characters) changes nothing, and a row whose
+// timestamp is not 14 digits is dropped.
+func TestWaybackCapturesLinkIgnoresOriginal(t *testing.T) {
+	f := newFakeWayback(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`[["timestamp","original","statuscode"],
+["20250302010203","https://evil.org/steal","200"],
+["20250303010203","https://docs.publicsite.org/guide\u0000\n\r?x","200"],
+["20250304010203","javascript:alert(1)","200"],
+["2025030401020","https://docs.publicsite.org/short","200"],
+["2025030401020x","https://docs.publicsite.org/letter","200"],
+["20250305010203/../../x","https://docs.publicsite.org/path","200"]]`))
+	})
+	got, err := f.client().Captures(context.Background(), pageURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var links []string
+	for _, s := range got {
+		links = append(links, s.URL)
+	}
+	want := []string{
+		"https://web.archive.org/web/20250302010203/" + pageURL,
+		"https://web.archive.org/web/20250303010203/" + pageURL,
+		"https://web.archive.org/web/20250304010203/" + pageURL,
+	}
+	if !slices.Equal(links, want) {
+		t.Errorf("links = %q, want %q", links, want)
 	}
 }
 
