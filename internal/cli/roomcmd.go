@@ -281,14 +281,17 @@ func roomReadLoop(ctx context.Context, out io.Writer, c roomClient, id string, s
 func newRoomCloseCmd() *cobra.Command {
 	var dir, facilitator, minutesPath string
 	var port int
-	var allowOpenItems bool
+	var allowOpenItems, useDraft bool
 	cmd := &cobra.Command{
 		Use:   "close <room>",
-		Short: "Close a war room with structured minutes (say/join refused; read still works)",
+		Short: "Close a war room with structured minutes or the saved draft (say/join refused; read still works)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if args[0] == room.ChannelID {
 				return room.ErrPermanentRoom
+			}
+			if useDraft && minutesPath != "" {
+				return errors.New("--use-draft and --minutes are mutually exclusive")
 			}
 			c, err := newRoomClient(dir, port)
 			if err != nil {
@@ -297,14 +300,19 @@ func newRoomCloseCmd() *cobra.Command {
 			if facilitator, err = resolveRoomFacilitator(facilitator, args[0]); err != nil {
 				return err
 			}
-			if minutesPath == "" {
-				return errors.New("--minutes <path|-|{...}> is required (JSON; run 'cerne room minutes template' for a blank one)")
+			var rm room.Room
+			if useDraft {
+				rm, err = c.closeWithDraft(cmd.Context(), args[0], facilitator, allowOpenItems)
+			} else {
+				if minutesPath == "" {
+					return errors.New("--minutes <path|-|{...}> or --use-draft is required (JSON; run 'cerne room minutes template' for a blank one)")
+				}
+				var minutes room.Minutes
+				if minutes, err = readMinutesJSON(minutesPath, cmd.InOrStdin()); err != nil {
+					return fmt.Errorf("--minutes: %w", err)
+				}
+				rm, err = c.close(cmd.Context(), args[0], facilitator, minutes, allowOpenItems)
 			}
-			minutes, err := readMinutesJSON(minutesPath)
-			if err != nil {
-				return fmt.Errorf("--minutes: %w", err)
-			}
-			rm, err := c.close(cmd.Context(), args[0], facilitator, minutes, allowOpenItems)
 			if err != nil {
 				pending, pendErr := c.pending(cmd.Context(), args[0], facilitator)
 				if pendErr == nil && len(pending) > 0 {
@@ -322,7 +330,8 @@ func newRoomCloseCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&facilitator, "facilitator", "", roomFacilitatorFlagHelp)
-	cmd.Flags().StringVar(&minutesPath, "minutes", "", "path to a JSON file with the meeting minutes, or - for stdin (required)")
+	cmd.Flags().StringVar(&minutesPath, "minutes", "", "path to a JSON file with the meeting minutes, - for stdin, or an inline JSON object (required unless --use-draft)")
+	cmd.Flags().BoolVar(&useDraft, "use-draft", false, "close with the room's saved minutes draft ('cerne room minutes draft'), instead of --minutes")
 	cmd.Flags().BoolVar(&allowOpenItems, "allow-open-items", false, "close even with open facilitation items (recorded as an exception in the minutes)")
 	addRoomFlags(cmd, &dir, &port)
 	return cmd
@@ -330,13 +339,13 @@ func newRoomCloseCmd() *cobra.Command {
 
 // readMinutesJSON decodes a room.Minutes from src: a literal JSON object
 // (starts with "{"), "-" for stdin, or a file path otherwise.
-func readMinutesJSON(src string) (room.Minutes, error) {
+func readMinutesJSON(src string, stdin io.Reader) (room.Minutes, error) {
 	var r io.Reader
 	switch {
 	case strings.HasPrefix(strings.TrimSpace(src), "{"):
 		r = strings.NewReader(src)
 	case src == "-":
-		r = os.Stdin
+		r = stdin
 	default:
 		f, err := os.Open(src)
 		if err != nil {
@@ -541,8 +550,62 @@ func newRoomMinutesCmd() *cobra.Command {
 		Short: "Work with a room's structured closing minutes",
 	}
 	cmd.AddCommand(newRoomMinutesTemplateCmd())
+	cmd.AddCommand(newRoomMinutesDraftCmd())
 	cmd.AddCommand(newRoomMinutesShowCmd())
 	cmd.AddCommand(newRoomMinutesRegisterCmd())
+	return cmd
+}
+
+// newRoomMinutesDraftCmd saves the open room's shared minutes draft (T-0022):
+// a participant writes it in the room instead of a loose file, and the
+// facilitator closes with it.
+func newRoomMinutesDraftCmd() *cobra.Command {
+	var dir, session, nick, facilitator, minutesPath string
+	var port int
+	cmd := &cobra.Command{
+		Use:   "draft <room>",
+		Short: "Save the open room's shared minutes draft (any participant or the facilitator)",
+		Long: "Validates the minutes JSON (conclusion and rationale are required) and saves it as the room's " +
+			"current draft, announced to everyone by a minutes_draft event; the room stays open and a later " +
+			"draft replaces it. Saves as your participant session, found like every session command, or as " +
+			"the facilitator (--facilitator or CERNE_ROOM_FACILITATOR). Only the facilitator closes with it: " +
+			"'cerne room close <room> --use-draft'.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if args[0] == room.ChannelID {
+				return room.ErrPermanentRoom
+			}
+			c, err := newRoomClient(dir, port)
+			if err != nil {
+				return err
+			}
+			sessionID, facilitatorID, err := resolveRoomDraftCredential(session, nick, facilitator, c.pid, args[0])
+			if err != nil {
+				return err
+			}
+			if minutesPath == "" {
+				return errors.New("--minutes <path|-|{...}> is required (JSON; run 'cerne room minutes template' for a blank one)")
+			}
+			minutes, err := readMinutesJSON(minutesPath, cmd.InOrStdin())
+			if err != nil {
+				return fmt.Errorf("--minutes: %w", err)
+			}
+			d, err := c.saveMinutesDraft(cmd.Context(), args[0], sessionID, facilitatorID, minutes)
+			if err != nil {
+				return fmt.Errorf("minutes draft %s: %w", args[0], err)
+			}
+			out := cmd.OutOrStdout()
+			fmt.Fprintf(out, "minutes draft saved in %s by %s\n", args[0], d.Author)
+			fmt.Fprintf(out, "review: cerne room minutes show %s --draft\n", args[0])
+			fmt.Fprintf(out, "the facilitator closes with it: cerne room close %s --use-draft\n", args[0])
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&minutesPath, "minutes", "", "path to a JSON file with the minutes, - for stdin, or an inline JSON object (required)")
+	cmd.Flags().StringVar(&session, "session", "", roomSessionFlagHelp)
+	cmd.Flags().StringVar(&nick, "nick", "", roomNickFlagHelp)
+	cmd.Flags().StringVar(&facilitator, "facilitator", "", "save as the facilitator: capability printed by 'cerne room open' (falls back to CERNE_ROOM_FACILITATOR when no session is found)")
+	addRoomFlags(cmd, &dir, &port)
 	return cmd
 }
 
@@ -566,9 +629,10 @@ func newRoomMinutesTemplateCmd() *cobra.Command {
 func newRoomMinutesShowCmd() *cobra.Command {
 	var dir, format string
 	var port int
+	var draft bool
 	cmd := &cobra.Command{
 		Use:   "show <room>",
-		Short: "Print a closed room's minutes",
+		Short: "Print a closed room's minutes, or an open room's current draft (--draft)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if format != "markdown" {
@@ -586,8 +650,16 @@ func newRoomMinutesShowCmd() *cobra.Command {
 				if rm.ID != args[0] {
 					continue
 				}
-				if rm.ClosedAt == nil {
-					return fmt.Errorf("room %s is still open — it has no minutes yet", rm.ID)
+				switch {
+				case draft && rm.MinutesDraft != nil:
+					fmt.Fprint(cmd.OutOrStdout(), room.RenderMinutesDraftMarkdown(rm))
+					return nil
+				case draft && rm.ClosedAt != nil:
+					return fmt.Errorf("room %s is closed, so it has no minutes draft — its minutes: cerne room minutes show %s", rm.ID, rm.ID)
+				case draft:
+					return fmt.Errorf("room %s has no minutes draft — save one with 'cerne room minutes draft %s --minutes <path|-|{...}>'", rm.ID, rm.ID)
+				case rm.ClosedAt == nil:
+					return fmt.Errorf("room %s is still open — it has no minutes yet (its shared draft: cerne room minutes show %s --draft)", rm.ID, rm.ID)
 				}
 				fmt.Fprint(cmd.OutOrStdout(), room.RenderMinutesMarkdown(rm))
 				return nil
@@ -595,6 +667,7 @@ func newRoomMinutesShowCmd() *cobra.Command {
 			return fmt.Errorf("room %s not found", args[0])
 		},
 	}
+	cmd.Flags().BoolVar(&draft, "draft", false, "print the open room's current minutes draft, with its author and time")
 	cmd.Flags().StringVar(&format, "format", "markdown", "output format")
 	addRoomFlags(cmd, &dir, &port)
 	return cmd

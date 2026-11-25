@@ -225,6 +225,23 @@ func (c roomClient) close(ctx context.Context, id, facilitatorID string, minutes
 	return rm, err
 }
 
+// closeWithDraft is close with the room's saved minutes draft (T-0022).
+func (c roomClient) closeWithDraft(ctx context.Context, id, facilitatorID string, allowOpenItems bool) (room.Room, error) {
+	var rm room.Room
+	body := map[string]any{"facilitator_id": facilitatorID, "use_draft": true, "allow_open_items": allowOpenItems}
+	err := c.do(ctx, http.MethodPost, "/rooms/"+url.PathEscape(id)+"/close", body, &rm)
+	return rm, err
+}
+
+// saveMinutesDraft saves the open room's shared minutes draft (T-0022) as a
+// participant session or as the facilitator (exactly one of the two is set).
+func (c roomClient) saveMinutesDraft(ctx context.Context, id, sessionID, facilitatorID string, minutes room.Minutes) (room.MinutesDraft, error) {
+	var d room.MinutesDraft
+	body := map[string]any{"session_id": sessionID, "facilitator_id": facilitatorID, "minutes": minutes}
+	err := c.do(ctx, http.MethodPost, "/rooms/"+url.PathEscape(id)+"/minutes/draft", body, &d)
+	return d, err
+}
+
 // handoffFacilitator rotates the room's facilitator capability (F-0228
 // criterion 1), returning the new one; current is invalidated in the same
 // step.
