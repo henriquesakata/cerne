@@ -406,11 +406,63 @@ func TestRoomJoinPrintsSessionAndNextSteps(t *testing.T) {
 	}
 }
 
-// credentialOnTheCommandLine matches a room command that passes a capability
-// as a flag value or as an inline variable prefix (B-0084): placeholders
-// (<token>), variables ($X), quoted values, printf verbs and raw hex tokens
-// count; the bare flag name in prose does not.
-var credentialOnTheCommandLine = regexp.MustCompile("cerne room [^`\\n]*?--(session|facilitator)(=|\\s+)[<$\"'%0-9a-f]|CERNE_ROOM_(SESSION|FACILITATOR)=[^\\s`]+\\s+cerne room")
+// roomCredentialFlag captures the value after --session/--facilitator on a
+// room command (`=` or a space, within one code span); roomCredentialPrefix
+// is an inline CERNE_ROOM_*=<value> before a room command, the value plain,
+// `$(…)` or backticked.
+var (
+	roomCredentialFlag   = regexp.MustCompile("cerne room [^`\\n]*?--(?:session|facilitator)(?:=|\\s+)(\\S+)")
+	roomCredentialPrefix = regexp.MustCompile("CERNE_ROOM_(?:SESSION|FACILITATOR)=(?:\\$\\([^)]*\\)|`[^`]*`|[^\\s`]+)\\s+cerne room")
+)
+
+// teachesCredential reports whether line passes a room capability on the
+// command line (B-0084): any flag value that is not another flag and not the
+// `string` of a flag listing, or an inline variable prefix. The bare flag
+// name in prose does not count.
+func teachesCredential(line string) bool {
+	if roomCredentialPrefix.MatchString(line) {
+		return true
+	}
+	for _, m := range roomCredentialFlag.FindAllStringSubmatch(line, -1) {
+		if v := m[1]; v != "string" && !strings.HasPrefix(v, "-") {
+			return true
+		}
+	}
+	return false
+}
+
+// B-0084, review round 2: the scan catches every way of passing the
+// capability on a room command line, and leaves the flag name in prose and
+// in a flag listing alone.
+func TestTeachesCredentialCatchesEveryForm(t *testing.T) {
+	for _, line := range []string{
+		`cerne room say <id> "<msg>" --session <token>`,
+		`cerne room say R1 hi --session=TOKEN`,
+		`cerne room say R1 hi --session {token}`,
+		`cerne room pending R1 --facilitator TOKEN`,
+		"cerne room watch R1 --session `cat tok` --once",
+		`cerne room watch R1 --session $(cat tok) --once`,
+		`CERNE_ROOM_SESSION=$(cat tok) cerne room say R1 hi`,
+		"CERNE_ROOM_FACILITATOR=`cat tok` cerne room close R1",
+		`CERNE_ROOM_FACILITATOR=<new> cerne room close <room>`,
+	} {
+		if !teachesCredential(line) {
+			t.Errorf("missed: %s", line)
+		}
+	}
+	for _, line := range []string{
+		`cerne room say R1 hi --nick ana`,
+		`cerne room say <room> --session string   session capability printed by join`,
+		`cerne room watch R1 --session --once`,
+		"`cerne room say <room> \"<message>\"` takes a `--session` value or none",
+		`export CERNE_ROOM_SESSION=<printed by join>`,
+		`cerne room watch <id> [--once]   # pass --nick to pick yours`,
+	} {
+		if teachesCredential(line) {
+			t.Errorf("flagged: %s", line)
+		}
+	}
+}
 
 // lineValue is what follows prefix on the first line of out that starts
 // with it, or "".
@@ -429,7 +481,7 @@ func lineValue(out, prefix string) string {
 func assertCredentialOnlyWhereAllowed(t *testing.T, out, cred string) {
 	t.Helper()
 	for _, line := range strings.Split(out, "\n") {
-		if credentialOnTheCommandLine.MatchString(line) {
+		if teachesCredential(line) {
 			t.Errorf("line %q puts the capability on the command line", line)
 		}
 		if !strings.Contains(line, cred) {
@@ -1171,7 +1223,7 @@ func TestRoomTextsKeepCredentialOffTheCommandLine(t *testing.T) {
 	}
 	for name, text := range texts {
 		for i, line := range strings.Split(text, "\n") {
-			if credentialOnTheCommandLine.MatchString(line) {
+			if teachesCredential(line) {
 				t.Errorf("%s:%d teaches the capability on the command line: %.160q", name, i+1, line)
 			}
 		}
