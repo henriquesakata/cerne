@@ -1,0 +1,585 @@
+package app
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net"
+	"net/http"
+	"net/url"
+	"regexp"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/sourceurl"
+	"github.com/henriquesakata/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/version"
+)
+
+// Snapshot is one dated copy of a page in an archive service (F-0503).
+type Snapshot struct {
+	URL        string
+	CapturedAt time.Time
+}
+
+// ArchiveClient is the archive service: Save asks for a new copy of a page,
+// Captures lists the copies already there (one per day). Each gets only the
+// page's URL; which copy is the right one is chosen locally.
+type ArchiveClient interface {
+	Save(ctx context.Context, url string) (Snapshot, error)
+	Captures(ctx context.Context, url string) ([]Snapshot, error)
+}
+
+// errNoCopyLink: Save answered without the link of a copy.
+var errNoCopyLink = errors.New("no copy link")
+
+// httpStatusError is a service answer that is not a success; its text is the
+// bare code, safe to record.
+type httpStatusError int
+
+func (e httpStatusError) Error() string { return strconv.Itoa(int(e)) }
+
+// WaybackClient is the real ArchiveClient: the Wayback Machine's Save Page Now
+// and its capture list, the CDX API (R-0140). The endpoints are fields so a
+// test points them at a fake.
+type WaybackClient struct {
+	SaveURL   string            // the page URL is appended: https://web.archive.org/save/<url>
+	CDXURL    string            // the query is added: https://web.archive.org/cdx/search/cdx
+	Transport http.RoundTripper // nil: the default transport, environment proxy kept
+}
+
+// NewWaybackClient points at the Internet Archive.
+func NewWaybackClient() WaybackClient {
+	return WaybackClient{SaveURL: "https://web.archive.org/save/", CDXURL: "https://web.archive.org/cdx/search/cdx"}
+}
+
+const (
+	waybackSaveTimeout     = 120 * time.Second
+	waybackCapturesTimeout = 20 * time.Second
+	waybackTimestamp       = "20060102150405"
+)
+
+// waybackTransport is the default transport of the Wayback client; the
+// environment proxy is kept.
+var waybackTransport = http.DefaultTransport.(*http.Transport).Clone()
+
+// get sends a GET with no cookie jar that follows no redirect: Save reads the
+// copy's link from the redirect itself.
+func (c WaybackClient) get(ctx context.Context, u string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "cerne/"+version.Version)
+	rt := c.Transport
+	if rt == nil {
+		rt = waybackTransport
+	}
+	client := &http.Client{Transport: rt, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	return client.Do(req)
+}
+
+// Save asks Save Page Now for a new copy and reads its link from Location or
+// Content-Location (/web/<timestamp>/<url>).
+func (c WaybackClient) Save(ctx context.Context, target string) (Snapshot, error) {
+	ctx, cancel := context.WithTimeout(ctx, waybackSaveTimeout)
+	defer cancel()
+	resp, err := c.get(ctx, c.SaveURL+target)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return Snapshot{}, httpStatusError(resp.StatusCode)
+	}
+	for _, h := range []string{"Location", "Content-Location"} {
+		if s, ok := copyAt(resp.Request.URL, resp.Header.Get(h)); ok {
+			return s, nil
+		}
+	}
+	return Snapshot{}, errNoCopyLink
+}
+
+// copyLink is the only shape of a link recorded as a copy.
+var copyLink = regexp.MustCompile(`^https://web\.archive\.org/web/(\d{14})`)
+
+// copyAt resolves a copy link against the request and reads its timestamp;
+// false unless it is https://web.archive.org/web/<timestamp>/... (an http one
+// on that host is kept on https), so a foreign or relative-to-elsewhere link
+// counts as no copy.
+func copyAt(base *url.URL, link string) (Snapshot, bool) {
+	if link == "" {
+		return Snapshot{}, false
+	}
+	u, err := base.Parse(link)
+	if err != nil {
+		return Snapshot{}, false
+	}
+	if u.Scheme == "http" && u.Host == "web.archive.org" {
+		u.Scheme = "https"
+	}
+	m := copyLink.FindStringSubmatch(u.String())
+	if m == nil {
+		return Snapshot{}, false
+	}
+	at, err := time.Parse(waybackTimestamp, m[1])
+	if err != nil {
+		return Snapshot{}, false
+	}
+	return Snapshot{URL: u.String(), CapturedAt: at}, true
+}
+
+// Archive statuses recorded on a reference (store.ReferenceArchive.Status).
+const (
+	archiveArchived  = "archived"
+	archivePending   = "pending"
+	archiveNotPublic = "not_public"
+	archiveSkipped   = "skipped"
+)
+
+// ArchiveNet is every network piece an archive run touches (F-0503); a test
+// swaps each one.
+type ArchiveNet struct {
+	Client    ArchiveClient
+	LookupIP  func(ctx context.Context, network, host string) ([]net.IP, error)
+	Transport http.RoundTripper   // the public proof's
+	Pause     time.Duration       // between two requests to the archive service
+	Now       func() time.Time    // nil: time.Now
+	Progress  func(ArchiveResult) // nil: silent
+}
+
+// NewArchiveNet is the real network: the Wayback Machine, the system
+// resolver, the default transport (environment proxy kept) and a 5 s pause.
+func NewArchiveNet() ArchiveNet {
+	return ArchiveNet{
+		Client:    NewWaybackClient(),
+		LookupIP:  net.DefaultResolver.LookupIP,
+		Transport: http.DefaultTransport.(*http.Transport).Clone(),
+		Pause:     5 * time.Second,
+	}
+}
+
+// ErrArchiveOff refuses an archive run while references.archive is off.
+var ErrArchiveOff = errors.New("references.archive is off")
+
+// archiveWouldSend is a dry run's result for a URL that passed the gate; it
+// is never recorded.
+const archiveWouldSend = "would_send"
+
+// ArchiveResult is one reference's outcome in an archive run; Source is the
+// reference's URL, ReferenceArchive.URL the copy's.
+type ArchiveResult struct {
+	ID     string
+	Source string
+	store.ReferenceArchive
+}
+
+// ArchiveReferences archives the named references, or every current external
+// one with no copy yet or a pending one (F-0503). Each URL goes through
+// gateArchive; one that passes gets chooseCopy: the capture list, then Save,
+// one reference at a time with n.Pause between two. A dry run stops after the
+// gate and records nothing. The network phase runs outside the backend lock;
+// the outcomes are recorded in one mutation with a reference.archived event
+// each. With references.archive off it refuses before anything.
+// ponytail: one commit per run, so a run cut short records nothing (the copies
+// already made are in the capture list next time); commit per reference if
+// batches of hundreds need it.
+func ArchiveReferences(repoDir, projDir string, ids []string, n ArchiveNet, dryRun bool) ([]ArchiveResult, error) {
+	on := project.ReferencesArchive(projDir)
+	if !on {
+		return nil, fmt.Errorf("%w: nothing is sent; a human turns it on in the Settings screen of cerne ui", ErrArchiveOff)
+	}
+	cfg, _, err := project.LoadConfig(projDir)
+	if err != nil {
+		return nil, err // no ignore list, no archive
+	}
+	refs, err := referencesToArchive(repoDir, ids)
+	if err != nil {
+		return nil, err
+	}
+	ctx := context.Background()
+	var out []ArchiveResult
+	sent := false
+	for _, r := range refs {
+		res := ArchiveResult{ID: r.ID, Source: r.URL}
+		st, why := gateArchive(ctx, r, on, cfg.SourceIgnore(), n)
+		switch {
+		case st != "":
+			res.Status, res.Reason = st, why
+		case dryRun:
+			res.Status = archiveWouldSend
+		default:
+			if sent {
+				time.Sleep(n.Pause) // ponytail: fixed pause; back off on 429 if the service asks for it
+			}
+			sent = true
+			res.ReferenceArchive = chooseCopy(ctx, r, n)
+		}
+		out = append(out, res)
+		if !dryRun && n.Progress != nil {
+			n.Progress(res) // before the commit: a cut-short run still shows what was sent
+		}
+	}
+	if dryRun || len(out) == 0 {
+		return out, nil
+	}
+	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		recorded := 0
+		for _, res := range out {
+			r, err := store.LoadReference(repoDir, res.ID)
+			if err != nil {
+				return "", err
+			}
+			if r.State != domain.ReferenceCurrent || r.URL != res.Source {
+				continue // retired or repointed meanwhile
+			}
+			a := res.ReferenceArchive
+			// A failed retry never replaces a good copy, and a new one replaces it only when strictly nearer the registration day: the event alone keeps it.
+			if r.Archive == nil || r.Archive.Status != archiveArchived || (a.Status == archiveArchived && distance(a.CapturedAt, r.CreatedAt) < distance(r.Archive.CapturedAt, r.CreatedAt)) {
+				r.Archive = &a
+				if err := store.SaveReference(repoDir, r); err != nil {
+					return "", err
+				}
+			}
+			payload := map[string]string{"status": a.Status}
+			for k, v := range map[string]string{"origin": a.Origin, "link": a.URL, "reason": a.Reason} {
+				if v != "" {
+					payload[k] = v
+				}
+			}
+			if err := store.AppendEvent(repoDir, domain.NewEvent(r.ID, "reference.archived", payload, EventActor())); err != nil {
+				return "", err
+			}
+			recorded++
+		}
+		return fmt.Sprintf("cerne: archive %d reference(s)", recorded), nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// archiveOptOutEvent records --no-archive in the append-only log (F-0503).
+const archiveOptOutEvent = "reference.archive_opt_out"
+
+// referencesToArchive is referencesToCheck's targets; with no ids, only the
+// ones with no copy yet or a pending one, never a no-archive one. A reference
+// is no-archive when its field says so or the log holds its opt-out event, so
+// a rewrite that dropped the field does not reopen it. An unreadable log
+// refuses the run.
+func referencesToArchive(repoDir string, ids []string) ([]store.Reference, error) {
+	refs, err := referencesToCheck(repoDir, ids)
+	if err != nil {
+		return nil, err
+	}
+	events, err := store.ReadEvents(repoDir)
+	if err != nil {
+		return nil, err
+	}
+	all, err := store.LoadAllReferences(repoDir)
+	if err != nil {
+		return nil, err
+	}
+	urlOf := map[string]string{}
+	for _, r := range all {
+		urlOf[r.ID] = r.URL
+	}
+	optedOutID, optedOutURL := map[string]bool{}, map[string]bool{}
+	for _, e := range events {
+		if e.Type == archiveOptOutEvent {
+			optedOutID[e.EntityID] = true
+			// The opt-out is for the URL: an event from before the payload carried it reads the reference's.
+			u := e.Payload["url"]
+			if u == "" {
+				u = urlOf[e.EntityID]
+			}
+			optedOutURL[optOutKey(u)] = true
+		}
+	}
+	for i, r := range refs {
+		refs[i].NoArchive = r.NoArchive || optedOutID[r.ID] || optedOutURL[optOutKey(r.URL)]
+	}
+	if len(ids) > 0 {
+		return refs, nil
+	}
+	return slices.DeleteFunc(refs, func(r store.Reference) bool {
+		return r.NoArchive || (r.Archive != nil && r.Archive.Status != archivePending)
+	}), nil
+}
+
+// saveFailure names a Save failure without its raw text, which can carry a
+// proxy host or an internal address.
+func saveFailure(err error) string {
+	var code httpStatusError
+	switch {
+	case errors.As(err, &code):
+		return code.Error()
+	case errors.Is(err, errNoCopyLink):
+		return "no copy link"
+	}
+	return transientReason(err)
+}
+
+// gateArchive is the one door to the archive service (F-0503): nothing reaches
+// Save or Captures unless it returns "". The checks run cheapest and offline
+// first — no-archive (crit. 7), the setting (2), internal hosts and ignored
+// sources (4), credentials and secrets (5) — so a refusal there opens no
+// connection; then the DNS answer and the anonymous GET (6). Otherwise it
+// returns the status to record and why.
+func gateArchive(ctx context.Context, r store.Reference, on bool, ignore []string, n ArchiveNet) (status, reason string) {
+	if r.NoArchive {
+		return archiveSkipped, "no-archive"
+	}
+	if !on {
+		return archiveSkipped, "archive off"
+	}
+	u, err := url.Parse(r.URL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
+		return archiveSkipped, "not an http(s) URL"
+	}
+	switch {
+	case internalURL(r.URL, ignore) || reservedHost(u.Hostname()):
+		return archiveSkipped, "internal host"
+	case shareLinkHost(u.Hostname()):
+		return archiveSkipped, "share link host"
+	case webhookParsed(u):
+		return archiveSkipped, "webhook"
+	case u.User != nil:
+		return archiveSkipped, "credentials in URL"
+	case sourceurl.HasSecret(r.URL):
+		return archiveSkipped, "secret in query"
+	}
+	if st, why := resolvesPublic(ctx, u.Hostname(), n.LookupIP); st != "" {
+		return st, why
+	}
+	return provePublic(ctx, r.URL, ignore, n.Transport, n.LookupIP)
+}
+
+// internalURL is sourceurl.Internal without regard to case, for the archive
+// only: the lint keeps its exact matching.
+func internalURL(raw string, ignore []string) bool {
+	lower := make([]string, len(ignore))
+	for i, s := range ignore {
+		lower[i] = strings.ToLower(s)
+	}
+	return sourceurl.Internal(strings.ToLower(raw), lower)
+}
+
+// reservedSuffixes are names that never resolve on the public Internet.
+var reservedSuffixes = []string{".local", ".localhost", ".internal", ".lan", ".home.arpa", ".corp", ".test", ".invalid", ".example"}
+
+// reservedHost is the archive's stricter filter, kept out of lint: a name with
+// no dot, a reserved suffix, or an IP literal that is not public.
+func reservedHost(host string) bool {
+	host = strings.TrimSuffix(strings.ToLower(host), ".")
+	if ip := net.ParseIP(host); ip != nil {
+		return !publicIP(ip)
+	}
+	if !strings.Contains(host, ".") {
+		return true
+	}
+	for _, s := range reservedSuffixes {
+		if strings.HasSuffix(host, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// shareLinkDomains serve documents to anyone holding the link: such a page
+// answers 200 to an anonymous GET and is still private.
+// ponytail: a fixed list, matched with its subdomains (www.figma.com,
+// acme.slack.com; bare slack.com is over-blocked too). An unlisted page on any
+// other host, reachable by link only, still passes the proof; extend the list,
+// and review reference archive --dry-run before a real run.
+var shareLinkDomains = []string{
+	"docs.google.com", "drive.google.com", "sharepoint.com", "onedrive.live.com", "1drv.ms",
+	"dropbox.com", "box.com", "gist.github.com", "notion.so", "notion.site", "figma.com",
+	"loom.com", "slack.com", "teams.microsoft.com", "excalidraw.com", "mega.nz", "loca.lt", "app.github.dev", "githubpreview.dev", "webhook.office.com", "hooks.zapier.com", "maker.ifttt.com", "pastebin.com",
+	"photos.google.com", "photos.app.goo.gl", "goo.gl", "canva.com", "miro.com", "hackmd.io", "ngrok.io", "ngrok.app",
+	"ngrok-free.app", "trycloudflare.com", "perplexity.ai", "claude.site", "g.co",
+}
+
+// shareLinkExact are share hosts whose other subdomains carry public pages
+// (learn.chatgpt.com, the Codex docs): only the host itself or its www. is refused.
+var shareLinkExact = []string{"chatgpt.com", "chat.openai.com", "claude.ai", "gemini.google.com"}
+
+// shareLinkHost reports a host that serves documents to anyone with the link.
+func shareLinkHost(host string) bool {
+	host = strings.TrimSuffix(strings.ToLower(host), ".")
+	if slices.Contains(shareLinkExact, strings.TrimPrefix(host, "www.")) {
+		return true
+	}
+	for _, d := range shareLinkDomains {
+		if host == d || strings.HasSuffix(host, "."+d) {
+			return true
+		}
+	}
+	return false
+}
+
+// specialUse are the ranges that global unicast and private leave open: "this
+// network", carrier-grade NAT, IETF protocol assignments, the documentation
+// and benchmarking blocks, the reserved class E and the IPv6 documentation
+// block. An IPv4 address mapped into IPv6 is judged as IPv4 by Contains.
+var specialUse = func() (nets []*net.IPNet) {
+	for _, c := range []string{"0.0.0.0/8", "100.64.0.0/10", "192.0.0.0/24", "192.0.2.0/24", "198.18.0.0/15",
+		"198.51.100.0/24", "203.0.113.0/24", "240.0.0.0/4", "2001:db8::/32", "2001::/32"} {
+		_, n, _ := net.ParseCIDR(c)
+		nets = append(nets, n)
+	}
+	return nets
+}()
+
+// publicIP: global unicast (so not multicast or link-local), not private, in
+// no special-use range.
+func publicIP(ip net.IP) bool {
+	if ip.To4() == nil && len(ip) == net.IPv6len {
+		// NAT64 (64:ff9b::/96) and 6to4 (2002::/16) carry an IPv4 address: judge that one.
+		if ip[0] == 0 && ip[1] == 0x64 && ip[2] == 0xff && ip[3] == 0x9b && slices.Equal(ip[4:12], make([]byte, 8)) {
+			return publicIP(net.IP(ip[12:16]))
+		}
+		// local-use NAT64, 64:ff9b:1::/48: RFC 6052 puts the IPv4 in bytes 6, 7, 9, 10
+		if ip[0] == 0 && ip[1] == 0x64 && ip[2] == 0xff && ip[3] == 0x9b && ip[4] == 0 && ip[5] == 1 {
+			return publicIP(net.IP{ip[6], ip[7], ip[9], ip[10]})
+		}
+		if ip[0] == 0x20 && ip[1] == 0x02 {
+			return publicIP(net.IP(ip[2:6]))
+		}
+	}
+	return ip.IsGlobalUnicast() && !ip.IsPrivate() && !slices.ContainsFunc(specialUse, func(n *net.IPNet) bool { return n.Contains(ip) })
+}
+
+const dnsTimeout = 10 * time.Second
+
+// resolvesPublic refuses a name any of whose addresses is not public: a
+// public-looking intranet name answers 200 from inside the network.
+func resolvesPublic(ctx context.Context, host string, lookup func(context.Context, string, string) ([]net.IP, error)) (status, reason string) {
+	if net.ParseIP(host) != nil {
+		return "", "" // a literal: reservedHost already judged it
+	}
+	ctx, cancel := context.WithTimeout(ctx, dnsTimeout)
+	defer cancel()
+	ips, err := lookup(ctx, "ip", host)
+	if err != nil || len(ips) == 0 {
+		return archivePending, "dns lookup failed"
+	}
+	for _, ip := range ips {
+		if !publicIP(ip) {
+			return archiveSkipped, "private address"
+		}
+	}
+	return "", ""
+}
+
+const proofTimeout = 15 * time.Second
+
+// loginHosts and the segment rules recognize a login page: a path segment that
+// contains one of loginWords, starts with one of loginPrefixes or is one of
+// loginExact (wp-login.php, login.jsp, login.action, /oauth2/authorize).
+// ponytail: a handful of hosts and path words, over-blocking on purpose; a
+// private page that answers 200 without redirecting to one passes. Upgrade
+// path: per-host rules or a login-form sniff of the body.
+var (
+	loginHosts    = []string{"accounts.google.com", "login.microsoftonline.com", "login.live.com", "id.atlassian.com"}
+	loginWords    = []string{"login", "logon", "signin", "sign-in", "sign_in"}
+	loginPrefixes = []string{"oauth", "openid", "saml", "sso"}
+	loginExact    = []string{"auth", "authorize", "cas", "sessions"}
+	loginParams   = []string{"starturl", "returnurl", "return_to", "redirect_uri", "samlrequest", "relaystate", "ec"}
+)
+
+func loginPage(u *url.URL) bool {
+	if slices.Contains(loginHosts, strings.ToLower(u.Hostname())) {
+		return true
+	}
+	for k, vs := range u.Query() {
+		if slices.Contains(loginParams, strings.ToLower(k)) || (strings.EqualFold(k, "wa") && slices.ContainsFunc(vs, func(v string) bool { return strings.HasPrefix(strings.ToLower(v), "wsignin") })) {
+			return true
+		}
+	}
+	for _, seg := range strings.Split(strings.ToLower(u.Path), "/") {
+		if strings.Contains(seg, "oauth") || slices.Contains(loginExact, seg) ||
+			slices.ContainsFunc(loginWords, func(w string) bool { return strings.Contains(seg, w) }) ||
+			slices.ContainsFunc(loginPrefixes, func(p string) bool { return strings.HasPrefix(seg, p) }) {
+			return true
+		}
+	}
+	return false
+}
+
+// refusedHop stops the proof at a redirect: the status and reason to record.
+type refusedHop struct{ status, reason string }
+
+func (e refusedHop) Error() string { return e.reason }
+
+// hopRefusal judges each URL the proof lands on, the final one included.
+func hopRefusal(u *url.URL, ignore []string) string {
+	switch {
+	case loginPage(u):
+		return "login page"
+	case shareLinkHost(u.Hostname()):
+		return "share link host"
+	case webhookParsed(u):
+		return "webhook"
+	case u.Scheme != "http" && u.Scheme != "https", internalURL(u.String(), ignore), reservedHost(u.Hostname()):
+		return "redirects to an internal host"
+	}
+	return ""
+}
+
+// provePublic is the anonymous GET (crit. 6): its own client, no cookie jar,
+// no credential, no Referer, redirects followed and each one judged, its name
+// resolved like the first, the body never read. Only a final 200 passes; 429
+// and 5xx are pending, anything else is not public.
+func provePublic(ctx context.Context, raw string, ignore []string, rt http.RoundTripper, lookup func(context.Context, string, string) ([]net.IP, error)) (status, reason string) {
+	client := &http.Client{
+		Transport: rt,
+		Timeout:   proofTimeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return refusedHop{archiveNotPublic, "too many redirects"}
+			}
+			req.Header.Del("Referer")
+			if why := hopRefusal(req.URL, ignore); why != "" {
+				return refusedHop{archiveNotPublic, why}
+			}
+			switch st, _ := resolvesPublic(req.Context(), req.URL.Hostname(), lookup); st {
+			case archiveSkipped:
+				return refusedHop{archiveNotPublic, "redirects to a private address"}
+			case archivePending:
+				return refusedHop{archivePending, "dns lookup failed"}
+			}
+			return nil
+		},
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, raw, nil)
+	if err != nil {
+		return archiveSkipped, "not an http(s) URL"
+	}
+	req.Header.Set("User-Agent", "cerne/"+version.Version)
+	resp, err := client.Do(req)
+	var hop refusedHop
+	if errors.As(err, &hop) {
+		return hop.status, hop.reason
+	}
+	if err != nil {
+		return archivePending, "page unreachable: " + transientReason(err)
+	}
+	resp.Body.Close()
+	if why := hopRefusal(resp.Request.URL, ignore); why != "" {
+		return archiveNotPublic, why
+	}
+	switch code := resp.StatusCode; {
+	case code == http.StatusOK:
+		return "", ""
+	case code == http.StatusTooManyRequests || code >= 500:
+		return archivePending, "HTTP " + strconv.Itoa(code)
+	default:
+		return archiveNotPublic, "HTTP " + strconv.Itoa(code)
+	}
+}

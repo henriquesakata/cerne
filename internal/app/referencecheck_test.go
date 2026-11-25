@@ -62,7 +62,7 @@ func refsBackend(t *testing.T, n int) (repoDir, projDir string) {
 	}
 	for i := 1; i <= n; i++ {
 		u := fmt.Sprintf("https://example.com/%d", i)
-		if _, err := CreateExternalReference(repoDir, projDir, "Src "+u, u, "", []string{"F-0001"}, nil, nil, false); err != nil {
+		if _, err := CreateExternalReference(repoDir, projDir, "Src "+u, u, "", []string{"F-0001"}, nil, nil, false, false); err != nil {
 			t.Fatal(err)
 		}
 	}

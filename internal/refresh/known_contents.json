@@ -23,6 +23,7 @@
   ".agents/skills/cerne-authoring/SKILL.md": [
    "11ad1363c6ed10ddfbbccdd723dbce2051993ac582798c6b54ca9a37aa616e4c",
    "2341847a93a4a998c3808882980a56b0f1840d300351bfc4baeb32f742c7cb8b",
+   "2a38a0639d8d9a23bf448e0bd6fd6534554b339de480a22ca68f0e5c45669b97",
    "495a655be0bfdf022d9729540ca15480517bca3e9d6fbaa7e565427f33f35842",
    "52baf721ff3ae16a1a86296e481bff6bde2f87accbb0856567b33bc474d7dcd2",
    "54c68f3bfbfe0ea5af9b6b29dfe225d9d946f84b713194bce81c9b2c48df5ba4",
@@ -64,9 +65,13 @@
    "ff4941fc31a839f23e9c91f7aa4c711e8e2133d075b4edd29cdc34c463984fed"
   ],
   ".agents/skills/cerne-authoring/reference/external-sources.md": [
+   "237ea7b71341e7cabbf2dbe36acdcb690abdb29516ffe33cc3e2e0883eedf141",
+   "28cf5ccbddc1292cc3e2cfa1da2ec49e20b0082dc7e664342df47ba2565512f8",
    "3fcdca411d9166e6b8df08dd9ff97053cdbc93d771d9f33ebb94a1118c6f3936",
    "48636437e3c0e02bc6a4207ae2e8e06be89b5da9c47b3d462c21119c7d51d6df",
-   "d8a70e72100c398c9bb721ec52e5b43a3a1563af9b3c39976b570cecabaa46ba"
+   "991d4cfef2afca665931cf319df19eeeea7f740fbf2e458f10edbe92dcaaf257",
+   "d8a70e72100c398c9bb721ec52e5b43a3a1563af9b3c39976b570cecabaa46ba",
+   "e61099a4ba1aec522f53ec0fc8075eb54dff95b16541a9cd9d0158fef92d3729"
   ],
   ".agents/skills/cerne-authoring/reference/gauntlet.md": [
    "08e72fc5b0ed038c6c6c6977e310c0b0e814ef8a8fa10fca88fbf302c57aeb5a",
@@ -236,6 +241,7 @@
   ".claude/skills/cerne-authoring/SKILL.md": [
    "11ad1363c6ed10ddfbbccdd723dbce2051993ac582798c6b54ca9a37aa616e4c",
    "2341847a93a4a998c3808882980a56b0f1840d300351bfc4baeb32f742c7cb8b",
+   "2a38a0639d8d9a23bf448e0bd6fd6534554b339de480a22ca68f0e5c45669b97",
    "495a655be0bfdf022d9729540ca15480517bca3e9d6fbaa7e565427f33f35842",
    "52baf721ff3ae16a1a86296e481bff6bde2f87accbb0856567b33bc474d7dcd2",
    "54c68f3bfbfe0ea5af9b6b29dfe225d9d946f84b713194bce81c9b2c48df5ba4",
@@ -282,9 +288,13 @@
    "ff4941fc31a839f23e9c91f7aa4c711e8e2133d075b4edd29cdc34c463984fed"
   ],
   ".claude/skills/cerne-authoring/reference/external-sources.md": [
+   "237ea7b71341e7cabbf2dbe36acdcb690abdb29516ffe33cc3e2e0883eedf141",
+   "28cf5ccbddc1292cc3e2cfa1da2ec49e20b0082dc7e664342df47ba2565512f8",
    "3fcdca411d9166e6b8df08dd9ff97053cdbc93d771d9f33ebb94a1118c6f3936",
    "48636437e3c0e02bc6a4207ae2e8e06be89b5da9c47b3d462c21119c7d51d6df",
-   "d8a70e72100c398c9bb721ec52e5b43a3a1563af9b3c39976b570cecabaa46ba"
+   "991d4cfef2afca665931cf319df19eeeea7f740fbf2e458f10edbe92dcaaf257",
+   "d8a70e72100c398c9bb721ec52e5b43a3a1563af9b3c39976b570cecabaa46ba",
+   "e61099a4ba1aec522f53ec0fc8075eb54dff95b16541a9cd9d0158fef92d3729"
   ],
   ".claude/skills/cerne-authoring/reference/gauntlet.md": [
    "08e72fc5b0ed038c6c6c6977e310c0b0e814ef8a8fa10fca88fbf302c57aeb5a",
@@ -422,6 +432,7 @@
   ".cursor/skills/cerne-authoring/SKILL.md": [
    "11ad1363c6ed10ddfbbccdd723dbce2051993ac582798c6b54ca9a37aa616e4c",
    "2341847a93a4a998c3808882980a56b0f1840d300351bfc4baeb32f742c7cb8b",
+   "2a38a0639d8d9a23bf448e0bd6fd6534554b339de480a22ca68f0e5c45669b97",
    "495a655be0bfdf022d9729540ca15480517bca3e9d6fbaa7e565427f33f35842",
    "52baf721ff3ae16a1a86296e481bff6bde2f87accbb0856567b33bc474d7dcd2",
    "54c68f3bfbfe0ea5af9b6b29dfe225d9d946f84b713194bce81c9b2c48df5ba4",
@@ -463,9 +474,13 @@
    "ff4941fc31a839f23e9c91f7aa4c711e8e2133d075b4edd29cdc34c463984fed"
   ],
   ".cursor/skills/cerne-authoring/reference/external-sources.md": [
+   "237ea7b71341e7cabbf2dbe36acdcb690abdb29516ffe33cc3e2e0883eedf141",
+   "28cf5ccbddc1292cc3e2cfa1da2ec49e20b0082dc7e664342df47ba2565512f8",
    "3fcdca411d9166e6b8df08dd9ff97053cdbc93d771d9f33ebb94a1118c6f3936",
    "48636437e3c0e02bc6a4207ae2e8e06be89b5da9c47b3d462c21119c7d51d6df",
-   "d8a70e72100c398c9bb721ec52e5b43a3a1563af9b3c39976b570cecabaa46ba"
+   "991d4cfef2afca665931cf319df19eeeea7f740fbf2e458f10edbe92dcaaf257",
+   "d8a70e72100c398c9bb721ec52e5b43a3a1563af9b3c39976b570cecabaa46ba",
+   "e61099a4ba1aec522f53ec0fc8075eb54dff95b16541a9cd9d0158fef92d3729"
   ],
   ".cursor/skills/cerne-authoring/reference/gauntlet.md": [
    "08e72fc5b0ed038c6c6c6977e310c0b0e814ef8a8fa10fca88fbf302c57aeb5a",
@@ -559,6 +574,7 @@
   ".gemini/skills/cerne-authoring/SKILL.md": [
    "11ad1363c6ed10ddfbbccdd723dbce2051993ac582798c6b54ca9a37aa616e4c",
    "2341847a93a4a998c3808882980a56b0f1840d300351bfc4baeb32f742c7cb8b",
+   "2a38a0639d8d9a23bf448e0bd6fd6534554b339de480a22ca68f0e5c45669b97",
    "495a655be0bfdf022d9729540ca15480517bca3e9d6fbaa7e565427f33f35842",
    "52baf721ff3ae16a1a86296e481bff6bde2f87accbb0856567b33bc474d7dcd2",
    "54c68f3bfbfe0ea5af9b6b29dfe225d9d946f84b713194bce81c9b2c48df5ba4",
@@ -600,9 +616,13 @@
    "ff4941fc31a839f23e9c91f7aa4c711e8e2133d075b4edd29cdc34c463984fed"
   ],
   ".gemini/skills/cerne-authoring/reference/external-sources.md": [
+   "237ea7b71341e7cabbf2dbe36acdcb690abdb29516ffe33cc3e2e0883eedf141",
+   "28cf5ccbddc1292cc3e2cfa1da2ec49e20b0082dc7e664342df47ba2565512f8",
    "3fcdca411d9166e6b8df08dd9ff97053cdbc93d771d9f33ebb94a1118c6f3936",
    "48636437e3c0e02bc6a4207ae2e8e06be89b5da9c47b3d462c21119c7d51d6df",
-   "d8a70e72100c398c9bb721ec52e5b43a3a1563af9b3c39976b570cecabaa46ba"
+   "991d4cfef2afca665931cf319df19eeeea7f740fbf2e458f10edbe92dcaaf257",
+   "d8a70e72100c398c9bb721ec52e5b43a3a1563af9b3c39976b570cecabaa46ba",
+   "e61099a4ba1aec522f53ec0fc8075eb54dff95b16541a9cd9d0158fef92d3729"
   ],
   ".gemini/skills/cerne-authoring/reference/gauntlet.md": [
    "08e72fc5b0ed038c6c6c6977e310c0b0e814ef8a8fa10fca88fbf302c57aeb5a",
@@ -688,6 +708,7 @@
   ],
   ".github/skills/cerne-authoring/SKILL.md": [
    "2341847a93a4a998c3808882980a56b0f1840d300351bfc4baeb32f742c7cb8b",
+   "2a38a0639d8d9a23bf448e0bd6fd6534554b339de480a22ca68f0e5c45669b97",
    "495a655be0bfdf022d9729540ca15480517bca3e9d6fbaa7e565427f33f35842",
    "54c68f3bfbfe0ea5af9b6b29dfe225d9d946f84b713194bce81c9b2c48df5ba4",
    "5504c1622c4d4d4563cbf2cf572822712ae9e1c4c8d3c9e7a81c91e8b5ed4afd",
@@ -723,9 +744,13 @@
    "ff4941fc31a839f23e9c91f7aa4c711e8e2133d075b4edd29cdc34c463984fed"
   ],
   ".github/skills/cerne-authoring/reference/external-sources.md": [
+   "237ea7b71341e7cabbf2dbe36acdcb690abdb29516ffe33cc3e2e0883eedf141",
+   "28cf5ccbddc1292cc3e2cfa1da2ec49e20b0082dc7e664342df47ba2565512f8",
    "3fcdca411d9166e6b8df08dd9ff97053cdbc93d771d9f33ebb94a1118c6f3936",
    "48636437e3c0e02bc6a4207ae2e8e06be89b5da9c47b3d462c21119c7d51d6df",
-   "d8a70e72100c398c9bb721ec52e5b43a3a1563af9b3c39976b570cecabaa46ba"
+   "991d4cfef2afca665931cf319df19eeeea7f740fbf2e458f10edbe92dcaaf257",
+   "d8a70e72100c398c9bb721ec52e5b43a3a1563af9b3c39976b570cecabaa46ba",
+   "e61099a4ba1aec522f53ec0fc8075eb54dff95b16541a9cd9d0158fef92d3729"
   ],
   ".github/skills/cerne-authoring/reference/gauntlet.md": [
    "08e72fc5b0ed038c6c6c6977e310c0b0e814ef8a8fa10fca88fbf302c57aeb5a",

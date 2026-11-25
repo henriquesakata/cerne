@@ -35,7 +35,8 @@ func TestGauntletSettingDeclared(t *testing.T) {
 		t.Error("SettingHumanOnly must be true only for gates.gauntlet")
 	}
 	// F-0449 crit. 3: the mirror's switch and destinations are the owner's too.
-	humanOnly := []string{"gates.gauntlet", "mirror.enabled", "mirror.trackers"}
+	// F-0503 crit. 1: and so is sending reference URLs to an archive service.
+	humanOnly := []string{"gates.gauntlet", "mirror.enabled", "mirror.trackers", "references.archive"}
 	for _, r := range settingsRegistry {
 		if r.HumanOnly != slices.Contains(humanOnly, r.ID) {
 			t.Errorf("%s: human-only = %v; want human-only exactly %v", r.ID, r.HumanOnly, humanOnly)

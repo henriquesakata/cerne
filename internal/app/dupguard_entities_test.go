@@ -82,7 +82,7 @@ func TestCreateNoteGuardIgnoresRetiredAndOtherTypes(t *testing.T) {
 	if _, err := CreateNote(repoDir, projDir, "Gate humano remoto procuração in-band", "c", nil, nil, nil, nil, "", false, false); err != nil {
 		t.Fatalf("after retire: %v", err)
 	}
-	if _, err := CreateExternalReference(repoDir, projDir, "Gate humano remoto procuração in-band", "http://a", "c", nil, nil, nil, false); err != nil {
+	if _, err := CreateExternalReference(repoDir, projDir, "Gate humano remoto procuração in-band", "http://a", "c", nil, nil, nil, false, false); err != nil {
 		t.Fatalf("other type: %v", err)
 	}
 	if _, err := CreateDecision(repoDir, projDir, "Gate humano remoto procuração in-band", "c", nil, nil, nil, false); err != nil {
@@ -162,16 +162,16 @@ func TestCreateDecisionGuard(t *testing.T) {
 // Crit. 2, 4, 5, 8 for references: identity is the normalized URL, never the title.
 func TestCreateReferenceGuardByURL(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	first, err := CreateExternalReference(repoDir, projDir, "Tech Lead's Club — liderança", "https://Example.com/post/", "c", nil, nil, nil, false)
+	first, err := CreateExternalReference(repoDir, projDir, "Tech Lead's Club — liderança", "https://Example.com/post/", "c", nil, nil, nil, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Same shape of title, different URL: both live (R-0014/R-0015 case).
-	if _, err := CreateExternalReference(repoDir, projDir, "Tech Lead's Club — liderança", "https://example.com/other", "c", nil, nil, nil, false); err != nil {
+	if _, err := CreateExternalReference(repoDir, projDir, "Tech Lead's Club — liderança", "https://example.com/other", "c", nil, nil, nil, false, false); err != nil {
 		t.Fatalf("different URL must not block: %v", err)
 	}
 	// Different title, equal normalized URL: refused.
-	_, err = CreateExternalReference(repoDir, projDir, "Algo completamente distinto", "https://example.com/post#intro", "c", nil, nil, nil, false)
+	_, err = CreateExternalReference(repoDir, projDir, "Algo completamente distinto", "https://example.com/post#intro", "c", nil, nil, nil, false, false)
 	if !errors.Is(err, ErrSimilarExists) {
 		t.Fatalf("err = %v, want ErrSimilarExists", err)
 	}
@@ -183,7 +183,7 @@ func TestCreateReferenceGuardByURL(t *testing.T) {
 	if rs, _ := store.LoadAllReferences(repoDir); len(rs) != 2 {
 		t.Fatalf("references = %d, want 2", len(rs))
 	}
-	r, err := CreateExternalReference(repoDir, projDir, "Algo completamente distinto", "https://example.com/post#intro", "c", nil, nil, nil, true)
+	r, err := CreateExternalReference(repoDir, projDir, "Algo completamente distinto", "https://example.com/post#intro", "c", nil, nil, nil, true, false)
 	if err != nil {
 		t.Fatalf("forced: %v", err)
 	}
@@ -199,7 +199,7 @@ func TestCreateReferenceGuardByURL(t *testing.T) {
 		}
 	}
 	commitBackend(t, repoDir)
-	if _, err := CreateExternalReference(repoDir, projDir, "Novo", "https://example.com/post", "c", nil, nil, nil, false); err != nil {
+	if _, err := CreateExternalReference(repoDir, projDir, "Novo", "https://example.com/post", "c", nil, nil, nil, false, false); err != nil {
 		t.Fatalf("after obsolete: %v", err)
 	}
 }

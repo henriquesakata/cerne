@@ -32,7 +32,7 @@ func TestConcurrentCreationsDistinctIDs(t *testing.T) {
 		}, func(id string) string { return "content/decisions/" + id + ".md" }},
 		{"reference", func(r, p string, i int) (string, error) {
 			ref, err := CreateExternalReference(r, p, fmt.Sprintf("Ref %d", i),
-				fmt.Sprintf("https://example.com/%d", i), fmt.Sprintf("corpo %d\n", i), nil, nil, nil, false)
+				fmt.Sprintf("https://example.com/%d", i), fmt.Sprintf("corpo %d\n", i), nil, nil, nil, false, false)
 			return ref.ID, err
 		}, func(id string) string { return "content/references/" + id + ".md" }},
 		{"runbook", func(r, p string, i int) (string, error) {

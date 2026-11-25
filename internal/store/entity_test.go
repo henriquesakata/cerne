@@ -204,6 +204,39 @@ func TestReferenceCheckRoundTrip(t *testing.T) {
 	}
 }
 
+// F-0503 crit. 8: the copy's link, capture date, origin and status persist;
+// a reference without them loads and saves back without the keys.
+func TestReferenceArchiveRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	at := time.Date(2025, 3, 2, 10, 4, 5, 0, time.UTC)
+	r := Reference{ID: "R-0001", Title: "x", State: domain.ReferenceCurrent, External: true,
+		Archive: &ReferenceArchive{URL: "https://web.archive.org/web/20250302100405/https://a.org/", CapturedAt: at, Origin: "existing", Status: "archived"}}
+	if err := SaveReference(dir, r); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadReference(dir, "R-0001")
+	if err != nil || got.Archive == nil || *got.Archive != *r.Archive {
+		t.Fatalf("got %+v, %v; want archive %+v", got.Archive, err, r.Archive)
+	}
+	// F-0503 crit. 7: the no-archive mark persists.
+	off := Reference{ID: "R-0002", Title: "y", State: domain.ReferenceCurrent, NoArchive: true}
+	if err := SaveReference(dir, off); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := LoadReference(dir, "R-0002"); err != nil || !got.NoArchive {
+		t.Fatalf("got NoArchive %v, %v; want true", got.NoArchive, err)
+	}
+	raw := `{"id":"R-0003","title":"z","state":"current","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}`
+	var p Reference
+	if err := json.Unmarshal([]byte(raw), &p); err != nil || p.Archive != nil || p.NoArchive {
+		t.Fatalf("plain = %+v, %v; want no archive fields", p, err)
+	}
+	b, _ := json.Marshal(p)
+	if strings.Contains(string(b), `"archive"`) || strings.Contains(string(b), `"no_archive"`) {
+		t.Fatalf("archive keys marshaled for a reference without them: %s", b)
+	}
+}
+
 func TestNoteRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	want := Note{

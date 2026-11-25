@@ -92,6 +92,7 @@ type CheckResult struct {
 	Status  int
 	Detail  string
 	Informs []string
+	Archive string // the link, origin and date of the page's archived copy, if any (F-0503)
 }
 
 const checkParallel = 8
@@ -151,6 +152,9 @@ func CheckReferences(repoDir, projDir string, ids []string, fetch Fetcher) ([]Ch
 			}
 			res := classifyCheck(&r, out[i], now, reached)
 			res.ID, res.Informs = r.ID, r.Informs
+			if r.Archive != nil && r.Archive.Status == archiveArchived {
+				res.Archive = r.Archive.URL + " (" + r.Archive.Origin + " " + r.Archive.CapturedAt.Format(time.DateOnly) + ")"
+			}
 			if res.Result != "transient" {
 				if err := store.SaveReference(repoDir, r); err != nil {
 					return "", err

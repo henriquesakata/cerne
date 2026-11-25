@@ -12,7 +12,7 @@ import (
 // reason on the event, requires a reason and refuses an already-obsolete one.
 func TestRetireReference(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	r, err := CreateExternalReference(repoDir, projDir, "Fonte", "http://a", "c", nil, nil, nil, false)
+	r, err := CreateExternalReference(repoDir, projDir, "Fonte", "http://a", "c", nil, nil, nil, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}

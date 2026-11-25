@@ -666,6 +666,12 @@ func (r showResult) renderText(w io.Writer) {
 		if len(e.Informs) > 0 {
 			fmt.Fprintf(w, "informs: %s\n", strings.Join(e.Informs, ", "))
 		}
+		switch { // F-0503
+		case e.Archive != nil:
+			fmt.Fprintf(w, "archive: %s\n", archiveText(*e.Archive))
+		case e.NoArchive:
+			fmt.Fprintln(w, "archive: skipped (no-archive)")
+		}
 	case store.Note:
 		fmt.Fprintf(w, "%s  %s  [%s]  %s\n", e.ID, r.kind, e.State, e.Title)
 		if e.Durable {

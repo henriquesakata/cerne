@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -141,6 +142,96 @@ func TestReferenceGoneLintNeverTouchesTheNetwork(t *testing.T) {
 	for _, args := range [][]string{{"pull"}, {"push"}} {
 		if out, err := run(args...); err != nil {
 			t.Fatalf("cerne %s: %v\n%s", args[0], err, out)
+		}
+	}
+}
+
+// F-0503 crit. 2 and crit. 7: with references.archive off, reference new
+// (with and without --no-archive) and reference archive (dry run included)
+// make no HTTP(S) request through the environment proxy; with it on, neither a
+// reference new --no-archive nor an archive run naming a no-archive reference
+// does. Positive control, last: on, the batch takes the one reference without
+// the mark and its anonymous proof GET goes through the proxy (404, so not
+// public: nothing reaches the archive service), while the no-archive URLs never
+// show. The URLs are public IP literals from the documentation range, so no DNS
+// lookup is made and Go proxies them (N-0130).
+func TestReferenceArchiveNeverTouchesTheNetworkWhenOff(t *testing.T) {
+	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
+	origin := filepath.Join(t.TempDir(), "origin.git")
+	if err := gitback.InitBare(origin); err != nil {
+		t.Fatal(err)
+	}
+	proj := t.TempDir()
+	mustCerne(t, "init", "--name", "Demo", "--backend", origin, "--dir", proj)
+
+	var strict atomic.Bool
+	var mu sync.Mutex
+	var seen []string
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		seen = append(seen, r.Method+" "+r.Host+" "+r.URL.String())
+		mu.Unlock()
+		if strict.Load() {
+			t.Errorf("network call through the proxy: %s %s", r.Method, r.URL)
+		}
+		http.NotFound(w, r)
+	}))
+	defer proxy.Close()
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := append(os.Environ(), "CERNE_TEST_RUN_CLI=1", "HOME="+t.TempDir(), "CERNE_CONFIG_DIR="+t.TempDir(), "NO_PROXY=", "no_proxy=")
+	for _, k := range []string{"HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY"} {
+		env = append(env, k+"="+proxy.URL)
+	}
+	run := func(args ...string) (string, error) {
+		cmd := exec.Command(self, append(args, "--dir", proj)...)
+		cmd.Env = env
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	must := func(args ...string) string {
+		t.Helper()
+		out, err := run(args...)
+		if err != nil {
+			t.Fatalf("cerne %s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+		return out
+	}
+
+	strict.Store(true)
+	if out := must("reference", "new", "Public page", "--url", "http://93.184.215.10/a"); strings.Contains(out, "archive") {
+		t.Errorf("reference new spoke of the archive with the setting off:\n%s", out)
+	}
+	must("reference", "new", "Kept page", "--url", "http://93.184.215.11/b", "--no-archive")
+	for _, args := range [][]string{{"reference", "archive"}, {"reference", "archive", "--dry-run"}} {
+		if out, err := run(args...); err == nil || !strings.Contains(out, "references.archive is off") {
+			t.Errorf("cerne %s with the setting off: %v\n%s", strings.Join(args, " "), err, out)
+		}
+	}
+
+	rc := filepath.Join(proj, ".cernerc")
+	if err := os.WriteFile(rc, []byte(mustRead(t, rc)+"\n[references]\narchive = true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	must("reference", "new", "Kept too", "--url", "http://93.184.215.12/c", "--no-archive")
+	if out := must("reference", "archive", "R-0002", "R-0003"); !strings.Contains(out, "R-0002  skipped (no-archive)") || !strings.Contains(out, "R-0003  skipped (no-archive)") {
+		t.Errorf("named no-archive references:\n%s", out)
+	}
+
+	strict.Store(false)
+	if out := must("reference", "archive"); !strings.Contains(out, "R-0001  not public (HTTP 404)") || strings.Contains(out, "R-0002") || strings.Contains(out, "R-0003") {
+		t.Errorf("positive control:\n%s", out)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(seen) == 0 || !strings.Contains(strings.Join(seen, "\n"), "93.184.215.10") {
+		t.Fatalf("the proof GET never went through the proxy (the probe is blind): %v", seen)
+	}
+	for _, s := range seen {
+		if strings.Contains(s, "93.184.215.11") || strings.Contains(s, "93.184.215.12") || strings.Contains(s, "archive.org") {
+			t.Errorf("the proxy saw %q", s)
 		}
 	}
 }

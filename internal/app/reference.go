@@ -26,8 +26,10 @@ func ReferenceDocPath(repoDir, id string) string {
 // content doc (indexed, so ask can cite it), appends reference.created, and
 // commits+pushes the backend refreshing the docs.lock snapshot in projDir. A
 // live reference with the same normalized URL refuses the creation (F-0324);
-// force overrides it and records guard=forced on reference.created.
-func CreateExternalReference(repoDir, projDir, title, url, content string, informs, facets, components []string, force bool) (store.Reference, error) {
+// force overrides it and records guard=forced on reference.created. noArchive
+// marks the reference as never sent to an archive service (F-0503), in the
+// same commit that creates it.
+func CreateExternalReference(repoDir, projDir, title, url, content string, informs, facets, components []string, force, noArchive bool) (store.Reference, error) {
 	title = strings.TrimSpace(title)
 	url = strings.TrimSpace(url)
 	if title == "" {
@@ -76,6 +78,7 @@ func CreateExternalReference(repoDir, projDir, title, url, content string, infor
 			Informs:    cleaned,
 			Facets:     normFacets,
 			Components: normComponents,
+			NoArchive:  noArchive,
 			CreatedAt:  now,
 			UpdatedAt:  now,
 		}
@@ -92,6 +95,13 @@ func CreateExternalReference(repoDir, projDir, title, url, content string, infor
 		ev := domain.NewEvent(id, "reference.created", payload, EventActor())
 		if err := store.AppendEvent(repoDir, ev); err != nil {
 			return "", err
+		}
+		// The opt-out is also an append-only event (F-0503): a release binary
+		// without the field rewrites the reference, never the log.
+		if noArchive {
+			if err := store.AppendEvent(repoDir, domain.NewEvent(id, archiveOptOutEvent, map[string]string{"url": url}, EventActor())); err != nil {
+				return "", err
+			}
 		}
 		return fmt.Sprintf("cerne: create %s (%s)", id, title), nil
 	})

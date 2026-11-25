@@ -12,6 +12,7 @@ import (
 
 	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
 	"github.com/henriquesakata/cerne/internal/verbs"
 )
@@ -21,6 +22,10 @@ func newReferenceCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "reference",
 		Short: "Register and manage references in the backend",
+		Long: "Register and manage references in the backend. Three commands reach the network: 'reference check' " +
+			"(one request per source), 'reference archive', and 'reference new' when a human turned references.archive on " +
+			"(it then tries to archive the page it registers; --no-archive keeps one source out). Everything else, " +
+			"lint, pull and push included, reads what is recorded.",
 	}
 	cmd.PersistentFlags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.PersistentFlags().MarkHidden("dir")
@@ -31,8 +36,13 @@ func newReferenceCmd() *cobra.Command {
 	cmd.AddCommand(newReferenceLinkCmd(&dir))
 	cmd.AddCommand(newReferenceCheckCmd(&dir))
 	cmd.AddCommand(verbs.MarkChat(newReferenceKeepCmd(&dir)))
+	cmd.AddCommand(newReferenceArchiveCmd(&dir))
 	return cmd
 }
+
+// archiveNet is the network reference new and reference archive use (F-0503);
+// a var so tests point it at fakes.
+var archiveNet = app.NewArchiveNet
 
 // referenceCheckTimeout bounds each URL of `reference check` (F-0501).
 const referenceCheckTimeout = 15 * time.Second
@@ -45,8 +55,8 @@ func newReferenceCheckCmd(dir *string) *cobra.Command {
 			"HTTP status and a hash of the visible text. The first check writes the baseline. Later ones report: ok, " +
 			"changed (the text differs from the baseline; confirm with 'cerne reference keep'), gone (404, 410 or a " +
 			"domain that no longer exists; 'cerne lint' then flags reference-gone) or transient (timeout, 5xx, 429 or any " +
-			"other failure: nothing is recorded but the event). This is the only command that touches the network; the " +
-			"request carries just the URL and a generic cerne User-Agent.",
+			"other failure: nothing is recorded but the event). Each request carries just the URL and a generic cerne " +
+			"User-Agent. A gone or changed line ends with the archived copy, when the reference has one.",
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := resolveProject(*dir)
@@ -77,10 +87,132 @@ func printReferenceChecks(w io.Writer, res []app.CheckResult) {
 		if (r.Result == "changed" || r.Result == "gone") && len(r.Informs) > 0 {
 			line += "  informs " + strings.Join(r.Informs, ", ")
 		}
+		if (r.Result == "changed" || r.Result == "gone") && r.Archive != "" {
+			line += "  archive: " + r.Archive
+		}
 		fmt.Fprintln(w, line)
 	}
 	fmt.Fprintf(w, "checked %d: %d ok, %d changed, %d gone, %d transient\n",
 		len(res), n["ok"], n["changed"], n["gone"], n["transient"])
+}
+
+func newReferenceArchiveCmd(dir *string) *cobra.Command {
+	var dryRun, optOut bool
+	cmd := &cobra.Command{
+		Use:   "archive [id...]",
+		Short: "Keep the link of a dated copy of each public external source (Wayback Machine)",
+		Long: "Sends the URL of each current external reference that has no copy yet, or whose last attempt is " +
+			"pending (or only the ids given), to the Wayback Machine of the Internet Archive, and records the link " +
+			"and date of the copy: the capture nearest the day the reference was registered when the archive has " +
+			"one (existing), else a new one (saved), falling back on that capture when Save Page Now refuses. " +
+			"Only the URL is sent. Nothing leaves the machine unless a human turned references.archive " +
+			"on, and never for an internal host, an unregistered_source_ignore item, a URL with credentials or a " +
+			"secret parameter, a name that resolves to a private address, a page an anonymous GET does not read " +
+			"with a 200, or a reference registered with --no-archive: that opt-out holds for the URL, so it bars " +
+			"every reference with the same one. --opt-out marks the ids given the same way, needs ids and reaches " +
+			"no network. --dry-run runs every one of those checks and " +
+			"lists what would be sent, sending nothing to the archive service and recording nothing.",
+		Args: cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, err := resolveProject(*dir)
+			if err != nil {
+				return err
+			}
+			if optOut {
+				done, err := app.OptOutReferences(ctx.repoDir, ctx.projDir, args)
+				if err != nil {
+					return err
+				}
+				for _, id := range done {
+					fmt.Fprintln(cmd.OutOrStdout(), id+"  no-archive")
+				}
+				return nil
+			}
+			net := archiveNet()
+			if !dryRun {
+				net.Progress = func(r app.ArchiveResult) {
+					line, _ := archiveLine(r, false)
+					fmt.Fprintln(cmd.OutOrStdout(), line)
+				}
+			}
+			res, err := app.ArchiveReferences(ctx.repoDir, ctx.projDir, args, net, dryRun)
+			if err != nil {
+				return err
+			}
+			printReferenceArchives(cmd.OutOrStdout(), res, dryRun, !dryRun)
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "run every check (filters, DNS, anonymous GET) and list what would be sent; send nothing to the archive service")
+	cmd.Flags().BoolVar(&optOut, "opt-out", false, "mark the ids given as never to be archived, them and any reference with the same URL; reaches no network and works with references.archive off")
+	cmd.MarkFlagsMutuallyExclusive("opt-out", "dry-run")
+	return verbs.MarkLocal(cmd)
+}
+
+// archiveText is an archive outcome as show and reference new print it:
+// `<link> (saved 2026-11-24)`, `pending (save failed: 429)`, `not public
+// (HTTP 404)`, `skipped (internal host)`.
+func archiveText(a store.ReferenceArchive) string {
+	switch a.Status {
+	case "archived":
+		return a.URL + " (" + a.Origin + " " + a.CapturedAt.Format(time.DateOnly) + ")"
+	case "not_public":
+		return "not public (" + a.Reason + ")"
+	}
+	return a.Status + " (" + a.Reason + ")"
+}
+
+// archiveLine is one reference's line: `R-0012  archived <link>  (saved
+// 2026-11-24)`, `R-0013  existing  <link>  (captured 2025-03-02)`,
+// `R-0014  pending  (save failed: 429)`, `R-0015  not public (HTTP 404)`,
+// `R-0016  skipped (internal host)`; and the key it is counted under. A dry run
+// ends each line with the source URL.
+func archiveLine(r app.ArchiveResult, dryRun bool) (line, key string) {
+	line = r.ID + "  "
+	key = r.Status
+	switch {
+	case r.Status == "archived" && r.Origin == "existing":
+		key = "existing"
+		line += "existing  " + r.URL + "  (captured " + r.CapturedAt.Format(time.DateOnly) + ")"
+	case r.Status == "archived":
+		line += "archived  " + r.URL + "  (saved " + r.CapturedAt.Format(time.DateOnly) + ")"
+	case r.Status == "pending":
+		line += "pending  (" + r.Reason + ")"
+	case r.Status == "would_send":
+		line += "would send"
+	default:
+		line += archiveText(r.ReferenceArchive)
+	}
+	if dryRun {
+		line += "  " + r.Source
+	}
+	return line, key
+}
+
+// printReferenceArchives writes the archive lines and the counts. A real run
+// has streamed its lines already (streamed), each as soon as it was processed,
+// so only the counts are left; a dry run prints its lines here and says nothing
+// was sent.
+func printReferenceArchives(w io.Writer, res []app.ArchiveResult, dryRun, streamed bool) {
+	if len(res) == 0 {
+		fmt.Fprintln(w, "nothing to archive: every current external reference has a copy, a final outcome or --no-archive")
+		return
+	}
+	n := map[string]int{}
+	for _, r := range res {
+		line, key := archiveLine(r, dryRun)
+		n[key]++
+		if !streamed {
+			fmt.Fprintln(w, line)
+		}
+	}
+	if dryRun {
+		fmt.Fprintf(w, "dry run, nothing sent: %d would send, %d pending, %d not public, %d skipped\n",
+			n["would_send"], n["pending"], n["not_public"], n["skipped"])
+		return
+	}
+	fmt.Fprintf(w, "processed %d: %d archived, %d existing, %d pending, %d not public, %d skipped\n",
+		len(res), n["archived"], n["existing"], n["pending"], n["not_public"], n["skipped"])
 }
 
 func newReferenceKeepCmd(dir *string) *cobra.Command {
@@ -183,7 +315,7 @@ func runReferenceRetire(cmd *cobra.Command, dir, id, reason string) error {
 
 func newReferenceNewCmd(dir *string) *cobra.Command {
 	var url, informs, file, facet, component string
-	var force bool
+	var force, noArchive bool
 	cmd := &cobra.Command{
 		Use:   "new [title]",
 		Short: "Register an external source (article/doc) as a reference",
@@ -192,10 +324,11 @@ func newReferenceNewCmd(dir *string) *cobra.Command {
 			"so 'ask' starts citing it. Use --informs to link the source to the entities " +
 			"(F-/E-/T-/B-/D-/RB-/N-/I-) it motivated. Use --facet (closed axis: infra,code,data,process,auth) and " +
 			"--component (subsystem/tool, e.g. gitea,kpack) to categorize — both multi-valued, " +
-			"comma-separated. A live reference with the same normalized URL refuses the creation (F-0324); --force overrides it. The title argument may be omitted when the body (--file or stdin) opens with a `# ` heading: that heading becomes the title.",
+			"comma-separated. A live reference with the same normalized URL refuses the creation (F-0324); --force overrides it. The title argument may be omitted when the body (--file or stdin) opens with a `# ` heading: that heading becomes the title. " +
+			"With references.archive on, the page is then archived as 'cerne reference archive' does; --no-archive marks the source as never sent to the archive service, now or later.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runReferenceNew(cmd, *dir, args, url, informs, file, facet, component, force)
+			return runReferenceNew(cmd, *dir, args, url, informs, file, facet, component, force, noArchive)
 		},
 	}
 	cmd.Flags().StringVar(&url, "url", "", "source URL (required)")
@@ -204,11 +337,12 @@ func newReferenceNewCmd(dir *string) *cobra.Command {
 	cmd.Flags().StringVar(&facet, "facet", "", "facets (comma-separated; closed set: infra,code,data,process,auth)")
 	cmd.Flags().StringVar(&component, "component", "", "components (comma-separated subsystem/tool tags, e.g. gitea,kpack)")
 	cmd.Flags().BoolVar(&force, "force", false, "bypass the duplicate-registration guard (F-0324) for a consciously distinct source, and accept a component near an existing one (E-0005; check 'cerne tags' first)")
+	cmd.Flags().BoolVar(&noArchive, "no-archive", false, "never send this source's URL to the archive service, now or later (F-0503)")
 	_ = cmd.MarkFlagRequired("url")
 	return verbs.MarkChatTool(cmd)
 }
 
-func runReferenceNew(cmd *cobra.Command, dir string, args []string, url, informs, file, facet, component string, force bool) error {
+func runReferenceNew(cmd *cobra.Command, dir string, args []string, url, informs, file, facet, component string, force, noArchive bool) error {
 	content, err := readReferenceContent(cmd, file)
 	if err != nil {
 		return err
@@ -222,12 +356,25 @@ func runReferenceNew(cmd *cobra.Command, dir string, args []string, url, informs
 		return err
 	}
 	notice := componentNotice(cmd, ctx.repoDir, component)
-	r, err := app.CreateExternalReference(ctx.repoDir, ctx.projDir, title, url, content, splitInforms(informs), splitInforms(facet), splitInforms(component), force)
+	r, err := app.CreateExternalReference(ctx.repoDir, ctx.projDir, title, url, content, splitInforms(informs), splitInforms(facet), splitInforms(component), force, noArchive)
 	if err != nil {
 		return err
 	}
 	notice()
 	fmt.Fprintf(cmd.OutOrStdout(), "%s registered (external: %s).\n", r.ID, r.URL)
+	if noArchive || !project.ReferencesArchive(ctx.projDir) {
+		return nil
+	}
+	// After the registration (F-0503 crit. 8): a failure here leaves the
+	// reference registered and the next 'reference archive' retries it.
+	res, err := app.ArchiveReferences(ctx.repoDir, ctx.projDir, []string{r.ID}, archiveNet(), false)
+	if err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s is registered but its archive was not recorded: %v — run 'cerne reference archive %s'\n", r.ID, err, r.ID)
+		return nil
+	}
+	if len(res) == 1 {
+		fmt.Fprintln(cmd.OutOrStdout(), "archive: "+archiveText(res[0].ReferenceArchive))
+	}
 	return nil
 }
 
@@ -308,6 +455,9 @@ func runReferenceList(cmd *cobra.Command, dir string, all, asJSON bool, facet, c
 		}
 		if r.URL != "" {
 			tags = append(tags, r.URL)
+		}
+		if a := r.Archive; a != nil && a.Status == "archived" {
+			tags = append(tags, "archive "+a.URL+" "+a.CapturedAt.Format(time.DateOnly))
 		}
 		if m := matched[r.ID]; m != nil {
 			tags = append(tags, "matched "+strings.Join(m, ","))
