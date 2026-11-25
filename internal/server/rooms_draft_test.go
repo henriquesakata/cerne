@@ -118,6 +118,21 @@ func TestMinutesDraftEndpointRefusals(t *testing.T) {
 	}
 }
 
+// T-0022 crit. 1
+// E-0006 crit. 10
+func TestMinutesDraftEndpointRefusesAnOversizedBody(t *testing.T) {
+	h, opened, alice := openDraftRoom(t, "proj-minutes-draft-413")
+	huge := strings.Repeat("x", 300<<10)
+	body := `{"session_id":"` + alice.SessionID + `","minutes":{"conclusion":"` + huge + `","rationale":"r"}}`
+	var got map[string]string
+	if rec := doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/minutes/draft", body, &got); rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized draft status = %d, want 413", rec.Code)
+	}
+	if r, _ := listedRoom(t, h, opened.ID); r.MinutesDraft != nil {
+		t.Fatal("an oversized draft was saved")
+	}
+}
+
 // T-0022 crit. 2, 3
 // E-0006 crit. 11, 12
 func TestCloseUseDraftChecksTheReviewedDraft(t *testing.T) {

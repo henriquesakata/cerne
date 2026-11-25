@@ -623,6 +623,9 @@ type minutesDraftRequest struct {
 	Minutes       room.Minutes `json:"minutes"`
 }
 
+// maxMinutesDraftBody caps a minutes draft request (T-0022).
+const maxMinutesDraftBody = 256 << 10
+
 // handleRoomMinutesDraft saves the open room's shared minutes draft (T-0022)
 // for a participant session (authored as its nick) or the facilitator.
 func handleRoomMinutesDraft(w http.ResponseWriter, r *http.Request, projectID, id string) {
@@ -630,7 +633,12 @@ func handleRoomMinutesDraft(w http.ResponseWriter, r *http.Request, projectID, i
 		return
 	}
 	var req minutesDraftRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxMinutesDraftBody)).Decode(&req); err != nil {
+		var tooBig *http.MaxBytesError
+		if errors.As(err, &tooBig) {
+			writeJSON(w, http.StatusRequestEntityTooLarge, errorBody("minutes draft too large: the limit is 256 KiB"))
+			return
+		}
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
 		return
 	}
