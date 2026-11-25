@@ -178,6 +178,10 @@ const TRANSCRIPT_TYPES = new Set<RoomMessage['type']>([
 ])
 const shownInTranscript = (e: RoomMessage) => TRANSCRIPT_TYPES.has(e.type)
 
+// T-0022: the author of a minutes draft the facilitator saved — a nick the
+// server refuses to participants — shown as the translated role.
+const FACILITATOR_AUTHOR = 'facilitator'
+
 // T-0022: the open items as any viewer reads them in the public transcript —
 // an item is I<seq> of the event that raised it, as the server names it. The
 // facilitator's queue still comes from the server.
@@ -613,7 +617,7 @@ export function WarRoomDetail({ id }: { id: string }) {
         return t.warRoom.resolutionEvent(raised?.title ?? m.item_id ?? '', m.body ?? '')
       }
       case 'minutes_draft':
-        return t.warRoom.minutesDraftEvent(who)
+        return who === FACILITATOR_AUTHOR ? t.warRoom.minutesDraftEventFacilitator : t.warRoom.minutesDraftEvent(who)
       default:
         return t.warRoom.leftEvent(who)
     }
@@ -748,7 +752,7 @@ export function WarRoomDetail({ id }: { id: string }) {
           <section className="room-minutes" aria-labelledby="room-draft-title">
             <h2 id="room-draft-title">{t.warRoom.minutesDraftTitle}</h2>
             <p className="room-minutes-meta">
-              {t.warRoom.minutesDraftBy(draft.nick ?? '')} ·{' '}
+              {draft.nick === FACILITATOR_AUTHOR ? t.warRoom.minutesDraftByFacilitator : t.warRoom.minutesDraftBy(draft.nick ?? '')} ·{' '}
               <time dateTime={draft.time} title={instant(draft.time, 'full')}>
                 {instant(draft.time, 'time')}
               </time>

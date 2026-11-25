@@ -1506,6 +1506,31 @@ describe('facilitação e rascunho de ata visíveis na sala (T-0022)', () => {
     expect(screen.getByText(/ata da sala/i)).toBeInTheDocument()
   })
 
+  // T-0022 crit. 3, 4
+  // E-0006 crit. 12, 13
+  it('o rascunho salvo pela facilitação mostra o papel traduzido, não o token', async () => {
+    const byFacilitator = { ...draft, nick: 'facilitator' }
+    readRoomMessages.mockImplementationOnce(() => Promise.resolve([open, byFacilitator]))
+    render(<WarRoomDetail id="R1" />)
+
+    const card = await screen.findByRole('region', { name: /rascunho de ata/i })
+    expect(within(card).getByText(/pela facilitação/)).toBeInTheDocument()
+    expect(within(screen.getByRole('log')).getByText('A facilitação salvou um rascunho de ata')).toBeInTheDocument()
+    expect(screen.queryByText(/facilitator/)).not.toBeInTheDocument()
+    cleanup()
+
+    localStorage.setItem('cerne-lang', 'en')
+    readRoomMessages.mockImplementationOnce(() => Promise.resolve([open, byFacilitator]))
+    render(
+      <I18nProvider>
+        <WarRoomDetail id="R1" />
+      </I18nProvider>,
+    )
+    const enCard = await screen.findByRole('region', { name: /minutes draft/i })
+    expect(within(enCard).getByText(/by the facilitator/)).toBeInTheDocument()
+    expect(within(screen.getByRole('log')).getByText('The facilitator saved a minutes draft')).toBeInTheDocument()
+  })
+
   // T-0022 crit. 4
   // E-0006 crit. 13
   it('tem os textos novos também em inglês', async () => {
