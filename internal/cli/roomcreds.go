@@ -104,6 +104,25 @@ func storeRoomSession(projectID, roomID, nick, sessionID string) ([]string, erro
 	if err != nil || path == "" {
 		return nil, err
 	}
+	unlock, err := lockRoomCreds(path)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	c, _ := loadRoomCreds(projectID, roomID) // unreadable: replaced
+	if c.Sessions == nil {
+		c.Sessions = map[string]string{}
+	}
+	c.Sessions[nick] = sessionID
+	if err := saveRoomCreds(path, c); err != nil {
+		return nil, err
+	}
+	return slices.Sorted(maps.Keys(c.Sessions)), nil
+}
+
+// lockRoomCreds takes the blocking OS lock on path+".lock" that serializes
+// every read-modify-write of the stored sessions; the returned func drops it.
+func lockRoomCreds(path string) (func(), error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
@@ -111,23 +130,51 @@ func storeRoomSession(projectID, roomID, nick, sessionID string) ([]string, erro
 	if err != nil {
 		return nil, err
 	}
-	defer lock.Close() // closing drops the lock
 	if err := lockFile(lock); err != nil {
+		lock.Close()
 		return nil, err
 	}
-	c, _ := loadRoomCreds(projectID, roomID) // unreadable: replaced
-	if c.Sessions == nil {
-		c.Sessions = map[string]string{}
-	}
-	c.Sessions[nick] = sessionID
+	return func() { lock.Close() }, nil // closing drops the lock
+}
+
+func saveRoomCreds(path string, c roomCreds) error {
 	data, err := json.Marshal(c)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	if err := writePrivateFile(path, data); err != nil {
-		return nil, err
+	return writePrivateFile(path, data)
+}
+
+// forgetRoomSession drops, from this agent session's store in roomID, the
+// entry that holds sessionID — the session `room leave` just revoked — under
+// the same lock as storeRoomSession. An entry holding any other session (a
+// re-join raced in) stays; without CERNE_SESSION it does nothing.
+func forgetRoomSession(projectID, roomID, sessionID string) error {
+	path, err := roomCredsPath(projectID, roomID)
+	if err != nil || path == "" {
+		return err
 	}
-	return slices.Sorted(maps.Keys(c.Sessions)), nil
+	unlock, err := lockRoomCreds(path)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	c, err := loadRoomCreds(projectID, roomID)
+	if err != nil {
+		return err
+	}
+	n := len(c.Sessions)
+	maps.DeleteFunc(c.Sessions, func(_, s string) bool { return s == sessionID })
+	if len(c.Sessions) == n {
+		return nil
+	}
+	return saveRoomCreds(path, c)
+}
+
+// roomSessionFromVar reports whether resolveRoomSession takes
+// CERNE_ROOM_SESSION: no --session, no --nick, and the variable set.
+func roomSessionFromVar(flag, nick string) bool {
+	return flag == "" && nick == "" && os.Getenv("CERNE_ROOM_SESSION") != ""
 }
 
 // resolveRoomSession picks the session a room command speaks with:
@@ -143,7 +190,7 @@ func resolveRoomSession(flag, nick, projectID, roomID string) (string, error) {
 		return "", errRoomSessionAndNick
 	case flag != "":
 		return flag, nil
-	case nick == "" && os.Getenv("CERNE_ROOM_SESSION") != "":
+	case roomSessionFromVar(flag, nick):
 		return os.Getenv("CERNE_ROOM_SESSION"), nil
 	}
 	c, err := loadRoomCreds(projectID, roomID)

@@ -717,8 +717,9 @@ func TestRoomLeaveEnvFallbackAndRevokedError(t *testing.T) {
 // F-0511 crit. 7
 func TestRoomLeaveWithoutSessionIsLocalError(t *testing.T) {
 	t.Setenv("CERNE_ROOM_SESSION", "")
-	// no server needed: the check fires before any HTTP.
-	_, err := runRoom(t, "leave", "R1")
+	// the check fires before any HTTP; --dir keeps it off the repo's .cernerc (B-0084).
+	dir, _ := newRoomTestServer(t, "proj-leave-nosession")
+	_, err := runRoom(t, "leave", "R1", "--dir", dir)
 	if err == nil || !strings.Contains(err.Error(), "--session") || !strings.Contains(err.Error(), "CERNE_ROOM_SESSION") || !strings.Contains(err.Error(), "room join") {
 		t.Fatalf("leave without session err = %v, want the say-style local error", err)
 	}

@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"maps"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -340,5 +343,77 @@ func TestRoomCredsRefuseRoomIDThatIsAPath(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(cache, "y")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("a store outside room-creds/: %v", err)
+	}
+}
+
+// B-0084: `room leave --nick` resolves like every session command and, once
+// the server revoked the session, drops only the entry that held it — so a
+// bare command then picks the nick that is left, and a new join of the same
+// nick is stored again. A refused leave (401) keeps the entry.
+func TestRoomLeaveForgetsOnlyTheRevokedNick(t *testing.T) {
+	dir, port := newRoomTestServer(t, "proj-leave-nick")
+	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
+	t.Setenv("CERNE_ROOM_SESSION", "")
+	t.Setenv("CERNE_SESSION", "agent-1")
+	runRoom(t, append([]string{"open", "topic"}, dirFlag...)...)
+	ana := joinRoomAs(t, dirFlag, "R1", "ana")
+	bia := joinRoomAs(t, dirFlag, "R1", "bia")
+
+	if out, err := runRoom(t, append([]string{"leave", "R1", "--nick", "bia"}, dirFlag...)...); err != nil {
+		t.Fatalf("leave --nick bia: %v (%s)", err, out)
+	}
+	if stored, _ := loadRoomCreds("proj-leave-nick", "R1"); !maps.Equal(stored.Sessions, map[string]string{"ana": ana}) {
+		t.Fatalf("stored after leave = %+v, want only ana", stored)
+	}
+	if _, err := runRoom(t, append([]string{"say", "R1", "ghost", "--session", bia}, dirFlag...)...); err == nil {
+		t.Fatal("say with bia's revoked session: want error")
+	}
+	if _, err := runRoom(t, append([]string{"say", "R1", "after leave"}, dirFlag...)...); err != nil {
+		t.Fatalf("bare say after bia left: %v", err)
+	}
+	read, err := runRoom(t, append([]string{"read", "R1"}, dirFlag...)...)
+	if err != nil || !strings.Contains(read, "[ana] after leave") {
+		t.Fatalf("read = %q, %v; want the bare say under ana", read, err)
+	}
+
+	bia2 := joinRoomAs(t, dirFlag, "R1", "bia")
+	if stored, _ := loadRoomCreds("proj-leave-nick", "R1"); bia2 == bia || stored.Sessions["bia"] != bia2 {
+		t.Fatalf("stored after re-join = %+v, want bia's new session", stored)
+	}
+
+	if _, err := storeRoomSession("proj-leave-nick", "R1", "zed", "deadbeefdeadbeefdeadbeefdeadbeef"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runRoom(t, append([]string{"leave", "R1", "--nick", "zed"}, dirFlag...)...); err == nil {
+		t.Fatal("leave with a session the server does not know: want error")
+	}
+	if stored, _ := loadRoomCreds("proj-leave-nick", "R1"); stored.Sessions["zed"] == "" {
+		t.Fatalf("stored after a refused leave = %+v, want zed kept", stored)
+	}
+}
+
+// B-0084: a leave the server fails (5xx) keeps the stored entry.
+func TestRoomLeaveServerErrorKeepsTheEntry(t *testing.T) {
+	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
+	t.Setenv("CERNE_ROOM_SESSION", "")
+	t.Setenv("CERNE_SESSION", "agent-1")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"error":"boom"}`))
+	}))
+	t.Cleanup(srv.Close)
+	u, _ := url.Parse(srv.URL)
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".cernerc"), []byte("project_id = \"proj-leave-5xx\"\nbackend = \"/dev/null\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := storeRoomSession("proj-leave-5xx", "R1", "ana", "s-ana"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runRoom(t, "leave", "R1", "--nick", "ana", "--dir", dir, "--port", u.Port()); err == nil {
+		t.Fatal("leave against a failing server: want error")
+	}
+	if stored, _ := loadRoomCreds("proj-leave-5xx", "R1"); stored.Sessions["ana"] != "s-ana" {
+		t.Fatalf("stored after a failed leave = %+v, want ana kept", stored)
 	}
 }

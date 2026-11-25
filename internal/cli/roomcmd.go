@@ -154,28 +154,29 @@ func newRoomJoinCmd() *cobra.Command {
 }
 
 func newRoomLeaveCmd() *cobra.Command {
-	var dir, session string
+	var dir, session, nick string
 	var port int
 	cmd := &cobra.Command{
 		Use:   "leave <room>",
 		Short: "Leave a war room, revoking your session capability",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fromEnv := false
-			if session == "" {
-				session = os.Getenv("CERNE_ROOM_SESSION")
-				fromEnv = session != ""
-			}
-			if session == "" {
-				return errors.New("a session is required: pass --session or set CERNE_ROOM_SESSION (run 'cerne room join <room>' to obtain one)")
-			}
+			fromEnv := roomSessionFromVar(session, nick)
 			c, err := newRoomClient(dir, port)
 			if err != nil {
+				return err
+			}
+			if session, err = resolveRoomSession(session, nick, c.pid, args[0]); err != nil {
 				return err
 			}
 			rm, err := c.leave(cmd.Context(), args[0], session)
 			if err != nil {
 				return fmt.Errorf("leave %s: %w", args[0], err)
+			}
+			// B-0084: the revoked session must not stay stored, or a bare
+			// command would keep picking it among this agent session's nicks.
+			if err := forgetRoomSession(c.pid, args[0], session); err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: left, but could not drop the session from this agent session's store: %v\n", err)
 			}
 			out := cmd.OutOrStdout()
 			fmt.Fprintf(out, "left %s (%d active participant(s))\n", rm.ID, len(rm.ActiveParticipants))
@@ -186,7 +187,8 @@ func newRoomLeaveCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&session, "session", "", "session capability printed by 'cerne room join' (falls back to CERNE_ROOM_SESSION)")
+	cmd.Flags().StringVar(&session, "session", "", roomSessionFlagHelp)
+	cmd.Flags().StringVar(&nick, "nick", "", roomNickFlagHelp)
 	addRoomFlags(cmd, &dir, &port)
 	return cmd
 }
