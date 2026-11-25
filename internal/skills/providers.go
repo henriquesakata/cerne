@@ -154,6 +154,20 @@ func scanBlock(raw []byte) (start, end int, found, ok bool) {
 	return begins[0][0], ends[0][1], true, true
 }
 
+// StripManagedBlock returns raw without cerne's managed block. Without a block,
+// or with duplicated or out-of-order markers, it returns raw intact.
+func StripManagedBlock(raw []byte) []byte {
+	start, end, found, ok := scanBlock(raw)
+	if !found || !ok {
+		return raw
+	}
+	out := append(append([]byte{}, raw[:start]...), raw[end:]...)
+	if out = bytes.TrimRight(out, "\r\n"); len(out) > 0 {
+		out = append(out, '\n')
+	}
+	return out
+}
+
 // writePointer adds or refreshes the single managed block in a user-owned doc.
 // It never rewrites anything outside the markers, never writes through a
 // symlink, mirrors the file's predominant line ending, writes atomically, and

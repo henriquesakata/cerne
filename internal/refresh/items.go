@@ -30,6 +30,17 @@ var wholeFileDirs = []string{
 	".github/instructions",
 }
 
+// IsWholeFileDir reports whether rel, a slash path relative to the project, is
+// one of those folders or lies inside one.
+func IsWholeFileDir(rel string) bool {
+	for _, d := range wholeFileDirs {
+		if rel == d || strings.HasPrefix(rel, d+"/") {
+			return true
+		}
+	}
+	return false
+}
+
 // blockFiles are the JSON files that belong to the person, with cerne entries inside.
 var blockFiles = []string{".claude/settings.json", ".codex/hooks.json", ".gemini/settings.json", ".cursor/hooks.json", ".mcp.json"}
 
