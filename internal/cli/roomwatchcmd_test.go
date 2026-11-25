@@ -20,7 +20,8 @@ import (
 )
 
 func TestRoomWatchRequiresSession(t *testing.T) {
-	_, err := runRoom(t, "watch", "R1")
+	dir, _ := newRoomTestServer(t, "proj-watch-nosession") // --dir: never the repo's .cernerc
+	_, err := runRoom(t, "watch", "R1", "--dir", dir)
 	if err == nil {
 		t.Fatal("watch without session: want error, got nil")
 	}

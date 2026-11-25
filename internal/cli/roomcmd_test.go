@@ -649,8 +649,9 @@ func TestRoomJoinTwoNicksFromOneAgentSession(t *testing.T) {
 }
 
 func TestRoomSayWithoutSessionIsLocalError(t *testing.T) {
-	// no server needed: the check fires before any HTTP.
-	_, err := runRoom(t, "say", "R1", "oi")
+	// the check fires before any HTTP; --dir keeps it off the repo's .cernerc.
+	dir, _ := newRoomTestServer(t, "proj-say-nosession")
+	_, err := runRoom(t, "say", "R1", "oi", "--dir", dir)
 	if err == nil {
 		t.Fatal("say without session: want error, got nil")
 	}
@@ -734,9 +735,30 @@ func TestFormatRoomEventLeave(t *testing.T) {
 // --nick back only as a selector among stored sessions, so a nick alone
 // grants nothing.
 func TestRoomSayNickAloneGrantsNothing(t *testing.T) {
-	_, err := runRoom(t, "say", "R1", "oi", "--nick", "ana")
+	dir, _ := newRoomTestServer(t, "proj-say-nick-alone") // --dir: never the repo's .cernerc
+	_, err := runRoom(t, "say", "R1", "oi", "--nick", "ana", "--dir", dir)
 	if !errors.Is(err, errRoomNickNotStored) {
 		t.Fatalf("say --nick with nothing stored: err = %v, want errRoomNickNotStored", err)
+	}
+}
+
+// B-0084, review round 2: a nick stored under one CERNE_SESSION is not
+// reachable from another, --nick or not.
+func TestRoomSayNickStoredUnderAnotherAgentSessionRefuses(t *testing.T) {
+	dir, port := newRoomTestServer(t, "proj-say-other-agent")
+	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
+	t.Setenv("CERNE_ROOM_SESSION", "")
+	t.Setenv("CERNE_SESSION", "agent-1")
+	runRoom(t, append([]string{"open", "topic"}, dirFlag...)...)
+	joinRoomAs(t, dirFlag, "R1", "ana")
+
+	t.Setenv("CERNE_SESSION", "agent-2")
+	if _, err := runRoom(t, append([]string{"say", "R1", "not ana", "--nick", "ana"}, dirFlag...)...); !errors.Is(err, errRoomNickNotStored) {
+		t.Fatalf("say --nick ana from agent-2: err = %v, want errRoomNickNotStored", err)
+	}
+	read, err := runRoom(t, append([]string{"read", "R1"}, dirFlag...)...)
+	if err != nil || strings.Contains(read, "not ana") {
+		t.Fatalf("read = %q, %v; want nothing posted", read, err)
 	}
 }
 
