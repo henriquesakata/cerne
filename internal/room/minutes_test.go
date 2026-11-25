@@ -117,6 +117,31 @@ func TestRenderMinutesNoteBodyNilReturnsEmpty(t *testing.T) {
 	}
 }
 
+// T-0022 crit. 2
+// E-0006 crit. 11
+func TestRenderMinutesDraftMarkdownGolden(t *testing.T) {
+	at := time.Date(2026, 11, 25, 14, 2, 0, 0, time.UTC)
+	r := Room{ID: "R6", Topic: "fila serial", MinutesDraft: &MinutesDraft{
+		Author:    "grok",
+		UpdatedAt: at,
+		Minutes:   Minutes{Conclusion: "Reverter.", Rationale: "Mais rápido.", Owners: []string{"ana"}},
+	}}
+	want := "# Rascunho de ata — R6 (fila serial)\n\n" +
+		"- Autor: grok\n" +
+		"- Atualizado em: 2026-11-25T14:02:00Z\n\n" +
+		"## Conclusão\n\nReverter.\n\n" +
+		"## Justificativa\n\nMais rápido.\n\n" +
+		"## Opções descartadas\n\n_Nenhum._\n\n" +
+		"## Responsáveis\n\n- ana\n\n" +
+		"## Próximos passos\n\n_Nenhum._\n\n"
+	if got := RenderMinutesDraftMarkdown(r); got != want {
+		t.Fatalf("RenderMinutesDraftMarkdown =\n%s\nwant\n%s", got, want)
+	}
+	if got := RenderMinutesDraftMarkdown(Room{ID: "R6"}); got != "" {
+		t.Fatalf("RenderMinutesDraftMarkdown = %q, want empty for a room with no draft", got)
+	}
+}
+
 // T-0022 crit. 1
 // E-0006 crit. 10
 func TestSaveMinutesDraftBySession(t *testing.T) {
