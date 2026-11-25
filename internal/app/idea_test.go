@@ -208,7 +208,7 @@ func TestPromoteIdeaCreatesLinkedCandidate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, f, err := PromoteIdea(repoDir, projDir, i.ID, "", "", false)
+	got, f, err := PromoteIdea(repoDir, projDir, i.ID, PromoteOptions{})
 	if err != nil {
 		t.Fatalf("PromoteIdea: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestPromoteIdeaCreatesLinkedCandidate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, f2, err := PromoteIdea(repoDir, projDir, long.ID, "", "", false)
+	_, f2, err := PromoteIdea(repoDir, projDir, long.ID, PromoteOptions{})
 	if err != nil {
 		t.Fatalf("PromoteIdea long: %v", err)
 	}
@@ -255,12 +255,12 @@ func TestPromoteIdeaRefusesClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, f, err := PromoteIdea(repoDir, projDir, i.ID, "", "", false)
+	_, f, err := PromoteIdea(repoDir, projDir, i.ID, PromoteOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	before, _ := store.LoadAllFeatures(repoDir)
-	_, _, err = PromoteIdea(repoDir, projDir, i.ID, "", "", false)
+	_, _, err = PromoteIdea(repoDir, projDir, i.ID, PromoteOptions{})
 	if !errors.Is(err, ErrIdeaNotActive) || !strings.Contains(err.Error(), "promoted") || !strings.Contains(err.Error(), f.ID) {
 		t.Fatalf("second promote err = %v, want ErrIdeaNotActive naming promoted and %s", err, f.ID)
 	}
@@ -271,7 +271,7 @@ func TestPromoteIdeaRefusesClosed(t *testing.T) {
 	if _, err := DropIdea(repoDir, projDir, d.ID, "não"); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := PromoteIdea(repoDir, projDir, d.ID, "", "", false); !errors.Is(err, ErrIdeaNotActive) || !strings.Contains(err.Error(), "dropped") {
+	if _, _, err := PromoteIdea(repoDir, projDir, d.ID, PromoteOptions{}); !errors.Is(err, ErrIdeaNotActive) || !strings.Contains(err.Error(), "dropped") {
 		t.Fatalf("promote of a dropped idea err = %v, want ErrIdeaNotActive naming dropped", err)
 	}
 	if after, _ := store.LoadAllFeatures(repoDir); len(after) != len(before) {
@@ -292,7 +292,7 @@ func TestIdeaIDValidatedBeforeAnyPath(t *testing.T) {
 		if _, err := DropIdea(repoDir, projDir, id, ""); !errors.Is(err, ErrNotIdeaID) {
 			t.Fatalf("DropIdea(%q) err = %v, want ErrNotIdeaID", id, err)
 		}
-		if _, _, err := PromoteIdea(repoDir, projDir, id, "", "", false); !errors.Is(err, ErrNotIdeaID) {
+		if _, _, err := PromoteIdea(repoDir, projDir, id, PromoteOptions{}); !errors.Is(err, ErrNotIdeaID) {
 			t.Fatalf("PromoteIdea(%q) err = %v, want ErrNotIdeaID", id, err)
 		}
 	}
@@ -349,7 +349,7 @@ func TestPromoteIdeaRaceDropNoOrphan(t *testing.T) {
 		var f store.Feature
 		var wg sync.WaitGroup
 		wg.Add(2)
-		go func() { defer wg.Done(); _, f, perr = PromoteIdea(repoDir, projDir, i.ID, "", "", true) }()
+		go func() { defer wg.Done(); _, f, perr = PromoteIdea(repoDir, projDir, i.ID, PromoteOptions{Force: true}) }()
 		go func() { defer wg.Done(); _, derr = DropIdea(repoDir, projDir, i.ID, "corrida") }()
 		wg.Wait()
 		stored, _ := store.LoadIdea(repoDir, i.ID)

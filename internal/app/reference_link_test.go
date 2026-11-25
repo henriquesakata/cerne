@@ -96,7 +96,7 @@ func TestPromoteIdeaCarriesReferenceLinks(t *testing.T) {
 	if _, err := RetireReference(repoDir, projDir, dead.ID, "dup"); err != nil {
 		t.Fatal(err)
 	}
-	_, f, err := PromoteIdea(repoDir, projDir, i.ID, "", "", false)
+	_, f, err := PromoteIdea(repoDir, projDir, i.ID, PromoteOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +180,7 @@ func TestInformsIdeaStates(t *testing.T) {
 	if _, err := DropIdea(repoDir, projDir, dropped.ID, "no"); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := PromoteIdea(repoDir, projDir, promoted.ID, "", "", false); err != nil {
+	if _, _, err := PromoteIdea(repoDir, projDir, promoted.ID, PromoteOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	for n, id := range []string{active.ID, promoted.ID} {
@@ -214,7 +214,7 @@ func TestPromoteIdeaAtomicWithCorruptReference(t *testing.T) {
 		}
 	}
 	before, _ := gitback.HeadSHA(repoDir)
-	if _, _, err := PromoteIdea(repoDir, projDir, i.ID, "", "", false); err == nil {
+	if _, _, err := PromoteIdea(repoDir, projDir, i.ID, PromoteOptions{}); err == nil {
 		t.Fatal("promote must fail on a corrupt reference")
 	}
 	if after, _ := gitback.HeadSHA(repoDir); after != before {

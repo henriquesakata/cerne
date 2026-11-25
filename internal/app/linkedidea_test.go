@@ -235,7 +235,7 @@ func TestPromoteIdeaWithATitleKeepsTheIdeaTitle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, f, err := PromoteIdea(repoDir, projDir, i.ID, "Exportar o kanban v2", "", false)
+	_, f, err := PromoteIdea(repoDir, projDir, i.ID, PromoteOptions{Title: "Exportar o kanban v2"})
 	if err != nil {
 		t.Fatal(err)
 	}

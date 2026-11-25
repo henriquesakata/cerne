@@ -331,7 +331,7 @@ func newIdeaPromoteCmd(dir *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			i, f, err := app.PromoteIdea(ctx.repoDir, ctx.projDir, args[0], title, module, force)
+			i, f, err := app.PromoteIdea(ctx.repoDir, ctx.projDir, args[0], app.PromoteOptions{Title: title, Module: module, Force: force})
 			if err != nil {
 				return err
 			}

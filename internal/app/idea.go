@@ -225,6 +225,13 @@ func DropIdea(repoDir, projDir, id, reason string) (store.Idea, error) {
 	return i, nil
 }
 
+// PromoteOptions are the caller's choices on a promote: Title replaces the
+// derived title; Module and Force go to the feature core.
+type PromoteOptions struct {
+	Title, Module string
+	Force         bool
+}
+
 // PromoteIdea turns an active idea into a candidate feature: the first line
 // of the text (80 runes max) is the title, the whole text the spec's context
 // under "**Origem:** ideia [[I-NNNN]] (capturada em AAAA-MM-DD)", and the
@@ -233,9 +240,10 @@ func DropIdea(repoDir, projDir, id, reason string) (store.Idea, error) {
 // backend lock (C1): a racing drop either closes the idea first — the promote
 // is refused, nothing created — or finds it already promoted. A non-blank
 // title replaces the derived one (C9: an idea whose first line is a live
-// feature's exact title). module and force go to the feature core
-// (ValidateModule, the F-0147 guard).
-func PromoteIdea(repoDir, projDir, id, title, module string, force bool) (store.Idea, store.Feature, error) {
+// feature's exact title). Module and Force go to the feature core
+// (ValidateModule, the F-0147 guard). The zero PromoteOptions is the plain
+// promote the server route runs.
+func PromoteIdea(repoDir, projDir, id string, o PromoteOptions) (store.Idea, store.Feature, error) {
 	id, err := CanonicalIdeaID(id)
 	if err != nil {
 		return store.Idea{}, store.Feature{}, err
@@ -250,7 +258,8 @@ func PromoteIdea(repoDir, projDir, id, title, module string, force bool) (store.
 		// The context carries the body; when the candidate's title is not the
 		// idea's own (cut to 80 runes, or a --title), the idea's title goes there
 		// too, so nothing the capture said is lost (critic F-0419 #2).
-		if title = strings.TrimSpace(title); title == "" {
+		title := strings.TrimSpace(o.Title)
+		if title == "" {
 			title = truncateDraftRunes(i.Title, 80)
 		}
 		text := i.Body
@@ -258,7 +267,7 @@ func PromoteIdea(repoDir, projDir, id, title, module string, force bool) (store.
 			text = strings.TrimSpace(i.Title + "\n\n" + i.Body)
 		}
 		context := fmt.Sprintf("**Origem:** ideia [[%s]] (capturada em %s)\n\n%s", i.ID, i.CreatedAt.Format(time.DateOnly), text)
-		n, err := prepareFeature("F", title, module, "", i.Facets, i.Components, spectmpl.StubWithContextIn(store.DocsLanguage(repoDir), title, context), force, "", "")
+		n, err := prepareFeature("F", title, o.Module, "", i.Facets, i.Components, spectmpl.StubWithContextIn(store.DocsLanguage(repoDir), title, context), o.Force, "", "")
 		if err != nil {
 			return "", err
 		}
