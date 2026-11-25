@@ -68,7 +68,11 @@ func MirrorFeature(repoDir, projDir, id, trackerName, title, summary string) (st
 	link := store.MirrorRef{Tracker: tc.Name, Kind: tc.Kind, Title: title, Summary: summary}
 	ctx, cancel := context.WithTimeout(context.Background(), mirrorTimeout)
 	defer cancel()
-	r, createErr := tr.Create(ctx, mirrorItem(repoDir, projDir, f, link, cfg, tr))
+	it := mirrorItem(repoDir, f, link, cfg, tr)
+	// No issue yet to ask the adapter about: hold whenever the card would;
+	// a kind no merge closes ignores it (B-0079).
+	it.HoldOpen = holdOpen(ctx, projDir, f, cfg)
+	r, createErr := tr.Create(ctx, it)
 	if r.URL == "" {
 		return store.Feature{}, fmt.Errorf("mirror %s -> %s: %w", id, tc.Name, createErr)
 	}
@@ -129,8 +133,8 @@ func pickTracker(cfg project.MirrorConfig, name string) (tracker.Config, error) 
 // mirrored on the same tracker, an issue tr owns. A successor on another
 // tracker is not cited (its address is not this tracker's audience's to see),
 // nor a stored link the contract finds malformed.
-func mirrorItem(repoDir, projDir string, f store.Feature, link store.MirrorRef, cfg project.MirrorConfig, tr tracker.IssueTracker) tracker.Item {
-	it := tracker.Item{CardID: f.ID, State: f.State, Title: link.Title, Summary: link.Summary, NoReopen: cfg.CloseOn == "merge", HoldOpen: holdOpen(projDir, f, cfg)}
+func mirrorItem(repoDir string, f store.Feature, link store.MirrorRef, cfg project.MirrorConfig, tr tracker.IssueTracker) tracker.Item {
+	it := tracker.Item{CardID: f.ID, State: f.State, Title: link.Title, Summary: link.Summary, NoReopen: cfg.CloseOn == "merge"}
 	if f.State == domain.StateSuperseded && f.SupersededBy != "" {
 		if s, err := store.LoadFeature(repoDir, f.SupersededBy); err == nil && s.Mirror != nil && s.Mirror.Tracker == link.Tracker {
 			if r := (tracker.Ref{Tracker: s.Mirror.Tracker, ID: s.Mirror.ID, URL: s.Mirror.URL}); tr.Owns(r) {
@@ -144,15 +148,35 @@ func mirrorItem(repoDir, projDir string, f store.Feature, link store.MirrorRef, 
 // holdOpen reports whether f's issue waits for the merge (B-0079): under
 // close_on = "merge" a done card with a delivery closes its issue only once
 // the forge confirms the delivery on the default branch. In doubt (no forge,
-// no answer) it holds: closing before the merge is the defect it guards.
-// ponytail: one forge call per such card on every mirror round, a sync
-// included; skip it for an issue the sync's open list shows closed if syncs slow.
-func holdOpen(projDir string, f store.Feature, cfg project.MirrorConfig) bool {
+// no answer within ctx) it holds: closing before the merge is the defect it
+// guards. Only a done card with a delivery costs a forge call.
+func holdOpen(ctx context.Context, projDir string, f store.Feature, cfg project.MirrorConfig) bool {
 	if cfg.CloseOn != "merge" || f.State != domain.StateDone || f.DeliveryMRURL == "" && f.DeliveryCommitURL == "" {
 		return false
 	}
 	pc, _, err := project.LoadConfig(projDir)
-	return err != nil || !deliveryMerged(pc, projDir, f)
+	return err != nil || !deliveryMerged(ctx, pc, projDir, f)
+}
+
+// closesOnMerge reports whether tr writes a closing word for r, so a merge
+// that cites the issue closes it: asked of the adapter (its CommitRef), never
+// by kind (D-0009).
+func closesOnMerge(tr tracker.IssueTracker, r tracker.Ref) bool {
+	return strings.HasPrefix(tr.CommitRef(r, "", true), "Closes")
+}
+
+// mirrorClosesOnMerge is closesOnMerge for the link m on its configured
+// tracker; false for no link or a tracker no longer configured.
+func mirrorClosesOnMerge(cfg project.MirrorConfig, m *store.MirrorRef) bool {
+	if m == nil {
+		return false
+	}
+	k := slices.IndexFunc(cfg.Trackers, func(t tracker.Config) bool { return t.Name == m.Tracker })
+	if k < 0 {
+		return false
+	}
+	tr, err := tracker.New(cfg.Trackers[k])
+	return err == nil && closesOnMerge(tr, tracker.Ref{Tracker: m.Tracker, ID: m.ID, URL: m.URL})
 }
 
 // mirrorAfterTransition moves the issue of each mirrored card among ids to the
@@ -174,7 +198,7 @@ func mirrorAfterTransition(repoDir, projDir string, ids []string) []string {
 		if err != nil || f.Mirror == nil {
 			continue
 		}
-		if err := applyMirror(ctx, repoDir, projDir, f, cfg); err != nil {
+		if err := applyMirror(ctx, repoDir, projDir, f, cfg, false); err != nil {
 			line := fmt.Sprintf("cerne: mirror %s -> %s: %v", id, f.Mirror.Tracker, err)
 			if !errors.As(err, new(notOwnedError)) { // a sync cannot fix a link on another repository
 				line += "; run 'cerne mirror sync'"
@@ -187,7 +211,9 @@ func mirrorAfterTransition(repoDir, projDir string, ids []string) []string {
 
 // applyMirror moves the issue f is linked to toward f's state, on the tracker
 // the link names; a tracker renamed or removed since is no fallback to another.
-func applyMirror(ctx context.Context, repoDir, projDir string, f store.Feature, cfg project.MirrorConfig) error {
+// knownClosed says the caller already saw the issue closed: no merge is left
+// to wait for, so the forge is not asked (B-0079).
+func applyMirror(ctx context.Context, repoDir, projDir string, f store.Feature, cfg project.MirrorConfig, knownClosed bool) error {
 	k := slices.IndexFunc(cfg.Trackers, func(t tracker.Config) bool { return t.Name == f.Mirror.Tracker })
 	if k < 0 {
 		return fmt.Errorf("tracker %s not configured in mirror.trackers: %w", f.Mirror.Tracker, ErrUnknownTracker)
@@ -200,7 +226,11 @@ func applyMirror(ctx context.Context, repoDir, projDir string, f store.Feature, 
 	if !tr.Owns(r) {
 		return notOwnedError{link: r.URL, trackerURL: cfg.Trackers[k].URL}
 	}
-	return tr.Update(ctx, r, mirrorItem(repoDir, projDir, f, *f.Mirror, cfg, tr))
+	it := mirrorItem(repoDir, f, *f.Mirror, cfg, tr)
+	if !knownClosed && closesOnMerge(tr, r) {
+		it.HoldOpen = holdOpen(ctx, projDir, f, cfg)
+	}
+	return tr.Update(ctx, r, it)
 }
 
 // notOwnedError is a card's link to an issue the tracker of that name no
@@ -252,6 +282,9 @@ func SyncMirror(repoDir, projDir string) (MirrorSyncReport, error) {
 		return rep, err
 	}
 	var fresh []store.Idea
+	// open is each tracker's whole open list, when the sync read all of it (no
+	// label, under the cap): an issue missing from it is closed (B-0079).
+	open := map[string]map[string]bool{}
 	rep.Trackers = make([]MirrorTrackerRun, len(cfg.Trackers))
 	runs := map[string]*MirrorTrackerRun{}
 	for i, tc := range cfg.Trackers {
@@ -267,6 +300,11 @@ func SyncMirror(repoDir, projDir string) (MirrorSyncReport, error) {
 		}
 		if len(remotes) >= mirrorListCap {
 			rep.Notes = append(rep.Notes, listCapNote(tc))
+		} else if tc.Label == "" {
+			open[tc.Name] = map[string]bool{}
+			for _, r := range remotes {
+				open[tc.Name][r.URL] = true
+			}
 		}
 		for _, r := range remotes {
 			if !linked[r.URL] {
@@ -291,7 +329,8 @@ func SyncMirror(repoDir, projDir string) (MirrorSyncReport, error) {
 			continue
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), mirrorTimeout)
-		err := applyMirror(ctx, repoDir, projDir, f, cfg)
+		list, whole := open[f.Mirror.Tracker]
+		err := applyMirror(ctx, repoDir, projDir, f, cfg, whole && !list[f.Mirror.URL])
 		cancel()
 		if err != nil {
 			rep.Warnings = append(rep.Warnings, fmt.Sprintf("cerne: mirror %s -> %s: %v", f.ID, f.Mirror.Tracker, err))

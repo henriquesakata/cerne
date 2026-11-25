@@ -214,8 +214,9 @@ func CheckMirror(repoDir, projDir string) ([]MirrorCheck, error) {
 		// With close_on = "merge" only a merge closes an issue, and only from
 		// in_development on.
 		mergeCanClose := f.State == domain.StateInDevelopment || f.State == domain.StateImplemented
-		// A delivered done card's issue waits for that merge (B-0079).
-		awaitingMerge := cfg.CloseOn == "merge" && f.State == domain.StateDone && (f.DeliveryMRURL != "" || f.DeliveryCommitURL != "")
+		// A delivered done card's issue waits for that merge, on a tracker a
+		// merge closes (B-0079).
+		awaitingMerge := cfg.CloseOn == "merge" && f.State == domain.StateDone && (f.DeliveryMRURL != "" || f.DeliveryCommitURL != "") && mirrorClosesOnMerge(cfg, f.Mirror)
 		switch {
 		case !known:
 			c.Status, c.Reason = MirrorUnchecked, ReasonTrackerUnknown

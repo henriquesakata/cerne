@@ -190,6 +190,17 @@ func TestHoldOpenOnlyForDeliveredDone(t *testing.T) {
 			t.Fatalf("superseded: open=%v, forge calls=%d; want closed, none", issueOpen(t, pub, r), f.calls)
 		}
 	})
+	// B-0079 crit. 7: on a tracker no merge closes (Jira, Trello), done closes
+	// the issue on the accept and the forge is not asked.
+	t.Run("done on a tracker no merge closes", func(t *testing.T) {
+		f := &fakeForge{pr: prOpen}
+		repoDir, projDir, pub, r := holdCard(t, "merge", true, domain.StateImplemented, holdPR, holdCommit, f)
+		pub.RefsOnly = true
+		holdAccept(t, repoDir, projDir)
+		if issueOpen(t, pub, r) || f.calls != 0 {
+			t.Fatalf("refs-only tracker: open=%v, forge calls=%d; want closed, none", issueOpen(t, pub, r), f.calls)
+		}
+	})
 	t.Run("done with no delivery", func(t *testing.T) {
 		f := &fakeForge{pr: prOpen}
 		repoDir, projDir, pub, r := holdCard(t, "merge", true, domain.StateImplemented, "", "", f)
@@ -212,5 +223,44 @@ func TestHoldOpenNotUnderCloseOnAccept(t *testing.T) {
 	holdSync(t, repoDir, projDir)
 	if f.calls != 0 {
 		t.Fatalf("close_on = accept: the mirror asked the forge %d times", f.calls)
+	}
+}
+
+// B-0079 crit. 1: the opt-in of a card already done, its PR still open,
+// publishes the issue open.
+func TestHoldOpenOnOptIn(t *testing.T) {
+	f := &fakeForge{pr: prOpen}
+	repoDir, projDir, pub, _ := holdCard(t, "merge", true, domain.StateImplemented, holdPR, holdCommit, f)
+	seedFeatureInState(t, repoDir, "F-0002", domain.StateDone)
+	card := reload(t, repoDir, "F-0002")
+	card.DeliveryMRURL = holdPR
+	if err := store.SaveFeature(repoDir, card); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "deliver F-0002"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := MirrorFeature(repoDir, projDir, "F-0002", "", "Public F-0002", "Public summary of F-0002")
+	if err != nil {
+		t.Fatalf("MirrorFeature: %v", err)
+	}
+	if !pub.Issues[got.Mirror.ID].Open {
+		t.Fatal("the opt-in of a done card with an open PR published the issue closed")
+	}
+}
+
+// B-0079: a sync asks the forge only for an issue it did not already see
+// closed: a delivered done card whose issue the merge closed costs nothing.
+func TestHoldOpenSyncSkipsClosedIssues(t *testing.T) {
+	f := &fakeForge{pr: prMerged}
+	repoDir, projDir, pub, r := holdCard(t, "merge", true, domain.StateImplemented, holdPR, holdCommit, f)
+	holdAccept(t, repoDir, projDir)
+	if issueOpen(t, pub, r) {
+		t.Fatal("merged before the accept: the accept left the issue open")
+	}
+	f.calls = 0
+	holdSync(t, repoDir, projDir)
+	if f.calls != 0 {
+		t.Fatalf("the sync saw the issue closed and still asked the forge %d times", f.calls)
 	}
 }

@@ -26,6 +26,9 @@ type Fake struct {
 	Calls  []Call            // Create/Update/ListOpen, in order
 	Err    error             // when set, every call returns it
 	Delay  time.Duration     // each call waits; an expired ctx returns ctx.Err()
+	// RefsOnly makes it a kind no merge closes, like Jira and Trello: CommitRef
+	// writes Refs: even when closing, and HoldOpen is ignored (B-0079).
+	RefsOnly bool
 }
 
 // Issue is one issue on the fake tracker; State stands for its cerne label.
@@ -48,7 +51,7 @@ func (f *Fake) Create(ctx context.Context, it tracker.Item) (tracker.Ref, error)
 	if err := f.call(ctx, Call{Op: "Create", Item: it}); err != nil {
 		return tracker.Ref{}, err
 	}
-	return f.add(&Issue{Title: it.Title, Body: it.Body(), State: it.State, Open: open(it.State)}), nil
+	return f.add(&Issue{Title: it.Title, Body: it.Body(), State: it.State, Open: open(it.State) || it.HoldOpen && !f.RefsOnly}), nil
 }
 
 // Update moves the issue to it.State: an empty Title keeps the outside text,
@@ -71,7 +74,7 @@ func (f *Fake) Update(ctx context.Context, r tracker.Ref, it tracker.Item) error
 		iss.Comments = append(iss.Comments, "Superseded by "+it.Successor.URL)
 	}
 	switch {
-	case iss.Open && it.HoldOpen:
+	case iss.Open && it.HoldOpen && !f.RefsOnly:
 	case iss.Open || !it.NoReopen:
 		iss.Open = open(it.State)
 	}
@@ -94,7 +97,7 @@ func (f *Fake) ListOpen(ctx context.Context, label string) ([]tracker.Remote, er
 
 // CommitRef cites the issue by URL; the fake knows no code repository.
 func (f *Fake) CommitRef(r tracker.Ref, _ string, closing bool) string {
-	if closing {
+	if closing && !f.RefsOnly {
 		return "Closes: " + r.URL
 	}
 	return "Refs: " + r.URL
@@ -261,6 +264,12 @@ func RunContract(t *testing.T, h Harness) {
 		update(t, tr, r, it)
 		if _, ok := listed(t, tr, "", r); ok {
 			t.Fatalf("done with the merge confirmed left issue %s open", r.ID)
+		}
+		// The opt-in of a card already done, its merge still to come.
+		it = item("F-9010", domain.StateDone)
+		it.HoldOpen, it.NoReopen = true, true
+		if c := create(t, tr, it); !func() bool { _, ok := listed(t, tr, "", c); return ok }() {
+			t.Fatalf("Create with HoldOpen closed issue %s before the merge", c.ID)
 		}
 	})
 

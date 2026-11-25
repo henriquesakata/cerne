@@ -210,15 +210,29 @@ func TestDeliveryBranchWarningPR(t *testing.T) {
 			}
 		})
 	}
-	t.Run("open, mirrored under close_on merge", func(t *testing.T) {
+	mirrored := func(t *testing.T, refsOnly bool, pr forge.PullRequest) string {
 		projDir := t.TempDir()
-		mirrorProject(t, projDir, mirrorConf{closeOn: "merge"}, &trackertest.Fake{Name: "pub"})
-		useFakeForge(t, &fakeForge{pr: forge.PullRequest{Base: "main", DefaultBranch: "main"}})
+		mirrorProject(t, projDir, mirrorConf{closeOn: "merge"}, &trackertest.Fake{Name: "pub", RefsOnly: refsOnly})
+		useFakeForge(t, &fakeForge{pr: pr})
 		m := feat
 		m.Mirror = &store.MirrorRef{Tracker: "pub", Kind: "fake", ID: "1", URL: "https://fake.test/pub/issues/1"}
+		return DeliveryBranchWarning(forgeCfg("github"), projDir, m)
+	}
+	t.Run("open, mirrored under close_on merge", func(t *testing.T) {
 		want := "cerne: https://github.com/o/r/pull/7 is still open; the mirrored issue https://fake.test/pub/issues/1 stays open until it merges"
-		if got := DeliveryBranchWarning(forgeCfg("github"), projDir, m); got != want {
+		if got := mirrored(t, false, forge.PullRequest{Base: "main", DefaultBranch: "main"}); got != want {
 			t.Fatalf("got %q, want %q", got, want)
+		}
+	})
+	t.Run("closed unmerged, mirrored under close_on merge", func(t *testing.T) {
+		want := "cerne: https://github.com/o/r/pull/7 was closed without merge; the mirrored issue https://fake.test/pub/issues/1 stays open until a delivery merges"
+		if got := mirrored(t, false, forge.PullRequest{Closed: true, Base: "main", DefaultBranch: "main"}); got != want {
+			t.Fatalf("got %q, want %q", got, want)
+		}
+	})
+	t.Run("open, mirrored on a tracker no merge closes", func(t *testing.T) {
+		if got, want := mirrored(t, true, forge.PullRequest{Base: "main", DefaultBranch: "main"}), "cerne: https://github.com/o/r/pull/7 is still open"; got != want {
+			t.Fatalf("got %q, want %q: that issue closed on the accept", got, want)
 		}
 	})
 }
