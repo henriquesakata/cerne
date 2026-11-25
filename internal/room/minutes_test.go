@@ -248,7 +248,7 @@ func TestMinutesDraftSurvivesRestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second draft: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, r.ID+".minutes-draft.jsonl")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, r.ID+".minutes-draft.json")); err != nil {
 		t.Fatalf("draft sidecar: %v", err)
 	}
 
@@ -340,6 +340,67 @@ func TestCloseWithDraftBlocksOnOpenItems(t *testing.T) {
 	}
 }
 
+// T-0022 crit. 1, 2
+// E-0006 crit. 10, 11
+func TestMinutesDraftFileIsOneObjectRemovedOnClose(t *testing.T) {
+	dir := t.TempDir()
+	m, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	r, fac, _ := m.Open("topico")
+	for _, c := range []string{"primeira", "segunda"} {
+		if _, err := m.SaveMinutesDraft(r.ID, "", fac, Minutes{Conclusion: c, Rationale: "r"}); err != nil {
+			t.Fatalf("SaveMinutesDraft: %v", err)
+		}
+	}
+	path := filepath.Join(dir, r.ID+".minutes-draft.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("draft file: %v", err)
+	}
+	var d MinutesDraft
+	if err := json.Unmarshal(data, &d); err != nil || d.Minutes.Conclusion != "segunda" {
+		t.Fatalf("draft file = %s (%v), want the current draft as one JSON object", data, err)
+	}
+	// An older cerne lists every *.jsonl outside its own skip list as a room.
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		name := e.Name()
+		if strings.HasSuffix(name, ".jsonl") && name != r.ID+".jsonl" && !strings.HasSuffix(name, sessionsSuffix) &&
+			!strings.HasSuffix(name, facilitatorSuffix) && !strings.HasSuffix(name, minutesNoteSuffix) {
+			t.Fatalf("%s would read as a room to an older loader", name)
+		}
+	}
+	if _, err := m.CloseWithDraft(r.ID, fac, time.Time{}, false); err != nil {
+		t.Fatalf("CloseWithDraft: %v", err)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("draft file after close: %v, want it removed", err)
+	}
+}
+
+// T-0022 crit. 1
+// E-0006 crit. 10
+func TestUnreadableMinutesDraftFileKeepsTheRoom(t *testing.T) {
+	dir := t.TempDir()
+	m1, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	r, _, _ := m1.Open("topico")
+	if err := os.WriteFile(filepath.Join(dir, r.ID+".minutes-draft.json"), []byte(`{"minutes":{"concl`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m2, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager with an unreadable draft file: %v", err)
+	}
+	if got := m2.List(); len(got) != 1 || got[0].MinutesDraft != nil {
+		t.Fatalf("rooms = %+v, want the room without a draft", got)
+	}
+}
+
 // T-0022 crit. 2
 // E-0006 crit. 11
 func TestClosedRoomDropsDraftAcrossRestart(t *testing.T) {
@@ -385,7 +446,7 @@ func TestMinutesDraftNeverServesCapabilities(t *testing.T) {
 	listed, _ := json.Marshal(m.List())
 	msgs, _ := m.Read(context.Background(), r.ID, 0, false, time.Second)
 	read, _ := json.Marshal(msgs)
-	sidecar, err := os.ReadFile(filepath.Join(dir, r.ID+".minutes-draft.jsonl"))
+	sidecar, err := os.ReadFile(filepath.Join(dir, r.ID+".minutes-draft.json"))
 	if err != nil {
 		t.Fatalf("read sidecar: %v", err)
 	}

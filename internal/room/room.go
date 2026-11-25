@@ -255,7 +255,7 @@ func (m *Manager) load() error {
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") ||
 			strings.HasSuffix(e.Name(), sessionsSuffix) || strings.HasSuffix(e.Name(), facilitatorSuffix) ||
-			strings.HasSuffix(e.Name(), minutesNoteSuffix) || strings.HasSuffix(e.Name(), minutesDraftSuffix) {
+			strings.HasSuffix(e.Name(), minutesNoteSuffix) {
 			continue
 		}
 		id := strings.TrimSuffix(e.Name(), ".jsonl")
@@ -530,52 +530,60 @@ func (m *Manager) SetMinutesNote(id, noteID string, force bool) (Room, error) {
 	return rs.snapshotLocked(), nil
 }
 
-const minutesDraftSuffix = ".minutes-draft.jsonl"
+// minutesDraftSuffix names the file holding a room's current minutes draft
+// (T-0022): one JSON object, not a .jsonl log, so a cerne that predates it
+// never lists the file as a room.
+const minutesDraftSuffix = ".minutes-draft.json"
 
-// persistMinutesDraft appends a saved draft to the <id>.minutes-draft.jsonl
-// sidecar (T-0022): append-only, the last line is the current draft. No
-// capability is ever written — the author is a nick or "facilitator".
+// persistMinutesDraft replaces the room's draft file atomically (temp file
+// plus rename), so a crash never leaves it torn. No capability is ever
+// written: the author is a nick or "facilitator".
 func (m *Manager) persistMinutesDraft(id string, d MinutesDraft) error {
-	line, err := json.Marshal(d)
+	data, err := json.Marshal(d)
 	if err != nil {
 		return err
 	}
-	f, err := os.OpenFile(filepath.Join(m.dir, id+minutesDraftSuffix), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	tmp, err := os.CreateTemp(m.dir, id+minutesDraftSuffix+".*.tmp")
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	_, err = f.Write(append(line, '\n'))
+	_, err = tmp.Write(data)
+	if err == nil {
+		err = tmp.Chmod(0o644)
+	}
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Rename(tmp.Name(), filepath.Join(m.dir, id+minutesDraftSuffix))
+	}
+	if err != nil {
+		os.Remove(tmp.Name())
+	}
 	return err
 }
 
-// loadMinutesDraft replays the sidecar's last draft into an open room; a
-// closed room keeps none, and a missing sidecar means no draft yet.
+// loadMinutesDraft reads an open room's draft file; a closed room keeps
+// none, and a missing or unreadable file means no draft, never a room that
+// fails to load.
 func loadMinutesDraft(path string, rs *roomState) error {
 	if rs.meta.ClosedAt != nil {
 		return nil
 	}
-	f, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 64*1024), 1<<20)
-	for sc.Scan() {
-		if len(sc.Bytes()) == 0 {
-			continue
-		}
-		var d MinutesDraft
-		if err := json.Unmarshal(sc.Bytes(), &d); err != nil {
-			return err
-		}
-		rs.meta.MinutesDraft = &d
+	var d MinutesDraft
+	if json.Unmarshal(data, &d) != nil {
+		return nil // corrupt file: no draft rather than a bricked project
 	}
-	return sc.Err()
+	d.Minutes = d.Minutes.withLists()
+	rs.meta.MinutesDraft = &d
+	return nil
 }
 
 func roomNumber(id string) (int, bool) {
@@ -1104,6 +1112,9 @@ func (m *Manager) close(id, facilitatorToken string, given *Minutes, reviewed ti
 	rs.meta.ClosedAt = &now
 	rs.meta.Minutes = &minutes
 	rs.meta.MinutesDraft = nil
+	// The close event is already persisted and a closed room never loads its
+	// draft, so a file left behind by a failed remove is inert.
+	_ = os.Remove(filepath.Join(m.dir, id+minutesDraftSuffix))
 	return rs.snapshotLocked(), nil
 }
 
