@@ -21,6 +21,12 @@ var (
 	ErrCapabilityLinked = errors.New("capability is linked by features")
 )
 
+// unknownCapability wraps ErrUnknownCapability with the id and the command
+// that lists the valid ones (B-0082), so no refusal leaves the user guessing.
+func unknownCapability(id string) error {
+	return fmt.Errorf("%w: %s (see 'cerne capability list --tree')", ErrUnknownCapability, id)
+}
+
 // CreateCapability mints the next C- id as an active capability under the
 // optional parent (which must exist and keep the taxonomy acyclic) and
 // commits+pushes the backend. Nothing is written on a validation error.
@@ -38,7 +44,7 @@ func CreateCapability(repoDir, projDir, title, parent string) (store.Capability,
 		}
 		if parent != "" {
 			if _, err := store.LoadCapability(repoDir, parent); err != nil {
-				return "", fmt.Errorf("%w: %s", ErrUnknownCapability, parent)
+				return "", unknownCapability(parent)
 			}
 		}
 		id, err := store.NextID(repoDir, "C")
@@ -84,7 +90,7 @@ func RetireCapability(repoDir, projDir, id, reason string) (store.Capability, er
 		var err error
 		c, err = store.LoadCapability(repoDir, id)
 		if err != nil {
-			return "", fmt.Errorf("%w: %s", ErrUnknownCapability, id)
+			return "", unknownCapability(id)
 		}
 		all, err := store.LoadAllCapabilities(repoDir)
 		if err != nil {
@@ -132,7 +138,7 @@ func LinkFeatureCapabilities(repoDir, projDir, featureID string, capIDs []string
 		} else {
 			for _, cid := range capIDs {
 				if _, err := store.LoadCapability(repoDir, cid); err != nil {
-					return "", fmt.Errorf("%w: %s", ErrUnknownCapability, cid)
+					return "", unknownCapability(cid)
 				}
 			}
 			f.Capabilities = capIDs
@@ -157,7 +163,7 @@ func knownCapabilities(repoDir string, ids []string) ([]string, error) {
 			continue
 		}
 		if _, err := store.LoadCapability(repoDir, id); err != nil {
-			return nil, fmt.Errorf("%w: %s", ErrUnknownCapability, id)
+			return nil, unknownCapability(id)
 		}
 		out = append(out, id)
 	}
