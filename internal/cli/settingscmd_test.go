@@ -484,3 +484,31 @@ func TestSettingsLLMModeHostScopeAndDetected(t *testing.T) {
 		t.Errorf("get = %q", out)
 	}
 }
+
+// TestSettingsLinksSuggestRefusesAgent pins F-0502 crit. 1: set and unset of
+// links.suggest refuse CERNE_ACTOR=agent and leave .cernerc byte for byte.
+func TestSettingsLinksSuggestRefusesAgent(t *testing.T) { // F-0502 crit. 1
+	projDir, _ := settingsProject(t, "")
+	rc := filepath.Join(projDir, ".cernerc")
+	before, _ := os.ReadFile(rc)
+	t.Setenv("CERNE_ACTOR", "agent")
+	for _, args := range [][]string{
+		{"settings", "set", "links.suggest", "true", "--scope", "project", "--dir", projDir},
+		{"settings", "unset", "links.suggest", "--scope", "project", "--dir", projDir},
+	} {
+		out, err := execCerne(t, args...)
+		if !errors.Is(err, app.ErrHumanGate) {
+			t.Errorf("%v: err = %v (%s), want ErrHumanGate", args[1], err, out)
+		}
+		if after, _ := os.ReadFile(rc); string(after) != string(before) {
+			t.Errorf("%v changed .cernerc:\n%s", args[1], after)
+		}
+	}
+	t.Setenv("CERNE_ACTOR", "")
+	if out, err := execCerne(t, "settings", "set", "links.suggest", "true", "--scope", "project", "--dir", projDir); err != nil {
+		t.Errorf("human set: %v\n%s", err, out)
+	}
+	if on, _ := project.LinksSuggest(projDir); !on {
+		t.Error("human set did not turn links.suggest on")
+	}
+}

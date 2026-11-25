@@ -34,8 +34,9 @@ func TestGauntletSettingDeclared(t *testing.T) {
 	if !SettingHumanOnly("gates.gauntlet") || SettingHumanOnly("graph.enabled") || SettingHumanOnly("nope") {
 		t.Error("SettingHumanOnly must be true only for gates.gauntlet")
 	}
-	// F-0449 crit. 3: the mirror's switch and destinations are the owner's too.
-	humanOnly := []string{"gates.gauntlet", "mirror.enabled", "mirror.trackers"}
+	// F-0449 crit. 3: the mirror's switch and destinations are the owner's too;
+	// F-0502 crit. 1: so is the link-suggestion switch.
+	humanOnly := []string{"gates.gauntlet", "links.suggest", "mirror.enabled", "mirror.trackers"}
 	for _, r := range settingsRegistry {
 		if r.HumanOnly != slices.Contains(humanOnly, r.ID) {
 			t.Errorf("%s: human-only = %v; want human-only exactly %v", r.ID, r.HumanOnly, humanOnly)

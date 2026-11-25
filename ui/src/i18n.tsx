@@ -1693,6 +1693,9 @@ const ptBR = {
       'Close the issue on': 'Fechar a issue no',
       "accept closes a mirrored card's issue when a human accepts the card. merge writes Closes: in the delivery commit, so the forge closes the issue when the PR merges, and mirror sync never reopens it.":
         'accept fecha a issue de um card espelhado quando um humano aceita o card. merge escreve Closes: no commit de entrega, e a forge fecha a issue quando o PR é mergeado, sem que o mirror sync a reabra.',
+      'Suggest links with the LLM': 'Sugerir ligações com o LLM',
+      "On lets cerne links suggest ask the configured LLM for relations a document mentions without a link, after showing the documents and a token estimate; a person accepts or rejects each one. Off refuses the command. Nothing else in cerne asks for suggestions. An agent cannot change this key through cerne settings: spending tokens is the project owner's decision.":
+        'Ligado, cerne links suggest pede ao LLM configurado as relações que um documento menciona sem link, depois de mostrar os documentos e uma estimativa de tokens; uma pessoa aceita ou recusa cada uma. Desligado, o comando recusa. Nada mais no cerne pede sugestões. Um agente não muda esta chave pelo cerne settings: gastar tokens é decisão do dono do projeto.',
       'Issue mirror': 'Espelho de issues',
       "On lets a human publish a card to an issue tracker with cerne feature mirror, and keeps each mirrored card's issue in step with the card's state. Off sends nothing to any tracker. An agent cannot change this key through cerne settings: it is the project owner's decision.":
         'Ligado, um humano publica um card num tracker de issues com cerne feature mirror, e a issue de cada card espelhado acompanha o estado do card. Desligado, nada vai para nenhum tracker. Um agente não muda esta chave pelo cerne settings: a decisão é do dono do projeto.',
