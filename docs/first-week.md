@@ -215,7 +215,7 @@ I-0001 created (active) — Dark mode
 ```
 
 ```bash
-cerne idea promote I-0001      # becomes a candidate feature
+cerne idea promote I-0001 --facet code --component <c>      # becomes a candidate feature, tagged
 cerne task new "<step>" --parent <feature-id> --context "<what this step does>" --facet code --component <c>
 cerne bug new "<what breaks>" --context "<what happens, where>" --on-behalf "<your words>" --facet code --component <c>
 ```

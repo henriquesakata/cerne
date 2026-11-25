@@ -27,3 +27,19 @@ func TestCerneAuthoringDocumentsIdeas(t *testing.T) {
 		}
 	}
 }
+
+// F-0510 crit. 9: the promote bullet teaches classifying the card in the same
+// act — the tag and capability flags, and the refusal's way out.
+func TestCerneAuthoringPromoteClassifiesInTheSameAct(t *testing.T) {
+	var bullet string
+	for _, line := range strings.Split(fullAuthoring(t), "\n") {
+		if strings.HasPrefix(line, "- **Promote / link:**") {
+			bullet = line
+		}
+	}
+	for _, sub := range []string{"--facet", "--component", "--capability", "--allow-incomplete", "same act"} {
+		if !strings.Contains(bullet, sub) {
+			t.Errorf("promote bullet lacks %q:\n%s", sub, bullet)
+		}
+	}
+}
