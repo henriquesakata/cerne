@@ -3,6 +3,7 @@
 package e2e_test
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -75,6 +76,36 @@ func TestAURPKGBUILD_MissingAsset(t *testing.T) {
 	}
 	if out != "" {
 		t.Errorf("printed a PKGBUILD despite the missing asset:\n%s", out)
+	}
+}
+
+// F-0507 crit. 7: INSTALL.md tells an Arch user how to install from the AUR
+// (with and without a helper) and lists the AUR among the ways cerne updates.
+func TestInstallDoc_AUR(t *testing.T) {
+	raw, err := os.ReadFile("../INSTALL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := string(raw)
+	i := strings.Index(doc, "\n## Arch Linux (AUR)\n")
+	if i < 0 {
+		t.Fatal("INSTALL.md has no '## Arch Linux (AUR)' section")
+	}
+	section := doc[i+1:]
+	if j := strings.Index(section[3:], "\n## "); j >= 0 {
+		section = section[:j+3]
+	}
+	for _, want := range []string{"yay -S cerne-bin", "git clone https://aur.archlinux.org/cerne-bin.git", "cd cerne-bin", "makepkg -si"} {
+		if !strings.Contains(section, want) {
+			t.Errorf("AUR section lacks %q", want)
+		}
+	}
+	if brew := strings.Index(doc, "\n## Homebrew (macOS and Linux)\n"); brew < 0 || brew > i {
+		t.Error("the AUR section must come after the Homebrew one")
+	}
+	upd := strings.Index(doc, "\n### Updating\n")
+	if upd < 0 || !strings.Contains(doc[upd:], "- **Arch Linux (AUR):**") {
+		t.Error("### Updating lacks the AUR line")
 	}
 }
 

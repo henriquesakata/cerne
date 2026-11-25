@@ -9,6 +9,10 @@ While cerne is below 1.0.0, a minor version may change behavior: read the
 
 ## [Unreleased]
 
+### Added
+
+- Arch Linux: the `cerne-bin` package on the AUR, with the release binary checked against `SHA256SUMS`, updated by each stable release. `cerne update` leaves a binary in `/usr/bin` to the system package manager and prints the AUR helper command.
+
 ## [0.15.2] - 2026-11-22
 
 ### Added
