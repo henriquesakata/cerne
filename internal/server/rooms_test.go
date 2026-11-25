@@ -737,11 +737,20 @@ func TestRoomListPinsChannel(t *testing.T) {
 			ID           string            `json:"id"`
 			Permanent    bool              `json:"permanent"`
 			Participants []participantJSON `json:"participants"`
+			// F-0511: raw, to tell `[]` from `null`.
+			ActiveParticipants json.RawMessage `json:"active_participants"`
 		} `json:"rooms"`
 	}
 	rec := doJSON(t, h, http.MethodGet, "/api/rooms", "", &got)
 	if rec.Code != http.StatusOK || len(got.Rooms) != 2 || got.Rooms[0].ID != "channel" || !got.Rooms[0].Permanent || got.Rooms[1].ID != "R1" || got.Rooms[1].Permanent {
 		t.Fatalf("rooms = %+v", got.Rooms)
+	}
+	// F-0511 crit. 5: every entry serializes active_participants as a list,
+	// the channel included, so a consumer never meets null.
+	for _, r := range got.Rooms {
+		if string(r.ActiveParticipants) != "[]" {
+			t.Fatalf("%s active_participants = %s, want []", r.ID, r.ActiveParticipants)
+		}
 	}
 	var nicks []string
 	for _, p := range got.Rooms[0].Participants {

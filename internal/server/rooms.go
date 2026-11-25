@@ -88,7 +88,7 @@ func handleRoomList(w http.ResponseWriter, repoDir, projectID string) {
 	}
 	// The formal rooms never depend on the channel's health (critic C8): an
 	// unreadable channel is still listed, carrying its error.
-	channel := channelRoomView{Room: room.Room{ID: room.ChannelID, Permanent: true, Participants: []room.Participant{}}}
+	channel := channelRoomView{Room: room.Room{ID: room.ChannelID, Permanent: true, Participants: []room.Participant{}, ActiveParticipants: []room.Participant{}}}
 	msgs, roster, err := app.ChannelRead(cacheDir, repoDir, "", time.Now().UTC())
 	if err != nil {
 		channel.Error = err.Error()
