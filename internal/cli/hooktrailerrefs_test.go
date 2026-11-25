@@ -137,8 +137,10 @@ func TestHookCommitTrailerRefs(t *testing.T) {
 			t.Fatalf("message changed with the mirror off:\n%q", got)
 		}
 	})
+	// B-0080 crit. 7: no project from the directory git runs the hook in.
 	t.Run("a directory with no project is a no-op", func(t *testing.T) {
 		dir := t.TempDir()
+		t.Chdir(dir)
 		p := filepath.Join(dir, "COMMIT_EDITMSG")
 		const msg = "fix: y\n\nCerne: F-0001\n"
 		if err := os.WriteFile(p, []byte(msg), 0o644); err != nil {
