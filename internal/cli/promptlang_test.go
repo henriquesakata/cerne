@@ -212,6 +212,9 @@ func promptCases() []promptCase {
 		{name: "import plan", covers: []string{"BuildPlanPrompt"}, closes: closesNothing, why: "asks for JSON only; the synthesized bodies follow the language of the sources, whose project has no language yet at import", render: func(_ *testing.T, _ doclang.Lang) string {
 			return importer.BuildPlanPrompt([]importer.Source{{RelPath: "docs/a.md", Content: "text"}})
 		}},
+		{name: "link suggestions", covers: []string{"BuildLinkPrompt", "LinkPromptMarker"}, closes: closesNothing, why: "asks for a JSON array of ids and excerpts copied verbatim from the document; it writes no document, so no language directive (F-0502)", render: func(_ *testing.T, _ doclang.Lang) string {
+			return app.BuildLinkPrompt(app.LinkSource{ID: "F-0001", Title: "Sign in", Text: "We keep it in memory."}, []app.LinkTarget{{ID: "D-0001", Title: "Cache ADR"}})
+		}},
 		{name: "draft output contract", covers: []string{"DraftOutputContract"}, closes: closesNothing, why: "a sentence embedded in every draft prompt, before the directive", render: func(_ *testing.T, _ doclang.Lang) string { return app.DraftOutputContract }},
 	}
 	// Every persona of both roasts, not only the first: each lens is its own text.
