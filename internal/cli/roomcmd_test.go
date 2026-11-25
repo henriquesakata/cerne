@@ -1285,12 +1285,14 @@ func TestFormatRoomEventFacilitation(t *testing.T) {
 // T-0019 crit. 2
 // E-0006 crit. 2
 func TestFormatRoomEventTime(t *testing.T) {
+	prev := time.Local
+	time.Local = time.FixedZone("UTC+9", 9*3600)
+	t.Cleanup(func() { time.Local = prev })
 	ts := time.Date(2026, 11, 25, 14, 3, 0, 0, time.UTC)
-	hhmm := ts.Local().Format("15:04")
-	if got, want := formatRoomEvent(room.Message{Seq: 3, Type: "message", Nick: "ana", Body: "oi", Time: ts}), "#3 "+hhmm+" [ana] oi"; got != want {
+	if got, want := formatRoomEvent(room.Message{Seq: 3, Type: "message", Nick: "ana", Body: "oi", Time: ts}), "#3 23:03 [ana] oi"; got != want {
 		t.Fatalf("message = %q, want %q", got, want)
 	}
-	if got, want := formatRoomEvent(room.Message{Seq: 5, Type: "leave", Nick: "ana", Time: ts}), "#5 "+hhmm+" [leave: ana]"; got != want {
+	if got, want := formatRoomEvent(room.Message{Seq: 5, Type: "leave", Nick: "ana", Time: ts}), "#5 23:03 [leave: ana]"; got != want {
 		t.Fatalf("leave = %q, want %q", got, want)
 	}
 	if got, want := formatRoomEvent(room.Message{Seq: 3, Type: "message", Nick: "ana", Body: "oi"}), "#3 [ana] oi"; got != want {
