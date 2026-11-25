@@ -264,6 +264,9 @@ func dataRoutes() []dataRoute {
 		{"POST", "/rooms/{id}/sessions/resume", false, func(w http.ResponseWriter, r *http.Request, _, _, projectID string) {
 			handleRoomResume(w, r, projectID, r.PathValue("id"))
 		}},
+		{"POST", "/rooms/{id}/sessions/leave", false, func(w http.ResponseWriter, r *http.Request, _, _, projectID string) {
+			handleRoomLeave(w, r, projectID, r.PathValue("id"))
+		}},
 		{"POST", "/rooms/{id}/messages", false, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, projectID string) {
 			handleRoomSay(w, r, repoDir, projDir, projectID, r.PathValue("id"))
 		}},

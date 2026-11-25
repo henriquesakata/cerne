@@ -250,6 +250,32 @@ func handleRoomResume(w http.ResponseWriter, r *http.Request, projectID, id stri
 	writeJSON(w, http.StatusOK, sess)
 }
 
+// handleRoomLeave revokes the presented capability (F-0511): the room
+// records a public leave event and the snapshot comes back without the nick
+// among the active participants. A revoked or unknown capability is a 401,
+// like resume and say.
+func handleRoomLeave(w http.ResponseWriter, r *http.Request, projectID, id string) {
+	if refuseChannelRite(w, id) {
+		return
+	}
+	var req resumeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
+		return
+	}
+	m, err := roomManagerFor(projectID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	rm, err := m.Leave(id, req.SessionID)
+	if err != nil {
+		writeRoomErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rm)
+}
+
 type sayRequest struct {
 	SessionID string `json:"session_id"`
 	Body      string `json:"body"`
