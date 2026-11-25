@@ -95,6 +95,31 @@ func TestRoomListServesLiveListening(t *testing.T) {
 	}
 }
 
+// TestRoomFollowReadWithRevokedSessionIs401: a follow read carrying a
+// capability revoked by Leave answers 401 at once, never waits nor reads as
+// public — the cue the UI uses to drop the session and observe.
+// T-0021 crit. 1
+// E-0006 crit. 7
+func TestRoomFollowReadWithRevokedSessionIs401(t *testing.T) {
+	h := newRoomServer(t, "proj-room-presence-revoked")
+	var opened openJSON
+	doJSON(t, h, http.MethodPost, "/api/rooms", `{"topic":"t"}`, &opened)
+	alice := joinAs(t, h, opened.ID, "alice")
+	doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/sessions/leave", `{"session_id":"`+alice.SessionID+`"}`, &roomJSON{})
+
+	req := localRequest(http.MethodGet, "/api/rooms/"+opened.ID+"/messages?since=1000000&follow=1", nil)
+	req.Header.Set("X-Room-Session", alice.SessionID)
+	rec := httptest.NewRecorder()
+	start := time.Now()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("follow read with a revoked capability status = %d, want 401; body: %s", rec.Code, rec.Body.String())
+	}
+	if time.Since(start) > 2*time.Second {
+		t.Fatalf("the 401 took %v: the read waited before refusing", time.Since(start))
+	}
+}
+
 // T-0021 crit. 1
 // E-0006 crit. 7
 func TestRoomListClosedRoomOmitsListening(t *testing.T) {

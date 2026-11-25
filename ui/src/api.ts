@@ -2048,11 +2048,15 @@ export async function readRoomMessages(
   since: number,
   follow: boolean,
   signal?: AbortSignal,
+  sessionID?: string,
 ): Promise<RoomMessage[]> {
   const params = new URLSearchParams({ since: String(since) })
   if (follow) params.set('follow', '1')
-  const r = await fetch(`${base()}/rooms/${encodeURIComponent(id)}/messages?${params}`, { signal })
-  if (!r.ok) throw new Error(await errorMessage(r))
+  // T-0021: read as the session, so its participant shows as listening; a
+  // revoked one answers 401 (HTTPError.status).
+  const headers: Record<string, string> = sessionID ? { 'X-Room-Session': sessionID } : {}
+  const r = await fetch(`${base()}/rooms/${encodeURIComponent(id)}/messages?${params}`, { signal, headers })
+  if (!r.ok) throw new HTTPError(await errorMessage(r), r.status)
   return ((await r.json()) as { messages: RoomMessage[] }).messages
 }
 

@@ -13,7 +13,7 @@ const sayRoom = vi.fn<(id: string, sessionID: string, body: string) => Promise<R
 const resumeRoomSession = vi.fn<(id: string, sessionID: string) => Promise<RoomSession>>()
 const leaveRoom = vi.fn<(id: string, sessionID: string) => Promise<Room>>()
 const readRoomMessages = vi.fn<
-  (id: string, since: number, follow: boolean, signal?: AbortSignal) => Promise<RoomMessage[]>
+  (id: string, since: number, follow: boolean, signal?: AbortSignal, sessionID?: string) => Promise<RoomMessage[]>
 >()
 const postRoomOpen = vi.fn<(topic: string) => Promise<{ room: Room; facilitator_id: string }>>()
 const postRoomClose = vi.fn<(id: string, facilitatorId: string, minutes: Minutes, allow?: boolean) => Promise<Room>>()
@@ -29,8 +29,8 @@ vi.mock('./api', async (importOriginal) => ({
   sayRoom: (id: string, sessionID: string, body: string) => sayRoom(id, sessionID, body),
   resumeRoomSession: (id: string, sessionID: string) => resumeRoomSession(id, sessionID),
   leaveRoom: (id: string, sessionID: string) => leaveRoom(id, sessionID),
-  readRoomMessages: (id: string, since: number, follow: boolean, signal?: AbortSignal) =>
-    readRoomMessages(id, since, follow, signal),
+  readRoomMessages: (id: string, since: number, follow: boolean, signal?: AbortSignal, sessionID?: string) =>
+    readRoomMessages(id, since, follow, signal, sessionID),
   postRoomOpen: (topic: string) => postRoomOpen(topic),
   postRoomClose: (id: string, facilitatorId: string, minutes: Minutes, allow?: boolean) =>
     postRoomClose(id, facilitatorId, minutes, allow),
@@ -1190,5 +1190,98 @@ describe('presença ao vivo no painel (T-0021)', () => {
     await waitFor(() => expect(within(entryOf('ana')).getByText('listening')).toBeInTheDocument())
     expect(within(entryOf('bia')).getByText(/^idle/)).toBeInTheDocument()
     expect(within(entryOf('bia')).getByText(/last active 5 minutes ago/)).toBeInTheDocument()
+  })
+})
+
+describe('o long-poll da aba lê como a sessão (T-0021)', () => {
+  const open: RoomMessage = { seq: 1, type: 'open', topic: 'Fila serial', time: '2026-08-06T00:00:00Z' }
+  const said: RoomMessage = { seq: 2, type: 'message', nick: 'bia', body: 'oi', time: '2026-08-06T00:00:02Z' }
+  const sid = session().session_id
+
+  // follow polls wait until their signal aborts, like a real fetch; inFlight
+  // tracks how many are open at once (N-0140: one per tab).
+  let inFlight = 0
+  let maxInFlight = 0
+  const hang = (signal?: AbortSignal) => {
+    inFlight++
+    maxInFlight = Math.max(maxInFlight, inFlight)
+    return new Promise<RoomMessage[]>((_, reject) =>
+      signal?.addEventListener('abort', () => {
+        inFlight--
+        reject(new DOMException('aborted', 'AbortError'))
+      }),
+    )
+  }
+  const follows = () => readRoomMessages.mock.calls.filter(([, , follow]) => follow)
+
+  beforeEach(() => {
+    inFlight = 0
+    maxInFlight = 0
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session()))
+    resumeRoomSession.mockResolvedValue(session())
+    readRoomMessages.mockImplementation((_id, _since, follow, signal) =>
+      follow ? hang(signal) : Promise.resolve([open, said]),
+    )
+  })
+
+  // T-0021 crit. 1, 3
+  // E-0006 crit. 7, 9
+  it('com sessão guardada, a única leitura longa manda a sessão', async () => {
+    render(<WarRoomDetail id="R1" />)
+
+    await waitFor(() => expect(follows().at(-1)?.[4]).toBe(sid))
+    expect(follows().at(-1)?.[1]).toBe(2)
+    expect(maxInFlight).toBe(1)
+  })
+
+  // T-0021 crit. 1, 3
+  // E-0006 crit. 7, 9
+  it('401 na leitura longa: esquece a sessão, avisa e segue lendo sem sessão do mesmo ponto', async () => {
+    readRoomMessages.mockImplementation((_id, _since, follow, signal, sessionID) => {
+      if (!follow) return Promise.resolve([open, said])
+      if (sessionID) return Promise.reject(new HTTPError('invalid session', 401))
+      return hang(signal)
+    })
+    render(<WarRoomDetail id="R1" />)
+
+    await waitFor(() => expect(screen.getByText(/já não era válida/)).toBeInTheDocument())
+    expect(screen.getByText('Observando')).toBeInTheDocument()
+    expect(localStorage.getItem(SESSION_KEY)).toBeNull()
+    await waitFor(() => expect(follows().at(-1)?.[4]).toBeUndefined())
+    expect(follows().at(-1)?.[1]).toBe(2)
+    expect(follows().filter(([, , , , s]) => s).length).toBe(1)
+    expect(maxInFlight).toBe(1)
+  })
+
+  // T-0021 crit. 1, 3
+  // E-0006 crit. 7, 9
+  it('depois de sair, a próxima leitura longa vai sem sessão, sem passar por 401', async () => {
+    let deliver: (events: RoomMessage[]) => void = () => {}
+    readRoomMessages.mockImplementation((_id, _since, follow, signal, sessionID) => {
+      if (!follow) return Promise.resolve([open, said])
+      if (sessionID === sid) {
+        // the server answers the authenticated poll with the leave event
+        return new Promise<RoomMessage[]>((resolve, reject) => {
+          deliver = resolve
+          signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+        })
+      }
+      if (sessionID) return Promise.reject(new HTTPError('invalid session', 401))
+      return hang(signal)
+    })
+    leaveRoom.mockImplementation(() => {
+      deliver([{ seq: 3, type: 'leave', nick: 'ana', time: '2026-08-06T00:00:03Z' }])
+      return Promise.resolve(room({ active_participants: [] }))
+    })
+    render(<WarRoomDetail id="R1" />)
+    await waitFor(() => expect(follows().at(-1)?.[4]).toBe(sid))
+    const authenticated = follows().filter(([, , , , s]) => s).length
+
+    fireEvent.click(screen.getByRole('button', { name: /^sair$/i }))
+    await waitFor(() => expect(screen.getByText('Observando')).toBeInTheDocument())
+    await waitFor(() => expect(follows().at(-1)?.[1]).toBe(3))
+    expect(follows().at(-1)?.[4]).toBeUndefined()
+    expect(follows().filter(([, , , , s]) => s).length).toBe(authenticated)
+    expect(screen.queryByText(/já não era válida/)).not.toBeInTheDocument()
   })
 })

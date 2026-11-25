@@ -216,6 +216,10 @@ export function WarRoomDetail({ id }: { id: string }) {
   const [minutesNextSteps, setMinutesNextSteps] = useState('')
 
   const sinceRef = useRef(0)
+  // T-0021: the session the tab's one long-poll reads as, and that poll's
+  // abort, so a session that appears or goes away re-issues the same poll.
+  const sessionRef = useRef<RoomSession | null>(null)
+  const pollRef = useRef<AbortController | null>(null)
 
   // Glue-scroll (F-0292): a sala abre no fim e acompanha as mensagens que
   // chegam pelo long-poll enquanto o leitor estiver lá; quem subiu está lendo
@@ -260,6 +264,7 @@ export function WarRoomDetail({ id }: { id: string }) {
     let cancelled = false
     const controller = new AbortController()
     sinceRef.current = 0
+    sessionRef.current = null // this room's session arrives through the resume below
     setTopic('')
     setRoster([])
     setMessages([])
@@ -281,12 +286,27 @@ export function WarRoomDetail({ id }: { id: string }) {
         return
       }
       while (!cancelled) {
+        const poll = new AbortController()
+        pollRef.current = poll
+        const sid = sessionRef.current?.session_id
         try {
-          const events = await readRoomMessages(id, sinceRef.current, true, controller.signal)
+          const events = await readRoomMessages(id, sinceRef.current, true, poll.signal, sid)
           if (cancelled) return
           applyEvents(events)
-        } catch {
+        } catch (e: unknown) {
           if (cancelled) return
+          if (poll.signal.aborted) continue // the session changed: poll again as the new one
+          if (sid && e instanceof HTTPError && e.status === 401) {
+            // Revoked elsewhere (another tab, the terminal): observe from the
+            // same cursor, as an invalid resume does (F-0511).
+            if (sessionRef.current?.session_id === sid) {
+              sessionRef.current = null
+              localStorage.removeItem(sessionKey(id))
+              setSession(null)
+              setNotice(t.warRoom.sessionGone)
+            }
+            continue
+          }
           await new Promise((resolve) => setTimeout(resolve, 2000))
         }
       }
@@ -295,6 +315,7 @@ export function WarRoomDetail({ id }: { id: string }) {
     return () => {
       cancelled = true
       controller.abort()
+      pollRef.current?.abort()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, version])
@@ -344,6 +365,14 @@ export function WarRoomDetail({ id }: { id: string }) {
       cancelled = true
     }
   }, [id, version])
+
+  // T-0021: a session that appears (join, resume) or goes away re-issues the
+  // tab's one long-poll with or without it, from the same cursor.
+  useEffect(() => {
+    if (sessionRef.current?.session_id === session?.session_id) return
+    sessionRef.current = session
+    pollRef.current?.abort()
+  }, [session])
 
   // Carrega a capability de facilitador guardada (se o navegador abriu a
   // sala, ou já assumiu/recebeu a facilitação antes) — F-0228 critério 1.
@@ -461,6 +490,9 @@ export function WarRoomDetail({ id }: { id: string }) {
     setLeaving(true)
     setError(null)
     setNotice(null)
+    // T-0021: the poll that answers with the leave event already reads
+    // without the session, so the next one never meets a 401.
+    sessionRef.current = null
     leaveRoom(id, session.session_id)
       .then((r) => {
         setLeaving(false)
@@ -476,6 +508,9 @@ export function WarRoomDetail({ id }: { id: string }) {
           setNotice(t.warRoom.sessionGone)
           return
         }
+        // Still valid: read as it again.
+        sessionRef.current = session
+        pollRef.current?.abort()
         setError(t.warRoom.leaveError(e instanceof Error ? e.message : String(e)))
       })
   }
