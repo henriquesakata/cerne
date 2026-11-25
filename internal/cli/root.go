@@ -128,6 +128,7 @@ func Root() *cobra.Command {
 	addIn("admin", verbs.MarkLocal(newSettingsCmd()))
 	addIn("agents", verbs.MarkLocal(newGuardCmd()))
 	addIn("sync", verbs.MarkLocal(newLockCmd()))
+	addIn("author", verbs.MarkLocal(newLinksCmd()))
 	addIn("agents", verbs.MarkLocal(newRoomCmd()))
 	addIn("agents", verbs.MarkLocal(newMsgCmd()))
 	root.InitDefaultCompletionCmd() // cobra adds it only at Execute, after the guard would have run
