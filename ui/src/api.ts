@@ -1840,6 +1840,9 @@ export type Room = {
   opened_at: string
   closed_at?: string
   participants: RoomParticipant[]
+  // active_participants: who holds a valid session now (F-0511); participants
+  // stays the historical roster the minutes read. Null for the channel.
+  active_participants?: RoomParticipant[] | null
   minutes?: Minutes
   // minutes_note é o id (N-NNNN) da nota governada em que a ata da sala foi
   // registrada via 'cerne room minutes register' (F-0238); vazio até então.
@@ -1856,7 +1859,7 @@ export type Room = {
 // por seq.
 export type RoomMessage = {
   seq: number
-  type: 'open' | 'join' | 'message' | 'close' | 'proposal' | 'decision_request' | 'resolution'
+  type: 'open' | 'join' | 'leave' | 'message' | 'close' | 'proposal' | 'decision_request' | 'resolution'
   nick?: string
   bio?: string
   body?: string
@@ -2009,6 +2012,20 @@ export async function resumeRoomSession(id: string, sessionID: string): Promise<
   })
   if (!r.ok) throw new Error(await errorMessage(r))
   return (await r.json()) as RoomSession
+}
+
+// leaveRoom revokes the capability on the server (F-0511) and returns the room
+// without the nick among the active participants. A 401 (the capability was
+// already revoked) comes as an HTTPError, so the screen can tell it from a
+// failure worth retrying.
+export async function leaveRoom(id: string, sessionID: string): Promise<Room> {
+  const r = await fetch(`${base()}/rooms/${encodeURIComponent(id)}/sessions/leave`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_id: sessionID }),
+  })
+  if (!r.ok) throw new HTTPError(await errorMessage(r), r.status)
+  return (await r.json()) as Room
 }
 
 export async function sayRoom(id: string, sessionID: string, body: string): Promise<RoomMessage> {

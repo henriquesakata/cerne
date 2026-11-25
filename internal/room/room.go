@@ -39,6 +39,7 @@ var (
 const (
 	typeOpen            = "open"
 	typeJoin            = "join"
+	typeLeave           = "leave"
 	typeMessage         = "message"
 	typeClose           = "close"
 	typeProposal        = "proposal"
@@ -53,7 +54,11 @@ type Room struct {
 	OpenedAt     time.Time     `json:"opened_at"`
 	ClosedAt     *time.Time    `json:"closed_at,omitempty"`
 	Participants []Participant `json:"participants"`
-	Minutes      *Minutes      `json:"minutes,omitempty"`
+	// ActiveParticipants is the current membership (F-0511): one entry per
+	// valid session, in join order. Participants stays the historical roster
+	// the minutes read; a nick that left drops out of this list only.
+	ActiveParticipants []Participant `json:"active_participants"`
+	Minutes            *Minutes      `json:"minutes,omitempty"`
 	// MessageCount is the transcript's current length (every event, not just
 	// said messages) — the "período seq" of a registered minutes note (F-0238).
 	MessageCount int `json:"message_count"`
@@ -105,7 +110,7 @@ func newSessionToken() (string, error) {
 // event, a said message, or a facilitation event (F-0228).
 type Message struct {
 	Seq   int       `json:"seq"`
-	Type  string    `json:"type"` // open|join|message|close|proposal|decision_request|resolution
+	Type  string    `json:"type"` // open|join|leave|message|close|proposal|decision_request|resolution
 	Nick  string    `json:"nick,omitempty"`
 	Bio   string    `json:"bio,omitempty"`   // join only
 	Body  string    `json:"body,omitempty"`  // message body, item description, or resolution result
@@ -233,17 +238,21 @@ func (m *Manager) load() error {
 const sessionsSuffix = ".sessions.jsonl"
 
 // sessionRecord is one line of the private <id>.sessions.jsonl sidecar: the
-// hex SHA-256 of the capability, never the raw token.
+// hex SHA-256 of the capability, never the raw token. Revoked marks an
+// explicit leave (F-0511): the nick's capability stops being valid.
 type sessionRecord struct {
 	Hash     string    `json:"hash"`
 	Nick     string    `json:"nick"`
 	JoinedAt time.Time `json:"joined_at"`
+	Revoked  bool      `json:"revoked,omitempty"`
 }
 
-// loadSessions replays the private sidecar into rs. Only records whose nick
-// has a matching public join are activated — a crash between the private
-// write and the public event leaves an orphan row, which is ignored; the
-// last matching record per nick wins (a retry after such a crash). A missing
+// loadSessions replays the private sidecar into rs. A record is activated only
+// when it belongs to its nick's last public join — the nick has not left since,
+// and Join wrote the same instant to the record and to the event — so a crash
+// between the private write and the public event leaves an orphan row, which
+// is ignored; the last matching record per nick wins (a revocation of that
+// join), and a revoked last record activates nothing (F-0511). A missing
 // sidecar (legacy transcript) is fine: participants simply have no session.
 func loadSessions(path string, rs *roomState) error {
 	f, err := os.Open(path)
@@ -255,9 +264,14 @@ func loadSessions(path string, rs *roomState) error {
 	}
 	defer f.Close()
 
-	joined := map[string]bool{}
-	for _, p := range rs.meta.Participants {
-		joined[p.Nick] = true
+	lastJoin := map[string]time.Time{} // nick → its last public join, while it has not left since
+	for _, msg := range rs.log {
+		switch msg.Type {
+		case typeJoin:
+			lastJoin[msg.Nick] = msg.Time
+		case typeLeave:
+			delete(lastJoin, msg.Nick)
+		}
 	}
 	latest := map[string]sessionRecord{}
 	sc := bufio.NewScanner(f)
@@ -270,7 +284,7 @@ func loadSessions(path string, rs *roomState) error {
 		if err := json.Unmarshal(line, &rec); err != nil {
 			return err
 		}
-		if joined[rec.Nick] {
+		if t, ok := lastJoin[rec.Nick]; ok && rec.JoinedAt.Equal(t) {
 			latest[rec.Nick] = rec
 		}
 	}
@@ -278,6 +292,9 @@ func loadSessions(path string, rs *roomState) error {
 		return err
 	}
 	for _, rec := range latest {
+		if rec.Revoked {
+			continue
+		}
 		raw, err := hex.DecodeString(rec.Hash)
 		if err != nil || len(raw) != sha256.Size {
 			continue // corrupt row: skip rather than brick the room
@@ -286,6 +303,7 @@ func loadSessions(path string, rs *roomState) error {
 		copy(sa.hash[:], raw)
 		rs.sessions = append(rs.sessions, sa)
 	}
+	sort.Slice(rs.sessions, func(i, j int) bool { return rs.sessions[i].joinedAt.Before(rs.sessions[j].joinedAt) })
 	return nil
 }
 
@@ -574,6 +592,10 @@ func (m *Manager) persist(id string, rec Message) error {
 func (rs *roomState) snapshotLocked() Room {
 	cp := rs.meta
 	cp.Participants = append([]Participant(nil), rs.meta.Participants...)
+	cp.ActiveParticipants = make([]Participant, 0, len(rs.sessions))
+	for _, s := range rs.sessions {
+		cp.ActiveParticipants = append(cp.ActiveParticipants, Participant{Nick: s.nick, Bio: rs.bioOfLocked(s.nick), JoinedAt: s.joinedAt})
+	}
 	cp.MessageCount = len(rs.log)
 	return cp
 }
@@ -695,6 +717,41 @@ func (m *Manager) Join(id, nick, bio string) (Room, Session, error) {
 	rs.sessions = append(rs.sessions, sessionAuth{hash: hash, nick: nick, joinedAt: now})
 	sess := Session{SessionID: token, RoomID: rs.meta.ID, Nick: nick, Bio: bio, JoinedAt: now, LastSeq: len(rs.log)}
 	return rs.snapshotLocked(), sess, nil
+}
+
+// Leave revokes sessionID's capability and records a public leave event
+// (F-0511). The revocation is persisted to the private sidecar before the
+// public event, so a crash in between leaves the capability revoked, never a
+// leave without effect. The nick stays in the historical Participants and
+// may join again for a new capability. Rejected when the room is unknown or
+// closed, or the capability is not valid in this room.
+func (m *Manager) Leave(id, sessionID string) (Room, error) {
+	rs, err := m.getRoom(id)
+	if err != nil {
+		return Room{}, err
+	}
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+	if rs.meta.ClosedAt != nil {
+		return Room{}, ErrClosed
+	}
+	sa, ok := rs.findSessionLocked(sessionID)
+	if !ok {
+		return Room{}, ErrInvalidSession
+	}
+	if err := m.persistSession(rs.meta.ID, sessionRecord{Hash: hex.EncodeToString(sa.hash[:]), Nick: sa.nick, JoinedAt: sa.joinedAt, Revoked: true}); err != nil {
+		return Room{}, err
+	}
+	for i, s := range rs.sessions {
+		if s.hash == sa.hash {
+			rs.sessions = append(rs.sessions[:i], rs.sessions[i+1:]...)
+			break
+		}
+	}
+	if err := m.appendLocked(rs, Message{Type: typeLeave, Nick: sa.nick, Time: time.Now().UTC()}); err != nil {
+		return Room{}, err
+	}
+	return rs.snapshotLocked(), nil
 }
 
 func (rs *roomState) hasParticipantLocked(nick string) bool {

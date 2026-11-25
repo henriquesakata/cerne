@@ -12,7 +12,9 @@ import {
   fetchRoomPending,
   fetchRooms,
   getApiProject,
+  HTTPError,
   joinRoom,
+  leaveRoom,
   postRoomClose,
   postRoomFacilitatorHandoff,
   postRoomItem,
@@ -136,7 +138,7 @@ export default function WarRoom() {
                 </span>
               </span>
               <span className="card-title">{r.topic}</span>
-              <span className="muted">{t.warRoom.participants(r.participants.length)}</span>
+              <span className="muted">{t.warRoom.participants((r.active_participants ?? []).length)}</span>
             </a>
           ))}
         </div>
@@ -153,7 +155,13 @@ type Roster = { nick: string; bio?: string }[]
 const GROUP_MS = 5 * 60 * 1000
 
 const continuesPrevious = (prev: RoomMessage | undefined, m: RoomMessage) =>
-  prev !== undefined && prev.nick === m.nick && Date.parse(m.time) - Date.parse(prev.time) < GROUP_MS
+  prev !== undefined &&
+  prev.type === 'message' &&
+  prev.nick === m.nick &&
+  Date.parse(m.time) - Date.parse(prev.time) < GROUP_MS
+
+// F-0511: the transcript shows what was said plus who joined and who left.
+const shownInTranscript = (e: RoomMessage) => e.type === 'message' || e.type === 'join' || e.type === 'leave'
 
 export function WarRoomDetail({ id }: { id: string }) {
   const [topic, setTopic] = useState('')
@@ -169,6 +177,11 @@ export function WarRoomDetail({ id }: { id: string }) {
   const [bio, setBio] = useState(() => localStorage.getItem(BIO_KEY) ?? '')
   const [session, setSession] = useState<RoomSession | null>(null)
   const [joining, setJoining] = useState(false)
+  const [leaving, setLeaving] = useState(false)
+  // F-0511: an informational line, e.g. the session was already revoked.
+  const [notice, setNotice] = useState<string | null>(null)
+  // F-0511: a join or leave event refetches the active participants.
+  const [rosterTick, setRosterTick] = useState(0)
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -222,16 +235,8 @@ export function WarRoomDetail({ id }: { id: string }) {
   const applyEvents = (events: RoomMessage[]) => {
     if (events.length === 0) return
     sinceRef.current = events[events.length - 1].seq
-    setMessages((prev) => [...prev, ...events.filter((e) => e.type === 'message')])
-    setRoster((prev) => {
-      const next = [...prev]
-      for (const e of events) {
-        if (e.type === 'join' && e.nick && !next.some((p) => p.nick === e.nick)) {
-          next.push({ nick: e.nick, bio: e.bio })
-        }
-      }
-      return next
-    })
+    setMessages((prev) => [...prev, ...events.filter(shownInTranscript)])
+    if (events.some((e) => e.type === 'join' || e.type === 'leave')) setRosterTick((n) => n + 1)
     let sawFacilitationEvent = false
     for (const e of events) {
       if (e.type === 'open' && e.topic) setTopic(e.topic)
@@ -289,32 +294,31 @@ export function WarRoomDetail({ id }: { id: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, version])
 
-  // O vínculo com a ata registrada (F-0238) é metadado da sala, não um
-  // evento do transcript — busca uma vez quando a sala fecha (registro
-  // acontece fora da UI, via 'cerne room minutes register'; sem polling
-  // contínuo aqui, a sala já é lida em contexto).
+  // Room metadata, not transcript events: the active participants (F-0511),
+  // refetched on every join or leave, and the link to the registered minutes
+  // (F-0238), read once the room is closed (registration happens outside the
+  // UI, via 'cerne room minutes register').
   useEffect(() => {
-    if (!closed) {
-      setMinutesNoteID(null)
-      return
-    }
     let cancelled = false
     fetchRooms()
       .then((rooms) => {
         if (cancelled) return
-        setMinutesNoteID(rooms.find((r) => r.id === id)?.minutes_note ?? null)
+        const r = rooms.find((r) => r.id === id)
+        setRoster(r?.active_participants ?? [])
+        setMinutesNoteID(closed ? (r?.minutes_note ?? null) : null)
       })
       .catch(() => {})
     return () => {
       cancelled = true
     }
-  }, [closed, id, version])
+  }, [closed, id, version, rosterTick])
 
   // Reload retoma a sessão guardada validando a capability no servidor
   // (F-0226 critério 9); token inválido volta ao formulário de join sem
   // impersonar o nick salvo.
   useEffect(() => {
     setSession(null)
+    setNotice(null)
     const stored = loadStoredSession(id)
     if (!stored) return
     let cancelled = false
@@ -424,6 +428,7 @@ export function WarRoomDetail({ id }: { id: string }) {
     localStorage.setItem(BIO_KEY, bio)
     setJoining(true)
     setError(null)
+    setNotice(null)
     joinRoom(id, trimmedNick, bio)
       .then(({ session: s }) => {
         setJoining(false)
@@ -433,6 +438,34 @@ export function WarRoomDetail({ id }: { id: string }) {
       .catch((e: unknown) => {
         setJoining(false)
         setError(e instanceof Error ? e.message : String(e))
+      })
+  }
+
+  // F-0511: the server revokes the capability first; only then does this
+  // browser forget it. A failure worth retrying keeps the session, so Leave
+  // can be tried again; a 401 means the server had already revoked it (another
+  // tab, the terminal), so the browser forgets it like an invalid resume does.
+  const doLeave = () => {
+    if (!session || leaving) return
+    setLeaving(true)
+    setError(null)
+    setNotice(null)
+    leaveRoom(id, session.session_id)
+      .then((r) => {
+        setLeaving(false)
+        localStorage.removeItem(sessionKey(id))
+        setSession(null)
+        if (r.active_participants) setRoster(r.active_participants)
+      })
+      .catch((e: unknown) => {
+        setLeaving(false)
+        if (e instanceof HTTPError && e.status === 401) {
+          localStorage.removeItem(sessionKey(id))
+          setSession(null)
+          setNotice(t.warRoom.sessionGone)
+          return
+        }
+        setError(t.warRoom.leaveError(e instanceof Error ? e.message : String(e)))
       })
   }
 
@@ -601,6 +634,14 @@ export function WarRoomDetail({ id }: { id: string }) {
             </div>
           )}
           {messages.map((m, i) => {
+            if (m.type !== 'message') {
+              const who = m.nick ?? ''
+              return (
+                <p key={m.seq} className="room-event">
+                  {m.type === 'join' ? t.warRoom.joinedEvent(who) : t.warRoom.leftEvent(who)}
+                </p>
+              )
+            }
             const own = ownNick !== undefined && m.nick === ownNick
             const cont = continuesPrevious(messages[i - 1], m)
             return (
@@ -626,7 +667,30 @@ export function WarRoomDetail({ id }: { id: string }) {
             {error}
           </p>
         )}
+        {notice && (
+          <p className="room-notice" role="status">
+            {notice}
+          </p>
+        )}
         {closed && <p className="room-notice">{t.warRoom.closedNotice}</p>}
+        {!closed && (
+          <div className="room-mode">
+            {joined ? (
+              <>
+                <span className="badge room-badge-open">{t.warRoom.participatingBadge}</span>
+                <span>{t.warRoom.participatingHint}</span>
+                <button type="button" className="room-btn" onClick={doLeave} disabled={leaving}>
+                  {leaving ? t.warRoom.leaving : t.warRoom.leave}
+                </button>
+              </>
+            ) : (
+              <>
+                <span className="badge">{t.warRoom.observingBadge}</span>
+                <span>{t.warRoom.observingHint}</span>
+              </>
+            )}
+          </div>
+        )}
         {!closed && !joined && (
           <form className="room-join" onSubmit={doJoin}>
             <p className="room-join-title">{t.warRoom.joinTitle}</p>

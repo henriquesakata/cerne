@@ -1088,3 +1088,303 @@ func TestRoomMessageCount(t *testing.T) {
 		t.Fatalf("MessageCount = %d, want 4", closed.MessageCount)
 	}
 }
+
+// --- F-0511: explicit leave, revocation and active participants ---
+
+func nicks(ps []Participant) []string {
+	out := make([]string, 0, len(ps))
+	for _, p := range ps {
+		out = append(out, p.Nick)
+	}
+	return out
+}
+
+func sameNicks(ps []Participant, want ...string) bool {
+	got := nicks(ps)
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// F-0511 crit. 2, 5
+func TestLeaveRevokesSessionAndKeepsHistory(t *testing.T) {
+	m := newManager(t)
+	r, _, _ := m.Open("topico")
+	alice := mustJoin(t, m, r.ID, "alice", "bio-alice")
+	mustJoin(t, m, r.ID, "bob", "")
+
+	got, err := m.Leave(r.ID, alice.SessionID)
+	if err != nil {
+		t.Fatalf("Leave: %v", err)
+	}
+	if !sameNicks(got.ActiveParticipants, "bob") {
+		t.Fatalf("ActiveParticipants = %v, want [bob]", nicks(got.ActiveParticipants))
+	}
+	if !sameNicks(got.Participants, "alice", "bob") {
+		t.Fatalf("Participants = %v, want historical [alice bob]", nicks(got.Participants))
+	}
+	msgs, _ := m.Read(context.Background(), r.ID, 0, false, time.Second)
+	last := msgs[len(msgs)-1]
+	if last.Type != "leave" || last.Nick != "alice" {
+		t.Fatalf("last event = %+v, want leave by alice", last)
+	}
+	if got.MessageCount != len(msgs) {
+		t.Fatalf("MessageCount = %d, want %d", got.MessageCount, len(msgs))
+	}
+}
+
+// F-0511 crit. 5
+func TestActiveParticipantsInJoinOrderWithBio(t *testing.T) {
+	m := newManager(t)
+	r, _, _ := m.Open("topico")
+	if len(r.ActiveParticipants) != 0 || r.ActiveParticipants == nil {
+		t.Fatalf("fresh room ActiveParticipants = %#v, want empty non-nil", r.ActiveParticipants)
+	}
+	mustJoin(t, m, r.ID, "alice", "bio-alice")
+	got, _, err := m.Join(r.ID, "bob", "bio-bob")
+	if err != nil {
+		t.Fatalf("Join bob: %v", err)
+	}
+	if !sameNicks(got.ActiveParticipants, "alice", "bob") {
+		t.Fatalf("ActiveParticipants = %v, want [alice bob]", nicks(got.ActiveParticipants))
+	}
+	if got.ActiveParticipants[0].Bio != "bio-alice" || got.ActiveParticipants[0].JoinedAt.IsZero() {
+		t.Fatalf("active alice = %+v, want bio and joined_at", got.ActiveParticipants[0])
+	}
+}
+
+// F-0511 crit. 3
+func TestRevokedSessionRejectedEverywhere(t *testing.T) {
+	m := newManager(t)
+	r, _, _ := m.Open("topico")
+	alice := mustJoin(t, m, r.ID, "alice", "")
+	if _, err := m.Leave(r.ID, alice.SessionID); err != nil {
+		t.Fatalf("Leave: %v", err)
+	}
+	if _, err := m.Resume(r.ID, alice.SessionID); !errors.Is(err, ErrInvalidSession) {
+		t.Fatalf("Resume err = %v, want ErrInvalidSession", err)
+	}
+	if _, err := m.Say(r.ID, alice.SessionID, "oi"); !errors.Is(err, ErrInvalidSession) {
+		t.Fatalf("Say err = %v, want ErrInvalidSession", err)
+	}
+	if _, err := m.Propose(r.ID, alice.SessionID, "t", "b"); !errors.Is(err, ErrInvalidSession) {
+		t.Fatalf("Propose err = %v, want ErrInvalidSession", err)
+	}
+	if _, err := m.RequestDecision(r.ID, alice.SessionID, "t", "b"); !errors.Is(err, ErrInvalidSession) {
+		t.Fatalf("RequestDecision err = %v, want ErrInvalidSession", err)
+	}
+	if _, err := m.Leave(r.ID, alice.SessionID); !errors.Is(err, ErrInvalidSession) {
+		t.Fatalf("second Leave err = %v, want ErrInvalidSession", err)
+	}
+}
+
+// F-0511 crit. 2, 3
+func TestLeaveSurvivesRestart(t *testing.T) {
+	dir := t.TempDir()
+	m1, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	r, _, _ := m1.Open("topico")
+	alice := mustJoin(t, m1, r.ID, "alice", "")
+	for _, n := range []string{"bob", "carol", "dave", "erin"} {
+		mustJoin(t, m1, r.ID, n, "")
+	}
+	if _, err := m1.Leave(r.ID, alice.SessionID); err != nil {
+		t.Fatalf("Leave: %v", err)
+	}
+
+	m2, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager (restart): %v", err)
+	}
+	if _, err := m2.Say(r.ID, alice.SessionID, "voltei?"); !errors.Is(err, ErrInvalidSession) {
+		t.Fatalf("revoked capability accepted after restart: err = %v", err)
+	}
+	rooms := m2.List()
+	if !sameNicks(rooms[0].ActiveParticipants, "bob", "carol", "dave", "erin") || !sameNicks(rooms[0].Participants, "alice", "bob", "carol", "dave", "erin") {
+		t.Fatalf("after restart active = %v, participants = %v", nicks(rooms[0].ActiveParticipants), nicks(rooms[0].Participants))
+	}
+	// the revocation record keeps the sidecar hash-only.
+	sidecar, _ := os.ReadFile(filepath.Join(dir, r.ID+".sessions.jsonl"))
+	if bytes.Contains(sidecar, []byte(alice.SessionID)) {
+		t.Fatalf("sidecar stores the raw token")
+	}
+	public, _ := os.ReadFile(filepath.Join(dir, r.ID+".jsonl"))
+	hash := sha256.Sum256([]byte(alice.SessionID))
+	if bytes.Contains(public, []byte(alice.SessionID)) || bytes.Contains(public, []byte(hex.EncodeToString(hash[:]))) {
+		t.Fatalf("public transcript leaks the session")
+	}
+}
+
+// F-0511 crit. 4
+func TestRejoinAfterLeaveMintsNewCapability(t *testing.T) {
+	dir := t.TempDir()
+	m1, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	r, _, _ := m1.Open("topico")
+	old := mustJoin(t, m1, r.ID, "alice", "bio")
+	if _, err := m1.Leave(r.ID, old.SessionID); err != nil {
+		t.Fatalf("Leave: %v", err)
+	}
+	got, fresh, err := m1.Join(r.ID, "alice", "bio")
+	if err != nil {
+		t.Fatalf("re-join after leave: %v", err)
+	}
+	if fresh.SessionID == old.SessionID {
+		t.Fatalf("re-join reused the revoked capability")
+	}
+	if !sameNicks(got.ActiveParticipants, "alice") || !sameNicks(got.Participants, "alice") {
+		t.Fatalf("active = %v, participants = %v, want [alice] both", nicks(got.ActiveParticipants), nicks(got.Participants))
+	}
+	msgs, _ := m1.Read(context.Background(), r.ID, 0, false, time.Second)
+	joins := 0
+	for _, msg := range msgs {
+		if msg.Type == "join" && msg.Nick == "alice" {
+			joins++
+		}
+	}
+	if joins != 2 {
+		t.Fatalf("join events = %d, want 2", joins)
+	}
+	if _, err := m1.Say(r.ID, old.SessionID, "x"); !errors.Is(err, ErrInvalidSession) {
+		t.Fatalf("old capability err = %v, want ErrInvalidSession", err)
+	}
+
+	m2, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager (restart): %v", err)
+	}
+	if _, err := m2.Say(r.ID, old.SessionID, "x"); !errors.Is(err, ErrInvalidSession) {
+		t.Fatalf("old capability after restart err = %v, want ErrInvalidSession", err)
+	}
+	if _, err := m2.Say(r.ID, fresh.SessionID, "y"); err != nil {
+		t.Fatalf("new capability after restart: %v", err)
+	}
+	if rooms := m2.List(); !sameNicks(rooms[0].ActiveParticipants, "alice") {
+		t.Fatalf("active after restart = %v, want [alice]", nicks(rooms[0].ActiveParticipants))
+	}
+}
+
+// F-0511 crit. 2
+func TestLeaveClosedOrUnknownRoom(t *testing.T) {
+	m := newManager(t)
+	r, fac, _ := m.Open("topico")
+	alice := mustJoin(t, m, r.ID, "alice", "")
+	if _, err := m.Close(r.ID, fac, minimalMinutes, false); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if _, err := m.Leave(r.ID, alice.SessionID); !errors.Is(err, ErrClosed) {
+		t.Fatalf("closed room err = %v, want ErrClosed", err)
+	}
+	if _, err := m.Leave("R99", alice.SessionID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown room err = %v, want ErrNotFound", err)
+	}
+}
+
+// appendSidecar writes one raw record to a room's private sessions sidecar.
+func appendSidecar(t *testing.T, dir, id string, rec map[string]any) {
+	t.Helper()
+	line, _ := json.Marshal(rec)
+	f, err := os.OpenFile(filepath.Join(dir, id+".sessions.jsonl"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatalf("open sidecar: %v", err)
+	}
+	defer f.Close()
+	if _, err := f.Write(append(line, '\n')); err != nil {
+		t.Fatalf("write sidecar: %v", err)
+	}
+}
+
+// F-0511 crit. 3: a crash after the revocation record but before the public
+// leave event leaves the capability revoked.
+func TestReplayRevocationWithoutLeaveEvent(t *testing.T) {
+	dir := t.TempDir()
+	m1, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	r, _, _ := m1.Open("topico")
+	alice := mustJoin(t, m1, r.ID, "alice", "")
+	hash := sha256.Sum256([]byte(alice.SessionID))
+	appendSidecar(t, dir, r.ID, map[string]any{"hash": hex.EncodeToString(hash[:]), "nick": "alice", "joined_at": alice.JoinedAt, "revoked": true})
+
+	m2, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager (restart): %v", err)
+	}
+	if _, err := m2.Resume(r.ID, alice.SessionID); !errors.Is(err, ErrInvalidSession) {
+		t.Fatalf("revoked capability resumed: err = %v", err)
+	}
+	if rooms := m2.List(); len(rooms[0].ActiveParticipants) != 0 {
+		t.Fatalf("active = %v, want empty", nicks(rooms[0].ActiveParticipants))
+	}
+}
+
+// F-0511 crit. 4: a crash after a re-join's private record but before its
+// public join event leaves the nick out, not bound to a capability nobody holds.
+func TestReplayRejoinRecordWithoutJoinEvent(t *testing.T) {
+	dir := t.TempDir()
+	m1, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	r, _, _ := m1.Open("topico")
+	alice := mustJoin(t, m1, r.ID, "alice", "")
+	if _, err := m1.Leave(r.ID, alice.SessionID); err != nil {
+		t.Fatalf("Leave: %v", err)
+	}
+	orphan := sha256.Sum256([]byte("orphan-token"))
+	appendSidecar(t, dir, r.ID, map[string]any{"hash": hex.EncodeToString(orphan[:]), "nick": "alice", "joined_at": time.Now().UTC()})
+
+	m2, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager (restart): %v", err)
+	}
+	if _, err := m2.Say(r.ID, "orphan-token", "boo"); !errors.Is(err, ErrInvalidSession) {
+		t.Fatalf("orphan re-join capability accepted: err = %v", err)
+	}
+	if _, _, err := m2.Join(r.ID, "alice", ""); err != nil {
+		t.Fatalf("re-join after the crash: %v", err)
+	}
+}
+
+// F-0511 crit. 3, 4: two crashes — one between the revocation record and the
+// public leave, another during a re-join before its public join. The nick's
+// last public event is still the first join, but the re-join record does not
+// belong to it: nobody holds its token, so it must not come back.
+func TestReplayRecordMustBelongToTheLastJoin(t *testing.T) {
+	dir := t.TempDir()
+	m1, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	r, _, _ := m1.Open("topico")
+	alice := mustJoin(t, m1, r.ID, "alice", "")
+	hash := sha256.Sum256([]byte(alice.SessionID))
+	appendSidecar(t, dir, r.ID, map[string]any{"hash": hex.EncodeToString(hash[:]), "nick": "alice", "joined_at": alice.JoinedAt, "revoked": true})
+	orphan := sha256.Sum256([]byte("orphan-token"))
+	appendSidecar(t, dir, r.ID, map[string]any{"hash": hex.EncodeToString(orphan[:]), "nick": "alice", "joined_at": alice.JoinedAt.Add(time.Second)})
+
+	m2, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager (restart): %v", err)
+	}
+	if _, err := m2.Say(r.ID, "orphan-token", "boo"); !errors.Is(err, ErrInvalidSession) {
+		t.Fatalf("orphan re-join capability accepted: err = %v", err)
+	}
+	if _, err := m2.Say(r.ID, alice.SessionID, "boo"); !errors.Is(err, ErrInvalidSession) {
+		t.Fatalf("revoked capability accepted: err = %v", err)
+	}
+	if _, _, err := m2.Join(r.ID, "alice", ""); err != nil {
+		t.Fatalf("re-join after both crashes: %v (want the nick free)", err)
+	}
+}

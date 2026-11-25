@@ -411,6 +411,74 @@ func TestRoomSayWithoutSessionIsLocalError(t *testing.T) {
 	}
 }
 
+// F-0511 crit. 7
+func TestRoomLeaveRevokesAndGuides(t *testing.T) {
+	t.Setenv("CERNE_ROOM_SESSION", "")
+	dir, port := newRoomTestServer(t, "proj-leave")
+	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
+	runRoom(t, append([]string{"open", "topic"}, dirFlag...)...)
+	sess := joinRoomAs(t, dirFlag, "R1", "ana")
+
+	out, err := runRoom(t, append([]string{"leave", "R1", "--session", sess}, dirFlag...)...)
+	if err != nil {
+		t.Fatalf("leave: %v", err)
+	}
+	if !strings.Contains(out, "left R1") || !strings.Contains(out, "no longer valid") || !strings.Contains(out, "cerne room join R1") {
+		t.Fatalf("leave output = %q, want the room left, the capability invalid and how to join again", out)
+	}
+	if strings.Contains(out, sess) {
+		t.Fatalf("leave output leaks the capability: %q", out)
+	}
+	if strings.Contains(out, "unset CERNE_ROOM_SESSION") {
+		t.Fatalf("leave output = %q, the env hint belongs only to an env-provided session", out)
+	}
+	if _, err := runRoom(t, append([]string{"say", "R1", "--session", sess, "still here?"}, dirFlag...)...); err == nil {
+		t.Fatal("say with a revoked capability: want error, got nil")
+	}
+	read, _ := runRoom(t, append([]string{"read", "R1"}, dirFlag...)...)
+	if !strings.Contains(read, "[leave: ana]") {
+		t.Fatalf("read output = %q, want the leave event", read)
+	}
+}
+
+// F-0511 crit. 7
+func TestRoomLeaveEnvFallbackAndRevokedError(t *testing.T) {
+	dir, port := newRoomTestServer(t, "proj-leave-env")
+	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
+	runRoom(t, append([]string{"open", "topic"}, dirFlag...)...)
+	sess := joinRoomAs(t, dirFlag, "R1", "ana")
+
+	t.Setenv("CERNE_ROOM_SESSION", sess)
+	out, err := runRoom(t, append([]string{"leave", "R1"}, dirFlag...)...)
+	if err != nil {
+		t.Fatalf("leave via env: %v", err)
+	}
+	if !strings.Contains(out, "unset CERNE_ROOM_SESSION") || strings.Contains(out, sess) {
+		t.Fatalf("leave via env output = %q, want the unset hint and no token", out)
+	}
+	_, err = runRoom(t, append([]string{"leave", "R1"}, dirFlag...)...)
+	if err == nil || !strings.Contains(err.Error(), "invalid room session") || strings.Contains(err.Error(), sess) {
+		t.Fatalf("second leave err = %v, want a clear invalid-session error without the token", err)
+	}
+}
+
+// F-0511 crit. 7
+func TestRoomLeaveWithoutSessionIsLocalError(t *testing.T) {
+	t.Setenv("CERNE_ROOM_SESSION", "")
+	// no server needed: the check fires before any HTTP.
+	_, err := runRoom(t, "leave", "R1")
+	if err == nil || !strings.Contains(err.Error(), "--session") || !strings.Contains(err.Error(), "CERNE_ROOM_SESSION") || !strings.Contains(err.Error(), "room join") {
+		t.Fatalf("leave without session err = %v, want the say-style local error", err)
+	}
+}
+
+// F-0511 crit. 7
+func TestFormatRoomEventLeave(t *testing.T) {
+	if got := formatRoomEvent(room.Message{Seq: 5, Type: "leave", Nick: "ana"}); got != "#5 [leave: ana]" {
+		t.Fatalf("formatRoomEvent(leave) = %q, want #5 [leave: ana]", got)
+	}
+}
+
 func TestRoomSayNickFlagRemoved(t *testing.T) {
 	_, err := runRoom(t, "say", "R1", "oi", "--nick", "ana")
 	if err == nil || !strings.Contains(err.Error(), "unknown flag") {

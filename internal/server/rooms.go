@@ -88,7 +88,7 @@ func handleRoomList(w http.ResponseWriter, repoDir, projectID string) {
 	}
 	// The formal rooms never depend on the channel's health (critic C8): an
 	// unreadable channel is still listed, carrying its error.
-	channel := channelRoomView{Room: room.Room{ID: room.ChannelID, Permanent: true, Participants: []room.Participant{}}}
+	channel := channelRoomView{Room: room.Room{ID: room.ChannelID, Permanent: true, Participants: []room.Participant{}, ActiveParticipants: []room.Participant{}}}
 	msgs, roster, err := app.ChannelRead(cacheDir, repoDir, "", time.Now().UTC())
 	if err != nil {
 		channel.Error = err.Error()
@@ -248,6 +248,32 @@ func handleRoomResume(w http.ResponseWriter, r *http.Request, projectID, id stri
 		return
 	}
 	writeJSON(w, http.StatusOK, sess)
+}
+
+// handleRoomLeave revokes the presented capability (F-0511): the room
+// records a public leave event and the snapshot comes back without the nick
+// among the active participants. A revoked or unknown capability is a 401,
+// like resume and say.
+func handleRoomLeave(w http.ResponseWriter, r *http.Request, projectID, id string) {
+	if refuseChannelRite(w, id) {
+		return
+	}
+	var req resumeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
+		return
+	}
+	m, err := roomManagerFor(projectID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	rm, err := m.Leave(id, req.SessionID)
+	if err != nil {
+		writeRoomErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rm)
 }
 
 type sayRequest struct {

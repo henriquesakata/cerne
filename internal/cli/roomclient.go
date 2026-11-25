@@ -207,6 +207,14 @@ func (c roomClient) resume(ctx context.Context, id, sessionID string) (room.Sess
 	return sess, err
 }
 
+// leave revokes the session capability (F-0511) and returns the room
+// snapshot without the nick among the active participants.
+func (c roomClient) leave(ctx context.Context, id, sessionID string) (room.Room, error) {
+	var rm room.Room
+	err := c.do(ctx, http.MethodPost, "/rooms/"+url.PathEscape(id)+"/sessions/leave", map[string]string{"session_id": sessionID}, &rm)
+	return rm, err
+}
+
 // close closes the room with the facilitator's structured minutes (F-0228);
 // blocked by default while facilitation items are still open unless
 // allowOpenItems forces it through.

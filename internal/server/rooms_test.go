@@ -26,7 +26,9 @@ type roomJSON struct {
 	Topic        string            `json:"topic"`
 	ClosedAt     *time.Time        `json:"closed_at"`
 	Participants []participantJSON `json:"participants"`
-	Minutes      *minutesJSON      `json:"minutes"`
+	// F-0511: the current membership; Participants stays historical.
+	ActiveParticipants []participantJSON `json:"active_participants"`
+	Minutes            *minutesJSON      `json:"minutes"`
 }
 
 // openJSON is the POST /api/rooms response (F-0228): the room snapshot plus
@@ -735,11 +737,20 @@ func TestRoomListPinsChannel(t *testing.T) {
 			ID           string            `json:"id"`
 			Permanent    bool              `json:"permanent"`
 			Participants []participantJSON `json:"participants"`
+			// F-0511: raw, to tell `[]` from `null`.
+			ActiveParticipants json.RawMessage `json:"active_participants"`
 		} `json:"rooms"`
 	}
 	rec := doJSON(t, h, http.MethodGet, "/api/rooms", "", &got)
 	if rec.Code != http.StatusOK || len(got.Rooms) != 2 || got.Rooms[0].ID != "channel" || !got.Rooms[0].Permanent || got.Rooms[1].ID != "R1" || got.Rooms[1].Permanent {
 		t.Fatalf("rooms = %+v", got.Rooms)
+	}
+	// F-0511 crit. 5: every entry serializes active_participants as a list,
+	// the channel included, so a consumer never meets null.
+	for _, r := range got.Rooms {
+		if string(r.ActiveParticipants) != "[]" {
+			t.Fatalf("%s active_participants = %s, want []", r.ID, r.ActiveParticipants)
+		}
 	}
 	var nicks []string
 	for _, p := range got.Rooms[0].Participants {
@@ -946,5 +957,81 @@ func TestRoomListSurvivesABrokenChannel(t *testing.T) {
 	rec := doJSON(t, h, http.MethodGet, "/api/rooms", "", &got)
 	if rec.Code != http.StatusOK || len(got.Rooms) != 2 || got.Rooms[0].ID != "channel" || got.Rooms[0].Error == "" || got.Rooms[1].ID != "R1" {
 		t.Fatalf("list = %d %s, want 200 with the channel marked errored and R1", rec.Code, rec.Body.String())
+	}
+}
+
+func participantNicks(ps []participantJSON) string {
+	out := make([]string, 0, len(ps))
+	for _, p := range ps {
+		out = append(out, p.Nick)
+	}
+	return strings.Join(out, ",")
+}
+
+// TestRoomLeaveEndpoint: leaving revokes the capability over HTTP and drops
+// the nick from the active list only.
+// F-0511 crit. 2, 3
+func TestRoomLeaveEndpoint(t *testing.T) {
+	h := newRoomServer(t, "proj-room-leave")
+	var opened openJSON
+	doJSON(t, h, http.MethodPost, "/api/rooms", `{"topic":"t"}`, &opened)
+	alice := joinAs(t, h, opened.ID, "alice")
+	joinAs(t, h, opened.ID, "bob")
+	leaveURL := "/api/rooms/" + opened.ID + "/sessions/leave"
+	leaveBody := `{"session_id":"` + alice.SessionID + `"}`
+
+	var got roomJSON
+	rec := doJSON(t, h, http.MethodPost, leaveURL, leaveBody, &got)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("leave status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	if participantNicks(got.ActiveParticipants) != "bob" || participantNicks(got.Participants) != "alice,bob" {
+		t.Fatalf("active = %q, participants = %q", participantNicks(got.ActiveParticipants), participantNicks(got.Participants))
+	}
+	if strings.Contains(rec.Body.String(), alice.SessionID) || strings.Contains(rec.Body.String(), "session") || strings.Contains(rec.Body.String(), "hash") {
+		t.Fatalf("leave response leaks the capability: %s", rec.Body.String())
+	}
+
+	var errBody map[string]string
+	for _, c := range []struct{ path, body string }{
+		{leaveURL, leaveBody},
+		{"/api/rooms/" + opened.ID + "/sessions/resume", leaveBody},
+		{"/api/rooms/" + opened.ID + "/messages", `{"session_id":"` + alice.SessionID + `","body":"oi"}`},
+	} {
+		if rec := doJSON(t, h, http.MethodPost, c.path, c.body, &errBody); rec.Code != http.StatusUnauthorized {
+			t.Fatalf("POST %s with a revoked capability status = %d, want 401; body: %s", c.path, rec.Code, rec.Body.String())
+		}
+	}
+	if rec := doJSON(t, h, http.MethodPost, leaveURL, `{`, &errBody); rec.Code != http.StatusBadRequest {
+		t.Fatalf("invalid body status = %d, want 400", rec.Code)
+	}
+
+	var list struct {
+		Rooms []roomJSON `json:"rooms"`
+	}
+	doJSON(t, h, http.MethodGet, "/api/rooms", "", &list)
+	for _, r := range list.Rooms {
+		if r.ID == opened.ID && participantNicks(r.ActiveParticipants) != "bob" {
+			t.Fatalf("GET /api/rooms active = %q, want bob", participantNicks(r.ActiveParticipants))
+		}
+	}
+}
+
+// F-0511 crit. 2
+func TestRoomLeaveClosedOrUnknownRoom(t *testing.T) {
+	h := newRoomServer(t, "proj-room-leave-closed")
+	var opened openJSON
+	doJSON(t, h, http.MethodPost, "/api/rooms", `{"topic":"t"}`, &opened)
+	alice := joinAs(t, h, opened.ID, "alice")
+	closeBody := `{"facilitator_id":"` + opened.FacilitatorID + `","minutes":{"conclusion":"fim","rationale":"teste"}}`
+	doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/close", closeBody, &roomJSON{})
+
+	var errBody map[string]string
+	body := `{"session_id":"` + alice.SessionID + `"}`
+	if rec := doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/sessions/leave", body, &errBody); rec.Code != http.StatusConflict {
+		t.Fatalf("closed room status = %d, want 409; body: %s", rec.Code, rec.Body.String())
+	}
+	if rec := doJSON(t, h, http.MethodPost, "/api/rooms/R99/sessions/leave", body, &errBody); rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown room status = %d, want 404; body: %s", rec.Code, rec.Body.String())
 	}
 }
