@@ -1,0 +1,28 @@
+name: packaging
+
+# Installs the release through the package managers the release workflow feeds,
+# so a change to the packaging scripts is proven before a tag needs it. Runs
+# only when they change: the ci.yml suite already covers every PR.
+on:
+  pull_request:
+    paths:
+      - 'scripts/aur-*.sh'
+      - '.github/workflows/packaging.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  aur:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - name: install git
+        run: pacman -Syu --noconfirm --needed git
+      - uses: actions/checkout@v4
+      # The latest stable release, as GitHub names it (prereleases excluded).
+      - name: build and install cerne-bin from the latest release
+        run: |
+          tag=$(curl -fsSL https://api.github.com/repos/henriquesakata/cerne/releases/latest | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')
+          [ -n "$tag" ] || { echo "::error::cannot find the latest release"; exit 1; }
+          sh scripts/aur-check.sh "$tag"
