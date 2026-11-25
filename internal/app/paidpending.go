@@ -43,8 +43,8 @@ func CheckPaidCited(repoDir string, f store.Feature) error {
 	if len(cite) == 0 {
 		return nil
 	}
-	return fmt.Errorf("%w: cite %s in content/features/%s/result.md and run 'cerne push', or unlink the ones %s does not pay: %s",
-		ErrPaidPendingUncited, strings.Join(cite, ", "), f.ID, f.ID, strings.Join(unlink, ", "))
+	return fmt.Errorf("%w: cite %s in the result (%s), or unlink the ones %s does not pay: %s",
+		ErrPaidPendingUncited, strings.Join(cite, ", "), EditDoc(f, "result.md"), f.ID, strings.Join(unlink, ", "))
 }
 
 // fenceOpen opens a code fence: three or more backticks or tildes (CommonMark).

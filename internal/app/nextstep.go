@@ -9,6 +9,7 @@ import (
 
 	"github.com/henriquesakata/cerne/internal/cost"
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/materialize"
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
 )
@@ -76,17 +77,25 @@ func DeliveryOwed(f store.Feature) string {
 }
 
 // docRef names the file the agent edits: the materialized copy under .docs/
-// when the project has one, else the backend path.
-func docRef(projDir, id, name string) string {
+// as it is on disk (a title renamed since the pull keeps the old folder), else
+// where the next pull puts it — never the backend path (B-0074).
+func docRef(projDir string, f store.Feature, name string) string {
 	dir := filepath.Join(projDir, ".docs", "current", "features")
 	if ents, err := os.ReadDir(dir); err == nil {
 		for _, e := range ents {
-			if e.IsDir() && (e.Name() == id || strings.HasPrefix(e.Name(), id+"-")) {
+			if e.IsDir() && (e.Name() == f.ID || strings.HasPrefix(e.Name(), f.ID+"-")) {
 				return ".docs/current/features/" + e.Name() + "/" + name
 			}
 		}
 	}
-	return "content/features/" + id + "/" + name + " (backend)"
+	return materialize.ProjectedDocPath(f.ID, f.Title, name)
+}
+
+// EditDoc is how every refusal and Next step tells the user to change feature
+// f's document filename: the copy 'cerne pull' materializes, then 'cerne
+// push' — never the backend path, which the user does not edit (B-0074).
+func EditDoc(f store.Feature, filename string) string {
+	return "run 'cerne pull', edit " + materialize.ProjectedDocPath(f.ID, f.Title, filename) + " and run 'cerne push'"
 }
 
 // NextStepTail is " — next: <step> (run: <command>)" for id, or "" when the
@@ -125,7 +134,7 @@ func NextStep(repoDir, projDir, id string) (Step, error) {
 	gates := projectGates(projDir)
 	s := Step{State: string(f.State), Actor: ActorAgent}
 	edit := func(msg, doc string) (Step, error) {
-		s.Step = msg + " — edit " + docRef(projDir, id, doc) + " and run 'cerne push'"
+		s.Step = msg + " — edit " + docRef(projDir, f, doc) + " and run 'cerne push'"
 		return s, nil
 	}
 	// A human act: with the project's gate set to auto it is the agent's, with the command.
@@ -169,7 +178,7 @@ func NextStep(repoDir, projDir, id string) (Step, error) {
 		if err != nil {
 			return Step{}, err
 		}
-		if err := checkActionDocs(id, domain.ActionStart, docs); err != nil {
+		if err := checkActionDocs(f, domain.ActionStart, docs); err != nil {
 			return edit("the start would refuse: "+errors.Unwrap(err).Error(), "plan.md")
 		}
 		if gates.GauntletEnabled() {
@@ -190,11 +199,12 @@ func NextStep(repoDir, projDir, id string) (Step, error) {
 		if err != nil {
 			return Step{}, err
 		}
-		if err := checkActionDocs(id, domain.ActionComplete, docs); err != nil {
+		if err := checkActionDocs(f, domain.ActionComplete, docs); err != nil {
 			return edit("the complete would refuse: "+errors.Unwrap(err).Error(), "result.md")
 		}
 		if err := CheckCompleteResult(repoDir, f, gates); err != nil {
-			return edit("the complete would refuse: "+err.Error(), "result.md")
+			s.Step = "the complete would refuse: " + err.Error() // the error already says what to edit (EditDoc)
+			return s, nil
 		}
 		if err := CheckCriterionTests(repoDir, projDir, f); err != nil {
 			s.Step = "the complete would refuse: " + err.Error()

@@ -614,7 +614,7 @@ func TestTransitionGateFailure(t *testing.T) {
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want 422; body: %s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(got["error"], "spec.md") || !strings.Contains(got["error"], "write") {
+	if !strings.Contains(got["error"], "spec.md") || !strings.Contains(got["error"], "edit") { // B-0074: edit the .docs copy
 		t.Fatalf("error = %q, want gate message naming spec.md", got["error"])
 	}
 	if f, _ := store.LoadFeature(repoDir, "F-0001"); f.State != domain.StateCandidate {

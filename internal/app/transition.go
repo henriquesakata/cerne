@@ -265,7 +265,7 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 		if err != nil {
 			return "", err
 		}
-		if err := checkActionDocs(id, action, docs); err != nil {
+		if err := checkActionDocs(f, action, docs); err != nil {
 			return "", err
 		}
 		// Gauntlet bar gate (F-0295): a property of the spec, not of who
@@ -787,9 +787,9 @@ func planBehindWarning(repoDir string, f store.Feature) string {
 // checkActionDocs is the document gate of an action (a real plan to start, a
 // real result to complete): domain.CheckGate over the feature's doc set, with
 // the file to write named.
-func checkActionDocs(id string, action domain.Action, docs domain.DocSet) error {
-	if err := domain.CheckGate(id, action, docs); err != nil {
-		return fmt.Errorf("%w — write content/features/%s/%s in the backend and run 'cerne push'", err, id, gateDocFilename(err))
+func checkActionDocs(f store.Feature, action domain.Action, docs domain.DocSet) error {
+	if err := domain.CheckGate(f.ID, action, docs); err != nil {
+		return fmt.Errorf("%w — %s", err, EditDoc(f, gateDocFilename(err)))
 	}
 	return nil
 }
@@ -799,7 +799,7 @@ func checkActionDocs(id string, action domain.Action, docs domain.DocSet) error 
 // The transition and NextStep (F-0371) both call it.
 func CheckCompleteResult(repoDir string, f store.Feature, gates project.GatesConfig) error {
 	if err := CheckResultRecord(repoDir, f, gates); err != nil {
-		return fmt.Errorf("%w\n— fix content/features/%s/result.md in the backend and run 'cerne push'", err, f.ID)
+		return fmt.Errorf("%w\n— %s", err, EditDoc(f, "result.md"))
 	}
 	return CheckPaidCited(repoDir, f)
 }
