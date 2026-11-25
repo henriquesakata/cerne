@@ -1054,9 +1054,10 @@ func (m *Manager) Read(ctx context.Context, id string, since int, follow bool, t
 // ReadForSession is Read on behalf of sessionID's participant (T-0021),
 // returning the reader's nick. It stamps the nick's last_seen_at and, while
 // a follow read is in flight, counts it as listening. The count is undone by
-// defer, so a canceled request never leaks one; a session revoked meanwhile
-// (Leave already cleared the count) undoes nothing. Rejected when the
-// capability is not valid in this room.
+// defer, which stamps last_seen_at again as the read ends, so a canceled
+// request never leaks one; a session revoked meanwhile (Leave already
+// cleared its presence) undoes nothing. Rejected when the capability is not
+// valid in this room.
 func (m *Manager) ReadForSession(ctx context.Context, id, sessionID string, since int, follow bool, timeout time.Duration) ([]Message, string, error) {
 	rs, err := m.getRoom(id)
 	if err != nil {
@@ -1077,7 +1078,11 @@ func (m *Manager) ReadForSession(ctx context.Context, id, sessionID string, sinc
 		defer func() {
 			rs.mu.Lock()
 			defer rs.mu.Unlock()
-			if rs.hasSessionLocked(sa.hash) && rs.watchers[sa.nick] > 0 {
+			if !rs.hasSessionLocked(sa.hash) {
+				return
+			}
+			rs.touchLocked(sa.nick)
+			if rs.watchers[sa.nick] > 0 {
 				rs.watchers[sa.nick]--
 			}
 		}()

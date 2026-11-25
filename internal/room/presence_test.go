@@ -79,6 +79,24 @@ func TestPresenceListeningWhileFollowReadInFlight(t *testing.T) {
 	}
 }
 
+// TestPresenceLastSeenStampedWhenFollowReadEnds: a long read that just ended
+// is the participant's latest activity, not the moment it began.
+// T-0021 crit. 1
+// E-0006 crit. 7
+func TestPresenceLastSeenStampedWhenFollowReadEnds(t *testing.T) {
+	m := newManager(t)
+	r, _, _ := m.Open("topico")
+	alice := mustJoin(t, m, r.ID, "alice", "")
+	cancel := follow(t, m, r.ID, alice.SessionID)
+	waitListening(t, m, r.ID, "alice", true)
+	time.Sleep(2 * time.Millisecond) // the read's start stamp must be strictly earlier
+	before := time.Now().UTC()
+	cancel()
+	if got := activeOf(t, m, r.ID, "alice").LastSeenAt; got == nil || got.Before(before) {
+		t.Fatalf("last_seen_at = %v, want the end of the read (>= %v)", got, before)
+	}
+}
+
 // T-0021 crit. 1
 // E-0006 crit. 7
 func TestPresenceTwoFollowReadsOfOneSession(t *testing.T) {
