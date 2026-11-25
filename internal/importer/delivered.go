@@ -37,10 +37,10 @@ func IsPlanDelivered(it PlanItem) bool {
 	return it.Kind == "feature" && (it.State == "implemented" || it.State == "done")
 }
 
-// SetPlanDelivered is SetDelivered for agent plan items.
-func SetPlanDelivered(items []PlanItem, state string) {
+// SetAnchoredDelivered is SetDelivered for the anchored items of an agent plan.
+func SetAnchoredDelivered(items []AnchoredItem, state string) {
 	for i := range items {
-		if IsPlanDelivered(items[i]) {
+		if IsPlanDelivered(items[i].PlanItem) {
 			items[i].State = state
 		}
 	}

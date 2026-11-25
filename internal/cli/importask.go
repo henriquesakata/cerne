@@ -58,14 +58,3 @@ func countDelivered(cands []importer.Candidate) int {
 	}
 	return n
 }
-
-// countPlanDelivered is countDelivered for agent plan items.
-func countPlanDelivered(items []importer.PlanItem) int {
-	n := 0
-	for _, it := range items {
-		if importer.IsPlanDelivered(it) {
-			n++
-		}
-	}
-	return n
-}

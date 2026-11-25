@@ -35,6 +35,7 @@ func TestImportDeliveredStateFlag(t *testing.T) {
 		})
 		t.Run("agent/"+tt.name, func(t *testing.T) {
 			projDir, _, repoDir := setupProject(t)
+			writeTree(t, projDir, frigateTree())
 			writeAgentPlan(t, projDir, gabaritoPlan)
 			args := append([]string{"import", "--agent", "--ingest", "--yes", "--dir", projDir}, tt.args...)
 			if out, err := execCerne(t, args...); err != nil {
@@ -62,12 +63,13 @@ func TestImportDeliveredStateInvalid(t *testing.T) {
 }
 
 func TestImportAgentDoneItemDefaultsToImplemented(t *testing.T) {
-	const plan = `{"items":[{"kind":"feature","title":"Shipped thing","state":"done","body":"# Shipped\n\nx","source":"HISTORY.md#shipped"}]}`
+	const plan = `{"items":[{"kind":"feature","title":"Shipped thing","state":"done","body":"# Shipped\n\nx","source":"HISTORY.md#shipped","evidence":["MUDANCA_GO2RTC adicionada"]}]}`
 	for _, tt := range []struct {
 		args []string
 		want domain.FeatureState
 	}{{nil, domain.StateImplemented}, {[]string{"--delivered-state", "done"}, domain.StateDone}} {
 		projDir, _, repoDir := setupProject(t)
+		writeTree(t, projDir, frigateTree())
 		writeAgentPlan(t, projDir, plan)
 		args := append([]string{"import", "--agent", "--ingest", "--yes", "--dir", projDir}, tt.args...)
 		if out, err := execCerne(t, args...); err != nil {

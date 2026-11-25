@@ -499,14 +499,17 @@ func copyDoc(src, dst, id, source, contentRel string, idx *LinkIndex, pb Permali
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(dst, injectFrontmatter(body, id, source), 0o644)
+	return os.WriteFile(dst, injectFrontmatter(body, id, source, ""), 0o644)
 }
 
 // injectFrontmatter returns body with cerne_id and imported_from as the
 // first keys of the leading frontmatter block, prepending a fresh block when
 // body does not already start with a closed "---" block.
-func injectFrontmatter(body []byte, id, source string) []byte {
+func injectFrontmatter(body []byte, id, source, anchor string) []byte {
 	keys := "cerne_id: " + id + "\nimported_from: " + source + "\n"
+	if anchor != "" {
+		keys += "imported_anchor: " + anchor + "\n"
+	}
 	content := bytes.TrimPrefix(body, []byte(bom))
 	prefix := body[:len(body)-len(content)] // preserved BOM, if any
 	var buf bytes.Buffer

@@ -36,6 +36,9 @@ type PlanItem struct {
 	URL     string   `json:"url,omitempty"`     // required for reference
 	Informs []string `json:"informs,omitempty"` // F-/D- ids this backlinks (reference/note)
 	Source  string   `json:"source"`            // originating file (provenance + idempotency)
+	// Evidence is 1 to 3 snippets copied literally from Source that support the
+	// chosen state (F-0500); AnchorPlanItems checks them against the file.
+	Evidence []string `json:"evidence"`
 }
 
 // Plan is the agent's full proposal for a doc tree.
@@ -74,6 +77,9 @@ func ValidatePlan(p Plan) error {
 		}
 		if strings.TrimSpace(it.Source) == "" {
 			return fmt.Errorf("%w: item %d (%s): empty source", ErrInvalidPlan, i, it.Kind)
+		}
+		if strings.ContainsAny(it.Source, "\r\n") {
+			return fmt.Errorf("%w: item %d (%s): source has a line break", ErrInvalidPlan, i, it.Kind)
 		}
 		if strings.TrimSpace(it.Body) == "" {
 			return fmt.Errorf("%w: item %d (%s): empty body", ErrInvalidPlan, i, it.Kind)
@@ -171,7 +177,8 @@ const planSchemaJSON = `{
       "body": "markdown content synthesized from the source(s)",
       "url": "(required when kind=reference) external link",
       "informs": ["F-0001", "D-0002"],
-      "source": "relative/path/to/source.md"
+      "source": "relative/path/to/source.md",
+      "evidence": ["1 to 3 snippets copied unchanged from the source file that support the chosen state"]
     }
   ]
 }`
@@ -195,7 +202,10 @@ func BuildPlanPrompt(sources []Source) string {
 	b.WriteString("\nClassify each source into the right kind: changelog/chronological history → ")
 	b.WriteString("decision/note/feature; current-state doc (e.g. CLAUDE.md) → note/runbook; ")
 	b.WriteString("operational procedure → runbook; external link that informed the project → ")
-	b.WriteString("reference (with url and informs). Synthesize the body in markdown; do not copy the source verbatim.\n")
+	b.WriteString("reference (with url and informs). Synthesize the body in markdown; do not copy the source verbatim in the body.\n")
+	b.WriteString("\nEach item also carries evidence: 1 to 3 snippets copied literally from the source file that support the state you chose, each a short sentence of at least 12 characters ")
+	b.WriteString("(the title too, when it fits in the same snippet). The no-copy rule is for the body only; evidence must be copied unchanged — ")
+	b.WriteString("cerne checks every snippet against the file (whitespace and line breaks may differ) and leaves out any item whose evidence it cannot find.\n")
 
 	b.WriteString("\n## Plan schema (emit ONLY this JSON, no fences, no prose)\n\n```json\n")
 	b.WriteString(planSchemaJSON)
@@ -232,11 +242,11 @@ func capContent(content string) string {
 // copies no files and rewrites no links — the body is authored against backend
 // ids. Items are expected pre-validated (see ValidatePlan); an unknown kind
 // still aborts. No git interaction happens here.
-func ApplyPlan(repoDir string, items []PlanItem, actor string) (Summary, error) {
+func ApplyPlan(repoDir string, items []AnchoredItem, actor string) (Summary, error) {
 	sum := Summary{ByState: map[string]int{}}
 	now := time.Now().UTC()
 	for _, it := range items {
-		id, contentRel, err := savePlanEntity(repoDir, it, now)
+		id, contentRel, err := savePlanEntity(repoDir, it.PlanItem, now)
 		if err != nil {
 			return Summary{}, err
 		}
@@ -252,7 +262,12 @@ func ApplyPlan(repoDir string, items []PlanItem, actor string) (Summary, error) 
 		case "note":
 			sum.Notes++
 		}
-		ev := domain.NewEvent(id, it.Kind+".imported", map[string]string{"source": it.Source}, actor)
+		anchor := it.AnchorText()
+		payload := map[string]string{"source": it.Source}
+		if anchor != "" {
+			payload["anchor"] = anchor
+		}
+		ev := domain.NewEvent(id, it.Kind+".imported", payload, actor)
 		if err := store.AppendEvent(repoDir, ev); err != nil {
 			return Summary{}, err
 		}
@@ -260,7 +275,7 @@ func ApplyPlan(repoDir string, items []PlanItem, actor string) (Summary, error) 
 		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 			return Summary{}, err
 		}
-		stamped := injectFrontmatter([]byte(it.Body), id, it.Source)
+		stamped := injectFrontmatter([]byte(it.Body), id, it.Source, anchor)
 		if err := os.WriteFile(dst, stamped, 0o644); err != nil {
 			return Summary{}, err
 		}
@@ -271,12 +286,13 @@ func ApplyPlan(repoDir string, items []PlanItem, actor string) (Summary, error) 
 
 // FilterPlanItems drops items already represented in the backend so
 // re-ingesting a plan is idempotent — reusing the very predicates the case-folder
-// import uses: an item whose Source was already imported (imported_from, via
-// ImportedSources) and a feature whose title already matches a registered
+// import uses: an item whose Source and title were both already imported
+// (imported_from + the entity's title, via importedItems — one source may yield
+// several items, so the file alone is not the unit) and a feature whose title already matches a registered
 // feature (the F-0045 title guard, via ExistingFeatureTitles + normalizeTitle).
 // Returns the items to apply and the number skipped.
 func FilterPlanItems(repoDir string, items []PlanItem) ([]PlanItem, int, error) {
-	imported, err := ImportedSources(repoDir)
+	imported, err := importedItems(repoDir)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -287,7 +303,7 @@ func FilterPlanItems(repoDir string, items []PlanItem) ([]PlanItem, int, error) 
 	var kept []PlanItem
 	skipped := 0
 	for _, it := range items {
-		if imported[it.Source] {
+		if imported[importedItemKey(it.Source, it.Kind, it.Title)] || imported[importedItemKey(it.Source, "", "")] {
 			skipped++
 			continue
 		}

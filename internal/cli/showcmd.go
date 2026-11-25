@@ -778,6 +778,10 @@ func (r showResult) renderText(w io.Writer) {
 			fmt.Fprintf(w, "reason: %s\n", e.Reason)
 		}
 	}
+	if from, anchor := importProvenance(r.content); anchor != "" {
+		fmt.Fprintf(w, "imported from: %s\n", from)
+		fmt.Fprintf(w, "anchor: %s\n", anchor)
+	}
 	for _, d := range r.content {
 		if d.name != "" {
 			fmt.Fprintf(w, "\n## %s\n%s\n", d.name, d.body)
@@ -838,6 +842,8 @@ type showJSON struct {
 	HandoffRecords []store.Handoff      `json:"handoff_records,omitempty"`  // works only (F-0368): the HO- from or into it
 	MergedErrata   []mergedErrataJSON   `json:"merged_errata,omitempty"`    // runbooks only (F-0351)
 	EarlierBodyRev int                  `json:"earlier_body_rev,omitempty"` // idem: the revision before the first merge listed
+	ImportedFrom   string               `json:"imported_from,omitempty"`    // agent-imported entities (F-0500): the source file
+	ImportedAnchor string               `json:"imported_anchor,omitempty"`  // idem: file:start-end of each evidence snippet
 }
 
 type mergedErrataJSON struct {
@@ -909,6 +915,18 @@ type showDocJSON struct {
 	Body string `json:"body"`
 }
 
+// importProvenance reads the imported_from and imported_anchor frontmatter of
+// the entity's content (F-0500); both are empty unless the doc carries an
+// anchor, so an entity imported by the case-folder convention shows as before.
+func importProvenance(content []showDoc) (from, anchor string) {
+	for _, d := range content {
+		if anchor = doccheck.FrontmatterValue([]byte(d.body), "imported_anchor"); anchor != "" {
+			return doccheck.FrontmatterValue([]byte(d.body), "imported_from"), anchor
+		}
+	}
+	return "", ""
+}
+
 func (r showResult) toJSON(handoffs []store.HandoffEntry) showJSON {
 	var docs []showDocJSON
 	for _, d := range r.content {
@@ -921,7 +939,8 @@ func (r showResult) toJSON(handoffs []store.HandoffEntry) showJSON {
 	if is, ok := entity.(ideaShow); ok {
 		informedBy, entity = is.InformedBy, is.Idea
 	}
-	return showJSON{InformedBy: informedBy, Kind: r.kind, Entity: entity, Content: docs, ApprovalStale: r.approvalStale, Amendments: r.amendments, Writes: r.writes, Handoffs: handoffs}
+	from, anchor := importProvenance(r.content)
+	return showJSON{InformedBy: informedBy, Kind: r.kind, Entity: entity, Content: docs, ApprovalStale: r.approvalStale, Amendments: r.amendments, Writes: r.writes, Handoffs: handoffs, ImportedFrom: from, ImportedAnchor: anchor}
 }
 
 // approvalStaleLine is how show and next flag a stale approval (F-0318): the

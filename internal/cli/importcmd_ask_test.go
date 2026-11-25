@@ -74,6 +74,7 @@ func TestImportAsksDeliveredStateOnlyOnATerminal(t *testing.T) {
 	})
 	t.Run("agent ingest dry-run asks", func(t *testing.T) {
 		projDir, _, _ := setupProject(t)
+		writeTree(t, projDir, frigateTree())
 		writeAgentPlan(t, projDir, gabaritoPlan)
 		out := execCerneIn(t, true, "done\n", "import", "--agent", "--ingest", "--dir", projDir)
 		if !strings.Contains(out, deliveredQuestion) || !strings.Contains(out, "--delivered-state done") {
@@ -82,6 +83,7 @@ func TestImportAsksDeliveredStateOnlyOnATerminal(t *testing.T) {
 	})
 	t.Run("agent ingest not a terminal never asks", func(t *testing.T) {
 		projDir, _, _ := setupProject(t)
+		writeTree(t, projDir, frigateTree())
 		writeAgentPlan(t, projDir, gabaritoPlan)
 		out := execCerneIn(t, false, "done\n", "import", "--agent", "--ingest", "--dir", projDir)
 		if strings.Contains(out, deliveredQuestion) {
