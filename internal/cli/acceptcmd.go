@@ -88,6 +88,15 @@ func runFeatureAccept(cmd *cobra.Command, dir string, args []string, reason stri
 	if err != nil {
 		return err
 	}
+	if out.AlreadyDone {
+		// Idempotent (F-0506): the accept was given before; nothing was written.
+		line := out.ID + " was already done; nothing changed"
+		if reason != "" {
+			line += " (the reason was not recorded)"
+		}
+		fmt.Fprintln(cmd.OutOrStdout(), line)
+		return nil
+	}
 	printWarnings(cmd.ErrOrStderr(), out.Warnings)
 	fmt.Fprintf(cmd.OutOrStdout(), "%s: %s → %s\n", out.ID, out.From, out.To)
 	printMovedPendings(cmd.OutOrStdout(), out.Pendings)
