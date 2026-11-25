@@ -14,6 +14,7 @@ import (
 
 	"github.com/henriquesakata/cerne/internal/doccheck"
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/lint"
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
@@ -22,6 +23,8 @@ import (
 
 // TransitionOutcome reports a feature transition that was applied and synced.
 type TransitionOutcome struct {
+	// AlreadyDone: an accept on a card already done (F-0506); nothing was written.
+	AlreadyDone bool
 	ID   string
 	From domain.FeatureState
 	To   domain.FeatureState
@@ -257,6 +260,10 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 			}
 		}
 
+		if action == domain.ActionAccept && f.State == domain.StateDone {
+			out = TransitionOutcome{ID: id, From: f.State, To: f.State, AlreadyDone: true}
+			return "", nil // idempotent (F-0506): writes nothing, surfaces as ErrNothingToCommit
+		}
 		newState, err := domain.Transition(f.State, action)
 		if err != nil {
 			return "", err
@@ -541,6 +548,9 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 		out = TransitionOutcome{ID: id, From: oldState, To: newState, Propagated: propagated, EpicReadyToClose: epicReady, Warnings: warnings, Bar: bar, JudgeQuestion: judgeQuestion, Baseline: baseline, RenewedApprovalAt: renewedAt, Pendings: movedPendings, Ideas: movedIdeas, Cascade: casc.lines}
 		return msg, nil
 	})
+	if out.AlreadyDone && errors.Is(err, gitback.ErrNothingToCommit) {
+		return out, nil
+	}
 	if err != nil {
 		return TransitionOutcome{}, err
 	}
