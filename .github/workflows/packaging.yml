@@ -22,7 +22,9 @@ jobs:
       - uses: actions/checkout@v4
       # The latest stable release, as GitHub names it (prereleases excluded).
       - name: build and install cerne-bin from the latest release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
-          tag=$(curl -fsSL https://api.github.com/repos/henriquesakata/cerne/releases/latest | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')
+          tag=$(curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/henriquesakata/cerne/releases/latest | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')
           [ -n "$tag" ] || { echo "::error::cannot find the latest release"; exit 1; }
           sh scripts/aur-check.sh "$tag"

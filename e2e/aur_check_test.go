@@ -17,7 +17,7 @@ func TestAURCheck(t *testing.T) {
 	if _, err := exec.LookPath("makepkg"); err != nil || os.Geteuid() != 0 {
 		t.Skip("needs root and makepkg: run it in archlinux:base-devel")
 	}
-	tag, err := exec.Command("sh", "-c", `curl -fsSL https://api.github.com/repos/henriquesakata/cerne/releases/latest | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p'`).Output()
+	tag, err := exec.Command("sh", "-c", `curl -fsSL ${GITHUB_TOKEN:+-H "Authorization: Bearer $GITHUB_TOKEN"} https://api.github.com/repos/henriquesakata/cerne/releases/latest | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p'`).Output()
 	if err != nil || len(strings.TrimSpace(string(tag))) == 0 {
 		t.Fatalf("cannot find the latest release: %v", err)
 	}
@@ -47,6 +47,9 @@ func TestAURCheck_PackagingWorkflow(t *testing.T) {
 		"- '.github/workflows/packaging.yml'",
 		"container: archlinux:base-devel",
 		"releases/latest",
+		// The API is rate limited per IP for anonymous callers; shared runners hit it.
+		`-H "Authorization: Bearer $GITHUB_TOKEN"`,
+		"GITHUB_TOKEN: ${{ github.token }}",
 		`sh scripts/aur-check.sh "$tag"`,
 	} {
 		if !strings.Contains(string(raw), want) {
