@@ -567,8 +567,10 @@ type closeRoomRequest struct {
 	Minutes        room.Minutes `json:"minutes"`
 	AllowOpenItems bool         `json:"allow_open_items"`
 	// UseDraft closes with the room's saved minutes draft (T-0022), in
-	// place of Minutes.
-	UseDraft bool `json:"use_draft"`
+	// place of Minutes. DraftUpdatedAt, when sent, is the updated_at of the
+	// draft the caller reviewed: a draft saved since then is a 409.
+	UseDraft       bool      `json:"use_draft"`
+	DraftUpdatedAt time.Time `json:"draft_updated_at"`
 }
 
 func handleRoomClose(w http.ResponseWriter, r *http.Request, projectID, id string) {
@@ -591,11 +593,17 @@ func handleRoomClose(w http.ResponseWriter, r *http.Request, projectID, id strin
 	}
 	var rm room.Room
 	if req.UseDraft {
-		rm, err = m.CloseWithDraft(id, req.FacilitatorID, time.Time{}, req.AllowOpenItems)
+		rm, err = m.CloseWithDraft(id, req.FacilitatorID, req.DraftUpdatedAt, req.AllowOpenItems)
 	} else {
 		rm, err = m.Close(id, req.FacilitatorID, req.Minutes, req.AllowOpenItems)
 	}
 	if err != nil {
+		if errors.Is(err, room.ErrDraftChanged) {
+			// draft_changed tells the UI apart from the other 409s (T-0022).
+			msg := err.Error() + " — review the current one: `cerne room minutes show " + id + " --draft`"
+			writeJSON(w, http.StatusConflict, map[string]any{"error": msg, "draft_changed": true})
+			return
+		}
 		if errors.Is(err, room.ErrOpenItems) {
 			pending, pendErr := m.Pending(id)
 			if pendErr == nil {

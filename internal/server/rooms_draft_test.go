@@ -118,6 +118,36 @@ func TestMinutesDraftEndpointRefusals(t *testing.T) {
 	}
 }
 
+// T-0022 crit. 2, 3
+// E-0006 crit. 11, 12
+func TestCloseUseDraftChecksTheReviewedDraft(t *testing.T) {
+	h, opened, alice := openDraftRoom(t, "proj-close-reviewed-draft")
+	save := func(conclusion string) draftJSON {
+		var d draftJSON
+		body := `{"session_id":"` + alice.SessionID + `","minutes":{"conclusion":"` + conclusion + `","rationale":"r"}}`
+		if rec := doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/minutes/draft", body, &d); rec.Code != http.StatusOK {
+			t.Fatalf("save draft status = %d; body: %s", rec.Code, rec.Body.String())
+		}
+		return d
+	}
+	closeAt := func(at time.Time, out any) int {
+		body := `{"facilitator_id":"` + opened.FacilitatorID + `","use_draft":true,"draft_updated_at":"` + at.Format(time.RFC3339Nano) + `"}`
+		return doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/close", body, out).Code
+	}
+	seen := save("a revisada")
+	time.Sleep(2 * time.Millisecond)
+	current := save("a nova")
+
+	var refused map[string]any
+	if code := closeAt(seen.UpdatedAt, &refused); code != http.StatusConflict || refused["draft_changed"] != true {
+		t.Fatalf("close with a stale draft = %d %v, want 409 with draft_changed", code, refused)
+	}
+	var closed draftRoomJSON
+	if code := closeAt(current.UpdatedAt, &closed); code != http.StatusOK || closed.Minutes == nil || closed.Minutes.Conclusion != "a nova" {
+		t.Fatalf("close with the current draft = %d %+v", code, closed)
+	}
+}
+
 // T-0022 crit. 2
 // E-0006 crit. 11
 func TestCloseUseDraft(t *testing.T) {
