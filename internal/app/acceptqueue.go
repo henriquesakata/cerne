@@ -20,15 +20,16 @@ import (
 // repeat (no new format). A field the result does not carry is NotInformed,
 // never inferred.
 
-// NotInformed is the literal the spec asks for (F-0875 criterion 3).
-const NotInformed = "não informado"
+// NotInformed marks a field the result does not carry. CLI output is English
+// (F-0124): B-0073 overrides the pt-BR literal F-0875 criterion 3 asked for.
+const NotInformed = "not reported"
 
 // AcceptRow is one implemented feature waiting for the human's accept.
 type AcceptRow struct {
 	ID              string    `json:"id"`
 	Title           string    `json:"title"`
 	ImplementedAt   time.Time `json:"implemented_at"` // the entity's last update, as the stale-ready lint ages it
-	Gauntlet        string    `json:"gauntlet"`       // vitória | empate | derrota | dispensada | NotInformed
+	Gauntlet        string    `json:"gauntlet"`       // win | loss | tie | exempt | NotInformed
 	Production      string    `json:"production"`     // the first production-evidence line, or NotInformed
 	Pending         []string  `json:"pending"`
 	PendingReported bool      `json:"pending_reported"` // false = the result declares no pendings section or marker

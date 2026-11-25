@@ -408,11 +408,11 @@ func gauntletForm(l doclang.Lang) string {
 
 // GauntletVerdict reads a result's Gauntlet outcome for the accept queue
 // (F-0875) from the rounds parseGauntlet reads for result-missing-gauntlet and
-// GauntletRounds, so the queue never contradicts the lint: the outcome word
-// (vitória, empate or derrota, as written) of the highest-numbered "Rodada N",
-// else of the implicit round (a "Veredito: derrota" line with no anchor), else
-// "dispensada" for a recorded exemption. ok is false when no outcome can be
-// read: the queue then says so, never infers.
+// GauntletRounds, so the queue never contradicts the lint: the outcome (win,
+// loss or tie, in English whatever the result's language — B-0073) of the
+// highest-numbered "Rodada N", else of the implicit round (a "Veredito:
+// derrota" line with no anchor), else "exempt" for a recorded exemption. ok is
+// false when no outcome can be read: the queue then says so, never infers.
 func GauntletVerdict(result []byte) (verdict string, ok bool) {
 	last, implicit, exempt := 0, "", false
 	for _, section := range gauntletSections(StripHTMLComments(result)) {
@@ -430,12 +430,27 @@ func GauntletVerdict(result []byte) (verdict string, ok bool) {
 	}
 	switch {
 	case verdict != "":
+		verdict = outcomeName(verdict)
 	case implicit != "":
-		verdict = implicit
+		verdict = outcomeName(implicit)
 	case exempt:
-		verdict = "dispensada"
+		verdict = "exempt"
 	}
 	return verdict, verdict != ""
+}
+
+// outcomeName is the English outcome of a round's word, in any language:
+// loss, tie or win, or "" for no word.
+func outcomeName(word string) string {
+	switch {
+	case word == "":
+		return ""
+	case doclang.Is(doclang.Loss, word):
+		return "loss"
+	case doclang.Is(doclang.Tie, word):
+		return "tie"
+	}
+	return "win"
 }
 
 // RoundOutcome is one round of a result's Gauntlet record (F-0391): its
@@ -451,18 +466,10 @@ type RoundOutcome struct {
 func GauntletRoundList(result []byte) []RoundOutcome {
 	var out []RoundOutcome
 	for _, r := range readRounds(result) {
-		o := ""
-		switch {
-		case r.n == 0 && r.outcome == 0:
+		if r.n == 0 && r.outcome == 0 {
 			continue
-		case r.outcome == 2:
-			o = "loss"
-		case r.outcome == 1 && doclang.Is(doclang.Tie, r.word):
-			o = "tie"
-		case r.outcome == 1:
-			o = "win"
 		}
-		out = append(out, RoundOutcome{N: r.n, Outcome: o})
+		out = append(out, RoundOutcome{N: r.n, Outcome: outcomeName(r.word)})
 	}
 	return out
 }

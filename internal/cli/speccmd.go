@@ -66,7 +66,7 @@ func runSpecDraft(cmd *cobra.Command, dir, id string) error {
 	// delegation (default): print the prompt for the host agent to draft inline.
 	if llm.ResolveMode(ctx.cfg.LLM.Mode) == llm.ModeDelegation {
 		fmt.Fprint(out, prompt)
-		fmt.Fprintf(out, "\n\nWrite the result to content/features/%s/spec.md (keeping the cerne_id frontmatter) and run 'cerne push'.\n", id)
+		fmt.Fprintf(out, "\n\nWrite the result into the spec, keeping the cerne_id frontmatter: %s.\n", app.EditDoc(f, "spec.md"))
 		return nil
 	}
 

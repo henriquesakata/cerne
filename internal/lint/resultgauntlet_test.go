@@ -457,16 +457,16 @@ func TestGauntletVerdictReadsLikeTheLint(t *testing.T) {
 		want   string
 		ok     bool
 	}{
-		"line of its own":    {"## Gauntlet\n\nBarra: x.\n\nVeredito: derrota\n", "derrota", true},
-		"resultado in bold":  {"## Gauntlet\n\nBarra: x.\n\n**Resultado:** Vitória.\n", "vitória", true},
-		"opens with outcome": {"## Gauntlet\n\nBarra: x.\n\nEmpate: \"os dois\"\n", "empate", true},
-		"anchored wins":      {"## Gauntlet\n\nBarra: x.\n\nVeredito: derrota\n\nRodada 2 — vitória: \"sim\"\n", "vitória", true},
-		"last round decides": {"## Gauntlet\n\nRodada 1 — derrota: \"a\"\nRodada 2 — empate: \"b\"\n", "empate", true},
-		"exemption":          {"## Gauntlet\n\nBarra: não aplicável (sem código).\n", "dispensada", true},
+		"line of its own":    {"## Gauntlet\n\nBarra: x.\n\nVeredito: derrota\n", "loss", true},
+		"resultado in bold":  {"## Gauntlet\n\nBarra: x.\n\n**Resultado:** Vitória.\n", "win", true},
+		"opens with outcome": {"## Gauntlet\n\nBarra: x.\n\nEmpate: \"os dois\"\n", "tie", true},
+		"anchored wins":      {"## Gauntlet\n\nBarra: x.\n\nVeredito: derrota\n\nRodada 2 — vitória: \"sim\"\n", "win", true},
+		"last round decides": {"## Gauntlet\n\nRodada 1 — derrota: \"a\"\nRodada 2 — empate: \"b\"\n", "tie", true},
+		"exemption":          {"## Gauntlet\n\nBarra: não aplicável (sem código).\n", "exempt", true},
 		"nothing":            {"## Gauntlet\n\nBarra: x.\n", "", false},
-		"same round twice":   {"## Gauntlet\n\nRodada 1 — vitória: \"a\"\nRodada 1 — empate: \"b\"\n", "vitória", true},
-		"derrota outranks":   {"## Gauntlet\n\nRodada 1 — vitória: \"a\"\nRodada 1 — derrota: \"b\"\n", "derrota", true},
-		"exemption + line":   {"## Gauntlet\n\nBarra: não aplicável (sem código).\n\nVeredito: derrota\n", "dispensada", true},
+		"same round twice":   {"## Gauntlet\n\nRodada 1 — vitória: \"a\"\nRodada 1 — empate: \"b\"\n", "win", true},
+		"derrota outranks":   {"## Gauntlet\n\nRodada 1 — vitória: \"a\"\nRodada 1 — derrota: \"b\"\n", "loss", true},
+		"exemption + line":   {"## Gauntlet\n\nBarra: não aplicável (sem código).\n\nVeredito: derrota\n", "exempt", true},
 	} {
 		got, ok := GauntletVerdict([]byte(tc.result))
 		if got != tc.want || ok != tc.ok {

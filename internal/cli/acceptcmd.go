@@ -79,7 +79,8 @@ func runFeatureAccept(cmd *cobra.Command, dir string, args []string, reason stri
 
 	// The delivery commit should be on the default branch (F-0355): say so
 	// before accepting, never block on it.
-	if f, err := store.LoadFeature(ctx.repoDir, id); err == nil {
+	// A done card has nothing to check (F-0506): no forge call on a repeat.
+	if f, err := store.LoadFeature(ctx.repoDir, id); err == nil && f.State != domain.StateDone {
 		if w := app.DeliveryBranchWarning(ctx.cfg, ctx.projDir, f); w != "" {
 			fmt.Fprintln(cmd.ErrOrStderr(), w)
 		}
@@ -87,6 +88,15 @@ func runFeatureAccept(cmd *cobra.Command, dir string, args []string, reason stri
 	out, err := app.TransitionFeature(ctx.repoDir, ctx.projDir, id, domain.ActionAccept, "", reason, nil)
 	if err != nil {
 		return err
+	}
+	if out.AlreadyDone {
+		// Idempotent (F-0506): the accept was given before; nothing was written.
+		line := out.ID + " was already done; nothing changed"
+		if reason != "" {
+			line += " (the reason was not recorded)"
+		}
+		fmt.Fprintln(cmd.OutOrStdout(), line)
+		return nil
 	}
 	printWarnings(cmd.ErrOrStderr(), out.Warnings)
 	fmt.Fprintf(cmd.OutOrStdout(), "%s: %s → %s\n", out.ID, out.From, out.To)

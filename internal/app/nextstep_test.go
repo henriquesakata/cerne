@@ -80,18 +80,18 @@ func TestNextStep(t *testing.T) {
 		stepHas []string
 		command string
 	}{
-		{name: "candidate stub spec", state: domain.StateCandidate, docs: map[string]string{"spec.md": spectmpl.Stub("t")}, actor: ActorAgent, stepHas: []string{"template stub", "edit content/features/F-0001/spec.md", "cerne push"}},
+		{name: "candidate stub spec", state: domain.StateCandidate, docs: map[string]string{"spec.md": spectmpl.Stub("t")}, actor: ActorAgent, stepHas: []string{"template stub", "edit .docs/current/features/F-0001-t/spec.md", "cerne push"}},
 		{name: "candidate no bar", state: domain.StateCandidate, docs: map[string]string{"spec.md": "# t\n\nProblema real.\n"}, actor: ActorAgent, stepHas: []string{"bar-missing", "Barra:", "edit "}},
 		{name: "candidate card impediment", state: domain.StateCandidate, docs: map[string]string{"spec.md": nextStepGoodSpec}, actor: ActorAgent, stepHas: []string{"untagged", "cerne feature retag F-0001", "yours to fix"}},
 		{name: "candidate ready", state: domain.StateCandidate, mut: tag, docs: map[string]string{"spec.md": nextStepGoodSpec}, actor: ActorHuman, stepHas: []string{"a human runs 'cerne feature approve F-0001'"}},
 		{name: "candidate ready with clarification", state: domain.StateCandidate, mut: tag, docs: map[string]string{"spec.md": nextStepGoodSpec + "\nX [ESCLARECER: qual o limite?]\n"}, actor: ActorHuman, stepHas: []string{"qual o limite?"}},
 		{name: "candidate ready, approve auto", state: domain.StateCandidate, mut: tag, docs: map[string]string{"spec.md": nextStepGoodSpec}, cerne: "[gates]\napprove = \"auto\"\n", actor: ActorAgent, command: "cerne feature approve F-0001"},
 		{name: "approved stale", state: domain.StateApproved, stale: true, docs: map[string]string{"spec.md": "# novo\n"}, actor: ActorHuman, stepHas: []string{"re-approval", "cerne feature approve F-0001"}},
-		{name: "approved stub plan", state: domain.StateApproved, docs: map[string]string{"spec.md": nextStepGoodSpec}, actor: ActorAgent, stepHas: []string{"edit content/features/F-0001/plan.md", "cerne push"}},
+		{name: "approved stub plan", state: domain.StateApproved, docs: map[string]string{"spec.md": nextStepGoodSpec}, actor: ActorAgent, stepHas: []string{"edit .docs/current/features/F-0001-t/plan.md", "cerne push"}},
 		{name: "approved real plan", state: domain.StateApproved, docs: map[string]string{"spec.md": nextStepGoodSpec, "plan.md": plan}, actor: ActorAgent, command: "cerne feature start F-0001"},
-		{name: "in development no result", state: domain.StateInDevelopment, docs: map[string]string{"spec.md": nextStepGoodSpec, "plan.md": plan}, actor: ActorAgent, stepHas: []string{"complete would refuse", "edit content/features/F-0001/result.md"}},
-		{name: "in development result missing evidence", state: domain.StateInDevelopment, docs: map[string]string{"spec.md": "# t\n\n## Objetivo e critérios de aceitação\n\n1. QUANDO a O SISTEMA DEVE b.\n2. QUANDO c O SISTEMA DEVE d.\n\n## Verificação\n\nBarra: ref — acesso\nPergunta ao juiz: qual é mais claro?\n", "plan.md": plan, "result.md": strings.Replace(nextStepGoodRes, "Sem critérios.", "critério 1 — ATENDIDO: teste", 1)}, actor: ActorAgent, stepHas: []string{"criterion(s) 2", "edit content/features/F-0001/result.md"}},
-		{name: "in development pending uncited", state: domain.StateInDevelopment, pending: true, docs: map[string]string{"spec.md": nextStepGoodSpec, "plan.md": plan, "result.md": nextStepGoodRes}, actor: ActorAgent, stepHas: []string{"P-0001", "edit content/features/F-0001/result.md"}},
+		{name: "in development no result", state: domain.StateInDevelopment, docs: map[string]string{"spec.md": nextStepGoodSpec, "plan.md": plan}, actor: ActorAgent, stepHas: []string{"complete would refuse", "edit .docs/current/features/F-0001-t/result.md"}},
+		{name: "in development result missing evidence", state: domain.StateInDevelopment, docs: map[string]string{"spec.md": "# t\n\n## Objetivo e critérios de aceitação\n\n1. QUANDO a O SISTEMA DEVE b.\n2. QUANDO c O SISTEMA DEVE d.\n\n## Verificação\n\nBarra: ref — acesso\nPergunta ao juiz: qual é mais claro?\n", "plan.md": plan, "result.md": strings.Replace(nextStepGoodRes, "Sem critérios.", "critério 1 — ATENDIDO: teste", 1)}, actor: ActorAgent, stepHas: []string{"criterion(s) 2", "edit .docs/current/features/F-0001-t/result.md"}},
+		{name: "in development pending uncited", state: domain.StateInDevelopment, pending: true, docs: map[string]string{"spec.md": nextStepGoodSpec, "plan.md": plan, "result.md": nextStepGoodRes}, actor: ActorAgent, stepHas: []string{"P-0001", "edit .docs/current/features/F-0001-t/result.md"}},
 		{name: "in development valid result", state: domain.StateInDevelopment, docs: map[string]string{"spec.md": nextStepGoodSpec, "plan.md": plan, "result.md": nextStepGoodRes}, actor: ActorAgent, command: "cerne feature complete F-0001"},
 		{name: "implemented no delivery", state: domain.StateImplemented, actor: ActorAgent, stepHas: []string{"cerne feature deliver F-0001 --mr <url>"}, command: "cerne feature deliver F-0001 --mr <url>"},
 		{name: "implemented complete", state: domain.StateImplemented, mut: deliver, actor: ActorHuman, stepHas: []string{"a human runs 'cerne feature accept F-0001'"}},
@@ -155,12 +155,12 @@ func TestNextStep(t *testing.T) {
 					t.Errorf("start suggested but the stale gate refuses: %v", err)
 				}
 				docs, _ := FeatureDocSet(repo, "F-0001")
-				if err := checkActionDocs("F-0001", domain.ActionStart, docs); err != nil {
+				if err := checkActionDocs(store.Feature{ID: "F-0001"}, domain.ActionStart, docs); err != nil {
 					t.Errorf("start suggested but the doc gate refuses: %v", err)
 				}
 			case got.Command == "cerne feature complete F-0001":
 				docs, _ := FeatureDocSet(repo, "F-0001")
-				if err := checkActionDocs("F-0001", domain.ActionComplete, docs); err != nil {
+				if err := checkActionDocs(store.Feature{ID: "F-0001"}, domain.ActionComplete, docs); err != nil {
 					t.Errorf("complete suggested but the doc gate refuses: %v", err)
 				}
 				if err := CheckCompleteResult(repo, f, projectGates(proj)); err != nil {
@@ -169,7 +169,7 @@ func TestNextStep(t *testing.T) {
 			case tc.state == domain.StateInDevelopment:
 				if CheckCompleteResult(repo, f, projectGates(proj)) == nil {
 					docs, _ := FeatureDocSet(repo, "F-0001")
-					if checkActionDocs("F-0001", domain.ActionComplete, docs) == nil {
+					if checkActionDocs(store.Feature{ID: "F-0001"}, domain.ActionComplete, docs) == nil {
 						t.Error("an edit step was returned but no complete gate refuses")
 					}
 				}

@@ -912,6 +912,12 @@ const maxEntryName = 200
 // boundary when possible) so an over-long title cannot produce a name that exceeds
 // the filesystem's NAME_MAX — the ID prefix keeps it unique regardless. slug.Make
 // emits only [a-z0-9-], so truncating by bytes never splits a multibyte rune.
+// ProjectedDocPath is the project-relative path where pull materializes feature
+// id's doc filename: the file the user edits and pushes (B-0074).
+func ProjectedDocPath(id, title, filename string) string {
+	return ".docs/current/features/" + entryName(id, title) + "/" + filename
+}
+
 func entryName(id, title string) string {
 	s := slug.Make(title)
 	if s == "" {

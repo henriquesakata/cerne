@@ -252,7 +252,7 @@ func TestFeatureStartNextStep(t *testing.T) {
 		"before the code: consult the active notes (cerne note list, filter with --facet/--component) and cite the applicable conventions in plan.md",
 		"mark each proving test with a comment `F-0001 crit. N`", // F-0473 crit. 12
 		"keep progress real-time: tick finished tasks in plan.md, gather evidence in result.md, cerne sync at each milestone",
-		"when done: fill in the result at content/features/F-0001/result.md")
+		"when done: fill in the result ('cerne result draft F-0001' scaffolds it): run 'cerne pull', edit .docs/current/features/F-0001-exportar-o-kanban-em-csv/result.md and run 'cerne push'") // B-0074
 }
 
 // Criterion 8, end to end with agent hooks off (a hookless harness): the
@@ -290,5 +290,5 @@ func TestLifecycleGuidanceWithoutHooks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("start: %v\n%s", err, out)
 	}
-	wantInOrder(t, stepBlock(out), "consult the active notes", "cerne sync at each milestone", "content/features/F-0002/result.md")
+	wantInOrder(t, stepBlock(out), "consult the active notes", "cerne sync at each milestone", ".docs/current/features/F-0002-", "/result.md")
 }

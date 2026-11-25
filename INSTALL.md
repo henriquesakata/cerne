@@ -39,6 +39,37 @@ It reads the same `CERNE_VERSION` and `CERNE_INSTALL_DIR` variables, set before 
 
 Then skip to [What you need](#3-what-you-need). To install by hand, follow sections 1 and 2.
 
+## Shell completion
+
+`cerne completion <shell>` prints a script that completes cerne's commands and flags when you press Tab. Run the block for your shell once; it writes only inside your home folder, no `sudo`. Then open a new shell and try `cerne fea<Tab>`. To try it in the current shell only, without saving anything, use the one-liner from `cerne completion <shell> --help`.
+
+**bash** needs the `bash-completion` package, version 2 (most Linux distributions install it; on macOS run `brew install bash-completion@2` and add the line it prints to `~/.bash_profile`):
+
+```bash
+mkdir -p ~/.local/share/bash-completion/completions
+cerne completion bash > ~/.local/share/bash-completion/completions/cerne
+```
+
+**zsh** (if your `~/.zshrc` does not turn completion on yet, as oh-my-zsh and most setups do, first add `autoload -U compinit; compinit` to it):
+
+```zsh
+echo 'source <(cerne completion zsh)' >> ~/.zshrc
+```
+
+**fish:**
+
+```fish
+mkdir -p ~/.config/fish/completions
+cerne completion fish > ~/.config/fish/completions/cerne.fish
+```
+
+**PowerShell:**
+
+```powershell
+if (!(Test-Path $PROFILE)) { New-Item -Path $PROFILE -ItemType File -Force | Out-Null }
+Add-Content $PROFILE 'cerne completion powershell | Out-String | Invoke-Expression'
+```
+
 ## Verifying a release
 
 Every release file carries a build provenance attestation, signed by the GitHub Actions run that built it. With the [GitHub CLI](https://cli.github.com/):

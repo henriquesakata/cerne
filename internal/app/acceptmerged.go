@@ -76,6 +76,14 @@ func AcceptMerged(repoDir, projDir string, cfg project.Config, ids []string) ([]
 			}
 		}
 		c := MergeCheck{ID: f.ID}
+		// Asked by id, a done card was accepted already (F-0506): a success
+		// line, and the forge is not asked.
+		if f.State == domain.StateDone {
+			c.Accepted, c.Line = true, f.ID+" was already done; nothing changed"
+			c.Outcome = TransitionOutcome{ID: f.ID, From: f.State, To: f.State, AlreadyDone: true}
+			checks = append(checks, c)
+			continue
+		}
 		m, why, open := mergeOf(cfg, repoDir, projDir, f)
 		if m == nil {
 			c.Line, c.Waiting = f.ID+": "+why, open
