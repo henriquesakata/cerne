@@ -234,7 +234,7 @@ func newRoomCloseCmd() *cobra.Command {
 				facilitator = os.Getenv("CERNE_ROOM_FACILITATOR")
 			}
 			if facilitator == "" {
-				return errors.New("a facilitator capability is required: pass --facilitator or set CERNE_ROOM_FACILITATOR (printed by 'cerne room open')")
+				return errors.New("a facilitator capability is required: pass --facilitator or set CERNE_ROOM_FACILITATOR (printed by 'cerne room open'; a room opened in cerne ui keeps it in that browser). Lost it? A human runs 'cerne room facilitator reset " + args[0] + "'")
 			}
 			if minutesPath == "" {
 				return errors.New("--minutes <path|-|{...}> is required (JSON; run 'cerne room minutes template' for a blank one)")
@@ -300,7 +300,43 @@ func newRoomFacilitatorCmd() *cobra.Command {
 		Use:   "facilitator",
 		Short: "Manage the room's facilitator capability",
 	}
-	cmd.AddCommand(newRoomFacilitatorHandoffCmd())
+	cmd.AddCommand(newRoomFacilitatorHandoffCmd(), newRoomFacilitatorResetCmd())
+	return cmd
+}
+
+// newRoomFacilitatorResetCmd recovers a lost facilitation (B-0083): a human
+// mints a new capability without the current one, and the running cerne ui
+// accepts it at once.
+func newRoomFacilitatorResetCmd() *cobra.Command {
+	var dir string
+	var port int
+	cmd := &cobra.Command{
+		Use:   "reset <room>",
+		Short: "Recover a lost facilitator capability (human only): mint a new one without the current",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if args[0] == room.ChannelID {
+				return room.ErrPermanentRoom
+			}
+			if err := app.CheckHumanFacilitatorReset(); err != nil {
+				return err
+			}
+			c, err := newRoomClient(dir, port)
+			if err != nil {
+				return err
+			}
+			next, err := c.resetFacilitator(cmd.Context(), args[0])
+			if err != nil {
+				return err
+			}
+			out := cmd.OutOrStdout()
+			fmt.Fprintf(out, "facilitator capability reset — every previous one is now invalid\n")
+			fmt.Fprintf(out, "new facilitator capability: %s\n", next)
+			fmt.Fprintf(out, "env: export CERNE_ROOM_FACILITATOR=%s\n", next)
+			return nil
+		},
+	}
+	addRoomFlags(cmd, &dir, &port)
 	return cmd
 }
 
