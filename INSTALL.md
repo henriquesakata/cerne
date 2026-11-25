@@ -57,6 +57,15 @@ It reads the same `CERNE_VERSION` and `CERNE_INSTALL_DIR` variables, set before 
 
 Then skip to [What you need](#3-what-you-need). To install by hand, follow sections 1 and 2.
 
+## Scoop (Windows)
+
+```powershell
+scoop bucket add henriquesakata https://github.com/henriquesakata/scoop-bucket
+scoop install henriquesakata/cerne
+```
+
+The manifest installs the release's `cerne.exe`, checked against its SHA-256, and each stable release updates it. Update it with `scoop update cerne`: `cerne update` leaves a Scoop install to Scoop (see [Updating](#updating)).
+
 ## Shell completion
 
 `cerne completion <shell>` prints a script that completes cerne's commands and flags when you press Tab. Run the block for your shell once; it writes only inside your home folder, no `sudo`. Then open a new shell and try `cerne fea<Tab>`. To try it in the current shell only, without saving anything, use the one-liner from `cerne completion <shell> --help`.
@@ -168,6 +177,7 @@ Run `cerne update` inside your project. It updates the binary the way you instal
 
 - **Homebrew:** it runs `brew upgrade henriquesakata/tap/cerne`, so Homebrew's own records stay right.
 - **Arch Linux (AUR):** it leaves `/usr/bin/cerne` alone, because pacman replaces it, and prints `update the cerne-bin package with your AUR helper (for example: yay -Syu cerne-bin)`.
+- **Scoop:** it leaves the binary alone, because Scoop replaces it, and prints `scoop update cerne`.
 - **Install script, or a release file put in place by hand:** it downloads the latest release, checks it against the release's `SHA256SUMS` and replaces the executable in the same place. If the check or the swap fails, the old executable stays in place and working.
 - **A local build or a `go install`, or a folder you cannot write:** it leaves the binary alone and prints the command to run.
 

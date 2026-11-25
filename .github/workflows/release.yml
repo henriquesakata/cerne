@@ -76,6 +76,37 @@ jobs:
             -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
             commit -q -m "cerne $GITHUB_REF_NAME"
           git push -q origin HEAD
+      # The Scoop bucket, the same way (F-0508): SCOOP_BUCKET_TOKEN is a
+      # fine-grained token with contents:write on henriquesakata/scoop-bucket
+      # only; without it the job fails, so a stale bucket never passes in
+      # silence. A prerelease tag leaves the bucket alone.
+      - name: check the Scoop bucket token
+        if: ${{ !contains(github.ref_name, '-') }}
+        env:
+          BUCKET_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
+        run: |
+          if [ -z "$BUCKET_TOKEN" ]; then
+            echo "::error::SCOOP_BUCKET_TOKEN is not set: the release is published, but the Scoop bucket still installs the previous version"
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+        if: ${{ !contains(github.ref_name, '-') }}
+        with:
+          repository: henriquesakata/scoop-bucket
+          token: ${{ secrets.SCOOP_BUCKET_TOKEN }}
+          path: scoop-bucket
+      - name: update the Scoop bucket
+        if: ${{ !contains(github.ref_name, '-') }}
+        run: |
+          mkdir -p scoop-bucket/bucket
+          sh scripts/scoop-manifest.sh "$GITHUB_REF_NAME" dist/SHA256SUMS >scoop-bucket/bucket/cerne.json
+          cd scoop-bucket
+          git add bucket/cerne.json
+          # A re-run on the same tag has nothing to commit.
+          git diff --cached --quiet || git -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -q -m "cerne $GITHUB_REF_NAME"
+          git push -q origin HEAD
 
   # Install from the tap just updated, the way INSTALL.md says, and check the
   # binary reports the tag (cerne --version prints the full version).
@@ -104,6 +135,42 @@ jobs:
             echo "::error::brew installed '$got', want '$want'"
             exit 1
           fi
+
+  # Install from the Scoop bucket just updated, the way INSTALL.md says, and
+  # check the binary reports the tag and that cerne update leaves a Scoop
+  # install to Scoop (F-0508).
+  scoop-check:
+    needs: release
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - name: scoop install henriquesakata/cerne
+        run: |
+          iex "& {$(irm get.scoop.sh)} -RunAsAdmin"
+          $env:PATH = "$HOME\scoop\shims;$env:PATH"
+          scoop bucket add henriquesakata https://github.com/henriquesakata/scoop-bucket
+          scoop install henriquesakata/cerne
+          $want = "cerne $($env:GITHUB_REF_NAME.TrimStart('v'))"
+          $got = (cerne --version)
+          Write-Host $got
+          if ($got -ne $want) {
+            Write-Host "::error::scoop installed '$got', want '$want'"
+            exit 1
+          }
+          # cerne update exits 1 by design when a part is not done, and native
+          # stderr must not become an error: capture it, assert on the binary
+          # line, then clear the exit code the step would otherwise end with.
+          $ErrorActionPreference = 'Continue'
+          $out = (cerne update 2>&1 | Out-String)
+          $ErrorActionPreference = 'Stop'
+          Write-Host $out
+          if ($out -notmatch '(?m)^binary: not done.*scoop update cerne') {
+            Write-Host "::error::the binary line of cerne update did not name 'scoop update cerne'"
+            exit 1
+          }
+          $global:LASTEXITCODE = 0
 
   # The Arch User Repository package cerne-bin (F-0507). scripts/aur-check.sh
   # builds and installs the package in this container first; only then the

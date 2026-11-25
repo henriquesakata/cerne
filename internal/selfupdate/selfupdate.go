@@ -30,15 +30,16 @@ const DefaultBaseURL = "https://github.com/henriquesakata/cerne"
 type Method int
 
 const (
-	Script    Method = iota // install script or a release file put in place by hand: cerne replaces it
-	Homebrew                // under a Cellar: Homebrew replaces it, so its records stay right
-	GoInstall               // in a GOBIN/GOPATH bin: `go install` replaces it
-	Dev                     // a local build: nothing to replace it with
-	SystemPackage           // /usr/bin/cerne from pacman and kin: the package manager replaces it
+	Script        Method = iota // install script or a release file put in place by hand: cerne replaces it
+	Homebrew                    // under a Cellar: Homebrew replaces it, so its records stay right
+	GoInstall                   // in a GOBIN/GOPATH bin: `go install` replaces it
+	Dev                         // a local build: nothing to replace it with
+	SystemPackage               // /usr/bin/cerne from pacman and kin: the package manager replaces it
+	Scoop                       // under scoop\apps\cerne: Scoop replaces it, so its records stay right
 )
 
 func (m Method) String() string {
-	return [...]string{"script", "homebrew", "go install", "dev", "system package"}[m]
+	return [...]string{"script", "homebrew", "go install", "dev", "system package", "scoop"}[m]
 }
 
 var (
@@ -61,6 +62,11 @@ func Detect(exe, resolved, version string, gobins []string) Method {
 	if !releaseTagRe.MatchString(version) || describeRe.MatchString(version) {
 		return Dev
 	}
+	for _, p := range []string{exe, resolved} {
+		if isScoopPath(p) {
+			return Scoop
+		}
+	}
 	if filepath.ToSlash(resolved) == "/usr/bin/cerne" {
 		return SystemPackage
 	}
@@ -77,6 +83,17 @@ func Detect(exe, resolved, version string, gobins []string) Method {
 		}
 	}
 	return Script
+}
+
+// winPathRe is a Windows path as written, whatever the host runs on: a drive
+// letter or a UNC prefix. A POSIX folder that happens to be named apps/cerne is
+// not one.
+var winPathRe = regexp.MustCompile(`^([A-Za-z]:|\\\\)`)
+
+// isScoopPath reports a Windows path inside <scoop root>\apps\cerne\.
+func isScoopPath(p string) bool {
+	return winPathRe.MatchString(p) &&
+		strings.Contains(strings.ToLower(strings.ReplaceAll(p, `\`, "/")), "/apps/cerne/")
 }
 
 // GoBins lists where `go install` writes or wrote: GOBIN and every GOPATH

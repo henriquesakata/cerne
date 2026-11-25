@@ -7,6 +7,7 @@ on:
   pull_request:
     paths:
       - 'scripts/aur-*.sh'
+      - 'scripts/scoop-manifest.sh'
       - '.github/workflows/packaging.yml'
 
 permissions:
@@ -28,3 +29,56 @@ jobs:
           tag=$(curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/henriquesakata/cerne/releases/latest | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')
           [ -n "$tag" ] || { echo "::error::cannot find the latest release"; exit 1; }
           sh scripts/aur-check.sh "$tag"
+
+  # The only place Scoop itself runs against the manifest the release writes
+  # (F-0508): install the latest release's manifest, then let Scoop's checkver
+  # rewrite the previous release's manifest and expect the same version, URL
+  # and hash.
+  scoop:
+    runs-on: windows-latest
+    env:
+      GITHUB_TOKEN: ${{ github.token }} # checkver reads it for the GitHub API
+    steps:
+      - uses: actions/checkout@v4
+      - name: install Scoop
+        run: |
+          iex "& {$(irm get.scoop.sh)} -RunAsAdmin"
+          "$HOME\scoop\shims" | Out-File -FilePath $env:GITHUB_PATH -Append
+      - name: find the latest and the previous stable releases
+        run: |
+          $rels = Invoke-RestMethod -Headers @{ Authorization = "Bearer $env:GITHUB_TOKEN" } "https://api.github.com/repos/henriquesakata/cerne/releases?per_page=30"
+          $stable = @($rels | Where-Object { -not $_.prerelease -and -not $_.draft })
+          if ($stable.Count -lt 2) { Write-Error "need two stable releases"; exit 1 }
+          "LATEST=$($stable[0].tag_name)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "PREVIOUS=$($stable[1].tag_name)" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: generate both manifests
+        shell: bash
+        run: |
+          set -eu
+          for pair in "latest:$LATEST" "previous:$PREVIOUS"; do
+            dir=${pair%%:*}
+            tag=${pair#*:}
+            mkdir -p "manifests/$dir"
+            curl -fsSL -o "manifests/$dir/SHA256SUMS" "https://github.com/henriquesakata/cerne/releases/download/$tag/SHA256SUMS"
+            sh scripts/scoop-manifest.sh "$tag" "manifests/$dir/SHA256SUMS" >"manifests/$dir/cerne.json"
+          done
+      - name: scoop install the latest manifest
+        run: |
+          Push-Location manifests\latest
+          scoop install .\cerne.json
+          Pop-Location
+          $want = "cerne $($env:LATEST.TrimStart('v'))"
+          $got = (cerne --version)
+          Write-Host $got
+          if ($got -ne $want) { Write-Error "scoop installed '$got', want '$want'"; exit 1 }
+      - name: checkver rewrites the previous manifest to the latest
+        run: |
+          & "$(scoop prefix scoop)\bin\checkver.ps1" -App cerne -Dir manifests\previous -Update
+          $got = (Get-Content manifests\previous\cerne.json -Raw | ConvertFrom-Json).architecture.'64bit'
+          $want = (Get-Content manifests\latest\cerne.json -Raw | ConvertFrom-Json).architecture.'64bit'
+          $gotVer = (Get-Content manifests\previous\cerne.json -Raw | ConvertFrom-Json).version
+          Write-Host "checkver: $gotVer $($got.hash)"
+          if ($gotVer -ne $env:LATEST.TrimStart('v') -or $got.hash -ne $want.hash -or $got.url -ne $want.url) {
+            Write-Error "checkver did not reproduce the generated manifest"
+            exit 1
+          }
