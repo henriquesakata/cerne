@@ -44,6 +44,41 @@ func TestInitClosingFitsTwelveLinesWithThreeSteps(t *testing.T) {
 	}
 }
 
+// B-0072: the init closing the first-week guide quotes is the one init prints,
+// line for line, so the guide cannot drift from a new line again.
+func TestFirstWeekInitSampleIsWhatInitPrints(t *testing.T) {
+	raw, err := os.ReadFile("../../docs/first-week.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := string(raw)
+	start := strings.Index(doc, "```text\n")
+	if start < 0 {
+		t.Fatal("first-week.md has no text block")
+	}
+	sample := doc[start+len("```text\n"):]
+	sample = sample[:strings.Index(sample, "```")]
+
+	gitignoreEnv(t)
+	localBackendEnv(t)
+	out, err := execInit(t, "--name", "sample", "--dir", gitRepoDir(t))
+	if err != nil {
+		t.Fatalf("init: %v\n%s", err, out)
+	}
+	// The closing starts after the .gitignore line; what comes before carries
+	// machine paths and install counts the guide does not quote.
+	const anchor = "Added .docs/ to .gitignore"
+	i := strings.Index(out, anchor)
+	if i < 0 {
+		t.Fatalf("init did not print %q:\n%s", anchor, out)
+	}
+	closing := out[i:]
+	closing = closing[strings.Index(closing, "\n")+1:]
+	if closing != sample {
+		t.Errorf("guide's init sample differs from what init prints.\nguide:\n%s\ninit:\n%s", sample, closing)
+	}
+}
+
 func TestInitClosingOnJoin(t *testing.T) {
 	gitignoreEnv(t)
 	first, origin, _ := setupProject(t)

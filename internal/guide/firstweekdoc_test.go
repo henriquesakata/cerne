@@ -73,6 +73,43 @@ func TestGuideAnswersWhatToDoAfterInstalling(t *testing.T) {
 	}
 }
 
+// B-0072: walking the guide with the 0.15.2 release hit what it left out —
+// the .claude/ folder init writes, the plan and result the gates ask for, a
+// backlog example that leaves lint red, the test_roots warning — and a check
+// it described as reading the spec.
+func TestFirstWeekCoversWhatTheReleaseAsks(t *testing.T) {
+	raw, err := os.ReadFile("../../docs/first-week.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := string(raw)
+	for _, want := range []string{
+		"commit `.claude/settings.json` and `.claude/hooks/`",
+		"`cerne feature start` refuses without one",
+		"`cerne feature complete` refuses without one",
+		"The Gauntlet is an optional quality loop",
+		"the check can pass while the goal and the criteria are still empty",
+		"`CRITERION-TESTS-CONFIG`",
+		"`test_roots`",
+	} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("guide lacks %q", want)
+		}
+	}
+	for _, bad := range []string{
+		"--parent F-0001",
+		"A spec must be written and tagged before it can be approved",
+	} {
+		if strings.Contains(doc, bad) {
+			t.Errorf("guide still has %q", bad)
+		}
+	}
+	found := guide.Search(guide.Corpus(cli.Root()), "do I commit the .claude folder", 3)
+	if len(found) == 0 || !strings.Contains(found[0].Text, "`.claude/settings.json` and `.claude/hooks/`") {
+		t.Errorf("cerne guide does not answer which .claude files to commit: %+v", found)
+	}
+}
+
 // T-0013: the guide and the FAQ describe what the code prints, not what the
 // first draft of the epic said it would.
 func TestFirstWeekTextMatchesWhatTheCodePrints(t *testing.T) {

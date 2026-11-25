@@ -18,6 +18,7 @@ cerne init --name my-project
 `init` ends with the steps to take now: the dashboard, the request to your agent and the approval. `cerne next` then adds the accept step:
 
 ```text
+Gauntlet is off (light mode). Turn it on in the Settings screen of cerne ui, or run: cerne settings set gates.gauntlet on --scope project
 Next steps:
   1. Open the dashboard: cerne ui  (http://localhost:7717)
   2. Ask your agent: "Use cerne to plan <a small change you want>: register the feature and write its spec."
@@ -27,7 +28,11 @@ Commit .cernerc, docs.lock, .gitattributes and .gitignore to your project reposi
 First week: https://github.com/henriquesakata/cerne/blob/main/docs/first-week.md
 ```
 
-Commit the four files it names. Then ask `cerne next` where you are:
+When another agent's CLI is on your `PATH` (Cursor, Codex, Gemini, Copilot), a step 2 asks you to connect it before the first request; see [Connect your agent](#connect-your-agent).
+
+The Gauntlet is an optional quality loop: each spec names a bar, a real reference the delivery is compared against, and the result quotes a judge's verdict against that bar. A new project starts with it off (light mode), so nothing in this guide asks you for a bar. Turn it on when you want deliveries measured against something outside their own spec.
+
+Commit the four files it names. `init` also wrote `.claude/` for Claude Code: commit `.claude/settings.json` and `.claude/hooks/` too, so a teammate's Claude Code gets the same hooks. `.claude/skills/` can stay out of git (add it to `.gitignore`), because `cerne skill install` recreates it on each clone. Then ask `cerne next` where you are:
 
 ```text
 FIRST STEPS (guide: https://github.com/henriquesakata/cerne/blob/main/docs/first-week.md):
@@ -112,7 +117,7 @@ FEATURES (1)
   F-0001  candidate  Sign in with Google
 ```
 
-Before you approve, read the spec in the dashboard (Kanban, then the card) or in `.docs/current/features/F-0001-…/spec.md` after `cerne pull`. A spec must be written and tagged before it can be approved. `--check` tells you what is missing, and changes nothing. Right after `feature new` it refuses (exit 1):
+Before you approve, read the spec in the dashboard (Kanban, then the card) or in `.docs/current/features/F-0001-…/spec.md` after `cerne pull`. `--check` tells you what still blocks the approval, and changes nothing. Right after `feature new` it refuses (exit 1):
 
 ```text
 $ cerne feature approve F-0001 --check
@@ -122,7 +127,7 @@ Complete the card with the commands above, then check again.
 Error: approve check found impediments: F-0001 has 1 (0 hard)
 ```
 
-What makes it approvable: the spec is really written (your agent does this), it carries the `Bar:` line when the Gauntlet is on (a new project starts in light mode, which asks for no bar), and the card is tagged, with `--facet`/`--component` at creation or afterwards:
+The check looks at the card's shape, not at the quality of the spec. It refuses a spec that is still the empty template, open `[CLARIFY: …]` questions, a card with no tag, a missing `Bar:` line when the Gauntlet is on, and a card with no capability once the project has a capability taxonomy. The context you gave at creation already counts as content, so the check can pass while the goal and the criteria are still empty: reading the spec before you approve is your part. Your agent writes the spec; the tag goes in with `--facet`/`--component` at creation or afterwards:
 
 ```bash
 cerne feature retag F-0001 --facet code --component auth
@@ -141,7 +146,7 @@ Approving is your call, not the agent's: click Approve on the card, or run `cern
 Error: human gate: this transition is a human act in this project — ask a human for the approval/acceptance ...
 ```
 
-After the approval the agent starts the feature, builds it and completes it, which puts the card in Ready. You then check the work and run `cerne feature accept F-0001` (or use the dashboard). That is the third step of `cerne next`.
+After the approval the agent writes the plan (`plan.md`; `cerne feature start` refuses without one), starts the feature and builds it. When it is done it writes the result (`result.md`: what changed and the evidence for each criterion; `cerne feature complete` refuses without one) and completes the feature, which puts the card in Ready. The plan and the result sit on the card next to the spec. You then check the work and run `cerne feature accept F-0001` (or use the dashboard). That is the third step of `cerne next`.
 
 ## Change your mind and find what went out of force
 
@@ -198,7 +203,7 @@ The backlog is whatever you have not started. There are three kinds of card, fro
 
 - An idea: raw material nobody evaluated. The title is all it takes.
 - A candidate feature: a demand worth a spec, as above.
-- A task or a bug: an execution unit. A task decomposes an approved feature (`--parent` is required); a bug you ask for is born approved.
+- A task or a bug: an execution unit. A task decomposes a feature that is approved and still open (`--parent` is required); a bug you ask for is born approved.
 
 <!-- quickstart -->
 ```bash
@@ -211,9 +216,11 @@ I-0001 created (active) — Dark mode
 
 ```bash
 cerne idea promote I-0001      # becomes a candidate feature
-cerne task new "<step>" --parent F-0001 --context "<what this step does>"
-cerne bug new "<what breaks>" --context "<what happens, where>" --on-behalf "<your words>"
+cerne task new "<step>" --parent <feature-id> --context "<what this step does>" --facet code --component <c>
+cerne bug new "<what breaks>" --context "<what happens, where>" --on-behalf "<your words>" --facet code --component <c>
 ```
+
+Tag every card, at creation or later with `cerne feature retag <id> --facet <f> --component <c>`: `cerne lint` lists the live cards with no tag. A task turns its parent into an epic, and `cerne lint` also flags an epic that is already done while a child is still open, so give a task a parent you have not accepted yet.
 
 To work one: ask your agent to start it. The agent runs `cerne feature start <id>` and, for work that is not a card (a review, an investigation), `cerne work start "<what>" --ref <id>`. Both end with the index of the notes that inform that task and the command of its package, `cerne context <id>`: the task's document of the stage, its epic and the notes, decisions and sources that inform it, within a token budget: the notes and decisions linked to the task come with their body, the rest as id, title and a one-line gist; the agent opens another body with `cerne show <id>` when it needs it. Starting a task also registers what is in progress, so two agents do not do the same thing:
 
@@ -230,7 +237,7 @@ cerne work done W-0001 --note "button shipped"
 2. Approve the candidates whose spec you read, in the dashboard or with `cerne feature approve <id>`.
 3. Let the agent work. When it completes a feature, review it and accept it (`cerne accept queue` lists them).
 4. When something changes your plan, reject or supersede with a reason.
-5. `cerne sync` brings in what others changed and sends your own edits. `cerne lint` lists stale documentation.
+5. `cerne sync` brings in what others changed and sends your own edits. `cerne lint` lists stale documentation. While it finds no test file in the project root or in `test_roots`, it also warns `CRITERION-TESTS-CONFIG`: point `test_roots` (and `test_patterns`) in `.cernerc` at your tests, so it can link each criterion to the test that proves it.
 6. When a new cerne release comes out, run `cerne update` inside the project. It updates the binary, then renews the hooks and the guide your agent reads. While the project's files are older than the binary, `cerne next` opens with a line asking for it. The hooks and the guide also renew by themselves at the next session start or `cerne next` when no one edited them (a line says so); a file you edited, or one a newer cerne wrote, is never overwritten: cerne only warns, naming it, until you run `cerne update`. To turn that off: `cerne settings set hooks.auto_refresh false`. On a version without the command, update the binary first with `brew upgrade henriquesakata/tap/cerne` or the install script.
 
 When you forget a command, ask: `cerne guide "how do I close a feature"`.
