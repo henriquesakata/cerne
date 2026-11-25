@@ -148,8 +148,8 @@ func TestRoomCloseUseDraft(t *testing.T) {
 		t.Fatalf("close --use-draft by a participant err = %v, want the facilitator refusal", err)
 	}
 	out, err := closeR1("--facilitator", facilitator, "--use-draft")
-	if err != nil || !strings.Contains(out, "room R1 closed") {
-		t.Fatalf("close --use-draft = %q, %v", out, err)
+	if err != nil || !strings.Contains(out, "room R1 closed with the minutes draft by ana, saved at 20") {
+		t.Fatalf("close --use-draft = %q, %v; want the draft's author and time", out, err)
 	}
 	if out, _ := runRoom(t, append([]string{"minutes", "show", "R1"}, dirFlag...)...); !strings.Contains(out, "reverter o deploy") {
 		t.Fatalf("minutes after close --use-draft = %q, want the draft's conclusion", out)

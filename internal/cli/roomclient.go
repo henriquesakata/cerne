@@ -225,10 +225,14 @@ func (c roomClient) close(ctx context.Context, id, facilitatorID string, minutes
 	return rm, err
 }
 
-// closeWithDraft is close with the room's saved minutes draft (T-0022).
-func (c roomClient) closeWithDraft(ctx context.Context, id, facilitatorID string, allowOpenItems bool) (room.Room, error) {
+// closeWithDraft is close with the room's saved minutes draft (T-0022); a
+// non-zero reviewed is that draft's updated_at, so a later draft refuses.
+func (c roomClient) closeWithDraft(ctx context.Context, id, facilitatorID string, reviewed time.Time, allowOpenItems bool) (room.Room, error) {
 	var rm room.Room
 	body := map[string]any{"facilitator_id": facilitatorID, "use_draft": true, "allow_open_items": allowOpenItems}
+	if !reviewed.IsZero() {
+		body["draft_updated_at"] = reviewed
+	}
 	err := c.do(ctx, http.MethodPost, "/rooms/"+url.PathEscape(id)+"/close", body, &rm)
 	return rm, err
 }

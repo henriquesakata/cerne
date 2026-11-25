@@ -301,8 +301,19 @@ func newRoomCloseCmd() *cobra.Command {
 				return err
 			}
 			var rm room.Room
+			var draft *room.MinutesDraft // the draft this close reviewed and closes with (T-0022)
 			if useDraft {
-				rm, err = c.closeWithDraft(cmd.Context(), args[0], facilitator, allowOpenItems)
+				rooms, listErr := c.list(cmd.Context())
+				if listErr != nil {
+					return listErr
+				}
+				var reviewed time.Time
+				for _, r := range rooms {
+					if r.ID == args[0] && r.MinutesDraft != nil {
+						draft, reviewed = r.MinutesDraft, r.MinutesDraft.UpdatedAt
+					}
+				}
+				rm, err = c.closeWithDraft(cmd.Context(), args[0], facilitator, reviewed, allowOpenItems)
 			} else {
 				if minutesPath == "" {
 					return errors.New("--minutes <path|-|{...}> or --use-draft is required (JSON; run 'cerne room minutes template' for a blank one)")
@@ -324,6 +335,10 @@ func newRoomCloseCmd() *cobra.Command {
 					fmt.Fprintf(out, "resolve them, or pass --allow-open-items to close anyway (recorded as an exception in the minutes)\n")
 				}
 				return err
+			}
+			if draft != nil {
+				fmt.Fprintf(cmd.OutOrStdout(), "room %s closed with the minutes draft by %s, saved at %s\n", rm.ID, draft.Author, draft.UpdatedAt.UTC().Format(time.RFC3339))
+				return nil
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "room %s closed\n", rm.ID)
 			return nil
