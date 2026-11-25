@@ -291,6 +291,8 @@ var f0475Rewritten = []string{
 	"- **Register pendings when you close a feature:** for every debt you would write in the result's *Dé",
 	"**Accept queue (F-0875).** `cerne accept queue [--json]` lists the features in implemented, oldest f",
 	"The result rules count it too: a `critério N` cited in an errata entry clears `result-missing-eviden",
+	// T-0020: room watch --once now waits out --settle before it exits.
+	"`--once` long-polls until the first **relevant** (non-echo) event, prints it, and exits 0",
 }
 
 func isRewritten(s string) bool {
