@@ -90,8 +90,7 @@ func newRoomOpenCmd() *cobra.Command {
 			fmt.Fprintf(out, "listen: cerne room read %s --since 0 --once\n", rm.ID)
 			fmt.Fprintf(out, "facilitator capability: %s\n", res.FacilitatorID)
 			fmt.Fprintf(out, "keep this — it is required to resolve items and close the room; hand it off with 'cerne room facilitator handoff'\n")
-			stored, err := keepRoomFacilitator(c.pid, rm.ID, res.FacilitatorID)
-			printKeptOrEnv(cmd, stored, err, "CERNE_ROOM_FACILITATOR", res.FacilitatorID)
+			fmt.Fprintf(out, "env: export CERNE_ROOM_FACILITATOR=%s\n", res.FacilitatorID)
 			return nil
 		},
 	}
@@ -278,7 +277,7 @@ func newRoomCloseCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if facilitator, err = resolveRoomFacilitator(facilitator, c.pid, args[0]); err != nil {
+			if facilitator, err = resolveRoomFacilitator(facilitator, args[0]); err != nil {
 				return err
 			}
 			if minutesPath == "" {
@@ -393,7 +392,7 @@ func newRoomFacilitatorHandoffCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if facilitator, err = resolveRoomFacilitator(facilitator, c.pid, args[0]); err != nil {
+			if facilitator, err = resolveRoomFacilitator(facilitator, args[0]); err != nil {
 				return err
 			}
 			next, err := c.handoffFacilitator(cmd.Context(), args[0], facilitator)
@@ -466,7 +465,7 @@ func newRoomPendingCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if facilitator, err = resolveRoomFacilitator(facilitator, c.pid, args[0]); err != nil {
+			if facilitator, err = resolveRoomFacilitator(facilitator, args[0]); err != nil {
 				return err
 			}
 			items, err := c.pending(cmd.Context(), args[0], facilitator)
@@ -501,7 +500,7 @@ func newRoomResolveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if facilitator, err = resolveRoomFacilitator(facilitator, c.pid, args[0]); err != nil {
+			if facilitator, err = resolveRoomFacilitator(facilitator, args[0]); err != nil {
 				return err
 			}
 			item, err := c.resolve(cmd.Context(), args[0], facilitator, args[1], result)

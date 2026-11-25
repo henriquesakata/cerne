@@ -17,7 +17,7 @@ func TestRoomCredsRoundTripAndPermissions(t *testing.T) {
 	t.Setenv("CERNE_CACHE_DIR", cache)
 	t.Setenv("CERNE_SESSION", "agent-1")
 
-	want := roomCreds{Nick: "ana", SessionID: "s1", FacilitatorID: "f1"}
+	want := roomCreds{Nick: "ana", SessionID: "s1"}
 	if err := saveRoomCreds("p", "R1", want); err != nil {
 		t.Fatalf("saveRoomCreds: %v", err)
 	}
@@ -79,46 +79,59 @@ func TestRoomCredsNeedAgentSession(t *testing.T) {
 	}
 }
 
-// B-0084: --session > CERNE_ROOM_SESSION > stored, and the same for the
-// facilitator.
+// B-0084: --session > CERNE_ROOM_SESSION > stored.
 func TestRoomCredsResolvePrecedence(t *testing.T) {
 	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
 	t.Setenv("CERNE_SESSION", "agent-1")
 	t.Setenv("CERNE_ROOM_SESSION", "")
-	t.Setenv("CERNE_ROOM_FACILITATOR", "")
 
 	if _, err := resolveRoomSession("", "p", "R1"); !errors.Is(err, errNoRoomSession) {
 		t.Fatalf("nothing anywhere: err = %v, want errNoRoomSession", err)
 	}
-	_, err := resolveRoomFacilitator("", "p", "R1")
-	if !errors.Is(err, errNoRoomFacilitator) || !strings.Contains(err.Error(), "cerne room facilitator reset R1") {
-		t.Fatalf("nothing anywhere: err = %v, want errNoRoomFacilitator naming the reset", err)
-	}
-
-	if err := saveRoomCreds("p", "R1", roomCreds{Nick: "ana", SessionID: "stored-s", FacilitatorID: "stored-f"}); err != nil {
+	if err := saveRoomCreds("p", "R1", roomCreds{Nick: "ana", SessionID: "stored-s"}); err != nil {
 		t.Fatalf("saveRoomCreds: %v", err)
 	}
-	check := func(name string, resolve func(string, string, string) (string, error), env string) {
-		t.Helper()
-		if got, err := resolve("", "p", "R1"); err != nil || got != "stored-"+name {
-			t.Fatalf("%s stored only = %q, %v", name, got, err)
-		}
-		t.Setenv(env, "env-"+name)
-		if got, err := resolve("", "p", "R1"); err != nil || got != "env-"+name {
-			t.Fatalf("%s env over stored = %q, %v", name, got, err)
-		}
-		if got, err := resolve("flag-"+name, "p", "R1"); err != nil || got != "flag-"+name {
-			t.Fatalf("%s flag over env = %q, %v", name, got, err)
-		}
-		t.Setenv(env, "")
+	if got, err := resolveRoomSession("", "p", "R1"); err != nil || got != "stored-s" {
+		t.Fatalf("stored only = %q, %v", got, err)
 	}
-	check("s", resolveRoomSession, "CERNE_ROOM_SESSION")
-	check("f", resolveRoomFacilitator, "CERNE_ROOM_FACILITATOR")
+	t.Setenv("CERNE_ROOM_SESSION", "env-s")
+	if got, err := resolveRoomSession("", "p", "R1"); err != nil || got != "env-s" {
+		t.Fatalf("env over stored = %q, %v", got, err)
+	}
+	if got, err := resolveRoomSession("flag-s", "p", "R1"); err != nil || got != "flag-s" {
+		t.Fatalf("flag over env = %q, %v", got, err)
+	}
 }
 
-// B-0084: with a stored credential, say/propose/request-decision/watch and
-// the facilitator commands run with no flag and no variable, as the stored
-// nick.
+// B-0084, review round 1: the facilitator capability is --facilitator >
+// CERNE_ROOM_FACILITATOR only; a facilitator_id left in the stored file (by
+// an earlier build) is never read.
+func TestRoomCredsFacilitatorIsNeverStored(t *testing.T) {
+	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
+	t.Setenv("CERNE_SESSION", "agent-1")
+	t.Setenv("CERNE_ROOM_FACILITATOR", "")
+	path, err := roomCredsPath("p", "R1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writePrivateFile(path, []byte(`{"facilitator_id":"stored-f"}`)); err != nil {
+		t.Fatal(err)
+	}
+	_, err = resolveRoomFacilitator("", "R1")
+	if !errors.Is(err, errNoRoomFacilitator) || !strings.Contains(err.Error(), "cerne room facilitator reset R1") {
+		t.Fatalf("only a stored one: err = %v, want errNoRoomFacilitator naming the reset", err)
+	}
+	t.Setenv("CERNE_ROOM_FACILITATOR", "env-f")
+	if got, err := resolveRoomFacilitator("", "R1"); err != nil || got != "env-f" {
+		t.Fatalf("env = %q, %v", got, err)
+	}
+	if got, err := resolveRoomFacilitator("flag-f", "R1"); err != nil || got != "flag-f" {
+		t.Fatalf("flag over env = %q, %v", got, err)
+	}
+}
+
+// B-0084: with a stored session, say/propose/request-decision/watch run
+// with no flag and no variable, as the stored nick.
 func TestRoomCredsCommandsUseStoredCredential(t *testing.T) {
 	dir, port := newRoomTestServer(t, "proj-creds")
 	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
@@ -137,7 +150,7 @@ func TestRoomCredsCommandsUseStoredCredential(t *testing.T) {
 	if err != nil {
 		t.Fatalf("join: %v", err)
 	}
-	if err := saveRoomCreds(c.pid, "R1", roomCreds{Nick: "ana", SessionID: joined.Session.SessionID, FacilitatorID: opened.FacilitatorID}); err != nil {
+	if err := saveRoomCreds(c.pid, "R1", roomCreds{Nick: "ana", SessionID: joined.Session.SessionID}); err != nil {
 		t.Fatalf("saveRoomCreds: %v", err)
 	}
 
@@ -154,9 +167,10 @@ func TestRoomCredsCommandsUseStoredCredential(t *testing.T) {
 	if err != nil || !strings.Contains(out, "[ana] via stored") {
 		t.Fatalf("read = %q, %v; want the message said as ana", out, err)
 	}
+	t.Setenv("CERNE_ROOM_FACILITATOR", opened.FacilitatorID)
 	out, err = runRoom(t, append([]string{"pending", "R1"}, dirFlag...)...)
 	if err != nil || !strings.Contains(out, "usar postgres") || !strings.Contains(out, "by ana") {
-		t.Fatalf("pending with the stored facilitator = %q, %v; want ana's items", out, err)
+		t.Fatalf("pending = %q, %v; want ana's items", out, err)
 	}
 	out, err = runRoom(t, append([]string{"watch", "R1", "--once", "--since", "0"}, dirFlag...)...)
 	if err != nil || !strings.Contains(out, "#1 [open]") || strings.Contains(out, "via stored") {
@@ -170,7 +184,7 @@ func TestRoomCredsCommandsUseStoredCredential(t *testing.T) {
 		t.Fatalf("watch cursor for the stored session: %v", err)
 	}
 	if _, err := runRoom(t, append([]string{"close", "R1", "--minutes", minimalMinutesJSON, "--allow-open-items"}, dirFlag...)...); err != nil {
-		t.Fatalf("close with the stored facilitator: %v", err)
+		t.Fatalf("close: %v", err)
 	}
 }
 

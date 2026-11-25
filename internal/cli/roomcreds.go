@@ -12,28 +12,28 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// errNoRoomSession and errNoRoomFacilitator: no flag, no variable and nothing
-// stored for this agent session (B-0084).
+// errNoRoomSession: no flag, no variable and nothing stored for this agent
+// session; errNoRoomFacilitator: no flag and no variable (B-0084).
 var (
 	errNoRoomSession     = errors.New("a session is required: pass --session or set CERNE_ROOM_SESSION (run 'cerne room join <room>' to obtain one; in an agent session, where CERNE_SESSION is set, join stores it for that room and room commands find it on their own)")
-	errNoRoomFacilitator = errors.New("a facilitator capability is required: pass --facilitator or set CERNE_ROOM_FACILITATOR (printed by 'cerne room open', which stores it for that room in an agent session, where CERNE_SESSION is set; a room opened in cerne ui keeps it in that browser)")
+	errNoRoomFacilitator = errors.New("a facilitator capability is required: pass --facilitator or set CERNE_ROOM_FACILITATOR (printed once by 'cerne room open' and never stored; a room opened in cerne ui keeps it in that browser)")
 )
 
 const (
 	roomSessionFlagHelp     = "session capability printed by 'cerne room join' (falls back to CERNE_ROOM_SESSION, then the one join stored for this agent session)"
-	roomFacilitatorFlagHelp = "facilitator capability printed by 'cerne room open' (falls back to CERNE_ROOM_FACILITATOR, then the one open stored for this agent session)"
+	roomFacilitatorFlagHelp = "facilitator capability printed by 'cerne room open' (falls back to CERNE_ROOM_FACILITATOR)"
 )
 
-// roomCreds is what `room join` and `room open` keep for one agent session in
-// one room (B-0084), so later room commands find the capability without a
-// flag or a variable: in an agent harness both sit in the argv of the shell
-// wrapper, where the process list, the shell history and transcripts show
-// them. It guards against that accidental exposure, not against a process of
-// the same user that reads the cache.
+// roomCreds is what `room join` keeps for one agent session in one room
+// (B-0084), so later room commands find the session without a flag or a
+// variable: in an agent harness both sit in the argv of the shell wrapper,
+// where the process list, the shell history and transcripts show them. It
+// guards against that accidental exposure, not against a process of the same
+// user that reads the cache. The facilitator capability is never stored:
+// every subagent of the opener's session would hold the role.
 type roomCreds struct {
-	Nick          string `json:"nick,omitempty"`
-	SessionID     string `json:"session_id,omitempty"`
-	FacilitatorID string `json:"facilitator_id,omitempty"`
+	Nick      string `json:"nick,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
 }
 
 // roomCredsPath is <cache-dir>/room-creds/<room>/<sha256(CERNE_SESSION)>.json,
@@ -103,34 +103,16 @@ func resolveRoomSession(flag, projectID, roomID string) (string, error) {
 	return c.SessionID, nil
 }
 
-// resolveRoomFacilitator: --facilitator, then CERNE_ROOM_FACILITATOR, then the
-// capability `room open` stored for this agent session in roomID.
-func resolveRoomFacilitator(flag, projectID, roomID string) (string, error) {
+// resolveRoomFacilitator: --facilitator, then CERNE_ROOM_FACILITATOR. Never a
+// stored one (see roomCreds).
+func resolveRoomFacilitator(flag, roomID string) (string, error) {
 	if flag != "" {
 		return flag, nil
 	}
 	if env := os.Getenv("CERNE_ROOM_FACILITATOR"); env != "" {
 		return env, nil
 	}
-	c, err := loadRoomCreds(projectID, roomID)
-	if err != nil {
-		return "", err
-	}
-	if c.FacilitatorID == "" {
-		return "", fmt.Errorf("%w. Lost it? A human runs 'cerne room facilitator reset %s'", errNoRoomFacilitator, roomID)
-	}
-	return c.FacilitatorID, nil
-}
-
-// keepRoomFacilitator stores the capability `room open` just minted for this
-// agent session; stored is false without CERNE_SESSION.
-func keepRoomFacilitator(projectID, roomID, facilitatorID string) (stored bool, err error) {
-	if path, err := roomCredsPath(projectID, roomID); err != nil || path == "" {
-		return false, err
-	}
-	prev, _ := loadRoomCreds(projectID, roomID) // unreadable: replaced
-	prev.FacilitatorID = facilitatorID
-	return true, saveRoomCreds(projectID, roomID, prev)
+	return "", fmt.Errorf("%w. Lost it? A human runs 'cerne room facilitator reset %s'", errNoRoomFacilitator, roomID)
 }
 
 // keepJoinedSession stores the session `room join` just minted for this agent
@@ -152,9 +134,9 @@ func keepJoinedSession(ctx context.Context, c roomClient, roomID, nick, sessionI
 	return true, "", saveRoomCreds(c.pid, roomID, prev)
 }
 
-// printKeptOrEnv says where the capability lives after open/join: stored for
-// this agent session, or else the env line (no CERNE_SESSION, another nick
-// kept, a failed write) — the only copyable form that carries it.
+// printKeptOrEnv says where the session lives after join: stored for this
+// agent session, or else the env line (no CERNE_SESSION, another nick kept, a
+// failed write) — the only copyable form that carries it.
 func printKeptOrEnv(cmd *cobra.Command, stored bool, err error, envVar, capability string) {
 	if err != nil {
 		fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not store it for this agent session: %v\n", err)

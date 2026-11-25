@@ -487,13 +487,20 @@ func TestRoomOpenJoinKeepCredentialOffExamples(t *testing.T) {
 				}
 				return
 			}
-			if want := (roomCreds{Nick: "ana", SessionID: session, FacilitatorID: facilitator}); stored != want {
-				t.Fatalf("stored = %+v, want %+v", stored, want)
+			if stored.Nick != "ana" || stored.SessionID != session {
+				t.Fatalf("stored = %+v, want ana's session", stored)
 			}
-			for _, out := range []string{openOut, joinOut} {
-				if strings.Contains(out, "env: export") || !strings.Contains(out, "stored for this agent session") {
-					t.Fatalf("output = %q, want the stored line and no env line", out)
-				}
+			if strings.Contains(joinOut, "env: export") || !strings.Contains(joinOut, "stored for this agent session") {
+				t.Fatalf("join output = %q, want the stored line and no env line", joinOut)
+			}
+			// review round 1: the facilitator capability is never stored —
+			// every subagent of the opener's session would hold the role.
+			path, _ := roomCredsPath("proj-b0084", "R2")
+			if data, _ := os.ReadFile(path); strings.Contains(string(data), facilitator) {
+				t.Fatalf("stored file holds the facilitator capability: %s", data)
+			}
+			if !strings.Contains(openOut, "env: export CERNE_ROOM_FACILITATOR=") || strings.Contains(openOut, "stored for") {
+				t.Fatalf("open output = %q, want the env line and nothing stored", openOut)
 			}
 		})
 	}
