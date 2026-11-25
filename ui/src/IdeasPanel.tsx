@@ -68,7 +68,7 @@ const ideaSummary = (i: Idea, open: boolean) => (open ? i.title : i.title.slice(
 // via useLiveLoad (F-0031); falha na captura mantém o texto e oferece tentar
 // de novo (F-0300). Com `hash` é a tela #/ideas (F-0416): h1, todas as ideias
 // e o filtro de estado no endereço; sem ele, o painel do Backlog (só ativas).
-export default function IdeasPanel({ modules, onPromoted, hash }: { modules: string[]; onPromoted: () => void; hash?: string }) {
+export default function IdeasPanel({ modules, onPromoted, hash }: { modules: string[]; onPromoted: (ideaId: string) => void; hash?: string }) {
   const { t, lang } = useT()
   const page = hash !== undefined
   const { state, bad } = parseState(hash ?? '')
@@ -149,7 +149,7 @@ export default function IdeasPanel({ modules, onPromoted, hash }: { modules: str
       .finally(() => setBusy(null))
   }
   const promoteAs = (i: Idea, force: boolean) =>
-    act(i.id, () => promoteIdea(i.id, needsModule ? module : '', force), onPromoted)
+    act(i.id, () => promoteIdea(i.id, needsModule ? module : '', force), () => onPromoted(i.id))
   const promote = (i: Idea) => {
     if (needsModule && choosing !== i.id) {
       setChoosing(i.id)

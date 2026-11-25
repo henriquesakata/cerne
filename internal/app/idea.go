@@ -685,8 +685,13 @@ func UnlinkIdea(repoDir, projDir, id string) (store.Idea, error) {
 		if err := moveIdea(repoDir, &i, domain.ActionReopen, "", map[string]string{"feature": f.ID, "via": "unlink"}); err != nil {
 			return "", err
 		}
-		if f.FromIdea == id {
-			f.FromIdea = ""
+		if f.FromIdea == id || borrowsMirror(f, i) {
+			if f.FromIdea == id {
+				f.FromIdea = ""
+			}
+			if borrowsMirror(f, i) { // the issue link goes back with the idea (B-0076)
+				f.Mirror = nil
+			}
 			if err := store.SaveFeature(repoDir, f); err != nil {
 				return "", err
 			}
@@ -697,6 +702,80 @@ func UnlinkIdea(repoDir, projDir, id string) (store.Idea, error) {
 		return store.Idea{}, err
 	}
 	return i, nil
+}
+
+// borrowsMirror reports whether f holds the issue link of idea i, lent by the
+// promote (F-0449). It goes back with the idea whenever the idea returns to
+// active, so the card stops driving an issue whose request is live again
+// (B-0076). A card with an issue of its own has another URL.
+func borrowsMirror(f store.Feature, i store.Idea) bool {
+	return f.Mirror != nil && i.Mirror != nil && f.Mirror.URL == i.Mirror.URL
+}
+
+// ErrPromotionNotUndoable is an unpromote refused: the idea is not promoted,
+// it was linked to a card it did not create, or the card left candidate.
+var ErrPromotionNotUndoable = errors.New("the promotion cannot be undone")
+
+// UnpromoteIdea undoes a promotion (B-0076): the candidate the promote minted
+// is rejected with an automatic reason, and that reject hands the idea back to
+// active with its issue link (moveLinkedIdeas), in one commit that never
+// reaches the tracker. An idea linked to a card it did not create, or a card
+// past candidate, is refused with nothing written.
+// ponytail: the checks run before the reject takes the lock; a card approved
+// in between is rejected anyway. Move them into the transition if that race
+// ever shows up.
+func UnpromoteIdea(repoDir, projDir, id string) (store.Idea, store.Feature, error) {
+	id, err := CanonicalIdeaID(id)
+	if err != nil {
+		return store.Idea{}, store.Feature{}, err
+	}
+	i, err := store.LoadIdea(repoDir, id)
+	if err != nil {
+		return store.Idea{}, store.Feature{}, err
+	}
+	if i.State != domain.IdeaPromoted {
+		return store.Idea{}, store.Feature{}, fmt.Errorf("%w: %s is %s, not promoted", ErrPromotionNotUndoable, id, i.State)
+	}
+	f, err := store.LoadFeature(repoDir, i.PromotedTo)
+	if err != nil {
+		return store.Idea{}, store.Feature{}, err
+	}
+	linked, err := ideaLinked(repoDir, id)
+	if err != nil {
+		return store.Idea{}, store.Feature{}, err
+	}
+	if linked || f.FromIdea != id {
+		return store.Idea{}, store.Feature{}, fmt.Errorf("%w: %s points at %s, which its promotion did not create — use 'cerne idea unlink %s'", ErrPromotionNotUndoable, id, f.ID, id)
+	}
+	if f.State != domain.StateCandidate {
+		return store.Idea{}, store.Feature{}, fmt.Errorf("%w: %s is %s — reject it with 'cerne feature reject %s'", ErrPromotionNotUndoable, f.ID, f.State, f.ID)
+	}
+	if _, err := TransitionFeature(repoDir, projDir, f.ID, domain.ActionReject, "", "promotion of "+id+" undone", nil); err != nil {
+		return store.Idea{}, store.Feature{}, err
+	}
+	if i, err = store.LoadIdea(repoDir, id); err != nil {
+		return store.Idea{}, store.Feature{}, err
+	}
+	if f, err = store.LoadFeature(repoDir, f.ID); err != nil {
+		return store.Idea{}, store.Feature{}, err
+	}
+	return i, f, nil
+}
+
+// ideaLinked reports whether the last promotion of idea id was an 'idea link'
+// to an existing card rather than a promote that minted one.
+func ideaLinked(repoDir, id string) (bool, error) {
+	evs, err := store.ReadAllEvents(repoDir) // ReadEvents leaves the idea events out
+	if err != nil {
+		return false, err
+	}
+	linked := false
+	for _, ev := range evs {
+		if ev.EntityID == id && ev.Type == ideaEventTypes[domain.ActionPromote] {
+			linked = ev.Payload["via"] == "link"
+		}
+	}
+	return linked, nil
 }
 
 // RetagIdea sets the tag axes of an idea, in any state, in the backend clone at

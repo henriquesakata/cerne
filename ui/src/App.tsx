@@ -29,7 +29,7 @@ import Channel from './Channel'
 import Settings, { groupFromHash } from './Settings'
 import Pendings from './Pendings'
 import IdeasPanel from './IdeasPanel'
-import { fetchState } from './api'
+import { fetchState, unpromoteIdea } from './api'
 import { LoadPending, useLiveLoad } from './liveLoad'
 import { LiveProvider, useProjects } from './live'
 import { NotificationsProvider } from './notifications'
@@ -186,8 +186,28 @@ function IdeasPage({ hash }: { hash: string }) {
   const { t } = useT()
   const load = useLiveLoad(fetchState)
   // Here no candidate list sits beside the panel, so the promotion is said in a
-  // live region, with the way to the new candidate (crítica C5).
-  const [promoted, setPromoted] = useState(false)
+  // live region, with the way to the new candidate (crítica C5) and the undo
+  // for a promotion made by mistake (B-0076). The list follows the backend.
+  const [promoted, setPromoted] = useState<string | null>(null)
+  const [undone, setUndone] = useState(false)
+  const [undoing, setUndoing] = useState(false)
+  const [undoError, setUndoError] = useState<string | null>(null)
+  const onPromoted = (id: string) => {
+    setPromoted(id)
+    setUndone(false)
+    setUndoError(null)
+  }
+  const undo = (id: string) => {
+    setUndoing(true)
+    setUndoError(null)
+    unpromoteIdea(id)
+      .then(() => {
+        setPromoted(null)
+        setUndone(true)
+      })
+      .catch((e: unknown) => setUndoError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setUndoing(false))
+  }
   return (
     <main className="page">
       {load.data === null ? (
@@ -197,11 +217,26 @@ function IdeasPage({ hash }: { hash: string }) {
           <p className="ideas-promoted" role="status">
             {promoted && (
               <>
-                {t.ideas.promotedNotice} <a href="#/backlog">{t.ideas.openBacklog}</a>
+                {t.ideas.promotedNotice} <a href="#/backlog">{t.ideas.openBacklog}</a>{' '}
+                <button
+                  type="button"
+                  className="queue-btn"
+                  disabled={undoing}
+                  aria-label={t.ideas.undoPromotionOf(promoted)}
+                  onClick={() => undo(promoted)}
+                >
+                  {t.ideas.undoPromotion}
+                </button>
               </>
             )}
+            {undone && t.ideas.promotionUndone}
           </p>
-          <IdeasPanel modules={load.data.project.modules ?? []} onPromoted={() => setPromoted(true)} hash={hash} />
+          {undoError && (
+            <p className="form-error" role="alert">
+              {undoError}
+            </p>
+          )}
+          <IdeasPanel modules={load.data.project.modules ?? []} onPromoted={onPromoted} hash={hash} />
         </>
       )}
     </main>

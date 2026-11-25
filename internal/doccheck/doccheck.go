@@ -144,6 +144,91 @@ func fenceRun(line string) string {
 	return t[:n]
 }
 
+// StripHTMLComments drops HTML comments (template scaffold, never record). A
+// "<!--" inside a fenced code block or an inline code span is text, never an
+// opener (CommonMark): read left to right, whichever of a code span or a
+// comment starts first wins, so a comment quoting `code` still goes (B-0077).
+// A comment goes whole, inner newlines included; one with no "-->" stays.
+func StripHTMLComments(b []byte) []byte { return stripComments(b, false) }
+
+// stripComments is StripHTMLComments; with keepNewlines a comment leaves its
+// newlines behind, so line numbers still match the body (B-0078).
+func stripComments(b []byte, keepNewlines bool) []byte {
+	out := make([]byte, 0, len(b))
+	fence := "" // the opening run of the fenced block we are inside, if any
+	for i := 0; i < len(b); {
+		if i == 0 || b[i-1] == '\n' {
+			end := len(b)
+			if k := bytes.IndexByte(b[i:], '\n'); k >= 0 {
+				end = i + k + 1
+			}
+			line := string(b[i:end])
+			if run := fenceRun(line); fence != "" || run != "" {
+				switch {
+				case fence == "":
+					fence = run
+				case run != "" && run[0] == fence[0] && len(run) >= len(fence) && strings.TrimSpace(line) == run:
+					fence = ""
+				}
+				out = append(out, line...)
+				i = end
+				continue
+			}
+		}
+		switch {
+		case b[i] == '`':
+			n := runLen(b[i:], '`')
+			if j := closingRun(b, i+n, n); j >= 0 {
+				n = j + n - i
+			}
+			out = append(out, b[i:i+n]...) // a span, or a run with no closer (literal)
+			i += n
+			continue
+		case bytes.HasPrefix(b[i:], []byte("<!--")):
+			if j := bytes.Index(b[i+4:], []byte("-->")); j >= 0 {
+				if keepNewlines {
+					out = append(out, bytes.Repeat([]byte("\n"), bytes.Count(b[i:i+4+j], []byte("\n")))...)
+				}
+				i += 4 + j + 3
+				continue
+			}
+		}
+		out = append(out, b[i])
+		i++
+	}
+	return out
+}
+
+// closingRun returns the index of the next run of exactly n backticks from
+// from on, or -1 when a blank line (a code span never leaves its paragraph) or
+// the end comes first.
+func closingRun(b []byte, from, n int) int {
+	for j := from; j < len(b); {
+		switch {
+		case b[j] == '`':
+			m := runLen(b[j:], '`')
+			if m == n {
+				return j
+			}
+			j += m
+		case b[j] == '\n' && bytes.HasPrefix(bytes.TrimLeft(b[j+1:], " \t\r"), []byte("\n")):
+			return -1
+		default:
+			j++
+		}
+	}
+	return -1
+}
+
+// runLen is how many leading bytes of b are c.
+func runLen(b []byte, c byte) int {
+	n := 0
+	for n < len(b) && b[n] == c {
+		n++
+	}
+	return n
+}
+
 // frontmatterKeyLine is a top-level "key: value" line — with blank lines, the
 // only line a frontmatter block may hold before its closing '---'.
 var frontmatterKeyLine = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]*:(\s|$)`)

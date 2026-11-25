@@ -117,7 +117,25 @@ func handlePromoteIdea(w http.ResponseWriter, r *http.Request, repoDir, projDir,
 	}{i, f})
 }
 
-// writeIdeaError maps a drop/promote failure: unknown id 404, the created
+// handleUnpromoteIdea undoes a promotion (B-0076): the idea active again, its
+// candidate rejected; the refusals come as 422 with the CLI's message.
+func handleUnpromoteIdea(w http.ResponseWriter, r *http.Request, repoDir, projDir, id string) {
+	if !sameOriginJSON(r) {
+		writeJSON(w, http.StatusForbidden, errorBody("cross-origin or non-JSON request refused"))
+		return
+	}
+	i, f, err := app.UnpromoteIdea(repoDir, projDir, id)
+	if err != nil {
+		writeIdeaError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		Idea    store.Idea    `json:"idea"`
+		Feature store.Feature `json:"feature"`
+	}{i, f})
+}
+
+// writeIdeaError maps a drop/promote/unpromote failure: unknown id 404, the created
 // feature's duplicate guard 409 (F-0147 shape), anything else — a closed idea,
 // a missing module — 422 with the message the CLI prints.
 func writeIdeaError(w http.ResponseWriter, err error) {

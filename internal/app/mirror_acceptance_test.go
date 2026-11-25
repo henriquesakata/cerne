@@ -380,6 +380,7 @@ func TestMirrorStateTable(t *testing.T) {
 		{domain.StateApproved, []string{"spec.md", "plan.md"}, domain.ActionStart, "", domain.StateInDevelopment},
 		{domain.StateInDevelopment, []string{"spec.md", "plan.md", "result.md"}, domain.ActionComplete, "", domain.StateImplemented},
 		{domain.StateImplemented, nil, domain.ActionAccept, "", domain.StateDone},
+		// B-0076 crit. 7: a card with an issue of its own still closes it on reject.
 		{domain.StateCandidate, nil, domain.ActionReject, "not now", domain.StateRejected},
 	} {
 		t.Run(string(c.to), func(t *testing.T) {

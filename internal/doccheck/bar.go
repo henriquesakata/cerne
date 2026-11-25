@@ -22,7 +22,6 @@ var (
 // parenthesized text runs to ")" or to the end of the line: hard-wrapped
 // markdown closes it on a later line.
 var (
-	htmlCommentRe = regexp.MustCompile(`(?s)<!--.*?-->`)
 	// Template slots left unfilled, with only separators between them:
 	// "<referência + acesso>", "<referência> — <acesso>" (F-0327).
 	placeholderRe = regexp.MustCompile(`^<[^<>]*>(?:[\s\p{P}\p{S}]*<[^<>]*>)*$`)
@@ -138,7 +137,7 @@ func SpecBar(body []byte) (string, error) {
 func SpecBarIn(body []byte, lang doclang.Lang) (string, error) {
 	var firstInvalid error
 	inCode := false
-	for _, line := range strings.Split(htmlCommentRe.ReplaceAllString(string(body), ""), "\n") {
+	for _, line := range strings.Split(string(StripHTMLComments(body)), "\n") {
 		if doclang.Fence(line) {
 			inCode = !inCode
 			continue
@@ -202,11 +201,7 @@ func BarExempt(body []byte) bool {
 
 // blankComments drops HTML comments but keeps their newlines, so line numbers
 // still match the body.
-func blankComments(body string) string {
-	return htmlCommentRe.ReplaceAllStringFunc(body, func(c string) string {
-		return strings.Repeat("\n", strings.Count(c, "\n"))
-	})
-}
+func blankComments(body string) string { return string(stripComments([]byte(body), true)) }
 
 // SpecJudgeQuestion returns the question the blind judge answers, read from the
 // Verificação section of a spec body. With a bar named and no written question

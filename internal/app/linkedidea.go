@@ -42,6 +42,14 @@ func moveLinkedIdeas(repoDir string, f store.Feature, reason string) ([]string, 
 		if err := moveIdea(repoDir, &i, action, target, maps.Clone(payload)); err != nil {
 			return nil, err
 		}
+		// Back to active, the idea takes its issue link back before the tracker
+		// round, so the request it still carries stays open (B-0076).
+		if action == domain.ActionReopen && borrowsMirror(f, i) {
+			f.Mirror = nil
+			if err := store.SaveFeature(repoDir, f); err != nil {
+				return nil, err
+			}
+		}
 		line := fmt.Sprintf("%s: %s -> %s", i.ID, from, i.State)
 		if target != "" {
 			line += " (" + target + ")"
