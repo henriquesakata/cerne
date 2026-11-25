@@ -66,7 +66,8 @@ func TestPromoteIdeaUnknownFacetWritesNothing(t *testing.T) {
 }
 
 // F-0510 crit. 4: the capabilities land on the new card in the same backend
-// commit that mints it and marks the idea; a lowercase id is canonicalized.
+// commit that mints it and marks the idea; a lowercase id is canonicalized and
+// a repeated one is stored once.
 func TestPromoteIdeaLinksCapabilitiesInOneCommit(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
 	c, err := CreateCapability(repoDir, projDir, "Gestão de demandas", "")
@@ -75,7 +76,7 @@ func TestPromoteIdeaLinksCapabilitiesInOneCommit(t *testing.T) {
 	}
 	i, _ := CreateIdea(repoDir, projDir, "Ideia", "", nil, nil, "", false)
 	before := commitCount(t, repoDir)
-	got, f, err := PromoteIdea(repoDir, projDir, i.ID, PromoteOptions{Capabilities: []string{"c-0001"}})
+	got, f, err := PromoteIdea(repoDir, projDir, i.ID, PromoteOptions{Capabilities: []string{"c-0001", "C-0001"}})
 	if err != nil {
 		t.Fatalf("PromoteIdea: %v", err)
 	}
