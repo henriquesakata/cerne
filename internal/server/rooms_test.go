@@ -883,6 +883,7 @@ func TestChannelRiteRoutesRefuse(t *testing.T) {
 		{http.MethodPost, "/join"},
 		{http.MethodPost, "/close"},
 		{http.MethodPost, "/minutes/note"},
+		{http.MethodPost, "/minutes/draft"}, // T-0022
 		{http.MethodPost, "/facilitator/handoff"},
 		{http.MethodPost, "/items"},
 		{http.MethodGet, "/items/pending"},

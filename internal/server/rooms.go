@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -189,6 +190,8 @@ func writeRoomErr(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
 	case errors.Is(err, room.ErrRoomOpen):
 		writeJSON(w, http.StatusConflict, errorBody(err.Error()))
+	case errors.Is(err, room.ErrNoMinutesDraft):
+		writeJSON(w, http.StatusConflict, errorBody(err.Error()+" — save one with `cerne room minutes draft <room> --minutes <path|-|{...}>`"))
 	case errors.Is(err, room.ErrPermanentRoom):
 		writeJSON(w, http.StatusConflict, errorBody(err.Error()))
 	case errors.Is(err, app.ErrNoChannelIdentity):
@@ -563,6 +566,9 @@ type closeRoomRequest struct {
 	FacilitatorID  string       `json:"facilitator_id"`
 	Minutes        room.Minutes `json:"minutes"`
 	AllowOpenItems bool         `json:"allow_open_items"`
+	// UseDraft closes with the room's saved minutes draft (T-0022), in
+	// place of Minutes.
+	UseDraft bool `json:"use_draft"`
 }
 
 func handleRoomClose(w http.ResponseWriter, r *http.Request, projectID, id string) {
@@ -574,12 +580,21 @@ func handleRoomClose(w http.ResponseWriter, r *http.Request, projectID, id strin
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
 		return
 	}
+	if req.UseDraft && !reflect.ValueOf(req.Minutes).IsZero() {
+		writeJSON(w, http.StatusBadRequest, errorBody("use_draft and minutes are mutually exclusive"))
+		return
+	}
 	m, err := roomManagerFor(projectID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	rm, err := m.Close(id, req.FacilitatorID, req.Minutes, req.AllowOpenItems)
+	var rm room.Room
+	if req.UseDraft {
+		rm, err = m.CloseWithDraft(id, req.FacilitatorID, req.AllowOpenItems)
+	} else {
+		rm, err = m.Close(id, req.FacilitatorID, req.Minutes, req.AllowOpenItems)
+	}
 	if err != nil {
 		if errors.Is(err, room.ErrOpenItems) {
 			pending, pendErr := m.Pending(id)
@@ -592,6 +607,36 @@ func handleRoomClose(w http.ResponseWriter, r *http.Request, projectID, id strin
 		return
 	}
 	writeJSON(w, http.StatusOK, rm)
+}
+
+type minutesDraftRequest struct {
+	SessionID     string       `json:"session_id"`
+	FacilitatorID string       `json:"facilitator_id"`
+	Minutes       room.Minutes `json:"minutes"`
+}
+
+// handleRoomMinutesDraft saves the open room's shared minutes draft (T-0022)
+// for a participant session (authored as its nick) or the facilitator.
+func handleRoomMinutesDraft(w http.ResponseWriter, r *http.Request, projectID, id string) {
+	if refuseChannelRite(w, id) {
+		return
+	}
+	var req minutesDraftRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
+		return
+	}
+	m, err := roomManagerFor(projectID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	d, err := m.SaveMinutesDraft(id, req.SessionID, req.FacilitatorID, req.Minutes)
+	if err != nil {
+		writeRoomErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, d)
 }
 
 type setMinutesNoteRequest struct {
