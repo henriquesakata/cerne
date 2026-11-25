@@ -35,7 +35,10 @@ import (
 // submodule sits under another tree's .git (.git/worktrees/<name>,
 // .git/modules/<name>): walking up from there reaches the wrong .cernerc
 // (B-0080). So the project comes from the working directory, never from the
-// message file's path.
+// message file's path. That directory is git's contract with a hook (see
+// githooks(5); TestGitRunsCommitHookAtWorktreeRoot pins it), and the installed
+// scripts call cerne without a cd: a caller that runs these commands by hand
+// runs them from the root of the tree that commits.
 func hookProject() (project.Config, string, error) { return project.LoadConfig(".") }
 
 // gitTrailerRe is one "Token: value" git trailer line.

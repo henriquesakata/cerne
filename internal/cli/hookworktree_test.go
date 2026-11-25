@@ -192,3 +192,46 @@ func TestCommitHooks_MainCheckoutRelativePath(t *testing.T) {
 		t.Fatalf("message =\n%q\nwant\n%q", got, want)
 	}
 }
+
+// B-0080: the premise the fix stands on, pinned against real git. A
+// prepare-commit-msg hook that records its working directory runs at the
+// worktree's root, both for a commit made from a subdirectory and for
+// `git -C <worktree> commit`. The installed cerne hooks call cerne with no cd,
+// so cerne sees that same directory.
+func TestGitRunsCommitHookAtWorktreeRoot(t *testing.T) {
+	repo := t.TempDir()
+	initGitRepo(t, repo, "main")
+	gitIn(t, repo, "commit", "-q", "--allow-empty", "-m", "init")
+	record := filepath.Join(t.TempDir(), "pwd.txt")
+	hooks := strings.TrimSpace(gitIn(t, repo, "rev-parse", "--git-path", "hooks"))
+	if !filepath.IsAbs(hooks) {
+		hooks = filepath.Join(repo, hooks)
+	}
+	script := "#!/bin/sh\npwd -P > '" + record + "'\n"
+	if err := os.WriteFile(filepath.Join(hooks, "prepare-commit-msg"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	wt, _ := addWorktree(t, repo, "feat/x", "")
+	root, err := filepath.EvalSymlinks(wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub := filepath.Join(wt, "a", "b")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, run := range map[string]func(){
+		"from a subdirectory": func() { gitIn(t, sub, "commit", "-q", "--allow-empty", "-m", "x") },
+		"with git -C":         func() { gitIn(t, t.TempDir(), "-C", wt, "commit", "-q", "--allow-empty", "-m", "y") },
+	} {
+		_ = os.Remove(record)
+		run()
+		got, err := os.ReadFile(record)
+		if err != nil {
+			t.Fatalf("%s: the hook did not run: %v", name, err)
+		}
+		if strings.TrimSpace(string(got)) != root {
+			t.Fatalf("%s: git ran the hook in %q, want the worktree root %q", name, strings.TrimSpace(string(got)), root)
+		}
+	}
+}
