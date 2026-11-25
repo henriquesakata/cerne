@@ -1313,4 +1313,23 @@ describe('o long-poll da aba lê como a sessão (T-0021)', () => {
     await waitFor(() => expect(follows().at(-1)?.[4]).toBe(sid))
     expect(localStorage.getItem(SESSION_KEY)).not.toBeNull()
   })
+
+  // T-0021 crit. 1, 3
+  // E-0006 crit. 7, 9
+  it('401 de uma sessão velha não apaga a sessão mais nova que outra aba guardou', async () => {
+    const newer = JSON.stringify(session({ session_id: 'feedfacefeedfacefeedfacefeedface' }))
+    readRoomMessages.mockImplementation((_id, _since, follow, signal, sessionID) => {
+      if (!follow) return Promise.resolve([open, said])
+      if (sessionID) {
+        localStorage.setItem(SESSION_KEY, newer) // another tab re-joined meanwhile
+        return Promise.reject(new HTTPError('invalid session', 401))
+      }
+      return hang(signal)
+    })
+    render(<WarRoomDetail id="R1" />)
+
+    await waitFor(() => expect(screen.getByText(/já não era válida/)).toBeInTheDocument())
+    expect(screen.getByText('Observando')).toBeInTheDocument()
+    expect(localStorage.getItem(SESSION_KEY)).toBe(newer)
+  })
 })

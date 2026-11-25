@@ -301,7 +301,8 @@ export function WarRoomDetail({ id }: { id: string }) {
             // same cursor, as an invalid resume does (F-0511).
             if (sessionRef.current?.session_id === sid) {
               sessionRef.current = null
-              localStorage.removeItem(sessionKey(id))
+              // Another tab may have stored a newer session after re-joining.
+              if (loadStoredSession(id)?.session_id === sid) localStorage.removeItem(sessionKey(id))
               setSession(null)
               setNotice(t.warRoom.sessionGone)
             }
