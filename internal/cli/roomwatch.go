@@ -138,6 +138,7 @@ func newRoomWatchCmd() *cobra.Command {
 	var dir, session, cursorFile string
 	var port, since int
 	var once bool
+	var settle time.Duration
 	cmd := &cobra.Command{
 		Use:   "watch <room>",
 		Short: "Watch a war room with a durable per-session cursor, filtering your own echo (F-0227)",
@@ -182,12 +183,13 @@ func newRoomWatchCmd() *cobra.Command {
 				}
 				return err
 			}
-			return roomWatchLoop(ctx, cmd.OutOrStdout(), c, roomID, session, cpPath, start, once)
+			return roomWatchLoop(ctx, cmd.OutOrStdout(), c, roomID, session, cpPath, start, once, settle)
 		},
 	}
 	cmd.Flags().StringVar(&session, "session", "", "session capability printed by 'cerne room join' (falls back to CERNE_ROOM_SESSION)")
 	cmd.Flags().IntVar(&since, "since", 0, "override the checkpoint/last_seq and start from this sequence number")
-	cmd.Flags().BoolVar(&once, "once", false, "exit 0 after printing the first relevant (non-echo) event")
+	cmd.Flags().BoolVar(&once, "once", false, "exit 0 after the first relevant (non-echo) event, once --settle passes with nothing new")
+	cmd.Flags().DurationVar(&settle, "settle", 1500*time.Millisecond, "with --once, keep printing events until this long passes with no new one, at most 5s after the first; 0 exits on the first batch")
 	cmd.Flags().StringVar(&cursorFile, "cursor-file", "", "override the default per-room-per-session checkpoint file path")
 	addRoomFlags(cmd, &dir, &port)
 	return cmd
@@ -252,20 +254,45 @@ var roomWatchSleep = func(ctx context.Context, d time.Duration) {
 	}
 }
 
+// roomWatchSettleCap bounds the --settle window from the first relevant
+// event, so a room that never goes quiet cannot hold the turn (E-0006).
+const roomWatchSettleCap = 5 * time.Second
+
+// roomWatchNow is time.Now, swappable so the settle tests run on a fake clock.
+var roomWatchNow = time.Now
+
 // roomWatchLoop long-polls id as session from since, printing every event
 // but its own echo (own:true never printed, but still advances the
 // checkpoint — criterion 3) and persisting the checkpoint only after each
 // event's write succeeds (criterion 2/8). once exits after the first batch
-// with at least one printed event; a close event always ends the loop,
-// printed and checkpointed, regardless of once (criterion 6). A transient
-// read error retries with bounded backoff, cursor untouched; a definitive
-// one (errRoomTransient not set) returns immediately (criterion 5/6).
-func roomWatchLoop(ctx context.Context, out io.Writer, c roomEventReader, id, session, cpPath string, since int, once bool) error {
+// with at least one printed event — or, with settle > 0, once settle passes
+// with no new relevant event, at most roomWatchSettleCap after the first
+// (E-0006); a close event always ends the loop, printed and checkpointed,
+// regardless of once (criterion 6). A transient read error retries with
+// bounded backoff, cursor untouched; a definitive one (errRoomTransient not
+// set) returns immediately (criterion 5/6).
+func roomWatchLoop(ctx context.Context, out io.Writer, c roomEventReader, id, session, cpPath string, since int, once bool, settle time.Duration) error {
 	attempt := 0
+	// Both zero until --once prints its first relevant event; from then on
+	// each read is bounded by the settle window, which every relevant event
+	// pushes back, never past first+roomWatchSettleCap.
+	var first, deadline time.Time
 	for {
-		events, err := c.readAsSession(ctx, id, since, session)
+		readCtx, cancel := ctx, context.CancelFunc(func() {})
+		if !deadline.IsZero() {
+			readCtx, cancel = context.WithDeadline(ctx, deadline)
+		}
+		events, err := c.readAsSession(readCtx, id, since, session)
+		cancel()
 		if err != nil {
 			if ctx.Err() != nil {
+				return nil
+			}
+			// Inside the settle window, the deadline running out, or a
+			// dropped connection a backoff would carry past the cap, ends the
+			// run normally: what it printed is checkpointed and the next
+			// --once resumes there (E-0006).
+			if !deadline.IsZero() && (errors.Is(err, context.DeadlineExceeded) || errors.Is(err, errRoomTransient)) {
 				return nil
 			}
 			if !errors.Is(err, errRoomTransient) {
@@ -298,7 +325,20 @@ func roomWatchLoop(ctx context.Context, out io.Writer, c roomEventReader, id, se
 			}
 		}
 		if once && printedRelevant {
-			return nil
+			if settle <= 0 {
+				return nil
+			}
+			now := roomWatchNow()
+			if first.IsZero() {
+				first = now
+			}
+			deadline = now.Add(settle)
+			if limit := first.Add(roomWatchSettleCap); deadline.After(limit) {
+				deadline = limit
+			}
+			if !deadline.After(now) {
+				return nil
+			}
 		}
 		if ctx.Err() != nil {
 			return nil

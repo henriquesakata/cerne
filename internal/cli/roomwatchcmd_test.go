@@ -121,7 +121,7 @@ func TestRoomWatchLoopFiltersOwnEcho(t *testing.T) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
-		loopErr = roomWatchLoop(ctx, &out, c, "R1", sessA, cpPath, 2, false)
+		loopErr = roomWatchLoop(ctx, &out, c, "R1", sessA, cpPath, 2, false, 0)
 		close(done)
 	}()
 
@@ -174,7 +174,7 @@ func TestRoomWatchLoopOnceWaitsPastEcho(t *testing.T) {
 		// start = 3: past open(1)+ana join(2)+bob join(3), the tail before
 		// this watch begins — otherwise bob's own pre-existing join would
 		// already count as a first "relevant" event for --once.
-		loopErr = roomWatchLoop(ctx, &out, c, "R1", sessA, cpPath, 3, true)
+		loopErr = roomWatchLoop(ctx, &out, c, "R1", sessA, cpPath, 3, true, 0)
 		close(done)
 	}()
 
@@ -220,7 +220,7 @@ func TestRoomWatchLoopClosePrintsCheckpointsAndExits(t *testing.T) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
-		loopErr = roomWatchLoop(ctx, &out, c, "R1", sess, cpPath, 2, false)
+		loopErr = roomWatchLoop(ctx, &out, c, "R1", sess, cpPath, 2, false, 0)
 		close(done)
 	}()
 
@@ -286,7 +286,7 @@ func TestRoomWatchLoopPrintsSameFormatAsRead(t *testing.T) {
 		defer cancel()
 		// start = 3: past open(1)+ana join(2)+bob join(3) — see the same
 		// note in TestRoomWatchLoopOnceWaitsPastEcho.
-		_ = roomWatchLoop(ctx, &out, c, "R1", sessA, cpPath, 3, true)
+		_ = roomWatchLoop(ctx, &out, c, "R1", sessA, cpPath, 3, true, 0)
 		close(done)
 	}()
 	time.Sleep(200 * time.Millisecond)
@@ -436,4 +436,43 @@ func TestRoomWatchSignalDuringStartReleasesLock(t *testing.T) {
 	sendSelf(t, syscall.SIGTERM)
 	waitExit(t, done, "room watch")
 	assertLockFree(t, cpPath)
+}
+
+// T-0020 crit. 1 and 2
+// E-0006 crit. 5 and 6: `room watch --once` takes --settle (1.5s by default)
+// and hands it to the loop, so a line said after the first one is printed
+// lands in the same run. A minute-long window keeps the test off the clock;
+// the close ends the run at once.
+func TestRoomWatchSettleFlagKeepsOnceOpen(t *testing.T) {
+	if f := newRoomWatchCmd().Flags().Lookup("settle"); f == nil || f.DefValue != "1.5s" {
+		t.Fatalf("--settle flag = %+v, want it with a 1.5s default", f)
+	}
+	dir, port := newRoomTestServer(t, "proj-watch-settle")
+	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
+	_, facilitator := openRoomCLI(t, dirFlag, "topic")
+	sessA := joinRoomAs(t, dirFlag, "R1", "ana")
+	sessB := joinRoomAs(t, dirFlag, "R1", "bob") // R1 now at seq 3 (open, 2 joins)
+	c, err := newRoomClient(dir, port)
+	if err != nil {
+		t.Fatalf("newRoomClient: %v", err)
+	}
+	cpPath := filepath.Join(t.TempDir(), "cursor.json")
+
+	out := &syncBuf{}
+	done := runRoomTrapped(t, out, append([]string{"watch", "R1", "--session", sessA, "--once", "--settle", "1m", "--since", "3", "--cursor-file", cpPath}, dirFlag...)...)
+	if _, err := c.say(context.Background(), "R1", sessB, "primeira"); err != nil {
+		t.Fatalf("say: %v", err)
+	}
+	waitOutput(t, out, "primeira")
+	if _, err := c.say(context.Background(), "R1", sessB, "segunda"); err != nil {
+		t.Fatalf("say: %v", err)
+	}
+	waitOutput(t, out, "segunda")
+	if _, err := c.close(context.Background(), "R1", facilitator, room.Minutes{Conclusion: "ok", Rationale: "ok"}, false); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	waitExit(t, done, "room watch --once --settle")
+	if cp, ok, err := loadCheckpoint(cpPath); err != nil || !ok || cp.LastSeq != 6 {
+		t.Fatalf("checkpoint = %+v (ok=%v err=%v), want last_seq 6 (the close)", cp, ok, err)
+	}
 }
