@@ -168,7 +168,7 @@ func runHookChannel(cmd *cobra.Command, point string) {
 	if consume {
 		fmt.Fprint(cmd.OutOrStdout(), sessionBoard(cfg.ProjectID, cfg.RecentWorkWindowDays()))
 	}
-	block := channelBlock(cfg.ProjectID, in.SessionID, consume)
+	block := startBlock(cfg.ProjectID, in.SessionID, consume)
 	if point == "subagent" {
 		if task := sessionTask(cfg.ProjectID, in.SessionID, in.AgentID); task != "" {
 			if block != "" {
@@ -297,13 +297,35 @@ func channelBlock(projectID, sess string, consume bool) string {
 	return block
 }
 
-// channelThen puts session sess's pending channel block (F-0325) ahead of
+// startBlock is channelBlock at a hook's session start, led by the session's
+// card notices (F-0504). Only hooks take the notices: a hook tells a subagent
+// apart (its peek, an agent_id), while `cerne next` inside a subagent runs
+// under the parent's CERNE_SESSION and would hand the parent's notices away.
+func startBlock(projectID, sess string, consume bool) string {
+	block := channelBlock(projectID, sess, consume)
+	if !consume {
+		return block
+	}
+	cacheDir, err := project.CacheDir(projectID)
+	if err != nil {
+		return block
+	}
+	return withChannel(app.TakeNotices(cacheDir, sess, time.Now().UTC()), nil, block)
+}
+
+// channelThen puts session sess's card notices (F-0504) and pending channel
+// block (F-0325) ahead of
 // block, consuming it, at a tool call — an edit, a shell command (B-0054) —
 // where an addressed message already shown waits for the next turn (F-0490).
 // The prompt has its own (promptChannel). Fail-open: any error is no channel.
-func channelThen(cacheDir, repoDir, sess, block string) string {
-	ch, err := app.ChannelInjectTool(cacheDir, repoDir, sess, time.Now().UTC())
-	return withChannel(ch, err, block)
+func channelThen(cacheDir, repoDir, sess, agent, block string) string {
+	now := time.Now().UTC()
+	ch, err := app.ChannelInjectTool(cacheDir, repoDir, sess, now)
+	block = withChannel(ch, err, block)
+	if agent != "" { // a subagent carries its parent's session id: the notices are the parent's
+		return block
+	}
+	return withChannel(app.TakeNotices(cacheDir, sess, now), nil, block)
 }
 
 // withChannel puts the channel block ch ahead of block; an error is no channel.

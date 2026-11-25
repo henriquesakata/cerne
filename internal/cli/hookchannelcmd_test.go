@@ -724,3 +724,116 @@ func TestHookChannelReachesNeverBoundSession(t *testing.T) {
 		t.Fatalf("an unaddressed session got it: %v\n%q", err, out)
 	}
 }
+
+// seedCardNotice leaves a card notice for sess in the project's cache, in the
+// file format F-0504's transitions write.
+func seedCardNotice(t *testing.T, repoDir, sess, line string) {
+	t.Helper()
+	dir := filepath.Join(filepath.Dir(repoDir), "notices")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(map[string]any{"entity": "F-0001", "line": line, "at": time.Now().UTC()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, sess+".ndjson"), append(raw, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestHookNoticesAtContactPoints (F-0504 crit. 5): a card notice comes out at
+// the session's first contact point — a prompt, a tool call, an edit, a
+// session start — ahead of the channel, and only once.
+func TestHookNoticesAtContactPoints(t *testing.T) {
+	boardOff(t)
+	t.Setenv("CLAUDE_ENV_FILE", "")
+	const line = "F-0001: candidate → approved by local"
+	for _, c := range []struct {
+		name  string
+		stdin func(projDir string) string
+		args  []string
+	}{
+		{"prompt", func(p string) string { return promptJSON(t, "sess-a", p, "continua") }, []string{"hook", "prompt-notes"}},
+		{"tool", func(p string) string { return bashJSON(t, "sess-a", p, "go test ./...") }, []string{"hook", "tool-notes"}},
+		{"edit", func(p string) string {
+			return hookJSON(t, "sess-a", p, "Edit", map[string]any{"file_path": filepath.Join(p, "a.go")}, nil)
+		}, []string{"hook", "work-gate"}},
+		{"session start", func(p string) string { return sessionStartJSON(t, "sess-a", p) }, []string{"hook", "channel", "--point", "session-start"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			projDir, _, repoDir := setupProject(t)
+			startBoundWork(t, projDir, repoDir, "sess-a", "Mexer no servidor")
+			b := startBoundWork(t, projDir, repoDir, "sess-b", "Revisar a interface")
+			seedChannel(t, repoDir, b, "build verde")
+			seedCardNotice(t, repoDir, "sess-a", line)
+
+			out, err := execCerneStdin(t, c.stdin(projDir), c.args...)
+			if err != nil {
+				t.Fatalf("%v: %v\n%s", c.args, err, out)
+			}
+			n, ch := strings.Index(out, line), strings.Index(out, "build verde")
+			if n < 0 || ch >= 0 && ch < n {
+				t.Fatalf("%v: want the notice, ahead of the channel:\n%s", c.args, out)
+			}
+			if out, err := execCerneStdin(t, c.stdin(projDir), c.args...); err != nil || strings.Contains(out, line) {
+				t.Fatalf("%v: notice shown twice (%v):\n%s", c.args, err, out)
+			}
+		})
+	}
+
+	t.Run("subagent tool call leaves it", func(t *testing.T) {
+		projDir, _, repoDir := setupProject(t)
+		startBoundWork(t, projDir, repoDir, "sess-a", "Mexer no servidor")
+		seedCardNotice(t, repoDir, "sess-a", line)
+		var in map[string]any
+		if err := json.Unmarshal([]byte(bashJSON(t, "sess-a", projDir, "go test ./...")), &in); err != nil {
+			t.Fatal(err)
+		}
+		in["agent_id"] = "a1b2" // inside a subagent the session_id is still the parent's
+		raw, err := json.Marshal(in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if out, err := execCerneStdin(t, string(raw), "hook", "tool-notes"); err != nil || strings.Contains(out, line) {
+			t.Fatalf("a subagent's tool call took the session's notice (%v):\n%s", err, out)
+		}
+		if out, err := execCerneStdin(t, bashJSON(t, "sess-a", projDir, "go test ./..."), "hook", "tool-notes"); err != nil || !strings.Contains(out, line) {
+			t.Fatalf("the session lost its notice to a subagent (%v):\n%s", err, out)
+		}
+	})
+
+	t.Run("subagent peek leaves it", func(t *testing.T) {
+		projDir, _, repoDir := setupProject(t)
+		startBoundWork(t, projDir, repoDir, "sess-a", "Mexer no servidor")
+		seedCardNotice(t, repoDir, "sess-a", line)
+		payload := sessionStartJSON(t, "sess-a", projDir)
+		if out, err := execCerneStdin(t, payload, "hook", "channel", "--point", "subagent"); err != nil || strings.Contains(out, line) {
+			t.Fatalf("subagent took the session's notice (%v):\n%s", err, out)
+		}
+		if out, err := execCerneStdin(t, payload, "hook", "channel", "--point", "session-start"); err != nil || !strings.Contains(out, line) {
+			t.Fatalf("the session lost its notice to a subagent (%v):\n%s", err, out)
+		}
+	})
+}
+
+// TestNextLeavesCardNotices (F-0504 crit. 5): `cerne next` and `status
+// --active` never take the card notices. A subagent inherits its parent's
+// CERNE_SESSION and the CLI cannot tell it apart, so taking them there would
+// hand the parent's notices to a subagent; the hook before the command shows
+// them to the session instead.
+func TestNextLeavesCardNotices(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	startBoundWork(t, projDir, repoDir, "sess-a", "Mexer no servidor")
+	const line = "F-0001: candidate → approved by local"
+	seedCardNotice(t, repoDir, "sess-a", line)
+	t.Setenv("CERNE_SESSION", "sess-a")
+	for _, args := range [][]string{{"next", "--dir", projDir}, {"status", "--active", "--dir", projDir}} {
+		if out, err := execCerne(t, args...); err != nil || strings.Contains(out, line) {
+			t.Fatalf("%v took the card notice (%v):\n%s", args, err, out)
+		}
+	}
+	if out, err := execCerneStdin(t, bashJSON(t, "sess-a", projDir, "cerne next"), "hook", "tool-notes"); err != nil || !strings.Contains(out, line) {
+		t.Fatalf("the hook before the command lost the notice (%v):\n%s", err, out)
+	}
+}
