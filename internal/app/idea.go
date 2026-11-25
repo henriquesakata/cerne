@@ -260,6 +260,9 @@ func refuseIncompleteCard(repoDir, ideaID string, n newFeature) error {
 			fixes = append(fixes, "--capability C-… (see 'cerne capability list --tree')")
 		}
 	}
+	if len(lacks) == 0 { // an impediment this message does not know is not one the promote refuses
+		return nil
+	}
 	return fmt.Errorf("%w: %s would become a candidate with %s — pass %s, or --allow-incomplete to classify it later",
 		ErrIncompleteCard, ideaID, strings.Join(lacks, " and "), strings.Join(fixes, " and "))
 }

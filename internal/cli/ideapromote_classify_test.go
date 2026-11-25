@@ -80,20 +80,58 @@ func TestIdeaPromoteRefusesIncompleteCard(t *testing.T) {
 }
 
 // F-0510 crit. 7: a card born tagged and linked gets no tag or capability step,
-// and the approve check lists neither impediment.
+// and the approve check lists neither impediment — while it does list both for
+// a card promoted with --allow-incomplete (the control that gives it teeth).
+// The capability CSV reaches the card whole.
 func TestIdeaPromoteCompleteCardHasNoCardSteps(t *testing.T) {
-	projDir, _, _ := setupProject(t)
-	if out, err := execCerne(t, "capability", "new", "Gestão de demandas", "--dir", projDir); err != nil {
-		t.Fatalf("capability new: %v\n%s", err, out)
+	projDir, _, repoDir := setupProject(t)
+	for _, c := range []string{"Gestão de demandas", "Visualização"} {
+		if out, err := execCerne(t, "capability", "new", c, "--dir", projDir); err != nil {
+			t.Fatalf("capability new: %v\n%s", err, out)
+		}
 	}
 	ideaCmd(t, projDir, "new", "Ideia espelhada")
-	out := ideaCmd(t, projDir, "promote", "I-0001", "--facet", "code", "--component", "cli", "--capability", "C-0001")
+	ideaCmd(t, projDir, "new", "Exportar relatório em PDF")
+	out := ideaCmd(t, projDir, "promote", "I-0001", "--facet", "code", "--component", "cli", "--capability", "C-0001,C-0002")
 	block := stepBlock(out)
 	if block == "" || strings.Contains(block, stepTags) || strings.Contains(block, stepCapability) {
 		t.Fatalf("complete card still asks for tags or capability:\n%s", out)
 	}
-	check, _ := execCerne(t, "feature", "approve", "F-0001", "--check", "--dir", projDir)
-	if strings.Contains(check, app.ImpedimentUntagged) || strings.Contains(check, app.ImpedimentCapabilityMissing) {
-		t.Fatalf("approve --check lists a card impediment:\n%s", check)
+	if f, _ := store.LoadFeature(repoDir, "F-0001"); !slices.Equal(f.Capabilities, []string{"C-0001", "C-0002"}) {
+		t.Fatalf("capabilities = %v, want [C-0001 C-0002]", f.Capabilities)
+	}
+	ideaCmd(t, projDir, "promote", "I-0002", "--allow-incomplete")
+	for id, wantListed := range map[string]bool{"F-0001": false, "F-0002": true} {
+		check, _ := execCerne(t, "feature", "approve", id, "--check", "--dir", projDir)
+		if !strings.Contains(check, "Check: "+id) {
+			t.Fatalf("approve %s --check printed no check:\n%s", id, check)
+		}
+		for _, code := range []string{app.ImpedimentUntagged, app.ImpedimentCapabilityMissing} {
+			if strings.Contains(check, code) != wantListed {
+				t.Fatalf("approve %s --check lists %s = %v, want %v:\n%s", id, code, !wantListed, wantListed, check)
+			}
+		}
+	}
+}
+
+// F-0510 crit. 2 and 5: an unknown facet and an unknown capability passed on
+// the command line surface their errors, with nothing created.
+func TestIdeaPromoteFlagErrorsSurface(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	ideaCmd(t, projDir, "new", "Ideia")
+	for _, c := range []struct {
+		flags []string
+		want  error
+	}{
+		{[]string{"--facet", "bogus", "--component", "cli"}, domain.ErrUnknownFacet},
+		{[]string{"--facet", "code", "--capability", "C-9999"}, app.ErrUnknownCapability},
+	} {
+		args := append(append([]string{"idea", "promote", "I-0001"}, c.flags...), "--dir", projDir)
+		if out, err := execCerne(t, args...); !errors.Is(err, c.want) {
+			t.Fatalf("%v err = %v, want %v\n%s", c.flags, err, c.want, out)
+		}
+	}
+	if fs, _ := store.LoadAllFeatures(repoDir); len(fs) != 0 {
+		t.Fatalf("a refused promote created %d feature(s)", len(fs))
 	}
 }

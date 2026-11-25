@@ -7,7 +7,8 @@ import (
 )
 
 // F-0510 crit. 9: the FAQ and the first-week guide show idea promote with the
-// classification flags, so a promote copied from them is not refused.
+// classification flags, so a promote copied from them is not refused for a
+// missing tag (the FAQ also names --capability for a project with a taxonomy).
 func TestDocsPromoteWithClassificationFlags(t *testing.T) {
 	for path, wants := range map[string][]string{
 		"faq.md":                   {"--facet", "--component", "--capability", "--allow-incomplete"},
