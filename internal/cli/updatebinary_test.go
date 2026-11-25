@@ -28,6 +28,14 @@ func TestBinaryPlan(t *testing.T) {
 			t.Setenv("GOBIN", filepath.Dir(exe))
 			return exe
 		}, false, "go install", "go install github.com/henriquesakata/cerne/cmd/cerne@latest"},
+		// F-0507 crit. 6: the panel's plan refuses a package-managed binary too.
+		{"system package", func(t *testing.T) string {
+			if runtime.GOOS == "windows" {
+				t.Skip("needs the POSIX /usr/bin path")
+			}
+			setRunningBinary(t, "/usr/bin/cerne", "v0.14.3")
+			return "/usr/bin/cerne"
+		}, false, "system package manager", "yay -Syu cerne-bin"},
 		{"unwritable folder", func(t *testing.T) string {
 			if runtime.GOOS == "windows" || os.Geteuid() == 0 {
 				t.Skip("needs POSIX permissions and a non-root user")

@@ -67,15 +67,17 @@ func TestAURPKGBUILD_Render(t *testing.T) {
 
 // F-0507 crit. 2: a missing Linux asset fails, says which, and prints nothing.
 func TestAURPKGBUILD_MissingAsset(t *testing.T) {
-	out, stderr, err := renderPKGBUILD(t, "v9.9.9", fakeSums(t, "v9.9.9", "linux_arm64"))
-	if err == nil {
-		t.Fatal("render succeeded with linux_arm64 missing")
-	}
-	if !strings.Contains(stderr, "cerne_v9.9.9_linux_arm64") {
-		t.Errorf("stderr does not name the missing asset: %q", stderr)
-	}
-	if out != "" {
-		t.Errorf("printed a PKGBUILD despite the missing asset:\n%s", out)
+	for _, asset := range []string{"linux_amd64", "linux_arm64"} {
+		out, stderr, err := renderPKGBUILD(t, "v9.9.9", fakeSums(t, "v9.9.9", asset))
+		if err == nil {
+			t.Fatalf("render succeeded with %s missing", asset)
+		}
+		if !strings.Contains(stderr, "cerne_v9.9.9_"+asset) {
+			t.Errorf("%s: stderr does not name the missing asset: %q", asset, stderr)
+		}
+		if out != "" {
+			t.Errorf("%s: printed a PKGBUILD despite the missing asset:\n%s", asset, out)
+		}
 	}
 }
 

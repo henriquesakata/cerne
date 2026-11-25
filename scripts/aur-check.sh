@@ -43,7 +43,7 @@ echo "--- .SRCINFO"
 cat "$work/pkg/.SRCINFO"
 
 echo "--- namcap PKGBUILD"
-lint=$(as_builder 'namcap PKGBUILD' 2>&1) || true
+lint=$(as_builder 'namcap PKGBUILD' 2>&1) || fail "namcap failed: $lint"
 echo "$lint"
 if echo "$lint" | grep -q ' E: '; then
   fail "namcap reports an error in the PKGBUILD"
