@@ -2,9 +2,11 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
+	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/store"
 )
@@ -183,5 +185,28 @@ func mustExec(t *testing.T, projDir string, args ...string) {
 	full := append(args, "--dir", projDir)
 	if out, err := execCerne(t, full...); err != nil {
 		t.Fatalf("cerne %s: %v\noutput: %s", strings.Join(args, " "), err, out)
+	}
+}
+
+// B-0082: every command that refuses an unknown capability names the id and
+// the command that lists the valid ones, and the error stays matchable.
+func TestUnknownCapabilityPointsToList(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	mustExec(t, projDir, "feature", "new", "Relatar bugs", "--context", "ctx")
+	mustExec(t, projDir, "capability", "new", "Studio")
+	ideaCmd(t, projDir, "new", "Ideia")
+	for _, args := range [][]string{
+		{"feature", "capability", "F-0001", "C-9999"},
+		{"capability", "new", "x", "--parent", "C-9999"},
+		{"capability", "retire", "C-9999", "--reason", "y"},
+		{"idea", "promote", "I-0001", "--facet", "code", "--capability", "C-9999"},
+	} {
+		out, err := execCerne(t, append(args, "--dir", projDir)...)
+		if !errors.Is(err, app.ErrUnknownCapability) {
+			t.Fatalf("%v err = %v, want ErrUnknownCapability\n%s", args, err, out)
+		}
+		if msg := err.Error(); !strings.Contains(msg, "C-9999") || !strings.Contains(msg, "cerne capability list --tree") {
+			t.Fatalf("%v err = %q, want the id and 'cerne capability list --tree'", args, msg)
+		}
 	}
 }
