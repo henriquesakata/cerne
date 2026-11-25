@@ -144,6 +144,14 @@ func fenceRun(line string) string {
 	return t[:n]
 }
 
+// htmlComment is an HTML comment outside an inline code span.
+var htmlComment = regexp.MustCompile("(?s)(^|[^`])<!--.*?-->")
+
+// StripHTMLComments drops HTML comments (template scaffold, never record).
+func StripHTMLComments(b []byte) []byte {
+	return htmlComment.ReplaceAll(b, []byte("${1}"))
+}
+
 // frontmatterKeyLine is a top-level "key: value" line — with blank lines, the
 // only line a frontmatter block may hold before its closing '---'.
 var frontmatterKeyLine = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]*:(\s|$)`)

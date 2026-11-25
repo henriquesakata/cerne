@@ -19,6 +19,7 @@ import (
 
 	_ "modernc.org/sqlite" // database/sql driver "sqlite" (pure Go, no cgo)
 
+	"github.com/henriquesakata/cerne/internal/doccheck"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/store"
@@ -657,7 +658,9 @@ func splitCamel(tok string) []string {
 	return append(out, string(r[start:]))
 }
 
-// readDoc returns the file content and whether the file exists.
+// readDoc returns the file's searchable text and whether the file exists. The
+// leading frontmatter and the HTML comments (the template's guidance lines)
+// are not the document: they are neither matched nor quoted (B-0075).
 func readDoc(path string) (string, bool, error) {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -666,7 +669,11 @@ func readDoc(path string) (string, bool, error) {
 	if err != nil {
 		return "", false, fmt.Errorf("reading %s: %w", path, err)
 	}
-	return string(data), true, nil
+	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
+	if _, rest, opens, closed := doccheck.LeadingBlock(lines); opens && closed {
+		lines = rest
+	}
+	return string(doccheck.StripHTMLComments([]byte(strings.Join(lines, "\n")))), true, nil
 }
 
 // openDB opens dbPath waiting up to 5 s on a lock held by another writer, so

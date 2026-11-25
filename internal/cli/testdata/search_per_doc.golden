@@ -1,43 +1,33 @@
 Building index...
 F-0001 [feature/plan] candidate — Parcelamento
-  …F-0001
----
-
-# Título
+  # Título
 
 Calcular as «parcelas» no checkout.
 
 ## Verificação
 
-Barra: fixture de…
+Barra: fixture de teste — referência…
 F-0001 [feature/result] candidate — Parcelamento
-  …F-0001
----
-
-# Título
+  # Título
 
 As «parcelas» saem no extrato.
 
 ## Verificação
 
-Barra: fixture de…
+Barra: fixture de teste — referência…
 F-0001 [feature/spec] candidate — Parcelamento
-  …F-0001
----
-
-# Título
+  # Título
 
 Dividir compras em «parcelas» mensais sem juros.
 
 ## Verificação
 
-Barra…
+Barra: fixture de…
 F-0002 [feature/spec] candidate — Cartão
-  …F-0002
----
-
-# Título
+  # Título
 
 Fatura do cartão com «parcelas» de outras compras.
 
-## Verificação…
+## Verificação
+
+Barra: fixture…

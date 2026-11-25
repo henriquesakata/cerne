@@ -33,7 +33,6 @@ var (
 	// record: the result template's Gauntlet guide carries the literal forms.
 	// An opener written as code ("`<!--`") is not one, so a backtick before
 	// it disqualifies the match (the preceding byte is kept by the replace).
-	htmlCommentRe = regexp.MustCompile("(?s)(^|[^`])<!--.*?-->")
 	nextHeadingRe = regexp.MustCompile(`(?m)^\s*##\s`)
 	// Leading markdown markers of a line: heading, list, quote, table, "N."/"N)"
 	// and emphasis delimiters (NBSP counts as space).
@@ -60,9 +59,7 @@ func gauntletSections(result []byte) []string {
 }
 
 // StripHTMLComments drops HTML comments (template scaffold, never record).
-func StripHTMLComments(b []byte) []byte {
-	return htmlCommentRe.ReplaceAll(b, []byte("${1}"))
-}
+func StripHTMLComments(b []byte) []byte { return doccheck.StripHTMLComments(b) }
 
 // legacyGauntletRecorded is the pre-F-0304 per-line predicate, kept verbatim
 // for features completed before resultGauntletStrictSince. It reports whether the section carries at least one cited
