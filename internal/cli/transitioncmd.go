@@ -211,7 +211,8 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 		if out.From == domain.StateApproved && err == nil && domain.CheckGate(id, domain.ActionStart, docs) == nil {
 			fmt.Fprintf(cmd.OutOrStdout(), "Next step: 'cerne feature start %s' is open again.\n", id)
 		} else {
-			fmt.Fprintf(cmd.OutOrStdout(), "Next step: fill in the plan at content/features/%s/plan.md ('cerne plan draft %s' scaffolds it) and run 'cerne push' before 'cerne feature start'.\n", id, id)
+			f, _ := store.LoadFeature(ctx.repoDir, id)
+			fmt.Fprintf(cmd.OutOrStdout(), "Next step: fill in the plan ('cerne plan draft %s' scaffolds it): %s, before 'cerne feature start'.\n", id, app.EditDoc(f, "plan.md"))
 		}
 	}
 	if action == domain.ActionComplete {
@@ -231,7 +232,8 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 		fmt.Fprintln(w, "  - before the code: consult the active notes (cerne note list, filter with --facet/--component) and cite the applicable conventions in plan.md")
 		fmt.Fprintln(w, "  - mark each proving test with a comment `"+id+" crit. N` (a bug: `"+id+"`), or end an untested criterion with \"(manual verification)\" — complete refuses unmarked criteria")
 		fmt.Fprintln(w, "  - keep progress real-time: tick finished tasks in plan.md, gather evidence in result.md, cerne sync at each milestone")
-		fmt.Fprintf(w, "  - when done: fill in the result at content/features/%s/result.md ('cerne result draft %s' scaffolds it) and run 'cerne push' before 'cerne feature complete'\n", id, id)
+		f, _ := store.LoadFeature(ctx.repoDir, id)
+		fmt.Fprintf(w, "  - when done: fill in the result ('cerne result draft %s' scaffolds it): %s, before 'cerne feature complete'\n", id, app.EditDoc(f, "result.md"))
 		printTaskIndex(w, ctx.repoDir, id, "") // E-0005 criterion 9: the session binds here
 	}
 	// Completing the last alive child of an epic scaffolds the epic's result
@@ -239,7 +241,8 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 	// later — the complete gate still requires a real result before it fires.
 	if out.EpicReadyToClose != "" {
 		epic := out.EpicReadyToClose
-		fmt.Fprintf(cmd.OutOrStdout(), "↳ epic %s ready to close: fill content/features/%s/result.md and run 'cerne feature complete %s'\n", epic, epic, epic)
+		ef, _ := store.LoadFeature(ctx.repoDir, epic)
+		fmt.Fprintf(cmd.OutOrStdout(), "↳ epic %s ready to close: fill in its result (%s), then run 'cerne feature complete %s'\n", epic, app.EditDoc(ef, "result.md"), epic)
 	}
 	if action == domain.ActionComplete {
 		printCompleteNextStep(cmd.OutOrStdout(), ctx.repoDir, id, noStamp)

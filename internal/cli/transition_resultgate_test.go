@@ -42,7 +42,7 @@ func TestCompleteRefusalMessageAndNoForce(t *testing.T) {
 		t.Fatalf("err = %v, want ErrResultIncomplete", err)
 	}
 	t.Logf("refusal message:\n%s", err)
-	for _, want := range []string{"2 problem(s)", "criterion(s) 2 (", `no "## Gauntlet" section`, "content/features/" + id + "/result.md", "cerne push"} {
+	for _, want := range []string{"2 problem(s)", "criterion(s) 2 (", `no "## Gauntlet" section`, ".docs/current/features/" + id + "-feature-a/result.md", "cerne pull", "cerne push"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("refusal %q lacks %q", err, want)
 		}

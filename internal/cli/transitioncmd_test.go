@@ -743,3 +743,41 @@ func TestApproveFollowsGauntletSettingWrittenThroughRegistry(t *testing.T) {
 		t.Fatalf("approve with gates.gauntlet=on: %v, want ErrSpecMissingBar", err)
 	}
 }
+
+// B-0074: the refusals and Next steps of the lifecycle name the file the user
+// edits — .docs/current/features/<id>-<slug>/<doc> with 'cerne pull'/'cerne
+// push' — never the backend path content/features/<id>/.
+func TestLifecycleMessagesNameTheDocsFile(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	id := newFeature(t, projDir, "Sign in with GitHub", 1)
+	dir := ".docs/current/features/" + id + "-sign-in-with-github/"
+	check := func(step, text, doc string) {
+		t.Helper()
+		if !strings.Contains(text, dir+doc) || !strings.Contains(text, "cerne pull") || strings.Contains(text, "content/features/") {
+			t.Errorf("%s names %s%s with 'cerne pull' and no backend path:\n%s", step, dir, doc, text)
+		}
+	}
+	writeDoc(t, repoDir, id, "spec.md", realDoc(id, "Problema real descrito aqui."))
+	commitBackend(t, repoDir)
+	out, err := execCerne(t, "feature", "approve", id, "--dir", projDir)
+	if err != nil {
+		t.Fatalf("approve: %v\n%s", err, out)
+	}
+	check("approve Next step", out, "plan.md")
+	_, err = execCerne(t, "feature", "start", id, "--dir", projDir)
+	if err == nil {
+		t.Fatal("start with the stub plan passed")
+	}
+	check("start refusal", err.Error(), "plan.md")
+	writeDoc(t, repoDir, id, "plan.md", realDoc(id, "Passo 1: implementar."))
+	commitBackend(t, repoDir)
+	if out, err = execCerne(t, "feature", "start", id, "--dir", projDir); err != nil {
+		t.Fatalf("start: %v\n%s", err, out)
+	}
+	check("start Next step", out, "result.md")
+	_, err = execCerne(t, "feature", "complete", id, "--dir", projDir)
+	if err == nil {
+		t.Fatal("complete with the stub result passed")
+	}
+	check("complete refusal", err.Error(), "result.md")
+}
