@@ -90,7 +90,8 @@ func newRoomOpenCmd() *cobra.Command {
 			fmt.Fprintf(out, "listen: cerne room read %s --since 0 --once\n", rm.ID)
 			fmt.Fprintf(out, "facilitator capability: %s\n", res.FacilitatorID)
 			fmt.Fprintf(out, "keep this — it is required to resolve items and close the room; hand it off with 'cerne room facilitator handoff'\n")
-			fmt.Fprintf(out, "env: export CERNE_ROOM_FACILITATOR=%s\n", res.FacilitatorID)
+			stored, err := keepRoomFacilitator(c.pid, rm.ID, res.FacilitatorID)
+			printKeptOrEnv(cmd, stored, err, "CERNE_ROOM_FACILITATOR", res.FacilitatorID)
 			return nil
 		},
 	}
@@ -117,12 +118,19 @@ func newRoomJoinCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			id, sid := res.Room.ID, res.Session.SessionID
 			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "joined %s as %s (%d participant(s))\n", res.Room.ID, nick, len(res.Room.Participants))
-			fmt.Fprintf(out, "session: %s\n", res.Session.SessionID)
+			fmt.Fprintf(out, "joined %s as %s (%d participant(s))\n", id, nick, len(res.Room.Participants))
+			fmt.Fprintf(out, "session: %s\n", sid)
 			fmt.Fprintf(out, "keep this session token — losing it locks the nick until the room closes\n")
-			fmt.Fprintf(out, "say: cerne room say %s \"<message>\" --session %s\n", res.Room.ID, res.Session.SessionID)
-			fmt.Fprintf(out, "env: export CERNE_ROOM_SESSION=%s\n", res.Session.SessionID)
+			stored, kept, err := keepJoinedSession(cmd.Context(), c, id, nick, sid)
+			if kept != "" {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: this agent session already keeps nick %q in %s and it still works, so this session was not stored; pass it through CERNE_ROOM_SESSION\n", kept, id)
+			}
+			printKeptOrEnv(cmd, stored, err, "CERNE_ROOM_SESSION", sid)
+			fmt.Fprintf(out, "say: cerne room say %s \"<message>\"\n", id)
+			fmt.Fprintf(out, "listen: cerne room watch %s --once\n", id)
+			fmt.Fprintf(out, "ask the facilitator: cerne room request-decision %s --title \"<question>\" --body \"<why>\"\n", id)
 			return nil
 		},
 	}

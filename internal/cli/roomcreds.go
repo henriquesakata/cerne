@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/henriquesakata/cerne/internal/project"
+	"github.com/spf13/cobra"
 )
 
 // errNoRoomSession and errNoRoomFacilitator: no flag, no variable and nothing
@@ -118,4 +120,48 @@ func resolveRoomFacilitator(flag, projectID, roomID string) (string, error) {
 		return "", fmt.Errorf("%w. Lost it? A human runs 'cerne room facilitator reset %s'", errNoRoomFacilitator, roomID)
 	}
 	return c.FacilitatorID, nil
+}
+
+// keepRoomFacilitator stores the capability `room open` just minted for this
+// agent session; stored is false without CERNE_SESSION.
+func keepRoomFacilitator(projectID, roomID, facilitatorID string) (stored bool, err error) {
+	if path, err := roomCredsPath(projectID, roomID); err != nil || path == "" {
+		return false, err
+	}
+	prev, _ := loadRoomCreds(projectID, roomID) // unreadable: replaced
+	prev.FacilitatorID = facilitatorID
+	return true, saveRoomCreds(projectID, roomID, prev)
+}
+
+// keepJoinedSession stores the session `room join` just minted for this agent
+// session, unless the room already keeps another nick's session that still
+// works: a subagent shares its parent's CERNE_SESSION (hookchannelcmd.go), so
+// replacing it would hand the parent's nick over. Then kept names that nick
+// and nothing is stored. A transient resume failure counts as still working.
+func keepJoinedSession(ctx context.Context, c roomClient, roomID, nick, sessionID string) (stored bool, kept string, err error) {
+	if path, err := roomCredsPath(c.pid, roomID); err != nil || path == "" {
+		return false, "", err
+	}
+	prev, _ := loadRoomCreds(c.pid, roomID) // unreadable: replaced
+	if prev.SessionID != "" && prev.Nick != nick {
+		if _, err := c.resume(ctx, roomID, prev.SessionID); err == nil || errors.Is(err, errRoomTransient) {
+			return false, prev.Nick, nil
+		}
+	}
+	prev.Nick, prev.SessionID = nick, sessionID
+	return true, "", saveRoomCreds(c.pid, roomID, prev)
+}
+
+// printKeptOrEnv says where the capability lives after open/join: stored for
+// this agent session, or else the env line (no CERNE_SESSION, another nick
+// kept, a failed write) — the only copyable form that carries it.
+func printKeptOrEnv(cmd *cobra.Command, stored bool, err error, envVar, capability string) {
+	if err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not store it for this agent session: %v\n", err)
+	}
+	if stored && err == nil {
+		fmt.Fprintln(cmd.OutOrStdout(), "stored for this agent session (CERNE_SESSION) in a 0600 cache file: room commands for this room find it with no flag or variable")
+		return
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "env: export %s=%s\n", envVar, capability)
 }

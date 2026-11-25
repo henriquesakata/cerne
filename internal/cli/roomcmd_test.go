@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -383,17 +384,158 @@ func TestRoomJoinPrintsSessionAndNextSteps(t *testing.T) {
 	if !strings.Contains(out, "session: ") {
 		t.Fatalf("output = %q, want the session line", out)
 	}
-	if !strings.Contains(out, "cerne room say R1 \"<message>\" --session ") {
-		t.Fatalf("output = %q, want a copyable say example", out)
+	// B-0084: the copyable examples carry no credential.
+	for _, want := range []string{
+		"say: cerne room say R1 \"<message>\"\n",
+		"cerne room watch R1 --once\n",
+		"cerne room request-decision R1 --title",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output = %q, want the copyable example %q", out, want)
+		}
 	}
 	if !strings.Contains(out, "export CERNE_ROOM_SESSION=") {
-		t.Fatalf("output = %q, want the env convenience line", out)
+		t.Fatalf("output = %q, want the env line (no CERNE_SESSION here)", out)
 	}
 	if !strings.Contains(out, "keep this session token") {
 		t.Fatalf("output = %q, want the keep-the-token warning", out)
 	}
-	if strings.Contains(out, "watch") {
-		t.Fatalf("output = %q, watch example must wait for F-0227", out)
+}
+
+// credentialOnTheCommandLine matches a room command that passes a capability
+// as a flag value or as an inline variable prefix (B-0084): placeholders
+// (<token>), variables ($X), quoted values, printf verbs and raw hex tokens
+// count; the bare flag name in prose does not.
+var credentialOnTheCommandLine = regexp.MustCompile("cerne room [^`\\n]*?--(session|facilitator)(=|\\s+)[<$\"'%0-9a-f]|CERNE_ROOM_(SESSION|FACILITATOR)=[^\\s`]+\\s+cerne room")
+
+// lineValue is what follows prefix on the first line of out that starts
+// with it, or "".
+func lineValue(out, prefix string) string {
+	for _, line := range strings.Split(out, "\n") {
+		if v, ok := strings.CutPrefix(line, prefix); ok {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
+}
+
+// assertCredentialOnlyWhereAllowed fails when cred shows up in out outside
+// the single line that shows it once and the env line, or when any line
+// teaches a room command with the capability on its command line (B-0084).
+func assertCredentialOnlyWhereAllowed(t *testing.T, out, cred string) {
+	t.Helper()
+	for _, line := range strings.Split(out, "\n") {
+		if credentialOnTheCommandLine.MatchString(line) {
+			t.Errorf("line %q puts the capability on the command line", line)
+		}
+		if !strings.Contains(line, cred) {
+			continue
+		}
+		if !strings.HasPrefix(line, "session: ") && !strings.HasPrefix(line, "facilitator capability: ") && !strings.HasPrefix(line, "env: export CERNE_ROOM_") {
+			t.Errorf("line %q shows the capability", line)
+		}
+	}
+}
+
+// B-0084 regression, part 1: open and join never print a copyable example
+// with the capability, with or without CERNE_SESSION; with it they store the
+// capability (0600, per room) and print no env line; without it they store
+// nothing and teach the variable.
+func TestRoomOpenJoinKeepCredentialOffExamples(t *testing.T) {
+	for _, agent := range []string{"", "agent-1"} {
+		t.Run("CERNE_SESSION="+agent, func(t *testing.T) {
+			dir, port := newRoomTestServer(t, "proj-b0084")
+			dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
+			t.Setenv("CERNE_SESSION", agent)
+
+			openOut, err := runRoom(t, append([]string{"open", "topic"}, dirFlag...)...)
+			if err != nil {
+				t.Fatalf("open: %v", err)
+			}
+			_, facilitator := openRoomCLI(t, dirFlag, "second") // R2
+			joinOut, err := runRoom(t, append([]string{"join", "R2", "--nick", "ana"}, dirFlag...)...)
+			if err != nil {
+				t.Fatalf("join: %v", err)
+			}
+			session := lineValue(joinOut, "session: ")
+			openFacilitator := lineValue(openOut, "facilitator capability: ")
+			if session == "" || openFacilitator == "" {
+				t.Fatalf("open/join output = %q / %q, want the lines that show each capability once", openOut, joinOut)
+			}
+			assertCredentialOnlyWhereAllowed(t, joinOut, session)
+			assertCredentialOnlyWhereAllowed(t, openOut, openFacilitator)
+			if !strings.Contains(joinOut, "say: cerne room say R2 \"<message>\"\n") || !strings.Contains(joinOut, "cerne room watch R2 --once\n") {
+				t.Fatalf("join output = %q, want say and watch examples with no credential", joinOut)
+			}
+
+			stored, err := loadRoomCreds("proj-b0084", "R2")
+			if err != nil {
+				t.Fatalf("loadRoomCreds: %v", err)
+			}
+			if agent == "" {
+				if stored != (roomCreds{}) {
+					t.Fatalf("stored without CERNE_SESSION = %+v, want nothing", stored)
+				}
+				if _, err := os.Stat(filepath.Join(os.Getenv("CERNE_CACHE_DIR"), "proj-b0084", "room-creds")); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("room-creds dir without CERNE_SESSION: %v, want not exist", err)
+				}
+				for _, out := range []string{openOut, joinOut} {
+					if !strings.Contains(out, "env: export CERNE_ROOM_") {
+						t.Fatalf("output = %q, want the env line without CERNE_SESSION", out)
+					}
+				}
+				return
+			}
+			if want := (roomCreds{Nick: "ana", SessionID: session, FacilitatorID: facilitator}); stored != want {
+				t.Fatalf("stored = %+v, want %+v", stored, want)
+			}
+			for _, out := range []string{openOut, joinOut} {
+				if strings.Contains(out, "env: export") || !strings.Contains(out, "stored for this agent session") {
+					t.Fatalf("output = %q, want the stored line and no env line", out)
+				}
+			}
+		})
+	}
+}
+
+// B-0084: a subagent shares its parent's CERNE_SESSION, so join never
+// replaces another nick's still-valid stored session: it joins, warns and
+// falls back to the env form. A stored session that no longer works is
+// replaced.
+func TestRoomJoinKeepsAnotherNicksValidSession(t *testing.T) {
+	dir, port := newRoomTestServer(t, "proj-b0084-nick")
+	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
+	t.Setenv("CERNE_SESSION", "agent-1")
+	runRoom(t, append([]string{"open", "topic"}, dirFlag...)...)
+	ana := joinRoomAs(t, dirFlag, "R1", "ana")
+
+	out, err := runRoom(t, append([]string{"join", "R1", "--nick", "bia"}, dirFlag...)...)
+	if err != nil {
+		t.Fatalf("join bia: %v", err)
+	}
+	if !strings.Contains(out, `already keeps nick "ana" in R1`) || !strings.Contains(out, "env: export CERNE_ROOM_SESSION=") {
+		t.Fatalf("join bia output = %q, want the warning and the env form", out)
+	}
+	if stored, _ := loadRoomCreds("proj-b0084-nick", "R1"); stored.Nick != "ana" || stored.SessionID != ana {
+		t.Fatalf("stored after bia = %+v, want ana's session kept", stored)
+	}
+
+	// a stored session the server no longer accepts is replaced.
+	if err := saveRoomCreds("proj-b0084-nick", "R1", roomCreds{Nick: "old", SessionID: "deadbeefdeadbeefdeadbeefdeadbeef"}); err != nil {
+		t.Fatal(err)
+	}
+	cia := joinRoomAs(t, dirFlag, "R1", "cia")
+	if stored, _ := loadRoomCreds("proj-b0084-nick", "R1"); stored.Nick != "cia" || stored.SessionID != cia {
+		t.Fatalf("stored after cia = %+v, want cia's session over the invalid one", stored)
+	}
+
+	// the same nick, stale, is replaced too.
+	if err := saveRoomCreds("proj-b0084-nick", "R1", roomCreds{Nick: "dan", SessionID: "deadbeefdeadbeefdeadbeefdeadbeef"}); err != nil {
+		t.Fatal(err)
+	}
+	dan := joinRoomAs(t, dirFlag, "R1", "dan")
+	if stored, _ := loadRoomCreds("proj-b0084-nick", "R1"); stored.Nick != "dan" || stored.SessionID != dan {
+		t.Fatalf("stored after dan = %+v, want dan's new session", stored)
 	}
 }
 
