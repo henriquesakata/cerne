@@ -14,6 +14,7 @@ import {
   fetchState,
   promoteIdea,
   search,
+  unpromoteIdea,
 } from './api'
 import type { ProjectInfo, StateResponse } from './api'
 
@@ -40,6 +41,7 @@ vi.mock('./api', async (importOriginal) => ({
   fetchCosts: vi.fn(async () => { throw new Error('costs down') }),
   fetchCostDetail: vi.fn(async () => { throw new Error('feature not found: F-0001') }),
   promoteIdea: vi.fn(),
+  unpromoteIdea: vi.fn(),
 }))
 
 // Os providers viram passthrough: o alvo aqui é o roteador e a montagem
@@ -294,6 +296,35 @@ describe('App — #/ideas anuncia a promoção (F-0334, crítica C5)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Promover I-0001' }))
     await waitFor(() => expect(status).toHaveTextContent('Ideia promovida — a candidata está no Backlog.'))
     expect(within(status).getByRole('link', { name: 'Abrir o Backlog' })).toHaveAttribute('href', '#/backlog')
+  })
+
+  // B-0076 crit. 6: o aviso desfaz a promoção que acabou de acontecer.
+  it('Desfazer no aviso devolve a ideia e anuncia', async () => {
+    const idea = { id: 'I-0001', title: 'Uma ideia', state: 'active' as const, created_at: '2026-11-01T00:00:00Z', updated_at: '2026-11-01T00:00:00Z' }
+    vi.mocked(fetchIdeas).mockImplementation(async () => [idea])
+    vi.mocked(promoteIdea).mockResolvedValue({ idea: { ...idea, state: 'promoted', promoted_to: 'F-0009' }, feature: {} as never })
+    vi.mocked(unpromoteIdea).mockResolvedValue({ idea, feature: {} as never })
+    window.location.hash = '#/ideas'
+    render(<App />)
+    const status = await screen.findByRole('status')
+    fireEvent.click(await screen.findByRole('button', { name: 'Promover I-0001' }))
+    fireEvent.click(await within(status).findByRole('button', { name: 'Desfazer a promoção de I-0001' }))
+    await waitFor(() => expect(status).toHaveTextContent('Promoção desfeita — a ideia voltou para Ideias.'))
+    expect(unpromoteIdea).toHaveBeenCalledWith('I-0001')
+    expect(within(status).queryByRole('button')).toBeNull()
+  })
+
+  it('uma recusa do desfazer aparece no aviso', async () => {
+    const idea = { id: 'I-0001', title: 'Uma ideia', state: 'active' as const, created_at: '2026-11-01T00:00:00Z', updated_at: '2026-11-01T00:00:00Z' }
+    vi.mocked(fetchIdeas).mockImplementation(async () => [idea])
+    vi.mocked(promoteIdea).mockResolvedValue({ idea: { ...idea, state: 'promoted', promoted_to: 'F-0009' }, feature: {} as never })
+    vi.mocked(unpromoteIdea).mockRejectedValue(new Error('the promotion cannot be undone: F-0009 is approved'))
+    window.location.hash = '#/ideas'
+    render(<App />)
+    const status = await screen.findByRole('status')
+    fireEvent.click(await screen.findByRole('button', { name: 'Promover I-0001' }))
+    fireEvent.click(await within(status).findByRole('button', { name: 'Desfazer a promoção de I-0001' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('the promotion cannot be undone: F-0009 is approved')
   })
 })
 
