@@ -11,6 +11,7 @@ const fetchRooms = vi.fn<() => Promise<Room[]>>()
 const joinRoom = vi.fn<(id: string, nick: string, bio: string) => Promise<{ room: Room; session: RoomSession }>>()
 const sayRoom = vi.fn<(id: string, sessionID: string, body: string) => Promise<RoomMessage>>()
 const resumeRoomSession = vi.fn<(id: string, sessionID: string) => Promise<RoomSession>>()
+const leaveRoom = vi.fn<(id: string, sessionID: string) => Promise<Room>>()
 const readRoomMessages = vi.fn<
   (id: string, since: number, follow: boolean, signal?: AbortSignal) => Promise<RoomMessage[]>
 >()
@@ -27,6 +28,7 @@ vi.mock('./api', async (importOriginal) => ({
   joinRoom: (id: string, nick: string, bio: string) => joinRoom(id, nick, bio),
   sayRoom: (id: string, sessionID: string, body: string) => sayRoom(id, sessionID, body),
   resumeRoomSession: (id: string, sessionID: string) => resumeRoomSession(id, sessionID),
+  leaveRoom: (id: string, sessionID: string) => leaveRoom(id, sessionID),
   readRoomMessages: (id: string, since: number, follow: boolean, signal?: AbortSignal) =>
     readRoomMessages(id, since, follow, signal),
   postRoomOpen: (topic: string) => postRoomOpen(topic),
@@ -67,6 +69,7 @@ beforeEach(() => {
   joinRoom.mockReset()
   sayRoom.mockReset()
   resumeRoomSession.mockReset()
+  leaveRoom.mockReset()
   readRoomMessages.mockReset()
   postRoomOpen.mockReset()
   postRoomClose.mockReset()
@@ -88,9 +91,18 @@ beforeEach(() => {
 })
 
 describe('WarRoom (T-0003)', () => {
+  // F-0511 crit. 5: the card counts the active participants, not the history.
   it('lista salas abertas e fechadas', async () => {
     fetchRooms.mockResolvedValue([
-      room({ id: 'R1', topic: 'Fila serial', participants: [{ nick: 'ana', joined_at: '2026-08-06T00:00:00Z' }] }),
+      room({
+        id: 'R1',
+        topic: 'Fila serial',
+        participants: [
+          { nick: 'ana', joined_at: '2026-08-06T00:00:00Z' },
+          { nick: 'bia', joined_at: '2026-08-06T00:00:01Z' },
+        ],
+        active_participants: [{ nick: 'ana', joined_at: '2026-08-06T00:00:00Z' }],
+      }),
       room({ id: 'R2', topic: 'Já resolvido', closed_at: '2026-08-06T01:00:00Z' }),
     ])
     render(<WarRoom />)
@@ -180,11 +192,14 @@ describe('WarRoomDetail (T-0003)', () => {
         { seq: 3, type: 'message', nick: 'ana', body: 'oi pessoal', time: '2026-08-06T00:00:02Z' },
       ]),
     )
+    // F-0511 crit. 5: the panel lists the active participants the server reports.
+    const ana = { nick: 'ana', bio: 'pessimista', joined_at: '2026-08-06T00:00:01Z' }
+    fetchRooms.mockResolvedValue([room({ participants: [ana], active_participants: [ana] })])
     render(<WarRoomDetail id="R1" />)
 
     await waitFor(() => expect(screen.getByText(/Fila serial/)).toBeInTheDocument())
     const roster = screen.getByRole('region', { name: /participantes/i })
-    expect(within(roster).getByText('ana')).toBeInTheDocument()
+    await waitFor(() => expect(within(roster).getByText('ana')).toBeInTheDocument())
     expect(within(roster).getByText('pessimista', { exact: false })).toBeInTheDocument()
     expect(within(screen.getByRole('log')).getByText('ana')).toBeInTheDocument()
     expect(screen.getByText(/oi pessoal/)).toBeInTheDocument()
@@ -914,6 +929,124 @@ describe('layout e conversa da sala (B-0046)', () => {
     expect(within(screen.getByRole('log')).queryByText('ana')).not.toBeInTheDocument()
     expect(within(theirs as HTMLElement).getByText('bia')).toBeInTheDocument()
     expect(screen.getByText(/falando como ana/i)).toBeInTheDocument()
+  })
+
+  // --- F-0511: observar, participar e sair ---
+
+  // F-0511 crit. 1
+  it('sem sessão, identifica o observador, mostra a transcrição e diz que entrar só é preciso para publicar', async () => {
+    readRoomMessages.mockImplementationOnce(() => Promise.resolve([open, say(2, 'bia', 'oi pessoal', '2026-08-06T00:00:02Z')]))
+    render(<WarRoomDetail id="R1" />)
+
+    await waitFor(() => expect(screen.getByText('oi pessoal')).toBeInTheDocument())
+    expect(screen.getByText('Observando')).toBeInTheDocument()
+    expect(screen.getByText(/entrar só é preciso para publicar/i)).toBeInTheDocument()
+    expect(screen.getByText('Entrar para participar')).toBeInTheDocument()
+    expect(screen.queryByPlaceholderText(/escreva uma mensagem/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^sair$/i })).not.toBeInTheDocument()
+  })
+
+  // F-0511 crit. 6
+  it('sair revoga no servidor antes de apagar a sessão local e volta a observar, sem tocar a facilitação', async () => {
+    joinedAs('ana')
+    localStorage.setItem('warroom-facilitator--R1', 'facfacfacfacfacfacfacfacfacfacfa')
+    readRoomMessages.mockImplementationOnce(() => Promise.resolve([open]))
+    let finish: (r: Room) => void = () => {}
+    leaveRoom.mockImplementation(() => new Promise<Room>((resolve) => (finish = resolve)))
+    render(<WarRoomDetail id="R1" />)
+
+    await screen.findByPlaceholderText(/escreva uma mensagem/i)
+    expect(screen.getByText('Participando')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /^sair$/i }))
+    await waitFor(() => expect(leaveRoom).toHaveBeenCalledWith('R1', 'cafebabecafebabecafebabecafebabe'))
+    // still waiting for the server: the local session stays.
+    expect(localStorage.getItem(SESSION_KEY)).not.toBeNull()
+    expect(screen.getByPlaceholderText(/escreva uma mensagem/i)).toBeInTheDocument()
+
+    await act(async () => finish(room({ active_participants: [] })))
+    await waitFor(() => expect(screen.getByPlaceholderText(/apelido/i)).toBeInTheDocument())
+    expect(localStorage.getItem(SESSION_KEY)).toBeNull()
+    expect(screen.getByText('Observando')).toBeInTheDocument()
+    expect(screen.queryByPlaceholderText(/escreva uma mensagem/i)).not.toBeInTheDocument()
+    expect(localStorage.getItem('warroom-facilitator--R1')).toBe('facfacfacfacfacfacfacfacfacfacfa')
+  })
+
+  // F-0511 crit. 6
+  it('erro ao sair mantém a sessão local, mostra a falha e deixa tentar de novo', async () => {
+    joinedAs('ana')
+    readRoomMessages.mockImplementationOnce(() => Promise.resolve([open]))
+    leaveRoom.mockRejectedValueOnce(new Error('conexão recusada')).mockResolvedValueOnce(room({ active_participants: [] }))
+    render(<WarRoomDetail id="R1" />)
+
+    await screen.findByPlaceholderText(/escreva uma mensagem/i)
+    fireEvent.click(screen.getByRole('button', { name: /^sair$/i }))
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/conexão recusada/))
+    expect(localStorage.getItem(SESSION_KEY)).not.toBeNull()
+    expect(screen.getByPlaceholderText(/escreva uma mensagem/i)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /^sair$/i }))
+    await waitFor(() => expect(leaveRoom).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(localStorage.getItem(SESSION_KEY)).toBeNull())
+  })
+
+  // F-0511 crit. 5
+  it('o painel conta os participantes ativos, não o histórico', async () => {
+    readRoomMessages.mockImplementationOnce(() =>
+      Promise.resolve([
+        open,
+        { seq: 2, type: 'join', nick: 'ana', time: '2026-08-06T00:00:01Z' },
+        { seq: 3, type: 'join', nick: 'bia', bio: 'cética', time: '2026-08-06T00:00:02Z' },
+        { seq: 4, type: 'leave', nick: 'ana', time: '2026-08-06T00:00:03Z' },
+      ]),
+    )
+    fetchRooms.mockResolvedValue([
+      room({
+        participants: [
+          { nick: 'ana', joined_at: '2026-08-06T00:00:01Z' },
+          { nick: 'bia', bio: 'cética', joined_at: '2026-08-06T00:00:02Z' },
+        ],
+        active_participants: [{ nick: 'bia', bio: 'cética', joined_at: '2026-08-06T00:00:02Z' }],
+      }),
+    ])
+    render(<WarRoomDetail id="R1" />)
+
+    const roster = screen.getByRole('region', { name: /participantes/i })
+    await waitFor(() => expect(within(roster).getByText('bia')).toBeInTheDocument())
+    expect(within(roster).queryByText('ana')).not.toBeInTheDocument()
+    expect(within(roster).getByText('1')).toBeInTheDocument()
+  })
+
+  // F-0511 crit. 2, 4
+  it('entrada e saída aparecem na transcrição', async () => {
+    readRoomMessages.mockImplementationOnce(() =>
+      Promise.resolve([
+        open,
+        { seq: 2, type: 'join', nick: 'ana', time: '2026-08-06T00:00:01Z' },
+        { seq: 3, type: 'leave', nick: 'ana', time: '2026-08-06T00:00:02Z' },
+        { seq: 4, type: 'join', nick: 'ana', time: '2026-08-06T00:00:03Z' },
+      ]),
+    )
+    render(<WarRoomDetail id="R1" />)
+
+    const log = screen.getByRole('log')
+    await waitFor(() => expect(within(log).getByText('ana saiu')).toBeInTheDocument())
+    expect(within(log).getAllByText('ana entrou')).toHaveLength(2)
+  })
+
+  // F-0511 crit. 1, 6
+  it('tem os rótulos de observar, participar e sair também em inglês', async () => {
+    localStorage.setItem('cerne-lang', 'en')
+    readRoomMessages.mockImplementationOnce(() => Promise.resolve([open, { seq: 2, type: 'leave', nick: 'ana', time: '2026-08-06T00:00:02Z' }]))
+    render(
+      <I18nProvider>
+        <WarRoomDetail id="R1" />
+      </I18nProvider>,
+    )
+
+    await waitFor(() => expect(screen.getByText('Observing')).toBeInTheDocument())
+    expect(screen.getByText('Join to take part')).toBeInTheDocument()
+    expect(screen.getByText(/joining is only needed to post/i)).toBeInTheDocument()
+    expect(screen.getByText('ana left')).toBeInTheDocument()
   })
 
   it('o encerramento com ata fica recolhido até ser pedido', async () => {

@@ -1451,6 +1451,24 @@ h2 {
   background: var(--surface-3);
 }
 
+/* F-0511: entrar e sair são eventos da sala, não falas: uma linha discreta,
+   centrada, sem autor nem balão. Abre a transcrição como a primeira fala. */
+.room-event { align-self: center; margin: 0.75rem 0 0; font-size: 0.85rem; color: var(--muted); }
+.room-event:first-child { margin-top: auto; }
+
+/* F-0511: o papel atual (observando ou participando) fica onde a pessoa
+   decide publicar, logo acima da entrada ou do compositor. */
+.room-mode {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.room-mode .room-btn { margin-left: auto; }
+
 .room-composer { gap: 0.35rem; }
 .room-composer-hint { margin: 0; font-size: 0.85rem; color: var(--muted); }
 
