@@ -879,6 +879,17 @@ const ptBR = {
     minutesOwnersTitle: 'Responsáveis',
     minutesNextStepsTitle: 'Próximos passos',
     minutesOpenItemsTitle: 'Itens deixados em aberto (exceção registrada)',
+    // T-0022: facilitation in the transcript, the open items any viewer reads
+    // and the shared minutes draft.
+    proposalEvent: (nick: string, title: string) => `${nick} propôs: ${title}`,
+    decisionRequestEvent: (nick: string, title: string) => `${nick} pede uma decisão: ${title}`,
+    resolutionEvent: (item: string, result: string) => (result ? `Resolvido — ${item}: ${result}` : `Resolvido — ${item}`),
+    minutesDraftEvent: (nick: string) => `${nick} salvou um rascunho de ata`,
+    pendingReadOnly: 'Só quem facilita resolve estes itens.',
+    minutesDraftTitle: 'Rascunho de ata',
+    minutesDraftBy: (nick: string) => `por ${nick}`,
+    closeWithDraft: 'Encerrar com este rascunho',
+    loadDraft: 'Editar no formulário de encerramento',
   },
   palette: {
     placeholder: 'Buscar por código ou título…',
@@ -2565,6 +2576,15 @@ const en: Messages = {
     minutesOwnersTitle: 'Owners',
     minutesNextStepsTitle: 'Next steps',
     minutesOpenItemsTitle: 'Items left open (recorded exception)',
+    proposalEvent: (nick: string, title: string) => `${nick} proposed: ${title}`,
+    decisionRequestEvent: (nick: string, title: string) => `${nick} asks for a decision: ${title}`,
+    resolutionEvent: (item: string, result: string) => (result ? `Resolved — ${item}: ${result}` : `Resolved — ${item}`),
+    minutesDraftEvent: (nick: string) => `${nick} saved a minutes draft`,
+    pendingReadOnly: 'Only the facilitator resolves these items.',
+    minutesDraftTitle: 'Minutes draft',
+    minutesDraftBy: (nick: string) => `by ${nick}`,
+    closeWithDraft: 'Close with this draft',
+    loadDraft: 'Edit in the close form',
   },
   palette: {
     placeholder: 'Search by id or title…',

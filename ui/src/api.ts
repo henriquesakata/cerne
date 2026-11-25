@@ -1861,7 +1861,7 @@ export type Room = {
 // por seq.
 export type RoomMessage = {
   seq: number
-  type: 'open' | 'join' | 'leave' | 'message' | 'close' | 'proposal' | 'decision_request' | 'resolution'
+  type: 'open' | 'join' | 'leave' | 'message' | 'close' | 'proposal' | 'decision_request' | 'resolution' | 'minutes_draft'
   nick?: string
   bio?: string
   body?: string
@@ -1963,17 +1963,19 @@ export async function postRoomResolveItem(
 
 // postRoomClose fecha a sala com a ata estruturada; por padrão recusa com
 // itens abertos (F-0228 critério 5) — allowOpenItems força e registra a
-// exceção na própria ata.
+// exceção na própria ata. minutes null fecha com o rascunho salvo na sala
+// (T-0022, use_draft).
 export async function postRoomClose(
   id: string,
   facilitatorId: string,
-  minutes: Minutes,
+  minutes: Minutes | null,
   allowOpenItems = false,
 ): Promise<Room> {
+  const payload = minutes ? { minutes } : { use_draft: true }
   const r = await fetch(`${base()}/rooms/${encodeURIComponent(id)}/close`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ facilitator_id: facilitatorId, minutes, allow_open_items: allowOpenItems }),
+    body: JSON.stringify({ facilitator_id: facilitatorId, ...payload, allow_open_items: allowOpenItems }),
   })
   if (!r.ok) throw new Error(await errorMessage(r))
   return (await r.json()) as Room
