@@ -177,3 +177,62 @@ func TestAURRelease_CheckJob(t *testing.T) {
 		}
 	}
 }
+
+// F-0508 crit. 4: after the tap, the release job writes bucket/cerne.json to the
+// Scoop bucket for stable tags only, refusing to run without its token and
+// committing only when something changed.
+func TestScoopRelease_BucketSteps(t *testing.T) {
+	raw, err := os.ReadFile("../.github/workflows/release.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := jobOf(t, string(raw), "release")
+	from := strings.Index(job, "check the Scoop bucket token")
+	if from < 0 {
+		t.Fatal("release job has no 'check the Scoop bucket token' step")
+	}
+	if tap := strings.Index(job, "update the Homebrew tap"); tap < 0 || tap > from {
+		t.Error("the bucket steps must come after the Homebrew tap")
+	}
+	steps := job[from:]
+	for _, want := range []string{
+		"secrets.SCOOP_BUCKET_TOKEN",
+		"::error::SCOOP_BUCKET_TOKEN is not set",
+		"the Scoop bucket still installs the previous version",
+		"repository: henriquesakata/scoop-bucket",
+		`sh scripts/scoop-manifest.sh "$GITHUB_REF_NAME" dist/SHA256SUMS >scoop-bucket/bucket/cerne.json`,
+		"git diff --cached --quiet ||",
+		`commit -q -m "cerne $GITHUB_REF_NAME"`,
+	} {
+		if !strings.Contains(steps, want) {
+			t.Errorf("bucket steps lack %q", want)
+		}
+	}
+	if n := strings.Count(steps, "if: ${{ !contains(github.ref_name, '-') }}"); n < 3 {
+		t.Errorf("only %d bucket steps are guarded to stable tags, want all of them", n)
+	}
+}
+
+// F-0508 crit. 5 and 6: once the bucket is updated, a Windows runner adds it,
+// installs from it and checks the version, and that cerne update names Scoop.
+func TestScoopRelease_CheckJob(t *testing.T) {
+	raw, err := os.ReadFile("../.github/workflows/release.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := jobOf(t, string(raw), "scoop-check")
+	for _, want := range []string{
+		"needs: release",
+		"if: ${{ !contains(github.ref_name, '-') }}",
+		"runs-on: windows-latest",
+		"get.scoop.sh",
+		"scoop bucket add henriquesakata https://github.com/henriquesakata/scoop-bucket",
+		"scoop install henriquesakata/cerne",
+		"cerne --version",
+		"scoop update cerne",
+	} {
+		if !strings.Contains(job, want) {
+			t.Errorf("scoop-check job lacks %q", want)
+		}
+	}
+}
