@@ -26,6 +26,9 @@ type Fake struct {
 	Calls  []Call            // Create/Update/ListOpen, in order
 	Err    error             // when set, every call returns it
 	Delay  time.Duration     // each call waits; an expired ctx returns ctx.Err()
+	// RefsOnly makes it a kind no merge closes, like Jira and Trello: CommitRef
+	// writes Refs: even when closing, and HoldOpen is ignored (B-0079).
+	RefsOnly bool
 }
 
 // Issue is one issue on the fake tracker; State stands for its cerne label.
@@ -48,12 +51,13 @@ func (f *Fake) Create(ctx context.Context, it tracker.Item) (tracker.Ref, error)
 	if err := f.call(ctx, Call{Op: "Create", Item: it}); err != nil {
 		return tracker.Ref{}, err
 	}
-	return f.add(&Issue{Title: it.Title, Body: it.Body(), State: it.State, Open: open(it.State)}), nil
+	return f.add(&Issue{Title: it.Title, Body: it.Body(), State: it.State, Open: open(it.State) || it.HoldOpen && !f.RefsOnly}), nil
 }
 
 // Update moves the issue to it.State: an empty Title keeps the outside text,
-// NoReopen keeps a closed issue closed, and the superseded comment is written
-// only by the call that closes the issue.
+// NoReopen keeps a closed issue closed, HoldOpen keeps an open one open (the
+// merge closes it, B-0079), and the superseded comment is written only by the
+// call that closes the issue.
 func (f *Fake) Update(ctx context.Context, r tracker.Ref, it tracker.Item) error {
 	if err := f.call(ctx, Call{Op: "Update", Ref: r, Item: it}); err != nil {
 		return err
@@ -69,7 +73,9 @@ func (f *Fake) Update(ctx context.Context, r tracker.Ref, it tracker.Item) error
 	if iss.Open && it.State == domain.StateSuperseded && it.Successor != nil {
 		iss.Comments = append(iss.Comments, "Superseded by "+it.Successor.URL)
 	}
-	if iss.Open || !it.NoReopen {
+	switch {
+	case iss.Open && it.HoldOpen && !f.RefsOnly:
+	case iss.Open || !it.NoReopen:
 		iss.Open = open(it.State)
 	}
 	return nil
@@ -91,7 +97,7 @@ func (f *Fake) ListOpen(ctx context.Context, label string) ([]tracker.Remote, er
 
 // CommitRef cites the issue by URL; the fake knows no code repository.
 func (f *Fake) CommitRef(r tracker.Ref, _ string, closing bool) string {
-	if closing {
+	if closing && !f.RefsOnly {
 		return "Closes: " + r.URL
 	}
 	return "Refs: " + r.URL
@@ -171,7 +177,7 @@ func Register(t *testing.T, fakes ...*Fake) {
 type Harness struct {
 	New           func(t *testing.T) tracker.IssueTracker
 	Open          func(t *testing.T, title, body, label string) tracker.Ref
-	ClosesOnMerge bool // the kind writes a closing word: NoReopen is checked
+	ClosesOnMerge bool // the kind writes a closing word: NoReopen and HoldOpen are checked
 }
 
 // RunContract checks, through the IssueTracker interface only, the behavior
@@ -225,6 +231,45 @@ func RunContract(t *testing.T, h Harness) {
 		update(t, tr, r, it)
 		if _, ok := listed(t, tr, "", r); ok {
 			t.Fatalf("NoReopen reopened issue %s", r.ID)
+		}
+	})
+
+	// B-0079: under close_on = "merge" a done card whose delivery has not
+	// reached the default branch moves only its labels; once the core stops
+	// holding, the same done closes the issue. A kind that writes no closing
+	// word ignores the hold: no merge closes its issues.
+	t.Run("HoldOpen keeps an open issue open until the merge", func(t *testing.T) {
+		tr := h.New(t)
+		if !h.ClosesOnMerge {
+			held := createOpen(t, tr, item("F-9008", domain.StateImplemented))
+			plain := createOpen(t, tr, item("F-9009", domain.StateImplemented))
+			it := item("F-9008", domain.StateDone)
+			it.HoldOpen = true
+			update(t, tr, held, it)
+			update(t, tr, plain, item("F-9009", domain.StateDone))
+			_, heldOpen := listed(t, tr, "", held)
+			if _, plainOpen := listed(t, tr, "", plain); heldOpen != plainOpen {
+				t.Fatalf("HoldOpen changed a done issue on a kind that writes no closing word: listed %v, without it %v", heldOpen, plainOpen)
+			}
+			return
+		}
+		r := createOpen(t, tr, item("F-9008", domain.StateImplemented))
+		it := item("F-9008", domain.StateDone)
+		it.HoldOpen, it.NoReopen = true, true
+		update(t, tr, r, it)
+		if _, ok := listed(t, tr, "", r); !ok {
+			t.Fatalf("HoldOpen closed issue %s before the merge", r.ID)
+		}
+		it.HoldOpen = false
+		update(t, tr, r, it)
+		if _, ok := listed(t, tr, "", r); ok {
+			t.Fatalf("done with the merge confirmed left issue %s open", r.ID)
+		}
+		// The opt-in of a card already done, its merge still to come.
+		it = item("F-9010", domain.StateDone)
+		it.HoldOpen, it.NoReopen = true, true
+		if c := create(t, tr, it); !func() bool { _, ok := listed(t, tr, "", c); return ok }() {
+			t.Fatalf("Create with HoldOpen closed issue %s before the merge", c.ID)
 		}
 	})
 

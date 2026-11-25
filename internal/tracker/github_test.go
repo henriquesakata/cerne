@@ -698,6 +698,7 @@ func TestGitHubRawFieldsOnly(t *testing.T) {
 // F-0449 crit. 9: the GitHub adapter passes the contract suite the fake passes.
 func TestGitHubContract(t *testing.T) {
 	var g *fakeGH
+	// B-0079 crit. 10: the contract checks HoldOpen on this kind.
 	trackertest.RunContract(t, trackertest.Harness{
 		New: func(t *testing.T) tracker.IssueTracker {
 			g = newFakeGH(t, "github.com", "o/r")

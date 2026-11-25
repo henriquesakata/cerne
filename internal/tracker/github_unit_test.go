@@ -164,6 +164,7 @@ func unitItem(s domain.FeatureState) tracker.Item {
 // TestDevEmulatorContract runs the contract suite over this file's emulator.
 func TestDevEmulatorContract(t *testing.T) {
 	var g *unitGH
+	// B-0079 crit. 10: the contract checks HoldOpen on this kind.
 	trackertest.RunContract(t, trackertest.Harness{
 		New: func(t *testing.T) tracker.IssueTracker {
 			g = installUnitGH(t)
@@ -333,5 +334,36 @@ func TestGitHubNamesDefaultHostDespiteGHHost(t *testing.T) {
 	}
 	if i := slices.Index(g.calls[0], "--hostname"); i < 0 || g.calls[0][i+1] != "github.com" {
 		t.Fatalf("argv = %q, want --hostname github.com", g.calls[0])
+	}
+}
+
+// B-0079 crit. 1: a held done sends the cerne:done label and no state write;
+// crit. 2: the same done, no longer held, closes the issue as completed.
+func TestGitHubHoldOpenMovesOnlyLabels(t *testing.T) {
+	g := installUnitGH(t)
+	tr := unitTracker(t, "https://github.com/o/r")
+	ctx := context.Background()
+	r, err := tr.Create(ctx, unitItem(domain.StateImplemented))
+	if err != nil {
+		t.Fatal(err)
+	}
+	it := unitItem(domain.StateDone)
+	it.HoldOpen, it.NoReopen = true, true
+	if err := tr.Update(ctx, r, it); err != nil {
+		t.Fatal(err)
+	}
+	last := g.calls[len(g.calls)-1]
+	if !slices.Contains(last, "labels[]=cerne:done") || slices.ContainsFunc(last, func(a string) bool { return strings.HasPrefix(a, "state") }) {
+		t.Fatalf("held done sent %v, want the cerne:done label and no state", last)
+	}
+	if iss := g.issues[1]; iss.State != "open" {
+		t.Fatalf("held done left the issue %s, want open", iss.State)
+	}
+	it.HoldOpen = false
+	if err := tr.Update(ctx, r, it); err != nil {
+		t.Fatal(err)
+	}
+	if iss := g.issues[1]; iss.State != "closed" || iss.Reason != "completed" {
+		t.Fatalf("done after the merge left the issue %s/%s, want closed/completed", iss.State, iss.Reason)
 	}
 }

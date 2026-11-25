@@ -982,6 +982,7 @@ func TestTrelloContract(t *testing.T) {
 		},
 	}
 	for run := range 2 {
+		// B-0079 crit. 7: the contract checks this kind ignores HoldOpen.
 		t.Run(fmt.Sprint("run ", run+1), func(t *testing.T) { trackertest.RunContract(t, h) })
 	}
 	if want := append([]string{"Inbox"}, trelloLifecycle...); !slices.Equal(fk.listNames(trelloBoard), want) {

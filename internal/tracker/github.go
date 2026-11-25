@@ -112,6 +112,7 @@ func (g github) apply(ctx context.Context, cur ghIssue, it Item) error {
 	closing := false
 	switch {
 	case closed && it.NoReopen: // the merge closed it: only the labels move
+	case !closed && reason != "" && it.HoldOpen: // the merge will close it: only the labels move (B-0079)
 	case reason == "" && closed:
 		f = append(f, "state=open", "state_reason=reopened")
 	case reason != "" && (!closed || cur.StateReason != reason):

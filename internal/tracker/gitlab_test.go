@@ -398,6 +398,7 @@ func TestGitLabOwns(t *testing.T) {
 // passes, on a project in a subgroup.
 func TestGitLabContract(t *testing.T) {
 	var g *fakeGL
+	// B-0079 crit. 10: the contract checks HoldOpen on this kind.
 	trackertest.RunContract(t, trackertest.Harness{
 		New: func(t *testing.T) tracker.IssueTracker {
 			g = newFakeGL(t, "gitlab.com", "g/sub/p")
@@ -590,6 +591,7 @@ func TestGitLabContractLive(t *testing.T) {
 	old := forge.RunCLI
 	forge.RunCLI = liveRunCLI
 	t.Cleanup(func() { forge.RunCLI = old })
+	// B-0079 crit. 10: the contract checks HoldOpen on this kind.
 	trackertest.RunContract(t, trackertest.Harness{
 		New: func(t *testing.T) tracker.IssueTracker {
 			tr, err := tracker.New(tracker.Config{Name: "live", Kind: "gitlab", URL: project})

@@ -108,6 +108,8 @@ type checkCase struct {
 	delay      bool
 	unknownTrk bool
 	capped     bool
+	delivery   bool // the card carries a delivery PR (B-0079)
+	refsOnly   bool // the tracker is a kind no merge closes (B-0079)
 	status     string
 	reason     string
 }
@@ -125,6 +127,11 @@ func TestCheckMirrorTable(t *testing.T) {
 		{name: "close_on merge: closed issue of an implemented card is the merge", state: domain.StateImplemented, closeOn: "merge", status: MirrorOK},
 		{name: "close_on merge: closed issue of an approved card is drift", state: domain.StateApproved, closeOn: "merge", status: MirrorDrift, reason: ReasonClosedCardOpen},
 		{name: "close_on merge: closed issue of a candidate card is drift", state: domain.StateCandidate, closeOn: "merge", status: MirrorDrift, reason: ReasonClosedCardOpen},
+		// B-0079 crit. 8: a done card with a delivery waits for the merge to close its issue.
+		{name: "close_on merge: open issue of a delivered done card waits for the merge", state: domain.StateDone, issueOpen: true, closeOn: "merge", delivery: true, status: MirrorOK},
+		{name: "close_on merge: open issue of a done card with no delivery is drift", state: domain.StateDone, issueOpen: true, closeOn: "merge", status: MirrorDrift, reason: ReasonOpenCardClosed},
+		{name: "close_on accept: open issue of a delivered done card is drift", state: domain.StateDone, issueOpen: true, delivery: true, status: MirrorDrift, reason: ReasonOpenCardClosed},
+		{name: "close_on merge: open issue of a delivered done card on a tracker no merge closes is drift", state: domain.StateDone, issueOpen: true, closeOn: "merge", delivery: true, refsOnly: true, status: MirrorDrift, reason: ReasonOpenCardClosed},
 		{name: "tracker fails", state: domain.StateCandidate, issueOpen: true, failTrk: true, status: MirrorUnchecked, reason: ReasonTrackerFailed},
 		{name: "tracker times out", state: domain.StateCandidate, issueOpen: true, delay: true, status: MirrorUnchecked, reason: ReasonTrackerFailed},
 		{name: "tracker left the config", state: domain.StateCandidate, issueOpen: true, unknownTrk: true, status: MirrorUnchecked, reason: ReasonTrackerUnknown},
@@ -139,11 +146,18 @@ func TestCheckMirrorTable(t *testing.T) {
 				t.Cleanup(func() { mirrorTimeout = prev })
 			}
 			repoDir, projDir, _ := newFeatureBackend(t)
-			pub := &trackertest.Fake{Name: "pub"}
+			pub := &trackertest.Fake{Name: "pub", RefsOnly: c.refsOnly}
 			mirrorProject(t, projDir, mirrorConf{closeOn: c.closeOn, labels: map[string]string{"pub": c.label}}, pub)
 			r := issueOn(t, pub, "F-0001", c.state)
 			pub.Issues[r.ID].Open = c.issueOpen
 			seedMirrored(t, repoDir, "F-0001", c.state, r)
+			if c.delivery {
+				f := reload(t, repoDir, "F-0001")
+				f.DeliveryMRURL = "https://github.com/o/r/pull/7"
+				if err := store.SaveFeature(repoDir, f); err != nil {
+					t.Fatal(err)
+				}
+			}
 			if c.unknownTrk {
 				f := reload(t, repoDir, "F-0001")
 				f.Mirror.Tracker = "gone"

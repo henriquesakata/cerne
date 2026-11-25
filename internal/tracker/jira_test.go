@@ -1264,6 +1264,7 @@ func TestJiraContract(t *testing.T) {
 	}{{"cloud", newJiraCloudFake, jiraCloud}, {"datacenter", newJiraDCFake, jiraDC}} {
 		t.Run(flavor.name, func(t *testing.T) {
 			var f *jiraFake
+			// B-0079 crit. 7: the contract checks this kind ignores HoldOpen.
 			trackertest.RunContract(t, trackertest.Harness{
 				New: func(t *testing.T) tracker.IssueTracker {
 					f = flavor.fake(t)
@@ -1386,6 +1387,7 @@ func TestJiraContractLive(t *testing.T) {
 		}
 	})
 	tr := jiraLive{IssueTracker: newJiraTracker(t, raw), created: &created}
+	// B-0079 crit. 7: the contract checks this kind ignores HoldOpen.
 	trackertest.RunContract(t, trackertest.Harness{
 		New: func(*testing.T) tracker.IssueTracker { return tr },
 		Open: func(t *testing.T, title, body, label string) tracker.Ref {
