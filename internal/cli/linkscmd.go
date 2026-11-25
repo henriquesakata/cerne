@@ -107,9 +107,9 @@ func runLinksSuggest(cmd *cobra.Command, dir string, ids []string, yes, ingest b
 	}
 	mode := llm.ResolveMode(ctx.cfg.LLM.Mode)
 	estimate := app.EstimateLinkTokens(prompts)
-	fmt.Fprintf(out, "%d document(s), ~%d tokens (estimate: a quarter of the characters sent, plus room for each answer", len(sources), estimate)
+	fmt.Fprintf(out, "%d document(s), ~%d tokens (estimate: half of the characters sent, plus room for each answer", len(sources), estimate)
 	if linksCLIAgent(mode) {
-		fmt.Fprintf(out, "; %s adds its own context to each call, not counted", mode)
+		fmt.Fprintf(out, "; requests %s makes on its own are not counted", mode)
 	}
 	fmt.Fprintln(out, ").")
 	if line := lastRoundRatio(ctx.repoDir); line != "" {

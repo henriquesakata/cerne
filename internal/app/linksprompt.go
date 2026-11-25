@@ -99,12 +99,12 @@ func BuildLinkPrompt(src LinkSource, catalog []LinkTarget) string {
 	return b.String()
 }
 
-// EstimateLinkTokens is a rough token estimate for sending prompts: a quarter
-// of their runes, plus LinkAnswerTokens of answer for each.
+// EstimateLinkTokens is a rough token estimate for sending prompts: half
+// of their runes (measured ~2.14 runes/token on pt-BR catalogs: err high), plus LinkAnswerTokens of answer for each.
 func EstimateLinkTokens(prompts []string) int {
 	n := 0
 	for _, p := range prompts {
-		n += utf8.RuneCountInString(p)/4 + LinkAnswerTokens
+		n += utf8.RuneCountInString(p)/2 + LinkAnswerTokens
 	}
 	return n
 }

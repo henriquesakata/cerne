@@ -120,7 +120,7 @@ func TestLinksSuggestShowsEstimateAndAsks(t *testing.T) { // F-0502 crit. 3
 	if err != nil {
 		t.Fatalf("suggest: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "2 document(s), ~") || !strings.Contains(out, "tokens (estimate") || !strings.Contains(out, "--yes") {
+	if !strings.Contains(out, "2 document(s), ~") || !strings.Contains(out, "tokens (estimate: half of the characters sent") || !strings.Contains(out, "--yes") {
 		t.Errorf("output lacks the documents, the estimate or the --yes hint:\n%s", out)
 	}
 	if n := fake.calls.Load(); n != 0 {
@@ -403,8 +403,8 @@ func TestLinksOnlySuggestAsksForSuggestions(t *testing.T) { // F-0502 crit. 9
 	}
 }
 
-// TestLinksSuggestEstimateIsHonest: a CLI agent adds its own context to every
-// call, so its estimate line says it is not counted; the event records the
+// TestLinksSuggestEstimateIsHonest: a CLI agent makes requests of its own on top of
+// ours, so its estimate line says it is not counted; the event records the
 // estimate, and the next round shows how far the last one was off.
 func TestLinksSuggestEstimateIsHonest(t *testing.T) { // F-0502 crit. 3, 10
 	fake := &linksFake{answers: map[string]string{"F-0001": linksAnswer}, usage: `{"input_tokens":120,"output_tokens":30}`}
@@ -414,7 +414,7 @@ func TestLinksSuggestEstimateIsHonest(t *testing.T) { // F-0502 crit. 3, 10
 	if err != nil {
 		t.Fatalf("suggest: %v\n%s", err, out)
 	}
-	if strings.Contains(out, "adds its own context") || strings.Contains(out, "Last round") {
+	if strings.Contains(out, "requests ") || strings.Contains(out, "Last round") {
 		t.Errorf("an HTTP mode with no history must print neither note:\n%s", out)
 	}
 	evs, _ := store.ReadEvents(repoDir)
@@ -442,7 +442,7 @@ func TestLinksSuggestEstimateIsHonest(t *testing.T) { // F-0502 crit. 3, 10
 		t.Fatal(err)
 	}
 	out, err = execCerne(t, "links", "suggest", "--dir", projDir) // not confirmed: nothing is sent
-	if err != nil || !strings.Contains(out, "claude-cli adds its own context to each call, not counted") {
+	if err != nil || !strings.Contains(out, "requests claude-cli makes on its own are not counted") {
 		t.Errorf("no CLI-agent note: %v\n%s", err, out)
 	}
 }
