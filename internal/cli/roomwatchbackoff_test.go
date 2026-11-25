@@ -60,7 +60,7 @@ func TestRoomWatchBackoffOnTransientThenRecovers(t *testing.T) {
 	defer func() { roomWatchSleep = old }()
 
 	cpPath := filepath.Join(t.TempDir(), "cursor.json")
-	err := roomWatchLoop(context.Background(), io.Discard, reader, "R1", "sess", cpPath, 0, true)
+	err := roomWatchLoop(context.Background(), io.Discard, reader, "R1", "sess", cpPath, 0, true, 0)
 	if err != nil {
 		t.Fatalf("roomWatchLoop: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestRoomWatchBackoffCappedAtMax(t *testing.T) {
 	defer func() { roomWatchSleep = old }()
 
 	cpPath := filepath.Join(t.TempDir(), "cursor.json")
-	if err := roomWatchLoop(context.Background(), io.Discard, reader, "R1", "sess", cpPath, 0, true); err != nil {
+	if err := roomWatchLoop(context.Background(), io.Discard, reader, "R1", "sess", cpPath, 0, true, 0); err != nil {
 		t.Fatalf("roomWatchLoop: %v", err)
 	}
 	for _, d := range slept {
@@ -112,7 +112,7 @@ func TestRoomWatchDefinitiveErrorSkipsBackoff(t *testing.T) {
 	defer func() { roomWatchSleep = old }()
 
 	cpPath := filepath.Join(t.TempDir(), "cursor.json")
-	err := roomWatchLoop(context.Background(), io.Discard, reader, "R1", "sess", cpPath, 0, true)
+	err := roomWatchLoop(context.Background(), io.Discard, reader, "R1", "sess", cpPath, 0, true, 0)
 	if err == nil {
 		t.Fatal("roomWatchLoop with a definitive error: want error, got nil")
 	}
@@ -133,7 +133,7 @@ func TestRoomWatchCtrlCDuringBackoffExits0(t *testing.T) {
 
 	cpPath := filepath.Join(t.TempDir(), "cursor.json")
 	start := time.Now()
-	err := roomWatchLoop(ctx, io.Discard, reader, "R1", "sess", cpPath, 0, true)
+	err := roomWatchLoop(ctx, io.Discard, reader, "R1", "sess", cpPath, 0, true, 0)
 	elapsed := time.Since(start)
 	if err != nil {
 		t.Fatalf("roomWatchLoop cancelled mid-backoff: want nil (clean exit), got %v", err)
