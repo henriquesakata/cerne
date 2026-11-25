@@ -12,6 +12,7 @@ import {
   fetchRoomPending,
   fetchRooms,
   getApiProject,
+  HTTPError,
   joinRoom,
   leaveRoom,
   postRoomClose,
@@ -177,6 +178,8 @@ export function WarRoomDetail({ id }: { id: string }) {
   const [session, setSession] = useState<RoomSession | null>(null)
   const [joining, setJoining] = useState(false)
   const [leaving, setLeaving] = useState(false)
+  // F-0511: an informational line, e.g. the session was already revoked.
+  const [notice, setNotice] = useState<string | null>(null)
   // F-0511: a join or leave event refetches the active participants.
   const [rosterTick, setRosterTick] = useState(0)
   const [input, setInput] = useState('')
@@ -315,6 +318,7 @@ export function WarRoomDetail({ id }: { id: string }) {
   // impersonar o nick salvo.
   useEffect(() => {
     setSession(null)
+    setNotice(null)
     const stored = loadStoredSession(id)
     if (!stored) return
     let cancelled = false
@@ -424,6 +428,7 @@ export function WarRoomDetail({ id }: { id: string }) {
     localStorage.setItem(BIO_KEY, bio)
     setJoining(true)
     setError(null)
+    setNotice(null)
     joinRoom(id, trimmedNick, bio)
       .then(({ session: s }) => {
         setJoining(false)
@@ -437,11 +442,14 @@ export function WarRoomDetail({ id }: { id: string }) {
   }
 
   // F-0511: the server revokes the capability first; only then does this
-  // browser forget it. On failure the session stays, so Leave can be retried.
+  // browser forget it. A failure worth retrying keeps the session, so Leave
+  // can be tried again; a 401 means the server had already revoked it (another
+  // tab, the terminal), so the browser forgets it like an invalid resume does.
   const doLeave = () => {
     if (!session || leaving) return
     setLeaving(true)
     setError(null)
+    setNotice(null)
     leaveRoom(id, session.session_id)
       .then((r) => {
         setLeaving(false)
@@ -451,6 +459,12 @@ export function WarRoomDetail({ id }: { id: string }) {
       })
       .catch((e: unknown) => {
         setLeaving(false)
+        if (e instanceof HTTPError && e.status === 401) {
+          localStorage.removeItem(sessionKey(id))
+          setSession(null)
+          setNotice(t.warRoom.sessionGone)
+          return
+        }
         setError(t.warRoom.leaveError(e instanceof Error ? e.message : String(e)))
       })
   }
@@ -651,6 +665,11 @@ export function WarRoomDetail({ id }: { id: string }) {
         {error && (
           <p className="room-error" role="alert">
             {error}
+          </p>
+        )}
+        {notice && (
+          <p className="room-notice" role="status">
+            {notice}
           </p>
         )}
         {closed && <p className="room-notice">{t.warRoom.closedNotice}</p>}

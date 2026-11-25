@@ -2015,14 +2015,16 @@ export async function resumeRoomSession(id: string, sessionID: string): Promise<
 }
 
 // leaveRoom revokes the capability on the server (F-0511) and returns the room
-// without the nick among the active participants.
+// without the nick among the active participants. A 401 (the capability was
+// already revoked) comes as an HTTPError, so the screen can tell it from a
+// failure worth retrying.
 export async function leaveRoom(id: string, sessionID: string): Promise<Room> {
   const r = await fetch(`${base()}/rooms/${encodeURIComponent(id)}/sessions/leave`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ session_id: sessionID }),
   })
-  if (!r.ok) throw new Error(await errorMessage(r))
+  if (!r.ok) throw new HTTPError(await errorMessage(r), r.status)
   return (await r.json()) as Room
 }
 

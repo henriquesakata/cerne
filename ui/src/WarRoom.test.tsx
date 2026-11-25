@@ -5,7 +5,7 @@ import '@testing-library/jest-dom/vitest'
 import WarRoom, { WarRoomDetail } from './WarRoom'
 import { I18nProvider } from './i18n'
 import { LiveProvider, useProjects } from './live'
-import { fetchProjects, type FacilitationItem, type Minutes, type ProjectInfo, type Room, type RoomMessage, type RoomSession } from './api'
+import { fetchProjects, HTTPError, type FacilitationItem, type Minutes, type ProjectInfo, type Room, type RoomMessage, type RoomSession } from './api'
 
 const fetchRooms = vi.fn<() => Promise<Room[]>>()
 const joinRoom = vi.fn<(id: string, nick: string, bio: string) => Promise<{ room: Room; session: RoomSession }>>()
@@ -971,11 +971,15 @@ describe('layout e conversa da sala (B-0046)', () => {
     expect(localStorage.getItem('warroom-facilitator--R1')).toBe('facfacfacfacfacfacfacfacfacfacfa')
   })
 
-  // F-0511 crit. 6
-  it('erro ao sair mantém a sessão local, mostra a falha e deixa tentar de novo', async () => {
+  // F-0511 crit. 6: a failure that can be retried — network, 5xx, 409.
+  it.each([
+    ['rede', new Error('conexão recusada')],
+    ['5xx', new HTTPError('conexão recusada', 500)],
+    ['409', new HTTPError('conexão recusada', 409)],
+  ])('erro ao sair (%s) mantém a sessão local, mostra a falha e deixa tentar de novo', async (_kind, failure) => {
     joinedAs('ana')
     readRoomMessages.mockImplementationOnce(() => Promise.resolve([open]))
-    leaveRoom.mockRejectedValueOnce(new Error('conexão recusada')).mockResolvedValueOnce(room({ active_participants: [] }))
+    leaveRoom.mockRejectedValueOnce(failure).mockResolvedValueOnce(room({ active_participants: [] }))
     render(<WarRoomDetail id="R1" />)
 
     await screen.findByPlaceholderText(/escreva uma mensagem/i)
@@ -987,6 +991,25 @@ describe('layout e conversa da sala (B-0046)', () => {
     fireEvent.click(screen.getByRole('button', { name: /^sair$/i }))
     await waitFor(() => expect(leaveRoom).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(localStorage.getItem(SESSION_KEY)).toBeNull())
+  })
+
+  // F-0511 crit. 6: a 401 means the server had already revoked the capability
+  // (another tab, the terminal): nothing to retry, so the browser forgets it.
+  it('sessão já revogada (401) ao sair: esquece a sessão local, volta a observar e avisa', async () => {
+    joinedAs('ana')
+    readRoomMessages.mockImplementationOnce(() => Promise.resolve([open]))
+    leaveRoom.mockRejectedValueOnce(new HTTPError('invalid room session', 401))
+    render(<WarRoomDetail id="R1" />)
+
+    await screen.findByPlaceholderText(/escreva uma mensagem/i)
+    fireEvent.click(screen.getByRole('button', { name: /^sair$/i }))
+    await waitFor(() => expect(screen.getByPlaceholderText(/apelido/i)).toBeInTheDocument())
+    expect(localStorage.getItem(SESSION_KEY)).toBeNull()
+    expect(screen.getByText('Observando')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent(/já não era válida/i)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByPlaceholderText(/escreva uma mensagem/i)).not.toBeInTheDocument()
+    expect(leaveRoom).toHaveBeenCalledTimes(1)
   })
 
   // F-0511 crit. 5
