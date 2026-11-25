@@ -130,27 +130,27 @@ func TestInstallDoc_Scoop(t *testing.T) {
 // Windows, checks the version, and has Scoop's own checkver rewrite the
 // previous release's manifest to the latest one.
 func TestScoopManifest_PackagingWorkflow(t *testing.T) {
+	job := parseJob(t, "../.github/workflows/packaging.yml", "scoop")
+	if job.RunsOn != "windows-latest" {
+		t.Errorf("scoop job runs on %q", job.RunsOn)
+	}
+	gen := job.stepWith("scripts/scoop-manifest.sh")
+	install := job.stepWith("scoop install .\\cerne.json")
+	checkver := job.stepWith("checkver.ps1")
+	if gen < 0 || install < 0 || checkver < 0 || !(gen < install && install < checkver) {
+		t.Fatalf("steps: generate %d, install %d, checkver %d; want them in that order", gen, install, checkver)
+	}
+	if !strings.Contains(job.Steps[install].Run, "cerne --version") || !strings.Contains(job.Steps[checkver].Run, "-Update") {
+		t.Error("install must check cerne --version and checkver must run with -Update")
+	}
+	if i := job.stepWith("get.scoop.sh"); i < 0 || !strings.Contains(job.Steps[i].Run, "-RunAsAdmin") || i > gen {
+		t.Errorf("Scoop must be installed (with -RunAsAdmin) before the manifests are used: step %d", i)
+	}
 	raw, err := os.ReadFile("../.github/workflows/packaging.yml")
 	if err != nil {
 		t.Fatal(err)
 	}
-	wf := string(raw)
-	job := jobOf(t, wf, "scoop")
-	for _, want := range []string{
-		"runs-on: windows-latest",
-		"get.scoop.sh",
-		"-RunAsAdmin",
-		"scripts/scoop-manifest.sh",
-		"scoop install .\\cerne.json",
-		"cerne --version",
-		"checkver.ps1",
-		"-Update",
-	} {
-		if !strings.Contains(job, want) {
-			t.Errorf("scoop job lacks %q", want)
-		}
-	}
-	if !strings.Contains(wf, "- 'scripts/scoop-manifest.sh'") {
+	if !strings.Contains(string(raw), "- 'scripts/scoop-manifest.sh'") {
 		t.Error("packaging.yml does not run when scripts/scoop-manifest.sh changes")
 	}
 }

@@ -35,6 +35,8 @@ type wfStep struct {
 	Uses string            `yaml:"uses"`
 	Run  string            `yaml:"run"`
 	Env  map[string]string `yaml:"env"`
+	If   string            `yaml:"if"`
+	With map[string]string `yaml:"with"`
 }
 
 type wfJob struct {
@@ -180,59 +182,91 @@ func TestAURRelease_CheckJob(t *testing.T) {
 
 // F-0508 crit. 4: after the tap, the release job writes bucket/cerne.json to the
 // Scoop bucket for stable tags only, refusing to run without its token and
-// committing only when something changed.
+// committing only when something changed. The shell branches themselves
+// (token missing, no diff, prerelease) are proved at the first stable tag.
 func TestScoopRelease_BucketSteps(t *testing.T) {
-	raw, err := os.ReadFile("../.github/workflows/release.yml")
-	if err != nil {
-		t.Fatal(err)
+	job := parseJob(t, "../.github/workflows/release.yml", "release")
+	tap := job.stepWith("update the Homebrew tap")
+	if tap < 0 {
+		for i, s := range job.Steps {
+			if s.Name == "update the Homebrew tap" {
+				tap = i
+			}
+		}
 	}
-	job := jobOf(t, string(raw), "release")
-	from := strings.Index(job, "check the Scoop bucket token")
-	if from < 0 {
-		t.Fatal("release job has no 'check the Scoop bucket token' step")
+	token, checkout, update := -1, -1, -1
+	for i, s := range job.Steps {
+		switch {
+		case s.Name == "check the Scoop bucket token":
+			token = i
+		case s.Uses != "" && s.With["repository"] == "henriquesakata/scoop-bucket":
+			checkout = i
+		case s.Name == "update the Scoop bucket":
+			update = i
+		}
 	}
-	if tap := strings.Index(job, "update the Homebrew tap"); tap < 0 || tap > from {
-		t.Error("the bucket steps must come after the Homebrew tap")
+	if token < 0 || checkout < 0 || update < 0 || !(tap < token && token < checkout && checkout < update) {
+		t.Fatalf("steps: tap %d, token check %d, checkout %d, update %d; want them in that order", tap, token, checkout, update)
 	}
-	steps := job[from:]
+	stable := "${{ !contains(github.ref_name, '-') }}"
+	for _, i := range []int{token, checkout, update} {
+		if job.Steps[i].If != stable {
+			t.Errorf("step %q runs on %q, want stable tags only", job.Steps[i].Name, job.Steps[i].If)
+		}
+	}
+	tok := job.Steps[token]
+	if tok.Env["BUCKET_TOKEN"] != "${{ secrets.SCOOP_BUCKET_TOKEN }}" ||
+		!strings.Contains(tok.Run, "::error::SCOOP_BUCKET_TOKEN is not set") ||
+		!strings.Contains(tok.Run, "the Scoop bucket still installs the previous version") {
+		t.Errorf("token step: %+v", tok)
+	}
+	if job.Steps[checkout].With["token"] != "${{ secrets.SCOOP_BUCKET_TOKEN }}" {
+		t.Errorf("checkout does not use the bucket token: %+v", job.Steps[checkout].With)
+	}
 	for _, want := range []string{
-		"secrets.SCOOP_BUCKET_TOKEN",
-		"::error::SCOOP_BUCKET_TOKEN is not set",
-		"the Scoop bucket still installs the previous version",
-		"repository: henriquesakata/scoop-bucket",
 		`sh scripts/scoop-manifest.sh "$GITHUB_REF_NAME" dist/SHA256SUMS >scoop-bucket/bucket/cerne.json`,
 		"git diff --cached --quiet ||",
 		`commit -q -m "cerne $GITHUB_REF_NAME"`,
 	} {
-		if !strings.Contains(steps, want) {
-			t.Errorf("bucket steps lack %q", want)
+		if !strings.Contains(job.Steps[update].Run, want) {
+			t.Errorf("update step lacks %q", want)
 		}
-	}
-	if n := strings.Count(steps, "if: ${{ !contains(github.ref_name, '-') }}"); n < 3 {
-		t.Errorf("only %d bucket steps are guarded to stable tags, want all of them", n)
 	}
 }
 
 // F-0508 crit. 5 and 6: once the bucket is updated, a Windows runner adds it,
-// installs from it and checks the version, and that cerne update names Scoop.
+// installs from it and checks the version, and that cerne update names Scoop
+// without its exit code 1 (a part "not done") failing the job.
 func TestScoopRelease_CheckJob(t *testing.T) {
-	raw, err := os.ReadFile("../.github/workflows/release.yml")
-	if err != nil {
-		t.Fatal(err)
+	job := parseJob(t, "../.github/workflows/release.yml", "scoop-check")
+	if job.Needs != "release" || job.If != "${{ !contains(github.ref_name, '-') }}" || job.RunsOn != "windows-latest" {
+		t.Errorf("scoop-check job needs %q, if %q, runs-on %q", job.Needs, job.If, job.RunsOn)
 	}
-	job := jobOf(t, string(raw), "scoop-check")
+	i := job.stepWith("scoop install henriquesakata/cerne")
+	if i < 0 {
+		t.Fatal("scoop-check does not install from the bucket")
+	}
+	run := job.Steps[i].Run
 	for _, want := range []string{
-		"needs: release",
-		"if: ${{ !contains(github.ref_name, '-') }}",
-		"runs-on: windows-latest",
 		"get.scoop.sh",
 		"scoop bucket add henriquesakata https://github.com/henriquesakata/scoop-bucket",
-		"scoop install henriquesakata/cerne",
 		"cerne --version",
 		"scoop update cerne",
+		// The pwsh wrapper ends a step with `exit $LASTEXITCODE`, and cerne
+		// update exits 1 by design when a part is not done.
+		"$ErrorActionPreference = 'Continue'",
+		"$global:LASTEXITCODE = 0",
 	} {
-		if !strings.Contains(job, want) {
-			t.Errorf("scoop-check job lacks %q", want)
+		if !strings.Contains(run, want) {
+			t.Errorf("scoop-check step lacks %q", want)
 		}
+	}
+	// The binary line is what has to carry the fix.
+	if !strings.Contains(run, "binary") {
+		t.Error("scoop-check does not assert on the binary line")
+	}
+	update, reset := strings.Index(run, "cerne update"), strings.LastIndex(run, "$global:LASTEXITCODE = 0")
+	if update < 0 || reset < update {
+		t.Errorf("the exit code is reset (%d) before cerne update runs (%d)", reset, update)
 	}
 }

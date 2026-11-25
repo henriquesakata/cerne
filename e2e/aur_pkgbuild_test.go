@@ -126,4 +126,3 @@ func TestAURPKGBUILD_BadTag(t *testing.T) {
 		}
 	}
 }
-

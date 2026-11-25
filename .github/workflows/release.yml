@@ -159,12 +159,18 @@ jobs:
             Write-Host "::error::scoop installed '$got', want '$want'"
             exit 1
           }
+          # cerne update exits 1 by design when a part is not done, and native
+          # stderr must not become an error: capture it, assert on the binary
+          # line, then clear the exit code the step would otherwise end with.
+          $ErrorActionPreference = 'Continue'
           $out = (cerne update 2>&1 | Out-String)
+          $ErrorActionPreference = 'Stop'
           Write-Host $out
-          if ($out -notmatch 'scoop update cerne') {
-            Write-Host "::error::cerne update did not name 'scoop update cerne'"
+          if ($out -notmatch '(?m)^binary: not done.*scoop update cerne') {
+            Write-Host "::error::the binary line of cerne update did not name 'scoop update cerne'"
             exit 1
           }
+          $global:LASTEXITCODE = 0
 
   # The Arch User Repository package cerne-bin (F-0507). scripts/aur-check.sh
   # builds and installs the package in this container first; only then the
