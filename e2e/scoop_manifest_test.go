@@ -93,4 +93,31 @@ func TestScoopManifest_BadTag(t *testing.T) {
 	}
 }
 
-var _ = os.Getenv
+// F-0508 crit. 3: the PR workflow installs the generated manifest with Scoop on
+// Windows, checks the version, and has Scoop's own checkver rewrite the
+// previous release's manifest to the latest one.
+func TestScoopManifest_PackagingWorkflow(t *testing.T) {
+	raw, err := os.ReadFile("../.github/workflows/packaging.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wf := string(raw)
+	job := jobOf(t, wf, "scoop")
+	for _, want := range []string{
+		"runs-on: windows-latest",
+		"get.scoop.sh",
+		"-RunAsAdmin",
+		"scripts/scoop-manifest.sh",
+		"scoop install .\\cerne.json",
+		"cerne --version",
+		"checkver.ps1",
+		"-Update",
+	} {
+		if !strings.Contains(job, want) {
+			t.Errorf("scoop job lacks %q", want)
+		}
+	}
+	if !strings.Contains(wf, "- 'scripts/scoop-manifest.sh'") {
+		t.Error("packaging.yml does not run when scripts/scoop-manifest.sh changes")
+	}
+}
