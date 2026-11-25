@@ -34,6 +34,7 @@ var (
 	ErrItemNotFound         = errors.New("facilitation item not found or already resolved")
 	ErrRoomOpen             = errors.New("room is still open — close it with minutes first")
 	ErrMinutesAlreadyLinked = errors.New("room minutes are already registered as a note")
+	ErrNoMinutesDraft       = errors.New("room has no minutes draft")
 )
 
 const (
@@ -45,6 +46,7 @@ const (
 	typeProposal        = "proposal"
 	typeDecisionRequest = "decision_request"
 	typeResolution      = "resolution"
+	typeMinutesDraft    = "minutes_draft"
 )
 
 // Room is the metadata + roster snapshot returned to callers.
@@ -68,6 +70,17 @@ type Room struct {
 	// Permanent marks the project's permanent channel (F-0325): no
 	// open/close/minutes, roster derived from the active works.
 	Permanent bool `json:"permanent,omitempty"`
+	// MinutesDraft is the open room's current shared draft (T-0022), saved by
+	// any participant or the facilitator; gone once the room closes.
+	MinutesDraft *MinutesDraft `json:"minutes_draft,omitempty"`
+}
+
+// MinutesDraft is a validated minutes proposal and who saved it last (T-0022).
+// Author is the participant's nick, or "facilitator".
+type MinutesDraft struct {
+	Minutes   Minutes   `json:"minutes"`
+	Author    string    `json:"author"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // Participant is one joined nick. Listening and LastSeenAt are live presence
@@ -116,7 +129,7 @@ func newSessionToken() (string, error) {
 // event, a said message, or a facilitation event (F-0228).
 type Message struct {
 	Seq   int       `json:"seq"`
-	Type  string    `json:"type"` // open|join|leave|message|close|proposal|decision_request|resolution
+	Type  string    `json:"type"` // open|join|leave|message|close|proposal|decision_request|resolution|minutes_draft
 	Nick  string    `json:"nick,omitempty"`
 	Bio   string    `json:"bio,omitempty"`   // join only
 	Body  string    `json:"body,omitempty"`  // message body, item description, or resolution result
@@ -125,7 +138,7 @@ type Message struct {
 
 	Title   string   `json:"title,omitempty"`   // proposal|decision_request only
 	ItemID  string   `json:"item_id,omitempty"` // resolution only: the item it resolves
-	Minutes *Minutes `json:"minutes,omitempty"` // close only
+	Minutes *Minutes `json:"minutes,omitempty"` // close and minutes_draft only
 
 	Human bool `json:"human,omitempty"` // permanent channel (F-0325): posted by the human from the UI
 	// Session is the agent session that posted a channel message (F-0325):
@@ -240,7 +253,7 @@ func (m *Manager) load() error {
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") ||
 			strings.HasSuffix(e.Name(), sessionsSuffix) || strings.HasSuffix(e.Name(), facilitatorSuffix) ||
-			strings.HasSuffix(e.Name(), minutesNoteSuffix) {
+			strings.HasSuffix(e.Name(), minutesNoteSuffix) || strings.HasSuffix(e.Name(), minutesDraftSuffix) {
 			continue
 		}
 		id := strings.TrimSuffix(e.Name(), ".jsonl")
@@ -256,6 +269,9 @@ func (m *Manager) load() error {
 		}
 		if err := loadMinutesNote(filepath.Join(m.dir, id+minutesNoteSuffix), rs); err != nil {
 			return fmt.Errorf("replay %s minutes note: %w", id, err)
+		}
+		if err := loadMinutesDraft(filepath.Join(m.dir, id+minutesDraftSuffix), rs); err != nil {
+			return fmt.Errorf("replay %s minutes draft: %w", id, err)
 		}
 		m.rooms[id] = rs
 		if n, ok := roomNumber(id); ok && n > m.nextID {
@@ -510,6 +526,54 @@ func (m *Manager) SetMinutesNote(id, noteID string, force bool) (Room, error) {
 	}
 	rs.meta.MinutesNote = noteID
 	return rs.snapshotLocked(), nil
+}
+
+const minutesDraftSuffix = ".minutes-draft.jsonl"
+
+// persistMinutesDraft appends a saved draft to the <id>.minutes-draft.jsonl
+// sidecar (T-0022): append-only, the last line is the current draft. No
+// capability is ever written — the author is a nick or "facilitator".
+func (m *Manager) persistMinutesDraft(id string, d MinutesDraft) error {
+	line, err := json.Marshal(d)
+	if err != nil {
+		return err
+	}
+	f, err := os.OpenFile(filepath.Join(m.dir, id+minutesDraftSuffix), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.Write(append(line, '\n'))
+	return err
+}
+
+// loadMinutesDraft replays the sidecar's last draft into an open room; a
+// closed room keeps none, and a missing sidecar means no draft yet.
+func loadMinutesDraft(path string, rs *roomState) error {
+	if rs.meta.ClosedAt != nil {
+		return nil
+	}
+	f, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), 1<<20)
+	for sc.Scan() {
+		if len(sc.Bytes()) == 0 {
+			continue
+		}
+		var d MinutesDraft
+		if err := json.Unmarshal(sc.Bytes(), &d); err != nil {
+			return err
+		}
+		rs.meta.MinutesDraft = &d
+	}
+	return sc.Err()
 }
 
 func roomNumber(id string) (int, bool) {
@@ -975,6 +1039,12 @@ func (m *Manager) Resolve(id, facilitatorToken, itemID, result string) (Facilita
 // Idempotent: closing an already-closed room is a no-op returning its
 // existing minutes, still gated on a valid facilitator capability.
 func (m *Manager) Close(id, facilitatorToken string, minutes Minutes, allowOpenItems bool) (Room, error) {
+	return m.close(id, facilitatorToken, &minutes, allowOpenItems)
+}
+
+// close implements Close and CloseWithDraft: a nil given closes with the
+// saved draft. Closing drops the draft.
+func (m *Manager) close(id, facilitatorToken string, given *Minutes, allowOpenItems bool) (Room, error) {
 	rs, err := m.getRoom(id)
 	if err != nil {
 		return Room{}, err
@@ -987,6 +1057,13 @@ func (m *Manager) Close(id, facilitatorToken string, minutes Minutes, allowOpenI
 	if rs.meta.ClosedAt != nil {
 		return rs.snapshotLocked(), nil
 	}
+	if given == nil {
+		if rs.meta.MinutesDraft == nil {
+			return Room{}, ErrNoMinutesDraft
+		}
+		given = &rs.meta.MinutesDraft.Minutes
+	}
+	minutes := *given
 	if err := minutes.validate(); err != nil {
 		return Room{}, err
 	}
@@ -1008,7 +1085,63 @@ func (m *Manager) Close(id, facilitatorToken string, minutes Minutes, allowOpenI
 	}
 	rs.meta.ClosedAt = &now
 	rs.meta.Minutes = &minutes
+	rs.meta.MinutesDraft = nil
 	return rs.snapshotLocked(), nil
+}
+
+// SaveMinutesDraft replaces the open room's shared minutes draft (T-0022) and
+// appends a public minutes_draft event carrying it, without closing the room.
+// Any participant (sessionID, authoring as its nick) or the facilitator
+// (facilitatorToken, authoring as "facilitator") may save; the draft must
+// carry the fields Close requires. The private sidecar is written before the
+// event, so a crash in between keeps the draft for the next restart.
+func (m *Manager) SaveMinutesDraft(id, sessionID, facilitatorToken string, minutes Minutes) (MinutesDraft, error) {
+	rs, err := m.getRoom(id)
+	if err != nil {
+		return MinutesDraft{}, err
+	}
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+	if rs.meta.ClosedAt != nil {
+		return MinutesDraft{}, ErrClosed
+	}
+	author := "facilitator"
+	switch {
+	case sessionID != "":
+		sa, ok := rs.findSessionLocked(sessionID)
+		if !ok {
+			return MinutesDraft{}, ErrInvalidSession
+		}
+		author = sa.nick
+	case facilitatorToken != "":
+		if !rs.checkFacilitatorLocked(facilitatorToken) {
+			return MinutesDraft{}, ErrNotFacilitator
+		}
+	default:
+		return MinutesDraft{}, ErrInvalidSession
+	}
+	if err := minutes.validate(); err != nil {
+		return MinutesDraft{}, err
+	}
+	d := MinutesDraft{Minutes: minutes, Author: author, UpdatedAt: time.Now().UTC()}
+	if err := m.persistMinutesDraft(id, d); err != nil {
+		return MinutesDraft{}, err
+	}
+	if err := m.appendLocked(rs, Message{Type: typeMinutesDraft, Nick: author, Minutes: &d.Minutes, Time: d.UpdatedAt}); err != nil {
+		return MinutesDraft{}, err
+	}
+	rs.meta.MinutesDraft = &d
+	if sessionID != "" {
+		rs.touchLocked(author)
+	}
+	return d, nil
+}
+
+// CloseWithDraft is Close with the room's saved minutes draft (T-0022):
+// ErrNoMinutesDraft when none was saved. Same facilitator gate, open-items
+// rule and idempotency as Close.
+func (m *Manager) CloseWithDraft(id, facilitatorToken string, allowOpenItems bool) (Room, error) {
+	return m.close(id, facilitatorToken, nil, allowOpenItems)
 }
 
 // Read returns every event with Seq > since. When follow is true and none is

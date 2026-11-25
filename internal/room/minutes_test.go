@@ -1,6 +1,13 @@
 package room
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -107,5 +114,240 @@ func TestRenderMinutesNoteBodyGolden(t *testing.T) {
 func TestRenderMinutesNoteBodyNilReturnsEmpty(t *testing.T) {
 	if got := RenderMinutesNoteBody(Room{ID: "R1", Topic: "t"}, time.Now()); got != "" {
 		t.Fatalf("RenderMinutesNoteBody = %q, want empty for a room with no minutes", got)
+	}
+}
+
+// T-0022 crit. 1
+// E-0006 crit. 10
+func TestSaveMinutesDraftBySession(t *testing.T) {
+	m := newManager(t)
+	r, _, _ := m.Open("topico")
+	alice := mustJoin(t, m, r.ID, "alice", "")
+	time.Sleep(2 * time.Millisecond) // Join's stamp must be strictly earlier
+	before := time.Now().UTC()
+	mn := Minutes{Conclusion: "reverter o deploy", Rationale: "mais rápido", Owners: []string{"alice"}}
+
+	d, err := m.SaveMinutesDraft(r.ID, alice.SessionID, "", mn)
+	if err != nil {
+		t.Fatalf("SaveMinutesDraft: %v", err)
+	}
+	if d.Author != "alice" || d.Minutes.Conclusion != mn.Conclusion || d.UpdatedAt.Before(before) {
+		t.Fatalf("draft = %+v, want alice's minutes stamped after %v", d, before)
+	}
+	got := m.List()[0]
+	if got.ClosedAt != nil {
+		t.Fatal("saving a draft closed the room")
+	}
+	if got.MinutesDraft == nil || got.MinutesDraft.Author != "alice" || got.MinutesDraft.Minutes.Rationale != mn.Rationale {
+		t.Fatalf("room draft = %+v, want alice's draft", got.MinutesDraft)
+	}
+	if seen := activeOf(t, m, r.ID, "alice").LastSeenAt; seen == nil || seen.Before(before) {
+		t.Fatalf("last_seen_at = %v, want >= %v", seen, before)
+	}
+	msgs, _ := m.Read(context.Background(), r.ID, 0, false, time.Second)
+	last := msgs[len(msgs)-1]
+	if last.Type != "minutes_draft" || last.Nick != "alice" || last.Minutes == nil || last.Minutes.Conclusion != mn.Conclusion {
+		t.Fatalf("last event = %+v, want a minutes_draft event by alice carrying the draft", last)
+	}
+}
+
+// T-0022 crit. 1
+// E-0006 crit. 10
+func TestSaveMinutesDraftByFacilitator(t *testing.T) {
+	m := newManager(t)
+	r, fac, _ := m.Open("topico")
+	d, err := m.SaveMinutesDraft(r.ID, "", fac, minimalMinutes)
+	if err != nil || d.Author != "facilitator" {
+		t.Fatalf("SaveMinutesDraft as facilitator = %+v, %v; want author facilitator", d, err)
+	}
+}
+
+// T-0022 crit. 1
+// E-0006 crit. 10
+func TestSaveMinutesDraftRefusals(t *testing.T) {
+	m := newManager(t)
+	r, _, _ := m.Open("topico")
+	alice := mustJoin(t, m, r.ID, "alice", "")
+	logLen := m.List()[0].MessageCount
+	for _, tc := range []struct {
+		name, session, facilitator string
+		mn                         Minutes
+		want                       error
+	}{
+		{"empty rationale", alice.SessionID, "", Minutes{Conclusion: "ok"}, ErrIncompleteMinutes},
+		{"blank conclusion", alice.SessionID, "", Minutes{Conclusion: "  ", Rationale: "ok"}, ErrIncompleteMinutes},
+		{"no credential", "", "", minimalMinutes, ErrInvalidSession},
+		{"unknown session", "deadbeefdeadbeefdeadbeefdeadbeef", "", minimalMinutes, ErrInvalidSession},
+		{"session as facilitator", "", alice.SessionID, minimalMinutes, ErrNotFacilitator},
+	} {
+		if _, err := m.SaveMinutesDraft(r.ID, tc.session, tc.facilitator, tc.mn); !errors.Is(err, tc.want) {
+			t.Errorf("%s: err = %v, want %v", tc.name, err, tc.want)
+		}
+	}
+	if got := m.List()[0]; got.MinutesDraft != nil || got.MessageCount != logLen {
+		t.Fatalf("a refused draft left a trace: draft=%+v events %d -> %d", got.MinutesDraft, logLen, got.MessageCount)
+	}
+	if _, err := m.SaveMinutesDraft("R99", alice.SessionID, "", minimalMinutes); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown room err = %v, want ErrNotFound", err)
+	}
+}
+
+// T-0022 crit. 1
+// E-0006 crit. 10
+func TestSaveMinutesDraftRefusesClosedRoom(t *testing.T) {
+	m := newManager(t)
+	r, fac, _ := m.Open("topico")
+	alice := mustJoin(t, m, r.ID, "alice", "")
+	if _, err := m.Close(r.ID, fac, minimalMinutes, false); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if _, err := m.SaveMinutesDraft(r.ID, alice.SessionID, "", minimalMinutes); !errors.Is(err, ErrClosed) {
+		t.Fatalf("err = %v, want ErrClosed", err)
+	}
+}
+
+// T-0022 crit. 1
+// E-0006 crit. 10
+func TestMinutesDraftSurvivesRestart(t *testing.T) {
+	dir := t.TempDir()
+	m1, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	r, _, _ := m1.Open("topico")
+	alice := mustJoin(t, m1, r.ID, "alice", "")
+	if _, err := m1.SaveMinutesDraft(r.ID, alice.SessionID, "", Minutes{Conclusion: "primeira", Rationale: "r"}); err != nil {
+		t.Fatalf("first draft: %v", err)
+	}
+	want, err := m1.SaveMinutesDraft(r.ID, alice.SessionID, "", Minutes{Conclusion: "segunda", Rationale: "r"})
+	if err != nil {
+		t.Fatalf("second draft: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, r.ID+".minutes-draft.jsonl")); err != nil {
+		t.Fatalf("draft sidecar: %v", err)
+	}
+
+	m2, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager (restart): %v", err)
+	}
+	rooms := m2.List()
+	if len(rooms) != 1 {
+		t.Fatalf("rooms after restart = %d, want 1 (the draft sidecar is not a room)", len(rooms))
+	}
+	d := rooms[0].MinutesDraft
+	if d == nil || d.Minutes.Conclusion != "segunda" || d.Author != "alice" || !d.UpdatedAt.Equal(want.UpdatedAt) {
+		t.Fatalf("draft after restart = %+v, want the last one saved (%+v)", d, want)
+	}
+}
+
+// T-0022 crit. 2
+// E-0006 crit. 11
+func TestCloseWithDraftUsesSavedDraft(t *testing.T) {
+	m := newManager(t)
+	r, fac, _ := m.Open("topico")
+	alice := mustJoin(t, m, r.ID, "alice", "")
+	if _, err := m.CloseWithDraft(r.ID, fac, false); !errors.Is(err, ErrNoMinutesDraft) {
+		t.Fatalf("close with no draft err = %v, want ErrNoMinutesDraft", err)
+	}
+	mn := Minutes{Conclusion: "reverter", Rationale: "rápido", NextSteps: []string{"post-mortem"}}
+	if _, err := m.SaveMinutesDraft(r.ID, alice.SessionID, "", mn); err != nil {
+		t.Fatalf("SaveMinutesDraft: %v", err)
+	}
+	if _, err := m.CloseWithDraft(r.ID, alice.SessionID, false); !errors.Is(err, ErrNotFacilitator) {
+		t.Fatalf("close by a participant err = %v, want ErrNotFacilitator", err)
+	}
+	closed, err := m.CloseWithDraft(r.ID, fac, false)
+	if err != nil {
+		t.Fatalf("CloseWithDraft: %v", err)
+	}
+	if closed.ClosedAt == nil || closed.Minutes == nil || closed.Minutes.Conclusion != mn.Conclusion || len(closed.Minutes.NextSteps) != 1 {
+		t.Fatalf("closed = %+v, want the room closed with the draft's minutes", closed)
+	}
+	if closed.MinutesDraft != nil {
+		t.Fatalf("draft = %+v after close, want none", closed.MinutesDraft)
+	}
+}
+
+// T-0022 crit. 2
+// E-0006 crit. 11
+func TestCloseWithDraftBlocksOnOpenItems(t *testing.T) {
+	m := newManager(t)
+	r, fac, _ := m.Open("topico")
+	alice := mustJoin(t, m, r.ID, "alice", "")
+	item, _ := m.Propose(r.ID, alice.SessionID, "t", "b")
+	if _, err := m.SaveMinutesDraft(r.ID, alice.SessionID, "", minimalMinutes); err != nil {
+		t.Fatalf("SaveMinutesDraft: %v", err)
+	}
+	if _, err := m.CloseWithDraft(r.ID, fac, false); !errors.Is(err, ErrOpenItems) {
+		t.Fatalf("err = %v, want ErrOpenItems", err)
+	}
+	closed, err := m.CloseWithDraft(r.ID, fac, true)
+	if err != nil || closed.Minutes == nil || len(closed.Minutes.OpenItems) != 1 || closed.Minutes.OpenItems[0] != item.ID {
+		t.Fatalf("forced close = %+v, %v; want the open item recorded", closed.Minutes, err)
+	}
+}
+
+// T-0022 crit. 2
+// E-0006 crit. 11
+func TestClosedRoomDropsDraftAcrossRestart(t *testing.T) {
+	dir := t.TempDir()
+	m1, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	r, fac, _ := m1.Open("topico")
+	if _, err := m1.SaveMinutesDraft(r.ID, "", fac, Minutes{Conclusion: "rascunho", Rationale: "r"}); err != nil {
+		t.Fatalf("SaveMinutesDraft: %v", err)
+	}
+	closed, err := m1.Close(r.ID, fac, Minutes{Conclusion: "final", Rationale: "r"}, false)
+	if err != nil || closed.MinutesDraft != nil {
+		t.Fatalf("Close = %+v, %v; want the draft gone", closed.MinutesDraft, err)
+	}
+	m2, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager (restart): %v", err)
+	}
+	got := m2.List()[0]
+	if got.MinutesDraft != nil || got.Minutes == nil || got.Minutes.Conclusion != "final" {
+		t.Fatalf("after restart draft=%+v minutes=%+v, want no draft and the final minutes", got.MinutesDraft, got.Minutes)
+	}
+}
+
+// T-0022 crit. 1
+// E-0006 crit. 10
+func TestMinutesDraftNeverServesCapabilities(t *testing.T) {
+	dir := t.TempDir()
+	m, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	r, fac, _ := m.Open("topico")
+	alice := mustJoin(t, m, r.ID, "alice", "")
+	if _, err := m.SaveMinutesDraft(r.ID, alice.SessionID, "", minimalMinutes); err != nil {
+		t.Fatalf("draft by session: %v", err)
+	}
+	if _, err := m.SaveMinutesDraft(r.ID, "", fac, minimalMinutes); err != nil {
+		t.Fatalf("draft by facilitator: %v", err)
+	}
+	listed, _ := json.Marshal(m.List())
+	msgs, _ := m.Read(context.Background(), r.ID, 0, false, time.Second)
+	read, _ := json.Marshal(msgs)
+	sidecar, err := os.ReadFile(filepath.Join(dir, r.ID+".minutes-draft.jsonl"))
+	if err != nil {
+		t.Fatalf("read sidecar: %v", err)
+	}
+	transcript, _ := os.ReadFile(filepath.Join(dir, r.ID+".jsonl"))
+	var secrets []string
+	for _, tok := range []string{alice.SessionID, fac} {
+		h := sha256.Sum256([]byte(tok))
+		secrets = append(secrets, tok, hex.EncodeToString(h[:]))
+	}
+	for name, body := range map[string][]byte{"list": listed, "read": read, "sidecar": sidecar, "transcript": transcript} {
+		for _, secret := range secrets {
+			if strings.Contains(string(body), secret) {
+				t.Fatalf("%s carries a capability or its hash: %s", name, body)
+			}
+		}
 	}
 }
