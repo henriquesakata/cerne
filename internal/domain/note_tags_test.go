@@ -43,6 +43,18 @@ func TestNormalizeFacets(t *testing.T) {
 	}
 }
 
+// TestNormalizeFacetsUnknownMessage pins the refusal text: English (N-0068),
+// naming the offender and the valid set, still matching the sentinel. // B-0081
+func TestNormalizeFacetsUnknownMessage(t *testing.T) {
+	_, err := NormalizeFacets([]string{"infra", "Bogus"})
+	if !errors.Is(err, ErrUnknownFacet) {
+		t.Fatalf("err = %v, want errors.Is ErrUnknownFacet", err)
+	}
+	if want := "unknown facet: bogus (one of infra, code, data, process, auth)"; err.Error() != want {
+		t.Fatalf("err = %q, want %q", err.Error(), want)
+	}
+}
+
 func TestNormalizeComponents(t *testing.T) {
 	tests := []struct {
 		name string

@@ -23,7 +23,7 @@ function refusal(err: unknown, t: Messages): string {
   const r = t.ideas.refusals
   if (msg.startsWith('the idea title cannot be empty')) return r.textRequired
   if (msg.startsWith('the idea title must be a single line')) return r.titleMultiline
-  if (msg.startsWith('facet desconhecida')) return r.unknownFacet
+  if (msg.startsWith('unknown facet')) return r.unknownFacet
   if (msg.startsWith('the idea is not active')) return r.notActive
   if (msg.startsWith('--module is required')) return r.moduleRequired
   if (msg.startsWith('a live feature with this title already exists')) return r.duplicateTitle

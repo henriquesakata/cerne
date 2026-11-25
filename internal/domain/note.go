@@ -57,7 +57,7 @@ const AtaComponent = "ata"
 const GoldenPathComponent = "golden-path"
 
 // ErrUnknownFacet is returned by NormalizeFacets for a value not in ValidFacets.
-var ErrUnknownFacet = errors.New("facet desconhecida")
+var ErrUnknownFacet = errors.New("unknown facet")
 
 func validFacet(f string) bool {
 	for _, v := range ValidFacets {
@@ -70,8 +70,8 @@ func validFacet(f string) bool {
 
 // NormalizeFacets lowercases and trims each facet, drops blanks, deduplicates
 // (order-preserving) and validates against the closed ValidFacets set. A value
-// outside the set yields ErrUnknownFacet (naming the offender) and no partial
-// result, so an invalid tag set never half-applies.
+// outside the set yields ErrUnknownFacet (naming the offender and the valid
+// set) and no partial result, so an invalid tag set never half-applies.
 func NormalizeFacets(in []string) ([]string, error) {
 	var out []string
 	seen := map[string]bool{}
@@ -81,7 +81,7 @@ func NormalizeFacets(in []string) ([]string, error) {
 			continue
 		}
 		if !validFacet(f) {
-			return nil, fmt.Errorf("%w: %s", ErrUnknownFacet, f)
+			return nil, fmt.Errorf("%w: %s (one of %s)", ErrUnknownFacet, f, strings.Join(ValidFacets, ", "))
 		}
 		if seen[f] {
 			continue

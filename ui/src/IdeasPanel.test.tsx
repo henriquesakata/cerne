@@ -200,7 +200,8 @@ describe('IdeasPanel (F-0312)', () => {
 
   it('recusas conhecidas em pt-BR, e o erro some no sucesso seguinte (C18)', async () => {
     ideas = [idea('I-0001', 'uma ideia')]
-    createIdea.mockRejectedValueOnce(new HTTPError('facet desconhecida: nope', 422))
+    // B-0081: the server's English refusal still maps to the UI's own text.
+    createIdea.mockRejectedValueOnce(new HTTPError('unknown facet: nope (one of infra, code, data, process, auth)', 422))
     createIdea.mockResolvedValue(idea('I-0002', 'outra'))
     promoteIdea.mockRejectedValueOnce(new HTTPError('the idea is not active: I-0001 is dropped (reason: x)', 422))
     render(<IdeasPanel modules={[]} onPromoted={() => {}} />)
@@ -208,7 +209,7 @@ describe('IdeasPanel (F-0312)', () => {
     expect(screen.getByRole('textbox', { name: 'Facetas (separadas por vírgula)' })).toBeInTheDocument()
     capture('outra')
     expect(await screen.findByRole('alert')).toHaveTextContent('Faceta desconhecida')
-    expect(screen.getByRole('alert')).not.toHaveTextContent('facet desconhecida')
+    expect(screen.getByRole('alert')).not.toHaveTextContent('unknown facet')
     fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
     await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
     fireEvent.click(row('uma ideia').getByRole('button', { name: 'Promover I-0001' }))
