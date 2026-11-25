@@ -276,7 +276,7 @@ func TestRoomCredsCommandsUseStoredCredential(t *testing.T) {
 		t.Fatalf("pending = %q, %v; want ana's items", out, err)
 	}
 	out, err = runRoom(t, append([]string{"watch", "R1", "--once", "--since", "0"}, dirFlag...)...)
-	if err != nil || !strings.Contains(out, "#1 [open]") || strings.Contains(out, "via stored") {
+	if err != nil || !strings.Contains(out, "[open]") || strings.Contains(out, "via stored") {
 		t.Fatalf("watch with the stored session = %q, %v; want the open event and no own echo", out, err)
 	}
 	cp, err := checkpointPath(c.pid, "R1", joined.Session.SessionID)

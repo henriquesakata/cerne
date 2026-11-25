@@ -290,7 +290,7 @@ func TestRoomReadOnceExitsOnFirstBatch(t *testing.T) {
 	if loopErr != nil {
 		t.Fatalf("roomReadLoop: %v", loopErr)
 	}
-	if !strings.Contains(out.String(), "#3 [ana] chegou") {
+	if !strings.Contains(out.String(), "[ana] chegou") || !strings.HasPrefix(out.String(), "#3 ") {
 		t.Fatalf("once output = %q, want the new message with its seq", out.String())
 	}
 }
@@ -344,8 +344,10 @@ func TestRoomOpenPrintsListenLine(t *testing.T) {
 	if err != nil {
 		t.Fatalf("room open: %v", err)
 	}
-	if !strings.Contains(out, "listen: cerne room read R1 --since 0 --once") {
-		t.Fatalf("output = %q, want a listen: suggestion with --once", out)
+	// T-0019 crit. 4
+	// E-0006 crit. 4
+	if !strings.Contains(out, "listen: cerne room watch R1 --once\n") || strings.Contains(out, "room read R1 --since 0") {
+		t.Fatalf("output = %q, want a credential-free watch --once listen line", out)
 	}
 }
 
@@ -804,7 +806,7 @@ func TestRoomReadRendersJoinWithNickAndBio(t *testing.T) {
 	if !strings.Contains(out, "[join: bob]") {
 		t.Fatalf("read output = %q, want join without bio rendered without separator", out)
 	}
-	if !strings.Contains(out, "#1 [open]") {
+	if !strings.Contains(out, "#1 ") || !strings.Contains(out, "[open]") {
 		t.Fatalf("read output = %q, want open still rendered as a system event", out)
 	}
 }
@@ -1249,6 +1251,112 @@ func TestRoomTextsKeepCredentialOffTheCommandLine(t *testing.T) {
 			if teachesCredential(line) {
 				t.Errorf("%s:%d teaches the capability on the command line: %.160q", name, i+1, line)
 			}
+		}
+	}
+}
+
+// T-0019 crit. 3
+// E-0006 crit. 3
+func TestFormatRoomEventFacilitation(t *testing.T) {
+	cases := []struct {
+		name string
+		m    room.Message
+		want []string
+	}{
+		{"proposal", room.Message{Seq: 4, Type: "proposal", Nick: "ana", Title: "Use X", Body: "cheaper"}, []string{"#4", "ana", "Use X", "cheaper"}},
+		{"decision_request", room.Message{Seq: 5, Type: "decision_request", Nick: "bia", Title: "Pick", Body: "why"}, []string{"#5", "bia", "decision", "Pick", "why"}},
+		{"resolution", room.Message{Seq: 6, Type: "resolution", ItemID: "I2", Body: "go with X"}, []string{"#6", "I2", "go with X"}},
+		{"minutes_draft", room.Message{Seq: 7, Type: "minutes_draft", Nick: "cia", Minutes: &room.Minutes{Conclusion: "ship it"}}, []string{"#7", "cia", "ship it"}},
+		{"minutes_draft nil minutes", room.Message{Seq: 8, Type: "minutes_draft", Nick: "cia", Body: "fallback"}, []string{"#8", "cia", "fallback"}},
+	}
+	for _, c := range cases {
+		got := formatRoomEvent(c.m)
+		for _, w := range c.want {
+			if !strings.Contains(got, w) {
+				t.Errorf("%s: %q lacks %q", c.name, got, w)
+			}
+		}
+		if strings.HasSuffix(got, "["+c.m.Type+"]") {
+			t.Errorf("%s: bare type rendering %q", c.name, got)
+		}
+	}
+}
+
+// T-0019 crit. 2
+// E-0006 crit. 2
+func TestFormatRoomEventTime(t *testing.T) {
+	ts := time.Date(2026, 11, 25, 14, 3, 0, 0, time.UTC)
+	hhmm := ts.Local().Format("15:04")
+	if got, want := formatRoomEvent(room.Message{Seq: 3, Type: "message", Nick: "ana", Body: "oi", Time: ts}), "#3 "+hhmm+" [ana] oi"; got != want {
+		t.Fatalf("message = %q, want %q", got, want)
+	}
+	if got, want := formatRoomEvent(room.Message{Seq: 5, Type: "leave", Nick: "ana", Time: ts}), "#5 "+hhmm+" [leave: ana]"; got != want {
+		t.Fatalf("leave = %q, want %q", got, want)
+	}
+	if got, want := formatRoomEvent(room.Message{Seq: 3, Type: "message", Nick: "ana", Body: "oi"}), "#3 [ana] oi"; got != want {
+		t.Fatalf("zero time = %q, want %q", got, want)
+	}
+}
+
+// T-0019 crit. 1
+// E-0006 crit. 1
+func TestRoomSayBodySources(t *testing.T) {
+	dir, port := newRoomTestServer(t, "proj-say-sources")
+	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
+	runRoom(t, append([]string{"open", "topic"}, dirFlag...)...)
+	sess := joinRoomAs(t, dirFlag, "R1", "ana")
+	file := filepath.Join(t.TempDir(), "body.md")
+	md := "line `one`\nline $(two)\n"
+	if err := os.WriteFile(file, []byte(md), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	say := func(stdin string, args ...string) error {
+		cmd := newRoomCmd()
+		buf := &bytes.Buffer{}
+		cmd.SetOut(buf)
+		cmd.SetErr(buf)
+		cmd.SetIn(strings.NewReader(stdin))
+		cmd.SetArgs(append(append([]string{"say", "R1", "--session", sess}, args...), dirFlag...))
+		return cmd.Execute()
+	}
+	if err := say(md, "-"); err != nil {
+		t.Fatalf("say -: %v", err)
+	}
+	if err := say("", "--file", file); err != nil {
+		t.Fatalf("say --file: %v", err)
+	}
+	out, _ := runRoom(t, append([]string{"read", "R1"}, dirFlag...)...)
+	if strings.Count(out, "line `one`") != 2 || strings.Count(out, "line $(two)") != 2 {
+		t.Fatalf("transcript = %q, want the multiline body twice, verbatim", out)
+	}
+
+	// refused locally, before any HTTP: port 1 would fail on dial with a
+	// different message, and --session is a made-up token.
+	bad := []struct {
+		name  string
+		stdin string
+		args  []string
+	}{
+		{"message and file", "", []string{"hi", "--file", file}},
+		{"dash and file", "x", []string{"-", "--file", file}},
+		{"empty stdin", "", []string{"-"}},
+		{"blank stdin", " \n\t\n", []string{"-"}},
+		{"blank message", "", []string{"   "}},
+		{"missing source", "", nil},
+	}
+	for _, b := range bad {
+		cmd := newRoomCmd()
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetIn(strings.NewReader(b.stdin))
+		cmd.SetArgs(append(append([]string{"say", "R1", "--session", "bogus"}, b.args...), "--dir", dir, "--port", "1"))
+		err := cmd.Execute()
+		if err == nil {
+			t.Errorf("%s: want error", b.name)
+			continue
+		}
+		if strings.Contains(err.Error(), "dial") || strings.Contains(err.Error(), "connect") {
+			t.Errorf("%s: reached HTTP: %v", b.name, err)
 		}
 	}
 }
