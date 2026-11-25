@@ -119,7 +119,7 @@ func TestAcceptQueueRowFields(t *testing.T) {
 		by[r.ID] = r
 	}
 	full := by["F-0901"]
-	if full.Gauntlet != "vitória" { // the last round decides: round 1 derrota, round 2 vitória
+	if full.Gauntlet != "win" { // the last round decides: round 1 derrota, round 2 vitória
 		t.Errorf("F-0901 gauntlet = %q", full.Gauntlet)
 	}
 	if !strings.Contains(full.Production, "conferido em 2026-11-05") {
@@ -128,7 +128,7 @@ func TestAcceptQueueRowFields(t *testing.T) {
 	if !full.PendingReported || len(full.Pending) != 3 { // one PENDENTE line + two débitos
 		t.Errorf("F-0901 pending = %v (reported %v), want 3", full.Pending, full.PendingReported)
 	}
-	if g := by["F-0903"].Gauntlet; g != "empate" {
+	if g := by["F-0903"].Gauntlet; g != "tie" {
 		t.Errorf("F-0903 gauntlet = %q", g)
 	}
 	if p := by["F-0902"].Production; !strings.Contains(p, "aplicado pelo dono") {
@@ -136,7 +136,7 @@ func TestAcceptQueueRowFields(t *testing.T) {
 	}
 }
 
-// crit. 3: a missing field reads "não informado", never inferred.
+// crit. 3: a missing field reads NotInformed, never inferred (in English since B-0073).
 func TestAcceptQueueMissingIsNotInformed(t *testing.T) {
 	projDir, repoDir := acceptFixture(t)
 	rows, _ := app.AcceptQueue(repoDir)
@@ -152,7 +152,7 @@ func TestAcceptQueueMissingIsNotInformed(t *testing.T) {
 			}
 		}
 	}
-	// The text proves it field by field: "não informado" exactly where the
+	// The text proves it field by field: NotInformed exactly where the
 	// result lacks the field, and a value where it has one.
 	fields := map[string]map[string]string{}
 	cur := ""
@@ -164,15 +164,15 @@ func TestAcceptQueueMissingIsNotInformed(t *testing.T) {
 			fields[cur][k] = v
 		}
 	}
-	want := map[string]map[string]bool{ // true = "não informado"
+	want := map[string]map[string]bool{ // true = NotInformed
 		"F-0901": {"gauntlet": false, "production": false, "pending": false},
 		"F-0902": {"gauntlet": true, "production": false, "pending": true},
 		"F-0903": {"gauntlet": false, "production": true, "pending": false},
 	}
 	for id, fs := range want {
 		for field, absent := range fs {
-			if got := fields[id][field] == "não informado"; got != absent {
-				t.Errorf("%s %s = %q, 'não informado' want %v", id, field, fields[id][field], absent)
+			if got := fields[id][field] == app.NotInformed; got != absent {
+				t.Errorf("%s %s = %q, %q want %v", id, field, fields[id][field], app.NotInformed, absent)
 			}
 		}
 	}
@@ -229,8 +229,36 @@ func TestAcceptQueueBatchCommands(t *testing.T) {
 			t.Errorf("json row lacks %q", k)
 		}
 	}
-	if got.Queue[0]["gauntlet"] != "não informado" {
+	if got.Queue[0]["gauntlet"] != app.NotInformed {
 		t.Errorf("json gauntlet of F-0902 = %v", got.Queue[0]["gauntlet"])
+	}
+}
+
+// B-0073: CLI output is English (F-0124, N-0068) whatever language the result
+// is written in: the verdict read from a pt-BR result prints as its English
+// outcome and an absent field as "not reported", in the text and the JSON.
+func TestAcceptQueuePrintsEnglish(t *testing.T) {
+	projDir, repoDir := acceptFixture(t)
+	out := rb(t, projDir, "accept", "queue")
+	for _, pt := range []string{"não informado", "vitória", "empate", "derrota", "dispensada"} {
+		if strings.Contains(out, pt) {
+			t.Errorf("text output carries the pt-BR label %q:\n%s", pt, out)
+		}
+	}
+	for _, want := range []string{"gauntlet: win", "gauntlet: tie", "gauntlet: not reported", "production: not reported", "pending: not reported"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("text output lacks %q:\n%s", want, out)
+		}
+	}
+	stdout, _, err := execCerneSplit(t, "accept", "queue", "--json", "--dir", projDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(stdout, "não informado") || strings.Contains(stdout, "vitória") {
+		t.Errorf("JSON carries pt-BR values:\n%s", stdout)
+	}
+	if r := queueRow(t, repoDir, "## Gauntlet\n\nBarra: não aplicável (correção com teste de regressão)\n"); r.Gauntlet != "exempt" {
+		t.Errorf("exempt bar = %q, want exempt", r.Gauntlet)
 	}
 }
 
@@ -251,7 +279,7 @@ func TestAcceptQueueRefusals(t *testing.T) {
 	}
 }
 
-// A missing, empty or garbage result is "não informado", never a crash or a guess.
+// A missing, empty or garbage result is NotInformed, never a crash or a guess.
 func TestAcceptQueueMalformedResult(t *testing.T) {
 	_, repoDir := acceptFixture(t)
 	for name, body := range map[string]string{
@@ -430,9 +458,9 @@ func TestAcceptQueueF0887Fixtures(t *testing.T) {
 		got[r.ID] = fmt.Sprintf("production=%s pending=%d reported=%v", r.Production, len(r.Pending), r.PendingReported)
 	}
 	for id, want := range map[string]string{
-		"F-0905": "production=não informado pending=3 reported=true", // crit. 1
-		"F-0906": "production=não informado pending=0 reported=true", // crit. 2
-		"F-0907": "production=não informado pending=2 reported=true", // crit. 3
+		"F-0905": "production=" + app.NotInformed + " pending=3 reported=true", // crit. 1
+		"F-0906": "production=" + app.NotInformed + " pending=0 reported=true", // crit. 2
+		"F-0907": "production=" + app.NotInformed + " pending=2 reported=true", // crit. 3
 	} {
 		if got[id] != want {
 			t.Errorf("%s: %s, want %s", id, got[id], want)
@@ -443,12 +471,12 @@ func TestAcceptQueueF0887Fixtures(t *testing.T) {
 // r1: the verdict on a line of its own reads as the lint reads it.
 func TestAcceptQueueVerdictLineOfItsOwn(t *testing.T) {
 	_, repoDir := acceptFixture(t)
-	if r := queueRow(t, repoDir, "## Gauntlet\n\nBarra: o fluxo do cerne.\n\nVeredito: derrota\n"); r.Gauntlet != "derrota" {
-		t.Fatalf("gauntlet = %q, want derrota", r.Gauntlet)
+	if r := queueRow(t, repoDir, "## Gauntlet\n\nBarra: o fluxo do cerne.\n\nVeredito: derrota\n"); r.Gauntlet != "loss" {
+		t.Fatalf("gauntlet = %q, want loss", r.Gauntlet)
 	}
 }
 
-// r2: Débitos as a table or prose declares no bullet list: "não informado",
+// r2: Débitos as a table or prose declares no bullet list: NotInformed,
 // never "0"; an HTML comment (template scaffold) is no evidence and no pending.
 func TestAcceptQueueProseTableAndCommentsAreNotInformed(t *testing.T) {
 	_, repoDir := acceptFixture(t)
@@ -478,9 +506,9 @@ func TestAcceptQueueEmptyJSON(t *testing.T) {
 	}
 }
 
-// r2: the queue and the lint read the same record: "derrota" in the queue iff
+// r2: the queue and the lint read the same record: "loss" in the queue iff
 // the lint counts a derrota. "VEREDITO: A" (the blind judge's letter) is no
-// outcome word for either: the queue says "não informado", the lint counts none.
+// outcome word for either: the queue says NotInformed, the lint counts none.
 func TestAcceptQueueAgreesWithLintOnDerrota(t *testing.T) {
 	_, repoDir := acceptFixture(t)
 	for name, body := range map[string]string{
@@ -491,7 +519,7 @@ func TestAcceptQueueAgreesWithLintOnDerrota(t *testing.T) {
 		"commented": "<!--\n## Gauntlet\n\nRodada 1 — derrota: \"a\"\n-->\n",
 	} {
 		_, derrotas := lint.GauntletRounds([]byte(body))
-		if got := queueRow(t, repoDir, body).Gauntlet == "derrota"; got != (derrotas > 0) {
+		if got := queueRow(t, repoDir, body).Gauntlet == "loss"; got != (derrotas > 0) {
 			t.Errorf("%s: queue derrota %v, lint derrotas %d", name, got, derrotas)
 		}
 	}
