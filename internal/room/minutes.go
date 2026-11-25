@@ -51,6 +51,17 @@ func (mn Minutes) validate() error {
 	return nil
 }
 
+// withLists returns mn with every nil list made empty, so the JSON carries []
+// and never null — a client iterates the lists without a guard (T-0022).
+func (mn Minutes) withLists() Minutes {
+	for _, l := range []*[]string{&mn.DiscardedOptions, &mn.Owners, &mn.NextSteps} {
+		if *l == nil {
+			*l = []string{}
+		}
+	}
+	return mn
+}
+
 // RenderMinutesMarkdown deterministically projects a closed room's minutes
 // to Markdown — no LLM, no synthesis, pure formatting (F-0228 criterion 8).
 // Returns "" for a room with no minutes (still open, or pre-F-0228 data).

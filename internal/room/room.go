@@ -605,6 +605,10 @@ func replayRoom(path, id string) (*roomState, error) {
 		if err := json.Unmarshal(line, &rec); err != nil {
 			return nil, err
 		}
+		if rec.Minutes != nil { // a transcript written before T-0022 may carry null lists
+			mn := rec.Minutes.withLists()
+			rec.Minutes = &mn
+		}
 		switch rec.Type {
 		case typeOpen:
 			rs.meta.Topic = rec.Topic
@@ -1063,7 +1067,7 @@ func (m *Manager) close(id, facilitatorToken string, given *Minutes, allowOpenIt
 		}
 		given = &rs.meta.MinutesDraft.Minutes
 	}
-	minutes := *given
+	minutes := given.withLists()
 	if err := minutes.validate(); err != nil {
 		return Room{}, err
 	}
@@ -1123,7 +1127,7 @@ func (m *Manager) SaveMinutesDraft(id, sessionID, facilitatorToken string, minut
 	if err := minutes.validate(); err != nil {
 		return MinutesDraft{}, err
 	}
-	d := MinutesDraft{Minutes: minutes, Author: author, UpdatedAt: time.Now().UTC()}
+	d := MinutesDraft{Minutes: minutes.withLists(), Author: author, UpdatedAt: time.Now().UTC()}
 	if err := m.persistMinutesDraft(id, d); err != nil {
 		return MinutesDraft{}, err
 	}

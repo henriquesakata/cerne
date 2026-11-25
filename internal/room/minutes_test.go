@@ -376,3 +376,54 @@ func TestMinutesDraftNeverServesCapabilities(t *testing.T) {
 		}
 	}
 }
+
+// T-0022 crit. 1, 2
+// E-0006 crit. 10, 11
+func TestMinutesListsAreNeverNull(t *testing.T) {
+	dir := t.TempDir()
+	m, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	r, fac, _ := m.Open("topico")
+	if _, err := m.SaveMinutesDraft(r.ID, "", fac, minimalMinutes); err != nil {
+		t.Fatalf("SaveMinutesDraft: %v", err)
+	}
+	closed, err := m.CloseWithDraft(r.ID, fac, false)
+	if err != nil {
+		t.Fatalf("CloseWithDraft: %v", err)
+	}
+	served, _ := json.Marshal(closed)
+	transcript, _ := os.ReadFile(filepath.Join(dir, r.ID+".jsonl"))
+	for name, body := range map[string]string{"close response": string(served), "transcript": string(transcript)} {
+		for _, list := range []string{"discarded_options", "owners", "next_steps"} {
+			if strings.Contains(body, `"`+list+`":null`) || !strings.Contains(body, `"`+list+`":[]`) {
+				t.Fatalf("%s carries %s as null, want []: %s", name, list, body)
+			}
+		}
+	}
+}
+
+// T-0022 crit. 2
+// E-0006 crit. 11
+func TestReplayedMinutesNeverCarryNullLists(t *testing.T) {
+	dir := t.TempDir()
+	legacy := `{"seq":1,"type":"open","topic":"t","time":"2026-11-25T10:00:00Z"}` + "\n" +
+		`{"seq":2,"type":"close","time":"2026-11-25T10:05:00Z","minutes":{"conclusion":"c","rationale":"r","discarded_options":null,"owners":null,"next_steps":null}}` + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "R1.jsonl"), []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	msgs, _ := m.Read(context.Background(), "R1", 0, false, time.Second)
+	for name, v := range map[string]any{"room": m.List()[0], "close event": msgs[1]} {
+		b, _ := json.Marshal(v)
+		for _, list := range []string{"discarded_options", "owners", "next_steps"} {
+			if !strings.Contains(string(b), `"`+list+`":[]`) {
+				t.Fatalf("replayed %s carries %s as null, want []: %s", name, list, b)
+			}
+		}
+	}
+}
