@@ -42,10 +42,10 @@ func TestLoadLinkSourcesAndPrompt(t *testing.T) { // F-0502 crit. 3
 	}
 }
 
-// TestEstimateLinkTokens: runes / 4 per prompt plus a fixed answer budget each.
+// TestEstimateLinkTokens: runes / 2 per prompt plus a fixed answer budget each.
 func TestEstimateLinkTokens(t *testing.T) { // F-0502 crit. 3
 	got := EstimateLinkTokens([]string{strings.Repeat("a", 400), strings.Repeat("é", 40)})
-	if want := 100 + 10 + 2*LinkAnswerTokens; got != want {
+	if want := 200 + 20 + 2*LinkAnswerTokens; got != want {
 		t.Errorf("estimate = %d, want %d", got, want)
 	}
 	if EstimateLinkTokens(nil) != 0 {
