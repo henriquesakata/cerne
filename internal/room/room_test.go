@@ -1356,3 +1356,35 @@ func TestReplayRejoinRecordWithoutJoinEvent(t *testing.T) {
 		t.Fatalf("re-join after the crash: %v", err)
 	}
 }
+
+// F-0511 crit. 3, 4: two crashes — one between the revocation record and the
+// public leave, another during a re-join before its public join. The nick's
+// last public event is still the first join, but the re-join record does not
+// belong to it: nobody holds its token, so it must not come back.
+func TestReplayRecordMustBelongToTheLastJoin(t *testing.T) {
+	dir := t.TempDir()
+	m1, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	r, _, _ := m1.Open("topico")
+	alice := mustJoin(t, m1, r.ID, "alice", "")
+	hash := sha256.Sum256([]byte(alice.SessionID))
+	appendSidecar(t, dir, r.ID, map[string]any{"hash": hex.EncodeToString(hash[:]), "nick": "alice", "joined_at": alice.JoinedAt, "revoked": true})
+	orphan := sha256.Sum256([]byte("orphan-token"))
+	appendSidecar(t, dir, r.ID, map[string]any{"hash": hex.EncodeToString(orphan[:]), "nick": "alice", "joined_at": alice.JoinedAt.Add(time.Second)})
+
+	m2, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager (restart): %v", err)
+	}
+	if _, err := m2.Say(r.ID, "orphan-token", "boo"); !errors.Is(err, ErrInvalidSession) {
+		t.Fatalf("orphan re-join capability accepted: err = %v", err)
+	}
+	if _, err := m2.Say(r.ID, alice.SessionID, "boo"); !errors.Is(err, ErrInvalidSession) {
+		t.Fatalf("revoked capability accepted: err = %v", err)
+	}
+	if _, _, err := m2.Join(r.ID, "alice", ""); err != nil {
+		t.Fatalf("re-join after both crashes: %v (want the nick free)", err)
+	}
+}

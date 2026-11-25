@@ -247,12 +247,13 @@ type sessionRecord struct {
 	Revoked  bool      `json:"revoked,omitempty"`
 }
 
-// loadSessions replays the private sidecar into rs. Only records whose nick's
-// last public join/leave event is a join are activated — a crash between the
-// private write and the public event leaves an orphan row, which is ignored;
-// the last matching record per nick wins (a retry after such a crash), and a
-// revoked last record activates nothing (F-0511). A missing sidecar (legacy
-// transcript) is fine: participants simply have no session.
+// loadSessions replays the private sidecar into rs. A record is activated only
+// when it belongs to its nick's last public join — the nick has not left since,
+// and Join wrote the same instant to the record and to the event — so a crash
+// between the private write and the public event leaves an orphan row, which
+// is ignored; the last matching record per nick wins (a revocation of that
+// join), and a revoked last record activates nothing (F-0511). A missing
+// sidecar (legacy transcript) is fine: participants simply have no session.
 func loadSessions(path string, rs *roomState) error {
 	f, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -263,13 +264,13 @@ func loadSessions(path string, rs *roomState) error {
 	}
 	defer f.Close()
 
-	joined := map[string]bool{}
+	lastJoin := map[string]time.Time{} // nick → its last public join, while it has not left since
 	for _, msg := range rs.log {
 		switch msg.Type {
 		case typeJoin:
-			joined[msg.Nick] = true
+			lastJoin[msg.Nick] = msg.Time
 		case typeLeave:
-			joined[msg.Nick] = false
+			delete(lastJoin, msg.Nick)
 		}
 	}
 	latest := map[string]sessionRecord{}
@@ -283,7 +284,7 @@ func loadSessions(path string, rs *roomState) error {
 		if err := json.Unmarshal(line, &rec); err != nil {
 			return err
 		}
-		if joined[rec.Nick] {
+		if t, ok := lastJoin[rec.Nick]; ok && rec.JoinedAt.Equal(t) {
 			latest[rec.Nick] = rec
 		}
 	}
