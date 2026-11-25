@@ -31,6 +31,11 @@ func TestMain(m *testing.M) {
 	os.Unsetenv("CURSOR_AGENT") // Cursor's agent-shell marker counts as an agent too (F-0428)
 	os.Unsetenv("COPILOT_CLI")  // and Copilot CLI's (F-0444); CLAUDECODE is dropped below (B-0030)
 	os.Unsetenv("CODEX_THREAD_ID") // and Codex's (B-0051)
+	// B-0084: room join/open store a credential keyed by CERNE_SESSION, and
+	// room commands read it and the CERNE_ROOM_* variables; room tests opt in.
+	os.Unsetenv("CERNE_SESSION")
+	os.Unsetenv("CERNE_ROOM_SESSION")
+	os.Unsetenv("CERNE_ROOM_FACILITATOR")
 	dir, err := os.MkdirTemp("", "cerne-config-")
 	if err != nil {
 		panic(err)

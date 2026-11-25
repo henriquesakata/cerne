@@ -117,12 +117,33 @@ func newRoomJoinCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			id, sid := res.Room.ID, res.Session.SessionID
 			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "joined %s as %s (%d participant(s))\n", res.Room.ID, nick, len(res.Room.Participants))
-			fmt.Fprintf(out, "session: %s\n", res.Session.SessionID)
+			fmt.Fprintf(out, "joined %s as %s (%d participant(s))\n", id, nick, len(res.Room.Participants))
+			fmt.Fprintf(out, "session: %s\n", sid)
 			fmt.Fprintf(out, "keep this session token — losing it locks the nick until the room closes\n")
-			fmt.Fprintf(out, "say: cerne room say %s \"<message>\" --session %s\n", res.Room.ID, res.Session.SessionID)
-			fmt.Fprintf(out, "env: export CERNE_ROOM_SESSION=%s\n", res.Session.SessionID)
+			nicks, err := storeRoomSession(c.pid, id, nick, sid)
+			if err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not store the session for this agent session: %v\n", err)
+			} else if nicks != nil {
+				warnRoomSessionVar(cmd.ErrOrStderr(), nick)
+			}
+			// storeRoomSession returns nil, nil only without CERNE_SESSION. In
+			// an agent session every example carries --nick, even with one
+			// nick: a later store failure or a second joiner then makes it
+			// refuse instead of speaking as someone else.
+			pick := ""
+			if err != nil || nicks != nil {
+				pick = " --nick " + nick
+			}
+			if err != nil || nicks == nil {
+				fmt.Fprintf(out, "env: export CERNE_ROOM_SESSION=%s\n", sid)
+			} else {
+				fmt.Fprintf(out, "stored for this agent session (CERNE_SESSION) in a 0600 cache file, which keeps %s in this room: room commands pick yours with --nick %s\n", strings.Join(nicks, ", "), nick)
+			}
+			fmt.Fprintf(out, "say: cerne room say %s \"<message>\"%s\n", id, pick)
+			fmt.Fprintf(out, "listen: cerne room watch %s --once%s\n", id, pick)
+			fmt.Fprintf(out, "ask the facilitator: cerne room request-decision %s%s --title \"<question>\" --body \"<why>\"\n", id, pick)
 			return nil
 		},
 	}
@@ -133,28 +154,29 @@ func newRoomJoinCmd() *cobra.Command {
 }
 
 func newRoomLeaveCmd() *cobra.Command {
-	var dir, session string
+	var dir, session, nick string
 	var port int
 	cmd := &cobra.Command{
 		Use:   "leave <room>",
 		Short: "Leave a war room, revoking your session capability",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fromEnv := false
-			if session == "" {
-				session = os.Getenv("CERNE_ROOM_SESSION")
-				fromEnv = session != ""
-			}
-			if session == "" {
-				return errors.New("a session is required: pass --session or set CERNE_ROOM_SESSION (run 'cerne room join <room>' to obtain one)")
-			}
+			fromEnv := roomSessionFromVar(session, nick)
 			c, err := newRoomClient(dir, port)
 			if err != nil {
+				return err
+			}
+			if session, err = resolveRoomSession(session, nick, c.pid, args[0]); err != nil {
 				return err
 			}
 			rm, err := c.leave(cmd.Context(), args[0], session)
 			if err != nil {
 				return fmt.Errorf("leave %s: %w", args[0], err)
+			}
+			// B-0084: the revoked session must not stay stored, or a bare
+			// command would keep picking it among this agent session's nicks.
+			if err := forgetRoomSession(c.pid, args[0], session); err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: left, but could not drop the session from this agent session's store: %v\n", err)
 			}
 			out := cmd.OutOrStdout()
 			fmt.Fprintf(out, "left %s (%d active participant(s))\n", rm.ID, len(rm.ActiveParticipants))
@@ -165,36 +187,33 @@ func newRoomLeaveCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&session, "session", "", "session capability printed by 'cerne room join' (falls back to CERNE_ROOM_SESSION)")
+	cmd.Flags().StringVar(&session, "session", "", roomSessionFlagHelp)
+	cmd.Flags().StringVar(&nick, "nick", "", roomNickFlagHelp)
 	addRoomFlags(cmd, &dir, &port)
 	return cmd
 }
 
 func newRoomSayCmd() *cobra.Command {
-	var dir, session string
+	var dir, session, nick string
 	var port int
 	cmd := &cobra.Command{
 		Use:   "say <room> <message>",
 		Short: "Send a message to a war room (authored by your session capability)",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// --session wins over the env var; the variable is a single-room
-			// convenience, not multi-room storage (F-0226 criterion 6).
-			if session == "" {
-				session = os.Getenv("CERNE_ROOM_SESSION")
-			}
-			if session == "" {
-				return errors.New("a session is required: pass --session or set CERNE_ROOM_SESSION (run 'cerne room join <room>' to obtain one)")
-			}
 			c, err := newRoomClient(dir, port)
 			if err != nil {
+				return err
+			}
+			if session, err = resolveRoomSession(session, nick, c.pid, args[0]); err != nil {
 				return err
 			}
 			_, err = c.say(cmd.Context(), args[0], session, args[1])
 			return err
 		},
 	}
-	cmd.Flags().StringVar(&session, "session", "", "session capability printed by 'cerne room join' (falls back to CERNE_ROOM_SESSION)")
+	cmd.Flags().StringVar(&session, "session", "", roomSessionFlagHelp)
+	cmd.Flags().StringVar(&nick, "nick", "", roomNickFlagHelp)
 	addRoomFlags(cmd, &dir, &port)
 	return cmd
 }
@@ -271,11 +290,12 @@ func newRoomCloseCmd() *cobra.Command {
 			if args[0] == room.ChannelID {
 				return room.ErrPermanentRoom
 			}
-			if facilitator == "" {
-				facilitator = os.Getenv("CERNE_ROOM_FACILITATOR")
+			c, err := newRoomClient(dir, port)
+			if err != nil {
+				return err
 			}
-			if facilitator == "" {
-				return errors.New("a facilitator capability is required: pass --facilitator or set CERNE_ROOM_FACILITATOR (printed by 'cerne room open'; a room opened in cerne ui keeps it in that browser). Lost it? A human runs 'cerne room facilitator reset " + args[0] + "'")
+			if facilitator, err = resolveRoomFacilitator(facilitator, args[0]); err != nil {
+				return err
 			}
 			if minutesPath == "" {
 				return errors.New("--minutes <path|-|{...}> is required (JSON; run 'cerne room minutes template' for a blank one)")
@@ -283,10 +303,6 @@ func newRoomCloseCmd() *cobra.Command {
 			minutes, err := readMinutesJSON(minutesPath)
 			if err != nil {
 				return fmt.Errorf("--minutes: %w", err)
-			}
-			c, err := newRoomClient(dir, port)
-			if err != nil {
-				return err
 			}
 			rm, err := c.close(cmd.Context(), args[0], facilitator, minutes, allowOpenItems)
 			if err != nil {
@@ -305,7 +321,7 @@ func newRoomCloseCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&facilitator, "facilitator", "", "facilitator capability printed by 'cerne room open' (falls back to CERNE_ROOM_FACILITATOR)")
+	cmd.Flags().StringVar(&facilitator, "facilitator", "", roomFacilitatorFlagHelp)
 	cmd.Flags().StringVar(&minutesPath, "minutes", "", "path to a JSON file with the meeting minutes, or - for stdin (required)")
 	cmd.Flags().BoolVar(&allowOpenItems, "allow-open-items", false, "close even with open facilitation items (recorded as an exception in the minutes)")
 	addRoomFlags(cmd, &dir, &port)
@@ -389,14 +405,11 @@ func newRoomFacilitatorHandoffCmd() *cobra.Command {
 		Short: "Rotate the facilitator capability, transferring the role to a new bearer",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if facilitator == "" {
-				facilitator = os.Getenv("CERNE_ROOM_FACILITATOR")
-			}
-			if facilitator == "" {
-				return errors.New("a facilitator capability is required: pass --facilitator or set CERNE_ROOM_FACILITATOR")
-			}
 			c, err := newRoomClient(dir, port)
 			if err != nil {
+				return err
+			}
+			if facilitator, err = resolveRoomFacilitator(facilitator, args[0]); err != nil {
 				return err
 			}
 			next, err := c.handoffFacilitator(cmd.Context(), args[0], facilitator)
@@ -411,30 +424,27 @@ func newRoomFacilitatorHandoffCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&facilitator, "facilitator", "", "current facilitator capability (falls back to CERNE_ROOM_FACILITATOR)")
+	cmd.Flags().StringVar(&facilitator, "facilitator", "", roomFacilitatorFlagHelp)
 	addRoomFlags(cmd, &dir, &port)
 	return cmd
 }
 
 func newRoomItemCmd(use, short, kind string) *cobra.Command {
-	var dir, session, title, body string
+	var dir, session, nick, title, body string
 	var port int
 	cmd := &cobra.Command{
 		Use:   use,
 		Short: short,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if session == "" {
-				session = os.Getenv("CERNE_ROOM_SESSION")
-			}
-			if session == "" {
-				return errors.New("a session is required: pass --session or set CERNE_ROOM_SESSION (run 'cerne room join <room>' to obtain one)")
-			}
 			if title == "" {
 				return errors.New("--title is required")
 			}
 			c, err := newRoomClient(dir, port)
 			if err != nil {
+				return err
+			}
+			if session, err = resolveRoomSession(session, nick, c.pid, args[0]); err != nil {
 				return err
 			}
 			item, err := c.createItem(cmd.Context(), args[0], session, kind, title, body)
@@ -445,7 +455,8 @@ func newRoomItemCmd(use, short, kind string) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&session, "session", "", "session capability printed by 'cerne room join' (falls back to CERNE_ROOM_SESSION)")
+	cmd.Flags().StringVar(&session, "session", "", roomSessionFlagHelp)
+	cmd.Flags().StringVar(&nick, "nick", "", roomNickFlagHelp)
 	cmd.Flags().StringVar(&title, "title", "", "short title (required)")
 	cmd.Flags().StringVar(&body, "body", "", "description")
 	addRoomFlags(cmd, &dir, &port)
@@ -468,14 +479,11 @@ func newRoomPendingCmd() *cobra.Command {
 		Short: "List the room's open facilitation items (the facilitator's triage queue)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if facilitator == "" {
-				facilitator = os.Getenv("CERNE_ROOM_FACILITATOR")
-			}
-			if facilitator == "" {
-				return errors.New("a facilitator capability is required: pass --facilitator or set CERNE_ROOM_FACILITATOR")
-			}
 			c, err := newRoomClient(dir, port)
 			if err != nil {
+				return err
+			}
+			if facilitator, err = resolveRoomFacilitator(facilitator, args[0]); err != nil {
 				return err
 			}
 			items, err := c.pending(cmd.Context(), args[0], facilitator)
@@ -493,7 +501,7 @@ func newRoomPendingCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&facilitator, "facilitator", "", "facilitator capability (falls back to CERNE_ROOM_FACILITATOR)")
+	cmd.Flags().StringVar(&facilitator, "facilitator", "", roomFacilitatorFlagHelp)
 	addRoomFlags(cmd, &dir, &port)
 	return cmd
 }
@@ -506,14 +514,11 @@ func newRoomResolveCmd() *cobra.Command {
 		Short: "Resolve an open facilitation item",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if facilitator == "" {
-				facilitator = os.Getenv("CERNE_ROOM_FACILITATOR")
-			}
-			if facilitator == "" {
-				return errors.New("a facilitator capability is required: pass --facilitator or set CERNE_ROOM_FACILITATOR")
-			}
 			c, err := newRoomClient(dir, port)
 			if err != nil {
+				return err
+			}
+			if facilitator, err = resolveRoomFacilitator(facilitator, args[0]); err != nil {
 				return err
 			}
 			item, err := c.resolve(cmd.Context(), args[0], facilitator, args[1], result)
@@ -524,7 +529,7 @@ func newRoomResolveCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&facilitator, "facilitator", "", "facilitator capability (falls back to CERNE_ROOM_FACILITATOR)")
+	cmd.Flags().StringVar(&facilitator, "facilitator", "", roomFacilitatorFlagHelp)
 	cmd.Flags().StringVar(&result, "result", "", "the resolution")
 	addRoomFlags(cmd, &dir, &port)
 	return cmd

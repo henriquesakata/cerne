@@ -5,14 +5,17 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"net"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -22,6 +25,8 @@ import (
 	"github.com/henriquesakata/cerne/internal/room"
 	"github.com/henriquesakata/cerne/internal/server"
 	"github.com/henriquesakata/cerne/internal/store"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 // minimalMinutesJSON satisfies room close's required-field validation with
@@ -383,23 +388,270 @@ func TestRoomJoinPrintsSessionAndNextSteps(t *testing.T) {
 	if !strings.Contains(out, "session: ") {
 		t.Fatalf("output = %q, want the session line", out)
 	}
-	if !strings.Contains(out, "cerne room say R1 \"<message>\" --session ") {
-		t.Fatalf("output = %q, want a copyable say example", out)
+	// B-0084: the copyable examples carry no credential.
+	for _, want := range []string{
+		"say: cerne room say R1 \"<message>\"\n",
+		"cerne room watch R1 --once\n",
+		"cerne room request-decision R1 --title",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output = %q, want the copyable example %q", out, want)
+		}
 	}
 	if !strings.Contains(out, "export CERNE_ROOM_SESSION=") {
-		t.Fatalf("output = %q, want the env convenience line", out)
+		t.Fatalf("output = %q, want the env line (no CERNE_SESSION here)", out)
 	}
 	if !strings.Contains(out, "keep this session token") {
 		t.Fatalf("output = %q, want the keep-the-token warning", out)
 	}
-	if strings.Contains(out, "watch") {
-		t.Fatalf("output = %q, watch example must wait for F-0227", out)
+}
+
+// roomCredentialFlag captures the value after --session/--facilitator on a
+// room command (`=` or a space, within one code span); roomCredentialPrefix
+// is an inline CERNE_ROOM_*=<value> before a room command, the value plain,
+// `$(…)` or backticked.
+var (
+	roomCredentialFlag   = regexp.MustCompile("cerne room [^`\\n]*?--(?:session|facilitator)(?:=|\\s+)(\\S+)")
+	roomCredentialPrefix = regexp.MustCompile("CERNE_ROOM_(?:SESSION|FACILITATOR)=(?:\\$\\([^)]*\\)|`[^`]*`|[^\\s`]+)\\s+cerne room")
+)
+
+// teachesCredential reports whether line passes a room capability on the
+// command line (B-0084): any flag value that is not another flag and not the
+// `string` of a flag listing, or an inline variable prefix. The bare flag
+// name in prose does not count.
+func teachesCredential(line string) bool {
+	if roomCredentialPrefix.MatchString(line) {
+		return true
+	}
+	for _, m := range roomCredentialFlag.FindAllStringSubmatch(line, -1) {
+		if v := m[1]; v != "string" && !strings.HasPrefix(v, "-") {
+			return true
+		}
+	}
+	return false
+}
+
+// B-0084, review round 2: the scan catches every way of passing the
+// capability on a room command line, and leaves the flag name in prose and
+// in a flag listing alone.
+func TestTeachesCredentialCatchesEveryForm(t *testing.T) {
+	for _, line := range []string{
+		`cerne room say <id> "<msg>" --session <token>`,
+		`cerne room say R1 hi --session=TOKEN`,
+		`cerne room say R1 hi --session {token}`,
+		`cerne room pending R1 --facilitator TOKEN`,
+		"cerne room watch R1 --session `cat tok` --once",
+		`cerne room watch R1 --session $(cat tok) --once`,
+		`CERNE_ROOM_SESSION=$(cat tok) cerne room say R1 hi`,
+		"CERNE_ROOM_FACILITATOR=`cat tok` cerne room close R1",
+		`CERNE_ROOM_FACILITATOR=<new> cerne room close <room>`,
+	} {
+		if !teachesCredential(line) {
+			t.Errorf("missed: %s", line)
+		}
+	}
+	for _, line := range []string{
+		`cerne room say R1 hi --nick ana`,
+		`cerne room say <room> --session string   session capability printed by join`,
+		`cerne room watch R1 --session --once`,
+		"`cerne room say <room> \"<message>\"` takes a `--session` value or none",
+		`export CERNE_ROOM_SESSION=<printed by join>`,
+		`cerne room watch <id> [--once]   # pass --nick to pick yours`,
+	} {
+		if teachesCredential(line) {
+			t.Errorf("flagged: %s", line)
+		}
+	}
+}
+
+// lineValue is what follows prefix on the first line of out that starts
+// with it, or "".
+func lineValue(out, prefix string) string {
+	for _, line := range strings.Split(out, "\n") {
+		if v, ok := strings.CutPrefix(line, prefix); ok {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
+}
+
+// assertCredentialOnlyWhereAllowed fails when cred shows up in out outside
+// the single line that shows it once and the env line, or when any line
+// teaches a room command with the capability on its command line (B-0084).
+func assertCredentialOnlyWhereAllowed(t *testing.T, out, cred string) {
+	t.Helper()
+	for _, line := range strings.Split(out, "\n") {
+		if teachesCredential(line) {
+			t.Errorf("line %q puts the capability on the command line", line)
+		}
+		if !strings.Contains(line, cred) {
+			continue
+		}
+		if !strings.HasPrefix(line, "session: ") && !strings.HasPrefix(line, "facilitator capability: ") && !strings.HasPrefix(line, "env: export CERNE_ROOM_") {
+			t.Errorf("line %q shows the capability", line)
+		}
+	}
+}
+
+// B-0084 regression, part 1: open and join never print a copyable example
+// with the capability, with or without CERNE_SESSION; with it they store the
+// capability (0600, per room) and print no env line; without it they store
+// nothing and teach the variable.
+func TestRoomOpenJoinKeepCredentialOffExamples(t *testing.T) {
+	for _, agent := range []string{"", "agent-1"} {
+		t.Run("CERNE_SESSION="+agent, func(t *testing.T) {
+			dir, port := newRoomTestServer(t, "proj-b0084")
+			dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
+			t.Setenv("CERNE_SESSION", agent)
+
+			openOut, err := runRoom(t, append([]string{"open", "topic"}, dirFlag...)...)
+			if err != nil {
+				t.Fatalf("open: %v", err)
+			}
+			_, facilitator := openRoomCLI(t, dirFlag, "second") // R2
+			joinOut, err := runRoom(t, append([]string{"join", "R2", "--nick", "ana"}, dirFlag...)...)
+			if err != nil {
+				t.Fatalf("join: %v", err)
+			}
+			session := lineValue(joinOut, "session: ")
+			openFacilitator := lineValue(openOut, "facilitator capability: ")
+			if session == "" || openFacilitator == "" {
+				t.Fatalf("open/join output = %q / %q, want the lines that show each capability once", openOut, joinOut)
+			}
+			assertCredentialOnlyWhereAllowed(t, joinOut, session)
+			assertCredentialOnlyWhereAllowed(t, openOut, openFacilitator)
+			// review round 2: in an agent session every example carries
+			// --nick, even with one nick, so a later store failure or a
+			// second joiner makes it refuse instead of misattribute.
+			pick := ""
+			if agent != "" {
+				pick = " --nick ana"
+			}
+			for _, want := range []string{
+				"say: cerne room say R2 \"<message>\"" + pick + "\n",
+				"cerne room watch R2 --once" + pick + "\n",
+				"cerne room request-decision R2" + pick + " --title",
+			} {
+				if !strings.Contains(joinOut, want) {
+					t.Fatalf("join output = %q, want %q", joinOut, want)
+				}
+			}
+
+			stored, err := loadRoomCreds("proj-b0084", "R2")
+			if err != nil {
+				t.Fatalf("loadRoomCreds: %v", err)
+			}
+			if agent == "" {
+				if len(stored.Sessions) != 0 {
+					t.Fatalf("stored without CERNE_SESSION = %+v, want nothing", stored)
+				}
+				if _, err := os.Stat(filepath.Join(os.Getenv("CERNE_CACHE_DIR"), "proj-b0084", "room-creds")); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("room-creds dir without CERNE_SESSION: %v, want not exist", err)
+				}
+				for _, out := range []string{openOut, joinOut} {
+					if !strings.Contains(out, "env: export CERNE_ROOM_") {
+						t.Fatalf("output = %q, want the env line without CERNE_SESSION", out)
+					}
+				}
+				return
+			}
+			if !maps.Equal(stored.Sessions, map[string]string{"ana": session}) {
+				t.Fatalf("stored = %+v, want ana's session", stored)
+			}
+			if strings.Contains(joinOut, "env: export") || !strings.Contains(joinOut, "stored for this agent session") {
+				t.Fatalf("join output = %q, want the stored line and no env line", joinOut)
+			}
+			// review round 1: the facilitator capability is never stored —
+			// every subagent of the opener's session would hold the role.
+			path, _ := roomCredsPath("proj-b0084", "R2")
+			if data, _ := os.ReadFile(path); strings.Contains(string(data), facilitator) {
+				t.Fatalf("stored file holds the facilitator capability: %s", data)
+			}
+			if !strings.Contains(openOut, "env: export CERNE_ROOM_FACILITATOR=") || strings.Contains(openOut, "stored for") {
+				t.Fatalf("open output = %q, want the env line and nothing stored", openOut)
+			}
+		})
+	}
+}
+
+// B-0084, review round 1 (reproduced "#4 [ana] hello from bia"): a subagent
+// shares its parent's CERNE_SESSION, so two nicks joined from one agent
+// session are both stored; a bare say refuses instead of speaking as the
+// wrong nick, --nick picks each one, and bia's join output teaches --nick bia.
+// Concurrent joins from one agent session both end up stored.
+func TestRoomJoinTwoNicksFromOneAgentSession(t *testing.T) {
+	dir, port := newRoomTestServer(t, "proj-b0084-nick")
+	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
+	t.Setenv("CERNE_SESSION", "agent-1")
+	t.Setenv("CERNE_ROOM_SESSION", "")
+	runRoom(t, append([]string{"open", "topic"}, dirFlag...)...)
+	ana := joinRoomAs(t, dirFlag, "R1", "ana")
+
+	out, err := runRoom(t, append([]string{"join", "R1", "--nick", "bia"}, dirFlag...)...)
+	if err != nil {
+		t.Fatalf("join bia: %v", err)
+	}
+	bia := lineValue(out, "session: ")
+	for _, want := range []string{
+		"say: cerne room say R1 \"<message>\" --nick bia\n",
+		"cerne room watch R1 --once --nick bia\n",
+		"cerne room request-decision R1 --nick bia --title",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("join bia output = %q, want %q", out, want)
+		}
+	}
+	if stored, _ := loadRoomCreds("proj-b0084-nick", "R1"); !maps.Equal(stored.Sessions, map[string]string{"ana": ana, "bia": bia}) {
+		t.Fatalf("stored = %+v, want ana and bia", stored)
+	}
+
+	_, err = runRoom(t, append([]string{"say", "R1", "who am i"}, dirFlag...)...)
+	if !errors.Is(err, errRoomNickAmbiguous) || !strings.Contains(err.Error(), "ana, bia") {
+		t.Fatalf("bare say with two nicks: err = %v, want errRoomNickAmbiguous listing ana, bia", err)
+	}
+	for _, nick := range []string{"bia", "ana"} {
+		if _, err := runRoom(t, append([]string{"say", "R1", "hello from " + nick, "--nick", nick}, dirFlag...)...); err != nil {
+			t.Fatalf("say --nick %s: %v", nick, err)
+		}
+	}
+	if _, err := runRoom(t, append([]string{"say", "R1", "x", "--nick", "cia"}, dirFlag...)...); !errors.Is(err, errRoomNickNotStored) {
+		t.Fatalf("say --nick cia: err = %v, want errRoomNickNotStored", err)
+	}
+	read, err := runRoom(t, append([]string{"read", "R1"}, dirFlag...)...)
+	if err != nil || !strings.Contains(read, "[bia] hello from bia") || !strings.Contains(read, "[ana] hello from ana") || strings.Contains(read, "who am i") {
+		t.Fatalf("read = %q, %v; want each message under its own nick and no bare one", read, err)
+	}
+	for _, args := range [][]string{
+		{"propose", "R1", "--nick", "bia", "--title", "t"},
+		{"watch", "R1", "--once", "--since", "0", "--nick", "bia"},
+	} {
+		if _, err := runRoom(t, append(args, dirFlag...)...); err != nil {
+			t.Fatalf("%s --nick bia: %v", args[0], err)
+		}
+	}
+
+	// two concurrent joins from the same agent session both end up stored.
+	var wg sync.WaitGroup
+	for _, nick := range []string{"cia", "dan"} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := runRoom(t, append([]string{"join", "R1", "--nick", nick}, dirFlag...)...); err != nil {
+				t.Errorf("join %s: %v", nick, err)
+			}
+		}()
+	}
+	wg.Wait()
+	stored, _ := loadRoomCreds("proj-b0084-nick", "R1")
+	if got := slices.Sorted(maps.Keys(stored.Sessions)); !slices.Equal(got, []string{"ana", "bia", "cia", "dan"}) {
+		t.Fatalf("stored nicks after concurrent joins = %v", got)
 	}
 }
 
 func TestRoomSayWithoutSessionIsLocalError(t *testing.T) {
-	// no server needed: the check fires before any HTTP.
-	_, err := runRoom(t, "say", "R1", "oi")
+	// the check fires before any HTTP; --dir keeps it off the repo's .cernerc.
+	dir, _ := newRoomTestServer(t, "proj-say-nosession")
+	_, err := runRoom(t, "say", "R1", "oi", "--dir", dir)
 	if err == nil {
 		t.Fatal("say without session: want error, got nil")
 	}
@@ -465,8 +717,9 @@ func TestRoomLeaveEnvFallbackAndRevokedError(t *testing.T) {
 // F-0511 crit. 7
 func TestRoomLeaveWithoutSessionIsLocalError(t *testing.T) {
 	t.Setenv("CERNE_ROOM_SESSION", "")
-	// no server needed: the check fires before any HTTP.
-	_, err := runRoom(t, "leave", "R1")
+	// the check fires before any HTTP; --dir keeps it off the repo's .cernerc (B-0084).
+	dir, _ := newRoomTestServer(t, "proj-leave-nosession")
+	_, err := runRoom(t, "leave", "R1", "--dir", dir)
 	if err == nil || !strings.Contains(err.Error(), "--session") || !strings.Contains(err.Error(), "CERNE_ROOM_SESSION") || !strings.Contains(err.Error(), "room join") {
 		t.Fatalf("leave without session err = %v, want the say-style local error", err)
 	}
@@ -479,10 +732,34 @@ func TestFormatRoomEventLeave(t *testing.T) {
 	}
 }
 
-func TestRoomSayNickFlagRemoved(t *testing.T) {
-	_, err := runRoom(t, "say", "R1", "oi", "--nick", "ana")
-	if err == nil || !strings.Contains(err.Error(), "unknown flag") {
-		t.Fatalf("say --nick: err = %v, want unknown flag (contract migrated to --session)", err)
+// F-0226 made the session, not the nick, the authority; B-0084 brought
+// --nick back only as a selector among stored sessions, so a nick alone
+// grants nothing.
+func TestRoomSayNickAloneGrantsNothing(t *testing.T) {
+	dir, _ := newRoomTestServer(t, "proj-say-nick-alone") // --dir: never the repo's .cernerc
+	_, err := runRoom(t, "say", "R1", "oi", "--nick", "ana", "--dir", dir)
+	if !errors.Is(err, errRoomNickNotStored) {
+		t.Fatalf("say --nick with nothing stored: err = %v, want errRoomNickNotStored", err)
+	}
+}
+
+// B-0084, review round 2: a nick stored under one CERNE_SESSION is not
+// reachable from another, --nick or not.
+func TestRoomSayNickStoredUnderAnotherAgentSessionRefuses(t *testing.T) {
+	dir, port := newRoomTestServer(t, "proj-say-other-agent")
+	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
+	t.Setenv("CERNE_ROOM_SESSION", "")
+	t.Setenv("CERNE_SESSION", "agent-1")
+	runRoom(t, append([]string{"open", "topic"}, dirFlag...)...)
+	joinRoomAs(t, dirFlag, "R1", "ana")
+
+	t.Setenv("CERNE_SESSION", "agent-2")
+	if _, err := runRoom(t, append([]string{"say", "R1", "not ana", "--nick", "ana"}, dirFlag...)...); !errors.Is(err, errRoomNickNotStored) {
+		t.Fatalf("say --nick ana from agent-2: err = %v, want errRoomNickNotStored", err)
+	}
+	read, err := runRoom(t, append([]string{"read", "R1"}, dirFlag...)...)
+	if err != nil || strings.Contains(read, "not ana") {
+		t.Fatalf("read = %q, %v; want nothing posted", read, err)
 	}
 }
 
@@ -930,4 +1207,48 @@ func TestRoomReadFollowSIGTERMExitsClean(t *testing.T) {
 
 	sendSelf(t, syscall.SIGTERM)
 	waitExit(t, done, "room read --follow")
+}
+
+// B-0084 regression, part 2: the guide, SKILL.md, the FAQ and every room
+// subcommand's help teach no room command with the capability on its command
+// line. The bare flag name in prose may stay.
+func TestRoomTextsKeepCredentialOffTheCommandLine(t *testing.T) {
+	texts := map[string]string{}
+	for _, path := range []string{
+		"../skills/cerne-authoring/reference/war-room-channel.md",
+		"../skills/cerne-authoring/SKILL.md",
+		"../guide/faq.md",
+	} {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		texts[path] = string(data)
+	}
+	// review round 1: Short, Long, Example and every flag's usage — no room
+	// subcommand has an Example or a Long today, so those alone found nothing.
+	var walk func(*cobra.Command)
+	walk = func(c *cobra.Command) {
+		help := []string{c.Short, c.Long, c.Example}
+		c.Flags().VisitAll(func(f *pflag.Flag) { help = append(help, f.Usage) })
+		texts[c.CommandPath()] = strings.Join(help, "\n")
+		for _, sub := range c.Commands() {
+			walk(sub)
+		}
+	}
+	for _, c := range Root().Commands() {
+		if c.Name() == "room" {
+			walk(c)
+		}
+	}
+	if _, ok := texts["cerne room join"]; !ok {
+		t.Fatal("room join not found under Root()")
+	}
+	for name, text := range texts {
+		for i, line := range strings.Split(text, "\n") {
+			if teachesCredential(line) {
+				t.Errorf("%s:%d teaches the capability on the command line: %.160q", name, i+1, line)
+			}
+		}
+	}
 }
