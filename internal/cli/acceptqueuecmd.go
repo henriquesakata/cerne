@@ -38,7 +38,7 @@ func newAcceptQueueCmd(dir *string) *cobra.Command {
 		Short: "List implemented features, oldest first, with Gauntlet verdict, production evidence and declared pendings (read-only)",
 		Long: "Lists the features in implemented, from the oldest to the newest, each with the Gauntlet verdict, the " +
 			"production evidence and the pendings its result.md declares. A field the result does not carry is " +
-			"marked as not informed: nothing is inferred. Read-only: it never accepts anything. The batch is the list of " +
+			"marked \"not reported\": nothing is inferred. Read-only: it never accepts anything. The batch is the list of " +
 			"individual 'cerne feature accept <id>' commands at the end, for the human to run one by one.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {

@@ -164,6 +164,8 @@ var rewritten = []string{
 	"An MCP client without a shell reads the same surface through **`cerne mcp`** (F-0363): a stdio MCP server whose read-only tools",
 	// F-0499: revert also walks back from Ready and Done.
 	"- `cerne feature revert F-NNNN --reason \"…\"` — undoes an approval, back to `candidate`",
+	// B-0073: the accept queue prints English whatever the project's language.
+	"A field the result does not carry reads `não informado`",
 }
 
 // b0015Renames maps the pt-BR names and placeholders the 2026-11-13 snapshot

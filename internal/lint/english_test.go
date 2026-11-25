@@ -206,8 +206,8 @@ func TestResultGauntlet_PortugueseUnchangedByEnglishWords(t *testing.T) {
 		losses        int
 		verdict       string
 	}{
-		{"a metric line is not an outcome", "Barra: internal/x.go\nRodada 1\nLoss: 0.31 no holdout\nVeredito: vitória — \"B é melhor\"\n", 0, "vitória"},
-		{"the anchor's language decides", "Barra: internal/x.go\nRodada 2 — quick win tentado, derrota: \"A segue melhor\"\n", 1, "derrota"},
+		{"a metric line is not an outcome", "Barra: internal/x.go\nRodada 1\nLoss: 0.31 no holdout\nVeredito: vitória — \"B é melhor\"\n", 0, "win"},
+		{"the anchor's language decides", "Barra: internal/x.go\nRodada 2 — quick win tentado, derrota: \"A segue melhor\"\n", 1, "loss"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
