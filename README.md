@@ -200,7 +200,7 @@ cerne init --name my-project
 cerne ui        # your dashboard, at http://localhost:7717
 ```
 
-Commit the files `init` wrote at the root (`.cernerc`, `docs.lock`, `.gitattributes`, `.gitignore`). For a team, pass `--backend` an empty private repository on GitHub or GitLab instead; `init` prints how to move a local backend to a remote later. Documents are scaffolded in English; add `--docs-language pt-BR` for Portuguese.
+Commit the files `init` wrote at the root (`.cernerc`, `docs.lock`, `.gitattributes`, `.gitignore`), plus `.claude/settings.json` and `.claude/hooks/` so your teammates' Claude Code gets the same hooks (`.claude/skills/` can stay out of git: `cerne skill install` recreates it). For a team, pass `--backend` an empty private repository on GitHub or GitLab instead; `init` prints how to move a local backend to a remote later. Documents are scaffolded in English; add `--docs-language pt-BR` for Portuguese.
 
 Now open your agent in the project and ask for something: *"add sign in with Google"*. It registers the feature and drafts the spec, and the card shows up on your board, waiting for your approval. Claude Code picks up everything `init` installed; for the other agents, see [Agent integrations](#agent-integrations). What to do in your first week, from the first spec to the daily routine: [first-week guide](docs/first-week.md).
 
