@@ -890,6 +890,7 @@ const ptBR = {
     minutesDraftBy: (nick: string) => `por ${nick}`,
     closeWithDraft: 'Encerrar com este rascunho',
     loadDraft: 'Editar no formulário de encerramento',
+    draftChanged: 'O rascunho mudou depois que você o leu; a sala segue aberta. Revise o novo antes de encerrar.',
   },
   palette: {
     placeholder: 'Buscar por código ou título…',
@@ -2585,6 +2586,7 @@ const en: Messages = {
     minutesDraftBy: (nick: string) => `by ${nick}`,
     closeWithDraft: 'Close with this draft',
     loadDraft: 'Edit in the close form',
+    draftChanged: 'The draft changed after you read it; the room is still open. Review the new one before closing.',
   },
   palette: {
     placeholder: 'Search by id or title…',

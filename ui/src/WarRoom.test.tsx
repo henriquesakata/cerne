@@ -5,7 +5,7 @@ import '@testing-library/jest-dom/vitest'
 import WarRoom, { WarRoomDetail } from './WarRoom'
 import { I18nProvider } from './i18n'
 import { LiveProvider, useProjects } from './live'
-import { fetchProjects, HTTPError, type FacilitationItem, type Minutes, type ProjectInfo, type Room, type RoomMessage, type RoomSession } from './api'
+import { DraftChangedError, fetchProjects, HTTPError, type FacilitationItem, type Minutes, type ProjectInfo, type Room, type RoomMessage, type RoomSession } from './api'
 
 const fetchRooms = vi.fn<() => Promise<Room[]>>()
 const joinRoom = vi.fn<(id: string, nick: string, bio: string) => Promise<{ room: Room; session: RoomSession }>>()
@@ -16,7 +16,7 @@ const readRoomMessages = vi.fn<
   (id: string, since: number, follow: boolean, signal?: AbortSignal, sessionID?: string) => Promise<RoomMessage[]>
 >()
 const postRoomOpen = vi.fn<(topic: string) => Promise<{ room: Room; facilitator_id: string }>>()
-const postRoomClose = vi.fn<(id: string, facilitatorId: string, minutes: Minutes | null, allow?: boolean) => Promise<Room>>()
+const postRoomClose = vi.fn<(id: string, facilitatorId: string, minutes: Minutes | string, allow?: boolean) => Promise<Room>>()
 const postRoomFacilitatorHandoff = vi.fn<(id: string, facilitatorId: string) => Promise<string>>()
 const fetchRoomPending = vi.fn<(id: string, facilitatorId: string) => Promise<FacilitationItem[]>>()
 const postRoomResolveItem =
@@ -32,7 +32,7 @@ vi.mock('./api', async (importOriginal) => ({
   readRoomMessages: (id: string, since: number, follow: boolean, signal?: AbortSignal, sessionID?: string) =>
     readRoomMessages(id, since, follow, signal, sessionID),
   postRoomOpen: (topic: string) => postRoomOpen(topic),
-  postRoomClose: (id: string, facilitatorId: string, minutes: Minutes | null, allow?: boolean) =>
+  postRoomClose: (id: string, facilitatorId: string, minutes: Minutes | string, allow?: boolean) =>
     postRoomClose(id, facilitatorId, minutes, allow),
   postRoomFacilitatorHandoff: (id: string, facilitatorId: string) => postRoomFacilitatorHandoff(id, facilitatorId),
   fetchRoomPending: (id: string, facilitatorId: string) => fetchRoomPending(id, facilitatorId),
@@ -1416,9 +1416,41 @@ describe('facilitação e rascunho de ata visíveis na sala (T-0022)', () => {
     render(<WarRoomDetail id="R1" />)
 
     fireEvent.click(await screen.findByRole('button', { name: /encerrar com este rascunho/i }))
-    await waitFor(() => expect(postRoomClose).toHaveBeenCalledWith('R1', FAC, null, false))
+    await waitFor(() => expect(postRoomClose).toHaveBeenCalledWith('R1', FAC, draft.time, false))
     await waitFor(() => expect(screen.getByText(/sala fechada/i)).toBeInTheDocument())
     expect(screen.queryByRole('region', { name: /rascunho de ata/i })).not.toBeInTheDocument()
+  })
+
+  // T-0022 crit. 3
+  // E-0006 crit. 12
+  it('um rascunho trocado depois da leitura não fecha a sala: avisa e relê a transcrição', async () => {
+    localStorage.setItem('warroom-facilitator--R1', FAC)
+    const newer: RoomMessage = {
+      ...draft,
+      seq: 6,
+      nick: 'ana',
+      minutes: { ...draftMinutes, conclusion: 'manter o deploy' },
+      time: '2026-08-06T00:00:06Z',
+    }
+    let follows = 0
+    readRoomMessages.mockImplementation((_id, _since, follow, signal) => {
+      if (!follow) return Promise.resolve([open, draft])
+      follows++
+      if (follows === 1) {
+        // the tab's long-poll, waiting until the refusal re-issues it
+        return new Promise((_, reject) => signal?.addEventListener('abort', () => reject(new Error('aborted'))))
+      }
+      return follows === 2 ? Promise.resolve([newer]) : new Promise(() => {})
+    })
+    postRoomClose.mockRejectedValue(new DraftChangedError('the minutes draft changed after it was reviewed'))
+    render(<WarRoomDetail id="R1" />)
+
+    fireEvent.click(await screen.findByRole('button', { name: /encerrar com este rascunho/i }))
+    await waitFor(() => expect(postRoomClose).toHaveBeenCalledWith('R1', FAC, draft.time, false))
+    await waitFor(() => expect(screen.getByText(/o rascunho mudou/i)).toBeInTheDocument())
+    const card = screen.getByRole('region', { name: /rascunho de ata/i })
+    await waitFor(() => expect(within(card).getByText('manter o deploy')).toBeInTheDocument())
+    expect(screen.queryByText(/sala fechada/i)).not.toBeInTheDocument()
   })
 
   // T-0022 crit. 3

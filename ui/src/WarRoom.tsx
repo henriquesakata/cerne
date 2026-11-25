@@ -9,6 +9,7 @@ import {
 } from 'react'
 import { isAtBottom } from './BacklogChat'
 import {
+  DraftChangedError,
   fetchRoomPending,
   fetchRooms,
   getApiProject,
@@ -650,11 +651,14 @@ export function WarRoomDetail({ id }: { id: string }) {
     setCloseFormOpen(true)
   }
 
-  // minutes null closes with the room's saved draft (T-0022).
-  const submitClose = (minutesPayload: Minutes | null) => {
+  // A string closes with the room's saved draft, the one updated at that
+  // instant (T-0022). Another draft saved meanwhile refuses: the tab says so
+  // and re-issues its long-poll, which brings the new draft into the card.
+  const submitClose = (minutesPayload: Minutes | string) => {
     if (!facilitatorId || closing) return
     setClosing(true)
     setError(null)
+    setNotice(null)
     postRoomClose(id, facilitatorId, minutesPayload, allowOpenItems)
       .then((r) => {
         setClosing(false)
@@ -663,6 +667,11 @@ export function WarRoomDetail({ id }: { id: string }) {
       })
       .catch((e: unknown) => {
         setClosing(false)
+        if (e instanceof DraftChangedError) {
+          setNotice(t.warRoom.draftChanged)
+          pollRef.current?.abort()
+          return
+        }
         setError(e instanceof Error ? e.message : String(e))
       })
   }
@@ -750,7 +759,7 @@ export function WarRoomDetail({ id }: { id: string }) {
                 <button
                   type="button"
                   className="room-btn-primary"
-                  onClick={() => submitClose(null)}
+                  onClick={() => submitClose(draft.time)}
                   disabled={closing}
                 >
                   {closing ? t.warRoom.closing : t.warRoom.closeWithDraft}
