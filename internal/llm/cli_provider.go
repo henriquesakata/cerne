@@ -198,10 +198,13 @@ func execRun(ctx context.Context, dir, name string, args []string, stdin string)
 // the agent runs to an agent in the event log, and app.CheckHumanGate keeps
 // refusing approve/accept from it — the human gates (F-0131) are untouched by
 // the agent gaining write tools. DenyLifecycleEnv makes the binary refuse every
-// lifecycle verb (B-0040). os.Environ() comes first so the stamps win over an
-// inherited value (exec keeps the last of a duplicated key).
+// lifecycle verb (B-0040). os.Environ() comes first, then the context extras
+// (claudeNoTitleEnv, F-0505), and the stamps last, so they win over an inherited
+// value or an extra (exec keeps the last of a duplicated key).
 func agentRun(ctx context.Context, dir, name string, args []string, stdin string) (string, string, error) {
-	return execRunEnv(ctx, dir, name, args, stdin, append(os.Environ(), "CERNE_ACTOR=agent", DenyLifecycleEnv+"=1"))
+	extra, _ := ctx.Value(envKey{}).([]string)
+	env := append(append(os.Environ(), extra...), "CERNE_ACTOR=agent", DenyLifecycleEnv+"=1")
+	return execRunEnv(ctx, dir, name, args, stdin, env)
 }
 
 // DenyLifecycleEnv is the second stamp of agentRun: while it is present the
@@ -331,6 +334,15 @@ func parseClaudeJSON(out string) (reply, model string, ok bool) {
 // runs in the project on purpose, and its tools ARE the feature.
 var oneShotIsolation = []string{"--safe-mode", "--tools", ""}
 
+// claudeNoTitleEnv goes in the environment of every `claude -p` child, one-shot
+// and agentic (F-0505). Without it the CLI fires a second API request next to
+// each call to title the session, resending the whole prompt uncached on the
+// same model, and modelUsage counts both: half of the 530,009 input tokens of
+// the F-0502 live proof (N-0150). An environment variable, not --name, because
+// an old CLI ignores an unknown variable but rejects an unknown flag, and the
+// agentic turn never retries with less isolation.
+const claudeNoTitleEnv = "CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1"
+
 // isUnknownFlag reports whether err looks like the CLI rejecting a flag it
 // does not know — an old Claude Code without --allowedTools. Covers the
 // cobra ("unknown flag") and commander ("unknown option") phrasings.
@@ -400,6 +412,8 @@ func (p *cliProvider) Complete(ctx context.Context, prompt string) (string, erro
 	} else {
 		args = append(args, oneShotIsolation...)
 	}
+	extra, _ := ctx.Value(envKey{}).([]string)
+	ctx = context.WithValue(ctx, envKey{}, append(slices.Clone(extra), claudeNoTitleEnv))
 	start := time.Now()
 	out, stderr, err := p.run(ctx, p.dir, p.bin, args, prompt)
 	if err != nil && isUnknownFlag(err) {
