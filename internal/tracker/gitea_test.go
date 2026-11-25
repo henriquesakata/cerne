@@ -599,6 +599,7 @@ func TestGiteaLabelPagesHaveACap(t *testing.T) {
 func TestGiteaContract(t *testing.T) {
 	ctx := context.Background()
 	var g *fakeGitea
+	// B-0079 crit. 10: the contract checks HoldOpen on this kind.
 	trackertest.RunContract(t, trackertest.Harness{
 		New: func(t *testing.T) tracker.IssueTracker {
 			g = newFakeGitea(t)
@@ -769,6 +770,7 @@ func TestGiteaContractLive(t *testing.T) {
 		}
 	}
 	tr := newGiteaTracker(t, raw)
+	// B-0079 crit. 10: the contract checks HoldOpen on this kind.
 	trackertest.RunContract(t, trackertest.Harness{
 		New: func(*testing.T) tracker.IssueTracker { return tr },
 		Open: func(t *testing.T, title, body, label string) tracker.Ref {

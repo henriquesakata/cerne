@@ -128,11 +128,34 @@ func reasonOf(err error) string {
 	return strings.TrimPrefix(err.Error(), forge.ErrNoSinglePR.Error()+": ")
 }
 
-// DeliveryBranchWarning asks the forge whether f's delivery commit is on the
+// DeliveryBranchWarning asks the forge whether f's delivery reached the
 // repository's default branch (F-0355 crit. 7). It returns the stderr line to
-// print when it is not, and "" when it is, when the check does not apply (no
-// forge, no commit) or when the forge cannot answer: a warning never blocks.
+// print when it has not, and "" when it has, when the check does not apply (no
+// forge, no delivery) or when the forge cannot answer: a warning never blocks.
+// With a delivery PR the line says what the forge says about it (B-0079 crit.
+// 9): still open, and for a card mirrored under close_on = "merge" that its
+// issue waits for the merge; closed unmerged; or merged into another branch.
+// With only a commit it says the commit is not on the default branch.
 func DeliveryBranchWarning(cfg project.Config, projDir string, f store.Feature) string {
+	if pr, ok := deliveryPR(cfg, projDir, f.DeliveryMRURL); ok && pr.DefaultBranch != "" {
+		switch {
+		case !pr.Closed:
+			line := fmt.Sprintf("cerne: %s is still open", f.DeliveryMRURL)
+			if ms := project.MirrorSettings(projDir); f.Mirror != nil && ms.Enabled && ms.CloseOn == "merge" {
+				line += fmt.Sprintf("; the mirrored issue %s stays open until it merges", f.Mirror.URL)
+			}
+			return line
+		case !pr.Merged:
+			return fmt.Sprintf("cerne: %s was closed without merge", f.DeliveryMRURL)
+		case pr.Base == pr.DefaultBranch:
+			return ""
+		}
+		what := f.DeliveryMRURL
+		if _, sha, ok := forge.ParseCommitURL(f.DeliveryCommitURL); ok {
+			what = "commit " + sha
+		}
+		return fmt.Sprintf("cerne: delivery %s is not on %s; the PR may have merged into another branch", what, pr.DefaultBranch)
+	}
 	fg, sha, _ := deliveryForge(cfg, projDir, f.DeliveryCommitURL)
 	if fg == nil {
 		return ""
@@ -141,5 +164,42 @@ func DeliveryBranchWarning(cfg project.Config, projDir string, f store.Feature) 
 	if err != nil || on {
 		return ""
 	}
-	return fmt.Sprintf("cerne: delivery commit %s is not on %s; the PR may have merged into another branch", sha, branch)
+	return fmt.Sprintf("cerne: delivery commit %s is not on %s", sha, branch)
+}
+
+// deliveryPR asks the [delivery] forge about the PR at url; false when there
+// is no forge or PR to ask about, it must not be asked (another repository, a
+// host that is not the origin remote) or it did not answer.
+func deliveryPR(cfg project.Config, projDir, url string) (forge.PullRequest, bool) {
+	if cfg.Delivery.Forge == "" || url == "" {
+		return forge.PullRequest{}, false
+	}
+	repo, n, ok := forge.ParsePRURL(url)
+	if !ok {
+		return forge.PullRequest{}, false
+	}
+	fg, _ := forgeOnOrigin(cfg, projDir, repo, "the PR")
+	if fg == nil {
+		return forge.PullRequest{}, false
+	}
+	pr, err := fg.PullRequest(context.Background(), n)
+	return pr, err == nil
+}
+
+// deliveryMerged reports whether the forge confirms f's delivery on the
+// default branch (B-0079): its PR merged into that branch when the card links
+// one (a squash merge never brings the commit there), else its commit
+// reachable from it. No forge, a link it must not ask about, or no answer:
+// false.
+func deliveryMerged(cfg project.Config, projDir string, f store.Feature) bool {
+	if f.DeliveryMRURL != "" {
+		pr, ok := deliveryPR(cfg, projDir, f.DeliveryMRURL)
+		return ok && pr.Merged && pr.DefaultBranch != "" && pr.Base == pr.DefaultBranch
+	}
+	fg, sha, _ := deliveryForge(cfg, projDir, f.DeliveryCommitURL)
+	if fg == nil {
+		return false
+	}
+	on, _, err := fg.OnDefaultBranch(context.Background(), sha)
+	return err == nil && on
 }

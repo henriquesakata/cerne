@@ -14,9 +14,10 @@ func TestItemBody(t *testing.T) {
 }
 
 // TestItemCarriesOnlyPublicFields pins what may leave the backend: a new field
-// on Item is a new disclosure and must be decided, not slipped in.
+// on Item is a new disclosure and must be decided, not slipped in. HoldOpen
+// (B-0079) is an instruction to the adapter, never written to the tracker.
 func TestItemCarriesOnlyPublicFields(t *testing.T) {
-	want := []string{"CardID", "State", "Title", "Summary", "Successor", "NoReopen"}
+	want := []string{"CardID", "State", "Title", "Summary", "Successor", "NoReopen", "HoldOpen"}
 	typ := reflect.TypeFor[Item]()
 	var got []string
 	for i := range typ.NumField() {

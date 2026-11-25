@@ -38,6 +38,7 @@ type Item struct {
 	Summary   string // public summary from the opt-in
 	Successor *Ref   // State == superseded and the successor card is mirrored
 	NoReopen  bool   // mirror.close_on = "merge": an issue found closed stays closed
+	HoldOpen  bool   // State closes, but its delivery has not reached the default branch: the merge closes the issue (B-0079)
 }
 
 // Body is the issue body every adapter writes: the public summary, then the card id.

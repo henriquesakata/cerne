@@ -200,6 +200,7 @@ func (c *giteaCall) apply(ctx context.Context, cur giteaIssue, it Item) error {
 	shut, closed := closeReason(it.State) != "", cur.State == "closed"
 	switch {
 	case closed && it.NoReopen: // the merge closed it: only the labels move
+	case !closed && shut && it.HoldOpen: // the merge will close it: only the labels move (B-0079)
 	case closed && !shut:
 		edit["state"] = "open"
 	case !closed && shut:

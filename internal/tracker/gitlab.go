@@ -118,6 +118,7 @@ func (g gitlab) apply(ctx context.Context, cur glIssue, it Item) error {
 	closing := false
 	switch {
 	case closed && it.NoReopen: // the merge closed it: only the labels move
+	case !closed && wantClosed && it.HoldOpen: // the merge will close it: only the labels move (B-0079)
 	case closed && !wantClosed:
 		f = append(f, "state_event=reopen")
 	case !closed && wantClosed:

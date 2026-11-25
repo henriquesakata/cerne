@@ -10,6 +10,7 @@ import (
 	"github.com/henriquesakata/cerne/internal/forge"
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
+	"github.com/henriquesakata/cerne/internal/tracker/trackertest"
 )
 
 // fakeForge replaces NewDeliveryForge for one test and counts the calls.
@@ -153,10 +154,11 @@ func TestDiscoverPRSkips(t *testing.T) {
 }
 
 // F-0355 crit. 7: a commit outside the default branch warns; inside, none.
+// B-0079 crit. 9: with no PR known, the line no longer guesses where it merged.
 func TestDeliveryBranchWarning(t *testing.T) {
 	feat := store.Feature{ID: "F-1", DeliveryCommitURL: "https://github.com/o/r/commit/abc1234"}
 	useFakeForge(t, &fakeForge{on: false, branch: "main"})
-	want := "cerne: delivery commit abc1234 is not on main; the PR may have merged into another branch"
+	want := "cerne: delivery commit abc1234 is not on main"
 	if got := DeliveryBranchWarning(forgeCfg("github"), "p", feat); got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
@@ -175,4 +177,48 @@ func TestDeliveryBranchWarning(t *testing.T) {
 	if got := DeliveryBranchWarning(forgeCfg("github"), "p", store.Feature{ID: "F-1"}); got != "" {
 		t.Fatalf("no commit: got %q", got)
 	}
+}
+
+// B-0079 crit. 9: with a delivery PR, accept's warning says what the forge
+// says about it: still open (and, for a card mirrored under close_on =
+// "merge", that its issue waits for the merge), closed unmerged, or merged
+// into another branch, the only case that keeps "may have merged into another
+// branch". Merged into the default branch, or no answer, says nothing new.
+func TestDeliveryBranchWarningPR(t *testing.T) {
+	feat := store.Feature{ID: "F-1", DeliveryMRURL: "https://github.com/o/r/pull/7", DeliveryCommitURL: "https://github.com/o/r/commit/abc1234"}
+	const elsewhere = "the PR may have merged into another branch"
+	for _, c := range []struct {
+		name string
+		pr   forge.PullRequest
+		err  error
+		want string
+	}{
+		{"open", forge.PullRequest{Base: "main", DefaultBranch: "main"}, nil, "cerne: https://github.com/o/r/pull/7 is still open"},
+		{"closed unmerged", forge.PullRequest{Closed: true, Base: "main", DefaultBranch: "main"}, nil, "cerne: https://github.com/o/r/pull/7 was closed without merge"},
+		{"merged elsewhere", forge.PullRequest{Merged: true, Closed: true, Base: "release", DefaultBranch: "main"}, nil, "cerne: delivery commit abc1234 is not on main; " + elsewhere},
+		{"merged into main", forge.PullRequest{Merged: true, Closed: true, Base: "main", DefaultBranch: "main"}, nil, ""},
+		{"no answer", forge.PullRequest{}, errors.New("boom"), ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			useFakeForge(t, &fakeForge{pr: c.pr, err: c.err, on: c.want == "", branch: "main"})
+			got := DeliveryBranchWarning(forgeCfg("github"), "p", feat)
+			if got != c.want {
+				t.Fatalf("got %q, want %q", got, c.want)
+			}
+			if c.name != "merged elsewhere" && strings.Contains(got, elsewhere) {
+				t.Fatalf("%s: the line guesses another branch: %q", c.name, got)
+			}
+		})
+	}
+	t.Run("open, mirrored under close_on merge", func(t *testing.T) {
+		projDir := t.TempDir()
+		mirrorProject(t, projDir, mirrorConf{closeOn: "merge"}, &trackertest.Fake{Name: "pub"})
+		useFakeForge(t, &fakeForge{pr: forge.PullRequest{Base: "main", DefaultBranch: "main"}})
+		m := feat
+		m.Mirror = &store.MirrorRef{Tracker: "pub", Kind: "fake", ID: "1", URL: "https://fake.test/pub/issues/1"}
+		want := "cerne: https://github.com/o/r/pull/7 is still open; the mirrored issue https://fake.test/pub/issues/1 stays open until it merges"
+		if got := DeliveryBranchWarning(forgeCfg("github"), projDir, m); got != want {
+			t.Fatalf("got %q, want %q", got, want)
+		}
+	})
 }

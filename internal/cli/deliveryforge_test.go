@@ -200,12 +200,37 @@ func TestAcceptWarnsCommitOffDefaultBranch(t *testing.T) {
 		if err != nil {
 			t.Fatalf("accept must not be blocked (on=%v): %v\n%s%s", on, err, stdout, stderr)
 		}
-		warned := strings.Contains(stderr, "cerne: delivery commit abc1234 is not on main; the PR may have merged into another branch")
+		// B-0079 crit. 9: no PR known, so no guess about another branch.
+		warned := strings.Contains(stderr, "cerne: delivery commit abc1234 is not on main")
+		if strings.Contains(stderr, "may have merged") {
+			t.Fatalf("on=%v: the warning guesses another branch with no PR known:\n%s", on, stderr)
+		}
 		if warned == on {
 			t.Fatalf("on=%v: warned=%v, stderr:\n%s", on, warned, stderr)
 		}
 		if got, _ := store.LoadFeature(repoDir, "F-0001"); got.State != domain.StateDone {
 			t.Fatalf("state = %s, want done", got.State)
 		}
+	}
+}
+
+// B-0079 crit. 9: accepted while its delivery PR is open, the card is done and
+// stderr says the PR is still open, with its URL.
+func TestAcceptWarnsPROpen(t *testing.T) {
+	f := &cliFakeForge{on: false, pr: forge.PullRequest{Base: "main", DefaultBranch: "main"}}
+	projDir, repoDir := forgeProject(t, "github", f)
+	seedDeliveryFeature(t, repoDir, "F-0001", domain.StateImplemented)
+	if out, err := execCerne(t, "feature", "deliver", "F-0001", "--commit", "abc1234", "--mr", "https://github.com/o/r/pull/12", "--dir", projDir); err != nil {
+		t.Fatalf("deliver: %v\n%s", err, out)
+	}
+	stdout, stderr, err := execCerneSplit(t, "feature", "accept", "F-0001", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("accept must not be blocked: %v\n%s%s", err, stdout, stderr)
+	}
+	if !strings.Contains(stderr, "cerne: https://github.com/o/r/pull/12 is still open") || strings.Contains(stderr, "may have merged") {
+		t.Fatalf("stderr = %q, want the open PR named and no guess about another branch", stderr)
+	}
+	if got, _ := store.LoadFeature(repoDir, "F-0001"); got.State != domain.StateDone {
+		t.Fatalf("state = %s, want done", got.State)
 	}
 }
