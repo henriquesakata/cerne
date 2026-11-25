@@ -12,6 +12,7 @@ While cerne is below 1.0.0, a minor version may change behavior: read the
 ### Added
 
 - Arch Linux: the `cerne-bin` package on the AUR, with the release binary checked against `SHA256SUMS`, updated by each stable release. `cerne update` leaves a binary in `/usr/bin` to the system package manager and prints the AUR helper command.
+- Windows: a Scoop manifest in the `henriquesakata/scoop-bucket` bucket (`scoop bucket add henriquesakata https://github.com/henriquesakata/scoop-bucket`, `scoop install henriquesakata/cerne`), updated by each stable release. `cerne update` leaves a Scoop install to `scoop update cerne`.
 
 ## [0.15.2] - 2026-11-22
 

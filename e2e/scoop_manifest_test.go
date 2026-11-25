@@ -93,6 +93,39 @@ func TestScoopManifest_BadTag(t *testing.T) {
 	}
 }
 
+// F-0508 crit. 7: INSTALL.md tells a Windows user how to install with Scoop and
+// lists Scoop among the ways cerne updates.
+func TestInstallDoc_Scoop(t *testing.T) {
+	raw, err := os.ReadFile("../INSTALL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := string(raw)
+	i := strings.Index(doc, "\n## Scoop (Windows)\n")
+	if i < 0 {
+		t.Fatal("INSTALL.md has no '## Scoop (Windows)' section")
+	}
+	section := doc[i+1:]
+	if j := strings.Index(section[3:], "\n## "); j >= 0 {
+		section = section[:j+3]
+	}
+	for _, want := range []string{
+		"scoop bucket add henriquesakata https://github.com/henriquesakata/scoop-bucket",
+		"scoop install henriquesakata/cerne",
+	} {
+		if !strings.Contains(section, want) {
+			t.Errorf("Scoop section lacks %q", want)
+		}
+	}
+	if win := strings.Index(doc, "\n## Quick install (Windows)\n"); win < 0 || win > i {
+		t.Error("the Scoop section must come after the Windows quick install")
+	}
+	upd := strings.Index(doc, "\n### Updating\n")
+	if upd < 0 || !strings.Contains(doc[upd:], "- **Scoop:**") {
+		t.Error("### Updating lacks the Scoop line")
+	}
+}
+
 // F-0508 crit. 3: the PR workflow installs the generated manifest with Scoop on
 // Windows, checks the version, and has Scoop's own checkver rewrite the
 // previous release's manifest to the latest one.
