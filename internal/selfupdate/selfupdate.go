@@ -30,15 +30,16 @@ const DefaultBaseURL = "https://github.com/henriquesakata/cerne"
 type Method int
 
 const (
-	Script    Method = iota // install script or a release file put in place by hand: cerne replaces it
-	Homebrew                // under a Cellar: Homebrew replaces it, so its records stay right
-	GoInstall               // in a GOBIN/GOPATH bin: `go install` replaces it
-	Dev                     // a local build: nothing to replace it with
-	SystemPackage           // /usr/bin/cerne from pacman and kin: the package manager replaces it
+	Script        Method = iota // install script or a release file put in place by hand: cerne replaces it
+	Homebrew                    // under a Cellar: Homebrew replaces it, so its records stay right
+	GoInstall                   // in a GOBIN/GOPATH bin: `go install` replaces it
+	Dev                         // a local build: nothing to replace it with
+	SystemPackage               // /usr/bin/cerne from pacman and kin: the package manager replaces it
+	Scoop                       // under scoop\apps\cerne: Scoop replaces it, so its records stay right
 )
 
 func (m Method) String() string {
-	return [...]string{"script", "homebrew", "go install", "dev", "system package"}[m]
+	return [...]string{"script", "homebrew", "go install", "dev", "system package", "scoop"}[m]
 }
 
 var (
@@ -60,6 +61,12 @@ var (
 func Detect(exe, resolved, version string, gobins []string) Method {
 	if !releaseTagRe.MatchString(version) || describeRe.MatchString(version) {
 		return Dev
+	}
+	for _, p := range []string{exe, resolved} {
+		// Windows paths, whatever the host: slashes and case are normalized.
+		if strings.Contains(strings.ToLower(strings.ReplaceAll(p, `\`, "/")), "/apps/cerne/") {
+			return Scoop
+		}
 	}
 	if filepath.ToSlash(resolved) == "/usr/bin/cerne" {
 		return SystemPackage

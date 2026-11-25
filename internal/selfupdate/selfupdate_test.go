@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-// F-0476 crit. 6 and 9, F-0507 crit. 6: the install path decides who replaces the binary.
+// F-0476 crit. 6 and 9, F-0507 crit. 6, F-0508 crit. 6: the install path decides who replaces the binary.
 func TestDetect(t *testing.T) {
 	gobin := filepath.Join("/home", "me", "go", "bin")
 	cases := []struct {
@@ -27,6 +27,12 @@ func TestDetect(t *testing.T) {
 		{"homebrew linux", "/home/linuxbrew/.linuxbrew/Cellar/cerne/0.14.3/bin/cerne", "/home/linuxbrew/.linuxbrew/Cellar/cerne/0.14.3/bin/cerne", "v0.14.3", Homebrew},
 		{"install script", "/usr/local/bin/cerne", "/usr/local/bin/cerne", "v0.14.3", Script},
 		{"go install", filepath.Join(gobin, "cerne"), filepath.Join(gobin, "cerne"), "v0.14.3", GoInstall},
+		{"scoop, current junction", `C:\Users\u\scoop\apps\cerne\current\cerne.exe`, `C:\Users\u\scoop\apps\cerne\current\cerne.exe`, "v0.14.3", Scoop},
+		{"scoop, global", `C:\ProgramData\scoop\apps\cerne\0.16.0\cerne.exe`, `C:\ProgramData\scoop\apps\cerne\0.16.0\cerne.exe`, "v0.16.0", Scoop},
+		{"scoop, custom root, other case", `D:\Tools\Apps\Cerne\current\cerne.exe`, `D:\Tools\Apps\Cerne\current\cerne.exe`, "v0.16.0", Scoop},
+		{"scoop, shim resolved to the app", `C:\Users\u\scoop\shims\cerne.exe`, `C:\Users\u\scoop\apps\cerne\0.16.0\cerne.exe`, "v0.16.0", Scoop},
+		{"scoop, local build", `C:\Users\u\scoop\apps\cerne\current\cerne.exe`, `C:\Users\u\scoop\apps\cerne\current\cerne.exe`, "dev", Dev},
+		{"install.ps1 folder", `C:\Users\u\AppData\Local\Programs\cerne\cerne.exe`, `C:\Users\u\AppData\Local\Programs\cerne\cerne.exe`, "v0.16.0", Script},
 		{"system package", "/usr/bin/cerne", "/usr/bin/cerne", "v0.14.3", SystemPackage},
 		{"system package through a link", "/usr/local/bin/cerne", "/usr/bin/cerne", "v0.14.3", SystemPackage},
 		{"system package, local build", "/usr/bin/cerne", "/usr/bin/cerne", "dev", Dev},

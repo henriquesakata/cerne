@@ -146,3 +146,21 @@ func TestUpdateBinary_SystemPackageRefuses(t *testing.T) {
 		t.Fatalf("asked the network %d time(s)", *hits)
 	}
 }
+
+// F-0508 crit. 6: a Scoop install is Scoop's to replace: the binary stays, the
+// fix is `scoop update cerne`, and no download happens. The path need not exist.
+func TestUpdateBinary_ScoopRefuses(t *testing.T) {
+	exe := `C:\Users\u\scoop\apps\cerne\current\cerne.exe`
+	setRunningBinary(t, exe, "v0.14.3")
+	hits := fakeRelease(t, "v0.15.0", []byte("new"))
+	p, newExe := replaceBinary(&bytes.Buffer{}, &bytes.Buffer{}, exe)
+	if p.name != "binary" || p.state != stNotDone || newExe != "" {
+		t.Fatalf("line = %+v new %q, want binary not done", p, newExe)
+	}
+	if !strings.Contains(p.detail, "Scoop") || p.fix != "scoop update cerne" {
+		t.Fatalf("detail %q, fix %q", p.detail, p.fix)
+	}
+	if *hits != 0 {
+		t.Fatalf("asked the network %d time(s)", *hits)
+	}
+}
