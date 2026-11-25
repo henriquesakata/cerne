@@ -11,6 +11,7 @@ import (
 // Asking why room watch --once woke on the first message of a burst lands on
 // the FAQ entry that teaches --settle.
 // E-0006 crit. 4
+// T-0020 crit. 3
 func TestGuideAnswersRoomWatchSettle(t *testing.T) {
 	corpus := guide.Corpus(cli.Root())
 	for _, q := range []string{"room watch --once wakes me on the first message of a burst", "room watch settle"} {

@@ -438,6 +438,7 @@ func TestRoomWatchSignalDuringStartReleasesLock(t *testing.T) {
 	assertLockFree(t, cpPath)
 }
 
+// T-0020 crit. 1 and 2
 // E-0006 crit. 5 and 6: `room watch --once` takes --settle (1.5s by default)
 // and hands it to the loop, so a line said after the first one is printed
 // lands in the same run. A minute-long window keeps the test off the clock;

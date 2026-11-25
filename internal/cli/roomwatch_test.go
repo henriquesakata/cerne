@@ -259,6 +259,7 @@ func runSettle(t *testing.T, settle time.Duration, arrivals ...settleArrival) (*
 	return r, out.String(), cp.LastSeq
 }
 
+// T-0020 crit. 1
 // E-0006 crit. 5: a burst of 3 events inside the window comes out in one
 // --once run, checkpointed at the last, and the run ends after --settle of
 // silence counted from the last event, not the first.
@@ -281,6 +282,7 @@ func TestRoomWatchSettleCoalescesBurst(t *testing.T) {
 	}
 }
 
+// T-0020 crit. 1
 // E-0006 crit. 5: --settle 0 keeps the old --once, ending on the first batch.
 func TestRoomWatchSettleZeroExitsOnFirstBatch(t *testing.T) {
 	r, out, last := runSettle(t, 0,
@@ -295,6 +297,7 @@ func TestRoomWatchSettleZeroExitsOnFirstBatch(t *testing.T) {
 	}
 }
 
+// T-0020 crit. 1
 // E-0006 crit. 5: a room that never goes quiet ends the window 5s after the
 // first relevant event, whatever --settle says.
 func TestRoomWatchSettleCapsAtFiveSeconds(t *testing.T) {
@@ -317,6 +320,7 @@ func TestRoomWatchSettleCapsAtFiveSeconds(t *testing.T) {
 	}
 }
 
+// T-0020 crit. 1
 // E-0006 crit. 5: your own echo inside the window is not printed but still
 // advances the checkpoint.
 func TestRoomWatchSettleFiltersOwnEchoButCheckpoints(t *testing.T) {
@@ -336,6 +340,7 @@ func TestRoomWatchSettleFiltersOwnEchoButCheckpoints(t *testing.T) {
 	}
 }
 
+// T-0020 crit. 1
 // E-0006 crit. 5: a dropped connection inside the window ends the run like
 // silence does (exit 0, no backoff), so the 5s cap holds; the next --once
 // resumes from the checkpoint.
@@ -358,6 +363,7 @@ func TestRoomWatchSettleTransientErrorEndsWindow(t *testing.T) {
 	}
 }
 
+// T-0020 crit. 2
 // E-0006 crit. 6: a close in the first batch ends the watch at once, with
 // no settle window.
 func TestRoomWatchSettleCloseInFirstBatchEndsAtOnce(t *testing.T) {
@@ -372,6 +378,7 @@ func TestRoomWatchSettleCloseInFirstBatchEndsAtOnce(t *testing.T) {
 	}
 }
 
+// T-0020 crit. 2
 // E-0006 crit. 6: a close inside the window ends the watch at once, without
 // waiting out the rest of --settle.
 func TestRoomWatchSettleCloseMidWindowEndsAtOnce(t *testing.T) {
