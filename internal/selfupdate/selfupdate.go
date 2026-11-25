@@ -34,10 +34,11 @@ const (
 	Homebrew                // under a Cellar: Homebrew replaces it, so its records stay right
 	GoInstall               // in a GOBIN/GOPATH bin: `go install` replaces it
 	Dev                     // a local build: nothing to replace it with
+	SystemPackage           // /usr/bin/cerne from pacman and kin: the package manager replaces it
 )
 
 func (m Method) String() string {
-	return [...]string{"script", "homebrew", "go install", "dev"}[m]
+	return [...]string{"script", "homebrew", "go install", "dev", "system package"}[m]
 }
 
 var (
@@ -59,6 +60,9 @@ var (
 func Detect(exe, resolved, version string, gobins []string) Method {
 	if !releaseTagRe.MatchString(version) || describeRe.MatchString(version) {
 		return Dev
+	}
+	if filepath.ToSlash(resolved) == "/usr/bin/cerne" {
+		return SystemPackage
 	}
 	if strings.Contains(filepath.ToSlash(resolved), "/Cellar/cerne/") {
 		return Homebrew

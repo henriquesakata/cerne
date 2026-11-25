@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-// F-0476 crit. 6 and 9: the install path decides who replaces the binary.
+// F-0476 crit. 6 and 9, F-0507 crit. 6: the install path decides who replaces the binary.
 func TestDetect(t *testing.T) {
 	gobin := filepath.Join("/home", "me", "go", "bin")
 	cases := []struct {
@@ -27,6 +27,9 @@ func TestDetect(t *testing.T) {
 		{"homebrew linux", "/home/linuxbrew/.linuxbrew/Cellar/cerne/0.14.3/bin/cerne", "/home/linuxbrew/.linuxbrew/Cellar/cerne/0.14.3/bin/cerne", "v0.14.3", Homebrew},
 		{"install script", "/usr/local/bin/cerne", "/usr/local/bin/cerne", "v0.14.3", Script},
 		{"go install", filepath.Join(gobin, "cerne"), filepath.Join(gobin, "cerne"), "v0.14.3", GoInstall},
+		{"system package", "/usr/bin/cerne", "/usr/bin/cerne", "v0.14.3", SystemPackage},
+		{"system package through a link", "/usr/local/bin/cerne", "/usr/bin/cerne", "v0.14.3", SystemPackage},
+		{"system package, local build", "/usr/bin/cerne", "/usr/bin/cerne", "dev", Dev},
 		{"local build", "/work/cerne/bin/cerne", "/work/cerne/bin/cerne", "dev", Dev},
 		{"go install of a dev build", filepath.Join(gobin, "cerne"), filepath.Join(gobin, "cerne"), "dev", Dev},
 		{"describe-stamped local build", "/usr/local/bin/cerne", "/usr/local/bin/cerne", "v0.14.3-5-gabc1234", Dev},
