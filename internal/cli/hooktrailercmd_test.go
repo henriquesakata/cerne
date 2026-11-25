@@ -26,10 +26,12 @@ func enableCommitTrailer(t *testing.T, projDir string) {
 	}
 }
 
-// writeMsgFile lays a COMMIT_EDITMSG-style file inside the project tree (git
-// hooks receive a path under .git/, so LoadConfig walks up to the project).
+// writeMsgFile lays a COMMIT_EDITMSG-style file under the project's .git/ and
+// moves into the project, as git does: it runs a commit hook at the root of
+// the tree that commits, which is where the hook finds the project (B-0080).
 func writeMsgFile(t *testing.T, projDir, content string) string {
 	t.Helper()
+	t.Chdir(projDir)
 	dir := filepath.Join(projDir, ".git")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)

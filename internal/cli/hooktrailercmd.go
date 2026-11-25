@@ -2,7 +2,6 @@ package cli
 
 import (
 	"os"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -20,9 +19,7 @@ import (
 // was produced under. Ambiguity (zero or several live bindings) never becomes
 // a guess, an existing trailer is never duplicated, and every failure path is
 // a silent no-op: the worst outcome is an unstamped commit, never a broken
-// one. The project is resolved from the message file's own path (git hands
-// .git/COMMIT_EDITMSG, and LoadConfig walks up), so the hook is independent
-// of the shell's cwd.
+// one. The project is the one of the tree that commits (hookProject).
 //
 // With the mirror on (F-0449) the same hook adds the Refs:/Closes: trailer of
 // each mirrored card the commit cites: its Cerne: trailers (hand-written ones
@@ -30,6 +27,16 @@ import (
 // body is no citation (owner's decision, 2026-11-18): with close_on = "merge"
 // it would close the wrong issue at the merge. The Cerne: stamp stays under
 // the commit_trailer gate; the Refs: line depends only on mirror.enabled.
+
+// hookProject is the cerne project of the tree a git commit hook runs for.
+// Git runs prepare-commit-msg and commit-msg at the root of the tree that
+// commits (the checkout, a linked worktree, a submodule), but hands the
+// message file from that tree's admin dir, which for a worktree or a
+// submodule sits under another tree's .git (.git/worktrees/<name>,
+// .git/modules/<name>): walking up from there reaches the wrong .cernerc
+// (B-0080). So the project comes from the working directory, never from the
+// message file's path.
+func hookProject() (project.Config, string, error) { return project.LoadConfig(".") }
 
 // gitTrailerRe is one "Token: value" git trailer line.
 var gitTrailerRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]*:\s`)
@@ -54,7 +61,7 @@ func runHookCommitTrailer(msgPath string) {
 		return
 	}
 	msg := string(raw)
-	cfg, projDir, err := project.LoadConfig(filepath.Dir(msgPath))
+	cfg, projDir, err := hookProject()
 	if err != nil {
 		return
 	}

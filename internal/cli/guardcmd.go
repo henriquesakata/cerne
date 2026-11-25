@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -62,13 +61,11 @@ func runGuardCommitMsg(cmd *cobra.Command, msgPath string) error {
 	if err != nil {
 		return nil
 	}
-	// git hands the message file under <repo>/.git/COMMIT_EDITMSG; LoadConfig
-	// walks up from there to the project's .cernerc.
-	cfg, projDir, err := project.LoadConfig(filepath.Dir(msgPath))
+	cfg, projDir, err := hookProject()
 	if err != nil {
 		return nil
 	}
-	ids := guardCitedIDs(string(raw), currentBranch(projDir))
+	ids := guardCitedIDs(string(raw), currentBranch())
 	if len(ids) == 0 {
 		return nil
 	}
@@ -114,11 +111,12 @@ func guardCitedIDs(msg, branch string) []string {
 	return ids
 }
 
-// currentBranch resolves the checked-out branch name; "" on any failure
+// currentBranch resolves the branch checked out in the tree that commits, the
+// working directory git runs the hook in (B-0080); "" on any failure
 // (detached HEAD, no git, not a repo) since an id cited only on the branch is
 // then simply not found there — the message is still checked.
-func currentBranch(projDir string) string {
-	out, err := exec.Command("git", "-C", projDir, "symbolic-ref", "--short", "HEAD").Output()
+func currentBranch() string {
+	out, err := exec.Command("git", "symbolic-ref", "--short", "HEAD").Output()
 	if err != nil {
 		return ""
 	}

@@ -99,10 +99,12 @@ func TestGuardCommitMsg_IDOnBranch(t *testing.T) {
 	}
 }
 
-// TestGuardCommitMsg_BackendUnavailable (F-0225 crit. 3): no cerne project
-// reachable from the message file's path fails open (exit 0).
+// TestGuardCommitMsg_BackendUnavailable (F-0225 crit. 3; B-0080 crit. 7): no
+// cerne project reachable from the directory git runs the hook in fails open
+// (exit 0).
 func TestGuardCommitMsg_BackendUnavailable(t *testing.T) {
 	dir := t.TempDir()
+	t.Chdir(dir)
 	gitDir := filepath.Join(dir, ".git")
 	if err := os.MkdirAll(gitDir, 0o755); err != nil {
 		t.Fatal(err)
