@@ -224,7 +224,7 @@ function MinutesBody({ minutes }: { minutes: Minutes }) {
         <strong>{t.warRoom.minutesRationale}:</strong> {minutes.rationale}
       </p>
       {sections
-        .filter((s) => s.items !== undefined && s.items.length > 0)
+        .filter((s) => (s.items ?? []).length > 0)
         .map((s) => (
           <section key={s.label} className={s.className}>
             <h3>{s.label}</h3>
@@ -644,9 +644,9 @@ export function WarRoomDetail({ id }: { id: string }) {
     if (!mn) return
     setMinutesConclusion(mn.conclusion)
     setMinutesRationale(mn.rationale)
-    setMinutesDiscarded(mn.discarded_options.join('\n'))
-    setMinutesOwners(mn.owners.join('\n'))
-    setMinutesNextSteps(mn.next_steps.join('\n'))
+    setMinutesDiscarded((mn.discarded_options ?? []).join('\n'))
+    setMinutesOwners((mn.owners ?? []).join('\n'))
+    setMinutesNextSteps((mn.next_steps ?? []).join('\n'))
     setCloseFormOpen(true)
   }
 

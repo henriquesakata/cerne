@@ -1439,6 +1439,41 @@ describe('facilitação e rascunho de ata visíveis na sala (T-0022)', () => {
     expect(postRoomClose).not.toHaveBeenCalled()
   })
 
+  // A minutes JSON without its lists, as a server before the T-0022 fix served it.
+  const bare = {
+    conclusion: 'conclusão sem listas',
+    rationale: 'justificativa sem listas',
+    discarded_options: null,
+    owners: null,
+    next_steps: null,
+  } as unknown as Minutes
+
+  // T-0022 crit. 3
+  // E-0006 crit. 12
+  it('um rascunho com listas null aparece e carrega no formulário', async () => {
+    localStorage.setItem('warroom-facilitator--R1', FAC)
+    readRoomMessages.mockImplementationOnce(() => Promise.resolve([open, { ...draft, minutes: bare }]))
+    render(<WarRoomDetail id="R1" />)
+
+    const card = await screen.findByRole('region', { name: /rascunho de ata/i })
+    expect(within(card).getByText('conclusão sem listas')).toBeInTheDocument()
+    fireEvent.click(within(card).getByRole('button', { name: /editar no formulário/i }))
+    expect(screen.getByLabelText(/^conclusão$/i)).toHaveValue('conclusão sem listas')
+    expect(screen.getByLabelText(/responsáveis \(um por linha\)/i)).toHaveValue('')
+  })
+
+  // T-0022 crit. 3
+  // E-0006 crit. 12
+  it('a ata de uma sala fechada com listas null aparece', async () => {
+    readRoomMessages.mockImplementationOnce(() =>
+      Promise.resolve([open, { seq: 2, type: 'close', time: '2026-08-06T00:05:00Z', minutes: bare }]),
+    )
+    render(<WarRoomDetail id="R1" />)
+
+    await waitFor(() => expect(screen.getByText('conclusão sem listas')).toBeInTheDocument())
+    expect(screen.getByText(/ata da sala/i)).toBeInTheDocument()
+  })
+
   // T-0022 crit. 4
   // E-0006 crit. 13
   it('tem os textos novos também em inglês', async () => {
