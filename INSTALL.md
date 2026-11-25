@@ -10,6 +10,24 @@ brew install henriquesakata/tap/cerne
 
 `cerne update` updates it later (see [Updating](#updating)). Use the full name `henriquesakata/tap/cerne`: since Homebrew 6.0 a third-party tap must be trusted before use, and installing by the full name trusts this formula only, in the same command.
 
+## Arch Linux (AUR)
+
+With an AUR helper:
+
+```bash
+yay -S cerne-bin
+```
+
+Without one:
+
+```bash
+git clone https://aur.archlinux.org/cerne-bin.git
+cd cerne-bin
+makepkg -si
+```
+
+The package installs the release binary as `/usr/bin/cerne` (x86_64 and aarch64), checked against the release's `SHA256SUMS`, and each stable release updates it. Update it with your helper (`yay -Syu cerne-bin`): `cerne update` leaves a package-managed binary to pacman (see [Updating](#updating)).
+
 ## Quick install (macOS and Linux)
 
 ```bash
@@ -149,6 +167,7 @@ Close and reopen the terminal, then run `cerne --version`. If Windows shows *"Wi
 Run `cerne update` inside your project. It updates the binary the way you installed it, then renews the hooks and the authoring guide of the agents already connected to that project:
 
 - **Homebrew:** it runs `brew upgrade henriquesakata/tap/cerne`, so Homebrew's own records stay right.
+- **Arch Linux (AUR):** it leaves `/usr/bin/cerne` alone, because pacman replaces it, and prints `update the cerne-bin package with your AUR helper (for example: yay -Syu cerne-bin)`.
 - **Install script, or a release file put in place by hand:** it downloads the latest release, checks it against the release's `SHA256SUMS` and replaces the executable in the same place. If the check or the swap fails, the old executable stays in place and working.
 - **A local build or a `go install`, or a folder you cannot write:** it leaves the binary alone and prints the command to run.
 

@@ -28,6 +28,14 @@ func TestBinaryPlan(t *testing.T) {
 			t.Setenv("GOBIN", filepath.Dir(exe))
 			return exe
 		}, false, "go install", "go install github.com/henriquesakata/cerne/cmd/cerne@latest"},
+		// F-0507 crit. 6: the panel's plan refuses a package-managed binary too.
+		{"system package", func(t *testing.T) string {
+			if runtime.GOOS == "windows" {
+				t.Skip("needs the POSIX /usr/bin path")
+			}
+			setRunningBinary(t, "/usr/bin/cerne", "v0.14.3")
+			return "/usr/bin/cerne"
+		}, false, "system package manager", "yay -Syu cerne-bin"},
 		{"unwritable folder", func(t *testing.T) string {
 			if runtime.GOOS == "windows" || os.Geteuid() == 0 {
 				t.Skip("needs POSIX permissions and a non-root user")
@@ -112,5 +120,29 @@ mkdir -p "$k" && echo new > "$k/cerne" && rm -rf '`+filepath.Dir(filepath.Dir(ol
 	}
 	if now, _ := filepath.EvalSymlinks(link); !strings.Contains(now, "0.15.0") {
 		t.Fatalf("the link resolves to %s, want the new keg", now)
+	}
+}
+
+// F-0507 crit. 6: a binary the system package manager put in /usr/bin is
+// left alone; the fix is the package manager's, never install.sh, and no
+// download happens. The path need not exist: the refusal falls back to it.
+func TestUpdateBinary_SystemPackageRefuses(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("needs the POSIX /usr/bin path")
+	}
+	setRunningBinary(t, "/usr/bin/cerne", "v0.14.3")
+	hits := fakeRelease(t, "v0.15.0", []byte("new"))
+	p, newExe := replaceBinary(&bytes.Buffer{}, &bytes.Buffer{}, "/usr/bin/cerne")
+	if p.name != "binary" || p.state != stNotDone || newExe != "" {
+		t.Fatalf("line = %+v new %q, want binary not done", p, newExe)
+	}
+	if !strings.Contains(p.detail, "system package manager") {
+		t.Fatalf("detail = %q", p.detail)
+	}
+	if !strings.Contains(p.fix, "yay -Syu cerne-bin") || strings.Contains(p.fix, "install.sh") {
+		t.Fatalf("fix = %q", p.fix)
+	}
+	if *hits != 0 {
+		t.Fatalf("asked the network %d time(s)", *hits)
 	}
 }

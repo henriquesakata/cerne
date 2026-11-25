@@ -314,6 +314,8 @@ func binaryRefusal(exe string) (resolved, why, fix string) {
 		return resolved, "this is a local build (version dev), not a release: it is not replaced", `go build -ldflags="-s -w" -o ` + exe + " ./cmd/cerne, in your cerne clone"
 	case selfupdate.GoInstall:
 		return resolved, "installed by go install (" + filepath.Dir(exe) + "): go install replaces it", "go install github.com/henriquesakata/cerne/cmd/cerne@latest"
+	case selfupdate.SystemPackage:
+		return resolved, "installed by the system package manager (/usr/bin/cerne): it replaces the binary, so its records stay right", "update the cerne-bin package with your AUR helper (for example: yay -Syu cerne-bin)"
 	}
 	return resolved, "", ""
 }

@@ -105,6 +105,93 @@ jobs:
             exit 1
           fi
 
+  # The Arch User Repository package cerne-bin (F-0507). scripts/aur-check.sh
+  # builds and installs the package in this container first; only then the
+  # PKGBUILD and .SRCINFO go to the AUR git repository over SSH. The host key is
+  # pinned below, never scanned: these three lines were checked against the
+  # fingerprints published on https://aur.archlinux.org/ (Ed25519
+  # SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4, ECDSA
+  # SHA256:uTa/0PndEgPZTf76e1DFqXKJEXKsn7m9ivhLQtzGOCI, RSA
+  # SHA256:5s5cIyReIfNNVGRFdDbe3hdYiI5OelHGpw2rOUud3Q8). If the AUR rotates a
+  # key the push fails, the safe side: update the lines from that page.
+  # AUR_SSH_PRIVATE_KEY is the private half of a key registered on the owner's
+  # AUR account; without it the job fails, so a stale package never passes in
+  # silence. A prerelease tag leaves the AUR alone, as it does the tap.
+  aur:
+    needs: release
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    permissions:
+      contents: read
+    steps:
+      - name: install git and ssh
+        run: pacman -Syu --noconfirm --needed git openssh
+      - uses: actions/checkout@v4
+      - name: check the AUR key
+        env:
+          AUR_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          if [ -z "$AUR_KEY" ]; then
+            echo "::error::AUR_SSH_PRIVATE_KEY is not set: the release is published, but the AUR still installs the previous version"
+            exit 1
+          fi
+      - name: build and install the package
+        run: sh scripts/aur-check.sh "$GITHUB_REF_NAME" aur-out
+      - name: push to the AUR
+        env:
+          AUR_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          set -eu
+          # Private files from the first byte; every path below is explicit
+          # because OpenSSH finds ~ through the passwd entry, not $HOME.
+          umask 077
+          ssh_dir="$HOME/.ssh"
+          mkdir -p "$ssh_dir"
+          printf '%s\n' "$AUR_KEY" >"$ssh_dir/aur"
+          cat >"$ssh_dir/known_hosts" <<'EOF'
+          aur.archlinux.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEuBKrPzbawxA/k2g6NcyV5jmqwJ2s+zpgZGZ7tpLIcN
+          aur.archlinux.org ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBLMiLrP8pVi5BFX2i3vepSUnpedeiewE5XptnUnau+ZoeUOPkpoCgZZuYfpaIQfhhJJI5qgnjJmr4hyJbe/zxow=
+          aur.archlinux.org ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDKF9vAFWdgm9Bi8uc+tYRBmXASBb5cB5iZsB7LOWWFeBrLp3r14w0/9S2vozjgqY5sJLDPONWoTTaVTbhe3vwO8CBKZTEt1AcWxuXNlRnk9FliR1/eNB9uz/7y1R0+c1Md+P98AJJSJWKN12nqIDIhjl2S1vOUvm7FNY43fU2knIhEbHybhwWeg+0wxpKwcAd/JeL5i92Uv03MYftOToUijd1pqyVFdJvQFhqD4v3M157jxS5FTOBrccAEjT+zYmFyD8WvKUa9vUclRddNllmBJdy4NyLB8SvVZULUPrP3QOlmzemeKracTlVOUG1wsDbxknF1BwSCU7CmU6UFP90kpWIyz66bP0bl67QAvlIc52Yix7pKJPbw85+zykvnfl2mdROsaT8p8R9nwCdFsBc9IiD0NhPEHcyHRwB8fokXTajk2QnGhL+zP5KnkmXnyQYOCUYo3EKMXIlVOVbPDgRYYT/XqvBuzq5S9rrU70KoI/S5lDnFfx/+lPLdtcnnEPk=
+          EOF
+          export GIT_SSH_COMMAND="ssh -i $ssh_dir/aur -o IdentitiesOnly=yes -o UserKnownHostsFile=$ssh_dir/known_hosts -o StrictHostKeyChecking=yes"
+          # A first push to a name nobody holds creates the package: the clone is empty.
+          git clone -q ssh://aur@aur.archlinux.org/cerne-bin.git aur-repo
+          cp aur-out/PKGBUILD aur-out/.SRCINFO aur-repo/
+          cd aur-repo
+          git add PKGBUILD .SRCINFO
+          # A re-run on the same tag has nothing to commit.
+          git diff --cached --quiet || git -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -q -m "cerne $GITHUB_REF_NAME"
+          git push -q origin HEAD:master
+
+  # Install from the AUR just updated, the way INSTALL.md says, in a clean
+  # container, and check the binary reports the tag.
+  aur-check:
+    needs: aur
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    permissions:
+      contents: read
+    steps:
+      - name: makepkg -si from the AUR
+        run: |
+          set -eu
+          pacman -Syu --noconfirm --needed git sudo
+          useradd -m builder
+          echo 'builder ALL=(root) NOPASSWD: /usr/bin/pacman' >/etc/sudoers.d/builder
+          chmod 440 /etc/sudoers.d/builder
+          su builder -c 'cd ~ && git clone https://aur.archlinux.org/cerne-bin.git && cd cerne-bin && makepkg -si --noconfirm'
+          want="cerne ${GITHUB_REF_NAME#v}"
+          got=$(cerne --version)
+          echo "$got"
+          if [ "$got" != "$want" ]; then
+            echo "::error::the AUR installed '$got', want '$want'"
+            exit 1
+          fi
+
   # Lists the release in the official MCP Registry (F-0455), which Glama,
   # PulseMCP and other directories mirror, from the server.json the release
   # job uploaded. Every stable tag verifies mcp-publisher and validates that
