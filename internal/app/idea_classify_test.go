@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/domain"
@@ -105,4 +106,51 @@ func TestPromoteIdeaUnknownCapabilityWritesNothing(t *testing.T) {
 		t.Fatalf("err = %v, want ErrUnknownCapability", err)
 	}
 	assertPromoteWroteNothing(t, repoDir, i.ID, head)
+}
+
+// F-0510 crit. 6: with RequireComplete, a promote that would leave the card
+// untagged, or without a capability while the project has a taxonomy, is
+// refused with nothing written and a message naming the flags; without it the
+// plain promote still creates.
+func TestPromoteIdeaRequireComplete(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	i, _ := CreateIdea(repoDir, projDir, "Ideia", "", nil, nil, "", false)
+
+	// No taxonomy yet: only the tag is required.
+	head := backendHead(t, repoDir)
+	_, _, err := PromoteIdea(repoDir, projDir, i.ID, PromoteOptions{RequireComplete: true})
+	if !errors.Is(err, ErrIncompleteCard) {
+		t.Fatalf("untagged err = %v, want ErrIncompleteCard", err)
+	}
+	for _, want := range []string{i.ID, "no tag", "--facet", "--component", "--allow-incomplete"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("refusal %q lacks %q", err, want)
+		}
+	}
+	if strings.Contains(err.Error(), "--capability") {
+		t.Fatalf("refusal %q asks for a capability the project does not curate", err)
+	}
+	assertPromoteWroteNothing(t, repoDir, i.ID, head)
+
+	// With a taxonomy, the capability is required too.
+	if _, err := CreateCapability(repoDir, projDir, "Gestão de demandas", ""); err != nil {
+		t.Fatal(err)
+	}
+	head = backendHead(t, repoDir)
+	_, _, err = PromoteIdea(repoDir, projDir, i.ID, PromoteOptions{RequireComplete: true,
+		Facets: []string{"code"}, SetFacets: true})
+	if !errors.Is(err, ErrIncompleteCard) || !strings.Contains(err.Error(), "no capability") ||
+		!strings.Contains(err.Error(), "--capability") || strings.Contains(err.Error(), "no tag") {
+		t.Fatalf("capability-missing err = %v, want ErrIncompleteCard naming only the capability", err)
+	}
+	assertPromoteWroteNothing(t, repoDir, i.ID, head)
+
+	if _, _, err := PromoteIdea(repoDir, projDir, i.ID, PromoteOptions{RequireComplete: true,
+		Facets: []string{"code"}, SetFacets: true, Capabilities: []string{"C-0001"}}); err != nil {
+		t.Fatalf("complete promote: %v", err)
+	}
+	j, _ := CreateIdea(repoDir, projDir, "Outra", "", nil, nil, "", false)
+	if _, f, err := PromoteIdea(repoDir, projDir, j.ID, PromoteOptions{}); err != nil || len(f.Facets)+len(f.Components) != 0 {
+		t.Fatalf("plain promote = %+v, %v; want an untagged card, as today", f, err)
+	}
 }

@@ -229,13 +229,39 @@ func DropIdea(repoDir, projDir, id, reason string) (store.Idea, error) {
 // derived title; Module and Force go to the feature core. Facets/Components
 // replace the idea's axis when their Set flag is on, the other axis is
 // inherited (F-0510, retag semantics); Capabilities link the new card in the
-// same write.
+// same write. RequireComplete refuses a card the approve check would call
+// untagged or capability-missing (the CLI's default; the server route leaves
+// it off, as the UI approve does).
 type PromoteOptions struct {
 	Title, Module            string
 	Force                    bool
 	Facets, Components       []string
 	SetFacets, SetComponents bool
 	Capabilities             []string
+	RequireComplete          bool
+}
+
+// refuseIncompleteCard asks cardImpediments — the approve check's own
+// predicate — about the card n would mint, and names what it lacks and the
+// promote flags that complete it.
+func refuseIncompleteCard(repoDir, ideaID string, n newFeature) error {
+	imps, err := cardImpediments(repoDir, store.Feature{Facets: n.facets, Components: n.components, Capabilities: n.capabilities})
+	if err != nil || len(imps) == 0 {
+		return err
+	}
+	var lacks, fixes []string
+	for _, im := range imps {
+		switch im.Code {
+		case ImpedimentUntagged:
+			lacks = append(lacks, "no tag")
+			fixes = append(fixes, "--facet <f> --component <c> (see 'cerne tags')")
+		case ImpedimentCapabilityMissing:
+			lacks = append(lacks, "no capability")
+			fixes = append(fixes, "--capability C-… (see 'cerne capability list --tree')")
+		}
+	}
+	return fmt.Errorf("%w: %s would become a candidate with %s — pass %s, or --allow-incomplete to classify it later",
+		ErrIncompleteCard, ideaID, strings.Join(lacks, " and "), strings.Join(fixes, " and "))
 }
 
 // PromoteIdea turns an active idea into a candidate feature: the first line
@@ -286,6 +312,11 @@ func PromoteIdea(repoDir, projDir, id string, o PromoteOptions) (store.Idea, sto
 		}
 		if n.capabilities, err = knownCapabilities(repoDir, o.Capabilities); err != nil {
 			return "", err
+		}
+		if o.RequireComplete {
+			if err := refuseIncompleteCard(repoDir, i.ID, n); err != nil {
+				return "", err
+			}
 		}
 		n.fromIdea = i.ID
 		n.origin, _, _ = resolveOrigin("") // a blank quote is the only error
