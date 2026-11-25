@@ -184,7 +184,7 @@ func writeRoomErr(w http.ResponseWriter, err error) {
 	case errors.Is(err, room.ErrInvalidSession):
 		writeJSON(w, http.StatusUnauthorized, errorBody(err.Error()))
 	case errors.Is(err, room.ErrNotFacilitator):
-		writeJSON(w, http.StatusForbidden, errorBody(err.Error()))
+		writeJSON(w, http.StatusForbidden, errorBody(err.Error()+" — lost the capability? a human recovers it with `cerne room facilitator reset <room>`"))
 	case errors.Is(err, room.ErrIncompleteMinutes):
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody(err.Error()))
 	case errors.Is(err, room.ErrRoomOpen):
@@ -405,6 +405,30 @@ func handleRoomFacilitatorHandoff(w http.ResponseWriter, r *http.Request, projec
 		return
 	}
 	next, err := m.HandoffFacilitator(id, req.FacilitatorID)
+	if err != nil {
+		writeRoomErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"facilitator_id": next})
+}
+
+// handleRoomFacilitatorReset recovers a lost facilitation (B-0083): it mints
+// a new capability with no current one. Same-origin guard only — the human
+// gate is the CLI's, as for the other human acts.
+func handleRoomFacilitatorReset(w http.ResponseWriter, r *http.Request, projectID, id string) {
+	if !sameOriginJSON(r) {
+		writeJSON(w, http.StatusForbidden, errorBody("cross-origin or non-JSON request refused"))
+		return
+	}
+	if refuseChannelRite(w, id) {
+		return
+	}
+	m, err := roomManagerFor(projectID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	next, err := m.ResetFacilitator(id)
 	if err != nil {
 		writeRoomErr(w, err)
 		return

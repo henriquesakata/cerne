@@ -310,6 +310,30 @@ describe('WarRoomDetail (T-0003)', () => {
     await waitFor(() => expect(screen.getByText(/você é o.a. facilitador/i)).toBeInTheDocument())
   })
 
+  // B-0083
+  it('transferir facilitação pede confirmação antes de invalidar a capability do navegador', async () => {
+    localStorage.setItem('warroom-facilitator--R1', 'facfacfacfacfacfacfacfacfacfacfa')
+    readRoomMessages.mockImplementationOnce(() =>
+      Promise.resolve([{ seq: 1, type: 'open', topic: 'Fila serial', time: '2026-08-06T00:00:00Z' }]),
+    )
+    postRoomFacilitatorHandoff.mockResolvedValue('novacapabilitynovacapabilitynova')
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
+    render(<WarRoomDetail id="R1" />)
+
+    const transfer = await screen.findByRole('button', { name: /transferir facilitação/i })
+    fireEvent.click(transfer)
+    expect(confirm).toHaveBeenCalledTimes(1)
+    expect(postRoomFacilitatorHandoff).not.toHaveBeenCalled()
+    expect(localStorage.getItem('warroom-facilitator--R1')).toBe('facfacfacfacfacfacfacfacfacfacfa')
+
+    fireEvent.click(transfer)
+    await waitFor(() =>
+      expect(postRoomFacilitatorHandoff).toHaveBeenCalledWith('R1', 'facfacfacfacfacfacfacfacfacfacfa'),
+    )
+    await waitFor(() => expect(screen.getByText(/novacapabilitynovacapabilitynova/)).toBeInTheDocument())
+    confirm.mockRestore()
+  })
+
   it('destaca a fila de itens que precisam de decisão humana e permite resolver (F-0228 critério 9)', async () => {
     localStorage.setItem('warroom-facilitator--R1', 'facfacfacfacfacfacfacfacfacfacfa')
     readRoomMessages.mockImplementationOnce(() =>

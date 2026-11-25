@@ -675,6 +675,44 @@ func TestHandoffFacilitatorRejectsWrongCapability(t *testing.T) {
 	}
 }
 
+// B-0083: a capability lost to a handoff nobody received is recovered with no
+// current capability; every earlier one stops working, also after a restart.
+func TestResetFacilitatorRecoversLostCapability(t *testing.T) {
+	dir := t.TempDir()
+	m, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	r, fac, _ := m.Open("topico")
+	lost, err := m.HandoffFacilitator(r.ID, fac)
+	if err != nil {
+		t.Fatalf("HandoffFacilitator: %v", err)
+	}
+	reset, err := m.ResetFacilitator(r.ID)
+	if err != nil {
+		t.Fatalf("ResetFacilitator: %v", err)
+	}
+	if reset == fac || reset == lost {
+		t.Fatalf("reset returned a previous capability")
+	}
+	if _, err := m.ResetFacilitator("R99"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("reset of unknown room err = %v, want ErrNotFound", err)
+	}
+
+	m2, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("NewManager (restart): %v", err)
+	}
+	for _, old := range []string{fac, lost} {
+		if _, err := m2.Close(r.ID, old, minimalMinutes, false); !errors.Is(err, ErrNotFacilitator) {
+			t.Fatalf("pre-reset capability err = %v, want ErrNotFacilitator", err)
+		}
+	}
+	if _, err := m2.Close(r.ID, reset, minimalMinutes, false); err != nil {
+		t.Fatalf("Close with reset capability after restart: %v", err)
+	}
+}
+
 func TestFacilitatorCapabilitySurvivesRestart(t *testing.T) {
 	dir := t.TempDir()
 	m1, err := NewManager(dir)

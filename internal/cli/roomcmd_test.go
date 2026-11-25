@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/room"
 	"github.com/henriquesakata/cerne/internal/server"
@@ -499,6 +500,45 @@ func TestRoomFacilitatorHandoffCmd(t *testing.T) {
 	// the old capability no longer closes the room.
 	if _, err := runRoom(t, append([]string{"close", "R1", "--facilitator", facilitator, "--minutes", minimalMinutesJSON}, dirFlag...)...); err == nil {
 		t.Fatal("close with rotated-out capability: want error, got nil")
+	}
+}
+
+// B-0083: a lost facilitation is recovered by a human with
+// `room facilitator reset`, which an agent actor is refused; a close with no
+// capability names the reset and where a UI-opened room keeps it.
+func TestRoomFacilitatorResetCmd(t *testing.T) {
+	dir, port := newRoomTestServer(t, "proj-reset")
+	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
+	_, facilitator := openRoomCLI(t, dirFlag, "topic")
+
+	t.Setenv("CERNE_ROOM_FACILITATOR", "")
+	_, err := runRoom(t, append([]string{"close", "R1", "--minutes", minimalMinutesJSON}, dirFlag...)...)
+	if err == nil || !strings.Contains(err.Error(), "cerne room facilitator reset") || !strings.Contains(err.Error(), "browser") {
+		t.Fatalf("close without capability err = %v, want the reset command and the browser hint", err)
+	}
+
+	t.Setenv("CERNE_ACTOR", "agent")
+	if _, err := runRoom(t, append([]string{"facilitator", "reset", "R1"}, dirFlag...)...); !errors.Is(err, app.ErrHumanGate) {
+		t.Fatalf("agent reset err = %v, want ErrHumanGate", err)
+	}
+
+	t.Setenv("CERNE_ACTOR", "human")
+	out, err := runRoom(t, append([]string{"facilitator", "reset", "R1"}, dirFlag...)...)
+	if err != nil {
+		t.Fatalf("reset: %v", err)
+	}
+	const prefix = "new facilitator capability: "
+	i := strings.Index(out, prefix)
+	if i < 0 {
+		t.Fatalf("output = %q, want the new capability line", out)
+	}
+	reset := strings.Fields(out[i+len(prefix):])[0]
+
+	if _, err := runRoom(t, append([]string{"close", "R1", "--facilitator", facilitator, "--minutes", minimalMinutesJSON}, dirFlag...)...); err == nil {
+		t.Fatal("close with pre-reset capability: want error, got nil")
+	}
+	if _, err := runRoom(t, append([]string{"close", "R1", "--facilitator", reset, "--minutes", minimalMinutesJSON}, dirFlag...)...); err != nil {
+		t.Fatalf("close with reset capability: %v", err)
 	}
 }
 

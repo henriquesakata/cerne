@@ -378,6 +378,8 @@ export function WarRoomDetail({ id }: { id: string }) {
 
   const transferFacilitator = () => {
     if (!facilitatorId || transferring) return
+    // B-0083: o handoff invalida a capability deste navegador na hora.
+    if (!window.confirm(t.warRoom.facilitatorTransferConfirm)) return
     setTransferring(true)
     setError(null)
     postRoomFacilitatorHandoff(id, facilitatorId)

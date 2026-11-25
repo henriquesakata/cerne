@@ -625,6 +625,27 @@ func (m *Manager) HandoffFacilitator(id, current string) (string, error) {
 	if !rs.checkFacilitatorLocked(current) {
 		return "", ErrNotFacilitator
 	}
+	return m.rotateFacilitatorLocked(id, rs)
+}
+
+// ResetFacilitator mints a replacement facilitator capability without the
+// current one (B-0083): the recovery when the capability was lost, e.g. a UI
+// handoff whose new capability nobody copied. Every earlier capability stops
+// working. The human gate lives in the CLI; the server only guards the route
+// against a cross-site post.
+func (m *Manager) ResetFacilitator(id string) (string, error) {
+	rs, err := m.getRoom(id)
+	if err != nil {
+		return "", err
+	}
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+	return m.rotateFacilitatorLocked(id, rs)
+}
+
+// rotateFacilitatorLocked mints, persists and installs a new facilitator
+// capability. Caller must hold rs.mu.
+func (m *Manager) rotateFacilitatorLocked(id string, rs *roomState) (string, error) {
 	next, err := newSessionToken()
 	if err != nil {
 		return "", err

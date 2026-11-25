@@ -835,6 +835,8 @@ const ptBR = {
     facilitatorYouAre: 'Você é o(a) facilitador(a) desta sala.',
     facilitatorTransfer: 'Transferir facilitação',
     facilitatorTransferring: 'Transferindo…',
+    facilitatorTransferConfirm:
+      'Transferir a facilitação? Este navegador perde a capability agora, e a nova aparece uma vez só: copie e envie a quem vai assumir. Se ela se perder, só `cerne room facilitator reset` recupera.',
     facilitatorNewCapability: (token: string) => `Nova capability: ${token}`,
     facilitatorTransferHint:
       'Envie esta capability para quem vai assumir, por um canal externo — ela não aparece aqui de novo.',
@@ -2509,6 +2511,8 @@ const en: Messages = {
     facilitatorYouAre: 'You are this room’s facilitator.',
     facilitatorTransfer: 'Transfer facilitation',
     facilitatorTransferring: 'Transferring…',
+    facilitatorTransferConfirm:
+      'Transfer facilitation? This browser loses the capability now, and the new one is shown only once: copy it and send it to whoever takes over. If it gets lost, only `cerne room facilitator reset` recovers it.',
     facilitatorNewCapability: (token: string) => `New capability: ${token}`,
     facilitatorTransferHint:
       'Send this capability to whoever is taking over, out of band — it will not be shown here again.',

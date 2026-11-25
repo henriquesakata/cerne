@@ -57,6 +57,17 @@ func checkHumanMirror() error {
 	return nil
 }
 
+// CheckHumanFacilitatorReset refuses an agent actor on `room facilitator
+// reset` (B-0083): taking a room's facilitation without its capability is the
+// human's recovery, not a participant's shortcut to close the room. Fail-open
+// like CheckHumanGate.
+func CheckHumanFacilitatorReset() error {
+	if isAgentActor(actorEnv()) {
+		return fmt.Errorf("%w: recovering a room's facilitation is a human act — ask a human to run 'cerne room facilitator reset' in their own terminal%s", ErrHumanGate, humanEscape)
+	}
+	return nil
+}
+
 // projectGates loads the [gates] block from the project's .cernerc; a missing
 // or unreadable config yields the zero value, whose accessors resolve to the
 // human default on both ends.
