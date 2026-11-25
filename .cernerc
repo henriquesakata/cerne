@@ -26,6 +26,12 @@ commit_url = "https://github.com/henriquesakata/cerne/commit/{sha}"
 forge = "github"
 pr_url = "https://github.com/henriquesakata/cerne/pull/{n}"
 
+# F-0488: the owner's merge of a card's delivery PR into main is its
+# acceptance (`cerne feature accept --merged` records it), so a card reaches
+# done, and its mirrored GitHub issue closes, only once the code is on main.
+[gates]
+accept = "merge"
+
 # Code→doc drift (F-0113/F-0116): this project has no modules, so the axis
 # is component (the features' tags). Coverage grows with `cerne feature retag`
 # on the backlog; a component with no matching feature is harmless.
