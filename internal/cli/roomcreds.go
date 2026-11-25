@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"path/filepath"
@@ -18,11 +19,12 @@ import (
 // errRoomNickAmbiguous and errRoomNickNotStored: the agent session keeps
 // more than one nick in the room and --nick is missing or names none of them.
 var (
-	errNoRoomSession     = errors.New("a session is required: pass --session or set CERNE_ROOM_SESSION (run 'cerne room join <room>' to obtain one; in an agent session, where CERNE_SESSION is set, join stores it for that room and room commands find it on their own)")
-	errNoRoomFacilitator = errors.New("a facilitator capability is required: pass --facilitator or set CERNE_ROOM_FACILITATOR (printed once by 'cerne room open' and never stored; a room opened in cerne ui keeps it in that browser)")
-	errRoomNickAmbiguous = errors.New("this agent session keeps more than one nick in this room: pass --nick <nick> to pick yours")
-	errRoomNickNotStored = errors.New("this agent session keeps no session for that nick in this room")
-	errRoomIDNotLocal    = errors.New("invalid room id: it must be a single name like R1, not a path")
+	errNoRoomSession      = errors.New("a session is required: pass --session or set CERNE_ROOM_SESSION (run 'cerne room join <room>' to obtain one; in an agent session, where CERNE_SESSION is set, join stores it for that room and room commands find it on their own)")
+	errNoRoomFacilitator  = errors.New("a facilitator capability is required: pass --facilitator or set CERNE_ROOM_FACILITATOR (printed once by 'cerne room open' and never stored; a room opened in cerne ui keeps it in that browser)")
+	errRoomNickAmbiguous  = errors.New("this agent session keeps more than one nick in this room: pass --nick <nick> to pick yours")
+	errRoomNickNotStored  = errors.New("this agent session keeps no session for that nick in this room")
+	errRoomIDNotLocal     = errors.New("invalid room id: it must be a single name like R1, not a path")
+	errRoomSessionAndNick = errors.New("pass --session or --nick, not both: --session is the capability itself, --nick picks one this agent session stored")
 )
 
 const (
@@ -118,34 +120,52 @@ func storeRoomSession(projectID, roomID, nick, sessionID string) ([]string, erro
 	return slices.Sorted(maps.Keys(c.Sessions)), nil
 }
 
-// resolveRoomSession: --session, then CERNE_ROOM_SESSION, then the session
-// `room join` stored for this agent session in roomID — the one of nick, or
-// the only one when nick is empty. Several stored nicks and no nick is a
-// refusal, never a guess: a subagent would speak as its parent.
+// resolveRoomSession picks the session a room command speaks with:
+// --session; else --nick's entry among the sessions `room join` stored for
+// this agent session in roomID, ignoring CERNE_ROOM_SESSION (an agent started
+// from a human's shell inherits that variable, and an explicit nick must not
+// speak as the human); else CERNE_ROOM_SESSION; else the only stored session.
+// --session with --nick, a --nick not stored, or several stored nicks and
+// no --nick is a refusal, never a guess.
 func resolveRoomSession(flag, nick, projectID, roomID string) (string, error) {
-	if flag != "" {
+	switch {
+	case flag != "" && nick != "":
+		return "", errRoomSessionAndNick
+	case flag != "":
 		return flag, nil
-	}
-	if env := os.Getenv("CERNE_ROOM_SESSION"); env != "" {
-		return env, nil
+	case nick == "" && os.Getenv("CERNE_ROOM_SESSION") != "":
+		return os.Getenv("CERNE_ROOM_SESSION"), nil
 	}
 	c, err := loadRoomCreds(projectID, roomID)
 	if err != nil {
 		return "", err
 	}
 	nicks := slices.Sorted(maps.Keys(c.Sessions))
-	switch {
-	case len(nicks) == 0:
-		return "", errNoRoomSession
-	case nick != "":
+	if nick != "" {
 		if s, ok := c.Sessions[nick]; ok {
 			return s, nil
 		}
-		return "", fmt.Errorf("%w: --nick %s (stored: %s)", errRoomNickNotStored, nick, strings.Join(nicks, ", "))
+		stored := strings.Join(nicks, ", ")
+		if stored == "" {
+			stored = "none"
+		}
+		return "", fmt.Errorf("%w: --nick %s (stored: %s)", errRoomNickNotStored, nick, stored)
+	}
+	switch {
+	case len(nicks) == 0:
+		return "", errNoRoomSession
 	case len(nicks) == 1:
 		return c.Sessions[nicks[0]], nil
 	default:
 		return "", fmt.Errorf("%w (stored: %s)", errRoomNickAmbiguous, strings.Join(nicks, ", "))
+	}
+}
+
+// warnRoomSessionVar: join just stored a session, but a CERNE_ROOM_SESSION
+// inherited from the shell still wins over a bare room command.
+func warnRoomSessionVar(w io.Writer, nick string) {
+	if os.Getenv("CERNE_ROOM_SESSION") != "" {
+		fmt.Fprintf(w, "warning: CERNE_ROOM_SESSION is set in this environment and overrides bare room commands; pass --nick %s (or unset the variable) to use the session just stored\n", nick)
 	}
 }
 

@@ -125,6 +125,8 @@ func newRoomJoinCmd() *cobra.Command {
 			nicks, err := storeRoomSession(c.pid, id, nick, sid)
 			if err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not store the session for this agent session: %v\n", err)
+			} else if nicks != nil {
+				warnRoomSessionVar(cmd.ErrOrStderr(), nick)
 			}
 			pick := "" // --nick once this agent session keeps more than one nick here
 			switch {

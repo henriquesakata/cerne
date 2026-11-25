@@ -84,8 +84,11 @@ func TestRoomCredsNeedAgentSession(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(cache, "p", "room-creds", "R2")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("stat R2 creds dir = %v, want not exist", err)
 	}
-	if _, err := resolveRoomSession("", "ana", "p", "R1"); !errors.Is(err, errNoRoomSession) {
+	if _, err := resolveRoomSession("", "", "p", "R1"); !errors.Is(err, errNoRoomSession) {
 		t.Fatalf("resolveRoomSession without CERNE_SESSION err = %v, want errNoRoomSession", err)
+	}
+	if _, err := resolveRoomSession("", "ana", "p", "R1"); !errors.Is(err, errRoomNickNotStored) {
+		t.Fatalf("resolveRoomSession --nick ana without CERNE_SESSION err = %v, want errRoomNickNotStored", err)
 	}
 }
 
@@ -121,12 +124,53 @@ func TestRoomCredsResolvePrecedence(t *testing.T) {
 			t.Fatalf("--nick %s = %q, %v; want %q", nick, got, err, want)
 		}
 	}
+	// review round 2: an explicit --nick beats the environment, so a
+	// CERNE_ROOM_SESSION inherited from a human's shell never speaks for a
+	// stored nick; the variable still beats a bare stored lookup.
 	t.Setenv("CERNE_ROOM_SESSION", "env-s")
-	if got, err := resolveRoomSession("", "bia", "p", "R1"); err != nil || got != "env-s" {
-		t.Fatalf("env over stored = %q, %v", got, err)
+	if got, err := resolveRoomSession("", "bia", "p", "R1"); err != nil || got != "stored-bia" {
+		t.Fatalf("--nick bia with the variable set = %q, %v; want stored-bia", got, err)
 	}
-	if got, err := resolveRoomSession("flag-s", "bia", "p", "R1"); err != nil || got != "flag-s" {
-		t.Fatalf("flag over env = %q, %v", got, err)
+	if _, err := resolveRoomSession("", "cia", "p", "R1"); !errors.Is(err, errRoomNickNotStored) {
+		t.Fatalf("--nick cia with the variable set: err = %v, want errRoomNickNotStored (variable ignored)", err)
+	}
+	if got, err := resolveRoomSession("", "", "p", "R1"); err != nil || got != "env-s" {
+		t.Fatalf("variable over a bare stored lookup = %q, %v", got, err)
+	}
+	if got, err := resolveRoomSession("flag-s", "", "p", "R1"); err != nil || got != "flag-s" {
+		t.Fatalf("--session over the variable = %q, %v", got, err)
+	}
+	if _, err := resolveRoomSession("flag-s", "bia", "p", "R1"); !errors.Is(err, errRoomSessionAndNick) {
+		t.Fatalf("--session with --nick: err = %v, want errRoomSessionAndNick", err)
+	}
+}
+
+// B-0084, review round 2: a human who exported CERNE_ROOM_SESSION and then
+// started an agent from that shell hands the variable to every agent and
+// subagent. --nick still speaks as the stored nick, and join warns that the
+// variable overrides bare commands.
+func TestRoomJoinWithInheritedRoomSessionVariable(t *testing.T) {
+	dir, port := newRoomTestServer(t, "proj-b0084-env")
+	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
+	runRoom(t, append([]string{"open", "topic"}, dirFlag...)...)
+	t.Setenv("CERNE_SESSION", "")
+	human := joinRoomAs(t, dirFlag, "R1", "hum")
+
+	t.Setenv("CERNE_ROOM_SESSION", human)
+	t.Setenv("CERNE_SESSION", "agent-1")
+	out, err := runRoom(t, append([]string{"join", "R1", "--nick", "ana"}, dirFlag...)...)
+	if err != nil {
+		t.Fatalf("join ana: %v", err)
+	}
+	if !strings.Contains(out, "CERNE_ROOM_SESSION is set") || !strings.Contains(out, "--nick ana") {
+		t.Fatalf("join output = %q, want the warning that the variable overrides bare commands", out)
+	}
+	if _, err := runRoom(t, append([]string{"say", "R1", "from ana", "--nick", "ana"}, dirFlag...)...); err != nil {
+		t.Fatalf("say --nick ana: %v", err)
+	}
+	read, err := runRoom(t, append([]string{"read", "R1"}, dirFlag...)...)
+	if err != nil || !strings.Contains(read, "[ana] from ana") {
+		t.Fatalf("read = %q, %v; want the --nick message under ana, not the variable's nick", read, err)
 	}
 }
 

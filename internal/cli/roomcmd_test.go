@@ -670,8 +670,8 @@ func TestFormatRoomEventLeave(t *testing.T) {
 // grants nothing.
 func TestRoomSayNickAloneGrantsNothing(t *testing.T) {
 	_, err := runRoom(t, "say", "R1", "oi", "--nick", "ana")
-	if !errors.Is(err, errNoRoomSession) {
-		t.Fatalf("say --nick with nothing stored: err = %v, want errNoRoomSession", err)
+	if !errors.Is(err, errRoomNickNotStored) {
+		t.Fatalf("say --nick with nothing stored: err = %v, want errRoomNickNotStored", err)
 	}
 }
 
