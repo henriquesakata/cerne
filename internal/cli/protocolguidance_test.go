@@ -58,7 +58,9 @@ func protocolGuidanceTranscript(t *testing.T, lang string) string {
 // TestProtocolGuidance_Portuguese (F-0418 crit. 5): in a pt-BR project the
 // guidance on a refused spec — already English prose citing the Portuguese
 // forms — stays byte for byte what it was before F-0418. The golden was
-// recorded on origin/main 58cf122ee; CERNE_UPDATE_GOLDEN=1 rewrites it.
+// recorded on origin/main 58cf122ee; B-0074 re-recorded it, changing only the
+// three "next:" lines (they name the .docs file, not the backend path).
+// CERNE_UPDATE_GOLDEN=1 rewrites it.
 func TestProtocolGuidance_Portuguese(t *testing.T) {
 	got := protocolGuidanceTranscript(t, "pt-BR")
 	golden := filepath.Join("testdata", "protocol_guidance_pt.golden")

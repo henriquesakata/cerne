@@ -13,7 +13,7 @@ $ cerne feature approve F-0001
 Error: spec has no valid Gauntlet bar: no "Barra:" line — run 'cerne feature approve F-0001 --check' for the accepted forms
 error: spec has no valid Gauntlet bar: no "Barra:" line — run 'cerne feature approve F-0001 --check' for the accepted forms
 $ cerne next F-0001
-F-0001 [candidate] — next: bar-missing: no "Barra:" line — edit content/features/F-0001/spec.md (backend) and run 'cerne push'
+F-0001 [candidate] — next: bar-missing: no "Barra:" line — edit .docs/current/features/F-0001-missing-bar/spec.md and run 'cerne push'
 $ cerne feature approve F-0002 --check
 Check: F-0002 is not approvable yet — 1 impediment(s) (nothing approved, nothing written):
   - bar-malformed: malformed "Barra:" line: "Barra:" holds only a <…> template placeholder, not a named reference
@@ -29,7 +29,7 @@ $ cerne feature approve F-0002
 Error: spec has no valid Gauntlet bar: malformed "Barra:" line: "Barra:" holds only a <…> template placeholder, not a named reference — run 'cerne feature approve F-0002 --check' for the accepted forms
 error: spec has no valid Gauntlet bar: malformed "Barra:" line: "Barra:" holds only a <…> template placeholder, not a named reference — run 'cerne feature approve F-0002 --check' for the accepted forms
 $ cerne next F-0002
-F-0002 [candidate] — next: bar-malformed: malformed "Barra:" line: "Barra:" holds only a <…> template placeholder, not a named reference — edit content/features/F-0002/spec.md (backend) and run 'cerne push'
+F-0002 [candidate] — next: bar-malformed: malformed "Barra:" line: "Barra:" holds only a <…> template placeholder, not a named reference — edit .docs/current/features/F-0002-placeholder-slot/spec.md and run 'cerne push'
 $ cerne feature approve F-0003 --check
 Check: F-0003 is not approvable yet — 1 impediment(s) (nothing approved, nothing written):
   - judge-question-missing: spec has a bar but no judge question — add under the bar, in ## Verificação: "Pergunta ao juiz: <a pergunta que o juiz cego responde>"
@@ -46,7 +46,7 @@ $ cerne feature approve F-0003
 Error: spec has a bar but no judge question — add under the bar, in ## Verificação: "Pergunta ao juiz: <a pergunta que o juiz cego responde>" — run 'cerne feature approve F-0003 --check'
 error: spec has a bar but no judge question — add under the bar, in ## Verificação: "Pergunta ao juiz: <a pergunta que o juiz cego responde>" — run 'cerne feature approve F-0003 --check'
 $ cerne next F-0003
-F-0003 [candidate] — next: judge-question-missing: spec has a bar but no judge question — add under the bar, in ## Verificação: "Pergunta ao juiz: <a pergunta que o juiz cego responde>" — edit content/features/F-0003/spec.md (backend) and run 'cerne push'
+F-0003 [candidate] — next: judge-question-missing: spec has a bar but no judge question — add under the bar, in ## Verificação: "Pergunta ao juiz: <a pergunta que o juiz cego responde>" — edit .docs/current/features/F-0003-judge-question-absent/spec.md and run 'cerne push'
 $ cerne lint
 SPEC-MISSING-BAR (2)
   content/features/F-0001/spec.md — no "Barra:" line (Missing bar) — the approve refuses it; 'cerne feature approve F-0001 --check' lists the accepted forms
