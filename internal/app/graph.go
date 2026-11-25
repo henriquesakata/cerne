@@ -196,6 +196,17 @@ func BuildGraph(repoDir string) (Graph, error) {
 		}
 	}
 
+	// F-0502: relations a person accepted from a link suggestion are links
+	// edges too, stored as data outside the document body.
+	// An unreadable queue (a merge conflict, a cut write) leaves the graph
+	// without these edges instead of failing it; lint reports the file.
+	confirmed, _ := store.ConfirmedLinks(repoDir)
+	for from, tos := range confirmed {
+		for _, to := range tos {
+			addEdge(from, to, EdgeLinks, "")
+		}
+	}
+
 	sort.Slice(nodes, func(i, j int) bool { return nodes[i].ID < nodes[j].ID })
 	sort.Slice(edges, func(i, j int) bool {
 		if edges[i].From != edges[j].From {

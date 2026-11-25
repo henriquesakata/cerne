@@ -249,6 +249,11 @@ var settingsRegistry = []Setting{
 		Description: "On keeps the wiki live: when compile_on_push is set, a push recompiles the dirty pages, and wiki lint debt counts as pending work in 'cerne next'. Off stops both; the wiki stays readable, with a stale banner and an on-demand recompile.",
 	},
 	{
+		ID: "links.suggest", Group: "ai", Title: "Suggest links with the LLM", Type: "bool", Default: false,
+		Scopes: []string{ScopeProject, ScopeHost}, HumanOnly: true,
+		Description: "On lets cerne links suggest ask the configured LLM for relations a document mentions without a link, after showing the documents and a token estimate; a person accepts or rejects each one. Off refuses the command. Nothing else in cerne asks for suggestions. An agent cannot change this key through cerne settings: spending tokens is the project owner's decision.",
+	},
+	{
 		ID: "hooks.notes_on_edit", Group: "integrations", Title: "Notes on edit", Type: "bool", Default: true,
 		Scopes:      []string{ScopeProject, ScopeHost},
 		Description: "On shows the agent the notes that cite a file or declare it in an edit: trigger when it edits that file: before the edit on Claude Code and Codex, right after it on Cursor, Gemini and Copilot. Off stops showing them.",
@@ -294,6 +299,21 @@ func WikiEnabled(projDir string) (on bool, warning string) {
 		return s.Value != false, warning
 	}
 	return true, ""
+}
+
+// LinksSuggest is links.suggest for the project at (or above) projDir
+// (F-0502): true only when it resolves to true.
+func LinksSuggest(projDir string) (bool, error) {
+	view := ResolveSettings(projDir)
+	if len(view.Errors) > 0 {
+		return false, fmt.Errorf("links.suggest: unreadable in %s scope (%s)", view.Errors[0].Scope, view.Errors[0].File)
+	}
+	for _, s := range view.Settings {
+		if s.ID == "links.suggest" {
+			return s.Value == true, nil
+		}
+	}
+	return false, nil
 }
 
 // PromptNotes is hooks.prompt_notes for the project at (or above) projDir
