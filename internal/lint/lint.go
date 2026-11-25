@@ -163,7 +163,7 @@ func DropGauntletRules(findings []Finding, gauntletOn bool) []Finding {
 func Blocking(f Finding) bool { return !Advisory(f.Rule) && !f.Downgraded }
 
 // RuleOrder is the deterministic report order of the lint rules.
-var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleEpicUnplanned, RuleStaleCandidate, RuleStaleReady, RuleStaleWork, RuleStaleNote, RuleStaleDecision, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect, RuleOpenClarification, RuleClarifyUnescapedPipe, RuleCapabilityOrphan, RuleSpecChangedAfterApproval, RuleResultMissingEvidence, RuleResultMissingGauntlet, RuleDuplicateLive, RuleStalePending, RuleSpecMissingBar, RulePreconditionMalformed, RuleErrataPending, RuleRunStalled, RuleAppendedAmendment, RuleStatusInBody, RuleWorkOutlivedFeature, RuleSpecCLILiteralPT, RulePlanOlderThanSpec, RuleHookCitesMissingRule, RuleCriterionWithoutTest, RuleOrphanCriterionTest, RuleCriterionTestsConfig, RuleComponentSingleUse, RuleComponentSameRoot, RuleComponentNoteOnly, RuleNoteUnreachable}
+var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleEpicUnplanned, RuleStaleCandidate, RuleStaleReady, RuleStaleWork, RuleStaleNote, RuleStaleDecision, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect, RuleOpenClarification, RuleClarifyUnescapedPipe, RuleCapabilityOrphan, RuleSpecChangedAfterApproval, RuleResultMissingEvidence, RuleResultMissingGauntlet, RuleDuplicateLive, RuleStalePending, RuleSpecMissingBar, RulePreconditionMalformed, RuleErrataPending, RuleRunStalled, RuleAppendedAmendment, RuleStatusInBody, RuleWorkOutlivedFeature, RuleSpecCLILiteralPT, RulePlanOlderThanSpec, RuleHookCitesMissingRule, RuleCriterionWithoutTest, RuleOrphanCriterionTest, RuleCriterionTestsConfig, RuleComponentSingleUse, RuleComponentSameRoot, RuleComponentNoteOnly, RuleNoteUnreachable, RuleReferenceGone}
 
 var ruleRank = map[string]int{
 	RuleRefToSuperseded:          0,
@@ -210,6 +210,7 @@ var ruleRank = map[string]int{
 	RuleComponentSameRoot:        41,
 	RuleComponentNoteOnly:        42,
 	RuleNoteUnreachable:          43,
+	RuleReferenceGone:            44,
 }
 
 // Finding is one lint problem detected in the backend.
@@ -395,6 +396,8 @@ func RunConfig(repoDir string, staleReadyDays, staleWorkHours, staleDecisionDays
 	findings = append(findings, wikiSources...)
 
 	findings = append(findings, parentFindings(features)...)
+
+	findings = append(findings, referenceGoneFindings(references)...)
 
 	unplanned, err := epicUnplannedFindings(repoDir, features)
 	if err != nil {

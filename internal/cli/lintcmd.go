@@ -430,6 +430,8 @@ func taskAction(f lint.Finding) string {
 		return "finish it (cerne work done) or abandon it (cerne work abandon)"
 	case lint.RuleStaleNote:
 		return "retire it (cerne note retire) or mark it durable (cerne note keep)"
+	case lint.RuleReferenceGone:
+		return fmt.Sprintf("retire it (cerne reference retire %s --reason \"source gone\") or check it again (cerne reference check %s)", f.Entity, f.Entity)
 	case lint.RuleStalePending:
 		return "resolve, drop or promote it (cerne pending resolve|drop|promote)"
 	}
