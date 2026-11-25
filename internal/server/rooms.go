@@ -382,16 +382,15 @@ func handleRoomRead(w http.ResponseWriter, r *http.Request, repoDir, projectID, 
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	var reader *room.Session
-	if token := r.Header.Get("X-Room-Session"); token != "" {
-		sess, err := m.Resume(id, token)
-		if err != nil {
-			writeRoomErr(w, err)
-			return
-		}
-		reader = &sess
+	// An authenticated read counts toward the reader's presence (T-0021).
+	token := r.Header.Get("X-Room-Session")
+	var msgs []room.Message
+	var nick string
+	if token != "" {
+		msgs, nick, err = m.ReadForSession(r.Context(), id, token, since, follow, roomReadTimeout)
+	} else {
+		msgs, err = m.Read(r.Context(), id, since, follow, roomReadTimeout)
 	}
-	msgs, err := m.Read(r.Context(), id, since, follow, roomReadTimeout)
 	if err != nil {
 		writeRoomErr(w, err)
 		return
@@ -399,8 +398,8 @@ func handleRoomRead(w http.ResponseWriter, r *http.Request, repoDir, projectID, 
 	out := make([]roomEventView, 0, len(msgs))
 	for _, msg := range msgs {
 		v := roomEventView{Message: msg}
-		if reader != nil {
-			own := msg.Nick != "" && msg.Nick == reader.Nick
+		if token != "" {
+			own := msg.Nick != "" && msg.Nick == nick
 			v.Own = &own
 		}
 		out = append(out, v)
