@@ -70,12 +70,19 @@ var roomCheckpointRename = os.Rename
 // itself (the raw token isn't in it), but there's no reason to make it
 // group/world readable.
 func saveCheckpoint(path string, cp roomCheckpoint) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
 	data, err := json.Marshal(cp)
 	if err != nil {
+		return err
+	}
+	return writePrivateFile(path, data)
+}
+
+// writePrivateFile writes data to path atomically (temp file + rename), the
+// file 0600 under a 0700 dir: the watch cursor and the stored room
+// credential (B-0084).
+func writePrivateFile(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".*.tmp")
@@ -145,15 +152,11 @@ func newRoomWatchCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			roomID := args[0]
-			// --session wins over the env var, same convention as `say` (F-0226).
-			if session == "" {
-				session = os.Getenv("CERNE_ROOM_SESSION")
-			}
-			if session == "" {
-				return errors.New("a session is required: pass --session or set CERNE_ROOM_SESSION (run 'cerne room join <room>' to obtain one)")
-			}
 			c, err := newRoomClient(dir, port)
 			if err != nil {
+				return err
+			}
+			if session, err = resolveRoomSession(session, c.pid, roomID); err != nil {
 				return err
 			}
 
@@ -186,7 +189,7 @@ func newRoomWatchCmd() *cobra.Command {
 			return roomWatchLoop(ctx, cmd.OutOrStdout(), c, roomID, session, cpPath, start, once, settle)
 		},
 	}
-	cmd.Flags().StringVar(&session, "session", "", "session capability printed by 'cerne room join' (falls back to CERNE_ROOM_SESSION)")
+	cmd.Flags().StringVar(&session, "session", "", roomSessionFlagHelp)
 	cmd.Flags().IntVar(&since, "since", 0, "override the checkpoint/last_seq and start from this sequence number")
 	cmd.Flags().BoolVar(&once, "once", false, "exit 0 after the first relevant (non-echo) event, once --settle passes with nothing new")
 	cmd.Flags().DurationVar(&settle, "settle", 1500*time.Millisecond, "with --once, keep printing events until this long passes with no new one, at most 5s after the first; 0 exits on the first batch")
