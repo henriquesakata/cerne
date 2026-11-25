@@ -31,6 +31,9 @@ type roomCheckpoint struct {
 // checkpointPath is <cache-dir>/room-watch/<room>/<sha256(session)>.json —
 // a sibling of the "rooms" dir the server itself uses under project.CacheDir.
 func checkpointPath(projectID, roomID, sessionID string) (string, error) {
+	if err := checkRoomIDLocal(roomID); err != nil { // B-0084: never a path outside room-watch/
+		return "", err
+	}
 	cacheDir, err := project.CacheDir(projectID)
 	if err != nil {
 		return "", err

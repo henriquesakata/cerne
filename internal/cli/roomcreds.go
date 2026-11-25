@@ -56,14 +56,24 @@ func roomCredsPath(projectID, roomID string) (string, error) {
 	if agent == "" {
 		return "", nil
 	}
-	if !filepath.IsLocal(roomID) || filepath.Base(roomID) != roomID {
-		return "", fmt.Errorf("%w: %q", errRoomIDNotLocal, roomID)
+	if err := checkRoomIDLocal(roomID); err != nil {
+		return "", err
 	}
 	cacheDir, err := project.CacheDir(projectID)
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join(cacheDir, "room-creds", roomID, hashSessionID(agent)+".json"), nil
+}
+
+// checkRoomIDLocal refuses a room id that is not a single local name: it
+// comes from the command line and names a directory of the stored sessions
+// and of the watch cursor.
+func checkRoomIDLocal(roomID string) error {
+	if !filepath.IsLocal(roomID) || filepath.Base(roomID) != roomID {
+		return fmt.Errorf("%w: %q", errRoomIDNotLocal, roomID)
+	}
+	return nil
 }
 
 func loadRoomCreds(projectID, roomID string) (roomCreds, error) {

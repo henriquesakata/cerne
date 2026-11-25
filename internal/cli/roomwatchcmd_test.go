@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -474,5 +475,24 @@ func TestRoomWatchSettleFlagKeepsOnceOpen(t *testing.T) {
 	waitExit(t, done, "room watch --once --settle")
 	if cp, ok, err := loadCheckpoint(cpPath); err != nil || !ok || cp.LastSeq != 6 {
 		t.Fatalf("checkpoint = %+v (ok=%v err=%v), want last_seq 6 (the close)", cp, ok, err)
+	}
+}
+
+// B-0084, review round 2: the watch cursor's path joins the room id too, and
+// lockCheckpoint creates its directory before any server call, so
+// `watch ../../x` is refused before anything lands outside the cache.
+func TestRoomWatchRefusesRoomIDThatIsAPath(t *testing.T) {
+	dir, port := newRoomTestServer(t, "proj-watch-path")
+	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
+	cache := os.Getenv("CERNE_CACHE_DIR")
+	if _, err := checkpointPath("proj-watch-path", "../x", "s"); !errors.Is(err, errRoomIDNotLocal) {
+		t.Errorf("checkpointPath(../x) err = %v, want errRoomIDNotLocal", err)
+	}
+	_, err := runRoom(t, append([]string{"watch", "../../x", "--session", "abc", "--once"}, dirFlag...)...)
+	if !errors.Is(err, errRoomIDNotLocal) {
+		t.Errorf("watch ../../x err = %v, want errRoomIDNotLocal", err)
+	}
+	if _, err := os.Stat(filepath.Join(cache, "x")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("watch ../../x created %s: %v", filepath.Join(cache, "x"), err)
 	}
 }
