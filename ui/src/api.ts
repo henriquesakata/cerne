@@ -1820,7 +1820,9 @@ export async function fetchLintStatus(): Promise<LintResult> {
 
 // ---- war room (T-0001/T-0003): salas de chat locais, operacionais ----
 
-export type RoomParticipant = { nick: string; bio?: string; joined_at: string }
+// listening/last_seen_at: live presence (T-0021), served on active_participants
+// only. listening = a session read is waiting for events in an open room.
+export type RoomParticipant = { nick: string; bio?: string; joined_at: string; listening?: boolean; last_seen_at?: string }
 
 // Minutes é a ata estruturada exigida do facilitador para fechar a sala
 // (F-0228 critério 6): conclusion/rationale são obrigatórios, as listas

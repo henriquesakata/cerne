@@ -1358,6 +1358,10 @@ h2 {
 .room-roster-nick { font-weight: 600; overflow-wrap: anywhere; }
 .room-roster-nick .room-side-muted { font-weight: 400; }
 .room-roster-bio { font-size: 0.85rem; line-height: 1.4; color: var(--muted); }
+/* T-0021: presence is not a lifecycle state, so it takes no hue (the Signal
+   Rule): listening is a full-ink chip, idle stays in muted text. */
+.room-presence { font-size: 0.78rem; color: var(--muted); }
+.room-presence-listening { background: var(--surface-3); color: var(--fg); }
 
 /* ---- sala (B-0046): grid próprio ----
 

@@ -147,7 +147,11 @@ export default function WarRoom() {
   )
 }
 
-type Roster = { nick: string; bio?: string }[]
+type Roster = { nick: string; bio?: string; listening?: boolean; last_seen_at?: string }[]
+
+// T-0021: presence has no event of its own, so an open room re-reads it on
+// this timer through fetchRooms, never a second long-poll (N-0140).
+const PRESENCE_REFRESH_MS = 10_000
 
 // B-0046: a message from the same author within this window continues the
 // previous one (no repeated name/time header), the way Slack and Discord group
@@ -180,7 +184,8 @@ export function WarRoomDetail({ id }: { id: string }) {
   const [leaving, setLeaving] = useState(false)
   // F-0511: an informational line, e.g. the session was already revoked.
   const [notice, setNotice] = useState<string | null>(null)
-  // F-0511: a join or leave event refetches the active participants.
+  // F-0511/T-0021: each batch of events, and the presence timer, refetches
+  // the active participants and their presence.
   const [rosterTick, setRosterTick] = useState(0)
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
@@ -236,7 +241,7 @@ export function WarRoomDetail({ id }: { id: string }) {
     if (events.length === 0) return
     sinceRef.current = events[events.length - 1].seq
     setMessages((prev) => [...prev, ...events.filter(shownInTranscript)])
-    if (events.some((e) => e.type === 'join' || e.type === 'leave')) setRosterTick((n) => n + 1)
+    setRosterTick((n) => n + 1)
     let sawFacilitationEvent = false
     for (const e of events) {
       if (e.type === 'open' && e.topic) setTopic(e.topic)
@@ -312,6 +317,12 @@ export function WarRoomDetail({ id }: { id: string }) {
       cancelled = true
     }
   }, [closed, id, version, rosterTick])
+
+  useEffect(() => {
+    if (closed) return
+    const timer = setInterval(() => setRosterTick((n) => n + 1), PRESENCE_REFRESH_MS)
+    return () => clearInterval(timer)
+  }, [closed, id])
 
   // Reload retoma a sessão guardada validando a capability no servidor
   // (F-0226 critério 9); token inválido volta ao formulário de join sem
@@ -777,6 +788,25 @@ export function WarRoomDetail({ id }: { id: string }) {
                   {p.nick === ownNick && <span className="room-side-muted"> ({t.warRoom.you})</span>}
                 </span>
                 {p.bio && <span className="room-roster-bio">{p.bio}</span>}
+                {!closed && (
+                  <span className="room-presence">
+                    {p.listening ? (
+                      <span className="chip room-presence-listening">{t.warRoom.listening}</span>
+                    ) : (
+                      <>
+                        {t.warRoom.idle}
+                        {p.last_seen_at && (
+                          <>
+                            {' · '}
+                            <time dateTime={p.last_seen_at} title={instant(p.last_seen_at, 'full')}>
+                              {t.warRoom.lastActive} {t.notif.age((Date.now() - Date.parse(p.last_seen_at)) / 60000)}
+                            </time>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </span>
+                )}
               </li>
             ))}
           </ul>

@@ -1084,3 +1084,111 @@ describe('layout e conversa da sala (B-0046)', () => {
     expect(details).not.toHaveAttribute('open')
   })
 })
+
+describe('presença ao vivo no painel (T-0021)', () => {
+  const open: RoomMessage = { seq: 1, type: 'open', topic: 'Fila serial', time: '2026-08-06T00:00:00Z' }
+  const fiveMinAgo = () => new Date(Date.now() - 5 * 60_000).toISOString()
+  const presence = (lastSeen: string) =>
+    room({
+      active_participants: [
+        { nick: 'ana', joined_at: '2026-08-06T00:00:01Z', listening: true, last_seen_at: lastSeen },
+        { nick: 'bia', joined_at: '2026-08-06T00:00:02Z', last_seen_at: lastSeen },
+      ],
+    })
+  const entryOf = (nick: string) =>
+    // eslint-disable-next-line testing-library/no-node-access
+    within(screen.getByRole('region', { name: /participantes|participants/i })).getByText(nick).closest('li')!
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  // T-0021 crit. 3
+  // E-0006 crit. 9
+  it('distingue quem está em escuta de quem está fora, com a última atividade', async () => {
+    const lastSeen = fiveMinAgo()
+    readRoomMessages.mockImplementationOnce(() => Promise.resolve([open]))
+    fetchRooms.mockResolvedValue([presence(lastSeen)])
+    render(<WarRoomDetail id="R1" />)
+
+    await waitFor(() => expect(within(entryOf('ana')).getByText('em escuta')).toBeInTheDocument())
+    expect(within(entryOf('ana')).queryByText(/última atividade/)).not.toBeInTheDocument()
+    const bia = entryOf('bia')
+    expect(within(bia).getByText(/fora de escuta/)).toBeInTheDocument()
+    expect(within(bia).getByText(/última atividade há 5 minutos/)).toBeInTheDocument()
+    // eslint-disable-next-line testing-library/no-node-access
+    expect(bia.querySelector(`time[datetime="${lastSeen}"]`)).toHaveAttribute('title')
+  })
+
+  // T-0021 crit. 3
+  // E-0006 crit. 9
+  it('sala fechada não marca presença', async () => {
+    readRoomMessages.mockImplementationOnce(() =>
+      Promise.resolve([open, { seq: 2, type: 'close', time: '2026-08-06T00:05:00Z' }]),
+    )
+    fetchRooms.mockResolvedValue([{ ...presence(fiveMinAgo()), closed_at: '2026-08-06T00:05:00Z' }])
+    render(<WarRoomDetail id="R1" />)
+
+    await waitFor(() => expect(entryOf('bia')).toBeInTheDocument())
+    expect(screen.queryByText('em escuta')).not.toBeInTheDocument()
+    expect(screen.queryByText(/fora de escuta/)).not.toBeInTheDocument()
+  })
+
+  // T-0021 crit. 3
+  // E-0006 crit. 9
+  it('refaz a presença a cada lote de eventos, sem segundo long-poll', async () => {
+    let deliver: (events: RoomMessage[]) => void = () => {}
+    readRoomMessages.mockImplementationOnce(() => Promise.resolve([open]))
+    readRoomMessages.mockImplementationOnce(() => new Promise((resolve) => (deliver = resolve)))
+    render(<WarRoomDetail id="R1" />)
+    await waitFor(() => expect(readRoomMessages).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(fetchRooms).toHaveBeenCalled())
+    const before = fetchRooms.mock.calls.length
+
+    await act(async () => deliver([{ seq: 2, type: 'message', nick: 'ana', body: 'oi', time: '2026-08-06T00:00:03Z' }]))
+    await waitFor(() => expect(fetchRooms.mock.calls.length).toBeGreaterThan(before))
+    expect(readRoomMessages.mock.calls.filter(([, , follow]) => follow).length).toBe(2)
+  })
+
+  // T-0021 crit. 3
+  // E-0006 crit. 9
+  it('em sala aberta, relê a presença a cada 10 s; em sala fechada, não', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    readRoomMessages.mockImplementationOnce(() => Promise.resolve([open]))
+    fetchRooms.mockResolvedValue([room({ active_participants: [{ nick: 'ana', joined_at: '2026-08-06T00:00:01Z' }] })])
+    const { unmount } = render(<WarRoomDetail id="R1" />)
+    await waitFor(() => expect(within(entryOf('ana')).getByText(/fora de escuta/)).toBeInTheDocument())
+
+    fetchRooms.mockResolvedValue([presence(fiveMinAgo())])
+    await act(async () => vi.advanceTimersByTime(10_000))
+    await waitFor(() => expect(within(entryOf('ana')).getByText('em escuta')).toBeInTheDocument())
+    expect(readRoomMessages.mock.calls.filter(([, , follow]) => follow).length).toBe(1)
+    unmount()
+
+    readRoomMessages.mockImplementationOnce(() =>
+      Promise.resolve([open, { seq: 2, type: 'close', time: '2026-08-06T00:05:00Z' }]),
+    )
+    render(<WarRoomDetail id="R1" />)
+    await waitFor(() => expect(screen.getByText(/sala fechada/i)).toBeInTheDocument())
+    const settled = fetchRooms.mock.calls.length
+    await act(async () => vi.advanceTimersByTime(30_000))
+    expect(fetchRooms.mock.calls.length).toBe(settled)
+  })
+
+  // T-0021 crit. 4
+  // E-0006 crit. 13
+  it('tem os rótulos de presença também em inglês', async () => {
+    localStorage.setItem('cerne-lang', 'en')
+    readRoomMessages.mockImplementationOnce(() => Promise.resolve([open]))
+    fetchRooms.mockResolvedValue([presence(fiveMinAgo())])
+    render(
+      <I18nProvider>
+        <WarRoomDetail id="R1" />
+      </I18nProvider>,
+    )
+
+    await waitFor(() => expect(within(entryOf('ana')).getByText('listening')).toBeInTheDocument())
+    expect(within(entryOf('bia')).getByText(/^idle/)).toBeInTheDocument()
+    expect(within(entryOf('bia')).getByText(/last active 5 minutes ago/)).toBeInTheDocument()
+  })
+})
