@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -46,6 +47,10 @@ var blockFiles = []string{".claude/settings.json", ".codex/hooks.json", ".gemini
 
 // markerFiles are project docs carrying cerne's marked block.
 var markerFiles = []string{"AGENTS.md", "GEMINI.md"}
+
+// IsMarkerFile reports whether rel, a slash path relative to the project, is a
+// doc carrying cerne's marked block.
+func IsMarkerFile(rel string) bool { return slices.Contains(markerFiles, rel) }
 
 const (
 	markerBegin = "<!-- cerne:authoring-guide:begin"

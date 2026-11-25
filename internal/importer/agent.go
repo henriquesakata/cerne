@@ -146,7 +146,7 @@ func CollectSources(root string) ([]Source, error) {
 		if err != nil {
 			return err
 		}
-		if r := filepath.ToSlash(rel); r == "AGENTS.md" || r == "GEMINI.md" {
+		if refresh.IsMarkerFile(filepath.ToSlash(rel)) {
 			data = skills.StripManagedBlock(data)
 			if len(bytes.TrimSpace(data)) == 0 {
 				return nil // only cerne's block
