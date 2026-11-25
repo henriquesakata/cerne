@@ -22,6 +22,7 @@ var (
 	errNoRoomFacilitator = errors.New("a facilitator capability is required: pass --facilitator or set CERNE_ROOM_FACILITATOR (printed once by 'cerne room open' and never stored; a room opened in cerne ui keeps it in that browser)")
 	errRoomNickAmbiguous = errors.New("this agent session keeps more than one nick in this room: pass --nick <nick> to pick yours")
 	errRoomNickNotStored = errors.New("this agent session keeps no session for that nick in this room")
+	errRoomIDNotLocal    = errors.New("invalid room id: it must be a single name like R1, not a path")
 )
 
 const (
@@ -46,11 +47,15 @@ type roomCreds struct {
 
 // roomCredsPath is <cache-dir>/room-creds/<room>/<sha256(CERNE_SESSION)>.json,
 // or "" without CERNE_SESSION: a human terminal has no agent session, so
-// nothing is stored or read for it.
+// nothing is stored or read for it. The room comes from the command line, so
+// anything but a single local name is refused before it reaches the path.
 func roomCredsPath(projectID, roomID string) (string, error) {
 	agent := os.Getenv("CERNE_SESSION")
 	if agent == "" {
 		return "", nil
+	}
+	if !filepath.IsLocal(roomID) || filepath.Base(roomID) != roomID {
+		return "", fmt.Errorf("%w: %q", errRoomIDNotLocal, roomID)
 	}
 	cacheDir, err := project.CacheDir(projectID)
 	if err != nil {

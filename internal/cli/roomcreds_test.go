@@ -265,3 +265,36 @@ func TestRoomCredsMissingErrorNamesJoin(t *testing.T) {
 		}
 	}
 }
+
+// B-0084, review round 1: the room argument names the stored file's
+// directory, so a path in it (say ../../x) is refused before anything is
+// read or written outside room-creds/.
+func TestRoomCredsRefuseRoomIDThatIsAPath(t *testing.T) {
+	dir, port := newRoomTestServer(t, "proj-path")
+	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
+	t.Setenv("CERNE_SESSION", "agent-1")
+	t.Setenv("CERNE_ROOM_SESSION", "")
+	cache := os.Getenv("CERNE_CACHE_DIR")
+	// where <cache>/proj-path/room-creds/../../x would land.
+	planted := filepath.Join(cache, "x", hashSessionID("agent-1")+".json")
+	if err := writePrivateFile(planted, []byte(`{"sessions":{"ana":"planted"}}`)); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"../../x", "a/b", "..", ""} {
+		if got, err := resolveRoomSession("", "", "proj-path", id); !errors.Is(err, errRoomIDNotLocal) {
+			t.Errorf("resolveRoomSession(%q) = %q, %v; want errRoomIDNotLocal", id, got, err)
+		}
+		if _, err := storeRoomSession("proj-path", id, "ana", "s"); !errors.Is(err, errRoomIDNotLocal) {
+			t.Errorf("storeRoomSession(%q) err = %v, want errRoomIDNotLocal", id, err)
+		}
+	}
+	if _, err := runRoom(t, append([]string{"say", "../../x", "oi"}, dirFlag...)...); !errors.Is(err, errRoomIDNotLocal) {
+		t.Fatalf("say ../../x err = %v, want errRoomIDNotLocal", err)
+	}
+	if _, err := storeRoomSession("proj-path", "../../y", "ana", "s"); !errors.Is(err, errRoomIDNotLocal) {
+		t.Fatalf("storeRoomSession(../../y) err = %v, want errRoomIDNotLocal", err)
+	}
+	if _, err := os.Stat(filepath.Join(cache, "y")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a store outside room-creds/: %v", err)
+	}
+}
