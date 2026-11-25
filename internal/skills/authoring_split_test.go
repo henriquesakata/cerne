@@ -168,6 +168,18 @@ var rewritten = []string{
 	"A field the result does not carry reads `não informado`",
 	// F-0510: idea promote classifies the card itself; only the spec follows.
 	"From there the candidate is a regular demand: complete its spec and tags in the same act",
+	// B-0084: room examples keep the capability off the command line; join
+	// and open store it for the agent session.
+	"export CERNE_ROOM_SESSION=<printed by join>",
+	"cerne room say <id> \"<msg>\" --session <token>",
+	"cerne room watch <id> --session <token> [--once]",
+	"cerne room close <id> --facilitator <token> --minutes <...>",
+	"`--session`/`CERNE_ROOM_SESSION` is required (same convention as `say`)",
+	"**Facilitation and structured close (F-0228).** `cerne room open` also mints a **facilitator capability**",
+	"cerne room propose <id> --session <token>",
+	"cerne room request-decision <id> --session <token>",
+	"cerne room pending <id> --facilitator <token>",
+	"cerne room resolve <id> <item-id> --facilitator <token>",
 }
 
 // b0015Renames maps the pt-BR names and placeholders the 2026-11-13 snapshot
