@@ -149,7 +149,11 @@ func fenceRun(line string) string {
 // opener (CommonMark): read left to right, whichever of a code span or a
 // comment starts first wins, so a comment quoting `code` still goes (B-0077).
 // A comment goes whole, inner newlines included; one with no "-->" stays.
-func StripHTMLComments(b []byte) []byte {
+func StripHTMLComments(b []byte) []byte { return stripComments(b, false) }
+
+// stripComments is StripHTMLComments; with keepNewlines a comment leaves its
+// newlines behind, so line numbers still match the body (B-0078).
+func stripComments(b []byte, keepNewlines bool) []byte {
 	out := make([]byte, 0, len(b))
 	fence := "" // the opening run of the fenced block we are inside, if any
 	for i := 0; i < len(b); {
@@ -182,6 +186,9 @@ func StripHTMLComments(b []byte) []byte {
 			continue
 		case bytes.HasPrefix(b[i:], []byte("<!--")):
 			if j := bytes.Index(b[i+4:], []byte("-->")); j >= 0 {
+				if keepNewlines {
+					out = append(out, bytes.Repeat([]byte("\n"), bytes.Count(b[i:i+4+j], []byte("\n")))...)
+				}
 				i += 4 + j + 3
 				continue
 			}

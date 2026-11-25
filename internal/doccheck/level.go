@@ -29,7 +29,7 @@ var foldAccents = strings.NewReplacer("ã", "a", "ç", "c", "̃", "", "̧", "")
 // or another word is no level, and neither is a missing line.
 func SpecLevel(body []byte) (string, bool) {
 	inCode := false
-	for _, line := range strings.Split(htmlCommentRe.ReplaceAllString(string(body), ""), "\n") {
+	for _, line := range strings.Split(string(StripHTMLComments(body)), "\n") {
 		if doclang.Fence(line) {
 			inCode = !inCode
 			continue
