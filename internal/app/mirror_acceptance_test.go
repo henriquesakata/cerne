@@ -823,7 +823,7 @@ func TestPromotedIdeaCarriesMirror(t *testing.T) {
 	if !ok {
 		t.Fatal("the outside issue was not imported")
 	}
-	_, f, err := PromoteIdea(repoDir, projDir, idea.ID, "", "", false)
+	_, f, err := PromoteIdea(repoDir, projDir, idea.ID, PromoteOptions{})
 	if err != nil {
 		t.Fatalf("PromoteIdea: %v", err)
 	}

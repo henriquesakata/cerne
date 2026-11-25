@@ -182,7 +182,7 @@ func TestIdeaPromotePrintsBothIDs(t *testing.T) {
 func TestIdeaPromoteNeedsModuleInMultiModuleProject(t *testing.T) {
 	projDir, _, repoDir := setupProject(t, "core", "web")
 	ideaCmd(t, projDir, "new", "Atalho de teclado")
-	if out, err := execCerne(t, "idea", "promote", "I-0001", "--dir", projDir); err == nil || !strings.Contains(err.Error(), "--module") {
+	if out, err := execCerne(t, "idea", "promote", "I-0001", "--allow-incomplete", "--dir", projDir); err == nil || !strings.Contains(err.Error(), "--module") {
 		t.Fatalf("promote without --module err = %v, want the module requirement\n%s", err, out)
 	}
 	if i, _ := store.LoadIdea(repoDir, "I-0001"); i.State != domain.IdeaActive {
@@ -191,7 +191,7 @@ func TestIdeaPromoteNeedsModuleInMultiModuleProject(t *testing.T) {
 	if fs, _ := store.LoadAllFeatures(repoDir); len(fs) != 0 {
 		t.Fatalf("a refused promote created %d feature(s)", len(fs))
 	}
-	if out := ideaCmd(t, projDir, "promote", "I-0001", "--module", "core"); !strings.Contains(out, "promoted") {
+	if out := ideaCmd(t, projDir, "promote", "I-0001", "--module", "core", "--allow-incomplete"); !strings.Contains(out, "promoted") {
 		t.Fatalf("promote --module core = %q", out)
 	}
 	if fs, _ := store.LoadAllFeatures(repoDir); len(fs) != 1 || fs[0].Module != "core" {
@@ -245,7 +245,7 @@ func TestShowIdeaLowercaseAndArticle(t *testing.T) {
 func TestPromotedFeatureKeepsFromIdeaAfterSpecRewrite(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
 	ideaCmd(t, projDir, "new", "Exportar o kanban em CSV")
-	ideaCmd(t, projDir, "promote", "I-0001")
+	ideaCmd(t, projDir, "promote", "I-0001", "--allow-incomplete")
 	fs, _ := store.LoadAllFeatures(repoDir)
 	if len(fs) != 1 || fs[0].FromIdea != "I-0001" {
 		t.Fatalf("features = %+v, want one with from_idea I-0001", fs)
@@ -312,11 +312,11 @@ func TestIdeaPromoteTitleForAnExactDuplicate(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
 	ideaCmd(t, projDir, "new", "Mesmo texto")
 	ideaCmd(t, projDir, "new", "Mesmo texto")
-	ideaCmd(t, projDir, "promote", "I-0001")
-	if _, err := execCerne(t, "idea", "promote", "I-0002", "--force", "--dir", projDir); err == nil {
+	ideaCmd(t, projDir, "promote", "I-0001", "--allow-incomplete")
+	if _, err := execCerne(t, "idea", "promote", "I-0002", "--force", "--allow-incomplete", "--dir", projDir); err == nil {
 		t.Fatal("an exact-duplicate title was promoted")
 	}
-	ideaCmd(t, projDir, "promote", "I-0002", "--title", "Mesmo texto, variante B", "--force")
+	ideaCmd(t, projDir, "promote", "I-0002", "--title", "Mesmo texto, variante B", "--force", "--allow-incomplete")
 	i, _ := store.LoadIdea(repoDir, "I-0002")
 	f, err := store.LoadFeature(repoDir, i.PromotedTo)
 	if err != nil || f.Title != "Mesmo texto, variante B" || f.FromIdea != "I-0002" {
@@ -330,7 +330,7 @@ func TestIdeaPromoteTitleForAnExactDuplicate(t *testing.T) {
 func TestIdeaPromotePrintsNextStep(t *testing.T) {
 	projDir, _, _ := setupProject(t)
 	ideaCmd(t, projDir, "new", "Exportar o kanban em CSV")
-	out := ideaCmd(t, projDir, "promote", "I-0001")
+	out := ideaCmd(t, projDir, "promote", "I-0001", "--allow-incomplete")
 	wantInOrder(t, stepBlock(out), stepCardNow,
 		stepSpec+"F-0001-*/spec.md, cerne push",
 		stepTags+"F-0001",
@@ -342,7 +342,7 @@ func TestIdeaPromotePrintsNextStep(t *testing.T) {
 func TestShowIdeaPrintsItsHistory(t *testing.T) {
 	projDir, _, _ := setupProject(t)
 	ideaCmd(t, projDir, "new", "Exportar o kanban em CSV")
-	ideaCmd(t, projDir, "promote", "I-0001")
+	ideaCmd(t, projDir, "promote", "I-0001", "--allow-incomplete")
 	out, err := execCerne(t, "show", "I-0001", "--dir", projDir)
 	if err != nil {
 		t.Fatalf("show I-0001: %v\n%s", err, out)

@@ -29,7 +29,7 @@ func promotedMirror(t *testing.T) (repoDir, projDir string, pub *trackertest.Fak
 	if !ok {
 		t.Fatal("the outside issue was not imported")
 	}
-	_, f, err := PromoteIdea(repoDir, projDir, idea.ID, "", "", false)
+	_, f, err := PromoteIdea(repoDir, projDir, idea.ID, PromoteOptions{})
 	if err != nil {
 		t.Fatalf("PromoteIdea: %v", err)
 	}
@@ -190,7 +190,7 @@ func TestRepromoteKeepsOneCardPerIssue(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			repoDir, projDir, pub, r, idea, f := promotedMirror(t)
 			back(t, repoDir, projDir, idea.ID, f.ID)
-			_, again, err := PromoteIdea(repoDir, projDir, idea.ID, "", "", false)
+			_, again, err := PromoteIdea(repoDir, projDir, idea.ID, PromoteOptions{})
 			if err != nil {
 				t.Fatalf("second PromoteIdea: %v", err)
 			}

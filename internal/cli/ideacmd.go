@@ -342,24 +342,35 @@ func newIdeaDropCmd(dir *string) *cobra.Command {
 }
 
 func newIdeaPromoteCmd(dir *string) *cobra.Command {
-	var title, module string
-	var force bool
+	var title, module, facet, component, capability string
+	var force, allowIncomplete bool
 	cmd := &cobra.Command{
 		Use:   "promote <id>",
 		Short: "Turn an active idea into a candidate feature (active -> promoted), linked both ways",
-		Long: "Creates a candidate feature titled by the idea's title, with the idea's tags and its body as the " +
-			"spec's context; the spec links back with '**Origem:** ideia [[I-NNNN]]' and the idea records " +
-			"promoted_to. From there the candidate follows the regular funnel: fill its spec and tags. The idea follows the candidate (its accept resolves the idea).",
-		Args: cobra.ExactArgs(1),
+		Long: "Creates a candidate feature titled by the idea's title, with its body as the spec's context; the spec " +
+			"links back with '**Origem:** ideia [[I-NNNN]]' and the idea records promoted_to. Classify the card in the " +
+			"same act: --facet/--component replace the idea's tags on the axis passed (the other axis is inherited) and " +
+			"--capability links it. A card that would be born with no tag, or with no capability while the project " +
+			"curates a taxonomy, is refused unless --allow-incomplete. From there the candidate follows the regular " +
+			"funnel: write its spec. The idea follows the candidate (its accept resolves the idea).",
+		Example: "  cerne idea promote I-0053 --facet code --component cli --capability C-0004",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := resolveProject(*dir)
 			if err != nil {
 				return err
 			}
-			i, f, err := app.PromoteIdea(ctx.repoDir, ctx.projDir, args[0], title, module, force)
+			notice := componentNotice(cmd, ctx.repoDir, component)
+			i, f, err := app.PromoteIdea(ctx.repoDir, ctx.projDir, args[0], app.PromoteOptions{
+				Title: title, Module: module, Force: force,
+				Facets: splitInforms(facet), SetFacets: cmd.Flags().Changed("facet"),
+				Components: splitInforms(component), SetComponents: cmd.Flags().Changed("component"),
+				Capabilities: splitInforms(capability), RequireComplete: !allowIncomplete,
+			})
 			if err != nil {
 				return err
 			}
+			notice()
 			fmt.Fprintf(cmd.OutOrStdout(), "%s: %s -> %s (%s)\n", i.ID, domain.IdeaActive, i.State, f.ID)
 			// The candidate is a stub (N-0028): same block as feature new (F-0426).
 			imps := printApproveReadiness(cmd.OutOrStdout(), ctx.repoDir, ctx.projDir, f.ID)
@@ -369,7 +380,11 @@ func newIdeaPromoteCmd(dir *string) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&title, "title", "", "the feature's title (default: the idea's title) — for an idea that reads exactly like a live feature")
 	cmd.Flags().StringVar(&module, "module", "", "module of the created feature (required when the project has 2+ modules)")
-	cmd.Flags().BoolVar(&force, "force", false, "bypass the created feature's duplicate-registration guard (F-0147)")
+	cmd.Flags().StringVar(&facet, "facet", "", "the card's facets (CSV; closed set: infra,code,data,process,auth) — replaces the idea's")
+	cmd.Flags().StringVar(&component, "component", "", "the card's components (CSV; subsystem/tool, see 'cerne tags') — replaces the idea's")
+	cmd.Flags().StringVar(&capability, "capability", "", "capability ids to link the card to (CSV of C- ids, see 'cerne capability list --tree')")
+	cmd.Flags().BoolVar(&allowIncomplete, "allow-incomplete", false, "create the card even with no tag, or with no capability while the project curates a taxonomy")
+	cmd.Flags().BoolVar(&force, "force", false, "bypass the created feature's duplicate-registration guard (F-0147), and accept a component near an existing one (E-0005; check 'cerne tags' first)")
 	return cmd
 }
 

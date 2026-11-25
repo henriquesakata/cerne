@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -143,6 +144,24 @@ func LinkFeatureCapabilities(repoDir, projDir, featureID string, capIDs []string
 		return "cerne: feature capability " + featureID, nil
 	})
 	return f, err
+}
+
+// knownCapabilities canonicalizes ids (N-0061: a case-insensitive disk would
+// load "c-0001" and store it lowercase), drops a repeat and refuses one the
+// backend lacks.
+func knownCapabilities(repoDir string, ids []string) ([]string, error) {
+	var out []string
+	for _, id := range ids {
+		id = domain.CanonicalID(id)
+		if slices.Contains(out, id) {
+			continue
+		}
+		if _, err := store.LoadCapability(repoDir, id); err != nil {
+			return nil, fmt.Errorf("%w: %s", ErrUnknownCapability, id)
+		}
+		out = append(out, id)
+	}
+	return out, nil
 }
 
 // CountFeaturesByCapability aggregates how many features link each capability

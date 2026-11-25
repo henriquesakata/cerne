@@ -225,6 +225,48 @@ func DropIdea(repoDir, projDir, id, reason string) (store.Idea, error) {
 	return i, nil
 }
 
+// PromoteOptions are the caller's choices on a promote: Title replaces the
+// derived title; Module and Force go to the feature core. Facets/Components
+// replace the idea's axis when their Set flag is on, the other axis is
+// inherited (F-0510, retag semantics); Capabilities link the new card in the
+// same write. RequireComplete refuses a card the approve check would call
+// untagged or capability-missing (the CLI's default; the server route leaves
+// it off, as the UI approve does).
+type PromoteOptions struct {
+	Title, Module            string
+	Force                    bool
+	Facets, Components       []string
+	SetFacets, SetComponents bool
+	Capabilities             []string
+	RequireComplete          bool
+}
+
+// refuseIncompleteCard asks cardImpediments — the approve check's own
+// predicate — about the card n would mint, and names what it lacks and the
+// promote flags that complete it.
+func refuseIncompleteCard(repoDir, ideaID string, n newFeature) error {
+	imps, err := cardImpediments(repoDir, store.Feature{Facets: n.facets, Components: n.components, Capabilities: n.capabilities})
+	if err != nil || len(imps) == 0 {
+		return err
+	}
+	var lacks, fixes []string
+	for _, im := range imps {
+		switch im.Code {
+		case ImpedimentUntagged:
+			lacks = append(lacks, "no tag")
+			fixes = append(fixes, "--facet <f> --component <c> (see 'cerne tags')")
+		case ImpedimentCapabilityMissing:
+			lacks = append(lacks, "no capability")
+			fixes = append(fixes, "--capability C-… (see 'cerne capability list --tree')")
+		}
+	}
+	if len(lacks) == 0 { // an impediment this message does not know is not one the promote refuses
+		return nil
+	}
+	return fmt.Errorf("%w: %s would become a candidate with %s — pass %s, or --allow-incomplete to classify it later",
+		ErrIncompleteCard, ideaID, strings.Join(lacks, " and "), strings.Join(fixes, " and "))
+}
+
 // PromoteIdea turns an active idea into a candidate feature: the first line
 // of the text (80 runes max) is the title, the whole text the spec's context
 // under "**Origem:** ideia [[I-NNNN]] (capturada em AAAA-MM-DD)", and the
@@ -233,9 +275,10 @@ func DropIdea(repoDir, projDir, id, reason string) (store.Idea, error) {
 // backend lock (C1): a racing drop either closes the idea first — the promote
 // is refused, nothing created — or finds it already promoted. A non-blank
 // title replaces the derived one (C9: an idea whose first line is a live
-// feature's exact title). module and force go to the feature core
-// (ValidateModule, the F-0147 guard).
-func PromoteIdea(repoDir, projDir, id, title, module string, force bool) (store.Idea, store.Feature, error) {
+// feature's exact title). Module and Force go to the feature core
+// (ValidateModule, the F-0147 guard). The zero PromoteOptions is the plain
+// promote the server route runs.
+func PromoteIdea(repoDir, projDir, id string, o PromoteOptions) (store.Idea, store.Feature, error) {
 	id, err := CanonicalIdeaID(id)
 	if err != nil {
 		return store.Idea{}, store.Feature{}, err
@@ -250,7 +293,8 @@ func PromoteIdea(repoDir, projDir, id, title, module string, force bool) (store.
 		// The context carries the body; when the candidate's title is not the
 		// idea's own (cut to 80 runes, or a --title), the idea's title goes there
 		// too, so nothing the capture said is lost (critic F-0419 #2).
-		if title = strings.TrimSpace(title); title == "" {
+		title := strings.TrimSpace(o.Title)
+		if title == "" {
 			title = truncateDraftRunes(i.Title, 80)
 		}
 		text := i.Body
@@ -258,9 +302,24 @@ func PromoteIdea(repoDir, projDir, id, title, module string, force bool) (store.
 			text = strings.TrimSpace(i.Title + "\n\n" + i.Body)
 		}
 		context := fmt.Sprintf("**Origem:** ideia [[%s]] (capturada em %s)\n\n%s", i.ID, i.CreatedAt.Format(time.DateOnly), text)
-		n, err := prepareFeature("F", title, module, "", i.Facets, i.Components, spectmpl.StubWithContextIn(store.DocsLanguage(repoDir), title, context), force, "", "")
+		facets, components := i.Facets, i.Components
+		if o.SetFacets {
+			facets = o.Facets
+		}
+		if o.SetComponents {
+			components = o.Components
+		}
+		n, err := prepareFeature("F", title, o.Module, "", facets, components, spectmpl.StubWithContextIn(store.DocsLanguage(repoDir), title, context), o.Force, "", "")
 		if err != nil {
 			return "", err
+		}
+		if n.capabilities, err = knownCapabilities(repoDir, o.Capabilities); err != nil {
+			return "", err
+		}
+		if o.RequireComplete {
+			if err := refuseIncompleteCard(repoDir, i.ID, n); err != nil {
+				return "", err
+			}
 		}
 		n.fromIdea = i.ID
 		n.origin, _, _ = resolveOrigin("") // a blank quote is the only error

@@ -101,7 +101,7 @@ func TestPromoteIdeaCarriesDecisionLinks(t *testing.T) {
 	if _, err := TransitionDecision(repoDir, projDir, dead.ID, live.ID, "trocou"); err != nil {
 		t.Fatal(err)
 	}
-	_, f, err := PromoteIdea(repoDir, projDir, i.ID, "", "", false)
+	_, f, err := PromoteIdea(repoDir, projDir, i.ID, PromoteOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
