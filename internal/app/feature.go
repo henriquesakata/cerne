@@ -230,6 +230,7 @@ func createFeatureOrigin(repoDir, projDir, prefix, title, module, parent string,
 type newFeature struct {
 	prefix, title, module, parent, specBody, owner, priority string
 	facets, components                                       []string
+	capabilities                                             []string // F-0510: validated C- ids a promote links at birth
 	force                                                    bool
 	fromIdea                                                 string    // F-0312: the idea a promote mints it from
 	fixes                                                    string    // F-0321: the feature this one corrects
@@ -295,7 +296,7 @@ func (n newFeature) mint(repoDir string) (store.Feature, string, error) {
 		}
 		state := domain.StateCandidate
 		facets, components := n.facets, n.components
-		var capabilities []string
+		capabilities := n.capabilities
 		if prefix == "B" {
 			// T-0006: a human report is its own approval; a bug the agent found
 			// waits for the human. --fixes lends the target's tags where the

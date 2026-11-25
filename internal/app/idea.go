@@ -226,10 +226,16 @@ func DropIdea(repoDir, projDir, id, reason string) (store.Idea, error) {
 }
 
 // PromoteOptions are the caller's choices on a promote: Title replaces the
-// derived title; Module and Force go to the feature core.
+// derived title; Module and Force go to the feature core. Facets/Components
+// replace the idea's axis when their Set flag is on, the other axis is
+// inherited (F-0510, retag semantics); Capabilities link the new card in the
+// same write.
 type PromoteOptions struct {
-	Title, Module string
-	Force         bool
+	Title, Module            string
+	Force                    bool
+	Facets, Components       []string
+	SetFacets, SetComponents bool
+	Capabilities             []string
 }
 
 // PromoteIdea turns an active idea into a candidate feature: the first line
@@ -267,8 +273,18 @@ func PromoteIdea(repoDir, projDir, id string, o PromoteOptions) (store.Idea, sto
 			text = strings.TrimSpace(i.Title + "\n\n" + i.Body)
 		}
 		context := fmt.Sprintf("**Origem:** ideia [[%s]] (capturada em %s)\n\n%s", i.ID, i.CreatedAt.Format(time.DateOnly), text)
-		n, err := prepareFeature("F", title, o.Module, "", i.Facets, i.Components, spectmpl.StubWithContextIn(store.DocsLanguage(repoDir), title, context), o.Force, "", "")
+		facets, components := i.Facets, i.Components
+		if o.SetFacets {
+			facets = o.Facets
+		}
+		if o.SetComponents {
+			components = o.Components
+		}
+		n, err := prepareFeature("F", title, o.Module, "", facets, components, spectmpl.StubWithContextIn(store.DocsLanguage(repoDir), title, context), o.Force, "", "")
 		if err != nil {
+			return "", err
+		}
+		if n.capabilities, err = knownCapabilities(repoDir, o.Capabilities); err != nil {
 			return "", err
 		}
 		n.fromIdea = i.ID
