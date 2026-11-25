@@ -23,6 +23,7 @@ import (
 	"github.com/henriquesakata/cerne/internal/room"
 	"github.com/henriquesakata/cerne/internal/server"
 	"github.com/henriquesakata/cerne/internal/store"
+	"github.com/spf13/cobra"
 )
 
 // minimalMinutesJSON satisfies room close's required-field validation with
@@ -1072,4 +1073,44 @@ func TestRoomReadFollowSIGTERMExitsClean(t *testing.T) {
 
 	sendSelf(t, syscall.SIGTERM)
 	waitExit(t, done, "room read --follow")
+}
+
+// B-0084 regression, part 2: the guide, SKILL.md, the FAQ and every room
+// subcommand's help teach no room command with the capability on its command
+// line. The bare flag name in prose may stay.
+func TestRoomTextsKeepCredentialOffTheCommandLine(t *testing.T) {
+	texts := map[string]string{}
+	for _, path := range []string{
+		"../skills/cerne-authoring/reference/war-room-channel.md",
+		"../skills/cerne-authoring/SKILL.md",
+		"../guide/faq.md",
+	} {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		texts[path] = string(data)
+	}
+	var walk func(*cobra.Command)
+	walk = func(c *cobra.Command) {
+		texts[c.CommandPath()] = c.Example + "\n" + c.Long
+		for _, sub := range c.Commands() {
+			walk(sub)
+		}
+	}
+	for _, c := range Root().Commands() {
+		if c.Name() == "room" {
+			walk(c)
+		}
+	}
+	if _, ok := texts["cerne room join"]; !ok {
+		t.Fatal("room join not found under Root()")
+	}
+	for name, text := range texts {
+		for i, line := range strings.Split(text, "\n") {
+			if credentialOnTheCommandLine.MatchString(line) {
+				t.Errorf("%s:%d teaches the capability on the command line: %.160q", name, i+1, line)
+			}
+		}
+	}
 }
