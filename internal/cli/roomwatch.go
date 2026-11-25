@@ -273,24 +273,33 @@ var roomWatchNow = time.Now
 // set) returns immediately (criterion 5/6).
 func roomWatchLoop(ctx context.Context, out io.Writer, c roomEventReader, id, session, cpPath string, since int, once bool, settle time.Duration) error {
 	attempt := 0
-	// readCtx is ctx until --once prints its first relevant event, then the
-	// settle window: ctx with a deadline, pushed back by each relevant event.
-	readCtx, cancel := ctx, context.CancelFunc(func() {})
-	defer func() { cancel() }()
-	var first time.Time
+	// Both zero until --once prints its first relevant event; from then on
+	// each read is bounded by the settle window, which every relevant event
+	// pushes back, never past first+roomWatchSettleCap.
+	var first, deadline time.Time
 	for {
+		readCtx, cancel := ctx, context.CancelFunc(func() {})
+		if !deadline.IsZero() {
+			readCtx, cancel = context.WithDeadline(ctx, deadline)
+		}
 		events, err := c.readAsSession(readCtx, id, since, session)
+		cancel()
 		if err != nil {
-			// The settle window running out is a normal end, never a
-			// transient failure to back off from (E-0006).
-			if readCtx.Err() != nil || (!first.IsZero() && errors.Is(err, context.DeadlineExceeded)) {
+			if ctx.Err() != nil {
+				return nil
+			}
+			// Inside the settle window, the deadline running out, or a
+			// dropped connection a backoff would carry past the cap, ends the
+			// run normally: what it printed is checkpointed and the next
+			// --once resumes there (E-0006).
+			if !deadline.IsZero() && (errors.Is(err, context.DeadlineExceeded) || errors.Is(err, errRoomTransient)) {
 				return nil
 			}
 			if !errors.Is(err, errRoomTransient) {
 				return err
 			}
-			roomWatchSleep(readCtx, nextRoomWatchBackoff(attempt))
-			if readCtx.Err() != nil {
+			roomWatchSleep(ctx, nextRoomWatchBackoff(attempt))
+			if ctx.Err() != nil {
 				return nil
 			}
 			attempt++
@@ -323,15 +332,13 @@ func roomWatchLoop(ctx context.Context, out io.Writer, c roomEventReader, id, se
 			if first.IsZero() {
 				first = now
 			}
-			deadline := now.Add(settle)
+			deadline = now.Add(settle)
 			if limit := first.Add(roomWatchSettleCap); deadline.After(limit) {
 				deadline = limit
 			}
 			if !deadline.After(now) {
 				return nil
 			}
-			cancel()
-			readCtx, cancel = context.WithDeadline(ctx, deadline)
 		}
 		if ctx.Err() != nil {
 			return nil

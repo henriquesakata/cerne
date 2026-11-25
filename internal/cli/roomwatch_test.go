@@ -188,11 +188,12 @@ func TestCheckpointPathHashesSessionNotRaw(t *testing.T) {
 	}
 }
 
-// settleArrival is one batch the fake room delivers at an offset on the fake
-// clock.
+// settleArrival is one batch (or one read error) the fake room delivers at an
+// offset on the fake clock.
 type settleArrival struct {
 	at     time.Duration
 	events []roomWatchEvent
+	err    error
 }
 
 // settleReader is a fake room on a fake clock, so the --settle tests never
@@ -223,7 +224,7 @@ func (r *settleReader) readAsSession(ctx context.Context, id string, since int, 
 	a := r.arrivals[0]
 	r.arrivals = r.arrivals[1:]
 	r.now = r.start.Add(a.at)
-	return a.events, nil
+	return a.events, a.err
 }
 
 func settleEvent(seq int, typ, nick, body string, own bool) roomWatchEvent {
@@ -332,6 +333,28 @@ func TestRoomWatchSettleFiltersOwnEchoButCheckpoints(t *testing.T) {
 	}
 	if last != 6 {
 		t.Fatalf("checkpoint = %d, want 6 (the echo advances it)", last)
+	}
+}
+
+// E-0006 crit. 5: a dropped connection inside the window ends the run like
+// silence does (exit 0, no backoff), so the 5s cap holds; the next --once
+// resumes from the checkpoint.
+func TestRoomWatchSettleTransientErrorEndsWindow(t *testing.T) {
+	var slept []time.Duration
+	old := roomWatchSleep
+	roomWatchSleep = func(ctx context.Context, d time.Duration) { slept = append(slept, d) }
+	t.Cleanup(func() { roomWatchSleep = old })
+
+	_, out, last := runSettle(t, 1500*time.Millisecond,
+		settleAt(0, settleEvent(4, "message", "bob", "um", false)),
+		settleArrival{at: 500 * time.Millisecond, err: fmt.Errorf("%w: connection reset", errRoomTransient)},
+		settleAt(600*time.Millisecond, settleEvent(5, "message", "cy", "dois", false)),
+	)
+	if !strings.Contains(out, "um") || strings.Contains(out, "dois") {
+		t.Fatalf("output = %q, want the first event only", out)
+	}
+	if last != 4 || len(slept) != 0 {
+		t.Fatalf("checkpoint = %d, slept %v; want 4 and no backoff inside the window", last, slept)
 	}
 }
 
