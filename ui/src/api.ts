@@ -2257,6 +2257,12 @@ export async function promoteIdea(id: string, module: string, force = false): Pr
   return postIdea(`/${encodeURIComponent(id)}/promote`, { module, force })
 }
 
+// unpromoteIdea desfaz a promoção (B-0076): a candidata criada é rejeitada e a
+// ideia volta a ativa, com o link do issue quando veio do espelho.
+export async function unpromoteIdea(id: string): Promise<{ idea: Idea; feature: Feature }> {
+  return postIdea(`/${encodeURIComponent(id)}/unpromote`, {})
+}
+
 // --- Harness (F-0251) ---
 
 // HarnessItem é uma linha do inventário do harness efetivo: nome, camada de

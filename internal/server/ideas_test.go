@@ -145,6 +145,37 @@ func TestIdeasAPIRoundTrip(t *testing.T) {
 	}
 }
 
+// B-0076 crit. 6 (server): POST /ideas/{id}/unpromote undoes a promotion —
+// the idea active again, the candidate rejected — and a second one is refused.
+func TestIdeaUnpromoteRoute(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	h := New(repoDir, projDir, "")
+	var e map[string]any
+	if rec := doJSON(t, h, http.MethodPost, "/api/ideas", `{"title":"Export as CSV"}`, &e); rec.Code != http.StatusCreated {
+		t.Fatalf("POST /api/ideas = %d: %s", rec.Code, rec.Body.String())
+	}
+	var promoted struct {
+		Feature store.Feature `json:"feature"`
+	}
+	if rec := doJSON(t, h, http.MethodPost, "/api/ideas/I-0001/promote", `{}`, &promoted); rec.Code != http.StatusOK {
+		t.Fatalf("promote = %d: %s", rec.Code, rec.Body.String())
+	}
+	var undone struct {
+		Idea    store.Idea    `json:"idea"`
+		Feature store.Feature `json:"feature"`
+	}
+	if rec := doJSON(t, h, http.MethodPost, "/api/ideas/I-0001/unpromote", `{}`, &undone); rec.Code != http.StatusOK ||
+		undone.Idea.State != "active" || undone.Feature.ID != promoted.Feature.ID || undone.Feature.State != "rejected" {
+		t.Fatalf("unpromote = %d %+v", rec.Code, undone)
+	}
+	if rec := doJSON(t, h, http.MethodPost, "/api/ideas/I-0001/unpromote", `{}`, &e); rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("second unpromote = %d %s, want 422", rec.Code, rec.Body.String())
+	}
+	if rec := doJSON(t, h, http.MethodPost, "/api/ideas/I-0099/unpromote", `{}`, &e); rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown idea = %d, want 404", rec.Code)
+	}
+}
+
 // TestIdeaCaptureConcurrentAcrossSurfaces (F-0312 crit. 12): captures racing
 // from the UI route and from the CLI's app call on one clone serialize on the
 // backend lock — distinct ids, every text on origin, nothing corrupted.

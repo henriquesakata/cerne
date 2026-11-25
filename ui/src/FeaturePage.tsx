@@ -22,6 +22,7 @@ import {
   roastSpec,
   saveFeatureDoc,
   setFeatureParent,
+  unpromoteIdea,
   type ApproveAdvice,
   type ApproveImpediment,
   type DocWrite,
@@ -237,6 +238,37 @@ export default function FeaturePage({ id }: { id: string }) {
   return <FeatureView key={id} id={id} />
 }
 
+// UndoPromotion (B-0076): a candidate born from an idea undoes its promotion —
+// the card is rejected, the idea goes back to Ideas, where the person lands.
+function UndoPromotion({ ideaId }: { ideaId: string }) {
+  const { t } = useT()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const undo = () => {
+    setBusy(true)
+    setError(null)
+    unpromoteIdea(ideaId)
+      .then(() => {
+        window.location.hash = '#/ideas'
+      })
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setBusy(false))
+  }
+  return (
+    <>
+      {' '}
+      <button type="button" className="title-edit-btn" disabled={busy} onClick={undo}>
+        {t.feature.undoPromotion}
+      </button>
+      {error && (
+        <span className="status error" role="alert">
+          {error}
+        </span>
+      )}
+    </>
+  )
+}
+
 function FeatureView({ id }: { id: string }) {
   // Carga compartilhada (F-0300): falha com a página já na tela vira aviso, não
   // troca a página; o sujeito é o id, então outra feature nunca aparece sob este.
@@ -323,7 +355,12 @@ function FeatureView({ id }: { id: string }) {
             <a href={`#/f/${encodeURIComponent(f.parent)}`}>{f.parent}</a>
           </p>
         )}
-        {f.from_idea && <p className="feature-note">{t.feature.fromIdea(f.from_idea)}</p>}
+        {f.from_idea && (
+          <p className="feature-note">
+            {t.feature.fromIdea(f.from_idea)}
+            {f.state === 'candidate' && <UndoPromotion ideaId={f.from_idea} />}
+          </p>
+        )}
         {f.superseded_by && (
           <p className="feature-note">{t.feature.supersededBy(f.superseded_by)}</p>
         )}

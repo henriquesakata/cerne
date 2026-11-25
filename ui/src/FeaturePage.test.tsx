@@ -14,6 +14,7 @@ import {
   roastPlan,
   roastSpec,
   saveFeatureDoc,
+  unpromoteIdea,
 } from './api'
 
 const detail = (state: FeatureState): FeatureDetail => ({
@@ -66,6 +67,7 @@ vi.mock('./api', async (importOriginal) => ({
     report: '# Roast da spec',
   })),
   fetchArtifactText: vi.fn(async () => '# Roast da spec\n\n- [alta] achado'),
+  unpromoteIdea: vi.fn(),
 }))
 
 // Versão ao vivo controlável (F-0300): a página re-busca quando ela muda.
@@ -809,6 +811,38 @@ describe('FeaturePage from_idea (F-0312)', () => {
     payload.feature.from_idea = 'I-0007'
     render(<FeaturePage id="F-0221" />)
     expect(await screen.findByText('Nasceu da ideia I-0007')).toBeInTheDocument()
+  })
+
+  // B-0076 crit. 6: a candidata que nasceu de uma ideia desfaz a promoção e
+  // leva a pessoa de volta a Ideias.
+  it('candidata: Desfazer promoção devolve a ideia e abre Ideias', async () => {
+    payload = detail('candidate')
+    payload.feature.from_idea = 'I-0007'
+    vi.mocked(unpromoteIdea).mockResolvedValue({ idea: {} as never, feature: {} as never })
+    window.location.hash = '#/f/F-0221'
+    render(<FeaturePage id="F-0221" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Desfazer promoção' }))
+    await waitFor(() => expect(window.location.hash).toBe('#/ideas'))
+    expect(unpromoteIdea).toHaveBeenCalledWith('I-0007')
+  })
+
+  it('a recusa aparece e a página fica', async () => {
+    payload = detail('candidate')
+    payload.feature.from_idea = 'I-0007'
+    vi.mocked(unpromoteIdea).mockRejectedValue(new Error('the promotion cannot be undone: F-0221 is approved'))
+    window.location.hash = '#/f/F-0221'
+    render(<FeaturePage id="F-0221" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Desfazer promoção' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('the promotion cannot be undone: F-0221 is approved')
+    expect(window.location.hash).toBe('#/f/F-0221')
+  })
+
+  it('fora de candidate não oferece o desfazer', async () => {
+    payload = detail('approved')
+    payload.feature.from_idea = 'I-0007'
+    render(<FeaturePage id="F-0221" />)
+    expect(await screen.findByText('Nasceu da ideia I-0007')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Desfazer promoção' })).toBeNull()
   })
 })
 
