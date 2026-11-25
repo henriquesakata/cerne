@@ -198,10 +198,13 @@ func execRun(ctx context.Context, dir, name string, args []string, stdin string)
 // the agent runs to an agent in the event log, and app.CheckHumanGate keeps
 // refusing approve/accept from it — the human gates (F-0131) are untouched by
 // the agent gaining write tools. DenyLifecycleEnv makes the binary refuse every
-// lifecycle verb (B-0040). os.Environ() comes first so the stamps win over an
-// inherited value (exec keeps the last of a duplicated key).
+// lifecycle verb (B-0040). os.Environ() comes first, then the context extras
+// (claudeNoTitleEnv, F-0505), and the stamps last, so they win over an inherited
+// value or an extra (exec keeps the last of a duplicated key).
 func agentRun(ctx context.Context, dir, name string, args []string, stdin string) (string, string, error) {
-	return execRunEnv(ctx, dir, name, args, stdin, append(os.Environ(), "CERNE_ACTOR=agent", DenyLifecycleEnv+"=1"))
+	extra, _ := ctx.Value(envKey{}).([]string)
+	env := append(append(os.Environ(), extra...), "CERNE_ACTOR=agent", DenyLifecycleEnv+"=1")
+	return execRunEnv(ctx, dir, name, args, stdin, env)
 }
 
 // DenyLifecycleEnv is the second stamp of agentRun: while it is present the
@@ -286,24 +289,30 @@ type claudeJSON struct {
 	Type       string `json:"type"`
 	Result     string `json:"result"`
 	ModelUsage map[string]struct {
-		OutputTokens int `json:"outputTokens"`
+		InputTokens         int `json:"inputTokens"`
+		OutputTokens        int `json:"outputTokens"`
+		CacheReadTokens     int `json:"cacheReadInputTokens"`
+		CacheCreationTokens int `json:"cacheCreationInputTokens"`
 	} `json:"modelUsage"`
 }
 
-// parseClaudeJSON reads the reply and the busiest model of a JSON result; ok is
-// false for anything else (a CLI that ignored the format), kept as plain text.
-func parseClaudeJSON(out string) (reply, model string, ok bool) {
+// parseClaudeJSON reads the reply and the usage of a JSON result — Model is the
+// busiest model, the tokens are summed over every model; ok is false for
+// anything else (a CLI that ignored the format), kept as plain text.
+func parseClaudeJSON(out string) (reply string, u Usage, ok bool) {
 	var r claudeJSON
 	if json.Unmarshal([]byte(out), &r) != nil || r.Type != "result" {
-		return "", "", false
+		return "", Usage{}, false
 	}
 	best := -1
-	for m, u := range r.ModelUsage {
-		if u.OutputTokens > best || (u.OutputTokens == best && m < model) {
-			best, model = u.OutputTokens, m
+	for m, mu := range r.ModelUsage {
+		u.InputTokens += mu.InputTokens + mu.CacheReadTokens + mu.CacheCreationTokens
+		u.OutputTokens += mu.OutputTokens
+		if mu.OutputTokens > best || (mu.OutputTokens == best && m < u.Model) {
+			best, u.Model = mu.OutputTokens, m
 		}
 	}
-	return r.Result, model, true
+	return r.Result, u, true
 }
 
 // oneShotIsolation are the flags that turn `claude -p` back into what the
@@ -330,6 +339,15 @@ func parseClaudeJSON(out string) (reply, model string, ok bool) {
 // This is deliberately NOT applied in agentic mode: the Backlog agent (F-0224)
 // runs in the project on purpose, and its tools ARE the feature.
 var oneShotIsolation = []string{"--safe-mode", "--tools", ""}
+
+// claudeNoTitleEnv goes in the environment of every `claude -p` child, one-shot
+// and agentic (F-0505). Without it the CLI fires a second API request next to
+// each call to title the session, resending the whole prompt uncached on the
+// same model, and modelUsage counts both: half of the 530,009 input tokens of
+// the F-0502 live proof (N-0150). An environment variable, not --name, because
+// an old CLI ignores an unknown variable but rejects an unknown flag, and the
+// agentic turn never retries with less isolation.
+const claudeNoTitleEnv = "CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1"
 
 // isUnknownFlag reports whether err looks like the CLI rejecting a flag it
 // does not know — an old Claude Code without --allowedTools. Covers the
@@ -375,9 +393,31 @@ func (p *cliProvider) Complete(ctx context.Context, prompt string) (string, erro
 	case ModeCopilotCLI:
 		return p.completeCopilot(ctx, prompt)
 	}
+	s, _, err := p.completeClaude(ctx, prompt, false)
+	return s, err
+}
+
+// CompleteUsage is Complete that also returns the tokens the call used
+// (F-0502). Usage travels with the call, not in the provider: a provider is
+// shared between goroutines. Only the claude CLI reports it, and asks for JSON
+// output to do so; the other CLIs answer with a zero Usage.
+func (p *cliProvider) CompleteUsage(ctx context.Context, prompt string) (string, Usage, error) {
+	if p.kind != "" {
+		s, err := p.Complete(ctx, prompt)
+		return s, Usage{}, err
+	}
+	return p.completeClaude(ctx, prompt, true)
+}
+
+// completeClaude is the `claude -p` call; wantUsage turns the output to JSON
+// so the tokens can be read.
+func (p *cliProvider) completeClaude(ctx context.Context, prompt string, wantUsage bool) (string, Usage, error) {
 	base := []string{"-p", "--output-format", "text"}
 	args := slices.Clone(base)
 	agentic := len(p.agentTools) > 0
+	if wantUsage {
+		args[2] = "json" // F-0502: the result carries the tokens (a copy; base stays text for the old-CLI retry)
+	}
 	if agentic {
 		args[2] = "json" // F-0440: the result carries the model that ran (a copy; base stays text for the old-CLI retry)
 		// B-0008: keep the project's CLAUDE.md/skills/hooks, drop the user's
@@ -400,28 +440,32 @@ func (p *cliProvider) Complete(ctx context.Context, prompt string) (string, erro
 	} else {
 		args = append(args, oneShotIsolation...)
 	}
+	extra, _ := ctx.Value(envKey{}).([]string)
+	ctx = context.WithValue(ctx, envKey{}, append(slices.Clone(extra), claudeNoTitleEnv))
 	start := time.Now()
 	out, stderr, err := p.run(ctx, p.dir, p.bin, args, prompt)
 	if err != nil && isUnknownFlag(err) {
 		if agentic {
 			// Never retry with less isolation (B-0008, F-0414 rule).
-			return "", fmt.Errorf("%w: this Claude Code does not know a flag cerne needs (isolation, model or effort) — update Claude Code (claude update); cerne will not run the chat with less isolation: %w", ErrClaudeCLI, err)
+			return "", Usage{}, fmt.Errorf("%w: this Claude Code does not know a flag cerne needs (isolation, model or effort) — update Claude Code (claude update); cerne will not run the chat with less isolation: %w", ErrClaudeCLI, err)
 		}
 		out, stderr, err = p.run(ctx, p.dir, p.bin, base, prompt)
 	}
 	if err != nil {
-		return "", cliFailure(ctx, start, ErrClaudeCLI, "Claude Code (claude -p)", err, "check 'claude /login' (subscription) or use [llm] mode=\"byo-key\"")
+		return "", Usage{}, cliFailure(ctx, start, ErrClaudeCLI, "Claude Code (claude -p)", err, "check 'claude /login' (subscription) or use [llm] mode=\"byo-key\"")
 	}
 	if s := strings.TrimSpace(stderr); agentic && s != "" {
 		log.Printf("claude-cli stderr: %s", truncate([]byte(s), maxOutputBytes))
 	}
-	if agentic {
-		if reply, model, ok := parseClaudeJSON(out); ok {
-			p.answered = model
-			return strings.TrimSpace(reply), nil
+	if agentic || wantUsage {
+		if reply, u, ok := parseClaudeJSON(out); ok {
+			if agentic {
+				p.answered = u.Model
+			}
+			return strings.TrimSpace(reply), u, nil
 		}
 	}
-	return strings.TrimSpace(out), nil
+	return strings.TrimSpace(out), Usage{}, nil
 }
 
 // scratchDir is the empty directory the Codex and Gemini one-shots run in, so
