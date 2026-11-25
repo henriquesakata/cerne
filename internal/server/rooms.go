@@ -178,7 +178,7 @@ func writeRoomErr(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusNotFound, errorBody(err.Error()))
 	case errors.Is(err, room.ErrClosed):
 		writeJSON(w, http.StatusConflict, errorBody(err.Error()))
-	case errors.Is(err, room.ErrNickTaken):
+	case errors.Is(err, room.ErrNickTaken), errors.Is(err, room.ErrNickReserved):
 		writeJSON(w, http.StatusConflict, errorBody(err.Error()))
 	case errors.Is(err, room.ErrOpenItems):
 		writeJSON(w, http.StatusConflict, errorBody(err.Error()))

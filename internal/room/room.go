@@ -27,6 +27,7 @@ var (
 	ErrNotFound             = errors.New("room not found")
 	ErrClosed               = errors.New("room is closed")
 	ErrNickTaken            = errors.New("nickname already in use in this room")
+	ErrNickReserved         = errors.New(`the nickname "facilitator" is reserved: it names the facilitator as a minutes draft author`)
 	ErrInvalidSession       = errors.New("invalid room session")
 	ErrNotFacilitator       = errors.New("caller is not the room facilitator")
 	ErrIncompleteMinutes    = errors.New("minutes missing a required field")
@@ -784,10 +785,15 @@ func (m *Manager) rotateFacilitatorLocked(id string, rs *roomState) (string, err
 	return next, nil
 }
 
+// facilitatorAuthor is the author of a minutes draft the facilitator saved
+// (T-0022); no participant may join under it, in any case or padding.
+const facilitatorAuthor = "facilitator"
+
 // Join registers nick as a participant and mints its session capability.
-// Rejected when the room is unknown, closed, or the nick already has an
-// active session. A legacy participant (replayed transcript without session
-// data) may re-join to obtain a capability.
+// Rejected when the room is unknown, closed, the nick is the reserved
+// facilitatorAuthor, or the nick already has an active session. A legacy
+// participant (replayed transcript without session data) may re-join to
+// obtain a capability.
 func (m *Manager) Join(id, nick, bio string) (Room, Session, error) {
 	rs, err := m.getRoom(id)
 	if err != nil {
@@ -797,6 +803,9 @@ func (m *Manager) Join(id, nick, bio string) (Room, Session, error) {
 	defer rs.mu.Unlock()
 	if rs.meta.ClosedAt != nil {
 		return Room{}, Session{}, ErrClosed
+	}
+	if strings.EqualFold(strings.TrimSpace(nick), facilitatorAuthor) {
+		return Room{}, Session{}, ErrNickReserved
 	}
 	for _, s := range rs.sessions {
 		if s.nick == nick {
@@ -1114,7 +1123,7 @@ func (m *Manager) SaveMinutesDraft(id, sessionID, facilitatorToken string, minut
 	if rs.meta.ClosedAt != nil {
 		return MinutesDraft{}, ErrClosed
 	}
-	author := "facilitator"
+	author := facilitatorAuthor
 	switch {
 	case sessionID != "":
 		sa, ok := rs.findSessionLocked(sessionID)

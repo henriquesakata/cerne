@@ -114,6 +114,24 @@ func TestJoinDuplicateNickRejected(t *testing.T) {
 	}
 }
 
+// T-0022 crit. 1, 3
+// E-0006 crit. 10, 12
+func TestJoinRefusesTheFacilitatorNick(t *testing.T) {
+	m := newManager(t)
+	r, _, _ := m.Open("topico")
+	for _, nick := range []string{"facilitator", " Facilitator ", "FACILITATOR"} {
+		if _, _, err := m.Join(r.ID, nick, ""); !errors.Is(err, ErrNickReserved) {
+			t.Errorf("Join %q err = %v, want ErrNickReserved", nick, err)
+		}
+	}
+	if got := m.List()[0]; len(got.Participants) != 0 || got.MessageCount != 1 {
+		t.Fatalf("a refused join left a trace: %+v", got)
+	}
+	if _, _, err := m.Join(r.ID, "facilitadora", ""); err != nil {
+		t.Fatalf("a nick that only starts like the reserved one: %v", err)
+	}
+}
+
 func TestJoinUnknownRoomNotFound(t *testing.T) {
 	m := newManager(t)
 	if _, _, err := m.Join("R99", "alice", ""); !errors.Is(err, ErrNotFound) {
