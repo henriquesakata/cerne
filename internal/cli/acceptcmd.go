@@ -79,7 +79,8 @@ func runFeatureAccept(cmd *cobra.Command, dir string, args []string, reason stri
 
 	// The delivery commit should be on the default branch (F-0355): say so
 	// before accepting, never block on it.
-	if f, err := store.LoadFeature(ctx.repoDir, id); err == nil {
+	// A done card has nothing to check (F-0506): no forge call on a repeat.
+	if f, err := store.LoadFeature(ctx.repoDir, id); err == nil && f.State != domain.StateDone {
 		if w := app.DeliveryBranchWarning(ctx.cfg, ctx.projDir, f); w != "" {
 			fmt.Fprintln(cmd.ErrOrStderr(), w)
 		}

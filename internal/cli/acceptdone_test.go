@@ -58,6 +58,31 @@ func TestFeatureAcceptRepeatedIsNoOp(t *testing.T) {
 	}
 }
 
+// F-0506 crit. 1: the repeated accept never asks the forge about the delivery
+// commit and prints nothing on stderr.
+func TestFeatureAcceptRepeatedSkipsForge(t *testing.T) {
+	f := &cliFakeForge{on: false}
+	projDir, repoDir := forgeProject(t, "github", f)
+	id := cardInState(t, projDir, repoDir, domain.StateDone)
+	card, err := store.LoadFeature(repoDir, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	card.DeliveryCommitURL = "https://github.com/o/r/commit/abc1234"
+	if err := store.SaveFeature(repoDir, card); err != nil {
+		t.Fatal(err)
+	}
+	commitBackend(t, repoDir)
+
+	_, stderr, err := execCerneSplit(t, "feature", "accept", id, "--dir", projDir)
+	if err != nil {
+		t.Fatalf("repeated accept: %v", err)
+	}
+	if f.calls != 0 || stderr != "" {
+		t.Fatalf("forge calls = %d, stderr = %q; want none", f.calls, stderr)
+	}
+}
+
 // F-0506 crit. 6: every other state keeps today's refusal.
 func TestFeatureAcceptOtherStatesStillRefused(t *testing.T) {
 	for _, st := range []domain.FeatureState{domain.StateCandidate, domain.StateApproved, domain.StateInDevelopment, domain.StateRejected, domain.StateSuperseded} {
