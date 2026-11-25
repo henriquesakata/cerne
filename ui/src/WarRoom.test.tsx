@@ -1284,4 +1284,33 @@ describe('o long-poll da aba lê como a sessão (T-0021)', () => {
     expect(follows().filter(([, , , , s]) => s).length).toBe(authenticated)
     expect(screen.queryByText(/já não era válida/)).not.toBeInTheDocument()
   })
+
+  // T-0021 crit. 1, 3
+  // E-0006 crit. 7, 9
+  it('saída que falha (500) mantém a sessão, e a leitura longa volta a mandá-la', async () => {
+    let deliver: (events: RoomMessage[]) => void = () => {}
+    readRoomMessages.mockImplementation((_id, _since, follow, signal, sessionID) => {
+      if (!follow) return Promise.resolve([open, said])
+      if (sessionID) {
+        return new Promise<RoomMessage[]>((resolve, reject) => {
+          deliver = resolve
+          signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+        })
+      }
+      return hang(signal)
+    })
+    // an event ends the authenticated poll while Leave is on its way
+    leaveRoom.mockImplementation(() => {
+      deliver([{ seq: 3, type: 'message', nick: 'bia', body: 'ainda aqui', time: '2026-08-06T00:00:03Z' }])
+      return Promise.reject(new HTTPError('erro interno', 500))
+    })
+    render(<WarRoomDetail id="R1" />)
+    await waitFor(() => expect(follows().at(-1)?.[4]).toBe(sid))
+
+    fireEvent.click(screen.getByRole('button', { name: /^sair$/i }))
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/erro interno/))
+    await waitFor(() => expect(follows().at(-1)?.[1]).toBe(3))
+    await waitFor(() => expect(follows().at(-1)?.[4]).toBe(sid))
+    expect(localStorage.getItem(SESSION_KEY)).not.toBeNull()
+  })
 })
