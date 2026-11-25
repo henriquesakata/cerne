@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"net"
 	"net/http/httptest"
 	"net/url"
@@ -14,6 +15,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -474,7 +476,7 @@ func TestRoomOpenJoinKeepCredentialOffExamples(t *testing.T) {
 				t.Fatalf("loadRoomCreds: %v", err)
 			}
 			if agent == "" {
-				if stored != (roomCreds{}) {
+				if len(stored.Sessions) != 0 {
 					t.Fatalf("stored without CERNE_SESSION = %+v, want nothing", stored)
 				}
 				if _, err := os.Stat(filepath.Join(os.Getenv("CERNE_CACHE_DIR"), "proj-b0084", "room-creds")); !errors.Is(err, os.ErrNotExist) {
@@ -487,7 +489,7 @@ func TestRoomOpenJoinKeepCredentialOffExamples(t *testing.T) {
 				}
 				return
 			}
-			if stored.Nick != "ana" || stored.SessionID != session {
+			if !maps.Equal(stored.Sessions, map[string]string{"ana": session}) {
 				t.Fatalf("stored = %+v, want ana's session", stored)
 			}
 			if strings.Contains(joinOut, "env: export") || !strings.Contains(joinOut, "stored for this agent session") {
@@ -506,14 +508,16 @@ func TestRoomOpenJoinKeepCredentialOffExamples(t *testing.T) {
 	}
 }
 
-// B-0084: a subagent shares its parent's CERNE_SESSION, so join never
-// replaces another nick's still-valid stored session: it joins, warns and
-// falls back to the env form. A stored session that no longer works is
-// replaced.
-func TestRoomJoinKeepsAnotherNicksValidSession(t *testing.T) {
+// B-0084, review round 1 (reproduced "#4 [ana] hello from bia"): a subagent
+// shares its parent's CERNE_SESSION, so two nicks joined from one agent
+// session are both stored; a bare say refuses instead of speaking as the
+// wrong nick, --nick picks each one, and bia's join output teaches --nick bia.
+// Concurrent joins from one agent session both end up stored.
+func TestRoomJoinTwoNicksFromOneAgentSession(t *testing.T) {
 	dir, port := newRoomTestServer(t, "proj-b0084-nick")
 	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
 	t.Setenv("CERNE_SESSION", "agent-1")
+	t.Setenv("CERNE_ROOM_SESSION", "")
 	runRoom(t, append([]string{"open", "topic"}, dirFlag...)...)
 	ana := joinRoomAs(t, dirFlag, "R1", "ana")
 
@@ -521,29 +525,60 @@ func TestRoomJoinKeepsAnotherNicksValidSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("join bia: %v", err)
 	}
-	if !strings.Contains(out, `already keeps nick "ana" in R1`) || !strings.Contains(out, "env: export CERNE_ROOM_SESSION=") {
-		t.Fatalf("join bia output = %q, want the warning and the env form", out)
+	bia := lineValue(out, "session: ")
+	for _, want := range []string{
+		"say: cerne room say R1 \"<message>\" --nick bia\n",
+		"cerne room watch R1 --once --nick bia\n",
+		"cerne room request-decision R1 --nick bia --title",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("join bia output = %q, want %q", out, want)
+		}
 	}
-	if stored, _ := loadRoomCreds("proj-b0084-nick", "R1"); stored.Nick != "ana" || stored.SessionID != ana {
-		t.Fatalf("stored after bia = %+v, want ana's session kept", stored)
-	}
-
-	// a stored session the server no longer accepts is replaced.
-	if err := saveRoomCreds("proj-b0084-nick", "R1", roomCreds{Nick: "old", SessionID: "deadbeefdeadbeefdeadbeefdeadbeef"}); err != nil {
-		t.Fatal(err)
-	}
-	cia := joinRoomAs(t, dirFlag, "R1", "cia")
-	if stored, _ := loadRoomCreds("proj-b0084-nick", "R1"); stored.Nick != "cia" || stored.SessionID != cia {
-		t.Fatalf("stored after cia = %+v, want cia's session over the invalid one", stored)
+	if stored, _ := loadRoomCreds("proj-b0084-nick", "R1"); !maps.Equal(stored.Sessions, map[string]string{"ana": ana, "bia": bia}) {
+		t.Fatalf("stored = %+v, want ana and bia", stored)
 	}
 
-	// the same nick, stale, is replaced too.
-	if err := saveRoomCreds("proj-b0084-nick", "R1", roomCreds{Nick: "dan", SessionID: "deadbeefdeadbeefdeadbeefdeadbeef"}); err != nil {
-		t.Fatal(err)
+	_, err = runRoom(t, append([]string{"say", "R1", "who am i"}, dirFlag...)...)
+	if !errors.Is(err, errRoomNickAmbiguous) || !strings.Contains(err.Error(), "ana, bia") {
+		t.Fatalf("bare say with two nicks: err = %v, want errRoomNickAmbiguous listing ana, bia", err)
 	}
-	dan := joinRoomAs(t, dirFlag, "R1", "dan")
-	if stored, _ := loadRoomCreds("proj-b0084-nick", "R1"); stored.Nick != "dan" || stored.SessionID != dan {
-		t.Fatalf("stored after dan = %+v, want dan's new session", stored)
+	for _, nick := range []string{"bia", "ana"} {
+		if _, err := runRoom(t, append([]string{"say", "R1", "hello from " + nick, "--nick", nick}, dirFlag...)...); err != nil {
+			t.Fatalf("say --nick %s: %v", nick, err)
+		}
+	}
+	if _, err := runRoom(t, append([]string{"say", "R1", "x", "--nick", "cia"}, dirFlag...)...); !errors.Is(err, errRoomNickNotStored) {
+		t.Fatalf("say --nick cia: err = %v, want errRoomNickNotStored", err)
+	}
+	read, err := runRoom(t, append([]string{"read", "R1"}, dirFlag...)...)
+	if err != nil || !strings.Contains(read, "[bia] hello from bia") || !strings.Contains(read, "[ana] hello from ana") || strings.Contains(read, "who am i") {
+		t.Fatalf("read = %q, %v; want each message under its own nick and no bare one", read, err)
+	}
+	for _, args := range [][]string{
+		{"propose", "R1", "--nick", "bia", "--title", "t"},
+		{"watch", "R1", "--once", "--since", "0", "--nick", "bia"},
+	} {
+		if _, err := runRoom(t, append(args, dirFlag...)...); err != nil {
+			t.Fatalf("%s --nick bia: %v", args[0], err)
+		}
+	}
+
+	// two concurrent joins from the same agent session both end up stored.
+	var wg sync.WaitGroup
+	for _, nick := range []string{"cia", "dan"} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := runRoom(t, append([]string{"join", "R1", "--nick", nick}, dirFlag...)...); err != nil {
+				t.Errorf("join %s: %v", nick, err)
+			}
+		}()
+	}
+	wg.Wait()
+	stored, _ := loadRoomCreds("proj-b0084-nick", "R1")
+	if got := slices.Sorted(maps.Keys(stored.Sessions)); !slices.Equal(got, []string{"ana", "bia", "cia", "dan"}) {
+		t.Fatalf("stored nicks after concurrent joins = %v", got)
 	}
 }
 
@@ -629,10 +664,13 @@ func TestFormatRoomEventLeave(t *testing.T) {
 	}
 }
 
-func TestRoomSayNickFlagRemoved(t *testing.T) {
+// F-0226 made the session, not the nick, the authority; B-0084 brought
+// --nick back only as a selector among stored sessions, so a nick alone
+// grants nothing.
+func TestRoomSayNickAloneGrantsNothing(t *testing.T) {
 	_, err := runRoom(t, "say", "R1", "oi", "--nick", "ana")
-	if err == nil || !strings.Contains(err.Error(), "unknown flag") {
-		t.Fatalf("say --nick: err = %v, want unknown flag (contract migrated to --session)", err)
+	if !errors.Is(err, errNoRoomSession) {
+		t.Fatalf("say --nick with nothing stored: err = %v, want errNoRoomSession", err)
 	}
 }
 

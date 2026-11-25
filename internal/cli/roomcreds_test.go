@@ -3,24 +3,34 @@ package cli
 import (
 	"context"
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 )
 
-// B-0084: the credential join/open keep for an agent session lives in a 0600
-// file under a 0700 dir, named by the hash of CERNE_SESSION, one per room.
+// B-0084: the sessions join keeps for an agent session live in a 0600 file
+// under a 0700 dir, named by the hash of CERNE_SESSION, one per room, one
+// entry per nick; a re-join of the same nick replaces its entry.
 func TestRoomCredsRoundTripAndPermissions(t *testing.T) {
 	cache := t.TempDir()
 	t.Setenv("CERNE_CACHE_DIR", cache)
 	t.Setenv("CERNE_SESSION", "agent-1")
 
-	want := roomCreds{Nick: "ana", SessionID: "s1"}
-	if err := saveRoomCreds("p", "R1", want); err != nil {
-		t.Fatalf("saveRoomCreds: %v", err)
+	if nicks, err := storeRoomSession("p", "R1", "ana", "s0"); err != nil || !slices.Equal(nicks, []string{"ana"}) {
+		t.Fatalf("store ana = %v, %v; want [ana]", nicks, err)
 	}
+	if nicks, err := storeRoomSession("p", "R1", "bia", "s2"); err != nil || !slices.Equal(nicks, []string{"ana", "bia"}) {
+		t.Fatalf("store bia = %v, %v; want [ana bia]", nicks, err)
+	}
+	if _, err := storeRoomSession("p", "R1", "ana", "s1"); err != nil {
+		t.Fatalf("re-store ana: %v", err)
+	}
+	want := roomCreds{Sessions: map[string]string{"ana": "s1", "bia": "s2"}}
 	path := filepath.Join(cache, "p", "room-creds", "R1", hashSessionID("agent-1")+".json")
 	if got, err := roomCredsPath("p", "R1"); err != nil || got != path {
 		t.Fatalf("roomCredsPath = %q, %v; want %q", got, err, path)
@@ -41,16 +51,16 @@ func TestRoomCredsRoundTripAndPermissions(t *testing.T) {
 	}
 
 	got, err := loadRoomCreds("p", "R1")
-	if err != nil || got != want {
+	if err != nil || !maps.Equal(got.Sessions, want.Sessions) {
 		t.Fatalf("loadRoomCreds = %+v, %v; want %+v", got, err, want)
 	}
 	// another room shares nothing.
-	if other, err := loadRoomCreds("p", "R2"); err != nil || other != (roomCreds{}) {
+	if other, err := loadRoomCreds("p", "R2"); err != nil || len(other.Sessions) != 0 {
 		t.Fatalf("loadRoomCreds(R2) = %+v, %v; want empty", other, err)
 	}
 	// another agent session shares nothing.
 	t.Setenv("CERNE_SESSION", "agent-2")
-	if other, err := loadRoomCreds("p", "R1"); err != nil || other != (roomCreds{}) {
+	if other, err := loadRoomCreds("p", "R1"); err != nil || len(other.Sessions) != 0 {
 		t.Fatalf("loadRoomCreds as agent-2 = %+v, %v; want empty", other, err)
 	}
 }
@@ -60,46 +70,92 @@ func TestRoomCredsNeedAgentSession(t *testing.T) {
 	cache := t.TempDir()
 	t.Setenv("CERNE_CACHE_DIR", cache)
 	t.Setenv("CERNE_SESSION", "agent-1")
-	if err := saveRoomCreds("p", "R1", roomCreds{SessionID: "s1"}); err != nil {
-		t.Fatalf("saveRoomCreds: %v", err)
+	if _, err := storeRoomSession("p", "R1", "ana", "s1"); err != nil {
+		t.Fatalf("storeRoomSession: %v", err)
 	}
 
 	t.Setenv("CERNE_SESSION", "")
-	if got, err := loadRoomCreds("p", "R1"); err != nil || got != (roomCreds{}) {
+	if got, err := loadRoomCreds("p", "R1"); err != nil || len(got.Sessions) != 0 {
 		t.Fatalf("loadRoomCreds without CERNE_SESSION = %+v, %v; want empty", got, err)
 	}
-	if err := saveRoomCreds("p", "R2", roomCreds{SessionID: "s2"}); err != nil {
-		t.Fatalf("saveRoomCreds without CERNE_SESSION: %v", err)
+	if nicks, err := storeRoomSession("p", "R2", "ana", "s2"); err != nil || nicks != nil {
+		t.Fatalf("storeRoomSession without CERNE_SESSION = %v, %v; want nil, nil", nicks, err)
 	}
 	if _, err := os.Stat(filepath.Join(cache, "p", "room-creds", "R2")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("stat R2 creds dir = %v, want not exist", err)
 	}
-	if _, err := resolveRoomSession("", "p", "R1"); !errors.Is(err, errNoRoomSession) {
+	if _, err := resolveRoomSession("", "ana", "p", "R1"); !errors.Is(err, errNoRoomSession) {
 		t.Fatalf("resolveRoomSession without CERNE_SESSION err = %v, want errNoRoomSession", err)
 	}
 }
 
-// B-0084: --session > CERNE_ROOM_SESSION > stored.
+// B-0084: --session > CERNE_ROOM_SESSION > stored; among stored nicks,
+// --nick picks one, a single one needs no --nick, and several without --nick
+// are refused rather than guessed (review round 1).
 func TestRoomCredsResolvePrecedence(t *testing.T) {
 	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
 	t.Setenv("CERNE_SESSION", "agent-1")
 	t.Setenv("CERNE_ROOM_SESSION", "")
 
-	if _, err := resolveRoomSession("", "p", "R1"); !errors.Is(err, errNoRoomSession) {
+	if _, err := resolveRoomSession("", "", "p", "R1"); !errors.Is(err, errNoRoomSession) {
 		t.Fatalf("nothing anywhere: err = %v, want errNoRoomSession", err)
 	}
-	if err := saveRoomCreds("p", "R1", roomCreds{Nick: "ana", SessionID: "stored-s"}); err != nil {
-		t.Fatalf("saveRoomCreds: %v", err)
+	if _, err := storeRoomSession("p", "R1", "ana", "stored-ana"); err != nil {
+		t.Fatalf("storeRoomSession: %v", err)
 	}
-	if got, err := resolveRoomSession("", "p", "R1"); err != nil || got != "stored-s" {
-		t.Fatalf("stored only = %q, %v", got, err)
+	if got, err := resolveRoomSession("", "", "p", "R1"); err != nil || got != "stored-ana" {
+		t.Fatalf("one stored nick = %q, %v", got, err)
+	}
+	if _, err := resolveRoomSession("", "bia", "p", "R1"); !errors.Is(err, errRoomNickNotStored) {
+		t.Fatalf("--nick bia not stored: err = %v, want errRoomNickNotStored", err)
+	}
+	if _, err := storeRoomSession("p", "R1", "bia", "stored-bia"); err != nil {
+		t.Fatalf("storeRoomSession: %v", err)
+	}
+	_, err := resolveRoomSession("", "", "p", "R1")
+	if !errors.Is(err, errRoomNickAmbiguous) || !strings.Contains(err.Error(), "ana, bia") {
+		t.Fatalf("two stored nicks, no --nick: err = %v, want errRoomNickAmbiguous listing ana, bia", err)
+	}
+	for nick, want := range map[string]string{"ana": "stored-ana", "bia": "stored-bia"} {
+		if got, err := resolveRoomSession("", nick, "p", "R1"); err != nil || got != want {
+			t.Fatalf("--nick %s = %q, %v; want %q", nick, got, err, want)
+		}
 	}
 	t.Setenv("CERNE_ROOM_SESSION", "env-s")
-	if got, err := resolveRoomSession("", "p", "R1"); err != nil || got != "env-s" {
+	if got, err := resolveRoomSession("", "bia", "p", "R1"); err != nil || got != "env-s" {
 		t.Fatalf("env over stored = %q, %v", got, err)
 	}
-	if got, err := resolveRoomSession("flag-s", "p", "R1"); err != nil || got != "flag-s" {
+	if got, err := resolveRoomSession("flag-s", "bia", "p", "R1"); err != nil || got != "flag-s" {
 		t.Fatalf("flag over env = %q, %v", got, err)
+	}
+}
+
+// B-0084, review round 1: parallel joins from one CERNE_SESSION (subagents
+// of one parent) all end up stored — the read-modify-write is locked.
+func TestRoomCredsConcurrentStoresKeepEveryNick(t *testing.T) {
+	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
+	t.Setenv("CERNE_SESSION", "agent-1")
+	const n = 16
+	var wg sync.WaitGroup
+	errs := make(chan error, n)
+	for i := range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := storeRoomSession("p", "R1", "nick"+strconv.Itoa(i), "s"+strconv.Itoa(i))
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("storeRoomSession: %v", err)
+		}
+	}
+	got, err := loadRoomCreds("p", "R1")
+	if err != nil || len(got.Sessions) != n {
+		t.Fatalf("stored %d nick(s), %v; want %d", len(got.Sessions), err, n)
 	}
 }
 
@@ -150,8 +206,8 @@ func TestRoomCredsCommandsUseStoredCredential(t *testing.T) {
 	if err != nil {
 		t.Fatalf("join: %v", err)
 	}
-	if err := saveRoomCreds(c.pid, "R1", roomCreds{Nick: "ana", SessionID: joined.Session.SessionID}); err != nil {
-		t.Fatalf("saveRoomCreds: %v", err)
+	if _, err := storeRoomSession(c.pid, "R1", "ana", joined.Session.SessionID); err != nil {
+		t.Fatalf("storeRoomSession: %v", err)
 	}
 
 	for _, args := range [][]string{

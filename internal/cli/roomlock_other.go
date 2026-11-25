@@ -18,3 +18,9 @@ func tryLockFile(f *os.File) error {
 	}
 	return err
 }
+
+// lockFile is tryLockFile that waits for the lock (B-0084: the stored room
+// sessions' read-modify-write).
+func lockFile(f *os.File) error {
+	return syscall.Flock(int(f.Fd()), syscall.LOCK_EX)
+}

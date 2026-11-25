@@ -122,14 +122,23 @@ func newRoomJoinCmd() *cobra.Command {
 			fmt.Fprintf(out, "joined %s as %s (%d participant(s))\n", id, nick, len(res.Room.Participants))
 			fmt.Fprintf(out, "session: %s\n", sid)
 			fmt.Fprintf(out, "keep this session token — losing it locks the nick until the room closes\n")
-			stored, kept, err := keepJoinedSession(cmd.Context(), c, id, nick, sid)
-			if kept != "" {
-				fmt.Fprintf(cmd.ErrOrStderr(), "warning: this agent session already keeps nick %q in %s and it still works, so this session was not stored; pass it through CERNE_ROOM_SESSION\n", kept, id)
+			nicks, err := storeRoomSession(c.pid, id, nick, sid)
+			if err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not store the session for this agent session: %v\n", err)
 			}
-			printKeptOrEnv(cmd, stored, err, "CERNE_ROOM_SESSION", sid)
-			fmt.Fprintf(out, "say: cerne room say %s \"<message>\"\n", id)
-			fmt.Fprintf(out, "listen: cerne room watch %s --once\n", id)
-			fmt.Fprintf(out, "ask the facilitator: cerne room request-decision %s --title \"<question>\" --body \"<why>\"\n", id)
+			pick := "" // --nick once this agent session keeps more than one nick here
+			switch {
+			case err != nil || nicks == nil:
+				fmt.Fprintf(out, "env: export CERNE_ROOM_SESSION=%s\n", sid)
+			case len(nicks) == 1:
+				fmt.Fprintln(out, "stored for this agent session (CERNE_SESSION) in a 0600 cache file: room commands for this room find it with no flag or variable")
+			default:
+				pick = " --nick " + nick
+				fmt.Fprintf(out, "stored for this agent session (CERNE_SESSION) in a 0600 cache file, which keeps %s in this room: room commands pick yours with --nick %s\n", strings.Join(nicks, ", "), nick)
+			}
+			fmt.Fprintf(out, "say: cerne room say %s \"<message>\"%s\n", id, pick)
+			fmt.Fprintf(out, "listen: cerne room watch %s --once%s\n", id, pick)
+			fmt.Fprintf(out, "ask the facilitator: cerne room request-decision %s%s --title \"<question>\" --body \"<why>\"\n", id, pick)
 			return nil
 		},
 	}
@@ -178,7 +187,7 @@ func newRoomLeaveCmd() *cobra.Command {
 }
 
 func newRoomSayCmd() *cobra.Command {
-	var dir, session string
+	var dir, session, nick string
 	var port int
 	cmd := &cobra.Command{
 		Use:   "say <room> <message>",
@@ -189,7 +198,7 @@ func newRoomSayCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if session, err = resolveRoomSession(session, c.pid, args[0]); err != nil {
+			if session, err = resolveRoomSession(session, nick, c.pid, args[0]); err != nil {
 				return err
 			}
 			_, err = c.say(cmd.Context(), args[0], session, args[1])
@@ -197,6 +206,7 @@ func newRoomSayCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&session, "session", "", roomSessionFlagHelp)
+	cmd.Flags().StringVar(&nick, "nick", "", roomNickFlagHelp)
 	addRoomFlags(cmd, &dir, &port)
 	return cmd
 }
@@ -413,7 +423,7 @@ func newRoomFacilitatorHandoffCmd() *cobra.Command {
 }
 
 func newRoomItemCmd(use, short, kind string) *cobra.Command {
-	var dir, session, title, body string
+	var dir, session, nick, title, body string
 	var port int
 	cmd := &cobra.Command{
 		Use:   use,
@@ -427,7 +437,7 @@ func newRoomItemCmd(use, short, kind string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if session, err = resolveRoomSession(session, c.pid, args[0]); err != nil {
+			if session, err = resolveRoomSession(session, nick, c.pid, args[0]); err != nil {
 				return err
 			}
 			item, err := c.createItem(cmd.Context(), args[0], session, kind, title, body)
@@ -439,6 +449,7 @@ func newRoomItemCmd(use, short, kind string) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&session, "session", "", roomSessionFlagHelp)
+	cmd.Flags().StringVar(&nick, "nick", "", roomNickFlagHelp)
 	cmd.Flags().StringVar(&title, "title", "", "short title (required)")
 	cmd.Flags().StringVar(&body, "body", "", "description")
 	addRoomFlags(cmd, &dir, &port)

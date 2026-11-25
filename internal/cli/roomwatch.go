@@ -142,7 +142,7 @@ func lockCheckpoint(path string) (func(), error) {
 }
 
 func newRoomWatchCmd() *cobra.Command {
-	var dir, session, cursorFile string
+	var dir, session, nick, cursorFile string
 	var port, since int
 	var once bool
 	var settle time.Duration
@@ -156,7 +156,7 @@ func newRoomWatchCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if session, err = resolveRoomSession(session, c.pid, roomID); err != nil {
+			if session, err = resolveRoomSession(session, nick, c.pid, roomID); err != nil {
 				return err
 			}
 
@@ -190,6 +190,7 @@ func newRoomWatchCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&session, "session", "", roomSessionFlagHelp)
+	cmd.Flags().StringVar(&nick, "nick", "", roomNickFlagHelp)
 	cmd.Flags().IntVar(&since, "since", 0, "override the checkpoint/last_seq and start from this sequence number")
 	cmd.Flags().BoolVar(&once, "once", false, "exit 0 after the first relevant (non-echo) event, once --settle passes with nothing new")
 	cmd.Flags().DurationVar(&settle, "settle", 1500*time.Millisecond, "with --once, keep printing events until this long passes with no new one, at most 5s after the first; 0 exits on the first batch")

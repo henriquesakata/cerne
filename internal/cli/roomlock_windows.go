@@ -20,3 +20,9 @@ func tryLockFile(f *os.File) error {
 	}
 	return err
 }
+
+// lockFile is tryLockFile that waits for the lock (B-0084: the stored room
+// sessions' read-modify-write).
+func lockFile(f *os.File) error {
+	return windows.LockFileEx(windows.Handle(f.Fd()), windows.LOCKFILE_EXCLUSIVE_LOCK, 0, 1, 0, &windows.Overlapped{})
+}
