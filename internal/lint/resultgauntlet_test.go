@@ -474,3 +474,19 @@ func TestGauntletVerdictReadsLikeTheLint(t *testing.T) {
 		}
 	}
 }
+
+// B-0077 crit. 3: a "<!--" inside an inline code span in the prose is text, so
+// the cost anchor's "-->" at the end never closes a comment that swallowed the
+// "## Gauntlet" section in between.
+func TestGauntletRoundsCommentOpenerInCodeSpan(t *testing.T) {
+	result := []byte("## Resultado\n\nO trecho vinha como `--- # … <!-- HOW TO USE …` no search.\n\n" +
+		"## Gauntlet\nBarra: não aplicável (correção com teste de regressão) — padrão alternativo: teste vermelho antes e verde depois\n" +
+		"Rodada 1 — vitória: \"o teste de regressão falha antes e passa depois\"\n\n" +
+		"<!-- cerne:cost v1 {\"tokens\":1} -->\n")
+	if has, derrotas := GauntletRounds(result); !has || derrotas != 0 {
+		t.Fatalf("GauntletRounds = (%v, %d), want (true, 0): the section was stripped", has, derrotas)
+	}
+	if v, ok := GauntletVerdict(result); !ok {
+		t.Fatalf("GauntletVerdict = (%q, false), want the round's outcome", v)
+	}
+}
