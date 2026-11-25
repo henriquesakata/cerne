@@ -35,6 +35,7 @@ var (
 	ErrRoomOpen             = errors.New("room is still open — close it with minutes first")
 	ErrMinutesAlreadyLinked = errors.New("room minutes are already registered as a note")
 	ErrNoMinutesDraft       = errors.New("room has no minutes draft")
+	ErrDraftChanged         = errors.New("the minutes draft changed after it was reviewed")
 )
 
 const (
@@ -1043,12 +1044,13 @@ func (m *Manager) Resolve(id, facilitatorToken, itemID, result string) (Facilita
 // Idempotent: closing an already-closed room is a no-op returning its
 // existing minutes, still gated on a valid facilitator capability.
 func (m *Manager) Close(id, facilitatorToken string, minutes Minutes, allowOpenItems bool) (Room, error) {
-	return m.close(id, facilitatorToken, &minutes, allowOpenItems)
+	return m.close(id, facilitatorToken, &minutes, time.Time{}, allowOpenItems)
 }
 
 // close implements Close and CloseWithDraft: a nil given closes with the
-// saved draft. Closing drops the draft.
-func (m *Manager) close(id, facilitatorToken string, given *Minutes, allowOpenItems bool) (Room, error) {
+// saved draft, refused with ErrDraftChanged when reviewed is set and is not
+// that draft's updated_at. Closing drops the draft.
+func (m *Manager) close(id, facilitatorToken string, given *Minutes, reviewed time.Time, allowOpenItems bool) (Room, error) {
 	rs, err := m.getRoom(id)
 	if err != nil {
 		return Room{}, err
@@ -1064,6 +1066,9 @@ func (m *Manager) close(id, facilitatorToken string, given *Minutes, allowOpenIt
 	if given == nil {
 		if rs.meta.MinutesDraft == nil {
 			return Room{}, ErrNoMinutesDraft
+		}
+		if !reviewed.IsZero() && !reviewed.Equal(rs.meta.MinutesDraft.UpdatedAt) {
+			return Room{}, ErrDraftChanged
 		}
 		given = &rs.meta.MinutesDraft.Minutes
 	}
@@ -1142,10 +1147,13 @@ func (m *Manager) SaveMinutesDraft(id, sessionID, facilitatorToken string, minut
 }
 
 // CloseWithDraft is Close with the room's saved minutes draft (T-0022):
-// ErrNoMinutesDraft when none was saved. Same facilitator gate, open-items
-// rule and idempotency as Close.
-func (m *Manager) CloseWithDraft(id, facilitatorToken string, allowOpenItems bool) (Room, error) {
-	return m.close(id, facilitatorToken, nil, allowOpenItems)
+// ErrNoMinutesDraft when none was saved. A non-zero reviewed is the
+// updated_at of the draft the facilitator read: a draft saved since then
+// refuses with ErrDraftChanged, so the room never closes with minutes its
+// facilitator did not see. Same facilitator gate, open-items rule and
+// idempotency as Close.
+func (m *Manager) CloseWithDraft(id, facilitatorToken string, reviewed time.Time, allowOpenItems bool) (Room, error) {
+	return m.close(id, facilitatorToken, nil, reviewed, allowOpenItems)
 }
 
 // Read returns every event with Seq > since. When follow is true and none is

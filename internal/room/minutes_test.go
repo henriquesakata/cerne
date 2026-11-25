@@ -272,17 +272,17 @@ func TestCloseWithDraftUsesSavedDraft(t *testing.T) {
 	m := newManager(t)
 	r, fac, _ := m.Open("topico")
 	alice := mustJoin(t, m, r.ID, "alice", "")
-	if _, err := m.CloseWithDraft(r.ID, fac, false); !errors.Is(err, ErrNoMinutesDraft) {
+	if _, err := m.CloseWithDraft(r.ID, fac, time.Time{}, false); !errors.Is(err, ErrNoMinutesDraft) {
 		t.Fatalf("close with no draft err = %v, want ErrNoMinutesDraft", err)
 	}
 	mn := Minutes{Conclusion: "reverter", Rationale: "rápido", NextSteps: []string{"post-mortem"}}
 	if _, err := m.SaveMinutesDraft(r.ID, alice.SessionID, "", mn); err != nil {
 		t.Fatalf("SaveMinutesDraft: %v", err)
 	}
-	if _, err := m.CloseWithDraft(r.ID, alice.SessionID, false); !errors.Is(err, ErrNotFacilitator) {
+	if _, err := m.CloseWithDraft(r.ID, alice.SessionID, time.Time{}, false); !errors.Is(err, ErrNotFacilitator) {
 		t.Fatalf("close by a participant err = %v, want ErrNotFacilitator", err)
 	}
-	closed, err := m.CloseWithDraft(r.ID, fac, false)
+	closed, err := m.CloseWithDraft(r.ID, fac, time.Time{}, false)
 	if err != nil {
 		t.Fatalf("CloseWithDraft: %v", err)
 	}
@@ -296,6 +296,33 @@ func TestCloseWithDraftUsesSavedDraft(t *testing.T) {
 
 // T-0022 crit. 2
 // E-0006 crit. 11
+func TestCloseWithDraftClosesOnlyWithTheReviewedDraft(t *testing.T) {
+	m := newManager(t)
+	r, fac, _ := m.Open("topico")
+	alice := mustJoin(t, m, r.ID, "alice", "")
+	seen, err := m.SaveMinutesDraft(r.ID, alice.SessionID, "", Minutes{Conclusion: "a revisada", Rationale: "r"})
+	if err != nil {
+		t.Fatalf("first draft: %v", err)
+	}
+	time.Sleep(2 * time.Millisecond) // the second draft's stamp must differ
+	current, err := m.SaveMinutesDraft(r.ID, alice.SessionID, "", Minutes{Conclusion: "a nova", Rationale: "r"})
+	if err != nil {
+		t.Fatalf("second draft: %v", err)
+	}
+	if _, err := m.CloseWithDraft(r.ID, fac, seen.UpdatedAt, false); !errors.Is(err, ErrDraftChanged) {
+		t.Fatalf("close with a stale draft err = %v, want ErrDraftChanged", err)
+	}
+	if m.List()[0].ClosedAt != nil {
+		t.Fatal("a refused close closed the room")
+	}
+	closed, err := m.CloseWithDraft(r.ID, fac, current.UpdatedAt, false)
+	if err != nil || closed.Minutes == nil || closed.Minutes.Conclusion != "a nova" {
+		t.Fatalf("close with the current draft = %+v, %v", closed.Minutes, err)
+	}
+}
+
+// T-0022 crit. 2
+// E-0006 crit. 11
 func TestCloseWithDraftBlocksOnOpenItems(t *testing.T) {
 	m := newManager(t)
 	r, fac, _ := m.Open("topico")
@@ -304,10 +331,10 @@ func TestCloseWithDraftBlocksOnOpenItems(t *testing.T) {
 	if _, err := m.SaveMinutesDraft(r.ID, alice.SessionID, "", minimalMinutes); err != nil {
 		t.Fatalf("SaveMinutesDraft: %v", err)
 	}
-	if _, err := m.CloseWithDraft(r.ID, fac, false); !errors.Is(err, ErrOpenItems) {
+	if _, err := m.CloseWithDraft(r.ID, fac, time.Time{}, false); !errors.Is(err, ErrOpenItems) {
 		t.Fatalf("err = %v, want ErrOpenItems", err)
 	}
-	closed, err := m.CloseWithDraft(r.ID, fac, true)
+	closed, err := m.CloseWithDraft(r.ID, fac, time.Time{}, true)
 	if err != nil || closed.Minutes == nil || len(closed.Minutes.OpenItems) != 1 || closed.Minutes.OpenItems[0] != item.ID {
 		t.Fatalf("forced close = %+v, %v; want the open item recorded", closed.Minutes, err)
 	}
@@ -389,7 +416,7 @@ func TestMinutesListsAreNeverNull(t *testing.T) {
 	if _, err := m.SaveMinutesDraft(r.ID, "", fac, minimalMinutes); err != nil {
 		t.Fatalf("SaveMinutesDraft: %v", err)
 	}
-	closed, err := m.CloseWithDraft(r.ID, fac, false)
+	closed, err := m.CloseWithDraft(r.ID, fac, time.Time{}, false)
 	if err != nil {
 		t.Fatalf("CloseWithDraft: %v", err)
 	}

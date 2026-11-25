@@ -591,7 +591,7 @@ func handleRoomClose(w http.ResponseWriter, r *http.Request, projectID, id strin
 	}
 	var rm room.Room
 	if req.UseDraft {
-		rm, err = m.CloseWithDraft(id, req.FacilitatorID, req.AllowOpenItems)
+		rm, err = m.CloseWithDraft(id, req.FacilitatorID, time.Time{}, req.AllowOpenItems)
 	} else {
 		rm, err = m.Close(id, req.FacilitatorID, req.Minutes, req.AllowOpenItems)
 	}
