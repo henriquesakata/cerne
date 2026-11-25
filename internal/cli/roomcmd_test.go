@@ -26,6 +26,7 @@ import (
 	"github.com/henriquesakata/cerne/internal/server"
 	"github.com/henriquesakata/cerne/internal/store"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 // minimalMinutesJSON satisfies room close's required-field validation with
@@ -1136,9 +1137,13 @@ func TestRoomTextsKeepCredentialOffTheCommandLine(t *testing.T) {
 		}
 		texts[path] = string(data)
 	}
+	// review round 1: Short, Long, Example and every flag's usage — no room
+	// subcommand has an Example or a Long today, so those alone found nothing.
 	var walk func(*cobra.Command)
 	walk = func(c *cobra.Command) {
-		texts[c.CommandPath()] = c.Example + "\n" + c.Long
+		help := []string{c.Short, c.Long, c.Example}
+		c.Flags().VisitAll(func(f *pflag.Flag) { help = append(help, f.Usage) })
+		texts[c.CommandPath()] = strings.Join(help, "\n")
 		for _, sub := range c.Commands() {
 			walk(sub)
 		}
