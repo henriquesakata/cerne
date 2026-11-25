@@ -29,6 +29,8 @@ func formatRoomEvent(m room.Message) string {
 		return fmt.Sprintf("#%d [join: %s — %s]", m.Seq, m.Nick, m.Bio)
 	case m.Type == "join":
 		return fmt.Sprintf("#%d [join: %s]", m.Seq, m.Nick)
+	case m.Type == "leave":
+		return fmt.Sprintf("#%d [leave: %s]", m.Seq, m.Nick)
 	default:
 		return fmt.Sprintf("#%d [%s]", m.Seq, m.Type)
 	}
@@ -46,10 +48,11 @@ func addRoomFlags(cmd *cobra.Command, dir *string, port *int) {
 func newRoomCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "room",
-		Short: "Talk to the local war room: open/join/say/read/close/list",
+		Short: "Talk to the local war room: open/join/leave/say/read/close/list",
 	}
 	cmd.AddCommand(newRoomOpenCmd())
 	cmd.AddCommand(newRoomJoinCmd())
+	cmd.AddCommand(newRoomLeaveCmd())
 	cmd.AddCommand(newRoomSayCmd())
 	cmd.AddCommand(newRoomReadCmd())
 	cmd.AddCommand(newRoomWatchCmd())
@@ -125,6 +128,44 @@ func newRoomJoinCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&nick, "nick", "", "your nickname in the room (required)")
 	cmd.Flags().StringVar(&bio, "bio", "", "short profile shown to other participants")
+	addRoomFlags(cmd, &dir, &port)
+	return cmd
+}
+
+func newRoomLeaveCmd() *cobra.Command {
+	var dir, session string
+	var port int
+	cmd := &cobra.Command{
+		Use:   "leave <room>",
+		Short: "Leave a war room, revoking your session capability",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			fromEnv := false
+			if session == "" {
+				session = os.Getenv("CERNE_ROOM_SESSION")
+				fromEnv = session != ""
+			}
+			if session == "" {
+				return errors.New("a session is required: pass --session or set CERNE_ROOM_SESSION (run 'cerne room join <room>' to obtain one)")
+			}
+			c, err := newRoomClient(dir, port)
+			if err != nil {
+				return err
+			}
+			rm, err := c.leave(cmd.Context(), args[0], session)
+			if err != nil {
+				return fmt.Errorf("leave %s: %w", args[0], err)
+			}
+			out := cmd.OutOrStdout()
+			fmt.Fprintf(out, "left %s (%d active participant(s))\n", rm.ID, len(rm.ActiveParticipants))
+			fmt.Fprintf(out, "this session capability is no longer valid — run 'cerne room join %s --nick <nick>' for a new one\n", rm.ID)
+			if fromEnv {
+				fmt.Fprintln(out, "env: unset CERNE_ROOM_SESSION")
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&session, "session", "", "session capability printed by 'cerne room join' (falls back to CERNE_ROOM_SESSION)")
 	addRoomFlags(cmd, &dir, &port)
 	return cmd
 }

@@ -23,8 +23,11 @@ export CERNE_ROOM_SESSION=<printed by join>                         # or pass --
 cerne room say <id> "<msg>" --session <token>                        # speak, authenticated by the session's nick
 cerne room watch <id> --session <token> [--once]                     # F-0227: turn-based wakeup with a durable cursor, filters your own echo
 cerne room read <id> --since <seq> --once                            # F-0220 primitive: stateless wakeup, no cursor/session/echo-filter
+cerne room leave <id>                                                # F-0511: revokes the CERNE_ROOM_SESSION capability; join again for a new one
 cerne room close <id> --facilitator <token> --minutes <...>          # F-0228: facilitator-only, structured minutes — see below
 ```
+
+**Observe without joining; leave when you are done (F-0511).** Reading needs no session: `cerne room read` is how you observe a room, and joining is only what lets you publish. When you are done, `cerne room leave <id>` revokes your capability on the server — it stops working for `say`, `watch`, `propose` and `request-decision`, a `leave` event goes into the transcript, and you drop out of the room's `active_participants` while staying in its historical `participants` (the minutes still list you). The nick is free again: a later `cerne room join` mints a new capability. Leaving never touches the facilitator capability. Closing a terminal or tab does not leave.
 
 **`room watch --once`, not `room read`, for a turn-based agent (F-0227).** `watch` wraps the same long-poll primitive as `read` with what a turn-based agent actually needs: a durable cursor (a restart resumes where you left off — no manual `--since` bookkeeping), and it filters out your **own** messages so `say`-ing something doesn't consume your own wakeup. `--once` long-polls until the first **relevant** (non-echo) event, prints it, and exits 0; a room `close` event always ends the loop, printed, regardless of `--once`. `--session`/`CERNE_ROOM_SESSION` is required (same convention as `say`); the cursor is a local file, not a `--since` you track by hand. `watch` never blocks forever on its own the way `--follow` would — retry a transient connection failure with its own bounded backoff, or re-run `--once` for the next turn.
 
