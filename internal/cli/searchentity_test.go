@@ -28,7 +28,8 @@ func perDocFixture(t *testing.T) string {
 }
 
 // F-0367 criterion 2: --per-doc prints one line per document, byte for byte
-// the output `cerne search` printed before F-0367 (golden captured then).
+// the output `cerne search` printed before F-0367 (golden captured then; B-0075
+// regenerated it: the snippets no longer quote the frontmatter).
 func TestSearchPerDocGolden(t *testing.T) {
 	out, err := execCerne(t, "search", "parcelas", "--per-doc", "--dir", perDocFixture(t))
 	if err != nil {
