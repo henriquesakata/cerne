@@ -36,6 +36,12 @@ func TestBinaryPlan(t *testing.T) {
 			setRunningBinary(t, "/usr/bin/cerne", "v0.14.3")
 			return "/usr/bin/cerne"
 		}, false, "system package manager", "yay -Syu cerne-bin"},
+		// F-0508 crit. 6: and a Scoop install.
+		{"scoop", func(t *testing.T) string {
+			exe := `C:\Users\u\scoop\apps\cerne\current\cerne.exe`
+			setRunningBinary(t, exe, "v0.14.3")
+			return exe
+		}, false, "installed by Scoop", "scoop update cerne"},
 		{"unwritable folder", func(t *testing.T) string {
 			if runtime.GOOS == "windows" || os.Geteuid() == 0 {
 				t.Skip("needs POSIX permissions and a non-root user")

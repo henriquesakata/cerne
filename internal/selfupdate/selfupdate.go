@@ -63,8 +63,7 @@ func Detect(exe, resolved, version string, gobins []string) Method {
 		return Dev
 	}
 	for _, p := range []string{exe, resolved} {
-		// Windows paths, whatever the host: slashes and case are normalized.
-		if strings.Contains(strings.ToLower(strings.ReplaceAll(p, `\`, "/")), "/apps/cerne/") {
+		if isScoopPath(p) {
 			return Scoop
 		}
 	}
@@ -84,6 +83,17 @@ func Detect(exe, resolved, version string, gobins []string) Method {
 		}
 	}
 	return Script
+}
+
+// winPathRe is a Windows path as written, whatever the host runs on: a drive
+// letter or a UNC prefix. A POSIX folder that happens to be named apps/cerne is
+// not one.
+var winPathRe = regexp.MustCompile(`^([A-Za-z]:|\\\\)`)
+
+// isScoopPath reports a Windows path inside <scoop root>\apps\cerne\.
+func isScoopPath(p string) bool {
+	return winPathRe.MatchString(p) &&
+		strings.Contains(strings.ToLower(strings.ReplaceAll(p, `\`, "/")), "/apps/cerne/")
 }
 
 // GoBins lists where `go install` writes or wrote: GOBIN and every GOPATH

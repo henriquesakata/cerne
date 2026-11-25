@@ -84,8 +84,8 @@ func TestScoopManifest_BadTag(t *testing.T) {
 		if err == nil {
 			t.Errorf("render succeeded for tag %q", tag)
 		}
-		if !strings.Contains(stderr, tag) {
-			t.Errorf("tag %q: stderr does not name it: %q", tag, stderr)
+		if want := "tag must look like v1.2.3, got '" + tag + "'"; !strings.Contains(stderr, want) {
+			t.Errorf("tag %q: stderr %q lacks %q", tag, stderr, want)
 		}
 		if out != "" {
 			t.Errorf("tag %q: printed a manifest:\n%s", tag, out)
