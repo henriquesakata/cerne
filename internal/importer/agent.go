@@ -1,6 +1,7 @@
 package importer
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/refresh"
+	"github.com/henriquesakata/cerne/internal/skills"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -117,7 +120,17 @@ func CollectSources(root string) ([]Source, error) {
 			return err
 		}
 		if d.IsDir() {
-			if path != root && ignoredDirs[d.Name()] {
+			if path == root {
+				return nil
+			}
+			rel, err := filepath.Rel(root, path)
+			if err != nil {
+				return err
+			}
+			rel = filepath.ToSlash(rel)
+			// B-0071: what cerne installs is not the project's documentation.
+			if ignoredDirs[d.Name()] || refresh.IsWholeFileDir(rel) ||
+				(filepath.Dir(rel) == ".claude/skills" && strings.HasPrefix(d.Name(), skills.LearnedPrefix)) {
 				return fs.SkipDir
 			}
 			return nil
@@ -132,6 +145,12 @@ func CollectSources(root string) ([]Source, error) {
 		rel, err := filepath.Rel(root, path)
 		if err != nil {
 			return err
+		}
+		if refresh.IsMarkerFile(filepath.ToSlash(rel)) {
+			data = skills.StripManagedBlock(data)
+			if len(bytes.TrimSpace(data)) == 0 {
+				return nil // only cerne's block
+			}
 		}
 		sources = append(sources, Source{RelPath: filepath.ToSlash(rel), Content: string(data)})
 		return nil

@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -30,11 +31,26 @@ var wholeFileDirs = []string{
 	".github/instructions",
 }
 
+// IsWholeFileDir reports whether rel, a slash path relative to the project, is
+// one of those folders or lies inside one.
+func IsWholeFileDir(rel string) bool {
+	for _, d := range wholeFileDirs {
+		if rel == d || strings.HasPrefix(rel, d+"/") {
+			return true
+		}
+	}
+	return false
+}
+
 // blockFiles are the JSON files that belong to the person, with cerne entries inside.
 var blockFiles = []string{".claude/settings.json", ".codex/hooks.json", ".gemini/settings.json", ".cursor/hooks.json", ".mcp.json"}
 
 // markerFiles are project docs carrying cerne's marked block.
 var markerFiles = []string{"AGENTS.md", "GEMINI.md"}
+
+// IsMarkerFile reports whether rel, a slash path relative to the project, is a
+// doc carrying cerne's marked block.
+func IsMarkerFile(rel string) bool { return slices.Contains(markerFiles, rel) }
 
 const (
 	markerBegin = "<!-- cerne:authoring-guide:begin"
