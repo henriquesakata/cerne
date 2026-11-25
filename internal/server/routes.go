@@ -156,6 +156,9 @@ func dataRoutes() []dataRoute {
 		{"POST", "/ideas/{id}/promote", false, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
 			handlePromoteIdea(w, r, repoDir, projDir, r.PathValue("id"))
 		}},
+		{"POST", "/ideas/{id}/unpromote", false, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
+			handleUnpromoteIdea(w, r, repoDir, projDir, r.PathValue("id"))
+		}},
 		// Mirror tab (F-0465): local-only and read-only; the check only lists
 		// open issues on each tracker.
 		{"GET", "/mirror", false, func(w http.ResponseWriter, _ *http.Request, repoDir, projDir, _ string) {

@@ -37,6 +37,7 @@ func newIdeaCmd() *cobra.Command {
 	cmd.AddCommand(verbs.MarkLocal(newIdeaDropCmd(&dir)))
 	cmd.AddCommand(verbs.MarkLocal(newIdeaLinkCmd(&dir)))
 	cmd.AddCommand(verbs.MarkLocal(newIdeaUnlinkCmd(&dir)))
+	cmd.AddCommand(verbs.MarkLocal(newIdeaUnpromoteCmd(&dir)))
 	cmd.AddCommand(verbs.MarkLocal(newIdeaMigrateCmd(&dir)))
 	cmd.AddCommand(verbs.MarkLocal(newIdeaPromoteCmd(&dir)))
 	cmd.AddCommand(verbs.MarkLocal(newIdeaRetagCmd(&dir)))
@@ -251,6 +252,30 @@ func newIdeaUnlinkCmd(dir *string) *cobra.Command {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s: %s -> %s\n", i.ID, domain.IdeaPromoted, i.State)
+			return nil
+		},
+	}
+}
+
+func newIdeaUnpromoteCmd(dir *string) *cobra.Command {
+	return &cobra.Command{
+		Use:   "unpromote <I-id>",
+		Short: "Undo a promotion: reject the candidate it created and return the idea to active",
+		Long: "Undoes an 'idea promote' while its card is still a candidate: the card is rejected with the reason " +
+			"'promotion of I-NNNN undone' and the idea returns to active, in one commit. An idea imported from an " +
+			"issue takes its link back, so the issue is left as it is. A card past candidate is refused (reject it " +
+			"with 'cerne feature reject'), and so is an idea linked to a card it did not create ('cerne idea unlink').",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, err := resolveProject(*dir)
+			if err != nil {
+				return err
+			}
+			i, f, err := app.UnpromoteIdea(ctx.repoDir, ctx.projDir, args[0])
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%s: %s -> %s\n%s: %s -> %s\n", i.ID, domain.IdeaPromoted, i.State, f.ID, domain.StateCandidate, f.State)
 			return nil
 		},
 	}
