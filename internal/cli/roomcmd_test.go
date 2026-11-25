@@ -468,8 +468,21 @@ func TestRoomOpenJoinKeepCredentialOffExamples(t *testing.T) {
 			}
 			assertCredentialOnlyWhereAllowed(t, joinOut, session)
 			assertCredentialOnlyWhereAllowed(t, openOut, openFacilitator)
-			if !strings.Contains(joinOut, "say: cerne room say R2 \"<message>\"\n") || !strings.Contains(joinOut, "cerne room watch R2 --once\n") {
-				t.Fatalf("join output = %q, want say and watch examples with no credential", joinOut)
+			// review round 2: in an agent session every example carries
+			// --nick, even with one nick, so a later store failure or a
+			// second joiner makes it refuse instead of misattribute.
+			pick := ""
+			if agent != "" {
+				pick = " --nick ana"
+			}
+			for _, want := range []string{
+				"say: cerne room say R2 \"<message>\"" + pick + "\n",
+				"cerne room watch R2 --once" + pick + "\n",
+				"cerne room request-decision R2" + pick + " --title",
+			} {
+				if !strings.Contains(joinOut, want) {
+					t.Fatalf("join output = %q, want %q", joinOut, want)
+				}
 			}
 
 			stored, err := loadRoomCreds("proj-b0084", "R2")

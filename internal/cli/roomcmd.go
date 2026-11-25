@@ -128,14 +128,17 @@ func newRoomJoinCmd() *cobra.Command {
 			} else if nicks != nil {
 				warnRoomSessionVar(cmd.ErrOrStderr(), nick)
 			}
-			pick := "" // --nick once this agent session keeps more than one nick here
-			switch {
-			case err != nil || nicks == nil:
-				fmt.Fprintf(out, "env: export CERNE_ROOM_SESSION=%s\n", sid)
-			case len(nicks) == 1:
-				fmt.Fprintln(out, "stored for this agent session (CERNE_SESSION) in a 0600 cache file: room commands for this room find it with no flag or variable")
-			default:
+			// storeRoomSession returns nil, nil only without CERNE_SESSION. In
+			// an agent session every example carries --nick, even with one
+			// nick: a later store failure or a second joiner then makes it
+			// refuse instead of speaking as someone else.
+			pick := ""
+			if err != nil || nicks != nil {
 				pick = " --nick " + nick
+			}
+			if err != nil || nicks == nil {
+				fmt.Fprintf(out, "env: export CERNE_ROOM_SESSION=%s\n", sid)
+			} else {
 				fmt.Fprintf(out, "stored for this agent session (CERNE_SESSION) in a 0600 cache file, which keeps %s in this room: room commands pick yours with --nick %s\n", strings.Join(nicks, ", "), nick)
 			}
 			fmt.Fprintf(out, "say: cerne room say %s \"<message>\"%s\n", id, pick)
