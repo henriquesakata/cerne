@@ -164,9 +164,52 @@ func TestPresenceClosedRoomNeverListening(t *testing.T) {
 	}
 	cancel := follow(t, m, r.ID, alice.SessionID)
 	defer cancel()
-	time.Sleep(50 * time.Millisecond) // give the read time to register
+	waitWatching(t, m, r.ID, "alice", 1)
 	if activeOf(t, m, r.ID, "alice").Listening {
 		t.Fatal("listening in a closed room")
+	}
+	b, _ := json.Marshal(m.List())
+	if strings.Contains(string(b), `"listening"`) {
+		t.Fatalf("closed room serves listening: %s", b)
+	}
+}
+
+// waitWatching polls until nick has n follow reads counted: in a closed room
+// listening stays false, so the count itself is the state to wait for.
+func waitWatching(t *testing.T, m *Manager, id, nick string, n int) {
+	t.Helper()
+	rs, err := m.getRoom(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(2 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		rs.mu.Lock()
+		got := rs.watchers[nick]
+		rs.mu.Unlock()
+		if got == n {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%s has %d follow reads counted, want %d", nick, got, n)
+		}
+	}
+}
+
+// T-0021 crit. 1
+// E-0006 crit. 7
+func TestPresenceCloseWhileFollowReadInFlight(t *testing.T) {
+	m := newManager(t)
+	r, fac, _ := m.Open("topico")
+	alice := mustJoin(t, m, r.ID, "alice", "")
+	cancel := follow(t, m, r.ID, alice.SessionID)
+	defer cancel()
+	waitListening(t, m, r.ID, "alice", true)
+
+	if _, err := m.Close(r.ID, fac, minimalMinutes, false); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if activeOf(t, m, r.ID, "alice").Listening {
+		t.Fatal("still listening after the room closed under her follow read")
 	}
 	b, _ := json.Marshal(m.List())
 	if strings.Contains(string(b), `"listening"`) {

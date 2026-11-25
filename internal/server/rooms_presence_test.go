@@ -129,10 +129,22 @@ func TestRoomListClosedRoomOmitsListening(t *testing.T) {
 	alice := joinAs(t, h, opened.ID, "alice")
 	closeMinimalRoom(t, h, opened.ID, opened.FacilitatorID)
 
+	// In a closed room listening stays false, so wait for the read's
+	// last_seen_at stamp, taken in the same step that counts it.
+	time.Sleep(2 * time.Millisecond) // the join's stamp must be strictly earlier
+	before := time.Now().UTC()
 	cancel := followAs(t, h, opened.ID, alice.SessionID)
 	defer cancel()
-	time.Sleep(50 * time.Millisecond) // give the read time to register
-	if _, body := presenceOf(t, h, opened.ID, "alice"); strings.Contains(body, `"listening"`) {
-		t.Fatalf("closed room serves listening: %s", body)
+	for deadline := time.Now().Add(2 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		p, body := presenceOf(t, h, opened.ID, "alice")
+		if p.LastSeenAt != nil && !p.LastSeenAt.Before(before) {
+			if strings.Contains(body, `"listening"`) {
+				t.Fatalf("closed room serves listening: %s", body)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the follow read never registered: %s", body)
+		}
 	}
 }
