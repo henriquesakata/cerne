@@ -126,7 +126,7 @@ func runCostStamp(cmd *cobra.Command, dir, id string) error {
 	if err != nil {
 		return err
 	}
-	o, err := stampCost(ctx, id)
+	o, err := stampCost(ctx, id, false)
 	if err != nil {
 		return err
 	}
@@ -146,13 +146,21 @@ func runCostStamp(cmd *cobra.Command, dir, id string) error {
 
 // stampCost is the one stamp path: `cerne cost --stamp` and the complete
 // transition (F-0402) both run it, with no pull or push of their own.
-func stampCost(ctx projCtx, id string) (stampOutcome, error) {
+//
+// justCompleted (B-0090) is the complete path: the automatic accept may have
+// carried the card to done in the same transition, and the stamp then still
+// runs, judged as the implemented card it was a moment ago.
+func stampCost(ctx projCtx, id string, justCompleted bool) (stampOutcome, error) {
 	f, err := store.LoadFeature(ctx.repoDir, id)
 	if err != nil {
 		return stampOutcome{}, err
 	}
 	cacheDir := filepath.Dir(ctx.repoDir)
-	r, err := cost.PrecheckStamp(cost.Inputs{CacheDir: cacheDir, RepoDir: ctx.repoDir, Roots: claudeRoots()}, f.State, id)
+	state, amend := f.State, app.AmendFeatureResult
+	if justCompleted && state == domain.StateDone {
+		state, amend = domain.StateImplemented, app.AmendCompletedResult
+	}
+	r, err := cost.PrecheckStamp(cost.Inputs{CacheDir: cacheDir, RepoDir: ctx.repoDir, Roots: claudeRoots()}, state, id)
 	if err != nil {
 		return stampOutcome{}, err
 	}
@@ -172,7 +180,7 @@ func stampCost(ctx projCtx, id string) (stampOutcome, error) {
 	if err != nil {
 		return stampOutcome{}, err
 	}
-	_, changed, err := app.AmendFeatureResult(ctx.repoDir, ctx.projDir, id, body, "cost stamp (F-0309)")
+	_, changed, err := amend(ctx.repoDir, ctx.projDir, id, body, "cost stamp (F-0309)")
 	if err != nil {
 		return stampOutcome{}, err
 	}
@@ -610,18 +618,23 @@ const (
 
 // completeStampLine words a stamp outcome after a complete: the line that is
 // printed, always followed by exit 0 (F-0402 crit. 3).
-func completeStampLine(id string, o stampOutcome, err error) string {
+func completeStampLine(id string, o stampOutcome, err error, done bool) string {
+	// A done card refuses `cerne cost --stamp` (B-0090): no advice to run it.
+	rerun := fmt.Sprintf("; run 'cerne cost %s --stamp'", id)
+	if done {
+		rerun = ""
+	}
 	switch {
 	case errors.Is(err, cost.ErrNothingToStamp):
 		// B-0070: "another machine" alone sent the agent away from an unbound
 		// session that ran right here. Attribution is temporal, so a bind made
 		// now counts nothing already done: say so, and how to bind next time.
-		return fmt.Sprintf("warning: cost not stamped: no session on this machine is bound to %s, so the work done here is not counted. A session binds when it starts: 'cerne feature start %s', or 'cerne work start \"%s: <what>\" --ref %s' when it continues another session's work. Work done on another machine is stamped there: cerne cost %s --stamp", id, id, id, id, id)
+		return fmt.Sprintf("warning: cost not stamped: no session on this machine is bound to %s, so the work done here is not counted. A session binds when it starts: 'cerne feature start %s', or 'cerne work start \"%s: <what>\" --ref %s' when it continues another session's work. Work done on another machine is stamped there%s", id, id, id, id, strings.Replace(rerun, "; run 'cerne cost "+id+" --stamp'", ": cerne cost "+id+" --stamp", 1))
 	case errors.Is(err, cost.ErrUnsupportedHarness):
 		// --stamp would fail the same way (B-0055): advise no command.
 		return "warning: cost not stamped: this session ran under a harness cerne cost cannot read (Claude Code transcripts only); nothing to run"
 	case err != nil:
-		return fmt.Sprintf("warning: cost not stamped: %s; run 'cerne cost %s --stamp'", strings.Join(strings.Fields(err.Error()), " "), id)
+		return fmt.Sprintf("warning: cost not stamped: %s%s", strings.Join(strings.Fields(err.Error()), " "), rerun)
 	case o.kind == stampLowerRefused:
 		return "warning: cost not stamped: the stamped total is higher than this machine's sessions; nothing written"
 	case o.kind != stampWritten:

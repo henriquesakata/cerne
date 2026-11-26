@@ -219,8 +219,8 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 		// The transition is the act that counts: a stamp that cannot be made
 		// warns and the exit stays 0 (F-0402 crit. 3).
 		if !noStamp {
-			o, serr := stampCost(ctx, id)
-			fmt.Fprintln(cmd.OutOrStdout(), completeStampLine(id, o, serr))
+			o, serr := stampCost(ctx, id, true)
+			fmt.Fprintln(cmd.OutOrStdout(), completeStampLine(id, o, serr, out.To == domain.StateDone))
 		}
 		printCompleteLearnings(cmd.OutOrStdout(), ctx.repoDir, id)
 	}
