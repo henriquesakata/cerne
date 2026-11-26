@@ -693,7 +693,7 @@ function SettingRow({
       : s.enum?.length && typeof v === 'string'
         ? v === ''
           ? ts.emptyEnum
-          : (ts.options[v] ?? v)
+          : (ts.options[`${s.id}:${v}`] ?? ts.options[v] ?? v)
         : formatValue(v, ts)
   const desc = tx(s.description)
   const label = (sc: SettingScope) => (sc === 'host' ? ts.hostGlobal : ts.scopes[sc])
@@ -711,6 +711,44 @@ function SettingRow({
   const onOff = s.type === 'string' && s.enum?.length === 2 && s.enum.includes('on') && s.enum.includes('off')
   const isToggle = s.type === 'bool' || onOff
   const titleNode = <span id={titleId}>{tx(s.title)}</span>
+  // The question a human-only key asks before it leaves its default: a toggle
+  // turns on or off, a select changes to the value picked (F-0515).
+  const turningOn = pending === true || pending === 'on'
+  const file = ws === 'project' ? '.cernerc' : 'settings.toml'
+  let ask = ''
+  if (confirming && !isToggle) ask = ts.confirmValue(tx(s.title), fmt(pending), file, ws === 'project')
+  else if (confirming) ask = turningOn ? ts.confirmOn(tx(s.title), file) : ts.confirmOff(tx(s.title), file, ws === 'project')
+  const confirmBox = confirming && (
+    <div
+      className="settings-confirm"
+      role="group"
+      aria-labelledby={askId}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') cancel()
+      }}
+    >
+      <p id={askId}>{ask}</p>
+      <button
+        type="button"
+        className="settings-confirm-yes"
+        aria-disabled={lock}
+        onClick={() => {
+          if (busy) return
+          const next = pending
+          setPending(undefined)
+          // The question unmounts with the pressed button: hand the focus
+          // back to the control now, so a failed write leaves it there too.
+          document.getElementById(controlId(s.id))?.focus()
+          onWrite(ws, () => putSetting(s.id, ws, next))
+        }}
+      >
+        {!isToggle ? ts.change : turningOn ? ts.turnOn : ts.turnOff}
+      </button>{' '}
+      <button type="button" ref={confirmBtn} className="settings-confirm-no" onClick={cancel}>
+        {ts.cancel}
+      </button>
+    </div>
+  )
   let control = null
   if (isToggle) {
     const on = onOff ? current === 'on' : current === true
@@ -740,47 +778,13 @@ function SettingRow({
         <span aria-hidden="true">{on ? ts.stateOn : ts.stateOff}</span>
       </label>
     )
-    {
-      const turningOn = pending === true || pending === 'on'
-      const file = ws === 'project' ? '.cernerc' : 'settings.toml'
-      // Always a fragment, so the box is not remounted when the question opens.
-      control = (
-        <>
-          {control}
-          {confirming && (
-          <div
-            className="settings-confirm"
-            role="group"
-            aria-labelledby={askId}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') cancel()
-            }}
-          >
-            <p id={askId}>{turningOn ? ts.confirmOn(tx(s.title), file) : ts.confirmOff(tx(s.title), file, ws === 'project')}</p>
-            <button
-              type="button"
-              className="settings-confirm-yes"
-              aria-disabled={lock}
-              onClick={() => {
-                if (busy) return
-                const next = pending
-                setPending(undefined)
-                // The question unmounts with the pressed button: hand the focus
-                // back to the box now, so a failed write leaves it there too.
-                document.getElementById(controlId(s.id))?.focus()
-                onWrite(ws, () => putSetting(s.id, ws, next))
-              }}
-            >
-              {turningOn ? ts.turnOn : ts.turnOff}
-            </button>{' '}
-            <button type="button" ref={confirmBtn} className="settings-confirm-no" onClick={cancel}>
-              {ts.cancel}
-            </button>
-          </div>
-          )}
-        </>
-      )
-    }
+    // Always a fragment, so the box is not remounted when the question opens.
+    control = (
+      <>
+        {control}
+        {confirmBox}
+      </>
+    )
   } else {
     control = (
       <>
@@ -794,9 +798,16 @@ function SettingRow({
             aria-disabled={lock}
             onChange={(e) => {
               const next = e.target.value
+              if (busy) return
+              // A human-only select asks before it leaves its default, like
+              // the toggles (F-0515: the approve and accept gates).
+              if (s.human_only && next !== String(s.default)) {
+                setPending(next)
+                return
+              }
               // The default is not always a declared value (an empty one
               // means "unset"): picking it removes the scope's value.
-              if (!busy) onWrite(ws, () => (next === '' ? unsetSetting(s.id, ws) : putSetting(s.id, ws, next)))
+              onWrite(ws, () => (next === '' ? unsetSetting(s.id, ws) : putSetting(s.id, ws, next)))
             }}
           >
             {(s.enum.includes(String(s.default)) ? s.enum : [String(s.default), ...s.enum]).map((v) => (
@@ -905,6 +916,7 @@ function SettingRow({
             <code>{fmt(current)}</code> <span className="settings-note">{ts.readOnly}</span>
           </p>
         )}
+        {confirmBox}
       </>
     )
   }

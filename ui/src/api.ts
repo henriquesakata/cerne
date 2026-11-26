@@ -31,7 +31,8 @@ export type Feature = {
   components?: string[] // open, slugified subsystem/tool axis (D-0002)
   delivery_commit_url?: string // F-0179: resolved URL of the delivering commit
   delivery_mr_url?: string // F-0179: URL of the delivering MR/PR
-  accepted_via?: string // F-0488: "merge" when the human's merge of the PR was the acceptance
+  accepted_via?: string // F-0488: "merge" when the human's merge of the PR was the acceptance; F-0515: "auto" when complete reached done by [gates] accept = "auto"
+  approved_via?: string // F-0515: "auto" when an agent approved under [gates] approve = "auto"
   // F-0449: the tracker issue a human published this card to; absent = never mirrored.
   mirror?: { tracker: string; kind: string; id: string; url: string; title?: string; summary?: string }
   capabilities?: string[] // F-0188: C- ids da taxonomia funcional

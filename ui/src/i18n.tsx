@@ -485,6 +485,9 @@ const ptBR = {
     childInDev: 'filho em dev',
     staleApproval: 'aprovação vencida',
     staleApprovalTitle: 'A spec mudou desde a aprovação — reaprove antes de iniciar',
+    // F-0515: o card cruzou um gate sem ato humano (gates.approve/accept = auto).
+    approvedAuto: 'Aprovada sem revisão humana',
+    acceptedAuto: 'Aceita sem revisão humana',
     childInDevTitle:
       'um filho já está em desenvolvimento; planeje e inicie o épico',
     pendingClarify: (n: number) => `❓ ${n}`,
@@ -1591,6 +1594,10 @@ const ptBR = {
     confirmOn: (title: string, file: string) =>
       `Ligar ${title}? A partir de agora, um card que um humano marcar como público é publicado nos trackers abaixo: título e resumo públicos, id e estado. Isto grava em ${file}.`,
     turnOn: 'Ligar',
+    // F-0515: uma chave só-humano de valores declarados que sai do padrão.
+    confirmValue: (title: string, value: string, file: string, versioned: boolean) =>
+      `Esta chave é só do dono do projeto. Mudar ${title} para ${value} grava no ${file}${versioned ? ', versionado — lembre de commitar' : ''}; dá para voltar aqui.`,
+    change: 'Mudar',
     // F-0449: o editor de uma chave de registros (mirror.trackers).
     records: {
       actions: 'Ações',
@@ -1757,8 +1764,19 @@ const ptBR = {
         'Só as issues de fora com esta label viram ideas. Vazio importa todas as issues abertas.',
     } as Record<string, string>,
     // Rótulos dos valores de uma chave de texto com valores declarados.
-    // accept/merge: os valores de mirror.close_on (F-0449).
-    options: { on: 'ligado', off: 'desligado', accept: 'no aceite humano', merge: 'no merge do PR' } as Record<string, string>,
+    // accept/merge: os valores de mirror.close_on (F-0449). "<chave>:<valor>"
+    // vence o valor sozinho, para uma chave cujo valor tem outro rótulo (F-0515).
+    options: {
+      on: 'ligado',
+      off: 'desligado',
+      accept: 'no aceite humano',
+      merge: 'no merge do PR',
+      'gates.approve:human': 'Uma pessoa',
+      'gates.approve:auto': 'Automático',
+      'gates.accept:human': 'Uma pessoa',
+      'gates.accept:merge': 'No merge do PR',
+      'gates.accept:auto': 'Automático',
+    } as Record<string, string>,
   },
 }
 
@@ -2206,6 +2224,8 @@ const en: Messages = {
     childInDev: 'child in dev',
     staleApproval: 'approval stale',
     staleApprovalTitle: 'The spec changed since approval — re-approve before starting',
+    approvedAuto: 'Approved without human review',
+    acceptedAuto: 'Accepted without human review',
     childInDevTitle:
       'a child is already in development; plan and start the epic',
     pendingClarify: (n: number) => `❓ ${n}`,
@@ -3290,6 +3310,9 @@ const en: Messages = {
     confirmOn: (title: string, file: string) =>
       `Turn on ${title}? From now on, a card a human marks public is published to the trackers below: its public title, summary, id and state. This writes to ${file}.`,
     turnOn: 'Turn on',
+    confirmValue: (title: string, value: string, file: string, versioned: boolean) =>
+      `This key is the project owner's alone. Changing ${title} to ${value} writes to ${file}${versioned ? ', versioned — remember to commit' : ''}; you can change it back here.`,
+    change: 'Change',
     records: {
       actions: 'Actions',
       row: 'row',
@@ -3357,7 +3380,15 @@ const en: Messages = {
       other: 'Other',
     },
     text: {},
-    options: { accept: 'on human accept', merge: 'on PR merge' },
+    options: {
+      accept: 'on human accept',
+      merge: 'on PR merge',
+      'gates.approve:human': 'A person',
+      'gates.approve:auto': 'Automatic',
+      'gates.accept:human': 'A person',
+      'gates.accept:merge': 'On the PR merge',
+      'gates.accept:auto': 'Automatic',
+    },
   },
 }
 
