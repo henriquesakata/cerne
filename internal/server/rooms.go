@@ -276,6 +276,36 @@ func handleRoomLeave(w http.ResponseWriter, r *http.Request, projectID, id strin
 	writeJSON(w, http.StatusOK, rm)
 }
 
+// maxRoomBody caps a say body and a close's minutes (T-0019): the room log is
+// one JSON line per event and replay reads it with a 1 MiB line limit, and
+// json.Marshal writes '<', '>' and '&' as 6 bytes each, so 160 KiB stays
+// under it. The request itself may be that much larger once escaped.
+const maxRoomBody = 160 * 1024
+
+// decodeRoomBody decodes a room write, answering 413 itself when the request
+// is oversized. It reports false when the response was already written.
+func decodeRoomBody(w http.ResponseWriter, r *http.Request, v any) bool {
+	err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8*maxRoomBody)).Decode(v)
+	var tooBig *http.MaxBytesError
+	switch {
+	case errors.As(err, &tooBig):
+		writeJSON(w, http.StatusRequestEntityTooLarge, errorBody("request too large"))
+	case err != nil:
+		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
+	default:
+		return true
+	}
+	return false
+}
+
+func tooLargeRoomBody(w http.ResponseWriter, n int) bool {
+	if n <= maxRoomBody {
+		return false
+	}
+	writeJSON(w, http.StatusRequestEntityTooLarge, errorBody(fmt.Sprintf("message too large: %d bytes, the limit is %d", n, maxRoomBody)))
+	return true
+}
+
 type sayRequest struct {
 	SessionID string `json:"session_id"`
 	Body      string `json:"body"`
@@ -293,8 +323,7 @@ func handleRoomSay(w http.ResponseWriter, r *http.Request, repoDir, projDir, pro
 		return
 	}
 	var req sayRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
+	if !decodeRoomBody(w, r, &req) || tooLargeRoomBody(w, len(req.Body)) {
 		return
 	}
 	if id == room.ChannelID {
@@ -571,8 +600,17 @@ func handleRoomClose(w http.ResponseWriter, r *http.Request, projectID, id strin
 		return
 	}
 	var req closeRoomRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
+	if !decodeRoomBody(w, r, &req) {
+		return
+	}
+	mn := req.Minutes
+	n := len(mn.Conclusion) + len(mn.Rationale)
+	for _, l := range [][]string{mn.DiscardedOptions, mn.Owners, mn.NextSteps, mn.OpenItems} {
+		for _, x := range l {
+			n += len(x)
+		}
+	}
+	if tooLargeRoomBody(w, n) {
 		return
 	}
 	m, err := roomManagerFor(projectID)
