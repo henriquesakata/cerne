@@ -64,6 +64,17 @@ func CheckHumanSetting(id string) error {
 	return nil
 }
 
+// CheckOwnerAct refuses an agent actor on an act only the project owner does
+// (F-0518): answering a decision of the risk gate, marking a card's accept
+// mode. Fail-open like CheckHumanGate; the ui server does not call it, the
+// person at the form is the owner.
+func CheckOwnerAct(act string) error {
+	if isAgentActor(actorEnv()) {
+		return fmt.Errorf("%w: %s is the project owner's act — the owner does it in cerne ui or in their own terminal; an agent never does it to pass a delivery%s", ErrHumanGate, act, humanEscape)
+	}
+	return nil
+}
+
 // AgentEnv reports whether the environment declares an agent, by the same
 // test as the human gates: `cerne update` leaves the binary to the human
 // (F-0476 crit. 10).

@@ -43,6 +43,20 @@ func setAcceptGate(t *testing.T, projDir, gate string) {
 	}
 }
 
+// endCalibration stores gates.risk_calibration = 0 (F-0518): the risk gate
+// decides on its own from the first delivery.
+func endCalibration(t *testing.T, projDir string) {
+	t.Helper()
+	cfg, _, err := project.LoadConfig(projDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Gates.RiskCalibrationN = new(int64)
+	if err := project.SaveConfig(projDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // riskProject is a project under [gates] accept = "risk" whose checkout is a
 // git repository: main holds what init wrote and the delivery branch commits
 // change. F-0001 is in development with facets, riskCLISpec(manual) and
@@ -51,6 +65,7 @@ func riskProject(t *testing.T, facets []string, outcome string, manual bool, cha
 	t.Helper()
 	projDir, _, repoDir = setupProject(t)
 	setAcceptGate(t, projDir, project.GateRisk)
+	endCalibration(t, projDir)
 	gitRun(t, projDir, "init", "-q", "-b", "main")
 	gitRun(t, projDir, "add", "-A")
 	gitRun(t, projDir, "commit", "-q", "-m", "base")

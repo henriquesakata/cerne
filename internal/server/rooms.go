@@ -333,10 +333,17 @@ func handleRoomSay(w http.ResponseWriter, r *http.Request, repoDir, projDir, pro
 		// F-0325: a post carrying a session is that session's agent, exactly
 		// like `cerne msg send` (`cerne room say channel --session` sends
 		// one); only a post with no session — the UI composer — is the human,
-		// named by the channel.human_name setting.
+		// named by the channel.human_name setting. The human's post needs
+		// the page's Origin (B-0091): it wakes the sessions it cites, and the
+		// room client always sends a session.
 		// ponytail: local trust model, like every room route — any process
-		// that can reach this localhost port may post as the human or as any
-		// session id it knows. Authenticate when the server leaves the machine.
+		// that can reach this localhost port may post as any session id it
+		// knows, or as the human with a forged Origin. Authenticate when the
+		// server leaves the machine.
+		if req.SessionID == "" && r.Header.Get("Origin") == "" {
+			writeJSON(w, http.StatusForbidden, errorBody(fmt.Errorf("%w: a channel post with no session signs as the human, and this one has no Origin header — an agent posts with 'cerne msg send'", errNotFromPage).Error()))
+			return
+		}
 		if strings.TrimSpace(req.Body) == "" {
 			writeJSON(w, http.StatusBadRequest, errorBody("the message cannot be empty"))
 			return

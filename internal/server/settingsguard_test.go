@@ -11,10 +11,14 @@ import (
 
 // localRequest is httptest.NewRequest as the local ui sends it: a loopback
 // Host, which every request to it requires (B-0043, B-0044) — httptest's own is
-// example.com.
+// example.com — and, on a write, the page's Origin, which the browser sends
+// and the local ui requires (B-0091).
 func localRequest(method, target string, body io.Reader) *http.Request {
 	req := httptest.NewRequest(method, target, body)
 	req.Host = "127.0.0.1:7717"
+	if method != http.MethodGet && method != http.MethodHead {
+		req.Header.Set("Origin", "http://"+req.Host)
+	}
 	return req
 }
 
@@ -25,14 +29,22 @@ func doLocal(t *testing.T, h http.Handler, method, target, body string, out any)
 	return doJSONWith(t, h, method, target, body, map[string]string{"Host": "127.0.0.1:7717"}, out)
 }
 
-// doJSONWith is doJSON with request headers; "Host" sets the request's host.
+// doJSONWith is doJSON with request headers; "Host" sets the request's host,
+// and a write's page Origin follows it unless headers name one. An empty value
+// drops the header ("Origin": "" is a write with no Origin).
 func doJSONWith(t *testing.T, h http.Handler, method, target, body string, headers map[string]string, out any) *httptest.ResponseRecorder {
 	t.Helper()
 	req := localRequest(method, target, strings.NewReader(body))
 	for k, v := range headers {
-		if k == "Host" {
+		switch {
+		case k == "Host":
 			req.Host = v
-		} else {
+			if _, named := headers["Origin"]; !named && req.Header.Get("Origin") != "" {
+				req.Header.Set("Origin", "http://"+v)
+			}
+		case v == "":
+			req.Header.Del(k)
+		default:
 			req.Header.Set(k, v)
 		}
 	}

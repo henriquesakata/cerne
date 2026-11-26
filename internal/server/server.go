@@ -349,6 +349,9 @@ type featureDetailResponse struct {
 	// Writes are the recorded writes of the feature's documents, oldest first
 	// (F-0375): the page footers name the first writer and the last edit.
 	Writes []app.DocWrite `json:"writes"`
+	// RiskDecision is the risk gate's last decision on the card and the
+	// owner's answer to it (F-0518); omitted when the gate never decided it.
+	RiskDecision *app.RiskDecision `json:"risk_decision,omitempty"`
 }
 
 type approvalDelta struct {
@@ -509,7 +512,12 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, projDir, id string) {
 	if writes == nil {
 		writes = []app.DocWrite{}
 	}
-	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, DocsReal: real, DocsUpdated: updated, DocsHash: hashes, Artifacts: artifacts, InformedBy: informedBy, Children: children, Errata: errata, SpecChangedAfterApproval: specChanged, ApprovalDelta: delta, ApprovalBaselineMissing: app.ApprovalBaselineMissing(repoDir, f), RoastRounds: rounds, PlanRoastRounds: planRounds, ApproveReadiness: readiness, Bar: bar, JudgeQuestion: judgeQuestion, ApproveAdvice: advice, Writes: writes})
+	// The risk section is extra (F-0518): unreadable, the page loads without it.
+	riskDecision, err := readRiskDecision(repoDir, projDir, id)
+	if err != nil {
+		riskDecision = nil
+	}
+	writeJSON(w, http.StatusOK, featureDetailResponse{RiskDecision: riskDecision, Feature: f, Docs: docs, DocsReal: real, DocsUpdated: updated, DocsHash: hashes, Artifacts: artifacts, InformedBy: informedBy, Children: children, Errata: errata, SpecChangedAfterApproval: specChanged, ApprovalDelta: delta, ApprovalBaselineMissing: app.ApprovalBaselineMissing(repoDir, f), RoastRounds: rounds, PlanRoastRounds: planRounds, ApproveReadiness: readiness, Bar: bar, JudgeQuestion: judgeQuestion, ApproveAdvice: advice, Writes: writes})
 }
 
 // informedByRefs returns the external references whose Informs backlink targets
@@ -1055,7 +1063,9 @@ func handleWikiIndex(w http.ResponseWriter, repoDir, projDir string) {
 // sameOriginJSON guards a state-changing route against the cross-site POST a
 // browser sends without a preflight (C7, F-0316): an Origin that is not this
 // server's, or a body type other than JSON (a form or text/plain post), is
-// refused. No Origin and no body type — the CLI, curl — passes.
+// refused. No Origin and no body type passes here — the room client, the
+// remote serve's host; on the local ui, localOnly has already refused a write
+// with no Origin to any other route (B-0091).
 func sameOriginJSON(r *http.Request) bool { return sameOriginAs(r, "application/json") }
 
 // sameOriginAs is sameOriginJSON for a body of mediaType (F-0464: the vault's

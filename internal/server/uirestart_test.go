@@ -167,6 +167,55 @@ func TestRestartRoute(t *testing.T) {
 	}
 }
 
+// TestPanelJoinAndRestartLandWithoutOrigin (B-0091): the two writes another
+// `cerne ui` sends to a running panel with no Origin — registering its
+// project (registerProject) and asking the panel to restart
+// (requestPanelRestart) — still land through the real router.
+func TestPanelJoinAndRestartLandWithoutOrigin(t *testing.T) {
+	t.Setenv("CERNE_TEST_FAKE_IDENTITY", "1")
+	repoA, projA, _ := newGitBackendNoClean(t)
+	repoB, projB, _ := newGitBackendNoClean(t)
+	resolve := func(dir string) (string, string, string, string, error) {
+		if dir == "B" {
+			return repoB, projB, "proj-b", "Projeto B", nil
+		}
+		return repoA, projA, "proj-a", "Projeto A", nil
+	}
+	cmd := filepath.Join(t.TempDir(), "cerne")
+	t0 := time.Now().Add(-time.Hour)
+	installFake(t, cmd, identityJSON(version.Version, UIIdentity()), t0)
+	restarts := make(chan struct{}, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	h, err := NewUIMultiHost(ctx, resolve, 0, "A", UIHost{Command: cmd, Restart: func() { restarts <- struct{}{} }})
+	if err != nil {
+		t.Fatalf("NewUIMultiHost: %v", err)
+	}
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	post := func(path, body string) int {
+		r, err := http.Post(srv.URL+path, "application/json", strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.Body.Close()
+		return r.StatusCode
+	}
+	if code := post("/api/projects", `{"dir":"B"}`); code != http.StatusOK {
+		t.Fatalf("POST /api/projects with no Origin = %d, want 200", code)
+	}
+	installFake(t, cmd, identityJSON("v9.9.9", "newui"), t0.Add(time.Minute))
+	if code := post("/api/restart", ""); code != http.StatusAccepted {
+		t.Fatalf("POST /api/restart with no Origin = %d, want 202", code)
+	}
+	select {
+	case <-restarts:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Restart not called")
+	}
+}
+
 // TestRestartRouteWithoutHost: a panel built without a host (tests, the
 // zero UIHost) has no watcher and no restart.
 func TestRestartRouteWithoutHost(t *testing.T) {

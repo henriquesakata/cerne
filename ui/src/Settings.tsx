@@ -19,6 +19,7 @@ import { norm } from './Palette'
 import { FixBlock } from './Harness'
 import { checkProjectName } from './projectName'
 import AISettings, { groupTitleId } from './AISettings'
+import RiskGatePanel from './RiskGatePanel'
 
 // Settings (F-0315): the active project's settings, derived from the registry
 // F-0314 serves. The screen knows no key: title, description, type and scopes
@@ -362,6 +363,8 @@ export default function Settings({ group: asked = 'general' }: { group?: Setting
               ))}
             </ul>
           )}
+          {/* Beside the two risk lists (F-0518): what the gate learned. */}
+          {q === '' && group === 'process' && all.some((s) => s.id === 'gates.accept' && s.value === 'risk') && <RiskGatePanel key={activePid} />}
           </>
           ) : (
             <LoadPending load={load} message={ts.loadError} />
@@ -877,11 +880,17 @@ function SettingRow({
                 return
               }
               const n = Number(raw)
-              if (!Number.isInteger(n) || n < 1) {
+              if (!Number.isInteger(n) || n < (s.allow_zero ? 0 : 1)) {
                 setIntError(true)
                 return
               }
               setIntError(false)
+              // A human-only count asks before it leaves its default, like
+              // the toggles, selects and lists (F-0518).
+              if (s.human_only && n !== Number(s.default)) {
+                setPending(n)
+                return
+              }
               onWrite(ws, () => putSetting(s.id, ws, n))
             }}
           >
@@ -890,7 +899,7 @@ function SettingRow({
               id={controlId(s.id)}
               name="value"
               type="number"
-              min="1"
+              min={s.allow_zero ? '0' : '1'}
               step="1"
               className="settings-text"
               defaultValue={String(current)}
@@ -904,7 +913,7 @@ function SettingRow({
             </button>
             {intError && (
               <p id={errId} role="alert" className="form-error">
-                {ts.notInteger}
+                {s.allow_zero ? ts.notCount : ts.notInteger}
               </p>
             )}
           </form>

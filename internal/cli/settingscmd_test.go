@@ -200,7 +200,7 @@ func TestSettingsGet(t *testing.T) {
 		}
 	}
 	if _, err := execCerne(t, "settings", "get", "nope.enabled", "--dir", projDir); !errors.Is(err, project.ErrUnknownSetting) ||
-		!strings.Contains(err.Error(), "known: channel.human_name, delivery.commit_url, delivery.forge, delivery.pr_url, gates.accept, gates.approve, gates.gauntlet, gates.risk_human_facets, gates.risk_human_paths, graph.enabled, lint.cli_output_language, lint.criterion_tests, lint.stale_decision_days, llm.base_url, llm.mode, llm.model, llm.provider, mindmap.enabled, mirror.close_on, mirror.enabled, mirror.trackers, references.archive, ui.update_check, wiki.enabled") {
+		!strings.Contains(err.Error(), "known: channel.human_name, delivery.commit_url, delivery.forge, delivery.pr_url, gates.accept, gates.approve, gates.gauntlet, gates.risk_calibration, gates.risk_human_facets, gates.risk_human_paths, gates.risk_relax_after, graph.enabled, lint.cli_output_language, lint.criterion_tests, lint.stale_decision_days, llm.base_url, llm.mode, llm.model, llm.provider, mindmap.enabled, mirror.close_on, mirror.enabled, mirror.trackers, references.archive, ui.update_check, wiki.enabled") {
 		t.Errorf("unknown key: err = %v, want ErrUnknownSetting listing the known keys", err)
 	}
 }
