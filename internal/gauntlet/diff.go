@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
-	"path"
 	"regexp"
 	"strings"
 
@@ -91,7 +90,7 @@ type Delivery struct {
 	Base, Head string   // the merge-base of Ref and HEAD, and HEAD, as SHAs
 	Files      []string // changed from Base to HEAD, from the repository root, no excludes; a rename as its old and its new path
 	Cited      bool     // a non-merge commit of Base..HEAD is the id's, by the rule of FeatureCommits (ownCommit)
-	Dirty      []string // files that differ from HEAD (staged, unstaged or untracked, not ignored), but docs.lock, cerne's own pin
+	Dirty      []string // files that differ from HEAD (staged, unstaged or untracked, not ignored), but the project's own docs.lock and .docs/
 	Prefix     string   // dir from the repository root, with a trailing slash; "" at the root
 }
 
@@ -139,9 +138,9 @@ func ReadDelivery(dir, pinBranch, id string) (Delivery, error) {
 		return Delivery{}, err
 	}
 	for _, e := range strings.Split(status, "\x00") {
-		// cerne's own projection under the project dir is never the delivery.
-		if len(e) > 3 && path.Base(e[3:]) != "docs.lock" && !strings.HasPrefix(e[3:], d.Prefix+".docs/") {
-			d.Dirty = append(d.Dirty, e[3:])
+		// cerne's own pin and projection, at the root or the project dir, are never the delivery.
+		if p := e[min(3, len(e)):]; p != "" && p != "docs.lock" && p != d.Prefix+"docs.lock" && !strings.HasPrefix(p, d.Prefix+".docs/") {
+			d.Dirty = append(d.Dirty, p)
 		}
 	}
 	return d, nil

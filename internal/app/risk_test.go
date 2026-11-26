@@ -149,6 +149,10 @@ func TestRiskSensitiveArea(t *testing.T) {
 			riskRepo(t, d, map[string]string{".gitignore": "build/\n"}, map[string]string{"a.go": "a"})
 			riskWrite(t, d, "build/out.bin", "x")
 		}, []string{"code"}, true, nil, []string{"no sensitive path or facet"}},
+		{"another docs.lock, deeper in the tree, changed and not committed", func(t *testing.T, d string) {
+			riskRepo(t, d, map[string]string{"vendor/x/docs.lock": "{}\n"}, map[string]string{"a.go": "a"})
+			riskWrite(t, d, "vendor/x/docs.lock", "{\"snapshot\":\"x\"}\n")
+		}, []string{"code"}, false, nil, []string{"uncommitted", "vendor/x/docs.lock"}},
 		{"only docs.lock changed and not committed", func(t *testing.T, d string) {
 			riskRepo(t, d, map[string]string{"docs.lock": "{}\n"}, map[string]string{"a.go": "a"})
 			riskWrite(t, d, "docs.lock", "{\"snapshot\":\"x\"}\n")
