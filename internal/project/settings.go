@@ -40,6 +40,9 @@ var (
 	ErrSettingScope        = errors.New("unknown scope")
 	// ErrSettingNotSet: an unset of a key the scope's file does not hold.
 	ErrSettingNotSet = errors.New("nothing to unset")
+	// ErrSettingBackslash: a list item with a backslash (F-0516). Path
+	// patterns use forward slashes; a Windows-style one would match nothing.
+	ErrSettingBackslash = errors.New("a backslash in a list item; write paths with forward slashes")
 	// ErrConfigBusy: another writer held the file's lock past
 	// configLockTimeout. Nothing was written.
 	ErrConfigBusy = errors.New("config file is locked by another writer")
@@ -904,6 +907,9 @@ func checkList(s Setting, v any) ([]string, error) {
 		str, ok := item.(string)
 		if !ok || strings.TrimSpace(str) == "" || strings.ContainsFunc(str, func(r rune) bool { return r < 0x20 || r == 0x7f }) || utf8.RuneCountInString(str) > maxLen(s) {
 			return nil, fmt.Errorf("%s: %w: item %d: want one non-blank line of at most %d characters, with no control character", s.ID, ErrInvalidSettingValue, i+1, maxLen(s))
+		}
+		if strings.Contains(str, `\`) {
+			return nil, fmt.Errorf("%s: %w: item %d %q: %w", s.ID, ErrInvalidSettingValue, i+1, str, ErrSettingBackslash)
 		}
 		out = append(out, str)
 	}

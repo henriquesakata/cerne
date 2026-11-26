@@ -159,3 +159,19 @@ func TestSettingsSetRiskLists(t *testing.T) {
 		t.Errorf("after unset = %v, want the default", cfg.Gates.RiskHumanPaths())
 	}
 }
+
+// TestSettingsSetRiskListsRefusesBackslash: a path pattern written with
+// backslashes is refused by its own sentinel, and nothing is written.
+// F-0516 crit. 14
+func TestSettingsSetRiskListsRefusesBackslash(t *testing.T) {
+	projDir, _ := settingsFixture(t, gatesBlock, "", false)
+	rc := filepath.Join(projDir, ".cernerc")
+	before, _ := os.ReadFile(rc)
+	err := SetSetting(projDir, "gates.risk_human_paths", ScopeProject, `[".github\\workflows\\**"]`)
+	if !errors.Is(err, ErrSettingBackslash) || !errors.Is(err, ErrInvalidSettingValue) {
+		t.Errorf("err = %v, want ErrSettingBackslash and ErrInvalidSettingValue", err)
+	}
+	if after, _ := os.ReadFile(rc); string(after) != string(before) {
+		t.Errorf("a refused write changed .cernerc:\n%s", after)
+	}
+}
