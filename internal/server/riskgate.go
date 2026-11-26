@@ -14,8 +14,8 @@ import (
 
 // The risk gate's learning in the local ui (F-0518). Every write is the
 // owner's: the person at the form, behind localWrite (loopback host,
-// same-origin JSON). B-0091: a request with no Origin still passes as the
-// person, as on every other local write route.
+// same-origin JSON) and the page-Origin rule of localOnly (B-0091), so a
+// write with no Origin is refused like on every other human-act route.
 
 // readRiskDecision reads a card's risk decision for its page; a variable so
 // a test can make it fail.
