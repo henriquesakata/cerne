@@ -191,6 +191,7 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 	var out TransitionOutcome
 	var title string
 	var casc cascaded
+	var autoAccepted bool // a complete [gates] accept = "auto" carried to done
 	var baseline bool
 	var renewedAt time.Time
 	if err := ValidateTransitionFlags(action, by, reason); err != nil {
@@ -443,7 +444,7 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 		// carries the feature straight to done in the same critical section —
 		// both events land in one commit. Default (human) stops at implemented
 		// ("Ready") and waits for the explicit human accept.
-		autoAccepted := action == domain.ActionComplete && projectGates(projDir).AcceptGate() == project.GateAuto
+		autoAccepted = action == domain.ActionComplete && projectGates(projDir).AcceptGate() == project.GateAuto
 		if autoAccepted {
 			promoted, err := domain.Transition(f.State, domain.ActionAccept)
 			if err != nil {
@@ -589,8 +590,13 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 			out.Warnings = append(out.Warnings, "warning: card notice: "+err.Error())
 		}
 	}
+	// A task an auto complete carried was accepted, not completed (F-0515).
+	cascAction := action
+	if autoAccepted {
+		cascAction = domain.ActionAccept
+	}
 	for _, c := range casc.moved {
-		dispatchWebhook(projDir, c.ID, "feature", string(action), string(cascadeFrom[action]), string(c.State), c.Title)
+		dispatchWebhook(projDir, c.ID, "feature", string(cascAction), string(cascadeFrom[cascAction]), string(c.State), c.Title)
 	}
 	out.Warnings = append(out.Warnings, mirrorAfterTransition(repoDir, projDir, transitionIDs(id, out.Propagated, casc.moved))...)
 	return out, nil

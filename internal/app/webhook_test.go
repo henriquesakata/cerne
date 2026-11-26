@@ -185,3 +185,39 @@ func TestWebhookPayloadActorIsPseudonym(t *testing.T) {
 		t.Errorf("webhook actor = %q, want %q", got.Actor, want)
 	}
 }
+
+// TestWebhookAutoCompleteCarriesTasksAsAccept: a task a complete under accept
+// = "auto" carries to done is reported as what happened to it, an accept from
+// implemented to done — not the parent's complete.
+// F-0515 crit. 7
+func TestWebhookAutoCompleteCarriesTasksAsAccept(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	var events []notify.Event
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var ev notify.Event
+		if err := json.NewDecoder(r.Body).Decode(&ev); err != nil {
+			t.Errorf("decode: %v", err)
+		}
+		events = append(events, ev)
+	}))
+	defer ts.Close()
+	cfg := project.Config{Webhook: project.WebhookConfig{URL: ts.URL}, Gates: project.GatesConfig{Accept: project.GateAuto}}
+	if err := project.SaveConfig(projDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	seedFeatureInState(t, repoDir, "F-0001", domain.StateInDevelopment, "spec.md", "plan.md", "result.md")
+	seedWithSpec(t, repoDir, store.Feature{ID: "T-0002", Parent: "F-0001", State: domain.StateImplemented}, taskBody+exemptTaskBar)
+
+	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionComplete, "", "", nil); err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	for _, ev := range events {
+		if ev.ID == "T-0002" {
+			if ev.Action != "accept" || ev.From != "implemented" || ev.To != "done" {
+				t.Errorf("T-0002 webhook = %s %s → %s, want accept implemented → done", ev.Action, ev.From, ev.To)
+			}
+			return
+		}
+	}
+	t.Fatalf("no webhook for T-0002 among %+v", events)
+}
