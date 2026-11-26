@@ -1,7 +1,9 @@
 package hooks
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -396,6 +398,19 @@ func copilotMCP(projDir string) (Result, string) {
 	return r, string(blockRaw)
 }
 
+// decodeObject reads a JSON object keeping each number as written
+// (json.Number): a float64 round trip changes a large integer on rewrite.
+// Anything but exactly one object is not ok.
+func decodeObject(raw []byte) (map[string]any, bool) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var root map[string]any
+	if dec.Decode(&root) != nil || root == nil || dec.Decode(&struct{}{}) != io.EOF {
+		return nil, false
+	}
+	return root, true
+}
+
 // mergeMCPServer merges server as mcpServers.cerne into the JSON file at path,
 // keeping every other server and key (Copilot F-0444, Cursor F-0512). A
 // different cerne entry or an unreadable file stays untouched, reported
@@ -406,7 +421,8 @@ func mergeMCPServer(asset, path string, server map[string]any, manual string) Re
 	raw, err := os.ReadFile(path)
 	exists := err == nil
 	if exists {
-		if json.Unmarshal(raw, &root) != nil || root == nil {
+		var ok bool
+		if root, ok = decodeObject(raw); !ok {
 			return skip("existing file is not valid JSON — " + manual)
 		}
 	} else if !os.IsNotExist(err) {
@@ -422,10 +438,9 @@ func mergeMCPServer(asset, path string, server map[string]any, manual string) Re
 	}
 	if cur, has := servers["cerne"]; has {
 		// Compare through JSON so both sides carry the same dynamic types.
-		var want any
 		wantRaw, _ := json.Marshal(server)
-		_ = json.Unmarshal(wantRaw, &want)
-		if reflect.DeepEqual(cur, want) {
+		want, _ := decodeObject(wantRaw)
+		if reflect.DeepEqual(cur, any(want)) {
 			return Result{Asset: asset, Status: StatusUnchanged}
 		}
 		return skip(`a different "cerne" server is already declared — left as is; ` + manual)

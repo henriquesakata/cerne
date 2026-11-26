@@ -1,7 +1,6 @@
 package hooks
 
 import (
-	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -140,7 +139,8 @@ func installCursorSandbox(projDir string, network bool) (r Result) {
 	raw, rErr := os.ReadFile(path)
 	exists := rErr == nil
 	if exists {
-		if json.Unmarshal(raw, &root) != nil || root == nil {
+		var ok bool
+		if root, ok = decodeObject(raw); !ok {
 			return skip("existing file is not valid JSON — add cerne's folders by hand:" + byHand)
 		}
 	} else if !os.IsNotExist(rErr) {

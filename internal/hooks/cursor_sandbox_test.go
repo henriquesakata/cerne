@@ -158,6 +158,27 @@ func TestInstallCursorSandboxPreservesAndIsIdempotent(t *testing.T) {
 	}
 }
 
+// F-0512 crit. 1 and 3 (review #7): a rewrite keeps the user's numbers exactly
+// — a float64 round trip would turn 12345678901234567890 into
+// 12345678901234567000 — in both .cursor/sandbox.json and .cursor/mcp.json.
+func TestInstallCursorKeepsLargeNumbers(t *testing.T) {
+	proj, _ := codexProject(t, "git@example.com:o/r.git")
+	const big = "12345678901234567890"
+	writeCursorSandbox(t, proj, `{"big": `+big+`, "ratio": 0.1}`)
+	if err := os.WriteFile(filepath.Join(proj, ".cursor", "mcp.json"), []byte(`{"mcpServers":{"mine":{"command":"x","timeoutMs":`+big+`}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := InstallNetwork(proj, false, ProviderCursor); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"sandbox.json", "mcp.json"} {
+		raw, _ := os.ReadFile(filepath.Join(proj, ".cursor", f))
+		if !strings.Contains(string(raw), big) || !strings.Contains(string(raw), "cerne") && f == "mcp.json" {
+			t.Errorf("%s lost the number or was not rewritten:\n%s", f, raw)
+		}
+	}
+}
+
 // F-0512 crit. 1: a file that is not valid JSON is left untouched and the
 // result is skipped with the block to add by hand.
 func TestInstallCursorSandboxInvalidJSONSkipped(t *testing.T) {
