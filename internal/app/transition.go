@@ -473,6 +473,16 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 		if err := store.AppendEvent(repoDir, domain.NewEvent(id, eventType, payload, actor)); err != nil {
 			return "", err
 		}
+		// A task that held its parent records its own measurements (F-0516).
+		if risk != nil {
+			for _, ht := range risk.HeldTasks {
+				p := ht.Risk.payload()
+				p["cascade_from"] = id
+				if err := store.AppendEvent(repoDir, domain.NewEvent(ht.ID, "feature.risk_held", p, EventActor())); err != nil {
+					return "", err
+				}
+			}
+		}
 		// End-of-flow bypass (F-0131): with [gates] accept = "auto" the complete
 		// carries the feature straight to done in the same critical section —
 		// both events land in one commit. Default (human) stops at implemented

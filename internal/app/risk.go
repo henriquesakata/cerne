@@ -34,10 +34,22 @@ type RiskAssessment struct {
 	Round                 int      // the number of the Gauntlet's highest round; 0 with none or an unnumbered one
 	Tested                string   // "<criteria with a test>/<criteria>"
 	Base, Head            string   // the commits measured: merge-base with the default branch, and HEAD; empty when unread
+	// HeldTasks are the implemented tasks the gate holds: their work rides
+	// this card's PR, so any of them holds the card too.
+	HeldTasks []HeldTask
 }
 
-// Low reports a delivery of low risk: all three conditions hold.
-func (r RiskAssessment) Low() bool { return r.Area.Holds && r.Gauntlet.Holds && r.Tests.Holds }
+// HeldTask is an implemented task the risk gate holds, with its own reading.
+type HeldTask struct {
+	ID   string
+	Risk RiskAssessment
+}
+
+// Low reports a delivery of low risk: all three conditions hold, and no
+// implemented task of the card is held.
+func (r RiskAssessment) Low() bool {
+	return r.Area.Holds && r.Gauntlet.Holds && r.Tests.Holds && len(r.HeldTasks) == 0
+}
 
 // Summary is the three measurements in one line.
 func (r RiskAssessment) Summary() string {
@@ -51,6 +63,9 @@ func (r RiskAssessment) Held() []string {
 		if !c.Holds {
 			out = append(out, c.Found)
 		}
+	}
+	for _, t := range r.HeldTasks {
+		out = append(out, "task "+t.ID+" is held: "+strings.Join(t.Risk.Held(), "; "))
 	}
 	return out
 }
@@ -69,8 +84,16 @@ func (r RiskAssessment) payload() map[string]string {
 		"risk": risk, "risk_area": r.Area.Found, "risk_gauntlet": r.Gauntlet.Found, "risk_tests": r.Tests.Found,
 		"risk_paths": strings.Join(r.Paths, ", "), "risk_facets": strings.Join(r.Facets, ", "),
 		"risk_verdict": r.Verdict, "risk_round": strconv.Itoa(r.Round), "risk_criteria_tested": r.Tested,
-		"risk_base": r.Base, "risk_head": r.Head,
+		"risk_base": r.Base, "risk_head": r.Head, "risk_tasks": strings.Join(heldTaskLines(r.HeldTasks), " | "),
 	}
+}
+
+func heldTaskLines(tasks []HeldTask) []string {
+	out := make([]string, len(tasks))
+	for i, t := range tasks {
+		out[i] = t.ID + ": " + strings.Join(t.Risk.Held(), "; ")
+	}
+	return out
 }
 
 // assessRisk measures the three conditions of the risk gate on feature f,
@@ -93,6 +116,19 @@ func assessRisk(repoDir, projDir string, f store.Feature) RiskAssessment {
 		r.Gauntlet = RiskCheck{Found: fmt.Sprintf("reverted after its risk accept on round %d: the win predates the revert, record a new Gauntlet round", prev)}
 	}
 	r.Tests, r.Tested = riskTests(repoDir, projDir, f)
+	// The implemented tasks ride this card's PR: each is measured on its own,
+	// and any one held holds the card.
+	if !isTask(f.ID) {
+		tasks, err := childrenOf(repoDir, f.ID, func(c store.Feature) bool { return isTask(c.ID) && c.State == domain.StateImplemented })
+		if err != nil { // in doubt, hold
+			r.Area = RiskCheck{Found: strings.TrimPrefix(r.Area.Found+"; ", "touches no sensitive path or facet; ") + "the card's tasks cannot be read: " + err.Error()}
+		}
+		for _, c := range tasks {
+			if tr := assessRisk(repoDir, projDir, c); !tr.Low() {
+				r.HeldTasks = append(r.HeldTasks, HeldTask{ID: c.ID, Risk: tr})
+			}
+		}
+	}
 	return r
 }
 
