@@ -1601,6 +1601,12 @@ const ptBR = {
     confirmValue: (title: string, value: string, file: string, versioned: boolean) =>
       `Esta chave é só do dono do projeto. Mudar ${title} para ${value} grava no ${file}${versioned ? ', versionado — lembre de commitar' : ''}; dá para voltar aqui.`,
     change: 'Mudar',
+    // F-0515: o que muda para o dono, dito na pergunta antes de gravar.
+    consequence: {
+      'gates.approve:auto': 'Daqui em diante, um agente também aprova specs, e cada card que ele aprovar fica marcado como aprovado sem revisão humana.',
+      'gates.accept:auto': 'Daqui em diante, o card que um agente conclui vai direto a concluído, marcado como aceito sem revisão humana.',
+      'gates.accept:merge': 'Daqui em diante, o merge do PR da entrega vale como aceite.',
+    } as Record<string, string>,
     // F-0449: o editor de uma chave de registros (mirror.trackers).
     records: {
       actions: 'Ações',
@@ -3319,6 +3325,11 @@ const en: Messages = {
     confirmValue: (title: string, value: string, file: string, versioned: boolean) =>
       `This key is the project owner's alone. Changing ${title} to ${value} writes to ${file}${versioned ? ', versioned — remember to commit' : ''}; you can change it back here.`,
     change: 'Change',
+    consequence: {
+      'gates.approve:auto': 'From now on an agent may approve specs too, and each card it approves is marked approved without human review.',
+      'gates.accept:auto': 'From now on a card an agent completes goes straight to done, marked accepted without human review.',
+      'gates.accept:merge': 'From now on the merge of the delivery PR counts as the acceptance.',
+    },
     records: {
       actions: 'Actions',
       row: 'row',
