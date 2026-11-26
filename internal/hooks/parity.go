@@ -201,7 +201,7 @@ var parityTable = []ParityRow{
 	{
 		Capability: "Document author (CERNE_PROVIDER, F-0375)",
 		Claude:     "no declaration — the model is read from the session transcript",
-		Cursor:     degraded + ": no per-project session env surface — recorded as unknown",
+		Cursor:     "no declaration — the hooks record each session's model from the hook payload (model_id, else model), and a write from Cursor's agent shell is provider cursor with that model; no model when the Cursor sessions in play disagree (F-0513)",
 		Codex:      "CERNE_PROVIDER=openai in shell_environment_policy.set; no model exposed",
 		Gemini:     "CERNE_PROVIDER=google in .gemini/.env; no model exposed",
 		Copilot:    degraded + ": CERNE_PROVIDER=copilot reaches the hook processes only, not the bash tool shell — no model exposed",

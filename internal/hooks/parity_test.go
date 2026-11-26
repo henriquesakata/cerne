@@ -173,3 +173,33 @@ func TestParitySandboxAndMCPRowsAreNotApplicableWhereNothingIsWritten(t *testing
 		}
 	}
 }
+
+// TestParityCursorDocumentAuthor (F-0513 crit. 5): Cursor's document author
+// is no longer degraded — the cell says the model comes from the hook payload,
+// as provider cursor, and that ambiguity leaves it empty — and the Cursor
+// install reports no skipped CERNE_PROVIDER line.
+func TestParityCursorDocumentAuthor(t *testing.T) {
+	var author ParityRow
+	for _, r := range ParityRows() {
+		if r.Capability == "Document author (CERNE_PROVIDER, F-0375)" {
+			author = r
+		}
+	}
+	if d, _ := author.Degraded(ProviderCursor); d {
+		t.Fatalf("Cursor document author still degraded: %q", author.Cursor)
+	}
+	for _, want := range []string{"hook payload", "provider cursor", "no model"} {
+		if !strings.Contains(author.Cursor, want) {
+			t.Errorf("Cursor cell lacks %q: %s", want, author.Cursor)
+		}
+	}
+	results, err := Install(t.TempDir(), ProviderCursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range results {
+		if r.Asset == "cursor: CERNE_PROVIDER" {
+			t.Fatalf("Cursor install still reports %s as %s: %s", r.Asset, r.Status, r.Note)
+		}
+	}
+}

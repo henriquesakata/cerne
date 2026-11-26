@@ -141,7 +141,7 @@ func TestInstallCursor(t *testing.T) {
 		t.Fatalf("hooks.json missing sessionStart wiring:\n%s", raw)
 	}
 	st := statuses(results)
-	for _, degraded := range []string{"cursor: work-gate", "cursor: CERNE_ACTOR", "cursor: CERNE_PROVIDER", "cursor: subagent-context"} {
+	for _, degraded := range []string{"cursor: work-gate", "cursor: CERNE_ACTOR", "cursor: subagent-context"} {
 		if st[degraded] != StatusSkipped {
 			t.Fatalf("%s not reported as degraded: %v", degraded, results)
 		}
