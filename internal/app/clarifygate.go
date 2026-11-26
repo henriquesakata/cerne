@@ -88,6 +88,9 @@ func CheckOpenClarifications(repoDir, projDir, id string) error {
 		for k, o := range c.Options {
 			opts[k] = fmt.Sprintf("%d: %s", k+1, o)
 		}
+		if c.Recommended > 0 {
+			opts[c.Recommended-1] += " (recommended)"
+		}
 		fmt.Fprintf(&b, "--pick <k>   (%s — or free text: --answer \"...\")", strings.Join(opts, ", "))
 	}
 	if len(open) > 1 {

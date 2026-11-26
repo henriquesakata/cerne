@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -40,8 +41,13 @@ type OpenClarification struct {
 	Doc      string   `json:"doc"` // backend-relative path, e.g. content/features/F-0001/spec.md
 	Index    int      `json:"index"`
 	Question string   `json:"question"`
-	Options  []string `json:"options,omitempty"`
-	Offset   int      `json:"offset"`
+	// Options are in display order: the recommended one first, then the rest as
+	// written, suffix stripped. --pick <k> and the UI follow this order (F-0517).
+	Options []string `json:"options,omitempty"`
+	// Recommended is the 1-based position (in Options) of the recommended
+	// option; 0 when the author marked none.
+	Recommended int `json:"recommended,omitempty"`
+	Offset  int      `json:"offset"`
 	Raw      string   `json:"raw"`
 }
 
@@ -286,12 +292,18 @@ func listClarifications(repoDir, id string, resolved bool) ([]OpenClarification,
 				continue
 			}
 			indexes[d.entity]++
+			opts := c.Options
+			if r := c.Recommended; r > 1 {
+				// Recommended first, the rest as written — the UI's order.
+				opts = append([]string{opts[r-1]}, append(slices.Clone(opts[:r-1]), opts[r:]...)...)
+			}
 			out = append(out, OpenClarification{
-				Entity:   d.entity,
-				Doc:      d.rel,
-				Index:    indexes[d.entity],
-				Question: c.Question,
-				Options:  c.Options,
+				Entity:      d.entity,
+				Doc:         d.rel,
+				Index:       indexes[d.entity],
+				Question:    c.Question,
+				Options:     opts,
+				Recommended: min(c.Recommended, 1),
 				Offset:   c.Offset,
 				Raw:      c.Raw,
 			})

@@ -33,6 +33,14 @@ func clarificationFindings(d scannedDoc, text string) []Finding {
 				Detail: detail,
 			})
 		}
+		if c.ManyRecommended {
+			findings = append(findings, Finding{
+				Rule:   RuleClarifyManyRecommended,
+				Entity: d.entity,
+				File:   d.rel,
+				Detail: "more than one option is marked recommended; only the first counts: " + c.Question,
+			})
+		}
 		if inTableRow(text, c.Offset) && hasCellSeparator(c.Raw) {
 			findings = append(findings, Finding{
 				Rule:   RuleClarifyUnescapedPipe,
