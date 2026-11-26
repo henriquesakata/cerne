@@ -1166,6 +1166,9 @@ export type ChatRun = { tool: string; verb: string; args?: string[]; result: Cha
 export type ChatMsg = {
   role: 'user' | 'assistant'
   content: string
+  // attachments (F-0520): os ids das imagens anexadas a esta mensagem, como o
+  // servidor os devolveu no upload. Só os ids ficam no localStorage.
+  attachments?: string[]
   runs?: ChatRun[]
   noExec?: boolean
   noRuns?: boolean
@@ -1282,7 +1285,11 @@ export async function streamChat(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      messages: messages.map(({ role, content, runs, noRuns }) => ({ role, content: content + runsSummary(runs, noRuns) })),
+      messages: messages.map(({ role, content, runs, noRuns, attachments }) => ({
+        role,
+        content: content + runsSummary(runs, noRuns),
+        attachments: attachments?.length ? attachments : undefined,
+      })),
       provider: override?.provider,
       model: override?.model,
       effort: override?.effort,
@@ -1465,6 +1472,30 @@ export type LLMOptions = {
   defaultModel: string
   providers: string[]
   preferredProvider: string
+  // imageProviders (F-0520): os provedores cujo turno do chat recebe imagem.
+  imageProviders: string[]
+}
+
+// Anexos de imagem do chat do Backlog (F-0520): ficam no cache local do
+// projeto, por conversa; a mensagem leva só o id que o upload devolve.
+export const CHAT_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
+export const CHAT_IMAGES_PER_MESSAGE = 5
+
+export async function uploadChatAttachment(conversationId: string, file: Blob): Promise<string> {
+  const r = await fetch(`${base()}/chat/attachments?conversation_id=${encodeURIComponent(conversationId)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': file.type || 'application/octet-stream' },
+    body: file,
+  })
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return ((await r.json()) as { id: string }).id
+}
+
+export const chatAttachmentUrl = (conversationId: string, id: string) =>
+  `${base()}/chat/attachments/${encodeURIComponent(conversationId)}/${encodeURIComponent(id)}`
+
+export async function deleteChatAttachments(conversationId: string): Promise<void> {
+  await fetch(`${base()}/chat/attachments/${encodeURIComponent(conversationId)}`, { method: 'DELETE' })
 }
 
 export async function fetchLLMOptions(): Promise<LLMOptions> {
@@ -1476,6 +1507,7 @@ export async function fetchLLMOptions(): Promise<LLMOptions> {
     default_model?: string
     providers?: string[]
     preferred_provider?: string
+    image_providers?: string[]
   }
   return {
     mode: j.mode,
@@ -1483,6 +1515,7 @@ export async function fetchLLMOptions(): Promise<LLMOptions> {
     defaultModel: j.default_model ?? '',
     providers: j.providers ?? [],
     preferredProvider: j.preferred_provider ?? '',
+    imageProviders: j.image_providers ?? [],
   }
 }
 

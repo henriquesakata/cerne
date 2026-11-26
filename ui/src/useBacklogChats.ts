@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { getApiProject, type ChatMsg } from './api'
+import { deleteChatAttachments, getApiProject, type ChatMsg } from './api'
 import { useT } from './i18n'
 
 // Conversation (F-0219) é uma conversa do chat do Backlog: a F-0218 persistia
@@ -277,6 +277,9 @@ export function useBacklogChats(): UseBacklogChats {
     const target = chats.find((c) => c.id === id)
     if (!target) return
     if (!confirmFn(t.backlogChat.confirmDeleteConversation(target.title || t.backlogChat.untitledConversation))) return
+    // F-0520: as imagens da conversa vivem no cache local do servidor e saem
+    // com ela. Falhar aqui não segura a exclusão: a varredura de 30 dias cobre.
+    if (target.messages.some((m) => m.attachments?.length)) deleteChatAttachments(id).catch(() => {})
     const next = chats.filter((c) => c.id !== id)
     if (next.length === 0) {
       const fresh = emptyConversation()

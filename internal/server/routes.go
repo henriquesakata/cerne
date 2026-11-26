@@ -202,6 +202,17 @@ func dataRoutes() []dataRoute {
 		{"POST", "/chat/note", true, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
 			handleChatNote(w, r, repoDir, projDir)
 		}},
+		// Image attachments (F-0520): they write to this machine's cache, so
+		// they exist only under the local ui.
+		{"POST", "/chat/attachments", false, func(w http.ResponseWriter, r *http.Request, _, _, projectID string) {
+			handleChatAttachmentUpload(w, r, projectID)
+		}},
+		{"GET", "/chat/attachments/{conversation}/{id}", false, func(w http.ResponseWriter, r *http.Request, _, _, projectID string) {
+			handleChatAttachmentGet(w, projectID, r.PathValue("conversation"), r.PathValue("id"))
+		}},
+		{"DELETE", "/chat/attachments/{conversation}", false, func(w http.ResponseWriter, r *http.Request, _, _, projectID string) {
+			handleChatAttachmentsDelete(w, r, projectID, r.PathValue("conversation"))
+		}},
 		// Title summary (F-0310): spends the host's LLM — local ui only, like
 		// /wiki/compile.
 		{"POST", "/chat/title", false, func(w http.ResponseWriter, r *http.Request, _, projDir, _ string) {

@@ -430,3 +430,31 @@ describe('useBacklogChats (F-0310)', () => {
     expect(result.current.active).toMatchObject({ id: 'c1', updatedAt: 1234 })
   })
 })
+
+describe('useBacklogChats: anexos saem com a conversa (F-0520)', () => {
+  // F-0520 crit. 10
+  it('apagar uma conversa com imagens pede ao servidor que apague os anexos dela; sem imagens, nenhuma chamada', () => {
+    const originalFetch = global.fetch
+    const fetchSpy = vi.fn(() => Promise.resolve(new Response(null, { status: 204 })))
+    global.fetch = fetchSpy as unknown as typeof fetch
+    try {
+      const base: Conversation = { id: 'img', title: 'com imagem', updatedAt: 2, messages: [{ role: 'user', content: 'veja', attachments: ['00000000000000aa.png'] }], model: '', effort: '' }
+      writeChats([base, { ...base, id: 'txt', title: 'só texto', updatedAt: 1, messages: [{ role: 'user', content: 'oi' }] }], 'img')
+      const { result } = renderHook(() => useBacklogChats())
+
+      act(() => result.current.deleteConversation('txt', () => true))
+      expect(fetchSpy).not.toHaveBeenCalled()
+
+      act(() => result.current.deleteConversation('img', () => false))
+      expect(fetchSpy).not.toHaveBeenCalled() // cancelado: os anexos ficam
+
+      act(() => result.current.deleteConversation('img', () => true))
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
+      const [url, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit]
+      expect(url).toMatch(/\/chat\/attachments\/img$/)
+      expect(init.method).toBe('DELETE')
+    } finally {
+      global.fetch = originalFetch
+    }
+  })
+})

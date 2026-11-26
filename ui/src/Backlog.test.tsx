@@ -65,7 +65,7 @@ beforeEach(() => {
   streamChat.mockReset()
   registerChatCandidate.mockReset()
   fetchLLMOptions.mockReset()
-  fetchLLMOptions.mockResolvedValue({ mode: 'byo-key', models: [], defaultModel: '', providers: [], preferredProvider: '' })
+  fetchLLMOptions.mockResolvedValue({ mode: 'byo-key', models: [], defaultModel: '', providers: [], preferredProvider: '', imageProviders: [] })
   summarizeChatTitle.mockReset()
   summarizeChatTitle.mockResolvedValue({ generated: false })
 })

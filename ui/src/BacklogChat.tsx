@@ -5,13 +5,19 @@ import {
   useMemo,
   useRef,
   useState,
+  type ClipboardEvent,
+  type DragEvent,
   type KeyboardEvent,
   type ReactNode,
   type UIEvent,
 } from 'react'
 import {
+  CHAT_IMAGE_TYPES,
+  CHAT_IMAGES_PER_MESSAGE,
+  chatAttachmentUrl,
   fetchFeature,
   fetchLLMOptions,
+  uploadChatAttachment,
   registerChatCandidate,
   registerChatNote,
   setPreferredProvider,
@@ -238,6 +244,37 @@ function answerTo(messages: ChatMsg[], from: number, question: string, nth: numb
 // weight 600 without the asterisks (the stored text is unchanged: answerTo
 // reads it).
 const ANSWER_LINE = /^\*\*(.+?)\*\* → (.+)$/
+
+// ChatImages (F-0520): as miniaturas das imagens de uma mensagem, servidas do
+// cache local do projeto. Uma imagem que o servidor já não tem (expirou, a
+// conversa foi apagada em outra aba) vira um marcador, não um ícone quebrado.
+function ChatImages({ conversationId, ids, onRemove }: { conversationId: string; ids: string[]; onRemove?: (id: string) => void }) {
+  const { t } = useT()
+  const [gone, setGone] = useState<string[]>([])
+  if (ids.length === 0) return null
+  return (
+    <ul className="backlog-chat-images">
+      {ids.map((id) => (
+        <li key={id}>
+          {gone.includes(id) ? (
+            <span className="backlog-chat-image-gone">{t.backlogChat.attachmentExpired}</span>
+          ) : (
+            <img
+              src={chatAttachmentUrl(conversationId, id)}
+              alt={t.backlogChat.attachedImage}
+              onError={() => setGone((g) => [...g, id])}
+            />
+          )}
+          {onRemove && (
+            <button type="button" className="backlog-chat-image-remove" aria-label={t.backlogChat.removeAttachment} title={t.backlogChat.removeAttachment} onClick={() => onRemove(id)}>
+              <span aria-hidden="true">×</span>
+            </button>
+          )}
+        </li>
+      ))}
+    </ul>
+  )
+}
 
 function UserTurn({ text }: { text: string }) {
   const lines = text.split('\n').map((l) => ANSWER_LINE.exec(l))
@@ -860,6 +897,14 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
   const [defaultModel, setDefaultModel] = useState('')
   const [providers, setProviders] = useState<string[]>([])
   const [provider, setProvider] = useState('')
+  // F-0520: as imagens já enviadas ao servidor que esperam a próxima mensagem.
+  const [imageProviders, setImageProviders] = useState<string[]>([])
+  const [attachments, setAttachments] = useState<string[]>([])
+  const [attachError, setAttachError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  // Anexadas mais as que ainda estão subindo: o limite por mensagem conta as
+  // duas, senão dois lotes simultâneos passariam cada um pelo teto.
+  const reservedRef = useRef(0)
   // F-0323 C3: só o canal de tools prende a execução ao card; no modo
   // assinatura o agente recebe o cerne no turno, e a dica tem de dizer isso.
   const [cardBound, setCardBound] = useState(true)
@@ -898,6 +943,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
         setCatalog(opts.models)
         setDefaultModel(opts.defaultModel)
         setProviders(opts.providers)
+        setImageProviders(opts.imageProviders)
         setProvider(prov)
         setModel(next)
         setEffort(reconcileEffort(offered.find((e) => e.id === next), conversation.effort))
@@ -1061,8 +1107,8 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
     onUpdate({ messages: next })
   }
 
-  const sendContent = (content: string) => {
-    const next = [...messages, { role: 'user' as const, content }]
+  const sendContent = (content: string, images: string[] = []) => {
+    const next = [...messages, { role: 'user' as const, content, ...(images.length > 0 ? { attachments: images } : {}) }]
     setMessages(next)
     sendMessages(next)
     // F-0310 crit. 14: o título truncado nasce com a primeira mensagem; antes
@@ -1071,9 +1117,71 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
     onUpdate({ messages: next })
   }
 
+  // F-0520: o anexo só existe para o provedor que recebe imagem.
+  const canAttach = imageProviders.includes(provider)
+
+  // addImages envia cada arquivo ao cache local na hora em que é anexado; a
+  // mensagem carrega só os ids. Uma recusa (tipo, tamanho, limite) aparece
+  // acima do compositor e não toca no texto digitado.
+  const addImages = async (files: File[]) => {
+    if (files.length === 0) return
+    if (!canAttach) {
+      setAttachError(t.backlogChat.attachUnavailable)
+      return
+    }
+    setAttachError(null)
+    for (const file of files) {
+      if (!CHAT_IMAGE_TYPES.includes(file.type)) {
+        setAttachError(t.backlogChat.attachNotImage)
+        continue
+      }
+      if (reservedRef.current >= CHAT_IMAGES_PER_MESSAGE) {
+        setAttachError(t.backlogChat.attachLimit(CHAT_IMAGES_PER_MESSAGE))
+        break
+      }
+      reservedRef.current += 1
+      try {
+        const id = await uploadChatAttachment(conversation.id, file)
+        setAttachments((a) => [...a, id])
+      } catch (e) {
+        reservedRef.current -= 1
+        setAttachError(e instanceof Error ? e.message : String(e))
+      }
+    }
+  }
+
+  const onComposerPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+    // Só intercepta quando há imagem aceita e o provedor a recebe: uma cópia de
+    // planilha traz texto e imagem juntos, e sem isso o texto seria engolido.
+    const images = Array.from(e.clipboardData?.files ?? []).filter((f) => CHAT_IMAGE_TYPES.includes(f.type))
+    if (images.length === 0 || !canAttach) return
+    e.preventDefault()
+    void addImages(images)
+  }
+
+  const removeAttachment = (id: string) => {
+    reservedRef.current -= 1
+    setAttachments((a) => a.filter((x) => x !== id))
+  }
+
+  const onChatDrop = (e: DragEvent<HTMLElement>) => {
+    const files = Array.from(e.dataTransfer?.files ?? [])
+    if (files.length === 0) return
+    e.preventDefault()
+    void addImages(files)
+  }
+
+  // Sem fila para imagem: a fila do B-0049 junta textos num turno só.
+  const canSubmit = (input.trim() !== '' || attachments.length > 0) && !(busy && attachments.length > 0)
+
   const submitMessage = () => {
     const content = input.trim()
-    if (content === '') return
+    if (!canSubmit) return
+    const images = attachments
+    // As que ainda sobem continuam reservadas e ficam para a próxima mensagem.
+    reservedRef.current -= images.length
+    setAttachments([])
+    setAttachError(null)
     setInput('')
     // F-0246: limpar o valor não desfaz a altura — o autoExpand deixou um
     // style.height inline, e sem removê-lo o campo fica alto e vazio até o
@@ -1087,7 +1195,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
       chatRequest.enqueue(conversation.id, content)
       return
     }
-    sendContent(content)
+    sendContent(content, images)
   }
 
   const retry = () => {
@@ -1288,7 +1396,14 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
   }
 
   return (
-    <aside className="backlog-chat">
+    <aside
+      className="backlog-chat"
+      onDragOver={(e) => {
+        // Sempre: sem isso o navegador abre o arquivo solto e sai do chat.
+        if (e.dataTransfer?.types.includes('Files')) e.preventDefault()
+      }}
+      onDrop={onChatDrop}
+    >
       {!toolbarOutside && <ChatToolbar refineId={refineId} />}
       <div className="backlog-chat-body">
       <div className="backlog-chat-main">
@@ -1309,6 +1424,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
           return (
             <div key={i} className={`backlog-chat-msg backlog-chat-msg-${m.role}`}>
               {m.role !== 'assistant' && <UserTurn text={m.content} />}
+              {m.role !== 'assistant' && <ChatImages conversationId={conversation.id} ids={m.attachments ?? []} />}
               {/* F-0255 critério 1: a mensagem que traz proposta mostra só a
                   condução em volta e uma referência ao painel — a spec inteira
                   no scroll enterrava a conversa a cada revisão. */}
@@ -1417,7 +1533,36 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
           submitMessage()
         }}
       >
+        {attachError && <p className="backlog-chat-attach-error" role="alert">{attachError}</p>}
+        <ChatImages
+          conversationId={conversation.id}
+          ids={attachments}
+          onRemove={removeAttachment}
+        />
         <div className="backlog-chat-composer">
+          {/* F-0520: anexar por arquivo; colar e arrastar caem no mesmo addImages. */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={CHAT_IMAGE_TYPES.join(',')}
+            multiple
+            hidden
+            aria-label={t.backlogChat.attach}
+            onChange={(e) => {
+              void addImages(Array.from(e.target.files ?? []))
+              e.target.value = ''
+            }}
+          />
+          <button
+            type="button"
+            className="backlog-chat-attach"
+            aria-label={t.backlogChat.attach}
+            title={canAttach ? t.backlogChat.attach : t.backlogChat.attachUnavailable}
+            disabled={!canAttach}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <span aria-hidden="true">+</span>
+          </button>
           <textarea
             ref={textareaRef}
             value={input}
@@ -1426,6 +1571,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
               autoExpand()
             }}
             onKeyDown={onComposerKeyDown}
+            onPaste={onComposerPaste}
             placeholder={t.backlogChat.placeholder}
             rows={1}
           />
@@ -1436,8 +1582,8 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
             type="submit"
             className="backlog-chat-send"
             aria-label={busy ? t.backlogChat.queue : t.backlogChat.send}
-            title={busy ? t.backlogChat.queue : t.backlogChat.send}
-            disabled={input.trim() === ''}
+            title={busy && attachments.length > 0 ? t.backlogChat.attachWhileBusy : busy ? t.backlogChat.queue : t.backlogChat.send}
+            disabled={!canSubmit}
           >
             <span aria-hidden="true">↵</span>
           </button>
