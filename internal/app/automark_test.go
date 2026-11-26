@@ -12,15 +12,20 @@ import (
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
-// asActor clears every agent marker of the environment (N-0058) and, when
-// actor is not empty, declares it through CERNE_ACTOR.
+// asActor clears every agent marker of the environment (N-0058), then applies
+// actor: space-separated KEY=VALUE assignments (a harness's shell marker), or
+// else a CERNE_ACTOR value; empty is the person.
 func asActor(t *testing.T, actor string) {
 	t.Helper()
 	for _, k := range []string{"CERNE_ACTOR", "CLAUDECODE", "CURSOR_AGENT", "COPILOT_CLI", "CODEX_THREAD_ID"} {
 		t.Setenv(k, "")
 	}
-	if actor != "" {
-		t.Setenv("CERNE_ACTOR", actor)
+	for _, a := range strings.Fields(actor) {
+		if k, v, ok := strings.Cut(a, "="); ok {
+			t.Setenv(k, v)
+		} else {
+			t.Setenv("CERNE_ACTOR", a)
+		}
 	}
 }
 
@@ -51,6 +56,11 @@ func TestApproveAutoMarksEntity(t *testing.T) {
 	}{
 		{"agent under auto", "agent", project.GateAuto, "auto"},
 		{"prefixed agent under auto", "agent:m-1", project.GateAuto, "auto"},
+		// The harness shell markers stand for CERNE_ACTOR=agent (B-0030).
+		{"Claude Code shell under auto", "CLAUDECODE=1", project.GateAuto, "auto"},
+		{"Cursor shell under auto", "CURSOR_AGENT=1", project.GateAuto, "auto"},
+		{"Copilot CLI shell under auto", "COPILOT_CLI=1", project.GateAuto, "auto"},
+		{"person declared in a Claude Code shell", "CLAUDECODE=1 CERNE_ACTOR=human", project.GateAuto, ""},
 		{"person under auto", "", project.GateAuto, ""},
 		{"agent under human (the ui core)", "agent", project.GateHuman, ""},
 	} {
