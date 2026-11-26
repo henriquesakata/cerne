@@ -43,8 +43,9 @@ type EntitySession struct {
 // its opener, the writers of its documents, the sessions bound to it, the
 // works that ref it — in order of
 // their first touch. Subagents fold into their main session: a finished
-// subagent hears nothing, its session does.
-func EntitySessions(cacheDir, repoDir, id string, roots []string) ([]EntitySession, error) {
+// subagent hears nothing, its session does. roots hold Claude Code's
+// transcripts, cursorRoots Cursor's (F-0513).
+func EntitySessions(cacheDir, repoDir, id string, roots, cursorRoots []string) ([]EntitySession, error) {
 	binds, err := cost.ReadBinds(cacheDir)
 	if err != nil {
 		return nil, err
@@ -105,7 +106,7 @@ func EntitySessions(cacheDir, repoDir, id string, roots []string) ([]EntitySessi
 		return []EntitySession{}, nil
 	}
 
-	infos, err := cost.SessionInfos(roots, order)
+	infos, err := cost.SessionInfos(roots, cursorRoots, order)
 	if err != nil {
 		return nil, err
 	}

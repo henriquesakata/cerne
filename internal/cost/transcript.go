@@ -55,24 +55,20 @@ func CursorRoots() []string {
 // cursorSessionFiles indexes the Cursor transcripts of sessions under every
 // root (F-0513): <slug>/agent-transcripts/<sess>/<sess>.jsonl plus
 // <sess>/subagents/*.jsonl, under any slug. As in sessionFiles, a session id
-// only names a path once a listing has shown it.
-func cursorSessionFiles(roots, sessions []string) (map[string][]tfile, error) {
+// only names a path once a listing has shown it. Unlike it, an entry that
+// cannot be listed is skipped: these files feed no cost, only where a session
+// is, and one unreadable folder of Cursor's must not hide every session.
+func cursorSessionFiles(roots, sessions []string) map[string][]tfile {
 	files := map[string][]tfile{}
 	for _, root := range roots {
 		projects := filepath.Join(root, "projects")
-		slugs, err := readDir(projects)
-		if err != nil {
-			return nil, err
-		}
+		slugs, _ := os.ReadDir(projects)
 		for _, slug := range slugs {
 			if !slug.IsDir() {
 				continue
 			}
 			dir := filepath.Join(projects, slug.Name(), "agent-transcripts")
-			entries, err := readDir(dir)
-			if err != nil {
-				return nil, err
-			}
+			entries, _ := os.ReadDir(dir)
 			names := make(map[string]bool, len(entries))
 			for _, e := range entries {
 				names[e.Name()] = e.IsDir()
@@ -83,15 +79,12 @@ func cursorSessionFiles(roots, sessions []string) (map[string][]tfile, error) {
 				}
 				rel := slug.Name() + "/agent-transcripts"
 				files[sess] = append(files[sess], tfile{rel: rel + "/" + sess + "/" + sess + ".jsonl", abs: filepath.Join(dir, sess, sess+".jsonl")})
-				subs, err := subagentFiles(dir, rel, sess)
-				if err != nil {
-					return nil, err
-				}
+				subs, _ := subagentFiles(dir, rel, sess)
 				files[sess] = append(files[sess], subs...)
 			}
 		}
 	}
-	return files, nil
+	return files
 }
 
 // tfile is one transcript file of a session: rel is its path under projects/

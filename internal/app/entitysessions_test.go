@@ -81,7 +81,7 @@ func TestEntitySessions(t *testing.T) {
 	writeTranscript(t, root, "s-tl", "TL do lote", "/w/tl", map[string]string{"a-dev": "dev", "a-crit": "code-reviewer"})
 	writeTranscript(t, root, "s-rev", "Revisão F-0001", "/w/rev", nil)
 
-	got, err := EntitySessions(cacheDir, repoDir, "F-0001", []string{root})
+	got, err := EntitySessions(cacheDir, repoDir, "F-0001", []string{root}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestEntitySessions(t *testing.T) {
 		t.Fatalf("s-codex = %+v, want harness other, no transcript, work W-0010", codex)
 	}
 
-	none, err := EntitySessions(cacheDir, repoDir, "F-0099", []string{root})
+	none, err := EntitySessions(cacheDir, repoDir, "F-0099", []string{root}, nil)
 	if err != nil || len(none) != 0 {
 		t.Fatalf("F-0099 = %+v (%v), want no session", none, err)
 	}

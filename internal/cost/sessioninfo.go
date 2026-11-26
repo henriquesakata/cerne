@@ -36,20 +36,19 @@ type locationLine struct {
 
 var locationKeys = [][]byte{[]byte(`"customTitle"`), []byte(`"prUrl"`), []byte(`"cwd"`)}
 
-// SessionInfos reads the location of every session under roots — Claude
-// Code's transcripts and Cursor's agent-transcripts (F-0513). A session with
-// no main transcript here (another harness, a pruned transcript) is
-// Found=false. Last is the newest mtime of the session's files: both harnesses
-// append on every activity.
-func SessionInfos(roots, sessions []string) (map[string]SessionInfo, error) {
+// SessionInfos reads the location of every session under roots (Claude
+// Code's transcripts) and cursorRoots (Cursor's agent-transcripts, F-0513),
+// kept apart so that a Cursor folder is never read as Claude Code's, nor its
+// unreadable entries fail the whole read. A session with no main transcript
+// here (another harness, a pruned transcript) is Found=false. Last is the
+// newest mtime of the session's files: both harnesses append on every
+// activity.
+func SessionInfos(roots, cursorRoots, sessions []string) (map[string]SessionInfo, error) {
 	files, err := sessionFiles(roots, sessions)
 	if err != nil {
 		return nil, err
 	}
-	cursor, err := cursorSessionFiles(roots, sessions)
-	if err != nil {
-		return nil, err
-	}
+	cursor := cursorSessionFiles(cursorRoots, sessions)
 	out := make(map[string]SessionInfo, len(sessions))
 	for _, sess := range sessions {
 		var info SessionInfo

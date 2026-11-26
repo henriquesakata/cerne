@@ -40,7 +40,7 @@ func cardSessions(repoDir, projectID, id string) ([]app.EntitySession, error) {
 		return nil, err
 	}
 	// Claude Code's transcripts and Cursor's agent-transcripts (F-0513).
-	return app.EntitySessions(cacheDir, repoDir, id, append(app.CostRoots(), cost.CursorRoots()...))
+	return app.EntitySessions(cacheDir, repoDir, id, app.CostRoots(), cost.CursorRoots())
 }
 
 // checkCardRecipients is the trust boundary of a post from a card's page

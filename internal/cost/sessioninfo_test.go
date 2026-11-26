@@ -34,7 +34,7 @@ func TestSessionInfosReadsOnlyLocation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	infos, err := SessionInfos([]string{root}, []string{"s1", "gone"})
+	infos, err := SessionInfos([]string{root}, nil, []string{"s1", "gone"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestSessionInfosWidensPastTheTail(t *testing.T) {
 		lines = append(lines, filler)
 	}
 	writeLines(t, root, "-tmp-p/s2.jsonl", lines...)
-	infos, err := SessionInfos([]string{root}, []string{"s2"})
+	infos, err := SessionInfos([]string{root}, nil, []string{"s2"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestSessionInfosWidensPastTheTail(t *testing.T) {
 // TestSessionInfosNoRoots: no transcript root at all is no session found, not
 // an error.
 func TestSessionInfosNoRoots(t *testing.T) {
-	infos, err := SessionInfos([]string{filepath.Join(t.TempDir(), "none")}, []string{"s"})
+	infos, err := SessionInfos([]string{filepath.Join(t.TempDir(), "none")}, []string{filepath.Join(t.TempDir(), "none")}, []string{"s"})
 	if err != nil || infos["s"].Found {
 		t.Fatalf("infos = %+v, err = %v", infos, err)
 	}
@@ -102,7 +102,7 @@ func TestSessionInfosFindsCursorSessions(t *testing.T) {
 		if err := os.Chtimes(sub, last, last); err != nil {
 			t.Fatal(err)
 		}
-		infos, err := SessionInfos([]string{root}, []string{"c1", "gone"})
+		infos, err := SessionInfos(nil, []string{root}, []string{"c1", "gone"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -121,6 +121,41 @@ func TestSessionInfosFindsCursorSessions(t *testing.T) {
 	}
 	if seen[0] != seen[1] {
 		t.Fatalf("the content changed the result:\n%s\n%s", seen[0], seen[1])
+	}
+}
+
+// TestSessionInfosSkipsUnreadableCursorEntries (F-0513 crit. 4): an entry
+// under a Cursor root that cannot be listed — agent-transcripts that is a
+// file, a folder the user cannot read — is skipped, and the Claude Code and
+// Cursor sessions around it are still found.
+func TestSessionInfosSkipsUnreadableCursorEntries(t *testing.T) {
+	claude, cursor := t.TempDir(), t.TempDir()
+	writeLines(t, claude, "-tmp-p/s1.jsonl", `{"type":"user","cwd":"/w"}`)
+	writeLines(t, cursor, "Users-dev-p/agent-transcripts/c1/c1.jsonl", `{"role":"user"}`)
+	writeLines(t, cursor, "Users-dev-p/agent-transcripts/c1/subagents/sub-1.jsonl", `{"role":"user"}`)
+	writeLines(t, cursor, "x-file/agent-transcripts", "not a folder")
+	denied := []string{
+		filepath.Join(cursor, "projects", "x-denied", "agent-transcripts"),
+		filepath.Join(cursor, "projects", "x-denied-slug"),
+		filepath.Join(cursor, "projects", "Users-dev-p", "agent-transcripts", "c1", "subagents"),
+	}
+	for _, d := range denied[:2] {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, d := range denied {
+		if err := os.Chmod(d, 0); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { os.Chmod(d, 0o755) })
+	}
+	infos, err := SessionInfos([]string{claude}, []string{cursor}, []string{"s1", "c1"})
+	if err != nil {
+		t.Fatalf("SessionInfos: %v, want the unreadable entries skipped", err)
+	}
+	if !infos["s1"].Found || !infos["c1"].Found {
+		t.Fatalf("infos = %+v, want s1 and c1 found", infos)
 	}
 }
 
