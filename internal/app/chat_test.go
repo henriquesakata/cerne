@@ -1167,3 +1167,25 @@ func TestBuildChatSystemPrompt_EnglishGolden(t *testing.T) {
 		}
 	}
 }
+
+// F-0520 crit. 5: each attached image is named by its path right under the
+// message it belongs to; a transcript with no image keeps today's prompt.
+func TestBuildChatPromptNamesAttachedImages(t *testing.T) {
+	plain := []ChatMessage{{Role: "user", Content: "hi"}, {Role: "assistant", Content: "hello"}}
+	if got, want := BuildChatPrompt("SYS", plain), "SYS\n\n--- Conversation so far ---\nUser: hi\nAgent: hello\nAgent:"; got != want {
+		t.Fatalf("prompt without images changed:\n%q\nwant\n%q", got, want)
+	}
+
+	withImg := []ChatMessage{
+		{Role: "user", Content: "see this", Images: []string{"/c/a.png", "/c/b.jpg"}},
+		{Role: "assistant", Content: "ok"},
+		{Role: "user", Content: "and now?"},
+	}
+	got := BuildChatPrompt("SYS", withImg)
+	if !strings.Contains(got, "User: see this\n[attached image: /c/a.png]\n[attached image: /c/b.jpg]\nAgent: ok\nUser: and now?\n") {
+		t.Fatalf("images are not listed under their message:\n%s", got)
+	}
+	if !strings.Contains(got, chatImagesNote) || strings.Index(got, chatImagesNote) > strings.Index(got, "--- Conversation so far ---") {
+		t.Fatalf("the images note must come before the transcript:\n%s", got)
+	}
+}

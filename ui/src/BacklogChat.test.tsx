@@ -55,8 +55,11 @@ const opts = (patch: Partial<LLMOptions> = {}): LLMOptions => ({
   defaultModel: 'claude-opus-5-5',
   providers: ['anthropic'],
   preferredProvider: '',
+  imageProviders: [],
   ...patch,
 })
+
+const uploadChatAttachment = vi.fn<(conversationId: string, file: Blob) => Promise<string>>()
 
 vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api')>()),
@@ -77,6 +80,7 @@ vi.mock('./api', async (importOriginal) => ({
   registerChatNote: (title: string, body: string, facets: string[], components: string[], informs?: string[]) =>
     registerChatNote(title, body, facets, components, informs),
   fetchLLMOptions: () => fetchLLMOptions(),
+  uploadChatAttachment: (conversationId: string, file: Blob) => uploadChatAttachment(conversationId, file),
   fetchFeature: (id: string) => fetchFeature(id),
   setPreferredProvider: (p: string) => setPreferredProvider(p),
   summarizeChatTitle: () => summarizeChatTitle(),
@@ -1879,5 +1883,152 @@ describe('cartão de pergunta (F-0437)', () => {
     send('Oi')
     await screen.findByText(/Sem opções/)
     expect(screen.queryByRole('group', { name: 'Sem opções' })).not.toBeInTheDocument()
+  })
+})
+
+describe('BacklogChat: anexar imagens (F-0520)', () => {
+  const png = (name = 'tela.png') => new File(['x'], name, { type: 'image/png' })
+  const withImages = () => fetchLLMOptions.mockResolvedValue(opts({ imageProviders: ['anthropic'] }))
+  const thumbs = () => screen.queryAllByAltText('Imagem anexada')
+  const attachButton = () => screen.getByRole('button', { name: 'Anexar imagem' })
+
+  beforeEach(() => {
+    uploadChatAttachment.mockReset()
+    let n = 0
+    uploadChatAttachment.mockImplementation(async () => `${String(++n).padStart(16, '0')}.png`)
+  })
+
+  // F-0520 crit. 1
+  it('colar uma imagem mostra a miniatura e não envia a mensagem', async () => {
+    withImages()
+    const { conversation } = renderChat()
+    await waitFor(() => expect(attachButton()).toBeEnabled())
+    fireEvent.paste(screen.getByRole('textbox'), { clipboardData: { files: [png()] } })
+    await waitFor(() => expect(thumbs()).toHaveLength(1))
+    expect(uploadChatAttachment).toHaveBeenCalledWith(conversation.id, expect.any(File))
+    expect(thumbs()[0].getAttribute('src')).toContain(`/chat/attachments/${conversation.id}/0000000000000001.png`)
+    expect(streamChat).not.toHaveBeenCalled()
+  })
+
+  // F-0520 crit. 2
+  it('soltar um arquivo no painel e escolher pelo botão mostram a miniatura, que sai ao remover', async () => {
+    withImages()
+    const { container } = renderChat()
+    await waitFor(() => expect(attachButton()).toBeEnabled())
+    fireEvent.drop(container.querySelector('.backlog-chat')!, { dataTransfer: { files: [png('a.png')], types: ['Files'] } })
+    await waitFor(() => expect(thumbs()).toHaveLength(1))
+    fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [png('b.png')] } })
+    await waitFor(() => expect(thumbs()).toHaveLength(2))
+    expect(streamChat).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Remover imagem' })[0])
+    expect(thumbs()).toHaveLength(1)
+    expect(thumbs()[0].getAttribute('src')).toContain('0000000000000002.png')
+  })
+
+  // F-0520 crit. 5
+  it('envia os ids das imagens na mensagem e limpa o compositor', async () => {
+    withImages()
+    streamChat.mockResolvedValue({ answered: true, reply: 'Vi a tela.' })
+    renderChat()
+    await waitFor(() => expect(attachButton()).toBeEnabled())
+    fireEvent.paste(screen.getByRole('textbox'), { clipboardData: { files: [png()] } })
+    await waitFor(() => expect(thumbs()).toHaveLength(1))
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'o que está errado aqui?' } })
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
+    await waitFor(() => expect(streamChat).toHaveBeenCalled())
+    const sent = streamChat.mock.calls[0][0] as { role: string; content: string; attachments?: string[] }[]
+    expect(sent[sent.length - 1]).toMatchObject({ role: 'user', content: 'o que está errado aqui?', attachments: ['0000000000000001.png'] })
+    // a miniatura agora está na bolha da mensagem, não mais no compositor
+    expect(screen.queryByRole('button', { name: 'Remover imagem' })).toBeNull()
+    expect(thumbs()).toHaveLength(1)
+  })
+
+  // F-0520 crit. 4
+  it('recusa do servidor, tipo errado e sexto anexo mostram o motivo e mantêm o texto', async () => {
+    withImages()
+    const { container } = renderChat()
+    await waitFor(() => expect(attachButton()).toBeEnabled())
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'rascunho' } })
+
+    uploadChatAttachment.mockRejectedValueOnce(new Error('image larger than 10 MB'))
+    fireEvent.paste(screen.getByRole('textbox'), { clipboardData: { files: [png()] } })
+    expect(await screen.findByRole('alert')).toHaveTextContent('image larger than 10 MB')
+    expect(thumbs()).toHaveLength(0)
+
+    fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['x'], 'a.pdf', { type: 'application/pdf' })] } })
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Só PNG, JPEG, WebP ou GIF'))
+
+    fireEvent.paste(screen.getByRole('textbox'), { clipboardData: { files: [png(), png(), png(), png(), png(), png()] } })
+    await waitFor(() => expect(thumbs()).toHaveLength(5))
+    expect(screen.getByRole('alert')).toHaveTextContent('No máximo 5 imagens por mensagem')
+    expect(screen.getByRole('textbox')).toHaveValue('rascunho')
+  })
+
+  // F-0520 crit. 8
+  it('provedor que não recebe imagem deixa o anexo desabilitado, com o motivo', async () => {
+    fetchLLMOptions.mockResolvedValue(opts({ imageProviders: [] }))
+    renderChat()
+    await waitFor(() => expect(fetchLLMOptions).toHaveBeenCalled())
+    expect(attachButton()).toBeDisabled()
+    expect(attachButton()).toHaveAttribute('title', 'Este provedor não recebe imagem no chat')
+    const pasted = fireEvent.paste(screen.getByRole('textbox'), { clipboardData: { files: [png()] } })
+    await Promise.resolve()
+    expect(pasted).toBe(true) // não interceptado: o que mais veio na área de transferência segue
+    expect(uploadChatAttachment).not.toHaveBeenCalled()
+
+    // soltar não abre o arquivo no navegador: fica no chat e diz por quê
+    const { container } = { container: document.body }
+    const dropped = fireEvent.drop(container.querySelector('.backlog-chat')!, { dataTransfer: { files: [png()], types: ['Files'] } })
+    expect(dropped).toBe(false)
+    expect(await screen.findByRole('alert')).toHaveTextContent('Este provedor não recebe imagem no chat')
+    expect(uploadChatAttachment).not.toHaveBeenCalled()
+  })
+
+  // F-0520 crit. 1
+  it('colar texto junto de um arquivo que não é imagem aceita não é interceptado', async () => {
+    withImages()
+    renderChat()
+    await waitFor(() => expect(attachButton()).toBeEnabled())
+    const pasted = fireEvent.paste(screen.getByRole('textbox'), {
+      clipboardData: { files: [new File(['x'], 'planilha.xlsx', { type: 'application/vnd.ms-excel' })] },
+    })
+    expect(pasted).toBe(true)
+    expect(uploadChatAttachment).not.toHaveBeenCalled()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  // F-0520 crit. 4
+  it('dois lotes simultâneos não passam de cinco imagens na mesma mensagem', async () => {
+    withImages()
+    renderChat()
+    await waitFor(() => expect(attachButton()).toBeEnabled())
+    const box = screen.getByRole('textbox')
+    fireEvent.paste(box, { clipboardData: { files: [png(), png(), png()] } })
+    fireEvent.paste(box, { clipboardData: { files: [png(), png(), png()] } })
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('No máximo 5 imagens por mensagem'))
+    await waitFor(() => expect(thumbs()).toHaveLength(5))
+    await new Promise((r) => setTimeout(r, 20))
+    expect(thumbs()).toHaveLength(5)
+    expect(uploadChatAttachment).toHaveBeenCalledTimes(5)
+
+    // remover libera uma vaga
+    fireEvent.click(screen.getAllByRole('button', { name: 'Remover imagem' })[0])
+    fireEvent.paste(box, { clipboardData: { files: [png()] } })
+    await waitFor(() => expect(uploadChatAttachment).toHaveBeenCalledTimes(6))
+    await waitFor(() => expect(thumbs()).toHaveLength(5))
+  })
+
+  // F-0520 crit. 9
+  it('conversa recarregada mostra a miniatura da mensagem antiga, ou o marcador se ela expirou', async () => {
+    withImages()
+    const { conversation } = renderChat({
+      messages: [{ role: 'user', content: 'veja', attachments: ['00000000000000aa.png'] }],
+    })
+    const img = await screen.findByAltText('Imagem anexada')
+    expect(img.getAttribute('src')).toContain(`/chat/attachments/${conversation.id}/00000000000000aa.png`)
+    fireEvent.error(img)
+    expect(await screen.findByText('Imagem expirada')).toBeInTheDocument()
+    expect(thumbs()).toHaveLength(0)
   })
 })

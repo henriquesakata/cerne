@@ -38,6 +38,9 @@ type llmConfigResponse struct {
 	// choice the chat starts from and the catalog refresh queries.
 	Providers         []string `json:"providers"`
 	PreferredProvider string   `json:"preferred_provider,omitempty"`
+	// ImageProviders (F-0520) are the Providers whose chat turn takes attached
+	// images; the chat offers the attach button only for them.
+	ImageProviders []string `json:"image_providers,omitempty"`
 	// F-0414: what the AI settings panel shows. Source says where Mode came
 	// from (configured, detected on PATH, default); CLIs are the three
 	// subscription CLIs with whether each is installed; Key is the state of the
@@ -102,6 +105,22 @@ func reachableProviders(cfg project.LLMConfig, remote bool) []string {
 	return out
 }
 
+// imageProviders is the subset of providers whose chat turn takes images
+// (F-0520): the mode turnLLM would run each one on must have an image input.
+// None on the remote serve, which has no attachment store.
+func imageProviders(cfg project.LLMConfig, providers []string, remote bool) []string {
+	if remote {
+		return nil
+	}
+	var out []string
+	for _, p := range providers {
+		if llm.SupportsImages(llm.ResolveMode(llm.ForProvider(cfg, p).Mode)) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 func codexInstalled() bool { return slices.Contains(project.FoundSubscriptionCLIs(), "codex") }
 
 // llmConfig builds the GET payload for the project's [llm] config.
@@ -125,6 +144,7 @@ func llmConfig(cfg project.LLMConfig, remote bool) llmConfigResponse {
 		Providers: reachableProviders(cfg, remote), PreferredProvider: cat.PreferredProvider,
 		Source: source, Provider: eff.Provider, Model: model, BaseURL: eff.BaseURL,
 	}
+	resp.ImageProviders = imageProviders(cfg, resp.Providers, remote)
 	// B-0006: the baseline knows no Codex model (each account sees its own);
 	// the CLI's cache is what its picker offers.
 	// F-0440: an installed codex offers them too, so picking OpenAI in a project
