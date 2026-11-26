@@ -1438,6 +1438,19 @@ describe('FeaturePage — o dono responde ao gate de risco (F-0518)', () => {
     await waitFor(() => expect(vi.mocked(postRiskFeedback)).toHaveBeenCalledWith('F-0221', 'should_have_asked', 'mexeu no parser', ['internal/x/**'], []))
   })
 
+  // F-0518 crit. 5
+  for (const [lang, added, commit] of [
+    ['pt-BR', 'Entrou na lista: internal/x/**', 'lembre de commitar'],
+    ['en', 'Added to the list: internal/x/**', 'remember to commit'],
+  ] as const) {
+    it(`${lang}: o que a resposta apertou foi gravado no .cernerc, a commitar`, async () => {
+      payload = decided({ accepted_via: 'risk' }, { ...low, feedback: { answer: 'should_have_asked', at: '2026-11-26T00:00:00Z', added_paths: ['internal/x/**'] } })
+      await show(lang)
+      const note = screen.getByText((_, el) => el?.tagName === 'P' && (el.textContent ?? '').includes(added))
+      expect(note).toHaveTextContent(commit)
+    })
+  }
+
   // F-0518 crit. 12
   for (const [lang, question, yes, no] of [
     ['pt-BR', 'Esta entrega precisava de você?', 'Precisava', 'Não precisava'],

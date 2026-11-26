@@ -33,7 +33,7 @@ export function RiskFeedback({ feature, decision, onAnswered }: { feature: Featu
           {tr.yourAnswer((decision.calibration ? tr.calibrationAnswers : tr.answers)[fb.answer] ?? fb.answer)}
           {fb.reason ? ` — ${fb.reason}` : ''}
           {[...(fb.added_paths ?? []), ...(fb.added_facets ?? [])].length > 0 && (
-            <> · {tr.added([...(fb.added_paths ?? []), ...(fb.added_facets ?? [])].join(', '))}</>
+            <> · {tr.added([...(fb.added_paths ?? []), ...(fb.added_facets ?? [])].join(', '))} {tr.addedCommit}</>
           )}{' '}
           <button type="button" className="risk-feedback-change" onClick={() => setChanging(true)}>
             {tr.changeAnswer}

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"errors"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -92,6 +93,11 @@ func TestFeatureFeedbackMarksPaths(t *testing.T) {
 	}
 	if !strings.Contains(out, "gates.risk_human_paths: internal/x/**") || !strings.Contains(out, "gates.risk_human_facets: code") {
 		t.Errorf("output does not say what entered the lists:\n%s", out)
+	}
+	// The lists live in this checkout's .cernerc, versioned: say so, like
+	// cerne settings set and the Settings screen.
+	if !strings.Contains(out, filepath.Join(projDir, ".cernerc")) || !strings.Contains(out, "commit it") {
+		t.Errorf("output does not say the .cernerc was written and must be committed:\n%s", out)
 	}
 	cfg, _, err := project.LoadConfig(projDir)
 	if err != nil {

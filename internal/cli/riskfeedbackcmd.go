@@ -8,6 +8,7 @@ import (
 
 	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/verbs"
 )
 
@@ -56,6 +57,10 @@ func newFeatureFeedbackCmd(dir *string) *cobra.Command {
 			}
 			if f := d.Feedback.AddedFacets; len(f) > 0 {
 				fmt.Fprintf(out, "  added to gates.risk_human_facets: %s\n", strings.Join(f, ", "))
+			}
+			if len(d.Feedback.AddedPaths)+len(d.Feedback.AddedFacets) > 0 {
+				// The lists live in this checkout's .cernerc, versioned.
+				fmt.Fprintf(out, "  written to %s — it is versioned: commit it\n", project.ResolveSettings(ctx.projDir).Files[project.ScopeProject])
 			}
 			if answer == app.FeedbackShouldHaveAsked && len(addPaths)+len(addFacets) == 0 && len(d.Dirs) > 0 {
 				fmt.Fprintf(out, "  to have the gate ask next time, mark what needs a person: --add-path <glob> (this delivery touched %s) or --add-facet <facet>\n", strings.Join(d.Dirs, ", "))
