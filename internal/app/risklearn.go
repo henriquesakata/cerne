@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"os"
 	"path"
 	"slices"
 	"strings"
@@ -208,6 +209,17 @@ func RecordRiskFeedback(repoDir, projDir, id string, fb RiskFeedback) (*RiskDeci
 		return nil, err
 	}
 	fb.AddFacets = facets
+	// No half-applied tightening: the lists go back to what they were if
+	// anything after their write fails — the other list, the answer, the
+	// backend commit.
+	restore := func() {}
+	if len(fb.AddPaths)+len(fb.AddFacets) > 0 {
+		if rc := project.ResolveSettings(projDir).Files[project.ScopeProject]; rc != "" {
+			if before, err := os.ReadFile(rc); err == nil {
+				restore = func() { _ = os.WriteFile(rc, before, 0o644) }
+			}
+		}
+	}
 	var d *RiskDecision
 	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		f, err := store.LoadFeature(repoDir, id)
@@ -257,6 +269,7 @@ func RecordRiskFeedback(repoDir, projDir, id string, fb RiskFeedback) (*RiskDeci
 		return "cerne: risk feedback " + f.ID, nil
 	})
 	if err != nil {
+		restore()
 		return nil, err
 	}
 	return d, nil

@@ -404,6 +404,36 @@ func TestAcceptModeAutoNeverPassesTheGateFiles(t *testing.T) {
 	}
 }
 
+// TestShouldHaveAskedIsAllOrNothing: when the answer cannot be recorded after
+// the lists were written, the lists go back as they were — no half-applied
+// tightening.
+// F-0518 crit. 5
+func TestShouldHaveAskedIsAllOrNothing(t *testing.T) {
+	asActor(t, "")
+	repoDir, projDir, _ := newFeatureBackend(t)
+	calibrating(t, projDir, 0)
+	decided(t, repoDir, "F-0001", domain.StateDone, []string{"code"}, lowPayload())
+	rc := filepath.Join(projDir, ".cernerc")
+	before, err := os.ReadFile(rc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The log refuses the write: the answer fails after the lists.
+	logs, _ := filepath.Glob(filepath.Join(repoDir, "events", "*.ndjson"))
+	for _, l := range logs {
+		if err := os.Chmod(l, 0o444); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(l, 0o644) })
+	}
+	if _, err := RecordRiskFeedback(repoDir, projDir, "F-0001", RiskFeedback{Answer: FeedbackShouldHaveAsked, AddPaths: []string{"internal/x/**"}, AddFacets: []string{"code"}}); err == nil {
+		t.Fatal("the answer was recorded on a log that refuses writes")
+	}
+	if after, _ := os.ReadFile(rc); string(after) != string(before) {
+		t.Errorf("the lists stayed half-applied:\n%s", after)
+	}
+}
+
 // TestRiskCapsTheFileLists: the file lists copied into events keep at most
 // 200 entries each, with the total beside them, so a huge delivery does not
 // grow every event; a short list is whole.
