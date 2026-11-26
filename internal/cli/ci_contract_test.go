@@ -62,3 +62,24 @@ func TestGitHubActionsDocsLockSingleWriterContract(t *testing.T) {
 		t.Error("docs.lock CI writer must never force-push")
 	}
 }
+
+// TestGitHubActionsPinPushesWithDeployKey pins that the pin job pushes with a
+// write deploy key held by the `pin` environment, so a ruleset whose only
+// bypass is a deploy key does not stop it, and that a missing key skips
+// instead of failing.
+// B-0087
+func TestGitHubActionsPinPushesWithDeployKey(t *testing.T) {
+	pin := readWorkflow(t, "pin.yml")
+	for _, want := range []string{
+		"environment: pin",
+		"ssh-key: ${{ secrets.CERNE_PIN_PUSH_KEY }}",
+		"CERNE_PIN_PUSH_KEY: ${{ secrets.CERNE_PIN_PUSH_KEY }}",
+		"skipping docs.lock pin: CERNE_PIN_PUSH_KEY is not set.",
+		"write deploy key for this repository",
+		"as a secret named CERNE_PIN_PUSH_KEY in the pin environment",
+	} {
+		if !strings.Contains(pin, want) {
+			t.Errorf("pin.yml missing deploy-key push contract %q", want)
+		}
+	}
+}

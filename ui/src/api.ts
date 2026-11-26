@@ -232,7 +232,7 @@ export type ApproveImpediment = {
 // Conselho do approve (F-0390): só informa, nunca recusa. A mensagem vem do
 // servidor (em inglês, com os números medidos); o rótulo é da UI.
 export type ApproveAdvice = {
-  code: 'gauntlet-cost' | 'light-with-bar' | 'standard-without-bar'
+  code: 'gauntlet-cost' | 'light-with-bar' | 'standard-without-bar' | 'clarify-without-options'
   message: string
 }
 

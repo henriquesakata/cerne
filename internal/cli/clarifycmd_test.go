@@ -35,7 +35,7 @@ func TestClarifyListHumanAndJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("clarify list: %v\n%s", err, out)
 	}
-	for _, want := range []string{"F-0001", "#1", "sincrona ou assincrona?", "sincrona | assincrona", "#2", "which format?"} {
+	for _, want := range []string{"F-0001", "#1", "sincrona ou assincrona?", "1: sincrona, 2: assincrona", "#2", "which format?"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("list output missing %q:\n%s", want, out)
 		}

@@ -500,6 +500,74 @@
       "name": "B-0001: an unclosed marker followed by many code spans is not a marker",
       "content": "[ESCLARECER: `a` `a` `a` `a` `a` `a` `a` `a` `a` `a` `a` `a` x\n",
       "spans": []
+    },
+    {
+      "name": "F-0517 pt recommended suffix",
+      "content": "[ESCLARECER: q? | a | b (recomendada)]",
+      "spans": [
+        {
+          "raw": "[ESCLARECER: q? | a | b (recomendada)]",
+          "offset": 0,
+          "resolved": false
+        }
+      ],
+      "question": "q?",
+      "options": [
+        "a",
+        "b"
+      ],
+      "recommended": 2
+    },
+    {
+      "name": "F-0517 en recommended suffix",
+      "content": "[CLARIFY: q? | a (recommended) | b]",
+      "spans": [
+        {
+          "raw": "[CLARIFY: q? | a (recommended) | b]",
+          "offset": 0,
+          "resolved": false
+        }
+      ],
+      "question": "q?",
+      "options": [
+        "a",
+        "b"
+      ],
+      "recommended": 1
+    },
+    {
+      "name": "F-0517 many recommended: the first counts",
+      "content": "[CLARIFY: q? | a (recommended) | b (recomendada)]",
+      "spans": [
+        {
+          "raw": "[CLARIFY: q? | a (recommended) | b (recomendada)]",
+          "offset": 0,
+          "resolved": false
+        }
+      ],
+      "question": "q?",
+      "options": [
+        "a",
+        "b"
+      ],
+      "recommended": 1
+    },
+    {
+      "name": "F-0517 suffix in the middle stays text",
+      "content": "[CLARIFY: q? | a (recommended) x | b]",
+      "spans": [
+        {
+          "raw": "[CLARIFY: q? | a (recommended) x | b]",
+          "offset": 0,
+          "resolved": false
+        }
+      ],
+      "question": "q?",
+      "options": [
+        "a (recommended) x",
+        "b"
+      ],
+      "recommended": 0
     }
   ],
   "_resolve_comment": "Resolution parity (F-0193): each case rewrites ONE anchored open marker to its resolved form. Go replays via clarify.Resolve + manual splice (TestResolveCorpus); TS replays via resolveMarker (Clarify.test.tsx). want=null means the rewriter must refuse (anchor mismatch or already resolved).",

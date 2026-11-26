@@ -3686,6 +3686,14 @@ button.clarify-open:hover { filter: brightness(0.96); }
   color: var(--fg);
 }
 .clarify-option:hover { border-color: var(--accent); }
+.clarify-badge {
+  margin-left: 0.5rem;
+  padding: 0 0.4rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
 .clarify-free {
   font: inherit;
   font-size: 0.85rem;
