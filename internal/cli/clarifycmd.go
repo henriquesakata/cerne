@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -80,7 +81,11 @@ func newClarifyListCmd() *cobra.Command {
 				}
 				fmt.Fprintf(out, "  #%d  %s\n", c.Index, q)
 				if len(c.Options) > 0 {
-					fmt.Fprintf(out, "      options: %s\n", strings.Join(c.Options, " | "))
+					opts := slices.Clone(c.Options)
+					if c.Recommended > 0 {
+						opts[c.Recommended-1] += " (recommended)"
+					}
+					fmt.Fprintf(out, "      options: %s\n", strings.Join(opts, " | "))
 				}
 			}
 			if resolved {
