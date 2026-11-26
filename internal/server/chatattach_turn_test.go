@@ -169,3 +169,48 @@ func TestChatWritesCarryNoAttachment(t *testing.T) {
 		}
 	}
 }
+
+// F-0520 crit. 8: only the message being sent is refused for its images. After
+// a switch to a provider with no image input, an older message's images are
+// left out and the conversation goes on.
+func TestChatTurnAfterProviderSwitchDropsOlderImages(t *testing.T) {
+	h, spy, id, _, _, _ := attachTurn(t, llm.ModeGeminiCLI)
+	body := `{"conversation_id":"conv-1","messages":[{"role":"user","content":"veja a tela","attachments":["` + id + `"]},{"role":"assistant","content":"vi"},{"role":"user","content":"e agora?"}]}`
+	rec := postChat(h, body)
+	if rec.Code != http.StatusOK || spy.calls != 1 {
+		t.Fatalf("status = %d, provider calls = %d, want 200 and one call; body: %s", rec.Code, spy.calls, rec.Body.String())
+	}
+	if len(spy.images) != 0 || strings.Contains(spy.prompt, "[attached image") {
+		t.Fatalf("a provider with no image input got images %v; prompt:\n%s", spy.images, spy.prompt)
+	}
+}
+
+// F-0520 crit. 5: a long conversation hands the provider its most recent
+// images only, and a message may be images with no text.
+func TestChatTurnCapsImagesAcrossTheConversation(t *testing.T) {
+	h, spy, first, _, _, _ := attachTurn(t, llm.ModeClaudeCLI)
+	var msgs []string
+	var last string
+	for m := range maxChatImagesPerTurn/maxChatImagesPerMessage + 1 {
+		ids := []string{first}
+		if m > 0 {
+			ids = ids[:0]
+			for range maxChatImagesPerMessage {
+				last = uploadedID(t, uploadAttachment(t, h, "conv-1", "image/png", pngBytes))
+				ids = append(ids, last)
+			}
+		}
+		raw, _ := json.Marshal(ids)
+		msgs = append(msgs, `{"role":"user","content":"","attachments":`+string(raw)+`}`)
+	}
+	rec := postChat(h, `{"conversation_id":"conv-1","messages":[`+strings.Join(msgs, ",")+`]}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	if len(spy.images) != maxChatImagesPerTurn || !strings.HasSuffix(spy.images[len(spy.images)-1], last) {
+		t.Fatalf("provider got %d images ending in %v, want the %d most recent", len(spy.images), spy.images[len(spy.images)-1:], maxChatImagesPerTurn)
+	}
+	if strings.Contains(strings.Join(spy.images, " ")+spy.prompt, first) {
+		t.Fatalf("the oldest image must be left out of the turn")
+	}
+}

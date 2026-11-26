@@ -273,9 +273,14 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 	cfg.LLM.Effort = req.Effort
 	// F-0520: a turn that cannot show the images to the model is refused, not
 	// answered as if they were not there.
-	if len(slices.Concat(images...)) > 0 && (servedRemotely(r) || !llm.SupportsImages(llm.ResolveMode(cfg.LLM.Mode))) {
-		writeJSON(w, http.StatusUnprocessableEntity, errorBody("this provider does not take images in the chat: remove the attachments or pick a provider that does"))
-		return
+	// Only the message being sent is refused: images of older messages (the
+	// provider was switched since) are left out, so the conversation goes on.
+	if servedRemotely(r) || !llm.SupportsImages(llm.ResolveMode(cfg.LLM.Mode)) {
+		if len(images[len(images)-1]) > 0 {
+			writeJSON(w, http.StatusUnprocessableEntity, errorBody("this provider does not take images in the chat: remove the attachments or pick a provider that does"))
+			return
+		}
+		clear(images)
 	}
 
 	// F-0224: the chat provider runs claude-cli as an agent in the project dir;
@@ -383,7 +388,7 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 // server's pattern, attachments on an agent message or without a valid
 // conversation are a 400; more than the per-message cap is a 422. An id whose
 // file is gone (expired, conversation deleted) is dropped: the turn runs
-// without that image.
+// without that image. Past maxChatImagesPerTurn the oldest are left out.
 func turnImages(req chatRequest, projectID string) ([][]string, int, error) {
 	images := make([][]string, len(req.Messages))
 	for i, m := range req.Messages {
@@ -408,6 +413,14 @@ func turnImages(req chatRequest, projectID string) ([][]string, int, error) {
 				images[i] = append(images[i], path)
 			}
 		}
+	}
+	// Every image is handed to the CLI again on each turn: keep the most
+	// recent maxChatImagesPerTurn and leave the older ones out.
+	for i, kept := len(images)-1, 0; i >= 0; i-- {
+		if room := maxChatImagesPerTurn - kept; len(images[i]) > room {
+			images[i] = images[i][len(images[i])-room:]
+		}
+		kept += len(images[i])
 	}
 	return images, 0, nil
 }

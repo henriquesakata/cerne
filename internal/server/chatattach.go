@@ -20,6 +20,11 @@ import (
 const (
 	maxChatImageBytes       = 10 << 20
 	maxChatImagesPerMessage = 5
+	// maxChatImagesPerTurn bounds what one turn hands the CLI, across the
+	// whole conversation.
+	// ponytail: a fixed window of the most recent images; make it a setting if
+	// long image-heavy conversations turn out to need the older ones.
+	maxChatImagesPerTurn = 20
 	// chatAttachmentTTL is how long a conversation's attachments outlive their
 	// last upload; the sweep runs on every upload.
 	chatAttachmentTTL = 30 * 24 * time.Hour
@@ -94,8 +99,12 @@ func handleChatAttachmentUpload(w http.ResponseWriter, r *http.Request, projectI
 		return
 	}
 	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxChatImageBytes))
-	if err != nil {
+	if tooLarge := new(http.MaxBytesError); errors.As(err, &tooLarge) {
 		writeJSON(w, http.StatusRequestEntityTooLarge, errorBody("image larger than 10 MB"))
+		return
+	}
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody("could not read the image"))
 		return
 	}
 	mediaType := http.DetectContentType(data)
