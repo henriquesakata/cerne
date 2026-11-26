@@ -82,7 +82,7 @@ func assessRisk(repoDir, projDir string, f store.Feature) RiskAssessment {
 	}
 	var r RiskAssessment
 	var d gauntlet.Delivery
-	r.Area, r.Paths, r.Facets, d = riskArea(projDir, cfg.PinBranch, f, cfg.Gates)
+	r.Area, r.Paths, r.Facets, d = riskArea(repoDir, projDir, cfg.PinBranch, f, cfg.Gates)
 	r.Base, r.Head = d.Base, d.Head
 	result, _ := os.ReadFile(FeatureDocPath(repoDir, f.ID, "result.md"))
 	r.Gauntlet, r.Verdict = riskGauntlet(result, cfg.Gates.GauntletEnabled())
@@ -129,7 +129,7 @@ func revertedRiskRound(repoDir, id string) (round int, reverted bool) {
 // empty one (complete ran outside the delivery's branch) and a card with no
 // facet all wait for a person. Its own function: a per-card waiver drops only
 // this condition. d is the delivery read, empty when git could not read it.
-func riskArea(projDir, pinBranch string, f store.Feature, g project.GatesConfig) (c RiskCheck, paths, facets []string, d gauntlet.Delivery) {
+func riskArea(repoDir, projDir, pinBranch string, f store.Feature, g project.GatesConfig) (c RiskCheck, paths, facets []string, d gauntlet.Delivery) {
 	var why []string
 	d, err := gauntlet.ReadDelivery(projDir, pinBranch, f.ID)
 	files, base := d.Files, d.Ref
@@ -157,13 +157,14 @@ func riskArea(projDir, pinBranch string, f store.Feature, g project.GatesConfig)
 		why = append(why, "uncommitted changes the diff cannot measure: "+someOf(d.Dirty))
 	}
 	human := g.RiskHumanFacets()
-	for _, x := range f.Facets {
-		if slices.ContainsFunc(human, func(h string) bool { return strings.EqualFold(h, x) }) {
+	chain := chainFacets(repoDir, f)
+	for _, x := range chain {
+		if slices.ContainsFunc(human, func(h string) bool { return strings.EqualFold(h, x) }) && !slices.Contains(facets, x) {
 			facets = append(facets, x)
 		}
 	}
 	switch {
-	case len(f.Facets) == 0:
+	case len(chain) == 0:
 		why = append(why, "the card has no facet (cerne feature retag "+f.ID+" --facet …)")
 	case len(facets) > 0:
 		why = append(why, "carries a sensitive facet: "+strings.Join(facets, ", "))
@@ -172,6 +173,24 @@ func riskArea(projDir, pinBranch string, f store.Feature, g project.GatesConfig)
 		return RiskCheck{Found: strings.Join(why, "; ")}, paths, facets, d
 	}
 	return RiskCheck{Holds: true, Found: "touches no sensitive path or facet"}, nil, nil, d
+}
+
+// chainFacets are the facets of f and of every ancestor up its parent chain:
+// a child tagged code under an epic tagged auth carries auth too. A parent
+// that cannot be read, or a cycle, ends the walk.
+func chainFacets(repoDir string, f store.Feature) []string {
+	out := slices.Clone(f.Facets)
+	seen := map[string]bool{f.ID: true}
+	for id := f.Parent; id != "" && !seen[id]; {
+		seen[id] = true
+		p, err := store.LoadFeature(repoDir, id)
+		if err != nil {
+			break
+		}
+		out = append(out, p.Facets...)
+		id = p.Parent
+	}
+	return out
 }
 
 // sensitivePaths are the files a glob matches: a glob with no slash matches
