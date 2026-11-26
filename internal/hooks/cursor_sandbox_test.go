@@ -57,6 +57,42 @@ func writeCursorSandbox(t *testing.T, proj, body string) {
 	}
 }
 
+// F-0512 crit. 1 (review #1a): the renewal path (Install, what the automatic
+// refresh and cerne update run) never creates or widens .cursor/sandbox.json or
+// .cursor/mcp.json — only the explicit hook install (InstallNetwork) does.
+func TestInstallCursorRenewalNeverTouchesSandboxOrMCP(t *testing.T) {
+	proj, home := codexProject(t, "git@example.com:o/r.git")
+	if _, err := Install(proj, ProviderCursor); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"sandbox.json", "mcp.json"} {
+		if _, err := os.Stat(filepath.Join(proj, ".cursor", f)); !os.IsNotExist(err) {
+			t.Errorf("renewal created .cursor/%s (stat err %v)", f, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(proj, ".cursor", "rules", "cerne.mdc")); err != nil {
+		t.Errorf("renewal no longer writes the rules: %v", err)
+	}
+
+	if _, err := InstallNetwork(proj, false, ProviderCursor); err != nil {
+		t.Fatal(err)
+	}
+	_, before := readCursorSandbox(t, proj)
+	other := filepath.Join(home, "other")
+	if err := os.MkdirAll(other, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(proj, ".cernerc"), []byte("project_id = \"demo\"\nbackend = \""+other+"\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Install(proj, ProviderCursor); err != nil {
+		t.Fatal(err)
+	}
+	if _, after := readCursorSandbox(t, proj); after != before {
+		t.Errorf("renewal widened the sandbox:\n%s\n---\n%s", before, after)
+	}
+}
+
 // F-0512 crit. 1: the install opens the cache (both OS forms) and a local
 // backend under the home, with ~/ paths, and writes no network policy.
 func TestInstallCursorSandboxOpensCacheAndBackend(t *testing.T) {
@@ -65,7 +101,7 @@ func TestInstallCursorSandboxOpensCacheAndBackend(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(proj, ".cernerc"), []byte("project_id = \"demo\"\nbackend = \""+backend+"\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	rs, err := Install(proj, ProviderCursor)
+	rs, err := InstallNetwork(proj, false, ProviderCursor)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +125,7 @@ func TestInstallCursorSandboxPreservesAndIsIdempotent(t *testing.T) {
 	proj, home := codexProject(t, "git@example.com:o/r.git")
 	writeCursorSandbox(t, proj, `{"type":"workspace_readwrite","additionalReadwritePaths":["~/mine","~/.cache/cerne/demo"],"networkPolicy":{"default":"deny","allow":["pypi.org"]}}`)
 
-	rs, err := Install(proj, ProviderCursor)
+	rs, err := InstallNetwork(proj, false, ProviderCursor)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +141,7 @@ func TestInstallCursorSandboxPreservesAndIsIdempotent(t *testing.T) {
 		t.Errorf("user keys lost:\n%s", first)
 	}
 
-	rs, err = Install(proj, ProviderCursor)
+	rs, err = InstallNetwork(proj, false, ProviderCursor)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +163,7 @@ func TestInstallCursorSandboxInvalidJSONSkipped(t *testing.T) {
 	proj, _ := codexProject(t, "git@example.com:o/r.git")
 	bad := `{"additionalReadwritePaths": [`
 	writeCursorSandbox(t, proj, bad)
-	rs, err := Install(proj, ProviderCursor)
+	rs, err := InstallNetwork(proj, false, ProviderCursor)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +225,7 @@ func TestInstallCursorSandboxNetworkAllowsBackendHost(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.host, func(t *testing.T) {
 			proj, _ := codexProject(t, tc.backend)
-			rs, err := Install(proj, ProviderCursor)
+			rs, err := InstallNetwork(proj, false, ProviderCursor)
 			if err != nil {
 				t.Fatal(err)
 			}

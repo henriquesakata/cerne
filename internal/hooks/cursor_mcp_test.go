@@ -32,7 +32,7 @@ func TestInstallCursorMCP(t *testing.T) {
 	if err := os.WriteFile(path, []byte(user), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	rs, err := Install(proj, ProviderCursor)
+	rs, err := InstallNetwork(proj, false, ProviderCursor)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestInstallCursorMCP(t *testing.T) {
 		t.Errorf("user entries lost:\n%s", first)
 	}
 
-	rs, err = Install(proj, ProviderCursor)
+	rs, err = InstallNetwork(proj, false, ProviderCursor)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestInstallCursorMCPSkipsDivergentOrInvalid(t *testing.T) {
 			if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			rs, err := Install(proj, ProviderCursor)
+			rs, err := InstallNetwork(proj, false, ProviderCursor)
 			if err != nil {
 				t.Fatal(err)
 			}
