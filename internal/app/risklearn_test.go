@@ -218,6 +218,40 @@ func TestCalibrationWouldReadsTheTaskHold(t *testing.T) {
 	}
 }
 
+// TestRiskTasksRideByOneRule: the parent's check and the cascade judge a task
+// by the same rule. Under an auto parent in calibration, an unmarked task that
+// passes on its own measurements goes to done with the parent — it is not
+// left implemented with a risk_held — and one the gate would hold holds both.
+// F-0518 crit. 15
+func TestRiskTasksRideByOneRule(t *testing.T) {
+	for _, c := range []struct {
+		name, facet string
+		done        bool
+	}{{"a task that passes", "code", true}, {"a task held", "auth", false}} {
+		t.Run(c.name, func(t *testing.T) {
+			asActor(t, "agent")
+			repoDir, projDir, _ := newFeatureBackend(t)
+			riskDeliveryUnder(t, calibration(2), repoDir, projDir, store.Feature{ID: "F-0001", Facets: []string{"code"}, AcceptMode: AcceptModeAuto}, "vitória", cleanChange())
+			seedRiskTasks(t, repoDir, projDir, store.Feature{ID: "T-0002", Facets: []string{c.facet}})
+			if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionComplete, "", "", nil); err != nil {
+				t.Fatal(err)
+			}
+			parent, task := reload(t, repoDir, "F-0001"), reload(t, repoDir, "T-0002")
+			if (parent.State == domain.StateDone) != c.done || (task.State == domain.StateDone) != c.done {
+				t.Fatalf("parent %s, task %s; want both done %v", parent.State, task.State, c.done)
+			}
+			if held := entityEvents(t, repoDir, "T-0002", "feature.risk_held"); c.done && len(held) > 0 {
+				t.Errorf("the task rode its parent and still got a risk_held: %v", held[0].Payload)
+			}
+			if c.done {
+				if p := lastEntityEvent(t, repoDir, "T-0002", "feature.accepted").Payload; p["risk"] != "low" || p["via"] != "risk" {
+					t.Errorf("task accept payload risk %q via %q, want low, risk", p["risk"], p["via"])
+				}
+			}
+		})
+	}
+}
+
 // TestCalibrationAnswerIsFeedback: on a card held in calibration, either
 // answer is the owner's feedback, recorded with what the gate would have
 // decided, and it counts toward the number.

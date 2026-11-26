@@ -77,6 +77,12 @@ func (r RiskAssessment) would() bool {
 	return r.Area.Holds && r.Gauntlet.Holds && r.Tests.Holds && len(r.HeldTasks) == 0 && r.Mode != AcceptModeHuman
 }
 
+// rides reports whether an implemented task goes with its parent's decision
+// (F-0518): what the gate would decide on the task's own measurements. The
+// calibration and the parent's auto mark are the parent's to apply — one rule
+// for the parent's check and for the cascade.
+func (r RiskAssessment) rides() bool { return r.would() }
+
 // Low reports a delivery of low risk: the gate would accept it and is past
 // its calibration, or the owner marked the card to pass alone (F-0518).
 func (r RiskAssessment) Low() bool {
@@ -220,7 +226,7 @@ func assessWith(repoDir string, env riskEnv, f store.Feature) RiskAssessment {
 		for _, c := range tasks {
 			tr := assessWith(repoDir, env, c)
 			r.tasks[c.ID] = tr // the cascade reuses it
-			if !tr.would() {
+			if !tr.rides() {
 				r.HeldTasks = append(r.HeldTasks, HeldTask{ID: c.ID, Risk: tr})
 			}
 		}
