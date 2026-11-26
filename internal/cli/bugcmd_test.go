@@ -45,7 +45,7 @@ func TestBugNewMintsBPrefix(t *testing.T) {
 func TestBugNewAgentBornCandidate(t *testing.T) {
 	t.Setenv("CERNE_ACTOR", "agent")
 	projDir, _, repoDir := setupProject(t)
-	if out, err := execCerne(t, "bug", "new", "Achado pelo agente", "--context", "ctx", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "bug", "new", "Achado pelo agente", "--context", "ctx", "--origin", "agent", "--dir", projDir); err != nil {
 		t.Fatalf("bug new: %v\noutput: %s", err, out)
 	}
 	f, _ := store.LoadFeature(repoDir, "B-0001")
