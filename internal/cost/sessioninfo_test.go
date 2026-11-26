@@ -34,7 +34,7 @@ func TestSessionInfosReadsOnlyLocation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	infos, err := SessionInfos([]string{root}, []string{"s1", "gone"})
+	infos, err := SessionInfos([]string{root}, nil, []string{"s1", "gone"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestSessionInfosWidensPastTheTail(t *testing.T) {
 		lines = append(lines, filler)
 	}
 	writeLines(t, root, "-tmp-p/s2.jsonl", lines...)
-	infos, err := SessionInfos([]string{root}, []string{"s2"})
+	infos, err := SessionInfos([]string{root}, nil, []string{"s2"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,8 +75,104 @@ func TestSessionInfosWidensPastTheTail(t *testing.T) {
 // TestSessionInfosNoRoots: no transcript root at all is no session found, not
 // an error.
 func TestSessionInfosNoRoots(t *testing.T) {
-	infos, err := SessionInfos([]string{filepath.Join(t.TempDir(), "none")}, []string{"s"})
+	infos, err := SessionInfos([]string{filepath.Join(t.TempDir(), "none")}, []string{filepath.Join(t.TempDir(), "none")}, []string{"s"})
 	if err != nil || infos["s"].Found {
 		t.Fatalf("infos = %+v, err = %v", infos, err)
+	}
+}
+
+// TestSessionInfosFindsCursorSessions (F-0513 crit. 4): a Cursor session is
+// found at <root>/projects/<slug>/agent-transcripts/<sess>/<sess>.jsonl and
+// its subagents in <sess>/subagents/*.jsonl — Found, Last the newest mtime of
+// them all, Agents each subagent — from file metadata alone: a transcript of
+// invalid content gives the same result, so no line of it is read.
+func TestSessionInfosFindsCursorSessions(t *testing.T) {
+	last := time.Date(2026, 11, 25, 12, 0, 0, 0, time.UTC)
+	var seen []string
+	for _, content := range []string{
+		`{"role":"user","message":{"content":[{"type":"text","text":"SEGREDO-NA-CONVERSA"}]}}`,
+		"not json {{{ SEGREDO-NA-CONVERSA",
+	} {
+		root := t.TempDir()
+		main := writeLines(t, root, "Users-dev-p/agent-transcripts/c1/c1.jsonl", content)
+		sub := writeLines(t, root, "Users-dev-p/agent-transcripts/c1/subagents/sub-1.jsonl", content)
+		if err := os.Chtimes(main, last.Add(-time.Hour), last.Add(-time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(sub, last, last); err != nil {
+			t.Fatal(err)
+		}
+		infos, err := SessionInfos(nil, []string{root}, []string{"c1", "gone"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := infos["c1"]
+		if _, ok := got.Agents["sub-1"]; !got.Found || !got.Last.Equal(last) || len(got.Agents) != 1 || !ok {
+			t.Fatalf("c1 = %+v, want Found, Last %v and the subagent sub-1", got, last)
+		}
+		if g := infos["gone"]; g.Found {
+			t.Fatalf("gone = %+v, want Found=false", g)
+		}
+		raw, _ := json.Marshal(infos)
+		if strings.Contains(string(raw), "SEGREDO") {
+			t.Fatalf("conversation leaked into the session info: %s", raw)
+		}
+		seen = append(seen, string(raw))
+	}
+	if seen[0] != seen[1] {
+		t.Fatalf("the content changed the result:\n%s\n%s", seen[0], seen[1])
+	}
+}
+
+// TestSessionInfosSkipsUnreadableCursorEntries (F-0513 crit. 4): an entry
+// under a Cursor root that cannot be listed — agent-transcripts that is a
+// file, a folder the user cannot read — is skipped, and the Claude Code and
+// Cursor sessions around it are still found.
+func TestSessionInfosSkipsUnreadableCursorEntries(t *testing.T) {
+	claude, cursor := t.TempDir(), t.TempDir()
+	writeLines(t, claude, "-tmp-p/s1.jsonl", `{"type":"user","cwd":"/w"}`)
+	writeLines(t, cursor, "Users-dev-p/agent-transcripts/c1/c1.jsonl", `{"role":"user"}`)
+	writeLines(t, cursor, "Users-dev-p/agent-transcripts/c1/subagents/sub-1.jsonl", `{"role":"user"}`)
+	writeLines(t, cursor, "x-file/agent-transcripts", "not a folder")
+	denied := []string{
+		filepath.Join(cursor, "projects", "x-denied", "agent-transcripts"),
+		filepath.Join(cursor, "projects", "x-denied-slug"),
+		filepath.Join(cursor, "projects", "Users-dev-p", "agent-transcripts", "c1", "subagents"),
+	}
+	for _, d := range denied[:2] {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, d := range denied {
+		if err := os.Chmod(d, 0); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { os.Chmod(d, 0o755) })
+	}
+	infos, err := SessionInfos([]string{claude}, []string{cursor}, []string{"s1", "c1"})
+	if err != nil {
+		t.Fatalf("SessionInfos: %v, want the unreadable entries skipped", err)
+	}
+	if !infos["s1"].Found || !infos["c1"].Found {
+		t.Fatalf("infos = %+v, want s1 and c1 found", infos)
+	}
+}
+
+// TestCursorRoots (F-0513 crit. 4): CURSOR_CONFIG_DIR when set, else ~/.cursor.
+func TestCursorRoots(t *testing.T) {
+	t.Setenv("CURSOR_CONFIG_DIR", filepath.Join(t.TempDir(), "cursor"))
+	if got := CursorRoots(); len(got) != 1 || got[0] != os.Getenv("CURSOR_CONFIG_DIR") {
+		t.Fatalf("CursorRoots = %v, want only $CURSOR_CONFIG_DIR", got)
+	}
+	t.Setenv("CURSOR_CONFIG_DIR", "")
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", os.Getenv("HOME"))
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := CursorRoots(); len(got) != 1 || got[0] != filepath.Join(home, ".cursor") {
+		t.Fatalf("CursorRoots = %v, want %s", got, filepath.Join(home, ".cursor"))
 	}
 }

@@ -43,6 +43,7 @@ func TestMain(m *testing.M) {
 	os.Setenv("CERNE_CONFIG_DIR", dir)
 	os.Unsetenv("CLAUDECODE")
 	os.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(dir, "claude"))
+	os.Setenv("CURSOR_CONFIG_DIR", filepath.Join(dir, "cursor")) // F-0513: nor Cursor's
 	claudeRoots = func() []string { return strings.Split(os.Getenv("CLAUDE_CONFIG_DIR"), ",") }
 	app.CostRoots = claudeRoots
 	code := m.Run()

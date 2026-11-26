@@ -78,6 +78,13 @@ type cursorInput struct {
 	ConversationID string          `json:"conversation_id"`
 	LoopCount      int             `json:"loop_count"`
 	Status         string          `json:"status"`
+	// Model and ModelID name the session's model on every event (F-0513):
+	// model_id is the canonical id, model the mode variant on sessionStart.
+	Model   string `json:"model"`
+	ModelID string `json:"model_id"`
+	// HookEventName tells a shell call about to run (preToolUse) from one
+	// that ran (postToolUse): what keeps a session's pending command (F-0513).
+	HookEventName string `json:"hook_event_name"`
 }
 
 // cursor reports a payload delivered by Cursor, which is answered in Cursor's
@@ -93,6 +100,47 @@ func recordSessionMode(cacheDir string, in hookInput) {
 		harness = "cursor"
 	}
 	_ = app.RecordSessionMode(cacheDir, in.SessionID, in.AgentID, harness, in.PermissionMode)
+}
+
+// recordCursorSession keeps the model a Cursor payload names for its session
+// (F-0513), in the cache of the project the payload's workspace root names:
+// model_id over model. Called by the decode, so every hook subcommand that
+// reads a Cursor payload records it. No project, no record (an empty cwd would
+// climb from the hook process's own folder). Fail-open.
+func recordCursorSession(in hookInput) {
+	if in.CWD == "" {
+		return
+	}
+	cfg, _, err := project.LoadConfig(in.CWD)
+	if err != nil {
+		return
+	}
+	cacheDir, err := project.CacheDir(cfg.ProjectID)
+	if err != nil {
+		return
+	}
+	seen := app.CursorSeen{Model: in.Cursor.ModelID, TranscriptPath: in.TranscriptPath}
+	if seen.Model == "" {
+		seen.Model = in.Cursor.Model
+	}
+	// The cerne command the session's shell runs, from its preToolUse to its
+	// postToolUse: what tells the writer apart among concurrent sessions
+	// (F-0513 crit. 6), as the pending tool_use does on Claude Code.
+	if in.ToolName == "Shell" {
+		var ti struct {
+			Command string `json:"command"`
+		}
+		_ = json.Unmarshal(in.ToolInput, &ti)
+		switch in.Cursor.HookEventName {
+		case "preToolUse":
+			if runsCerne(ti.Command, cerneAnyRe) {
+				seen.Pending = ti.Command
+			}
+		case "postToolUse":
+			seen.Ran = ti.Command
+		}
+	}
+	_ = app.RecordCursorSession(cacheDir, in.SessionID, seen)
 }
 
 func decodeHookInput(r io.Reader) (hookInput, error) {
@@ -111,6 +159,7 @@ func decodeHookInput(r io.Reader) (hookInput, error) {
 	if json.Unmarshal(raw, &c) == nil && c.CursorVersion != "" {
 		in.Cursor = &c
 		normalizeCursorInput(&in)
+		recordCursorSession(in)
 	}
 	return in, nil
 }
@@ -224,6 +273,7 @@ var (
 	cerneTakeRe         = regexp.MustCompile(cerneRunPrefix + `handoff\s+take\b`)
 	cerneFeatureStartRe = regexp.MustCompile(cerneRunPrefix + `feature\s+start\b`)
 	cerneCardNewRe      = regexp.MustCompile(cerneRunPrefix + `(?:feature|task|bug|epic)\s+new\b`)
+	cerneAnyRe          = regexp.MustCompile(cerneRunPrefix + `\w`) // any cerne verb (F-0513)
 	helpFlagRe          = regexp.MustCompile(`(^|\s)(-h|--help)(\s|$)`)
 )
 
@@ -336,8 +386,12 @@ func runHookBindWork(cmd *cobra.Command, format string) {
 	}
 	// The cost ledger trusts the delivering contract first: only a Claude Code
 	// payload can be a claude-code bind, and only under its CLAUDECODE marker.
+	// A Cursor payload is Cursor's, whatever the process env says (F-0513).
 	harness := cost.CurrentHarness()
-	if format != "claude" {
+	switch {
+	case in.cursor():
+		harness = "cursor"
+	case format != "claude":
 		harness = "other"
 	}
 	// F-0486: a card the session created records it as the card's opener — a

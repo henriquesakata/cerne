@@ -66,8 +66,10 @@ func LLMAuthorAnswered(c project.LLMConfig, answered string) DocAuthor {
 // order of F-0375's criteria: a chat tool call (CERNE_ORIGIN=chat) is the
 // project's [llm] with the call's CERNE_MODEL; no agent CERNE_ACTOR is a
 // human; CERNE_SESSION with a readable Claude Code transcript gives its model
-// (ambiguous: unknown); then CERNE_PROVIDER/CERNE_MODEL as declared; else
-// unknown — never inferred.
+// (ambiguous: unknown); in a Cursor agent shell, the one model its hooks
+// recorded (F-0513), then the declaration, then cursor with no model;
+// elsewhere CERNE_PROVIDER/CERNE_MODEL as declared; else unknown — never
+// inferred.
 func docAuthor(projDir string) DocAuthor {
 	unknown := DocAuthor{Source: "unknown"}
 	if os.Getenv("CERNE_ORIGIN") == "chat" {
@@ -95,10 +97,33 @@ func docAuthor(projDir string) DocAuthor {
 		}
 	}
 	p, m := strings.TrimSpace(os.Getenv("CERNE_PROVIDER")), strings.TrimSpace(os.Getenv("CERNE_MODEL"))
-	if p != "" || m != "" {
+	declared := p != "" || m != ""
+	if cursorShell() {
+		// The writing session's model (its pending command, criterion 6) or the
+		// hooks' unambiguous model beats a declaration, as the transcript
+		// does (F-0513, the owner's call of 2026-11-26); without one, the
+		// declaration; without both, cursor with no model.
+		a := DocAuthor{Provider: "cursor", Source: "hook"}
+		if cfg, _, err := project.LoadConfig(projDir); err == nil {
+			if cacheDir, err := project.CacheDir(cfg.ProjectID); err == nil {
+				a = cursorAuthor(cacheDir, os.Args[min(1, len(os.Args)):])
+			}
+		}
+		if a.Model == "" && declared {
+			return DocAuthor{Provider: p, Model: m, Source: "declared"}
+		}
+		return a
+	}
+	if declared {
 		return DocAuthor{Provider: p, Model: m, Source: "declared"}
 	}
 	return unknown
+}
+
+// cursorShell reports a Cursor agent shell with no Claude Code session in it
+// (F-0513): the writer is a Cursor session its hooks recorded.
+func cursorShell() bool {
+	return os.Getenv("CURSOR_AGENT") == "1" && os.Getenv("CERNE_SESSION") == ""
 }
 
 // docEdited is the feature.doc_edited event of a write of doc by a: the
@@ -119,8 +144,15 @@ func (a DocAuthor) recordDocEdited(repoDir, id, doc string, state domain.Feature
 	if err := store.AppendEvent(repoDir, a.docEdited(id, doc, state, extra)); err != nil {
 		return err
 	}
-	if sess := os.Getenv("CERNE_SESSION"); a.Source != "human" && os.Getenv("CERNE_ORIGIN") != "chat" && safeSessionID(sess) == nil {
-		_ = RecordMark(filepath.Dir(repoDir), sess, "", cost.CurrentHarness(), id, doc)
+	if a.Source == "human" || os.Getenv("CERNE_ORIGIN") == "chat" {
+		return nil
+	}
+	cacheDir, sess, harness := filepath.Dir(repoDir), os.Getenv("CERNE_SESSION"), cost.CurrentHarness()
+	if cursorShell() { // F-0513: the shell names no session; its pending command, or the sole one in play, does
+		sess, harness = cursorWriterSession(cacheDir, os.Args[min(1, len(os.Args)):]), "cursor"
+	}
+	if safeSessionID(sess) == nil {
+		_ = RecordMark(cacheDir, sess, "", harness, id, doc)
 	}
 	return nil
 }

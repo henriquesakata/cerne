@@ -124,7 +124,7 @@ func notifyCardSessions(repoDir, projDir, id string, from, to domain.FeatureStat
 	if err != nil {
 		return err
 	}
-	sessions, err := EntitySessions(cacheDir, repoDir, id, nil)
+	sessions, err := EntitySessions(cacheDir, repoDir, id, nil, nil)
 	if err != nil {
 		return err
 	}

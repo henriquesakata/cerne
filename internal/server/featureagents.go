@@ -7,6 +7,7 @@ import (
 	"slices"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/cost"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
@@ -38,7 +39,8 @@ func cardSessions(repoDir, projectID, id string) ([]app.EntitySession, error) {
 	if err != nil {
 		return nil, err
 	}
-	return app.EntitySessions(cacheDir, repoDir, id, app.CostRoots())
+	// Claude Code's transcripts and Cursor's agent-transcripts (F-0513).
+	return app.EntitySessions(cacheDir, repoDir, id, app.CostRoots(), cost.CursorRoots())
 }
 
 // checkCardRecipients is the trust boundary of a post from a card's page

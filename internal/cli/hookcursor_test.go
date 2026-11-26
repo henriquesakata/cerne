@@ -2,13 +2,78 @@ package cli
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/cost"
+	"github.com/henriquesakata/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/server"
+	"github.com/henriquesakata/cerne/internal/store"
 )
+
+// panelSession is one session of a card's agents panel.
+type panelSession struct {
+	Session string `json:"session"`
+	Harness string `json:"harness"`
+	Roles   []struct {
+		Kind string `json:"kind"`
+	} `json:"roles"`
+}
+
+// agentsPanel is what the UI's agents panel of card id reads, through the
+// project's API (GET /api/features/<id>/agents).
+func agentsPanel(t *testing.T, projDir, repoDir, id string) map[string]panelSession {
+	t.Helper()
+	cfg, _, err := project.LoadConfig(projDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/features/"+id+"/agents", nil)
+	req.Host = "127.0.0.1:7717" // the local ui: the route is local only
+	rec := httptest.NewRecorder()
+	server.New(repoDir, projDir, cfg.ProjectID).ServeHTTP(rec, req)
+	var got struct {
+		Sessions []panelSession `json:"sessions"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); rec.Code != http.StatusOK || err != nil {
+		t.Fatalf("agents panel: status %d: %s", rec.Code, rec.Body.String())
+	}
+	out := map[string]panelSession{}
+	for _, s := range got.Sessions {
+		out[s.Session] = s
+	}
+	return out
+}
+
+// TestHookCursorBindRecordsCursorHarness (F-0513 crit. 4): a session bound
+// from a Cursor payload is recorded as harness cursor — decided by the
+// payload, not by the hook process's environment — and the agents panel
+// shows it as cursor.
+func TestHookCursorBindRecordsCursorHarness(t *testing.T) {
+	t.Setenv("CURSOR_CONFIG_DIR", t.TempDir())
+	projDir, _, repoDir, _ := pulledProject(t)
+	p := cursorFixture(t, "post-tool-use-feature-start.json", projDir)
+	p["tool_input"] = map[string]any{"command": "cerne feature start F-0001", "cwd": ""}
+	p["tool_output"] = cursorShellOutput(t, "F-0001: approved → in_development\n")
+	if out, err := execCerneStdin(t, payloadString(t, p), "hook", "bind-work"); err != nil {
+		t.Fatalf("hook bind-work: %v\noutput: %s", err, out)
+	}
+	binds, err := cost.ReadBinds(filepath.Dir(repoDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(binds) == 0 || binds[len(binds)-1].Session != cursorSess || binds[len(binds)-1].Harness != "cursor" {
+		t.Fatalf("binds = %+v, want %s bound under harness cursor", binds, cursorSess)
+	}
+	if s := agentsPanel(t, projDir, repoDir, "F-0001")[cursorSess]; s.Harness != "cursor" {
+		t.Fatalf("agents panel session = %+v, want harness cursor", s)
+	}
+}
 
 // Cursor runs the project's .claude hooks through its third-party import
 // (F-0428). The fixtures in testdata/cursor are payloads from a real Cursor
@@ -307,5 +372,285 @@ func TestWorkspaceDir(t *testing.T) {
 	}
 	if got := workspaceDir("/x", nil); got != "/x" {
 		t.Errorf("no roots: %q, want /x", got)
+	}
+}
+
+// cursorRecord is the cursor-sessions record of sess in the project whose
+// clone is repoDir; nil when there is none.
+func cursorRecord(t *testing.T, repoDir, sess string) map[string]any {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(filepath.Dir(repoDir), "cursor-sessions", sess+".json"))
+	if err != nil {
+		return nil
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatalf("record %s: %v\n%s", sess, err, raw)
+	}
+	return m
+}
+
+// TestHookCursorRecordsSessionModel (F-0513 crit. 1): every hook a Cursor
+// payload reaches records the session's model — model_id (grok-4.7) over the
+// mode variant in model (grok-4.7-high-fast) — with the time of the
+// observation and, when the payload has one, the transcript path.
+func TestHookCursorRecordsSessionModel(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	for _, tc := range []struct{ fixture, hook, flag string }{
+		{"session-start.json", "session-context", ""},
+		{"post-tool-use-feature-start.json", "bind-work", ""},
+		{"post-tool-use-feature-start.json", "tool-notes", "--after"},
+		{"pre-tool-use-write.json", "work-gate", ""},
+		{"stop.json", "stop-check", ""},
+		// Review of PR #221: every hook that reads a Cursor payload records,
+		// through the shared decode, not command by command.
+		{"post-tool-use-feature-start.json", "provenance", ""},
+		{"stop.json", "precompact", ""},
+		{"stop.json", "channel", ""},
+	} {
+		p := cursorFixture(t, tc.fixture, projDir)
+		sess := "c-" + tc.hook
+		p["session_id"], p["conversation_id"] = sess, sess
+		args := []string{"hook", tc.hook}
+		if tc.flag != "" {
+			args = append(args, tc.flag)
+		}
+		if out, err := execCerneStdin(t, payloadString(t, p), args...); err != nil {
+			t.Fatalf("hook %s: %v\noutput: %s", tc.hook, err, out)
+		}
+		rec := cursorRecord(t, repoDir, sess)
+		if rec["model"] != "grok-4.7" || rec["updated_at"] == nil {
+			t.Errorf("%s: record = %v, want model grok-4.7 and updated_at", tc.hook, rec)
+		}
+		if want, _ := p["transcript_path"].(string); want != "" && rec["transcript_path"] != want {
+			t.Errorf("%s: transcript_path = %v, want %s", tc.hook, rec["transcript_path"], want)
+		}
+	}
+}
+
+// TestHookCursorRecordsPendingShellCommand (F-0513 crit. 6): Cursor's
+// preToolUse of its Shell tool reaches the .claude PreToolUse/Bash hook
+// (tool-notes) through the third-party import, which maps Bash to Shell
+// (R-0037). A cerne command there is recorded as the session's pending
+// command; a command that runs no cerne is not; the postToolUse of the same
+// command clears it. pre-tool-use-shell.json is crafted from the logged
+// pre-tool-use-write.json and the logged Shell tool_input.
+func TestHookCursorRecordsPendingShellCommand(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	pre := cursorFixture(t, "pre-tool-use-shell.json", projDir)
+	if out, err := execCerneStdin(t, payloadString(t, pre), "hook", "tool-notes"); err != nil {
+		t.Fatalf("hook tool-notes: %v\noutput: %s", err, out)
+	}
+	if rec := cursorRecord(t, repoDir, cursorSess); rec["pending"] != "cerne push" || rec["pending_at"] == nil {
+		t.Fatalf("record = %v, want cerne push pending with its time", rec)
+	}
+
+	ls := cursorFixture(t, "pre-tool-use-shell.json", projDir)
+	ls["session_id"], ls["conversation_id"] = "c-ls", "c-ls"
+	ls["tool_input"] = map[string]any{"command": "ls -la && echo cerne push", "cwd": ""}
+	if out, err := execCerneStdin(t, payloadString(t, ls), "hook", "tool-notes"); err != nil {
+		t.Fatalf("hook tool-notes: %v\noutput: %s", err, out)
+	}
+	if rec := cursorRecord(t, repoDir, "c-ls"); rec == nil || rec["pending"] != nil {
+		t.Fatalf("a command that runs no cerne: record = %v, want no pending command", rec)
+	}
+
+	post := cursorFixture(t, "post-tool-use-feature-start.json", projDir)
+	post["tool_input"] = map[string]any{"command": "cerne push", "cwd": ""}
+	post["tool_output"] = cursorShellOutput(t, "Sent: 1 document(s).\n")
+	if out, err := execCerneStdin(t, payloadString(t, post), "hook", "bind-work"); err != nil {
+		t.Fatalf("hook bind-work: %v\noutput: %s", err, out)
+	}
+	if rec := cursorRecord(t, repoDir, cursorSess); rec["pending"] != nil {
+		t.Fatalf("after its postToolUse: record = %v, want nothing pending", rec)
+	}
+}
+
+// TestHookCursorSessionRecordFailOpen (F-0513 crit. 1): a session id that
+// could leave the directory records nothing, a record that cannot be written
+// never breaks the hook (the session still binds), and a payload that is not
+// Cursor's records nothing.
+func TestHookCursorSessionRecordFailOpen(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	cacheDir := filepath.Dir(repoDir)
+
+	p := cursorFixture(t, "post-tool-use-feature-start.json", projDir)
+	p["session_id"], p["conversation_id"] = "../evil", "../evil"
+	if out, err := execCerneStdin(t, payloadString(t, p), "hook", "bind-work"); err != nil {
+		t.Fatalf("unsafe id: %v\noutput: %s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(cacheDir, "cursor-sessions")); !os.IsNotExist(err) {
+		t.Fatalf("unsafe id: cursor-sessions exists (%v), want nothing written", err)
+	}
+	if _, err := os.Stat(filepath.Join(cacheDir, "evil.json")); !os.IsNotExist(err) {
+		t.Fatalf("unsafe id: evil.json written outside cursor-sessions")
+	}
+
+	p = cursorFixture(t, "post-tool-use-feature-start.json", projDir)
+	delete(p, "cursor_version")
+	p["session_id"], p["cwd"] = "claude-like", projDir // a Claude Code payload names its cwd
+	if out, err := execCerneStdin(t, payloadString(t, p), "hook", "bind-work"); err != nil {
+		t.Fatalf("no cursor_version: %v\noutput: %s", err, out)
+	}
+	if rec := cursorRecord(t, repoDir, "claude-like"); rec != nil {
+		t.Fatalf("no cursor_version: record = %v, want none", rec)
+	}
+
+	if err := os.WriteFile(filepath.Join(cacheDir, "cursor-sessions"), []byte("not a dir"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p = cursorFixture(t, "post-tool-use-feature-start.json", projDir)
+	if out, err := execCerneStdin(t, payloadString(t, p), "hook", "bind-work"); err != nil {
+		t.Fatalf("unwritable record: %v\noutput: %s", err, out)
+	}
+	if got := boundTo(t, repoDir, cursorSess); got != "F-0425" {
+		t.Fatalf("unwritable record: bound id = %q, want F-0425 (the hook must go on)", got)
+	}
+}
+
+// TestPushRecordsCursorAuthor (F-0513 crit. 2): the whole path — Cursor's
+// sessionStart reaches the hooks, then its agent shell (CURSOR_AGENT=1, no
+// CERNE_SESSION, nothing declared) pushes the spec: the write names cursor
+// and grok-4.7. Once a second session on another model starts, the next push
+// names no model.
+func TestPushRecordsCursorAuthor(t *testing.T) {
+	projDir, _, repoDir, specPath := pulledProject(t)
+	for _, k := range []string{"CERNE_ACTOR", "CERNE_SESSION", "CERNE_PROVIDER", "CERNE_MODEL"} {
+		t.Setenv(k, "")
+	}
+	t.Setenv("CURSOR_AGENT", "1")
+	start := func(p map[string]any) {
+		t.Helper()
+		if out, err := execCerneStdin(t, payloadString(t, p), "hook", "session-context"); err != nil {
+			t.Fatalf("hook session-context: %v\noutput: %s", err, out)
+		}
+	}
+	push := func(body string) map[string]string {
+		t.Helper()
+		mustWrite(t, specPath, "---\ncerne_id: F-0001\n---\n\n# Parcelamento\n\n"+body+"\n")
+		if out, err := execCerne(t, "push", "--dir", projDir); err != nil {
+			t.Fatalf("push: %v\n%s", err, out)
+		}
+		evs, err := store.ReadEvents(repoDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var last map[string]string
+		for _, ev := range evs {
+			if ev.EntityID == "F-0001" && ev.Type == "feature.doc_edited" {
+				last = ev.Payload
+			}
+		}
+		return last
+	}
+
+	start(cursorFixture(t, "session-start.json", projDir))
+	if p := push("Dividir compras em parcelas, no Cursor."); p["provider"] != "cursor" || p["model"] != "grok-4.7" || p["source"] != "hook" {
+		t.Fatalf("one session: doc_edited = %v, want cursor/grok-4.7 from the hook", p)
+	}
+	other := cursorFixture(t, "session-start.json", projDir)
+	other["session_id"], other["conversation_id"], other["model_id"] = "other-sess", "other-sess", "gpt-6"
+	start(other)
+	if p := push("Dividir compras em parcelas, em duas sessões."); p["provider"] != "cursor" || p["model"] != "" || p["source"] != "hook" {
+		t.Fatalf("two sessions on two models: doc_edited = %v, want cursor with no model", p)
+	}
+}
+
+// TestCursorSessionRolesOnTheAgentsPanel (F-0513 crit. 3): the only Cursor
+// session in play writes the spec and the plan before any feature start
+// binds it, and the agents panel shows it as their writer, under harness
+// cursor. Once a second session is in play, a write marks nobody.
+func TestCursorSessionRolesOnTheAgentsPanel(t *testing.T) {
+	t.Setenv("CURSOR_CONFIG_DIR", t.TempDir())
+	projDir, _, repoDir, specPath := pulledProject(t)
+	for _, k := range []string{"CERNE_ACTOR", "CERNE_SESSION", "CERNE_PROVIDER", "CERNE_MODEL"} {
+		t.Setenv(k, "")
+	}
+	t.Setenv("CURSOR_AGENT", "1")
+	start := func(p map[string]any) {
+		t.Helper()
+		if out, err := execCerneStdin(t, payloadString(t, p), "hook", "session-context"); err != nil {
+			t.Fatalf("hook session-context: %v\noutput: %s", err, out)
+		}
+	}
+	push := func() {
+		t.Helper()
+		if out, err := execCerne(t, "push", "--dir", projDir); err != nil {
+			t.Fatalf("push: %v\n%s", err, out)
+		}
+	}
+
+	start(cursorFixture(t, "session-start.json", projDir))
+	mustWrite(t, specPath, "---\ncerne_id: F-0001\n---\n\n# Parcelamento\n\nDividir compras em parcelas, no Cursor.\n")
+	mustWrite(t, filepath.Join(filepath.Dir(specPath), "plan.md"), "---\ncerne_id: F-0001\n---\n\n# Plano\n\nPassos.\n")
+	push()
+	s := agentsPanel(t, projDir, repoDir, "F-0001")[cursorSess]
+	var kinds []string
+	for _, r := range s.Roles {
+		kinds = append(kinds, r.Kind)
+	}
+	if s.Harness != "cursor" || !strings.Contains(strings.Join(kinds, ","), "spec") || !strings.Contains(strings.Join(kinds, ","), "plan") {
+		t.Fatalf("agents panel session = %+v, want harness cursor with the spec and plan roles", s)
+	}
+
+	marks, _ := cost.ReadMarks(filepath.Dir(repoDir))
+	other := cursorFixture(t, "session-start.json", projDir)
+	other["session_id"], other["conversation_id"], other["model_id"] = "other-sess", "other-sess", "gpt-6"
+	start(other)
+	mustWrite(t, specPath, "---\ncerne_id: F-0001\n---\n\n# Parcelamento\n\nDividir compras em parcelas, em duas sessões.\n")
+	push()
+	if after, _ := cost.ReadMarks(filepath.Dir(repoDir)); len(after) != len(marks) {
+		t.Fatalf("two sessions in play: marks %+v, want no new one", after[len(marks):])
+	}
+}
+
+// TestPushAttributesCursorPendingCommand (F-0513 crit. 6): the whole path
+// with two concurrent Cursor sessions on different models and a declared
+// CERNE_PROVIDER/CERNE_MODEL. Only the second session's preToolUse runs this
+// `cerne push`, so the push's write names that session's model, ahead of the
+// declaration, and the local mark goes to it.
+func TestPushAttributesCursorPendingCommand(t *testing.T) {
+	projDir, _, repoDir, specPath := pulledProject(t)
+	for k, v := range map[string]string{"CERNE_ACTOR": "", "CERNE_SESSION": "", "CERNE_PROVIDER": "xai", "CERNE_MODEL": "grok-x", "CURSOR_AGENT": "1"} {
+		t.Setenv(k, v)
+	}
+	hook := func(fixture, sub, sess, modelID string) {
+		t.Helper()
+		p := cursorFixture(t, fixture, projDir)
+		p["session_id"], p["conversation_id"] = sess, sess
+		if modelID != "" {
+			p["model_id"], p["model"] = modelID, modelID
+		}
+		if out, err := execCerneStdin(t, payloadString(t, p), "hook", sub); err != nil {
+			t.Fatalf("hook %s: %v\noutput: %s", sub, err, out)
+		}
+	}
+	hook("session-start.json", "session-context", "sess-a", "")
+	hook("session-start.json", "session-context", "sess-b", "gpt-6")
+	hook("pre-tool-use-shell.json", "tool-notes", "sess-b", "gpt-6")
+
+	args := os.Args
+	os.Args = []string{"cerne", "push", "--dir", projDir} // the shell's own command line
+	t.Cleanup(func() { os.Args = args })
+	mustWrite(t, specPath, "---\ncerne_id: F-0001\n---\n\n# Parcelamento\n\nDividir compras em parcelas, na sessão B.\n")
+	if out, err := execCerne(t, "push", "--dir", projDir); err != nil {
+		t.Fatalf("push: %v\n%s", err, out)
+	}
+	evs, err := store.ReadEvents(repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var last map[string]string
+	for _, ev := range evs {
+		if ev.EntityID == "F-0001" && ev.Type == "feature.doc_edited" {
+			last = ev.Payload
+		}
+	}
+	if last["provider"] != "cursor" || last["model"] != "gpt-6" || last["source"] != "hook" {
+		t.Fatalf("doc_edited = %v, want cursor/gpt-6 from the session whose pending command it is", last)
+	}
+	marks, _ := cost.ReadMarks(filepath.Dir(repoDir))
+	if len(marks) == 0 || marks[len(marks)-1].Session != "sess-b" || marks[len(marks)-1].Harness != "cursor" {
+		t.Fatalf("marks = %+v, want the spec marked on sess-b", marks)
 	}
 }
