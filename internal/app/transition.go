@@ -489,10 +489,12 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 			if risk != nil {
 				acceptVia, acceptPayload = project.GateRisk, risk.payload()
 				acceptPayload["via"] = project.GateRisk
-				f.AcceptedRisk = risk.Summary()
 			}
-			if src != srcSeed {
+			if src != srcSeed { // a seed crosses no gate, so it marks nothing
 				f.AcceptedVia = acceptVia // F-0515: done with no human act
+				if risk != nil {
+					f.AcceptedRisk = risk.Summary()
+				}
 			}
 			f.UpdatedAt = time.Now().UTC()
 			if err := store.SaveFeature(repoDir, f); err != nil {

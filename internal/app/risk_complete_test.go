@@ -150,6 +150,22 @@ func TestRiskAcceptCascadesTasks(t *testing.T) {
 	}
 }
 
+// TestRiskSeedLeavesNoMark: a scripted seed (cerne demo) crosses no gate, so a
+// complete it runs under the risk gate marks the card with neither
+// accepted_via nor the risk summary.
+// F-0516 crit. 6
+func TestRiskSeedLeavesNoMark(t *testing.T) {
+	asActor(t, "agent")
+	repoDir, projDir, _ := newFeatureBackend(t)
+	riskDelivery(t, repoDir, projDir, store.Feature{ID: "F-0001", Facets: []string{"code"}}, "vitória", cleanChange())
+	if _, err := TransitionFeatureSeed(repoDir, projDir, "F-0001", domain.ActionComplete, "", "", nil, false); err != nil {
+		t.Fatal(err)
+	}
+	if f := reload(t, repoDir, "F-0001"); f.State != domain.StateDone || f.AcceptedVia != "" || f.AcceptedRisk != "" {
+		t.Errorf("seeded card = %s, accepted_via %q, accepted_risk %q; want done and unmarked", f.State, f.AcceptedVia, f.AcceptedRisk)
+	}
+}
+
 // TestRiskHeldKeepsTasks: a held parent stays implemented and so do its
 // tasks: nothing was accepted.
 // F-0516 crit. 7, 9
