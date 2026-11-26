@@ -805,6 +805,8 @@ function SettingRow({
                 setPending(next)
                 return
               }
+              // Back to the default writes at once: an open question goes.
+              setPending(undefined)
               // The default is not always a declared value (an empty one
               // means "unset"): picking it removes the scope's value.
               onWrite(ws, () => (next === '' ? unsetSetting(s.id, ws) : putSetting(s.id, ws, next)))

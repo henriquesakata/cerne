@@ -1787,6 +1787,19 @@ describe('Settings — gates de aprovação e de aceite (F-0515)', () => {
     await waitFor(() => expect(putSetting).toHaveBeenCalledWith('gates.approve', 'project', 'human'))
   })
 
+  it('com a pergunta aberta, voltar ao padrão grava e fecha a pergunta', async () => {
+    load(undefined, accept({ value: 'merge', stored: { project: 'merge' }, origin: 'project' }))
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Aceite da entrega' })
+    const select = within(r).getByRole('combobox')
+    fireEvent.change(select, { target: { value: 'auto' } })
+    expect(within(r).getByRole('button', { name: 'Mudar' })).toBeInTheDocument()
+    fireEvent.change(select, { target: { value: 'human' } })
+    await waitFor(() => expect(putSetting).toHaveBeenCalledWith('gates.accept', 'project', 'human'))
+    expect(within(r).queryByRole('button', { name: 'Mudar' })).toBeNull()
+    expect(putSetting).not.toHaveBeenCalledWith('gates.accept', 'project', 'auto')
+  })
+
   it('en: a pergunta e os botões em inglês', async () => {
     localStorage.setItem('cerne-lang', 'en')
     load()
