@@ -109,6 +109,26 @@ func TestPromoteIdeaUnknownCapabilityWritesNothing(t *testing.T) {
 	assertPromoteWroteNothing(t, repoDir, i.ID, head)
 }
 
+// F-0514: a retired capability is refused at promote too (the check lives in
+// mint), with nothing written.
+func TestPromoteIdeaRetiredCapabilityWritesNothing(t *testing.T) {
+	repoDir, projDir, _ := newFeatureBackend(t)
+	c, err := CreateCapability(repoDir, projDir, "Velha", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RetireCapability(repoDir, projDir, c.ID, "gone"); err != nil {
+		t.Fatal(err)
+	}
+	i, _ := CreateIdea(repoDir, projDir, "Ideia", "", nil, nil, "", false)
+	head := backendHead(t, repoDir)
+	_, _, err = PromoteIdea(repoDir, projDir, i.ID, PromoteOptions{Capabilities: []string{c.ID}})
+	if !errors.Is(err, ErrUnknownCapability) {
+		t.Fatalf("err = %v, want ErrUnknownCapability", err)
+	}
+	assertPromoteWroteNothing(t, repoDir, i.ID, head)
+}
+
 // F-0510 crit. 6: with RequireComplete, a promote that would leave the card
 // untagged, or without a capability while the project has a taxonomy, is
 // refused with nothing written and a message naming the flags; without it the

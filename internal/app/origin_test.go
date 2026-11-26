@@ -11,7 +11,7 @@ func createWithOnBehalf(t *testing.T, actor, onBehalf string) (string, store.Fea
 	t.Helper()
 	t.Setenv("CERNE_ACTOR", actor)
 	repoDir, projDir, _ := newFeatureBackend(t)
-	f, err := CreateEpicWithSpec(repoDir, projDir, "Origem", "", "", nil, nil, "", false, "", "", onBehalf)
+	f, err := CreateLike(repoDir, projDir, "E", "Origem", "", "", "", nil, nil, nil, "", false, "", "", onBehalf)
 	return repoDir, f, err
 }
 
@@ -64,7 +64,7 @@ func TestCreateFeatureOnBehalf(t *testing.T) {
 func TestCreateFeatureOnBehalfEmptyRefused(t *testing.T) {
 	t.Setenv("CERNE_ACTOR", "agent")
 	repoDir, projDir, _ := newFeatureBackend(t)
-	_, err := CreateEpicWithSpec(repoDir, projDir, "Origem", "", "", nil, nil, "", false, "", "", "   ")
+	_, err := CreateLike(repoDir, projDir, "E", "Origem", "", "", "", nil, nil, nil, "", false, "", "", "   ")
 	if !errors.Is(err, ErrOnBehalfEmpty) {
 		t.Fatalf("err = %v, want ErrOnBehalfEmpty", err)
 	}

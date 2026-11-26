@@ -796,9 +796,9 @@ func TestCreateFeatureWithFixes(t *testing.T) {
 	if _, ok := evs[len(evs)-1].Payload["fixes"]; ok {
 		t.Fatalf("payload without fixes = %v, want no fixes key", evs[len(evs)-1].Payload)
 	}
-	f, err := CreateFeatureFixes(repoDir, projDir, "Corrige", "", "", "F-0001", nil, nil, "", false, "", "", "")
+	f, err := CreateLike(repoDir, projDir, "F", "Corrige", "", "", "F-0001", nil, nil, nil, "", false, "", "", "")
 	if err != nil {
-		t.Fatalf("CreateFeatureFixes: %v", err)
+		t.Fatalf("CreateLike: %v", err)
 	}
 	if f.ID != "F-0002" || f.Fixes != "F-0001" {
 		t.Fatalf("feature = %s fixes %q, want F-0002 fixes F-0001", f.ID, f.Fixes)
@@ -860,7 +860,7 @@ func TestFixesUnknownFeatureRefused(t *testing.T) {
 	}
 	featsBefore, _ := store.LoadAllFeatures(repoDir)
 	evsBefore, _ := store.ReadEvents(repoDir)
-	if _, err := CreateFeatureFixes(repoDir, projDir, "Outra", "", "", "F-9999", nil, nil, "", false, "", "", ""); !errors.Is(err, ErrFixesNotFound) {
+	if _, err := CreateLike(repoDir, projDir, "F", "Outra", "", "", "F-9999", nil, nil, nil, "", false, "", "", ""); !errors.Is(err, ErrFixesNotFound) {
 		t.Fatalf("create err = %v, want ErrFixesNotFound", err)
 	}
 	if _, err := SetFeature(repoDir, projDir, "F-0001", "", "", "F-9999", false, false, true); !errors.Is(err, ErrFixesNotFound) {
@@ -880,7 +880,7 @@ func TestFixesUnknownFeatureRefused(t *testing.T) {
 		t.Fatalf("SaveFeature implemented: %v", err)
 	}
 	commitBackend(t, repoDir) // MutateAndSnapshot's pre-mutate hard reset drops uncommitted files
-	if _, err := CreateFeatureFixes(repoDir, projDir, "Corrige a pronta", "", "", "F-0002", nil, nil, "", false, "", "", ""); err != nil {
+	if _, err := CreateLike(repoDir, projDir, "F", "Corrige a pronta", "", "", "F-0002", nil, nil, nil, "", false, "", "", ""); err != nil {
 		t.Fatalf("fixes on an implemented feature: %v, want accepted", err)
 	}
 }
@@ -892,8 +892,8 @@ func TestFixesCycleRefused(t *testing.T) {
 	if _, err := CreateFeature(repoDir, projDir, "Entregue", "", "", nil, nil); err != nil {
 		t.Fatalf("CreateFeature: %v", err)
 	}
-	if _, err := CreateFeatureFixes(repoDir, projDir, "Corrige", "", "", "F-0001", nil, nil, "", false, "", "", ""); err != nil {
-		t.Fatalf("CreateFeatureFixes: %v", err)
+	if _, err := CreateLike(repoDir, projDir, "F", "Corrige", "", "", "F-0001", nil, nil, nil, "", false, "", "", ""); err != nil {
+		t.Fatalf("CreateLike: %v", err)
 	}
 	evsBefore, _ := store.ReadEvents(repoDir)
 	if _, err := SetFeature(repoDir, projDir, "F-0002", "", "", "F-0002", false, false, true); !errors.Is(err, ErrFixesCycle) {

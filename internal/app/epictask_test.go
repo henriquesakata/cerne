@@ -24,9 +24,9 @@ func setFeatureState(t *testing.T, repoDir string, f store.Feature, s domain.Fea
 
 func TestCreateEpic(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	e, err := CreateEpicWithSpec(repoDir, projDir, "Meu épico", "", "", nil, nil, "", false, "", "", "")
+	e, err := CreateLike(repoDir, projDir, "E", "Meu épico", "", "", "", nil, nil, nil, "", false, "", "", "")
 	if err != nil {
-		t.Fatalf("CreateEpicWithSpec: %v", err)
+		t.Fatalf("CreateLike: %v", err)
 	}
 	if e.ID != "E-0001" || e.State != domain.StateCandidate {
 		t.Fatalf("epic = %+v, want E-0001 candidate", e)
@@ -78,9 +78,9 @@ func TestCreateTask(t *testing.T) {
 // TestCreateTaskUnderEpic pins the mixed-prefix link: T- under a declared E-.
 func TestCreateTaskUnderEpic(t *testing.T) {
 	repoDir, projDir, _ := newFeatureBackend(t)
-	e, err := CreateEpicWithSpec(repoDir, projDir, "Épico", "", "", nil, nil, "", false, "", "", "")
+	e, err := CreateLike(repoDir, projDir, "E", "Épico", "", "", "", nil, nil, nil, "", false, "", "", "")
 	if err != nil {
-		t.Fatalf("CreateEpicWithSpec: %v", err)
+		t.Fatalf("CreateLike: %v", err)
 	}
 	setFeatureState(t, repoDir, e, domain.StateInDevelopment)
 	tk, err := CreateTaskWithSpec(repoDir, projDir, "Passo", "", e.ID, nil, nil, "", false, "", "", "")

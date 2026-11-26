@@ -153,21 +153,6 @@ func CreateFeatureWithSpecBy(repoDir, projDir, title, module, parent string, fac
 	return createFeatureCore(repoDir, projDir, "F", title, module, parent, facets, components, specBody, false, "", "", "", by, "")
 }
 
-// CreateFeatureFixes is CreateFeatureWithSpec with the correction link (F-0321):
-// fixes names the delivered feature whose defect this one corrects, validated to
-// exist before anything is written (ErrFixesNotFound, wrapped).
-func CreateFeatureFixes(repoDir, projDir, title, module, parent, fixes string, facets, components []string, specBody string, force bool, owner, priority, onBehalf string) (store.Feature, error) {
-	return createFeatureCore(repoDir, projDir, "F", title, module, parent, facets, components, specBody, force, owner, priority, strings.TrimSpace(fixes), DocAuthor{}, onBehalf)
-}
-
-// CreateEpicWithSpec creates a declared epic (E-, F-0203): a full feature
-// lifecycle under its own id sequence — a semantic signal at birth for a PRD
-// that is known to decompose. Epic behavior itself stays structural (children),
-// never derived from the prefix.
-func CreateEpicWithSpec(repoDir, projDir, title, module, parent string, facets, components []string, specBody string, force bool, owner, priority, onBehalf string) (store.Feature, error) {
-	return createFeatureCore(repoDir, projDir, "E", title, module, parent, facets, components, specBody, force, owner, priority, "", DocAuthor{}, onBehalf)
-}
-
 // CreateTaskWithSpec creates a task (T-, F-0203): an execution unit of a
 // committed PRD, born approved — the human gate was paid on the parent. The
 // parent is mandatory and must be past candidacy; every refusal happens before
@@ -1308,7 +1293,7 @@ func resolveOrigin(onBehalf string) (origin, quote string, err error) {
 }
 
 // CreateLike is the one creation entry the CLI uses for F-/E-/T- (F-0514): the
-// same flow as CreateFeatureFixes/CreateEpicWithSpec/CreateTaskWithSpec, plus
+// creation flow for F-/E-/T- (the fixes link, the task parent rule), plus
 // the C- ids linked at birth — validated inside the creation's own mutation, so
 // a bad id mints nothing.
 func CreateLike(repoDir, projDir, prefix, title, module, parent, fixes string, facets, components, capabilities []string, specBody string, force bool, owner, priority, onBehalf string) (store.Feature, error) {
