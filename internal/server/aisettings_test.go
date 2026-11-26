@@ -417,3 +417,20 @@ func TestAITestWithATypedKeyNamesAnEnvVarThatWins(t *testing.T) {
 		t.Fatalf("ok=%v auth=%q note=%q body=%s", r.OK, auth, r.Note, body)
 	}
 }
+
+// B-0092: an Anthropic key in the shared legacy variable is not reported as
+// the openai provider's key.
+func TestKeyStatusDoesNotLendALegacyKeyToAnotherVendor(t *testing.T) {
+	t.Setenv("CERNE_CONFIG_DIR", t.TempDir())
+	for _, n := range []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY"} {
+		t.Setenv(n, "")
+	}
+	t.Setenv("CERNE_LLM_API_KEY", "sk-ant-api03-SECRETSECRET")
+	st := keyStatuses(project.LLMConfig{Mode: "byo-key"})
+	if !st["anthropic"].Set {
+		t.Fatalf("anthropic must still see its key in the legacy variable: %+v", st["anthropic"])
+	}
+	if o := st["openai"]; o.Set || o.Problem != "" || o.Last4 != "" {
+		t.Fatalf("openai reports another vendor's key: %+v", o)
+	}
+}
