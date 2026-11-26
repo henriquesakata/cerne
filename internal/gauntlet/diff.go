@@ -146,6 +146,22 @@ func ReadDelivery(dir, pinBranch, id string) (Delivery, error) {
 	return d, nil
 }
 
+// TrackedFiles lists the files git tracks under dir, relative to it: the
+// tree the risk gate reads test marks from (F-0516).
+func TrackedFiles(dir string) ([]string, error) {
+	out, err := runGit(dir, "ls-files", "-z")
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	for _, f := range strings.Split(out, "\x00") {
+		if f != "" {
+			files = append(files, f)
+		}
+	}
+	return files, nil
+}
+
 // ErrNoFeatureCommits means no non-merge commit on the base cites the id.
 var ErrNoFeatureCommits = errors.New("no commit cites the feature in its message")
 

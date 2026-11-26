@@ -7,6 +7,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -126,6 +127,34 @@ func ScanTestMarks(projDir string, roots, patterns []string) TestIndex {
 			idx.Marks = append(idx.Marks, ParseTestMarks(filepath.ToSlash(rel), string(b))...)
 			return nil
 		})
+	}
+	return idx
+}
+
+// ScanTrackedTestMarks is ScanTestMarks over the files git tracks (paths
+// relative to projDir) instead of the file system, for the risk gate
+// (F-0516): a test git ignores or never added — a gitignored checkout under
+// the tree, a tmp/ — proves nothing the delivery carries.
+func ScanTrackedTestMarks(projDir string, files, patterns []string) TestIndex {
+	if len(patterns) == 0 {
+		patterns = DefaultTestPatterns
+	}
+	var idx TestIndex
+	for _, rel := range files {
+		rel = filepath.ToSlash(rel)
+		if slices.ContainsFunc(strings.Split(path.Dir(rel), "/"), func(seg string) bool { return skipScanDirs[seg] }) || !matchesAny(patterns, path.Base(rel)) {
+			continue
+		}
+		p := filepath.Join(projDir, filepath.FromSlash(rel))
+		if info, err := os.Stat(p); err != nil || info.Size() > maxTestFileBytes {
+			continue
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		idx.Files++
+		idx.Marks = append(idx.Marks, ParseTestMarks(rel, string(b))...)
 	}
 	return idx
 }

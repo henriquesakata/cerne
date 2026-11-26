@@ -374,7 +374,10 @@ func riskTests(repoDir, projDir string, f store.Feature) (c RiskCheck, tested st
 	if err != nil {
 		cfg = project.Config{}
 	}
-	idx := ScanProjectTests(projDir, cfg)
+	// Only what git tracks: an ignored or never-added test proves nothing the
+	// delivery carries. A tree git cannot read has no test file.
+	tracked, _ := gauntlet.TrackedFiles(projDir)
+	idx := lint.ScanTrackedTestMarks(projDir, tracked, cfg.TestPatterns)
 	criteria, withTest, manual := lint.CriterionCoverage(repoDir, f.ID, idx)
 	tested = fmt.Sprintf("%d/%d", len(withTest), len(criteria))
 	var why []string
