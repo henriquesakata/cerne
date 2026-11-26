@@ -1,10 +1,12 @@
 package server
 
 import (
+	"errors"
 	"net/http"
 	"slices"
 	"testing"
 
+	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
@@ -74,6 +76,24 @@ func TestRiskFeedbackRoute(t *testing.T) {
 	}
 	if rec := doJSON(t, h, http.MethodPost, "/api/features/F-0001/risk-feedback", `{"answer":"should_have_asked","add_facets":["billing"]}`, &got); rec.Code != http.StatusBadRequest {
 		t.Errorf("a facet outside the closed set: status %d, want 400", rec.Code)
+	}
+}
+
+// TestFeaturePageSurvivesAnUnreadableRiskDecision: when the risk gate's
+// decision cannot be read, the feature page still loads, with no risk
+// section.
+// F-0518 crit. 1
+func TestFeaturePageSurvivesAnUnreadableRiskDecision(t *testing.T) {
+	repoDir, projDir := riskGateBackend(t)
+	prev := readRiskDecision
+	readRiskDecision = func(string, string, string) (*app.RiskDecision, error) { return nil, errors.New("log unreadable") }
+	t.Cleanup(func() { readRiskDecision = prev })
+	var detail struct {
+		Feature      struct{ ID string } `json:"feature"`
+		RiskDecision *app.RiskDecision   `json:"risk_decision"`
+	}
+	if rec := doJSON(t, New(repoDir, projDir, ""), http.MethodGet, "/api/features/F-0001", "", &detail); rec.Code != http.StatusOK || detail.Feature.ID != "F-0001" || detail.RiskDecision != nil {
+		t.Fatalf("status %d, detail %+v; want the page without the risk section", rec.Code, detail)
 	}
 }
 

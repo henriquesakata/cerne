@@ -512,10 +512,10 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, projDir, id string) {
 	if writes == nil {
 		writes = []app.DocWrite{}
 	}
-	riskDecision, err := app.RiskDecisionOf(repoDir, projDir, id)
+	// The risk section is extra (F-0518): unreadable, the page loads without it.
+	riskDecision, err := readRiskDecision(repoDir, projDir, id)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
-		return
+		riskDecision = nil
 	}
 	writeJSON(w, http.StatusOK, featureDetailResponse{RiskDecision: riskDecision, Feature: f, Docs: docs, DocsReal: real, DocsUpdated: updated, DocsHash: hashes, Artifacts: artifacts, InformedBy: informedBy, Children: children, Errata: errata, SpecChangedAfterApproval: specChanged, ApprovalDelta: delta, ApprovalBaselineMissing: app.ApprovalBaselineMissing(repoDir, f), RoastRounds: rounds, PlanRoastRounds: planRounds, ApproveReadiness: readiness, Bar: bar, JudgeQuestion: judgeQuestion, ApproveAdvice: advice, Writes: writes})
 }

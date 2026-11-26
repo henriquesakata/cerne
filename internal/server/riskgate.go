@@ -17,6 +17,10 @@ import (
 // same-origin JSON). B-0091: a request with no Origin still passes as the
 // person, as on every other local write route.
 
+// readRiskDecision reads a card's risk decision for its page; a variable so
+// a test can make it fail.
+var readRiskDecision = app.RiskDecisionOf
+
 // riskFeedbackRequest is the POST /api/features/{id}/risk-feedback body.
 type riskFeedbackRequest struct {
 	Answer    string   `json:"answer"`
