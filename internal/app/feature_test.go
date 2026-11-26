@@ -1385,3 +1385,71 @@ func TestSpecBodyOnlyFrontmatterIsEmpty(t *testing.T) {
 		t.Fatalf("origin moved on an empty body: %s -> %s", head0, h)
 	}
 }
+
+// B-0085: a human corrects a card's origin after creation, in any state; an
+// agent is refused, a blank quote is refused, a bad value is refused.
+func TestSetFeatureOrigin(t *testing.T) {
+	cases := []struct {
+		name, actor, startOrigin, origin, quote string
+		state                                   domain.FeatureState
+		wantErr                                 error
+		wantOrigin                              string
+	}{
+		{"human to human, candidate", "human", "agent", "human", "o dono pediu", "", nil, "human"},
+		{"human to agent", "human", "human", "agent", "", "", nil, "agent"},
+		{"human to human, implemented", "human", "agent", "human", "o dono pediu", domain.StateImplemented, nil, "human"},
+		{"agent refused", "agent", "agent", "human", "o dono pediu", "", ErrHumanGate, "agent"},
+		{"blank quote refused", "human", "agent", "human", "   ", "", ErrOnBehalfEmpty, "agent"},
+		{"missing quote for human refused", "human", "agent", "human", "", "", ErrOnBehalfEmpty, "agent"},
+		{"invalid value refused", "human", "agent", "robot", "x", "", ErrInvalidOrigin, "agent"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Setenv("CERNE_ACTOR", "human")
+			repoDir, projDir, _ := newFeatureBackend(t)
+			if _, err := CreateFeature(repoDir, projDir, "Feat", "", "", nil, nil); err != nil {
+				t.Fatalf("CreateFeature: %v", err)
+			}
+			f, _ := store.LoadFeature(repoDir, "F-0001")
+			f.Origin = c.startOrigin
+			if c.state != "" {
+				f.State = c.state
+			}
+			if err := store.SaveFeature(repoDir, f); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := gitback.CommitAndPush(repoDir, "seed origin"); err != nil && !errors.Is(err, gitback.ErrNothingToCommit) {
+				t.Fatal(err)
+			}
+			t.Setenv("CERNE_ACTOR", c.actor)
+			_, err := SetFeatureOrigin(repoDir, projDir, "F-0001", c.origin, c.quote)
+			if !errors.Is(err, c.wantErr) {
+				t.Fatalf("err = %v, want %v", err, c.wantErr)
+			}
+			got, _ := store.LoadFeature(repoDir, "F-0001")
+			if got.Origin != c.wantOrigin {
+				t.Fatalf("origin = %q, want %q", got.Origin, c.wantOrigin)
+			}
+			evs, _ := store.ReadEvents(repoDir)
+			var corr []domain.Event
+			for _, e := range evs {
+				if e.Type == "feature.origin_corrected" {
+					corr = append(corr, e)
+				}
+			}
+			if c.wantErr != nil {
+				if len(corr) != 0 {
+					t.Fatalf("refused correction wrote %d events", len(corr))
+				}
+				return
+			}
+			if len(corr) != 1 {
+				t.Fatalf("correction events = %d, want 1", len(corr))
+			}
+			p := corr[0].Payload
+			if p["from"] != c.startOrigin || p["to"] != c.origin || p["on_behalf"] != strings.TrimSpace(c.quote) {
+				t.Fatalf("payload = %v", p)
+			}
+		})
+	}
+}
