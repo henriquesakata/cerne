@@ -143,8 +143,20 @@ func TransitionFeature(repoDir, projDir, id string, action domain.Action, by, re
 // the parallel-implementation guard (F-0257): force starts the feature even
 // when another session holds active work on it, stamping the event.
 func TransitionFeatureForce(repoDir, projDir, id string, action domain.Action, by, reason string, d *Delivery, force bool) (TransitionOutcome, error) {
+	return transitionOwnOp(repoDir, projDir, id, action, by, reason, d, force, srcCLI)
+}
+
+// TransitionFeatureSeed is TransitionFeatureForce for a scripted seed (cerne
+// demo, F-0515): nobody crosses a gate, so no card it moves is marked auto,
+// whatever the environment declares.
+func TransitionFeatureSeed(repoDir, projDir, id string, action domain.Action, by, reason string, d *Delivery, force bool) (TransitionOutcome, error) {
+	return transitionOwnOp(repoDir, projDir, id, action, by, reason, d, force, srcSeed)
+}
+
+// transitionOwnOp runs a transition on an Op of its own.
+func transitionOwnOp(repoDir, projDir, id string, action domain.Action, by, reason string, d *Delivery, force bool, src actSource) (TransitionOutcome, error) {
 	op := telemetry.StartOp("backend")
-	out, err := TransitionFeatureOpForce(op, repoDir, projDir, id, action, by, reason, d, force)
+	out, err := transitionFeature(op, repoDir, projDir, id, action, by, reason, d, force, nil, src)
 	status := "ok"
 	if err != nil {
 		status = "error"
@@ -159,13 +171,13 @@ func TransitionFeatureForce(repoDir, projDir, id string, action domain.Action, b
 // line. The person at the form is the human whatever env the server runs in,
 // so no approve or accept through it is marked auto (F-0515).
 func TransitionFeatureFromUI(op *telemetry.Op, repoDir, projDir, id string, action domain.Action, by, reason string, d *Delivery) (TransitionOutcome, error) {
-	return transitionFeature(op, repoDir, projDir, id, action, by, reason, d, false, nil, true)
+	return transitionFeature(op, repoDir, projDir, id, action, by, reason, d, false, nil, srcUI)
 }
 
 // TransitionFeatureOpForce is TransitionFeature recording its phases on op,
 // carrying the F-0257 guard override.
 func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, action domain.Action, by, reason string, d *Delivery, force bool) (TransitionOutcome, error) {
-	return transitionFeature(op, repoDir, projDir, id, action, by, reason, d, force, nil, false)
+	return transitionFeature(op, repoDir, projDir, id, action, by, reason, d, force, nil, srcCLI)
 }
 
 // mergeAccept is an accept that transcribes the human's merge of the delivery
@@ -183,8 +195,8 @@ func (m *mergeAccept) payload() map[string]string {
 const mergeActor = "human"
 
 // transitionFeature is the one transition path; m is non-nil only for an
-// accept on merge (F-0488), fromUI only for the cerne ui form (F-0515).
-func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action domain.Action, by, reason string, d *Delivery, force bool, m *mergeAccept, fromUI bool) (TransitionOutcome, error) {
+// accept on merge (F-0488), src says who stands behind the act (F-0515).
+func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action domain.Action, by, reason string, d *Delivery, force bool, m *mergeAccept, src actSource) (TransitionOutcome, error) {
 	if m != nil && action != domain.ActionAccept {
 		return TransitionOutcome{}, fmt.Errorf("an acceptance on merge is an accept, not %s", action)
 	}
@@ -328,11 +340,11 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 			f.Reason = reason
 		case domain.ActionApprove:
 			// F-0515: a person's re-approval clears an agent's earlier mark.
-			f.ApprovedVia = autoVia(gates.ApproveGate(), agentAct(fromUI))
+			f.ApprovedVia = autoVia(gates.ApproveGate(), agentAct(src))
 		case domain.ActionAccept:
 			// F-0515: an agent's own accept under accept = "auto"; the merge
 			// (m, F-0488) is the human's and marks itself below.
-			f.AcceptedVia = autoVia(gates.AcceptGate(), agentAct(fromUI))
+			f.AcceptedVia = autoVia(gates.AcceptGate(), agentAct(src))
 		case domain.ActionRevert:
 			// An acceptance undone (F-0499) is no longer an acceptance on merge,
 			// nor is an approval undone one without a human act (F-0515).
@@ -451,7 +463,9 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 				return "", err
 			}
 			f.State = promoted
-			f.AcceptedVia = project.GateAuto // F-0515: done with no human act
+			if src != srcSeed {
+				f.AcceptedVia = project.GateAuto // F-0515: done with no human act
+			}
 			f.UpdatedAt = time.Now().UTC()
 			if err := store.SaveFeature(repoDir, f); err != nil {
 				return "", err
@@ -490,7 +504,7 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 				return "", err
 			}
 			// The children ride the parent's approve (T-0007), in this commit.
-			if casc, err = cascadeApprove(repoDir, projDir, id, gauntletOn, agentAct(fromUI)); err != nil {
+			if casc, err = cascadeApprove(repoDir, projDir, id, gauntletOn, agentAct(src)); err != nil {
 				return "", err
 			}
 		}

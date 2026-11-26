@@ -41,10 +41,19 @@ func autoVia(gate string, agentAct bool) string {
 	return ""
 }
 
-// agentAct reports whether a transition is an agent's act: the environment
-// declares an agent and the act does not come from the cerne ui form, whose
-// user is the person whatever env the server runs in (F-0515).
-func agentAct(fromUI bool) bool { return !fromUI && isAgentActor(actorEnv()) }
+// actSource is who stands behind a transition, where the environment alone
+// cannot tell (F-0515).
+type actSource int
+
+const (
+	srcCLI  actSource = iota // the environment declares the actor
+	srcUI                    // the cerne ui form: the person, whatever env the server runs in
+	srcSeed                  // a scripted seed (cerne demo): nobody crosses a gate, nothing is marked
+)
+
+// agentAct reports whether a transition is an agent's act: only a CLI call
+// whose environment declares an agent.
+func agentAct(src actSource) bool { return src == srcCLI && isAgentActor(actorEnv()) }
 
 // CheckHumanSetting refuses an agent actor on a setting only a human writes
 // (F-0392). Fail-open like CheckHumanGate; the UI server does not call it.
