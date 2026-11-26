@@ -66,9 +66,10 @@ func LLMAuthorAnswered(c project.LLMConfig, answered string) DocAuthor {
 // order of F-0375's criteria: a chat tool call (CERNE_ORIGIN=chat) is the
 // project's [llm] with the call's CERNE_MODEL; no agent CERNE_ACTOR is a
 // human; CERNE_SESSION with a readable Claude Code transcript gives its model
-// (ambiguous: unknown); then CERNE_PROVIDER/CERNE_MODEL as declared; then,
-// in a Cursor agent shell, the model its hooks recorded (F-0513); else
-// unknown — never inferred.
+// (ambiguous: unknown); in a Cursor agent shell, the one model its hooks
+// recorded (F-0513), then the declaration, then cursor with no model;
+// elsewhere CERNE_PROVIDER/CERNE_MODEL as declared; else unknown — never
+// inferred.
 func docAuthor(projDir string) DocAuthor {
 	unknown := DocAuthor{Source: "unknown"}
 	if os.Getenv("CERNE_ORIGIN") == "chat" {
@@ -96,19 +97,24 @@ func docAuthor(projDir string) DocAuthor {
 		}
 	}
 	p, m := strings.TrimSpace(os.Getenv("CERNE_PROVIDER")), strings.TrimSpace(os.Getenv("CERNE_MODEL"))
-	if p != "" || m != "" {
-		return DocAuthor{Provider: p, Model: m, Source: "declared"}
-	}
+	declared := p != "" || m != ""
 	if cursorShell() {
-		cfg, _, err := project.LoadConfig(projDir)
-		if err != nil {
-			return DocAuthor{Provider: "cursor", Source: "hook"}
+		// The hooks' unambiguous model beats a declaration, as the transcript
+		// does (F-0513, the owner's call of 2026-11-26); without one, the
+		// declaration; without both, cursor with no model.
+		a := DocAuthor{Provider: "cursor", Source: "hook"}
+		if cfg, _, err := project.LoadConfig(projDir); err == nil {
+			if cacheDir, err := project.CacheDir(cfg.ProjectID); err == nil {
+				a = cursorAuthor(cacheDir)
+			}
 		}
-		cacheDir, err := project.CacheDir(cfg.ProjectID)
-		if err != nil {
-			return DocAuthor{Provider: "cursor", Source: "hook"}
+		if a.Model == "" && declared {
+			return DocAuthor{Provider: p, Model: m, Source: "declared"}
 		}
-		return cursorAuthor(cacheDir)
+		return a
+	}
+	if declared {
+		return DocAuthor{Provider: p, Model: m, Source: "declared"}
 	}
 	return unknown
 }

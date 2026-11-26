@@ -251,8 +251,9 @@ func cursorSeen(t *testing.T, cacheDir, sess, model string, age time.Duration, b
 // provider cursor and the model its hooks recorded when every Cursor session
 // in play agrees on one, and no model when they disagree or none recorded one
 // — never a guess between concurrent sessions. In play: every session
-// recorded in the last 12 h, bound or not. A declaration, the chat, a Claude
-// Code transcript and a human are as before.
+// recorded in the last 12 h, bound or not. That unambiguous evidence beats a
+// declared CERNE_PROVIDER/CERNE_MODEL, which is honored only without it. The
+// chat, a Claude Code transcript and a human are as before.
 func TestDocAuthorCursor(t *testing.T) {
 	type seen struct {
 		sess, model string
@@ -277,7 +278,12 @@ func TestDocAuthorCursor(t *testing.T) {
 		// Review of PR #221: cb may be the writer (feature new --file runs
 		// before any feature start binds), so the binding of ca decides nothing.
 		{"a bound and an unbound session, two models", nil, []seen{{"ca", "grok-4.7", time.Hour, true}, {"cb", "gpt-6", time.Minute, false}}, "", none},
-		{"declared wins", map[string]string{"CERNE_PROVIDER": "xai", "CERNE_MODEL": "grok-x"}, []seen{{"ca", "grok-4.7", time.Minute, false}}, "", DocAuthor{Provider: "xai", Model: "grok-x", Source: "declared"}},
+		// The owner's amendment of 2026-11-26: unambiguous hook evidence beats
+		// a declaration, as the transcript does on Claude Code (F-0375).
+		{"declared, one agreeing session: the hook wins", map[string]string{"CERNE_PROVIDER": "xai", "CERNE_MODEL": "grok-x"}, []seen{{"ca", "grok-4.7", time.Minute, false}}, "", DocAuthor{Provider: "cursor", Model: "grok-4.7", Source: "hook"}},
+		{"declared, two models: declared", map[string]string{"CERNE_PROVIDER": "xai", "CERNE_MODEL": "grok-x"}, []seen{{"ca", "grok-4.7", time.Minute, false}, {"cb", "gpt-6", time.Minute, true}}, "", DocAuthor{Provider: "xai", Model: "grok-x", Source: "declared"}},
+		{"declared, no record: declared", map[string]string{"CERNE_MODEL": "grok-x"}, nil, "", DocAuthor{Model: "grok-x", Source: "declared"}},
+		{"declared, a session with no model: declared", map[string]string{"CERNE_PROVIDER": "xai"}, []seen{{"ca", "", time.Minute, false}}, "", DocAuthor{Provider: "xai", Source: "declared"}},
 		{"chat unchanged", map[string]string{"CERNE_ORIGIN": "chat"}, []seen{{"ca", "grok-4.7", time.Minute, false}}, "", DocAuthor{Provider: "anthropic", Model: "claude-opus-5-5", Source: "llm-config"}},
 		{"claude code transcript unchanged", map[string]string{"CERNE_SESSION": "s1"}, []seen{{"ca", "grok-4.7", time.Minute, false}}, "claude-opus-5-5", DocAuthor{Provider: "anthropic", Model: "claude-opus-5-5", Source: "transcript"}},
 		{"no CURSOR_AGENT unchanged", map[string]string{"CURSOR_AGENT": "", "CERNE_ACTOR": "agent"}, []seen{{"ca", "grok-4.7", time.Minute, false}}, "", DocAuthor{Source: "unknown"}},
