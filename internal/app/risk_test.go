@@ -125,6 +125,15 @@ func TestRiskSensitiveArea(t *testing.T) {
 			riskGit(t, d, "add", "-A")
 			riskGit(t, d, "commit", "-q", "-m", "feat: other work (F-0010)")
 		}, []string{"code"}, false, nil, []string{"no commit", "cites F-0001"}},
+		// The FeatureCommits rule: a body mentioning the id in passing, under a
+		// subject that cites another card, is that card's commit (review 2 of #228).
+		{"another card's commit mentions the id in passing", func(t *testing.T, d string) {
+			riskRepo(t, d, nil, nil)
+			riskGit(t, d, "checkout", "-q", "-b", "feat/other")
+			riskWrite(t, d, "a.go", "a")
+			riskGit(t, d, "add", "-A")
+			riskGit(t, d, "commit", "-q", "-m", "feat: other work (F-0010)", "-m", "Unlike F-0001, this keeps the old flag.")
+		}, []string{"code"}, false, nil, []string{"no commit", "cites F-0001"}},
 		// Uncommitted work cannot be measured; cerne's own docs.lock pin is not work.
 		{"a tracked file changed and not committed", func(t *testing.T, d string) {
 			riskRepo(t, d, nil, map[string]string{"a.go": "a"})
