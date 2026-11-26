@@ -189,6 +189,35 @@ func TestRiskCalibrationHoldsAndRecords(t *testing.T) {
 	}
 }
 
+// TestCalibrationWouldReadsTheTaskHold: what calibration records the gate
+// would have decided reads the same holds as the decision: a held
+// implemented task makes it held; tasks that pass on their own leave it low.
+// F-0518 crit. 12
+func TestCalibrationWouldReadsTheTaskHold(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		facet string // of T-0003
+		would string
+	}{{"a task held", "auth", "held"}, {"every task passes", "code", "low"}} {
+		t.Run(c.name, func(t *testing.T) {
+			asActor(t, "agent")
+			repoDir, projDir, _ := newFeatureBackend(t)
+			riskDeliveryUnder(t, calibration(2), repoDir, projDir, store.Feature{ID: "F-0001", Facets: []string{"code"}}, "vitória", cleanChange())
+			seedRiskTasks(t, repoDir, projDir, store.Feature{ID: "T-0002", Facets: []string{"code"}}, store.Feature{ID: "T-0003", Facets: []string{c.facet}})
+			out, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionComplete, "", "", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if out.To != domain.StateImplemented {
+				t.Fatalf("complete in calibration = %s, want held", out.To)
+			}
+			if p := lastEntityEvent(t, repoDir, "F-0001", "feature.completed").Payload; p["risk_would"] != c.would || p["risk_calibration"] != "0/2" {
+				t.Errorf("risk_would %q, risk_calibration %q; want %s, 0/2 (tasks %q)", p["risk_would"], p["risk_calibration"], c.would, p["risk_tasks"])
+			}
+		})
+	}
+}
+
 // TestCalibrationAnswerIsFeedback: on a card held in calibration, either
 // answer is the owner's feedback, recorded with what the gate would have
 // decided, and it counts toward the number.
