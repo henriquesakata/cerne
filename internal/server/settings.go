@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"strings"
@@ -137,23 +138,69 @@ func localWriteOf(w http.ResponseWriter, r *http.Request, mediaType string) bool
 // localOnly refuses, with 403, every request to the local ui whose Host is not
 // the loopback (B-0044): a page served from a name rebound to 127.0.0.1 sends
 // its own name as Host, and would otherwise read the project and the host's
-// ~/.claude layer. A write — any method but GET and HEAD — must also be
-// same-origin (B-0043): a cross-site page sends its own Origin. One guard on
-// the router, so a route added later cannot forget it; the routes that take a
-// body type check it themselves (localWriteOf, sameOriginAs). The remote
-// `cerne serve` is not wrapped: its requests come from other hosts by design.
-func localOnly(h http.Handler) http.Handler {
+// ~/.claude layer. A write — any method but GET and HEAD — must also come from
+// the page (pageWrite): a cross-site page sends its own Origin (B-0043), curl
+// sends none (B-0091). One guard on the router, so a route added later cannot
+// forget it; the routes that take a body type check it themselves
+// (localWriteOf, sameOriginAs). The remote `cerne serve` is not wrapped: its
+// requests come from other hosts by design.
+func localOnly(mux *http.ServeMux) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !loopbackHost(r.Host) {
 			writeJSON(w, http.StatusForbidden, errorBody("cerne ui answers only on this machine: loopback host"))
 			return
 		}
-		if r.Method != http.MethodGet && r.Method != http.MethodHead && !sameOrigin(r) {
-			writeJSON(w, http.StatusForbidden, errorBody("writes are accepted only from cerne ui on this machine: loopback host, same-origin request"))
-			return
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			_, pattern := mux.Handler(r)
+			if err := pageWrite(r, pattern); err != nil {
+				writeJSON(w, http.StatusForbidden, errorBody(err.Error()))
+				return
+			}
 		}
-		h.ServeHTTP(w, r)
+		mux.ServeHTTP(w, r)
 	})
+}
+
+// errNotFromPage refuses a local ui write the cerne ui page did not send
+// (B-0091).
+var errNotFromPage = errors.New("write refused: not sent by the cerne ui page")
+
+// pageWrite is the local ui's rule for a write to the route pattern (B-0091).
+// The server runs as the person who started it, so a data write lands as
+// theirs: a bug report born approved, an approve, an accept, a human-only
+// setting, a document signed by the human. The page proves itself with its
+// Origin, which a browser sends on every write; a request with none, or with
+// another one, is errNotFromPage. The exception is a no-Origin write to a
+// route cerne's own processes call (cliWrite).
+//
+// ponytail: the Origin header is the page's whole proof, so a local process
+// that sends a matching one (curl -H 'Origin: http://127.0.0.1:7717') still
+// writes as the human. A per-process token handed to the page, or a check on
+// the peer process, closes that when it matters.
+func pageWrite(r *http.Request, pattern string) error {
+	o := r.Header.Get("Origin")
+	switch {
+	case o == "" && cliWrite(pattern):
+		return nil
+	case o == "":
+		return fmt.Errorf("%w: the request has no Origin header, and a write here acts as the human (a bug report, an approve, an accept, a setting) — an agent runs the cerne command instead", errNotFromPage)
+	case !sameOrigin(r):
+		return fmt.Errorf("%w: Origin %s is not this server", errNotFromPage, o)
+	}
+	return nil
+}
+
+// cliWrite reports a write route cerne's own processes call with no Origin:
+// another `cerne ui` registering its project in this panel, deregistering it
+// or asking the panel to restart (N-0113), and the `cerne room` client. Two
+// room writes still act as the human with no Origin: the channel post with no
+// session and the facilitator reset (rooms.go, B-0083).
+func cliWrite(pattern string) bool {
+	switch pattern {
+	case "POST /api/projects", "DELETE /api/projects/{pid}", "POST /api/restart":
+		return true
+	}
+	return strings.Contains(pattern, "/rooms")
 }
 
 // loopbackHost reports a Host header naming this machine's loopback

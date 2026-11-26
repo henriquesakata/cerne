@@ -1055,7 +1055,9 @@ func handleWikiIndex(w http.ResponseWriter, repoDir, projDir string) {
 // sameOriginJSON guards a state-changing route against the cross-site POST a
 // browser sends without a preflight (C7, F-0316): an Origin that is not this
 // server's, or a body type other than JSON (a form or text/plain post), is
-// refused. No Origin and no body type — the CLI, curl — passes.
+// refused. No Origin and no body type passes here — the room client, the
+// remote serve's host; on the local ui, localOnly has already refused a write
+// with no Origin to any other route (B-0091).
 func sameOriginJSON(r *http.Request) bool { return sameOriginAs(r, "application/json") }
 
 // sameOriginAs is sameOriginJSON for a body of mediaType (F-0464: the vault's
