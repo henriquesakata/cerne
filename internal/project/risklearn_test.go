@@ -39,6 +39,29 @@ func TestSettingsRegistryRiskCalibration(t *testing.T) {
 	}
 }
 
+// TestSettingsRegistryRiskRelaxAfter: gates.risk_relax_after is the owner's
+// project key, 3 by default, a positive number.
+// F-0518 crit. 6
+func TestSettingsRegistryRiskRelaxAfter(t *testing.T) {
+	s := declared("gates.risk_relax_after")
+	if s.Type != "int" || s.Default != int64(3) || !s.HumanOnly || !slices.Equal(s.Scopes, []string{ScopeProject}) || s.Group != "process" {
+		t.Fatalf("gates.risk_relax_after = %+v, want a human-only project int of the process group, 3 by default", s)
+	}
+	if got := (GatesConfig{}).RiskRelaxAfter(); got != 3 {
+		t.Errorf("RiskRelaxAfter() unset = %d, want 3", got)
+	}
+	projDir, _ := settingsFixture(t, gatesBlock, "", false)
+	if err := SetSetting(projDir, "gates.risk_relax_after", ScopeProject, "0"); !errors.Is(err, ErrInvalidSettingValue) {
+		t.Errorf("set 0: err = %v, want ErrInvalidSettingValue", err)
+	}
+	if err := SetSetting(projDir, "gates.risk_relax_after", ScopeProject, "5"); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, _, err := LoadConfig(projDir); err != nil || cfg.Gates.RiskRelaxAfter() != 5 {
+		t.Errorf("RiskRelaxAfter() after set 5 = %d (%v)", cfg.Gates.RiskRelaxAfter(), err)
+	}
+}
+
 // settingValue is id's resolved value for projDir.
 func settingValue(t *testing.T, projDir, id string) any {
 	t.Helper()

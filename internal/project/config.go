@@ -292,6 +292,19 @@ type GatesConfig struct {
 	// F-0518: owner answers the risk gate collects, holding every delivery,
 	// before it decides; unset = 20, 0 = no calibration.
 	RiskCalibrationN *int64 `toml:"risk_calibration,omitempty"`
+	// F-0518: "not needed" answers on as many cards held by one pattern or
+	// facet open a proposal to drop it; unset = 3.
+	RiskRelaxAfterN *int64 `toml:"risk_relax_after,omitempty"`
+}
+
+// RiskRelaxAfter is how many cards held by one pattern or facet the owner
+// answers "not needed", with no contrary signal, before the gate proposes to
+// drop it (F-0518 crit. 6). Unset or below 1 reads as 3.
+func (g GatesConfig) RiskRelaxAfter() int {
+	if g.RiskRelaxAfterN == nil || *g.RiskRelaxAfterN < 1 {
+		return 3
+	}
+	return int(*g.RiskRelaxAfterN)
 }
 
 // RiskCalibration is how many owner answers the risk gate collects before it
@@ -327,7 +340,7 @@ func (g GatesConfig) GauntletEnabled() bool {
 // isZero reports whether the block carries nothing worth persisting (the
 // struct holds a slice, so it is not ==-comparable).
 func (g GatesConfig) isZero() bool {
-	return g.Approve == "" && g.Accept == "" && g.Revert == "" && g.WorkGate == "" && len(g.WorkGateAllow) == 0 && g.WorkGateHint == "" && g.CommitTrailer == "" && g.Gauntlet == "" && g.RiskPaths == nil && g.RiskFacets == nil && g.RiskCalibrationN == nil
+	return g.Approve == "" && g.Accept == "" && g.Revert == "" && g.WorkGate == "" && len(g.WorkGateAllow) == 0 && g.WorkGateHint == "" && g.CommitTrailer == "" && g.Gauntlet == "" && g.RiskPaths == nil && g.RiskFacets == nil && g.RiskCalibrationN == nil && g.RiskRelaxAfterN == nil
 }
 
 // RiskHumanPaths are the path globs whose change always needs a person under

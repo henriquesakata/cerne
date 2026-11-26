@@ -59,11 +59,12 @@ type RiskAnswer struct {
 	// What the answer added to the lists (crit. 5).
 	AddedPaths  []string `json:"added_paths,omitempty"`
 	AddedFacets []string `json:"added_facets,omitempty"`
+	idx         int      // the answer's position in the log
 }
 
-func newRiskAnswer(ev domain.Event) *RiskAnswer {
+func newRiskAnswer(ev domain.Event, idx int) *RiskAnswer {
 	p := ev.Payload
-	return &RiskAnswer{Answer: p["answer"], Reason: p["reason"], At: ev.At, AddedPaths: splitList(p["added_paths"]), AddedFacets: splitList(p["added_facets"])}
+	return &RiskAnswer{Answer: p["answer"], Reason: p["reason"], At: ev.At, AddedPaths: splitList(p["added_paths"]), AddedFacets: splitList(p["added_facets"]), idx: idx}
 }
 
 // RiskDecision is the risk gate's last decision on a card, read from its
@@ -129,7 +130,7 @@ func riskDecisions(evs []domain.Event) map[string]*RiskDecision {
 		case ev.Type == eventTypes[domain.ActionComplete]:
 			delete(out, ev.EntityID)
 		case ev.Type == riskFeedbackEvent && out[ev.EntityID] != nil:
-			out[ev.EntityID].Feedback = newRiskAnswer(ev)
+			out[ev.EntityID].Feedback = newRiskAnswer(ev, i)
 		}
 	}
 	return out
@@ -240,7 +241,7 @@ func RecordRiskFeedback(repoDir, projDir, id string, fb RiskFeedback) (*RiskDeci
 		if err := store.AppendEvent(repoDir, ev); err != nil {
 			return "", err
 		}
-		d.Feedback = newRiskAnswer(ev)
+		d.Feedback = newRiskAnswer(ev, len(evs))
 		return "cerne: risk feedback " + f.ID, nil
 	})
 	if err != nil {
@@ -303,7 +304,35 @@ type RiskGateView struct {
 	// Questions are the cards decided in calibration, accepted at the merge,
 	// that the owner has not answered yet.
 	Questions []string `json:"questions"`
+	// Proposals are the open changes to the lists (crit. 6 to 8): none
+	// applies on its own.
+	Proposals []GateProposal `json:"proposals"`
 }
+
+// GateProposal is a change to one of the risk gate's lists that the signals
+// call for (F-0518 crit. 6 to 8): to drop a pattern or facet the owner keeps
+// answering "not needed" for (relax), or to add the folders of a delivery
+// accepted as low risk that was then fixed or reverted (tighten).
+type GateProposal struct {
+	ID      string   `json:"id"`      // relax:<setting>:<item> or tighten:<card>
+	Kind    string   `json:"kind"`    // relax or tighten
+	Setting string   `json:"setting"` // gates.risk_human_paths or gates.risk_human_facets
+	Add     []string `json:"add,omitempty"`
+	Remove  []string `json:"remove,omitempty"`
+	After   []string `json:"after"`   // the list once applied
+	Cards   []string `json:"cards"`   // the cards that motivated it
+	Signals []string `json:"signals"` // what each card said, one line each
+	Command string   `json:"command"` // the exact cerne settings set that applies it
+}
+
+// The owner's decisions on a proposal.
+const (
+	ProposalAccepted  = "accepted"
+	ProposalDismissed = "dismissed"
+)
+
+// ErrUnknownProposal: no open proposal has that id.
+var ErrUnknownProposal = errors.New("no open gate proposal")
 
 // ReadRiskGate reads the risk gate's learning from the log; since bounds the
 // period of the counts.
@@ -342,6 +371,7 @@ func ReadRiskGate(repoDir, projDir string, since time.Time) (RiskGateView, error
 			c.Missed++
 		}
 	}
+	v.Proposals = gateProposals(repoDir, projectGates(projDir), evs, features)
 	return v, nil
 }
 

@@ -6,6 +6,7 @@ import (
 	"io"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -146,6 +147,9 @@ type nextJSON struct {
 	// RiskQuestions (F-0518): under the risk gate in calibration, the cards
 	// accepted on the merge whose owner has not said whether they needed them.
 	RiskQuestions []string `json:"risk_questions,omitempty"`
+	// GateProposals (F-0518): the open changes to the risk gate's lists, each
+	// with the exact command that applies it — the owner's to run.
+	GateProposals []app.GateProposal `json:"gate_proposals,omitempty"`
 	riskGate      app.RiskGateView
 }
 
@@ -264,7 +268,7 @@ func runNext(cmd *cobra.Command, dir string, asJSON, all bool) error {
 		if q.riskGate, err = app.ReadRiskGate(ctx.repoDir, ctx.projDir, time.Time{}); err != nil {
 			return err
 		}
-		q.RiskQuestions = q.riskGate.Questions
+		q.RiskQuestions, q.GateProposals = q.riskGate.Questions, q.riskGate.Proposals
 	}
 
 	out := cmd.OutOrStdout()
@@ -340,6 +344,23 @@ func runNext(cmd *cobra.Command, dir string, asJSON, all bool) error {
 				fmt.Fprintln(out, statusLine(features[i], width))
 			}
 			fmt.Fprintf(out, "    it did: cerne feature feedback %s --should-have-asked · it did not: cerne feature feedback %s --not-needed\n", id, id)
+		}
+		fmt.Fprintln(out)
+	}
+
+	if len(q.GateProposals) > 0 {
+		printed = true
+		fmt.Fprintf(out, "GATE PROPOSALS (%d) — the owner applies or dismisses each one (Settings screen of cerne ui, or the command below); an agent never does\n", len(q.GateProposals))
+		for _, p := range q.GateProposals {
+			change := "drop " + strings.Join(p.Remove, ", ") + " from " + p.Setting
+			if p.Kind == "tighten" {
+				change = "add " + strings.Join(p.Add, ", ") + " to " + p.Setting
+			}
+			fmt.Fprintf(out, "  %s — %s (%s)\n", p.ID, change, strings.Join(p.Cards, ", "))
+			for _, s := range p.Signals {
+				fmt.Fprintln(out, "    "+s)
+			}
+			fmt.Fprintln(out, "    apply: "+p.Command)
 		}
 		fmt.Fprintln(out)
 	}
