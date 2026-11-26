@@ -156,7 +156,8 @@ func TestAcceptMergedEventPayload(t *testing.T) {
 		keys = append(keys, k)
 	}
 	slices.Sort(keys)
-	if want := []string{"merged_at", "pr", "recorded_by", "via"}; !slices.Equal(keys, want) {
+	// F-0516: every accept also records the Gauntlet round it saw.
+	if want := []string{"gauntlet_round", "merged_at", "pr", "recorded_by", "via"}; !slices.Equal(keys, want) {
 		t.Fatalf("payload keys = %v, want %v", keys, want)
 	}
 	if ev.Payload["via"] != "merge" || ev.Payload["pr"] != prURL("158") || ev.Payload["merged_at"] != mergedPR.MergedAt || !strings.HasPrefix(ev.Payload["recorded_by"], "agent:") {

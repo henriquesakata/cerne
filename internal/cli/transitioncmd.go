@@ -93,17 +93,13 @@ func newTransitionCmds(dir *string) []*cobra.Command {
 
 // transitionLine is a transition's headline. Renewing a stale approval
 // (F-0318) says so and names the approval it renewed (F-0417), instead of the
-// bare "approved → approved". taskParent is the parent of a task, which rides
-// its parent's acceptance (T-0007); "" for any other card.
-func transitionLine(action domain.Action, out app.TransitionOutcome, taskParent string) string {
+// bare "approved → approved". waits is what a card the risk gate held waits
+// for (app.RiskHeldWait); "" for every other outcome.
+func transitionLine(action domain.Action, out app.TransitionOutcome, waits string) string {
 	if r := out.Risk; r != nil && r.Low() { // the risk gate accepted it (F-0516)
 		return fmt.Sprintf("%s: %s → %s\n%s: %s → %s (accepted as low risk: %s)", out.ID, out.From, domain.StateImplemented, out.ID, domain.StateImplemented, out.To, r.Summary())
 	}
 	if r := out.Risk; r != nil { // held: one line per condition that failed
-		waits := "the human merge of its PR"
-		if taskParent != "" {
-			waits = "the acceptance of its parent " + taskParent
-		}
 		line := fmt.Sprintf("%s: %s → %s\n%s waits for %s ([gates] accept = %q); what held it:", out.ID, out.From, out.To, out.ID, waits, project.GateRisk)
 		for _, h := range r.Held() {
 			line += "\n  - " + h
@@ -198,13 +194,13 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 	for _, w := range out.Warnings {
 		fmt.Fprintln(cmd.ErrOrStderr(), w)
 	}
-	var taskParent string
-	if out.Risk != nil && strings.HasPrefix(id, "T-") {
-		if f, err := store.LoadFeature(ctx.repoDir, id); err == nil {
-			taskParent = f.Parent
-		}
+	var waits string
+	if out.Risk != nil {
+		f, _ := store.LoadFeature(ctx.repoDir, id)
+		f.ID = id
+		waits = app.RiskHeldWait(ctx.repoDir, f)
 	}
-	fmt.Fprintln(cmd.OutOrStdout(), transitionLine(action, out, taskParent))
+	fmt.Fprintln(cmd.OutOrStdout(), transitionLine(action, out, waits))
 	printMovedPendings(cmd.OutOrStdout(), out.Pendings)
 	printMovedPendings(cmd.OutOrStdout(), out.Ideas)
 	printMovedPendings(cmd.OutOrStdout(), out.Cascade) // the children it carried (T-0007)

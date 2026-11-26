@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
-	"path"
 	"regexp"
 	"strings"
 
@@ -90,8 +89,8 @@ type Delivery struct {
 	Ref        string   // the base ref resolved (see resolveBase)
 	Base, Head string   // the merge-base of Ref and HEAD, and HEAD, as SHAs
 	Files      []string // changed from Base to HEAD, from the repository root, no excludes; a rename as its old and its new path
-	Cited      bool     // a non-merge commit of Base..HEAD cites the id, as FeatureCommits reads it
-	Dirty      []string // tracked files that differ from HEAD (staged or not), but docs.lock, cerne's own pin
+	Cited      bool     // a non-merge commit of Base..HEAD is the id's, by the rule of FeatureCommits (ownCommit)
+	Dirty      []string // files that differ from HEAD (staged, unstaged or untracked, not ignored), but the project's own docs.lock and .docs/
 	Prefix     string   // dir from the repository root, with a trailing slash; "" at the root
 }
 
@@ -123,20 +122,25 @@ func ReadDelivery(dir, pinBranch, id string) (Delivery, error) {
 			d.Files = append(d.Files, f)
 		}
 	}
-	log, err := runGit(dir, "log", "--no-merges", "--format=%B%x1e", d.Base+".."+d.Head)
+	log, err := runGit(dir, "log", "--no-merges", "--format=%s%x00%B%x1e", d.Base+".."+d.Head)
 	if err != nil {
 		return Delivery{}, err
 	}
-	for _, msg := range strings.Split(log, "\x1e") {
-		d.Cited = d.Cited || citesID(msg, id)
+	for _, rec := range strings.Split(log, "\x1e") {
+		if subject, msg, ok := strings.Cut(strings.TrimLeft(rec, "\n"), "\x00"); ok {
+			own, _ := ownCommit(subject, msg, id)
+			d.Cited = d.Cited || own
+		}
 	}
-	status, err := runGit(dir, "status", "--porcelain=v1", "-z", "--untracked-files=no", "--no-renames")
+	// Untracked files count: the test marks are read from the tree.
+	status, err := runGit(dir, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames")
 	if err != nil {
 		return Delivery{}, err
 	}
 	for _, e := range strings.Split(status, "\x00") {
-		if len(e) > 3 && path.Base(e[3:]) != "docs.lock" {
-			d.Dirty = append(d.Dirty, e[3:])
+		// cerne's own pin and projection, at the root or the project dir, are never the delivery.
+		if p := e[min(3, len(e)):]; p != "" && p != "docs.lock" && p != d.Prefix+"docs.lock" && !strings.HasPrefix(p, d.Prefix+".docs/") {
+			d.Dirty = append(d.Dirty, p)
 		}
 	}
 	return d, nil
@@ -172,6 +176,22 @@ func citesID(msg, id string) bool {
 		}
 		off = start + 1
 	}
+}
+
+// ownCommit is the rule that makes a commit id's: its message cites id as a
+// whole word, and its subject cites id or no other feature. A commit whose
+// subject names another feature while only the body mentions id belongs to
+// that feature, returned as other. FeatureCommits and ReadDelivery share it.
+func ownCommit(subject, msg, id string) (own bool, other string) {
+	if !citesID(msg, id) {
+		return false, ""
+	}
+	if !citesID(subject, id) {
+		if other = otherFeatureID(subject, id); other != "" {
+			return false, other
+		}
+	}
+	return true, ""
 }
 
 // isIDChar: a char that glues to an id before it (branch and URL paths included).
@@ -212,14 +232,14 @@ func FeatureCommits(dir, base, pinBranch, id string, excludes []string) (diff st
 	var b strings.Builder
 	for _, rec := range strings.Split(log, "\x1e") {
 		f := strings.SplitN(strings.TrimLeft(rec, "\n"), "\x00", 4)
-		if len(f) < 4 || !citesID(f[3], id) {
+		if len(f) < 4 {
 			continue
 		}
-		if !citesID(f[2], id) {
-			if other := otherFeatureID(f[2], id); other != "" {
+		if own, other := ownCommit(f[2], f[3], id); !own {
+			if other != "" {
 				skipped = append(skipped, Commit{Sha: f[1], Subject: f[2], Other: other})
-				continue
 			}
+			continue
 		}
 		args := append([]string{"show", "--no-color", "--no-ext-diff", "--no-textconv", "--format=commit %h %s", f[0], "--", "."}, excludeArgs(excludes)...)
 		out, err := runGit(dir, args...)

@@ -125,11 +125,34 @@ func TestRiskSensitiveArea(t *testing.T) {
 			riskGit(t, d, "add", "-A")
 			riskGit(t, d, "commit", "-q", "-m", "feat: other work (F-0010)")
 		}, []string{"code"}, false, nil, []string{"no commit", "cites F-0001"}},
+		// The FeatureCommits rule: a body mentioning the id in passing, under a
+		// subject that cites another card, is that card's commit (review 2 of #228).
+		{"another card's commit mentions the id in passing", func(t *testing.T, d string) {
+			riskRepo(t, d, nil, nil)
+			riskGit(t, d, "checkout", "-q", "-b", "feat/other")
+			riskWrite(t, d, "a.go", "a")
+			riskGit(t, d, "add", "-A")
+			riskGit(t, d, "commit", "-q", "-m", "feat: other work (F-0010)", "-m", "Unlike F-0001, this keeps the old flag.")
+		}, []string{"code"}, false, nil, []string{"no commit", "cites F-0001"}},
 		// Uncommitted work cannot be measured; cerne's own docs.lock pin is not work.
 		{"a tracked file changed and not committed", func(t *testing.T, d string) {
 			riskRepo(t, d, nil, map[string]string{"a.go": "a"})
 			riskWrite(t, d, "a.go", "a changed\n")
 		}, []string{"code"}, false, nil, []string{"uncommitted", "a.go"}},
+		// The test marks are read from the tree: a test never added would prove
+		// a criterion the PR does not carry (review 2 of #228).
+		{"an untracked test file", func(t *testing.T, d string) {
+			riskRepo(t, d, nil, map[string]string{"a.go": "a"})
+			riskWrite(t, d, "x/x_test.go", "package x\n\n// F-0001 crit. 1, 2\n")
+		}, []string{"code"}, false, nil, []string{"uncommitted", "x/x_test.go"}},
+		{"an ignored file", func(t *testing.T, d string) {
+			riskRepo(t, d, map[string]string{".gitignore": "build/\n"}, map[string]string{"a.go": "a"})
+			riskWrite(t, d, "build/out.bin", "x")
+		}, []string{"code"}, true, nil, []string{"no sensitive path or facet"}},
+		{"another docs.lock, deeper in the tree, changed and not committed", func(t *testing.T, d string) {
+			riskRepo(t, d, map[string]string{"vendor/x/docs.lock": "{}\n"}, map[string]string{"a.go": "a"})
+			riskWrite(t, d, "vendor/x/docs.lock", "{\"snapshot\":\"x\"}\n")
+		}, []string{"code"}, false, nil, []string{"uncommitted", "vendor/x/docs.lock"}},
 		{"only docs.lock changed and not committed", func(t *testing.T, d string) {
 			riskRepo(t, d, map[string]string{"docs.lock": "{}\n"}, map[string]string{"a.go": "a"})
 			riskWrite(t, d, "docs.lock", "{\"snapshot\":\"x\"}\n")
@@ -217,6 +240,15 @@ func TestRiskSensitiveAreaReadsParentFacets(t *testing.T) {
 	if c.Holds || !slices.Equal(facets, []string{"auth"}) || !strings.Contains(c.Found, "auth") {
 		t.Errorf("holds %v (%q), facets %v; want held by the grandparent's auth", c.Holds, c.Found, facets)
 	}
+	// A parent's facets only add sensitivity: a card with no facet of its own
+	// still waits (criterion 3, review 2 of #228).
+	if err := store.SaveFeature(repoDir, store.Feature{ID: "E-0003", Facets: []string{"code"}}); err != nil {
+		t.Fatal(err)
+	}
+	c, _, _, _ = riskArea(repoDir, dir, "", store.Feature{ID: "F-0001", Parent: "E-0002"}, project.GatesConfig{})
+	if c.Holds || !strings.Contains(c.Found, "no facet") {
+		t.Errorf("a card with no facet of its own under tagged parents: holds %v (%q); want held", c.Holds, c.Found)
+	}
 }
 
 // TestRiskSensitivePatternsNormalized: a pattern an owner writes the way
@@ -227,6 +259,14 @@ func TestRiskSensitivePatternsNormalized(t *testing.T) {
 	files := []string{"go.mod", "infra/main.tf", "deploy/k8s/app.yml", ".github/workflows/ci.yml", "src/app.go"}
 	got := sensitivePaths(files, []string{"/go.mod", "infra/", "/deploy/**", `.github\workflows\**`}, "")
 	if want := files[:4]; !slices.Equal(got, want) {
+		t.Errorf("matched %v, want %v", got, want)
+	}
+	// Review 2 of #228: "./go.mod", and a bare folder name, gitignore-style,
+	// at any depth — but not a file that only starts with the name.
+	files = []string{"go.mod", "infra/x.tf", "a/infra/y.tf", "infrastructure.md", "src/app.go"}
+	got = sensitivePaths(files, []string{"./go.mod", "infra"}, "")
+	slices.Sort(got)
+	if want := []string{"a/infra/y.tf", "go.mod", "infra/x.tf"}; !slices.Equal(got, want) {
 		t.Errorf("matched %v, want %v", got, want)
 	}
 }

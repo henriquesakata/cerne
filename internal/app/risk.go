@@ -1,6 +1,7 @@
 package app
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"math"
@@ -34,17 +35,27 @@ type RiskAssessment struct {
 	Round                 int      // the number of the Gauntlet's highest round; 0 with none or an unnumbered one
 	Tested                string   // "<criteria with a test>/<criteria>"
 	Base, Head            string   // the commits measured: merge-base with the default branch, and HEAD; empty when unread
-	Mode                  string   // the card's accept_mode (F-0518): human, auto or empty
-	Calibration           string   // "<owner answers>/<target>" while the gate calibrates (F-0518); empty past it
+	// HeldTasks are the implemented tasks the gate holds: their work rides
+	// this card's PR, so any of them holds the card too.
+	HeldTasks   []HeldTask
+	Mode        string // the card's accept_mode (F-0518): human, auto or empty
+	Calibration string // "<owner answers>/<target>" while the gate calibrates (F-0518); empty past it
 	// Files is every file the delivery changed and Patterns the sensitive
 	// globs that hit (F-0518): what the owner marks and the proposals count.
 	Files, Patterns []string
 }
 
-// would is what the gate decides on its own: all three conditions hold and
-// the owner did not mark the card as needing a person (F-0518).
+// HeldTask is an implemented task the risk gate holds, with its own reading.
+type HeldTask struct {
+	ID   string
+	Risk RiskAssessment
+}
+
+// would is what the gate decides on its own (F-0518): all three conditions
+// hold, no implemented task of the card is held, and the owner did not mark
+// the card as needing a person. Calibration records it and holds anyway.
 func (r RiskAssessment) would() bool {
-	return r.Area.Holds && r.Gauntlet.Holds && r.Tests.Holds && r.Mode != AcceptModeHuman
+	return r.Area.Holds && r.Gauntlet.Holds && r.Tests.Holds && len(r.HeldTasks) == 0 && r.Mode != AcceptModeHuman
 }
 
 // Low reports a delivery of low risk: the gate would accept it and is past
@@ -68,6 +79,9 @@ func (r RiskAssessment) Held() []string {
 		if !c.Holds {
 			out = append(out, c.Found)
 		}
+	}
+	for _, t := range r.HeldTasks {
+		out = append(out, "task "+t.ID+" is held: "+strings.Join(t.Risk.Held(), "; "))
 	}
 	if r.Mode == AcceptModeHuman {
 		out = append(out, ownerHold)
@@ -99,7 +113,7 @@ func (r RiskAssessment) payload() map[string]string {
 		"risk": risk, "risk_area": r.Area.Found, "risk_gauntlet": r.Gauntlet.Found, "risk_tests": r.Tests.Found,
 		"risk_paths": strings.Join(r.Paths, ", "), "risk_facets": strings.Join(r.Facets, ", "),
 		"risk_verdict": r.Verdict, "risk_round": strconv.Itoa(r.Round), "risk_criteria_tested": r.Tested,
-		"risk_base": r.Base, "risk_head": r.Head,
+		"risk_base": r.Base, "risk_head": r.Head, "risk_tasks": strings.Join(heldTaskLines(r.HeldTasks), " | "),
 	}
 	if r.Mode != "" {
 		p["risk_mode"] = r.Mode
@@ -111,6 +125,14 @@ func (r RiskAssessment) payload() map[string]string {
 	// files makes one long line — cap it if logs grow heavy.
 	p["risk_files"], p["risk_patterns"] = strings.Join(r.Files, ", "), strings.Join(r.Patterns, ", ")
 	return p
+}
+
+func heldTaskLines(tasks []HeldTask) []string {
+	out := make([]string, len(tasks))
+	for i, t := range tasks {
+		out[i] = t.ID + ": " + strings.Join(t.Risk.Held(), "; ")
+	}
+	return out
 }
 
 // assessRisk measures the three conditions of the risk gate on feature f,
@@ -134,10 +156,24 @@ func assessRisk(repoDir, projDir string, f store.Feature) RiskAssessment {
 	if rounds := lint.GauntletRoundList(result); len(rounds) > 0 {
 		r.Round = rounds[len(rounds)-1].N
 	}
-	if prev, reverted := revertedRiskRound(repoDir, f.ID); r.Gauntlet.Holds && reverted && r.Round <= prev {
-		r.Gauntlet = RiskCheck{Found: fmt.Sprintf("reverted after its risk accept on round %d: the win predates the revert, record a new Gauntlet round", prev)}
+	if prev, reverted := revertedRound(repoDir, f.ID); r.Gauntlet.Holds && reverted && r.Round <= prev {
+		r.Gauntlet = RiskCheck{Found: revertedFound(prev)}
 	}
 	r.Tests, r.Tested = riskTests(repoDir, projDir, f)
+	// The implemented tasks ride this card's PR: each is measured on its own,
+	// and any one held holds the card. A task is held by what the gate would
+	// decide on it (F-0518): the calibration is the project's, read once here.
+	if !isTask(f.ID) {
+		tasks, err := childrenOf(repoDir, f.ID, func(c store.Feature) bool { return isTask(c.ID) && c.State == domain.StateImplemented })
+		if err != nil { // in doubt, hold
+			r.Area = RiskCheck{Found: strings.TrimPrefix(r.Area.Found+"; ", "touches no sensitive path or facet; ") + "the card's tasks cannot be read: " + err.Error()}
+		}
+		for _, c := range tasks {
+			if tr := assessRisk(repoDir, projDir, c); !tr.would() {
+				r.HeldTasks = append(r.HeldTasks, HeldTask{ID: c.ID, Risk: tr})
+			}
+		}
+	}
 	if answers, target := riskCalibration(repoDir, cfg.Gates); answers < target {
 		r.Calibration = fmt.Sprintf("%d/%d", answers, target)
 	}
@@ -167,17 +203,32 @@ func answeredCards(evs []domain.Event) map[string]bool {
 	return out
 }
 
-// revertedRiskRound reports whether feature id was reverted after its last
-// accept as low risk and, if so, the round that accept counted; an accept
-// that recorded none counts as the highest, so nothing passes it.
-func revertedRiskRound(repoDir, id string) (round int, reverted bool) {
+// RiskHeldWait says what a card the risk gate holds waits for (F-0516), the
+// way it really closes: a task rides its parent's acceptance while the parent
+// is open; any other card, and a task whose parent is already done, waits for
+// the human merge of its PR (the task's recorded with accept --merged).
+func RiskHeldWait(repoDir string, f store.Feature) string {
+	if !isTask(f.ID) || f.Parent == "" {
+		return "the human merge of its PR"
+	}
+	if p, err := store.LoadFeature(repoDir, f.Parent); err == nil && p.State != domain.StateDone {
+		return "the acceptance of its parent " + f.Parent
+	}
+	return "the human merge of its PR (record it with 'cerne feature accept " + f.ID + " --merged')"
+}
+
+// revertedRound reports whether feature id was reverted after its last
+// accept, whatever its via (a person, the merge, the auto or the risk gate),
+// and, if so, the Gauntlet round current at that accept. An accept that
+// recorded none counts as the highest, so no round passes it.
+func revertedRound(repoDir, id string) (round int, reverted bool) {
 	evs, err := store.ReadEvents(repoDir)
 	if err != nil {
 		return math.MaxInt, true // in doubt, hold
 	}
 	accepted := -1
 	for i, ev := range evs {
-		if ev.EntityID == id && ev.Type == eventTypes[domain.ActionAccept] && ev.Payload["via"] == project.GateRisk {
+		if ev.EntityID == id && ev.Type == eventTypes[domain.ActionAccept] {
 			accepted = i
 		}
 	}
@@ -186,11 +237,31 @@ func revertedRiskRound(repoDir, id string) (round int, reverted bool) {
 	}) {
 		return 0, false
 	}
-	n, err := strconv.Atoi(evs[accepted].Payload["risk_round"])
+	p := evs[accepted].Payload
+	n, err := strconv.Atoi(cmp.Or(p["gauntlet_round"], p["risk_round"]))
 	if err != nil {
 		return math.MaxInt, true
 	}
 	return n, true
+}
+
+// revertedFound is the held line of a win that predates a revert.
+func revertedFound(prev int) string {
+	if prev == math.MaxInt {
+		return "reverted after an accept that recorded no Gauntlet round: the win cannot be told from an old one — a human accepts on the merge"
+	}
+	return fmt.Sprintf("reverted after its accept on round %d: the win predates the revert, record a new Gauntlet round", prev)
+}
+
+// gauntletRoundOf is the number of the highest round in feature id's result
+// ("0" with none): every accept records it, so a revert can tell an old win
+// from a new one (F-0516).
+func gauntletRoundOf(repoDir, id string) string {
+	result, _ := os.ReadFile(FeatureDocPath(repoDir, id, "result.md"))
+	if rounds := lint.GauntletRoundList(result); len(rounds) > 0 {
+		return strconv.Itoa(rounds[len(rounds)-1].N)
+	}
+	return "0"
 }
 
 // riskArea is the first condition (crit. 3): the delivery touches no
@@ -239,10 +310,11 @@ func riskArea(repoDir, projDir, pinBranch string, f store.Feature, g project.Gat
 			facets = append(facets, x)
 		}
 	}
-	switch {
-	case len(chain) == 0:
+	// A card needs a facet of its own; its parents' only add sensitivity.
+	if len(f.Facets) == 0 {
 		sensitive = append(sensitive, "the card has no facet (cerne feature retag "+f.ID+" --facet …)")
-	case len(facets) > 0:
+	}
+	if len(facets) > 0 {
 		sensitive = append(sensitive, "carries a sensitive facet: "+strings.Join(facets, ", "))
 	}
 	waived := f.AcceptMode == AcceptModeAuto && len(sensitive) > 0
@@ -284,26 +356,31 @@ func sensitivePaths(files, globs []string, prefix string) []string {
 	var out []string
 	for _, g := range globs {
 		// Written as gitignore or Windows would, a pattern must not silently
-		// match nothing: backslashes are slashes, a leading slash goes, and a
-		// trailing one is the folder's whole tree.
-		g = strings.TrimPrefix(strings.ReplaceAll(strings.TrimSpace(g), `\`, "/"), "/")
+		// match nothing: backslashes are slashes, a leading "./" or "/" goes,
+		// and a trailing slash is the folder's whole tree.
+		g = strings.ReplaceAll(strings.TrimSpace(g), `\`, "/")
+		g = strings.TrimPrefix(strings.TrimPrefix(g, "./"), "/")
 		if strings.HasSuffix(g, "/") {
 			g += "**"
 		}
 		if g == "" {
 			continue
 		}
+		forms := []string{g}
 		if !strings.Contains(g, "/") {
-			g = "**/" + g
+			// A bare name is a file or a folder at any depth (gitignore).
+			forms = []string{"**/" + g, "**/" + g + "/**"}
 		}
-		re, err := domain.GlobRegexp(g)
-		if err != nil {
-			continue // every glob compiles: GlobRegexp quotes all but * and ?
-		}
-		for _, f := range files {
-			rel, under := strings.CutPrefix(f, prefix)
-			if (re.MatchString(f) || under && prefix != "" && re.MatchString(rel)) && !slices.Contains(out, f) {
-				out = append(out, f)
+		for _, form := range forms {
+			re, err := domain.GlobRegexp(form)
+			if err != nil {
+				continue // every glob compiles: GlobRegexp quotes all but * and ?
+			}
+			for _, f := range files {
+				rel, under := strings.CutPrefix(f, prefix)
+				if (re.MatchString(f) || under && prefix != "" && re.MatchString(rel)) && !slices.Contains(out, f) {
+					out = append(out, f)
+				}
 			}
 		}
 	}
