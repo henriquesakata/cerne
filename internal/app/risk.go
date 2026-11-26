@@ -153,6 +153,9 @@ func riskArea(projDir, pinBranch string, f store.Feature, g project.GatesConfig)
 	if len(paths) > 0 {
 		why = append(why, "touches a sensitive path: "+someOf(paths))
 	}
+	if len(d.Dirty) > 0 {
+		why = append(why, "uncommitted changes the diff cannot measure: "+someOf(d.Dirty))
+	}
 	human := g.RiskHumanFacets()
 	for _, x := range f.Facets {
 		if slices.ContainsFunc(human, func(h string) bool { return strings.EqualFold(h, x) }) {

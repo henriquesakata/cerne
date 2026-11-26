@@ -125,6 +125,15 @@ func TestRiskSensitiveArea(t *testing.T) {
 			riskGit(t, d, "add", "-A")
 			riskGit(t, d, "commit", "-q", "-m", "feat: other work (F-0010)")
 		}, []string{"code"}, false, nil, []string{"no commit", "cites F-0001"}},
+		// Uncommitted work cannot be measured; cerne's own docs.lock pin is not work.
+		{"a tracked file changed and not committed", func(t *testing.T, d string) {
+			riskRepo(t, d, nil, map[string]string{"a.go": "a"})
+			riskWrite(t, d, "a.go", "a changed\n")
+		}, []string{"code"}, false, nil, []string{"uncommitted", "a.go"}},
+		{"only docs.lock changed and not committed", func(t *testing.T, d string) {
+			riskRepo(t, d, map[string]string{"docs.lock": "{}\n"}, map[string]string{"a.go": "a"})
+			riskWrite(t, d, "docs.lock", "{\"snapshot\":\"x\"}\n")
+		}, []string{"code"}, true, nil, []string{"no sensitive path or facet"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()

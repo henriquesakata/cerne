@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path"
 	"regexp"
 	"strings"
 
@@ -90,6 +91,7 @@ type Delivery struct {
 	Base, Head string   // the merge-base of Ref and HEAD, and HEAD, as SHAs
 	Files      []string // changed from Base to HEAD, no excludes; a rename as its old and its new path
 	Cited      bool     // a non-merge commit of Base..HEAD cites the id, as FeatureCommits reads it
+	Dirty      []string // tracked files that differ from HEAD (staged or not), but docs.lock, cerne's own pin
 }
 
 // ReadDelivery reads the delivery of card id checked out at dir against the
@@ -122,6 +124,15 @@ func ReadDelivery(dir, pinBranch, id string) (Delivery, error) {
 	}
 	for _, msg := range strings.Split(log, "\x1e") {
 		d.Cited = d.Cited || citesID(msg, id)
+	}
+	status, err := runGit(dir, "status", "--porcelain=v1", "-z", "--untracked-files=no", "--no-renames")
+	if err != nil {
+		return Delivery{}, err
+	}
+	for _, e := range strings.Split(status, "\x00") {
+		if len(e) > 3 && path.Base(e[3:]) != "docs.lock" {
+			d.Dirty = append(d.Dirty, e[3:])
+		}
 	}
 	return d, nil
 }
