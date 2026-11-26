@@ -192,7 +192,7 @@ function ClarifyChip({
   const chipRef = useRef<HTMLButtonElement>(null)
   const info = parseClarification(raw)
   if (!info) return <>{raw}</>
-  // B-0088: um só caminho de fechar — Cancelar e Esc; o foco volta ao chip.
+  // B-0088: one close path for Cancelar and Esc; focus returns to the chip.
   const cancel = () => {
     setOpen(false)
     setOther(false)
@@ -200,7 +200,7 @@ function ClarifyChip({
     chipRef.current?.focus()
   }
   const onEsc = (e: KeyboardEvent<HTMLElement>) => {
-    if (e.key === 'Escape' && !e.nativeEvent.isComposing) cancel()
+    if (open && e.key === 'Escape' && !e.nativeEvent.isComposing) cancel()
   }
   const submit = (answer: string) => {
     // Aberto vai pelo onAnswer; resolvido, pelo onCorrect — dois caminhos
@@ -222,7 +222,7 @@ function ClarifyChip({
       )
     }
     return (
-      <span className="clarify-anchor">
+      <span className="clarify-anchor" onKeyDown={onEsc}>
         <button
           type="button"
           ref={chipRef}
@@ -236,7 +236,7 @@ function ClarifyChip({
           ✓ {trail}
         </button>
         {open && (
-          <span className="clarify-pop" role="dialog" aria-labelledby={titleId} onKeyDown={onEsc}>
+          <span className="clarify-pop" role="dialog" aria-labelledby={titleId}>
             <span id={titleId} className="clarify-pop-question">{info.question || t.clarify.noQuestion}</span>
             <span className="clarify-pop-current">{t.clarify.currentAnswer(info.answer)}</span>
             <textarea
@@ -268,7 +268,7 @@ function ClarifyChip({
     return <span className="clarify-chip clarify-open">? {label}</span>
   }
   return (
-    <span className="clarify-anchor">
+    <span className="clarify-anchor" onKeyDown={onEsc}>
       <button
         type="button"
         ref={chipRef}
@@ -279,7 +279,7 @@ function ClarifyChip({
         ? {label}
       </button>
       {open && (
-        <span className="clarify-pop" role="dialog" aria-labelledby={titleId} onKeyDown={onEsc}>
+        <span className="clarify-pop" role="dialog" aria-labelledby={titleId}>
           <span id={titleId} className="clarify-pop-question">{label}</span>
           {/* F-0517: a recomendada vai primeiro, com o selo; as outras na ordem escrita. */}
           {optionOrder.map((i) => (

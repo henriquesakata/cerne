@@ -99,21 +99,29 @@ describe('F-0517: esclarecimento com opções e recomendada', () => {
   })
 })
 
-// B-0088: o popover é um diálogo nomeado, fecha com Esc e devolve o foco ao chip.
-describe('B-0088: acessibilidade do popover de esclarecimento', () => {
+// B-0088: the popover is a named dialog, closes with Esc and returns focus to the chip.
+describe('B-0088: clarify popover accessibility', () => {
   const md = '[CLARIFY: qual formato? | json | yaml]'
   const chip = () => screen.getAllByRole('button')[0]
-  it('o diálogo tem o nome da pergunta', () => {
+  it('the dialog is named after the question', () => {
     open(md, 'en')
     expect(screen.getByRole('dialog', { name: 'qual formato?' })).toBeInTheDocument()
   })
-  it('Esc fecha e o foco volta ao chip', () => {
+  // B-0088: after the click, focus stays on the chip, outside the dialog.
+  it('Esc on the chip closes the dialog and keeps focus there', () => {
+    open(md, 'en')
+    chip().focus()
+    fireEvent.keyDown(chip(), { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(chip()).toHaveFocus()
+  })
+  it('Esc closes the dialog and focus returns to the chip', () => {
     open(md, 'en')
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(chip()).toHaveFocus()
   })
-  it('Esc no campo livre fecha, salvo durante composição de IME', () => {
+  it('Esc in the free field closes it, except during IME composition', () => {
     open('[CLARIFY: qual formato?]', 'en')
     const field = screen.getByRole('textbox')
     fireEvent.keyDown(field, { key: 'Escape', isComposing: true })
