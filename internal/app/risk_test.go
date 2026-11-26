@@ -240,6 +240,15 @@ func TestRiskSensitiveAreaReadsParentFacets(t *testing.T) {
 	if c.Holds || !slices.Equal(facets, []string{"auth"}) || !strings.Contains(c.Found, "auth") {
 		t.Errorf("holds %v (%q), facets %v; want held by the grandparent's auth", c.Holds, c.Found, facets)
 	}
+	// A parent's facets only add sensitivity: a card with no facet of its own
+	// still waits (criterion 3, review 2 of #228).
+	if err := store.SaveFeature(repoDir, store.Feature{ID: "E-0003", Facets: []string{"code"}}); err != nil {
+		t.Fatal(err)
+	}
+	c, _, _, _ = riskArea(repoDir, dir, "", store.Feature{ID: "F-0001", Parent: "E-0002"}, project.GatesConfig{})
+	if c.Holds || !strings.Contains(c.Found, "no facet") {
+		t.Errorf("a card with no facet of its own under tagged parents: holds %v (%q); want held", c.Holds, c.Found)
+	}
 }
 
 // TestRiskSensitivePatternsNormalized: a pattern an owner writes the way

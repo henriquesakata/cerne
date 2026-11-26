@@ -221,10 +221,11 @@ func riskArea(repoDir, projDir, pinBranch string, f store.Feature, g project.Gat
 			facets = append(facets, x)
 		}
 	}
-	switch {
-	case len(chain) == 0:
+	// A card needs a facet of its own; its parents' only add sensitivity.
+	if len(f.Facets) == 0 {
 		why = append(why, "the card has no facet (cerne feature retag "+f.ID+" --facet …)")
-	case len(facets) > 0:
+	}
+	if len(facets) > 0 {
 		why = append(why, "carries a sensitive facet: "+strings.Join(facets, ", "))
 	}
 	if len(why) > 0 {
