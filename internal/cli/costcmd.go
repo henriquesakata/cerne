@@ -147,17 +147,19 @@ func runCostStamp(cmd *cobra.Command, dir, id string) error {
 // stampCost is the one stamp path: `cerne cost --stamp` and the complete
 // transition (F-0402) both run it, with no pull or push of their own.
 //
-// justCompleted (B-0090) is the complete path: the automatic accept may have
-// carried the card to done in the same transition, and the stamp then still
-// runs, judged as the implemented card it was a moment ago.
-func stampCost(ctx projCtx, id string, justCompleted bool) (stampOutcome, error) {
+// movedToDone (B-0090) is set by the complete whose own transition carried the
+// card to done (the automatic accept): the stamp then still runs, judged as the
+// implemented card it was a moment ago. A card that is done for any other
+// reason, a human accept between the transition and the stamp included, stays
+// closed to it.
+func stampCost(ctx projCtx, id string, movedToDone bool) (stampOutcome, error) {
 	f, err := store.LoadFeature(ctx.repoDir, id)
 	if err != nil {
 		return stampOutcome{}, err
 	}
 	cacheDir := filepath.Dir(ctx.repoDir)
 	state, amend := f.State, app.AmendFeatureResult
-	if justCompleted && state == domain.StateDone {
+	if movedToDone && state == domain.StateDone {
 		state, amend = domain.StateImplemented, app.AmendCompletedResult
 	}
 	r, err := cost.PrecheckStamp(cost.Inputs{CacheDir: cacheDir, RepoDir: ctx.repoDir, Roots: claudeRoots()}, state, id)
