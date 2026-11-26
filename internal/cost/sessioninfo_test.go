@@ -80,3 +80,64 @@ func TestSessionInfosNoRoots(t *testing.T) {
 		t.Fatalf("infos = %+v, err = %v", infos, err)
 	}
 }
+
+// TestSessionInfosFindsCursorSessions (F-0513 crit. 4): a Cursor session is
+// found at <root>/projects/<slug>/agent-transcripts/<sess>/<sess>.jsonl and
+// its subagents in <sess>/subagents/*.jsonl — Found, Last the newest mtime of
+// them all, Agents each subagent — from file metadata alone: a transcript of
+// invalid content gives the same result, so no line of it is read.
+func TestSessionInfosFindsCursorSessions(t *testing.T) {
+	last := time.Date(2026, 11, 25, 12, 0, 0, 0, time.UTC)
+	var seen []string
+	for _, content := range []string{
+		`{"role":"user","message":{"content":[{"type":"text","text":"SEGREDO-NA-CONVERSA"}]}}`,
+		"not json {{{ SEGREDO-NA-CONVERSA",
+	} {
+		root := t.TempDir()
+		main := writeLines(t, root, "Users-dev-p/agent-transcripts/c1/c1.jsonl", content)
+		sub := writeLines(t, root, "Users-dev-p/agent-transcripts/c1/subagents/sub-1.jsonl", content)
+		if err := os.Chtimes(main, last.Add(-time.Hour), last.Add(-time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(sub, last, last); err != nil {
+			t.Fatal(err)
+		}
+		infos, err := SessionInfos([]string{root}, []string{"c1", "gone"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := infos["c1"]
+		if _, ok := got.Agents["sub-1"]; !got.Found || !got.Last.Equal(last) || len(got.Agents) != 1 || !ok {
+			t.Fatalf("c1 = %+v, want Found, Last %v and the subagent sub-1", got, last)
+		}
+		if g := infos["gone"]; g.Found {
+			t.Fatalf("gone = %+v, want Found=false", g)
+		}
+		raw, _ := json.Marshal(infos)
+		if strings.Contains(string(raw), "SEGREDO") {
+			t.Fatalf("conversation leaked into the session info: %s", raw)
+		}
+		seen = append(seen, string(raw))
+	}
+	if seen[0] != seen[1] {
+		t.Fatalf("the content changed the result:\n%s\n%s", seen[0], seen[1])
+	}
+}
+
+// TestCursorRoots (F-0513 crit. 4): CURSOR_CONFIG_DIR when set, else ~/.cursor.
+func TestCursorRoots(t *testing.T) {
+	t.Setenv("CURSOR_CONFIG_DIR", filepath.Join(t.TempDir(), "cursor"))
+	if got := CursorRoots(); len(got) != 1 || got[0] != os.Getenv("CURSOR_CONFIG_DIR") {
+		t.Fatalf("CursorRoots = %v, want only $CURSOR_CONFIG_DIR", got)
+	}
+	t.Setenv("CURSOR_CONFIG_DIR", "")
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", os.Getenv("HOME"))
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := CursorRoots(); len(got) != 1 || got[0] != filepath.Join(home, ".cursor") {
+		t.Fatalf("CursorRoots = %v, want %s", got, filepath.Join(home, ".cursor"))
+	}
+}

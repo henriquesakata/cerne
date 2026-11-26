@@ -78,6 +78,40 @@ func TestFeatureAgentsRoute(t *testing.T) {
 	}
 }
 
+// TestFeatureAgentsRouteFindsCursorSession (F-0513 crit. 4): the agents panel
+// finds a Cursor session in its agent-transcripts, with its subagent.
+func TestFeatureAgentsRouteFindsCursorSession(t *testing.T) {
+	h, _ := newAgentsServer(t, "proj-agents-cursor")
+	cursorRoot := t.TempDir()
+	t.Setenv("CURSOR_CONFIG_DIR", cursorRoot)
+	dir := filepath.Join(cursorRoot, "projects", "Users-w", "agent-transcripts", "s-dev")
+	if err := os.MkdirAll(filepath.Join(dir, "subagents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{filepath.Join(dir, "s-dev.jsonl"), filepath.Join(dir, "subagents", "sub-1.jsonl")} {
+		if err := os.WriteFile(f, []byte(`{"role":"user","message":{"content":"x"}}`+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var got struct {
+		Sessions []struct {
+			Session string `json:"session"`
+			Info    struct {
+				Found  bool              `json:"found"`
+				Agents map[string]string `json:"agents"`
+			} `json:"info"`
+		} `json:"sessions"`
+	}
+	rec := doJSON(t, h, http.MethodGet, "/api/features/F-0001/agents", "", &got)
+	if rec.Code != http.StatusOK || len(got.Sessions) != 2 {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	dev := got.Sessions[1]
+	if _, ok := dev.Info.Agents["sub-1"]; dev.Session != "s-dev" || !dev.Info.Found || !ok {
+		t.Fatalf("s-dev = %+v, want found in Cursor's agent-transcripts with subagent sub-1", dev)
+	}
+}
+
 // TestFeatureAgentsRouteIsLocalOnly (F-0486 crit. 14): the route that serves
 // session ids, folders and resume commands never joins `cerne serve`.
 func TestFeatureAgentsRouteIsLocalOnly(t *testing.T) {

@@ -39,6 +39,61 @@ func ClaudeRoots() []string {
 	return roots
 }
 
+// CursorRoots returns the Cursor config dirs whose projects/ hold the agent
+// transcripts (F-0513): $CURSOR_CONFIG_DIR when set (hermetic tests), else
+// ~/.cursor.
+func CursorRoots() []string {
+	if dir := strings.TrimSpace(os.Getenv("CURSOR_CONFIG_DIR")); dir != "" {
+		return []string{filepath.Clean(dir)}
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		return []string{filepath.Join(home, ".cursor")}
+	}
+	return nil
+}
+
+// cursorSessionFiles indexes the Cursor transcripts of sessions under every
+// root (F-0513): <slug>/agent-transcripts/<sess>/<sess>.jsonl plus
+// <sess>/subagents/*.jsonl, under any slug. As in sessionFiles, a session id
+// only names a path once a listing has shown it.
+func cursorSessionFiles(roots, sessions []string) (map[string][]tfile, error) {
+	files := map[string][]tfile{}
+	for _, root := range roots {
+		projects := filepath.Join(root, "projects")
+		slugs, err := readDir(projects)
+		if err != nil {
+			return nil, err
+		}
+		for _, slug := range slugs {
+			if !slug.IsDir() {
+				continue
+			}
+			dir := filepath.Join(projects, slug.Name(), "agent-transcripts")
+			entries, err := readDir(dir)
+			if err != nil {
+				return nil, err
+			}
+			names := make(map[string]bool, len(entries))
+			for _, e := range entries {
+				names[e.Name()] = e.IsDir()
+			}
+			for _, sess := range sessions {
+				if !names[sess] {
+					continue
+				}
+				rel := slug.Name() + "/agent-transcripts"
+				files[sess] = append(files[sess], tfile{rel: rel + "/" + sess + "/" + sess + ".jsonl", abs: filepath.Join(dir, sess, sess+".jsonl")})
+				subs, err := subagentFiles(dir, rel, sess)
+				if err != nil {
+					return nil, err
+				}
+				files[sess] = append(files[sess], subs...)
+			}
+		}
+	}
+	return files, nil
+}
+
 // tfile is one transcript file of a session: rel is its path under projects/
 // (stable across roots), abs where it is read.
 type tfile struct{ rel, abs string }

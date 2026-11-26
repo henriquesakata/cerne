@@ -40,6 +40,7 @@ func TestMain(m *testing.M) {
 	// registry, its transcripts), nor write to a live session's inbox. A
 	// test's own HOME or CLAUDE_CONFIG_DIR still counts.
 	os.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(dir, "claude"))
+	os.Setenv("CURSOR_CONFIG_DIR", filepath.Join(dir, "cursor")) // F-0513: nor Cursor's
 	realHome, _ := os.UserHomeDir()
 	app.CostRoots = func() []string {
 		return slices.DeleteFunc(cost.ClaudeRoots(), func(r string) bool {
