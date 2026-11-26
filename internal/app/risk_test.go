@@ -199,6 +199,18 @@ func TestRiskSensitiveAreaUsesConfiguredLists(t *testing.T) {
 	}
 }
 
+// TestRiskSensitivePatternsNormalized: a pattern an owner writes the way
+// gitignore or Windows would — a leading slash, a trailing slash for a
+// folder, backslashes — still matches instead of silently matching nothing.
+// F-0516 crit. 14
+func TestRiskSensitivePatternsNormalized(t *testing.T) {
+	files := []string{"go.mod", "infra/main.tf", "deploy/k8s/app.yml", ".github/workflows/ci.yml", "src/app.go"}
+	got := sensitivePaths(files, []string{"/go.mod", "infra/", "/deploy/**", `.github\workflows\**`}, "")
+	if want := files[:4]; !slices.Equal(got, want) {
+		t.Errorf("matched %v, want %v", got, want)
+	}
+}
+
 // TestRiskGauntletWin: only a last round won against a real bar holds; a
 // tie, a loss, an exempt bar, no verdict or the Gauntlet off never does.
 // F-0516 crit. 4

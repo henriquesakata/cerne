@@ -181,6 +181,16 @@ func riskArea(projDir, pinBranch string, f store.Feature, g project.GatesConfig)
 func sensitivePaths(files, globs []string, prefix string) []string {
 	var out []string
 	for _, g := range globs {
+		// Written as gitignore or Windows would, a pattern must not silently
+		// match nothing: backslashes are slashes, a leading slash goes, and a
+		// trailing one is the folder's whole tree.
+		g = strings.TrimPrefix(strings.ReplaceAll(strings.TrimSpace(g), `\`, "/"), "/")
+		if strings.HasSuffix(g, "/") {
+			g += "**"
+		}
+		if g == "" {
+			continue
+		}
 		if !strings.Contains(g, "/") {
 			g = "**/" + g
 		}
