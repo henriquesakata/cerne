@@ -835,6 +835,18 @@ var ErrAmendNotImplemented = errors.New("only the result of an implemented featu
 // (mutateAndSnapshotLatest). Returns the feature as stored
 // (state unchanged).
 func AmendFeatureResult(repoDir, projDir, id, body, reason string) (f store.Feature, changed bool, err error) {
+	return amendResult(repoDir, projDir, id, body, reason, false)
+}
+
+// AmendCompletedResult is AmendFeatureResult for the card a complete has just
+// carried to done through the automatic accept (B-0090): the cost stamp, which
+// the complete runs after the transition, writes through it. The caller is the
+// complete path alone; a done card a human accepted stays closed to amends.
+func AmendCompletedResult(repoDir, projDir, id, body, reason string) (store.Feature, bool, error) {
+	return amendResult(repoDir, projDir, id, body, reason, true)
+}
+
+func amendResult(repoDir, projDir, id, body, reason string, allowDone bool) (f store.Feature, changed bool, err error) {
 	reason = strings.TrimSpace(reason)
 	if reason == "" {
 		return store.Feature{}, false, errors.New("an amend needs a reason: pass --reason \"<why>\"")
@@ -852,7 +864,7 @@ func AmendFeatureResult(repoDir, projDir, id, body, reason string) (f store.Feat
 		if f, err = store.LoadFeature(repoDir, id); err != nil {
 			return "", err
 		}
-		if f.State != domain.StateImplemented {
+		if f.State != domain.StateImplemented && !(allowDone && f.State == domain.StateDone) {
 			return "", fmt.Errorf("%w: %s is %s — %s", ErrAmendNotImplemented, id, f.State, DocFixPhrase(id, "result", f.State))
 		}
 		path := FeatureDocPath(repoDir, id, "result.md")

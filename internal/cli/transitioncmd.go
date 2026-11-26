@@ -241,8 +241,8 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 		// The transition is the act that counts: a stamp that cannot be made
 		// warns and the exit stays 0 (F-0402 crit. 3).
 		if !noStamp {
-			o, serr := stampCost(ctx, id)
-			fmt.Fprintln(cmd.OutOrStdout(), completeStampLine(id, o, serr))
+			o, serr := stampCost(ctx, id, out.To == domain.StateDone)
+			fmt.Fprintln(cmd.OutOrStdout(), completeStampLine(id, o, serr, out.To == domain.StateDone))
 		}
 		printCompleteLearnings(cmd.OutOrStdout(), ctx.repoDir, id)
 	}
@@ -278,10 +278,11 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 // (--mr, the forge's PR or one recorded before).
 func printCompleteNextStep(w io.Writer, repoDir, id string, noStamp bool) {
 	fmt.Fprintln(w, "Next step:")
-	if noStamp {
+	f, err := store.LoadFeature(repoDir, id)
+	// A card the automatic accept carried to done refuses the stamp (B-0090).
+	if noStamp && !(err == nil && f.State == domain.StateDone) {
 		fmt.Fprintf(w, "  - record its token cost: cerne cost %s --stamp, before the human accept (F-0309)\n", id)
 	}
-	f, err := store.LoadFeature(repoDir, id)
 	// B-0070: the link 'cerne next' asks for comes before the accept, or the
 	// card closes with no PR on it.
 	if err == nil {
