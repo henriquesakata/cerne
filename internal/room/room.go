@@ -1099,12 +1099,12 @@ func (m *Manager) close(id, facilitatorToken string, given *Minutes, reviewed ti
 			openIDs = append(openIDs, it.ID)
 		}
 	}
-	if len(openIDs) > 0 {
-		if !allowOpenItems {
-			return Room{}, ErrOpenItems
-		}
-		minutes.OpenItems = openIDs
+	if len(openIDs) > 0 && !allowOpenItems {
+		return Room{}, ErrOpenItems
 	}
+	// The forced-close trail is the room's own record (F-0228), never what
+	// the minutes claim (T-0022).
+	minutes.OpenItems = openIDs
 	now := time.Now().UTC()
 	if err := m.appendLocked(rs, Message{Type: typeClose, Time: now, Minutes: &minutes}); err != nil {
 		return Room{}, err
@@ -1152,6 +1152,7 @@ func (m *Manager) SaveMinutesDraft(id, sessionID, facilitatorToken string, minut
 	if err := minutes.validate(); err != nil {
 		return MinutesDraft{}, err
 	}
+	minutes.OpenItems = nil // only a forced close records open items (F-0228)
 	d := MinutesDraft{Minutes: minutes.withLists(), Author: author, UpdatedAt: time.Now().UTC()}
 	if err := m.persistMinutesDraft(id, d); err != nil {
 		return MinutesDraft{}, err

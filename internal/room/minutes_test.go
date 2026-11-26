@@ -321,6 +321,31 @@ func TestCloseWithDraftClosesOnlyWithTheReviewedDraft(t *testing.T) {
 	}
 }
 
+// T-0022 crit. 1, 2
+// E-0006 crit. 10, 11
+func TestOpenItemsExceptionComesOnlyFromTheRoom(t *testing.T) {
+	m := newManager(t)
+	r, fac, _ := m.Open("topico")
+	alice := mustJoin(t, m, r.ID, "alice", "")
+	forged := Minutes{Conclusion: "c", Rationale: "r", OpenItems: []string{"I99"}}
+	d, err := m.SaveMinutesDraft(r.ID, alice.SessionID, "", forged)
+	if err != nil {
+		t.Fatalf("SaveMinutesDraft: %v", err)
+	}
+	if len(d.Minutes.OpenItems) != 0 || strings.Contains(RenderMinutesDraftMarkdown(m.List()[0]), "exceção registrada") {
+		t.Fatalf("draft kept the participant's open_items: %+v", d.Minutes)
+	}
+	closed, err := m.CloseWithDraft(r.ID, fac, time.Time{}, false)
+	if err != nil || closed.Minutes == nil || len(closed.Minutes.OpenItems) != 0 {
+		t.Fatalf("close with the draft = %+v, %v; want no open-items exception", closed.Minutes, err)
+	}
+	r2, fac2, _ := m.Open("outra")
+	closed, err = m.Close(r2.ID, fac2, forged, false)
+	if err != nil || len(closed.Minutes.OpenItems) != 0 {
+		t.Fatalf("close with given minutes = %+v, %v; want no open-items exception", closed.Minutes, err)
+	}
+}
+
 // T-0022 crit. 2
 // E-0006 crit. 11
 func TestCloseWithDraftBlocksOnOpenItems(t *testing.T) {
