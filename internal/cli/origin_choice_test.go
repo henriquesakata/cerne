@@ -6,15 +6,24 @@ import (
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/llm"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // B-0086: the Backlog chat spawns `cerne feature new` with CERNE_ACTOR=agent and
 // CERNE_ORIGIN=chat and no flag; its creation must keep working.
 func TestCreateFromChatKeepsWorking(t *testing.T) {
+	for _, env := range []string{"CERNE_ORIGIN", llm.DenyLifecycleEnv} {
+		t.Run(env, func(t *testing.T) { createFromChat(t, env) })
+	}
+}
+
+// createFromChat is one chat channel: the verb executor stamps CERNE_ORIGIN=chat,
+// the claude-cli provider stamps CERNE_DENY_LIFECYCLE=1.
+func createFromChat(t *testing.T, env string) {
 	projDir, _, repoDir := setupProject(t)
 	t.Setenv("CERNE_ACTOR", "agent")
-	t.Setenv("CERNE_ORIGIN", "chat")
+	t.Setenv(env, map[bool]string{true: "chat", false: "1"}[env == "CERNE_ORIGIN"])
 	if out, err := execCerne(t, "feature", "new", "From chat", "--context", "ctx", "--dir", projDir); err != nil {
 		t.Fatalf("chat creation refused: %v\n%s", err, out)
 	}

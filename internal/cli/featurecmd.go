@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -10,6 +11,7 @@ import (
 
 	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/lint"
+	"github.com/henriquesakata/cerne/internal/llm"
 	"github.com/henriquesakata/cerne/internal/verbs"
 )
 
@@ -90,9 +92,13 @@ func addOriginFlag(cmd *cobra.Command) {
 	cmd.Flags().String("origin", "", "set to agent when the idea is yours; in an agent shell a new card needs this or --on-behalf, not both (B-0086)")
 }
 
-func originFlag(cmd *cobra.Command) string {
+// checkOriginChoice is app.CheckOriginChoice with the Backlog chat's two
+// channels exempt: the verb executor stamps CERNE_ORIGIN=chat, the claude-cli
+// provider stamps llm.DenyLifecycleEnv. A human is in that conversation.
+func checkOriginChoice(cmd *cobra.Command, onBehalf string) error {
 	v, _ := cmd.Flags().GetString("origin")
-	return v
+	_, deny := os.LookupEnv(llm.DenyLifecycleEnv)
+	return app.CheckOriginChoice(onBehalf, v, os.Getenv("CERNE_ORIGIN") == "chat" || deny)
 }
 
 func runFeatureNew(cmd *cobra.Command, dir string, args []string, module, parent, fixes, facet, component, file, context string, force bool, owner, priority, onBehalf, capability string) error {

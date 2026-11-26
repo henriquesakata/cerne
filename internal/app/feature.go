@@ -1292,7 +1292,7 @@ var ErrOriginChoiceBoth = errors.New("--on-behalf and --origin agent exclude eac
 // --on-behalf (the human asked) or --origin agent (its own idea), never both.
 // It lives apart from the create functions on purpose: demo, import and the
 // server create cards with neither flag. Fail-open like resolveOrigin.
-func CheckOriginChoice(onBehalf, originFlag string) error {
+func CheckOriginChoice(onBehalf, originFlag string, chat bool) error {
 	quoted := strings.TrimSpace(onBehalf) != ""
 	if originFlag != "" && originFlag != "agent" {
 		return fmt.Errorf("%w: --origin takes only \"agent\" (a human's request takes --on-behalf)", ErrOriginChoiceRequired)
@@ -1300,9 +1300,9 @@ func CheckOriginChoice(onBehalf, originFlag string) error {
 	if quoted && originFlag == "agent" {
 		return ErrOriginChoiceBoth
 	}
-	// The Backlog chat spawns the CLI as an agent with CERNE_ORIGIN=chat and a
-	// human in the conversation: its card creation keeps its flagless form.
-	if !quoted && originFlag == "" && isAgentActor(actorEnv()) && os.Getenv("CERNE_ORIGIN") != "chat" {
+	// The Backlog chat (both its channels) runs the CLI as an agent with a human
+	// in the conversation: its card creation keeps its flagless form.
+	if !quoted && originFlag == "" && isAgentActor(actorEnv()) && !chat {
 		return fmt.Errorf("%w: pass --on-behalf \"<the human's literal words>\" when a human asked for this card, or --origin agent when the idea is yours", ErrOriginChoiceRequired)
 	}
 	return nil
