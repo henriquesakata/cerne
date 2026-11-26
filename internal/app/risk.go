@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 
@@ -18,6 +19,68 @@ import (
 type RiskCheck struct {
 	Holds bool
 	Found string
+}
+
+// RiskAssessment is the risk gate's reading of one delivery at complete
+// (F-0516): the three conditions and the measurements behind them, recorded
+// on the complete event and, when all three hold, on the accept.
+type RiskAssessment struct {
+	Area, Gauntlet, Tests RiskCheck
+	Paths                 []string // the changed files a sensitive glob matched
+	Facets                []string // the card's facets on the sensitive list
+	Verdict               string   // the Gauntlet's last outcome: win, tie, loss, exempt, off or none
+	Tested                string   // "<criteria with a test>/<criteria>"
+}
+
+// Low reports a delivery of low risk: all three conditions hold.
+func (r RiskAssessment) Low() bool { return r.Area.Holds && r.Gauntlet.Holds && r.Tests.Holds }
+
+// Summary is the three measurements in one line.
+func (r RiskAssessment) Summary() string {
+	return r.Area.Found + "; " + r.Gauntlet.Found + "; " + r.Tests.Found
+}
+
+// Held is what each condition that does not hold found, one line each.
+func (r RiskAssessment) Held() []string {
+	var out []string
+	for _, c := range []RiskCheck{r.Area, r.Gauntlet, r.Tests} {
+		if !c.Holds {
+			out = append(out, c.Found)
+		}
+	}
+	return out
+}
+
+// payload is the record of the measurements on the complete event and on the
+// accept of a low-risk delivery: risk is low or held, risk_area,
+// risk_gauntlet and risk_tests what each condition found, and the raw values
+// behind them (the sensitive paths and facets hit, comma-separated; the
+// verdict; the criteria with a test).
+func (r RiskAssessment) payload() map[string]string {
+	risk := "held"
+	if r.Low() {
+		risk = "low"
+	}
+	return map[string]string{
+		"risk": risk, "risk_area": r.Area.Found, "risk_gauntlet": r.Gauntlet.Found, "risk_tests": r.Tests.Found,
+		"risk_paths": strings.Join(r.Paths, ", "), "risk_facets": strings.Join(r.Facets, ", "),
+		"risk_verdict": r.Verdict, "risk_criteria_tested": r.Tested,
+	}
+}
+
+// assessRisk measures the three conditions of the risk gate on feature f,
+// whose delivery is the git checkout at projDir.
+func assessRisk(repoDir, projDir string, f store.Feature) RiskAssessment {
+	cfg, _, err := project.LoadConfig(projDir)
+	if err != nil {
+		cfg = project.Config{}
+	}
+	var r RiskAssessment
+	r.Area, r.Paths, r.Facets = riskArea(projDir, cfg.PinBranch, f, cfg.Gates)
+	result, _ := os.ReadFile(FeatureDocPath(repoDir, f.ID, "result.md"))
+	r.Gauntlet, r.Verdict = riskGauntlet(result, cfg.Gates.GauntletEnabled())
+	r.Tests, r.Tested = riskTests(repoDir, projDir, f)
+	return r
 }
 
 // riskArea is the first condition (crit. 3): the delivery touches no

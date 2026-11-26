@@ -101,14 +101,15 @@ func cascadeApprove(repoDir, projDir, parentID string, gauntletOn, agentAct bool
 // An F- child had its own approve and keeps its own accept; an actor the
 // accept's human gate refuses takes no task along. An accept on merge (m,
 // F-0488) is the human's whoever records it: the tasks ride it, marked alike.
-// via is the parent's accepted_via: an auto accept marks its tasks auto too
-// (F-0515).
-func cascadeAccept(repoDir, projDir, parentID string, m *mergeAccept, via string) (cascaded, error) {
+// The parent's accepted_via marks its tasks too: auto (F-0515), and risk
+// (F-0516), the gate's own accept, which no human gate stands behind.
+func cascadeAccept(repoDir, projDir string, parent store.Feature, m *mergeAccept) (cascaded, error) {
+	parentID, via := parent.ID, parent.AcceptedVia
 	children, err := childrenOf(repoDir, parentID, func(c store.Feature) bool { return isTask(c.ID) && c.State == cascadeFrom[domain.ActionAccept] })
 	if err != nil {
 		return cascaded{}, err
 	}
-	if m == nil && CheckHumanGate(projectGates(projDir).AcceptGate()) != nil {
+	if m == nil && via != project.GateRisk && CheckHumanGate(projectGates(projDir).AcceptGate()) != nil {
 		return keptByHumanGate(parentID, children), nil
 	}
 	var out cascaded
@@ -119,9 +120,9 @@ func cascadeAccept(repoDir, projDir, parentID string, m *mergeAccept, via string
 			payload["cascade_from"] = parentID
 			c.AcceptedVia = "merge"
 		}
-		if m == nil && via == project.GateAuto {
+		if m == nil && (via == project.GateAuto || via == project.GateRisk) {
 			payload["via"] = via
-			c.AcceptedVia = via
+			c.AcceptedVia, c.AcceptedRisk = via, parent.AcceptedRisk
 		}
 		if err := moveChild(repoDir, &c, domain.ActionAccept, payload, actor); err != nil {
 			return out, err

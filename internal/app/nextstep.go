@@ -219,11 +219,12 @@ func NextStep(repoDir, projDir, id string) (Step, error) {
 		case len(cmds) > 0:
 			s.Step, s.Command, s.Commands = "finish the delivery: "+strings.Join(cmds, "; "), cmds[0], cmds
 		// Under the merge gate (F-0488) the human acts on the forge; recording
-		// the merge is the agent's. NextStep stays offline: --merged asks.
-		case gates.AcceptGate() == project.GateMerge && f.DeliveryMRURL == "":
-			s.Step = "link the delivery PR: under the merge gate its merge is the acceptance; for a delivery with no PR, a human runs 'cerne feature accept " + id + "'"
+		// the merge is the agent's. NextStep stays offline: --merged asks. A
+		// card the risk gate held (F-0516) waits the same way.
+		case gates.AcceptsOnMerge() && f.DeliveryMRURL == "":
+			s.Step = "link the delivery PR: under the " + gates.AcceptGate() + " gate its merge is the acceptance; for a delivery with no PR, a human runs 'cerne feature accept " + id + "'"
 			s.Command = "cerne feature deliver " + id + " --mr <url>"
-		case gates.AcceptGate() == project.GateMerge:
+		case gates.AcceptsOnMerge():
 			s.Step = "the human's merge of " + f.DeliveryMRURL + " into the default branch is the acceptance; after it, record it"
 			s.Command = "cerne feature accept " + id + " --merged"
 		default:

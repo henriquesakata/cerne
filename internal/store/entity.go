@@ -53,6 +53,9 @@ type Feature struct {
 	// was the acceptance, "auto" when complete reached done by [gates] accept =
 	// "auto" (F-0515); empty for an accept typed or dragged by hand.
 	AcceptedVia string `json:"accepted_via,omitempty"`
+	// AcceptedRisk (F-0516) is, on a card accepted_via "risk", the summary of
+	// the three measurements that let complete accept it; empty otherwise.
+	AcceptedRisk string `json:"accepted_risk,omitempty"`
 	// ApprovedVia (F-0515) is "auto" when an agent approved under [gates]
 	// approve = "auto"; empty for a person's approval. Never back-filled.
 	ApprovedVia string `json:"approved_via,omitempty"`
