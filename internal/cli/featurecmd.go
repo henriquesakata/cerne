@@ -258,19 +258,34 @@ func runFeatureRetag(cmd *cobra.Command, dir, id, facet, component string, setFa
 }
 
 func newFeatureSetCmd(dir *string) *cobra.Command {
-	var owner, priority, fixes string
+	var owner, priority, fixes, origin, onBehalf string
 	cmd := &cobra.Command{
 		Use:   "set <id>",
 		Short: "Set a feature's owner, priority and/or fixes link in place (F-0204, F-0321)",
 		Long: "Changes owner and/or priority without touching the lifecycle — preserves state, module, tags and docs. " +
 			"Changes only the flag passed: 'set F-0001 --priority p1' keeps the owner; '--owner \"\"' clears the owner. " +
 			"A priority outside the closed set (p0,p1,p2,p3) is rejected, nothing written. Applies to a live or " +
-			"implemented feature; a terminal feature (done/rejected/superseded) is frozen history.",
+			"implemented feature; a terminal feature (done/rejected/superseded) is frozen history. " +
+			"--origin human|agent (B-0085) corrects who asked for the card, in any state, recording a correction event; " +
+			"--origin human needs --on-behalf with the human's words, and an agent shell is refused.",
 		Example: "  cerne feature set F-0001 --owner ana --priority p1\n" +
 			"  cerne feature set F-0001 --priority p0   # owner untouched\n" +
-			"  cerne feature set F-0002 --fixes F-0001  # F-0002 corrects a defect F-0001 shipped",
+			"  cerne feature set F-0002 --fixes F-0001  # F-0002 corrects a defect F-0001 shipped\n" +
+			"  cerne feature set F-0003 --origin human --on-behalf \"the owner's words\"",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if cmd.Flags().Changed("origin") {
+				ctx, err := resolveProject(*dir)
+				if err != nil {
+					return err
+				}
+				f, err := app.SetFeatureOrigin(ctx.repoDir, ctx.projDir, args[0], origin, onBehalf)
+				if err != nil {
+					return err
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "%s origin set to %s\n", f.ID, f.Origin)
+				return nil
+			}
 			return runFeatureSet(cmd, *dir, args[0], owner, priority, fixes,
 				cmd.Flags().Changed("owner"), cmd.Flags().Changed("priority"), cmd.Flags().Changed("fixes"))
 		},
@@ -278,12 +293,14 @@ func newFeatureSetCmd(dir *string) *cobra.Command {
 	cmd.Flags().StringVar(&owner, "owner", "", "new owner (free text) — empty clears")
 	cmd.Flags().StringVar(&priority, "priority", "", "new priority (closed set: p0,p1,p2,p3) — empty clears")
 	cmd.Flags().StringVar(&fixes, "fixes", "", "feature ID this one fixes — empty clears")
+	cmd.Flags().StringVar(&origin, "origin", "", "correct the card's origin: human (needs --on-behalf) or agent; a human act (B-0085)")
+	cmd.Flags().StringVar(&onBehalf, "on-behalf", "", "the human's literal words, required by --origin human")
 	return cmd
 }
 
 func runFeatureSet(cmd *cobra.Command, dir, id, owner, priority, fixes string, setOwner, setPriority, setFixes bool) error {
 	if !setOwner && !setPriority && !setFixes {
-		return fmt.Errorf("pass at least --owner, --priority or --fixes")
+		return fmt.Errorf("pass at least --owner, --priority, --fixes or --origin")
 	}
 	ctx, err := resolveProject(dir)
 	if err != nil {

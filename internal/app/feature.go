@@ -1276,6 +1276,51 @@ func writeEpicResultStub(repoDir, id, title string, children []store.Feature) er
 	return os.WriteFile(path, []byte(content), 0o644)
 }
 
+// ErrInvalidOrigin refuses an origin that is not "human" or "agent" (B-0085).
+var ErrInvalidOrigin = errors.New("origin must be human or agent")
+
+// SetFeatureOrigin is the human's correction of a card's origin (B-0085).
+// Any state is accepted; an agent actor is refused with ErrHumanGate (a human
+// origin waives the bug approve gate), --origin human needs a non-blank quote.
+// The correction is its own event; the creation event is never rewritten.
+func SetFeatureOrigin(repoDir, projDir, id, origin, onBehalf string) (store.Feature, error) {
+	if isAgentActor(actorEnv()) {
+		return store.Feature{}, fmt.Errorf("%w: correcting a card's origin is a human act — ask a human to run it in their own terminal%s", ErrHumanGate, humanEscape)
+	}
+	if origin != "human" && origin != "agent" {
+		return store.Feature{}, fmt.Errorf("%w: %q", ErrInvalidOrigin, origin)
+	}
+	quote := strings.TrimSpace(onBehalf)
+	if (origin == "human" || onBehalf != "") && quote == "" {
+		return store.Feature{}, ErrOnBehalfEmpty
+	}
+	var f store.Feature
+	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		var err error
+		f, err = store.LoadFeature(repoDir, id)
+		if err != nil {
+			return "", err
+		}
+		payload := map[string]string{"from": f.Origin, "to": origin}
+		if quote != "" {
+			payload["on_behalf"] = quote
+		}
+		f.Origin = origin
+		f.UpdatedAt = time.Now().UTC()
+		if err := store.SaveFeature(repoDir, f); err != nil {
+			return "", err
+		}
+		if err := store.AppendEvent(repoDir, domain.NewEvent(id, "feature.origin_corrected", payload, EventActor())); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: correct origin of %s to %s", id, origin), nil
+	})
+	if err != nil {
+		return store.Feature{}, err
+	}
+	return f, nil
+}
+
 // resolveOrigin is the one origin rule for every creation path (T-0005): an
 // agent session without --on-behalf asked for it itself ("agent"); anything
 // else — a human at the terminal, or an agent relaying a quoted human request —
