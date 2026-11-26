@@ -84,3 +84,45 @@ func TestMCPNeverSpawnsServer(t *testing.T) {
 		t.Fatal("inspection executed the MCP server binary")
 	}
 }
+
+// F-0512 crit. 4: the servers of the project's .cursor/mcp.json (origin
+// project) and the user's ~/.cursor/mcp.json (origin user) are inventoried,
+// consumed by Cursor, with no env or header value in the payload.
+func TestMCPCursorServersListed(t *testing.T) {
+	proj := t.TempDir()
+	home := t.TempDir()
+	bin := t.TempDir()
+	os.WriteFile(filepath.Join(bin, "cerne"), []byte("#!/bin/sh\n"), 0o755)
+	t.Setenv("PATH", bin)
+	writeFile(t, filepath.Join(proj, ".cursor", "mcp.json"), `{"mcpServers": {"cerne": {"type": "stdio", "command": "cerne", "args": ["mcp"], "env": {"TOKEN": "valor-secreto"}}}}`)
+	writeFile(t, filepath.Join(home, ".cursor", "mcp.json"), `{"mcpServers": {"cursor-global": {"url": "https://mcp.example.com", "headers": {"Authorization": "Bearer cabecalho-secreto"}}}}`)
+
+	inv := Inspect(Options{ProjDir: proj, Home: home})
+
+	it, ok := findItem(inv, "mcp", "cerne")
+	if !ok {
+		t.Fatal(".cursor/mcp.json server absent")
+	}
+	if it.Origin != OriginProject || it.State != StateConfigured || it.OutsideRepo || it.Path != filepath.Join(proj, ".cursor", "mcp.json") {
+		t.Errorf("cerne = %+v, want configured/project inside the repo", it)
+	}
+	if len(it.Consumers) != 1 || it.Consumers[0] != "cursor" {
+		t.Errorf("consumers = %v, want [cursor]", it.Consumers)
+	}
+	it, ok = findItem(inv, "mcp", "cursor-global")
+	if !ok {
+		t.Fatal("~/.cursor/mcp.json server absent")
+	}
+	if it.Origin != OriginUser || !it.OutsideRepo || !strings.Contains(it.Detail, "Authorization") {
+		t.Errorf("cursor-global = %+v, want user origin, outside the repo, header name surfaced", it)
+	}
+	raw, err := json.Marshal(inv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{"valor-secreto", "cabecalho-secreto", "Bearer"} {
+		if strings.Contains(string(raw), secret) {
+			t.Fatalf("secret %q leaked into the inventory payload", secret)
+		}
+	}
+}

@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"path/filepath"
 	"strings"
 
 	"github.com/henriquesakata/cerne/internal/hooks"
@@ -39,6 +40,10 @@ func consumersFor(it Item, copilot bool) []string {
 		}
 		return []string{string(hooks.ProviderClaude)}
 	case "mcp":
+		// .cursor/mcp.json (project or user) is Cursor's alone (F-0512).
+		if filepath.Base(filepath.Dir(it.Path)) == ".cursor" {
+			return []string{string(hooks.ProviderCursor)}
+		}
 		// The project .mcp.json is also Copilot's workspace MCP file (F-0444) —
 		// counted only when the project uses Copilot.
 		if it.Origin == OriginProject && copilot {
