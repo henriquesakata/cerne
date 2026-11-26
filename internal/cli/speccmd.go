@@ -220,6 +220,10 @@ func runSpecCheck(cmd *cobra.Command, dir, file string, asJSON bool) error {
 		if len(issues) == 0 {
 			fmt.Fprintln(out, "No format issues found.")
 		}
+		// Advice never changes the exit code (F-0517); --json keeps its issues array.
+		for _, a := range app.ClarifyAdvices([]byte(doccheck.ProposalSpecBody(body)), store.DocsLanguage(ctx.repoDir)) {
+			fmt.Fprintf(out, "advice: %s: %s\n", a.Code, a.Message)
+		}
 	}
 	if failed {
 		return errSpecCheckFailed

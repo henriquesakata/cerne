@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/henriquesakata/cerne/internal/clarify"
 	"github.com/henriquesakata/cerne/internal/cost"
 	"github.com/henriquesakata/cerne/internal/doccheck"
 	"github.com/henriquesakata/cerne/internal/doclang"
@@ -44,6 +45,15 @@ var levelEN = map[string]string{"leve": "light", "padrão": "standard", "avança
 // measured spec) skips the cost advice while the level advice runs with no
 // number. The check and the page then read the same as without advice.
 func ApproveAdvices(repoDir, projDir, id string) []ApproveAdvice {
+	var out []ApproveAdvice
+	if spec, err := os.ReadFile(FeatureDocPath(repoDir, id, "spec.md")); err == nil {
+		out = ClarifyAdvices(spec, store.DocsLanguage(repoDir))
+	}
+	return append(out, gauntletAdvices(repoDir, projDir, id)...)
+}
+
+// gauntletAdvices is the Gauntlet half of ApproveAdvices.
+func gauntletAdvices(repoDir, projDir, id string) []ApproveAdvice {
 	if !projectGates(projDir).GauntletEnabled() {
 		return nil
 	}
@@ -130,3 +140,26 @@ func measuredShare(st cost.GauntletStats, level string) string {
 }
 
 func percent(share float64) string { return fmt.Sprintf("%.0f%%", share*100) }
+
+// AdviceClarifyWithoutOptions is a clarification with no proposed options (F-0517).
+const AdviceClarifyWithoutOptions = "clarify-without-options"
+
+// ClarifyAdvices is the advice for each open marker in body that carries no
+// options: the form with options and a recommended one, in language l. It is
+// advice only (F-0517) — no surface refuses over it.
+func ClarifyAdvices(body []byte, l doclang.Lang) []ApproveAdvice {
+	var out []ApproveAdvice
+	for _, c := range clarify.Open(string(body)) {
+		if len(c.Options) > 0 {
+			continue
+		}
+		q := c.Question
+		if q == "" {
+			q = c.Raw
+		}
+		out = append(out, ApproveAdvice{AdviceClarifyWithoutOptions, fmt.Sprintf(
+			"%q has no proposed options: when it has possible answers, write them one per pipe and end the one you would pick with the recommended suffix: %s",
+			q, doclang.ClarifyForm(l))})
+	}
+	return out
+}

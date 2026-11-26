@@ -153,3 +153,13 @@ func Examples(l Lang) Prose {
 	}
 	return proseForms[PT]
 }
+
+// ClarifyForm is the clarification marker with proposed options and a
+// recommended one, written in language l (F-0517). The suffix is the
+// project's, like every protocol form (F-0418).
+func ClarifyForm(l Lang) string {
+	if l == EN {
+		return "[CLARIFY: <specific question> | <option A> (recommended) | <option B>]"
+	}
+	return "[ESCLARECER: <pergunta específica> | <opção A> (recomendada) | <opção B>]"
+}
