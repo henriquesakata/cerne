@@ -187,6 +187,7 @@ function ClarifyChip({
   const { t } = useT()
   const [open, setOpen] = useState(false)
   const [text, setText] = useState('')
+  const [other, setOther] = useState(false)
   const info = parseClarification(raw)
   if (!info) return <>{raw}</>
   const submit = (answer: string) => {
@@ -196,6 +197,7 @@ function ClarifyChip({
     handler?.(raw, offset, answer)
     setOpen(false)
     setText('')
+    setOther(false)
   }
   if (info.resolved) {
     const trail = info.question ? `${info.question} → ${info.answers.join(' → ')}` : info.answers.join(' → ')
@@ -246,6 +248,9 @@ function ClarifyChip({
     )
   }
   const label = info.question || t.clarify.noQuestion
+  const hasOptions = info.options.length > 0
+  const optionOrder = info.options.map((_, i) => i)
+  if (info.recommended > 0) optionOrder.unshift(...optionOrder.splice(info.recommended - 1, 1))
   if (!onAnswer) {
     return <span className="clarify-chip clarify-open">? {label}</span>
   }
@@ -262,23 +267,48 @@ function ClarifyChip({
       {open && (
         <span className="clarify-pop" role="dialog">
           <span className="clarify-pop-question">{label}</span>
-          {info.options.map((o) => (
-            <button type="button" key={o} className="clarify-option" onClick={() => submit(o)}>
-              {o}
+          {/* F-0517: a recomendada vai primeiro, com o selo; as outras na ordem escrita. */}
+          {optionOrder.map((i) => (
+            <button
+              type="button"
+              key={i}
+              className="clarify-option"
+              aria-label={i === info.recommended - 1 ? `${info.options[i]}, ${t.clarify.recommended}` : undefined}
+              onClick={() => submit(info.options[i])}
+            >
+              {info.options[i]}
+              {i === info.recommended - 1 && <span className="clarify-badge">{t.clarify.recommended}</span>}
             </button>
           ))}
-          <textarea
-            className="clarify-free"
-            rows={3}
-            placeholder={info.options.length > 0 ? t.clarify.otherAnswer : t.clarify.answerPlaceholder}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-          />
-          <span className="clarify-pop-actions">
-            <button type="button" disabled={text.trim() === ''} onClick={() => submit(text.trim())}>
-              {t.clarify.confirm}
+          {hasOptions && !other && (
+            <button type="button" className="clarify-option" onClick={() => setOther(true)}>
+              {t.clarify.otherEntry}
             </button>
-            <button type="button" onClick={() => setOpen(false)}>
+          )}
+          {(!hasOptions || other) && (
+            <textarea
+              className="clarify-free"
+              rows={3}
+              autoFocus={hasOptions}
+              placeholder={hasOptions ? t.clarify.otherAnswer : t.clarify.answerPlaceholder}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+            />
+          )}
+          <span className="clarify-pop-actions">
+            {(!hasOptions || other) && (
+              <button type="button" disabled={text.trim() === ''} onClick={() => submit(text.trim())}>
+                {t.clarify.confirm}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false)
+                setOther(false)
+                setText('')
+              }}
+            >
               {t.common.cancel}
             </button>
           </span>
