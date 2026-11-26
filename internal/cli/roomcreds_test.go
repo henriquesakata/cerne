@@ -165,8 +165,8 @@ func TestRoomJoinWithInheritedRoomSessionVariable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("join ana: %v", err)
 	}
-	if !strings.Contains(out, "CERNE_ROOM_SESSION is set") || !strings.Contains(out, "--nick ana") {
-		t.Fatalf("join output = %q, want the warning that the variable overrides bare commands", out)
+	if !strings.Contains(out, "CERNE_ROOM_SESSION is set") || !strings.Contains(out, "--nick ana") || !strings.Contains(out, "room leave R1 --nick ana") {
+		t.Fatalf("join output = %q, want the warning that the variable overrides bare commands, leave included", out)
 	}
 	if _, err := runRoom(t, append([]string{"say", "R1", "from ana", "--nick", "ana"}, dirFlag...)...); err != nil {
 		t.Fatalf("say --nick ana: %v", err)
@@ -276,7 +276,7 @@ func TestRoomCredsCommandsUseStoredCredential(t *testing.T) {
 		t.Fatalf("pending = %q, %v; want ana's items", out, err)
 	}
 	out, err = runRoom(t, append([]string{"watch", "R1", "--once", "--since", "0"}, dirFlag...)...)
-	if err != nil || !strings.Contains(out, "#1 [open]") || strings.Contains(out, "via stored") {
+	if err != nil || !strings.Contains(out, "[open]") || strings.Contains(out, "via stored") {
 		t.Fatalf("watch with the stored session = %q, %v; want the open event and no own echo", out, err)
 	}
 	cp, err := checkpointPath(c.pid, "R1", joined.Session.SessionID)
@@ -387,8 +387,9 @@ func TestRoomLeaveForgetsOnlyTheRevokedNick(t *testing.T) {
 	if _, err := runRoom(t, append([]string{"leave", "R1", "--nick", "zed"}, dirFlag...)...); err == nil {
 		t.Fatal("leave with a session the server does not know: want error")
 	}
-	if stored, _ := loadRoomCreds("proj-leave-nick", "R1"); stored.Sessions["zed"] == "" {
-		t.Fatalf("stored after a refused leave = %+v, want zed kept", stored)
+	// T-0019: a 401 means the session is already dead, so the entry goes too.
+	if stored, _ := loadRoomCreds("proj-leave-nick", "R1"); stored.Sessions["zed"] != "" {
+		t.Fatalf("stored after a 401 leave = %+v, want zed dropped", stored)
 	}
 }
 

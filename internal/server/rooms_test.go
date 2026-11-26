@@ -1049,3 +1049,50 @@ func TestRoomLeaveClosedOrUnknownRoom(t *testing.T) {
 		t.Fatalf("unknown room status = %d, want 404; body: %s", rec.Code, rec.Body.String())
 	}
 }
+
+// T-0019 crit. 1
+// E-0006 crit. 1
+func TestRoomSayBodyCap(t *testing.T) {
+	h := newRoomServer(t, "proj-room-say-cap")
+	var opened openJSON
+	doJSON(t, h, http.MethodPost, "/api/rooms", `{"topic":"t"}`, &opened)
+	sess := joinAs(t, h, opened.ID, "alice")
+	say := func(body string) (int, string) {
+		var resp struct {
+			Error string `json:"error"`
+		}
+		payload, _ := json.Marshal(map[string]string{"session_id": sess.SessionID, "body": body})
+		rec := doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/messages", string(payload), &resp)
+		return rec.Code, resp.Error
+	}
+	// at the boundary: 160 KiB of '<' (6 bytes each once marshaled) is accepted
+	if code, e := say(strings.Repeat("<", 160*1024)); code != http.StatusCreated {
+		t.Fatalf("boundary say = %d (%s), want 201", code, e)
+	}
+	code, e := say(strings.Repeat("a", 160*1024+1))
+	if code != http.StatusRequestEntityTooLarge || !strings.Contains(e, "too large") {
+		t.Fatalf("over-cap say = %d (%q), want 413 with a 'too large' error", code, e)
+	}
+	// restart replay: a fresh manager over the same directory still loads
+	cacheDir, err := project.CacheDir("proj-room-say-cap")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := room.NewManager(filepath.Join(cacheDir, "rooms")); err != nil {
+		t.Fatalf("replay after a max-size message: %v", err)
+	}
+}
+
+// T-0019 crit. 1
+// E-0006 crit. 1
+func TestRoomCloseMinutesCap(t *testing.T) {
+	h := newRoomServer(t, "proj-room-close-cap")
+	var opened openJSON
+	doJSON(t, h, http.MethodPost, "/api/rooms", `{"topic":"t"}`, &opened)
+	var errBody map[string]string
+	payload, _ := json.Marshal(map[string]any{"facilitator_id": opened.FacilitatorID, "minutes": map[string]any{"conclusion": strings.Repeat("a", 160*1024+1), "rationale": "r"}})
+	rec := doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/close", string(payload), &errBody)
+	if rec.Code != http.StatusRequestEntityTooLarge || !strings.Contains(errBody["error"], "too large") {
+		t.Fatalf("over-cap close = %d (%q), want 413", rec.Code, errBody["error"])
+	}
+}

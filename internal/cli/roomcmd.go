@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -22,17 +23,39 @@ import (
 // and `room watch` (F-0227): a said message, a join (with or without bio),
 // or any other typed system event (open/close).
 func formatRoomEvent(m room.Message) string {
-	switch {
-	case m.Type == "message":
-		return fmt.Sprintf("#%d [%s] %s", m.Seq, m.Nick, m.Body)
-	case m.Type == "join" && m.Bio != "":
-		return fmt.Sprintf("#%d [join: %s — %s]", m.Seq, m.Nick, m.Bio)
-	case m.Type == "join":
-		return fmt.Sprintf("#%d [join: %s]", m.Seq, m.Nick)
-	case m.Type == "leave":
-		return fmt.Sprintf("#%d [leave: %s]", m.Seq, m.Nick)
+	head := fmt.Sprintf("#%d", m.Seq)
+	if !m.Time.IsZero() {
+		head += " " + m.Time.Local().Format("15:04")
+	}
+	switch m.Type {
+	case "message":
+		return fmt.Sprintf("%s [%s] %s", head, m.Nick, m.Body)
+	case "join":
+		if m.Bio != "" {
+			return fmt.Sprintf("%s [join: %s — %s]", head, m.Nick, m.Bio)
+		}
+		return fmt.Sprintf("%s [join: %s]", head, m.Nick)
+	case "leave":
+		return fmt.Sprintf("%s [leave: %s]", head, m.Nick)
+	case "open":
+		return fmt.Sprintf("%s [open] %s", head, m.Topic)
+	case "close":
+		if m.Minutes != nil && m.Minutes.Conclusion != "" {
+			return fmt.Sprintf("%s [close] %s", head, m.Minutes.Conclusion)
+		}
+		return fmt.Sprintf("%s [close]", head)
+	case "proposal", "decision_request":
+		return fmt.Sprintf("%s [%s: %s] %s — %s", head, strings.ReplaceAll(m.Type, "_", " "), m.Nick, m.Title, m.Body)
+	case "resolution":
+		return fmt.Sprintf("%s [resolution: %s] %s", head, m.ItemID, m.Body)
+	case "minutes_draft":
+		body := m.Body
+		if m.Minutes != nil {
+			body = m.Minutes.Conclusion
+		}
+		return fmt.Sprintf("%s [minutes draft: %s] %s", head, m.Nick, body)
 	default:
-		return fmt.Sprintf("#%d [%s]", m.Seq, m.Type)
+		return fmt.Sprintf("%s [%s]", head, m.Type)
 	}
 }
 
@@ -87,7 +110,7 @@ func newRoomOpenCmd() *cobra.Command {
 			out := cmd.OutOrStdout()
 			fmt.Fprintf(out, "room %s opened: %s\n", rm.ID, rm.Topic)
 			fmt.Fprintf(out, "entry command: cerne room join %s --nick <nick> [--bio \"...\"]\n", rm.ID)
-			fmt.Fprintf(out, "listen: cerne room read %s --since 0 --once\n", rm.ID)
+			fmt.Fprintf(out, "listen: cerne room watch %s --once\n", rm.ID)
 			fmt.Fprintf(out, "facilitator capability: %s\n", res.FacilitatorID)
 			fmt.Fprintf(out, "keep this — it is required to resolve items and close the room; hand it off with 'cerne room facilitator handoff'\n")
 			fmt.Fprintf(out, "env: export CERNE_ROOM_FACILITATOR=%s\n", res.FacilitatorID)
@@ -119,21 +142,21 @@ func newRoomJoinCmd() *cobra.Command {
 			}
 			id, sid := res.Room.ID, res.Session.SessionID
 			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "joined %s as %s (%d participant(s))\n", id, nick, len(res.Room.Participants))
+			fmt.Fprintf(out, "joined %s as %s (%d active participant(s))\n", id, nick, len(res.Room.ActiveParticipants))
 			fmt.Fprintf(out, "session: %s\n", sid)
 			fmt.Fprintf(out, "keep this session token — losing it locks the nick until the room closes\n")
 			nicks, err := storeRoomSession(c.pid, id, nick, sid)
 			if err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not store the session for this agent session: %v\n", err)
 			} else if nicks != nil {
-				warnRoomSessionVar(cmd.ErrOrStderr(), nick)
+				warnRoomSessionVar(cmd.ErrOrStderr(), id, nick)
 			}
 			// storeRoomSession returns nil, nil only without CERNE_SESSION. In
 			// an agent session every example carries --nick, even with one
 			// nick: a later store failure or a second joiner then makes it
 			// refuse instead of speaking as someone else.
 			pick := ""
-			if err != nil || nicks != nil {
+			if err == nil && nicks != nil {
 				pick = " --nick " + nick
 			}
 			if err != nil || nicks == nil {
@@ -171,6 +194,12 @@ func newRoomLeaveCmd() *cobra.Command {
 			}
 			rm, err := c.leave(cmd.Context(), args[0], session)
 			if err != nil {
+				// A 401 means the session is already revoked: its stored entry
+				// is dead weight that bare commands would keep picking.
+				var se *roomStatusError
+				if errors.As(err, &se) && se.status == http.StatusUnauthorized {
+					_ = forgetRoomSession(c.pid, args[0], session)
+				}
 				return fmt.Errorf("leave %s: %w", args[0], err)
 			}
 			// B-0084: the revoked session must not stay stored, or a bare
@@ -193,14 +222,55 @@ func newRoomLeaveCmd() *cobra.Command {
 	return cmd
 }
 
+// readRoomSayBody picks the single body source of `room say` (E-0006): the
+// message argument, "-" for stdin, or --file. It runs before any HTTP call.
+func readRoomSayBody(rest []string, file string, in io.Reader) (string, error) {
+	n := len(rest)
+	if file != "" {
+		n++
+	}
+	if n != 1 {
+		return "", errors.New("give exactly one message source: <message>, - (stdin) or --file <path>")
+	}
+	body := ""
+	switch {
+	case file != "":
+		b, err := os.ReadFile(file)
+		if err != nil {
+			return "", fmt.Errorf("read --file: %w", err)
+		}
+		body = string(b)
+	case rest[0] == "-":
+		b, err := io.ReadAll(in)
+		if err != nil {
+			return "", fmt.Errorf("read stdin: %w", err)
+		}
+		body = string(b)
+	default:
+		body = rest[0]
+	}
+	if strings.TrimSpace(body) == "" {
+		return "", errors.New("the message is empty")
+	}
+	return body, nil
+}
+
 func newRoomSayCmd() *cobra.Command {
-	var dir, session, nick string
+	var dir, session, nick, file string
 	var port int
 	cmd := &cobra.Command{
-		Use:   "say <room> <message>",
+		Use:   "say <room> [<message> | -]",
 		Short: "Send a message to a war room (authored by your session capability)",
-		Args:  cobra.ExactArgs(2),
+		Long: "Send a message to a war room. The body is the <message> argument, or `-` to read\n" +
+			"it from stdin, or --file <path>: use stdin or a file for Markdown with backticks or\n" +
+			"quotes, which the shell would otherwise expand. Exactly one source; an empty body is refused.",
+		Example: "  cerne room say R1 \"short note\"\n  cerne room say R1 - < reply.md\n  cerne room say R1 --file reply.md",
+		Args:    cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			body, err := readRoomSayBody(args[1:], file, cmd.InOrStdin())
+			if err != nil {
+				return err
+			}
 			c, err := newRoomClient(dir, port)
 			if err != nil {
 				return err
@@ -208,10 +278,11 @@ func newRoomSayCmd() *cobra.Command {
 			if session, err = resolveRoomSession(session, nick, c.pid, args[0]); err != nil {
 				return err
 			}
-			_, err = c.say(cmd.Context(), args[0], session, args[1])
+			_, err = c.say(cmd.Context(), args[0], session, body)
 			return err
 		},
 	}
+	cmd.Flags().StringVar(&file, "file", "", "read the message body from this file")
 	cmd.Flags().StringVar(&session, "session", "", roomSessionFlagHelp)
 	cmd.Flags().StringVar(&nick, "nick", "", roomNickFlagHelp)
 	addRoomFlags(cmd, &dir, &port)
