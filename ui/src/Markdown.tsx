@@ -197,6 +197,7 @@ function ClarifyChip({
     handler?.(raw, offset, answer)
     setOpen(false)
     setText('')
+    setOther(false)
   }
   if (info.resolved) {
     const trail = info.question ? `${info.question} → ${info.answers.join(' → ')}` : info.answers.join(' → ')
@@ -268,7 +269,13 @@ function ClarifyChip({
           <span className="clarify-pop-question">{label}</span>
           {/* F-0517: a recomendada vai primeiro, com o selo; as outras na ordem escrita. */}
           {optionOrder.map((i) => (
-            <button type="button" key={i} className="clarify-option" onClick={() => submit(info.options[i])}>
+            <button
+              type="button"
+              key={i}
+              className="clarify-option"
+              aria-label={i === info.recommended - 1 ? `${info.options[i]}, ${t.clarify.recommended}` : undefined}
+              onClick={() => submit(info.options[i])}
+            >
               {info.options[i]}
               {i === info.recommended - 1 && <span className="clarify-badge">{t.clarify.recommended}</span>}
             </button>
@@ -294,7 +301,14 @@ function ClarifyChip({
                 {t.clarify.confirm}
               </button>
             )}
-            <button type="button" onClick={() => setOpen(false)}>
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false)
+                setOther(false)
+                setText('')
+              }}
+            >
               {t.common.cancel}
             </button>
           </span>

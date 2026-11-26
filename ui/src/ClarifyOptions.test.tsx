@@ -72,4 +72,29 @@ describe('F-0517: esclarecimento com opções e recomendada', () => {
     expect(screen.getByRole('textbox')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Outra resposta' })).toBeNull()
   })
+
+  // F-0517 crit. 1
+  it('um sufixo repetido sai inteiro', () => {
+    const info = parseClarification('[CLARIFY: q? | a | b (recommended) (recomendada)]')
+    expect(info?.options).toEqual(['a', 'b'])
+    expect(info?.recommended).toBe(2)
+    expect(parseClarification('[CLARIFY: q? | (recommended) | b]')?.options).toEqual(['(recommended)', 'b'])
+  })
+
+  // F-0517 crit. 4
+  it('o nome acessível separa a opção do selo', () => {
+    open('[CLARIFY: q? | a | b (recommended)]', 'en')
+    expect(screen.getByRole('button', { name: 'b, Recommended' })).toBeInTheDocument()
+  })
+
+  // F-0517 crit. 4
+  it('cancelar fecha a caixa de texto: ao reabrir, volta à lista de opções', () => {
+    open('[CLARIFY: q? | a | b]', 'en')
+    fireEvent.click(screen.getByRole('button', { name: 'Other answer' }))
+    expect(screen.getByRole('textbox')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    fireEvent.click(screen.getAllByRole('button')[0])
+    expect(screen.queryByRole('textbox')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Other answer' })).toBeInTheDocument()
+  })
 })

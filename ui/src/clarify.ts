@@ -123,11 +123,13 @@ export function parseClarification(raw: string): ClarifyInfo | null {
   for (const p of parts.slice(1)) {
     let opt = p.trim()
     if (opt === '') continue
-    const m = RECOMMENDED_RE.exec(opt)
-    if (m && m.index > 0) {
+    // Sufixos repetidos saem todos; um sufixo sozinho segue sendo opção.
+    let marked = false
+    for (let m = RECOMMENDED_RE.exec(opt); m && m.index > 0; m = RECOMMENDED_RE.exec(opt)) {
       opt = opt.slice(0, m.index).trim()
-      if (recommended === 0) recommended = options.length + 1
+      marked = true
     }
+    if (marked && recommended === 0) recommended = options.length + 1
     options.push(opt)
   }
   return {
