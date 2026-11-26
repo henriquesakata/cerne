@@ -309,3 +309,93 @@ func TestWorkspaceDir(t *testing.T) {
 		t.Errorf("no roots: %q, want /x", got)
 	}
 }
+
+// cursorRecord is the cursor-sessions record of sess in the project whose
+// clone is repoDir; nil when there is none.
+func cursorRecord(t *testing.T, repoDir, sess string) map[string]any {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(filepath.Dir(repoDir), "cursor-sessions", sess+".json"))
+	if err != nil {
+		return nil
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatalf("record %s: %v\n%s", sess, err, raw)
+	}
+	return m
+}
+
+// TestHookCursorRecordsSessionModel (F-0513 crit. 1): every hook a Cursor
+// payload reaches records the session's model — model_id (grok-4.7) over the
+// mode variant in model (grok-4.7-high-fast) — with the time of the
+// observation and, when the payload has one, the transcript path.
+func TestHookCursorRecordsSessionModel(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	for _, tc := range []struct{ fixture, hook, flag string }{
+		{"session-start.json", "session-context", ""},
+		{"post-tool-use-feature-start.json", "bind-work", ""},
+		{"post-tool-use-feature-start.json", "tool-notes", "--after"},
+		{"pre-tool-use-write.json", "work-gate", ""},
+		{"stop.json", "stop-check", ""},
+	} {
+		p := cursorFixture(t, tc.fixture, projDir)
+		sess := "c-" + tc.hook
+		p["session_id"], p["conversation_id"] = sess, sess
+		args := []string{"hook", tc.hook}
+		if tc.flag != "" {
+			args = append(args, tc.flag)
+		}
+		if out, err := execCerneStdin(t, payloadString(t, p), args...); err != nil {
+			t.Fatalf("hook %s: %v\noutput: %s", tc.hook, err, out)
+		}
+		rec := cursorRecord(t, repoDir, sess)
+		if rec["model"] != "grok-4.7" || rec["updated_at"] == nil {
+			t.Errorf("%s: record = %v, want model grok-4.7 and updated_at", tc.hook, rec)
+		}
+		if want, _ := p["transcript_path"].(string); want != "" && rec["transcript_path"] != want {
+			t.Errorf("%s: transcript_path = %v, want %s", tc.hook, rec["transcript_path"], want)
+		}
+	}
+}
+
+// TestHookCursorSessionRecordFailOpen (F-0513 crit. 1): a session id that
+// could leave the directory records nothing, a record that cannot be written
+// never breaks the hook (the session still binds), and a payload that is not
+// Cursor's records nothing.
+func TestHookCursorSessionRecordFailOpen(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	cacheDir := filepath.Dir(repoDir)
+
+	p := cursorFixture(t, "post-tool-use-feature-start.json", projDir)
+	p["session_id"], p["conversation_id"] = "../evil", "../evil"
+	if out, err := execCerneStdin(t, payloadString(t, p), "hook", "bind-work"); err != nil {
+		t.Fatalf("unsafe id: %v\noutput: %s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(cacheDir, "cursor-sessions")); !os.IsNotExist(err) {
+		t.Fatalf("unsafe id: cursor-sessions exists (%v), want nothing written", err)
+	}
+	if _, err := os.Stat(filepath.Join(cacheDir, "evil.json")); !os.IsNotExist(err) {
+		t.Fatalf("unsafe id: evil.json written outside cursor-sessions")
+	}
+
+	p = cursorFixture(t, "post-tool-use-feature-start.json", projDir)
+	delete(p, "cursor_version")
+	p["session_id"], p["cwd"] = "claude-like", projDir // a Claude Code payload names its cwd
+	if out, err := execCerneStdin(t, payloadString(t, p), "hook", "bind-work"); err != nil {
+		t.Fatalf("no cursor_version: %v\noutput: %s", err, out)
+	}
+	if rec := cursorRecord(t, repoDir, "claude-like"); rec != nil {
+		t.Fatalf("no cursor_version: record = %v, want none", rec)
+	}
+
+	if err := os.WriteFile(filepath.Join(cacheDir, "cursor-sessions"), []byte("not a dir"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p = cursorFixture(t, "post-tool-use-feature-start.json", projDir)
+	if out, err := execCerneStdin(t, payloadString(t, p), "hook", "bind-work"); err != nil {
+		t.Fatalf("unwritable record: %v\noutput: %s", err, out)
+	}
+	if got := boundTo(t, repoDir, cursorSess); got != "F-0425" {
+		t.Fatalf("unwritable record: bound id = %q, want F-0425 (the hook must go on)", got)
+	}
+}

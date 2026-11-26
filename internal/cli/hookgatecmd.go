@@ -78,6 +78,10 @@ type cursorInput struct {
 	ConversationID string          `json:"conversation_id"`
 	LoopCount      int             `json:"loop_count"`
 	Status         string          `json:"status"`
+	// Model and ModelID name the session's model on every event (F-0513):
+	// model_id is the canonical id, model the mode variant on sessionStart.
+	Model   string `json:"model"`
+	ModelID string `json:"model_id"`
 }
 
 // cursor reports a payload delivered by Cursor, which is answered in Cursor's
@@ -93,6 +97,21 @@ func recordSessionMode(cacheDir string, in hookInput) {
 		harness = "cursor"
 	}
 	_ = app.RecordSessionMode(cacheDir, in.SessionID, in.AgentID, harness, in.PermissionMode)
+	recordCursorSession(cacheDir, in)
+}
+
+// recordCursorSession keeps the model a Cursor payload names for its session
+// (F-0513): model_id over model. Nothing for another harness's payload.
+// Fail-open.
+func recordCursorSession(cacheDir string, in hookInput) {
+	if !in.cursor() {
+		return
+	}
+	model := in.Cursor.ModelID
+	if model == "" {
+		model = in.Cursor.Model
+	}
+	_ = app.RecordCursorSession(cacheDir, in.SessionID, model, in.TranscriptPath)
 }
 
 func decodeHookInput(r io.Reader) (hookInput, error) {
@@ -327,6 +346,7 @@ func runHookBindWork(cmd *cobra.Command, format string) {
 	}
 	// F-0361: every Bash call is a sign of life for the session's binding.
 	_ = app.TouchBinding(cacheDir, in.SessionID, in.AgentID)
+	recordCursorSession(cacheDir, in)
 	var ti struct {
 		Command string `json:"command"`
 	}
