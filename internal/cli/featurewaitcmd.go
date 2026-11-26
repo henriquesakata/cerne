@@ -260,7 +260,7 @@ func runFeatureWait(cmd *cobra.Command, dir, id, forState string, timeout, inter
 	}()
 
 	load := func() (store.Feature, error) { return store.LoadFeature(ctx.repoDir, id) }
-	if target == domain.StateDone && ctx.cfg.Gates.AcceptGate() == project.GateMerge {
+	if target == domain.StateDone && ctx.cfg.Gates.AcceptsOnMerge() {
 		load = mergeAwareLoad(ctx, id, load, cmd.OutOrStdout(), cmd.ErrOrStderr())
 	}
 	env := waitEnv{

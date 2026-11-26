@@ -60,6 +60,12 @@ func editTOML(raw []byte, table, key string, value any) ([]byte, error) {
 		lit = strconv.FormatInt(v, 10)
 	case inlineRecords:
 		lit, stored = v.literal(), v.decoded()
+	case []string:
+		quoted, decoded := make([]string, len(v)), make([]any, len(v))
+		for i, x := range v {
+			quoted[i], decoded[i] = strconv.Quote(x), x
+		}
+		lit, stored = "["+strings.Join(quoted, ", ")+"]", decoded
 	default:
 		return nil, fmt.Errorf("editTOML: unsupported value type %T", value)
 	}

@@ -180,6 +180,43 @@ func seedFeatureDocs(t *testing.T, repoDir, id string, docs map[string]string) {
 	writeTree(t, repoDir, files)
 }
 
+// TestShowAutoGateLines: show prints one line per gate a card crossed with no
+// human act, and --json carries both fields; an unmarked card prints neither.
+// F-0515 crit. 8
+func TestShowAutoGateLines(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	for _, f := range []store.Feature{
+		{ID: "F-0001", Title: "Both auto", State: domain.StateDone, ApprovedVia: "auto", AcceptedVia: "auto"},
+		{ID: "F-0002", Title: "By hand", State: domain.StateDone},
+	} {
+		if err := store.SaveFeature(repoDir, f); err != nil {
+			t.Fatal(err)
+		}
+	}
+	commitBackend(t, repoDir)
+	const approved, accepted = "\napproved: automatically (no human act)\n", "\naccepted: automatically (no human act)\n"
+	out, err := execCerne(t, "show", "F-0001", "--dir", projDir)
+	if err != nil || !strings.Contains(out, approved) || !strings.Contains(out, accepted) {
+		t.Fatalf("show F-0001 = %v\n%s\nwant both automatic lines", err, out)
+	}
+	if out, _ := execCerne(t, "show", "F-0002", "--dir", projDir); strings.Contains(out, "approved:") || strings.Contains(out, "accepted:") {
+		t.Errorf("show F-0002 claims an automatic gate:\n%s", out)
+	}
+	out, err = execCerne(t, "show", "F-0001", "--json", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("show --json: %v\n%s", err, out)
+	}
+	var js struct {
+		Entity struct {
+			ApprovedVia string `json:"approved_via"`
+			AcceptedVia string `json:"accepted_via"`
+		} `json:"entity"`
+	}
+	if err := json.Unmarshal([]byte(out), &js); err != nil || js.Entity.ApprovedVia != "auto" || js.Entity.AcceptedVia != "auto" {
+		t.Errorf("show --json entity = %+v (%v), want approved_via and accepted_via auto", js.Entity, err)
+	}
+}
+
 func TestShowFeatureDoc(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
 	if _, err := execCerne(t, "feature", "new", "Login com Google", "--context", "ctx de teste", "--dir", projDir); err != nil {

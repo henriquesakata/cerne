@@ -1655,7 +1655,7 @@ func handleTransition(w http.ResponseWriter, r *http.Request, repoDir, projDir, 
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return
 	}
-	out, err := app.TransitionFeatureOp(telemetry.OpFromContext(r.Context()), repoDir, projDir, id, domain.Action(req.Action), req.By, req.Reason, nil)
+	out, err := app.TransitionFeatureFromUI(telemetry.OpFromContext(r.Context()), repoDir, projDir, id, domain.Action(req.Action), req.By, req.Reason, nil)
 	if err != nil {
 		// Domain, gate and validation failures surface as 422 with the
 		// same message the CLI prints.
@@ -1671,6 +1671,11 @@ func handleTransition(w http.ResponseWriter, r *http.Request, repoDir, projDir, 
 	// card whose tracker round failed (F-0449), the parallel-work guard.
 	if len(out.Warnings) > 0 {
 		resp["warnings"] = out.Warnings
+	}
+	// What the risk gate measured on a complete (F-0516): accepted or not,
+	// and one reason per condition that held the card back.
+	if r := out.Risk; r != nil {
+		resp["risk"] = map[string]any{"low": r.Low(), "summary": r.Summary(), "held": r.Held()}
 	}
 	// An approve on an approved feature (F-0318) says what it did, so the page
 	// does not just read "approved → approved".

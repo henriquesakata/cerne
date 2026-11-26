@@ -40,6 +40,9 @@ var (
 	ErrSettingScope        = errors.New("unknown scope")
 	// ErrSettingNotSet: an unset of a key the scope's file does not hold.
 	ErrSettingNotSet = errors.New("nothing to unset")
+	// ErrSettingBackslash: a list item with a backslash (F-0516). Path
+	// patterns use forward slashes; a Windows-style one would match nothing.
+	ErrSettingBackslash = errors.New("a backslash in a list item; write paths with forward slashes")
 	// ErrConfigBusy: another writer held the file's lock past
 	// configLockTimeout. Nothing was written.
 	ErrConfigBusy = errors.New("config file is locked by another writer")
@@ -148,9 +151,30 @@ var settingsRegistry = []Setting{
 		Description: "The template that turns --mr #<n> into a link, with an {n} placeholder, for example https://github.com/owner/repo/pull/{n}.",
 	},
 	{
+		// F-0515. A new accept gate is one more value here and in AcceptGate.
+		ID: "gates.accept", Group: "process", Title: "Delivery acceptance", Type: "string", Default: GateHuman, Enum: []string{GateHuman, GateMerge, GateAuto, GateRisk},
+		Scopes: []string{ScopeProject}, HumanOnly: true,
+		Description: "Who accepts a delivered card. A person (human): complete stops at Ready and a person accepts the card; an agent is refused. On the PR merge (merge): the merge of the delivery PR is the acceptance, recorded by cerne feature accept --merged; an accept typed by hand stays a person's. Automatic (auto): complete carries the card straight to done, marked accepted without human review. By risk (risk): complete accepts the card on its own only when all three hold: the delivery touches no sensitive path or facet (the two lists below), its Gauntlet ended in a win, and every criterion has a test; any other card waits for the human merge, as under merge. An agent cannot change this key through cerne settings: it is the project owner's decision. The guard stops the cerne settings command and asks in the Settings screen; an agent that edits .cernerc by hand or calls the local settings API of cerne ui still changes it.",
+	},
+	{
+		ID: "gates.approve", Group: "process", Title: "Spec approval", Type: "string", Default: GateHuman, Enum: []string{GateHuman, GateAuto},
+		Scopes: []string{ScopeProject}, HumanOnly: true,
+		Description: "Who approves a spec. A person (human): only a person approves; an agent is refused. Automatic (auto): an agent may approve too, and a card an agent approves is marked approved without human review. An agent cannot change this key through cerne settings: it is the project owner's decision. The guard stops the cerne settings command and asks in the Settings screen; an agent that edits .cernerc by hand or calls the local settings API of cerne ui still changes it.",
+	},
+	{
 		ID: "gates.gauntlet", Group: "process", Title: "Gauntlet", Type: "string", Default: "on", Enum: []string{"on", "off"},
 		Scopes: []string{ScopeProject}, HumanOnly: true,
 		Description: "Turns the Gauntlet on or off for this project. With off (light mode), approve accepts a spec without a bar, complete accepts a result without a ## Gauntlet section, and lint stops charging both. Only the literal off turns it off; any other stored value counts as on. An agent cannot change this key through cerne settings: it is the project owner's decision.",
+	},
+	{
+		ID: "gates.risk_human_facets", Group: "process", Title: "Facets that always need a person", Type: "list", Default: defaultRiskHumanFacets,
+		Scopes: []string{ScopeProject}, HumanOnly: true,
+		Description: "Under the risk accept gate, a card that carries one of these facets always waits for a person, whatever its diff touches; a card with no facet waits too. Changed, the list counts from the next complete. An agent cannot change this key through cerne settings: it is the project owner's decision.",
+	},
+	{
+		ID: "gates.risk_human_paths", Group: "process", Title: "Paths that always need a person", Type: "list", Default: defaultRiskHumanPaths, MaxLen: 256,
+		Scopes: []string{ScopeProject}, HumanOnly: true,
+		Description: "Under the risk accept gate, a delivery that changes a file matching one of these globs always waits for a person; the files are the git diff from the merge-base with the default branch to HEAD, and a diff that cannot be read waits too. A glob with no slash matches a file or folder name at any depth (go.mod, CLAUDE.md, migrations); one with a slash starts at the repository root (a leading / or ./ is dropped, a trailing / is the whole folder); * stays inside a folder, ** crosses folders, and case is ignored. The default covers the CI workflows of the three forges, dependency manifests and lockfiles, migrations, .cernerc and the agents' hooks and configs. Changed, the list counts from the next complete. An agent cannot change this key through cerne settings: it is the project owner's decision.",
 	},
 	{
 		ID: "graph.enabled", Group: "interface", Title: "Graph", Type: "bool", Default: true,
@@ -451,6 +475,12 @@ func ResolveSettings(projDir string) SettingsView {
 				} else {
 					v = rows
 				}
+			} else if s.Type == "list" {
+				if items, err := checkList(s, v); err != nil {
+					problem = err.Error()
+				} else {
+					v = items
+				}
 			} else if !hasSettingType(s, v) {
 				problem = fmt.Sprintf("%v: want %s", ErrInvalidSettingValue, settingWant(s))
 			}
@@ -481,6 +511,10 @@ func hasSettingType(s Setting, v any) bool {
 		_, err := checkRecords(s, v)
 		return err == nil
 	}
+	if s.Type == "list" {
+		_, err := checkList(s, v)
+		return err == nil
+	}
 	switch v.(type) {
 	case bool:
 		return s.Type == "bool"
@@ -502,6 +536,9 @@ func settingWant(s Setting) string {
 	}
 	if s.Type == "records" {
 		return "a list of records {" + strings.Join(fieldIDs(s), ", ") + "}"
+	}
+	if s.Type == "list" {
+		return "a list of strings"
 	}
 	return s.Type
 }
@@ -581,6 +618,10 @@ func SetSetting(projDir, id, scope, raw string) error {
 		if err := json.Unmarshal([]byte(raw), &v); err != nil {
 			return fmt.Errorf("%s: %w %q: want a JSON list of records", id, ErrInvalidSettingValue, raw)
 		}
+	case "list":
+		if err := json.Unmarshal([]byte(raw), &v); err != nil {
+			return fmt.Errorf("%s: %w %q: want a JSON list of strings", id, ErrInvalidSettingValue, raw)
+		}
 	}
 	return SetSettingValue(projDir, id, scope, v)
 }
@@ -604,6 +645,12 @@ func SetSettingValue(projDir, id, scope string, v any) error {
 			return err
 		}
 		v = inlineRecords{fields: fieldIDs(s), rows: rows}
+	} else if s.Type == "list" {
+		items, err := checkList(s, v)
+		if err != nil {
+			return err
+		}
+		v = items
 	} else if !hasSettingType(s, v) {
 		return fmt.Errorf("%s: %w %v: want %s", id, ErrInvalidSettingValue, v, settingWant(s))
 	}
@@ -835,6 +882,36 @@ func checkRecords(s Setting, v any) ([]map[string]string, error) {
 			}
 		}
 		out = append(out, rec)
+	}
+	return out, nil
+}
+
+// checkList validates v, a JSON list or a TOML array, as a value of the list
+// key s and normalizes it to its strings (F-0516). An item that is not one
+// non-blank line of at most the key's MaxLen, with no control character, is
+// ErrInvalidSettingValue. An empty list is a value: it clears the default.
+func checkList(s Setting, v any) ([]string, error) {
+	var items []any
+	switch l := v.(type) {
+	case []any:
+		items = l
+	case []string:
+		for _, x := range l {
+			items = append(items, x)
+		}
+	default:
+		return nil, fmt.Errorf("%s: %w: want %s", s.ID, ErrInvalidSettingValue, settingWant(s))
+	}
+	out := make([]string, 0, len(items))
+	for i, item := range items {
+		str, ok := item.(string)
+		if !ok || strings.TrimSpace(str) == "" || strings.ContainsFunc(str, func(r rune) bool { return r < 0x20 || r == 0x7f }) || utf8.RuneCountInString(str) > maxLen(s) {
+			return nil, fmt.Errorf("%s: %w: item %d: want one non-blank line of at most %d characters, with no control character", s.ID, ErrInvalidSettingValue, i+1, maxLen(s))
+		}
+		if strings.Contains(str, `\`) {
+			return nil, fmt.Errorf("%s: %w: item %d %q: %w", s.ID, ErrInvalidSettingValue, i+1, str, ErrSettingBackslash)
+		}
+		out = append(out, str)
 	}
 	return out, nil
 }

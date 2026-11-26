@@ -15,7 +15,6 @@ import (
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/guide"
 	"github.com/henriquesakata/cerne/internal/lint"
-	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -48,7 +47,7 @@ var nextGroups = []nextGroup{
 	{domain.StateImplemented, false, "awaiting_accept", "WAITING FOR HUMAN ACCEPT", "ask a human to run 'cerne feature accept <id>' (a human act)"},
 }
 
-// awaitingMerge replaces awaiting_accept under [gates] accept = "merge"
+// awaitingMerge replaces awaiting_accept under [gates] accept = "merge" or "risk"
 // (F-0488): the human acts on the forge, the agent records the merge after.
 var awaitingMerge = nextGroup{domain.StateImplemented, false, "awaiting_merge", "WAITING FOR THE MERGE", "the human's merge of the PR into the default branch is the acceptance — after it, run 'cerne feature accept --merged'"}
 
@@ -168,7 +167,7 @@ func runNext(cmd *cobra.Command, dir string, asJSON, all bool) error {
 		return err
 	}
 
-	mergeGate := ctx.cfg.Gates.AcceptGate() == project.GateMerge
+	mergeGate := ctx.cfg.Gates.AcceptsOnMerge() // merge, or risk (F-0516)
 	q := nextJSON{Groups: []nextGroupJSON{}, EpicsReadyToClose: []store.Feature{}, OpenPendings: []store.Pending{}, Debts: []nextFinding{}}
 	for _, g := range nextGroups {
 		if g.queue == "awaiting_accept" && mergeGate {

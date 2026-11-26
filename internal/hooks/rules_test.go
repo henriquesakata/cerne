@@ -35,6 +35,8 @@ func TestRegisterReminderScriptMatchesGoRules(t *testing.T) {
 		"<planning, in the docs language>",
 		"--ref F-NNNN",
 		"F-0208",
+		// B-0086: the origin choice, in the Go copy and the shell copy alike.
+		"--origin agent",
 	} {
 		if !strings.Contains(string(body), want) {
 			t.Fatalf("cerne-register-reminder.sh missing %q", want)

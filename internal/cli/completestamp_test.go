@@ -54,6 +54,37 @@ func TestCompleteStampsCostInTheSameCommand(t *testing.T) {
 	}
 }
 
+// B-0090: with [gates] accept = "auto" the complete lands the card on done in
+// one go; the cost is still stamped, with no "cost not stamped" warning.
+func TestCompleteStampsCostWhenAutoAcceptLandsDone(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	seedResultFeatures(t, repoDir, domain.StateInDevelopment)
+	costSessions(t, repoDir)
+	cfg, _, err := project.LoadConfig(projDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Gates.Accept = project.GateAuto
+	if err := project.SaveConfig(projDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CERNE_ACTOR", "agent")
+
+	out, err := execCerne(t, "feature", "complete", "F-0001", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("complete: %v\n%s", err, out)
+	}
+	if strings.Contains(out, "cost not stamped") || !stampedLine.MatchString(out) {
+		t.Errorf("want a stamped line and no warning:\n%s", out)
+	}
+	if f, _ := store.LoadFeature(repoDir, "F-0001"); f.State != domain.StateDone {
+		t.Errorf("state = %s, want done", f.State)
+	}
+	if !cost.Stamped(repoDir, "F-0001") || stampEvents(t, repoDir) != 1 {
+		t.Errorf("stamped=%v events=%d", cost.Stamped(repoDir, "F-0001"), stampEvents(t, repoDir))
+	}
+}
+
 // F-0402 crit. 2: a refused transition stamps nothing and prints no stamp line.
 func TestCompleteRefusedDoesNotStamp(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
@@ -123,7 +154,7 @@ func TestCompleteStampLine(t *testing.T) {
 		{"epic: no shares on a mixed base", stampOutcome{report: cost.Report{ID: "E-0001", Counters: cost.Counters{Input: 100}, Total: &cost.Counters{Input: 400}, ByRole: map[string]cost.Counters{"main": {Input: 60}, "critic": {Input: 40}}}, kind: stampWritten}, nil, "cost stamped: 400 weighted tokens"},
 	}
 	for _, c := range cases {
-		if got := completeStampLine("F-0001", c.o, c.err); got != c.want {
+		if got := completeStampLine("F-0001", c.o, c.err, false); got != c.want {
 			t.Errorf("%s: got %q, want %q", c.name, got, c.want)
 		}
 	}
@@ -300,5 +331,45 @@ func TestNextAfterWarnedComplete(t *testing.T) {
 	out, err = execCerne(t, "next", "F-0001", "--dir", projDir)
 	if err != nil || strings.Contains(out, "cerne cost F-0001 --stamp") {
 		t.Errorf("next after a warned complete: %v\n%s", err, out)
+	}
+}
+
+// B-0090: a stamp that cannot be made on a done card advises no command that
+// the done card would refuse.
+func TestCompleteStampLineOnDoneCardAdvisesNoStampCommand(t *testing.T) {
+	for _, err := range []error{cost.ErrNothingToStamp, errors.New("boom")} {
+		got := completeStampLine("F-0001", stampOutcome{}, err, true)
+		if !strings.HasPrefix(got, "warning: cost not stamped") || strings.Contains(got, "--stamp") {
+			t.Errorf("%v: %s", err, got)
+		}
+	}
+	// The unbound-session warning says the cost is lost, not that another
+	// machine can stamp it: that stamp is refused on a done card too.
+	got := completeStampLine("F-0001", stampOutcome{}, cost.ErrNothingToStamp, true)
+	if !strings.HasSuffix(got, "this card's cost can no longer be stamped") || strings.Contains(got, "stamped there") {
+		t.Errorf("wording: %s", got)
+	}
+}
+
+// B-0090: --no-stamp on a card the complete lands on done advises no stamp
+// command, which a done card refuses.
+func TestCompleteNoStampOnDoneAdvisesNoStampCommand(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	seedResultFeatures(t, repoDir, domain.StateInDevelopment)
+	cfg, _, err := project.LoadConfig(projDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Gates.Accept = project.GateAuto
+	if err := project.SaveConfig(projDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CERNE_ACTOR", "agent")
+	out, err := execCerne(t, "feature", "complete", "F-0001", "--no-stamp", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("complete: %v\n%s", err, out)
+	}
+	if strings.Contains(out, "cerne cost F-0001 --stamp") {
+		t.Errorf("advises the refused stamp:\n%s", out)
 	}
 }

@@ -835,6 +835,18 @@ var ErrAmendNotImplemented = errors.New("only the result of an implemented featu
 // (mutateAndSnapshotLatest). Returns the feature as stored
 // (state unchanged).
 func AmendFeatureResult(repoDir, projDir, id, body, reason string) (f store.Feature, changed bool, err error) {
+	return amendResult(repoDir, projDir, id, body, reason, false)
+}
+
+// AmendCompletedResult is AmendFeatureResult for the card a complete has just
+// carried to done through the automatic accept (B-0090): the cost stamp, which
+// the complete runs after the transition, writes through it. The caller is the
+// complete path alone; a done card a human accepted stays closed to amends.
+func AmendCompletedResult(repoDir, projDir, id, body, reason string) (store.Feature, bool, error) {
+	return amendResult(repoDir, projDir, id, body, reason, true)
+}
+
+func amendResult(repoDir, projDir, id, body, reason string, allowDone bool) (f store.Feature, changed bool, err error) {
 	reason = strings.TrimSpace(reason)
 	if reason == "" {
 		return store.Feature{}, false, errors.New("an amend needs a reason: pass --reason \"<why>\"")
@@ -852,7 +864,7 @@ func AmendFeatureResult(repoDir, projDir, id, body, reason string) (f store.Feat
 		if f, err = store.LoadFeature(repoDir, id); err != nil {
 			return "", err
 		}
-		if f.State != domain.StateImplemented {
+		if f.State != domain.StateImplemented && !(allowDone && f.State == domain.StateDone) {
 			return "", fmt.Errorf("%w: %s is %s — %s", ErrAmendNotImplemented, id, f.State, DocFixPhrase(id, "result", f.State))
 		}
 		path := FeatureDocPath(repoDir, id, "result.md")
@@ -1276,12 +1288,98 @@ func writeEpicResultStub(repoDir, id, title string, children []store.Feature) er
 	return os.WriteFile(path, []byte(content), 0o644)
 }
 
+// ErrInvalidOrigin refuses an origin that is not "human" or "agent" (B-0085).
+var ErrInvalidOrigin = errors.New("origin must be human or agent")
+
+// ErrOriginChoiceRequired refuses a CLI card creation from an agent shell that
+// says neither --on-behalf nor --origin agent (B-0086): the origin is chosen,
+// never defaulted in silence.
+var ErrOriginChoiceRequired = errors.New("an agent creating a card must say who asked")
+
+// ErrOriginChoiceBoth refuses --on-behalf together with --origin agent (B-0086).
+var ErrOriginChoiceBoth = errors.New("--on-behalf and --origin agent exclude each other")
+
+// CheckOriginChoice is the B-0086 refusal the four `new` commands (feature,
+// bug, epic, task) call before writing: an agent shell must pass a non-blank
+// --on-behalf (the human asked) or --origin agent (its own idea), never both.
+// It lives apart from the create functions on purpose: demo, import and the
+// server create cards with neither flag. Fail-open like resolveOrigin.
+func CheckOriginChoice(onBehalf, originFlag string, chat bool) error {
+	quoted := strings.TrimSpace(onBehalf) != ""
+	if originFlag != "" && originFlag != "agent" {
+		return fmt.Errorf("%w: --origin takes only \"agent\" (a human's request takes --on-behalf)", ErrOriginChoiceRequired)
+	}
+	if quoted && originFlag == "agent" {
+		return ErrOriginChoiceBoth
+	}
+	// The Backlog chat (both its channels) runs the CLI as an agent with a human
+	// in the conversation: its card creation keeps its flagless form.
+	if !quoted && originFlag == "" && isAgentActor(actorEnv()) && !chat {
+		return fmt.Errorf("%w: pass --on-behalf \"<the human's literal words>\" when a human asked for this card, or --origin agent when the idea is yours", ErrOriginChoiceRequired)
+	}
+	return nil
+}
+
+// ErrOriginFlagConflict refuses `feature set --origin` combined with another
+// change flag, or --on-behalf without --origin (B-0085 review): the correction
+// is its own act and would silently drop the rest.
+var ErrOriginFlagConflict = errors.New("--origin stands alone: it cannot be combined with --owner, --priority or --fixes, and --on-behalf belongs to --origin")
+
+// SetFeatureOrigin is the human's correction of a card's origin (B-0085).
+// Any state is accepted; an agent actor is refused with ErrHumanGate (a human
+// origin waives the bug approve gate), --origin human needs a non-blank quote.
+// The correction is its own event; the creation event is never rewritten.
+func SetFeatureOrigin(repoDir, projDir, id, origin, onBehalf string) (store.Feature, error) {
+	if isAgentActor(actorEnv()) {
+		return store.Feature{}, fmt.Errorf("%w: correcting a card's origin is a human act — ask a human to run it in their own terminal%s", ErrHumanGate, humanEscape)
+	}
+	if origin != "human" && origin != "agent" {
+		return store.Feature{}, fmt.Errorf("%w: %q", ErrInvalidOrigin, origin)
+	}
+	quote := strings.TrimSpace(onBehalf)
+	if (origin == "human" || onBehalf != "") && quote == "" {
+		return store.Feature{}, ErrOnBehalfEmpty
+	}
+	var f store.Feature
+	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		var err error
+		f, err = store.LoadFeature(repoDir, id)
+		if err != nil {
+			return "", err
+		}
+		payload := map[string]string{"from": f.Origin, "to": origin}
+		if quote != "" {
+			payload["on_behalf"] = quote
+		}
+		f.Origin = origin // UpdatedAt stays: stale-ready and the accept queue read it as the implemented-at time
+		if err := store.SaveFeature(repoDir, f); err != nil {
+			return "", err
+		}
+		if err := store.AppendEvent(repoDir, domain.NewEvent(id, "feature.origin_corrected", payload, EventActor())); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cerne: correct origin of %s to %s", id, origin), nil
+	})
+	if err != nil {
+		return store.Feature{}, err
+	}
+	return f, nil
+}
+
+// AgentOrigin, passed where a create function takes the --on-behalf quote,
+// records origin agent in any shell (an explicit --origin agent, B-0086). A
+// quote is human text and never equals it.
+const AgentOrigin = "\x00origin:agent"
+
 // resolveOrigin is the one origin rule for every creation path (T-0005): an
 // agent session without --on-behalf asked for it itself ("agent"); anything
 // else — a human at the terminal, or an agent relaying a quoted human request —
 // is "human". A blank quote is refused before any write. Fail-open like F-0131:
 // the quote is auditable, not authenticated.
 func resolveOrigin(onBehalf string) (origin, quote string, err error) {
+	if onBehalf == AgentOrigin {
+		return "agent", "", nil
+	}
 	quote = strings.TrimSpace(onBehalf)
 	if onBehalf != "" && quote == "" {
 		return "", "", ErrOnBehalfEmpty

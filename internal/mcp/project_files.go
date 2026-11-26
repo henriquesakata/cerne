@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"regexp"
 	"strings"
 	"sync"
 	"unicode/utf8"
 
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/henriquesakata/cerne/internal/domain"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -68,31 +68,6 @@ func walkProjectFiles(ctx context.Context, tree *object.Tree, fn func(name strin
 	}
 }
 
-// globRegexp turns a path glob into a case-insensitive full-path regexp:
-// ** crosses directories, * and ? stay inside one.
-func globRegexp(glob string) (*regexp.Regexp, error) {
-	var b strings.Builder
-	b.WriteString("(?i)^")
-	for i := 0; i < len(glob); i++ {
-		switch {
-		case strings.HasPrefix(glob[i:], "**/"):
-			b.WriteString("(?:.*/)?")
-			i += 2
-		case strings.HasPrefix(glob[i:], "**"):
-			b.WriteString(".*")
-			i++
-		case glob[i] == '*':
-			b.WriteString("[^/]*")
-		case glob[i] == '?':
-			b.WriteString("[^/]")
-		default:
-			b.WriteString(regexp.QuoteMeta(string(glob[i])))
-		}
-	}
-	b.WriteString("$")
-	return regexp.Compile(b.String())
-}
-
 func NewProjectFileServer(version string, tree *object.Tree) *sdk.Server {
 	s := sdk.NewServer(&sdk.Implementation{Name: "cerne-project", Version: version}, nil)
 	var mu sync.Mutex
@@ -102,7 +77,7 @@ func NewProjectFileServer(version string, tree *object.Tree) *sdk.Server {
 		defer mu.Unlock()
 		match := func(name string) bool { return strings.Contains(strings.ToLower(name), strings.ToLower(in.Query)) }
 		if strings.ContainsAny(in.Query, "*?") {
-			re, err := globRegexp(in.Query)
+			re, err := domain.GlobRegexp(in.Query)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -131,7 +106,7 @@ func NewProjectFileServer(version string, tree *object.Tree) *sdk.Server {
 			if !projectPath(in.PathGlob) {
 				return nil, nil, errors.New("invalid path_glob")
 			}
-			re, err := globRegexp(in.PathGlob)
+			re, err := domain.GlobRegexp(in.PathGlob)
 			if err != nil {
 				return nil, nil, err
 			}
