@@ -9,6 +9,15 @@ While cerne is below 1.0.0, a minor version may change behavior: read the
 
 ## [Unreleased]
 
+### Added
+
+- Arch Linux: the `cerne-bin` package on the AUR, with the release binary
+  checked against `SHA256SUMS`, updated by each stable release. `cerne update`
+  leaves a binary in `/usr/bin` to the system package manager and prints
+  `yay -Syu cerne-bin`. The publishing job is in place but stays off until
+  the AUR reopens account registration.
+  ([#201](https://github.com/henriquesakata/cerne/pull/201))
+
 ## [0.16.0] - 2026-11-26
 
 ### Highlights
@@ -43,12 +52,10 @@ While cerne is below 1.0.0, a minor version may change behavior: read the
   accepts, rejects, reverts or supersedes a card, every agent session that
   worked on it sees the new state at its next turn, without asking.
   ([#187](https://github.com/henriquesakata/cerne/pull/187))
-- **More places to run cerne.** Arch Linux gets the `cerne-bin` package on
-  the AUR and Windows a Scoop bucket, both updated by each stable release, and
-  `cerne hook install --provider cursor` sets up Cursor's sandbox and MCP
-  files on the first try.
-  ([#201](https://github.com/henriquesakata/cerne/pull/201),
-  [#202](https://github.com/henriquesakata/cerne/pull/202),
+- **More places to run cerne.** Windows gets a Scoop bucket, updated by each
+  stable release, and `cerne hook install --provider cursor` sets up Cursor's
+  sandbox and MCP files on the first try.
+  ([#202](https://github.com/henriquesakata/cerne/pull/202),
   [#220](https://github.com/henriquesakata/cerne/pull/220),
   [#221](https://github.com/henriquesakata/cerne/pull/221))
 
@@ -184,11 +191,6 @@ While cerne is below 1.0.0, a minor version may change behavior: read the
 - `cerne feature set <id> --origin human|agent [--on-behalf "<quote>"]`
   corrects who a card came from, as a human act, recorded as its own event.
   ([#226](https://github.com/henriquesakata/cerne/pull/226))
-- Arch Linux: the `cerne-bin` package on the AUR, with the release binary
-  checked against `SHA256SUMS`, updated by each stable release. `cerne update`
-  leaves a binary in `/usr/bin` to the system package manager and prints
-  `yay -Syu cerne-bin`.
-  ([#201](https://github.com/henriquesakata/cerne/pull/201))
 - Windows: a Scoop manifest in the `henriquesakata/scoop-bucket` bucket
   (`scoop bucket add henriquesakata https://github.com/henriquesakata/scoop-bucket`,
   `scoop install henriquesakata/cerne`), updated by each stable release.
