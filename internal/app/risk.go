@@ -259,26 +259,31 @@ func sensitivePaths(files, globs []string, prefix string) []string {
 	var out []string
 	for _, g := range globs {
 		// Written as gitignore or Windows would, a pattern must not silently
-		// match nothing: backslashes are slashes, a leading slash goes, and a
-		// trailing one is the folder's whole tree.
-		g = strings.TrimPrefix(strings.ReplaceAll(strings.TrimSpace(g), `\`, "/"), "/")
+		// match nothing: backslashes are slashes, a leading "./" or "/" goes,
+		// and a trailing slash is the folder's whole tree.
+		g = strings.ReplaceAll(strings.TrimSpace(g), `\`, "/")
+		g = strings.TrimPrefix(strings.TrimPrefix(g, "./"), "/")
 		if strings.HasSuffix(g, "/") {
 			g += "**"
 		}
 		if g == "" {
 			continue
 		}
+		forms := []string{g}
 		if !strings.Contains(g, "/") {
-			g = "**/" + g
+			// A bare name is a file or a folder at any depth (gitignore).
+			forms = []string{"**/" + g, "**/" + g + "/**"}
 		}
-		re, err := domain.GlobRegexp(g)
-		if err != nil {
-			continue // every glob compiles: GlobRegexp quotes all but * and ?
-		}
-		for _, f := range files {
-			rel, under := strings.CutPrefix(f, prefix)
-			if (re.MatchString(f) || under && prefix != "" && re.MatchString(rel)) && !slices.Contains(out, f) {
-				out = append(out, f)
+		for _, form := range forms {
+			re, err := domain.GlobRegexp(form)
+			if err != nil {
+				continue // every glob compiles: GlobRegexp quotes all but * and ?
+			}
+			for _, f := range files {
+				rel, under := strings.CutPrefix(f, prefix)
+				if (re.MatchString(f) || under && prefix != "" && re.MatchString(rel)) && !slices.Contains(out, f) {
+					out = append(out, f)
+				}
 			}
 		}
 	}

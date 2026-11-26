@@ -252,6 +252,14 @@ func TestRiskSensitivePatternsNormalized(t *testing.T) {
 	if want := files[:4]; !slices.Equal(got, want) {
 		t.Errorf("matched %v, want %v", got, want)
 	}
+	// Review 2 of #228: "./go.mod", and a bare folder name, gitignore-style,
+	// at any depth — but not a file that only starts with the name.
+	files = []string{"go.mod", "infra/x.tf", "a/infra/y.tf", "infrastructure.md", "src/app.go"}
+	got = sensitivePaths(files, []string{"./go.mod", "infra"}, "")
+	slices.Sort(got)
+	if want := []string{"a/infra/y.tf", "go.mod", "infra/x.tf"}; !slices.Equal(got, want) {
+		t.Errorf("matched %v, want %v", got, want)
+	}
 }
 
 // TestRiskGauntletWin: only a last round won against a real bar holds; a
