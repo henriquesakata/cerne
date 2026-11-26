@@ -2,8 +2,10 @@ package llm
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/project"
@@ -110,5 +112,23 @@ func TestCLIModelOnlyWithoutAProvider(t *testing.T) {
 		if got := prov.(*cliProvider).model; got != want {
 			t.Errorf("provider %q: codex model = %q, want %q", provider, got, want)
 		}
+	}
+}
+
+// B-0092: with an Anthropic key in the shared legacy variable, the openai
+// provider is not built — there is no call that could carry the key.
+func TestOpenAIProviderNeverBuiltWithAnAnthropicKey(t *testing.T) {
+	clearKeys(t)
+	t.Setenv("CERNE_LLM_API_KEY", "sk-ant-api03-SECRETSECRET")
+	_, err := NewProvider(project.LLMConfig{Mode: "byo-key", Provider: "openai", Model: "gpt-test"})
+	if !errors.Is(err, ErrAPIKeyMissing) || !strings.Contains(err.Error(), "OPENAI_API_KEY") || strings.Contains(err.Error(), "SECRET") {
+		t.Fatalf("err = %v, want ErrAPIKeyMissing naming OPENAI_API_KEY and no key text", err)
+	}
+	t.Setenv("OPENAI_API_KEY", "sk-ant-api03-SECRETSECRET")
+	if _, err := NewProvider(project.LLMConfig{Mode: "byo-key", Provider: "openai", Model: "gpt-test"}); !errors.Is(err, project.ErrKeyWrongVendor) {
+		t.Fatalf("err = %v, want ErrKeyWrongVendor for an Anthropic key under OPENAI_API_KEY", err)
+	}
+	if _, err := NewProvider(project.LLMConfig{Mode: "byo-key", Provider: "anthropic", Model: "m"}); err != nil {
+		t.Fatalf("anthropic with its key in the legacy variable: %v", err)
 	}
 }
