@@ -1705,6 +1705,9 @@ h2 {
 /* F-0515: o card cruzou um gate sem ato humano — aviso de processo, como o
    badge-behind, para o dono achar depois o que passou sozinho. */
 .badge-auto { background: var(--amber-bg); color: var(--amber); border-color: var(--amber-border); }
+/* F-0516: accepted by the risk gate — the three conditions held; the title
+   carries what was measured. */
+.badge-risk { background: var(--green-bg); color: var(--green); border-color: var(--green-border); cursor: help; }
 /* F-0237: filhas concluídas representadas pelo épico numa coluna terminal.
    Neutro de propósito — é contagem estrutural, não estado nem severidade. */
 .badge-rolled { background: var(--surface-3); color: var(--muted); border-color: var(--border); font-variant-numeric: tabular-nums; }
@@ -4147,6 +4150,9 @@ details.backlinks-section > summary:focus-visible { outline: 2px solid var(--fg)
 }
 .settings-switch[aria-disabled="true"] { opacity: 0.5; cursor: default; }
 .settings-string { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+/* F-0516: a list key, one item per line. */
+.settings-list textarea { width: 100%; font-family: ui-monospace, monospace; font-size: 0.85rem; }
+.settings-list .settings-note { flex-basis: 100%; margin: 0; }
 .settings-string button,
 .settings-records-save {
   font: inherit;

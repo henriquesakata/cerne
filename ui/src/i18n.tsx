@@ -488,6 +488,8 @@ const ptBR = {
     // F-0515: o card cruzou um gate sem ato humano (gates.approve/accept = auto).
     approvedAuto: 'Aprovada sem revisão humana',
     acceptedAuto: 'Aceita sem revisão humana',
+    // F-0516: o gate de risco aceitou uma entrega de baixo risco.
+    acceptedRisk: 'Aceita por baixo risco',
     childInDevTitle:
       'um filho já está em desenvolvimento; planeje e inicie o épico',
     pendingClarify: (n: number) => `❓ ${n}`,
@@ -921,6 +923,7 @@ const ptBR = {
     epicLabel: 'Épico:',
     deliveryLabel: 'Entrega:',
     acceptedOnMerge: (n: string) => `Aceita no merge · PR #${n}`,
+    acceptedRisk: (m: string) => `Aceita por baixo risco: ${m}`,
     issueLabel: 'Issue pública:',
     supersededBy: (id: string) => `Substituída por ${id}`,
     edit: 'Editar',
@@ -1611,6 +1614,12 @@ const ptBR = {
       none: 'nenhum',
       summary: (n: number, names: string) => `${n} ${n === 1 ? 'tracker' : 'trackers'}: ${names}`,
     },
+    // Uma chave de lista (F-0516): um item por linha.
+    list: {
+      none: 'nenhum',
+      summary: (n: number, items: string) => `${n} ${n === 1 ? 'item' : 'itens'}: ${items}`,
+      hint: 'Um por linha. Vazio grava uma lista vazia; Redefinir volta ao padrão.',
+    },
     cancel: 'Cancelar',
     stateOn: 'Ligado',
     stateOff: 'Desligado',
@@ -2233,6 +2242,7 @@ const en: Messages = {
     staleApprovalTitle: 'The spec changed since approval — re-approve before starting',
     approvedAuto: 'Approved without human review',
     acceptedAuto: 'Accepted without human review',
+    acceptedRisk: 'Accepted as low risk',
     childInDevTitle:
       'a child is already in development; plan and start the epic',
     pendingClarify: (n: number) => `❓ ${n}`,
@@ -2649,6 +2659,7 @@ const en: Messages = {
     epicLabel: 'Epic:',
     deliveryLabel: 'Delivery:',
     acceptedOnMerge: (n: string) => `Accepted on merge · PR #${n}`,
+    acceptedRisk: (m: string) => `Accepted as low risk: ${m}`,
     issueLabel: 'Public issue:',
     supersededBy: (id: string) => `Superseded by ${id}`,
     edit: 'Edit',
@@ -3330,6 +3341,11 @@ const en: Messages = {
       optional: 'optional',
       none: 'none',
       summary: (n: number, names: string) => `${n} ${n === 1 ? 'tracker' : 'trackers'}: ${names}`,
+    },
+    list: {
+      none: 'none',
+      summary: (n: number, items: string) => `${n} ${n === 1 ? 'item' : 'items'}: ${items}`,
+      hint: 'One per line. Empty saves an empty list; Reset goes back to the default.',
     },
     cancel: 'Cancel',
     stateOn: 'On',

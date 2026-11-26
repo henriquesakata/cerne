@@ -1814,3 +1814,60 @@ describe('Settings — gates de aprovação e de aceite (F-0515)', () => {
     expect(within(r).getByRole('button', { name: 'Change' })).toBeInTheDocument()
   })
 })
+
+// F-0516 crit. 12 e 14: o valor «Por risco» do aceite, a descrição com as três
+// condições e as duas listas que sempre pedem uma pessoa, nos dois idiomas.
+// Títulos e descrições saem do registro Go, como o servidor os manda.
+describe('Settings — aceite por risco e as listas sensíveis (F-0516)', () => {
+  const goSrc = readFileSync('../internal/project/settings.go', 'utf8')
+  const reg = (id: string) => {
+    const m = /Title: "([^"]*)"[\s\S]*?Description: ("(?:[^"\\]|\\.)*")/.exec(goSrc.slice(goSrc.indexOf(`ID: "${id}"`)))!
+    return { title: m[1], description: JSON.parse(m[2]) as string }
+  }
+  const load = () =>
+    fetchSettings.mockResolvedValue(
+      fixture({
+        settings: [
+          key({ id: 'gates.accept', ...reg('gates.accept'), type: 'string', default: 'human', enum: ['human', 'merge', 'auto', 'risk'], scopes: ['project'], value: 'human', human_only: true }),
+          key({ id: 'gates.risk_human_paths', ...reg('gates.risk_human_paths'), type: 'list', default: ['go.mod', '.github/workflows/**'], scopes: ['project'], value: ['go.mod', '.github/workflows/**'], human_only: true }),
+          key({ id: 'gates.risk_human_facets', ...reg('gates.risk_human_facets'), type: 'list', default: ['auth', 'infra', 'data'], scopes: ['project'], value: ['auth', 'infra', 'data'], human_only: true }),
+        ],
+      }),
+    )
+
+  beforeEach(() => {
+    window.location.hash = '#/settings'
+    putSetting.mockResolvedValue(fixture())
+  })
+
+  for (const [lang, acceptName, risk, conditions, pathsName, facetsName] of [
+    ['pt-BR', 'Aceite da entrega', 'Por risco', ['Por risco (risk)', 'não toca em caminho nem em faceta sensível', 'o Gauntlet terminou em vitória', 'todo critério tem teste'], 'Caminhos que sempre pedem uma pessoa', 'Facetas que sempre pedem uma pessoa'],
+    ['en', 'Delivery acceptance', 'By risk', ['By risk (risk)', 'touches no sensitive path or facet', 'its Gauntlet ended in a win', 'every criterion has a test'], 'Paths that always need a person', 'Facets that always need a person'],
+  ] as const) {
+    it(`${lang}: o valor, as três condições e as duas listas`, async () => {
+      localStorage.setItem('cerne-lang', lang)
+      load()
+      render(
+        <I18nProvider>
+          <Settings />
+        </I18nProvider>,
+      )
+      const acc = await screen.findByRole('listitem', { name: acceptName })
+      expect(within(acc).getAllByRole('option').map((o) => o.textContent)).toContain(risk)
+      for (const c of conditions) expect(acc).toHaveTextContent(c)
+      const paths = screen.getByRole('listitem', { name: pathsName })
+      expect(within(paths).getByRole('textbox')).toHaveValue('go.mod\n.github/workflows/**')
+      const facets = screen.getByRole('listitem', { name: facetsName })
+      expect(within(facets).getByRole('textbox')).toHaveValue('auth\ninfra\ndata')
+    })
+  }
+
+  it('Salvar envia a lista, uma linha por item, sem as linhas vazias', async () => {
+    load()
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Facetas que sempre pedem uma pessoa' })
+    fireEvent.change(within(r).getByRole('textbox'), { target: { value: 'auth\n\n billing \n' } })
+    fireEvent.click(within(r).getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(putSetting).toHaveBeenCalledWith('gates.risk_human_facets', 'project', ['auth', 'billing']))
+  })
+})

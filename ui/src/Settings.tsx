@@ -662,6 +662,7 @@ function SettingRow({
   const effId = `${uid}-eff`
   const infoId = `${uid}-info`
   const askId = `${uid}-ask`
+  const listHintId = `${uid}-listhint`
   // The value a human-only toggle asks to write; undefined = no question open.
   const [pending, setPending] = useState<unknown>(undefined)
   const confirming = pending !== undefined
@@ -690,7 +691,9 @@ function SettingRow({
   const fmt = (v: unknown) =>
     s.type === 'records'
       ? recordsSummary(s, v, ts)
-      : s.enum?.length && typeof v === 'string'
+      : s.type === 'list'
+        ? listSummary(v, ts)
+        : s.enum?.length && typeof v === 'string'
         ? v === ''
           ? ts.emptyEnum
           : (ts.options[`${s.id}:${v}`] ?? ts.options[v] ?? v)
@@ -900,6 +903,39 @@ function SettingRow({
               </p>
             )}
           </form>
+        ) : s.type === 'list' ? (
+          // A list key (F-0516): one item per line; Save sends the non-blank
+          // lines, the server is the validator.
+          <form
+            className="settings-string settings-list"
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (busy) return
+              const items = String(new FormData(e.currentTarget).get('value') ?? '')
+                .split('\n')
+                .map((x) => x.trim())
+                .filter((x) => x !== '')
+              onWrite(ws, () => putSetting(s.id, ws, items))
+            }}
+          >
+            <textarea
+              key={`${ws}:${landed}:${JSON.stringify(current)}`}
+              id={controlId(s.id)}
+              name="value"
+              className="settings-text"
+              rows={Math.min(12, Math.max(3, (Array.isArray(current) ? current.length : 0) + 1))}
+              defaultValue={Array.isArray(current) ? current.join('\n') : ''}
+              aria-labelledby={titleId}
+              aria-describedby={`${described} ${listHintId}`}
+              aria-disabled={lock}
+            />
+            <p id={listHintId} className="settings-note">
+              {ts.list.hint}
+            </p>
+            <button type="submit" aria-describedby={titleId} aria-disabled={lock}>
+              {t.common.save}
+            </button>
+          </form>
         ) : s.type === 'records' && s.fields?.length ? (
           // Remounts on another scope, another value or a landed write, so the
           // draft always starts from what is stored.
@@ -1064,6 +1100,14 @@ function recordsSummary(s: ResolvedSetting, v: unknown, ts: Texts): string {
   if (rows.length === 0) return ts.records.none
   const key = s.fields?.[0]?.id ?? ''
   return ts.records.summary(rows.length, rows.map((r) => r[key] ?? '').join(', '))
+}
+
+// listSummary says a list value in one line (F-0516): how many, and the first
+// five; the field below has them all.
+function listSummary(v: unknown, ts: Texts): string {
+  const items = Array.isArray(v) ? v.map(String) : []
+  if (items.length === 0) return ts.list.none
+  return ts.list.summary(items.length, items.length > 5 ? `${items.slice(0, 5).join(', ')}, …` : items.join(', '))
 }
 
 // RecordsEditor edits a records key (F-0449) as a table: one row per record,
