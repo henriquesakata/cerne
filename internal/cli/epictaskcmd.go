@@ -116,7 +116,8 @@ func runFeatureLikeNew(cmd *cobra.Command, dir string, args []string, module, pa
 	if cmd.Flags().Changed("on-behalf") && strings.TrimSpace(onBehalf) == "" {
 		return app.ErrOnBehalfEmpty
 	}
-	if err := checkOriginChoice(cmd, onBehalf); err != nil {
+	onBehalf, err := checkOriginChoice(cmd, onBehalf)
+	if err != nil {
 		return err
 	}
 	body, err := readOptionalBody(cmd, file)

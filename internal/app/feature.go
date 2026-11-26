@@ -1354,12 +1354,20 @@ func SetFeatureOrigin(repoDir, projDir, id, origin, onBehalf string) (store.Feat
 	return f, nil
 }
 
+// AgentOrigin, passed where a create function takes the --on-behalf quote,
+// records origin agent in any shell (an explicit --origin agent, B-0086). A
+// quote is human text and never equals it.
+const AgentOrigin = "\x00origin:agent"
+
 // resolveOrigin is the one origin rule for every creation path (T-0005): an
 // agent session without --on-behalf asked for it itself ("agent"); anything
 // else — a human at the terminal, or an agent relaying a quoted human request —
 // is "human". A blank quote is refused before any write. Fail-open like F-0131:
 // the quote is auditable, not authenticated.
 func resolveOrigin(onBehalf string) (origin, quote string, err error) {
+	if onBehalf == AgentOrigin {
+		return "agent", "", nil
+	}
 	quote = strings.TrimSpace(onBehalf)
 	if onBehalf != "" && quote == "" {
 		return "", "", ErrOnBehalfEmpty

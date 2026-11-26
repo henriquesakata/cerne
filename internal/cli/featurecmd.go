@@ -95,10 +95,18 @@ func addOriginFlag(cmd *cobra.Command) {
 // checkOriginChoice is app.CheckOriginChoice with the Backlog chat's two
 // channels exempt: the verb executor stamps CERNE_ORIGIN=chat, the claude-cli
 // provider stamps llm.DenyLifecycleEnv. A human is in that conversation.
-func checkOriginChoice(cmd *cobra.Command, onBehalf string) error {
+// It returns the value to hand the create function: an explicit --origin agent
+// becomes app.AgentOrigin, so the card is born agent in any shell.
+func checkOriginChoice(cmd *cobra.Command, onBehalf string) (string, error) {
 	v, _ := cmd.Flags().GetString("origin")
-	_, deny := os.LookupEnv(llm.DenyLifecycleEnv)
-	return app.CheckOriginChoice(onBehalf, v, os.Getenv("CERNE_ORIGIN") == "chat" || deny)
+	chat := os.Getenv("CERNE_ORIGIN") == "chat" || os.Getenv(llm.DenyLifecycleEnv) != ""
+	if err := app.CheckOriginChoice(onBehalf, v, chat); err != nil {
+		return "", err
+	}
+	if v == "agent" {
+		return app.AgentOrigin, nil
+	}
+	return onBehalf, nil
 }
 
 func runFeatureNew(cmd *cobra.Command, dir string, args []string, module, parent, fixes, facet, component, file, context string, force bool, owner, priority, onBehalf, capability string) error {

@@ -18,6 +18,21 @@ func TestCreateFromChatKeepsWorking(t *testing.T) {
 	}
 }
 
+// B-0086 (review): only a non-empty CERNE_DENY_LIFECYCLE is the chat stamp; an
+// empty one (an exported-but-blank variable) exempts nothing.
+func TestEmptyDenyLifecycleDoesNotExempt(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	t.Setenv("CERNE_ACTOR", "agent")
+	t.Setenv(llm.DenyLifecycleEnv, "")
+	_, err := execCerne(t, "feature", "new", "Blank deny", "--context", "ctx", "--dir", projDir)
+	if !errors.Is(err, app.ErrOriginChoiceRequired) {
+		t.Fatalf("err = %v, want ErrOriginChoiceRequired", err)
+	}
+	if cards, _ := store.LoadAllFeatures(repoDir); len(cards) != 0 {
+		t.Fatalf("refused creation wrote %d cards", len(cards))
+	}
+}
+
 // createFromChat is one chat channel: the verb executor stamps CERNE_ORIGIN=chat,
 // the claude-cli provider stamps CERNE_DENY_LIFECYCLE=1.
 func createFromChat(t *testing.T, env string) {
@@ -59,6 +74,8 @@ func TestCreateRequiresOriginChoice(t *testing.T) {
 		{"agent, both", "agent", []string{"--on-behalf", "o dono pediu", "--origin", "agent"}, app.ErrOriginChoiceBoth, ""},
 		{"agent, origin human", "agent", []string{"--origin", "human"}, app.ErrOriginChoiceRequired, ""},
 		{"human, no flag", "", nil, nil, "human"},
+		// B-0086 (review): an explicit --origin agent records agent in any shell.
+		{"human, origin agent", "", []string{"--origin", "agent"}, nil, "agent"},
 	}
 	for _, c := range commands {
 		for _, s := range scenarios {
