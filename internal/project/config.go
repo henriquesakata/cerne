@@ -342,9 +342,9 @@ var defaultRiskHumanPaths = []string{
 	".github/workflows/**", ".github/actions/**", ".gitlab-ci.yml", ".gitlab/**", ".gitea/workflows/**", ".forgejo/workflows/**",
 	"go.mod", "go.sum", "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock",
 	"Cargo.toml", "Cargo.lock", "pyproject.toml", "poetry.lock", "requirements*.txt", "Gemfile*",
-	"**/migrations/**", "db/migrate/**",
+	"**/migrations/**", "**/db/migrate/**",
 	".cernerc",
-	".claude/**", ".cursor/**", ".codex/**", ".gemini/**", ".github/copilot-instructions.md",
+	"**/.claude/**", "**/.cursor/**", "**/.codex/**", "**/.gemini/**", ".github/copilot-instructions.md",
 	".github/hooks/**", ".github/instructions/**", ".github/skills/**",
 	".mcp.json", "AGENTS.md", "CLAUDE.md", "GEMINI.md",
 }
