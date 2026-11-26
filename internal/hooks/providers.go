@@ -381,26 +381,31 @@ func copilotMCPServer() map[string]any {
 	return map[string]any{"type": "stdio", "command": "cerne", "args": []any{"mcp"}, "tools": tools}
 }
 
-// copilotMCP merges the cerne server into the root .mcp.json, keeping every
-// other server and key; it returns the result and the JSON block for the
-// repository settings (the cloud agent's only MCP source). A different cerne
-// entry or an unreadable file stays untouched, reported skipped.
+// copilotMCP merges the cerne server into the root .mcp.json; it returns the
+// result and the JSON block for the repository settings (the cloud agent's only
+// MCP source).
 func copilotMCP(projDir string) (Result, string) {
-	asset := "copilot: .mcp.json"
 	server := copilotMCPServer()
 	blockRaw, _ := marshalIndentNoHTML(map[string]any{"mcpServers": map[string]any{"cerne": server}}, "", "  ")
-	block := string(blockRaw)
-	path := filepath.Join(projDir, ".mcp.json")
-	skip := func(note string) (Result, string) {
-		return Result{Asset: asset, Status: StatusSkipped, Note: note}, block
+	r := mergeMCPServer("copilot: .mcp.json", filepath.Join(projDir, ".mcp.json"), server, "add the read-only cerne server by hand (block below)")
+	if r.Status == StatusCreated || r.Status == StatusUpdated {
+		r.Note = "read-only server, also read by Claude Code from this file"
 	}
+	return r, string(blockRaw)
+}
 
+// mergeMCPServer merges server as mcpServers.cerne into the JSON file at path,
+// keeping every other server and key (Copilot F-0444, Cursor F-0512). A
+// different cerne entry or an unreadable file stays untouched, reported
+// skipped with manual, the step to do by hand.
+func mergeMCPServer(asset, path string, server map[string]any, manual string) Result {
+	skip := func(note string) Result { return Result{Asset: asset, Status: StatusSkipped, Note: note} }
 	root := map[string]any{}
 	raw, err := os.ReadFile(path)
 	exists := err == nil
 	if exists {
 		if json.Unmarshal(raw, &root) != nil || root == nil {
-			return skip("existing file is not valid JSON — add the cerne server by hand (block below)")
+			return skip("existing file is not valid JSON — " + manual)
 		}
 	} else if !os.IsNotExist(err) {
 		return skip("cannot read: " + err.Error())
@@ -408,7 +413,7 @@ func copilotMCP(projDir string) (Result, string) {
 	servers, _ := root["mcpServers"].(map[string]any)
 	if servers == nil {
 		if _, has := root["mcpServers"]; has {
-			return skip(`existing "mcpServers" key has an unexpected type — add the cerne server by hand (block below)`)
+			return skip(`existing "mcpServers" key has an unexpected type — ` + manual)
 		}
 		servers = map[string]any{}
 		root["mcpServers"] = servers
@@ -419,20 +424,23 @@ func copilotMCP(projDir string) (Result, string) {
 		wantRaw, _ := json.Marshal(server)
 		_ = json.Unmarshal(wantRaw, &want)
 		if reflect.DeepEqual(cur, want) {
-			return Result{Asset: asset, Status: StatusUnchanged}, block
+			return Result{Asset: asset, Status: StatusUnchanged}
 		}
-		return skip(`a different "cerne" server is already declared — left as is; the read-only one is in the block below`)
+		return skip(`a different "cerne" server is already declared — left as is; ` + manual)
 	}
 	servers["cerne"] = server
 	out, err := marshalIndentNoHTML(root, "", "  ")
 	if err != nil {
 		return skip("cannot render config: " + err.Error())
 	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return skip("cannot create directory: " + err.Error())
+	}
 	if err := writeFileAtomic(path, append(out, '\n'), 0o644); err != nil {
 		return skip("cannot write: " + err.Error())
 	}
 	if exists {
-		return Result{Asset: asset, Status: StatusUpdated, Note: "read-only server, also read by Claude Code from this file"}, block
+		return Result{Asset: asset, Status: StatusUpdated}
 	}
-	return Result{Asset: asset, Status: StatusCreated, Note: "read-only server, also read by Claude Code from this file"}, block
+	return Result{Asset: asset, Status: StatusCreated}
 }
