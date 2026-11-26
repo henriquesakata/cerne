@@ -185,3 +185,42 @@ func TestNextStepRiskGate(t *testing.T) {
 		t.Errorf("NextStep ran git: %s", raw)
 	}
 }
+
+// TestRiskRevertNeedsANewRound: a card accepted as low risk, reverted and
+// completed again with no new Gauntlet round is held — the win it carries was
+// judged before the revert; a round recorded after the revert lets it through.
+// F-0516 crit. 4
+func TestRiskRevertNeedsANewRound(t *testing.T) {
+	asActor(t, "agent")
+	repoDir, projDir, _ := newFeatureBackend(t)
+	riskDelivery(t, repoDir, projDir, store.Feature{ID: "F-0001", Facets: []string{"code"}}, "vitória", cleanChange())
+	step := func(action domain.Action, reason string) TransitionOutcome {
+		t.Helper()
+		out, err := TransitionFeature(repoDir, projDir, "F-0001", action, "", reason, nil)
+		if err != nil {
+			t.Fatalf("%s: %v", action, err)
+		}
+		return out
+	}
+	if out := step(domain.ActionComplete, ""); out.To != domain.StateDone {
+		t.Fatalf("first complete = %s, want done by risk", out.To)
+	}
+	step(domain.ActionRevert, "found a problem")
+	step(domain.ActionRevert, "back to development")
+	out := step(domain.ActionComplete, "")
+	if out.To != domain.StateImplemented || out.Risk == nil || out.Risk.Gauntlet.Holds || !strings.Contains(out.Risk.Gauntlet.Found, "revert") {
+		t.Fatalf("complete after the revert = %s, gauntlet %+v; want held: the win predates the revert", out.To, out.Risk)
+	}
+	if got := lastEntityEvent(t, repoDir, "F-0001", "feature.completed").Payload["risk_round"]; got != "1" {
+		t.Errorf("risk_round = %q, want 1", got)
+	}
+
+	step(domain.ActionRevert, "a new round")
+	riskWrite(t, repoDir, filepath.Join("content", "features", "F-0001", "result.md"), riskResult("vitória")+"Rodada 2 — vitória: \"de novo\"\n")
+	if _, err := gitback.CommitAndPush(repoDir, "round 2"); err != nil {
+		t.Fatal(err)
+	}
+	if out := step(domain.ActionComplete, ""); out.To != domain.StateDone {
+		t.Fatalf("complete with a round after the revert = %s (%+v), want done by risk", out.To, out.Risk)
+	}
+}

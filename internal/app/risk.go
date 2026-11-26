@@ -3,8 +3,10 @@ package app
 import (
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/henriquesakata/cerne/internal/domain"
@@ -29,6 +31,7 @@ type RiskAssessment struct {
 	Paths                 []string // the changed files a sensitive glob matched
 	Facets                []string // the card's facets on the sensitive list
 	Verdict               string   // the Gauntlet's last outcome: win, tie, loss, exempt, off or none
+	Round                 int      // the number of the Gauntlet's highest round; 0 with none or an unnumbered one
 	Tested                string   // "<criteria with a test>/<criteria>"
 }
 
@@ -64,7 +67,7 @@ func (r RiskAssessment) payload() map[string]string {
 	return map[string]string{
 		"risk": risk, "risk_area": r.Area.Found, "risk_gauntlet": r.Gauntlet.Found, "risk_tests": r.Tests.Found,
 		"risk_paths": strings.Join(r.Paths, ", "), "risk_facets": strings.Join(r.Facets, ", "),
-		"risk_verdict": r.Verdict, "risk_criteria_tested": r.Tested,
+		"risk_verdict": r.Verdict, "risk_round": strconv.Itoa(r.Round), "risk_criteria_tested": r.Tested,
 	}
 }
 
@@ -79,8 +82,40 @@ func assessRisk(repoDir, projDir string, f store.Feature) RiskAssessment {
 	r.Area, r.Paths, r.Facets = riskArea(projDir, cfg.PinBranch, f, cfg.Gates)
 	result, _ := os.ReadFile(FeatureDocPath(repoDir, f.ID, "result.md"))
 	r.Gauntlet, r.Verdict = riskGauntlet(result, cfg.Gates.GauntletEnabled())
+	if rounds := lint.GauntletRoundList(result); len(rounds) > 0 {
+		r.Round = rounds[len(rounds)-1].N
+	}
+	if prev, reverted := revertedRiskRound(repoDir, f.ID); r.Gauntlet.Holds && reverted && r.Round <= prev {
+		r.Gauntlet = RiskCheck{Found: fmt.Sprintf("reverted after its risk accept on round %d: the win predates the revert, record a new Gauntlet round", prev)}
+	}
 	r.Tests, r.Tested = riskTests(repoDir, projDir, f)
 	return r
+}
+
+// revertedRiskRound reports whether feature id was reverted after its last
+// accept as low risk and, if so, the round that accept counted; an accept
+// that recorded none counts as the highest, so nothing passes it.
+func revertedRiskRound(repoDir, id string) (round int, reverted bool) {
+	evs, err := store.ReadEvents(repoDir)
+	if err != nil {
+		return math.MaxInt, true // in doubt, hold
+	}
+	accepted := -1
+	for i, ev := range evs {
+		if ev.EntityID == id && ev.Type == eventTypes[domain.ActionAccept] && ev.Payload["via"] == project.GateRisk {
+			accepted = i
+		}
+	}
+	if accepted < 0 || !slices.ContainsFunc(evs[accepted+1:], func(ev domain.Event) bool {
+		return ev.EntityID == id && ev.Type == eventTypes[domain.ActionRevert]
+	}) {
+		return 0, false
+	}
+	n, err := strconv.Atoi(evs[accepted].Payload["risk_round"])
+	if err != nil {
+		return math.MaxInt, true
+	}
+	return n, true
 }
 
 // riskArea is the first condition (crit. 3): the delivery touches no
