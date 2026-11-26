@@ -220,9 +220,9 @@ func resolveRoomSession(flag, nick, projectID, roomID string) (string, error) {
 
 // warnRoomSessionVar: join just stored a session, but a CERNE_ROOM_SESSION
 // inherited from the shell still wins over a bare room command.
-func warnRoomSessionVar(w io.Writer, nick string) {
+func warnRoomSessionVar(w io.Writer, roomID, nick string) {
 	if os.Getenv("CERNE_ROOM_SESSION") != "" {
-		fmt.Fprintf(w, "warning: CERNE_ROOM_SESSION is set in this environment and overrides bare room commands; pass --nick %s (or unset the variable) to use the session just stored\n", nick)
+		fmt.Fprintf(w, "warning: CERNE_ROOM_SESSION is set in this environment and overrides bare room commands; pass --nick %s (or unset the variable) to use the session just stored; a bare 'cerne room leave' would revoke the variable's session, so use 'cerne room leave %s --nick %s'\n", nick, roomID, nick)
 	}
 }
 
