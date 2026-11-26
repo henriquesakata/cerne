@@ -307,13 +307,17 @@ func newRoomCloseCmd() *cobra.Command {
 				if listErr != nil {
 					return listErr
 				}
-				var reviewed time.Time
 				for _, r := range rooms {
-					if r.ID == args[0] && r.MinutesDraft != nil {
-						draft, reviewed = r.MinutesDraft, r.MinutesDraft.UpdatedAt
+					if r.ID == args[0] {
+						draft = r.MinutesDraft
 					}
 				}
-				rm, err = c.closeWithDraft(cmd.Context(), args[0], facilitator, reviewed, allowOpenItems)
+				// No draft when read: refuse here, so a draft saved before the
+				// close call can never close the room unreviewed.
+				if draft == nil {
+					return fmt.Errorf("%w — save one with 'cerne room minutes draft %s --minutes <path|-|{...}>'", room.ErrNoMinutesDraft, args[0])
+				}
+				rm, err = c.closeWithDraft(cmd.Context(), args[0], facilitator, draft.UpdatedAt, allowOpenItems)
 			} else {
 				if minutesPath == "" {
 					return errors.New("--minutes <path|-|{...}> or --use-draft is required (JSON; run 'cerne room minutes template' for a blank one)")

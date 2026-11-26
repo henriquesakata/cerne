@@ -5,6 +5,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -40,3 +45,31 @@ func TestRoomCloseWithDraftSendsTheReviewedDraft(t *testing.T) {
 	}
 }
 
+// T-0022 crit. 2
+// E-0006 crit. 11
+func TestRoomCloseUseDraftWithNoDraftNeverCallsClose(t *testing.T) {
+	var closes atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.Path, "/close") {
+			closes.Add(1) // a draft saved after the list would close here
+			_, _ = w.Write([]byte(`{"id":"R1"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"rooms":[{"id":"R1","topic":"t","participants":[],"active_participants":[]}]}`))
+	}))
+	defer srv.Close()
+	u, _ := url.Parse(srv.URL)
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".cernerc"), []byte("project_id = \"proj-no-draft\"\nbackend = \"/dev/null\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := runRoom(t, "close", "R1", "--use-draft", "--facilitator", "fac", "--dir", dir, "--port", u.Port())
+	if err == nil || !strings.Contains(err.Error(), "no minutes draft") {
+		t.Fatalf("close --use-draft with no draft err = %v, want the no-draft refusal", err)
+	}
+	if n := closes.Load(); n != 0 {
+		t.Fatalf("close was called %d time(s), want none: the room had no draft when it was read", n)
+	}
+}
