@@ -48,7 +48,7 @@ func TestApproveReadinessGoldenPath(t *testing.T) {
 	const bar = "Barra: cerne push --dry-run — ensaio de operação com gate"
 
 	t.Log("stage 1: register with a spec that names no bar")
-	out := mustCerne(t, "feature", "new", "Carrinho persistente", "--file", specFile(problem), "--facet", "code", "--dir", proj)
+	out := mustCerne(t, "feature", "new", "Carrinho persistente", "--file", specFile(problem), "--origin", "agent", "--facet", "code", "--dir", proj)
 	if !strings.Contains(out, "Approve readiness: not approvable — bar-missing") {
 		t.Fatalf("feature new output lacks the readiness:\n%s", out)
 	}

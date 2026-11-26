@@ -589,7 +589,7 @@ func TestFeatureFixesFlag(t *testing.T) {
 func TestFeatureSetOrigin(t *testing.T) {
 	projDir, _, repoDir := setupProject(t)
 	t.Setenv("CERNE_ACTOR", "agent")
-	if out, err := execCerne(t, "feature", "new", "Feat", "--context", "ctx de teste", "--dir", projDir); err != nil {
+	if out, err := execCerne(t, "feature", "new", "Feat", "--context", "ctx de teste", "--origin", "agent", "--dir", projDir); err != nil {
 		t.Fatalf("feature new: %v\n%s", err, out)
 	}
 	if f, _ := store.LoadFeature(repoDir, "F-0001"); f.Origin != "agent" {

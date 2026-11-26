@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -10,6 +11,7 @@ import (
 
 	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/lint"
+	"github.com/henriquesakata/cerne/internal/llm"
 	"github.com/henriquesakata/cerne/internal/verbs"
 )
 
@@ -76,12 +78,36 @@ func newFeatureNewCmd(dir *string) *cobra.Command {
 	cmd.Flags().StringVar(&owner, "owner", "", "responsible handle (free text, F-0204)")
 	cmd.Flags().StringVar(&priority, "priority", "", "priority (closed set: p0,p1,p2,p3, F-0204)")
 	cmd.Flags().StringVar(&onBehalf, "on-behalf", "", onBehalfHelp)
+	addOriginFlag(cmd)
 	cmd.Flags().StringVar(&capability, "capability", "", "capability nodes to link at birth (CSV of C- ids; validated before anything is written, one commit)")
 	return verbs.MarkChatTool(cmd)
 }
 
 // onBehalfHelp is the --on-behalf flag text shared by feature/epic/task new (T-0005).
 const onBehalfHelp = "quote of the human's request when an agent creates this for them: records origin human and the quote on the creation event"
+
+// addOriginFlag registers --origin on the four `new` commands (B-0086): the
+// agent's own idea, as opposed to --on-behalf with a human's words.
+func addOriginFlag(cmd *cobra.Command) {
+	cmd.Flags().String("origin", "", "set to agent when the idea is yours; in an agent shell a new card needs this or --on-behalf, not both (B-0086)")
+}
+
+// checkOriginChoice is app.CheckOriginChoice with the Backlog chat's two
+// channels exempt: the verb executor stamps CERNE_ORIGIN=chat, the claude-cli
+// provider stamps llm.DenyLifecycleEnv. A human is in that conversation.
+// It returns the value to hand the create function: an explicit --origin agent
+// becomes app.AgentOrigin, so the card is born agent in any shell.
+func checkOriginChoice(cmd *cobra.Command, onBehalf string) (string, error) {
+	v, _ := cmd.Flags().GetString("origin")
+	chat := os.Getenv("CERNE_ORIGIN") == "chat" || os.Getenv(llm.DenyLifecycleEnv) != ""
+	if err := app.CheckOriginChoice(onBehalf, v, chat); err != nil {
+		return "", err
+	}
+	if v == "agent" {
+		return app.AgentOrigin, nil
+	}
+	return onBehalf, nil
+}
 
 func runFeatureNew(cmd *cobra.Command, dir string, args []string, module, parent, fixes, facet, component, file, context string, force bool, owner, priority, onBehalf, capability string) error {
 	return runFeatureLikeNew(cmd, dir, args, module, parent, facet, component, file, context, force, owner, priority, onBehalf, capability, "F", fixes)
