@@ -363,6 +363,21 @@ func ListModels(ctx context.Context, cfg project.LLMConfig) ([]models.Entry, err
 	return out, nil
 }
 
+// anthropicUserContent is the content of the turn's user message: the prompt
+// as a plain string, or — when the turn has attached images (F-0522) — one
+// base64 image block per file followed by the prompt as a text block.
+func anthropicUserContent(ctx context.Context, prompt string) (any, error) {
+	imgs, err := loadImages(ctx)
+	if err != nil || len(imgs) == 0 {
+		return prompt, err
+	}
+	blocks := make([]any, 0, len(imgs)+1)
+	for _, img := range imgs {
+		blocks = append(blocks, map[string]any{"type": "image", "source": map[string]string{"type": "base64", "media_type": img.mediaType, "data": img.base64}})
+	}
+	return append(blocks, map[string]string{"type": "text", "text": prompt}), nil
+}
+
 // Complete performs one Messages API call and returns the concatenated text of
 // every "text"-type content block.
 func (p *httpProvider) Complete(ctx context.Context, prompt string) (string, error) {
@@ -373,10 +388,14 @@ func (p *httpProvider) Complete(ctx context.Context, prompt string) (string, err
 // CompleteUsage is Complete that also returns the tokens the response reports
 // (F-0502); the usage travels with the call, never in the shared provider.
 func (p *httpProvider) CompleteUsage(ctx context.Context, prompt string) (string, Usage, error) {
+	content, err := anthropicUserContent(ctx, prompt)
+	if err != nil {
+		return "", Usage{}, err
+	}
 	resp, err := p.post(ctx, messagesRequest{
 		Model:     p.model,
 		MaxTokens: p.maxTokens,
-		Messages:  []messagesMember{{Role: "user", Content: prompt}},
+		Messages:  []messagesMember{{Role: "user", Content: content}},
 	})
 	if err != nil {
 		return "", Usage{}, err
@@ -414,7 +433,11 @@ func (p *httpProvider) CompleteTools(ctx context.Context, prompt string, tools [
 	for i, t := range tools {
 		defs[i] = anthropicTool{Name: t.Name, Description: t.Description, InputSchema: t.Schema}
 	}
-	msgs := []messagesMember{{Role: "user", Content: prompt}}
+	content, err := anthropicUserContent(ctx, prompt)
+	if err != nil {
+		return "", err
+	}
+	msgs := []messagesMember{{Role: "user", Content: content}}
 	for range maxToolRounds {
 		req := messagesRequest{Model: p.model, MaxTokens: p.maxTokens, Messages: msgs, Tools: defs}
 		if len(defs) > 0 {
@@ -484,11 +507,15 @@ type sseEvent struct {
 // onDelta. The return is the full concatenated text. An onDelta error aborts
 // the read and is returned as-is.
 func (p *httpProvider) Stream(ctx context.Context, prompt string, onDelta func(string) error) (string, error) {
+	content, err := anthropicUserContent(ctx, prompt)
+	if err != nil {
+		return "", err
+	}
 	resp, err := p.post(ctx, messagesRequest{
 		Model:     p.model,
 		MaxTokens: p.maxTokens,
 		Stream:    true,
-		Messages:  []messagesMember{{Role: "user", Content: prompt}},
+		Messages:  []messagesMember{{Role: "user", Content: content}},
 	})
 	if err != nil {
 		return "", err

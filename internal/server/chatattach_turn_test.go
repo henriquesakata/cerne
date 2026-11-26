@@ -93,7 +93,7 @@ func TestChatTurnDropsExpiredAttachment(t *testing.T) {
 // F-0520 crit. 8: a turn with attachments on a mode that takes no image is
 // refused instead of answered blind.
 func TestChatTurnRefusesImagesOnModeWithoutThem(t *testing.T) {
-	for _, mode := range []string{"byo-key", llm.ModeGeminiCLI, llm.ModeCursorCLI} {
+	for _, mode := range []string{llm.ModeGeminiCLI, llm.ModeCursorCLI} { // F-0522 crit. 7
 		h, spy, id, _, _, _ := attachTurn(t, mode)
 		rec := postChat(h, chatBody("conv-1", id))
 		if rec.Code != http.StatusUnprocessableEntity || spy.calls != 0 {
@@ -140,17 +140,17 @@ func TestChatTurnRefusesBadAttachments(t *testing.T) {
 
 // F-0520 crit. 8: the UI learns which reachable providers take images.
 func TestLLMConfigListsImageProviders(t *testing.T) {
-	for mode, want := range map[string][]string{llm.ModeClaudeCLI: {"anthropic"}, "byo-key": nil} {
+	for mode, want := range map[string][]string{llm.ModeClaudeCLI: {"anthropic"}, llm.ModeGeminiCLI: nil} {
 		cfg := project.LLMConfig{Mode: mode}
 		got := imageProviders(cfg, llm.ConfiguredProviders(cfg), false)
 		if !slices.Equal(got, want) {
 			t.Errorf("mode %s: image providers = %v, want %v", mode, got, want)
 		}
 	}
-	// A CLI found on PATH beside a byo-key project takes images; the project's
-	// own vendor, reached by API key, does not.
-	if got := imageProviders(project.LLMConfig{Mode: "byo-key", Provider: "anthropic"}, []string{"anthropic", "openai", "gemini"}, false); !slices.Equal(got, []string{"openai"}) {
-		t.Errorf("image providers = %v, want [openai]", got)
+	// F-0522 crit. 4: the project's own vendor, reached by API key, takes
+	// images, and so does a CLI with an image input found on PATH; gemini not.
+	if got := imageProviders(project.LLMConfig{Mode: "byo-key", Provider: "anthropic"}, []string{"anthropic", "openai", "gemini"}, false); !slices.Equal(got, []string{"anthropic", "openai"}) {
+		t.Errorf("image providers = %v, want [anthropic openai]", got)
 	}
 	if got := imageProviders(project.LLMConfig{Mode: llm.ModeClaudeCLI}, []string{"anthropic"}, true); len(got) != 0 {
 		t.Errorf("remote image providers = %v, want none", got)
@@ -212,5 +212,18 @@ func TestChatTurnCapsImagesAcrossTheConversation(t *testing.T) {
 	}
 	if strings.Contains(strings.Join(spy.images, " ")+spy.prompt, first) {
 		t.Fatalf("the oldest image must be left out of the turn")
+	}
+}
+
+// F-0522 crit. 4: a byo-key turn takes the message with its attachment and
+// hands the image to the provider.
+func TestChatTurnByoKeyCarriesAttachedImages(t *testing.T) {
+	h, spy, id, _, _, _ := attachTurn(t, "byo-key")
+	rec := postChat(h, chatBody("conv-1", id))
+	if rec.Code != http.StatusOK || spy.calls != 1 {
+		t.Fatalf("status = %d, provider calls = %d, want 200 and one call; body: %s", rec.Code, spy.calls, rec.Body.String())
+	}
+	if len(spy.images) != 1 || !strings.HasSuffix(spy.images[0], id) {
+		t.Fatalf("provider images = %v, want the attached one", spy.images)
 	}
 }
