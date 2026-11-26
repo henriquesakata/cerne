@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/store"
 )
 
 // Cursor runs the project's .claude hooks through its third-party import
@@ -397,5 +398,53 @@ func TestHookCursorSessionRecordFailOpen(t *testing.T) {
 	}
 	if got := boundTo(t, repoDir, cursorSess); got != "F-0425" {
 		t.Fatalf("unwritable record: bound id = %q, want F-0425 (the hook must go on)", got)
+	}
+}
+
+// TestPushRecordsCursorAuthor (F-0513 crit. 2): the whole path — Cursor's
+// sessionStart reaches the hooks, then its agent shell (CURSOR_AGENT=1, no
+// CERNE_SESSION, nothing declared) pushes the spec: the write names cursor
+// and grok-4.7. Once a second session on another model starts, the next push
+// names no model.
+func TestPushRecordsCursorAuthor(t *testing.T) {
+	projDir, _, repoDir, specPath := pulledProject(t)
+	for _, k := range []string{"CERNE_ACTOR", "CERNE_SESSION", "CERNE_PROVIDER", "CERNE_MODEL"} {
+		t.Setenv(k, "")
+	}
+	t.Setenv("CURSOR_AGENT", "1")
+	start := func(p map[string]any) {
+		t.Helper()
+		if out, err := execCerneStdin(t, payloadString(t, p), "hook", "session-context"); err != nil {
+			t.Fatalf("hook session-context: %v\noutput: %s", err, out)
+		}
+	}
+	push := func(body string) map[string]string {
+		t.Helper()
+		mustWrite(t, specPath, "---\ncerne_id: F-0001\n---\n\n# Parcelamento\n\n"+body+"\n")
+		if out, err := execCerne(t, "push", "--dir", projDir); err != nil {
+			t.Fatalf("push: %v\n%s", err, out)
+		}
+		evs, err := store.ReadEvents(repoDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var last map[string]string
+		for _, ev := range evs {
+			if ev.EntityID == "F-0001" && ev.Type == "feature.doc_edited" {
+				last = ev.Payload
+			}
+		}
+		return last
+	}
+
+	start(cursorFixture(t, "session-start.json", projDir))
+	if p := push("Dividir compras em parcelas, no Cursor."); p["provider"] != "cursor" || p["model"] != "grok-4.7" || p["source"] != "hook" {
+		t.Fatalf("one session: doc_edited = %v, want cursor/grok-4.7 from the hook", p)
+	}
+	other := cursorFixture(t, "session-start.json", projDir)
+	other["session_id"], other["conversation_id"], other["model_id"] = "other-sess", "other-sess", "gpt-6"
+	start(other)
+	if p := push("Dividir compras em parcelas, em duas sessões."); p["provider"] != "cursor" || p["model"] != "" || p["source"] != "hook" {
+		t.Fatalf("two sessions on two models: doc_edited = %v, want cursor with no model", p)
 	}
 }

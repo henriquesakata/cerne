@@ -39,7 +39,7 @@ func authorEnv(t *testing.T) (claudeRoot string) {
 	claudeRoot = t.TempDir()
 	t.Setenv("CLAUDE_CONFIG_DIR", claudeRoot)
 	t.Setenv("HOME", t.TempDir())
-	for _, k := range []string{"CERNE_ACTOR", "CERNE_SESSION", "CERNE_PROVIDER", "CERNE_MODEL", "CERNE_ORIGIN"} {
+	for _, k := range []string{"CERNE_ACTOR", "CERNE_SESSION", "CERNE_PROVIDER", "CERNE_MODEL", "CERNE_ORIGIN", "CURSOR_AGENT"} {
 		t.Setenv(k, "")
 	}
 	args := os.Args
@@ -205,5 +205,148 @@ func TestDocWriteMarksSession(t *testing.T) {
 	}
 	if len(marks) != 1 || marks[0].Session != "s-plan" || marks[0].Entity != "F-0001" || marks[0].Role != "plan" {
 		t.Fatalf("marks = %+v, want only s-plan wrote the plan of F-0001", marks)
+	}
+}
+
+// cursorProject is a project with a cache dir of its own and a live feature
+// F-0001 in its clone: what a Cursor session's hooks record into and bind to.
+func cursorProject(t *testing.T) (projDir, cacheDir, repoDir string) {
+	t.Helper()
+	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
+	projDir = t.TempDir()
+	if err := os.WriteFile(filepath.Join(projDir, ".cernerc"), []byte("project_id = \"p\"\nbackend = \"x\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cacheDir, err := project.CacheDir("p")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repoDir = filepath.Join(cacheDir, "repo")
+	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0001", Title: "x", State: domain.StateInDevelopment, CreatedAt: time.Now(), UpdatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	return projDir, cacheDir, repoDir
+}
+
+// cursorSeen writes what the hooks of Cursor session sess recorded: model,
+// age ago; bound binds the session to the live F-0001.
+func cursorSeen(t *testing.T, cacheDir, sess, model string, age time.Duration, bound bool) {
+	t.Helper()
+	raw, _ := json.Marshal(cursorSession{Model: model, UpdatedAt: time.Now().Add(-age).UTC()})
+	dir := filepath.Join(cacheDir, cursorSessionsSubdir)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, sess+".json"), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if bound {
+		if err := BindSession(cacheDir, sess, "F-0001"); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// TestDocAuthorCursor (F-0513 crit. 2): a Cursor agent shell's write names
+// provider cursor and the model its hooks recorded when every Cursor session
+// in play agrees on one, and no model when they disagree or none recorded one
+// — never a guess between concurrent sessions. In play: recorded in the last
+// 12 h, and only the bound ones when any is bound. A declaration, the chat,
+// a Claude Code transcript and a human are as before.
+func TestDocAuthorCursor(t *testing.T) {
+	type seen struct {
+		sess, model string
+		age         time.Duration
+		bound       bool
+	}
+	none := DocAuthor{Provider: "cursor", Source: "hook"}
+	cases := []struct {
+		name string
+		env  map[string]string
+		seen []seen
+		tx   string // model of a Claude Code transcript for session "s1"
+		want DocAuthor
+	}{
+		{"one session", nil, []seen{{"ca", "grok-4.7", time.Minute, false}}, "", DocAuthor{Provider: "cursor", Model: "grok-4.7", Source: "hook"}},
+		{"two sessions, one model", nil, []seen{{"ca", "grok-4.7", time.Minute, false}, {"cb", "grok-4.7", time.Hour, true}}, "", DocAuthor{Provider: "cursor", Model: "grok-4.7", Source: "hook"}},
+		{"two sessions, two models", nil, []seen{{"ca", "grok-4.7", time.Minute, false}, {"cb", "gpt-6", time.Hour, false}}, "", none},
+		{"two bound sessions, two models", nil, []seen{{"ca", "grok-4.7", time.Minute, true}, {"cb", "gpt-6", time.Hour, true}}, "", none},
+		{"a session with no model", nil, []seen{{"ca", "grok-4.7", time.Minute, false}, {"cb", "", time.Minute, false}}, "", none},
+		{"no session recorded", nil, nil, "", none},
+		{"a session out of the window", nil, []seen{{"ca", "grok-4.7", time.Minute, false}, {"cb", "gpt-6", 13 * time.Hour, false}}, "", DocAuthor{Provider: "cursor", Model: "grok-4.7", Source: "hook"}},
+		{"the bound session over an unbound one", nil, []seen{{"ca", "grok-4.7", time.Hour, true}, {"cb", "gpt-6", time.Minute, false}}, "", DocAuthor{Provider: "cursor", Model: "grok-4.7", Source: "hook"}},
+		{"declared wins", map[string]string{"CERNE_PROVIDER": "xai", "CERNE_MODEL": "grok-x"}, []seen{{"ca", "grok-4.7", time.Minute, false}}, "", DocAuthor{Provider: "xai", Model: "grok-x", Source: "declared"}},
+		{"chat unchanged", map[string]string{"CERNE_ORIGIN": "chat"}, []seen{{"ca", "grok-4.7", time.Minute, false}}, "", DocAuthor{Provider: "anthropic", Model: "claude-opus-5-5", Source: "llm-config"}},
+		{"claude code transcript unchanged", map[string]string{"CERNE_SESSION": "s1"}, []seen{{"ca", "grok-4.7", time.Minute, false}}, "claude-opus-5-5", DocAuthor{Provider: "anthropic", Model: "claude-opus-5-5", Source: "transcript"}},
+		{"no CURSOR_AGENT unchanged", map[string]string{"CURSOR_AGENT": "", "CERNE_ACTOR": "agent"}, []seen{{"ca", "grok-4.7", time.Minute, false}}, "", DocAuthor{Source: "unknown"}},
+		{"human unchanged", map[string]string{"CERNE_ACTOR": "human"}, []seen{{"ca", "grok-4.7", time.Minute, false}}, "", DocAuthor{Source: "human"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := authorEnv(t)
+			projDir, cacheDir, _ := cursorProject(t)
+			t.Setenv("CURSOR_AGENT", "1")
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			if tc.env["CERNE_ORIGIN"] == "chat" {
+				if err := os.WriteFile(filepath.Join(projDir, ".cernerc"), []byte("project_id = \"p\"\nbackend = \"x\"\n[llm]\nmode = \"byo-key\"\nmodel = \"claude-opus-5-5\"\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tc.tx != "" {
+				writeClaudeTranscript(t, root, "s1", tc.tx)
+			}
+			for _, s := range tc.seen {
+				cursorSeen(t, cacheDir, s.sess, s.model, s.age, s.bound)
+			}
+			if got := docAuthor(projDir); got != tc.want {
+				t.Fatalf("docAuthor = %+v, want %+v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestRecordDocEditedCursorMark (F-0513 crit. 3): with no CERNE_SESSION, a
+// Cursor agent shell's write marks the one bound Cursor session as the
+// document's writer, under harness cursor — and nobody when that session is
+// not the only one bound, or none is.
+func TestRecordDocEditedCursorMark(t *testing.T) {
+	by := DocAuthor{Provider: "cursor", Model: "grok-4.7", Source: "hook"}
+	cases := []struct {
+		name  string
+		bound []string
+		free  []string
+		want  string // the marked session; "" for no mark
+	}{
+		{"one bound session", []string{"ca"}, []string{"cb"}, "ca"},
+		{"two bound sessions", []string{"ca", "cb"}, nil, ""},
+		{"no bound session", nil, []string{"ca"}, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			authorEnv(t)
+			_, cacheDir, repoDir := cursorProject(t)
+			t.Setenv("CURSOR_AGENT", "1")
+			for _, s := range tc.bound {
+				cursorSeen(t, cacheDir, s, "grok-4.7", time.Minute, true)
+			}
+			for _, s := range tc.free {
+				cursorSeen(t, cacheDir, s, "grok-4.7", time.Minute, false)
+			}
+			if err := RecordDocWrite(repoDir, "F-0001", "spec", by); err != nil {
+				t.Fatal(err)
+			}
+			marks, err := cost.ReadMarks(cacheDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch {
+			case tc.want == "" && len(marks) != 0:
+				t.Fatalf("marks = %+v, want none", marks)
+			case tc.want != "" && (len(marks) != 1 || marks[0].Session != tc.want || marks[0].Harness != "cursor" || marks[0].Role != "spec"):
+				t.Fatalf("marks = %+v, want %s wrote the spec under harness cursor", marks, tc.want)
+			}
+		})
 	}
 }
