@@ -141,7 +141,7 @@ alwaysApply: true
 ` + RegisterRules + `
 `
 
-func installCursor(projDir string) []Result {
+func installCursor(projDir string, network bool) []Result {
 	var results []Result
 
 	rulesDst := filepath.Join(projDir, ".cursor", "rules", "cerne.mdc")
@@ -160,6 +160,7 @@ func installCursor(projDir string) []Result {
 			"sessionStart": {flatCursorEntry("cerne hook session-context --format cursor")},
 		},
 	))
+	results = append(results, installCursorSandbox(projDir, network))
 
 	// Not installed natively (R-0037) — reported, with what covers them, never silent.
 	results = append(results,

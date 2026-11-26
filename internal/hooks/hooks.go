@@ -175,7 +175,8 @@ func Install(projDir string, providers ...Provider) ([]Result, error) {
 }
 
 // InstallNetwork is Install plus the F-0484 request: with network, the Codex
-// sandbox profile also opens the whole network (no domain list exists).
+// sandbox profile also opens the whole network (no domain list exists), and the
+// Cursor sandbox allows only the remote backend's host (F-0512).
 func InstallNetwork(projDir string, network bool, providers ...Provider) ([]Result, error) {
 	if len(providers) == 0 {
 		providers = []Provider{ProviderClaude}
@@ -190,7 +191,7 @@ func InstallNetwork(projDir string, network bool, providers ...Provider) ([]Resu
 		case ProviderClaude:
 			rs, err = installClaude(projDir)
 		case ProviderCursor:
-			rs = installCursor(projDir)
+			rs = installCursor(projDir, network)
 		case ProviderCodex:
 			rs = installCodex(projDir, network)
 		case ProviderGemini:

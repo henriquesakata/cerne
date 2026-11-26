@@ -146,6 +146,21 @@ func sshHost(u string) string {
 	return rest
 }
 
+// RemoteHost is the bare host of a remote backend (scheme://… or the scp-like
+// user@host:path), lowercased; "" for a local path or when none can be read.
+func RemoteHost(u string) string {
+	if IsLocalPath(u) {
+		return ""
+	}
+	if h := sshHost(u); h != "" {
+		return strings.ToLower(h)
+	}
+	if p, err := url.Parse(u); err == nil {
+		return strings.ToLower(p.Hostname())
+	}
+	return ""
+}
+
 // sshHostPort is sshHost plus the port, in the "host:port" form the known_hosts
 // callback is addressed by. Returns "" for non-SSH urls.
 //
