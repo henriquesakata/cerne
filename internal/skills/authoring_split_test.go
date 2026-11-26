@@ -106,7 +106,7 @@ func TestSkillMdKeepsTheRules(t *testing.T) {
 		"errata for the concluded":     {"is **history: its body is immutable**", "do **not** rewrite it and do **not** reopen it. Append an **errata** instead"},
 		"do not turn the Gauntlet off": {"Do not switch it yourself to get past a gate: turning the Gauntlet off is the project owner's decision"},
 		"triage the learnings":         {"**Closing includes triaging the learnings (F-0401).**"},
-		"mark ambiguity":               {"**Mark ambiguity, don't guess:** leave `[CLARIFY: specific question]`"},
+		"mark ambiguity":               {"**Mark ambiguity, don't guess:** leave `[CLARIFY: question | option (recommended) | …]`"},
 		"project language":             {"Write every document in the project's language: check the headings of the stub you are filling."},
 		"register non-feature work":    {"The moment you pick up a non-feature task, register it with `cerne work start", "run `cerne work list` before delegating an investigation"},
 		"ideas on demand":              {"Ideas are on demand only: never pull ideas in unasked."},

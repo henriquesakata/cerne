@@ -61,6 +61,7 @@ func Directive(l Lang) string {
 	fmt.Fprintf(&b, "this project's documentation is in %s. Write the WHOLE document in %s, under exactly the section headings listed above, ", f.name, f.name)
 	b.WriteString("and write every protocol form below exactly as shown, never translated into another language:\n")
 	fmt.Fprintf(&b, "- ambiguity marker: %s %s]\n", AmbiguityMarker(l), f.question)
+	fmt.Fprintf(&b, "- %s\n", ClarifyRule(l))
 	fmt.Fprintf(&b, "- behaviour criteria (EARS): %s;\n", f.ears)
 	fmt.Fprintf(&b, "- metadata labels: %s; an unknown value is %q; the agent line reads \"<model id> · %s <level>\" or %q;\n", f.labels, f.unknown, f.effort, f.human)
 	fmt.Fprintf(&b, "- Gauntlet: \"%s:\", \"%s:\", \"%s:\"; the exemptions \"%s: %s (<justification>)\" and \"%s: %s (<quote>)\"; ",
@@ -162,4 +163,18 @@ func ClarifyForm(l Lang) string {
 		return "[CLARIFY: <specific question> | <option A> (recommended) | <option B>]"
 	}
 	return "[ESCLARECER: <pergunta específica> | <opção A> (recomendada) | <opção B>]"
+}
+
+// ClarifyRule is the one sentence that teaches how to ask a clarification
+// (F-0517): the possible answers go after the question, one per pipe, the
+// author's pick carries the suffix, and a question with no possible answers
+// stays without a pipe. The session rule, the drafting prompts and the skill's
+// reference carry this same text, with the form in the project's language.
+func ClarifyRule(l Lang) string {
+	suffix := "(recomendada)"
+	if l == EN {
+		suffix = "(recommended)"
+	}
+	return "clarification options: when a question has possible answers, write each one after the question, one per pipe, and end the one you would pick with " + suffix +
+		" (at most one; the reason goes in the question): " + ClarifyForm(l) + "; a question with no possible answers stays without a pipe. The person answers with one click and can always write another answer."
 }
