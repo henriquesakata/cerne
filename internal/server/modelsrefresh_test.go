@@ -335,6 +335,7 @@ func TestBootRefreshKeepsConcurrentPreference(t *testing.T) {
 	}
 
 	req, _ := http.NewRequest(http.MethodPut, srv.URL+"/api/projects/pA/config/models/provider", strings.NewReader(`{"provider":"anthropic"}`))
+	req.Header.Set("Origin", srv.URL) // the page's write (B-0091)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil || resp.StatusCode != http.StatusOK {
 		t.Fatalf("PUT provider: %v %v", err, resp)

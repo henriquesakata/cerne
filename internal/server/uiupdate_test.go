@@ -69,6 +69,18 @@ func updatePanel(t *testing.T, ver string, plan func(string) (bool, string, stri
 
 func swappable(string) (bool, string, string) { return true, "", "" }
 
+// pagePost is http.Post as the panel's page sends it: with its Origin, which
+// every local ui write needs (B-0091).
+func pagePost(base, path string) (*http.Response, error) {
+	req, err := http.NewRequest(http.MethodPost, base+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Origin", base)
+	req.Header.Set("Content-Type", "application/json")
+	return http.DefaultClient.Do(req)
+}
+
 type updateBody struct {
 	Current   string         `json:"current"`
 	Latest    string         `json:"latest"`
@@ -228,7 +240,7 @@ func TestUpdatePost(t *testing.T) {
 	}()
 
 	post := func() int {
-		r, err := http.Post(srv.URL+"/api/update", "application/json", nil)
+		r, err := pagePost(srv.URL, "/api/update")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -273,7 +285,7 @@ func TestUpdatePostFailureKeepsPanel(t *testing.T) {
 	}
 	srv, restarts, _ := updatePanel(t, "v0.14.3", swappable, swap)
 	waitUpdate(t, srv.URL, func(b updateBody) bool { return b.Newer })
-	r, err := http.Post(srv.URL+"/api/update", "application/json", nil)
+	r, err := pagePost(srv.URL, "/api/update")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -330,7 +342,7 @@ func TestUpdatePostRestartRefused(t *testing.T) {
 	}
 	srv, _, _ := updatePanel(t, "v0.14.3", swappable, swap)
 	waitUpdate(t, srv.URL, func(b updateBody) bool { return b.Newer })
-	r, err := http.Post(srv.URL+"/api/update", "application/json", nil)
+	r, err := pagePost(srv.URL, "/api/update")
 	if err != nil {
 		t.Fatal(err)
 	}
