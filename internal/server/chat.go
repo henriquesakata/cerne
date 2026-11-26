@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"regexp"
 	"slices"
 	"strconv"
@@ -56,6 +57,9 @@ func execChannel(cfg project.LLMConfig, prov llm.Provider) bool {
 type chatMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
+	// Attachments (F-0520) are the ids POST /api/chat/attachments answered for
+	// the images of this user message, under the request's conversation_id.
+	Attachments []string `json:"attachments,omitempty"`
 }
 
 // chatRequest is the POST /api/chat body. Model/Effort (F-0218) are optional
@@ -216,6 +220,12 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 		writeJSON(w, http.StatusUnprocessableEntity, errorBody("messages must not be empty"))
 		return
 	}
+	// F-0520: the attachment ids are checked before anything runs.
+	images, status, err := turnImages(req, projectID)
+	if err != nil {
+		writeJSON(w, status, errorBody(err.Error()))
+		return
+	}
 	// F-0323: a confirmation that does not bind to the card's turn is refused
 	// loudly — never silently downgraded to a read-only turn.
 	turn, confirmErr := confirmedTurn(req)
@@ -261,6 +271,12 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 		cfg.LLM.Model = req.Model
 	}
 	cfg.LLM.Effort = req.Effort
+	// F-0520: a turn that cannot show the images to the model is refused, not
+	// answered as if they were not there.
+	if len(slices.Concat(images...)) > 0 && (servedRemotely(r) || !llm.SupportsImages(llm.ResolveMode(cfg.LLM.Mode))) {
+		writeJSON(w, http.StatusUnprocessableEntity, errorBody("this provider does not take images in the chat: remove the attachments or pick a provider that does"))
+		return
+	}
 
 	// F-0224: the chat provider runs claude-cli as an agent in the project dir;
 	// the budget covers chained cerne queries, not just one shot. F-0260: the
@@ -294,7 +310,7 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 	sysPrompt += refine
 	msgs := make([]app.ChatMessage, len(req.Messages))
 	for i, m := range req.Messages {
-		msgs[i] = app.ChatMessage{Role: m.Role, Content: m.Content}
+		msgs[i] = app.ChatMessage{Role: m.Role, Content: m.Content, Images: images[i]}
 	}
 	// F-0253: prime the turn server-side with the backend context relevant to
 	// the last user message — every provider gets it, tool-use or not. A
@@ -312,6 +328,7 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 
 	ctx, cancel := context.WithTimeout(r.Context(), cfg.Agent.ChatTimeoutOrDefault())
 	defer cancel()
+	ctx = llm.WithImages(ctx, slices.Concat(images...))
 	prompt := app.BuildChatPrompt(sysPrompt, msgs)
 
 	// F-0438: the proposal block, if any, is checked once the reply is whole —
@@ -359,6 +376,40 @@ func handleChat(w http.ResponseWriter, r *http.Request, repoDir, projDir, projec
 		return
 	}
 	writeChatLine(w, http.StatusOK, chatResponse{Answered: true, Reply: reply, NoExec: !channel, Context: injected, ProposalIssues: check(reply), AnsweredBy: turnAnsweredBy(cfg.LLM, prov)})
+}
+
+// turnImages resolves the attachment ids of every message to the files still
+// in the project cache (F-0520), one slice per message. An id outside the
+// server's pattern, attachments on an agent message or without a valid
+// conversation are a 400; more than the per-message cap is a 422. An id whose
+// file is gone (expired, conversation deleted) is dropped: the turn runs
+// without that image.
+func turnImages(req chatRequest, projectID string) ([][]string, int, error) {
+	images := make([][]string, len(req.Messages))
+	for i, m := range req.Messages {
+		if len(m.Attachments) == 0 {
+			continue
+		}
+		if m.Role != "user" {
+			return nil, http.StatusBadRequest, errors.New("only a user message carries attachments")
+		}
+		if len(m.Attachments) > maxChatImagesPerMessage {
+			return nil, http.StatusUnprocessableEntity, fmt.Errorf("a message takes at most %d images", maxChatImagesPerMessage)
+		}
+		for _, id := range m.Attachments {
+			path, err := chatAttachmentPath(projectID, req.ConversationID, id)
+			if errors.Is(err, errBadAttachmentRef) {
+				return nil, http.StatusBadRequest, err
+			}
+			if err != nil {
+				return nil, http.StatusInternalServerError, err
+			}
+			if _, err := os.Stat(path); err == nil {
+				images[i] = append(images[i], path)
+			}
+		}
+	}
+	return images, 0, nil
 }
 
 // lastUserMessage is the retrieval query for the turn (F-0253): the message

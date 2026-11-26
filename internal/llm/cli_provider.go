@@ -439,7 +439,7 @@ func (p *cliProvider) completeClaude(ctx context.Context, prompt string, wantUsa
 		}
 		// F-0520: the attached images live in the project cache, outside the
 		// working dir; Read opens them by the path the prompt names.
-		for _, d := range imageDirs(imagesFrom(ctx)) {
+		for _, d := range imageDirs(ImagesFrom(ctx)) {
 			args = append(args, "--add-dir", d)
 		}
 	} else {
@@ -551,7 +551,7 @@ func (p *cliProvider) completeCodex(ctx context.Context, prompt string) (string,
 	}
 	// F-0520: one -i per image; -i takes several files, so the stdin marker
 	// goes after a "--" or it would be read as one more image.
-	imgs := imagesFrom(ctx)
+	imgs := ImagesFrom(ctx)
 	for _, img := range imgs {
 		args = append(args, "-i", img)
 	}
@@ -766,7 +766,7 @@ func (p *cliProvider) completeCopilot(ctx context.Context, prompt string) (strin
 	if effortRE.MatchString(p.effort) {
 		args = append(args, "--effort", p.effort)
 	}
-	for _, img := range imagesFrom(ctx) { // F-0520
+	for _, img := range ImagesFrom(ctx) { // F-0520
 		args = append(args, "--attachment", img)
 	}
 	start := time.Now()

@@ -20,7 +20,8 @@ func WithImages(ctx context.Context, paths []string) context.Context {
 	return context.WithValue(ctx, imagesKey{}, slices.Clone(paths))
 }
 
-func imagesFrom(ctx context.Context) []string {
+// ImagesFrom is the image paths WithImages put in ctx, nil when none.
+func ImagesFrom(ctx context.Context) []string {
 	paths, _ := ctx.Value(imagesKey{}).([]string)
 	return paths
 }
