@@ -54,6 +54,12 @@ function loadStoredSession(roomId: string): RoomSession | null {
   }
 }
 
+// forgetStoredSession drops the stored session only when it is sid: another
+// tab may have stored a newer one after re-joining (T-0021, T-0022).
+function forgetStoredSession(roomId: string, sid: string) {
+  if (loadStoredSession(roomId)?.session_id === sid) localStorage.removeItem(sessionKey(roomId))
+}
+
 function loadStoredFacilitator(roomId: string): string | null {
   return localStorage.getItem(facilitatorKey(roomId))
 }
@@ -386,8 +392,7 @@ export function WarRoomDetail({ id }: { id: string }) {
             // same cursor, as an invalid resume does (F-0511).
             if (sessionRef.current?.session_id === sid) {
               sessionRef.current = null
-              // Another tab may have stored a newer session after re-joining.
-              if (loadStoredSession(id)?.session_id === sid) localStorage.removeItem(sessionKey(id))
+              forgetStoredSession(id, sid)
               setSession(null)
               setNotice(t.warRoom.sessionGone)
             }
@@ -445,7 +450,7 @@ export function WarRoomDetail({ id }: { id: string }) {
         if (!cancelled) setSession(s)
       })
       .catch(() => {
-        localStorage.removeItem(sessionKey(id))
+        forgetStoredSession(id, stored.session_id)
       })
     return () => {
       cancelled = true
@@ -582,14 +587,14 @@ export function WarRoomDetail({ id }: { id: string }) {
     leaveRoom(id, session.session_id)
       .then((r) => {
         setLeaving(false)
-        localStorage.removeItem(sessionKey(id))
+        forgetStoredSession(id, session.session_id)
         setSession(null)
         if (r.active_participants) setRoster(r.active_participants)
       })
       .catch((e: unknown) => {
         setLeaving(false)
         if (e instanceof HTTPError && e.status === 401) {
-          localStorage.removeItem(sessionKey(id))
+          forgetStoredSession(id, session.session_id)
           setSession(null)
           setNotice(t.warRoom.sessionGone)
           return

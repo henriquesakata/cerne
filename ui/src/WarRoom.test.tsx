@@ -1523,6 +1523,27 @@ describe('facilitação e rascunho de ata visíveis na sala (T-0022)', () => {
     expect(within(roster).queryByText(/ninguém entrou/i)).not.toBeInTheDocument()
   })
 
+  // T-0022 crit. 3
+  // E-0006 crit. 12
+  it.each([
+    ['sucesso', () => Promise.resolve(room({ active_participants: [] }))],
+    ['401', () => Promise.reject(new HTTPError('invalid room session', 401))],
+  ])('sair (%s) não apaga a sessão mais nova que outra aba guardou', async (_case, answer) => {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session()))
+    resumeRoomSession.mockResolvedValue(session())
+    readRoomMessages.mockImplementationOnce(() => Promise.resolve([open]))
+    const newer = JSON.stringify(session({ session_id: 'feedfacefeedfacefeedfacefeedface' }))
+    leaveRoom.mockImplementation(() => {
+      localStorage.setItem(SESSION_KEY, newer) // another tab re-joined meanwhile
+      return answer()
+    })
+    render(<WarRoomDetail id="R1" />)
+
+    fireEvent.click(await screen.findByRole('button', { name: /^sair$/i }))
+    await waitFor(() => expect(screen.getByText('Observando')).toBeInTheDocument())
+    expect(localStorage.getItem(SESSION_KEY)).toBe(newer)
+  })
+
   // A minutes JSON without its lists, as a server before the T-0022 fix served it.
   const bare = {
     conclusion: 'conclusão sem listas',
