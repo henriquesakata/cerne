@@ -1279,6 +1279,11 @@ func writeEpicResultStub(repoDir, id, title string, children []store.Feature) er
 // ErrInvalidOrigin refuses an origin that is not "human" or "agent" (B-0085).
 var ErrInvalidOrigin = errors.New("origin must be human or agent")
 
+// ErrOriginFlagConflict refuses `feature set --origin` combined with another
+// change flag, or --on-behalf without --origin (B-0085 review): the correction
+// is its own act and would silently drop the rest.
+var ErrOriginFlagConflict = errors.New("--origin stands alone: it cannot be combined with --owner, --priority or --fixes, and --on-behalf belongs to --origin")
+
 // SetFeatureOrigin is the human's correction of a card's origin (B-0085).
 // Any state is accepted; an agent actor is refused with ErrHumanGate (a human
 // origin waives the bug approve gate), --origin human needs a non-blank quote.
@@ -1305,8 +1310,7 @@ func SetFeatureOrigin(repoDir, projDir, id, origin, onBehalf string) (store.Feat
 		if quote != "" {
 			payload["on_behalf"] = quote
 		}
-		f.Origin = origin
-		f.UpdatedAt = time.Now().UTC()
+		f.Origin = origin // UpdatedAt stays: stale-ready and the accept queue read it as the implemented-at time
 		if err := store.SaveFeature(repoDir, f); err != nil {
 			return "", err
 		}
