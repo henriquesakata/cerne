@@ -71,7 +71,8 @@ func newRiskAnswer(ev domain.Event, idx int) *RiskAnswer {
 // events (F-0516 records them), with the owner's answer to it.
 type RiskDecision struct {
 	Risk        string      `json:"risk"`                  // low or held
-	Calibration bool        `json:"calibration,omitempty"` // held because the gate is still calibrating
+	Calibration bool        `json:"calibration,omitempty"` // held because the gate was calibrating
+	Calibrating bool        `json:"calibrating,omitempty"` // the gate is still calibrating: a held-in-calibration card is still asked
 	Would       string      `json:"would,omitempty"`       // in calibration, what the gate would have decided: low or held
 	Mode        string      `json:"mode,omitempty"`        // the card's accept_mode at the complete
 	Files       []string    `json:"files"`                 // every file the delivery changed
@@ -176,12 +177,16 @@ func dirGlobs(files []string) []string {
 
 // RiskDecisionOf is the risk gate's last decision on card id, with the
 // owner's answer to it; nil when the gate never decided the card.
-func RiskDecisionOf(repoDir, id string) (*RiskDecision, error) {
+func RiskDecisionOf(repoDir, projDir, id string) (*RiskDecision, error) {
 	evs, err := store.ReadEvents(repoDir)
 	if err != nil {
 		return nil, err
 	}
-	return riskDecisions(evs)[domain.CanonicalID(id)], nil
+	d := riskDecisions(evs)[domain.CanonicalID(id)]
+	if d != nil {
+		d.Calibrating = len(answeredCards(evs)) < projectGates(projDir).RiskCalibration()
+	}
+	return d, nil
 }
 
 // RecordRiskFeedback records the owner's answer on card id (F-0518 crit. 2
@@ -374,7 +379,9 @@ func ReadRiskGate(repoDir, projDir string, since time.Time) (RiskGateView, error
 			continue
 		}
 		if d.Feedback == nil {
-			if f.State == domain.StateDone {
+			// Asked only while the gate calibrates: past the number, or off,
+			// it decides as F-0516 and stops asking (crit. 12).
+			if f.State == domain.StateDone && c.Remaining > 0 {
 				v.Questions = append(v.Questions, f.ID)
 			}
 			continue

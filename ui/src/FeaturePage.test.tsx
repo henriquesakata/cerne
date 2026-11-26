@@ -1444,7 +1444,7 @@ describe('FeaturePage — o dono responde ao gate de risco (F-0518)', () => {
     ['en', 'Did this delivery need you?', 'It did', 'It did not'],
   ] as const) {
     it(`${lang}: na calibração, a pergunta no card aceito no merge`, async () => {
-      payload = decided({ accepted_via: 'merge' }, { ...held, calibration: true, would: 'low' })
+      payload = decided({ accepted_via: 'merge' }, { ...held, calibration: true, calibrating: true, would: 'low' })
       await show(lang)
       expect(screen.getByText(question)).toBeInTheDocument()
       fireEvent.click(screen.getByRole('button', { name: no }))
@@ -1456,9 +1456,17 @@ describe('FeaturePage — o dono responde ao gate de risco (F-0518)', () => {
 
   // F-0518 crit. 12
   it('na calibração, um card ainda não aceito não pergunta', async () => {
-    payload = { ...decided({}, { ...held, calibration: true, would: 'low' }), feature: { ...detail('implemented').feature } }
+    payload = { ...decided({}, { ...held, calibration: true, calibrating: true, would: 'low' }), feature: { ...detail('implemented').feature } }
     await show('en')
     expect(screen.queryByText('Did this delivery need you?')).toBeNull()
+  })
+
+  // F-0518 crit. 12
+  it('terminada a calibração, o card segurado nela não pergunta mais', async () => {
+    payload = decided({ accepted_via: 'merge' }, { ...held, calibration: true, calibrating: false, would: 'low' })
+    await show('en')
+    expect(screen.queryByText('Did this delivery need you?')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'It did' })).toBeNull()
   })
 
   // F-0518 crit. 14

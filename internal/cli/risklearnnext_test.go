@@ -107,6 +107,26 @@ func TestProposalRefusesAgent(t *testing.T) {
 	}
 }
 
+// TestNextStopsAskingAfterCalibration: once the number of answers is in, or
+// calibration is off, next asks nothing and says nothing about holding
+// every delivery.
+// F-0518 crit. 12
+func TestNextStopsAskingAfterCalibration(t *testing.T) {
+	for _, n := range []string{"1", "0"} {
+		projDir, _ := calibratedProject(t) // F-0002 answered: one answer
+		if out, err := execCerne(t, "settings", "set", "gates.risk_calibration", n, "--scope", "project", "--dir", projDir); err != nil {
+			t.Fatalf("set calibration %s: %v\n%s", n, err, out)
+		}
+		out, err := execCerne(t, "next", "--dir", projDir)
+		if err != nil {
+			t.Fatalf("next: %v\n%s", err, out)
+		}
+		if strings.Contains(out, "RISK CALIBRATION") || strings.Contains(out, "holds every delivery") {
+			t.Errorf("calibration %s: next still asks:\n%s", n, out)
+		}
+	}
+}
+
 // TestNextAsksTheCalibrationQuestion: in calibration, next asks the owner
 // about each card accepted on the merge that has no answer yet, with the
 // command of each answer; an answered card is not asked again.

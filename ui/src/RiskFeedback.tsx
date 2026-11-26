@@ -17,7 +17,8 @@ export function RiskFeedback({ feature, decision, onAnswered }: { feature: Featu
   const done = feature.state === 'done'
   // What the decision takes: one answer, or both in calibration.
   let offers: Answer[] = []
-  if (decision.calibration) offers = done ? ['should_have_asked', 'not_needed'] : []
+  // The calibration question is asked only while the gate calibrates.
+  if (decision.calibration) offers = done && decision.calibrating ? ['should_have_asked', 'not_needed'] : []
   else if (decision.risk === 'low' && feature.accepted_via === 'risk') offers = ['should_have_asked']
   else if (decision.risk === 'held' && done) offers = ['not_needed']
   if (offers.length === 0) return null

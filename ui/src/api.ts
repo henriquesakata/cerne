@@ -228,7 +228,8 @@ export type RiskAnswer = {
 // RiskDecision (F-0518): the risk gate's last decision on a card.
 export type RiskDecision = {
   risk: 'low' | 'held'
-  calibration?: boolean // held because the gate is still calibrating
+  calibration?: boolean // held because the gate was calibrating
+  calibrating?: boolean // the gate is still calibrating: the question is still open
   would?: 'low' | 'held' // in calibration, what the gate would have decided
   mode?: string
   files: string[]

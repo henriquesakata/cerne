@@ -512,7 +512,7 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, projDir, id string) {
 	if writes == nil {
 		writes = []app.DocWrite{}
 	}
-	riskDecision, err := app.RiskDecisionOf(repoDir, id)
+	riskDecision, err := app.RiskDecisionOf(repoDir, projDir, id)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
 		return

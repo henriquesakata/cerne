@@ -76,7 +76,7 @@ func TestFeedbackReplacesPrevious(t *testing.T) {
 	if evs := entityEvents(t, repoDir, "F-0001", riskFeedbackEvent); len(evs) != 2 {
 		t.Fatalf("%d feedback events, want both kept in the log", len(evs))
 	}
-	d, err := RiskDecisionOf(repoDir, "F-0001")
+	d, err := RiskDecisionOf(repoDir, projDir, "F-0001")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,6 +218,39 @@ func TestCalibrationWouldReadsTheTaskHold(t *testing.T) {
 	}
 }
 
+// TestCalibrationStopsAsking: once the owner has given the number of answers,
+// or with calibration off, the gate asks no more: no question in the view,
+// and the card's decision says the calibration is over.
+// F-0518 crit. 12
+func TestCalibrationStopsAsking(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		target int64
+		asks   bool
+	}{{"still calibrating", 2, true}, {"number reached", 1, false}, {"calibration off", 0, false}} {
+		t.Run(c.name, func(t *testing.T) {
+			asActor(t, "")
+			repoDir, projDir, _ := newFeatureBackend(t)
+			calibrating(t, projDir, c.target)
+			held := map[string]string{"risk": "held", "risk_calibration": "0/2", "risk_would": "low"}
+			decided(t, repoDir, "F-0001", domain.StateDone, []string{"code"}, held)
+			decided(t, repoDir, "F-0002", domain.StateDone, []string{"code"}, held)
+			answered(t, repoDir, "F-0002")
+			v, err := ReadRiskGate(repoDir, projDir, time.Time{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if asks := len(v.Questions) > 0; asks != c.asks {
+				t.Errorf("questions = %v, want asking %v", v.Questions, c.asks)
+			}
+			d, err := RiskDecisionOf(repoDir, projDir, "F-0001")
+			if err != nil || d == nil || d.Calibrating != c.asks {
+				t.Errorf("decision %+v (%v): want calibrating %v", d, err, c.asks)
+			}
+		})
+	}
+}
+
 // TestRiskTasksRideByOneRule: the parent's check and the cascade judge a task
 // by the same rule. Under an auto parent in calibration, an unmarked task that
 // passes on its own measurements goes to done with the parent — it is not
@@ -296,7 +329,7 @@ func TestRiskRecordsTheDeliveryFiles(t *testing.T) {
 	if p["risk_files"] != "go.mod, internal/x/x.go, internal/x/x_test.go" || p["risk_patterns"] != "go.mod" {
 		t.Errorf("risk_files %q, risk_patterns %q", p["risk_files"], p["risk_patterns"])
 	}
-	d, err := RiskDecisionOf(repoDir, "F-0001")
+	d, err := RiskDecisionOf(repoDir, projDir, "F-0001")
 	if err != nil || d == nil || strings.Join(d.Dirs, " ") != "go.mod internal/x/**" {
 		t.Fatalf("decision %+v (%v): want the folders go.mod and internal/x/**", d, err)
 	}
