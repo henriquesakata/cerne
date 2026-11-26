@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"strings"
 	"time"
@@ -101,8 +102,8 @@ func cascadeApprove(repoDir, projDir, parentID string, gauntletOn, agentAct bool
 // An F- child had its own approve and keeps its own accept; an actor the
 // accept's human gate refuses takes no task along. An accept on merge (m,
 // F-0488) is the human's whoever records it: the tasks ride it, marked alike.
-// The parent's accepted_via marks its tasks too: auto (F-0515), and risk
-// (F-0516), the gate's own accept, which no human gate stands behind.
+// The parent's accepted_via marks its tasks too: auto (F-0515); under risk
+// (F-0516) only the tasks the gate accepts on their own measurements ride.
 func cascadeAccept(repoDir, projDir string, parent store.Feature, m *mergeAccept) (cascaded, error) {
 	parentID, via := parent.ID, parent.AcceptedVia
 	children, err := childrenOf(repoDir, parentID, func(c store.Feature) bool { return isTask(c.ID) && c.State == cascadeFrom[domain.ActionAccept] })
@@ -120,9 +121,27 @@ func cascadeAccept(repoDir, projDir string, parent store.Feature, m *mergeAccept
 			payload["cascade_from"] = parentID
 			c.AcceptedVia = "merge"
 		}
-		if m == nil && (via == project.GateAuto || via == project.GateRisk) {
+		if m == nil && via == project.GateAuto {
 			payload["via"] = via
-			c.AcceptedVia, c.AcceptedRisk = via, parent.AcceptedRisk
+			c.AcceptedVia = via
+		}
+		// A risk accept is earned per card (F-0516): each task is measured on
+		// its own, and one the gate holds waits for the human merge, with its
+		// measurements on an event of its own.
+		if m == nil && via == project.GateRisk {
+			ra := assessRisk(repoDir, projDir, c)
+			if !ra.Low() {
+				held := ra.payload()
+				held["cascade_from"] = parentID
+				if err := store.AppendEvent(repoDir, domain.NewEvent(c.ID, "feature.risk_held", held, EventActor())); err != nil {
+					return out, err
+				}
+				out.lines = append(out.lines, fmt.Sprintf("%s stays %s, not carried along with %s: the risk gate holds it — %s", c.ID, c.State, parentID, strings.Join(ra.Held(), "; ")))
+				continue
+			}
+			maps.Copy(payload, ra.payload())
+			payload["via"] = via
+			c.AcceptedVia, c.AcceptedRisk = via, ra.Summary()
 		}
 		if err := moveChild(repoDir, &c, domain.ActionAccept, payload, actor); err != nil {
 			return out, err

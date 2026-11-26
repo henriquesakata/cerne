@@ -103,7 +103,25 @@ func TestRiskAcceptCascadesTasks(t *testing.T) {
 	asActor(t, "agent")
 	repoDir, projDir, _ := newFeatureBackend(t)
 	riskDelivery(t, repoDir, projDir, store.Feature{ID: "F-0001", Facets: []string{"code"}}, "vitória", cleanChange())
-	seedWithSpec(t, repoDir, store.Feature{ID: "T-0002", Parent: "F-0001", State: domain.StateImplemented}, taskBody+exemptTaskBar)
+	// Each task is measured on its own: T-0002 is of low risk, T-0003 carries auth.
+	for _, task := range []store.Feature{
+		{ID: "T-0002", Parent: "F-0001", Facets: []string{"code"}},
+		{ID: "T-0003", Parent: "F-0001", Facets: []string{"auth"}},
+	} {
+		task.Title, task.State = "Task "+task.ID, domain.StateImplemented
+		if err := store.SaveFeature(repoDir, task); err != nil {
+			t.Fatal(err)
+		}
+		for doc, body := range map[string]string{"spec.md": riskSpec, "result.md": riskResult("vitória")} {
+			riskWrite(t, repoDir, filepath.Join("content", "features", task.ID, doc), body)
+		}
+		riskWrite(t, projDir, filepath.Join("internal", "x", strings.ToLower(task.ID)+"_test.go"), "package x\n\n// "+task.ID+" crit. 1, 2\n")
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "seed tasks"); err != nil {
+		t.Fatal(err)
+	}
+	riskGit(t, projDir, "add", "-A")
+	riskGit(t, projDir, "commit", "-q", "-m", "feat: the tasks (T-0002, T-0003)")
 
 	out, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionComplete, "", "", nil)
 	if err != nil {
@@ -112,14 +130,23 @@ func TestRiskAcceptCascadesTasks(t *testing.T) {
 	if f := reload(t, repoDir, "F-0001"); f.State != domain.StateDone || f.AcceptedVia != "risk" {
 		t.Fatalf("F-0001 = %s, accepted_via %q; want done, risk (%+v)", f.State, f.AcceptedVia, out.Risk)
 	}
-	if task := reload(t, repoDir, "T-0002"); task.State != domain.StateDone || task.AcceptedVia != "risk" {
-		t.Fatalf("T-0002 = %s, accepted_via %q; want done, risk", task.State, task.AcceptedVia)
+	carried := reload(t, repoDir, "T-0002")
+	if carried.State != domain.StateDone || carried.AcceptedVia != "risk" || carried.AcceptedRisk == "" {
+		t.Fatalf("T-0002 = %s, accepted_via %q, accepted_risk %q; want done, risk, its own summary", carried.State, carried.AcceptedVia, carried.AcceptedRisk)
 	}
-	if ev := lastEntityEvent(t, repoDir, "T-0002", "feature.accepted"); ev.Payload["via"] != "risk" || ev.Payload["cascade_from"] != "F-0001" {
-		t.Errorf("T-0002 accept event = %+v, want via risk and cascade_from F-0001", ev.Payload)
+	if ev := lastEntityEvent(t, repoDir, "T-0002", "feature.accepted"); ev.Payload["via"] != "risk" || ev.Payload["cascade_from"] != "F-0001" || ev.Payload["risk"] != "low" {
+		t.Errorf("T-0002 accept event = %+v, want via risk, cascade_from F-0001 and its own measurements", ev.Payload)
 	}
-	if lines := strings.Join(out.Cascade, "\n"); !strings.Contains(lines, "T-0002: implemented → done along with F-0001") {
-		t.Errorf("cascade lines = %q, want T-0002 carried", lines)
+	held := reload(t, repoDir, "T-0003")
+	if held.State != domain.StateImplemented || held.AcceptedVia != "" || held.AcceptedRisk != "" {
+		t.Fatalf("T-0003 = %s, accepted_via %q, accepted_risk %q; want implemented and unmarked", held.State, held.AcceptedVia, held.AcceptedRisk)
+	}
+	if ev := lastEntityEvent(t, repoDir, "T-0003", "feature.risk_held"); ev.Payload["risk"] != "held" || ev.Payload["risk_facets"] != "auth" || ev.Payload["cascade_from"] != "F-0001" {
+		t.Errorf("T-0003 held event = %+v, want its own held measurements", ev.Payload)
+	}
+	lines := strings.Join(out.Cascade, "\n")
+	if !strings.Contains(lines, "T-0002: implemented → done along with F-0001") || !strings.Contains(lines, "T-0003") || !strings.Contains(lines, "auth") {
+		t.Errorf("cascade lines = %q, want T-0002 carried and T-0003 held with why", lines)
 	}
 }
 
