@@ -45,8 +45,13 @@ type RiskAssessment struct {
 	Base, Head            string   // the commits measured: merge-base with the default branch, and HEAD; empty when unread
 	// HeldTasks are the implemented tasks the gate holds: their work rides
 	// this card's PR, so any of them holds the card too.
-	HeldTasks []HeldTask
-	tasks     map[string]RiskAssessment // every implemented task measured, by id
+	HeldTasks   []HeldTask
+	tasks       map[string]RiskAssessment // every implemented task measured, by id
+	Mode        string                    // the card's accept_mode (F-0518): human, auto or empty
+	Calibration string                    // "<owner answers>/<target>" while the gate calibrates (F-0518); empty past it
+	// Files is every file the delivery changed and Patterns the sensitive
+	// globs that hit (F-0518): what the owner marks and the proposals count.
+	Files, Patterns []string
 }
 
 // taskReading is the reading of implemented task id the assessment of its
@@ -65,11 +70,27 @@ type HeldTask struct {
 	Risk RiskAssessment
 }
 
-// Low reports a delivery of low risk: all three conditions hold, and no
-// implemented task of the card is held.
-func (r RiskAssessment) Low() bool {
-	return r.Area.Holds && r.Gauntlet.Holds && r.Tests.Holds && len(r.HeldTasks) == 0
+// would is what the gate decides on its own (F-0518): all three conditions
+// hold, no implemented task of the card is held, and the owner did not mark
+// the card as needing a person. Calibration records it and holds anyway.
+func (r RiskAssessment) would() bool {
+	return r.Area.Holds && r.Gauntlet.Holds && r.Tests.Holds && len(r.HeldTasks) == 0 && r.Mode != AcceptModeHuman
 }
+
+// rides reports whether an implemented task goes with its parent's decision
+// (F-0518): what the gate would decide on the task's own measurements. The
+// calibration and the parent's auto mark are the parent's to apply — one rule
+// for the parent's check and for the cascade.
+func (r RiskAssessment) rides() bool { return r.would() }
+
+// Low reports a delivery of low risk: the gate would accept it and is past
+// its calibration, or the owner marked the card to pass alone (F-0518).
+func (r RiskAssessment) Low() bool {
+	return r.would() && (r.Calibration == "" || r.Mode == AcceptModeAuto)
+}
+
+// ownerHold is the line of a card the owner marked as needing a person.
+const ownerHold = "the owner marked this card as one that needs a person (accept_mode human)"
 
 // Summary is the three measurements in one line.
 func (r RiskAssessment) Summary() string {
@@ -87,7 +108,20 @@ func (r RiskAssessment) Held() []string {
 	for _, t := range r.HeldTasks {
 		out = append(out, "task "+t.ID+" is held: "+strings.Join(t.Risk.Held(), "; "))
 	}
+	if r.Mode == AcceptModeHuman {
+		out = append(out, ownerHold)
+	}
+	if r.Calibration != "" && r.Mode != AcceptModeAuto {
+		out = append(out, fmt.Sprintf("the risk gate is in calibration (%s owner answers): it holds every delivery for a person and records what it would have decided (%s)", r.Calibration, r.wouldWord()))
+	}
 	return out
+}
+
+func (r RiskAssessment) wouldWord() string {
+	if r.would() {
+		return "low"
+	}
+	return "held"
 }
 
 // payload is the record of the measurements on the complete event and on the
@@ -100,12 +134,32 @@ func (r RiskAssessment) payload() map[string]string {
 	if r.Low() {
 		risk = "low"
 	}
-	return map[string]string{
+	p := map[string]string{
 		"risk": risk, "risk_area": r.Area.Found, "risk_gauntlet": r.Gauntlet.Found, "risk_tests": r.Tests.Found,
-		"risk_paths": strings.Join(r.Paths, ", "), "risk_facets": strings.Join(r.Facets, ", "),
+		"risk_facets": strings.Join(r.Facets, ", "),
 		"risk_verdict": r.Verdict, "risk_round": strconv.Itoa(r.Round), "risk_criteria_tested": r.Tested,
 		"risk_base": r.Base, "risk_head": r.Head, "risk_tasks": strings.Join(heldTaskLines(r.HeldTasks), " | "),
 	}
+	if r.Mode != "" {
+		p["risk_mode"] = r.Mode
+	}
+	if r.Calibration != "" {
+		p["risk_calibration"], p["risk_would"] = r.Calibration, r.wouldWord()
+	}
+	// The file lists ride every event that copies the decision (F-0518):
+	// capped, with the total beside them.
+	p["risk_files"], p["risk_files_total"] = capped(r.Files), strconv.Itoa(len(r.Files))
+	p["risk_paths"], p["risk_paths_total"] = capped(r.Paths), strconv.Itoa(len(r.Paths))
+	p["risk_patterns"] = strings.Join(r.Patterns, ", ")
+	return p
+}
+
+// maxEventList is how many entries of a file list an event keeps.
+const maxEventList = 200
+
+// capped joins the first maxEventList items.
+func capped(items []string) string {
+	return strings.Join(items[:min(len(items), maxEventList)], ", ")
 }
 
 func heldTaskLines(tasks []HeldTask) []string {
@@ -154,7 +208,12 @@ func assessWith(repoDir string, env riskEnv, f store.Feature) RiskAssessment {
 	cfg := env.cfg
 	var r RiskAssessment
 	r.Area, r.Paths, r.Facets = areaOf(repoDir, env.d, env.derr, f, cfg.Gates)
-	r.Base, r.Head = env.d.Base, env.d.Head
+	r.Base, r.Head, r.Mode, r.Files = env.d.Base, env.d.Head, f.AcceptMode, env.d.Files
+	for _, g := range cfg.Gates.RiskHumanPaths() {
+		if len(sensitivePaths(r.Paths, []string{g}, env.d.Prefix)) > 0 {
+			r.Patterns = append(r.Patterns, g)
+		}
+	}
 	// A native task with an inherited bar is judged by its parent's rounds.
 	result, _ := os.ReadFile(FeatureDocPath(repoDir, gauntletSource(repoDir, f), "result.md"))
 	r.Gauntlet, r.Verdict = riskGauntlet(result, cfg.Gates.GauntletEnabled())
@@ -166,7 +225,8 @@ func assessWith(repoDir string, env riskEnv, f store.Feature) RiskAssessment {
 	}
 	r.Tests, r.Tested = testsOf(repoDir, env, f)
 	// The implemented tasks ride this card's PR: each is measured on its own,
-	// and any one held holds the card.
+	// and any one held holds the card. A task is held by what the gate would
+	// decide on it (F-0518): the calibration is the project's, read once here.
 	if !isTask(f.ID) {
 		tasks, err := childrenOf(repoDir, f.ID, func(c store.Feature) bool { return isTask(c.ID) && c.State == domain.StateImplemented })
 		if err != nil { // in doubt, hold
@@ -176,12 +236,38 @@ func assessWith(repoDir string, env riskEnv, f store.Feature) RiskAssessment {
 		for _, c := range tasks {
 			tr := assessWith(repoDir, env, c)
 			r.tasks[c.ID] = tr // the cascade reuses it
-			if !tr.Low() {
+			if !tr.rides() {
 				r.HeldTasks = append(r.HeldTasks, HeldTask{ID: c.ID, Risk: tr})
 			}
 		}
 	}
+	if answers, target := riskCalibration(repoDir, cfg.Gates); answers < target {
+		r.Calibration = fmt.Sprintf("%d/%d", answers, target)
+	}
 	return r
+}
+
+// riskCalibration is how many cards the owner answered and how many answers
+// the gate collects before it decides on its own (F-0518 crit. 12). A log
+// that cannot be read counts none: in doubt, calibrate.
+func riskCalibration(repoDir string, g project.GatesConfig) (answers, target int) {
+	target = g.RiskCalibration()
+	evs, err := store.ReadEvents(repoDir)
+	if err != nil {
+		return 0, target
+	}
+	return len(answeredCards(evs)), target
+}
+
+// answeredCards are the cards with at least one answer of the owner.
+func answeredCards(evs []domain.Event) map[string]bool {
+	out := map[string]bool{}
+	for _, ev := range evs {
+		if ev.Type == riskFeedbackEvent {
+			out[ev.EntityID] = true
+		}
+	}
+	return out
 }
 
 // RiskHeldWait says what a card the risk gate holds waits for (F-0516), the
@@ -272,6 +358,11 @@ func gauntletSource(repoDir string, f store.Feature) string {
 // empty one (complete ran outside the delivery's branch) and a card with no
 // facet all wait for a person. Its own function: a per-card waiver drops only
 // this condition. d is the delivery read, empty when git could not read it.
+// The owner's accept_mode auto (F-0518) waives the sensitivity judgment — the
+// paths, the facets, a card with no facet — and keeps measuring them; a
+// delivery that cannot be measured (no diff, another card's checkout,
+// uncommitted changes) still holds: the owner judged the card, not this
+// checkout.
 func riskArea(repoDir, projDir, pinBranch string, f store.Feature, g project.GatesConfig) (c RiskCheck, paths, facets []string, d gauntlet.Delivery) {
 	d, err := readDelivery(projDir, pinBranch)
 	c, paths, facets = areaOf(repoDir, d, err, f, g)
@@ -280,7 +371,7 @@ func riskArea(repoDir, projDir, pinBranch string, f store.Feature, g project.Gat
 
 // areaOf is riskArea on a delivery already read (err when it could not be).
 func areaOf(repoDir string, d gauntlet.Delivery, err error, f store.Feature, g project.GatesConfig) (c RiskCheck, paths, facets []string) {
-	var why []string
+	var why, sensitive []string
 	files, base := d.Files, d.Ref
 	switch {
 	case errors.Is(err, gauntlet.ErrNotGitRepo):
@@ -300,7 +391,7 @@ func areaOf(repoDir string, d gauntlet.Delivery, err error, f store.Feature, g p
 		paths = sensitivePaths(files, g.RiskHumanPaths(), d.Prefix)
 	}
 	if len(paths) > 0 {
-		why = append(why, "touches a sensitive path: "+someOf(paths))
+		sensitive = append(sensitive, "touches a sensitive path: "+someOf(paths))
 	}
 	if len(d.Dirty) > 0 {
 		why = append(why, "uncommitted changes the diff cannot measure: "+someOf(d.Dirty))
@@ -314,15 +405,40 @@ func areaOf(repoDir string, d gauntlet.Delivery, err error, f store.Feature, g p
 	}
 	// A card needs a facet of its own; its parents' only add sensitivity.
 	if len(f.Facets) == 0 {
-		why = append(why, "the card has no facet (cerne feature retag "+f.ID+" --facet …)")
+		sensitive = append(sensitive, "the card has no facet (cerne feature retag "+f.ID+" --facet …)")
 	}
 	if len(facets) > 0 {
-		why = append(why, "carries a sensitive facet: "+strings.Join(facets, ", "))
+		sensitive = append(sensitive, "carries a sensitive facet: "+strings.Join(facets, ", "))
+	}
+	waived := f.AcceptMode == AcceptModeAuto && len(sensitive) > 0
+	if !waived {
+		why = append(why, sensitive...)
+	}
+	// The gate's own files never pass alone (F-0518, the tech lead's call):
+	// under auto, a delivery that changes them could loosen the gate and be
+	// accepted by it. Whatever the lists hold.
+	if f.AcceptMode == AcceptModeAuto {
+		if own := sensitivePaths(files, gateOwnPaths, d.Prefix); len(own) > 0 {
+			why = append(why, "touches the gate's own files, which the owner's auto mark never covers: "+someOf(own))
+		}
 	}
 	if len(why) > 0 {
 		return RiskCheck{Found: strings.Join(why, "; ")}, paths, facets
 	}
+	if waived {
+		return RiskCheck{Holds: true, Found: "the owner marked this card to pass alone (accept_mode auto), which waives: " + strings.Join(sensitive, "; ")}, paths, facets
+	}
 	return RiskCheck{Holds: true, Found: "touches no sensitive path or facet"}, nil, nil
+}
+
+// gateOwnPaths are the files that configure the gate and the agents it
+// judges: cerne's config, the agents' configs and instructions, and the
+// hooks and guide cerne installs. Not the owner's list: fixed.
+var gateOwnPaths = []string{
+	".cernerc",
+	"**/.claude/**", "**/.cursor/**", "**/.codex/**", "**/.gemini/**", "**/.agents/**", ".github/copilot-instructions.md",
+	".github/hooks/**", ".github/instructions/**", ".github/skills/**",
+	".mcp.json", "AGENTS.md", "CLAUDE.md", "GEMINI.md",
 }
 
 // chainFacets are the facets of f and of every ancestor up its parent chain:

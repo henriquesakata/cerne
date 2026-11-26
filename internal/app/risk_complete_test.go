@@ -26,9 +26,17 @@ func riskResult(outcome string) string {
 // riskDelivery makes projDir a project under accept = "risk" whose delivery
 // branch commits change, and seeds f in development in the backend with
 // riskSpec, a plan and riskResult(outcome).
+// Past calibration (F-0518): the gate decides on its own.
 func riskDelivery(t *testing.T, repoDir, projDir string, f store.Feature, outcome string, change map[string]string) {
 	t.Helper()
-	saveGates(t, projDir, project.GatesConfig{Accept: project.GateRisk})
+	riskDeliveryUnder(t, project.GatesConfig{Accept: project.GateRisk, RiskCalibrationN: new(int64)}, repoDir, projDir, f, outcome, change)
+}
+
+// riskDeliveryUnder is riskDelivery with the [gates] block g, committed in
+// the checkout's base.
+func riskDeliveryUnder(t *testing.T, g project.GatesConfig, repoDir, projDir string, f store.Feature, outcome string, change map[string]string) {
+	t.Helper()
+	saveGates(t, projDir, g)
 	riskRepo(t, projDir, nil, change)
 	f.Title, f.State = "Feature "+f.ID, domain.StateInDevelopment
 	if err := store.SaveFeature(repoDir, f); err != nil {
@@ -64,6 +72,7 @@ func TestRiskGateNeedsAllThree(t *testing.T) {
 					if !tested {
 						change["internal/x/x_test.go"] = "package x\n\n// F-0001 crit. 1\n"
 					}
+					calibrating(t, projDir, 0) // past calibration (F-0518)
 					riskRepo(t, projDir, nil, change)
 					outcome := "vitória"
 					if !win {

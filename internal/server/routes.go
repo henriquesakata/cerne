@@ -119,6 +119,19 @@ func dataRoutes() []dataRoute {
 		{"PUT", "/features/{id}/title", false, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
 			handleRenameTitle(w, r, repoDir, projDir, r.PathValue("id"))
 		}},
+		// The risk gate's learning (F-0518): the owner's writes, local ui only.
+		{"POST", "/features/{id}/risk-feedback", false, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
+			handleRiskFeedback(w, r, repoDir, projDir, r.PathValue("id"))
+		}},
+		{"PUT", "/features/{id}/accept-mode", false, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
+			handleAcceptMode(w, r, repoDir, projDir, r.PathValue("id"))
+		}},
+		{"GET", "/gate/risk", false, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
+			handleRiskGate(w, r, repoDir, projDir)
+		}},
+		{"POST", "/gate/proposals", false, func(w http.ResponseWriter, r *http.Request, repoDir, projDir, _ string) {
+			handleGateProposal(w, r, repoDir, projDir)
+		}},
 		{"GET", "/artifacts/{featureID}/{name}", false, func(w http.ResponseWriter, r *http.Request, repoDir, _, _ string) {
 			handleArtifactGet(w, repoDir, r.PathValue("featureID"), r.PathValue("name"))
 		}},

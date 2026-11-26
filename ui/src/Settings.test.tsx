@@ -5,7 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import '@testing-library/jest-dom/vitest'
 import Settings from './Settings'
 import { I18nProvider } from './i18n'
-import { HTTPError, type ResolvedSetting, type SettingScope, type SettingsView } from './api'
+import { HTTPError, type ResolvedSetting, type RiskGateView, type SettingScope, type SettingsView } from './api'
 
 // F-0315: a tela de Settings é derivada do registro de F-0314 — nenhuma chave
 // é conhecida pela tela; título, descrição, tipo e escopos vêm do payload.
@@ -14,9 +14,13 @@ const fetchSettings = vi.fn<() => Promise<SettingsView>>()
 const putSetting = vi.fn<(id: string, scope: SettingScope, value: unknown) => Promise<SettingsView>>()
 const unsetSetting = vi.fn<(id: string, scope: SettingScope) => Promise<SettingsView>>()
 const renameProject = vi.fn<(name: string) => Promise<string>>()
+const fetchRiskGate = vi.fn<(days: number) => Promise<RiskGateView>>()
+const decideGateProposal = vi.fn<(id: string, decision: string, days: number) => Promise<RiskGateView>>()
 
 vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api')>()),
+  fetchRiskGate: (days: number) => fetchRiskGate(days),
+  decideGateProposal: (id: string, decision: string, days: number) => decideGateProposal(id, decision, days),
   fetchSettings: () => fetchSettings(),
   putSetting: (id: string, scope: SettingScope, value: unknown) => putSetting(id, scope, value),
   unsetSetting: (id: string, scope: SettingScope) => unsetSetting(id, scope),
@@ -1925,5 +1929,135 @@ describe('Settings — aceite por risco e as listas sensíveis (F-0516)', () => 
     fireEvent.click(within(r).getByRole('button', { name: 'Salvar' }))
     await waitFor(() => expect(putSetting).toHaveBeenCalledWith('gates.risk_human_facets', 'project', ['auth', 'infra', 'data']))
     expect(within(r).queryByRole('button', { name: 'Mudar' })).toBeNull()
+  })
+})
+
+// F-0518: beside the two lists, what the risk gate learned, the calibration
+// and the proposals only the owner applies.
+describe('Settings — o que o gate de risco aprendeu (F-0518)', () => {
+  const view = (over: Partial<RiskGateView> = {}): RiskGateView => ({
+    calibration: { target: 20, answers: 12, remaining: 8, answered: 10, matched: 7, missed: 2 },
+    questions: [],
+    proposals: [],
+    stats: { accepted: { cards: 5, feedback: 1, fixed: 2, reverted: 0 }, held: { cards: 9, feedback: 4, fixed: 0, reverted: 1 } },
+    ...over,
+  })
+  const proposal = {
+    id: 'relax:gates.risk_human_paths:go.mod',
+    kind: 'relax' as const,
+    setting: 'gates.risk_human_paths',
+    remove: ['go.mod'],
+    after: ['.github/workflows/**'],
+    cards: ['F-0001', 'F-0002', 'F-0003'],
+    signals: ['F-0001 was held by go.mod and did not need the owner'],
+    command: "cerne settings set gates.risk_human_paths '[\".github/workflows/**\"]' --scope project",
+  }
+  const load = (gate: string) =>
+    fetchSettings.mockResolvedValue(
+      fixture({
+        settings: [
+          key({ id: 'gates.accept', group: 'process', type: 'string', default: 'human', enum: ['human', 'merge', 'auto', 'risk'], scopes: ['project'], value: gate, human_only: true }),
+          key({ id: 'gates.risk_calibration', title: 'Risk gate calibration', group: 'process', type: 'int', default: 20, scopes: ['project'], value: 20, human_only: true, allow_zero: true }),
+        ],
+      }),
+    )
+  const show = async (lang: string) => {
+    localStorage.setItem('cerne-lang', lang)
+    render(
+      <I18nProvider>
+        <Settings group="process" />
+      </I18nProvider>,
+    )
+  }
+  beforeEach(() => {
+    window.location.hash = '#/settings/process'
+    fetchRiskGate.mockReset()
+    decideGateProposal.mockReset()
+    putSetting.mockResolvedValue(fixture())
+  })
+
+  // F-0518 crit. 10
+  for (const [lang, accepted, held, period7] of [
+    ['pt-BR', '5 cards · 1 com resposta sua · 2 com correção · 0 revertidos', '9 cards · 4 com resposta sua · 0 com correção · 1 revertido', 'últimos 7 dias'],
+    ['en', '5 cards · 1 with your answer · 2 fixed · 0 reverted', '9 cards · 4 with your answer · 0 fixed · 1 reverted', 'last 7 days'],
+  ] as const) {
+    it(`${lang}: os números do período, trinta dias por padrão, e a troca de período`, async () => {
+      load('risk')
+      fetchRiskGate.mockResolvedValue(view())
+      await show(lang)
+      expect(await screen.findByText(accepted)).toBeInTheDocument()
+      expect(screen.getByText(held)).toBeInTheDocument()
+      expect(fetchRiskGate).toHaveBeenCalledWith(30)
+      fireEvent.change(screen.getByRole('combobox', { name: lang === 'en' ? 'Period' : 'Período' }), { target: { value: '7' } })
+      await waitFor(() => expect(fetchRiskGate).toHaveBeenLastCalledWith(7))
+      expect(screen.getByRole('option', { name: period7 })).toBeInTheDocument()
+    })
+  }
+
+  // F-0518 crit. 13
+  for (const [lang, left, match] of [
+    ['pt-BR', 'faltam 8 respostas de 20', 'Das 10 respostas da calibração, o gate teria acertado 7. Em 2, ele teria deixado passar e você disse que precisava de você.'],
+    ['en', '8 answers left of 20', 'Of the 10 answers in calibration, the gate would have got 7 right. In 2, it would have let the delivery pass and you said it needed you.'],
+  ] as const) {
+    it(`${lang}: o andamento da calibração`, async () => {
+      load('risk')
+      fetchRiskGate.mockResolvedValue(view())
+      await show(lang)
+      const p = await screen.findByText((_, el) => el?.tagName === 'P' && (el.textContent ?? '').includes(left))
+      expect(p).toHaveTextContent(match)
+    })
+  }
+
+  // F-0518 crit. 8
+  it('a proposta pede o dono: Aplicar pergunta antes, Recusar grava a recusa', async () => {
+    load('risk')
+    fetchRiskGate.mockResolvedValue(view({ proposals: [proposal] }))
+    decideGateProposal.mockResolvedValue(view())
+    await show('pt-BR')
+    expect(await screen.findByText('Tirar go.mod de gates.risk_human_paths')).toBeInTheDocument()
+    expect(screen.getByText('F-0001 was held by go.mod and did not need the owner')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar' }))
+    expect(decideGateProposal).not.toHaveBeenCalled()
+    expect(screen.getByText(/Grava no \.cernerc/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Recusar' }))
+    await waitFor(() => expect(decideGateProposal).toHaveBeenCalledWith(proposal.id, 'dismissed', 30))
+    expect(await screen.findByText('Nenhuma proposta aberta. Nada muda nas listas sem você.')).toBeInTheDocument()
+  })
+
+  // F-0518 crit. 8
+  it('Aplicar, confirmado, aplica a proposta', async () => {
+    load('risk')
+    fetchRiskGate.mockResolvedValue(view({ proposals: [proposal] }))
+    decideGateProposal.mockResolvedValue(view())
+    await show('en')
+    fireEvent.click(await screen.findByRole('button', { name: 'Apply' }))
+    const box = screen.getByRole('group', { name: /Drop go\.mod from gates\.risk_human_paths\?/ })
+    fireEvent.click(within(box).getByRole('button', { name: 'Apply' }))
+    await waitFor(() => expect(decideGateProposal).toHaveBeenCalledWith(proposal.id, 'accepted', 30))
+  })
+
+  // F-0518 crit. 10
+  it('fora do gate de risco, o painel não aparece', async () => {
+    load('human')
+    fetchRiskGate.mockResolvedValue(view())
+    await show('pt-BR')
+    await screen.findByRole('listitem', { name: 'Calibração do gate de risco' })
+    expect(screen.queryByText('O que o gate de risco aprendeu')).toBeNull()
+    expect(fetchRiskGate).not.toHaveBeenCalled()
+  })
+
+  // F-0518 crit. 12
+  it('a calibração aceita 0, que desliga, e pergunta antes de sair do padrão', async () => {
+    load('risk')
+    fetchRiskGate.mockResolvedValue(view())
+    await show('pt-BR')
+    const row = await screen.findByRole('listitem', { name: 'Calibração do gate de risco' })
+    fireEvent.change(within(row).getByRole('spinbutton'), { target: { value: '0' } })
+    fireEvent.click(within(row).getByRole('button', { name: 'Salvar' }))
+    expect(putSetting).not.toHaveBeenCalled()
+    expect(within(row).getByText(/o gate de risco decide sozinho já na próxima entrega/)).toBeInTheDocument()
+    fireEvent.click(within(row).getByRole('button', { name: 'Mudar' }))
+    await waitFor(() => expect(putSetting).toHaveBeenCalledWith('gates.risk_calibration', 'project', 0))
   })
 })

@@ -71,6 +71,9 @@ type Setting struct {
 	// actor (F-0392). The server only serializes it, for the UI to guard the
 	// key; the CLI still enforces it.
 	HumanOnly bool `json:"human_only,omitempty"`
+	// AllowZero lets an int key take 0 besides the positive integers (F-0518:
+	// zero turns a count off).
+	AllowZero bool `json:"allow_zero,omitempty"`
 	// MaxLen is the longest string the key accepts, in characters; 0 = the
 	// default maxSettingString (a URL needs more than a display name). The UI
 	// caps its text field with it (F-0449).
@@ -167,6 +170,11 @@ var settingsRegistry = []Setting{
 		Description: "Turns the Gauntlet on or off for this project. With off (light mode), approve accepts a spec without a bar, complete accepts a result without a ## Gauntlet section, and lint stops charging both. Only the literal off turns it off; any other stored value counts as on. An agent cannot change this key through cerne settings: it is the project owner's decision.",
 	},
 	{
+		ID: "gates.risk_calibration", Group: "process", Title: "Risk gate calibration", Type: "int", Default: int64(20), AllowZero: true,
+		Scopes: []string{ScopeProject}, HumanOnly: true,
+		Description: "Under the risk accept gate, how many of your answers the gate collects before it decides on its own. Until then it holds every delivery for the merge, records what it would have decided, and asks you on the card accepted at the merge whether the delivery needed you; a card you do not answer does not count. 0 turns calibration off. An agent cannot change this key through cerne settings: it is the project owner's decision.",
+	},
+	{
 		ID: "gates.risk_human_facets", Group: "process", Title: "Facets that always need a person", Type: "list", Default: defaultRiskHumanFacets,
 		Scopes: []string{ScopeProject}, HumanOnly: true,
 		Description: "Under the risk accept gate, a card that carries one of these facets always waits for a person, whatever its diff touches; a card with no facet waits too. Changed, the list counts from the next complete. An agent cannot change this key through cerne settings: it is the project owner's decision.",
@@ -175,6 +183,11 @@ var settingsRegistry = []Setting{
 		ID: "gates.risk_human_paths", Group: "process", Title: "Paths that always need a person", Type: "list", Default: defaultRiskHumanPaths, MaxLen: 256,
 		Scopes: []string{ScopeProject}, HumanOnly: true,
 		Description: "Under the risk accept gate, a delivery that changes a file matching one of these globs always waits for a person; the files are the git diff from the merge-base with the default branch to HEAD, and a diff that cannot be read waits too. A glob with no slash matches a file or folder name at any depth (go.mod, CLAUDE.md, migrations); one with a slash starts at the repository root (a leading / or ./ is dropped, a trailing / is the whole folder); * stays inside a folder, ** crosses folders, and case is ignored. The default covers the CI workflows of the three forges, dependency manifests and lockfiles, migrations, .cernerc and the agents' hooks and configs. Changed, the list counts from the next complete. An agent cannot change this key through cerne settings: it is the project owner's decision.",
+	},
+	{
+		ID: "gates.risk_relax_after", Group: "process", Title: "Answers before a looser list is proposed", Type: "int", Default: int64(3),
+		Scopes: []string{ScopeProject}, HumanOnly: true,
+		Description: "Under the risk accept gate, when this many cards held by the same path pattern or facet get your answer that they did not need you, with no answer that one should have asked, no fix and no revert of a card that touched it since, the gate proposes to drop the pattern or facet from its list. The proposal waits for you in the Settings screen and in cerne next; nothing loosens on its own. An agent cannot change this key through cerne settings: it is the project owner's decision.",
 	},
 	{
 		ID: "graph.enabled", Group: "interface", Title: "Graph", Type: "bool", Default: true,
@@ -521,7 +534,7 @@ func hasSettingType(s Setting, v any) bool {
 	case string:
 		return s.Type == "string" && (len(s.Enum) == 0 || slices.Contains(s.Enum, v.(string)))
 	case int64:
-		return s.Type == "int" && v.(int64) > 0
+		return s.Type == "int" && (v.(int64) > 0 || s.AllowZero && v.(int64) == 0)
 	}
 	return false
 }
@@ -530,6 +543,9 @@ func hasSettingType(s Setting, v any) bool {
 func settingWant(s Setting) string {
 	if len(s.Enum) > 0 {
 		return "one of: " + strings.Join(s.Enum, ", ")
+	}
+	if s.Type == "int" && s.AllowZero {
+		return "0 or a positive integer"
 	}
 	if s.Type == "int" {
 		return "a positive integer"
@@ -611,7 +627,7 @@ func SetSetting(projDir, id, scope, raw string) error {
 	case "int":
 		n, err := strconv.ParseInt(raw, 10, 64)
 		if err != nil {
-			return fmt.Errorf("%s: %w %q: want a positive integer", id, ErrInvalidSettingValue, raw)
+			return fmt.Errorf("%s: %w %q: want %s", id, ErrInvalidSettingValue, raw, settingWant(declared(id)))
 		}
 		v = n
 	case "records":

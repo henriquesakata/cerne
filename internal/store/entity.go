@@ -59,6 +59,10 @@ type Feature struct {
 	// ApprovedVia (F-0515) is "auto" when an agent approved under [gates]
 	// approve = "auto"; empty for a person's approval. Never back-filled.
 	ApprovedVia string `json:"approved_via,omitempty"`
+	// AcceptMode (F-0518) is the owner's mark for the risk gate: "human" holds
+	// the card for a person, "auto" waives its sensitive-area condition; empty
+	// lets the gate decide.
+	AcceptMode string `json:"accept_mode,omitempty"`
 	// Capabilities lists the product-capability nodes (C-…) this feature
 	// contributes to (F-0188) — the functional axis, N:N, validated on link.
 	Capabilities []string `json:"capabilities,omitempty"`

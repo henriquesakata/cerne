@@ -134,7 +134,9 @@ func cascadeAccept(repoDir, projDir string, parent store.Feature, m *mergeAccept
 			if !measured {
 				ra = assessRisk(repoDir, projDir, c)
 			}
-			if !ra.Low() {
+			// The parent's check held the card for any task that does not
+			// ride (F-0518): the same rule here, so no task is left behind.
+			if !ra.rides() {
 				held := ra.payload()
 				held["cascade_from"] = parentID
 				if err := store.AppendEvent(repoDir, domain.NewEvent(c.ID, "feature.risk_held", held, EventActor())); err != nil {
@@ -144,7 +146,7 @@ func cascadeAccept(repoDir, projDir string, parent store.Feature, m *mergeAccept
 				continue
 			}
 			maps.Copy(payload, ra.payload())
-			payload["via"] = via
+			payload["risk"], payload["via"] = "low", via // it rode the parent's accept as low risk
 			c.AcceptedVia, c.AcceptedRisk = via, ra.Summary()
 		}
 		if err := moveChild(repoDir, &c, domain.ActionAccept, payload, actor); err != nil {
