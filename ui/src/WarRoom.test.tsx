@@ -1423,6 +1423,19 @@ describe('facilitação e rascunho de ata visíveis na sala (T-0022)', () => {
 
   // T-0022 crit. 3
   // E-0006 crit. 12
+  it('o fechamento em um clique nunca força itens abertos, mesmo com a caixa do formulário marcada', async () => {
+    localStorage.setItem('warroom-facilitator--R1', FAC)
+    readRoomMessages.mockImplementationOnce(() => Promise.resolve([open, draft]))
+    postRoomClose.mockResolvedValue(room({ closed_at: '2026-08-06T01:00:00Z', minutes: draftMinutes }))
+    render(<WarRoomDetail id="R1" />)
+
+    fireEvent.click(await screen.findByLabelText(/permitir fechar com itens pendentes/i))
+    fireEvent.click(screen.getByRole('button', { name: /encerrar com este rascunho/i }))
+    await waitFor(() => expect(postRoomClose).toHaveBeenCalledWith('R1', FAC, draft.time, false))
+  })
+
+  // T-0022 crit. 3
+  // E-0006 crit. 12
   it('um rascunho trocado depois da leitura não fecha a sala: avisa e relê a transcrição', async () => {
     localStorage.setItem('warroom-facilitator--R1', FAC)
     const newer: RoomMessage = {

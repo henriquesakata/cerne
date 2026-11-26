@@ -658,12 +658,13 @@ export function WarRoomDetail({ id }: { id: string }) {
   // A string closes with the room's saved draft, the one updated at that
   // instant (T-0022). Another draft saved meanwhile refuses: the tab says so
   // and re-issues its long-poll, which brings the new draft into the card.
+  // Forcing past open items stays in the full form: the 1-click close never does.
   const submitClose = (minutesPayload: Minutes | string) => {
     if (!facilitatorId || closing) return
     setClosing(true)
     setError(null)
     setNotice(null)
-    postRoomClose(id, facilitatorId, minutesPayload, allowOpenItems)
+    postRoomClose(id, facilitatorId, minutesPayload, typeof minutesPayload !== 'string' && allowOpenItems)
       .then((r) => {
         setClosing(false)
         setClosed(true)
