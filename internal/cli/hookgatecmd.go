@@ -97,14 +97,23 @@ func recordSessionMode(cacheDir string, in hookInput) {
 		harness = "cursor"
 	}
 	_ = app.RecordSessionMode(cacheDir, in.SessionID, in.AgentID, harness, in.PermissionMode)
-	recordCursorSession(cacheDir, in)
 }
 
 // recordCursorSession keeps the model a Cursor payload names for its session
-// (F-0513): model_id over model. Nothing for another harness's payload.
-// Fail-open.
-func recordCursorSession(cacheDir string, in hookInput) {
-	if !in.cursor() {
+// (F-0513), in the cache of the project the payload's workspace root names:
+// model_id over model. Called by the decode, so every hook subcommand that
+// reads a Cursor payload records it. No project, no record (an empty cwd would
+// climb from the hook process's own folder). Fail-open.
+func recordCursorSession(in hookInput) {
+	if in.CWD == "" {
+		return
+	}
+	cfg, _, err := project.LoadConfig(in.CWD)
+	if err != nil {
+		return
+	}
+	cacheDir, err := project.CacheDir(cfg.ProjectID)
+	if err != nil {
 		return
 	}
 	model := in.Cursor.ModelID
@@ -130,6 +139,7 @@ func decodeHookInput(r io.Reader) (hookInput, error) {
 	if json.Unmarshal(raw, &c) == nil && c.CursorVersion != "" {
 		in.Cursor = &c
 		normalizeCursorInput(&in)
+		recordCursorSession(in)
 	}
 	return in, nil
 }
@@ -346,7 +356,6 @@ func runHookBindWork(cmd *cobra.Command, format string) {
 	}
 	// F-0361: every Bash call is a sign of life for the session's binding.
 	_ = app.TouchBinding(cacheDir, in.SessionID, in.AgentID)
-	recordCursorSession(cacheDir, in)
 	var ti struct {
 		Command string `json:"command"`
 	}

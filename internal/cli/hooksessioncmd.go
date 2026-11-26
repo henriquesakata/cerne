@@ -290,7 +290,6 @@ func runHookSessionContext(cmd *cobra.Command, format string) {
 	if in.SessionID != "" {
 		if cacheDir, err := project.CacheDir(cfg.ProjectID); err == nil {
 			_ = app.TouchBinding(cacheDir, in.SessionID, "") // F-0361: sign of life
-			recordCursorSession(cacheDir, in)
 		}
 	}
 

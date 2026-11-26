@@ -338,6 +338,11 @@ func TestHookCursorRecordsSessionModel(t *testing.T) {
 		{"post-tool-use-feature-start.json", "tool-notes", "--after"},
 		{"pre-tool-use-write.json", "work-gate", ""},
 		{"stop.json", "stop-check", ""},
+		// Review of PR #221: every hook that reads a Cursor payload records,
+		// through the shared decode, not command by command.
+		{"post-tool-use-feature-start.json", "provenance", ""},
+		{"stop.json", "precompact", ""},
+		{"stop.json", "channel", ""},
 	} {
 		p := cursorFixture(t, tc.fixture, projDir)
 		sess := "c-" + tc.hook
