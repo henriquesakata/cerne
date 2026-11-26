@@ -260,26 +260,46 @@ func TestShowAcceptedAsLowRisk(t *testing.T) {
 // acceptance, with what held it.
 // F-0516 crit. 7
 func TestCompleteRiskHeldTaskRidesItsParent(t *testing.T) {
-	projDir, repoDir := riskProject(t, []string{"code"}, "vitória", false, map[string]string{"internal/x/x.go": "package x\n"})
-	if err := store.SaveFeature(repoDir, store.Feature{ID: "T-0002", Title: "Task T-0002", Parent: "F-0001", State: domain.StateInDevelopment, Facets: []string{"auth"}}); err != nil {
-		t.Fatal(err)
-	}
-	for doc, body := range map[string]string{"spec.md": riskCLISpec(false), "plan.md": "# Doc\n\n## Plano\n\nCorpo real do plano.\n", "result.md": riskCLIResult("vitória")} {
-		p := filepath.Join(repoDir, "content", "features", "T-0002", doc)
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	commitBackend(t, repoDir)
-	t.Setenv("CERNE_ACTOR", "agent")
-	out, err := execCerne(t, "feature", "complete", "T-0002", "--no-stamp", "--dir", projDir)
-	if err != nil {
-		t.Fatalf("complete: %v\n%s", err, out)
-	}
-	if !strings.Contains(out, "T-0002 waits for the acceptance of its parent F-0001 ([gates] accept = \"risk\"); what held it:\n") || strings.Contains(out, "T-0002 waits for the human merge of its PR") {
-		t.Errorf("output must say the task rides its parent:\n%s", out)
+	for _, tc := range []struct {
+		parent domain.FeatureState
+		waits  string
+	}{
+		{domain.StateInDevelopment, "the acceptance of its parent F-0001"},
+		// A parent already done takes nobody along: the task waits for the
+		// human merge of its own PR (review 2 of #228).
+		{domain.StateDone, "the human merge of its PR (record it with 'cerne feature accept T-0002 --merged')"},
+	} {
+		t.Run(string(tc.parent), func(t *testing.T) {
+			projDir, repoDir := riskProject(t, []string{"code"}, "vitória", false, map[string]string{"internal/x/x.go": "package x\n"})
+			parent, err := store.LoadFeature(repoDir, "F-0001")
+			if err != nil {
+				t.Fatal(err)
+			}
+			parent.State = tc.parent
+			if err := store.SaveFeature(repoDir, parent); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.SaveFeature(repoDir, store.Feature{ID: "T-0002", Title: "Task T-0002", Parent: "F-0001", State: domain.StateInDevelopment, Facets: []string{"auth"}}); err != nil {
+				t.Fatal(err)
+			}
+			for doc, body := range map[string]string{"spec.md": riskCLISpec(false), "plan.md": "# Doc\n\n## Plano\n\nCorpo real do plano.\n", "result.md": riskCLIResult("vitória")} {
+				p := filepath.Join(repoDir, "content", "features", "T-0002", doc)
+				if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			commitBackend(t, repoDir)
+			t.Setenv("CERNE_ACTOR", "agent")
+			out, err := execCerne(t, "feature", "complete", "T-0002", "--no-stamp", "--dir", projDir)
+			if err != nil {
+				t.Fatalf("complete: %v\n%s", err, out)
+			}
+			if !strings.Contains(out, "T-0002 waits for "+tc.waits+" ([gates] accept = \"risk\"); what held it:\n") {
+				t.Errorf("output must say the task waits for %s:\n%s", tc.waits, out)
+			}
+		})
 	}
 }

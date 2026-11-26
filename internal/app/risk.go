@@ -133,6 +133,20 @@ func assessRisk(repoDir, projDir string, f store.Feature) RiskAssessment {
 	return r
 }
 
+// RiskHeldWait says what a card the risk gate holds waits for (F-0516), the
+// way it really closes: a task rides its parent's acceptance while the parent
+// is open; any other card, and a task whose parent is already done, waits for
+// the human merge of its PR (the task's recorded with accept --merged).
+func RiskHeldWait(repoDir string, f store.Feature) string {
+	if !isTask(f.ID) || f.Parent == "" {
+		return "the human merge of its PR"
+	}
+	if p, err := store.LoadFeature(repoDir, f.Parent); err == nil && p.State != domain.StateDone {
+		return "the acceptance of its parent " + f.Parent
+	}
+	return "the human merge of its PR (record it with 'cerne feature accept " + f.ID + " --merged')"
+}
+
 // revertedRound reports whether feature id was reverted after its last
 // accept, whatever its via (a person, the merge, the auto or the risk gate),
 // and, if so, the Gauntlet round current at that accept. An accept that

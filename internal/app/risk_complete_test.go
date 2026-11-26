@@ -294,6 +294,43 @@ func TestRiskRecordsBaseAndHead(t *testing.T) {
 	}
 }
 
+// TestNextStepRiskGateTask: next tells a task in development what it waits
+// for if the gate holds it, the way tasks close — its parent's acceptance
+// while the parent is open, else the human merge recorded with --merged.
+// F-0516 crit. 11
+func TestNextStepRiskGateTask(t *testing.T) {
+	for _, tc := range []struct {
+		parent domain.FeatureState
+		waits  string
+	}{
+		{domain.StateInDevelopment, "the acceptance of its parent F-0001"},
+		{domain.StateDone, "the human merge of its PR (record it with 'cerne feature accept T-0002 --merged')"},
+	} {
+		t.Run(string(tc.parent), func(t *testing.T) {
+			proj, repo := nextStepRepo(t)
+			riskWrite(t, proj, ".cernerc", "project_id = \"demo\"\nbackend = \"b\"\n\n[gates]\naccept = \"risk\"\n")
+			for _, f := range []store.Feature{
+				{ID: "F-0001", Title: "p", State: tc.parent},
+				{ID: "T-0002", Title: "t", Parent: "F-0001", State: domain.StateInDevelopment},
+			} {
+				if err := store.SaveFeature(repo, f); err != nil {
+					t.Fatal(err)
+				}
+			}
+			nextStepDoc(t, repo, "T-0002", "spec.md", nextStepGoodSpec)
+			nextStepDoc(t, repo, "T-0002", "plan.md", "# plano\n\nPassos reais do plano.\n")
+			nextStepDoc(t, repo, "T-0002", "result.md", riskResult("vitória"))
+			got, err := NextStep(repo, proj, "T-0002")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.HasSuffix(got.Step, "otherwise it waits for "+tc.waits) {
+				t.Errorf("step %q, want it to end with what the task waits for: %s", got.Step, tc.waits)
+			}
+		})
+	}
+}
+
 // TestRiskRevertNeedsANewRound: a card accepted as low risk, reverted and
 // completed again with no new Gauntlet round is held — the win it carries was
 // judged before the revert; a round recorded after the revert lets it through.
