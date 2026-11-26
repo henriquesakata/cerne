@@ -414,6 +414,14 @@ func areaOf(repoDir string, d gauntlet.Delivery, err error, f store.Feature, g p
 	if !waived {
 		why = append(why, sensitive...)
 	}
+	// The gate's own files never pass alone (F-0518, the tech lead's call):
+	// under auto, a delivery that changes them could loosen the gate and be
+	// accepted by it. Whatever the lists hold.
+	if f.AcceptMode == AcceptModeAuto {
+		if own := sensitivePaths(files, gateOwnPaths, d.Prefix); len(own) > 0 {
+			why = append(why, "touches the gate's own files, which the owner's auto mark never covers: "+someOf(own))
+		}
+	}
 	if len(why) > 0 {
 		return RiskCheck{Found: strings.Join(why, "; ")}, paths, facets
 	}
@@ -421,6 +429,16 @@ func areaOf(repoDir string, d gauntlet.Delivery, err error, f store.Feature, g p
 		return RiskCheck{Holds: true, Found: "the owner marked this card to pass alone (accept_mode auto), which waives: " + strings.Join(sensitive, "; ")}, paths, facets
 	}
 	return RiskCheck{Holds: true, Found: "touches no sensitive path or facet"}, nil, nil
+}
+
+// gateOwnPaths are the files that configure the gate and the agents it
+// judges: cerne's config, the agents' configs and instructions, and the
+// hooks and guide cerne installs. Not the owner's list: fixed.
+var gateOwnPaths = []string{
+	".cernerc",
+	"**/.claude/**", "**/.cursor/**", "**/.codex/**", "**/.gemini/**", "**/.agents/**", ".github/copilot-instructions.md",
+	".github/hooks/**", ".github/instructions/**", ".github/skills/**",
+	".mcp.json", "AGENTS.md", "CLAUDE.md", "GEMINI.md",
 }
 
 // chainFacets are the facets of f and of every ancestor up its parent chain:

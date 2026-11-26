@@ -370,6 +370,40 @@ func TestAcceptModeAutoStillMeasures(t *testing.T) {
 	}
 }
 
+// TestAcceptModeAutoNeverPassesTheGateFiles: a change to the gate's own files
+// — .cernerc, the agents' configs and cerne's hooks — never passes alone, not
+// under the owner's auto mark and not with the sensitive lists emptied: an
+// agent's delivery could otherwise loosen the gate and be accepted by it.
+// Tech-lead decision against crit. 15's letter (nothing loosens without the
+// owner).
+// F-0518 crit. 15
+func TestAcceptModeAutoNeverPassesTheGateFiles(t *testing.T) {
+	for _, file := range []string{".cernerc", ".claude/settings.json", "sub/.cursor/rules.md", "AGENTS.md", ".github/hooks/hook.sh", ".mcp.json"} {
+		t.Run(file, func(t *testing.T) {
+			repoDir, projDir := t.TempDir(), t.TempDir()
+			g := calibration(0)
+			g.RiskPaths, g.RiskFacets = []string{}, []string{} // the owner emptied both lists
+			saveGates(t, projDir, g)
+			rc, err := os.ReadFile(filepath.Join(projDir, ".cernerc"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			change := cleanChange()
+			change[file] = "# changed\n"
+			if file == ".cernerc" {
+				change[file] = string(rc) + "# changed\n"
+			}
+			riskRepo(t, projDir, nil, change)
+			riskWrite(t, repoDir, filepath.Join("content", "features", "F-0001", "spec.md"), riskSpec)
+			riskWrite(t, repoDir, filepath.Join("content", "features", "F-0001", "result.md"), riskResult("vitória"))
+			ra := assessRisk(repoDir, projDir, store.Feature{ID: "F-0001", Facets: []string{"code"}, AcceptMode: AcceptModeAuto})
+			if ra.Low() || ra.Area.Holds || !strings.Contains(ra.Area.Found, file) {
+				t.Fatalf("auto, touching %s: low %v, area %+v; want held, naming it", file, ra.Low(), ra.Area)
+			}
+		})
+	}
+}
+
 // TestRiskCapsTheFileLists: the file lists copied into events keep at most
 // 200 entries each, with the total beside them, so a huge delivery does not
 // grow every event; a short list is whole.
