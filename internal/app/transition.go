@@ -486,6 +486,25 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 		if err := store.AppendEvent(repoDir, domain.NewEvent(id, eventType, payload, actor)); err != nil {
 			return "", err
 		}
+		// A task the new reading lets ride drops the reasons of an older one (F-0521).
+		if risk != nil {
+			for id, tr := range risk.tasks {
+				if !tr.rides() {
+					continue
+				}
+				task, err := store.LoadFeature(repoDir, id)
+				if err != nil {
+					return "", err
+				}
+				if len(task.HeldRisk) == 0 {
+					continue
+				}
+				task.HeldRisk = nil
+				if err := store.SaveFeature(repoDir, task); err != nil {
+					return "", err
+				}
+			}
+		}
 		// A task that held its parent records its own measurements (F-0516).
 		if risk != nil {
 			for _, ht := range risk.HeldTasks {

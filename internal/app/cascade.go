@@ -152,6 +152,7 @@ func cascadeAccept(repoDir, projDir string, parent store.Feature, m *mergeAccept
 			maps.Copy(payload, ra.payload())
 			payload["risk"], payload["via"] = "low", via // it rode the parent's accept as low risk
 			c.AcceptedVia, c.AcceptedRisk = via, ra.Summary()
+			c.HeldRisk = nil // F-0521: this reading lets it ride
 		}
 		if err := moveChild(repoDir, &c, domain.ActionAccept, payload, actor); err != nil {
 			return out, err
