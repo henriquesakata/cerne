@@ -30,8 +30,17 @@ while [ "$attempt" -le "$PIN_ATTEMPTS" ]; do
   fi
   git add docs.lock
   git commit -m "chore(docs): pin docs.lock [skip ci]"
-  if git push origin HEAD:main; then
+  log="$(mktemp)"
+  if git push origin HEAD:main 2>"$log"; then
+    cat "$log"
     exit 0
+  fi
+  cat "$log"
+  # Only a non-fast-forward rejection means main moved; anything else
+  # (ruleset, pre-receive, auth) will not heal by retrying.
+  if ! grep -Eq 'fetch first|non-fast-forward' "$log"; then
+    echo "push was refused (not because main advanced); see git's error above"
+    exit 1
   fi
   if [ "$attempt" -lt "$PIN_ATTEMPTS" ]; then
     echo "push rejected (attempt $attempt of $PIN_ATTEMPTS): main advanced; fetching and re-pinning on the new tip"

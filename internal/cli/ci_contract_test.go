@@ -190,6 +190,23 @@ func TestPinPushRetriesWhenMainAdvances(t *testing.T) {
 			t.Errorf("retries = %d, want 2 (bounded to 3 attempts)\n%s", n, out)
 		}
 	})
+	t.Run("refused push is not retried", func(t *testing.T) {
+		origin, job, _ := pinRepos(t)
+		hook := filepath.Join(origin, "hooks", "pre-receive")
+		if err := os.WriteFile(hook, []byte("#!/bin/sh\necho 'blocked by ruleset' >&2\nexit 1\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		out, err := runPin(t, job, "echo snap1 > docs.lock")
+		if err == nil {
+			t.Fatalf("want failure, got success\n%s", out)
+		}
+		if !strings.Contains(out, "push was refused") {
+			t.Errorf("missing refusal message:\n%s", out)
+		}
+		if strings.Contains(out, "fetching and re-pinning") || strings.Contains(out, "kept advancing") {
+			t.Errorf("a refusal must fail at once, not retry:\n%s", out)
+		}
+	})
 	t.Run("tip already carries the pin", func(t *testing.T) {
 		origin, job, racer := pinRepos(t)
 		if out, err := runPin(t, job, racePin(t, racer, "snap1", 1, true)); err != nil {
