@@ -138,7 +138,11 @@ func NewProvider(cfg project.LLMConfig) (Provider, error) {
 		key = cfg.TestKey
 	}
 	if key == "" && cfg.Provider != providerCompatible {
-		return nil, fmt.Errorf("%w: set the %s environment variable or save the key in Settings", ErrAPIKeyMissing, raw.KeyVar())
+		err := fmt.Errorf("%w: set the %s environment variable or save the key in Settings", ErrAPIKeyMissing, raw.KeyVar())
+		if note := raw.LegacyKeyNote(); note != "" {
+			err = fmt.Errorf("%w (%s)", err, note)
+		}
+		return nil, err
 	}
 	if cfg.Provider != providerAnthropic {
 		return &openaiProvider{baseURL: cfg.BaseURL, model: cfg.Model, apiKey: key, httpClient: http.DefaultClient}, nil

@@ -466,7 +466,7 @@ type LLMConfig struct {
 	Mode      string `toml:"mode,omitempty"`       // "delegation" (default when empty) | "byo-key" | "claude-cli"
 	Provider  string `toml:"provider,omitempty"`   // byo-key provider; default "anthropic"
 	Model     string `toml:"model,omitempty"`      // model id; default: the model catalog's default (F-0311)
-	KeyEnv    string `toml:"key_env,omitempty"`    // env var NAME holding the key; default "CERNE_LLM_API_KEY"
+	KeyEnv    string `toml:"key_env,omitempty"`    // env var NAME holding the key; default: the provider's own variable
 	BaseURL   string `toml:"base_url,omitempty"`   // API base URL; default "https://api.anthropic.com"
 	MaxTokens int    `toml:"max_tokens,omitzero"`  // max output tokens; default 8000
 	ClaudeBin string `toml:"claude_bin,omitempty"` // claude-cli binary path; default "claude"
@@ -519,7 +519,7 @@ const (
 // provider absent here (anthropic, the empty default) uses the Anthropic ones;
 // "compatible" has no URL on purpose — the user's endpoint is required.
 var providerPresets = map[string]struct{ baseURL, keyEnv string }{
-	llmProviderOpenAI:     {"https://api.openai.com", defaultLLMKeyEnv},
+	llmProviderOpenAI:     {"https://api.openai.com", "OPENAI_API_KEY"},
 	llmProviderGemini:     {"https://generativelanguage.googleapis.com/v1beta/openai", "GEMINI_API_KEY"},
 	llmProviderOpenRouter: {"https://openrouter.ai/api", "OPENROUTER_API_KEY"},
 	llmProviderCompatible: {"", defaultLLMKeyEnv},

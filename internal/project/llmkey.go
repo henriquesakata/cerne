@@ -10,10 +10,12 @@ import (
 // vendor (B-0092). It is never sent.
 var ErrKeyWrongVendor = errors.New("API key belongs to another provider")
 
+const anthropicKeyPrefix = "sk-ant-"
+
 // keyPrefixVendor maps the key prefixes that name their vendor to it. A key of
 // any other shape is never judged.
 var keyPrefixVendor = []struct{ prefix, vendor string }{
-	{"sk-ant-", llmProviderAnthropic},
+	{anthropicKeyPrefix, llmProviderAnthropic},
 	{"sk-or-", llmProviderOpenRouter},
 	{"sk-proj-", llmProviderOpenAI},
 	{"AIza", llmProviderGemini},
@@ -62,12 +64,12 @@ func ProviderKeyEnv(provider string) string {
 
 // ResolveKey finds the API key of the configured provider (c is the raw
 // config, before WithDefaults): an explicit key_env alone, else the provider's
-// own variable, then — for anthropic and openai only, F-0323's single shared
-// name — the legacy CERNE_LLM_API_KEY. Each name is looked up in the process
-// environment, then in the host credentials file. The compatible provider
-// never reads the legacy name: its endpoint is not the vendor that key is for.
-// A key that plainly belongs to another vendor is never returned (B-0092): the
-// legacy name is skipped, any other variable is ErrKeyWrongVendor.
+// own variable, then — for anthropic only — the legacy CERNE_LLM_API_KEY
+// (F-0523: a name two vendors shared handed one's key to the other). Each name
+// is looked up in the process environment, then in the host credentials file.
+// The legacy name yields only an Anthropic-shaped key, unless base_url is the
+// user's own endpoint. A key that plainly belongs to another vendor is never
+// returned (B-0092): ErrKeyWrongVendor names the variable.
 // env is the variable the key was found under, the provider's own when none was.
 func (c LLMConfig) ResolveKey() (value, source, env string, err error) {
 	// An explicit key_env is the user pinning one variable: nothing else is read.
@@ -78,29 +80,44 @@ func (c LLMConfig) ResolveKey() (value, source, env string, err error) {
 		}
 		return v, src, c.KeyEnv, err
 	}
-	names := []string{}
 	own := ProviderKeyEnv(c.Provider)
 	if own != "" {
-		names = append(names, own)
-	}
-	if p := c.Provider; p == "" || p == llmProviderAnthropic || p == llmProviderOpenAI {
-		names = append(names, defaultLLMKeyEnv)
-	}
-	for _, n := range names {
-		v, src, err := ResolveAPIKey(n)
+		v, src, err := ResolveAPIKey(own)
 		if vendor := c.foreignKey(v); vendor != "" {
-			// The shared legacy name holds one vendor's key: for the other
-			// provider it is simply not this provider's key.
-			if n == defaultLLMKeyEnv && n != own {
-				continue
-			}
-			return "", "", n, wrongVendor(n, vendor, c.Provider)
+			return "", "", own, wrongVendor(own, vendor, c.Provider)
 		}
 		if err != nil || v != "" {
-			return v, src, n, err
+			return v, src, own, err
+		}
+	}
+	if own == providerKeyEnv[llmProviderAnthropic] {
+		v, src, err := ResolveAPIKey(defaultLLMKeyEnv)
+		if err != nil {
+			return "", "", defaultLLMKeyEnv, err
+		}
+		if v != "" && (c.BaseURL != "" || strings.HasPrefix(v, anthropicKeyPrefix)) {
+			return v, src, defaultLLMKeyEnv, nil
 		}
 	}
 	return "", "", c.KeyVar(), nil
+}
+
+// LegacyKeyNote says where the key goes now when openai finds none and the
+// legacy variable still holds one (F-0523); "" otherwise. It names the
+// variables, never the key.
+func (c LLMConfig) LegacyKeyNote() string {
+	if c.Provider != llmProviderOpenAI || c.KeyEnv != "" {
+		return ""
+	}
+	own := providerKeyEnv[llmProviderOpenAI]
+	if v, _, _ := ResolveAPIKey(own); v != "" {
+		return ""
+	}
+	// An Anthropic key there was never OpenAI's: nothing to move.
+	if v, _, _ := ResolveAPIKey(defaultLLMKeyEnv); v == "" || strings.HasPrefix(v, anthropicKeyPrefix) {
+		return ""
+	}
+	return fmt.Sprintf("%s is no longer read for OpenAI — put the OpenAI key in %s", defaultLLMKeyEnv, own)
 }
 
 // wrongVendor names the variable, the key's vendor and the provider — never

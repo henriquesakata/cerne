@@ -9,7 +9,7 @@ func TestWithDefaultsProviderPresets(t *testing.T) {
 	}{
 		{"", "https://api.anthropic.com", "CERNE_LLM_API_KEY", true},
 		{"anthropic", "https://api.anthropic.com", "CERNE_LLM_API_KEY", true},
-		{"openai", "https://api.openai.com", "CERNE_LLM_API_KEY", false},
+		{"openai", "https://api.openai.com", "OPENAI_API_KEY", false},
 		{"gemini", "https://generativelanguage.googleapis.com/v1beta/openai", "GEMINI_API_KEY", false},
 		{"openrouter", "https://openrouter.ai/api", "OPENROUTER_API_KEY", false},
 		{"compatible", "", "CERNE_LLM_API_KEY", false},
