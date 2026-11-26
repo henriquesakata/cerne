@@ -339,10 +339,10 @@ func (g GatesConfig) RiskHumanFacets() []string {
 // dependency manifests and lockfiles, migrations, cerne's own config and the
 // agents' hooks, instructions and configs.
 var defaultRiskHumanPaths = []string{
-	".github/workflows/**", ".gitlab-ci.yml", ".gitlab/**", ".gitea/workflows/**", ".forgejo/workflows/**",
+	".github/workflows/**", ".github/actions/**", ".gitlab-ci.yml", ".gitlab/**", ".gitea/workflows/**", ".forgejo/workflows/**",
 	"go.mod", "go.sum", "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock",
 	"Cargo.toml", "Cargo.lock", "pyproject.toml", "poetry.lock", "requirements*.txt", "Gemfile*",
-	"**/migrations/**",
+	"**/migrations/**", "db/migrate/**",
 	".cernerc",
 	".claude/**", ".cursor/**", ".codex/**", ".gemini/**", ".github/copilot-instructions.md",
 	".github/hooks/**", ".github/instructions/**", ".github/skills/**",

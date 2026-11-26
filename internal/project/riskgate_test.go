@@ -68,10 +68,10 @@ func TestSettingsRegistryAcceptRisk(t *testing.T) {
 // wantRiskPaths and wantRiskFacets are the default lists (F-0516 plan).
 var (
 	wantRiskPaths = []string{
-		".github/workflows/**", ".gitlab-ci.yml", ".gitlab/**", ".gitea/workflows/**", ".forgejo/workflows/**",
+		".github/workflows/**", ".github/actions/**", ".gitlab-ci.yml", ".gitlab/**", ".gitea/workflows/**", ".forgejo/workflows/**",
 		"go.mod", "go.sum", "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock",
 		"Cargo.toml", "Cargo.lock", "pyproject.toml", "poetry.lock", "requirements*.txt", "Gemfile*",
-		"**/migrations/**",
+		"**/migrations/**", "db/migrate/**",
 		".cernerc",
 		".claude/**", ".cursor/**", ".codex/**", ".gemini/**", ".github/copilot-instructions.md",
 		".github/hooks/**", ".github/instructions/**", ".github/skills/**",
