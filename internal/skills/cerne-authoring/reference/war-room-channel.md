@@ -61,4 +61,4 @@ Closing requires the facilitator capability and a structured **minutes** JSON (`
 **Troubleshooting a failed `cerne room join`, self-diagnosable without a human:**
 - **Connection error ("no cerne ui answering ... start one with 'cerne ui'")** → no `cerne ui` is listening on the port (default 7717). Start one: `cerne ui` in the project directory.
 - **"no cerne ui running this project" (404)** → a `cerne ui` is up but not serving *this* project directory. Not yours to fix — tell the human to restart `cerne ui` in the correct project directory.
-- **Conflict, nick already taken (409)** → someone else in the room already holds that `--nick`. Pick a different one and retry.
+- **Conflict, nick already taken or reserved (409)** → someone else in the room already holds that `--nick`, or it is `facilitator`, reserved for the facilitator's minutes drafts (T-0022). Pick a different one and retry.

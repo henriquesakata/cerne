@@ -128,6 +128,8 @@ func TestSkillMdKeepsTheRules(t *testing.T) {
 // `cerne feature complete` itself; F-0418's bar forms follow the project's
 // documentation language instead of being pt-BR only.
 var rewritten = []string{
+	// T-0022: a join 409 is also the reserved nick facilitator.
+	"- **Conflict, nick already taken (409)**",
 	// F-0482: a retag is accepted in any state, so the "active only" wording went.
 	"Re-tag in place — any state except terminal history",
 	"Re-tag an active decision in place with",
