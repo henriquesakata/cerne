@@ -181,3 +181,57 @@ func CountFeaturesByCapability(features []store.Feature) map[string]int {
 	}
 	return counts
 }
+
+// activeCapabilities is knownCapabilities that also refuses a retired node:
+// a card born or linked in bulk must not point at a superseded capability.
+func activeCapabilities(repoDir string, ids []string) ([]string, error) {
+	out, err := knownCapabilities(repoDir, ids)
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range out {
+		if c, _ := store.LoadCapability(repoDir, id); c.State != domain.CapabilityActive {
+			return nil, fmt.Errorf("%w: %s is retired (see 'cerne capability list --tree')", ErrUnknownCapability, id)
+		}
+	}
+	return out, nil
+}
+
+// LinkFeaturesCapabilities is LinkFeatureCapabilities over a batch (F-0514):
+// every target and capability is validated before the first write, and the
+// whole batch lands in one commit. Ids are canonicalized and deduplicated.
+func LinkFeaturesCapabilities(repoDir, projDir string, featureIDs, capIDs []string, clear bool) ([]store.Feature, error) {
+	var out []store.Feature
+	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		out = nil
+		var caps []string
+		if !clear {
+			var err error
+			if caps, err = activeCapabilities(repoDir, capIDs); err != nil {
+				return "", err
+			}
+		}
+		var ids []string
+		for _, id := range featureIDs {
+			if id = domain.CanonicalID(id); !slices.Contains(ids, id) {
+				ids = append(ids, id)
+			}
+		}
+		for _, id := range ids {
+			f, err := store.LoadFeature(repoDir, id)
+			if err != nil {
+				return "", fmt.Errorf("feature %s: %w", id, err)
+			}
+			f.Capabilities = caps
+			f.UpdatedAt = time.Now().UTC()
+			out = append(out, f)
+		}
+		for _, f := range out {
+			if err := store.SaveFeature(repoDir, f); err != nil {
+				return "", err
+			}
+		}
+		return "cerne: feature capability " + strings.Join(ids, ","), nil
+	})
+	return out, err
+}

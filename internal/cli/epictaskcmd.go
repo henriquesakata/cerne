@@ -32,7 +32,7 @@ func newEpicCmd() *cobra.Command {
 }
 
 func newEpicNewCmd(dir *string) *cobra.Command {
-	var module, parent, facet, component, file, context, owner, priority, onBehalf string
+	var module, parent, facet, component, file, context, owner, priority, onBehalf, capability string
 	var force bool
 	cmd := &cobra.Command{
 		Use:   "new <title>",
@@ -46,8 +46,7 @@ func newEpicNewCmd(dir *string) *cobra.Command {
 			"  cerne pull\n" + lifecycleSeq,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runFeatureLikeNew(cmd, *dir, args, module, parent, facet, component, file, context, force, owner, priority, onBehalf,
-				app.CreateEpicWithSpec)
+			return runFeatureLikeNew(cmd, *dir, args, module, parent, facet, component, file, context, force, owner, priority, onBehalf, capability, "E", "")
 		},
 	}
 	cmd.Flags().StringVar(&module, "module", "", "module the epic belongs to")
@@ -60,6 +59,7 @@ func newEpicNewCmd(dir *string) *cobra.Command {
 	cmd.Flags().StringVar(&owner, "owner", "", "responsible handle (free text, F-0204)")
 	cmd.Flags().StringVar(&priority, "priority", "", "priority (closed set: p0,p1,p2,p3, F-0204)")
 	cmd.Flags().StringVar(&onBehalf, "on-behalf", "", onBehalfHelp)
+	cmd.Flags().StringVar(&capability, "capability", "", "capability nodes to link at birth (CSV of C- ids; validated before anything is written, one commit)")
 	return cmd
 }
 
@@ -76,7 +76,7 @@ func newTaskCmd() *cobra.Command {
 }
 
 func newTaskNewCmd(dir *string) *cobra.Command {
-	var module, parent, facet, component, file, context, owner, priority, onBehalf string
+	var module, parent, facet, component, file, context, owner, priority, onBehalf, capability string
 	var force bool
 	cmd := &cobra.Command{
 		Use:   "new <title>",
@@ -90,8 +90,7 @@ func newTaskNewCmd(dir *string) *cobra.Command {
 			"  cerne feature complete T-NNNN  # result.md still required",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runFeatureLikeNew(cmd, *dir, args, module, parent, facet, component, file, context, force, owner, priority, onBehalf,
-				app.CreateTaskWithSpec)
+			return runFeatureLikeNew(cmd, *dir, args, module, parent, facet, component, file, context, force, owner, priority, onBehalf, capability, "T", "")
 		},
 	}
 	cmd.Flags().StringVar(&module, "module", "", "module the task belongs to")
@@ -104,14 +103,13 @@ func newTaskNewCmd(dir *string) *cobra.Command {
 	cmd.Flags().StringVar(&owner, "owner", "", "responsible handle (free text, F-0204)")
 	cmd.Flags().StringVar(&priority, "priority", "", "priority (closed set: p0,p1,p2,p3, F-0204)")
 	cmd.Flags().StringVar(&onBehalf, "on-behalf", "", onBehalfHelp)
+	cmd.Flags().StringVar(&capability, "capability", "", "capability nodes to link at birth (CSV of C- ids; validated before anything is written, one commit)")
 	return cmd
 }
 
 // runFeatureLikeNew is runFeatureNew generalized over the creation core
 // (F-0203): the same context gate, spec seeding and messages for F-/E-/T-.
-func runFeatureLikeNew(cmd *cobra.Command, dir string, args []string, module, parent, facet, component, file, context string, force bool, owner, priority, onBehalf string,
-	create func(repoDir, projDir, title, module, parent string, facets, components []string, specBody string, force bool, owner, priority, onBehalf string) (store.Feature, error),
-) error {
+func runFeatureLikeNew(cmd *cobra.Command, dir string, args []string, module, parent, facet, component, file, context string, force bool, owner, priority, onBehalf, capability, prefix, fixes string) error {
 	// An explicit blank --on-behalf must not read as "flag not passed" (T-0005).
 	if cmd.Flags().Changed("on-behalf") && strings.TrimSpace(onBehalf) == "" {
 		return app.ErrOnBehalfEmpty
@@ -141,8 +139,8 @@ func runFeatureLikeNew(cmd *cobra.Command, dir string, args []string, module, pa
 		specBody = spectmpl.StubWithContextIn(store.DocsLanguage(ctx.repoDir), title, context)
 	}
 	notice := componentNotice(cmd, ctx.repoDir, component)
-	f, err := create(ctx.repoDir, ctx.projDir, title, module, parent,
-		splitInforms(facet), splitInforms(component), specBody, force, owner, priority, onBehalf)
+	f, err := app.CreateLike(ctx.repoDir, ctx.projDir, prefix, title, module, parent, fixes,
+		splitInforms(facet), splitInforms(component), splitInforms(capability), specBody, force, owner, priority, onBehalf)
 	if err != nil {
 		return err
 	}

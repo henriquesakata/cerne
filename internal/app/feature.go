@@ -184,22 +184,23 @@ func CreateTaskWithSpec(repoDir, projDir, title, module, parent string, facets, 
 // committed-parent required. Everything else — guards, stub, event, sync — is
 // identical across the three. A spec body is recorded as written by by — the
 // zero DocAuthor resolves this process's (F-0375); cerne's stub by nobody.
-func createFeatureCore(repoDir, projDir, prefix, title, module, parent string, facets, components []string, specBody string, force bool, owner, priority, fixes string, by DocAuthor, onBehalf string) (store.Feature, error) {
+func createFeatureCore(repoDir, projDir, prefix, title, module, parent string, facets, components []string, specBody string, force bool, owner, priority, fixes string, by DocAuthor, onBehalf string, capabilities ...string) (store.Feature, error) {
 	origin, quote, err := resolveOrigin(onBehalf)
 	if err != nil {
 		return store.Feature{}, err
 	}
-	return createFeatureOrigin(repoDir, projDir, prefix, title, module, parent, facets, components, specBody, force, owner, priority, fixes, by, origin, quote)
+	return createFeatureOrigin(repoDir, projDir, prefix, title, module, parent, facets, components, specBody, force, owner, priority, fixes, by, origin, quote, capabilities...)
 }
 
 // createFeatureOrigin is createFeatureCore with the origin already resolved
 // (T-0006: the UI form is human by construction, whatever CERNE_ACTOR says).
-func createFeatureOrigin(repoDir, projDir, prefix, title, module, parent string, facets, components []string, specBody string, force bool, owner, priority, fixes string, by DocAuthor, origin, quote string) (store.Feature, error) {
+func createFeatureOrigin(repoDir, projDir, prefix, title, module, parent string, facets, components []string, specBody string, force bool, owner, priority, fixes string, by DocAuthor, origin, quote string, capabilities ...string) (store.Feature, error) {
 	n, err := prepareFeature(prefix, title, module, parent, facets, components, specBody, force, owner, priority)
 	n.fixes = fixes
 	if err != nil {
 		return store.Feature{}, err
 	}
+	n.capabilities = capabilities
 	n.origin, n.onBehalf = origin, quote
 	if strings.TrimSpace(specBody) != "" {
 		if by == (DocAuthor{}) {
@@ -279,6 +280,9 @@ func (n newFeature) mint(repoDir string) (store.Feature, string, error) {
 		forced, err := guardRegistration(repoDir, title, force)
 		if err != nil {
 			return err
+		}
+		if n.capabilities, err = activeCapabilities(repoDir, n.capabilities); err != nil {
+			return err // before NextID: a bad C- id mints nothing (F-0514)
 		}
 		id, err := store.NextID(repoDir, prefix)
 		if err != nil {
@@ -1301,4 +1305,15 @@ func resolveOrigin(onBehalf string) (origin, quote string, err error) {
 		return "agent", "", nil
 	}
 	return "human", quote, nil
+}
+
+// CreateLike is the one creation entry the CLI uses for F-/E-/T- (F-0514): the
+// same flow as CreateFeatureFixes/CreateEpicWithSpec/CreateTaskWithSpec, plus
+// the C- ids linked at birth — validated inside the creation's own mutation, so
+// a bad id mints nothing.
+func CreateLike(repoDir, projDir, prefix, title, module, parent, fixes string, facets, components, capabilities []string, specBody string, force bool, owner, priority, onBehalf string) (store.Feature, error) {
+	if prefix == "T" && strings.TrimSpace(parent) == "" {
+		return store.Feature{}, ErrParentRequired
+	}
+	return createFeatureCore(repoDir, projDir, prefix, title, module, parent, facets, components, specBody, force, owner, priority, strings.TrimSpace(fixes), DocAuthor{}, onBehalf, capabilities...)
 }
