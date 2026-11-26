@@ -34,10 +34,17 @@ type RiskAssessment struct {
 	Round                 int      // the number of the Gauntlet's highest round; 0 with none or an unnumbered one
 	Tested                string   // "<criteria with a test>/<criteria>"
 	Base, Head            string   // the commits measured: merge-base with the default branch, and HEAD; empty when unread
+	Mode                  string   // the card's accept_mode (F-0518): human, auto or empty
 }
 
-// Low reports a delivery of low risk: all three conditions hold.
-func (r RiskAssessment) Low() bool { return r.Area.Holds && r.Gauntlet.Holds && r.Tests.Holds }
+// Low reports a delivery of low risk: all three conditions hold and the
+// owner did not mark the card as needing a person (F-0518).
+func (r RiskAssessment) Low() bool {
+	return r.Area.Holds && r.Gauntlet.Holds && r.Tests.Holds && r.Mode != AcceptModeHuman
+}
+
+// ownerHold is the line of a card the owner marked as needing a person.
+const ownerHold = "the owner marked this card as one that needs a person (accept_mode human)"
 
 // Summary is the three measurements in one line.
 func (r RiskAssessment) Summary() string {
@@ -52,6 +59,9 @@ func (r RiskAssessment) Held() []string {
 			out = append(out, c.Found)
 		}
 	}
+	if r.Mode == AcceptModeHuman {
+		out = append(out, ownerHold)
+	}
 	return out
 }
 
@@ -65,12 +75,16 @@ func (r RiskAssessment) payload() map[string]string {
 	if r.Low() {
 		risk = "low"
 	}
-	return map[string]string{
+	p := map[string]string{
 		"risk": risk, "risk_area": r.Area.Found, "risk_gauntlet": r.Gauntlet.Found, "risk_tests": r.Tests.Found,
 		"risk_paths": strings.Join(r.Paths, ", "), "risk_facets": strings.Join(r.Facets, ", "),
 		"risk_verdict": r.Verdict, "risk_round": strconv.Itoa(r.Round), "risk_criteria_tested": r.Tested,
 		"risk_base": r.Base, "risk_head": r.Head,
 	}
+	if r.Mode != "" {
+		p["risk_mode"] = r.Mode
+	}
+	return p
 }
 
 // assessRisk measures the three conditions of the risk gate on feature f,
@@ -83,7 +97,7 @@ func assessRisk(repoDir, projDir string, f store.Feature) RiskAssessment {
 	var r RiskAssessment
 	var d gauntlet.Delivery
 	r.Area, r.Paths, r.Facets, d = riskArea(repoDir, projDir, cfg.PinBranch, f, cfg.Gates)
-	r.Base, r.Head = d.Base, d.Head
+	r.Base, r.Head, r.Mode = d.Base, d.Head, f.AcceptMode
 	result, _ := os.ReadFile(FeatureDocPath(repoDir, f.ID, "result.md"))
 	r.Gauntlet, r.Verdict = riskGauntlet(result, cfg.Gates.GauntletEnabled())
 	if rounds := lint.GauntletRoundList(result); len(rounds) > 0 {
@@ -129,8 +143,13 @@ func revertedRiskRound(repoDir, id string) (round int, reverted bool) {
 // empty one (complete ran outside the delivery's branch) and a card with no
 // facet all wait for a person. Its own function: a per-card waiver drops only
 // this condition. d is the delivery read, empty when git could not read it.
+// The owner's accept_mode auto (F-0518) waives the sensitivity judgment — the
+// paths, the facets, a card with no facet — and keeps measuring them; a
+// delivery that cannot be measured (no diff, another card's checkout,
+// uncommitted changes) still holds: the owner judged the card, not this
+// checkout.
 func riskArea(repoDir, projDir, pinBranch string, f store.Feature, g project.GatesConfig) (c RiskCheck, paths, facets []string, d gauntlet.Delivery) {
-	var why []string
+	var why, sensitive []string
 	d, err := gauntlet.ReadDelivery(projDir, pinBranch, f.ID)
 	files, base := d.Files, d.Ref
 	switch {
@@ -151,7 +170,7 @@ func riskArea(repoDir, projDir, pinBranch string, f store.Feature, g project.Gat
 		paths = sensitivePaths(files, g.RiskHumanPaths(), d.Prefix)
 	}
 	if len(paths) > 0 {
-		why = append(why, "touches a sensitive path: "+someOf(paths))
+		sensitive = append(sensitive, "touches a sensitive path: "+someOf(paths))
 	}
 	if len(d.Dirty) > 0 {
 		why = append(why, "uncommitted changes the diff cannot measure: "+someOf(d.Dirty))
@@ -165,12 +184,19 @@ func riskArea(repoDir, projDir, pinBranch string, f store.Feature, g project.Gat
 	}
 	switch {
 	case len(chain) == 0:
-		why = append(why, "the card has no facet (cerne feature retag "+f.ID+" --facet …)")
+		sensitive = append(sensitive, "the card has no facet (cerne feature retag "+f.ID+" --facet …)")
 	case len(facets) > 0:
-		why = append(why, "carries a sensitive facet: "+strings.Join(facets, ", "))
+		sensitive = append(sensitive, "carries a sensitive facet: "+strings.Join(facets, ", "))
+	}
+	waived := f.AcceptMode == AcceptModeAuto && len(sensitive) > 0
+	if !waived {
+		why = append(why, sensitive...)
 	}
 	if len(why) > 0 {
 		return RiskCheck{Found: strings.Join(why, "; ")}, paths, facets, d
+	}
+	if waived {
+		return RiskCheck{Holds: true, Found: "the owner marked this card to pass alone (accept_mode auto), which waives: " + strings.Join(sensitive, "; ")}, paths, facets, d
 	}
 	return RiskCheck{Holds: true, Found: "touches no sensitive path or facet"}, nil, nil, d
 }

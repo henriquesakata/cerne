@@ -21,6 +21,16 @@ const (
 	FeedbackNotNeeded       = "not_needed"        // the delivery did not need the owner
 )
 
+// The owner's marks on a card for the risk gate (F-0518 crit. 14), stored in
+// accept_mode; "gate", stored as empty, lets the gate decide.
+const (
+	AcceptModeHuman = "human" // held for a person, in any phase
+	AcceptModeAuto  = "auto"  // the sensitive-area condition is waived
+)
+
+// ErrInvalidAcceptMode refuses a mark outside human, auto and gate.
+var ErrInvalidAcceptMode = errors.New("invalid accept mode")
+
 // riskFeedbackEvent is the event an answer appends to the card.
 const riskFeedbackEvent = "feature.risk_feedback"
 
@@ -204,6 +214,42 @@ func RecordRiskFeedback(repoDir, projDir, id string, fb RiskFeedback) (*RiskDeci
 		return nil, err
 	}
 	return d, nil
+}
+
+// SetFeatureAcceptMode stores the owner's mark on a card not yet concluded
+// (F-0518 crit. 14): human, auto, or gate (stored empty), with a feature.set
+// event. ErrInvalidAcceptMode for any other value and ErrFeatureFrozen past
+// in_development, both wrapped, nothing written. The caller checks the actor.
+func SetFeatureAcceptMode(repoDir, projDir, id, mode string) (store.Feature, error) {
+	switch mode {
+	case AcceptModeHuman, AcceptModeAuto:
+	case "gate":
+		mode = ""
+	default:
+		return store.Feature{}, fmt.Errorf("%w %q: want human, auto or gate", ErrInvalidAcceptMode, mode)
+	}
+	var f store.Feature
+	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+		var err error
+		if f, err = store.LoadFeature(repoDir, id); err != nil {
+			return "", err
+		}
+		if !domain.TitleEditable(f.State) {
+			return "", fmt.Errorf("%w: %s (%s): the mark goes on a card before its complete", ErrFeatureFrozen, f.ID, f.State)
+		}
+		f.AcceptMode, f.UpdatedAt = mode, time.Now().UTC()
+		if err := store.SaveFeature(repoDir, f); err != nil {
+			return "", err
+		}
+		if err := store.AppendEvent(repoDir, domain.NewEvent(f.ID, "feature.set", map[string]string{"accept_mode": mode}, EventActor())); err != nil {
+			return "", err
+		}
+		return "cerne: set " + f.ID + " accept mode", nil
+	})
+	if err != nil {
+		return store.Feature{}, err
+	}
+	return f, nil
 }
 
 // riskKeys are the gate's measurements of a decision payload: its risk* keys.

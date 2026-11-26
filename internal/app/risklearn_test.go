@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -109,5 +110,70 @@ func TestFeedbackMatchesTheDecision(t *testing.T) {
 		if evs := entityEvents(t, repoDir, c.id, riskFeedbackEvent); len(evs) != 0 {
 			t.Errorf("%s: a refused answer wrote %d events", c.id, len(evs))
 		}
+	}
+}
+
+// TestAcceptModeHumanAlwaysHolds: a card the owner marked as needing a person
+// waits for the merge even with all three conditions holding, and the mark is
+// on the complete event.
+// F-0518 crit. 15
+func TestAcceptModeHumanAlwaysHolds(t *testing.T) {
+	asActor(t, "agent")
+	repoDir, projDir, _ := newFeatureBackend(t)
+	riskDelivery(t, repoDir, projDir, store.Feature{ID: "F-0001", Facets: []string{"code"}, AcceptMode: AcceptModeHuman}, "vitória", cleanChange())
+	out, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionComplete, "", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.To != domain.StateImplemented || out.Risk == nil || out.Risk.Low() || !strings.Contains(strings.Join(out.Risk.Held(), "; "), "needs a person") {
+		t.Fatalf("complete = %s, risk %+v; want held by the owner's mark", out.To, out.Risk)
+	}
+	if got := lastEntityEvent(t, repoDir, "F-0001", "feature.completed").Payload["risk_mode"]; got != AcceptModeHuman {
+		t.Errorf("risk_mode on the complete = %q, want human", got)
+	}
+}
+
+// TestAcceptModeAutoWaivesOnlySensitiveArea: a card the owner marked to pass
+// alone passes a sensitive path and facet, but only with a Gauntlet win and
+// every criterion tested; a checkout that is not its delivery still holds it.
+// F-0518 crit. 15
+func TestAcceptModeAutoWaivesOnlySensitiveArea(t *testing.T) {
+	for _, c := range []struct {
+		name        string
+		id          string
+		win, tested bool
+		low         bool
+	}{
+		{"win and tested", "F-0001", true, true, true},
+		{"tie", "F-0001", false, true, false},
+		{"a criterion untested", "F-0001", true, false, false},
+		{"neither", "F-0001", false, false, false},
+		{"not its delivery", "F-0002", true, true, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			repoDir, projDir := t.TempDir(), t.TempDir()
+			change := cleanChange()
+			change["go.mod"] = "module x\n"
+			if !c.tested {
+				change["internal/x/x_test.go"] = "package x\n\n// F-0001 crit. 1\n"
+			}
+			if c.id != "F-0001" {
+				change["internal/x/x_test.go"] = "package x\n\n// " + c.id + " crit. 1, 2\n"
+			}
+			riskRepo(t, projDir, nil, change)
+			outcome := "vitória"
+			if !c.win {
+				outcome = "empate"
+			}
+			riskWrite(t, repoDir, filepath.Join("content", "features", c.id, "spec.md"), riskSpec)
+			riskWrite(t, repoDir, filepath.Join("content", "features", c.id, "result.md"), riskResult(outcome))
+			ra := assessRisk(repoDir, projDir, store.Feature{ID: c.id, Facets: []string{"auth"}, AcceptMode: AcceptModeAuto})
+			if ra.Low() != c.low {
+				t.Fatalf("Low() = %v, want %v: %+v", ra.Low(), c.low, ra)
+			}
+			if c.id == "F-0001" && (!ra.Area.Holds || len(ra.Paths) == 0 || len(ra.Facets) == 0) {
+				t.Errorf("area %+v, paths %v, facets %v: want the sensitive area waived and still measured", ra.Area, ra.Paths, ra.Facets)
+			}
+		})
 	}
 }

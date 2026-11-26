@@ -259,36 +259,61 @@ func runFeatureRetag(cmd *cobra.Command, dir, id, facet, component string, setFa
 }
 
 func newFeatureSetCmd(dir *string) *cobra.Command {
-	var owner, priority, fixes string
+	var owner, priority, fixes, acceptMode string
 	cmd := &cobra.Command{
 		Use:   "set <id>",
-		Short: "Set a feature's owner, priority and/or fixes link in place (F-0204, F-0321)",
+		Short: "Set a feature's owner, priority, fixes link and/or accept mode in place (F-0204, F-0321, F-0518)",
 		Long: "Changes owner and/or priority without touching the lifecycle — preserves state, module, tags and docs. " +
 			"Changes only the flag passed: 'set F-0001 --priority p1' keeps the owner; '--owner \"\"' clears the owner. " +
 			"A priority outside the closed set (p0,p1,p2,p3) is rejected, nothing written. Applies to a live or " +
-			"implemented feature; a terminal feature (done/rejected/superseded) is frozen history.",
+			"implemented feature; a terminal feature (done/rejected/superseded) is frozen history. " +
+			"--accept-mode is the owner's mark for the risk gate, on a card before its complete: human holds it for " +
+			"a person, auto waives the sensitive-area condition (the Gauntlet win and the tested criteria still count), " +
+			"gate lets the gate decide. An agent is refused it.",
 		Example: "  cerne feature set F-0001 --owner ana --priority p1\n" +
 			"  cerne feature set F-0001 --priority p0   # owner untouched\n" +
-			"  cerne feature set F-0002 --fixes F-0001  # F-0002 corrects a defect F-0001 shipped",
+			"  cerne feature set F-0002 --fixes F-0001  # F-0002 corrects a defect F-0001 shipped\n" +
+			"  cerne feature set F-0003 --accept-mode human  # the owner wants to look at this one",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runFeatureSet(cmd, *dir, args[0], owner, priority, fixes,
-				cmd.Flags().Changed("owner"), cmd.Flags().Changed("priority"), cmd.Flags().Changed("fixes"))
+			if cmd.Flags().Changed("accept-mode") {
+				// The owner's mark (F-0518 crit. 16): refused before anything the call carries is written.
+				if err := app.CheckOwnerAct("marking a card's accept mode"); err != nil {
+					return err
+				}
+			}
+			return runFeatureSet(cmd, *dir, args[0], owner, priority, fixes, acceptMode,
+				cmd.Flags().Changed("owner"), cmd.Flags().Changed("priority"), cmd.Flags().Changed("fixes"), cmd.Flags().Changed("accept-mode"))
 		},
 	}
 	cmd.Flags().StringVar(&owner, "owner", "", "new owner (free text) — empty clears")
 	cmd.Flags().StringVar(&priority, "priority", "", "new priority (closed set: p0,p1,p2,p3) — empty clears")
 	cmd.Flags().StringVar(&fixes, "fixes", "", "feature ID this one fixes — empty clears")
+	cmd.Flags().StringVar(&acceptMode, "accept-mode", "", "the owner's mark for the risk gate, before the complete: human (needs a person), auto (may pass alone) or gate (the gate decides)")
 	return cmd
 }
 
-func runFeatureSet(cmd *cobra.Command, dir, id, owner, priority, fixes string, setOwner, setPriority, setFixes bool) error {
-	if !setOwner && !setPriority && !setFixes {
-		return fmt.Errorf("pass at least --owner, --priority or --fixes")
+func runFeatureSet(cmd *cobra.Command, dir, id, owner, priority, fixes, acceptMode string, setOwner, setPriority, setFixes, setAcceptMode bool) error {
+	if !setOwner && !setPriority && !setFixes && !setAcceptMode {
+		return fmt.Errorf("pass at least --owner, --priority, --fixes or --accept-mode")
 	}
 	ctx, err := resolveProject(dir)
 	if err != nil {
 		return err
+	}
+	if setAcceptMode {
+		f, err := app.SetFeatureAcceptMode(ctx.repoDir, ctx.projDir, id, acceptMode)
+		if err != nil {
+			return err
+		}
+		mode := f.AcceptMode
+		if mode == "" {
+			mode = "gate"
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "%s set — accept mode: %s\n", f.ID, mode)
+		if !setOwner && !setPriority && !setFixes {
+			return nil
+		}
 	}
 	f, err := app.SetFeature(ctx.repoDir, ctx.projDir, id, owner, priority, fixes, setOwner, setPriority, setFixes)
 	if err != nil {
