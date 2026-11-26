@@ -56,6 +56,10 @@ type Feature struct {
 	// AcceptedRisk (F-0516) is, on a card accepted_via "risk", the summary of
 	// the three measurements that let complete accept it; empty otherwise.
 	AcceptedRisk string `json:"accepted_risk,omitempty"`
+	// HeldRisk (F-0521) is, on a card the risk gate held at complete, the lines
+	// of what held it, the same ones complete prints; kept through the accept,
+	// cleared by a revert.
+	HeldRisk []string `json:"held_risk,omitempty"`
 	// ApprovedVia (F-0515) is "auto" when an agent approved under [gates]
 	// approve = "auto"; empty for a person's approval. Never back-filled.
 	ApprovedVia string `json:"approved_via,omitempty"`

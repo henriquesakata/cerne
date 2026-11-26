@@ -388,6 +388,9 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 		if f.AcceptedVia != project.GateRisk {
 			f.AcceptedRisk = "" // the summary belongs to a risk accept only (F-0516)
 		}
+		if risk != nil && action == domain.ActionComplete && !risk.Low() {
+			f.HeldRisk = risk.Held() // F-0521: the lines complete prints, in the same commit
+		}
 		if err := store.SaveFeature(repoDir, f); err != nil {
 			return "", err
 		}
