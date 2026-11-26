@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/domain"
@@ -73,5 +74,32 @@ func TestTransitionFromUINeverMarksAuto(t *testing.T) {
 	postTransition(t, repoDir, projDir, "F-0002", "accept")
 	if f, _ := store.LoadFeature(repoDir, "F-0002"); f.State != domain.StateDone || f.AcceptedVia != "" {
 		t.Errorf("after the form's accept: %s, accepted_via %q; want done, empty", f.State, f.AcceptedVia)
+	}
+}
+
+// TestTransitionCompleteUnderRiskSaysWhatHeldIt: a complete from the UI under
+// the risk gate answers with what the gate measured — whether it accepted the
+// card and, when it did not, one reason per condition that failed.
+// F-0516 crit. 7
+func TestTransitionCompleteUnderRiskSaysWhatHeldIt(t *testing.T) {
+	repoDir, projDir, _ := newGitBackend(t)
+	if err := project.SaveConfig(projDir, project.Config{ProjectID: "demo", Backend: "b", Gates: project.GatesConfig{Accept: project.GateRisk}}); err != nil {
+		t.Fatal(err)
+	}
+	seedFeature(t, repoDir, "F-0001", "Card", domain.StateInDevelopment)
+	for _, doc := range []string{"spec.md", "plan.md", "result.md"} {
+		writeDoc(t, repoDir, "F-0001", doc, realDoc("F-0001", "Corpo real do documento."))
+	}
+	commitBackend(t, repoDir)
+	var got struct {
+		To   string `json:"to"`
+		Risk struct {
+			Low  bool     `json:"low"`
+			Held []string `json:"held"`
+		} `json:"risk"`
+	}
+	rec := doJSON(t, New(repoDir, projDir, ""), http.MethodPost, "/api/features/F-0001/transition", `{"action":"complete"}`, &got)
+	if rec.Code != http.StatusOK || got.To != "implemented" || got.Risk.Low || len(got.Risk.Held) == 0 || !strings.Contains(strings.Join(got.Risk.Held, "\n"), "not a git repository") {
+		t.Fatalf("status %d, body %+v (%s); want implemented with the held reasons", rec.Code, got, rec.Body.String())
 	}
 }
