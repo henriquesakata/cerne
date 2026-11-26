@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/henriquesakata/cerne/internal/doclang"
@@ -159,7 +160,14 @@ func chatQuestionContract(l doclang.Lang, designSection string) string {
 type ChatMessage struct {
 	Role    string // "user" | "assistant"
 	Content string
+	// Images (F-0520) are the absolute paths of the images the user attached
+	// to this message, in the project cache — never in the backend.
+	Images []string
 }
+
+// chatImagesNote tells the agent what an [attached image: …] line is. It is
+// written only when the transcript has one.
+const chatImagesNote = "\n\nThe user attached images. Each one is named under its message as [attached image: <path>] and is part of the request: look at every image before answering (open the file at that path when the image did not reach you with the prompt), and ground the analysis in what it shows."
 
 // chatIdeasPolicy keeps ideas (F-0312) out of the automatic context: the
 // agent reads them only when the user asks, through whatever path its mode has
@@ -521,6 +529,9 @@ func BuildRefineBlock(repoDir, id string) (string, error) {
 func BuildChatPrompt(system string, messages []ChatMessage) string {
 	var b strings.Builder
 	b.WriteString(system)
+	if slices.ContainsFunc(messages, func(m ChatMessage) bool { return len(m.Images) > 0 }) {
+		b.WriteString(chatImagesNote)
+	}
 	b.WriteString("\n\n--- Conversation so far ---\n")
 	for _, m := range messages {
 		label := "User"
@@ -528,6 +539,9 @@ func BuildChatPrompt(system string, messages []ChatMessage) string {
 			label = "Agent"
 		}
 		fmt.Fprintf(&b, "%s: %s\n", label, m.Content)
+		for _, img := range m.Images {
+			fmt.Fprintf(&b, "[attached image: %s]\n", img)
+		}
 	}
 	b.WriteString("Agent:")
 	return b.String()
