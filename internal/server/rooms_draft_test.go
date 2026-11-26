@@ -2,9 +2,13 @@ package server
 
 import (
 	"net/http"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/henriquesakata/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/room"
 )
 
 // draftJSON mirrors room.MinutesDraft over HTTP (T-0022).
@@ -120,16 +124,32 @@ func TestMinutesDraftEndpointRefusals(t *testing.T) {
 
 // T-0022 crit. 1
 // E-0006 crit. 10
-func TestMinutesDraftEndpointRefusesAnOversizedBody(t *testing.T) {
+func TestMinutesDraftEndpointCapsTheBody(t *testing.T) {
+	const limit = 160 << 10
 	h, opened, alice := openDraftRoom(t, "proj-minutes-draft-413")
-	huge := strings.Repeat("x", 300<<10)
-	body := `{"session_id":"` + alice.SessionID + `","minutes":{"conclusion":"` + huge + `","rationale":"r"}}`
-	var got map[string]string
-	if rec := doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/minutes/draft", body, &got); rec.Code != http.StatusRequestEntityTooLarge {
-		t.Fatalf("oversized draft status = %d, want 413", rec.Code)
+	path := "/api/rooms/" + opened.ID + "/minutes/draft"
+	// '<' is the worst case: json.Marshal writes it as <, six bytes.
+	sized := func(n int) string {
+		head, tail := `{"session_id":"`+alice.SessionID+`","minutes":{"conclusion":"`, `","rationale":"r"}}`
+		return head + strings.Repeat("<", n-len(head)-len(tail)) + tail
+	}
+	var over map[string]string
+	if rec := doJSON(t, h, http.MethodPost, path, sized(limit+1), &over); rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("draft one byte over the cap status = %d, want 413", rec.Code)
 	}
 	if r, _ := listedRoom(t, h, opened.ID); r.MinutesDraft != nil {
 		t.Fatal("an oversized draft was saved")
+	}
+	if rec := doJSON(t, h, http.MethodPost, path, sized(limit), &draftJSON{}); rec.Code != http.StatusOK {
+		t.Fatalf("draft at the cap status = %d, want 200", rec.Code)
+	}
+	// The escaped transcript line must still fit the replay's 1 MiB scanner.
+	cacheDir, err := project.CacheDir("proj-minutes-draft-413")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := room.NewManager(filepath.Join(cacheDir, "rooms")); err != nil {
+		t.Fatalf("a draft at the cap breaks the replay: %v", err)
 	}
 }
 

@@ -623,8 +623,10 @@ type minutesDraftRequest struct {
 	Minutes       room.Minutes `json:"minutes"`
 }
 
-// maxMinutesDraftBody caps a minutes draft request (T-0022).
-const maxMinutesDraftBody = 256 << 10
+// maxMinutesDraftBody caps a minutes draft request (T-0022). json.Marshal
+// writes <, > and & as six bytes each, so 160 KiB of them still stays under
+// the 1 MiB line the transcript replay reads.
+const maxMinutesDraftBody = 160 << 10
 
 // handleRoomMinutesDraft saves the open room's shared minutes draft (T-0022)
 // for a participant session (authored as its nick) or the facilitator.
@@ -636,7 +638,7 @@ func handleRoomMinutesDraft(w http.ResponseWriter, r *http.Request, projectID, i
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxMinutesDraftBody)).Decode(&req); err != nil {
 		var tooBig *http.MaxBytesError
 		if errors.As(err, &tooBig) {
-			writeJSON(w, http.StatusRequestEntityTooLarge, errorBody("minutes draft too large: the limit is 256 KiB"))
+			writeJSON(w, http.StatusRequestEntityTooLarge, errorBody("minutes draft too large: the limit is 160 KiB"))
 			return
 		}
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
