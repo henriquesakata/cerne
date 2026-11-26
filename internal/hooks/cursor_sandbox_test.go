@@ -272,6 +272,47 @@ func TestInstallCursorSandboxNetworkNeverOverridesDeny(t *testing.T) {
 	}
 }
 
+// F-0512 crit. 2 (review #2): Cursor's deny beats allow and takes wildcards
+// and CIDR, so any deny entry that could match the host keeps the file as it
+// was (skipped, with the entry named), and "allows" is said only when none can.
+func TestInstallCursorSandboxNetworkWildcardOrCIDRDeny(t *testing.T) {
+	cases := []struct {
+		name, backend, deny string
+		blocked             bool
+	}{
+		{"star", "git@git.example.com:o/r.git", `["*"]`, true},
+		{"suffix wildcard", "git@git.example.com:o/r.git", `["*.example.com"]`, true},
+		{"suffix wildcard, other domain", "git@git.example.com:o/r.git", `["*.other.com"]`, false},
+		{"case-insensitive exact", "git@git.example.com:o/r.git", `["Git.Example.com"]`, true},
+		{"cidr holds the IP", "https://10.1.2.3/o/r.git", `["10.0.0.0/8"]`, true},
+		{"cidr misses the IP", "https://10.1.2.3/o/r.git", `["192.168.0.0/16"]`, false},
+		{"cidr with a name host is ambiguous", "git@git.example.com:o/r.git", `["10.0.0.0/8"]`, true},
+		{"ip with a name host is ambiguous", "git@git.example.com:o/r.git", `["10.1.2.3"]`, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			proj, _ := codexProject(t, tc.backend)
+			user := `{"networkPolicy":{"deny":` + tc.deny + `}}`
+			writeCursorSandbox(t, proj, user)
+			rs, err := InstallNetwork(proj, true, ProviderCursor)
+			if err != nil {
+				t.Fatal(err)
+			}
+			r := cursorSandboxResult(t, rs)
+			raw, _ := os.ReadFile(cursorSandboxPath(proj))
+			if tc.blocked {
+				if r.Status != StatusSkipped || string(raw) != user || strings.Contains(r.Note, "allows") || !strings.Contains(r.Note, "networkPolicy.deny") {
+					t.Errorf("want skipped, file intact, no allow claim; got %+v\n%s", r, raw)
+				}
+				return
+			}
+			if r.Status == StatusSkipped || !strings.Contains(r.Note, "allows") {
+				t.Errorf("want the host allowed, got %+v\n%s", r, raw)
+			}
+		})
+	}
+}
+
 // F-0512 crit. 2 (decision recorded in result.md): a local backend has no host
 // to allow, so --network leaves networkPolicy alone — it never opens the whole
 // network — and says so.

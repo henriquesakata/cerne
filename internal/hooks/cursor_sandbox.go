@@ -2,6 +2,8 @@ package hooks
 
 import (
 	"encoding/json"
+	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"slices"
@@ -64,6 +66,50 @@ func stringList(v any) ([]string, bool) {
 
 func hasHost(list []string, host string) bool {
 	return slices.ContainsFunc(list, func(s string) bool { return strings.EqualFold(s, host) })
+}
+
+// denyBlocks says which networkPolicy.deny entry blocks host, or may block
+// it; "" when none can.
+func denyBlocks(deny []string, host string) string {
+	e, sure := denyMatch(deny, host)
+	switch {
+	case e == "":
+		return ""
+	case sure:
+		return fmt.Sprintf("networkPolicy.deny entry %q blocks %s, the backend's host", e, host)
+	}
+	return fmt.Sprintf("networkPolicy.deny entry %q may block %s, the backend's host (cerne cannot tell without resolving the name)", e, host)
+}
+
+// denyMatch returns the first deny entry that could block host (Cursor's deny
+// beats allow and takes wildcards and CIDR, R-0146), and whether it surely
+// does: an IP or CIDR entry against a host name, or an IP range, cannot be
+// told without resolving, so it counts as a possible match.
+func denyMatch(deny []string, host string) (entry string, sure bool) {
+	host = strings.ToLower(host)
+	ip := net.ParseIP(host)
+	for _, d := range deny {
+		e := strings.ToLower(strings.TrimSpace(d))
+		if e == "*" || e == host || strings.HasPrefix(e, "*.") && (host == e[2:] || strings.HasSuffix(host, e[1:])) {
+			return d, true
+		}
+		if _, cidr, err := net.ParseCIDR(e); err == nil {
+			if ip == nil || cidr.Contains(ip) {
+				return d, ip != nil
+			}
+			continue
+		}
+		if eip := net.ParseIP(e); eip != nil {
+			if ip == nil || eip.Equal(ip) {
+				return d, ip != nil
+			}
+			continue
+		}
+		if lo, hi, ok := strings.Cut(e, "-"); ok && net.ParseIP(lo) != nil && net.ParseIP(hi) != nil {
+			return d, false
+		}
+	}
+	return "", false
 }
 
 // installCursorSandbox merges cerne's folders (and, with network, the remote
@@ -132,8 +178,8 @@ func installCursorSandbox(projDir string, network bool) (r Result) {
 		note = "the backend is local, so there is no host to allow: networkPolicy left as is (the whole network is never opened)"
 	case network && (!okAllow || !okDeny):
 		return skip(`existing networkPolicy allow or deny is not a list of strings — add the backend host by hand:` + byHand)
-	case network && hasHost(deny, host):
-		return skip("networkPolicy.deny lists " + host + ", the backend's host — not overridden, nothing written; remove it from deny and rerun, or rerun without --network to write only cerne's folders")
+	case network && denyBlocks(deny, host) != "":
+		return skip(denyBlocks(deny, host) + " — not overridden, nothing written; remove it from deny and rerun, or rerun without --network to write only cerne's folders")
 	case network:
 		if !hasHost(allow, host) {
 			// Only the host: a "default" here would replace the user's own
