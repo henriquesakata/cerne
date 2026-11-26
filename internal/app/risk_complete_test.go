@@ -332,3 +332,59 @@ func TestRiskRevertNeedsANewRound(t *testing.T) {
 		t.Fatalf("complete with a round after the revert = %s (%+v), want done by risk", out.To, out.Risk)
 	}
 }
+
+// TestRiskRevertAfterAnyAcceptNeedsANewRound: the revert guard reads the last
+// accept whatever its via — a person's, the merge's or the auto gate's: after
+// a revert, the old win does not pass the risk gate again.
+// F-0516 crit. 4
+func TestRiskRevertAfterAnyAcceptNeedsANewRound(t *testing.T) {
+	for _, via := range []string{"person", "merge", "auto"} {
+		t.Run(via, func(t *testing.T) {
+			asActor(t, "agent")
+			repoDir, projDir, _ := newFeatureBackend(t)
+			riskDelivery(t, repoDir, projDir, store.Feature{ID: "F-0001", Facets: []string{"code"}, DeliveryMRURL: prURL("7")}, "vitória", cleanChange())
+			// The gate in .cernerc is tracked: a change is committed, or the
+			// risk gate would hold the tree as uncommitted.
+			gate := func(g string) {
+				saveGates(t, projDir, project.GatesConfig{Accept: g})
+				riskGit(t, projDir, "commit", "-q", "-am", "chore: accept gate "+g+" (F-0001)")
+			}
+			step := func(action domain.Action, reason string) TransitionOutcome {
+				t.Helper()
+				out, err := TransitionFeature(repoDir, projDir, "F-0001", action, "", reason, nil)
+				if err != nil {
+					t.Fatalf("%s: %v", action, err)
+				}
+				return out
+			}
+			switch via {
+			case "person":
+				gate(project.GateHuman)
+				step(domain.ActionComplete, "")
+				asActor(t, "")
+				step(domain.ActionAccept, "")
+				asActor(t, "agent")
+			case "merge":
+				gate(project.GateMerge)
+				step(domain.ActionComplete, "")
+				useFakeForge(t, &fakeForge{pr: mergedPR})
+				if _, err := AcceptMerged(repoDir, projDir, mergeCfg(), []string{"F-0001"}); err != nil {
+					t.Fatalf("accept --merged: %v", err)
+				}
+			case "auto":
+				gate(project.GateAuto)
+				step(domain.ActionComplete, "")
+			}
+			if f := reload(t, repoDir, "F-0001"); f.State != domain.StateDone {
+				t.Fatalf("accepted by %s = %s, want done", via, f.State)
+			}
+			gate(project.GateRisk)
+			step(domain.ActionRevert, "found a problem")
+			step(domain.ActionRevert, "back to development")
+			out := step(domain.ActionComplete, "")
+			if out.To != domain.StateImplemented || out.Risk == nil || out.Risk.Gauntlet.Holds || !strings.Contains(out.Risk.Gauntlet.Found, "revert") {
+				t.Fatalf("complete after a revert of the %s accept = %s, gauntlet %+v; want held", via, out.To, out.Risk)
+			}
+		})
+	}
+}

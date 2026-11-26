@@ -121,6 +121,7 @@ func cascadeAccept(repoDir, projDir string, parent store.Feature, m *mergeAccept
 			payload["cascade_from"] = parentID
 			c.AcceptedVia = "merge"
 		}
+		payload["gauntlet_round"] = gauntletRoundOf(repoDir, c.ID) // F-0516: a later revert reads it
 		if m == nil && via == project.GateAuto {
 			payload["via"] = via
 			c.AcceptedVia = via

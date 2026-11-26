@@ -470,6 +470,14 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 		if m != nil {
 			payload, actor = m.payload(), mergeActor
 		}
+		// Every accept records the Gauntlet round it saw, whatever its via, so
+		// the risk gate can tell an old win from a new one after a revert (F-0516).
+		if action == domain.ActionAccept {
+			if payload == nil {
+				payload = map[string]string{}
+			}
+			payload["gauntlet_round"] = gauntletRoundOf(repoDir, id)
+		}
 		if err := store.AppendEvent(repoDir, domain.NewEvent(id, eventType, payload, actor)); err != nil {
 			return "", err
 		}
@@ -500,6 +508,7 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 				acceptVia, acceptPayload = project.GateRisk, risk.payload()
 				acceptPayload["via"] = project.GateRisk
 			}
+			acceptPayload["gauntlet_round"] = gauntletRoundOf(repoDir, id)
 			if src != srcSeed { // a seed crosses no gate, so it marks nothing
 				f.AcceptedVia = acceptVia // F-0515: done with no human act
 				if risk != nil {

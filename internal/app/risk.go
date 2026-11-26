@@ -1,6 +1,7 @@
 package app
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"math"
@@ -112,8 +113,8 @@ func assessRisk(repoDir, projDir string, f store.Feature) RiskAssessment {
 	if rounds := lint.GauntletRoundList(result); len(rounds) > 0 {
 		r.Round = rounds[len(rounds)-1].N
 	}
-	if prev, reverted := revertedRiskRound(repoDir, f.ID); r.Gauntlet.Holds && reverted && r.Round <= prev {
-		r.Gauntlet = RiskCheck{Found: fmt.Sprintf("reverted after its risk accept on round %d: the win predates the revert, record a new Gauntlet round", prev)}
+	if prev, reverted := revertedRound(repoDir, f.ID); r.Gauntlet.Holds && reverted && r.Round <= prev {
+		r.Gauntlet = RiskCheck{Found: revertedFound(prev)}
 	}
 	r.Tests, r.Tested = riskTests(repoDir, projDir, f)
 	// The implemented tasks ride this card's PR: each is measured on its own,
@@ -132,17 +133,18 @@ func assessRisk(repoDir, projDir string, f store.Feature) RiskAssessment {
 	return r
 }
 
-// revertedRiskRound reports whether feature id was reverted after its last
-// accept as low risk and, if so, the round that accept counted; an accept
-// that recorded none counts as the highest, so nothing passes it.
-func revertedRiskRound(repoDir, id string) (round int, reverted bool) {
+// revertedRound reports whether feature id was reverted after its last
+// accept, whatever its via (a person, the merge, the auto or the risk gate),
+// and, if so, the Gauntlet round current at that accept. An accept that
+// recorded none counts as the highest, so no round passes it.
+func revertedRound(repoDir, id string) (round int, reverted bool) {
 	evs, err := store.ReadEvents(repoDir)
 	if err != nil {
 		return math.MaxInt, true // in doubt, hold
 	}
 	accepted := -1
 	for i, ev := range evs {
-		if ev.EntityID == id && ev.Type == eventTypes[domain.ActionAccept] && ev.Payload["via"] == project.GateRisk {
+		if ev.EntityID == id && ev.Type == eventTypes[domain.ActionAccept] {
 			accepted = i
 		}
 	}
@@ -151,11 +153,31 @@ func revertedRiskRound(repoDir, id string) (round int, reverted bool) {
 	}) {
 		return 0, false
 	}
-	n, err := strconv.Atoi(evs[accepted].Payload["risk_round"])
+	p := evs[accepted].Payload
+	n, err := strconv.Atoi(cmp.Or(p["gauntlet_round"], p["risk_round"]))
 	if err != nil {
 		return math.MaxInt, true
 	}
 	return n, true
+}
+
+// revertedFound is the held line of a win that predates a revert.
+func revertedFound(prev int) string {
+	if prev == math.MaxInt {
+		return "reverted after an accept that recorded no Gauntlet round: the win cannot be told from an old one — a human accepts on the merge"
+	}
+	return fmt.Sprintf("reverted after its accept on round %d: the win predates the revert, record a new Gauntlet round", prev)
+}
+
+// gauntletRoundOf is the number of the highest round in feature id's result
+// ("0" with none): every accept records it, so a revert can tell an old win
+// from a new one (F-0516).
+func gauntletRoundOf(repoDir, id string) string {
+	result, _ := os.ReadFile(FeatureDocPath(repoDir, id, "result.md"))
+	if rounds := lint.GauntletRoundList(result); len(rounds) > 0 {
+		return strconv.Itoa(rounds[len(rounds)-1].N)
+	}
+	return "0"
 }
 
 // riskArea is the first condition (crit. 3): the delivery touches no
