@@ -91,7 +91,7 @@ type Delivery struct {
 	Base, Head string   // the merge-base of Ref and HEAD, and HEAD, as SHAs
 	Files      []string // changed from Base to HEAD, from the repository root, no excludes; a rename as its old and its new path
 	Cited      bool     // a non-merge commit of Base..HEAD is the id's, by the rule of FeatureCommits (ownCommit)
-	Dirty      []string // tracked files that differ from HEAD (staged or not), but docs.lock, cerne's own pin
+	Dirty      []string // files that differ from HEAD (staged, unstaged or untracked, not ignored), but docs.lock, cerne's own pin
 	Prefix     string   // dir from the repository root, with a trailing slash; "" at the root
 }
 
@@ -133,12 +133,14 @@ func ReadDelivery(dir, pinBranch, id string) (Delivery, error) {
 			d.Cited = d.Cited || own
 		}
 	}
-	status, err := runGit(dir, "status", "--porcelain=v1", "-z", "--untracked-files=no", "--no-renames")
+	// Untracked files count: the test marks are read from the tree.
+	status, err := runGit(dir, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames")
 	if err != nil {
 		return Delivery{}, err
 	}
 	for _, e := range strings.Split(status, "\x00") {
-		if len(e) > 3 && path.Base(e[3:]) != "docs.lock" {
+		// cerne's own projection under the project dir is never the delivery.
+		if len(e) > 3 && path.Base(e[3:]) != "docs.lock" && !strings.HasPrefix(e[3:], d.Prefix+".docs/") {
 			d.Dirty = append(d.Dirty, e[3:])
 		}
 	}

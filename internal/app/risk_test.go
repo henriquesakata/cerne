@@ -139,6 +139,16 @@ func TestRiskSensitiveArea(t *testing.T) {
 			riskRepo(t, d, nil, map[string]string{"a.go": "a"})
 			riskWrite(t, d, "a.go", "a changed\n")
 		}, []string{"code"}, false, nil, []string{"uncommitted", "a.go"}},
+		// The test marks are read from the tree: a test never added would prove
+		// a criterion the PR does not carry (review 2 of #228).
+		{"an untracked test file", func(t *testing.T, d string) {
+			riskRepo(t, d, nil, map[string]string{"a.go": "a"})
+			riskWrite(t, d, "x/x_test.go", "package x\n\n// F-0001 crit. 1, 2\n")
+		}, []string{"code"}, false, nil, []string{"uncommitted", "x/x_test.go"}},
+		{"an ignored file", func(t *testing.T, d string) {
+			riskRepo(t, d, map[string]string{".gitignore": "build/\n"}, map[string]string{"a.go": "a"})
+			riskWrite(t, d, "build/out.bin", "x")
+		}, []string{"code"}, true, nil, []string{"no sensitive path or facet"}},
 		{"only docs.lock changed and not committed", func(t *testing.T, d string) {
 			riskRepo(t, d, map[string]string{"docs.lock": "{}\n"}, map[string]string{"a.go": "a"})
 			riskWrite(t, d, "docs.lock", "{\"snapshot\":\"x\"}\n")
