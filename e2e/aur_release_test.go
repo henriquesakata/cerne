@@ -90,9 +90,12 @@ var aurHostFingerprints = map[string]string{
 // before pushing, verifies the AUR host key against the published fingerprints
 // and commits only when something changed. The shell branches themselves
 // (secret missing, no diff, prerelease) are proved at the first stable tag.
+// The job also waits for the owner's AUR_PUBLISH variable: AUR registration
+// was closed when v0.16.0 shipped, so there was no account to push from, and
+// a job that fails every release would hide a real failure.
 func TestAURRelease_PublishJob(t *testing.T) {
 	job := parseJob(t, "../.github/workflows/release.yml", "aur")
-	if job.Needs != "release" || job.If != "${{ !contains(github.ref_name, '-') }}" || job.Container != "archlinux:base-devel" {
+	if job.Needs != "release" || job.If != "${{ !contains(github.ref_name, '-') && vars.AUR_PUBLISH == 'true' }}" || job.Container != "archlinux:base-devel" {
 		t.Errorf("aur job needs %q, if %q, container %q", job.Needs, job.If, job.Container)
 	}
 	key := job.stepWith("::error::AUR_SSH_PRIVATE_KEY is not set")
