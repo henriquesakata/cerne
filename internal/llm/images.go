@@ -54,6 +54,10 @@ func SupportsImages(mode string) bool {
 	return false
 }
 
+// apiImageTypes are the image types both APIs take; anything else would reach
+// the provider as a media type it refuses (or a broken data URL).
+var apiImageTypes = []string{"image/png", "image/jpeg", "image/webp", "image/gif"}
+
 // imageData is one image of the turn, ready for an API body.
 type imageData struct {
 	mediaType string // read from the bytes, never from the file name
@@ -70,7 +74,11 @@ func loadImages(ctx context.Context) ([]imageData, error) {
 		if err != nil {
 			return nil, fmt.Errorf("attached image %s: %w", path, err)
 		}
-		out = append(out, imageData{mediaType: http.DetectContentType(data), base64: base64.StdEncoding.EncodeToString(data)})
+		mediaType := http.DetectContentType(data)
+		if !slices.Contains(apiImageTypes, mediaType) {
+			return nil, fmt.Errorf("attached image %s: %s is not a PNG, JPEG, WebP or GIF image", path, mediaType)
+		}
+		out = append(out, imageData{mediaType: mediaType, base64: base64.StdEncoding.EncodeToString(data)})
 	}
 	return out, nil
 }

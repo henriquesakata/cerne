@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -175,6 +176,14 @@ func TestImagesUnreadableFileFailsBeforeTheCall(t *testing.T) {
 	defer srv.Close()
 	gone := filepath.Join(t.TempDir(), "gone.png")
 	ctx := WithImages(context.Background(), []string{gone})
+	// A file that is not one of the four image types is refused the same way.
+	notImage := filepath.Join(t.TempDir(), "notes.png")
+	if err := os.WriteFile(notImage, []byte("plain text, not an image"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := anthropicProvider(t, srv.URL).Complete(WithImages(context.Background(), []string{notImage}), "p"); err == nil || !strings.Contains(err.Error(), notImage) {
+		t.Errorf("non-image file: err = %v, want one naming %s", err, notImage)
+	}
 	noDelta := func(string) error { return nil }
 	noCall := func(context.Context, ToolCall) (string, bool) { return "", false }
 
@@ -217,5 +226,30 @@ func TestImagesCursorAndGeminiUntouched(t *testing.T) {
 		if len(plain) != 1 || len(withImages) != 1 || len(plain[0].args) != len(withImages[0].args) {
 			t.Errorf("%s: argv changed with images in the turn: %v vs %v", kind, plain, withImages)
 		}
+	}
+}
+
+// F-0522 crit. 1: in a tool loop the images stay in the first user message of
+// every round, once.
+func TestImagesAnthropicToolLoopKeepsImages(t *testing.T) {
+	var bodies []map[string]any
+	srv := toolServer(t, &bodies,
+		`{"stop_reason":"tool_use","content":[{"type":"tool_use","id":"t1","name":"run","input":{}}]}`,
+		`{"stop_reason":"end_turn","content":[{"type":"text","text":"done"}]}`)
+	p := anthropicProvider(t, srv.URL)
+	tools := []Tool{{Name: "run", Description: "d", Schema: map[string]any{"type": "object"}}}
+	if _, err := p.CompleteTools(imageCtx(t), "the prompt", tools, func(context.Context, ToolCall) (string, bool) { return "ok", true }); err != nil {
+		t.Fatalf("CompleteTools: %v", err)
+	}
+	if len(bodies) != 2 {
+		t.Fatalf("got %d requests, want 2 rounds", len(bodies))
+	}
+	for i, b := range bodies {
+		if got := firstUserContent(t, b); !jsonEqual(got, wantAnthropicBlocks) {
+			t.Errorf("round %d first message = %v, want the image blocks then the text", i+1, got)
+		}
+	}
+	if raw, _ := json.Marshal(bodies[1]); strings.Count(string(raw), `"type":"image"`) != 2 {
+		t.Errorf("round 2 carries the images %d times, want each of the 2 once", strings.Count(string(raw), `"type":"image"`))
 	}
 }
