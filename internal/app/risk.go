@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/henriquesakata/cerne/internal/doccheck"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gauntlet"
 	"github.com/henriquesakata/cerne/internal/lint"
@@ -108,7 +109,8 @@ func assessRisk(repoDir, projDir string, f store.Feature) RiskAssessment {
 	var d gauntlet.Delivery
 	r.Area, r.Paths, r.Facets, d = riskArea(repoDir, projDir, cfg.PinBranch, f, cfg.Gates)
 	r.Base, r.Head = d.Base, d.Head
-	result, _ := os.ReadFile(FeatureDocPath(repoDir, f.ID, "result.md"))
+	// A native task with an inherited bar is judged by its parent's rounds.
+	result, _ := os.ReadFile(FeatureDocPath(repoDir, gauntletSource(repoDir, f), "result.md"))
 	r.Gauntlet, r.Verdict = riskGauntlet(result, cfg.Gates.GauntletEnabled())
 	if rounds := lint.GauntletRoundList(result); len(rounds) > 0 {
 		r.Round = rounds[len(rounds)-1].N
@@ -183,15 +185,34 @@ func revertedFound(prev int) string {
 	return fmt.Sprintf("reverted after its accept on round %d: the win predates the revert, record a new Gauntlet round", prev)
 }
 
-// gauntletRoundOf is the number of the highest round in feature id's result
-// ("0" with none): every accept records it, so a revert can tell an old win
-// from a new one (F-0516).
-func gauntletRoundOf(repoDir, id string) string {
-	result, _ := os.ReadFile(FeatureDocPath(repoDir, id, "result.md"))
+// gauntletRoundOf is the number of the highest round of the Gauntlet record
+// that speaks for f ("0" with none): every accept records it, so a revert can
+// tell an old win from a new one (F-0516).
+func gauntletRoundOf(repoDir string, f store.Feature) string {
+	result, _ := os.ReadFile(FeatureDocPath(repoDir, gauntletSource(repoDir, f), "result.md"))
 	if rounds := lint.GauntletRoundList(result); len(rounds) > 0 {
 		return strconv.Itoa(rounds[len(rounds)-1].N)
 	}
 	return "0"
+}
+
+// gauntletSource is the card whose Gauntlet record speaks for f: a task whose
+// bar is inherited from its own parent, which names a bar, owes no round of
+// its own (T-0007) and is judged by the parent's rounds; any other card, an
+// exempt bar included, by its own.
+func gauntletSource(repoDir string, f store.Feature) string {
+	if !isTask(f.ID) || f.Parent == "" {
+		return f.ID
+	}
+	spec, _ := os.ReadFile(FeatureDocPath(repoDir, f.ID, "spec.md"))
+	parent, inherited := doccheck.BarInherited(spec)
+	if !inherited || parent != f.Parent {
+		return f.ID
+	}
+	if pspec, _ := os.ReadFile(FeatureDocPath(repoDir, parent, "spec.md")); !doccheck.BarNamed(pspec) {
+		return f.ID
+	}
+	return parent
 }
 
 // riskArea is the first condition (crit. 3): the delivery touches no

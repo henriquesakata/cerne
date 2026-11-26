@@ -476,7 +476,7 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 			if payload == nil {
 				payload = map[string]string{}
 			}
-			payload["gauntlet_round"] = gauntletRoundOf(repoDir, id)
+			payload["gauntlet_round"] = gauntletRoundOf(repoDir, f)
 		}
 		if err := store.AppendEvent(repoDir, domain.NewEvent(id, eventType, payload, actor)); err != nil {
 			return "", err
@@ -508,7 +508,7 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 				acceptVia, acceptPayload = project.GateRisk, risk.payload()
 				acceptPayload["via"] = project.GateRisk
 			}
-			acceptPayload["gauntlet_round"] = gauntletRoundOf(repoDir, id)
+			acceptPayload["gauntlet_round"] = gauntletRoundOf(repoDir, f)
 			if src != srcSeed { // a seed crosses no gate, so it marks nothing
 				f.AcceptedVia = acceptVia // F-0515: done with no human act
 				if risk != nil {

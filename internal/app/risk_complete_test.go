@@ -150,6 +150,52 @@ func TestRiskAcceptCascadesTasks(t *testing.T) {
 	}
 }
 
+// TestRiskInheritedBarTaskReadsParentRound: a native task — its bar inherited
+// from the parent, no round of its own — is measured on the parent's highest
+// round: with the parent's win both go to done by risk; with its loss both
+// hold (review 3 of #228).
+// F-0516 crit. 4, 9
+func TestRiskInheritedBarTaskReadsParentRound(t *testing.T) {
+	const taskSpec = "# Doc\n\n## Objetivo e critérios de aceitação\n\n1. Um.\n2. Dois.\n\n## Verificação\n\nBarra: herdada de F-0001\n"
+	const taskResult = "# Doc\n\n## Resultado\n\ncritério 1 → TestUm; critério 2 → TestDois.\n"
+	for _, tc := range []struct {
+		outcome string
+		want    domain.FeatureState
+	}{{"vitória", domain.StateDone}, {"derrota", domain.StateImplemented}} {
+		t.Run(tc.outcome, func(t *testing.T) {
+			asActor(t, "agent")
+			repoDir, projDir, _ := newFeatureBackend(t)
+			riskDelivery(t, repoDir, projDir, store.Feature{ID: "F-0001", Facets: []string{"code"}}, tc.outcome, cleanChange())
+			if err := store.SaveFeature(repoDir, store.Feature{ID: "T-0002", Title: "Task", Parent: "F-0001", State: domain.StateImplemented, Facets: []string{"code"}}); err != nil {
+				t.Fatal(err)
+			}
+			riskWrite(t, repoDir, filepath.Join("content", "features", "T-0002", "spec.md"), taskSpec)
+			riskWrite(t, repoDir, filepath.Join("content", "features", "T-0002", "result.md"), taskResult)
+			if _, err := gitback.CommitAndPush(repoDir, "seed T-0002"); err != nil {
+				t.Fatal(err)
+			}
+			riskWrite(t, projDir, "internal/x/t0002_test.go", "package x\n\n// T-0002 crit. 1, 2\n")
+			riskGit(t, projDir, "add", "-A")
+			riskGit(t, projDir, "commit", "-q", "-m", "feat: the task (T-0002)")
+
+			out, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionComplete, "", "", nil)
+			if err != nil {
+				t.Fatalf("complete: %v", err)
+			}
+			for _, id := range []string{"F-0001", "T-0002"} {
+				if f := reload(t, repoDir, id); f.State != tc.want {
+					t.Errorf("%s = %s, want %s (%+v)", id, f.State, tc.want, out.Risk)
+				}
+			}
+			if tc.want == domain.StateImplemented {
+				if p := lastEntityEvent(t, repoDir, "T-0002", "feature.risk_held").Payload; p["risk_verdict"] != "loss" {
+					t.Errorf("T-0002 held = %+v, want the parent's loss as its verdict", p)
+				}
+			}
+		})
+	}
+}
+
 // TestRiskHeldTaskHoldsItsParent: one held task holds the whole card back —
 // its work rides the parent's PR. The parent's held lines name the task and
 // why; nothing moves, the task records its own measurements, and the human
