@@ -363,3 +363,86 @@ func TestRecordDocEditedCursorMark(t *testing.T) {
 		})
 	}
 }
+
+// cursorPending sets the pending shell command of the recorded Cursor
+// session sess, age ago.
+func cursorPending(t *testing.T, cacheDir, sess, command string, age time.Duration) {
+	t.Helper()
+	path := filepath.Join(cacheDir, cursorSessionsSubdir, sess+".json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rec cursorSession
+	if err := json.Unmarshal(raw, &rec); err != nil {
+		t.Fatal(err)
+	}
+	rec.Pending, rec.PendingAt = command, time.Now().Add(-age).UTC()
+	if raw, err = json.Marshal(rec); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestDocAuthorCursorPendingCommand (F-0513 crit. 6): among concurrent Cursor
+// sessions on different models, the one whose pending shell command is this
+// process's own cerne call (cost.Runs, Claude Code's rule) is the writer: its
+// model, ahead of criterion 2 and of a declaration, and the local mark. Two
+// such sessions are ambiguous, and criterion 2 decides; a pending command
+// older than the window, or another cerne call, counts for nothing.
+func TestDocAuthorCursorPendingCommand(t *testing.T) {
+	type pending struct {
+		sess, command string
+		age           time.Duration
+	}
+	none := DocAuthor{Provider: "cursor", Source: "hook"}
+	declared := map[string]string{"CERNE_PROVIDER": "xai", "CERNE_MODEL": "grok-x"}
+	cases := []struct {
+		name    string
+		env     map[string]string
+		pending []pending
+		want    DocAuthor
+		mark    string // the marked session; "" for no mark
+	}{
+		{"only cb runs this push", nil, []pending{{"cb", "cerne push", time.Minute}}, DocAuthor{Provider: "cursor", Model: "gpt-6", Source: "hook"}, "cb"},
+		{"only cb runs it, ahead of a declaration", declared, []pending{{"cb", "CERNE_X=1 cerne push --dir .", time.Minute}}, DocAuthor{Provider: "cursor", Model: "gpt-6", Source: "hook"}, "cb"},
+		{"both run it: criterion 2", nil, []pending{{"ca", "cerne push", time.Minute}, {"cb", "cerne push", time.Minute}}, none, ""},
+		{"both run it, declared: criterion 2", declared, []pending{{"ca", "cerne push", time.Minute}, {"cb", "cerne push", time.Minute}}, DocAuthor{Provider: "xai", Model: "grok-x", Source: "declared"}, ""},
+		{"a pending command out of the window", nil, []pending{{"cb", "cerne push", 13 * time.Hour}}, none, ""},
+		{"another cerne call", nil, []pending{{"cb", "cerne pull", time.Minute}}, none, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			authorEnv(t) // os.Args: cerne push
+			projDir, cacheDir, repoDir := cursorProject(t)
+			t.Setenv("CURSOR_AGENT", "1")
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			cursorSeen(t, cacheDir, "ca", "grok-4.7", time.Minute, false)
+			cursorSeen(t, cacheDir, "cb", "gpt-6", time.Minute, false)
+			for _, p := range tc.pending {
+				cursorPending(t, cacheDir, p.sess, p.command, p.age)
+			}
+			got := docAuthor(projDir)
+			if got != tc.want {
+				t.Fatalf("docAuthor = %+v, want %+v", got, tc.want)
+			}
+			if err := RecordDocWrite(repoDir, "F-0001", "spec", got); err != nil {
+				t.Fatal(err)
+			}
+			marks, err := cost.ReadMarks(cacheDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch {
+			case tc.mark == "" && len(marks) != 0:
+				t.Fatalf("marks = %+v, want none", marks)
+			case tc.mark != "" && (len(marks) != 1 || marks[0].Session != tc.mark || marks[0].Harness != "cursor"):
+				t.Fatalf("marks = %+v, want %s under harness cursor", marks, tc.mark)
+			}
+		})
+	}
+}

@@ -99,13 +99,14 @@ func docAuthor(projDir string) DocAuthor {
 	p, m := strings.TrimSpace(os.Getenv("CERNE_PROVIDER")), strings.TrimSpace(os.Getenv("CERNE_MODEL"))
 	declared := p != "" || m != ""
 	if cursorShell() {
-		// The hooks' unambiguous model beats a declaration, as the transcript
+		// The writing session's model (its pending command, criterion 6) or the
+		// hooks' unambiguous model beats a declaration, as the transcript
 		// does (F-0513, the owner's call of 2026-11-26); without one, the
 		// declaration; without both, cursor with no model.
 		a := DocAuthor{Provider: "cursor", Source: "hook"}
 		if cfg, _, err := project.LoadConfig(projDir); err == nil {
 			if cacheDir, err := project.CacheDir(cfg.ProjectID); err == nil {
-				a = cursorAuthor(cacheDir)
+				a = cursorAuthor(cacheDir, os.Args[min(1, len(os.Args)):])
 			}
 		}
 		if a.Model == "" && declared {
@@ -147,8 +148,8 @@ func (a DocAuthor) recordDocEdited(repoDir, id, doc string, state domain.Feature
 		return nil
 	}
 	cacheDir, sess, harness := filepath.Dir(repoDir), os.Getenv("CERNE_SESSION"), cost.CurrentHarness()
-	if cursorShell() { // F-0513: the shell names no session; the sole one in play does
-		sess, harness = soleCursorSession(cacheDir), "cursor"
+	if cursorShell() { // F-0513: the shell names no session; its pending command, or the sole one in play, does
+		sess, harness = cursorWriterSession(cacheDir, os.Args[min(1, len(os.Args)):]), "cursor"
 	}
 	if safeSessionID(sess) == nil {
 		_ = RecordMark(cacheDir, sess, "", harness, id, doc)

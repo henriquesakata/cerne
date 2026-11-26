@@ -603,3 +603,54 @@ func TestCursorSessionRolesOnTheAgentsPanel(t *testing.T) {
 		t.Fatalf("two sessions in play: marks %+v, want no new one", after[len(marks):])
 	}
 }
+
+// TestPushAttributesCursorPendingCommand (F-0513 crit. 6): the whole path
+// with two concurrent Cursor sessions on different models and a declared
+// CERNE_PROVIDER/CERNE_MODEL. Only the second session's preToolUse runs this
+// `cerne push`, so the push's write names that session's model, ahead of the
+// declaration, and the local mark goes to it.
+func TestPushAttributesCursorPendingCommand(t *testing.T) {
+	projDir, _, repoDir, specPath := pulledProject(t)
+	for k, v := range map[string]string{"CERNE_ACTOR": "", "CERNE_SESSION": "", "CERNE_PROVIDER": "xai", "CERNE_MODEL": "grok-x", "CURSOR_AGENT": "1"} {
+		t.Setenv(k, v)
+	}
+	hook := func(fixture, sub, sess, modelID string) {
+		t.Helper()
+		p := cursorFixture(t, fixture, projDir)
+		p["session_id"], p["conversation_id"] = sess, sess
+		if modelID != "" {
+			p["model_id"], p["model"] = modelID, modelID
+		}
+		if out, err := execCerneStdin(t, payloadString(t, p), "hook", sub); err != nil {
+			t.Fatalf("hook %s: %v\noutput: %s", sub, err, out)
+		}
+	}
+	hook("session-start.json", "session-context", "sess-a", "")
+	hook("session-start.json", "session-context", "sess-b", "gpt-6")
+	hook("pre-tool-use-shell.json", "tool-notes", "sess-b", "gpt-6")
+
+	args := os.Args
+	os.Args = []string{"cerne", "push", "--dir", projDir} // the shell's own command line
+	t.Cleanup(func() { os.Args = args })
+	mustWrite(t, specPath, "---\ncerne_id: F-0001\n---\n\n# Parcelamento\n\nDividir compras em parcelas, na sessão B.\n")
+	if out, err := execCerne(t, "push", "--dir", projDir); err != nil {
+		t.Fatalf("push: %v\n%s", err, out)
+	}
+	evs, err := store.ReadEvents(repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var last map[string]string
+	for _, ev := range evs {
+		if ev.EntityID == "F-0001" && ev.Type == "feature.doc_edited" {
+			last = ev.Payload
+		}
+	}
+	if last["provider"] != "cursor" || last["model"] != "gpt-6" || last["source"] != "hook" {
+		t.Fatalf("doc_edited = %v, want cursor/gpt-6 from the session whose pending command it is", last)
+	}
+	marks, _ := cost.ReadMarks(filepath.Dir(repoDir))
+	if len(marks) == 0 || marks[len(marks)-1].Session != "sess-b" || marks[len(marks)-1].Harness != "cursor" {
+		t.Fatalf("marks = %+v, want the spec marked on sess-b", marks)
+	}
+}

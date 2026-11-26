@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/henriquesakata/cerne/internal/cost"
 	"github.com/henriquesakata/cerne/internal/project"
 )
 
@@ -147,14 +148,38 @@ func cursorSessions(cacheDir string, now time.Time) map[string]cursorSession {
 	return recent
 }
 
-// cursorAuthor is the writer of a document from a Cursor agent shell (F-0513):
-// provider cursor, with the model the hooks recorded when every Cursor session
-// in play reported the same one, and none otherwise — the shell names no
-// session, so two concurrent sessions on different models are never told
-// apart by a guess (cost.AuthorModel's rule).
-func cursorAuthor(cacheDir string) DocAuthor {
+// cursorPendingWriter is the one session in play whose pending shell command
+// is this process's cerne call, args being its os.Args[1:] (F-0513 crit. 6):
+// the rule cost.AuthorModel applies to Claude Code's pending tool_use. A
+// pending command older than cursorRecent counts for nothing; "" when no
+// session, or more than one, runs it.
+func cursorPendingWriter(sessions map[string]cursorSession, args []string, now time.Time) string {
+	var match []string
+	for sess, rec := range sessions {
+		if rec.Pending != "" && now.Sub(rec.PendingAt) <= cursorRecent && cost.Runs(rec.Pending, args) {
+			match = append(match, sess)
+		}
+	}
+	if len(match) != 1 {
+		return ""
+	}
+	return match[0]
+}
+
+// cursorAuthor is the writer of a document from a Cursor agent shell (F-0513),
+// args being this process's os.Args[1:]: provider cursor, with the model of
+// the one session whose pending shell command this is (criterion 6), else
+// the model every Cursor session in play reported, and none otherwise — the
+// shell names no session, so two concurrent sessions on different models are
+// never told apart by a guess (cost.AuthorModel's rule).
+func cursorAuthor(cacheDir string, args []string) DocAuthor {
+	now := time.Now()
+	sessions := cursorSessions(cacheDir, now)
+	if w := cursorPendingWriter(sessions, args, now); sessions[w].Model != "" {
+		return DocAuthor{Provider: "cursor", Model: sessions[w].Model, Source: "hook"}
+	}
 	a := DocAuthor{Provider: "cursor", Source: "hook"}
-	for _, rec := range cursorSessions(cacheDir, time.Now()) {
+	for _, rec := range sessions {
 		if rec.Model == "" || (a.Model != "" && rec.Model != a.Model) {
 			return DocAuthor{Provider: "cursor", Source: "hook"}
 		}
@@ -163,12 +188,17 @@ func cursorAuthor(cacheDir string) DocAuthor {
 	return a
 }
 
-// soleCursorSession is the session a Cursor shell's write is marked on
-// (F-0513): the only Cursor session in play, bound or not — the spec and the
-// plan are written before any feature start binds. "" when another session is
-// in play too: either may be the writer.
-func soleCursorSession(cacheDir string) string {
-	sessions := cursorSessions(cacheDir, time.Now())
+// cursorWriterSession is the session a Cursor shell's write is marked on
+// (F-0513), args being this process's os.Args[1:]: the one whose pending
+// shell command this is (criterion 6), else the only Cursor session in play,
+// bound or not — the spec and the plan are written before any feature start
+// binds. "" when neither is single: any of them may be the writer.
+func cursorWriterSession(cacheDir string, args []string) string {
+	now := time.Now()
+	sessions := cursorSessions(cacheDir, now)
+	if w := cursorPendingWriter(sessions, args, now); w != "" {
+		return w
+	}
 	if len(sessions) != 1 {
 		return ""
 	}
