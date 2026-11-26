@@ -63,7 +63,7 @@ func riskRepo(t *testing.T, dir string, base, change map[string]string) {
 		}
 	}
 	riskGit(t, dir, "add", "-A")
-	riskGit(t, dir, "commit", "-q", "-m", "delivery")
+	riskGit(t, dir, "commit", "-q", "-m", "feat: the delivery (F-0001)")
 }
 
 // TestRiskSensitiveArea: the first condition holds only when no changed file
@@ -117,6 +117,14 @@ func TestRiskSensitiveArea(t *testing.T) {
 		{"HEAD on the default branch", func(t *testing.T, d string) {
 			riskRepo(t, d, nil, nil)
 		}, []string{"code"}, false, nil, []string{"empty", "worktree"}},
+		// The checkout must be this card's delivery (review of #228).
+		{"a clean checkout of another card", func(t *testing.T, d string) {
+			riskRepo(t, d, nil, nil)
+			riskGit(t, d, "checkout", "-q", "-b", "feat/other")
+			riskWrite(t, d, "a.go", "a")
+			riskGit(t, d, "add", "-A")
+			riskGit(t, d, "commit", "-q", "-m", "feat: other work (F-0010)")
+		}, []string{"code"}, false, nil, []string{"no commit", "cites F-0001"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()

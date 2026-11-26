@@ -89,11 +89,12 @@ type Delivery struct {
 	Ref        string   // the base ref resolved (see resolveBase)
 	Base, Head string   // the merge-base of Ref and HEAD, and HEAD, as SHAs
 	Files      []string // changed from Base to HEAD, no excludes; a rename as its old and its new path
+	Cited      bool     // a non-merge commit of Base..HEAD cites the id, as FeatureCommits reads it
 }
 
-// ReadDelivery reads the delivery checked out at dir against the default
-// branch (see resolveBase).
-func ReadDelivery(dir, pinBranch string) (Delivery, error) {
+// ReadDelivery reads the delivery of card id checked out at dir against the
+// default branch (see resolveBase).
+func ReadDelivery(dir, pinBranch, id string) (Delivery, error) {
 	ref, err := resolveBase(dir, "", pinBranch)
 	if err != nil {
 		return Delivery{}, err
@@ -114,6 +115,13 @@ func ReadDelivery(dir, pinBranch string) (Delivery, error) {
 		if f != "" {
 			d.Files = append(d.Files, f)
 		}
+	}
+	log, err := runGit(dir, "log", "--no-merges", "--format=%B%x1e", d.Base+".."+d.Head)
+	if err != nil {
+		return Delivery{}, err
+	}
+	for _, msg := range strings.Split(log, "\x1e") {
+		d.Cited = d.Cited || citesID(msg, id)
 	}
 	return d, nil
 }

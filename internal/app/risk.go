@@ -131,7 +131,7 @@ func revertedRiskRound(repoDir, id string) (round int, reverted bool) {
 // this condition. d is the delivery read, empty when git could not read it.
 func riskArea(projDir, pinBranch string, f store.Feature, g project.GatesConfig) (c RiskCheck, paths, facets []string, d gauntlet.Delivery) {
 	var why []string
-	d, err := gauntlet.ReadDelivery(projDir, pinBranch)
+	d, err := gauntlet.ReadDelivery(projDir, pinBranch, f.ID)
 	files, base := d.Files, d.Ref
 	switch {
 	case errors.Is(err, gauntlet.ErrNotGitRepo):
@@ -142,6 +142,11 @@ func riskArea(projDir, pinBranch string, f store.Feature, g project.GatesConfig)
 		why = append(why, "the diff cannot be read: "+err.Error())
 	case len(files) == 0:
 		why = append(why, "the diff from "+base+" to HEAD is empty: run complete in the delivery's worktree")
+	case !d.Cited:
+		// Another card's checkout (another worktree, the main checkout under
+		// cerne ui) would be measured in its place.
+		why = append(why, "no commit from "+base+" to HEAD cites "+f.ID+": this checkout is not its delivery — run complete in the delivery's worktree")
+		paths = sensitivePaths(files, g.RiskHumanPaths())
 	default:
 		paths = sensitivePaths(files, g.RiskHumanPaths())
 	}

@@ -65,7 +65,7 @@ func riskProject(t *testing.T, facets []string, outcome string, manual bool, cha
 		}
 	}
 	gitRun(t, projDir, "add", "-A")
-	gitRun(t, projDir, "commit", "-q", "-m", "delivery")
+	gitRun(t, projDir, "commit", "-q", "-m", "feat: the delivery (F-0001)")
 	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0001", Title: "Card F-0001", State: domain.StateInDevelopment, Facets: facets}); err != nil {
 		t.Fatal(err)
 	}
