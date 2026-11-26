@@ -621,15 +621,17 @@ const (
 func completeStampLine(id string, o stampOutcome, err error, done bool) string {
 	// A done card refuses `cerne cost --stamp` (B-0090): no advice to run it.
 	rerun := fmt.Sprintf("; run 'cerne cost %s --stamp'", id)
+	elsewhere := "Work done on another machine is stamped there: cerne cost " + id + " --stamp"
 	if done {
 		rerun = ""
+		elsewhere = "Nothing can count it later: this card's cost can no longer be stamped" // the other machine's stamp is refused too
 	}
 	switch {
 	case errors.Is(err, cost.ErrNothingToStamp):
 		// B-0070: "another machine" alone sent the agent away from an unbound
 		// session that ran right here. Attribution is temporal, so a bind made
 		// now counts nothing already done: say so, and how to bind next time.
-		return fmt.Sprintf("warning: cost not stamped: no session on this machine is bound to %s, so the work done here is not counted. A session binds when it starts: 'cerne feature start %s', or 'cerne work start \"%s: <what>\" --ref %s' when it continues another session's work. Work done on another machine is stamped there%s", id, id, id, id, strings.Replace(rerun, "; run 'cerne cost "+id+" --stamp'", ": cerne cost "+id+" --stamp", 1))
+		return fmt.Sprintf("warning: cost not stamped: no session on this machine is bound to %s, so the work done here is not counted. A session binds when it starts: 'cerne feature start %s', or 'cerne work start \"%s: <what>\" --ref %s' when it continues another session's work. %s", id, id, id, id, elsewhere)
 	case errors.Is(err, cost.ErrUnsupportedHarness):
 		// --stamp would fail the same way (B-0055): advise no command.
 		return "warning: cost not stamped: this session ran under a harness cerne cost cannot read (Claude Code transcripts only); nothing to run"

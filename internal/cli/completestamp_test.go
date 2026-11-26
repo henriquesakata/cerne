@@ -343,4 +343,33 @@ func TestCompleteStampLineOnDoneCardAdvisesNoStampCommand(t *testing.T) {
 			t.Errorf("%v: %s", err, got)
 		}
 	}
+	// The unbound-session warning says the cost is lost, not that another
+	// machine can stamp it: that stamp is refused on a done card too.
+	got := completeStampLine("F-0001", stampOutcome{}, cost.ErrNothingToStamp, true)
+	if !strings.HasSuffix(got, "this card's cost can no longer be stamped") || strings.Contains(got, "stamped there") {
+		t.Errorf("wording: %s", got)
+	}
+}
+
+// B-0090: --no-stamp on a card the complete lands on done advises no stamp
+// command, which a done card refuses.
+func TestCompleteNoStampOnDoneAdvisesNoStampCommand(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	seedResultFeatures(t, repoDir, domain.StateInDevelopment)
+	cfg, _, err := project.LoadConfig(projDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Gates.Accept = project.GateAuto
+	if err := project.SaveConfig(projDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CERNE_ACTOR", "agent")
+	out, err := execCerne(t, "feature", "complete", "F-0001", "--no-stamp", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("complete: %v\n%s", err, out)
+	}
+	if strings.Contains(out, "cerne cost F-0001 --stamp") {
+		t.Errorf("advises the refused stamp:\n%s", out)
+	}
 }
