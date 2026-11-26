@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -332,6 +333,26 @@ func TestRiskRecordsTheDeliveryFiles(t *testing.T) {
 	d, err := RiskDecisionOf(repoDir, projDir, "F-0001")
 	if err != nil || d == nil || strings.Join(d.Dirs, " ") != "go.mod internal/x/**" {
 		t.Fatalf("decision %+v (%v): want the folders go.mod and internal/x/**", d, err)
+	}
+}
+
+// TestRiskCapsTheFileLists: the file lists copied into events keep at most
+// 200 entries each, with the total beside them, so a huge delivery does not
+// grow every event; a short list is whole.
+// F-0518 crit. 5
+func TestRiskCapsTheFileLists(t *testing.T) {
+	var files []string
+	for i := range 250 {
+		files = append(files, fmt.Sprintf("pkg/f%03d.go", i))
+	}
+	p := RiskAssessment{Files: files, Paths: files}.payload()
+	for _, k := range []string{"risk_files", "risk_paths"} {
+		if n := len(splitList(p[k])); n != 200 || p[k+"_total"] != "250" {
+			t.Errorf("%s: %d entries, total %q; want 200 and 250", k, n, p[k+"_total"])
+		}
+	}
+	if p := (RiskAssessment{Files: files[:3]}).payload(); len(splitList(p["risk_files"])) != 3 || p["risk_files_total"] != "3" {
+		t.Errorf("a short list: %q, total %q", p["risk_files"], p["risk_files_total"])
 	}
 }
 

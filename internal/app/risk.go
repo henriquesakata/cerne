@@ -136,7 +136,7 @@ func (r RiskAssessment) payload() map[string]string {
 	}
 	p := map[string]string{
 		"risk": risk, "risk_area": r.Area.Found, "risk_gauntlet": r.Gauntlet.Found, "risk_tests": r.Tests.Found,
-		"risk_paths": strings.Join(r.Paths, ", "), "risk_facets": strings.Join(r.Facets, ", "),
+		"risk_facets": strings.Join(r.Facets, ", "),
 		"risk_verdict": r.Verdict, "risk_round": strconv.Itoa(r.Round), "risk_criteria_tested": r.Tested,
 		"risk_base": r.Base, "risk_head": r.Head, "risk_tasks": strings.Join(heldTaskLines(r.HeldTasks), " | "),
 	}
@@ -146,10 +146,20 @@ func (r RiskAssessment) payload() map[string]string {
 	if r.Calibration != "" {
 		p["risk_calibration"], p["risk_would"] = r.Calibration, r.wouldWord()
 	}
-	// ponytail: every changed file on the event; a delivery of thousands of
-	// files makes one long line — cap it if logs grow heavy.
-	p["risk_files"], p["risk_patterns"] = strings.Join(r.Files, ", "), strings.Join(r.Patterns, ", ")
+	// The file lists ride every event that copies the decision (F-0518):
+	// capped, with the total beside them.
+	p["risk_files"], p["risk_files_total"] = capped(r.Files), strconv.Itoa(len(r.Files))
+	p["risk_paths"], p["risk_paths_total"] = capped(r.Paths), strconv.Itoa(len(r.Paths))
+	p["risk_patterns"] = strings.Join(r.Patterns, ", ")
 	return p
+}
+
+// maxEventList is how many entries of a file list an event keeps.
+const maxEventList = 200
+
+// capped joins the first maxEventList items.
+func capped(items []string) string {
+	return strings.Join(items[:min(len(items), maxEventList)], ", ")
 }
 
 func heldTaskLines(tasks []HeldTask) []string {
