@@ -65,9 +65,23 @@ func isNextState(s domain.FeatureState) bool {
 	return false
 }
 
+// nextDebtPerRuleCap bounds each lint rule's items in the DEBTS block of cerne
+// next (F-0514); every rule header and its total stay.
+const nextDebtPerRuleCap = 5
+
+// printNextDebts is the DEBTS body: each rule capped at nextDebtPerRuleCap
+// unless all is set.
+func printNextDebts(out io.Writer, findings []lint.Finding, all bool) {
+	perRule := nextDebtPerRuleCap
+	if all {
+		perRule = 0
+	}
+	printFindingsCapped(out, findings, "", perRule)
+}
+
 func newNextCmd() *cobra.Command {
 	var dir string
-	var asJSON bool
+	var asJSON, all bool
 	cmd := &cobra.Command{
 		Use:   "next [id]",
 		Short: "Work queue: active features (by action) plus lint debts; with an id, that feature's next step",
@@ -76,12 +90,13 @@ func newNextCmd() *cobra.Command {
 			if len(args) == 1 {
 				return runNextByID(cmd, dir, args[0], asJSON)
 			}
-			return runNext(cmd, dir, asJSON)
+			return runNext(cmd, dir, asJSON, all)
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "machine-readable JSON output (the same sections)")
+	cmd.Flags().BoolVar(&all, "all", false, "text only: lift the caps on DEBTS (5 per rule) and OPEN PENDINGS (10); --json is never capped")
 	return cmd
 }
 
@@ -133,7 +148,7 @@ type nextJSON struct {
 // runNext consolidates `status --active` and `lint` into one agent-facing work
 // queue. Unlike lint it is informational: it never fails the command, even with
 // findings — it answers "what should I do next", not "is the backend clean".
-func runNext(cmd *cobra.Command, dir string, asJSON bool) error {
+func runNext(cmd *cobra.Command, dir string, asJSON, all bool) error {
 	ctx, err := resolveProject(dir)
 	if err != nil {
 		return err
@@ -317,10 +332,14 @@ func runNext(cmd *cobra.Command, dir string, asJSON bool) error {
 		printed = true
 		fmt.Fprintf(out, "OPEN PENDINGS (%d) — resolve, drop or promote: 'cerne pending resolve|drop|promote <id>'\n", len(open))
 		now := time.Now().UTC()
-		for _, p := range open[:min(len(open), nextPendingCap)] {
+		shown := min(len(open), nextPendingCap)
+		if all {
+			shown = len(open)
+		}
+		for _, p := range open[:shown] {
 			fmt.Fprintf(out, "  %s  %s  %s  %s\n", p.ID, pendingAge(now, p), p.From, p.Title)
 		}
-		if rest := len(open) - nextPendingCap; rest > 0 {
+		if rest := len(open) - shown; rest > 0 {
 			fmt.Fprintf(out, "  … and %d more ('cerne pending list')\n", rest)
 		}
 		fmt.Fprintln(out)
@@ -339,7 +358,7 @@ func runNext(cmd *cobra.Command, dir string, asJSON bool) error {
 	if len(findings) > 0 {
 		printed = true
 		fmt.Fprintln(out, "DEBTS (cerne lint):")
-		printFindings(out, findings)
+		printNextDebts(out, findings, all)
 	}
 
 	if q.DriftPending > 0 {
