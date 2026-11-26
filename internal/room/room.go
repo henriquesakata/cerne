@@ -70,11 +70,17 @@ type Room struct {
 	Permanent bool `json:"permanent,omitempty"`
 }
 
-// Participant is one joined nick.
+// Participant is one joined nick. Listening and LastSeenAt are live presence
+// (T-0021), in memory only and set only on ActiveParticipants entries.
 type Participant struct {
 	Nick     string    `json:"nick"`
 	Bio      string    `json:"bio,omitempty"`
 	JoinedAt time.Time `json:"joined_at"`
+	// Listening: the nick's session holds a follow read in flight in an
+	// open room.
+	Listening bool `json:"listening,omitempty"`
+	// LastSeenAt: the session's last authenticated interaction.
+	LastSeenAt *time.Time `json:"last_seen_at,omitempty"`
 }
 
 // Session is the private capability minted on Join (F-0226). SessionID is a
@@ -157,6 +163,30 @@ type roomState struct {
 	facilitatorHash [sha256.Size]byte // F-0228: single rotating capability, never in log/sessions
 	items           []FacilitationItem
 	changed         chan struct{} // closed and replaced on every append; long-poll wakeup
+	// Live presence by nick (T-0021), never persisted: follow reads in flight
+	// and the last authenticated interaction.
+	watchers map[string]int
+	lastSeen map[string]time.Time
+}
+
+// touchLocked stamps nick's last authenticated interaction. Caller must hold
+// rs.mu.
+func (rs *roomState) touchLocked(nick string) {
+	if rs.lastSeen == nil {
+		rs.lastSeen = map[string]time.Time{}
+	}
+	rs.lastSeen[nick] = time.Now().UTC()
+}
+
+// hasSessionLocked reports whether the session with hash is still valid.
+// Caller must hold rs.mu.
+func (rs *roomState) hasSessionLocked(hash [sha256.Size]byte) bool {
+	for _, s := range rs.sessions {
+		if s.hash == hash {
+			return true
+		}
+	}
+	return false
 }
 
 // checkFacilitatorLocked reports whether token is the room's current
@@ -594,7 +624,12 @@ func (rs *roomState) snapshotLocked() Room {
 	cp.Participants = append([]Participant(nil), rs.meta.Participants...)
 	cp.ActiveParticipants = make([]Participant, 0, len(rs.sessions))
 	for _, s := range rs.sessions {
-		cp.ActiveParticipants = append(cp.ActiveParticipants, Participant{Nick: s.nick, Bio: rs.bioOfLocked(s.nick), JoinedAt: s.joinedAt})
+		p := Participant{Nick: s.nick, Bio: rs.bioOfLocked(s.nick), JoinedAt: s.joinedAt}
+		p.Listening = rs.meta.ClosedAt == nil && rs.watchers[s.nick] > 0
+		if t, ok := rs.lastSeen[s.nick]; ok {
+			p.LastSeenAt = &t
+		}
+		cp.ActiveParticipants = append(cp.ActiveParticipants, p)
 	}
 	cp.MessageCount = len(rs.log)
 	return cp
@@ -715,6 +750,7 @@ func (m *Manager) Join(id, nick, bio string) (Room, Session, error) {
 		rs.meta.Participants = append(rs.meta.Participants, Participant{Nick: nick, Bio: bio, JoinedAt: now})
 	}
 	rs.sessions = append(rs.sessions, sessionAuth{hash: hash, nick: nick, joinedAt: now})
+	rs.touchLocked(nick)
 	sess := Session{SessionID: token, RoomID: rs.meta.ID, Nick: nick, Bio: bio, JoinedAt: now, LastSeq: len(rs.log)}
 	return rs.snapshotLocked(), sess, nil
 }
@@ -748,6 +784,8 @@ func (m *Manager) Leave(id, sessionID string) (Room, error) {
 			break
 		}
 	}
+	delete(rs.watchers, sa.nick)
+	delete(rs.lastSeen, sa.nick)
 	if err := m.appendLocked(rs, Message{Type: typeLeave, Nick: sa.nick, Time: time.Now().UTC()}); err != nil {
 		return Room{}, err
 	}
@@ -776,6 +814,7 @@ func (m *Manager) Resume(id, sessionID string) (Session, error) {
 	if !ok {
 		return Session{}, ErrInvalidSession
 	}
+	rs.touchLocked(sa.nick)
 	return Session{
 		SessionID: sessionID,
 		RoomID:    rs.meta.ID,
@@ -807,6 +846,7 @@ func (m *Manager) Say(id, sessionID, body string) (Message, error) {
 	if err := m.appendLocked(rs, rec); err != nil {
 		return Message{}, err
 	}
+	rs.touchLocked(sa.nick)
 	return rs.log[len(rs.log)-1], nil
 }
 
@@ -843,6 +883,7 @@ func (m *Manager) addItem(id, sessionID, kind, title, body string) (Facilitation
 	if err := m.appendLocked(rs, rec); err != nil {
 		return FacilitationItem{}, err
 	}
+	rs.touchLocked(sa.nick)
 	seq := rs.log[len(rs.log)-1].Seq
 	item := FacilitationItem{
 		ID:        fmt.Sprintf("I%d", seq),
@@ -1008,6 +1049,47 @@ func (m *Manager) Read(ctx context.Context, id string, since int, follow bool, t
 			return nil, nil
 		}
 	}
+}
+
+// ReadForSession is Read on behalf of sessionID's participant (T-0021),
+// returning the reader's nick. It stamps the nick's last_seen_at and, while
+// a follow read is in flight, counts it as listening. The count is undone by
+// defer, which stamps last_seen_at again as the read ends, so a canceled
+// request never leaks one; a session revoked meanwhile (Leave already
+// cleared its presence) undoes nothing. Rejected when the capability is not
+// valid in this room.
+func (m *Manager) ReadForSession(ctx context.Context, id, sessionID string, since int, follow bool, timeout time.Duration) ([]Message, string, error) {
+	rs, err := m.getRoom(id)
+	if err != nil {
+		return nil, "", err
+	}
+	rs.mu.Lock()
+	sa, ok := rs.findSessionLocked(sessionID)
+	if !ok {
+		rs.mu.Unlock()
+		return nil, "", ErrInvalidSession
+	}
+	rs.touchLocked(sa.nick)
+	if follow {
+		if rs.watchers == nil {
+			rs.watchers = map[string]int{}
+		}
+		rs.watchers[sa.nick]++
+		defer func() {
+			rs.mu.Lock()
+			defer rs.mu.Unlock()
+			if !rs.hasSessionLocked(sa.hash) {
+				return
+			}
+			rs.touchLocked(sa.nick)
+			if rs.watchers[sa.nick] > 0 {
+				rs.watchers[sa.nick]--
+			}
+		}()
+	}
+	rs.mu.Unlock()
+	msgs, err := m.Read(ctx, id, since, follow, timeout)
+	return msgs, sa.nick, err
 }
 
 // List returns every room (open and closed), sorted by numeric id.
