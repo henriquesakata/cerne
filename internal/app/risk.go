@@ -35,12 +35,19 @@ type RiskAssessment struct {
 	Tested                string   // "<criteria with a test>/<criteria>"
 	Base, Head            string   // the commits measured: merge-base with the default branch, and HEAD; empty when unread
 	Mode                  string   // the card's accept_mode (F-0518): human, auto or empty
+	Calibration           string   // "<owner answers>/<target>" while the gate calibrates (F-0518); empty past it
 }
 
-// Low reports a delivery of low risk: all three conditions hold and the
-// owner did not mark the card as needing a person (F-0518).
-func (r RiskAssessment) Low() bool {
+// would is what the gate decides on its own: all three conditions hold and
+// the owner did not mark the card as needing a person (F-0518).
+func (r RiskAssessment) would() bool {
 	return r.Area.Holds && r.Gauntlet.Holds && r.Tests.Holds && r.Mode != AcceptModeHuman
+}
+
+// Low reports a delivery of low risk: the gate would accept it and is past
+// its calibration, or the owner marked the card to pass alone (F-0518).
+func (r RiskAssessment) Low() bool {
+	return r.would() && (r.Calibration == "" || r.Mode == AcceptModeAuto)
 }
 
 // ownerHold is the line of a card the owner marked as needing a person.
@@ -62,7 +69,17 @@ func (r RiskAssessment) Held() []string {
 	if r.Mode == AcceptModeHuman {
 		out = append(out, ownerHold)
 	}
+	if r.Calibration != "" && r.Mode != AcceptModeAuto {
+		out = append(out, fmt.Sprintf("the risk gate is in calibration (%s owner answers): it holds every delivery for a person and records what it would have decided (%s)", r.Calibration, r.wouldWord()))
+	}
 	return out
+}
+
+func (r RiskAssessment) wouldWord() string {
+	if r.would() {
+		return "low"
+	}
+	return "held"
 }
 
 // payload is the record of the measurements on the complete event and on the
@@ -83,6 +100,9 @@ func (r RiskAssessment) payload() map[string]string {
 	}
 	if r.Mode != "" {
 		p["risk_mode"] = r.Mode
+	}
+	if r.Calibration != "" {
+		p["risk_calibration"], p["risk_would"] = r.Calibration, r.wouldWord()
 	}
 	return p
 }
@@ -107,7 +127,33 @@ func assessRisk(repoDir, projDir string, f store.Feature) RiskAssessment {
 		r.Gauntlet = RiskCheck{Found: fmt.Sprintf("reverted after its risk accept on round %d: the win predates the revert, record a new Gauntlet round", prev)}
 	}
 	r.Tests, r.Tested = riskTests(repoDir, projDir, f)
+	if answers, target := riskCalibration(repoDir, cfg.Gates); answers < target {
+		r.Calibration = fmt.Sprintf("%d/%d", answers, target)
+	}
 	return r
+}
+
+// riskCalibration is how many cards the owner answered and how many answers
+// the gate collects before it decides on its own (F-0518 crit. 12). A log
+// that cannot be read counts none: in doubt, calibrate.
+func riskCalibration(repoDir string, g project.GatesConfig) (answers, target int) {
+	target = g.RiskCalibration()
+	evs, err := store.ReadEvents(repoDir)
+	if err != nil {
+		return 0, target
+	}
+	return len(answeredCards(evs)), target
+}
+
+// answeredCards are the cards with at least one answer of the owner.
+func answeredCards(evs []domain.Event) map[string]bool {
+	out := map[string]bool{}
+	for _, ev := range evs {
+		if ev.Type == riskFeedbackEvent {
+			out[ev.EntityID] = true
+		}
+	}
+	return out
 }
 
 // revertedRiskRound reports whether feature id was reverted after its last

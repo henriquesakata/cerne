@@ -125,7 +125,9 @@ func riskDecisions(evs []domain.Event) map[string]*RiskDecision {
 
 func newRiskDecision(ev domain.Event, idx int) *RiskDecision {
 	p := ev.Payload
-	d := &RiskDecision{Risk: p["risk"], Calibration: p["risk_calibration"] != "", Would: p["risk_would"], Mode: p["risk_mode"],
+	// An owner's auto mark passes in calibration: that card was accepted, not
+	// held in calibration.
+	d := &RiskDecision{Risk: p["risk"], Calibration: p["risk_calibration"] != "" && p["risk"] == "held", Would: p["risk_would"], Mode: p["risk_mode"],
 		Files: splitList(p["risk_files"]), Facets: splitList(p["risk_facets"]), At: ev.At, payload: p, idx: idx}
 	d.Dirs = dirGlobs(d.Files)
 	return d
@@ -250,6 +252,66 @@ func SetFeatureAcceptMode(repoDir, projDir, id, mode string) (store.Feature, err
 		return store.Feature{}, err
 	}
 	return f, nil
+}
+
+// RiskCalibration is the risk gate's calibration (F-0518 crit. 12, 13): how
+// many answers it collects, how many it has, and how the decisions it would
+// have taken compare with the answers given in calibration.
+type RiskCalibration struct {
+	Target    int `json:"target"`    // gates.risk_calibration; 0 = off
+	Answers   int `json:"answers"`   // cards the owner answered
+	Remaining int `json:"remaining"` // answers left before the gate decides on its own
+	Answered  int `json:"answered"`  // answers on cards decided in calibration
+	Matched   int `json:"matched"`   // of those, where the decision the gate would have taken matched the answer
+	Missed    int `json:"missed"`    // of those, the gate would have let pass and the owner said it needed them
+}
+
+// RiskGateView is what the risk gate learned (F-0518), for next and the ui.
+type RiskGateView struct {
+	Calibration RiskCalibration `json:"calibration"`
+	// Questions are the cards decided in calibration, accepted at the merge,
+	// that the owner has not answered yet.
+	Questions []string `json:"questions"`
+}
+
+// ReadRiskGate reads the risk gate's learning from the log; since bounds the
+// period of the counts.
+func ReadRiskGate(repoDir, projDir string, since time.Time) (RiskGateView, error) {
+	v := RiskGateView{Questions: []string{}}
+	evs, err := store.ReadEvents(repoDir)
+	if err != nil {
+		return v, err
+	}
+	features, err := store.LoadAllFeatures(repoDir)
+	if err != nil {
+		return v, err
+	}
+	decisions := riskDecisions(evs)
+	c := &v.Calibration
+	c.Target = projectGates(projDir).RiskCalibration()
+	c.Answers = len(answeredCards(evs))
+	c.Remaining = max(0, c.Target-c.Answers)
+	for _, f := range features {
+		d := decisions[f.ID]
+		if d == nil || !d.Calibration {
+			continue
+		}
+		if d.Feedback == nil {
+			if f.State == domain.StateDone {
+				v.Questions = append(v.Questions, f.ID)
+			}
+			continue
+		}
+		c.Answered++
+		needed := d.Feedback.Answer == FeedbackShouldHaveAsked
+		if (d.Would == "low") != needed {
+			c.Matched++
+		}
+		if d.Would == "low" && needed {
+			c.Missed++
+		}
+	}
+	return v, nil
 }
 
 // riskKeys are the gate's measurements of a decision payload: its risk* keys.

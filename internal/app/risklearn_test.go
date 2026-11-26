@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gitback"
@@ -113,6 +114,107 @@ func TestFeedbackMatchesTheDecision(t *testing.T) {
 	}
 }
 
+// calibrating stores the risk gate with a calibration of n answers.
+func calibrating(t *testing.T, projDir string, n int64) {
+	t.Helper()
+	saveGates(t, projDir, calibration(n))
+}
+
+func calibration(n int64) project.GatesConfig {
+	return project.GatesConfig{Accept: project.GateRisk, RiskCalibrationN: &n}
+}
+
+// answered appends an owner's answer on each of ids, as RecordRiskFeedback
+// writes it.
+func answered(t *testing.T, repoDir string, ids ...string) {
+	t.Helper()
+	for _, id := range ids {
+		if err := store.AppendEvent(repoDir, domain.NewEvent(id, riskFeedbackEvent, map[string]string{"answer": FeedbackNotNeeded, "risk": "held"}, "human")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "answers"); err != nil && !errors.Is(err, gitback.ErrNothingToCommit) {
+		t.Fatal(err)
+	}
+}
+
+// TestRiskCalibrationHoldsAndRecords: until the owner has answered as many
+// cards as gates.risk_calibration, the gate holds a low-risk delivery and
+// records what it would have decided; a card answered twice counts once and
+// a decided card with no answer not at all; at the number, and with
+// calibration at zero, it decides as F-0516; the owner's auto mark passes in
+// calibration too.
+// F-0518 crit. 12, 15
+func TestRiskCalibrationHoldsAndRecords(t *testing.T) {
+	for _, c := range []struct {
+		name     string
+		target   int64
+		answers  []string
+		mode     string
+		low      bool
+		progress string
+	}{
+		{"before the number", 2, nil, "", false, "0/2"},
+		{"one card answered twice", 2, []string{"F-0008", "F-0008"}, "", false, "1/2"},
+		{"at the number", 2, []string{"F-0008", "F-0009"}, "", true, ""},
+		{"calibration off", 0, nil, "", true, ""},
+		{"marked auto in calibration", 2, nil, AcceptModeAuto, true, "0/2"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			asActor(t, "agent")
+			repoDir, projDir, _ := newFeatureBackend(t)
+			riskDeliveryUnder(t, calibration(c.target), repoDir, projDir, store.Feature{ID: "F-0001", Facets: []string{"code"}, AcceptMode: c.mode}, "vitória", cleanChange())
+			// A card the gate decided in calibration that nobody answered.
+			decided(t, repoDir, "F-0007", domain.StateDone, []string{"code"}, map[string]string{"risk": "held", "risk_calibration": "0/2", "risk_would": "low"})
+			answered(t, repoDir, c.answers...)
+			out, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionComplete, "", "", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if out.Risk == nil || out.Risk.Low() != c.low || (out.To == domain.StateDone) != c.low {
+				t.Fatalf("complete = %s, risk %+v; want low %v", out.To, out.Risk, c.low)
+			}
+			p := lastEntityEvent(t, repoDir, "F-0001", "feature.completed").Payload
+			if p["risk_calibration"] != c.progress {
+				t.Errorf("risk_calibration = %q, want %q", p["risk_calibration"], c.progress)
+			}
+			if wantWould := map[bool]string{true: "low", false: ""}[c.progress != ""]; p["risk_would"] != wantWould {
+				t.Errorf("risk_would = %q, want %q", p["risk_would"], wantWould)
+			}
+			if !c.low && !strings.Contains(strings.Join(out.Risk.Held(), "; "), "calibration") {
+				t.Errorf("held lines %q do not name the calibration", out.Risk.Held())
+			}
+		})
+	}
+}
+
+// TestCalibrationAnswerIsFeedback: on a card held in calibration, either
+// answer is the owner's feedback, recorded with what the gate would have
+// decided, and it counts toward the number.
+// F-0518 crit. 12
+func TestCalibrationAnswerIsFeedback(t *testing.T) {
+	asActor(t, "")
+	repoDir, projDir, _ := newFeatureBackend(t)
+	calibrating(t, projDir, 2)
+	decided(t, repoDir, "F-0001", domain.StateDone, []string{"code"}, map[string]string{"risk": "held", "risk_calibration": "0/2", "risk_would": "low"})
+	decided(t, repoDir, "F-0002", domain.StateDone, []string{"code"}, map[string]string{"risk": "held", "risk_calibration": "0/2", "risk_would": "held"})
+	for id, answer := range map[string]string{"F-0001": FeedbackShouldHaveAsked, "F-0002": FeedbackNotNeeded} {
+		if _, err := RecordRiskFeedback(repoDir, projDir, id, RiskFeedback{Answer: answer}); err != nil {
+			t.Fatalf("%s %s: %v", id, answer, err)
+		}
+		if p := lastEntityEvent(t, repoDir, id, riskFeedbackEvent).Payload; p["answer"] != answer || p["risk_would"] == "" || p["risk_calibration"] != "0/2" {
+			t.Errorf("%s: payload %v, want the answer with what the gate would have decided", id, p)
+		}
+	}
+	v, err := ReadRiskGate(repoDir, projDir, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.Calibration.Target != 2 || v.Calibration.Answers != 2 || v.Calibration.Remaining != 0 {
+		t.Errorf("calibration = %+v, want 2 of 2 answered", v.Calibration)
+	}
+}
+
 // TestAcceptModeHumanAlwaysHolds: a card the owner marked as needing a person
 // waits for the merge even with all three conditions holding, and the mark is
 // on the complete event.
@@ -160,6 +262,7 @@ func TestAcceptModeAutoWaivesOnlySensitiveArea(t *testing.T) {
 			if c.id != "F-0001" {
 				change["internal/x/x_test.go"] = "package x\n\n// " + c.id + " crit. 1, 2\n"
 			}
+			calibrating(t, projDir, 0)
 			riskRepo(t, projDir, nil, change)
 			outcome := "vitória"
 			if !c.win {

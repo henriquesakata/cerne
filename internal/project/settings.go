@@ -71,6 +71,9 @@ type Setting struct {
 	// actor (F-0392). The server only serializes it, for the UI to guard the
 	// key; the CLI still enforces it.
 	HumanOnly bool `json:"human_only,omitempty"`
+	// AllowZero lets an int key take 0 besides the positive integers (F-0518:
+	// zero turns a count off).
+	AllowZero bool `json:"allow_zero,omitempty"`
 	// MaxLen is the longest string the key accepts, in characters; 0 = the
 	// default maxSettingString (a URL needs more than a display name). The UI
 	// caps its text field with it (F-0449).
@@ -165,6 +168,11 @@ var settingsRegistry = []Setting{
 		ID: "gates.gauntlet", Group: "process", Title: "Gauntlet", Type: "string", Default: "on", Enum: []string{"on", "off"},
 		Scopes: []string{ScopeProject}, HumanOnly: true,
 		Description: "Turns the Gauntlet on or off for this project. With off (light mode), approve accepts a spec without a bar, complete accepts a result without a ## Gauntlet section, and lint stops charging both. Only the literal off turns it off; any other stored value counts as on. An agent cannot change this key through cerne settings: it is the project owner's decision.",
+	},
+	{
+		ID: "gates.risk_calibration", Group: "process", Title: "Risk gate calibration", Type: "int", Default: int64(20), AllowZero: true,
+		Scopes: []string{ScopeProject}, HumanOnly: true,
+		Description: "Under the risk accept gate, how many of your answers the gate collects before it decides on its own. Until then it holds every delivery for the merge, records what it would have decided, and asks you on the card accepted at the merge whether the delivery needed you; a card you do not answer does not count. 0 turns calibration off. An agent cannot change this key through cerne settings: it is the project owner's decision.",
 	},
 	{
 		ID: "gates.risk_human_facets", Group: "process", Title: "Facets that always need a person", Type: "list", Default: defaultRiskHumanFacets,
@@ -521,7 +529,7 @@ func hasSettingType(s Setting, v any) bool {
 	case string:
 		return s.Type == "string" && (len(s.Enum) == 0 || slices.Contains(s.Enum, v.(string)))
 	case int64:
-		return s.Type == "int" && v.(int64) > 0
+		return s.Type == "int" && (v.(int64) > 0 || s.AllowZero && v.(int64) == 0)
 	}
 	return false
 }
@@ -530,6 +538,9 @@ func hasSettingType(s Setting, v any) bool {
 func settingWant(s Setting) string {
 	if len(s.Enum) > 0 {
 		return "one of: " + strings.Join(s.Enum, ", ")
+	}
+	if s.Type == "int" && s.AllowZero {
+		return "0 or a positive integer"
 	}
 	if s.Type == "int" {
 		return "a positive integer"
@@ -611,7 +622,7 @@ func SetSetting(projDir, id, scope, raw string) error {
 	case "int":
 		n, err := strconv.ParseInt(raw, 10, 64)
 		if err != nil {
-			return fmt.Errorf("%s: %w %q: want a positive integer", id, ErrInvalidSettingValue, raw)
+			return fmt.Errorf("%s: %w %q: want %s", id, ErrInvalidSettingValue, raw, settingWant(declared(id)))
 		}
 		v = n
 	case "records":

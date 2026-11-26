@@ -289,6 +289,20 @@ type GatesConfig struct {
 	Gauntlet      string   `toml:"gauntlet,omitempty"`          // "off" = light mode (F-0364) | anything else = on (default)
 	RiskPaths     []string `toml:"risk_human_paths,omitempty"`  // F-0516: path globs a risk accept never passes; unset = the default list
 	RiskFacets    []string `toml:"risk_human_facets,omitempty"` // F-0516: facets a risk accept never passes; unset = the default list
+	// F-0518: owner answers the risk gate collects, holding every delivery,
+	// before it decides; unset = 20, 0 = no calibration.
+	RiskCalibrationN *int64 `toml:"risk_calibration,omitempty"`
+}
+
+// RiskCalibration is how many owner answers the risk gate collects before it
+// decides on its own (F-0518 crit. 12).
+// Unset or negative (a value written by hand) reads as the default: in doubt,
+// calibrate.
+func (g GatesConfig) RiskCalibration() int {
+	if g.RiskCalibrationN == nil || *g.RiskCalibrationN < 0 {
+		return 20
+	}
+	return int(*g.RiskCalibrationN)
 }
 
 // WorkGateEnabled resolves the edit gate: on only when explicitly configured.
@@ -313,7 +327,7 @@ func (g GatesConfig) GauntletEnabled() bool {
 // isZero reports whether the block carries nothing worth persisting (the
 // struct holds a slice, so it is not ==-comparable).
 func (g GatesConfig) isZero() bool {
-	return g.Approve == "" && g.Accept == "" && g.Revert == "" && g.WorkGate == "" && len(g.WorkGateAllow) == 0 && g.WorkGateHint == "" && g.CommitTrailer == "" && g.Gauntlet == "" && g.RiskPaths == nil && g.RiskFacets == nil
+	return g.Approve == "" && g.Accept == "" && g.Revert == "" && g.WorkGate == "" && len(g.WorkGateAllow) == 0 && g.WorkGateHint == "" && g.CommitTrailer == "" && g.Gauntlet == "" && g.RiskPaths == nil && g.RiskFacets == nil && g.RiskCalibrationN == nil
 }
 
 // RiskHumanPaths are the path globs whose change always needs a person under

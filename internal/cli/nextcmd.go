@@ -15,6 +15,7 @@ import (
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/guide"
 	"github.com/henriquesakata/cerne/internal/lint"
+	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -142,6 +143,10 @@ type nextJSON struct {
 	// Refreshed (F-0477): the line saying which agents' hooks and guide the
 	// automatic refresh renewed, when it did.
 	Refreshed string `json:"refreshed,omitempty"`
+	// RiskQuestions (F-0518): under the risk gate in calibration, the cards
+	// accepted on the merge whose owner has not said whether they needed them.
+	RiskQuestions []string `json:"risk_questions,omitempty"`
+	riskGate      app.RiskGateView
 }
 
 // runNext consolidates `status --active` and `lint` into one agent-facing work
@@ -254,6 +259,14 @@ func runNext(cmd *cobra.Command, dir string, asJSON, all bool) error {
 
 	q.RunbookPreflight = nextPreflights(ctx.repoDir, app.MRHost(ctx.cfg.Delivery))
 
+	// What the risk gate asks its owner (F-0518): informational, never the agent's.
+	if ctx.cfg.Gates.AcceptGate() == project.GateRisk {
+		if q.riskGate, err = app.ReadRiskGate(ctx.repoDir, ctx.projDir, time.Time{}); err != nil {
+			return err
+		}
+		q.RiskQuestions = q.riskGate.Questions
+	}
+
 	out := cmd.OutOrStdout()
 	// F-0477: the automatic refresh runs for the text and the JSON alike; the
 	// line shows what is left (text) or comes as "refreshed" (JSON).
@@ -314,6 +327,19 @@ func runNext(cmd *cobra.Command, dir string, asJSON, all bool) error {
 			for _, c := range f.Commands {
 				fmt.Fprintln(out, "    "+c)
 			}
+		}
+		fmt.Fprintln(out)
+	}
+
+	if len(q.RiskQuestions) > 0 {
+		printed = true
+		c := q.riskGate.Calibration
+		fmt.Fprintf(out, "RISK CALIBRATION (%d) — the owner answers, never the agent: Did this delivery need you? (%d of %d answers; the gate holds every delivery until then)\n", len(q.RiskQuestions), c.Answers, c.Target)
+		for _, id := range q.RiskQuestions {
+			if i := slices.IndexFunc(features, func(f store.Feature) bool { return f.ID == id }); i >= 0 {
+				fmt.Fprintln(out, statusLine(features[i], width))
+			}
+			fmt.Fprintf(out, "    it did: cerne feature feedback %s --should-have-asked · it did not: cerne feature feedback %s --not-needed\n", id, id)
 		}
 		fmt.Fprintln(out)
 	}
