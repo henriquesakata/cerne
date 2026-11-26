@@ -412,19 +412,25 @@ func TestShouldHaveAskedIsAllOrNothing(t *testing.T) {
 	asActor(t, "")
 	repoDir, projDir, _ := newFeatureBackend(t)
 	calibrating(t, projDir, 0)
-	decided(t, repoDir, "F-0001", domain.StateDone, []string{"code"}, lowPayload())
+	// The decision sits in an old month's log, so the answer needs a new
+	// month file; the events folder refuses it: the answer fails after the
+	// lists were written. (A file's mode is not enough: the backend's reset
+	// may rewrite it.)
+	if err := store.SaveFeature(repoDir, store.Feature{ID: "F-0001", Title: "Card F-0001", State: domain.StateDone, Facets: []string{"code"}}); err != nil {
+		t.Fatal(err)
+	}
+	ev := domain.NewEvent("F-0001", "feature.completed", lowPayload(), "agent")
+	ev.At = time.Date(2020, 1, 15, 0, 0, 0, 0, time.UTC)
+	logged(t, repoDir, ev)
+	events := filepath.Join(repoDir, "events")
+	if err := os.Chmod(events, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(events, 0o755) })
 	rc := filepath.Join(projDir, ".cernerc")
 	before, err := os.ReadFile(rc)
 	if err != nil {
 		t.Fatal(err)
-	}
-	// The log refuses the write: the answer fails after the lists.
-	logs, _ := filepath.Glob(filepath.Join(repoDir, "events", "*.ndjson"))
-	for _, l := range logs {
-		if err := os.Chmod(l, 0o444); err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = os.Chmod(l, 0o644) })
 	}
 	if _, err := RecordRiskFeedback(repoDir, projDir, "F-0001", RiskFeedback{Answer: FeedbackShouldHaveAsked, AddPaths: []string{"internal/x/**"}, AddFacets: []string{"code"}}); err == nil {
 		t.Fatal("the answer was recorded on a log that refuses writes")
