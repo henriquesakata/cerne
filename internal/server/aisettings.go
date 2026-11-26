@@ -51,6 +51,7 @@ func keyStatusFor(c project.LLMConfig) keyStatus {
 		return st
 	}
 	if v == "" {
+		st.Problem = c.LegacyKeyNote()
 		return st
 	}
 	st.Set, st.Source = true, source

@@ -65,8 +65,8 @@ func TestProviderKeyResolutionOrder(t *testing.T) {
 		wantKey, wantEnv string
 	}{
 		{"anthropic own", "anthropic", map[string]string{"ANTHROPIC_API_KEY": "a", "CERNE_LLM_API_KEY": "legacy"}, "a", "ANTHROPIC_API_KEY"},
-		{"anthropic legacy", "anthropic", map[string]string{"CERNE_LLM_API_KEY": "legacy"}, "legacy", "CERNE_LLM_API_KEY"},
-		{"openai legacy", "openai", map[string]string{"CERNE_LLM_API_KEY": "legacy"}, "legacy", "CERNE_LLM_API_KEY"},
+		{"anthropic legacy", "anthropic", map[string]string{"CERNE_LLM_API_KEY": "sk-ant-legacy"}, "sk-ant-legacy", "CERNE_LLM_API_KEY"},
+		{"openai no legacy", "openai", map[string]string{"CERNE_LLM_API_KEY": "legacy"}, "", "OPENAI_API_KEY"},
 		{"openai own wins", "openai", map[string]string{"OPENAI_API_KEY": "o", "CERNE_LLM_API_KEY": "legacy"}, "o", "OPENAI_API_KEY"},
 		{"gemini no legacy", "gemini", map[string]string{"CERNE_LLM_API_KEY": "legacy"}, "", "GEMINI_API_KEY"},
 		{"openrouter no legacy", "openrouter", map[string]string{"CERNE_LLM_API_KEY": "legacy"}, "", "OPENROUTER_API_KEY"},
@@ -130,5 +130,16 @@ func TestOpenAIProviderNeverBuiltWithAnAnthropicKey(t *testing.T) {
 	}
 	if _, err := NewProvider(project.LLMConfig{Mode: "byo-key", Provider: "anthropic", Model: "m"}); err != nil {
 		t.Fatalf("anthropic with its key in the legacy variable: %v", err)
+	}
+}
+
+// F-0523 crit. 4: openai with the key still in the legacy variable is told
+// where the key goes now, and is never built.
+func TestOpenAIMissingKeyNamesTheLegacyVariable(t *testing.T) {
+	clearKeys(t)
+	t.Setenv("CERNE_LLM_API_KEY", "sk-oldstyleSECRET")
+	_, err := NewProvider(project.LLMConfig{Mode: "byo-key", Provider: "openai", Model: "gpt-test"})
+	if !errors.Is(err, ErrAPIKeyMissing) || !strings.Contains(err.Error(), "CERNE_LLM_API_KEY") || !strings.Contains(err.Error(), "OPENAI_API_KEY") || strings.Contains(err.Error(), "SECRET") {
+		t.Fatalf("err = %v, want ErrAPIKeyMissing naming both variables and no key text", err)
 	}
 }

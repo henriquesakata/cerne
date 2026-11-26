@@ -108,15 +108,15 @@ func TestAIStatusReportsDetectionAndKeyWithoutTheValue(t *testing.T) {
 		t.Fatalf("clis = %+v", st.CLIs)
 	}
 
-	t.Setenv("CERNE_LLM_API_KEY", aiSecret)
+	t.Setenv("ANTHROPIC_API_KEY", aiSecret)
 	_, body = aiDo(t, h, http.MethodGet, "/api/config/llm", "")
 	json.Unmarshal([]byte(body), &st)
 	if !st.Key.Set || st.Key.Source != "env" || st.Key.Last4 != "1234" || strings.Contains(body, aiSecret) {
 		t.Fatalf("env key: %+v in %s", st.Key, body)
 	}
 
-	t.Setenv("CERNE_LLM_API_KEY", "")
-	if err := project.WriteCredential("CERNE_LLM_API_KEY", aiSecret); err != nil {
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	if err := project.WriteCredential("ANTHROPIC_API_KEY", aiSecret); err != nil {
 		t.Fatal(err)
 	}
 	_, body = aiDo(t, h, http.MethodGet, "/api/config/llm", "")
@@ -432,5 +432,22 @@ func TestKeyStatusDoesNotLendALegacyKeyToAnotherVendor(t *testing.T) {
 	}
 	if o := st["openai"]; o.Set || o.Problem != "" || o.Last4 != "" {
 		t.Fatalf("openai reports another vendor's key: %+v", o)
+	}
+}
+
+// F-0523 crit. 4: Settings says the legacy variable no longer serves OpenAI.
+func TestKeyStatusNamesTheLegacyVariableForOpenAI(t *testing.T) {
+	t.Setenv("CERNE_CONFIG_DIR", t.TempDir())
+	for _, n := range []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY"} {
+		t.Setenv(n, "")
+	}
+	t.Setenv("CERNE_LLM_API_KEY", "sk-oldstyleSECRET")
+	st := keyStatuses(project.LLMConfig{Mode: "byo-key"})
+	o := st["openai"]
+	if o.Set || !strings.Contains(o.Problem, "CERNE_LLM_API_KEY") || !strings.Contains(o.Problem, "OPENAI_API_KEY") || strings.Contains(o.Problem, "SECRET") {
+		t.Fatalf("openai: %+v, want unset with a problem naming both variables and no key", o)
+	}
+	if a := st["anthropic"]; a.Set || a.Problem != "" {
+		t.Fatalf("anthropic: %+v, want unset and no problem", a)
 	}
 }
