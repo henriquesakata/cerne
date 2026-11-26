@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"regexp"
 	"strings"
 	"unicode"
 )
@@ -114,6 +115,32 @@ func MatchGlob(glob, path string) bool {
 		return strings.HasPrefix(path, prefix)
 	}
 	return false
+}
+
+// GlobRegexp turns a path glob into a case-insensitive full-path regexp:
+// ** crosses directories, * and ? stay inside one. The MCP file finder and
+// the risk gate's sensitive paths (F-0516) share it.
+func GlobRegexp(glob string) (*regexp.Regexp, error) {
+	var b strings.Builder
+	b.WriteString("(?i)^")
+	for i := 0; i < len(glob); i++ {
+		switch {
+		case strings.HasPrefix(glob[i:], "**/"):
+			b.WriteString("(?:.*/)?")
+			i += 2
+		case strings.HasPrefix(glob[i:], "**"):
+			b.WriteString(".*")
+			i++
+		case glob[i] == '*':
+			b.WriteString("[^/]*")
+		case glob[i] == '?':
+			b.WriteString("[^/]")
+		default:
+			b.WriteString(regexp.QuoteMeta(string(glob[i])))
+		}
+	}
+	b.WriteString("$")
+	return regexp.Compile(b.String())
 }
 
 // PathTriggerScore rates how specifically trig matches the repo-relative

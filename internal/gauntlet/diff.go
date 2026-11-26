@@ -82,6 +82,26 @@ func Diff(dir, base, pinBranch string, excludes []string) (diff, usedBase string
 	return out, base, err
 }
 
+// ChangedFiles lists the files `git diff <base>...HEAD` changes in dir, with
+// no excludes, a rename as its old and its new path, and the base used (see
+// resolveBase): what the risk gate reads for sensitive paths (F-0516).
+func ChangedFiles(dir, pinBranch string) (files []string, usedBase string, err error) {
+	base, err := resolveBase(dir, "", pinBranch)
+	if err != nil {
+		return nil, "", err
+	}
+	out, err := runGit(dir, "diff", "--name-only", "--no-renames", "-z", base+"...HEAD")
+	if err != nil {
+		return nil, "", err
+	}
+	for _, f := range strings.Split(out, "\x00") {
+		if f != "" {
+			files = append(files, f)
+		}
+	}
+	return files, base, nil
+}
+
 // ErrNoFeatureCommits means no non-merge commit on the base cites the id.
 var ErrNoFeatureCommits = errors.New("no commit cites the feature in its message")
 

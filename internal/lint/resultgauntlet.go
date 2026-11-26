@@ -439,6 +439,18 @@ func GauntletVerdict(result []byte) (verdict string, ok bool) {
 	return verdict, verdict != ""
 }
 
+// GauntletExempt reports whether a result's Gauntlet record exempts the bar
+// (not applicable or waived by human decision), whatever rounds it holds: the
+// risk gate counts only a win against a real bar (F-0516).
+func GauntletExempt(result []byte) bool {
+	for _, section := range gauntletSections(StripHTMLComments(result)) {
+		if parseGauntlet(section).exempt {
+			return true
+		}
+	}
+	return false
+}
+
 // outcomeName is the English outcome of a round's word, in any language:
 // loss, tie or win, or "" for no word.
 func outcomeName(word string) string {

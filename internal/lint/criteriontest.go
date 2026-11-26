@@ -253,6 +253,31 @@ func CriterionTestFindings(repoDir string, features []store.Feature, events []do
 	return out
 }
 
+// CriterionCoverage reads the numbered criteria of feature id's spec against
+// the marks in idx (F-0516): every criterion, in order, the ones a test marks
+// and the ones the spec closes as verified by hand. Unlike the rule it charges
+// every entity, whenever it started.
+func CriterionCoverage(repoDir, id string, idx TestIndex) (criteria, tested, manual []int) {
+	criteria, _, dispensed := specCriterionTexts(specOf(repoDir, id))
+	marked := map[int]bool{}
+	for _, m := range idx.Marks {
+		if m.ID == id {
+			for _, n := range m.Nums {
+				marked[n] = true
+			}
+		}
+	}
+	for _, n := range criteria {
+		if marked[n] {
+			tested = append(tested, n)
+		}
+		if dispensed[n] {
+			manual = append(manual, n)
+		}
+	}
+	return criteria, tested, manual
+}
+
 // CheckCriterionTests returns the findings of ONE entity that block `complete`
 // (F-0473 criterion 6): criterion-without-test and orphan-criterion-test. The
 // config finding never blocks (criterion 8).
