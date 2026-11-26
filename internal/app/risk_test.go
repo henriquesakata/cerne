@@ -1,6 +1,7 @@
 package app
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 	"os/exec"
@@ -314,23 +315,33 @@ func TestRiskCriteriaTested(t *testing.T) {
 		holds                      bool
 		tested                     string
 		found                      string
+		path, ignore               string // where the test file sits, and a .gitignore
 	}{
-		{"all marked", spec, "// F-0001 crit. 1, 2\n// F-0001 crit. 3\n", "", true, "3/3", "3/3 criteria with a test"},
-		{"one unmarked", spec, "// F-0001 crit. 1, 2\n", "", false, "2/3", "criterion 3"},
-		{"one verified by hand", strings.Replace(spec, "3. Três.", "3. Três (verificação manual).", 1), "// F-0001 crit. 1, 2\n", "", false, "2/3", "criterion 3"},
-		{"rule off", spec, "// F-0001 crit. 1, 2, 3\n", "[lint]\ncriterion_tests = false\n", false, "", "lint.criterion_tests is off"},
-		{"no test file", spec, "", "", false, "0/3", "no test file"},
-		{"no numbered criterion", "# T\n\n## Objetivo e critérios de aceitação\n\nTudo.\n", "// F-0001 crit. 1\n", "", false, "0/0", "no numbered criterion"},
+		{name: "all marked", spec: spec, tests: "// F-0001 crit. 1, 2\n// F-0001 crit. 3\n", holds: true, tested: "3/3", found: "3/3 criteria with a test"},
+		{name: "one unmarked", spec: spec, tests: "// F-0001 crit. 1, 2\n", tested: "2/3", found: "criterion 3"},
+		{name: "one verified by hand", spec: strings.Replace(spec, "3. Três.", "3. Três (verificação manual).", 1), tests: "// F-0001 crit. 1, 2\n", tested: "2/3", found: "criterion 3"},
+		{name: "rule off", spec: spec, tests: "// F-0001 crit. 1, 2, 3\n", cernerc: "[lint]\ncriterion_tests = false\n", found: "lint.criterion_tests is off"},
+		{name: "no test file", spec: spec, tested: "0/3", found: "no test file"},
+		{name: "no numbered criterion", spec: "# T\n\n## Objetivo e critérios de aceitação\n\nTudo.\n", tests: "// F-0001 crit. 1\n", tested: "0/0", found: "no numbered criterion"},
+		// The marks the gate counts are the delivery's: a gitignored test file
+		// (a .worktrees/ checkout, a tmp/) proves nothing (review 3 of #228).
+		{name: "marks only in an ignored file", spec: spec, tests: "// F-0001 crit. 1, 2, 3\n", path: "tmp/y_test.go", ignore: "tmp/\n", tested: "0/3", found: "no test file"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			repoDir, projDir := t.TempDir(), t.TempDir()
 			riskWrite(t, repoDir, filepath.Join("content", "features", "F-0001", "spec.md"), tc.spec)
+			riskGit(t, projDir, "init", "-q", "-b", "main")
+			if tc.ignore != "" {
+				riskWrite(t, projDir, ".gitignore", tc.ignore)
+			}
 			if tc.tests != "" {
-				riskWrite(t, projDir, "x/x_test.go", "package x\n\n"+tc.tests)
+				riskWrite(t, projDir, cmp.Or(tc.path, "x/x_test.go"), "package x\n\n"+tc.tests)
 			}
 			if tc.cernerc != "" {
 				riskWrite(t, projDir, ".cernerc", "project_id = \"p\"\nbackend = \"b\"\n"+tc.cernerc)
 			}
+			riskGit(t, projDir, "add", "-A")
+			riskGit(t, projDir, "commit", "-q", "--allow-empty", "-m", "the tree")
 			c, tested := riskTests(repoDir, projDir, store.Feature{ID: "F-0001"})
 			if c.Holds != tc.holds || tested != tc.tested || !strings.Contains(c.Found, tc.found) {
 				t.Errorf("= holds %v, tested %q, found %q; want holds %v, tested %q, found with %q", c.Holds, tested, c.Found, tc.holds, tc.tested, tc.found)

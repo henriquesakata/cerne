@@ -470,13 +470,14 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 		if m != nil {
 			payload, actor = m.payload(), mergeActor
 		}
-		// Every accept records the Gauntlet round it saw, whatever its via, so
-		// the risk gate can tell an old win from a new one after a revert (F-0516).
-		if action == domain.ActionAccept {
+		// Every complete and accept records the Gauntlet round it saw, whatever
+		// the gate, so the risk gate can tell an old win from a new one after a
+		// revert (F-0516).
+		if action == domain.ActionAccept || action == domain.ActionComplete {
 			if payload == nil {
 				payload = map[string]string{}
 			}
-			payload["gauntlet_round"] = gauntletRoundOf(repoDir, id)
+			payload["gauntlet_round"] = gauntletRoundOf(repoDir, f)
 		}
 		if err := store.AppendEvent(repoDir, domain.NewEvent(id, eventType, payload, actor)); err != nil {
 			return "", err
@@ -508,7 +509,7 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 				acceptVia, acceptPayload = project.GateRisk, risk.payload()
 				acceptPayload["via"] = project.GateRisk
 			}
-			acceptPayload["gauntlet_round"] = gauntletRoundOf(repoDir, id)
+			acceptPayload["gauntlet_round"] = gauntletRoundOf(repoDir, f)
 			if src != srcSeed { // a seed crosses no gate, so it marks nothing
 				f.AcceptedVia = acceptVia // F-0515: done with no human act
 				if risk != nil {
@@ -538,7 +539,7 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 		// So do its implemented tasks (T-0007), on an auto accept too (F-0515)
 		// and on a risk one (F-0516).
 		if action == domain.ActionAccept || autoAccepted {
-			if casc, err = cascadeAccept(repoDir, projDir, f, m); err != nil {
+			if casc, err = cascadeAccept(repoDir, projDir, f, m, risk); err != nil {
 				return "", err
 			}
 		}

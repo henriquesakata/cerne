@@ -86,17 +86,17 @@ func Diff(dir, base, pinBranch string, excludes []string) (diff, usedBase string
 // (F-0516): the ref it diffs against, the merge-base and HEAD commits, and the
 // files changed between them.
 type Delivery struct {
-	Ref        string   // the base ref resolved (see resolveBase)
-	Base, Head string   // the merge-base of Ref and HEAD, and HEAD, as SHAs
-	Files      []string // changed from Base to HEAD, from the repository root, no excludes; a rename as its old and its new path
-	Cited      bool     // a non-merge commit of Base..HEAD is the id's, by the rule of FeatureCommits (ownCommit)
-	Dirty      []string // files that differ from HEAD (staged, unstaged or untracked, not ignored), but the project's own docs.lock and .docs/
-	Prefix     string   // dir from the repository root, with a trailing slash; "" at the root
+	Ref        string      // the base ref resolved (see resolveBase)
+	Base, Head string      // the merge-base of Ref and HEAD, and HEAD, as SHAs
+	Files      []string    // changed from Base to HEAD, from the repository root, no excludes; a rename as its old and its new path
+	commits    [][2]string // subject and message of each non-merge commit of Base..HEAD
+	Dirty      []string    // files that differ from HEAD (staged, unstaged or untracked, not ignored), but the project's own docs.lock and .docs/
+	Prefix     string      // dir from the repository root, with a trailing slash; "" at the root
 }
 
-// ReadDelivery reads the delivery of card id checked out at dir against the
-// default branch (see resolveBase).
-func ReadDelivery(dir, pinBranch, id string) (Delivery, error) {
+// ReadDelivery reads the delivery checked out at dir against the default
+// branch (see resolveBase), once for every card a complete measures.
+func ReadDelivery(dir, pinBranch string) (Delivery, error) {
 	ref, err := resolveBase(dir, "", pinBranch)
 	if err != nil {
 		return Delivery{}, err
@@ -128,8 +128,7 @@ func ReadDelivery(dir, pinBranch, id string) (Delivery, error) {
 	}
 	for _, rec := range strings.Split(log, "\x1e") {
 		if subject, msg, ok := strings.Cut(strings.TrimLeft(rec, "\n"), "\x00"); ok {
-			own, _ := ownCommit(subject, msg, id)
-			d.Cited = d.Cited || own
+			d.commits = append(d.commits, [2]string{subject, msg})
 		}
 	}
 	// Untracked files count: the test marks are read from the tree.
@@ -144,6 +143,33 @@ func ReadDelivery(dir, pinBranch, id string) (Delivery, error) {
 		}
 	}
 	return d, nil
+}
+
+// Cites reports whether a commit of the delivery is card id's, by the rule
+// of FeatureCommits (ownCommit).
+func (d Delivery) Cites(id string) bool {
+	for _, c := range d.commits {
+		if own, _ := ownCommit(c[0], c[1], id); own {
+			return true
+		}
+	}
+	return false
+}
+
+// TrackedFiles lists the files git tracks under dir, relative to it: the
+// tree the risk gate reads test marks from (F-0516).
+func TrackedFiles(dir string) ([]string, error) {
+	out, err := runGit(dir, "ls-files", "-z")
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	for _, f := range strings.Split(out, "\x00") {
+		if f != "" {
+			files = append(files, f)
+		}
+	}
+	return files, nil
 }
 
 // ErrNoFeatureCommits means no non-merge commit on the base cites the id.

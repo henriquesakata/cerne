@@ -10,11 +10,19 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/henriquesakata/cerne/internal/doccheck"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/gauntlet"
 	"github.com/henriquesakata/cerne/internal/lint"
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
+)
+
+// readDelivery and trackedFiles read the checkout for the risk gate; vars so
+// a test counts how often a complete reads it.
+var (
+	readDelivery = gauntlet.ReadDelivery
+	trackedFiles = gauntlet.TrackedFiles
 )
 
 // RiskCheck is what one condition of the risk gate found (F-0516): whether
@@ -38,11 +46,22 @@ type RiskAssessment struct {
 	// HeldTasks are the implemented tasks the gate holds: their work rides
 	// this card's PR, so any of them holds the card too.
 	HeldTasks   []HeldTask
-	Mode        string // the card's accept_mode (F-0518): human, auto or empty
-	Calibration string // "<owner answers>/<target>" while the gate calibrates (F-0518); empty past it
+	tasks       map[string]RiskAssessment // every implemented task measured, by id
+	Mode        string                    // the card's accept_mode (F-0518): human, auto or empty
+	Calibration string                    // "<owner answers>/<target>" while the gate calibrates (F-0518); empty past it
 	// Files is every file the delivery changed and Patterns the sensitive
 	// globs that hit (F-0518): what the owner marks and the proposals count.
 	Files, Patterns []string
+}
+
+// taskReading is the reading of implemented task id the assessment of its
+// parent already made; false when there is none (a nil r included).
+func (r *RiskAssessment) taskReading(id string) (RiskAssessment, bool) {
+	if r == nil {
+		return RiskAssessment{}, false
+	}
+	t, ok := r.tasks[id]
+	return t, ok
 }
 
 // HeldTask is an implemented task the risk gate holds, with its own reading.
@@ -135,23 +154,52 @@ func heldTaskLines(tasks []HeldTask) []string {
 	return out
 }
 
-// assessRisk measures the three conditions of the risk gate on feature f,
-// whose delivery is the git checkout at projDir.
-func assessRisk(repoDir, projDir string, f store.Feature) RiskAssessment {
+// riskEnv is what one complete reads once for every card it measures, inside
+// the backend's critical section: the config, the checkout's delivery and
+// the test marks of the files git tracks.
+type riskEnv struct {
+	cfg     project.Config
+	d       gauntlet.Delivery
+	derr    error
+	testsOn bool
+	idx     lint.TestIndex
+}
+
+func readRiskEnv(projDir string) riskEnv {
 	cfg, _, err := project.LoadConfig(projDir)
 	if err != nil {
 		cfg = project.Config{}
 	}
+	env := riskEnv{cfg: cfg, testsOn: project.CriterionTestsEnabled(projDir)}
+	env.d, env.derr = readDelivery(projDir, cfg.PinBranch)
+	if env.testsOn {
+		// Only what git tracks: an ignored or never-added test proves nothing
+		// the delivery carries. A tree git cannot read has no test file.
+		tracked, _ := trackedFiles(projDir)
+		env.idx = lint.ScanTrackedTestMarks(projDir, tracked, cfg.TestPatterns)
+	}
+	return env
+}
+
+// assessRisk measures the three conditions of the risk gate on feature f,
+// whose delivery is the git checkout at projDir.
+func assessRisk(repoDir, projDir string, f store.Feature) RiskAssessment {
+	return assessWith(repoDir, readRiskEnv(projDir), f)
+}
+
+// assessWith is assessRisk on a checkout already read.
+func assessWith(repoDir string, env riskEnv, f store.Feature) RiskAssessment {
+	cfg := env.cfg
 	var r RiskAssessment
-	var d gauntlet.Delivery
-	r.Area, r.Paths, r.Facets, d = riskArea(repoDir, projDir, cfg.PinBranch, f, cfg.Gates)
-	r.Base, r.Head, r.Mode, r.Files = d.Base, d.Head, f.AcceptMode, d.Files
+	r.Area, r.Paths, r.Facets = areaOf(repoDir, env.d, env.derr, f, cfg.Gates)
+	r.Base, r.Head, r.Mode, r.Files = env.d.Base, env.d.Head, f.AcceptMode, env.d.Files
 	for _, g := range cfg.Gates.RiskHumanPaths() {
-		if len(sensitivePaths(r.Paths, []string{g}, d.Prefix)) > 0 {
+		if len(sensitivePaths(r.Paths, []string{g}, env.d.Prefix)) > 0 {
 			r.Patterns = append(r.Patterns, g)
 		}
 	}
-	result, _ := os.ReadFile(FeatureDocPath(repoDir, f.ID, "result.md"))
+	// A native task with an inherited bar is judged by its parent's rounds.
+	result, _ := os.ReadFile(FeatureDocPath(repoDir, gauntletSource(repoDir, f), "result.md"))
 	r.Gauntlet, r.Verdict = riskGauntlet(result, cfg.Gates.GauntletEnabled())
 	if rounds := lint.GauntletRoundList(result); len(rounds) > 0 {
 		r.Round = rounds[len(rounds)-1].N
@@ -159,7 +207,7 @@ func assessRisk(repoDir, projDir string, f store.Feature) RiskAssessment {
 	if prev, reverted := revertedRound(repoDir, f.ID); r.Gauntlet.Holds && reverted && r.Round <= prev {
 		r.Gauntlet = RiskCheck{Found: revertedFound(prev)}
 	}
-	r.Tests, r.Tested = riskTests(repoDir, projDir, f)
+	r.Tests, r.Tested = testsOf(repoDir, env, f)
 	// The implemented tasks ride this card's PR: each is measured on its own,
 	// and any one held holds the card. A task is held by what the gate would
 	// decide on it (F-0518): the calibration is the project's, read once here.
@@ -168,8 +216,11 @@ func assessRisk(repoDir, projDir string, f store.Feature) RiskAssessment {
 		if err != nil { // in doubt, hold
 			r.Area = RiskCheck{Found: strings.TrimPrefix(r.Area.Found+"; ", "touches no sensitive path or facet; ") + "the card's tasks cannot be read: " + err.Error()}
 		}
+		r.tasks = map[string]RiskAssessment{}
 		for _, c := range tasks {
-			if tr := assessRisk(repoDir, projDir, c); !tr.would() {
+			tr := assessWith(repoDir, env, c)
+			r.tasks[c.ID] = tr // the cascade reuses it
+			if !tr.would() {
 				r.HeldTasks = append(r.HeldTasks, HeldTask{ID: c.ID, Risk: tr})
 			}
 		}
@@ -218,9 +269,10 @@ func RiskHeldWait(repoDir string, f store.Feature) string {
 }
 
 // revertedRound reports whether feature id was reverted after its last
-// accept, whatever its via (a person, the merge, the auto or the risk gate),
-// and, if so, the Gauntlet round current at that accept. An accept that
-// recorded none counts as the highest, so no round passes it.
+// complete or accept, whatever its via (a person, the merge, the auto or the
+// risk gate, a complete the gate held), and, if so, the Gauntlet round current
+// then. An event that recorded none counts as the highest, so no round passes
+// it.
 func revertedRound(repoDir, id string) (round int, reverted bool) {
 	evs, err := store.ReadEvents(repoDir)
 	if err != nil {
@@ -228,7 +280,7 @@ func revertedRound(repoDir, id string) (round int, reverted bool) {
 	}
 	accepted := -1
 	for i, ev := range evs {
-		if ev.EntityID == id && ev.Type == eventTypes[domain.ActionAccept] {
+		if ev.EntityID == id && (ev.Type == eventTypes[domain.ActionAccept] || ev.Type == eventTypes[domain.ActionComplete]) {
 			accepted = i
 		}
 	}
@@ -248,20 +300,39 @@ func revertedRound(repoDir, id string) (round int, reverted bool) {
 // revertedFound is the held line of a win that predates a revert.
 func revertedFound(prev int) string {
 	if prev == math.MaxInt {
-		return "reverted after an accept that recorded no Gauntlet round: the win cannot be told from an old one — a human accepts on the merge"
+		return "reverted after a complete or accept that recorded no Gauntlet round: the win cannot be told from an old one — a human accepts on the merge"
 	}
-	return fmt.Sprintf("reverted after its accept on round %d: the win predates the revert, record a new Gauntlet round", prev)
+	return fmt.Sprintf("reverted after its complete or accept on round %d: the win predates the revert, record a new Gauntlet round", prev)
 }
 
-// gauntletRoundOf is the number of the highest round in feature id's result
-// ("0" with none): every accept records it, so a revert can tell an old win
-// from a new one (F-0516).
-func gauntletRoundOf(repoDir, id string) string {
-	result, _ := os.ReadFile(FeatureDocPath(repoDir, id, "result.md"))
+// gauntletRoundOf is the number of the highest round of the Gauntlet record
+// that speaks for f ("0" with none): every accept records it, so a revert can
+// tell an old win from a new one (F-0516).
+func gauntletRoundOf(repoDir string, f store.Feature) string {
+	result, _ := os.ReadFile(FeatureDocPath(repoDir, gauntletSource(repoDir, f), "result.md"))
 	if rounds := lint.GauntletRoundList(result); len(rounds) > 0 {
 		return strconv.Itoa(rounds[len(rounds)-1].N)
 	}
 	return "0"
+}
+
+// gauntletSource is the card whose Gauntlet record speaks for f: a task whose
+// bar is inherited from its own parent, which names a bar, owes no round of
+// its own (T-0007) and is judged by the parent's rounds; any other card, an
+// exempt bar included, by its own.
+func gauntletSource(repoDir string, f store.Feature) string {
+	if !isTask(f.ID) || f.Parent == "" {
+		return f.ID
+	}
+	spec, _ := os.ReadFile(FeatureDocPath(repoDir, f.ID, "spec.md"))
+	parent, inherited := doccheck.BarInherited(spec)
+	if !inherited || parent != f.Parent {
+		return f.ID
+	}
+	if pspec, _ := os.ReadFile(FeatureDocPath(repoDir, parent, "spec.md")); !doccheck.BarNamed(pspec) {
+		return f.ID
+	}
+	return parent
 }
 
 // riskArea is the first condition (crit. 3): the delivery touches no
@@ -277,8 +348,14 @@ func gauntletRoundOf(repoDir, id string) string {
 // uncommitted changes) still holds: the owner judged the card, not this
 // checkout.
 func riskArea(repoDir, projDir, pinBranch string, f store.Feature, g project.GatesConfig) (c RiskCheck, paths, facets []string, d gauntlet.Delivery) {
+	d, err := readDelivery(projDir, pinBranch)
+	c, paths, facets = areaOf(repoDir, d, err, f, g)
+	return c, paths, facets, d
+}
+
+// areaOf is riskArea on a delivery already read (err when it could not be).
+func areaOf(repoDir string, d gauntlet.Delivery, err error, f store.Feature, g project.GatesConfig) (c RiskCheck, paths, facets []string) {
 	var why, sensitive []string
-	d, err := gauntlet.ReadDelivery(projDir, pinBranch, f.ID)
 	files, base := d.Files, d.Ref
 	switch {
 	case errors.Is(err, gauntlet.ErrNotGitRepo):
@@ -289,7 +366,7 @@ func riskArea(repoDir, projDir, pinBranch string, f store.Feature, g project.Gat
 		why = append(why, "the diff cannot be read: "+err.Error())
 	case len(files) == 0:
 		why = append(why, "the diff from "+base+" to HEAD is empty: run complete in the delivery's worktree")
-	case !d.Cited:
+	case !d.Cites(f.ID):
 		// Another card's checkout (another worktree, the main checkout under
 		// cerne ui) would be measured in its place.
 		why = append(why, "no commit from "+base+" to HEAD cites "+f.ID+": this checkout is not its delivery — run complete in the delivery's worktree")
@@ -322,12 +399,12 @@ func riskArea(repoDir, projDir, pinBranch string, f store.Feature, g project.Gat
 		why = append(why, sensitive...)
 	}
 	if len(why) > 0 {
-		return RiskCheck{Found: strings.Join(why, "; ")}, paths, facets, d
+		return RiskCheck{Found: strings.Join(why, "; ")}, paths, facets
 	}
 	if waived {
-		return RiskCheck{Holds: true, Found: "the owner marked this card to pass alone (accept_mode auto), which waives: " + strings.Join(sensitive, "; ")}, paths, facets, d
+		return RiskCheck{Holds: true, Found: "the owner marked this card to pass alone (accept_mode auto), which waives: " + strings.Join(sensitive, "; ")}, paths, facets
 	}
-	return RiskCheck{Holds: true, Found: "touches no sensitive path or facet"}, nil, nil, d
+	return RiskCheck{Holds: true, Found: "touches no sensitive path or facet"}, nil, nil
 }
 
 // chainFacets are the facets of f and of every ancestor up its parent chain:
@@ -427,14 +504,15 @@ func riskGauntlet(result []byte, gauntletOn bool) (c RiskCheck, verdict string) 
 // marked test and none is verified by hand. The rule off, no test file found
 // or a spec with no numbered criterion never hold: nothing was checked.
 func riskTests(repoDir, projDir string, f store.Feature) (c RiskCheck, tested string) {
-	if !project.CriterionTestsEnabled(projDir) {
+	return testsOf(repoDir, readRiskEnv(projDir), f)
+}
+
+// testsOf is riskTests on a checkout already read.
+func testsOf(repoDir string, env riskEnv, f store.Feature) (c RiskCheck, tested string) {
+	if !env.testsOn {
 		return RiskCheck{Found: "lint.criterion_tests is off: no criterion is checked against a test"}, ""
 	}
-	cfg, _, err := project.LoadConfig(projDir)
-	if err != nil {
-		cfg = project.Config{}
-	}
-	idx := ScanProjectTests(projDir, cfg)
+	idx := env.idx
 	criteria, withTest, manual := lint.CriterionCoverage(repoDir, f.ID, idx)
 	tested = fmt.Sprintf("%d/%d", len(withTest), len(criteria))
 	var why []string

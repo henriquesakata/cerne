@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/gauntlet"
 	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
@@ -156,6 +157,75 @@ func TestRiskAcceptCascadesTasks(t *testing.T) {
 		if lines := strings.Join(out.Cascade, "\n"); !strings.Contains(lines, id+": implemented → done along with F-0001") {
 			t.Errorf("cascade lines = %q, want %s carried", lines, id)
 		}
+	}
+}
+
+// TestRiskReadsTheCheckoutOnce: one complete reads the delivery and the
+// tracked files once, for the card and every task it measures and carries —
+// all of it runs inside the backend's critical section (review 3 of #228).
+// F-0516 crit. 2
+func TestRiskReadsTheCheckoutOnce(t *testing.T) {
+	asActor(t, "agent")
+	repoDir, projDir, _ := newFeatureBackend(t)
+	riskDelivery(t, repoDir, projDir, store.Feature{ID: "F-0001", Facets: []string{"code"}}, "vitória", cleanChange())
+	seedRiskTasks(t, repoDir, projDir, store.Feature{ID: "T-0002", Facets: []string{"code"}}, store.Feature{ID: "T-0003", Facets: []string{"code"}})
+	deliveries, trees := 0, 0
+	oldD, oldT := readDelivery, trackedFiles
+	t.Cleanup(func() { readDelivery, trackedFiles = oldD, oldT })
+	readDelivery = func(dir, pin string) (gauntlet.Delivery, error) { deliveries++; return oldD(dir, pin) }
+	trackedFiles = func(dir string) ([]string, error) { trees++; return oldT(dir) }
+
+	if out, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionComplete, "", "", nil); err != nil || out.To != domain.StateDone {
+		t.Fatalf("complete = %+v, %v; want done by risk", out, err)
+	}
+	if deliveries != 1 || trees != 1 {
+		t.Errorf("read the delivery %d times and the tracked files %d times; want once each", deliveries, trees)
+	}
+}
+
+// TestRiskInheritedBarTaskReadsParentRound: a native task — its bar inherited
+// from the parent, no round of its own — is measured on the parent's highest
+// round: with the parent's win both go to done by risk; with its loss both
+// hold (review 3 of #228).
+// F-0516 crit. 4, 9
+func TestRiskInheritedBarTaskReadsParentRound(t *testing.T) {
+	const taskSpec = "# Doc\n\n## Objetivo e critérios de aceitação\n\n1. Um.\n2. Dois.\n\n## Verificação\n\nBarra: herdada de F-0001\n"
+	const taskResult = "# Doc\n\n## Resultado\n\ncritério 1 → TestUm; critério 2 → TestDois.\n"
+	for _, tc := range []struct {
+		outcome string
+		want    domain.FeatureState
+	}{{"vitória", domain.StateDone}, {"derrota", domain.StateImplemented}} {
+		t.Run(tc.outcome, func(t *testing.T) {
+			asActor(t, "agent")
+			repoDir, projDir, _ := newFeatureBackend(t)
+			riskDelivery(t, repoDir, projDir, store.Feature{ID: "F-0001", Facets: []string{"code"}}, tc.outcome, cleanChange())
+			if err := store.SaveFeature(repoDir, store.Feature{ID: "T-0002", Title: "Task", Parent: "F-0001", State: domain.StateImplemented, Facets: []string{"code"}}); err != nil {
+				t.Fatal(err)
+			}
+			riskWrite(t, repoDir, filepath.Join("content", "features", "T-0002", "spec.md"), taskSpec)
+			riskWrite(t, repoDir, filepath.Join("content", "features", "T-0002", "result.md"), taskResult)
+			if _, err := gitback.CommitAndPush(repoDir, "seed T-0002"); err != nil {
+				t.Fatal(err)
+			}
+			riskWrite(t, projDir, "internal/x/t0002_test.go", "package x\n\n// T-0002 crit. 1, 2\n")
+			riskGit(t, projDir, "add", "-A")
+			riskGit(t, projDir, "commit", "-q", "-m", "feat: the task (T-0002)")
+
+			out, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionComplete, "", "", nil)
+			if err != nil {
+				t.Fatalf("complete: %v", err)
+			}
+			for _, id := range []string{"F-0001", "T-0002"} {
+				if f := reload(t, repoDir, id); f.State != tc.want {
+					t.Errorf("%s = %s, want %s (%+v)", id, f.State, tc.want, out.Risk)
+				}
+			}
+			if tc.want == domain.StateImplemented {
+				if p := lastEntityEvent(t, repoDir, "T-0002", "feature.risk_held").Payload; p["risk_verdict"] != "loss" {
+					t.Errorf("T-0002 held = %+v, want the parent's loss as its verdict", p)
+				}
+			}
+		})
 	}
 }
 
@@ -369,6 +439,51 @@ func TestRiskRevertNeedsANewRound(t *testing.T) {
 		t.Errorf("risk_round = %q, want 1", got)
 	}
 
+	step(domain.ActionRevert, "a new round")
+	riskWrite(t, repoDir, filepath.Join("content", "features", "F-0001", "result.md"), riskResult("vitória")+"Rodada 2 — vitória: \"de novo\"\n")
+	if _, err := gitback.CommitAndPush(repoDir, "round 2"); err != nil {
+		t.Fatal(err)
+	}
+	if out := step(domain.ActionComplete, ""); out.To != domain.StateDone {
+		t.Fatalf("complete with a round after the revert = %s (%+v), want done by risk", out.To, out.Risk)
+	}
+}
+
+// TestRiskRevertAfterAHeldCompleteNeedsANewRound: a complete the gate held,
+// reverted by a person ("the delivery is wrong") and completed again after
+// the fix, does not pass on the round judged before the revert; a new round
+// lets it through (review 3 of #228).
+// F-0516 crit. 4
+func TestRiskRevertAfterAHeldCompleteNeedsANewRound(t *testing.T) {
+	asActor(t, "agent")
+	repoDir, projDir, _ := newFeatureBackend(t)
+	riskDelivery(t, repoDir, projDir, store.Feature{ID: "F-0001", Facets: []string{"auth"}}, "vitória", cleanChange())
+	step := func(action domain.Action, reason string) TransitionOutcome {
+		t.Helper()
+		out, err := TransitionFeature(repoDir, projDir, "F-0001", action, "", reason, nil)
+		if err != nil {
+			t.Fatalf("%s: %v", action, err)
+		}
+		return out
+	}
+	if out := step(domain.ActionComplete, ""); out.To != domain.StateImplemented {
+		t.Fatalf("first complete = %s, want held by the auth facet", out.To)
+	}
+	asActor(t, "")
+	step(domain.ActionRevert, "the delivery is wrong")
+	asActor(t, "agent")
+	f := reload(t, repoDir, "F-0001")
+	f.Facets = []string{"code"} // the fix
+	if err := store.SaveFeature(repoDir, f); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "retag"); err != nil {
+		t.Fatal(err)
+	}
+	out := step(domain.ActionComplete, "")
+	if out.To != domain.StateImplemented || out.Risk == nil || out.Risk.Gauntlet.Holds || !strings.Contains(out.Risk.Gauntlet.Found, "revert") {
+		t.Fatalf("complete after the revert = %s, gauntlet %+v; want held: the round predates the revert", out.To, out.Risk)
+	}
 	step(domain.ActionRevert, "a new round")
 	riskWrite(t, repoDir, filepath.Join("content", "features", "F-0001", "result.md"), riskResult("vitória")+"Rodada 2 — vitória: \"de novo\"\n")
 	if _, err := gitback.CommitAndPush(repoDir, "round 2"); err != nil {
