@@ -57,3 +57,30 @@ func TestCursorSessionRejectsUnsafeID(t *testing.T) {
 		t.Fatalf("cache dir = %v, want nothing written", entries)
 	}
 }
+
+// TestCursorSessionsFreshness (F-0513 crit. 2): a record stamped in the
+// future is stale, not recent forever; a file untouched for longer than the
+// window is skipped by its mtime, whatever its content says, so a document
+// write does not read every record ever written.
+func TestCursorSessionsFreshness(t *testing.T) {
+	cacheDir := t.TempDir()
+	now := time.Now()
+	dir := filepath.Join(cacheDir, cursorSessionsSubdir)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for sess, at := range map[string]time.Time{"cfut": now.Add(30 * 24 * time.Hour), "cold": now.Add(-time.Minute), "cnow": now.Add(-time.Minute)} {
+		raw, _ := json.Marshal(cursorSession{Model: "m-" + sess, UpdatedAt: at.UTC()})
+		if err := os.WriteFile(filepath.Join(dir, sess+".json"), raw, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old := now.Add(-13 * time.Hour)
+	if err := os.Chtimes(filepath.Join(dir, "cold.json"), old, old); err != nil {
+		t.Fatal(err)
+	}
+	got := cursorSessions(cacheDir, now)
+	if _, ok := got["cnow"]; len(got) != 1 || !ok {
+		t.Fatalf("sessions in play = %v, want only cnow", got)
+	}
+}

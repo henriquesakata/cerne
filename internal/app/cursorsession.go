@@ -62,8 +62,9 @@ func RecordCursorSession(cacheDir, sess, model, transcriptPath string) error {
 // cursorSessions are the Cursor sessions in play for the project at now:
 // every one recorded within cursorRecent, bound or not — the shell names no
 // session, and an unbound one may be the writer (feature new --file runs
-// before any feature start binds). A record that does not parse is not in
-// play.
+// before any feature start binds). A record that does not parse, or is
+// stamped in the future, is not in play; a file untouched for longer than
+// the window is skipped unread.
 func cursorSessions(cacheDir string, now time.Time) map[string]cursorSession {
 	dir := filepath.Join(cacheDir, cursorSessionsSubdir)
 	entries, _ := os.ReadDir(dir)
@@ -73,9 +74,13 @@ func cursorSessions(cacheDir string, now time.Time) map[string]cursorSession {
 		if !ok || e.IsDir() || safeSessionID(sess) != nil {
 			continue // a write's temp file, or nothing of ours
 		}
+		if info, err := e.Info(); err != nil || now.Sub(info.ModTime()) > cursorRecent {
+			continue
+		}
 		var rec cursorSession
 		raw, err := os.ReadFile(filepath.Join(dir, e.Name()))
-		if err != nil || json.Unmarshal(raw, &rec) != nil || now.Sub(rec.UpdatedAt) > cursorRecent {
+		// A minute of clock skew still counts as now.
+		if err != nil || json.Unmarshal(raw, &rec) != nil || now.Sub(rec.UpdatedAt) > cursorRecent || rec.UpdatedAt.After(now.Add(time.Minute)) {
 			continue
 		}
 		recent[sess] = rec
