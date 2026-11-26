@@ -1300,7 +1300,9 @@ func CheckOriginChoice(onBehalf, originFlag string) error {
 	if quoted && originFlag == "agent" {
 		return ErrOriginChoiceBoth
 	}
-	if !quoted && originFlag == "" && isAgentActor(actorEnv()) {
+	// The Backlog chat spawns the CLI as an agent with CERNE_ORIGIN=chat and a
+	// human in the conversation: its card creation keeps its flagless form.
+	if !quoted && originFlag == "" && isAgentActor(actorEnv()) && os.Getenv("CERNE_ORIGIN") != "chat" {
 		return fmt.Errorf("%w: pass --on-behalf \"<the human's literal words>\" when a human asked for this card, or --origin agent when the idea is yours", ErrOriginChoiceRequired)
 	}
 	return nil

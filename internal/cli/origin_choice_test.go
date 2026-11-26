@@ -9,6 +9,20 @@ import (
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
+// B-0086: the Backlog chat spawns `cerne feature new` with CERNE_ACTOR=agent and
+// CERNE_ORIGIN=chat and no flag; its creation must keep working.
+func TestCreateFromChatKeepsWorking(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	t.Setenv("CERNE_ACTOR", "agent")
+	t.Setenv("CERNE_ORIGIN", "chat")
+	if out, err := execCerne(t, "feature", "new", "From chat", "--context", "ctx", "--dir", projDir); err != nil {
+		t.Fatalf("chat creation refused: %v\n%s", err, out)
+	}
+	if f, err := store.LoadFeature(repoDir, "F-0001"); err != nil || f.Origin != "agent" {
+		t.Fatalf("card = %+v, %v; want origin agent as before", f, err)
+	}
+}
+
 // B-0086: in an agent shell, feature/bug/epic/task new must say who asked:
 // --on-behalf "<quote>" (a human's request) or --origin agent (the agent's own
 // idea). Neither, or both, is refused before anything is written; a human in a
