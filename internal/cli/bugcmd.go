@@ -61,12 +61,16 @@ func newBugNewCmd(dir *string) *cobra.Command {
 	cmd.Flags().StringVar(&owner, "owner", "", "responsible handle (free text, F-0204)")
 	cmd.Flags().StringVar(&priority, "priority", "", "priority (closed set: p0,p1,p2,p3, F-0204)")
 	cmd.Flags().StringVar(&onBehalf, "on-behalf", "", onBehalfHelp)
+	addOriginFlag(cmd)
 	return cmd
 }
 
 func runBugNew(cmd *cobra.Command, dir string, args []string, module, fixes, facet, component, file, context, steps, expected string, force bool, owner, priority, onBehalf string) error {
 	if cmd.Flags().Changed("on-behalf") && strings.TrimSpace(onBehalf) == "" {
 		return app.ErrOnBehalfEmpty
+	}
+	if err := app.CheckOriginChoice(onBehalf, originFlag(cmd)); err != nil {
+		return err
 	}
 	body, err := readOptionalBody(cmd, file)
 	if err != nil {

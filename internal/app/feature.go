@@ -1279,6 +1279,33 @@ func writeEpicResultStub(repoDir, id, title string, children []store.Feature) er
 // ErrInvalidOrigin refuses an origin that is not "human" or "agent" (B-0085).
 var ErrInvalidOrigin = errors.New("origin must be human or agent")
 
+// ErrOriginChoiceRequired refuses a CLI card creation from an agent shell that
+// says neither --on-behalf nor --origin agent (B-0086): the origin is chosen,
+// never defaulted in silence.
+var ErrOriginChoiceRequired = errors.New("an agent creating a card must say who asked")
+
+// ErrOriginChoiceBoth refuses --on-behalf together with --origin agent (B-0086).
+var ErrOriginChoiceBoth = errors.New("--on-behalf and --origin agent exclude each other")
+
+// CheckOriginChoice is the B-0086 refusal the four `new` commands (feature,
+// bug, epic, task) call before writing: an agent shell must pass a non-blank
+// --on-behalf (the human asked) or --origin agent (its own idea), never both.
+// It lives apart from the create functions on purpose: demo, import and the
+// server create cards with neither flag. Fail-open like resolveOrigin.
+func CheckOriginChoice(onBehalf, originFlag string) error {
+	quoted := strings.TrimSpace(onBehalf) != ""
+	if originFlag != "" && originFlag != "agent" {
+		return fmt.Errorf("%w: --origin takes only \"agent\" (a human's request takes --on-behalf)", ErrOriginChoiceRequired)
+	}
+	if quoted && originFlag == "agent" {
+		return ErrOriginChoiceBoth
+	}
+	if !quoted && originFlag == "" && isAgentActor(actorEnv()) {
+		return fmt.Errorf("%w: pass --on-behalf \"<the human's literal words>\" when a human asked for this card, or --origin agent when the idea is yours", ErrOriginChoiceRequired)
+	}
+	return nil
+}
+
 // SetFeatureOrigin is the human's correction of a card's origin (B-0085).
 // Any state is accepted; an agent actor is refused with ErrHumanGate (a human
 // origin waives the bug approve gate), --origin human needs a non-blank quote.

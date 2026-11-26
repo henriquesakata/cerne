@@ -76,12 +76,24 @@ func newFeatureNewCmd(dir *string) *cobra.Command {
 	cmd.Flags().StringVar(&owner, "owner", "", "responsible handle (free text, F-0204)")
 	cmd.Flags().StringVar(&priority, "priority", "", "priority (closed set: p0,p1,p2,p3, F-0204)")
 	cmd.Flags().StringVar(&onBehalf, "on-behalf", "", onBehalfHelp)
+	addOriginFlag(cmd)
 	cmd.Flags().StringVar(&capability, "capability", "", "capability nodes to link at birth (CSV of C- ids; validated before anything is written, one commit)")
 	return verbs.MarkChatTool(cmd)
 }
 
 // onBehalfHelp is the --on-behalf flag text shared by feature/epic/task new (T-0005).
 const onBehalfHelp = "quote of the human's request when an agent creates this for them: records origin human and the quote on the creation event"
+
+// addOriginFlag registers --origin on the four `new` commands (B-0086): the
+// agent's own idea, as opposed to --on-behalf with a human's words.
+func addOriginFlag(cmd *cobra.Command) {
+	cmd.Flags().String("origin", "", "set to agent when the idea is yours; in an agent shell a new card needs this or --on-behalf, not both (B-0086)")
+}
+
+func originFlag(cmd *cobra.Command) string {
+	v, _ := cmd.Flags().GetString("origin")
+	return v
+}
 
 func runFeatureNew(cmd *cobra.Command, dir string, args []string, module, parent, fixes, facet, component, file, context string, force bool, owner, priority, onBehalf, capability string) error {
 	return runFeatureLikeNew(cmd, dir, args, module, parent, facet, component, file, context, force, owner, priority, onBehalf, capability, "F", fixes)

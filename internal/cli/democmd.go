@@ -137,7 +137,7 @@ func (d *demoBuild) put(id, slug, doc string) {
 
 // feature walks one feature through the lifecycle up to target.
 func (d *demoBuild) feature(slug, title, target string, flags ...string) string {
-	d.run(d.content("features/"+slug+"/spec.md"), append([]string{"feature", "new", title}, flags...)...)
+	d.run(d.content("features/"+slug+"/spec.md"), append([]string{"feature", "new", title, "--origin", "agent"}, flags...)...)
 	id := d.id("F")
 	if target != "candidate" && target != "rejected" {
 		d.run("", "feature", "approve", id)
