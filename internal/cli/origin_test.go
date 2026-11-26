@@ -30,7 +30,7 @@ func TestFeatureListFiltersOrigin(t *testing.T) {
 	t.Setenv("CERNE_ACTOR", "")
 	newOriginFeature(t, projDir, "Do humano")
 	t.Setenv("CERNE_ACTOR", "agent")
-	newOriginFeature(t, projDir, "Do agente")
+	newOriginFeature(t, projDir, "Do agente", "--origin", "agent")
 	newOriginFeature(t, projDir, "Repassada", "--on-behalf", "o dono pediu")
 
 	ids := func(origin string) string {
