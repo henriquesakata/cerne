@@ -114,6 +114,9 @@ func (c roomClient) doWithHeaders(ctx context.Context, method, path string, head
 			Error string `json:"error"`
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&e); err == nil && e.Error != "" {
+			if e.Error == room.ErrOpenItems.Error() {
+				return room.ErrOpenItems // close's open-items refusal, matched with errors.Is (T-0022)
+			}
 			return fmt.Errorf("%s", e.Error)
 		}
 		return fmt.Errorf("HTTP %d", resp.StatusCode)

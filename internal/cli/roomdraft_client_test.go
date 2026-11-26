@@ -47,6 +47,37 @@ func TestRoomCloseWithDraftSendsTheReviewedDraft(t *testing.T) {
 
 // T-0022 crit. 2
 // E-0006 crit. 11
+func TestRoomCloseUseDraftChangedPrintsNoOpenItemsHint(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/close"):
+			w.WriteHeader(http.StatusConflict)
+			_, _ = w.Write([]byte(`{"error":"the minutes draft changed after it was reviewed","draft_changed":true}`))
+		case strings.HasSuffix(r.URL.Path, "/items/pending"):
+			_, _ = w.Write([]byte(`{"items":[{"id":"I2","kind":"proposal","author":"ana","title":"usar postgres","source_seq":2,"status":"open"}]}`))
+		default:
+			_, _ = w.Write([]byte(`{"rooms":[{"id":"R1","topic":"t","participants":[],"minutes_draft":{"minutes":{"conclusion":"c","rationale":"r"},"author":"ana","updated_at":"2026-11-25T14:02:03Z"}}]}`))
+		}
+	}))
+	defer srv.Close()
+	u, _ := url.Parse(srv.URL)
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".cernerc"), []byte("project_id = \"proj-draft-changed\"\nbackend = \"/dev/null\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runRoom(t, "close", "R1", "--use-draft", "--facilitator", "fac", "--dir", dir, "--port", u.Port())
+	if err == nil || !strings.Contains(err.Error(), "draft changed") {
+		t.Fatalf("close --use-draft err = %v, want the draft-changed refusal", err)
+	}
+	if strings.Contains(out, "close refused") {
+		t.Fatalf("close --use-draft output = %q, want no open-items hint for a changed draft", out)
+	}
+}
+
+// T-0022 crit. 2
+// E-0006 crit. 11
 func TestRoomCloseUseDraftWithNoDraftNeverCallsClose(t *testing.T) {
 	var closes atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

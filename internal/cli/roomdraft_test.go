@@ -158,3 +158,26 @@ func TestRoomCloseUseDraft(t *testing.T) {
 		t.Fatalf("show --draft on a closed room err = %v", err)
 	}
 }
+
+// T-0022 crit. 2
+// E-0006 crit. 11
+func TestRoomCloseHintsOpenItemsOnlyForThatRefusal(t *testing.T) {
+	clearRoomCredEnv(t)
+	dir, port := newRoomTestServer(t, "proj-close-hint")
+	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
+	_, facilitator := openRoomCLI(t, dirFlag, "topic")
+	sess := joinRoomAs(t, dirFlag, "R1", "ana")
+	if _, err := runRoom(t, append([]string{"propose", "R1", "--session", sess, "--title", "usar postgres"}, dirFlag...)...); err != nil {
+		t.Fatalf("propose: %v", err)
+	}
+	for _, extra := range [][]string{nil, {"--allow-open-items"}} {
+		args := append([]string{"close", "R1", "--facilitator", facilitator, "--minutes", `{"conclusion":"","rationale":""}`}, extra...)
+		out, err := runRoom(t, append(args, dirFlag...)...)
+		if err == nil || !strings.Contains(err.Error(), "required field") {
+			t.Fatalf("close %v with incomplete minutes err = %v, want its own refusal", extra, err)
+		}
+		if strings.Contains(out, "close refused") {
+			t.Fatalf("close %v output = %q, want no open-items hint for another refusal", extra, out)
+		}
+	}
+}

@@ -329,6 +329,9 @@ func newRoomCloseCmd() *cobra.Command {
 				rm, err = c.close(cmd.Context(), args[0], facilitator, minutes, allowOpenItems)
 			}
 			if err != nil {
+				if !errors.Is(err, room.ErrOpenItems) || allowOpenItems {
+					return err // its own refusal, with no open-items hint (T-0022)
+				}
 				pending, pendErr := c.pending(cmd.Context(), args[0], facilitator)
 				if pendErr == nil && len(pending) > 0 {
 					out := cmd.OutOrStdout()
