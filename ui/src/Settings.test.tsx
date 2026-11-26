@@ -1761,10 +1761,39 @@ describe('Settings — gates de aprovação e de aceite (F-0515)', () => {
     const r = await screen.findByRole('listitem', { name: 'Aceite da entrega' })
     fireEvent.change(within(r).getByRole('combobox'), { target: { value: 'auto' } })
     expect(putSetting).not.toHaveBeenCalled()
-    const group = within(r).getByRole('group', { name: /^Esta chave é só do dono do projeto\. Mudar Aceite da entrega para Automático grava no \.cernerc, versionado — lembre de commitar; dá para voltar aqui\./ })
+    const group = within(r).getByRole('group', { name: /Esta chave é só do dono do projeto\. Mudar Aceite da entrega para Automático grava no \.cernerc, versionado — lembre de commitar; dá para voltar aqui\./ })
     expect(within(group).getByRole('button', { name: 'Cancelar' })).toHaveFocus()
     fireEvent.click(within(group).getByRole('button', { name: 'Mudar' }))
     await waitFor(() => expect(putSetting).toHaveBeenCalledWith('gates.accept', 'project', 'auto'))
+  })
+
+  // impeccable pass (F-0515): the question names what changes, and the select
+  // shows the value the question is about while it is open.
+  it('a pergunta diz a consequência e o select mostra o valor escolhido', async () => {
+    load()
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Aceite da entrega' })
+    const select = within(r).getByRole('combobox')
+    fireEvent.change(select, { target: { value: 'auto' } })
+    expect(select).toHaveValue('auto')
+    expect(
+      within(r).getByRole('group', { name: /^Daqui em diante, o card que um agente conclui vai direto a concluído, marcado como aceito sem revisão humana\. Esta chave/ }),
+    ).toBeInTheDocument()
+  })
+
+  it('en: a consequência da aprovação automática', async () => {
+    localStorage.setItem('cerne-lang', 'en')
+    load()
+    render(
+      <I18nProvider>
+        <Settings />
+      </I18nProvider>,
+    )
+    const r = await screen.findByRole('listitem', { name: 'Spec approval' })
+    fireEvent.change(within(r).getByRole('combobox'), { target: { value: 'auto' } })
+    expect(
+      within(r).getByRole('group', { name: /^From now on an agent may approve specs too, and each card it approves is marked approved without human review\. This key/ }),
+    ).toBeInTheDocument()
   })
 
   it('Cancelar não grava e devolve o foco ao select', async () => {
@@ -1810,7 +1839,7 @@ describe('Settings — gates de aprovação e de aceite (F-0515)', () => {
     )
     const r = await screen.findByRole('listitem', { name: 'Spec approval' })
     fireEvent.change(within(r).getByRole('combobox'), { target: { value: 'auto' } })
-    expect(within(r).getByRole('group', { name: /^This key is the project owner's alone\. Changing Spec approval to Automatic writes to \.cernerc, versioned — remember to commit; you can change it back here\./ })).toBeInTheDocument()
+    expect(within(r).getByRole('group', { name: /This key is the project owner's alone\. Changing Spec approval to Automatic writes to \.cernerc, versioned — remember to commit; you can change it back here\./ })).toBeInTheDocument()
     expect(within(r).getByRole('button', { name: 'Change' })).toBeInTheDocument()
   })
 })

@@ -719,7 +719,11 @@ function SettingRow({
   const turningOn = pending === true || pending === 'on'
   const file = ws === 'project' ? '.cernerc' : 'settings.toml'
   let ask = ''
-  if (confirming && !isToggle) ask = ts.confirmValue(tx(s.title), fmt(pending), file, ws === 'project')
+  if (confirming && !isToggle) {
+    // What changes for the owner comes first, then where it is written.
+    const what = ts.consequence[`${s.id}:${String(pending)}`]
+    ask = (what ? `${what} ` : '') + ts.confirmValue(tx(s.title), fmt(pending), file, ws === 'project')
+  }
   else if (confirming) ask = turningOn ? ts.confirmOn(tx(s.title), file) : ts.confirmOff(tx(s.title), file, ws === 'project')
   const confirmBox = confirming && (
     <div
@@ -795,7 +799,8 @@ function SettingRow({
           <select
             id={controlId(s.id)}
             className="settings-select"
-            value={String(current)}
+            // While the question is open the select shows the value it asks about.
+            value={String(confirming ? pending : current)}
             aria-labelledby={titleId}
             aria-describedby={described}
             aria-disabled={lock}

@@ -1030,6 +1030,7 @@ const ptBR = {
           'gauntlet-cost': 'Custo medido do Gauntlet neste projeto',
           'light-with-bar': 'Nível leve com barra nomeada: se os testes bastam, cabe "Barra: não aplicável (…)"',
           'standard-without-bar': 'Nível padrão ou avançado sem barra: confirme a justificativa declarada',
+          'clarify-without-options': 'Esclarecimento sem opções propostas',
         })[code] ?? code,
     },
   },
@@ -1508,6 +1509,8 @@ const ptBR = {
     chipTitle: 'Clique para responder',
     answerPlaceholder: 'Escreva a resposta…',
     otherAnswer: 'Outra resposta…',
+    recommended: 'Recomendada',
+    otherEntry: 'Outra resposta',
     confirm: 'Responder',
     openCount: (n: number) => `${n} esclarecimento(s) aberto(s)`,
     correctTitle: 'Clique para corrigir ou complementar a resposta',
@@ -1601,6 +1604,12 @@ const ptBR = {
     confirmValue: (title: string, value: string, file: string, versioned: boolean) =>
       `Esta chave é só do dono do projeto. Mudar ${title} para ${value} grava no ${file}${versioned ? ', versionado — lembre de commitar' : ''}; dá para voltar aqui.`,
     change: 'Mudar',
+    // F-0515: o que muda para o dono, dito na pergunta antes de gravar.
+    consequence: {
+      'gates.approve:auto': 'Daqui em diante, um agente também aprova specs, e cada card que ele aprovar fica marcado como aprovado sem revisão humana.',
+      'gates.accept:auto': 'Daqui em diante, o card que um agente conclui vai direto a concluído, marcado como aceito sem revisão humana.',
+      'gates.accept:merge': 'Daqui em diante, o merge do PR da entrega vale como aceite.',
+    } as Record<string, string>,
     // F-0449: o editor de uma chave de registros (mirror.trackers).
     records: {
       actions: 'Ações',
@@ -2763,6 +2772,7 @@ const en: Messages = {
           'gauntlet-cost': 'Gauntlet cost measured in this project',
           'light-with-bar': 'Light level with a named bar: if the tests suffice, "Bar: not applicable (…)" fits',
           'standard-without-bar': 'Standard or advanced level without a bar: confirm the declared justification',
+          'clarify-without-options': 'Clarification without proposed options',
         })[code] ?? code,
     },
   },
@@ -3240,6 +3250,8 @@ const en: Messages = {
     chipTitle: 'Click to answer',
     answerPlaceholder: 'Write the answer…',
     otherAnswer: 'Other answer…',
+    recommended: 'Recommended',
+    otherEntry: 'Other answer',
     confirm: 'Answer',
     openCount: (n: number) => `${n} open clarification(s)`,
     correctTitle: 'Click to correct or complete the answer',
@@ -3331,6 +3343,11 @@ const en: Messages = {
     confirmValue: (title: string, value: string, file: string, versioned: boolean) =>
       `This key is the project owner's alone. Changing ${title} to ${value} writes to ${file}${versioned ? ', versioned — remember to commit' : ''}; you can change it back here.`,
     change: 'Change',
+    consequence: {
+      'gates.approve:auto': 'From now on an agent may approve specs too, and each card it approves is marked approved without human review.',
+      'gates.accept:auto': 'From now on a card an agent completes goes straight to done, marked accepted without human review.',
+      'gates.accept:merge': 'From now on the merge of the delivery PR counts as the acceptance.',
+    },
     records: {
       actions: 'Actions',
       row: 'row',

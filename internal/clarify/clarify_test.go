@@ -274,6 +274,8 @@ func TestParseCorpus(t *testing.T) {
 			Question *string   `json:"question"`
 			Options  *[]string `json:"options"`
 			Answers  *[]string `json:"answers"`
+			// Optional (F-0517): the 1-based recommended position, 0 for none.
+			Recommended *int `json:"recommended"`
 		} `json:"cases"`
 	}
 	if err := json.Unmarshal(data, &corpus); err != nil {
@@ -293,6 +295,9 @@ func TestParseCorpus(t *testing.T) {
 					t.Errorf("[%d] = {%q %d %v}, want {%q %d %v}",
 						i, got[i].Raw, got[i].Offset, got[i].Resolved, want.Raw, want.Offset, want.Resolved)
 				}
+			}
+			if c.Recommended != nil && len(got) > 0 && got[0].Recommended != *c.Recommended {
+				t.Errorf("Recommended = %d, want %d", got[0].Recommended, *c.Recommended)
 			}
 			if c.Question == nil && c.Options == nil && c.Answers == nil {
 				return
