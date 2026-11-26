@@ -147,7 +147,9 @@ func sshHost(u string) string {
 }
 
 // RemoteHost is the bare host of a remote backend (scheme://… or the scp-like
-// user@host:path), lowercased; "" for a local path or when none can be read.
+// user@host:path), lowercased, never with credentials or port; "" for a local
+// path or when none can be read. Limit: an ~/.ssh/config alias comes back as
+// written — the alias, not the HostName ssh connects to.
 func RemoteHost(u string) string {
 	if IsLocalPath(u) {
 		return ""
