@@ -18,6 +18,7 @@ import {
 } from './api'
 import Tag, { tagCounts } from './Tag'
 import MirrorBadge from './MirrorBadge'
+import GateBadges from './GateBadges'
 import { sortByPriority } from './priority'
 import { useLiveVersion } from './live'
 import { LoadNotice, LoadPending, useLiveLoad } from './liveLoad'
@@ -910,6 +911,7 @@ function Card({
           </span>
         )}
         {feature.mirror && <MirrorBadge mirror={feature.mirror} />}
+        <GateBadges feature={feature} />
       </span>
       <span className="card-title">{feature.title}</span>
       {feature.owner && <span className="card-owner">@{feature.owner}</span>}

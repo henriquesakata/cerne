@@ -59,6 +59,7 @@ func newEpicNewCmd(dir *string) *cobra.Command {
 	cmd.Flags().StringVar(&owner, "owner", "", "responsible handle (free text, F-0204)")
 	cmd.Flags().StringVar(&priority, "priority", "", "priority (closed set: p0,p1,p2,p3, F-0204)")
 	cmd.Flags().StringVar(&onBehalf, "on-behalf", "", onBehalfHelp)
+	addOriginFlag(cmd)
 	cmd.Flags().StringVar(&capability, "capability", "", "capability nodes to link at birth (CSV of C- ids; validated before anything is written, one commit)")
 	return cmd
 }
@@ -103,6 +104,7 @@ func newTaskNewCmd(dir *string) *cobra.Command {
 	cmd.Flags().StringVar(&owner, "owner", "", "responsible handle (free text, F-0204)")
 	cmd.Flags().StringVar(&priority, "priority", "", "priority (closed set: p0,p1,p2,p3, F-0204)")
 	cmd.Flags().StringVar(&onBehalf, "on-behalf", "", onBehalfHelp)
+	addOriginFlag(cmd)
 	cmd.Flags().StringVar(&capability, "capability", "", "capability nodes to link at birth (CSV of C- ids; validated before anything is written, one commit)")
 	return cmd
 }
@@ -113,6 +115,10 @@ func runFeatureLikeNew(cmd *cobra.Command, dir string, args []string, module, pa
 	// An explicit blank --on-behalf must not read as "flag not passed" (T-0005).
 	if cmd.Flags().Changed("on-behalf") && strings.TrimSpace(onBehalf) == "" {
 		return app.ErrOnBehalfEmpty
+	}
+	onBehalf, err := checkOriginChoice(cmd, onBehalf)
+	if err != nil {
+		return err
 	}
 	body, err := readOptionalBody(cmd, file)
 	if err != nil {

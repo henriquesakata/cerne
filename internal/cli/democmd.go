@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -34,6 +35,21 @@ var demoCancelled atomic.Bool
 // demoRun, when set, replaces cerneInProcess so a test can fail one step.
 var demoRun func(body string, args ...string) (string, error)
 
+// demoSeedKey marks the context of a command the demo runs while seeding: its
+// transitions are a script's, not an agent crossing a gate (F-0515). Only
+// cerneInProcess sets it; no flag or variable reaches it from a shell.
+type demoSeedKey struct{}
+
+// demoSeeding reports whether cmd runs inside the demo's seeding.
+func demoSeeding(cmd *cobra.Command) bool {
+	ctx := cmd.Context()
+	if ctx == nil {
+		return false
+	}
+	seed, _ := ctx.Value(demoSeedKey{}).(bool)
+	return seed
+}
+
 // cerneInProcess runs one cerne command in-process — the same commands, and so
 // the same internal/app layer, a user types — with body as its stdin.
 func cerneInProcess(body string, args ...string) (string, error) {
@@ -43,7 +59,7 @@ func cerneInProcess(body string, args ...string) (string, error) {
 	root.SetErr(&out)
 	root.SetIn(strings.NewReader(body))
 	root.SetArgs(args)
-	err := root.Execute()
+	err := root.ExecuteContext(context.WithValue(context.Background(), demoSeedKey{}, true))
 	return out.String(), err
 }
 
@@ -137,7 +153,7 @@ func (d *demoBuild) put(id, slug, doc string) {
 
 // feature walks one feature through the lifecycle up to target.
 func (d *demoBuild) feature(slug, title, target string, flags ...string) string {
-	d.run(d.content("features/"+slug+"/spec.md"), append([]string{"feature", "new", title}, flags...)...)
+	d.run(d.content("features/"+slug+"/spec.md"), append([]string{"feature", "new", title, "--origin", "agent"}, flags...)...)
 	id := d.id("F")
 	if target != "candidate" && target != "rejected" {
 		d.run("", "feature", "approve", id)
