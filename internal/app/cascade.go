@@ -139,6 +139,10 @@ func cascadeAccept(repoDir, projDir string, parent store.Feature, m *mergeAccept
 			if !ra.rides() {
 				held := ra.payload()
 				held["cascade_from"] = parentID
+				c.HeldRisk = ra.Held() // F-0521: its own reasons, with its event
+				if err := store.SaveFeature(repoDir, c); err != nil {
+					return out, err
+				}
 				if err := store.AppendEvent(repoDir, domain.NewEvent(c.ID, "feature.risk_held", held, EventActor())); err != nil {
 					return out, err
 				}

@@ -490,6 +490,14 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 			for _, ht := range risk.HeldTasks {
 				p := ht.Risk.payload()
 				p["cascade_from"] = id
+				task, err := store.LoadFeature(repoDir, ht.ID)
+				if err != nil {
+					return "", err
+				}
+				task.HeldRisk = ht.Risk.Held() // F-0521: its own reasons, with its event
+				if err := store.SaveFeature(repoDir, task); err != nil {
+					return "", err
+				}
 				if err := store.AppendEvent(repoDir, domain.NewEvent(ht.ID, "feature.risk_held", p, EventActor())); err != nil {
 					return "", err
 				}
