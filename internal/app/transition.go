@@ -362,6 +362,7 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 			if oldState == domain.StateDone {
 				f.AcceptedVia = ""
 			}
+			f.HeldRisk = nil // F-0521: the next complete measures again
 			if oldState == domain.StateApproved {
 				f.ApprovedVia = ""
 			}
