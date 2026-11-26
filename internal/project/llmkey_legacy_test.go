@@ -32,6 +32,7 @@ func TestLegacyKeyIsAnthropicOnly(t *testing.T) {
 		{"anthropic own variable first", LLMConfig{Provider: "anthropic"}, map[string]string{"ANTHROPIC_API_KEY": "sk-ant-own", "CERNE_LLM_API_KEY": ant}, "sk-ant-own", "ANTHROPIC_API_KEY"},
 		// F-0523 crit. 3
 		{"anthropic with base_url reads any legacy value", LLMConfig{Provider: "anthropic", BaseURL: "https://proxy.internal"}, map[string]string{"CERNE_LLM_API_KEY": old}, old, "CERNE_LLM_API_KEY"},
+		{"anthropic with base_url reads even another vendor's legacy value", LLMConfig{Provider: "anthropic", BaseURL: "https://proxy.internal"}, map[string]string{"CERNE_LLM_API_KEY": "sk-proj-x"}, "sk-proj-x", "CERNE_LLM_API_KEY"},
 		// F-0523 crit. 5
 		{"pinned legacy for openai", LLMConfig{Provider: "openai", KeyEnv: "CERNE_LLM_API_KEY"}, map[string]string{"CERNE_LLM_API_KEY": old}, old, "CERNE_LLM_API_KEY"},
 		// F-0523 crit. 6
@@ -47,6 +48,20 @@ func TestLegacyKeyIsAnthropicOnly(t *testing.T) {
 		if v != c.wantKey || env != c.wantIn || err != nil {
 			t.Errorf("%s: key match=%v env=%q err=%v, want env %q", c.name, v == c.wantKey, env, err, c.wantIn)
 		}
+	}
+
+	// F-0523 crit. 1: a key Settings once saved under the legacy name, in the
+	// credentials file, is not openai's either.
+	clearLLMKeys(t)
+	if err := WriteCredential("CERNE_LLM_API_KEY", old); err != nil {
+		t.Fatal(err)
+	}
+	if v, _, env, err := (LLMConfig{Provider: "openai"}).ResolveKey(); v != "" || env != "OPENAI_API_KEY" || err != nil {
+		t.Errorf("openai with the legacy name in the credentials file: key set=%v env=%q err=%v", v != "", env, err)
+	}
+	// F-0523 crit. 4
+	if n := (LLMConfig{Provider: "openai"}).LegacyKeyNote(); n == "" {
+		t.Error("legacy name in the credentials file: want the note")
 	}
 
 	// F-0523 crit. 5: the pin keeps the B-0092 guard.
@@ -80,10 +95,12 @@ func TestLegacyKeyNote(t *testing.T) {
 	if n := (LLMConfig{Provider: "openai"}).LegacyKeyNote(); n != "" {
 		t.Errorf("openai with its own key: note = %q, want none", n)
 	}
-	clearLLMKeys(t)
-	t.Setenv("CERNE_LLM_API_KEY", "sk-ant-api03-SECRETSECRET")
-	if n := (LLMConfig{Provider: "openai"}).LegacyKeyNote(); n != "" {
-		t.Errorf("an Anthropic key in the legacy variable: note = %q, want none", n)
+	for _, other := range []string{"sk-ant-api03-SECRETSECRET", "sk-or-v1-x", "AIzaSyX"} {
+		clearLLMKeys(t)
+		t.Setenv("CERNE_LLM_API_KEY", other)
+		if n := (LLMConfig{Provider: "openai"}).LegacyKeyNote(); n != "" {
+			t.Errorf("another vendor's key (%.6s…) in the legacy variable: note = %q, want none", other, n)
+		}
 	}
 	clearLLMKeys(t)
 	if n := (LLMConfig{Provider: "openai"}).LegacyKeyNote(); n != "" {

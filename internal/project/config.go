@@ -519,7 +519,7 @@ const (
 // provider absent here (anthropic, the empty default) uses the Anthropic ones;
 // "compatible" has no URL on purpose — the user's endpoint is required.
 var providerPresets = map[string]struct{ baseURL, keyEnv string }{
-	llmProviderOpenAI:     {"https://api.openai.com", "OPENAI_API_KEY"},
+	llmProviderOpenAI:     {"https://api.openai.com", providerKeyEnv[llmProviderOpenAI]},
 	llmProviderGemini:     {"https://generativelanguage.googleapis.com/v1beta/openai", "GEMINI_API_KEY"},
 	llmProviderOpenRouter: {"https://openrouter.ai/api", "OPENROUTER_API_KEY"},
 	llmProviderCompatible: {"", defaultLLMKeyEnv},

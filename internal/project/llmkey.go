@@ -113,8 +113,8 @@ func (c LLMConfig) LegacyKeyNote() string {
 	if v, _, _ := ResolveAPIKey(own); v != "" {
 		return ""
 	}
-	// An Anthropic key there was never OpenAI's: nothing to move.
-	if v, _, _ := ResolveAPIKey(defaultLLMKeyEnv); v == "" || strings.HasPrefix(v, anthropicKeyPrefix) {
+	// A key there that names another vendor was never OpenAI's: nothing to move.
+	if v, _, _ := ResolveAPIKey(defaultLLMKeyEnv); v == "" || c.foreignKey(v) != "" {
 		return ""
 	}
 	return fmt.Sprintf("%s is no longer read for OpenAI — put the OpenAI key in %s", defaultLLMKeyEnv, own)
