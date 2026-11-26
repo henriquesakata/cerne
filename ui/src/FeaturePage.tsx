@@ -354,6 +354,17 @@ function FeatureView({ id }: { id: string }) {
         </p>
         {/* What the risk gate measured to accept it (F-0516), in the open. */}
         {f.accepted_via === 'risk' && f.accepted_risk && <p className="feature-note feature-accepted-risk">{t.feature.acceptedRisk(f.accepted_risk)}</p>}
+        {/* Why the risk gate held the card (F-0521): the lines complete printed. */}
+        {(f.state === 'implemented' || f.state === 'done') && f.held_risk && f.held_risk.length > 0 && (
+          <div className="feature-note feature-held-risk">
+            <p>{f.state === 'done' ? t.feature.heldRiskDone : t.feature.heldRiskReady}</p>
+            <ul>
+              {f.held_risk.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          </div>
+        )}
         {/* The owner answers the risk gate (F-0518) and marks a live card. */}
         {detail.risk_decision && <RiskFeedback feature={f} decision={detail.risk_decision} onAnswered={load} />}
         {(f.state === 'candidate' || f.state === 'approved' || f.state === 'in_development') && <AcceptModeControl feature={f} onChanged={load} />}

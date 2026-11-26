@@ -490,6 +490,8 @@ const ptBR = {
     acceptedAuto: 'Aceita sem revisão humana',
     // F-0516: o gate de risco aceitou uma entrega de baixo risco.
     acceptedRisk: 'Aceita por baixo risco',
+    // F-0521: o gate de risco segurou a entrega; os motivos vão no title.
+    heldRisk: 'Segurada pelo risco',
     childInDevTitle:
       'um filho já está em desenvolvimento; planeje e inicie o épico',
     pendingClarify: (n: number) => `❓ ${n}`,
@@ -924,6 +926,9 @@ const ptBR = {
     deliveryLabel: 'Entrega:',
     acceptedOnMerge: (n: string) => `Aceita no merge · PR #${n}`,
     acceptedRisk: (m: string) => `Aceita por baixo risco: ${m}`,
+    // F-0521: o motivo da retenção; as linhas vêm do backend, em inglês.
+    heldRiskReady: 'Segurada pelo gate de risco — espera uma pessoa',
+    heldRiskDone: 'Segurada pelo gate de risco antes do aceite',
     issueLabel: 'Issue pública:',
     supersededBy: (id: string) => `Substituída por ${id}`,
     edit: 'Editar',
@@ -2308,6 +2313,7 @@ const en: Messages = {
     approvedAuto: 'Approved without human review',
     acceptedAuto: 'Accepted without human review',
     acceptedRisk: 'Accepted as low risk',
+    heldRisk: 'Held by risk',
     childInDevTitle:
       'a child is already in development; plan and start the epic',
     pendingClarify: (n: number) => `❓ ${n}`,
@@ -2725,6 +2731,8 @@ const en: Messages = {
     deliveryLabel: 'Delivery:',
     acceptedOnMerge: (n: string) => `Accepted on merge · PR #${n}`,
     acceptedRisk: (m: string) => `Accepted as low risk: ${m}`,
+    heldRiskReady: 'Held by the risk gate — waits for a person',
+    heldRiskDone: 'Held by the risk gate before the accept',
     issueLabel: 'Public issue:',
     supersededBy: (id: string) => `Superseded by ${id}`,
     edit: 'Edit',

@@ -1524,3 +1524,70 @@ describe('FeaturePage — o dono responde ao gate de risco (F-0518)', () => {
     await waitFor(() => expect(screen.queryByLabelText('Aceite')).toBeNull())
   })
 })
+
+// F-0521: the page of a card the risk gate held says why, in both languages.
+describe('FeaturePage — o motivo da retenção pelo risco (F-0521)', () => {
+  const reasons = ['touches a sensitive path: go.mod', "the Gauntlet's last round is a tie, not a win"]
+  const held = (state: FeatureState, over: Partial<Feature> = {}): FeatureDetail => {
+    const d = detail(state)
+    return { ...d, feature: { ...d.feature, held_risk: reasons, ...over } }
+  }
+  const show = async () => {
+    render(
+      <I18nProvider>
+        <FeaturePage id="F-0221" />
+      </I18nProvider>,
+    )
+    await screen.findByText('Feature de teste')
+  }
+  // F-0521 crit. 4
+  for (const [lang, ready, done] of [
+    ['pt-BR', 'Segurada pelo gate de risco — espera uma pessoa', 'Segurada pelo gate de risco antes do aceite'],
+    ['en', 'Held by the risk gate — waits for a person', 'Held by the risk gate before the accept'],
+  ] as const) {
+    it(`${lang}: o rótulo de implemented e de done, com uma linha por motivo`, async () => {
+      localStorage.setItem('cerne-lang', lang)
+      payload = held('implemented')
+      await show()
+      const note = screen.getByText(ready).closest('.feature-held-risk') as HTMLElement
+      expect(within(note).getAllByRole('listitem').map((li) => li.textContent)).toEqual(reasons)
+      expect(screen.queryByText(done)).toBeNull()
+      cleanup()
+      payload = held('done')
+      await show()
+      const noteDone = screen.getByText(done).closest('.feature-held-risk') as HTMLElement
+      expect(within(noteDone).getAllByRole('listitem')).toHaveLength(2)
+      expect(screen.queryByText(ready)).toBeNull()
+    })
+  }
+
+  // F-0521 crit. 7
+  it('sem held_risk, ou aceito por baixo risco: sem a linha nova', async () => {
+    localStorage.setItem('cerne-lang', 'pt-BR')
+    payload = detail('implemented')
+    await show()
+    expect(screen.queryByText(/Segurada pelo gate de risco/)).toBeNull()
+    cleanup()
+    payload = { ...detail('done'), feature: { ...detail('done').feature, accepted_via: 'risk', accepted_risk: 'low' } }
+    await show()
+    expect(screen.queryByText(/Segurada pelo gate de risco/)).toBeNull()
+    expect(screen.queryByText('Segurada pelo risco')).toBeNull()
+  })
+
+  // F-0521 crit. 6: the complete from the button; the card the page reloads
+  // brings the reasons, with no browser reload.
+  it('o complete pelo botão: o motivo aparece com a resposta, sem recarregar', async () => {
+    localStorage.setItem('cerne-lang', 'pt-BR')
+    payload = detail('in_development')
+    await show()
+    expect(screen.queryByText(/Segurada pelo gate de risco/)).toBeNull()
+    vi.mocked(postTransition).mockImplementationOnce(async () => {
+      payload = held('implemented')
+      return { ok: true, data: { id: 'F-0221', from: 'in_development', to: 'implemented' } }
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'Concluir' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar conclusão' }))
+    expect(await screen.findByText('Segurada pelo gate de risco — espera uma pessoa')).toBeInTheDocument()
+    expect(screen.getByText(reasons[0])).toBeInTheDocument()
+  })
+})

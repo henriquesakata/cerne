@@ -1709,6 +1709,11 @@ h2 {
    person accepted it, so it is the same process warning as badge-auto and the
    owner finds it later. The title carries what was measured. */
 .badge-risk { background: var(--amber-bg); color: var(--amber); border-color: var(--amber-border); cursor: help; }
+/* F-0521: held by the risk gate: waits for a person, the same process warning
+   as badge-risk; the title carries the reasons. */
+.badge-held { background: var(--amber-bg); color: var(--amber); border-color: var(--amber-border); cursor: help; }
+.feature-held-risk p { margin: 0; font-weight: 600; }
+.feature-held-risk ul { margin: 0.2rem 0 0; padding-left: 1.2rem; }
 /* F-0237: filhas concluídas representadas pelo épico numa coluna terminal.
    Neutro de propósito — é contagem estrutural, não estado nem severidade. */
 .badge-rolled { background: var(--surface-3); color: var(--muted); border-color: var(--border); font-variant-numeric: tabular-nums; }
