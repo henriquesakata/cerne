@@ -141,8 +141,8 @@ func (a DocAuthor) recordDocEdited(repoDir, id, doc string, state domain.Feature
 		return nil
 	}
 	cacheDir, sess, harness := filepath.Dir(repoDir), os.Getenv("CERNE_SESSION"), cost.CurrentHarness()
-	if cursorShell() { // F-0513: the shell names no session; the one bound does
-		sess, harness = boundCursorSession(cacheDir), "cursor"
+	if cursorShell() { // F-0513: the shell names no session; the sole one in play does
+		sess, harness = soleCursorSession(cacheDir), "cursor"
 	}
 	if safeSessionID(sess) == nil {
 		_ = RecordMark(cacheDir, sess, "", harness, id, doc)

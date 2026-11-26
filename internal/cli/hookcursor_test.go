@@ -517,3 +517,51 @@ func TestPushRecordsCursorAuthor(t *testing.T) {
 		t.Fatalf("two sessions on two models: doc_edited = %v, want cursor with no model", p)
 	}
 }
+
+// TestCursorSessionRolesOnTheAgentsPanel (F-0513 crit. 3): the only Cursor
+// session in play writes the spec and the plan before any feature start
+// binds it, and the agents panel shows it as their writer, under harness
+// cursor. Once a second session is in play, a write marks nobody.
+func TestCursorSessionRolesOnTheAgentsPanel(t *testing.T) {
+	t.Setenv("CURSOR_CONFIG_DIR", t.TempDir())
+	projDir, _, repoDir, specPath := pulledProject(t)
+	for _, k := range []string{"CERNE_ACTOR", "CERNE_SESSION", "CERNE_PROVIDER", "CERNE_MODEL"} {
+		t.Setenv(k, "")
+	}
+	t.Setenv("CURSOR_AGENT", "1")
+	start := func(p map[string]any) {
+		t.Helper()
+		if out, err := execCerneStdin(t, payloadString(t, p), "hook", "session-context"); err != nil {
+			t.Fatalf("hook session-context: %v\noutput: %s", err, out)
+		}
+	}
+	push := func() {
+		t.Helper()
+		if out, err := execCerne(t, "push", "--dir", projDir); err != nil {
+			t.Fatalf("push: %v\n%s", err, out)
+		}
+	}
+
+	start(cursorFixture(t, "session-start.json", projDir))
+	mustWrite(t, specPath, "---\ncerne_id: F-0001\n---\n\n# Parcelamento\n\nDividir compras em parcelas, no Cursor.\n")
+	mustWrite(t, filepath.Join(filepath.Dir(specPath), "plan.md"), "---\ncerne_id: F-0001\n---\n\n# Plano\n\nPassos.\n")
+	push()
+	s := agentsPanel(t, projDir, repoDir, "F-0001")[cursorSess]
+	var kinds []string
+	for _, r := range s.Roles {
+		kinds = append(kinds, r.Kind)
+	}
+	if s.Harness != "cursor" || !strings.Contains(strings.Join(kinds, ","), "spec") || !strings.Contains(strings.Join(kinds, ","), "plan") {
+		t.Fatalf("agents panel session = %+v, want harness cursor with the spec and plan roles", s)
+	}
+
+	marks, _ := cost.ReadMarks(filepath.Dir(repoDir))
+	other := cursorFixture(t, "session-start.json", projDir)
+	other["session_id"], other["conversation_id"], other["model_id"] = "other-sess", "other-sess", "gpt-6"
+	start(other)
+	mustWrite(t, specPath, "---\ncerne_id: F-0001\n---\n\n# Parcelamento\n\nDividir compras em parcelas, em duas sessões.\n")
+	push()
+	if after, _ := cost.ReadMarks(filepath.Dir(repoDir)); len(after) != len(marks) {
+		t.Fatalf("two sessions in play: marks %+v, want no new one", after[len(marks):])
+	}
+}

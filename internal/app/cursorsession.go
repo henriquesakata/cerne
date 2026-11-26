@@ -109,13 +109,6 @@ func cursorSessions(cacheDir string, now time.Time) map[string]cursorSession {
 	return recent
 }
 
-// cursorBound reports a live binding of Cursor session sess (a session at
-// work under a W- or an F-).
-func cursorBound(cacheDir, sess string) bool {
-	id, err := os.ReadFile(filepath.Join(cacheDir, sessionsSubdir, sess))
-	return err == nil && bindingLive(filepath.Join(cacheDir, "repo"), strings.TrimSpace(string(id)))
-}
-
 // cursorAuthor is the writer of a document from a Cursor agent shell (F-0513):
 // provider cursor, with the model the hooks recorded when every Cursor session
 // in play reported the same one, and none otherwise — the shell names no
@@ -132,19 +125,17 @@ func cursorAuthor(cacheDir string) DocAuthor {
 	return a
 }
 
-// boundCursorSession is the session a Cursor shell's write is marked on
-// (F-0513): the only Cursor session in play, when it has a live binding. ""
-// when another session, bound or not, is in play too — either may be the
-// writer — or the only one is not bound.
-func boundCursorSession(cacheDir string) string {
+// soleCursorSession is the session a Cursor shell's write is marked on
+// (F-0513): the only Cursor session in play, bound or not — the spec and the
+// plan are written before any feature start binds. "" when another session is
+// in play too: either may be the writer.
+func soleCursorSession(cacheDir string) string {
 	sessions := cursorSessions(cacheDir, time.Now())
 	if len(sessions) != 1 {
 		return ""
 	}
 	for sess := range sessions {
-		if cursorBound(cacheDir, sess) {
-			return sess
-		}
+		return sess
 	}
 	return ""
 }
