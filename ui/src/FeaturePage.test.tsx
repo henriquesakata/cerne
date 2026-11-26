@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import FeaturePage from './FeaturePage'
 import { I18nProvider } from './i18n'
@@ -1480,6 +1480,25 @@ describe('FeaturePage — o dono responde ao gate de risco (F-0518)', () => {
     await show('en')
     expect(screen.queryByText('Did this delivery need you?')).toBeNull()
     expect(screen.queryByRole('button', { name: 'It did' })).toBeNull()
+  })
+
+  // F-0518 crit. 14 — impeccable pass: "may pass alone" loosens the gate for
+  // this card, so it asks first; the other marks write at once.
+  it('pt-BR: Pode passar sozinho pergunta antes de gravar', async () => {
+    acceptGate = 'risk'
+    payload = detail('in_development')
+    await show('pt-BR')
+    const select = await screen.findByLabelText('Aceite')
+    fireEvent.change(select, { target: { value: 'auto' } })
+    expect(vi.mocked(putAcceptMode)).not.toHaveBeenCalled()
+    expect(select).toHaveValue('auto')
+    const group = screen.getByRole('group', { name: /^Com «Pode passar sozinho», este card dispensa as listas de áreas sensíveis/ })
+    fireEvent.click(within(group).getByRole('button', { name: 'Cancelar' }))
+    expect(vi.mocked(putAcceptMode)).not.toHaveBeenCalled()
+    expect(select).toHaveValue('gate')
+    fireEvent.change(select, { target: { value: 'auto' } })
+    fireEvent.click(within(screen.getByRole('group', { name: /Pode passar sozinho/ })).getByRole('button', { name: 'Mudar' }))
+    await waitFor(() => expect(vi.mocked(putAcceptMode)).toHaveBeenCalledWith('F-0221', 'auto'))
   })
 
   // F-0518 crit. 14

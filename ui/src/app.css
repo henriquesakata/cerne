@@ -4141,6 +4141,10 @@ details.backlinks-section > summary:focus-visible { outline: 2px solid var(--fg)
 .settings-confirm-yes:focus-visible { outline: 2px solid var(--fg); outline-offset: 1px; }
 .settings-saved { margin: 0.4rem 0 0; font-size: 0.85rem; color: var(--fg); }
 /* F-0518: what the risk gate learned, beside its two lists. */
+/* F-0518 impeccable pass: the card's accept mark sizes to its options and
+   its hint and question sit on their own lines. */
+.risk-accept-mode .settings-select { width: auto; }
+.risk-accept-mode .settings-hint, .risk-accept-mode .settings-confirm { display: block; margin-top: 0.3rem; }
 .risk-gate-panel { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border); }
 .risk-gate-panel h3 { margin: 0 0 0.5rem; font-size: 1rem; }
 .risk-gate-panel h4 { margin: 1rem 0 0.4rem; font-size: 0.9rem; }

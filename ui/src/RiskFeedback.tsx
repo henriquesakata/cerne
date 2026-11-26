@@ -167,6 +167,8 @@ export function AcceptModeControl({ feature, onChanged }: { feature: Feature; on
   const [riskGate, setRiskGate] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // "May pass alone" loosens the gate for this card: it asks first (impeccable pass).
+  const [pending, setPending] = useState<'auto' | null>(null)
   useEffect(() => {
     let live = true
     fetchSettings().then(
@@ -178,29 +180,38 @@ export function AcceptModeControl({ feature, onChanged }: { feature: Feature; on
     }
   }, [])
   if (!riskGate && !feature.accept_mode) return null
+  const write = (next: 'human' | 'auto' | 'gate') => {
+    setBusy(true)
+    setError(null)
+    putAcceptMode(feature.id, next).then(
+      () => {
+        setBusy(false)
+        onChanged()
+      },
+      (err: unknown) => {
+        setBusy(false)
+        setError(err instanceof Error ? err.message : String(err))
+      },
+    )
+  }
   return (
     <p className="feature-note risk-accept-mode">
       <label htmlFor={`${uid}-mode`}>{tr.mode}</label>{' '}
       <select
         id={`${uid}-mode`}
         className="settings-select"
-        value={feature.accept_mode ?? 'gate'}
+        value={pending ?? feature.accept_mode ?? 'gate'}
         aria-describedby={`${uid}-hint`}
         aria-disabled={busy || undefined}
         onChange={(e) => {
           if (busy) return
-          setBusy(true)
-          setError(null)
-          putAcceptMode(feature.id, e.target.value as 'human' | 'auto' | 'gate').then(
-            () => {
-              setBusy(false)
-              onChanged()
-            },
-            (err: unknown) => {
-              setBusy(false)
-              setError(err instanceof Error ? err.message : String(err))
-            },
-          )
+          const next = e.target.value as 'human' | 'auto' | 'gate'
+          if (next === 'auto' && feature.accept_mode !== 'auto') {
+            setPending('auto')
+            return
+          }
+          setPending(null)
+          write(next)
         }}
       >
         {(['gate', 'human', 'auto'] as const).map((m) => (
@@ -212,6 +223,24 @@ export function AcceptModeControl({ feature, onChanged }: { feature: Feature; on
       <span id={`${uid}-hint`} className="settings-hint">
         {tr.modeHint}
       </span>
+      {pending && (
+        <span className="settings-confirm" role="group" aria-labelledby={`${uid}-ask`}>
+          <span id={`${uid}-ask`}>{tr.autoAsk}</span>{' '}
+          <button
+            type="button"
+            className="settings-confirm-yes"
+            onClick={() => {
+              setPending(null)
+              write('auto')
+            }}
+          >
+            {tr.change}
+          </button>{' '}
+          <button type="button" className="settings-confirm-no" onClick={() => setPending(null)}>
+            {tr.cancel}
+          </button>
+        </span>
+      )}
       {error && (
         <span role="alert" className="form-error">
           {' '}
