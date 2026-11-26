@@ -1362,3 +1362,84 @@ func TestRoomSayBodySources(t *testing.T) {
 		}
 	}
 }
+
+// T-0019 crit. 3
+// E-0006 crit. 3
+func TestFormatRoomEventOpenAndClose(t *testing.T) {
+	if got := formatRoomEvent(room.Message{Seq: 1, Type: "open", Topic: "deploy"}); !strings.Contains(got, "deploy") {
+		t.Errorf("open = %q, want the topic", got)
+	}
+	closed := room.Message{Seq: 9, Type: "close", Minutes: &room.Minutes{Conclusion: "ship it"}}
+	if got := formatRoomEvent(closed); !strings.Contains(got, "ship it") {
+		t.Errorf("close = %q, want the conclusion", got)
+	}
+	if got := formatRoomEvent(room.Message{Seq: 9, Type: "close"}); got != "#9 [close]" {
+		t.Errorf("close without minutes = %q, want the bare form", got)
+	}
+}
+
+// T-0019 crit. 4
+// E-0006 crit. 4
+func TestRoomJoinCountsActiveParticipants(t *testing.T) {
+	dir, port := newRoomTestServer(t, "proj-join-active")
+	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
+	runRoom(t, append([]string{"open", "topic"}, dirFlag...)...)
+	joinRoomAs(t, dirFlag, "R1", "ana")
+	sess := joinRoomAs(t, dirFlag, "R1", "bia")
+	runRoom(t, append([]string{"leave", "R1", "--session", sess}, dirFlag...)...)
+	out, err := runRoom(t, append([]string{"join", "R1", "--nick", "cia"}, dirFlag...)...)
+	if err != nil || !strings.Contains(out, "(2 active participant(s))") {
+		t.Fatalf("join output = %q, %v; want 2 active participant(s)", out, err)
+	}
+}
+
+// T-0019 crit. 4
+// E-0006 crit. 4
+func TestRoomJoinStoreFailurePrintsExamplesWithoutNick(t *testing.T) {
+	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
+	t.Setenv("CERNE_ROOM_SESSION", "")
+	t.Setenv("CERNE_SESSION", "agent-1")
+	dir, port := newRoomTestServer(t, "proj-join-storefail")
+	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
+	runRoom(t, append([]string{"open", "topic"}, dirFlag...)...)
+	path, err := roomCredsPath("proj-join-storefail", "R1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(path+".lock", 0o700); err != nil { // the lock file cannot be opened
+		t.Fatal(err)
+	}
+	out, err := runRoom(t, append([]string{"join", "R1", "--nick", "ana"}, dirFlag...)...)
+	if err != nil {
+		t.Fatalf("join: %v", err)
+	}
+	if !strings.Contains(out, "export CERNE_ROOM_SESSION=") {
+		t.Fatalf("output = %q, want the export line", out)
+	}
+	for _, l := range strings.Split(out, "\n") {
+		if strings.HasPrefix(l, "say:") || strings.HasPrefix(l, "listen:") || strings.HasPrefix(l, "ask the facilitator:") {
+			if strings.Contains(l, "--nick") {
+				t.Errorf("example %q carries --nick, which would ignore the exported variable", l)
+			}
+		}
+	}
+}
+
+// T-0019 crit. 4
+// E-0006 crit. 4
+func TestRoomLeaveInvalidSessionForgetsTheEntry(t *testing.T) {
+	dir, port := newRoomTestServer(t, "proj-leave-401")
+	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
+	t.Setenv("CERNE_ROOM_SESSION", "")
+	t.Setenv("CERNE_SESSION", "agent-1")
+	runRoom(t, append([]string{"open", "topic"}, dirFlag...)...)
+	if _, err := storeRoomSession("proj-leave-401", "R1", "zed", "deadbeefdeadbeefdeadbeefdeadbeef"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runRoom(t, append([]string{"leave", "R1", "--nick", "zed"}, dirFlag...)...); err == nil || !strings.Contains(err.Error(), "invalid room session") {
+		t.Fatalf("leave err = %v, want the invalid-session error", err)
+	}
+	if stored, _ := loadRoomCreds("proj-leave-401", "R1"); stored.Sessions["zed"] != "" {
+		t.Fatalf("stored after a 401 leave = %+v, want zed dropped", stored)
+	}
+}

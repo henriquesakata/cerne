@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -36,6 +37,13 @@ func formatRoomEvent(m room.Message) string {
 		return fmt.Sprintf("%s [join: %s]", head, m.Nick)
 	case "leave":
 		return fmt.Sprintf("%s [leave: %s]", head, m.Nick)
+	case "open":
+		return fmt.Sprintf("%s [open] %s", head, m.Topic)
+	case "close":
+		if m.Minutes != nil && m.Minutes.Conclusion != "" {
+			return fmt.Sprintf("%s [close] %s", head, m.Minutes.Conclusion)
+		}
+		return fmt.Sprintf("%s [close]", head)
 	case "proposal", "decision_request":
 		return fmt.Sprintf("%s [%s: %s] %s — %s", head, strings.ReplaceAll(m.Type, "_", " "), m.Nick, m.Title, m.Body)
 	case "resolution":
@@ -134,21 +142,21 @@ func newRoomJoinCmd() *cobra.Command {
 			}
 			id, sid := res.Room.ID, res.Session.SessionID
 			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "joined %s as %s (%d participant(s))\n", id, nick, len(res.Room.Participants))
+			fmt.Fprintf(out, "joined %s as %s (%d active participant(s))\n", id, nick, len(res.Room.ActiveParticipants))
 			fmt.Fprintf(out, "session: %s\n", sid)
 			fmt.Fprintf(out, "keep this session token — losing it locks the nick until the room closes\n")
 			nicks, err := storeRoomSession(c.pid, id, nick, sid)
 			if err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not store the session for this agent session: %v\n", err)
 			} else if nicks != nil {
-				warnRoomSessionVar(cmd.ErrOrStderr(), nick)
+				warnRoomSessionVar(cmd.ErrOrStderr(), id, nick)
 			}
 			// storeRoomSession returns nil, nil only without CERNE_SESSION. In
 			// an agent session every example carries --nick, even with one
 			// nick: a later store failure or a second joiner then makes it
 			// refuse instead of speaking as someone else.
 			pick := ""
-			if err != nil || nicks != nil {
+			if err == nil && nicks != nil {
 				pick = " --nick " + nick
 			}
 			if err != nil || nicks == nil {
@@ -186,6 +194,12 @@ func newRoomLeaveCmd() *cobra.Command {
 			}
 			rm, err := c.leave(cmd.Context(), args[0], session)
 			if err != nil {
+				// A 401 means the session is already revoked: its stored entry
+				// is dead weight that bare commands would keep picking.
+				var se *roomStatusError
+				if errors.As(err, &se) && se.status == http.StatusUnauthorized {
+					_ = forgetRoomSession(c.pid, args[0], session)
+				}
 				return fmt.Errorf("leave %s: %w", args[0], err)
 			}
 			// B-0084: the revoked session must not stay stored, or a bare

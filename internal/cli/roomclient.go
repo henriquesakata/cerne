@@ -114,9 +114,9 @@ func (c roomClient) doWithHeaders(ctx context.Context, method, path string, head
 			Error string `json:"error"`
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&e); err == nil && e.Error != "" {
-			return fmt.Errorf("%s", e.Error)
+			return &roomStatusError{resp.StatusCode, e.Error}
 		}
-		return fmt.Errorf("HTTP %d", resp.StatusCode)
+		return &roomStatusError{resp.StatusCode, fmt.Sprintf("HTTP %d", resp.StatusCode)}
 	}
 	if out == nil {
 		return nil
@@ -284,3 +284,12 @@ func (c roomClient) resolve(ctx context.Context, id, facilitatorID, itemID, resu
 	err := c.do(ctx, http.MethodPost, "/rooms/"+url.PathEscape(id)+"/items/"+url.PathEscape(itemID)+"/resolve", req, &item)
 	return item, err
 }
+
+// roomStatusError is a refusal the server answered, keeping its status so a
+// caller can tell a dead session (401) from a failure.
+type roomStatusError struct {
+	status int
+	msg    string
+}
+
+func (e *roomStatusError) Error() string { return e.msg }
