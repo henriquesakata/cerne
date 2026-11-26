@@ -288,8 +288,13 @@ func TestCostStampRefusesBeforeComplete(t *testing.T) {
 	for _, id := range ids {
 		before := readResult(t, repoDir, id)
 		_, err := execCerne(t, "cost", id, "--stamp", "--dir", projDir)
-		if !errors.Is(err, cost.ErrStampNeedsImplemented) || !strings.Contains(err.Error(), "cerne feature complete") {
-			t.Fatalf("%s: err = %v, want ErrStampNeedsImplemented with the hint", id, err)
+		// B-0090: only an unfinished card is told to complete; a done card cannot.
+		hint := "cerne feature complete"
+		if id == ids[domain.StateDone] {
+			hint = "can no longer be stamped"
+		}
+		if !errors.Is(err, cost.ErrStampNeedsImplemented) || !strings.Contains(err.Error(), hint) || (id == ids[domain.StateDone] && strings.Contains(err.Error(), "feature complete")) {
+			t.Fatalf("%s: err = %v, want ErrStampNeedsImplemented with %q", id, err, hint)
 		}
 		if readResult(t, repoDir, id) != before {
 			t.Fatalf("%s: result changed", id)
