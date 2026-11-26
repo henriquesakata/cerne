@@ -26,10 +26,11 @@ const (
 	codexSandboxMarker = "# cerne (F-0474): sandbox"
 )
 
-// codexSandboxPaths returns the folders to open: portable ones (~/… forms,
+// sandboxPaths returns the folders an agent sandbox must open for cerne
+// (shared by the Codex and Cursor adapters, F-0512): portable ones (~/… forms,
 // safe to commit) and machine-specific ones (env overrides, a backend outside
 // the home), which are printed instead of written.
-func codexSandboxPaths(projDir string) (portable, machine []string, err error) {
+func sandboxPaths(projDir string) (portable, machine []string, err error) {
 	cfg, _, err := project.LoadConfig(projDir)
 	if err != nil {
 		return nil, nil, err
@@ -162,7 +163,7 @@ func codexSandboxSnippet(paths []string, network bool) string {
 // .codex/config.toml, preserving the user's lines. Fail-closed: a file that is
 // not valid TOML, or would not be after the edit, is left untouched.
 func installCodexSandbox(projDir string, network bool) []Result {
-	portable, machine, err := codexSandboxPaths(projDir)
+	portable, machine, err := sandboxPaths(projDir)
 	if err != nil {
 		return []Result{{Asset: codexSandboxAsset, Status: StatusSkipped, Note: "cannot resolve cerne's folders (" + err.Error() + ") — run from a project with a .cernerc"}}
 	}
