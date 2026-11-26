@@ -1947,7 +1947,7 @@ describe('BacklogChat: anexar imagens (F-0520)', () => {
   // F-0520 crit. 4
   it('recusa do servidor, tipo errado e sexto anexo mostram o motivo e mantêm o texto', async () => {
     withImages()
-    renderChat()
+    const { container } = renderChat()
     await waitFor(() => expect(attachButton()).toBeEnabled())
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'rascunho' } })
 
@@ -1956,7 +1956,7 @@ describe('BacklogChat: anexar imagens (F-0520)', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('image larger than 10 MB')
     expect(thumbs()).toHaveLength(0)
 
-    fireEvent.paste(screen.getByRole('textbox'), { clipboardData: { files: [new File(['x'], 'a.pdf', { type: 'application/pdf' })] } })
+    fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['x'], 'a.pdf', { type: 'application/pdf' })] } })
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Só PNG, JPEG, WebP ou GIF'))
 
     fireEvent.paste(screen.getByRole('textbox'), { clipboardData: { files: [png(), png(), png(), png(), png(), png()] } })
@@ -1972,9 +1972,51 @@ describe('BacklogChat: anexar imagens (F-0520)', () => {
     await waitFor(() => expect(fetchLLMOptions).toHaveBeenCalled())
     expect(attachButton()).toBeDisabled()
     expect(attachButton()).toHaveAttribute('title', 'Este provedor não recebe imagem no chat')
-    fireEvent.paste(screen.getByRole('textbox'), { clipboardData: { files: [png()] } })
+    const pasted = fireEvent.paste(screen.getByRole('textbox'), { clipboardData: { files: [png()] } })
     await Promise.resolve()
+    expect(pasted).toBe(true) // não interceptado: o que mais veio na área de transferência segue
     expect(uploadChatAttachment).not.toHaveBeenCalled()
+
+    // soltar não abre o arquivo no navegador: fica no chat e diz por quê
+    const { container } = { container: document.body }
+    const dropped = fireEvent.drop(container.querySelector('.backlog-chat')!, { dataTransfer: { files: [png()], types: ['Files'] } })
+    expect(dropped).toBe(false)
+    expect(await screen.findByRole('alert')).toHaveTextContent('Este provedor não recebe imagem no chat')
+    expect(uploadChatAttachment).not.toHaveBeenCalled()
+  })
+
+  // F-0520 crit. 1
+  it('colar texto junto de um arquivo que não é imagem aceita não é interceptado', async () => {
+    withImages()
+    renderChat()
+    await waitFor(() => expect(attachButton()).toBeEnabled())
+    const pasted = fireEvent.paste(screen.getByRole('textbox'), {
+      clipboardData: { files: [new File(['x'], 'planilha.xlsx', { type: 'application/vnd.ms-excel' })] },
+    })
+    expect(pasted).toBe(true)
+    expect(uploadChatAttachment).not.toHaveBeenCalled()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  // F-0520 crit. 4
+  it('dois lotes simultâneos não passam de cinco imagens na mesma mensagem', async () => {
+    withImages()
+    renderChat()
+    await waitFor(() => expect(attachButton()).toBeEnabled())
+    const box = screen.getByRole('textbox')
+    fireEvent.paste(box, { clipboardData: { files: [png(), png(), png()] } })
+    fireEvent.paste(box, { clipboardData: { files: [png(), png(), png()] } })
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('No máximo 5 imagens por mensagem'))
+    await waitFor(() => expect(thumbs()).toHaveLength(5))
+    await new Promise((r) => setTimeout(r, 20))
+    expect(thumbs()).toHaveLength(5)
+    expect(uploadChatAttachment).toHaveBeenCalledTimes(5)
+
+    // remover libera uma vaga
+    fireEvent.click(screen.getAllByRole('button', { name: 'Remover imagem' })[0])
+    fireEvent.paste(box, { clipboardData: { files: [png()] } })
+    await waitFor(() => expect(uploadChatAttachment).toHaveBeenCalledTimes(6))
+    await waitFor(() => expect(thumbs()).toHaveLength(5))
   })
 
   // F-0520 crit. 9

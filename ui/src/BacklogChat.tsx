@@ -902,6 +902,9 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
   const [attachments, setAttachments] = useState<string[]>([])
   const [attachError, setAttachError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  // Anexadas mais as que ainda estão subindo: o limite por mensagem conta as
+  // duas, senão dois lotes simultâneos passariam cada um pelo teto.
+  const reservedRef = useRef(0)
   // F-0323 C3: só o canal de tools prende a execução ao card; no modo
   // assinatura o agente recebe o cerne no turno, e a dica tem de dizer isso.
   const [cardBound, setCardBound] = useState(true)
@@ -1121,34 +1124,44 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
   // mensagem carrega só os ids. Uma recusa (tipo, tamanho, limite) aparece
   // acima do compositor e não toca no texto digitado.
   const addImages = async (files: File[]) => {
-    if (files.length === 0 || !canAttach) return
+    if (files.length === 0) return
+    if (!canAttach) {
+      setAttachError(t.backlogChat.attachUnavailable)
+      return
+    }
     setAttachError(null)
-    let count = attachments.length
     for (const file of files) {
       if (!CHAT_IMAGE_TYPES.includes(file.type)) {
         setAttachError(t.backlogChat.attachNotImage)
         continue
       }
-      if (count >= CHAT_IMAGES_PER_MESSAGE) {
+      if (reservedRef.current >= CHAT_IMAGES_PER_MESSAGE) {
         setAttachError(t.backlogChat.attachLimit(CHAT_IMAGES_PER_MESSAGE))
         break
       }
-      count += 1
+      reservedRef.current += 1
       try {
         const id = await uploadChatAttachment(conversation.id, file)
         setAttachments((a) => [...a, id])
       } catch (e) {
-        count -= 1
+        reservedRef.current -= 1
         setAttachError(e instanceof Error ? e.message : String(e))
       }
     }
   }
 
   const onComposerPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
-    const files = Array.from(e.clipboardData?.files ?? [])
-    if (files.length === 0) return // texto colado segue o caminho normal
+    // Só intercepta quando há imagem aceita e o provedor a recebe: uma cópia de
+    // planilha traz texto e imagem juntos, e sem isso o texto seria engolido.
+    const images = Array.from(e.clipboardData?.files ?? []).filter((f) => CHAT_IMAGE_TYPES.includes(f.type))
+    if (images.length === 0 || !canAttach) return
     e.preventDefault()
-    void addImages(files)
+    void addImages(images)
+  }
+
+  const removeAttachment = (id: string) => {
+    reservedRef.current -= 1
+    setAttachments((a) => a.filter((x) => x !== id))
   }
 
   const onChatDrop = (e: DragEvent<HTMLElement>) => {
@@ -1165,6 +1178,8 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
     const content = input.trim()
     if (!canSubmit) return
     const images = attachments
+    // As que ainda sobem continuam reservadas e ficam para a próxima mensagem.
+    reservedRef.current -= images.length
     setAttachments([])
     setAttachError(null)
     setInput('')
@@ -1384,7 +1399,8 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
     <aside
       className="backlog-chat"
       onDragOver={(e) => {
-        if (canAttach && e.dataTransfer?.types.includes('Files')) e.preventDefault()
+        // Sempre: sem isso o navegador abre o arquivo solto e sai do chat.
+        if (e.dataTransfer?.types.includes('Files')) e.preventDefault()
       }}
       onDrop={onChatDrop}
     >
@@ -1521,7 +1537,7 @@ export default function BacklogChat({ conversation, onUpdate, onRegistered, tool
         <ChatImages
           conversationId={conversation.id}
           ids={attachments}
-          onRemove={(id) => setAttachments((a) => a.filter((x) => x !== id))}
+          onRemove={removeAttachment}
         />
         <div className="backlog-chat-composer">
           {/* F-0520: anexar por arquivo; colar e arrastar caem no mesmo addImages. */}
