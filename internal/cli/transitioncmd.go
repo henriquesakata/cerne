@@ -12,6 +12,7 @@ import (
 	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
 	"github.com/henriquesakata/cerne/internal/verbs"
 )
@@ -92,8 +93,19 @@ func newTransitionCmds(dir *string) []*cobra.Command {
 
 // transitionLine is a transition's headline. Renewing a stale approval
 // (F-0318) says so and names the approval it renewed (F-0417), instead of the
-// bare "approved → approved".
-func transitionLine(action domain.Action, out app.TransitionOutcome) string {
+// bare "approved → approved". waits is what a card the risk gate held waits
+// for (app.RiskHeldWait); "" for every other outcome.
+func transitionLine(action domain.Action, out app.TransitionOutcome, waits string) string {
+	if r := out.Risk; r != nil && r.Low() { // the risk gate accepted it (F-0516)
+		return fmt.Sprintf("%s: %s → %s\n%s: %s → %s (accepted as low risk: %s)", out.ID, out.From, domain.StateImplemented, out.ID, domain.StateImplemented, out.To, r.Summary())
+	}
+	if r := out.Risk; r != nil { // held: one line per condition that failed
+		line := fmt.Sprintf("%s: %s → %s\n%s waits for %s ([gates] accept = %q); what held it:", out.ID, out.From, out.To, out.ID, waits, project.GateRisk)
+		for _, h := range r.Held() {
+			line += "\n  - " + h
+		}
+		return line
+	}
 	if action != domain.ActionApprove || out.From != domain.StateApproved || out.Baseline {
 		return fmt.Sprintf("%s: %s → %s", out.ID, out.From, out.To)
 	}
@@ -182,7 +194,13 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 	for _, w := range out.Warnings {
 		fmt.Fprintln(cmd.ErrOrStderr(), w)
 	}
-	fmt.Fprintln(cmd.OutOrStdout(), transitionLine(action, out))
+	var waits string
+	if out.Risk != nil {
+		f, _ := store.LoadFeature(ctx.repoDir, id)
+		f.ID = id
+		waits = app.RiskHeldWait(ctx.repoDir, f)
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), transitionLine(action, out, waits))
 	printMovedPendings(cmd.OutOrStdout(), out.Pendings)
 	printMovedPendings(cmd.OutOrStdout(), out.Ideas)
 	printMovedPendings(cmd.OutOrStdout(), out.Cascade) // the children it carried (T-0007)
@@ -223,8 +241,8 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 		// The transition is the act that counts: a stamp that cannot be made
 		// warns and the exit stays 0 (F-0402 crit. 3).
 		if !noStamp {
-			o, serr := stampCost(ctx, id)
-			fmt.Fprintln(cmd.OutOrStdout(), completeStampLine(id, o, serr))
+			o, serr := stampCost(ctx, id, out.To == domain.StateDone)
+			fmt.Fprintln(cmd.OutOrStdout(), completeStampLine(id, o, serr, out.To == domain.StateDone))
 		}
 		printCompleteLearnings(cmd.OutOrStdout(), ctx.repoDir, id)
 	}
@@ -260,10 +278,11 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 // (--mr, the forge's PR or one recorded before).
 func printCompleteNextStep(w io.Writer, repoDir, id string, noStamp bool) {
 	fmt.Fprintln(w, "Next step:")
-	if noStamp {
+	f, err := store.LoadFeature(repoDir, id)
+	// A card the automatic accept carried to done refuses the stamp (B-0090).
+	if noStamp && !(err == nil && f.State == domain.StateDone) {
 		fmt.Fprintf(w, "  - record its token cost: cerne cost %s --stamp, before the human accept (F-0309)\n", id)
 	}
-	f, err := store.LoadFeature(repoDir, id)
 	// B-0070: the link 'cerne next' asks for comes before the accept, or the
 	// card closes with no PR on it.
 	if err == nil {
@@ -272,10 +291,16 @@ func printCompleteNextStep(w io.Writer, repoDir, id string, noStamp bool) {
 		}
 	}
 	task := err == nil && strings.HasPrefix(id, "T-") && f.Parent != ""
-	if task {
+	// A card the gate carried to done (auto, or risk: F-0516) owes no accept.
+	done := err == nil && f.State == domain.StateDone
+	switch {
+	case done && f.AcceptedVia == project.GateRisk:
+		fmt.Fprintln(w, "  - accepted as low risk: a person merges the PR when they choose; an agent never merges it")
+	case done:
+	case task:
 		// A task rides its parent's accept (T-0007): one human act for all.
 		fmt.Fprintf(w, "  - human accept: %s is accepted along with its parent: cerne feature accept %s\n", id, f.Parent)
-	} else {
+	default:
 		fmt.Fprintf(w, "  - human accept: cerne feature accept %s (or drag the card to Done)\n", id)
 	}
 	if err == nil {
@@ -286,7 +311,7 @@ func printCompleteNextStep(w io.Writer, repoDir, id string, noStamp bool) {
 			fmt.Fprintf(w, "  - %s\n", line)
 		}
 	}
-	if !task { // last: it is what the agent does right before it stops (F-0460)
+	if !task && !done { // last: it is what the agent does right before it stops (F-0460)
 		fmt.Fprintln(w, waitStep(id, domain.StateDone))
 	}
 }

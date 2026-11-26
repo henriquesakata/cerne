@@ -51,19 +51,5 @@ jobs:
           printf '%s\n' "$CERNE_DOCS_DEPLOY_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           echo 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' >> ~/.ssh/known_hosts
-          go run ./cmd/cerne lock pin
-          changed="$(git diff --name-only)"
-          if [ -n "$changed" ] && [ "$changed" != "docs.lock" ]; then
-            echo "refusing to pin: unexpected changed paths:"
-            echo "$changed"
-            exit 1
-          fi
-          if git diff --quiet -- docs.lock; then
-            echo "docs.lock already points at the current backend snapshot"
-            exit 0
-          fi
-          git config user.name "cerne-ci"
-          git config user.email "cerne-ci@users.noreply.github.com"
-          git add docs.lock
-          git commit -m "chore(docs): pin docs.lock [skip ci]"
-          git push origin HEAD:main
+          # Pin, commit and push with a bounded retry when main advances (B-0089).
+          sh .github/scripts/pin-push.sh

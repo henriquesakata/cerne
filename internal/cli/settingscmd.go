@@ -229,11 +229,12 @@ func findResolved(view project.SettingsView, id string) (project.ResolvedSetting
 	return project.ResolvedSetting{}, fmt.Errorf("%w %q (known: %s)", project.ErrUnknownSetting, id, strings.Join(ids, ", "))
 }
 
-// settingText prints a value the way it is typed in: a records list as
-// compact JSON (what 'settings set' takes), anything else as is.
+// settingText prints a value the way it is typed in: a records or a string
+// list as compact JSON (what 'settings set' takes), anything else as is.
 func settingText(v any) string {
-	if rows, ok := v.([]map[string]string); ok {
-		b, _ := json.Marshal(rows)
+	switch v.(type) {
+	case []map[string]string, []string:
+		b, _ := json.Marshal(v)
 		return string(b)
 	}
 	return fmt.Sprint(v)
