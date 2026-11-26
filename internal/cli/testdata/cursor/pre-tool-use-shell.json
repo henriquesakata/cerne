@@ -1,0 +1,19 @@
+{
+  "conversation_id": "2cbcdf25-fae0-4ddd-abb5-8ce420078093",
+  "generation_id": "e608e4a1-d425-4424-b62b-510748ffca32",
+  "model": "grok-4.7",
+  "tool_name": "Shell",
+  "tool_input": {
+    "command": "cerne push",
+    "cwd": "",
+    "timeout": 30000
+  },
+  "tool_use_id": "5200006d-df4a-4213-8650-f184b60a877d",
+  "session_id": "2cbcdf25-fae0-4ddd-abb5-8ce420078093",
+  "hook_event_name": "preToolUse",
+  "cursor_version": "3.25.6",
+  "workspace_roots": [
+    "__PROJ__"
+  ],
+  "transcript_path": "__CURSOR_HOME__/projects/Users-dev-project/agent-transcripts/2cbcdf25-fae0-4ddd-abb5-8ce420078093/2cbcdf25-fae0-4ddd-abb5-8ce420078093.jsonl"
+}

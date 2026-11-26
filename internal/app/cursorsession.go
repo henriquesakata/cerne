@@ -27,6 +27,18 @@ type cursorSession struct {
 	Model          string    `json:"model"`
 	TranscriptPath string    `json:"transcript_path,omitempty"`
 	UpdatedAt      time.Time `json:"updated_at"`
+	// Pending is the cerne command the session's shell is running, from
+	// its preToolUse until its postToolUse (F-0513 crit. 6), since PendingAt.
+	Pending   string    `json:"pending,omitempty"`
+	PendingAt time.Time `json:"pending_at,omitzero"`
+}
+
+// CursorSeen is what one Cursor hook payload says of its session.
+type CursorSeen struct {
+	Model, TranscriptPath string
+	// Pending is the cerne command a shell preToolUse is about to run; Ran
+	// the command a shell postToolUse just ran, which is pending no more.
+	Pending, Ran string
 }
 
 // maxCursorModel caps a recorded model name, in bytes.
@@ -49,11 +61,31 @@ func cleanCursorModel(m string) string {
 	return m
 }
 
-// RecordCursorSession stores what a Cursor hook payload said of session sess:
-// its model and transcript path, stamped now. An empty one keeps the value
-// already recorded (sessionStart names no transcript path). Atomic: parallel
-// tool calls record at once, and a reader never sees half a file.
-func RecordCursorSession(cacheDir, sess, model, transcriptPath string) error {
+// maxCursorCommand caps a recorded pending command, in bytes.
+const maxCursorCommand = 4 << 10
+
+// cleanCursorCommand is a shell command from a Cursor payload as cerne stores
+// it: no control or bidi character but the newline and tab that separate the
+// shell's commands, at most maxCursorCommand bytes on a rune boundary. It is
+// only ever matched against this process's own command line, never printed.
+func cleanCursorCommand(c string) string {
+	c = strings.TrimSpace(strings.Map(func(r rune) rune {
+		if r != '\n' && r != '\t' && nameBreaking(r) {
+			return -1
+		}
+		return r
+	}, c))
+	if len(c) > maxCursorCommand {
+		c = strings.ToValidUTF8(c[:maxCursorCommand], "")
+	}
+	return c
+}
+
+// RecordCursorSession stores what a Cursor hook payload said of session sess,
+// stamped now. An empty model or transcript path keeps the value already
+// recorded (sessionStart names no transcript path). Atomic: parallel tool
+// calls record at once, and a reader never sees half a file.
+func RecordCursorSession(cacheDir, sess string, seen CursorSeen) error {
 	if err := safeSessionID(sess); err != nil {
 		return err
 	}
@@ -62,11 +94,17 @@ func RecordCursorSession(cacheDir, sess, model, transcriptPath string) error {
 	if raw, err := os.ReadFile(filepath.Join(dir, sess+".json")); err == nil {
 		_ = json.Unmarshal(raw, &rec)
 	}
-	if model = cleanCursorModel(model); model != "" {
+	if model := cleanCursorModel(seen.Model); model != "" {
 		rec.Model = model
 	}
-	if transcriptPath != "" {
-		rec.TranscriptPath = transcriptPath
+	if seen.TranscriptPath != "" {
+		rec.TranscriptPath = seen.TranscriptPath
+	}
+	if ran := cleanCursorCommand(seen.Ran); ran != "" && ran == rec.Pending {
+		rec.Pending, rec.PendingAt = "", time.Time{}
+	}
+	if pending := cleanCursorCommand(seen.Pending); pending != "" {
+		rec.Pending, rec.PendingAt = pending, time.Now().UTC()
 	}
 	rec.UpdatedAt = time.Now().UTC()
 	raw, err := json.Marshal(rec)

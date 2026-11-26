@@ -82,6 +82,9 @@ type cursorInput struct {
 	// model_id is the canonical id, model the mode variant on sessionStart.
 	Model   string `json:"model"`
 	ModelID string `json:"model_id"`
+	// HookEventName tells a shell call about to run (preToolUse) from one
+	// that ran (postToolUse): what keeps a session's pending command (F-0513).
+	HookEventName string `json:"hook_event_name"`
 }
 
 // cursor reports a payload delivered by Cursor, which is answered in Cursor's
@@ -116,11 +119,28 @@ func recordCursorSession(in hookInput) {
 	if err != nil {
 		return
 	}
-	model := in.Cursor.ModelID
-	if model == "" {
-		model = in.Cursor.Model
+	seen := app.CursorSeen{Model: in.Cursor.ModelID, TranscriptPath: in.TranscriptPath}
+	if seen.Model == "" {
+		seen.Model = in.Cursor.Model
 	}
-	_ = app.RecordCursorSession(cacheDir, in.SessionID, model, in.TranscriptPath)
+	// The cerne command the session's shell runs, from its preToolUse to its
+	// postToolUse: what tells the writer apart among concurrent sessions
+	// (F-0513 crit. 6), as the pending tool_use does on Claude Code.
+	if in.ToolName == "Shell" {
+		var ti struct {
+			Command string `json:"command"`
+		}
+		_ = json.Unmarshal(in.ToolInput, &ti)
+		switch in.Cursor.HookEventName {
+		case "preToolUse":
+			if runsCerne(ti.Command, cerneAnyRe) {
+				seen.Pending = ti.Command
+			}
+		case "postToolUse":
+			seen.Ran = ti.Command
+		}
+	}
+	_ = app.RecordCursorSession(cacheDir, in.SessionID, seen)
 }
 
 func decodeHookInput(r io.Reader) (hookInput, error) {
@@ -253,6 +273,7 @@ var (
 	cerneTakeRe         = regexp.MustCompile(cerneRunPrefix + `handoff\s+take\b`)
 	cerneFeatureStartRe = regexp.MustCompile(cerneRunPrefix + `feature\s+start\b`)
 	cerneCardNewRe      = regexp.MustCompile(cerneRunPrefix + `(?:feature|task|bug|epic)\s+new\b`)
+	cerneAnyRe          = regexp.MustCompile(cerneRunPrefix + `\w`) // any cerne verb (F-0513)
 	helpFlagRe          = regexp.MustCompile(`(^|\s)(-h|--help)(\s|$)`)
 )
 

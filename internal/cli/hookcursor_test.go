@@ -428,6 +428,44 @@ func TestHookCursorRecordsSessionModel(t *testing.T) {
 	}
 }
 
+// TestHookCursorRecordsPendingShellCommand (F-0513 crit. 6): Cursor's
+// preToolUse of its Shell tool reaches the .claude PreToolUse/Bash hook
+// (tool-notes) through the third-party import, which maps Bash to Shell
+// (R-0037). A cerne command there is recorded as the session's pending
+// command; a command that runs no cerne is not; the postToolUse of the same
+// command clears it. pre-tool-use-shell.json is crafted from the logged
+// pre-tool-use-write.json and the logged Shell tool_input.
+func TestHookCursorRecordsPendingShellCommand(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	pre := cursorFixture(t, "pre-tool-use-shell.json", projDir)
+	if out, err := execCerneStdin(t, payloadString(t, pre), "hook", "tool-notes"); err != nil {
+		t.Fatalf("hook tool-notes: %v\noutput: %s", err, out)
+	}
+	if rec := cursorRecord(t, repoDir, cursorSess); rec["pending"] != "cerne push" || rec["pending_at"] == nil {
+		t.Fatalf("record = %v, want cerne push pending with its time", rec)
+	}
+
+	ls := cursorFixture(t, "pre-tool-use-shell.json", projDir)
+	ls["session_id"], ls["conversation_id"] = "c-ls", "c-ls"
+	ls["tool_input"] = map[string]any{"command": "ls -la && echo cerne push", "cwd": ""}
+	if out, err := execCerneStdin(t, payloadString(t, ls), "hook", "tool-notes"); err != nil {
+		t.Fatalf("hook tool-notes: %v\noutput: %s", err, out)
+	}
+	if rec := cursorRecord(t, repoDir, "c-ls"); rec == nil || rec["pending"] != nil {
+		t.Fatalf("a command that runs no cerne: record = %v, want no pending command", rec)
+	}
+
+	post := cursorFixture(t, "post-tool-use-feature-start.json", projDir)
+	post["tool_input"] = map[string]any{"command": "cerne push", "cwd": ""}
+	post["tool_output"] = cursorShellOutput(t, "Sent: 1 document(s).\n")
+	if out, err := execCerneStdin(t, payloadString(t, post), "hook", "bind-work"); err != nil {
+		t.Fatalf("hook bind-work: %v\noutput: %s", err, out)
+	}
+	if rec := cursorRecord(t, repoDir, cursorSess); rec["pending"] != nil {
+		t.Fatalf("after its postToolUse: record = %v, want nothing pending", rec)
+	}
+}
+
 // TestHookCursorSessionRecordFailOpen (F-0513 crit. 1): a session id that
 // could leave the directory records nothing, a record that cannot be written
 // never breaks the hook (the session still binds), and a payload that is not

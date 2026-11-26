@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 	"unicode"
+	"unicode/utf8"
 )
 
 // readCursorSession is the record of sess under cacheDir; false when absent.
@@ -34,10 +35,10 @@ func readCursorSession(t *testing.T, cacheDir, sess string) (cursorSession, bool
 func TestCursorSessionRecord(t *testing.T) {
 	cacheDir := t.TempDir()
 	before := time.Now().Add(-time.Second)
-	if err := RecordCursorSession(cacheDir, "c1", "grok-4.7", ""); err != nil {
+	if err := RecordCursorSession(cacheDir, "c1", CursorSeen{Model: "grok-4.7"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := RecordCursorSession(cacheDir, "c1", "", "/home/u/.cursor/projects/p/agent-transcripts/c1/c1.jsonl"); err != nil {
+	if err := RecordCursorSession(cacheDir, "c1", CursorSeen{TranscriptPath: "/home/u/.cursor/projects/p/agent-transcripts/c1/c1.jsonl"}); err != nil {
 		t.Fatal(err)
 	}
 	rec, ok := readCursorSession(t, cacheDir, "c1")
@@ -51,7 +52,7 @@ func TestCursorSessionRecord(t *testing.T) {
 func TestCursorSessionRejectsUnsafeID(t *testing.T) {
 	cacheDir := t.TempDir()
 	for _, sess := range []string{"", "../x", "a/b", `a\b`, ".."} {
-		if err := RecordCursorSession(cacheDir, sess, "grok-4.7", ""); !errors.Is(err, ErrUnsafeSessionID) {
+		if err := RecordCursorSession(cacheDir, sess, CursorSeen{Model: "grok-4.7"}); !errors.Is(err, ErrUnsafeSessionID) {
 			t.Errorf("RecordCursorSession(%q) = %v, want ErrUnsafeSessionID", sess, err)
 		}
 	}
@@ -71,7 +72,7 @@ func TestCursorSessionCleansModel(t *testing.T) {
 		{"grok\x1b[31m-4.7\n‮", "grok[31m-4.7"},
 		{long, strings.Repeat("é", 64)},
 	} {
-		if err := RecordCursorSession(cacheDir, "c1", tc.in, ""); err != nil {
+		if err := RecordCursorSession(cacheDir, "c1", CursorSeen{Model: tc.in}); err != nil {
 			t.Fatal(err)
 		}
 		if rec, _ := readCursorSession(t, cacheDir, "c1"); rec.Model != tc.want {
@@ -85,6 +86,42 @@ func TestCursorSessionCleansModel(t *testing.T) {
 	got := cursorSessions(cacheDir, time.Now())["c1"].Model
 	if strings.ContainsFunc(got, unicode.IsControl) || len(got) > 128 || !strings.HasPrefix(got, "gpt]8;;x-6é") {
 		t.Fatalf("read-back model = %q, want no control character and at most 128 bytes", got)
+	}
+}
+
+// TestCursorSessionPending (F-0513 crit. 6): the cerne command a session's
+// shell is about to run is recorded with its time, until the postToolUse of
+// that same command clears it; it is cleaned like the model (no control
+// character but the shell's newline and tab, at most 4 KiB) and never read
+// as anything but a command to match.
+func TestCursorSessionPending(t *testing.T) {
+	cacheDir := t.TempDir()
+	before := time.Now().Add(-time.Second)
+	if err := RecordCursorSession(cacheDir, "c1", CursorSeen{Model: "grok-4.7", Pending: "cerne push"}); err != nil {
+		t.Fatal(err)
+	}
+	if rec, _ := readCursorSession(t, cacheDir, "c1"); rec.Pending != "cerne push" || rec.PendingAt.Before(before) || rec.Model != "grok-4.7" {
+		t.Fatalf("record = %+v, want cerne push pending since now", rec)
+	}
+	if err := RecordCursorSession(cacheDir, "c1", CursorSeen{Ran: "ls"}); err != nil {
+		t.Fatal(err)
+	}
+	if rec, _ := readCursorSession(t, cacheDir, "c1"); rec.Pending != "cerne push" {
+		t.Fatalf("after another command ran: pending = %q, want cerne push still", rec.Pending)
+	}
+	if err := RecordCursorSession(cacheDir, "c1", CursorSeen{Ran: "cerne push"}); err != nil {
+		t.Fatal(err)
+	}
+	if rec, _ := readCursorSession(t, cacheDir, "c1"); rec.Pending != "" || !rec.PendingAt.IsZero() {
+		t.Fatalf("after cerne push ran: record = %+v, want nothing pending", rec)
+	}
+	long := "cerne push\x1b[31m‮\ncerne pull " + strings.Repeat("é", 3000)
+	if err := RecordCursorSession(cacheDir, "c1", CursorSeen{Pending: long}); err != nil {
+		t.Fatal(err)
+	}
+	rec, _ := readCursorSession(t, cacheDir, "c1")
+	if !strings.HasPrefix(rec.Pending, "cerne push[31m\ncerne pull é") || len(rec.Pending) > 4096 || !utf8.ValidString(rec.Pending) {
+		t.Fatalf("pending = %q (%d bytes), want no escape or bidi, the newline kept, at most 4096 bytes", rec.Pending[:40], len(rec.Pending))
 	}
 }
 
