@@ -94,11 +94,11 @@ func TestFunnelHumanActsCount(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			agent("epic", "new", "Funil enxuto", "--file", specFile("# Funil enxuto\n\n## Problema\n\nAtos humanos demais por épico.\n\n## Verificação\n\n"+funnelBar), "--facet", "process", "--component", "e2e")
+			agent("epic", "new", "Funil enxuto", "--origin", "agent", "--file", specFile("# Funil enxuto\n\n## Problema\n\nAtos humanos demais por épico.\n\n## Verificação\n\n"+funnelBar), "--facet", "process", "--component", "e2e")
 			human("feature", "approve", "E-0001")
 
 			for i := range n {
-				out := agent("task", "new", fmt.Sprintf("Passo %d", i+1), "--parent", "E-0001", "--facet", "process", "--component", "e2e",
+				out := agent("task", "new", fmt.Sprintf("Passo %d", i+1), "--origin", "agent", "--parent", "E-0001", "--facet", "process", "--component", "e2e",
 					"--file", specFile(fmt.Sprintf("# Passo %d\n\n## Problema\n\nUm passo do funil.\n\n## Verificação\n\n%s", i+1, bars[i])))
 				if !strings.Contains(out, "(approved)") {
 					t.Fatalf("a task is born approved:\n%s", out)
