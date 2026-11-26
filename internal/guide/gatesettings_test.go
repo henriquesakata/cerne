@@ -19,7 +19,7 @@ func TestGuideAnswersTheGateSettings(t *testing.T) {
 	settings := []string{"`gates.approve`", "`gates.accept`", "owner", "never changes them"}
 	marks := []string{"`gates.approve`", "agent's own `cerne feature accept`", "never marked", "CERNE_ACTOR=human", "approved: automatically (no human act)"}
 	for q, wants := range map[string][]string{
-		"can an agent approve or accept on its own": settings,
+		"can an agent approve or accept on its own":     settings,
 		"how does the owner turn the approval gate off": settings,
 		"approved without human review":                 marks,
 		"which cards are marked accepted_via auto":      marks,
