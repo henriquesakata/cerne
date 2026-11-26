@@ -34,6 +34,7 @@ func newFeatureCmd() *cobra.Command {
 	cmd.AddCommand(newTransitionCmds(&dir)...)
 	cmd.AddCommand(newFeatureDeliverCmd(&dir))
 	cmd.AddCommand(newFeatureAcceptCmd(&dir))
+	cmd.AddCommand(newFeatureFeedbackCmd(&dir))
 	cmd.AddCommand(newFeatureLearningsCmd(&dir))
 	cmd.AddCommand(verbs.MarkLocal(newFeatureWaitCmd(&dir))) // blocks for hours: never the chat's (F-0460)
 	cmd.AddCommand(verbs.MarkChat(newErrataCmd(&dir)))
