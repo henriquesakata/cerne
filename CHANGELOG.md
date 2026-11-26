@@ -9,10 +9,331 @@ While cerne is below 1.0.0, a minor version may change behavior: read the
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-11-26
+
+### Highlights
+
+- **Acceptance by risk.** With `[gates] accept = "risk"`, a delivery that
+  touches no sensitive path or facet, won its Gauntlet and has a test for
+  every criterion is accepted on its own at `cerne feature complete`; every
+  other card waits for the human merge and shows why. The gate learns from
+  the owner: one click says whether a delivery needed you, and cerne proposes
+  looser or tighter lists from those answers. The approval and acceptance
+  gates are now on the Settings screen.
+  ([#222](https://github.com/henriquesakata/cerne/pull/222),
+  [#228](https://github.com/henriquesakata/cerne/pull/228),
+  [#229](https://github.com/henriquesakata/cerne/pull/229),
+  [#236](https://github.com/henriquesakata/cerne/pull/236))
+- **A War Room you can leave, watch and close together.** Participants leave
+  explicitly or just observe, the roster shows who is listening right now, and
+  anyone can write a shared minutes draft that the facilitator closes the room
+  with. Room credentials no longer travel on the command line.
+  ([#213](https://github.com/henriquesakata/cerne/pull/213),
+  [#214](https://github.com/henriquesakata/cerne/pull/214),
+  [#215](https://github.com/henriquesakata/cerne/pull/215),
+  [#216](https://github.com/henriquesakata/cerne/pull/216),
+  [#217](https://github.com/henriquesakata/cerne/pull/217),
+  [#218](https://github.com/henriquesakata/cerne/pull/218))
+- **Images in the Backlog chat.** Paste, drop or pick a screenshot and the
+  agent reads it in that turn and the next ones, on Claude Code, Codex and
+  Copilot CLIs and on an Anthropic or OpenAI API key.
+  ([#235](https://github.com/henriquesakata/cerne/pull/235),
+  [#237](https://github.com/henriquesakata/cerne/pull/237))
+- **The agent hears when you move its card.** When a human approves,
+  accepts, rejects, reverts or supersedes a card, every agent session that
+  worked on it sees the new state at its next turn, without asking.
+  ([#187](https://github.com/henriquesakata/cerne/pull/187))
+- **More places to run cerne.** Arch Linux gets the `cerne-bin` package on
+  the AUR and Windows a Scoop bucket, both updated by each stable release, and
+  `cerne hook install --provider cursor` sets up Cursor's sandbox and MCP
+  files on the first try.
+  ([#201](https://github.com/henriquesakata/cerne/pull/201),
+  [#202](https://github.com/henriquesakata/cerne/pull/202),
+  [#220](https://github.com/henriquesakata/cerne/pull/220),
+  [#221](https://github.com/henriquesakata/cerne/pull/221))
+
 ### Added
 
-- Arch Linux: the `cerne-bin` package on the AUR, with the release binary checked against `SHA256SUMS`, updated by each stable release. `cerne update` leaves a binary in `/usr/bin` to the system package manager and prints the AUR helper command.
-- Windows: a Scoop manifest in the `henriquesakata/scoop-bucket` bucket (`scoop bucket add henriquesakata https://github.com/henriquesakata/scoop-bucket`, `scoop install henriquesakata/cerne`), updated by each stable release. `cerne update` leaves a Scoop install to `scoop update cerne`.
+- Card notices. When a human approves, accepts, rejects, reverts or
+  supersedes a card, every session on this machine that worked on it gets a
+  notice, the same line `cerne feature wait` prints. The session sees it once,
+  at its next session start, prompt or tool call; the actor's own session is
+  skipped, and a notice older than 24 hours is dropped.
+  ([#187](https://github.com/henriquesakata/cerne/pull/187))
+- `cerne reference check [R-…]` requests each current external reference and
+  records the date, the HTTP status and a hash of the visible text: ok,
+  changed, gone or transient. `cerne reference keep R-…` confirms a changed
+  source still holds. `cerne lint` flags a gone source as `reference-gone`,
+  reading only the recorded check: lint, pull and push never touch the
+  network.
+  ([#184](https://github.com/henriquesakata/cerne/pull/184))
+- Archived copies of public sources. With the human-only setting
+  `references.archive` on (off by default), `cerne reference new` and
+  `cerne reference archive [R-…] [--dry-run]` keep the link of a dated Wayback
+  Machine copy, the capture nearest the day the reference was registered. Only
+  the URL is sent, and never for an internal or private host, a URL with
+  credentials or a secret, a webhook or a page an anonymous request cannot
+  read. `--no-archive` and `reference archive --opt-out` keep a URL out.
+  `cerne show`, `reference list`, `reference check` and `reference-gone` carry
+  the copy's link.
+  ([#186](https://github.com/henriquesakata/cerne/pull/186))
+- `cerne links suggest | pending | accept | reject`: the configured LLM
+  suggests the relations a document mentions in prose without a link, each
+  with a literal excerpt, and a person accepts or rejects each one. An
+  accepted relation becomes a link in the graph, in `cerne context` and in
+  `cerne lint`. It spends tokens, so the project owner turns it on
+  (`links.suggest`, human-only, off by default), and it shows an estimate
+  before it sends anything.
+  ([#191](https://github.com/henriquesakata/cerne/pull/191),
+  [#192](https://github.com/henriquesakata/cerne/pull/192))
+- `cerne import --agent --ingest` keeps an imported entity only with a
+  literal excerpt of its source as evidence; the rest is left out and listed
+  with the reason, and `cerne show` prints the excerpt.
+  ([#183](https://github.com/henriquesakata/cerne/pull/183))
+
+- Acceptance by risk. With `[gates] accept = "risk"`, `cerne feature complete`
+  accepts a delivery on its own only when no changed file matches
+  `gates.risk_human_paths`, the card carries no facet of
+  `gates.risk_human_facets`, its last Gauntlet round is a win against a bar
+  that is not exempt, and every numbered criterion has a marked test. A card
+  with no facet, or a diff that cannot be read, does not pass. The accepted
+  card goes to done in the same commit, marked "Accepted as low risk" with the
+  measurements; a held card prints one line per failed condition, keeps those
+  lines as a badge on the kanban and its page, and waits for the merge as
+  under `accept = "merge"`. Both lists are human-only settings.
+  ([#228](https://github.com/henriquesakata/cerne/pull/228),
+  [#236](https://github.com/henriquesakata/cerne/pull/236))
+- The risk gate learns from the owner.
+  `cerne feature feedback <id> --should-have-asked | --not-needed` (and the
+  same buttons on the feature page) records whether a delivery needed you;
+  *should have asked* adds the folders and facets you name to the lists at
+  once. For the first `gates.risk_calibration` deliveries (20 by default, 0
+  turns it off) every delivery is held and the merged card asks "Did this
+  delivery need you?", listed by `cerne next` under RISK CALIBRATION. After
+  `gates.risk_relax_after` (3) *not needed* answers on one pattern, or a fix or
+  revert of a low-risk card, `cerne next` shows a proposal under GATE
+  PROPOSALS, applied or dismissed in Settings.
+  `cerne feature set <id> --accept-mode human|auto|gate` pins one card. Every
+  one of these writes is the owner's.
+  ([#229](https://github.com/henriquesakata/cerne/pull/229))
+- `gates.approve` (`human` | `auto`) and `gates.accept` (`human` | `merge` |
+  `risk` | `auto`) are on the Settings screen and in `cerne settings set`,
+  human-only. A card that an agent approved under `approve = "auto"`, or that
+  reached done under `accept = "auto"`, is marked: `cerne show` says
+  `approved: automatically (no human act)`, and the kanban and the feature page
+  show "Approved/Accepted without human review".
+  ([#222](https://github.com/henriquesakata/cerne/pull/222))
+- War Room: `cerne room leave <room>` revokes your session and keeps the
+  history, and a room you have not joined opens in the UI as "Observing";
+  joining is only needed to post. The roster shows who is listening and when
+  each participant was last active, and `cerne room list` prints
+  `<N> participants (<L> listening)`.
+  ([#214](https://github.com/henriquesakata/cerne/pull/214),
+  [#216](https://github.com/henriquesakata/cerne/pull/216))
+- War Room shared minutes: `cerne room minutes draft <room> --minutes …`
+  saves a draft any participant or the facilitator can update,
+  `cerne room minutes show <room> --draft` prints it, and
+  `cerne room close <room> --use-draft` closes with it. The UI shows the open
+  proposals and decision requests to everyone, the latest draft with its
+  author, and lets the facilitator close with it in one click.
+  ([#218](https://github.com/henriquesakata/cerne/pull/218))
+- War Room CLI: `cerne room say` reads the message from stdin (`-`) or
+  `--file`; `room read` and `room watch` show local `HH:MM` times and the
+  facilitation events; `cerne room watch --once --settle <duration>` (default
+  `1.5s`) gathers a whole burst of messages before it exits.
+  ([#213](https://github.com/henriquesakata/cerne/pull/213),
+  [#217](https://github.com/henriquesakata/cerne/pull/217))
+- `cerne room facilitator reset <room>` gives the facilitator role back when
+  its browser lost it, so the room can still be closed. The UI asks before it
+  hands the facilitation to someone else.
+  ([#212](https://github.com/henriquesakata/cerne/pull/212))
+- Images in the Backlog chat: paste, drop on the panel or pick a file (PNG,
+  JPEG, WebP or GIF, 10 MB each, 5 per message). The agent sees them in that
+  turn and the following ones of the conversation. They stay in the project's
+  local cache, never in the backend or `.docs/`, and go away with the
+  conversation. Works on `claude-cli`, `codex-cli`, `copilot-cli` and byo-key
+  Anthropic and OpenAI; other modes disable the button and say why.
+  ([#235](https://github.com/henriquesakata/cerne/pull/235),
+  [#237](https://github.com/henriquesakata/cerne/pull/237))
+- Cursor: `cerne hook install --provider cursor` adds cerne's cache folders to
+  `.cursor/sandbox.json` and the `cerne mcp` server to `.cursor/mcp.json`,
+  keeping your own keys; with `--network` it allows only the remote backend's
+  host. A file it cannot merge is left alone, with the block to add by hand.
+  A clone or sync blocked by Cursor's sandbox now says so and names the fix,
+  and `cerne harness` lists Cursor's MCP servers.
+  ([#220](https://github.com/henriquesakata/cerne/pull/220))
+- Cursor: a document written from a Cursor agent records `cursor` and its
+  model as the author (never a guessed model), and Cursor sessions show in
+  the Agents panel.
+  ([#221](https://github.com/henriquesakata/cerne/pull/221))
+- `cerne idea promote <id>` takes `--facet`, `--component` and
+  `--capability`, so the card is classified in the same command.
+  ([#206](https://github.com/henriquesakata/cerne/pull/206))
+- `cerne idea unpromote <I-id>` (and "Undo" in the UI) undoes a promotion:
+  it rejects the candidate the promote created and returns the idea to active.
+  A mirrored issue stays open.
+  ([#207](https://github.com/henriquesakata/cerne/pull/207))
+- `--capability` on `cerne feature|epic|task new` links the capability in the
+  same commit, and `cerne feature capability` takes a comma-separated batch.
+  ([#219](https://github.com/henriquesakata/cerne/pull/219))
+- Clarifications can carry the author's proposed answers: the recommended one
+  first with a badge, "Other answer" last, in the UI and in
+  `cerne clarify list`/`answer --pick`. `cerne lint` warns when a question
+  marks more than one answer as recommended.
+  ([#223](https://github.com/henriquesakata/cerne/pull/223))
+- `cerne feature set <id> --origin human|agent [--on-behalf "<quote>"]`
+  corrects who a card came from, as a human act, recorded as its own event.
+  ([#226](https://github.com/henriquesakata/cerne/pull/226))
+- Arch Linux: the `cerne-bin` package on the AUR, with the release binary
+  checked against `SHA256SUMS`, updated by each stable release. `cerne update`
+  leaves a binary in `/usr/bin` to the system package manager and prints
+  `yay -Syu cerne-bin`.
+  ([#201](https://github.com/henriquesakata/cerne/pull/201))
+- Windows: a Scoop manifest in the `henriquesakata/scoop-bucket` bucket
+  (`scoop bucket add henriquesakata https://github.com/henriquesakata/scoop-bucket`,
+  `scoop install henriquesakata/cerne`), updated by each stable release.
+  `cerne update` leaves a Scoop install to `scoop update cerne`.
+  ([#202](https://github.com/henriquesakata/cerne/pull/202))
+- INSTALL.md shows how to turn on shell completion in bash, zsh, fish and
+  PowerShell, writing only inside your home.
+  ([#198](https://github.com/henriquesakata/cerne/pull/198))
+
+### Changed
+
+- In an agent's shell (`CERNE_ACTOR=agent`), `cerne feature|bug|epic|task new`
+  asks where the card came from: `--on-behalf "<the human's words>"` when a
+  person asked for it, or `--origin agent` when the idea is the agent's. The
+  demo, the import, the UI and the Backlog chat create cards as before.
+  ([#227](https://github.com/henriquesakata/cerne/pull/227))
+- `cerne idea promote` from the CLI refuses to create a card with no tag, or
+  with no capability in a project that has a capability taxonomy, and names
+  the flags that fix it; `--allow-incomplete` creates it anyway. The UI keeps
+  its behavior.
+  ([#206](https://github.com/henriquesakata/cerne/pull/206))
+- `CERNE_LLM_API_KEY` is read only for Anthropic, and only for an `sk-ant-`
+  key (any value with a custom `base_url`). The `openai` provider reads only
+  `OPENAI_API_KEY`.
+  ([#239](https://github.com/henriquesakata/cerne/pull/239))
+- `cerne ui` refuses a write that does not come from its own page (no
+  `Origin`, or another host's): a local script can no longer approve, accept,
+  report a bug as a human or change a human-only setting through it. The UI
+  and the `cerne` commands that talk to a running panel are unaffected.
+  ([#234](https://github.com/henriquesakata/cerne/pull/234))
+- War Room credentials stay off the command line. In an agent session,
+  `cerne room join` stores the session (0600, in the cache) and `say`,
+  `watch`, `propose` and `request-decision` find it, by `--nick` when you
+  joined more than one; elsewhere use `CERNE_ROOM_SESSION` and
+  `CERNE_ROOM_FACILITATOR`. The printed examples and the guide carry no token.
+  ([#215](https://github.com/henriquesakata/cerne/pull/215))
+- `cerne next` shows at most 5 findings per lint rule; `--all` shows every
+  one, and `--json` is never capped.
+  ([#219](https://github.com/henriquesakata/cerne/pull/219))
+- Every `claude -p` call cerne makes skips Claude Code's session-title
+  request, which resent the whole prompt: a `claude-cli` call costs about half
+  the tokens it did.
+  ([#188](https://github.com/henriquesakata/cerne/pull/188))
+- Refusals and next steps point to the file you edit,
+  `.docs/current/features/<id>-<slug>/<doc>`, between `cerne pull` and
+  `cerne push`, instead of a path inside the backend.
+  ([#197](https://github.com/henriquesakata/cerne/pull/197))
+- A repeated `cerne feature accept` on a done card exits 0 with
+  "already done; nothing changed".
+  ([#195](https://github.com/henriquesakata/cerne/pull/195))
+
+### Fixed
+
+- With `mirror.close_on = "merge"`, accepting a card no longer closes its
+  GitHub, GitLab or Gitea issue before the PR merges: the issue gets the
+  `cerne:done` label and closes on the first mirror round after the merge. The
+  accept warning says whether the PR is still open or was closed without merge.
+  ([#210](https://github.com/henriquesakata/cerne/pull/210))
+- Undoing an idea's promotion through `cerne idea unlink` or a reject no longer
+  leaves the card driving the mirrored issue, or closes it.
+  ([#207](https://github.com/henriquesakata/cerne/pull/207))
+- The commit hooks read the project and branch of the tree that commits: in a
+  linked worktree they no longer follow the main checkout's `.cernerc`, so
+  `mirror.close_on = "merge"` writes `Closes:` as it should.
+  ([#209](https://github.com/henriquesakata/cerne/pull/209))
+- `cerne search` snippets no longer quote the frontmatter and the template's
+  HTML comments.
+  ([#199](https://github.com/henriquesakata/cerne/pull/199))
+- A `<!--` quoted inside code in a spec or result no longer hides the rest of
+  the document: the `Barra:` line, the `## Gauntlet` section and the cost stamp
+  read right.
+  ([#203](https://github.com/henriquesakata/cerne/pull/203),
+  [#205](https://github.com/henriquesakata/cerne/pull/205))
+- `cerne import --agent` leaves out the files cerne itself installs (the guide
+  copies, the hooks, the learned skills and cerne's block in `AGENTS.md` and
+  `GEMINI.md`).
+  ([#190](https://github.com/henriquesakata/cerne/pull/190))
+- `cerne accept queue` prints English in every project, in text and in
+  `--json`.
+  ([#196](https://github.com/henriquesakata/cerne/pull/196))
+- An unknown facet is refused in English with the valid list, and an unknown
+  capability points to `cerne capability list --tree`.
+  ([#208](https://github.com/henriquesakata/cerne/pull/208),
+  [#211](https://github.com/henriquesakata/cerne/pull/211))
+- Under `accept = "auto"`, `cerne feature complete` stamps the cost on the
+  card it carries to done, instead of warning with a command that cannot work.
+  ([#231](https://github.com/henriquesakata/cerne/pull/231))
+- A provider is never handed another vendor's API key: an `sk-ant-` key in
+  `CERNE_LLM_API_KEY` no longer reaches `api.openai.com`, and Settings no
+  longer reports it as the OpenAI key.
+  ([#238](https://github.com/henriquesakata/cerne/pull/238))
+- The clarification popover takes its name from the question and closes with
+  Esc.
+  ([#232](https://github.com/henriquesakata/cerne/pull/232))
+- `docs/first-week.md` and the README Quickstart match what the release prints
+  and asks, including which `.claude/` files to commit.
+  ([#194](https://github.com/henriquesakata/cerne/pull/194))
+
+### Upgrading
+
+Everything not listed here needs no action.
+
+- **Update the binary.** Run `cerne update` in a project, or
+  `brew upgrade henriquesakata/tap/cerne`, or run the install script again, or
+  `go install github.com/henriquesakata/cerne/cmd/cerne@v0.16.0` (details in
+  INSTALL.md, *Updating*). `cerne --version` then prints `cerne 0.16.0`. A
+  `cerne ui` that is already open offers to restart into the new binary.
+- **Hooks and the authoring guide changed.** They renew on their own at the
+  next agent session start when nobody edited them; if you did, run
+  `cerne hook install` and `cerne skill install`. On Cursor, run
+  `cerne hook install --provider cursor` (add `--network` for a remote
+  backend) to get the sandbox and MCP files.
+- **Agents creating cards pass an origin.** Scripts or agents that run
+  `cerne feature|bug|epic|task new` with `CERNE_ACTOR=agent` add
+  `--on-behalf "<quote>"` or `--origin agent`.
+- **`cerne idea promote` needs the tags.** Pass `--facet`/`--component` (and
+  `--capability` when the project has a taxonomy), or `--allow-incomplete`.
+- **OpenAI key.** If your OpenAI key is in `CERNE_LLM_API_KEY`, move it to
+  `OPENAI_API_KEY`; the error and Settings say so until you do.
+- **Scripts that write through `cerne ui`.** A `curl` to its API without the
+  page's `Origin` now gets 403; use the `cerne` commands instead.
+- **`cerne accept queue --json`.** The Gauntlet outcome is `win`, `loss`,
+  `tie` or `exempt`, and an absent field reads `not reported`.
+- **Git submodules.** A submodule with no `.cernerc` of its own no longer
+  borrows the superproject's project in the commit hooks; they do nothing
+  there.
+- **Acceptance by risk is opt-in.** Set `gates.accept` to `risk` in Settings ›
+  Process or `cerne settings set`. For the first 20 deliveries
+  (`gates.risk_calibration`) it holds every card and asks you to answer.
+
+### Known limitations
+
+- `cerne ui` trusts the `Origin` header as the page's proof, so a local
+  process that forges it still passes; the facilitator reset route still
+  accepts a write with no `Origin`, because `cerne room facilitator reset`
+  calls it without one.
+- The stored War Room session guards against accidental exposure (process
+  list, shell history, transcripts), not against another process of the same
+  user reading the cache.
+- Images in the Backlog chat do not work on `cursor-cli`, `gemini-cli` or the
+  remote `cerne serve`.
+- Going back to an older binary while a War Room is open turns the sessions
+  revoked by `cerne room leave` valid again.
+
+**Full changelog:** [v0.15.2...v0.16.0](https://github.com/henriquesakata/cerne/compare/v0.15.2...v0.16.0)
 
 ## [0.15.2] - 2026-11-22
 
@@ -1001,7 +1322,8 @@ Everything not listed here needs no action.
 First release published on GitHub. Versions 0.1.0 to 0.12.0 were released
 before the move and have no public release notes.
 
-[Unreleased]: https://github.com/henriquesakata/cerne/compare/v0.15.2...HEAD
+[Unreleased]: https://github.com/henriquesakata/cerne/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/henriquesakata/cerne/compare/v0.15.2...v0.16.0
 [0.15.2]: https://github.com/henriquesakata/cerne/compare/v0.15.1...v0.15.2
 [0.15.1]: https://github.com/henriquesakata/cerne/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/henriquesakata/cerne/compare/v0.14.3...v0.15.0
