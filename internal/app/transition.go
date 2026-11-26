@@ -153,17 +153,19 @@ func TransitionFeatureForce(repoDir, projDir, id string, action domain.Action, b
 	return out, err
 }
 
-// TransitionFeatureOp is TransitionFeature recording its phases on the
-// caller's Op (F-0149): the server passes the request's Op so the transition's
-// lock_wait/fetch/push story correlates with the HTTP log line.
-func TransitionFeatureOp(op *telemetry.Op, repoDir, projDir, id string, action domain.Action, by, reason string, d *Delivery) (TransitionOutcome, error) {
-	return TransitionFeatureOpForce(op, repoDir, projDir, id, action, by, reason, d, false)
+// TransitionFeatureFromUI is the cerne ui form's transition. It records its
+// phases on the caller's Op (F-0149): the server passes the request's Op so
+// the transition's lock_wait/fetch/push story correlates with the HTTP log
+// line. The person at the form is the human whatever env the server runs in,
+// so no approve or accept through it is marked auto (F-0515).
+func TransitionFeatureFromUI(op *telemetry.Op, repoDir, projDir, id string, action domain.Action, by, reason string, d *Delivery) (TransitionOutcome, error) {
+	return transitionFeature(op, repoDir, projDir, id, action, by, reason, d, false, nil, true)
 }
 
-// TransitionFeatureOpForce is TransitionFeatureOp carrying the F-0257 guard
-// override.
+// TransitionFeatureOpForce is TransitionFeature recording its phases on op,
+// carrying the F-0257 guard override.
 func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, action domain.Action, by, reason string, d *Delivery, force bool) (TransitionOutcome, error) {
-	return transitionFeature(op, repoDir, projDir, id, action, by, reason, d, force, nil)
+	return transitionFeature(op, repoDir, projDir, id, action, by, reason, d, force, nil, false)
 }
 
 // mergeAccept is an accept that transcribes the human's merge of the delivery
@@ -181,8 +183,8 @@ func (m *mergeAccept) payload() map[string]string {
 const mergeActor = "human"
 
 // transitionFeature is the one transition path; m is non-nil only for an
-// accept on merge (F-0488).
-func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action domain.Action, by, reason string, d *Delivery, force bool, m *mergeAccept) (TransitionOutcome, error) {
+// accept on merge (F-0488), fromUI only for the cerne ui form (F-0515).
+func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action domain.Action, by, reason string, d *Delivery, force bool, m *mergeAccept, fromUI bool) (TransitionOutcome, error) {
 	if m != nil && action != domain.ActionAccept {
 		return TransitionOutcome{}, fmt.Errorf("an acceptance on merge is an accept, not %s", action)
 	}
@@ -325,7 +327,7 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 			f.Reason = reason
 		case domain.ActionApprove:
 			// F-0515: a person's re-approval clears an agent's earlier mark.
-			f.ApprovedVia = approveVia(gates)
+			f.ApprovedVia = autoVia(gates.ApproveGate(), agentAct(fromUI))
 		case domain.ActionRevert:
 			// An acceptance undone (F-0499) is no longer an acceptance on merge,
 			// nor is an approval undone one without a human act (F-0515).
@@ -475,7 +477,7 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 				return "", err
 			}
 			// The children ride the parent's approve (T-0007), in this commit.
-			if casc, err = cascadeApprove(repoDir, projDir, id, gauntletOn); err != nil {
+			if casc, err = cascadeApprove(repoDir, projDir, id, gauntletOn, agentAct(fromUI)); err != nil {
 				return "", err
 			}
 		}

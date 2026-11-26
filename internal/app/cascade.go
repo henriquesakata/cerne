@@ -34,8 +34,9 @@ type cascaded struct {
 // kept, the plan scaffolded; every other candidate child stays, listed with
 // its impediment codes. An actor the approve's human gate refuses takes no
 // child along (crit. 2), and the outcome says so: the CLI refuses the parent
-// first, and the UI calls the core with no gate of its own.
-func cascadeApprove(repoDir, projDir, parentID string, gauntletOn bool) (cascaded, error) {
+// first, and the UI calls the core with no gate of its own. A child an
+// agent's act carries under the auto gate is marked like its parent (F-0515).
+func cascadeApprove(repoDir, projDir, parentID string, gauntletOn, agentAct bool) (cascaded, error) {
 	children, err := childrenOf(repoDir, parentID, func(c store.Feature) bool { return c.State == cascadeFrom[domain.ActionApprove] })
 	if err != nil {
 		return cascaded{}, err
@@ -58,7 +59,7 @@ func cascadeApprove(repoDir, projDir, parentID string, gauntletOn bool) (cascade
 			continue
 		}
 		payload := map[string]string{"cascade_from": parentID}
-		if c.ApprovedVia = approveVia(projectGates(projDir)); c.ApprovedVia != "" {
+		if c.ApprovedVia = autoVia(projectGates(projDir).ApproveGate(), agentAct); c.ApprovedVia != "" {
 			payload["via"] = c.ApprovedVia // F-0515
 		}
 		if !gauntletOn {

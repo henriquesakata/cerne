@@ -91,7 +91,7 @@ func AcceptMerged(repoDir, projDir string, cfg project.Config, ids []string) ([]
 			continue
 		}
 		op := telemetry.StartOp("backend")
-		out, err := transitionFeature(op, repoDir, projDir, f.ID, domain.ActionAccept, "", "", nil, false, m)
+		out, err := transitionFeature(op, repoDir, projDir, f.ID, domain.ActionAccept, "", "", nil, false, m, false)
 		if err != nil {
 			op.End("error")
 			c.Line = fmt.Sprintf("%s: the PR merged but the accept failed: %v", f.ID, err)

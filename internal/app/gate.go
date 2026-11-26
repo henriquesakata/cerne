@@ -32,14 +32,19 @@ func CheckHumanGate(gate string) error {
 	return nil
 }
 
-// approveVia is an approve's mark (F-0515): "auto" when an agent crosses the
-// approve gate set to auto; "" when a person approves, whatever the gate.
-func approveVia(g project.GatesConfig) string {
-	if g.ApproveGate() == project.GateAuto && isAgentActor(actorEnv()) {
+// autoVia is the mark of an act crossing gate (F-0515): "auto" when an agent
+// crosses it set to auto; "" for a person's act, whatever the gate.
+func autoVia(gate string, agentAct bool) string {
+	if gate == project.GateAuto && agentAct {
 		return project.GateAuto
 	}
 	return ""
 }
+
+// agentAct reports whether a transition is an agent's act: the environment
+// declares an agent and the act does not come from the cerne ui form, whose
+// user is the person whatever env the server runs in (F-0515).
+func agentAct(fromUI bool) bool { return !fromUI && isAgentActor(actorEnv()) }
 
 // CheckHumanSetting refuses an agent actor on a setting only a human writes
 // (F-0392). Fail-open like CheckHumanGate; the UI server does not call it.
