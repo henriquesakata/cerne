@@ -9,6 +9,7 @@ import { DeliveryPendings } from './Pendings'
 import FeatureAgents from './FeatureAgents'
 import Tag from './Tag'
 import GateBadges from './GateBadges'
+import { AcceptModeControl, RiskFeedback } from './RiskFeedback'
 import {
   fetchArtifactText,
   fetchFeature,
@@ -353,6 +354,9 @@ function FeatureView({ id }: { id: string }) {
         </p>
         {/* What the risk gate measured to accept it (F-0516), in the open. */}
         {f.accepted_via === 'risk' && f.accepted_risk && <p className="feature-note feature-accepted-risk">{t.feature.acceptedRisk(f.accepted_risk)}</p>}
+        {/* The owner answers the risk gate (F-0518) and marks a live card. */}
+        {detail.risk_decision && <RiskFeedback feature={f} decision={detail.risk_decision} onAnswered={load} />}
+        {(f.state === 'candidate' || f.state === 'approved' || f.state === 'in_development') && <AcceptModeControl feature={f} onChanged={load} />}
         {f.parent && (
           <p className="feature-note">
             {t.feature.epicLabel}{' '}

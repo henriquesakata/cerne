@@ -502,3 +502,34 @@ describe('Kanban — selo do aceite por baixo risco (F-0516)', () => {
     })
   }
 })
+
+// F-0518 crit. 14: the owner's mark shows on the card, in both languages;
+// passing alone is the warning badge, a card with no mark shows neither.
+describe('Kanban — a marca de aceite do dono (F-0518)', () => {
+  for (const [lang, human, auto] of [
+    ['pt-BR', 'Pede validação humana', 'Pode passar sozinho'],
+    ['en', 'Needs human validation', 'May pass alone'],
+  ] as const) {
+    it(`${lang}: a marca no card`, async () => {
+      localStorage.setItem('cerne-lang', lang)
+      payload = {
+        ...state(),
+        features: [
+          feature('F-0001', { state: 'in_development', accept_mode: 'human' }),
+          feature('F-0002', { state: 'approved', accept_mode: 'auto' }),
+          feature('F-0003', { state: 'approved' }),
+        ],
+      }
+      render(
+        <I18nProvider>
+          <Kanban />
+        </I18nProvider>,
+      )
+      await waitFor(() => expect(cardOf('F-0001')).toBeInTheDocument())
+      expect(cardOf('F-0001')).toHaveTextContent(human)
+      expect(cardOf('F-0002')?.querySelector('.badge-auto')).toHaveTextContent(auto)
+      expect(cardOf('F-0003')).not.toHaveTextContent(human)
+      expect(cardOf('F-0003')).not.toHaveTextContent(auto)
+    })
+  }
+})

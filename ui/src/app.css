@@ -4140,6 +4140,22 @@ details.backlinks-section > summary:focus-visible { outline: 2px solid var(--fg)
 .settings-confirm-no:focus-visible,
 .settings-confirm-yes:focus-visible { outline: 2px solid var(--fg); outline-offset: 1px; }
 .settings-saved { margin: 0.4rem 0 0; font-size: 0.85rem; color: var(--fg); }
+/* F-0518: what the risk gate learned, beside its two lists. */
+.risk-gate-panel { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+.risk-gate-panel h3 { margin: 0 0 0.5rem; font-size: 1rem; }
+.risk-gate-panel h4 { margin: 1rem 0 0.4rem; font-size: 0.9rem; }
+.risk-gate-stats { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; margin: 0.6rem 0; font-size: 0.9rem; }
+.risk-gate-stats dd { margin: 0; }
+.risk-gate-proposals, .risk-gate-signals { margin: 0; padding-left: 1.1rem; font-size: 0.9rem; }
+.risk-gate-proposals > li + li { margin-top: 0.75rem; }
+.risk-gate-signals { color: var(--muted); font-size: 0.85rem; }
+/* F-0518: the owner's answer to the risk gate on the feature page. */
+.risk-feedback-form { display: flex; flex-direction: column; align-items: flex-start; gap: 0.35rem; margin: 0.5rem 0 0; font-size: 0.9rem; }
+.risk-feedback-form textarea { width: min(100%, 32rem); font: inherit; }
+.risk-feedback-form fieldset { border: 0; margin: 0; padding: 0; }
+.risk-feedback-title { margin: 0; font-weight: 600; }
+.risk-feedback-mark { display: block; }
+.risk-feedback-ask button, .risk-feedback-change { font: inherit; font-size: 0.85rem; margin-left: 0.4rem; }
 .settings-group-head { margin-top: 1rem; }
 .settings-group-title { margin: 0; font-size: 1rem; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--fg); }
 .settings-write-chip { font-size: 0.72rem; }

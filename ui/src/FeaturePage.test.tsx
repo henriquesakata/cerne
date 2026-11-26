@@ -10,7 +10,9 @@ import {
   fetchFeature,
   fetchPendings,
   generateDiagram,
+  postRiskFeedback,
   postTransition,
+  putAcceptMode,
   roastPlan,
   roastSpec,
   saveFeatureDoc,
@@ -41,6 +43,7 @@ const detail = (state: FeatureState): FeatureDetail => ({
 let payload: FeatureDetail = detail('candidate')
 let llmMode: LLMMode = 'byo-key'
 let pendings: Pending[] = []
+let acceptGate = 'human'
 
 vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api')>()),
@@ -68,6 +71,9 @@ vi.mock('./api', async (importOriginal) => ({
   })),
   fetchArtifactText: vi.fn(async () => '# Roast da spec\n\n- [alta] achado'),
   unpromoteIdea: vi.fn(),
+  postRiskFeedback: vi.fn(async () => ({})),
+  putAcceptMode: vi.fn(async () => ({})),
+  fetchSettings: vi.fn(async () => ({ settings: [{ id: 'gates.accept', value: acceptGate }], files: {} })),
 }))
 
 // Versão ao vivo controlável (F-0300): a página re-busca quando ela muda.
@@ -1369,5 +1375,112 @@ describe('FeaturePage — aceite por baixo risco (F-0516)', () => {
     render(<FeaturePage id="F-0221" />)
     await screen.findByText('Feature de teste')
     expect(screen.queryByText(/baixo risco/)).toBeNull()
+  })
+})
+
+// F-0518: the owner answers the risk gate from the card's page.
+describe('FeaturePage — o dono responde ao gate de risco (F-0518)', () => {
+  const decided = (over: Partial<Feature>, decision: FeatureDetail['risk_decision']): FeatureDetail => {
+    const d = detail('done')
+    return { ...d, feature: { ...d.feature, facets: ['code'], ...over }, risk_decision: decision }
+  }
+  const low = { risk: 'low' as const, files: ['internal/x/x.go'], dirs: ['internal/x/**'], facets: [], at: '2026-11-26T00:00:00Z' }
+  const held = { ...low, risk: 'held' as const, files: ['go.mod'], dirs: ['go.mod'] }
+  const show = async (lang: string) => {
+    localStorage.setItem('cerne-lang', lang)
+    render(
+      <I18nProvider>
+        <FeaturePage id="F-0221" />
+      </I18nProvider>,
+    )
+    await screen.findByText('Feature de teste')
+  }
+  beforeEach(() => {
+    vi.mocked(postRiskFeedback).mockClear()
+    vi.mocked(putAcceptMode).mockClear()
+    acceptGate = 'human'
+  })
+
+  // F-0518 crit. 1
+  for (const [lang, should, notNeeded] of [
+    ['pt-BR', 'Devia ter me chamado', 'Não precisava de mim'],
+    ['en', 'Should have asked me', 'Did not need me'],
+  ] as const) {
+    it(`${lang}: a ação que discorda de cada decisão`, async () => {
+      payload = decided({ accepted_via: 'risk' }, low)
+      await show(lang)
+      expect(screen.getByRole('button', { name: should })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: notNeeded })).toBeNull()
+      cleanup()
+      payload = decided({ accepted_via: 'merge' }, held)
+      await show(lang)
+      expect(screen.getByRole('button', { name: notNeeded })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: should })).toBeNull()
+    })
+  }
+
+  // F-0518 crit. 1
+  it('o card aceito à mão não pede resposta nenhuma', async () => {
+    payload = decided({ accepted_via: '' }, undefined)
+    await show('pt-BR')
+    expect(screen.queryByRole('button', { name: 'Devia ter me chamado' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Não precisava de mim' })).toBeNull()
+  })
+
+  // F-0518 crit. 5
+  it('«Devia ter me chamado» mostra as pastas e as facetas para marcar, com o motivo opcional', async () => {
+    payload = decided({ accepted_via: 'risk' }, low)
+    await show('pt-BR')
+    fireEvent.click(screen.getByRole('button', { name: 'Devia ter me chamado' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'internal/x/**' }))
+    fireEvent.change(screen.getByLabelText('Motivo (opcional)'), { target: { value: 'mexeu no parser' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar' }))
+    await waitFor(() => expect(vi.mocked(postRiskFeedback)).toHaveBeenCalledWith('F-0221', 'should_have_asked', 'mexeu no parser', ['internal/x/**'], []))
+  })
+
+  // F-0518 crit. 12
+  for (const [lang, question, yes, no] of [
+    ['pt-BR', 'Esta entrega precisava de você?', 'Precisava', 'Não precisava'],
+    ['en', 'Did this delivery need you?', 'It did', 'It did not'],
+  ] as const) {
+    it(`${lang}: na calibração, a pergunta no card aceito no merge`, async () => {
+      payload = decided({ accepted_via: 'merge' }, { ...held, calibration: true, would: 'low' })
+      await show(lang)
+      expect(screen.getByText(question)).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: no }))
+      fireEvent.click(screen.getByRole('button', { name: lang === 'en' ? 'Send' : 'Enviar' }))
+      await waitFor(() => expect(vi.mocked(postRiskFeedback)).toHaveBeenCalledWith('F-0221', 'not_needed', '', [], []))
+      expect(screen.queryByText(yes)).not.toBeNull()
+    })
+  }
+
+  // F-0518 crit. 12
+  it('na calibração, um card ainda não aceito não pergunta', async () => {
+    payload = { ...decided({}, { ...held, calibration: true, would: 'low' }), feature: { ...detail('implemented').feature } }
+    await show('en')
+    expect(screen.queryByText('Did this delivery need you?')).toBeNull()
+  })
+
+  // F-0518 crit. 14
+  for (const [lang, label, human] of [
+    ['pt-BR', 'Aceite', 'Pede validação humana'],
+    ['en', 'Acceptance', 'Needs human validation'],
+  ] as const) {
+    it(`${lang}: a marca de aceite na página de um card vivo`, async () => {
+      acceptGate = 'risk'
+      payload = { ...detail('in_development'), feature: { ...detail('in_development').feature, accept_mode: 'auto' } }
+      await show(lang)
+      const select = await screen.findByLabelText(label)
+      fireEvent.change(select, { target: { value: 'human' } })
+      await waitFor(() => expect(vi.mocked(putAcceptMode)).toHaveBeenCalledWith('F-0221', 'human'))
+      expect(screen.getByRole('option', { name: human })).toBeInTheDocument()
+    })
+  }
+
+  // F-0518 crit. 14
+  it('fora do gate de risco e sem marca, não há controle de aceite', async () => {
+    payload = detail('in_development')
+    await show('pt-BR')
+    await waitFor(() => expect(screen.queryByLabelText('Aceite')).toBeNull())
   })
 })
