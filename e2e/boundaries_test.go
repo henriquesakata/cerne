@@ -1,7 +1,11 @@
 package e2e_test
 
 import (
+	"errors"
 	"fmt"
+	"go/build"
+	"io/fs"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -53,6 +57,8 @@ var boundaryExceptions = []boundaryException{
 	{"internal/compile", "internal/app",
 		"compile rewrites references to a superseded entity before prompting, through app.TerminalSuccessor, the one resolver of the supersession chain"},
 }
+
+const modulePath = "github.com/henriquesakata/cerne/"
 
 func isModuleImport(imp string) bool {
 	return strings.HasPrefix(imp, "internal/") || strings.HasPrefix(imp, "cmd/")
@@ -127,6 +133,80 @@ func TestBoundaryRulesHaveReason(t *testing.T) {
 	for _, e := range boundaryExceptions {
 		if strings.TrimSpace(e.why) == "" {
 			t.Errorf("exception %s -> %s has no reason", e.pkg, e.imp)
+		}
+	}
+}
+
+// buildImportGraph maps each package directory under internal/ and cmd/
+// (module-relative) to its non-test imports, module imports made
+// module-relative. It unions GOOS linux, darwin and windows so a build
+// constraint cannot hide an import.
+func buildImportGraph(t *testing.T, root string) map[string][]string {
+	t.Helper()
+	graph := map[string][]string{}
+	for _, top := range []string{"internal", "cmd"} {
+		err := filepath.WalkDir(filepath.Join(root, top), func(path string, d fs.DirEntry, err error) error {
+			if err != nil || !d.IsDir() {
+				return err
+			}
+			rel, err := filepath.Rel(root, path)
+			if err != nil {
+				return err
+			}
+			rel = filepath.ToSlash(rel)
+			seen := map[string]bool{}
+			found := false
+			for _, goos := range []string{"linux", "darwin", "windows"} {
+				ctx := build.Default
+				ctx.GOOS, ctx.CgoEnabled = goos, false
+				pkg, err := ctx.ImportDir(path, 0)
+				var noGo *build.NoGoError
+				if errors.As(err, &noGo) {
+					continue
+				}
+				if err != nil {
+					return fmt.Errorf("%s (%s): %w", rel, goos, err)
+				}
+				found = true
+				for _, imp := range pkg.Imports {
+					seen[strings.TrimPrefix(imp, modulePath)] = true
+				}
+			}
+			if found {
+				imps := make([]string, 0, len(seen))
+				for imp := range seen {
+					imps = append(imps, imp)
+				}
+				slices.Sort(imps)
+				graph[rel] = imps
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("reading imports under %s: %v", top, err)
+		}
+	}
+	return graph
+}
+
+// F-0519 crit. 1
+// F-0519 crit. 2
+// F-0519 crit. 3
+// F-0519 crit. 4
+// F-0519 crit. 5
+func TestPackageBoundaries(t *testing.T) {
+	graph := buildImportGraph(t, "..")
+	for _, anchor := range []string{"internal/domain", "internal/cli", "cmd/cerne"} {
+		if _, ok := graph[anchor]; !ok {
+			t.Fatalf("import graph lacks %s (wrong root or empty graph): %d packages", anchor, len(graph))
+		}
+	}
+	for _, v := range checkBoundaries(graph, boundaryRules, boundaryExceptions) {
+		t.Error(v)
+	}
+	for _, e := range boundaryExceptions {
+		if !slices.Contains(graph[e.pkg], e.imp) {
+			t.Errorf("stale exception: %s no longer imports %s; remove it from boundaryExceptions", e.pkg, e.imp)
 		}
 	}
 }
