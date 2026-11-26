@@ -117,3 +117,17 @@ func TestFeatureCapabilityBatch(t *testing.T) {
 		t.Fatalf("clear output:\n%s", out)
 	}
 }
+
+// F-0514 crit. 2: a capability list that resolves to nothing is refused, and
+// does not clear the links.
+func TestFeatureCapabilityEmptyListRefused(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	mustExec(t, projDir, "capability", "new", "Studio")
+	mustExec(t, projDir, "feature", "new", "Primeira coisa", "--context", "why", "--capability", "C-0001")
+	if out, err := execCerne(t, "feature", "capability", "F-0001", ",", "--dir", projDir); err == nil {
+		t.Fatalf("want a refusal, got:\n%s", out)
+	}
+	if f, _ := store.LoadFeature(repoDir, "F-0001"); len(f.Capabilities) != 1 {
+		t.Fatalf("links were cleared: %v", f.Capabilities)
+	}
+}

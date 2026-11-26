@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -45,8 +46,12 @@ func TestCreateLikeWithCapabilitiesOneCommit(t *testing.T) {
 	if len(e.Capabilities) != 1 || e.Capabilities[0] != cid {
 		t.Fatalf("capabilities = %v, want [%s]", e.Capabilities, cid)
 	}
+	setFeatureState(t, repoDir, e, domain.StateApproved)
 	tk, err := CreateLike(repoDir, projDir, "T", "Passo", "", e.ID, "", nil, nil, []string{cid}, "", false, "", "", "")
-	if err == nil && len(tk.Capabilities) != 1 {
+	if err != nil {
+		t.Fatalf("task CreateLike: %v", err)
+	}
+	if len(tk.Capabilities) != 1 || tk.Capabilities[0] != cid {
 		t.Fatalf("task capabilities = %v", tk.Capabilities)
 	}
 }
@@ -145,5 +150,29 @@ func TestLinkFeaturesCapabilitiesAbortsWholeBatch(t *testing.T) {
 	f, _ := store.LoadFeature(repoDir, ids[0])
 	if len(f.Capabilities) != 0 {
 		t.Fatalf("partial mutation: %v", f.Capabilities)
+	}
+}
+
+// F-0514 crit. 2: a list that resolves to nothing is refused before any write,
+// instead of silently clearing the links or failing with "nothing to commit".
+func TestLinkFeaturesCapabilitiesRefusesEmptyLists(t *testing.T) {
+	repoDir, projDir, origin := newFeatureBackend(t)
+	cid := mkCap(t, repoDir, projDir, "Cap")
+	ids := mkFeatures(t, repoDir, projDir, "Alpha card")
+	if _, err := LinkFeaturesCapabilities(repoDir, projDir, ids, []string{cid}, false); err != nil {
+		t.Fatal(err)
+	}
+	before := originCommits(t, origin)
+	if _, err := LinkFeaturesCapabilities(repoDir, projDir, ids, nil, false); !errors.Is(err, ErrEmptyCapabilityList) {
+		t.Fatalf("empty capabilities: err = %v, want ErrEmptyCapabilityList", err)
+	}
+	if _, err := LinkFeaturesCapabilities(repoDir, projDir, nil, []string{cid}, false); !errors.Is(err, ErrEmptyCapabilityList) {
+		t.Fatalf("empty cards: err = %v, want ErrEmptyCapabilityList", err)
+	}
+	if originCommits(t, origin) != before {
+		t.Fatal("a refused call wrote")
+	}
+	if f, _ := store.LoadFeature(repoDir, ids[0]); len(f.Capabilities) != 1 {
+		t.Fatalf("links were cleared: %v", f.Capabilities)
 	}
 }

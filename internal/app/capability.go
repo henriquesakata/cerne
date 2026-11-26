@@ -15,6 +15,8 @@ import (
 var (
 	// ErrUnknownCapability marks a C- id that does not exist in the backend.
 	ErrUnknownCapability = errors.New("unknown capability")
+	// ErrEmptyCapabilityList marks a batch link whose cards or capabilities resolve to zero ids.
+	ErrEmptyCapabilityList = errors.New("empty list: give at least one card id and one capability id (or --clear)")
 	// ErrCapabilityHasChildren blocks retiring a node with active children.
 	ErrCapabilityHasChildren = errors.New("capability has active children")
 	// ErrCapabilityLinked blocks retiring a node still linked by features.
@@ -210,12 +212,18 @@ func LinkFeaturesCapabilities(repoDir, projDir string, featureIDs, capIDs []stri
 			if caps, err = activeCapabilities(repoDir, capIDs); err != nil {
 				return "", err
 			}
+			if len(caps) == 0 {
+				return "", ErrEmptyCapabilityList
+			}
 		}
 		var ids []string
 		for _, id := range featureIDs {
 			if id = domain.CanonicalID(id); !slices.Contains(ids, id) {
 				ids = append(ids, id)
 			}
+		}
+		if len(ids) == 0 {
+			return "", ErrEmptyCapabilityList
 		}
 		for _, id := range ids {
 			f, err := store.LoadFeature(repoDir, id)
