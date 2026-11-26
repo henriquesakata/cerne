@@ -29,6 +29,26 @@ type cursorSession struct {
 	UpdatedAt      time.Time `json:"updated_at"`
 }
 
+// maxCursorModel caps a recorded model name, in bytes.
+const maxCursorModel = 128
+
+// cleanCursorModel is a model name from a Cursor payload as cerne stores and
+// reads it: no control, line-breaking or bidi character — the model rides on
+// the backend event that `cerne show` prints in a teammate's terminal — and
+// at most maxCursorModel bytes, cut on a rune boundary.
+func cleanCursorModel(m string) string {
+	m = strings.TrimSpace(strings.Map(func(r rune) rune {
+		if nameBreaking(r) {
+			return -1
+		}
+		return r
+	}, m))
+	if len(m) > maxCursorModel {
+		m = strings.ToValidUTF8(m[:maxCursorModel], "")
+	}
+	return m
+}
+
 // RecordCursorSession stores what a Cursor hook payload said of session sess:
 // its model and transcript path, stamped now. An empty one keeps the value
 // already recorded (sessionStart names no transcript path). Atomic: parallel
@@ -42,7 +62,7 @@ func RecordCursorSession(cacheDir, sess, model, transcriptPath string) error {
 	if raw, err := os.ReadFile(filepath.Join(dir, sess+".json")); err == nil {
 		_ = json.Unmarshal(raw, &rec)
 	}
-	if model != "" {
+	if model = cleanCursorModel(model); model != "" {
 		rec.Model = model
 	}
 	if transcriptPath != "" {
@@ -83,6 +103,7 @@ func cursorSessions(cacheDir string, now time.Time) map[string]cursorSession {
 		if err != nil || json.Unmarshal(raw, &rec) != nil || now.Sub(rec.UpdatedAt) > cursorRecent || rec.UpdatedAt.After(now.Add(time.Minute)) {
 			continue
 		}
+		rec.Model = cleanCursorModel(rec.Model) // a record written by hand, or by an older build
 		recent[sess] = rec
 	}
 	return recent

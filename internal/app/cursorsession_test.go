@@ -5,8 +5,10 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+	"unicode"
 )
 
 // readCursorSession is the record of sess under cacheDir; false when absent.
@@ -55,6 +57,34 @@ func TestCursorSessionRejectsUnsafeID(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(cacheDir); len(entries) != 0 {
 		t.Fatalf("cache dir = %v, want nothing written", entries)
+	}
+}
+
+// TestCursorSessionCleansModel (F-0513 crit. 1): the model rides on the
+// backend event that `cerne show` prints in a teammate's terminal, so an
+// escape sequence or an over-long value from a payload is cleaned when it is
+// stored, and again when a record is read back.
+func TestCursorSessionCleansModel(t *testing.T) {
+	cacheDir := t.TempDir()
+	long := strings.Repeat("é", 100) // 200 bytes
+	for _, tc := range []struct{ in, want string }{
+		{"grok\x1b[31m-4.7\n‮", "grok[31m-4.7"},
+		{long, strings.Repeat("é", 64)},
+	} {
+		if err := RecordCursorSession(cacheDir, "c1", tc.in, ""); err != nil {
+			t.Fatal(err)
+		}
+		if rec, _ := readCursorSession(t, cacheDir, "c1"); rec.Model != tc.want {
+			t.Errorf("stored model = %q, want %q", rec.Model, tc.want)
+		}
+	}
+	raw, _ := json.Marshal(cursorSession{Model: "gpt\x1b]8;;x\x07-6" + long, UpdatedAt: time.Now().UTC()})
+	if err := os.WriteFile(filepath.Join(cacheDir, cursorSessionsSubdir, "c1.json"), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got := cursorSessions(cacheDir, time.Now())["c1"].Model
+	if strings.ContainsFunc(got, unicode.IsControl) || len(got) > 128 || !strings.HasPrefix(got, "gpt]8;;x-6é") {
+		t.Fatalf("read-back model = %q, want no control character and at most 128 bytes", got)
 	}
 }
 
