@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -116,7 +117,7 @@ func writeRiskError(w http.ResponseWriter, err error) {
 		status = http.StatusNotFound
 	case errors.Is(err, app.ErrNoRiskDecision), errors.Is(err, app.ErrFeedbackMismatch), errors.Is(err, app.ErrFeatureFrozen):
 		status = http.StatusConflict
-	case errors.Is(err, app.ErrInvalidAcceptMode):
+	case errors.Is(err, app.ErrInvalidAcceptMode), errors.Is(err, domain.ErrUnknownFacet):
 		status = http.StatusBadRequest
 	default:
 		writeConfigError(w, err) // a list item the settings refuse

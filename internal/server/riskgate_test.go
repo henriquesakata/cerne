@@ -72,6 +72,9 @@ func TestRiskFeedbackRoute(t *testing.T) {
 	if rec := doJSON(t, h, http.MethodPost, "/api/features/F-0002/risk-feedback", `{"answer":"should_have_asked"}`, &got); rec.Code != http.StatusConflict {
 		t.Errorf("should-have-asked on a held card: status %d, want 409", rec.Code)
 	}
+	if rec := doJSON(t, h, http.MethodPost, "/api/features/F-0001/risk-feedback", `{"answer":"should_have_asked","add_facets":["billing"]}`, &got); rec.Code != http.StatusBadRequest {
+		t.Errorf("a facet outside the closed set: status %d, want 400", rec.Code)
+	}
 }
 
 // TestAcceptModeRoute: the owner marks a live card from the page or the

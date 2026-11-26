@@ -201,8 +201,15 @@ func RecordRiskFeedback(repoDir, projDir, id string, fb RiskFeedback) (*RiskDeci
 	if fb.Answer != FeedbackShouldHaveAsked && len(fb.AddPaths)+len(fb.AddFacets) > 0 {
 		return nil, fmt.Errorf("%w: paths and facets to mark go with %s, the answer that tightens the gate", ErrFeedbackMismatch, FeedbackShouldHaveAsked)
 	}
+	// A facet is one of the closed set (domain.ErrUnknownFacet), checked
+	// before anything is written.
+	facets, err := domain.NormalizeFacets(fb.AddFacets)
+	if err != nil {
+		return nil, err
+	}
+	fb.AddFacets = facets
 	var d *RiskDecision
-	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
+	err = MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		f, err := store.LoadFeature(repoDir, id)
 		if err != nil {
 			return "", err

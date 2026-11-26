@@ -477,6 +477,19 @@ func TestShouldHaveAskedAddsToList(t *testing.T) {
 	if _, err := RecordRiskFeedback(repoDir, projDir, "F-0002", RiskFeedback{Answer: FeedbackNotNeeded, AddPaths: []string{"x/**"}}); !errors.Is(err, ErrFeedbackMismatch) {
 		t.Errorf("not-needed with a mark: err = %v, want ErrFeedbackMismatch", err)
 	}
+	// A facet outside the closed set is refused, and nothing is written.
+	calibrating(t, projDir, 0)
+	decided(t, repoDir, "F-0003", domain.StateDone, []string{"code"}, lowPayload())
+	before, _ := os.ReadFile(filepath.Join(projDir, ".cernerc"))
+	if _, err := RecordRiskFeedback(repoDir, projDir, "F-0003", RiskFeedback{Answer: FeedbackShouldHaveAsked, AddPaths: []string{"x/**"}, AddFacets: []string{"billing"}}); !errors.Is(err, domain.ErrUnknownFacet) {
+		t.Errorf("--add-facet billing: err = %v, want ErrUnknownFacet", err)
+	}
+	if after, _ := os.ReadFile(filepath.Join(projDir, ".cernerc")); string(after) != string(before) {
+		t.Errorf("a refused facet changed .cernerc:\n%s", after)
+	}
+	if evs := entityEvents(t, repoDir, "F-0003", riskFeedbackEvent); len(evs) != 0 {
+		t.Errorf("a refused facet wrote the answer")
+	}
 }
 
 // TestAcceptModeHumanAlwaysHolds: a card the owner marked as needing a person
