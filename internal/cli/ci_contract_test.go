@@ -42,7 +42,11 @@ func TestGitHubActionsDocsLockSingleWriterContract(t *testing.T) {
 		}
 	}
 
-	pin := readWorkflow(t, "pin.yml") + readPinScript(t)
+	pinYML := readWorkflow(t, "pin.yml")
+	if !strings.Contains(pinYML, "sh .github/scripts/pin-push.sh") {
+		t.Error("pin.yml must call .github/scripts/pin-push.sh")
+	}
+	pin := pinYML + readPinScript(t)
 	for _, want := range []string{
 		"branches: [main]",
 		"contents: write",
