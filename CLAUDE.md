@@ -69,7 +69,7 @@ Backend git repo = **source of truth** (entities as JSON + content as markdown +
 | `internal/cli` | cobra commands: init, feature, status, next, pull, push, import, lint, search, ui, lock (`lock merge` = the docs.lock git merge driver). |
 | `internal/doccheck`, `internal/slug` | Shared helpers (stub detection, slugify with diacritics). |
 | `ui/` | Vite + React 19 + TS: kanban, feature page, Mermaid diagrams (lazy, read-only). `dist/` committed + embedded. |
-| `e2e/` | Black-box golden-path test through `cli.Root()`. |
+| `e2e/` | Black-box golden-path test through `cli.Root()`. Also `e2e/boundaries_test.go` (F-0519): the layer boundaries above are checked against the import graph — five rules (domain pure, store below app, cli and server outermost, app free of both), each with its reason, plus a table of named exceptions; a forbidden import fails with the package, the import and the rule. |
 
 ## Conventions
 
