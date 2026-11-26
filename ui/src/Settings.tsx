@@ -913,7 +913,7 @@ function SettingRow({
           // lines, the server is the validator. A human-only list asks before
           // it leaves its default, like the toggles and selects (F-0515).
           <form
-            className="settings-string settings-list"
+            className="settings-string settings-listfield"
             onSubmit={(e) => {
               e.preventDefault()
               if (busy) return
