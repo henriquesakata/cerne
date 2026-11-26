@@ -25,7 +25,7 @@ func TestClarifyListMarksRecommended(t *testing.T) {
 	if err != nil {
 		t.Fatalf("clarify list: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "options: assincrona (recommended) | sincrona | hibrida") {
+	if !strings.Contains(out, "options: 1: assincrona (recommended), 2: sincrona, 3: hibrida") {
 		t.Errorf("list does not put the recommended option first and mark it:\n%s", out)
 	}
 
@@ -71,5 +71,19 @@ func TestAnswerPickRecommendedStripsSuffix(t *testing.T) {
 	}
 	if strings.Contains(spec, "(recomendada)") {
 		t.Errorf("suffix leaked into the answer:\n%s", spec)
+	}
+}
+
+// F-0517 crit. 5: the approve refusal numbers the options the same way and
+// marks the recommended one.
+func TestApproveRefusalMarksRecommended(t *testing.T) {
+	projDir, _, _ := setupProject(t)
+	newFeatureWithSpec(t, projDir, "Com recomendada", recommendedSpecBody())
+	out, err := execCerne(t, "feature", "approve", "F-0001", "--dir", projDir)
+	if err == nil {
+		t.Fatalf("approve succeeded over an open clarification:\n%s", out)
+	}
+	if !strings.Contains(err.Error(), "1: assincrona (recommended), 2: sincrona, 3: hibrida") {
+		t.Errorf("refusal lacks the numbered list with the mark:\n%v", err)
 	}
 }

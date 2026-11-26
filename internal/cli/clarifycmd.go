@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -81,11 +80,14 @@ func newClarifyListCmd() *cobra.Command {
 				}
 				fmt.Fprintf(out, "  #%d  %s\n", c.Index, q)
 				if len(c.Options) > 0 {
-					opts := slices.Clone(c.Options)
+					opts := make([]string, len(c.Options))
+					for k, o := range c.Options {
+						opts[k] = fmt.Sprintf("%d: %s", k+1, o)
+					}
 					if c.Recommended > 0 {
 						opts[c.Recommended-1] += " (recommended)"
 					}
-					fmt.Fprintf(out, "      options: %s\n", strings.Join(opts, " | "))
+					fmt.Fprintf(out, "      options: %s\n", strings.Join(opts, ", "))
 				}
 			}
 			if resolved {
@@ -192,7 +194,7 @@ func newClarifyAnswerCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&answer, "answer", "", "free-text answer to the question")
-	cmd.Flags().IntVar(&pick, "pick", 0, "choose the k-th proposed option as the answer")
+	cmd.Flags().IntVar(&pick, "pick", 0, "choose the k-th proposed option, in the order 'clarify list' shows")
 	cmd.Flags().StringVar(&expect, "expect", "", "refuse unless the n-th open marker is still the one this key names (printed by the approve refusal)")
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	_ = cmd.Flags().MarkHidden("dir")
