@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"go/build"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -208,5 +209,16 @@ func TestPackageBoundaries(t *testing.T) {
 		if !slices.Contains(graph[e.pkg], e.imp) {
 			t.Errorf("stale exception: %s no longer imports %s; remove it from boundaryExceptions", e.pkg, e.imp)
 		}
+	}
+}
+
+// F-0519 crit. 8
+func TestClaudeMDCitesBoundaryTest(t *testing.T) {
+	b, err := os.ReadFile("../CLAUDE.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "e2e/boundaries_test.go") {
+		t.Error("CLAUDE.md must say the layer boundaries are checked by e2e/boundaries_test.go")
 	}
 }
