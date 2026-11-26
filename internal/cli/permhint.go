@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/llm"
 )
 
@@ -27,7 +28,11 @@ func cacheRefreshError(what, repoDir, backend string, err error) error {
 		return fmt.Errorf("%s at %s failed (%s): %w", what, repoDir, llm.CodexSandboxHint, err)
 	}
 	if inCursor {
-		return fmt.Errorf("%s at %s failed (%s): %w", what, repoDir, cursorSandboxHint, err)
+		hint := cursorSandboxHint
+		if gitback.IsLocalPath(backend) { // no host for --network to allow
+			hint = cursorLocalBackendHint
+		}
+		return fmt.Errorf("%s at %s failed (%s): %w", what, repoDir, hint, err)
 	}
 	return fmt.Errorf("%s at %s failed (delete that directory and re-run the command to force a fresh clone): %w", what, repoDir, err)
 }
@@ -35,6 +40,10 @@ func cacheRefreshError(what, repoDir, backend string, err error) error {
 // cursorSandboxHint (F-0512): Cursor's sandbox denies the network unless
 // .cursor/sandbox.json allows the host.
 const cursorSandboxHint = "the Cursor sandbox may be cutting the network; to allow the backend's host for this project, run: cerne hook install --provider cursor --network"
+
+// cursorLocalBackendHint: with a local backend the sandbox blocks a folder, not
+// a host.
+const cursorLocalBackendHint = "the Cursor sandbox may be blocking the local backend folder; to add it to .cursor/sandbox.json, run: cerne hook install --provider cursor"
 
 // notWritableError is the shared permission explanation: the cache dir (parent
 // of the clone) and, when the backend is a local directory, the backend itself.

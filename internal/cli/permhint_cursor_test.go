@@ -37,9 +37,17 @@ func TestCacheRefreshErrorInsideCursor(t *testing.T) {
 		}
 	}
 
+	// Review #4: a local backend has no host for --network to allow, so the
+	// hint points at the folder install instead, and never at deleting.
+	local := filepath.Join(t.TempDir(), "docs.git")
+	got := cacheRefreshError("cloning the backend", repoDir, local, causes[0]).Error()
+	if strings.Contains(got, "--network") || strings.Contains(got, "delete that directory") || !strings.Contains(got, "cerne hook install --provider cursor") {
+		t.Errorf("local backend inside Cursor: %q", got)
+	}
+
 	// A Codex session keeps the Codex hint.
 	t.Setenv("CODEX_THREAD_ID", "019e-thread")
-	got := cacheRefreshError("cloning the backend", repoDir, "x", causes[0]).Error()
+	got = cacheRefreshError("cloning the backend", repoDir, "x", causes[0]).Error()
 	if !strings.Contains(got, "--provider codex --network") || strings.Contains(got, "cursor") {
 		t.Errorf("Codex hint changed: %q", got)
 	}
