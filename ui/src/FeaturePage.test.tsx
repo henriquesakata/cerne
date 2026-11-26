@@ -1561,6 +1561,34 @@ describe('FeaturePage — o motivo da retenção pelo risco (F-0521)', () => {
     })
   }
 
+  // F-0521 crit. 4: the list sits after the badges and before the F-0518 block.
+  it('a lista fica depois dos selos e antes do bloco do dono', async () => {
+    localStorage.setItem('cerne-lang', 'pt-BR')
+    const decision = { risk: 'held' as const, files: ['go.mod'], dirs: ['go.mod'], facets: [], at: '2026-11-26T00:00:00Z' }
+    payload = { ...held('implemented'), risk_decision: decision }
+    const { container } = render(
+      <I18nProvider>
+        <FeaturePage id="F-0221" />
+      </I18nProvider>,
+    )
+    await screen.findByText('Feature de teste')
+    const badge = container.querySelector('.badge-held') as HTMLElement
+    const list = container.querySelector('.feature-held-risk') as HTMLElement
+    expect(badge.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    cleanup()
+    payload = { ...held('done'), risk_decision: decision }
+    const done = render(
+      <I18nProvider>
+        <FeaturePage id="F-0221" />
+      </I18nProvider>,
+    )
+    await screen.findByText('Feature de teste')
+    const feedback = done.container.querySelector('.risk-feedback') as HTMLElement
+    expect(feedback).not.toBeNull()
+    const doneList = done.container.querySelector('.feature-held-risk') as HTMLElement
+    expect(doneList.compareDocumentPosition(feedback) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   // F-0521 crit. 7
   it('sem held_risk, ou aceito por baixo risco: sem a linha nova', async () => {
     localStorage.setItem('cerne-lang', 'pt-BR')
