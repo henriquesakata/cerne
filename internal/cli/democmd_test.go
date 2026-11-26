@@ -371,3 +371,14 @@ func TestDemoProjectID_StatErrorIsReturned(t *testing.T) {
 		t.Fatalf("id = %q, want the stat error", id)
 	}
 }
+
+// B-0086: `cerne demo` seeds cards with no --on-behalf/--origin flag and must
+// keep working inside an agent shell (it runs in agents' sessions too).
+func TestDemo_WorksInAnAgentShell(t *testing.T) {
+	demoEnv(t)
+	t.Setenv("CERNE_ACTOR", "agent")
+	t.Setenv("CLAUDECODE", "1")
+	if out, err := runDemoCmd(t); err != nil {
+		t.Fatalf("cerne demo in an agent shell: %v\n%s", err, out)
+	}
+}

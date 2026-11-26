@@ -32,6 +32,29 @@ func CheckHumanGate(gate string) error {
 	return nil
 }
 
+// autoVia is the mark of an act crossing gate (F-0515): "auto" when an agent
+// crosses it set to auto; "" for a person's act, whatever the gate.
+func autoVia(gate string, agentAct bool) string {
+	if gate == project.GateAuto && agentAct {
+		return project.GateAuto
+	}
+	return ""
+}
+
+// actSource is who stands behind a transition, where the environment alone
+// cannot tell (F-0515).
+type actSource int
+
+const (
+	srcCLI  actSource = iota // the environment declares the actor
+	srcUI                    // the cerne ui form: the person, whatever env the server runs in
+	srcSeed                  // a scripted seed (cerne demo): nobody crosses a gate, nothing is marked
+)
+
+// agentAct reports whether a transition is an agent's act: only a CLI call
+// whose environment declares an agent.
+func agentAct(src actSource) bool { return src == srcCLI && isAgentActor(actorEnv()) }
+
 // CheckHumanSetting refuses an agent actor on a setting only a human writes
 // (F-0392). Fail-open like CheckHumanGate; the UI server does not call it.
 func CheckHumanSetting(id string) error {

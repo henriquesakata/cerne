@@ -169,7 +169,11 @@ func runTransition(cmd *cobra.Command, dir string, action domain.Action, id, by,
 			return err
 		}
 	}
-	out, err := app.TransitionFeatureForce(ctx.repoDir, ctx.projDir, id, action, by, reason, delivery, force)
+	transition := app.TransitionFeatureForce
+	if demoSeeding(cmd) { // the demo's script crosses no gate (F-0515)
+		transition = app.TransitionFeatureSeed
+	}
+	out, err := transition(ctx.repoDir, ctx.projDir, id, action, by, reason, delivery, force)
 	if err != nil {
 		return err
 	}

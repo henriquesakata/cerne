@@ -1303,3 +1303,37 @@ describe('FeaturePage gate safety (F-0498)', () => {
     expect(screen.queryByRole('button', { name: 'Editar título' })).toBeNull()
   })
 })
+
+// F-0515 crit. 9: a página da feature leva um selo por gate cruzado sem ato
+// humano; o aceite no merge (F-0488) segue com o rótulo dele.
+describe('FeaturePage — selos de gate sem ato humano (F-0515)', () => {
+  const marked = (over: Partial<Feature>): FeatureDetail => {
+    const d = detail('done')
+    return { ...d, feature: { ...d.feature, ...over } }
+  }
+  for (const [lang, approved, accepted] of [
+    ['pt-BR', 'Aprovada sem revisão humana', 'Aceita sem revisão humana'],
+    ['en', 'Approved without human review', 'Accepted without human review'],
+  ] as const) {
+    it(`${lang}: os dois selos no cabeçalho`, async () => {
+      localStorage.setItem('cerne-lang', lang)
+      payload = marked({ approved_via: 'auto', accepted_via: 'auto' })
+      render(
+        <I18nProvider>
+          <FeaturePage id="F-0221" />
+        </I18nProvider>,
+      )
+      await screen.findByText('Feature de teste')
+      expect(screen.getByText(approved)).toHaveClass('badge')
+      expect(screen.getByText(accepted)).toHaveClass('badge')
+    })
+  }
+
+  it('sem marca, nenhum selo; o aceite no merge não vira selo automático', async () => {
+    payload = marked({ accepted_via: 'merge', delivery_mr_url: 'https://github.com/o/r/pull/158' })
+    render(<FeaturePage id="F-0221" />)
+    await screen.findByText('Feature de teste')
+    expect(screen.queryByText(/sem revisão humana/)).toBeNull()
+    expect(screen.getByText('Aceita no merge · PR #158')).toBeInTheDocument()
+  })
+})

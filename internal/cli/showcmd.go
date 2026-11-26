@@ -20,6 +20,7 @@ import (
 	"github.com/henriquesakata/cerne/internal/doccheck"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/lint"
+	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -644,8 +645,14 @@ func (r showResult) renderText(w io.Writer) {
 		if e.DeliveryMRURL != "" {
 			fmt.Fprintf(w, "delivery mr: %s\n", e.DeliveryMRURL)
 		}
-		if e.AcceptedVia == "merge" { // F-0488: the human's merge was the acceptance
+		if e.ApprovedVia == project.GateAuto { // F-0515: an agent under [gates] approve = "auto"
+			fmt.Fprintln(w, "approved: automatically (no human act)")
+		}
+		switch e.AcceptedVia {
+		case project.GateMerge: // F-0488: the human's merge was the acceptance
 			fmt.Fprintf(w, "accepted: on merge of %s\n", e.DeliveryMRURL)
+		case project.GateAuto: // F-0515: complete under [gates] accept = "auto"
+			fmt.Fprintln(w, "accepted: automatically (no human act)")
 		}
 		writeSuccession(w, e.SupersededBy, e.Reason)
 		writeDocWriters(w, r.writes)

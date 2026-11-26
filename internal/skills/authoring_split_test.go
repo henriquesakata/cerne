@@ -305,8 +305,12 @@ var f0475Rewritten = []string{
 	"- **Register pendings when you close a feature:** for every debt you would write in the result's *Dé",
 	"**Accept queue (F-0875).** `cerne accept queue [--json]` lists the features in implemented, oldest f",
 	"The result rules count it too: a `critério N` cited in an errata entry clears `result-missing-eviden",
+	// B-0086: step 1 of the Feature loop names the origin choice.
+	"1. **Create** — `cerne feature new",
 	// T-0020: room watch --once now waits out --settle before it exits.
 	"`--once` long-polls until the first **relevant** (non-echo) event, prints it, and exits 0",
+	// F-0515: the gates are the owner's settings gates.approve/gates.accept now.
+	"Both gates read the project's `.cernerc` `[gates]` block (`approve`/`accept`, each `\"human\"` (defa",
 }
 
 func isRewritten(s string) bool {
