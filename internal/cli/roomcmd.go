@@ -703,7 +703,17 @@ func newRoomListCmd() *cobra.Command {
 				case rm.ClosedAt != nil:
 					status = "closed"
 				}
-				fmt.Fprintf(out, "%s  %-6s %d participant(s)  %s\n", rm.ID, status, len(rm.Participants), rm.Topic)
+				count := fmt.Sprintf("%d participant(s)", len(rm.Participants))
+				if status == "open" { // T-0021: the current members, and who listens
+					listening := 0
+					for _, p := range rm.ActiveParticipants {
+						if p.Listening {
+							listening++
+						}
+					}
+					count = fmt.Sprintf("%d participant(s) (%d listening)", len(rm.ActiveParticipants), listening)
+				}
+				fmt.Fprintf(out, "%s  %-6s %s  %s\n", rm.ID, status, count, rm.Topic)
 			}
 			return nil
 		},

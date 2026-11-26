@@ -147,7 +147,11 @@ export default function WarRoom() {
   )
 }
 
-type Roster = { nick: string; bio?: string }[]
+type Roster = { nick: string; bio?: string; listening?: boolean; last_seen_at?: string }[]
+
+// T-0021: presence has no event of its own, so an open room re-reads it on
+// this timer through fetchRooms, never a second long-poll (N-0140).
+const PRESENCE_REFRESH_MS = 10_000
 
 // B-0046: a message from the same author within this window continues the
 // previous one (no repeated name/time header), the way Slack and Discord group
@@ -180,7 +184,8 @@ export function WarRoomDetail({ id }: { id: string }) {
   const [leaving, setLeaving] = useState(false)
   // F-0511: an informational line, e.g. the session was already revoked.
   const [notice, setNotice] = useState<string | null>(null)
-  // F-0511: a join or leave event refetches the active participants.
+  // F-0511/T-0021: each batch of events, and the presence timer, refetches
+  // the active participants and their presence.
   const [rosterTick, setRosterTick] = useState(0)
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
@@ -211,6 +216,10 @@ export function WarRoomDetail({ id }: { id: string }) {
   const [minutesNextSteps, setMinutesNextSteps] = useState('')
 
   const sinceRef = useRef(0)
+  // T-0021: the session the tab's one long-poll reads as, and that poll's
+  // abort, so a session that appears or goes away re-issues the same poll.
+  const sessionRef = useRef<RoomSession | null>(null)
+  const pollRef = useRef<AbortController | null>(null)
 
   // Glue-scroll (F-0292): a sala abre no fim e acompanha as mensagens que
   // chegam pelo long-poll enquanto o leitor estiver lá; quem subiu está lendo
@@ -236,7 +245,7 @@ export function WarRoomDetail({ id }: { id: string }) {
     if (events.length === 0) return
     sinceRef.current = events[events.length - 1].seq
     setMessages((prev) => [...prev, ...events.filter(shownInTranscript)])
-    if (events.some((e) => e.type === 'join' || e.type === 'leave')) setRosterTick((n) => n + 1)
+    setRosterTick((n) => n + 1)
     let sawFacilitationEvent = false
     for (const e of events) {
       if (e.type === 'open' && e.topic) setTopic(e.topic)
@@ -255,6 +264,7 @@ export function WarRoomDetail({ id }: { id: string }) {
     let cancelled = false
     const controller = new AbortController()
     sinceRef.current = 0
+    sessionRef.current = null // this room's session arrives through the resume below
     setTopic('')
     setRoster([])
     setMessages([])
@@ -276,12 +286,28 @@ export function WarRoomDetail({ id }: { id: string }) {
         return
       }
       while (!cancelled) {
+        const poll = new AbortController()
+        pollRef.current = poll
+        const sid = sessionRef.current?.session_id
         try {
-          const events = await readRoomMessages(id, sinceRef.current, true, controller.signal)
+          const events = await readRoomMessages(id, sinceRef.current, true, poll.signal, sid)
           if (cancelled) return
           applyEvents(events)
-        } catch {
+        } catch (e: unknown) {
           if (cancelled) return
+          if (poll.signal.aborted) continue // the session changed: poll again as the new one
+          if (sid && e instanceof HTTPError && e.status === 401) {
+            // Revoked elsewhere (another tab, the terminal): observe from the
+            // same cursor, as an invalid resume does (F-0511).
+            if (sessionRef.current?.session_id === sid) {
+              sessionRef.current = null
+              // Another tab may have stored a newer session after re-joining.
+              if (loadStoredSession(id)?.session_id === sid) localStorage.removeItem(sessionKey(id))
+              setSession(null)
+              setNotice(t.warRoom.sessionGone)
+            }
+            continue
+          }
           await new Promise((resolve) => setTimeout(resolve, 2000))
         }
       }
@@ -290,6 +316,7 @@ export function WarRoomDetail({ id }: { id: string }) {
     return () => {
       cancelled = true
       controller.abort()
+      pollRef.current?.abort()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, version])
@@ -313,6 +340,12 @@ export function WarRoomDetail({ id }: { id: string }) {
     }
   }, [closed, id, version, rosterTick])
 
+  useEffect(() => {
+    if (closed) return
+    const timer = setInterval(() => setRosterTick((n) => n + 1), PRESENCE_REFRESH_MS)
+    return () => clearInterval(timer)
+  }, [closed, id])
+
   // Reload retoma a sessão guardada validando a capability no servidor
   // (F-0226 critério 9); token inválido volta ao formulário de join sem
   // impersonar o nick salvo.
@@ -333,6 +366,14 @@ export function WarRoomDetail({ id }: { id: string }) {
       cancelled = true
     }
   }, [id, version])
+
+  // T-0021: a session that appears (join, resume) or goes away re-issues the
+  // tab's one long-poll with or without it, from the same cursor.
+  useEffect(() => {
+    if (sessionRef.current?.session_id === session?.session_id) return
+    sessionRef.current = session
+    pollRef.current?.abort()
+  }, [session])
 
   // Carrega a capability de facilitador guardada (se o navegador abriu a
   // sala, ou já assumiu/recebeu a facilitação antes) — F-0228 critério 1.
@@ -450,6 +491,9 @@ export function WarRoomDetail({ id }: { id: string }) {
     setLeaving(true)
     setError(null)
     setNotice(null)
+    // T-0021: the poll that answers with the leave event already reads
+    // without the session, so the next one never meets a 401.
+    sessionRef.current = null
     leaveRoom(id, session.session_id)
       .then((r) => {
         setLeaving(false)
@@ -465,6 +509,9 @@ export function WarRoomDetail({ id }: { id: string }) {
           setNotice(t.warRoom.sessionGone)
           return
         }
+        // Still valid: read as it again.
+        sessionRef.current = session
+        pollRef.current?.abort()
         setError(t.warRoom.leaveError(e instanceof Error ? e.message : String(e)))
       })
   }
@@ -777,6 +824,25 @@ export function WarRoomDetail({ id }: { id: string }) {
                   {p.nick === ownNick && <span className="room-side-muted"> ({t.warRoom.you})</span>}
                 </span>
                 {p.bio && <span className="room-roster-bio">{p.bio}</span>}
+                {!closed && (
+                  <span className="room-presence">
+                    {p.listening ? (
+                      <span className="chip room-presence-listening">{t.warRoom.listening}</span>
+                    ) : (
+                      <>
+                        {t.warRoom.idle}
+                        {p.last_seen_at && (
+                          <>
+                            {' · '}
+                            <time dateTime={p.last_seen_at} title={instant(p.last_seen_at, 'full')}>
+                              {t.warRoom.lastActive} {t.notif.age((Date.now() - Date.parse(p.last_seen_at)) / 60000)}
+                            </time>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </span>
+                )}
               </li>
             ))}
           </ul>
