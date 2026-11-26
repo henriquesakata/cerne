@@ -349,6 +349,9 @@ type featureDetailResponse struct {
 	// Writes are the recorded writes of the feature's documents, oldest first
 	// (F-0375): the page footers name the first writer and the last edit.
 	Writes []app.DocWrite `json:"writes"`
+	// RiskDecision is the risk gate's last decision on the card and the
+	// owner's answer to it (F-0518); omitted when the gate never decided it.
+	RiskDecision *app.RiskDecision `json:"risk_decision,omitempty"`
 }
 
 type approvalDelta struct {
@@ -509,7 +512,12 @@ func handleFeatureDetail(w http.ResponseWriter, repoDir, projDir, id string) {
 	if writes == nil {
 		writes = []app.DocWrite{}
 	}
-	writeJSON(w, http.StatusOK, featureDetailResponse{Feature: f, Docs: docs, DocsReal: real, DocsUpdated: updated, DocsHash: hashes, Artifacts: artifacts, InformedBy: informedBy, Children: children, Errata: errata, SpecChangedAfterApproval: specChanged, ApprovalDelta: delta, ApprovalBaselineMissing: app.ApprovalBaselineMissing(repoDir, f), RoastRounds: rounds, PlanRoastRounds: planRounds, ApproveReadiness: readiness, Bar: bar, JudgeQuestion: judgeQuestion, ApproveAdvice: advice, Writes: writes})
+	riskDecision, err := app.RiskDecisionOf(repoDir, id)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, featureDetailResponse{RiskDecision: riskDecision, Feature: f, Docs: docs, DocsReal: real, DocsUpdated: updated, DocsHash: hashes, Artifacts: artifacts, InformedBy: informedBy, Children: children, Errata: errata, SpecChangedAfterApproval: specChanged, ApprovalDelta: delta, ApprovalBaselineMissing: app.ApprovalBaselineMissing(repoDir, f), RoastRounds: rounds, PlanRoastRounds: planRounds, ApproveReadiness: readiness, Bar: bar, JudgeQuestion: judgeQuestion, ApproveAdvice: advice, Writes: writes})
 }
 
 // informedByRefs returns the external references whose Informs backlink targets

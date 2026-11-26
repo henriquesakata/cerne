@@ -307,6 +307,23 @@ type RiskGateView struct {
 	// Proposals are the open changes to the lists (crit. 6 to 8): none
 	// applies on its own.
 	Proposals []GateProposal `json:"proposals"`
+	// Stats counts the gate's last decision on each card in the period.
+	Stats RiskStats `json:"stats"`
+}
+
+// RiskStats are the cards the gate accepted alone and the ones it held in a
+// period, and how many of each got an answer, a fix or a revert (crit. 10).
+type RiskStats struct {
+	Accepted RiskGroup `json:"accepted"`
+	Held     RiskGroup `json:"held"`
+}
+
+// RiskGroup is one side of RiskStats.
+type RiskGroup struct {
+	Cards    int `json:"cards"`
+	Feedback int `json:"feedback"`
+	Fixed    int `json:"fixed"`
+	Reverted int `json:"reverted"`
 }
 
 // GateProposal is a change to one of the risk gate's lists that the signals
@@ -371,7 +388,34 @@ func ReadRiskGate(repoDir, projDir string, since time.Time) (RiskGateView, error
 			c.Missed++
 		}
 	}
-	v.Proposals = gateProposals(repoDir, projectGates(projDir), evs, features)
+	signals := riskSignals(evs)
+	v.Proposals = gateProposals(repoDir, projectGates(projDir), evs, features, decisions, signals)
+	for _, f := range features {
+		d := decisions[f.ID]
+		if d == nil || d.At.Before(since) {
+			continue
+		}
+		g := &v.Stats.Held
+		if d.Risk == "low" {
+			g = &v.Stats.Accepted
+		}
+		g.Cards++
+		if d.Feedback != nil {
+			g.Feedback++
+		}
+		var fixed, reverted bool
+		for _, s := range signals[f.ID] {
+			if s.idx > d.idx {
+				fixed, reverted = fixed || s.fix, reverted || !s.fix
+			}
+		}
+		if fixed {
+			g.Fixed++
+		}
+		if reverted {
+			g.Reverted++
+		}
+	}
 	return v, nil
 }
 

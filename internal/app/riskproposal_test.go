@@ -188,6 +188,50 @@ func TestProposalAcceptAndDismiss(t *testing.T) {
 	}
 }
 
+// TestRiskGateStats: over a period, how many cards the gate accepted alone
+// and how many it held, and how many of each got an answer, a fix or a
+// revert; a decision before the period is out. The calibration's progress
+// separates what the gate would have let pass that the owner said needed
+// them.
+// F-0518 crit. 10, 13
+func TestRiskGateStats(t *testing.T) {
+	asActor(t, "")
+	repoDir, projDir, _ := newFeatureBackend(t)
+	calibrating(t, projDir, 4)
+	decided(t, repoDir, "F-0001", domain.StateDone, []string{"code"}, lowPayload())
+	decided(t, repoDir, "F-0002", domain.StateDone, []string{"code"}, lowPayload())
+	decided(t, repoDir, "F-0003", domain.StateDone, []string{"code"}, heldPayload())
+	cal := func(would string) map[string]string {
+		return map[string]string{"risk": "held", "risk_calibration": "0/4", "risk_would": would, "risk_files": "internal/x/x.go"}
+	}
+	decided(t, repoDir, "F-0004", domain.StateDone, []string{"code"}, cal("low"))
+	decided(t, repoDir, "F-0005", domain.StateDone, []string{"code"}, cal("held"))
+	decided(t, repoDir, "F-0006", domain.StateDone, []string{"code"}, cal("low"))
+	for id, answer := range map[string]string{"F-0001": FeedbackShouldHaveAsked, "F-0003": FeedbackNotNeeded, "F-0004": FeedbackShouldHaveAsked, "F-0005": FeedbackShouldHaveAsked, "F-0006": FeedbackNotNeeded} {
+		if _, err := RecordRiskFeedback(repoDir, projDir, id, RiskFeedback{Answer: answer}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	logged(t, repoDir, domain.NewEvent("F-0009", "feature.created", map[string]string{"fixes": "F-0002"}, "human"),
+		domain.NewEvent("F-0003", "feature.reverted", nil, "human"))
+	v, err := ReadRiskGate(repoDir, projDir, time.Now().Add(-time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (RiskGroup{Cards: 2, Feedback: 1, Fixed: 1}); v.Stats.Accepted != want {
+		t.Errorf("accepted = %+v, want %+v", v.Stats.Accepted, want)
+	}
+	if want := (RiskGroup{Cards: 4, Feedback: 4, Reverted: 1}); v.Stats.Held != want {
+		t.Errorf("held = %+v, want %+v", v.Stats.Held, want)
+	}
+	if want := (RiskCalibration{Target: 4, Answers: 5, Remaining: 0, Answered: 3, Matched: 2, Missed: 1}); v.Calibration != want {
+		t.Errorf("calibration = %+v, want %+v", v.Calibration, want)
+	}
+	if v, _ := ReadRiskGate(repoDir, projDir, time.Now().Add(time.Hour)); v.Stats.Accepted.Cards+v.Stats.Held.Cards != 0 {
+		t.Errorf("a period after every decision counts %+v", v.Stats)
+	}
+}
+
 // TestDismissedProposalStaysClosed: a dismissed proposal does not reopen from
 // the cards that motivated it — not when one more card adds to them, and not
 // when the same card is fixed again.

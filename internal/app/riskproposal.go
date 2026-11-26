@@ -22,14 +22,29 @@ const proposalEvent = "feature.gate_proposal"
 // position in the log.
 type riskSignal struct {
 	idx  int
+	fix  bool // a fix; a revert otherwise
 	line string
 }
 
+// riskSignals maps each card to its fixes (--fixes, at creation or by set)
+// and reverts, in log order.
+func riskSignals(evs []domain.Event) map[string][]riskSignal {
+	out := map[string][]riskSignal{}
+	for i, ev := range evs {
+		switch {
+		case (ev.Type == "feature.created" || ev.Type == "feature.set") && ev.Payload["fixes"] != "":
+			x := ev.Payload["fixes"]
+			out[x] = append(out[x], riskSignal{i, true, ev.EntityID + " fixes " + x})
+		case ev.Type == eventTypes[domain.ActionRevert]:
+			out[ev.EntityID] = append(out[ev.EntityID], riskSignal{i, false, ev.EntityID + " was reverted"})
+		}
+	}
+	return out
+}
+
 // gateProposals are the proposals the log calls for against the lists of g.
-func gateProposals(repoDir string, g project.GatesConfig, evs []domain.Event, features []store.Feature) []GateProposal {
-	decisions := riskDecisions(evs)
+func gateProposals(repoDir string, g project.GatesConfig, evs []domain.Event, features []store.Feature, decisions map[string]*RiskDecision, signals map[string][]riskSignal) []GateProposal {
 	decided := map[string]map[string]bool{} // proposal → cards the owner decided it for
-	signals := map[string][]riskSignal{}    // card → its fixes and reverts, in log order
 	lows := map[string][]*RiskDecision{}    // card → every accept as low risk
 	for i, ev := range evs {
 		switch {
@@ -39,11 +54,6 @@ func gateProposals(repoDir string, g project.GatesConfig, evs []domain.Event, fe
 				decided[id] = map[string]bool{}
 			}
 			decided[id][ev.EntityID] = true
-		case (ev.Type == "feature.created" || ev.Type == "feature.set") && ev.Payload["fixes"] != "":
-			x := ev.Payload["fixes"]
-			signals[x] = append(signals[x], riskSignal{i, ev.EntityID + " fixes " + x})
-		case ev.Type == eventTypes[domain.ActionRevert]:
-			signals[ev.EntityID] = append(signals[ev.EntityID], riskSignal{i, ev.EntityID + " was reverted"})
 		case isRiskDecision(ev) && ev.Payload["risk"] == "low":
 			lows[ev.EntityID] = append(lows[ev.EntityID], newRiskDecision(ev, i))
 		}
@@ -181,7 +191,7 @@ func DecideGateProposal(repoDir, projDir, id, decision string) error {
 		if err != nil {
 			return "", err
 		}
-		ps := gateProposals(repoDir, projectGates(projDir), evs, features)
+		ps := gateProposals(repoDir, projectGates(projDir), evs, features, riskDecisions(evs), riskSignals(evs))
 		i := slices.IndexFunc(ps, func(p GateProposal) bool { return p.ID == id })
 		if i < 0 {
 			return "", fmt.Errorf("%w: %s", ErrUnknownProposal, id)
