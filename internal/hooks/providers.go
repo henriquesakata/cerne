@@ -160,7 +160,7 @@ func installCursor(projDir string, network bool) []Result {
 			"sessionStart": {flatCursorEntry("cerne hook session-context --format cursor")},
 		},
 	))
-	results = append(results, installCursorSandbox(projDir, network))
+	results = append(results, installCursorSandbox(projDir, network), cursorMCP(projDir))
 
 	// Not installed natively (R-0037) — reported, with what covers them, never silent.
 	results = append(results,
