@@ -45,6 +45,7 @@ func riskSignals(evs []domain.Event) map[string][]riskSignal {
 // gateProposals are the proposals the log calls for against the lists of g.
 func gateProposals(repoDir string, g project.GatesConfig, evs []domain.Event, features []store.Feature, decisions map[string]*RiskDecision, signals map[string][]riskSignal) []GateProposal {
 	decided := map[string]map[string]bool{} // proposal → cards the owner decided it for
+	decidedAt := map[string]int{}           // proposal → the log position of the owner's last decision on it
 	lows := map[string][]*RiskDecision{}    // card → every accept as low risk
 	for i, ev := range evs {
 		switch {
@@ -54,6 +55,7 @@ func gateProposals(repoDir string, g project.GatesConfig, evs []domain.Event, fe
 				decided[id] = map[string]bool{}
 			}
 			decided[id][ev.EntityID] = true
+			decidedAt[id] = i
 		case isRiskDecision(ev) && ev.Payload["risk"] == "low":
 			lows[ev.EntityID] = append(lows[ev.EntityID], newRiskDecision(ev, i))
 		}
@@ -73,15 +75,18 @@ func gateProposals(repoDir string, g project.GatesConfig, evs []domain.Event, fe
 	paths := g.RiskHumanPaths()
 	for _, f := range features {
 		id := "tighten:" + f.ID
+		// A decision binds the signals behind it, not the card: only a fix
+		// or a revert after the owner's last decision opens it again.
+		after := -1
 		if decided[id][f.ID] {
-			continue
+			after = decidedAt[id]
 		}
 		// The last accept as low risk that a fix or a revert followed.
 		for k := len(lows[f.ID]) - 1; k >= 0; k-- {
 			low := lows[f.ID][k]
 			var why []string
 			for _, s := range signals[f.ID] {
-				if s.idx > low.idx {
+				if s.idx > low.idx && s.idx > after {
 					why = append(why, s.line)
 				}
 			}

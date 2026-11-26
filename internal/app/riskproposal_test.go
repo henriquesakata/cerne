@@ -258,9 +258,36 @@ func TestRiskGateStats(t *testing.T) {
 	}
 }
 
+// TestDismissedTightenReopensOnANewSignal: a dismissal binds the signals
+// behind it, not the card: with nothing new the tighten proposal stays
+// closed, and a fix of the same card after the dismissal opens it again,
+// citing only that fix.
+// F-0518 crit. 7, 8
+func TestDismissedTightenReopensOnANewSignal(t *testing.T) {
+	asActor(t, "")
+	repoDir, projDir, _ := newFeatureBackend(t)
+	saveGates(t, projDir, calibration(0))
+	decided(t, repoDir, "F-0020", domain.StateDone, []string{"code"}, lowPayload())
+	logged(t, repoDir, domain.NewEvent("F-0021", "feature.created", map[string]string{"fixes": "F-0020"}, "human"))
+	if err := DecideGateProposal(repoDir, projDir, "tighten:F-0020", ProposalDismissed); err != nil {
+		t.Fatal(err)
+	}
+	if ps := proposals(t, repoDir, projDir); len(ps) != 0 {
+		t.Fatalf("proposals right after the dismissal = %+v, want none", ps)
+	}
+	logged(t, repoDir, domain.NewEvent("F-0022", "feature.created", map[string]string{"fixes": "F-0020"}, "human"))
+	ps := proposals(t, repoDir, projDir)
+	if len(ps) != 1 || ps[0].ID != "tighten:F-0020" {
+		t.Fatalf("proposals after a new fix = %+v, want tighten:F-0020 again", ps)
+	}
+	if s := strings.Join(ps[0].Signals, " | "); !strings.Contains(s, "F-0022 fixes F-0020") || strings.Contains(s, "F-0021") {
+		t.Errorf("signals %q: want only the fix after the dismissal", s)
+	}
+}
+
 // TestDismissedProposalStaysClosed: a dismissed proposal does not reopen from
-// the cards that motivated it — not when one more card adds to them, and not
-// when the same card is fixed again.
+// the cards that motivated it when one more card adds to them; three new
+// cards are a new proposal, from those cards only.
 // F-0518 crit. 8
 func TestDismissedProposalStaysClosed(t *testing.T) {
 	asActor(t, "")
@@ -275,7 +302,6 @@ func TestDismissedProposalStaysClosed(t *testing.T) {
 		}
 	}
 	heldAndAnswered(t, repoDir, projDir, 4, 1, false)
-	logged(t, repoDir, domain.NewEvent("F-0022", "feature.created", map[string]string{"fixes": "F-0020"}, "human"))
 	if ps := proposals(t, repoDir, projDir); len(ps) != 0 {
 		t.Fatalf("proposals = %+v, want the dismissed ones closed", ps)
 	}
