@@ -32,6 +32,15 @@ func CheckHumanGate(gate string) error {
 	return nil
 }
 
+// approveVia is an approve's mark (F-0515): "auto" when an agent crosses the
+// approve gate set to auto; "" when a person approves, whatever the gate.
+func approveVia(g project.GatesConfig) string {
+	if g.ApproveGate() == project.GateAuto && isAgentActor(actorEnv()) {
+		return project.GateAuto
+	}
+	return ""
+}
+
 // CheckHumanSetting refuses an agent actor on a setting only a human writes
 // (F-0392). Fail-open like CheckHumanGate; the UI server does not call it.
 func CheckHumanSetting(id string) error {

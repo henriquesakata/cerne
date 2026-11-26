@@ -323,10 +323,17 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 			f.Reason = reason
 		case domain.ActionReject:
 			f.Reason = reason
+		case domain.ActionApprove:
+			// F-0515: a person's re-approval clears an agent's earlier mark.
+			f.ApprovedVia = approveVia(gates)
 		case domain.ActionRevert:
-			// An acceptance undone (F-0499) is no longer an acceptance on merge.
+			// An acceptance undone (F-0499) is no longer an acceptance on merge,
+			// nor is an approval undone one without a human act (F-0515).
 			if oldState == domain.StateDone {
 				f.AcceptedVia = ""
+			}
+			if oldState == domain.StateApproved {
+				f.ApprovedVia = ""
 			}
 		}
 		// Delivery links (F-0179): captured in the same write as the complete,
@@ -405,6 +412,12 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 				}
 			}
 		}
+		if action == domain.ActionApprove && f.ApprovedVia != "" {
+			if payload == nil {
+				payload = map[string]string{}
+			}
+			payload["via"] = f.ApprovedVia
+		}
 		actor := EventActor()
 		if m != nil {
 			payload, actor = m.payload(), mergeActor
@@ -416,12 +429,14 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 		// carries the feature straight to done in the same critical section —
 		// both events land in one commit. Default (human) stops at implemented
 		// ("Ready") and waits for the explicit human accept.
-		if action == domain.ActionComplete && projectGates(projDir).AcceptGate() == project.GateAuto {
+		autoAccepted := action == domain.ActionComplete && projectGates(projDir).AcceptGate() == project.GateAuto
+		if autoAccepted {
 			promoted, err := domain.Transition(f.State, domain.ActionAccept)
 			if err != nil {
 				return "", err
 			}
 			f.State = promoted
+			f.AcceptedVia = project.GateAuto // F-0515: done with no human act
 			f.UpdatedAt = time.Now().UTC()
 			if err := store.SaveFeature(repoDir, f); err != nil {
 				return "", err
@@ -442,9 +457,9 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 		if err != nil {
 			return "", err
 		}
-		// So do its implemented tasks (T-0007).
-		if action == domain.ActionAccept {
-			if casc, err = cascadeAccept(repoDir, projDir, id, m); err != nil {
+		// So do its implemented tasks (T-0007), on an auto accept too (F-0515).
+		if action == domain.ActionAccept || autoAccepted {
+			if casc, err = cascadeAccept(repoDir, projDir, id, m, autoAccepted); err != nil {
 				return "", err
 			}
 		}
