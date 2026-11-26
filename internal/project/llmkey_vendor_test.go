@@ -51,6 +51,14 @@ func TestResolveKeyRefusesAnotherVendorsKey(t *testing.T) {
 		}
 	}
 
+	// The provider's own variable still wins over a foreign key in the legacy one.
+	clear()
+	t.Setenv("CERNE_LLM_API_KEY", antKey)
+	t.Setenv("OPENAI_API_KEY", "sk-proj-mine")
+	if v, _, env, err := (LLMConfig{Provider: "openai"}).ResolveKey(); v != "sk-proj-mine" || env != "OPENAI_API_KEY" || err != nil {
+		t.Errorf("own variable beside a foreign legacy key: env=%q err=%v, want the key of OPENAI_API_KEY", env, err)
+	}
+
 	// Other directions of the same mistake.
 	for provider, key := range map[string]string{"anthropic": "sk-proj-abc", "openrouter": "sk-ant-abc", "gemini": "sk-or-v1-abc"} {
 		clear()
