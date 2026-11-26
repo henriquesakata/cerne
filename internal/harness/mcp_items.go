@@ -21,13 +21,16 @@ type mcpServer struct {
 	Headers map[string]string `json:"headers"`
 }
 
-// mcpItems builds the MCP class from the project's .mcp.json and the user's
-// ~/.claude.json declarations.
+// mcpItems builds the MCP class from the project's .mcp.json and
+// .cursor/mcp.json and the user's ~/.claude.json and ~/.cursor/mcp.json
+// declarations (Cursor reads only its own files, F-0512).
 func mcpItems(opts Options, ls *layerSet) []Item {
 	var items []Item
 	items = append(items, mcpFrom(filepath.Join(opts.ProjDir, ".mcp.json"), OriginProject, ls)...)
+	items = append(items, mcpFrom(filepath.Join(opts.ProjDir, ".cursor", "mcp.json"), OriginProject, ls)...)
 	if opts.Home != "" {
 		items = append(items, mcpFrom(filepath.Join(opts.Home, ".claude.json"), OriginUser, ls)...)
+		items = append(items, mcpFrom(filepath.Join(opts.Home, ".cursor", "mcp.json"), OriginUser, ls)...)
 	}
 	return items
 }

@@ -117,3 +117,59 @@ func TestParityWakeRow(t *testing.T) {
 		t.Errorf("Codex channel cell = %q, want the prompt hook", channel.Codex)
 	}
 }
+
+// F-0512 crit. 6: the matrix states the Cursor sandbox file, what --network
+// does there, and the Cursor MCP file — none of them degraded.
+func TestParityCursorSandboxNetworkAndMCP(t *testing.T) {
+	want := map[string][]string{
+		"sandbox": {".cursor/sandbox.json", "additionalReadwritePaths", "~/.cursor/sandbox.json"},
+		"network": {"--network", "networkPolicy.allow", "deny"},
+		"mcp":     {".cursor/mcp.json", "cerne mcp"},
+	}
+	found := map[string]bool{}
+	for _, r := range ParityRows() {
+		c := strings.ToLower(r.Capability)
+		for key, needles := range want {
+			if !strings.Contains(c, key) {
+				continue
+			}
+			found[key] = true
+			if d, _ := r.Degraded(ProviderCursor); d {
+				t.Errorf("row %q: Cursor cell degraded", r.Capability)
+			}
+			for _, n := range needles {
+				if !strings.Contains(r.Cursor, n) {
+					t.Errorf("row %q: Cursor cell lacks %q: %s", r.Capability, n, r.Cursor)
+				}
+			}
+		}
+	}
+	for key := range want {
+		if !found[key] {
+			t.Errorf("no %s row in the parity matrix", key)
+		}
+	}
+}
+
+// F-0512 crit. 6 (review #6): a provider whose install writes no sandbox or
+// MCP file gets n/a in those rows, so cerne harness reports no "missing" gap
+// whose fix would write nothing.
+func TestParitySandboxAndMCPRowsAreNotApplicableWhereNothingIsWritten(t *testing.T) {
+	na := map[string][]Provider{
+		"Agent sandbox":    {ProviderClaude, ProviderGemini, ProviderCopilot},
+		"Network for pull": {ProviderClaude, ProviderGemini, ProviderCopilot},
+		"Read-only MCP":    {ProviderClaude, ProviderCodex, ProviderGemini},
+	}
+	for _, r := range ParityRows() {
+		for prefix, ps := range na {
+			if !strings.HasPrefix(r.Capability, prefix) {
+				continue
+			}
+			for _, p := range ps {
+				if r.For(p) != NotApplicable {
+					t.Errorf("row %q, %s = %q, want %q", r.Capability, p, r.For(p), NotApplicable)
+				}
+			}
+		}
+	}
+}

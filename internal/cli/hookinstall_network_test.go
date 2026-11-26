@@ -7,13 +7,21 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-git/go-git/v5"
+
 	"github.com/henriquesakata/cerne/internal/project"
 )
 
 func networkProject(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	if err := project.SaveConfig(dir, project.Config{ProjectID: "p", Backend: "/tmp/b"}); err != nil {
+	// A repository outside the home: a machine-specific folder (F-0512 review
+	// #1b opens a local backend only when it is a git repository).
+	backend := filepath.Join(t.TempDir(), "b.git")
+	if _, err := git.PlainInit(backend, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := project.SaveConfig(dir, project.Config{ProjectID: "p", Backend: backend}); err != nil {
 		t.Fatal(err)
 	}
 	return dir
@@ -105,8 +113,8 @@ func TestHookInstallCodexNetworkFlagWritten(t *testing.T) {
 func TestHookInstallNetworkDefaultProviders(t *testing.T) {
 	dir := networkProject(t)
 	out, err := execCerne(t, "hook", "install", "--dir", dir, "--network")
-	if !errors.Is(err, ErrNetworkNeedsCodex) {
-		t.Fatalf("err = %v, want ErrNetworkNeedsCodex\n%s", err, out)
+	if !errors.Is(err, ErrNetworkNeedsSandboxProvider) {
+		t.Fatalf("err = %v, want ErrNetworkNeedsSandboxProvider\n%s", err, out)
 	}
 	if ents, _ := os.ReadDir(dir); len(ents) != 1 || ents[0].Name() != ".cernerc" {
 		t.Errorf("project dir changed on a refused install: %v", ents)
@@ -124,8 +132,8 @@ func TestHookInstallNetworkDefaultProviders(t *testing.T) {
 func TestHookInstallNetworkRefusedWithoutCodex(t *testing.T) {
 	dir := networkProject(t)
 	out, err := execCerne(t, "hook", "install", "--dir", dir, "--provider", "gemini", "--network")
-	if !errors.Is(err, ErrNetworkNeedsCodex) {
-		t.Fatalf("err = %v, want ErrNetworkNeedsCodex\n%s", err, out)
+	if !errors.Is(err, ErrNetworkNeedsSandboxProvider) {
+		t.Fatalf("err = %v, want ErrNetworkNeedsSandboxProvider\n%s", err, out)
 	}
 	ents, _ := os.ReadDir(dir)
 	if len(ents) != 1 || ents[0].Name() != ".cernerc" {

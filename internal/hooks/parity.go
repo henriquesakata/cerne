@@ -238,6 +238,30 @@ var parityTable = []ParityRow{
 		Gemini:     "trusted folders",
 		Copilot:    "trusted folder: in prompt mode an untrusted folder skips the repository hooks (probed); the cloud agent needs none",
 	},
+	{
+		Capability: "Agent sandbox: cache and local backend writable (F-0474, F-0512)",
+		Claude:     NotApplicable,
+		Cursor:     ".cursor/sandbox.json additionalReadwritePaths with ~/ paths, merged key by key, written only by an explicit hook install (never by a renewal); the cache needs a project_id that is one folder name, a local backend must be a git repository that is neither the home nor holds it; a machine-specific folder (CERNE_CACHE_DIR, XDG_CACHE_HOME, a backend outside the home) or invalid JSON writes nothing and prints the block for ~/.cursor/sandbox.json",
+		Codex:      ".codex/config.toml profile cerne extending :workspace, with ~/ paths; a machine-specific folder prints the snippet for ~/.codex/config.toml",
+		Gemini:     NotApplicable,
+		Copilot:    NotApplicable,
+	},
+	{
+		Capability: "Network for pull and push (--network, F-0484, F-0512)",
+		Claude:     NotApplicable,
+		Cursor:     "--network adds only the remote backend's host to networkPolicy.allow in .cursor/sandbox.json: no default, and nothing is written when a deny entry could match the host (exact, *, *.domain, an IP or CIDR); a local backend opens nothing",
+		Codex:      "--network sets enabled = true under [permissions.cerne.network]: the whole network, Codex has no domain list",
+		Gemini:     NotApplicable,
+		Copilot:    NotApplicable,
+	},
+	{
+		Capability: "Read-only MCP server (cerne mcp)",
+		Claude:     NotApplicable,
+		Cursor:     ".cursor/mcp.json mcpServers.cerne (stdio, cerne mcp), written only by an explicit hook install; Cursor does not read the root .mcp.json",
+		Codex:      NotApplicable,
+		Gemini:     NotApplicable,
+		Copilot:    "root .mcp.json mcpServers.cerne with the explicit tools list; the cloud agent needs the block pasted in the repository settings",
+	},
 }
 
 // ParityMatrix renders the provider parity matrix as the markdown document
@@ -253,7 +277,7 @@ What ` + "`cerne hook install`" + ` (and, for the authoring guide, ` + "`cerne s
 **degraded** are limitations of the provider's extension surface (or await
 live validation) and are reported as ` + "`skipped`" + ` lines, with the manual
 step, in the install output. Research provenance: R-0035 (Codex), R-0036
-(Gemini), R-0037 (Cursor), R-0101 (Copilot hooks); the authoring-guide paths: R-0064 (Codex), R-0065 (Gemini), R-0066 (Cursor), in the cerne backend.
+(Gemini), R-0037 (Cursor), R-0146 and R-0147 (Cursor sandbox and MCP), R-0101 (Copilot hooks); the authoring-guide paths: R-0064 (Codex), R-0065 (Gemini), R-0066 (Cursor), in the cerne backend.
 
 | Capability | Claude Code | Cursor | Codex CLI | Gemini CLI | GitHub Copilot |
 |---|---|---|---|---|---|

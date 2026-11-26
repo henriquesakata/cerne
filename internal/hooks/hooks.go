@@ -171,12 +171,20 @@ var ErrUnknownProvider = errors.New("unknown provider")
 // manual step as the note). A corrupt config file is a fail-closed error for
 // Claude Code; other providers degrade to skipped, never clobbering.
 func Install(projDir string, providers ...Provider) ([]Result, error) {
-	return InstallNetwork(projDir, false, providers...)
+	return install(projDir, false, false, providers...)
 }
 
-// InstallNetwork is Install plus the F-0484 request: with network, the Codex
-// sandbox profile also opens the whole network (no domain list exists).
+// InstallNetwork is the explicit `cerne hook install`: Install plus the files
+// that widen an agent sandbox, which a renewal must never write (F-0512 review:
+// .cernerc is writable from inside the sandbox, .cursor/*.json is not). With
+// network, the Codex sandbox profile also opens the whole network (no domain
+// list exists, F-0484), and the Cursor sandbox allows only the remote
+// backend's host.
 func InstallNetwork(projDir string, network bool, providers ...Provider) ([]Result, error) {
+	return install(projDir, true, network, providers...)
+}
+
+func install(projDir string, explicit, network bool, providers ...Provider) ([]Result, error) {
 	if len(providers) == 0 {
 		providers = []Provider{ProviderClaude}
 	}
@@ -190,7 +198,7 @@ func InstallNetwork(projDir string, network bool, providers ...Provider) ([]Resu
 		case ProviderClaude:
 			rs, err = installClaude(projDir)
 		case ProviderCursor:
-			rs = installCursor(projDir)
+			rs = installCursor(projDir, explicit, network)
 		case ProviderCodex:
 			rs = installCodex(projDir, network)
 		case ProviderGemini:
