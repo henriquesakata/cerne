@@ -10,7 +10,6 @@ import (
 
 	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/lint"
-	"github.com/henriquesakata/cerne/internal/store"
 	"github.com/henriquesakata/cerne/internal/verbs"
 )
 
@@ -48,7 +47,7 @@ var errFeatureContextRequired = errors.New(
 	"feature has no context: pass at least --context \"<1-3 sentences on why>\", or the full spec via --file <spec.md>/stdin")
 
 func newFeatureNewCmd(dir *string) *cobra.Command {
-	var module, parent, fixes, facet, component, file, context, owner, priority, onBehalf string
+	var module, parent, fixes, facet, component, file, context, owner, priority, onBehalf, capability string
 	var force bool
 	cmd := &cobra.Command{
 		Use:   "new [title]",
@@ -63,7 +62,7 @@ func newFeatureNewCmd(dir *string) *cobra.Command {
 			"  cerne pull\n" + lifecycleSeq,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runFeatureNew(cmd, *dir, args, module, parent, fixes, facet, component, file, context, force, owner, priority, onBehalf)
+			return runFeatureNew(cmd, *dir, args, module, parent, fixes, facet, component, file, context, force, owner, priority, onBehalf, capability)
 		},
 	}
 	cmd.Flags().StringVar(&module, "module", "", "module the feature belongs to")
@@ -77,17 +76,15 @@ func newFeatureNewCmd(dir *string) *cobra.Command {
 	cmd.Flags().StringVar(&owner, "owner", "", "responsible handle (free text, F-0204)")
 	cmd.Flags().StringVar(&priority, "priority", "", "priority (closed set: p0,p1,p2,p3, F-0204)")
 	cmd.Flags().StringVar(&onBehalf, "on-behalf", "", onBehalfHelp)
+	cmd.Flags().StringVar(&capability, "capability", "", "capability nodes to link at birth (CSV of C- ids; validated before anything is written, one commit)")
 	return verbs.MarkChatTool(cmd)
 }
 
 // onBehalfHelp is the --on-behalf flag text shared by feature/epic/task new (T-0005).
 const onBehalfHelp = "quote of the human's request when an agent creates this for them: records origin human and the quote on the creation event"
 
-func runFeatureNew(cmd *cobra.Command, dir string, args []string, module, parent, fixes, facet, component, file, context string, force bool, owner, priority, onBehalf string) error {
-	return runFeatureLikeNew(cmd, dir, args, module, parent, facet, component, file, context, force, owner, priority, onBehalf,
-		func(repoDir, projDir, title, module, parent string, facets, components []string, specBody string, force bool, owner, priority, onBehalf string) (store.Feature, error) {
-			return app.CreateFeatureFixes(repoDir, projDir, title, module, parent, fixes, facets, components, specBody, force, owner, priority, onBehalf)
-		})
+func runFeatureNew(cmd *cobra.Command, dir string, args []string, module, parent, fixes, facet, component, file, context string, force bool, owner, priority, onBehalf, capability string) error {
+	return runFeatureLikeNew(cmd, dir, args, module, parent, facet, component, file, context, force, owner, priority, onBehalf, capability, "F", fixes)
 }
 
 func newFeatureSpecCmd(dir *string) *cobra.Command {

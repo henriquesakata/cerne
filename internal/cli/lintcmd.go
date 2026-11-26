@@ -325,6 +325,12 @@ func printFindings(w io.Writer, findings []lint.Finding) {
 // printFindingsTotal is printFindings with a suffix on the Total line (the
 // scope label of `lint --feature/--parent`).
 func printFindingsTotal(w io.Writer, findings []lint.Finding, totalSuffix string) {
+	printFindingsCapped(w, findings, totalSuffix, 0)
+}
+
+// printFindingsCapped is printFindingsTotal showing at most perRule items of
+// each rule (0 = all), the rest as one "… and N more" line (F-0514).
+func printFindingsCapped(w io.Writer, findings []lint.Finding, totalSuffix string, perRule int) {
 	for _, rule := range lint.RuleOrder {
 		var group []lint.Finding
 		for _, f := range findings {
@@ -342,7 +348,11 @@ func printFindingsTotal(w io.Writer, findings []lint.Finding, totalSuffix string
 			warning = " (warning: wiki.enabled is off)"
 		}
 		fmt.Fprintf(w, "%s (%d)%s\n", strings.ToUpper(rule), len(group), warning)
-		for _, f := range group {
+		for i, f := range group {
+			if perRule > 0 && i == perRule {
+				fmt.Fprintf(w, "  … and %d more ('cerne lint' or 'cerne next --all')\n", len(group)-perRule)
+				break
+			}
 			fmt.Fprintf(w, "  %s — %s\n", findingPos(f), f.Detail)
 		}
 		fmt.Fprintln(w)

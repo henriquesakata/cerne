@@ -84,7 +84,7 @@ func TestRegisterRulesCompleteCard(t *testing.T) {
 		t.Fatalf("read asset: %v", err)
 	}
 	for name, text := range map[string]string{"RegisterRules": RegisterRules, "cerne-register-reminder.sh": string(body)} {
-		for _, want := range []string{"Register it complete in that same act", "--facet", "--component", "cerne feature capability <id> C-"} {
+		for _, want := range []string{"Register it complete in that same act", "--facet", "--component", "--capability C-"} {
 			if !strings.Contains(text, want) {
 				t.Errorf("%s missing %q", name, want)
 			}

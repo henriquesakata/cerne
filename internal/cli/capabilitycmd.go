@@ -124,8 +124,8 @@ func newCapabilityRetireCmd(dir *string) *cobra.Command {
 func newFeatureCapabilityCmd(dir *string) *cobra.Command {
 	var clear bool
 	cmd := &cobra.Command{
-		Use:   "capability <feature-id> [C-ids]",
-		Short: "Link a feature to capability nodes (comma-separated C- ids; --clear removes)",
+		Use:   "capability <feature-id[,id…]> [C-ids]",
+		Short: "Link one or more cards (comma-separated ids) to capability nodes (comma-separated C- ids; --clear removes)",
 		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := resolveProject(*dir)
@@ -139,14 +139,16 @@ func newFeatureCapabilityCmd(dir *string) *cobra.Command {
 			if !clear {
 				ids = splitInforms(args[1])
 			}
-			f, err := app.LinkFeatureCapabilities(ctx.repoDir, ctx.projDir, args[0], ids, clear)
+			fs, err := app.LinkFeaturesCapabilities(ctx.repoDir, ctx.projDir, splitInforms(args[0]), ids, clear)
 			if err != nil {
 				return err
 			}
-			if clear {
-				fmt.Fprintf(cmd.OutOrStdout(), "%s: capabilities cleared\n", f.ID)
-			} else {
-				fmt.Fprintf(cmd.OutOrStdout(), "%s: capabilities set (%d)\n", f.ID, len(f.Capabilities))
+			for _, f := range fs {
+				if clear {
+					fmt.Fprintf(cmd.OutOrStdout(), "%s: capabilities cleared\n", f.ID)
+				} else {
+					fmt.Fprintf(cmd.OutOrStdout(), "%s: capabilities set (%d)\n", f.ID, len(f.Capabilities))
+				}
 			}
 			return nil
 		},

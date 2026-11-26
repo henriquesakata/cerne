@@ -279,6 +279,10 @@ func TestNextShowsOpenPendings(t *testing.T) {
 	if strings.Contains(out, "P-0002 ") || strings.Contains(out, "P-0003 ") {
 		t.Fatalf("the two newest pendings must fall beyond the cap:\n%s", out)
 	}
+	// F-0514 crit. 4: --all lifts the pendings cap too.
+	if all, err := execCerne(t, "next", "--all", "--dir", projDir); err != nil || strings.Contains(all, "more ('cerne pending list')") || !strings.Contains(all, "P-0002 ") {
+		t.Fatalf("next --all must list every pending (%v):\n%s", err, all)
+	}
 }
 
 // Crit. 11 ("severidade warning"): stale-pending alone keeps 'cerne lint' at
