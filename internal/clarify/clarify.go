@@ -13,7 +13,11 @@
 //	[ESCLARECER]                              open, no question
 //	[ESCLARECER: question]                    open
 //	[ESCLARECER: question | option | option]  open, with proposed options
-//	[ESCLARECER: question \| option]          the same: an escaped pipe separates
+//	[ESCLARECER: question | option (recomendada) | option]
+//	                                          the author's pick ends with
+//	                                          (recomendada) or (recommended),
+//	                                          either word in either language
+//	[ESCLARECER: question \| option]        the same: an escaped pipe separates
 //	                                          options exactly like a bare one,
 //	                                          everywhere — the escape exists so a
 //	                                          marker inside a GFM table cell is
@@ -35,7 +39,11 @@ import (
 // Clarification is one marker occurrence inside a document.
 type Clarification struct {
 	Question string   // empty on the bare form
-	Options  []string // proposed answers, empty when the marker has no pipes
+	Options  []string // proposed answers as written, suffix stripped; empty when the marker has no pipes
+	// Recommended is the 1-based position in Options of the first option that
+	// carried the (recomendada)/(recommended) suffix; 0 when none did (F-0517).
+	Recommended     int
+	ManyRecommended bool // more than one option carried the suffix; only the first counts
 	Resolved bool     // true for [ESCLARECIDO: …]
 	Answer   string   // the CURRENT answer; set only when Resolved
 	Answers  []string // the answer trail in chronological order (F-0197); the
@@ -176,6 +184,21 @@ func citationRanges(content string) [][]int {
 	return ranges
 }
 
+// recommendedRe is the suffix that marks an option as the author's pick, read
+// only at the end of the option. Both languages' words are accepted in every
+// marker, like the marker words themselves (F-0517, F-0182).
+var recommendedRe = regexp.MustCompile(`(?i)[ \t]*\((?:recomendada|recommended)\)$`)
+
+// stripRecommended removes the recommended suffix from opt. A bare suffix
+// (nothing left) is not a recommendation, just an option.
+func stripRecommended(opt string) (string, bool) {
+	loc := recommendedRe.FindStringIndex(opt)
+	if loc == nil || loc[0] == 0 {
+		return opt, false
+	}
+	return strings.TrimSpace(opt[:loc[0]]), true
+}
+
 // Parse returns every marker in content, in document order, with exact
 // offsets so callers can rewrite one occurrence without touching duplicates.
 // Markers inside citation contexts (HTML comments, fenced or inline code)
@@ -224,9 +247,19 @@ func Parse(content string) []Clarification {
 			parts := strings.Split(unescapeSeparator(body), "|")
 			c.Question = strings.TrimSpace(parts[0])
 			for _, p := range parts[1:] {
-				if opt := strings.TrimSpace(p); opt != "" {
-					c.Options = append(c.Options, opt)
+				opt := strings.TrimSpace(p)
+				if opt == "" {
+					continue
 				}
+				if stripped, ok := stripRecommended(opt); ok {
+					opt = stripped
+					if c.Recommended == 0 {
+						c.Recommended = len(c.Options) + 1
+					} else {
+						c.ManyRecommended = true
+					}
+				}
+				c.Options = append(c.Options, opt)
 			}
 		}
 		out = append(out, c)

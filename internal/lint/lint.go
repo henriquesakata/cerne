@@ -56,7 +56,10 @@ const (
 	// GFM table row — the cell separator slices it and the answer chip never
 	// renders (F-0282).
 	RuleClarifyUnescapedPipe = "clarify-unescaped-pipe"
-	RuleCapabilityOrphan     = "capability-orphan"
+	// RuleClarifyManyRecommended: more than one option of a marker carries the
+	// recommended suffix; only the first counts (F-0517).
+	RuleClarifyManyRecommended = "clarify-many-recommended"
+	RuleCapabilityOrphan       = "capability-orphan"
 
 	RuleSpecChangedAfterApproval = "spec-changed-after-approval"
 	RuleResultMissingEvidence    = "result-missing-evidence"
@@ -162,7 +165,7 @@ func DropGauntletRules(findings []Finding, gauntletOn bool) []Finding {
 func Blocking(f Finding) bool { return !Advisory(f.Rule) && !f.Downgraded }
 
 // RuleOrder is the deterministic report order of the lint rules.
-var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleEpicUnplanned, RuleStaleCandidate, RuleStaleReady, RuleStaleWork, RuleStaleNote, RuleStaleDecision, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect, RuleOpenClarification, RuleClarifyUnescapedPipe, RuleCapabilityOrphan, RuleSpecChangedAfterApproval, RuleResultMissingEvidence, RuleResultMissingGauntlet, RuleDuplicateLive, RuleStalePending, RuleSpecMissingBar, RulePreconditionMalformed, RuleErrataPending, RuleRunStalled, RuleAppendedAmendment, RuleStatusInBody, RuleWorkOutlivedFeature, RuleSpecCLILiteralPT, RulePlanOlderThanSpec, RuleHookCitesMissingRule, RuleCriterionWithoutTest, RuleOrphanCriterionTest, RuleCriterionTestsConfig, RuleComponentSingleUse, RuleComponentSameRoot, RuleComponentNoteOnly, RuleNoteUnreachable, RuleReferenceGone}
+var RuleOrder = []string{RuleRefToSuperseded, RuleBrokenLink, RuleOrphanContent, RuleMissingGateDoc, RuleWikiSourceUnknown, RuleParentNotFound, RuleParentTerminal, RuleEpicOpenChildren, RuleEpicBehindChildren, RuleEpicUnplanned, RuleStaleCandidate, RuleStaleReady, RuleStaleWork, RuleStaleNote, RuleStaleDecision, RuleIncompleteDoc, RuleUntaggedLive, RuleUnregisteredSource, RuleDriftSuspect, RuleOpenClarification, RuleClarifyUnescapedPipe, RuleClarifyManyRecommended, RuleCapabilityOrphan, RuleSpecChangedAfterApproval, RuleResultMissingEvidence, RuleResultMissingGauntlet, RuleDuplicateLive, RuleStalePending, RuleSpecMissingBar, RulePreconditionMalformed, RuleErrataPending, RuleRunStalled, RuleAppendedAmendment, RuleStatusInBody, RuleWorkOutlivedFeature, RuleSpecCLILiteralPT, RulePlanOlderThanSpec, RuleHookCitesMissingRule, RuleCriterionWithoutTest, RuleOrphanCriterionTest, RuleCriterionTestsConfig, RuleComponentSingleUse, RuleComponentSameRoot, RuleComponentNoteOnly, RuleNoteUnreachable, RuleReferenceGone}
 
 var ruleRank = map[string]int{
 	RuleRefToSuperseded:          0,
@@ -186,30 +189,31 @@ var ruleRank = map[string]int{
 	RuleDriftSuspect:             18,
 	RuleOpenClarification:        19,
 	RuleClarifyUnescapedPipe:     20,
-	RuleCapabilityOrphan:         21,
-	RuleSpecChangedAfterApproval: 22,
-	RuleResultMissingEvidence:    23,
-	RuleResultMissingGauntlet:    24,
-	RuleDuplicateLive:            25,
-	RuleStalePending:             26,
-	RuleSpecMissingBar:           27,
-	RulePreconditionMalformed:    28,
-	RuleErrataPending:            29,
-	RuleRunStalled:               30,
-	RuleAppendedAmendment:        31,
-	RuleStatusInBody:             32,
-	RuleWorkOutlivedFeature:      33,
-	RuleSpecCLILiteralPT:         34,
-	RulePlanOlderThanSpec:        35,
-	RuleHookCitesMissingRule:     36,
-	RuleCriterionWithoutTest:     37,
-	RuleOrphanCriterionTest:      38,
-	RuleCriterionTestsConfig:     39,
-	RuleComponentSingleUse:       40,
-	RuleComponentSameRoot:        41,
-	RuleComponentNoteOnly:        42,
-	RuleNoteUnreachable:          43,
-	RuleReferenceGone:            44,
+	RuleClarifyManyRecommended:   21,
+	RuleCapabilityOrphan:         22,
+	RuleSpecChangedAfterApproval: 23,
+	RuleResultMissingEvidence:    24,
+	RuleResultMissingGauntlet:    25,
+	RuleDuplicateLive:            26,
+	RuleStalePending:             27,
+	RuleSpecMissingBar:           28,
+	RulePreconditionMalformed:    29,
+	RuleErrataPending:            30,
+	RuleRunStalled:               31,
+	RuleAppendedAmendment:        32,
+	RuleStatusInBody:             33,
+	RuleWorkOutlivedFeature:      34,
+	RuleSpecCLILiteralPT:         35,
+	RulePlanOlderThanSpec:        36,
+	RuleHookCitesMissingRule:     37,
+	RuleCriterionWithoutTest:     38,
+	RuleOrphanCriterionTest:      39,
+	RuleCriterionTestsConfig:     40,
+	RuleComponentSingleUse:       41,
+	RuleComponentSameRoot:        42,
+	RuleComponentNoteOnly:        43,
+	RuleNoteUnreachable:          44,
+	RuleReferenceGone:            45,
 }
 
 // Finding is one lint problem detected in the backend.
