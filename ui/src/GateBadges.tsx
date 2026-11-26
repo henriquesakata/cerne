@@ -5,8 +5,10 @@ import { useT } from './i18n'
 // with no human act ([gates] approve/accept = "auto"), on the kanban card and
 // the feature page. The acceptance on merge (F-0488) keeps its own label. A
 // card the risk gate accepted (F-0516) shows its measurements on hover. The
-// owner's accept mode (F-0518) shows too: passing alone is the warning.
-export default function GateBadges({ feature }: { feature: Pick<Feature, 'approved_via' | 'accepted_via' | 'accepted_risk' | 'accept_mode'> }) {
+// owner's accept mode (F-0518) shows too: passing alone is the warning. A card
+// the risk gate holds (F-0521) says why: the reasons are in the title and the
+// accessible name.
+export default function GateBadges({ feature }: { feature: Pick<Feature, 'state' | 'approved_via' | 'accepted_via' | 'accepted_risk' | 'accept_mode' | 'held_risk'> }) {
   const { t } = useT()
   return (
     <>
@@ -17,6 +19,16 @@ export default function GateBadges({ feature }: { feature: Pick<Feature, 'approv
       {feature.accepted_via === 'risk' && (
         <span className="badge badge-risk" title={feature.accepted_risk}>
           {t.kanban.acceptedRisk}
+        </span>
+      )}
+      {feature.state === 'implemented' && feature.held_risk && feature.held_risk.length > 0 && (
+        <span
+          className="badge badge-held"
+          role="note"
+          title={feature.held_risk.join('\n')}
+          aria-label={`${t.kanban.heldRisk}: ${feature.held_risk.join('; ')}`}
+        >
+          {t.kanban.heldRisk}
         </span>
       )}
     </>

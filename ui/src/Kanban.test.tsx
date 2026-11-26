@@ -533,3 +533,38 @@ describe('Kanban — a marca de aceite do dono (F-0518)', () => {
     })
   }
 })
+
+// F-0521 crit. 5, 7: a card the risk gate held shows why on hover and in its
+// accessible name; in done, or with no held_risk, no badge.
+describe('Kanban — selo da retenção pelo risco (F-0521)', () => {
+  const reasons = ['touches a sensitive path: go.mod', "the Gauntlet's last round is a tie, not a win"]
+  for (const [lang, label] of [
+    ['pt-BR', 'Segurada pelo risco'],
+    ['en', 'Held by risk'],
+  ] as const) {
+    it(`${lang}: o selo com os motivos; done e sem campo não o levam`, async () => {
+      localStorage.setItem('cerne-lang', lang)
+      payload = {
+        ...state(),
+        features: [
+          feature('F-0001', { state: 'implemented', held_risk: reasons }),
+          feature('F-0002', { state: 'done', held_risk: reasons }),
+          feature('F-0003', { state: 'implemented' }),
+          feature('F-0004', { state: 'done', accepted_via: 'risk', accepted_risk: 'low' }),
+        ],
+      }
+      render(
+        <I18nProvider>
+          <Kanban />
+        </I18nProvider>,
+      )
+      await waitFor(() => expect(cardOf('F-0001')).toBeInTheDocument())
+      const badge = cardOf('F-0001')?.querySelector('.badge-held') as HTMLElement
+      expect(badge).toHaveTextContent(label)
+      expect(badge).toHaveAttribute('title', reasons.join('\n'))
+      expect(badge).toHaveAccessibleName(`${label}: ${reasons.join('; ')}`)
+      for (const id of ['F-0002', 'F-0003', 'F-0004']) expect(cardOf(id)?.querySelector('.badge-held')).toBeNull()
+      expect(cardOf('F-0004')?.querySelector('.badge-risk')).not.toBeNull()
+    })
+  }
+})

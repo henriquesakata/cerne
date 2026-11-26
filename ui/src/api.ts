@@ -32,6 +32,7 @@ export type Feature = {
   delivery_commit_url?: string // F-0179: resolved URL of the delivering commit
   delivery_mr_url?: string // F-0179: URL of the delivering MR/PR
   accepted_via?: string // F-0488: "merge" when the human's merge of the PR was the acceptance; F-0515: "auto" when complete reached done by [gates] accept = "auto"; F-0516: "risk" when the risk gate accepted a low-risk delivery
+  held_risk?: string[] // F-0521: the lines of what held the card at complete, as the CLI prints them
   accepted_risk?: string // F-0516: on accepted_via "risk", the three measurements in one line
   approved_via?: string // F-0515: "auto" when an agent approved under [gates] approve = "auto"
   accept_mode?: 'human' | 'auto' // F-0518: the owner's mark for the risk gate; absent = the gate decides

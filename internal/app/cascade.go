@@ -139,6 +139,10 @@ func cascadeAccept(repoDir, projDir string, parent store.Feature, m *mergeAccept
 			if !ra.rides() {
 				held := ra.payload()
 				held["cascade_from"] = parentID
+				c.HeldRisk = ra.Held() // F-0521: its own reasons, with its event
+				if err := store.SaveFeature(repoDir, c); err != nil {
+					return out, err
+				}
 				if err := store.AppendEvent(repoDir, domain.NewEvent(c.ID, "feature.risk_held", held, EventActor())); err != nil {
 					return out, err
 				}
@@ -148,6 +152,7 @@ func cascadeAccept(repoDir, projDir string, parent store.Feature, m *mergeAccept
 			maps.Copy(payload, ra.payload())
 			payload["risk"], payload["via"] = "low", via // it rode the parent's accept as low risk
 			c.AcceptedVia, c.AcceptedRisk = via, ra.Summary()
+			c.HeldRisk = nil // F-0521: this reading lets it ride
 		}
 		if err := moveChild(repoDir, &c, domain.ActionAccept, payload, actor); err != nil {
 			return out, err
