@@ -1085,6 +1085,72 @@ h2 {
   align-items: flex-end;
 }
 
+/* F-0520: anexo de imagem — botão no canto esquerdo do campo, miniaturas acima. */
+.backlog-chat-attach {
+  position: absolute;
+  left: 0.4rem;
+  bottom: 0.4rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.backlog-chat-attach:hover:not(:disabled) { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.backlog-chat-attach:focus-visible { outline: 2px solid var(--fg); outline-offset: 1px; }
+.backlog-chat-attach:disabled { opacity: 0.4; cursor: default; }
+
+.backlog-chat-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.3rem 0;
+  padding: 0;
+  list-style: none;
+}
+.backlog-chat-images li { position: relative; }
+.backlog-chat-images img {
+  display: block;
+  max-width: 9rem;
+  max-height: 6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  object-fit: cover;
+}
+.backlog-chat-image-gone {
+  display: inline-block;
+  padding: 0.3rem 0.5rem;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.backlog-chat-image-remove {
+  position: absolute;
+  top: -0.35rem;
+  right: -0.35rem;
+  width: 1.15rem;
+  height: 1.15rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 0.8rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.backlog-chat-attach-error { margin: 0 0 0.3rem; color: var(--danger, #b42318); font-size: 0.85rem; }
+
 .backlog-chat-send {
   position: absolute;
   right: 0.4rem;
@@ -1121,6 +1187,8 @@ h2 {
   overflow-y: auto;
   /* espaço do botão de submit, que é absoluto dentro do campo (F-0241) */
   padding-right: 2.4rem;
+  /* e do botão de anexar, no canto oposto (F-0520) */
+  padding-left: 2.4rem;
 }
 
 /* Seletor em menu (F-0241): substitui o <select> nativo, que não renderiza
@@ -1231,7 +1299,7 @@ h2 {
    especificidade (0,1,1 contra 0,1,0). Excluí-los aqui é mais honesto que
    subir especificidade em cada um depois (F-0241). */
 .backlog-chat-proposal button,
-.backlog-chat-form button:not(.backlog-chat-send):not(.chat-menu-trigger):not(.chat-menu-item) {
+.backlog-chat-form button:not(.backlog-chat-send):not(.backlog-chat-attach):not(.backlog-chat-image-remove):not(.chat-menu-trigger):not(.chat-menu-item) {
   align-self: flex-start;
   font: inherit;
   padding: 0.45rem 1.1rem;
