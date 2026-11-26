@@ -250,9 +250,9 @@ func cursorSeen(t *testing.T, cacheDir, sess, model string, age time.Duration, b
 // TestDocAuthorCursor (F-0513 crit. 2): a Cursor agent shell's write names
 // provider cursor and the model its hooks recorded when every Cursor session
 // in play agrees on one, and no model when they disagree or none recorded one
-// — never a guess between concurrent sessions. In play: recorded in the last
-// 12 h, and only the bound ones when any is bound. A declaration, the chat,
-// a Claude Code transcript and a human are as before.
+// — never a guess between concurrent sessions. In play: every session
+// recorded in the last 12 h, bound or not. A declaration, the chat, a Claude
+// Code transcript and a human are as before.
 func TestDocAuthorCursor(t *testing.T) {
 	type seen struct {
 		sess, model string
@@ -274,7 +274,9 @@ func TestDocAuthorCursor(t *testing.T) {
 		{"a session with no model", nil, []seen{{"ca", "grok-4.7", time.Minute, false}, {"cb", "", time.Minute, false}}, "", none},
 		{"no session recorded", nil, nil, "", none},
 		{"a session out of the window", nil, []seen{{"ca", "grok-4.7", time.Minute, false}, {"cb", "gpt-6", 13 * time.Hour, false}}, "", DocAuthor{Provider: "cursor", Model: "grok-4.7", Source: "hook"}},
-		{"the bound session over an unbound one", nil, []seen{{"ca", "grok-4.7", time.Hour, true}, {"cb", "gpt-6", time.Minute, false}}, "", DocAuthor{Provider: "cursor", Model: "grok-4.7", Source: "hook"}},
+		// Review of PR #221: cb may be the writer (feature new --file runs
+		// before any feature start binds), so the binding of ca decides nothing.
+		{"a bound and an unbound session, two models", nil, []seen{{"ca", "grok-4.7", time.Hour, true}, {"cb", "gpt-6", time.Minute, false}}, "", none},
 		{"declared wins", map[string]string{"CERNE_PROVIDER": "xai", "CERNE_MODEL": "grok-x"}, []seen{{"ca", "grok-4.7", time.Minute, false}}, "", DocAuthor{Provider: "xai", Model: "grok-x", Source: "declared"}},
 		{"chat unchanged", map[string]string{"CERNE_ORIGIN": "chat"}, []seen{{"ca", "grok-4.7", time.Minute, false}}, "", DocAuthor{Provider: "anthropic", Model: "claude-opus-5-5", Source: "llm-config"}},
 		{"claude code transcript unchanged", map[string]string{"CERNE_SESSION": "s1"}, []seen{{"ca", "grok-4.7", time.Minute, false}}, "claude-opus-5-5", DocAuthor{Provider: "anthropic", Model: "claude-opus-5-5", Source: "transcript"}},

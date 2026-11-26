@@ -60,13 +60,14 @@ func RecordCursorSession(cacheDir, sess, model, transcriptPath string) error {
 }
 
 // cursorSessions are the Cursor sessions in play for the project at now:
-// recorded within cursorRecent and, when any of them has a live binding (a
-// session at work under a W- or an F-), only the bound ones — bound reports
-// which. A record that does not parse is not in play.
-func cursorSessions(cacheDir string, now time.Time) (sessions map[string]cursorSession, bound bool) {
+// every one recorded within cursorRecent, bound or not — the shell names no
+// session, and an unbound one may be the writer (feature new --file runs
+// before any feature start binds). A record that does not parse is not in
+// play.
+func cursorSessions(cacheDir string, now time.Time) map[string]cursorSession {
 	dir := filepath.Join(cacheDir, cursorSessionsSubdir)
 	entries, _ := os.ReadDir(dir)
-	recent, live := map[string]cursorSession{}, map[string]cursorSession{}
+	recent := map[string]cursorSession{}
 	for _, e := range entries {
 		sess, ok := strings.CutSuffix(e.Name(), ".json")
 		if !ok || e.IsDir() || safeSessionID(sess) != nil {
@@ -78,14 +79,15 @@ func cursorSessions(cacheDir string, now time.Time) (sessions map[string]cursorS
 			continue
 		}
 		recent[sess] = rec
-		if id, err := os.ReadFile(filepath.Join(cacheDir, sessionsSubdir, sess)); err == nil && bindingLive(filepath.Join(cacheDir, "repo"), strings.TrimSpace(string(id))) {
-			live[sess] = rec
-		}
 	}
-	if len(live) > 0 {
-		return live, true
-	}
-	return recent, false
+	return recent
+}
+
+// cursorBound reports a live binding of Cursor session sess (a session at
+// work under a W- or an F-).
+func cursorBound(cacheDir, sess string) bool {
+	id, err := os.ReadFile(filepath.Join(cacheDir, sessionsSubdir, sess))
+	return err == nil && bindingLive(filepath.Join(cacheDir, "repo"), strings.TrimSpace(string(id)))
 }
 
 // cursorAuthor is the writer of a document from a Cursor agent shell (F-0513):
@@ -95,8 +97,7 @@ func cursorSessions(cacheDir string, now time.Time) (sessions map[string]cursorS
 // apart by a guess (cost.AuthorModel's rule).
 func cursorAuthor(cacheDir string) DocAuthor {
 	a := DocAuthor{Provider: "cursor", Source: "hook"}
-	sessions, _ := cursorSessions(cacheDir, time.Now())
-	for _, rec := range sessions {
+	for _, rec := range cursorSessions(cacheDir, time.Now()) {
 		if rec.Model == "" || (a.Model != "" && rec.Model != a.Model) {
 			return DocAuthor{Provider: "cursor", Source: "hook"}
 		}
@@ -109,12 +110,14 @@ func cursorAuthor(cacheDir string) DocAuthor {
 // the session a Cursor shell's write is marked on (F-0513). "" when none is
 // bound or more than one is.
 func boundCursorSession(cacheDir string) string {
-	sessions, bound := cursorSessions(cacheDir, time.Now())
-	if !bound || len(sessions) != 1 {
+	var bound []string
+	for sess := range cursorSessions(cacheDir, time.Now()) {
+		if cursorBound(cacheDir, sess) {
+			bound = append(bound, sess)
+		}
+	}
+	if len(bound) != 1 {
 		return ""
 	}
-	for sess := range sessions {
-		return sess
-	}
-	return ""
+	return bound[0]
 }
