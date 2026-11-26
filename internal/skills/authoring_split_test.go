@@ -307,6 +307,8 @@ var f0475Rewritten = []string{
 	"The result rules count it too: a `critério N` cited in an errata entry clears `result-missing-eviden",
 	// T-0020: room watch --once now waits out --settle before it exits.
 	"`--once` long-polls until the first **relevant** (non-echo) event, prints it, and exits 0",
+	// F-0515: the gates are the owner's settings gates.approve/gates.accept now.
+	"Both gates read the project's `.cernerc` `[gates]` block (`approve`/`accept`, each `\"human\"` (defa",
 }
 
 func isRewritten(s string) bool {

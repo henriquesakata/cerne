@@ -485,6 +485,9 @@ const ptBR = {
     childInDev: 'filho em dev',
     staleApproval: 'aprovação vencida',
     staleApprovalTitle: 'A spec mudou desde a aprovação — reaprove antes de iniciar',
+    // F-0515: o card cruzou um gate sem ato humano (gates.approve/accept = auto).
+    approvedAuto: 'Aprovada sem revisão humana',
+    acceptedAuto: 'Aceita sem revisão humana',
     childInDevTitle:
       'um filho já está em desenvolvimento; planeje e inicie o épico',
     pendingClarify: (n: number) => `❓ ${n}`,
@@ -1594,6 +1597,16 @@ const ptBR = {
     confirmOn: (title: string, file: string) =>
       `Ligar ${title}? A partir de agora, um card que um humano marcar como público é publicado nos trackers abaixo: título e resumo públicos, id e estado. Isto grava em ${file}.`,
     turnOn: 'Ligar',
+    // F-0515: uma chave só-humano de valores declarados que sai do padrão.
+    confirmValue: (title: string, value: string, file: string, versioned: boolean) =>
+      `Esta chave é só do dono do projeto. Mudar ${title} para ${value} grava no ${file}${versioned ? ', versionado — lembre de commitar' : ''}; dá para voltar aqui.`,
+    change: 'Mudar',
+    // F-0515: o que muda para o dono, dito na pergunta antes de gravar.
+    consequence: {
+      'gates.approve:auto': 'Daqui em diante, um agente também aprova specs, e cada card que ele aprovar fica marcado como aprovado sem revisão humana.',
+      'gates.accept:auto': 'Daqui em diante, o card que um agente conclui vai direto a concluído, marcado como aceito sem revisão humana.',
+      'gates.accept:merge': 'Daqui em diante, o merge do PR da entrega vale como aceite.',
+    } as Record<string, string>,
     // F-0449: o editor de uma chave de registros (mirror.trackers).
     records: {
       actions: 'Ações',
@@ -1673,6 +1686,12 @@ const ptBR = {
       'Your name in the channel': 'Seu nome no canal',
       "The name that signs the messages you send from the UI on a project's permanent channel. It applies to every project on this machine. It is not the project's name, which is set in the “Project name” field of the Settings screen. Empty uses your OS user name.":
         'O nome que assina as mensagens que você envia pela UI no canal permanente de um projeto. Vale para todos os projetos desta máquina. Não é o nome do projeto, que se define no campo “Nome do projeto” da tela de Configurações. Vazio usa o seu usuário do sistema.',
+      'Delivery acceptance': 'Aceite da entrega',
+      "Who accepts a delivered card. A person (human): complete stops at Ready and a person accepts the card; an agent is refused. On the PR merge (merge): the merge of the delivery PR is the acceptance, recorded by cerne feature accept --merged; an accept typed by hand stays a person's. Automatic (auto): complete carries the card straight to done, marked accepted without human review. An agent cannot change this key through cerne settings: it is the project owner's decision. The guard stops the cerne settings command and asks in the Settings screen; an agent that edits .cernerc by hand or calls the local settings API of cerne ui still changes it.":
+        'Quem aceita um card entregue. Uma pessoa (human): o complete para em Pronto e uma pessoa aceita o card; um agente é recusado. No merge do PR (merge): o merge do PR da entrega é o aceite, registrado pelo cerne feature accept --merged; um aceite digitado à mão continua sendo de uma pessoa. Automático (auto): o complete leva o card direto a concluído, marcado como aceito sem revisão humana. Um agente não muda esta chave pelo cerne settings: a decisão é do dono do projeto. A trava para o comando cerne settings e pergunta na tela de Configurações; um agente que edita o .cernerc à mão ou chama a API local de configurações do cerne ui ainda muda o valor.',
+      'Spec approval': 'Aprovação da spec',
+      "Who approves a spec. A person (human): only a person approves; an agent is refused. Automatic (auto): an agent may approve too, and a card an agent approves is marked approved without human review. An agent cannot change this key through cerne settings: it is the project owner's decision. The guard stops the cerne settings command and asks in the Settings screen; an agent that edits .cernerc by hand or calls the local settings API of cerne ui still changes it.":
+        'Quem aprova uma spec. Uma pessoa (human): só uma pessoa aprova; um agente é recusado. Automático (auto): um agente também pode aprovar, e o card que um agente aprova fica marcado como aprovado sem revisão humana. Um agente não muda esta chave pelo cerne settings: a decisão é do dono do projeto. A trava para o comando cerne settings e pergunta na tela de Configurações; um agente que edita o .cernerc à mão ou chama a API local de configurações do cerne ui ainda muda o valor.',
       'Gauntlet': 'Gauntlet',
       "Turns the Gauntlet on or off for this project. With off (light mode), approve accepts a spec without a bar, complete accepts a result without a ## Gauntlet section, and lint stops charging both. Only the literal off turns it off; any other stored value counts as on. An agent cannot change this key through cerne settings: it is the project owner's decision.":
         'Liga ou desliga o Gauntlet neste projeto. Desligado (modo leve), o approve aceita uma spec sem barra, o complete aceita um result sem a seção ## Gauntlet e o lint deixa de cobrar os dois. Só o valor literal off desliga; qualquer outro valor gravado conta como ligado. Um agente não muda esta chave pelo cerne settings: a decisão é do dono do projeto.',
@@ -1754,8 +1773,19 @@ const ptBR = {
         'Só as issues de fora com esta label viram ideas. Vazio importa todas as issues abertas.',
     } as Record<string, string>,
     // Rótulos dos valores de uma chave de texto com valores declarados.
-    // accept/merge: os valores de mirror.close_on (F-0449).
-    options: { on: 'ligado', off: 'desligado', accept: 'no aceite humano', merge: 'no merge do PR' } as Record<string, string>,
+    // accept/merge: os valores de mirror.close_on (F-0449). "<chave>:<valor>"
+    // vence o valor sozinho, para uma chave cujo valor tem outro rótulo (F-0515).
+    options: {
+      on: 'ligado',
+      off: 'desligado',
+      accept: 'no aceite humano',
+      merge: 'no merge do PR',
+      'gates.approve:human': 'Uma pessoa',
+      'gates.approve:auto': 'Automático',
+      'gates.accept:human': 'Uma pessoa',
+      'gates.accept:merge': 'No merge do PR',
+      'gates.accept:auto': 'Automático',
+    } as Record<string, string>,
   },
 }
 
@@ -2203,6 +2233,8 @@ const en: Messages = {
     childInDev: 'child in dev',
     staleApproval: 'approval stale',
     staleApprovalTitle: 'The spec changed since approval — re-approve before starting',
+    approvedAuto: 'Approved without human review',
+    acceptedAuto: 'Accepted without human review',
     childInDevTitle:
       'a child is already in development; plan and start the epic',
     pendingClarify: (n: number) => `❓ ${n}`,
@@ -3290,6 +3322,14 @@ const en: Messages = {
     confirmOn: (title: string, file: string) =>
       `Turn on ${title}? From now on, a card a human marks public is published to the trackers below: its public title, summary, id and state. This writes to ${file}.`,
     turnOn: 'Turn on',
+    confirmValue: (title: string, value: string, file: string, versioned: boolean) =>
+      `This key is the project owner's alone. Changing ${title} to ${value} writes to ${file}${versioned ? ', versioned — remember to commit' : ''}; you can change it back here.`,
+    change: 'Change',
+    consequence: {
+      'gates.approve:auto': 'From now on an agent may approve specs too, and each card it approves is marked approved without human review.',
+      'gates.accept:auto': 'From now on a card an agent completes goes straight to done, marked accepted without human review.',
+      'gates.accept:merge': 'From now on the merge of the delivery PR counts as the acceptance.',
+    },
     records: {
       actions: 'Actions',
       row: 'row',
@@ -3357,7 +3397,15 @@ const en: Messages = {
       other: 'Other',
     },
     text: {},
-    options: { accept: 'on human accept', merge: 'on PR merge' },
+    options: {
+      accept: 'on human accept',
+      merge: 'on PR merge',
+      'gates.approve:human': 'A person',
+      'gates.approve:auto': 'Automatic',
+      'gates.accept:human': 'A person',
+      'gates.accept:merge': 'On the PR merge',
+      'gates.accept:auto': 'Automatic',
+    },
   },
 }
 

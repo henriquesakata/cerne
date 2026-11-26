@@ -8,6 +8,7 @@ import Backlinks from './Backlinks'
 import { DeliveryPendings } from './Pendings'
 import FeatureAgents from './FeatureAgents'
 import Tag from './Tag'
+import GateBadges from './GateBadges'
 import {
   fetchArtifactText,
   fetchFeature,
@@ -348,6 +349,7 @@ function FeatureView({ id }: { id: string }) {
           {f.components?.map((x) => (
             <Tag key={`c-${x}`} axis="component" value={x} />
           ))}
+          <GateBadges feature={f} />
         </p>
         {f.parent && (
           <p className="feature-note">

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import Kanban from './Kanban'
+import { I18nProvider } from './i18n'
 import type { Feature, StateResponse } from './api'
 import { fetchState } from './api'
 
@@ -439,4 +440,34 @@ describe('Kanban — card ligado a uma issue (B-0063)', () => {
     await waitFor(() => expect(cardOf('F-0001')?.querySelector('.badge-mirror')).toHaveTextContent('issue do GitLab #7'))
     expect(cardOf('F-0002')?.querySelector('.badge-mirror')).toBeNull()
   })
+})
+
+// F-0515 crit. 9: o card que passou por um gate sem ato humano leva o selo.
+describe('Kanban — selos de gate sem ato humano (F-0515)', () => {
+  for (const [lang, approved, accepted] of [
+    ['pt-BR', 'Aprovada sem revisão humana', 'Aceita sem revisão humana'],
+    ['en', 'Approved without human review', 'Accepted without human review'],
+  ] as const) {
+    it(`${lang}: um selo por marca; o card sem marca não tem nenhum`, async () => {
+      localStorage.setItem('cerne-lang', lang)
+      payload = {
+        ...state(),
+        features: [
+          feature('F-0001', { approved_via: 'auto' }),
+          feature('F-0002', { state: 'done', approved_via: 'auto', accepted_via: 'auto' }),
+          feature('F-0003', { state: 'done', accepted_via: 'merge' }),
+        ],
+      }
+      render(
+        <I18nProvider>
+          <Kanban />
+        </I18nProvider>,
+      )
+      await waitFor(() => expect(cardOf('F-0001')).toBeInTheDocument())
+      const badges = (id: string) => [...(cardOf(id)?.querySelectorAll('.badge-auto') ?? [])].map((b) => b.textContent)
+      expect(badges('F-0001')).toEqual([approved])
+      expect(badges('F-0002')).toEqual([approved, accepted])
+      expect(badges('F-0003')).toEqual([])
+    })
+  }
 })
