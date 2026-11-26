@@ -7,13 +7,21 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-git/go-git/v5"
+
 	"github.com/henriquesakata/cerne/internal/project"
 )
 
 func networkProject(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	if err := project.SaveConfig(dir, project.Config{ProjectID: "p", Backend: "/tmp/b"}); err != nil {
+	// A repository outside the home: a machine-specific folder (F-0512 review
+	// #1b opens a local backend only when it is a git repository).
+	backend := filepath.Join(t.TempDir(), "b.git")
+	if _, err := git.PlainInit(backend, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := project.SaveConfig(dir, project.Config{ProjectID: "p", Backend: backend}); err != nil {
 		t.Fatal(err)
 	}
 	return dir

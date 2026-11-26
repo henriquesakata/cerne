@@ -98,6 +98,7 @@ func TestInstallCursorRenewalNeverTouchesSandboxOrMCP(t *testing.T) {
 func TestInstallCursorSandboxOpensCacheAndBackend(t *testing.T) {
 	proj, home := codexProject(t, "x")
 	backend := filepath.Join(home, "Library", "Application Support", "cerne", "backends", "demo.git")
+	bareRepo(t, backend)
 	if err := os.WriteFile(filepath.Join(proj, ".cernerc"), []byte("project_id = \"demo\"\nbackend = \""+backend+"\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -277,6 +278,7 @@ func TestInstallCursorSandboxNetworkNeverOverridesDeny(t *testing.T) {
 func TestInstallCursorSandboxNetworkLocalBackendOpensNothing(t *testing.T) {
 	proj, home := codexProject(t, "x")
 	backend := filepath.Join(home, "backends", "demo.git")
+	bareRepo(t, backend)
 	if err := os.WriteFile(filepath.Join(proj, ".cernerc"), []byte("project_id = \"demo\"\nbackend = \""+backend+"\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

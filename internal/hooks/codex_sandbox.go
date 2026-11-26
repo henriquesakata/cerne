@@ -1,6 +1,7 @@
 package hooks
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -30,14 +31,20 @@ const (
 // (shared by the Codex and Cursor adapters, F-0512): portable ones (~/… forms,
 // safe to commit) and machine-specific ones (env overrides, a backend outside
 // the home), which are printed instead of written.
-func sandboxPaths(projDir string) (portable, machine []string, err error) {
+//
+// .cernerc is writable from inside the sandbox, so its values are checked
+// before they widen it (F-0512 review): a project_id that is not one folder
+// name opens no cache folder, and a local backend opens only when it is a git
+// repository that is neither the home nor holds it. What is left out comes
+// back in notes.
+func sandboxPaths(projDir string) (portable, machine, notes []string, err error) {
 	cfg, _, err := project.LoadConfig(projDir)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	tilde := func(p string) (string, bool) {
 		rel, err := filepath.Rel(home, p)
@@ -47,13 +54,16 @@ func sandboxPaths(projDir string) (portable, machine []string, err error) {
 		return "~/" + filepath.ToSlash(rel), true
 	}
 
-	if os.Getenv("CERNE_CACHE_DIR") != "" || os.Getenv("XDG_CACHE_HOME") != "" {
-		cache, cErr := project.CacheDir(cfg.ProjectID)
+	switch id := cfg.ProjectID; {
+	case !safeSegment(id):
+		notes = append(notes, fmt.Sprintf("project_id %q is not a single folder name, so no cache folder is opened", id))
+	case os.Getenv("CERNE_CACHE_DIR") != "" || os.Getenv("XDG_CACHE_HOME") != "":
+		cache, cErr := project.CacheDir(id)
 		if cErr != nil {
-			return nil, nil, cErr
+			return nil, nil, nil, cErr
 		}
 		machine = append(machine, cache)
-	} else {
+	default:
 		portable = append(portable,
 			"~/Library/Caches/cerne/"+cfg.ProjectID, // macOS os.UserCacheDir
 			"~/.cache/cerne/"+cfg.ProjectID,         // Linux os.UserCacheDir
@@ -65,16 +75,70 @@ func sandboxPaths(projDir string) (portable, machine []string, err error) {
 			b = filepath.Join(projDir, b)
 		}
 		b = filepath.Clean(b)
-		if rel, rErr := filepath.Rel(projDir, b); rErr == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			return portable, machine, nil // inside the project: already writable
+		if within(projDir, b) {
+			return portable, machine, notes, nil // inside the project: already writable
 		}
-		if t, ok := tilde(b); ok {
+		rb := resolved(b)
+		switch t, ok := tilde(b); {
+		case within(rb, resolved(home)):
+			notes = append(notes, "the local backend "+b+" is your home or holds it, so it is not opened")
+		case !isGitRepo(rb):
+			notes = append(notes, "the local backend "+b+" is not a git repository, so it is not opened")
+		case ok:
 			portable = append(portable, t)
-		} else {
+		default:
 			machine = append(machine, b)
 		}
 	}
-	return portable, machine, nil
+	return portable, machine, notes, nil
+}
+
+// withPathNotes adds what sandboxPaths left out to the adapter's result for
+// asset, or reports it alone when there is none.
+func withPathNotes(rs []Result, asset string, notes []string) []Result {
+	if len(notes) == 0 {
+		return rs
+	}
+	n := strings.Join(notes, "; ")
+	for i := range rs {
+		if rs[i].Asset == asset {
+			if rs[i].Note != "" {
+				n = rs[i].Note + "; " + n
+			}
+			rs[i].Note = n
+			return rs
+		}
+	}
+	return append(rs, Result{Asset: asset, Status: StatusSkipped, Note: n})
+}
+
+// safeSegment: one folder name, nothing that climbs or roots the path.
+func safeSegment(id string) bool {
+	return id != "" && id != "." && !strings.Contains(id, "..") && !strings.ContainsAny(id, `/\`) && !filepath.IsAbs(id)
+}
+
+// within reports whether p is dir or lies inside it.
+func within(dir, p string) bool {
+	rel, err := filepath.Rel(dir, p)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// resolved follows symlinks when it can (macOS /var -> /private/var).
+func resolved(p string) string {
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+	return p
+}
+
+// isGitRepo: a working copy (.git) or a bare repository (HEAD and objects/).
+func isGitRepo(dir string) bool {
+	if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+		return true
+	}
+	head, hErr := os.Stat(filepath.Join(dir, "HEAD"))
+	objs, oErr := os.Stat(filepath.Join(dir, "objects"))
+	return hErr == nil && !head.IsDir() && oErr == nil && objs.IsDir()
 }
 
 // codexNetworkTable (F-0484): codex-cli 0.169.0 has no domain list for the
@@ -162,8 +226,9 @@ func codexSandboxSnippet(paths []string, network bool) string {
 // installCodexSandbox writes the managed sandbox block into the project's
 // .codex/config.toml, preserving the user's lines. Fail-closed: a file that is
 // not valid TOML, or would not be after the edit, is left untouched.
-func installCodexSandbox(projDir string, network bool) []Result {
-	portable, machine, err := sandboxPaths(projDir)
+func installCodexSandbox(projDir string, network bool) (rs []Result) {
+	portable, machine, notes, err := sandboxPaths(projDir)
+	defer func() { rs = withPathNotes(rs, codexSandboxAsset, notes) }()
 	if err != nil {
 		return []Result{{Asset: codexSandboxAsset, Status: StatusSkipped, Note: "cannot resolve cerne's folders (" + err.Error() + ") — run from a project with a .cernerc"}}
 	}

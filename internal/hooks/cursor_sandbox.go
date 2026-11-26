@@ -71,9 +71,10 @@ func hasHost(list []string, host string) bool {
 // every key and entry of the user's. Fail-closed: a file it cannot read as
 // JSON, a folder specific to this machine, or an explicit deny of the host
 // leaves the file untouched, reported skipped.
-func installCursorSandbox(projDir string, network bool) Result {
+func installCursorSandbox(projDir string, network bool) (r Result) {
 	skip := func(note string) Result { return Result{Asset: cursorSandboxAsset, Status: StatusSkipped, Note: note} }
-	portable, machine, err := sandboxPaths(projDir)
+	portable, machine, notes, err := sandboxPaths(projDir)
+	defer func() { r = withPathNotes([]Result{r}, cursorSandboxAsset, notes)[0] }()
 	if err != nil {
 		return skip("cannot resolve cerne's folders (" + err.Error() + ") — run from a project with a .cernerc")
 	}
@@ -143,7 +144,7 @@ func installCursorSandbox(projDir string, network bool) Result {
 		note = "Cursor's sandbox denies the network by default, so pull and push with " + host + " fail inside it; to allow only that host, run: cerne hook install --provider cursor --network"
 	}
 
-	r := Result{Asset: cursorSandboxAsset, Status: StatusUnchanged, Note: note}
+	r = Result{Asset: cursorSandboxAsset, Status: StatusUnchanged, Note: note}
 	if !changed {
 		return r
 	}

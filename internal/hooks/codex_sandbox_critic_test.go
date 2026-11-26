@@ -12,6 +12,7 @@ import (
 func TestInstallCodexSandboxAnyMachineFolderWritesNothing(t *testing.T) {
 	proj, home := codexProject(t, "x")
 	backend := filepath.Join(home, "backends", "demo.git")
+	bareRepo(t, backend) // F-0512 review #1b: only a repository is opened
 	if err := os.WriteFile(filepath.Join(proj, ".cernerc"), []byte("project_id = \"demo\"\nbackend = \""+backend+"\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
