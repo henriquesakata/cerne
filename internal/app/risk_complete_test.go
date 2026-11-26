@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/gauntlet"
 	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
@@ -147,6 +148,29 @@ func TestRiskAcceptCascadesTasks(t *testing.T) {
 		if lines := strings.Join(out.Cascade, "\n"); !strings.Contains(lines, id+": implemented → done along with F-0001") {
 			t.Errorf("cascade lines = %q, want %s carried", lines, id)
 		}
+	}
+}
+
+// TestRiskReadsTheCheckoutOnce: one complete reads the delivery and the
+// tracked files once, for the card and every task it measures and carries —
+// all of it runs inside the backend's critical section (review 3 of #228).
+// F-0516 crit. 2
+func TestRiskReadsTheCheckoutOnce(t *testing.T) {
+	asActor(t, "agent")
+	repoDir, projDir, _ := newFeatureBackend(t)
+	riskDelivery(t, repoDir, projDir, store.Feature{ID: "F-0001", Facets: []string{"code"}}, "vitória", cleanChange())
+	seedRiskTasks(t, repoDir, projDir, store.Feature{ID: "T-0002", Facets: []string{"code"}}, store.Feature{ID: "T-0003", Facets: []string{"code"}})
+	deliveries, trees := 0, 0
+	oldD, oldT := readDelivery, trackedFiles
+	t.Cleanup(func() { readDelivery, trackedFiles = oldD, oldT })
+	readDelivery = func(dir, pin string) (gauntlet.Delivery, error) { deliveries++; return oldD(dir, pin) }
+	trackedFiles = func(dir string) ([]string, error) { trees++; return oldT(dir) }
+
+	if out, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionComplete, "", "", nil); err != nil || out.To != domain.StateDone {
+		t.Fatalf("complete = %+v, %v; want done by risk", out, err)
+	}
+	if deliveries != 1 || trees != 1 {
+		t.Errorf("read the delivery %d times and the tracked files %d times; want once each", deliveries, trees)
 	}
 }
 

@@ -539,7 +539,7 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 		// So do its implemented tasks (T-0007), on an auto accept too (F-0515)
 		// and on a risk one (F-0516).
 		if action == domain.ActionAccept || autoAccepted {
-			if casc, err = cascadeAccept(repoDir, projDir, f, m); err != nil {
+			if casc, err = cascadeAccept(repoDir, projDir, f, m, risk); err != nil {
 				return "", err
 			}
 		}

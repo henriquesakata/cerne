@@ -104,7 +104,7 @@ func cascadeApprove(repoDir, projDir, parentID string, gauntletOn, agentAct bool
 // F-0488) is the human's whoever records it: the tasks ride it, marked alike.
 // The parent's accepted_via marks its tasks too: auto (F-0515); under risk
 // (F-0516) only the tasks the gate accepts on their own measurements ride.
-func cascadeAccept(repoDir, projDir string, parent store.Feature, m *mergeAccept) (cascaded, error) {
+func cascadeAccept(repoDir, projDir string, parent store.Feature, m *mergeAccept, risk *RiskAssessment) (cascaded, error) {
 	parentID, via := parent.ID, parent.AcceptedVia
 	children, err := childrenOf(repoDir, parentID, func(c store.Feature) bool { return isTask(c.ID) && c.State == cascadeFrom[domain.ActionAccept] })
 	if err != nil {
@@ -130,7 +130,10 @@ func cascadeAccept(repoDir, projDir string, parent store.Feature, m *mergeAccept
 		// its own, and one the gate holds waits for the human merge, with its
 		// measurements on an event of its own.
 		if m == nil && via == project.GateRisk {
-			ra := assessRisk(repoDir, projDir, c)
+			ra, measured := risk.taskReading(c.ID) // read once by the parent's complete
+			if !measured {
+				ra = assessRisk(repoDir, projDir, c)
+			}
 			if !ra.Low() {
 				held := ra.payload()
 				held["cascade_from"] = parentID
