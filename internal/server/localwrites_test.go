@@ -172,10 +172,18 @@ func TestHumanActWritesNeedThePageOrigin(t *testing.T) {
 }
 
 // TestEveryWriteRouteRefusesNoOrigin pins B-0091 over the route table: every
-// write the local ui routes, but the room client's, refuses a request with no
-// Origin and writes nothing — a route added later is covered, `cerne ui`'s
-// own update button included.
+// write the local ui routes, but the ones roomClientWrites lists, refuses a
+// request with no Origin and writes nothing — a route added later is covered,
+// `cerne ui`'s own update button included.
 func TestEveryWriteRouteRefusesNoOrigin(t *testing.T) {
+	param := regexp.MustCompile(`\{[^}]+\}`)
+	exempt := map[[2]string]bool{}
+	for _, w := range roomClientWrites {
+		method, pattern, _ := strings.Cut(w, " ")
+		for _, prefix := range []string{"", "/projects/proj-a"} {
+			exempt[[2]string{method, "/api" + prefix + param.ReplaceAllString(pattern, "F-0001")}] = true
+		}
+	}
 	repoDir, projDir, _ := newGitBackendNoClean(t)
 	dirs := isolatedWriteDirs(t, repoDir, projDir)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -195,7 +203,7 @@ func TestEveryWriteRouteRefusesNoOrigin(t *testing.T) {
 		{multi, append(writeRoutes("/projects/proj-a"), [2]string{"POST", "/api/update"})},
 	} {
 		for _, rt := range s.routes {
-			if strings.Contains(rt[1], "/rooms") {
+			if exempt[rt] {
 				continue
 			}
 			rec := doJSONWith(t, s.h, rt[0], rt[1], "{}", map[string]string{"Origin": "", "Content-Type": "application/json"}, nil)
@@ -228,7 +236,10 @@ func TestPageWrite(t *testing.T) {
 		{"panel deregister, no Origin", "", "DELETE /api/projects/{pid}", false},
 		{"panel restart, no Origin", "", "POST /api/restart", false},
 		{"room client, no Origin", "", "POST /api/projects/{pid}/rooms/{id}/messages", false},
+		{"room client, single project, no Origin", "", "POST /api/rooms/{id}/items/{itemID}/resolve", false},
 		{"room, foreign Origin", "http://evil.example", "POST /api/rooms", true},
+		{"a room route the client does not call, no Origin", "", "POST /api/projects/{pid}/rooms/{id}/archive", true},
+		{"a rooms segment elsewhere, no Origin", "", "POST /api/projects/{pid}/features/{id}/rooms", true},
 	} {
 		r := localRequest(http.MethodPost, "/api/x", nil)
 		r.Header.Del("Origin")
@@ -237,6 +248,15 @@ func TestPageWrite(t *testing.T) {
 		}
 		if err := pageWrite(r, c.pattern); errors.Is(err, errNotFromPage) != c.refused {
 			t.Errorf("%s: pageWrite = %v, want refused %v", c.name, err, c.refused)
+		}
+	}
+	table := map[string]bool{}
+	for _, rt := range dataRoutes() {
+		table[rt.method+" "+rt.pattern] = true
+	}
+	for _, w := range roomClientWrites {
+		if !table[w] {
+			t.Errorf("roomClientWrites lists %q, which the route table does not have", w)
 		}
 	}
 }

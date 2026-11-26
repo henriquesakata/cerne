@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/henriquesakata/cerne/internal/app"
@@ -192,15 +193,35 @@ func pageWrite(r *http.Request, pattern string) error {
 
 // cliWrite reports a write route cerne's own processes call with no Origin:
 // another `cerne ui` registering its project in this panel, deregistering it
-// or asking the panel to restart (N-0113), and the `cerne room` client. Two
-// room writes still act as the human with no Origin: the channel post with no
-// session and the facilitator reset (rooms.go, B-0083).
+// or asking the panel to restart (N-0113), and the `cerne room` client's
+// routes, listed one by one (roomClientWrites), under either server's prefix.
+// The facilitator reset still acts as the human with no Origin (B-0083); the
+// channel's human post asks for the Origin itself (rooms.go).
 func cliWrite(pattern string) bool {
 	switch pattern {
 	case "POST /api/projects", "DELETE /api/projects/{pid}", "POST /api/restart":
 		return true
 	}
-	return strings.Contains(pattern, "/rooms")
+	method, path, _ := strings.Cut(pattern, " ")
+	path = strings.TrimPrefix(strings.TrimPrefix(path, "/api"), "/projects/{pid}")
+	return slices.Contains(roomClientWrites, method+" "+path)
+}
+
+// roomClientWrites are the write routes the `cerne room` client calls
+// (internal/cli/roomclient.go), as "METHOD pattern" after the /api prefix.
+var roomClientWrites = []string{
+	"POST /rooms",
+	"POST /rooms/{id}/join",
+	"POST /rooms/{id}/messages",
+	"POST /rooms/{id}/sessions/resume",
+	"POST /rooms/{id}/sessions/leave",
+	"POST /rooms/{id}/close",
+	"POST /rooms/{id}/minutes/draft",
+	"POST /rooms/{id}/minutes/note",
+	"POST /rooms/{id}/facilitator/handoff",
+	"POST /rooms/{id}/facilitator/reset",
+	"POST /rooms/{id}/items",
+	"POST /rooms/{id}/items/{itemID}/resolve",
 }
 
 // loopbackHost reports a Host header naming this machine's loopback
