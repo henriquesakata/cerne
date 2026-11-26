@@ -239,6 +239,10 @@ func Unstamped(cacheDir, repoDir, id string) bool {
 // report the stamp writes. `--stamp` and `cerne next <id>` both call it, so the
 // next step never names a stamp the command refuses.
 func PrecheckStamp(in Inputs, state domain.FeatureState, id string) (Report, error) {
+	if state == domain.StateDone { // B-0090: complete cannot be run again on it
+		return Report{}, fmt.Errorf("%w: %s is done — its cost can no longer be stamped; the stamp records the closed cost, before the accept",
+			ErrStampNeedsImplemented, id)
+	}
 	if state != domain.StateImplemented {
 		return Report{}, fmt.Errorf("%w: %s is %s — run 'cerne feature complete %s' first; the stamp records the closed cost, before the human accept",
 			ErrStampNeedsImplemented, id, state, id)

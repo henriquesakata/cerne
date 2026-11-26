@@ -116,12 +116,20 @@ func TestLifecycleMarksMatchDomainActions(t *testing.T) {
 	// import mints entities straight into any state (implemented, superseded),
 	// past every human gate — lifecycle in every mode (F-0323 crit. 4).
 	gateBypass := map[string]bool{"import": true}
+	// feature feedback is the owner's verdict on a risk accept (F-0518): a
+	// human act an agent must not reach through chat, so it is lifecycle.
+	ownerAct := map[string]bool{"feature feedback": true}
 	for _, a := range domain.FeatureActions() {
 		v, ok := verbOf[a]
 		if !ok {
 			v = string(a)
 		}
 		featureVerbs["feature "+v] = true
+	}
+	for path := range ownerAct {
+		if v, ok := cat[path]; !ok || !v.Lifecycle {
+			t.Errorf("(e) %q: present %v, marked %v — want a marked owner act", path, ok, v.Lifecycle)
+		}
 	}
 	for path := range featureVerbs {
 		if v, ok := cat[path]; !ok || !v.Lifecycle {
@@ -137,7 +145,7 @@ func TestLifecycleMarksMatchDomainActions(t *testing.T) {
 		if gateBypass[path] && !v.Lifecycle {
 			t.Errorf("(d) %q bypasses the gates and is not marked lifecycle", path)
 		}
-		if v.Lifecycle && !byName && !featureVerbs[path] && !gateBypass[path] {
+		if v.Lifecycle && !byName && !featureVerbs[path] && !gateBypass[path] && !ownerAct[path] {
 			t.Errorf("(c) %q is marked lifecycle but is neither a feature transition, a retire/supersede nor a gate bypass", path)
 		}
 	}
