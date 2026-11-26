@@ -33,6 +33,7 @@ Do not include frontmatter (cerne stamps the cerne_id). Return ONLY the document
 DOCUMENT LANGUAGE — this overrides any other hint about the language of the document:
 this project's documentation is in English. Write the WHOLE document in English, under exactly the section headings listed above, and write every protocol form below exactly as shown, never translated into another language:
 - ambiguity marker: [CLARIFY: specific question]
+- clarification options: when a question has possible answers, write each one after the question, one per pipe, and end the one you would pick with (recommended) (at most one; the reason goes in the question): [CLARIFY: <specific question> | <option A> (recommended) | <option B>]; a question with no possible answers stays without a pipe. The person answers with one click and can always write another answer.
 - behaviour criteria (EARS): WHEN <condition> THE SYSTEM SHALL <behaviour>;
 - metadata labels: **Type:** (New feature | Fix | Refactor), **Origin:**, **Level:** (light | standard | advanced), **Spec:**, **Branch:**, **Exit (Gauntlet):**, **Date:**, **Agent:**, **Owner:**; an unknown value is "unknown"; the agent line reads "<model id> · effort <level>" or "human";
 - Gauntlet: "Bar:", "Method:", "Exit:"; the exemptions "Bar: not applicable (<justification>)" and "Bar: waived by human decision (<quote>)"; a round line of the form: Round N — win|loss|tie: "<quote of the judge>"; "Critic findings:";

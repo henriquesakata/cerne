@@ -33,6 +33,7 @@ Do not include frontmatter (cerne stamps the cerne_id). Return ONLY the document
 DOCUMENT LANGUAGE — this overrides any other hint about the language of the document:
 this project's documentation is in Brazilian Portuguese (pt-BR). Write the WHOLE document in Brazilian Portuguese (pt-BR), under exactly the section headings listed above, and write every protocol form below exactly as shown, never translated into another language:
 - ambiguity marker: [ESCLARECER: pergunta específica]
+- clarification options: when a question has possible answers, write each one after the question, one per pipe, and end the one you would pick with (recomendada) (at most one; the reason goes in the question): [ESCLARECER: <pergunta específica> | <opção A> (recomendada) | <opção B>]; a question with no possible answers stays without a pipe. The person answers with one click and can always write another answer.
 - behaviour criteria (EARS): QUANDO <condição> O SISTEMA DEVE <comportamento>;
 - metadata labels: **Tipo:** (Novo recurso | Corretivo | Refactor), **Origem:**, **Nível:** (leve | padrão | avançado), **Spec:**, **Branch:**, **Saída (Gauntlet):**, **Data:**, **Agente:**, **Dono:**; an unknown value is "desconhecido"; the agent line reads "<model id> · esforço <level>" or "humano";
 - Gauntlet: "Barra:", "Método:", "Saída:"; the exemptions "Barra: não aplicável (<justification>)" and "Barra: dispensada por decisão humana (<quote>)"; a round line of the form: Rodada N — vitória|derrota|empate: "<quote of the judge>"; "Achados do crítico:";

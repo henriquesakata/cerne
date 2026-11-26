@@ -47,7 +47,7 @@ func langLine(l doclang.Lang) string {
 	return "- DOCS LANGUAGE: " + string(l) + " — write every document in it, with these forms only. Spec sections: " + sections(doclang.Spec) +
 		". Plan sections: " + sections(doclang.Plan) + ". Result sections: " + sections(doclang.Result) +
 		". Bar line `" + d(doclang.BarLabel) + ":` (with `" + d(doclang.MethodLabel) + ":` and `" + d(doclang.ExitLabel) + ":`); evidence `" + d(doclang.Criterion) +
-		" N`; open question `" + doclang.AmbiguityMarker(l) + " …]`."
+		" N`; open question `" + doclang.AmbiguityMarker(l) + " …]`; " + doclang.ClarifyRule(l)
 }
 
 // LangRules is what `cerne hook lang-rules` prints for the Claude Code

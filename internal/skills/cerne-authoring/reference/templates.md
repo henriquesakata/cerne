@@ -13,6 +13,11 @@ cerne scaffolds a new feature's `spec.md` from a canonical template (the same on
 
 **Mark ambiguity, don't guess.** Wherever something is unresolved, leave `[CLARIFY: specific question]` (pt-BR: `[ESCLARECER: pergunta específica]`) instead of a plausible-but-maybe-wrong guess, and resolve every marker before `cerne feature approve`. **Write the marker in the doc's own language** — the vocabulary is a per-language catalog (pt `[ESCLARECER:]`/`[ESCLARECIDO:]`, en `[CLARIFY:]`/`[CLARIFIED:]`) and cerne recognizes all of it everywhere (UI chips, tab badge, lint, approve gate), so an English doc uses `[CLARIFY: specific question]` and gates exactly like a pt-BR one. Options work the same in any vocabulary (`[CLARIFY: where? | doc | sidecar]`), and answering via the UI writes the resolved form in the marker's own vocabulary.
 
+**Ask with options (F-0517).** In an English project: clarification options: when a question has possible answers, write each one after the question, one per pipe, and end the one you would pick with (recommended) (at most one; the reason goes in the question): [CLARIFY: <specific question> | <option A> (recommended) | <option B>]; a question with no possible answers stays without a pipe. The person answers with one click and can always write another answer.
+In a pt-BR project: clarification options: when a question has possible answers, write each one after the question, one per pipe, and end the one you would pick with (recomendada) (at most one; the reason goes in the question): [ESCLARECER: <pergunta específica> | <opção A> (recomendada) | <opção B>]; a question with no possible answers stays without a pipe. The person answers with one click and can always write another answer.
+
+`cerne clarify list` shows the options recommended first, `--pick <k>` follows that order, and `cerne spec check` / `cerne feature approve <F-id> --check` advise (never block) on a marker with no options.
+
 The evidence behind this structure (lost-in-the-middle / primacy-recency, EARS, ADR, spec-driven development) is registered in the backend as external references — `cerne ask` cites them.
 
 ### Resolving `[ESCLARECER]`/`[CLARIFY]` markers from the terminal

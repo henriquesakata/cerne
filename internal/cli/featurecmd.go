@@ -292,7 +292,12 @@ func newFeatureSetCmd(dir *string) *cobra.Command {
 			"  cerne feature set F-0003 --origin human --on-behalf \"the owner's words\"",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if cmd.Flags().Changed("origin") {
+			fl := cmd.Flags()
+			if fl.Changed("on-behalf") && !fl.Changed("origin") ||
+				fl.Changed("origin") && (fl.Changed("owner") || fl.Changed("priority") || fl.Changed("fixes")) {
+				return app.ErrOriginFlagConflict
+			}
+			if fl.Changed("origin") {
 				ctx, err := resolveProject(*dir)
 				if err != nil {
 					return err
