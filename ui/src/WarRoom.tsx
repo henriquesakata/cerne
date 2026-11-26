@@ -58,6 +58,12 @@ function loadStoredFacilitator(roomId: string): string | null {
   return localStorage.getItem(facilitatorKey(roomId))
 }
 
+// rosterOf: an open room shows who holds a session now (F-0511), with
+// T-0021's presence; a closed one shows everyone who took part — the
+// roster its minutes read and `cerne room list` counts, also for a room
+// from before sessions existed.
+const rosterOf = (r: Room) => (r.closed_at ? r.participants : r.active_participants) ?? []
+
 // WarRoom (T-0003): lista de salas — critério 4 de [[F-0211]]. As salas em si
 // (open/join/say/read/close) já existem no server desde [[T-0001]]; esta
 // página e [[WarRoomDetail]] só são o cliente HTTP, igual ao CLI.
@@ -139,7 +145,7 @@ export default function WarRoom() {
                 </span>
               </span>
               <span className="card-title">{r.topic}</span>
-              <span className="muted">{t.warRoom.participants((r.active_participants ?? []).length)}</span>
+              <span className="muted">{t.warRoom.participants(rosterOf(r).length)}</span>
             </a>
           ))}
         </div>
@@ -410,7 +416,7 @@ export function WarRoomDetail({ id }: { id: string }) {
       .then((rooms) => {
         if (cancelled) return
         const r = rooms.find((r) => r.id === id)
-        setRoster(r?.active_participants ?? [])
+        setRoster(r ? rosterOf(r) : [])
         setMinutesNoteID(closed ? (r?.minutes_note ?? null) : null)
       })
       .catch(() => {})

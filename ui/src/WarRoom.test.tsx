@@ -1126,7 +1126,10 @@ describe('presença ao vivo no painel (T-0021)', () => {
     readRoomMessages.mockImplementationOnce(() =>
       Promise.resolve([open, { seq: 2, type: 'close', time: '2026-08-06T00:05:00Z' }]),
     )
-    fetchRooms.mockResolvedValue([{ ...presence(fiveMinAgo()), closed_at: '2026-08-06T00:05:00Z' }])
+    // T-0022: a closed room's panel lists its historical roster; keep the
+    // presence fields on it, so the panel is what drops them.
+    const live = presence(fiveMinAgo())
+    fetchRooms.mockResolvedValue([{ ...live, participants: live.active_participants ?? [], closed_at: '2026-08-06T00:05:00Z' }])
     render(<WarRoomDetail id="R1" />)
 
     await waitFor(() => expect(entryOf('bia')).toBeInTheDocument())
@@ -1482,6 +1485,42 @@ describe('facilitação e rascunho de ata visíveis na sala (T-0022)', () => {
     expect(screen.getByLabelText(/responsáveis \(um por linha\)/i)).toHaveValue('ana')
     expect(screen.getByLabelText(/próximos passos \(um por linha\)/i)).toHaveValue('post-mortem')
     expect(postRoomClose).not.toHaveBeenCalled()
+  })
+
+  const closeEvent: RoomMessage = { seq: 9, type: 'close', time: '2026-08-06T01:00:00Z', minutes: draftMinutes }
+  const ana = { nick: 'ana', joined_at: '2026-08-06T00:00:01Z' }
+  const bia = { nick: 'bia', joined_at: '2026-08-06T00:00:02Z' }
+
+  // T-0022 crit. 3
+  // E-0006 crit. 12
+  it('sala fechada conta e lista quem participou, inclusive quem saiu', async () => {
+    const closedRoom = room({ closed_at: '2026-08-06T01:00:00Z', participants: [ana, bia], active_participants: [ana] })
+    fetchRooms.mockResolvedValue([closedRoom])
+    render(<WarRoom />)
+    await waitFor(() => expect(screen.getByText('2 participante(s)')).toBeInTheDocument())
+    cleanup()
+
+    readRoomMessages.mockImplementationOnce(() => Promise.resolve([open, closeEvent]))
+    render(<WarRoomDetail id="R1" />)
+    const roster = screen.getByRole('region', { name: /participantes/i })
+    await waitFor(() => expect(within(roster).getByText('bia')).toBeInTheDocument())
+    expect(within(roster).getByText('ana')).toBeInTheDocument()
+  })
+
+  // T-0022 crit. 3
+  // E-0006 crit. 12
+  it('sala fechada antiga, sem lista de ativos, mostra o roster histórico', async () => {
+    const legacy = room({ closed_at: '2026-08-06T01:00:00Z', participants: [ana], active_participants: null })
+    fetchRooms.mockResolvedValue([legacy])
+    render(<WarRoom />)
+    await waitFor(() => expect(screen.getByText('1 participante(s)')).toBeInTheDocument())
+    cleanup()
+
+    readRoomMessages.mockImplementationOnce(() => Promise.resolve([open, closeEvent]))
+    render(<WarRoomDetail id="R1" />)
+    const roster = screen.getByRole('region', { name: /participantes/i })
+    await waitFor(() => expect(within(roster).getByText('ana')).toBeInTheDocument())
+    expect(within(roster).queryByText(/ninguém entrou/i)).not.toBeInTheDocument()
   })
 
   // A minutes JSON without its lists, as a server before the T-0022 fix served it.
