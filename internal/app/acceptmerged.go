@@ -38,8 +38,8 @@ type MergeCheck struct {
 // default branch goes to done; every other gets a line and stays. It fails
 // only outside the merge gate, with no forge, or on an unknown id.
 func AcceptMerged(repoDir, projDir string, cfg project.Config, ids []string) ([]MergeCheck, error) {
-	if g := cfg.Gates.AcceptGate(); g != project.GateMerge {
-		return nil, fmt.Errorf("%w: --merged needs [gates] accept = %q in .cernerc (this project's accept gate is %s)", ErrMergeGateOff, project.GateMerge, g)
+	if g := cfg.Gates.AcceptGate(); !cfg.Gates.AcceptsOnMerge() {
+		return nil, fmt.Errorf("%w: --merged needs [gates] accept = %q or %q in .cernerc (this project's accept gate is %s)", ErrMergeGateOff, project.GateMerge, project.GateRisk, g)
 	}
 	if cfg.Delivery.Forge == "" {
 		return nil, fmt.Errorf("%w: set [delivery] forge in .cernerc (github, gitlab or gitea) so cerne can ask whether the PR merged", ErrMergeGateNoForge)

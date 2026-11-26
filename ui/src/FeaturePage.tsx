@@ -351,6 +351,8 @@ function FeatureView({ id }: { id: string }) {
           ))}
           <GateBadges feature={f} />
         </p>
+        {/* What the risk gate measured to accept it (F-0516), in the open. */}
+        {f.accepted_via === 'risk' && f.accepted_risk && <p className="feature-note feature-accepted-risk">{t.feature.acceptedRisk(f.accepted_risk)}</p>}
         {f.parent && (
           <p className="feature-note">
             {t.feature.epicLabel}{' '}

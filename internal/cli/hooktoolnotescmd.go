@@ -218,7 +218,7 @@ var mergeCmdRe = regexp.MustCompile(`(?m)(?:^|[;&|(]|\$\(|\b(?:ba|z)?sh\s+-c\s+[
 	`)`)
 
 // mergeDenyReason is what the agent reads when its merge is refused.
-const mergeDenyReason = "this project accepts a card on the merge of its PR ([gates] accept = \"merge\", F-0488): the merge is the human's acceptance, so an agent never merges — ask a human to merge the PR, then record it with 'cerne feature accept --merged'"
+const mergeDenyReason = "this project accepts a card on the merge of its PR ([gates] accept = \"merge\" or \"risk\", F-0488, F-0516): the merge is the human's acceptance, so an agent never merges — ask a human to merge the PR, then record it with 'cerne feature accept --merged'"
 
 // denyAgentMerge refuses, before the tool, an agent's PR merge in a project
 // under the merge gate (F-0488 crit. 10), in the envelope of the harness that
@@ -239,7 +239,7 @@ func denyAgentMerge(cmd *cobra.Command, in hookInput, format string) bool {
 		cwd = os.Getenv("COPILOT_PROJECT_DIR")
 	}
 	cfg, _, err := project.LoadConfig(cwd)
-	if err != nil || cfg.Gates.AcceptGate() != project.GateMerge {
+	if err != nil || !cfg.Gates.AcceptsOnMerge() {
 		return false
 	}
 	return encodeDeny(cmd.OutOrStdout(), format, mergeDenyReason) == nil

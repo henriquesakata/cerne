@@ -1670,6 +1670,11 @@ func handleTransition(w http.ResponseWriter, r *http.Request, repoDir, projDir, 
 	if len(out.Warnings) > 0 {
 		resp["warnings"] = out.Warnings
 	}
+	// What the risk gate measured on a complete (F-0516): accepted or not,
+	// and one reason per condition that held the card back.
+	if r := out.Risk; r != nil {
+		resp["risk"] = map[string]any{"low": r.Low(), "summary": r.Summary(), "held": r.Held()}
+	}
 	// An approve on an approved feature (F-0318) says what it did, so the page
 	// does not just read "approved → approved".
 	if out.Baseline {

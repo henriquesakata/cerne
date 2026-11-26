@@ -37,8 +37,9 @@ func TestGauntletSettingDeclared(t *testing.T) {
 	// F-0449 crit. 3: the mirror's switch and destinations are the owner's too;
 	// F-0502 crit. 1: so is the link-suggestion switch;
 	// F-0503 crit. 1: and so is sending reference URLs to an archive service;
-	// F-0515 crit. 1: and so are the approve and accept gates.
-	humanOnly := []string{"gates.accept", "gates.approve", "gates.gauntlet", "links.suggest", "mirror.enabled", "mirror.trackers", "references.archive"}
+	// F-0515 crit. 1: and so are the approve and accept gates;
+	// F-0516 crit. 14: and so are the paths and facets that always need a person.
+	humanOnly := []string{"gates.accept", "gates.approve", "gates.gauntlet", "gates.risk_human_facets", "gates.risk_human_paths", "links.suggest", "mirror.enabled", "mirror.trackers", "references.archive"}
 	for _, r := range settingsRegistry {
 		if r.HumanOnly != slices.Contains(humanOnly, r.ID) {
 			t.Errorf("%s: human-only = %v; want human-only exactly %v", r.ID, r.HumanOnly, humanOnly)

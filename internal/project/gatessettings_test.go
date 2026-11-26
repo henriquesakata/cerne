@@ -24,7 +24,7 @@ func TestSettingsRegistryGates(t *testing.T) {
 		values []string
 	}{
 		{"gates.approve", []string{"human", "auto"}},
-		{"gates.accept", []string{"human", "merge", "auto"}},
+		{"gates.accept", []string{"human", "merge", "auto", "risk"}}, // F-0516 adds risk
 	} {
 		i := slices.IndexFunc(settingsRegistry, func(s Setting) bool { return s.ID == tc.id })
 		if i < 0 {
@@ -129,7 +129,7 @@ func TestSettingsSetGatesInvalidValue(t *testing.T) {
 	before, _ := os.ReadFile(rc)
 	for _, tc := range []struct{ id, value, want string }{
 		{"gates.approve", "merge", "want one of: human, auto"},
-		{"gates.accept", "always", "want one of: human, merge, auto"},
+		{"gates.accept", "always", "want one of: human, merge, auto, risk"},
 	} {
 		err := SetSetting(projDir, tc.id, ScopeProject, tc.value)
 		if !errors.Is(err, ErrInvalidSettingValue) || !strings.Contains(err.Error(), tc.want) {

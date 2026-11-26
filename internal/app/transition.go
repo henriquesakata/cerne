@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -66,6 +67,9 @@ type TransitionOutcome struct {
 	// Cascade holds one line per child an approve or accept carried along
 	// (T-0007), and per candidate child an approve left behind, with why.
 	Cascade []string
+	// Risk is what the risk gate measured on a complete under [gates] accept
+	// = "risk" (F-0516); nil for every other action and gate.
+	Risk *RiskAssessment
 }
 
 // ErrApprovalStale is the start refusal for an approved feature whose spec
@@ -328,6 +332,13 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 				return "", err
 			}
 		}
+		// The risk gate (F-0516) measures the delivery once the gates passed:
+		// low risk is accepted below, anything else waits for the human merge.
+		var risk *RiskAssessment
+		if action == domain.ActionComplete && gates.AcceptGate() == project.GateRisk {
+			ra := assessRisk(repoDir, projDir, f)
+			risk = &ra
+		}
 
 		oldState := f.State
 		f.State = newState
@@ -374,6 +385,9 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 		if m != nil {
 			f.AcceptedVia = "merge"
 		}
+		if f.AcceptedVia != project.GateRisk {
+			f.AcceptedRisk = "" // the summary belongs to a risk accept only (F-0516)
+		}
 		if err := store.SaveFeature(repoDir, f); err != nil {
 			return "", err
 		}
@@ -410,6 +424,13 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 				payload = map[string]string{}
 			}
 			payload["gauntlet"] = "off"
+		}
+		// So is what the risk gate measured (F-0516), accepted or held.
+		if risk != nil {
+			if payload == nil {
+				payload = map[string]string{}
+			}
+			maps.Copy(payload, risk.payload())
 		}
 		// Approving is accepting the proposed bar (F-0308 crit. 8): the line the
 		// gate just validated goes on the event, with the actor.
@@ -449,28 +470,57 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 		if m != nil {
 			payload, actor = m.payload(), mergeActor
 		}
+		// Every complete and accept records the Gauntlet round it saw, whatever
+		// the gate, so the risk gate can tell an old win from a new one after a
+		// revert (F-0516).
+		if action == domain.ActionAccept || action == domain.ActionComplete {
+			if payload == nil {
+				payload = map[string]string{}
+			}
+			payload["gauntlet_round"] = gauntletRoundOf(repoDir, f)
+		}
 		if err := store.AppendEvent(repoDir, domain.NewEvent(id, eventType, payload, actor)); err != nil {
 			return "", err
+		}
+		// A task that held its parent records its own measurements (F-0516).
+		if risk != nil {
+			for _, ht := range risk.HeldTasks {
+				p := ht.Risk.payload()
+				p["cascade_from"] = id
+				if err := store.AppendEvent(repoDir, domain.NewEvent(ht.ID, "feature.risk_held", p, EventActor())); err != nil {
+					return "", err
+				}
+			}
 		}
 		// End-of-flow bypass (F-0131): with [gates] accept = "auto" the complete
 		// carries the feature straight to done in the same critical section —
 		// both events land in one commit. Default (human) stops at implemented
-		// ("Ready") and waits for the explicit human accept.
-		autoAccepted = action == domain.ActionComplete && projectGates(projDir).AcceptGate() == project.GateAuto
+		// ("Ready") and waits for the explicit human accept. Under the risk
+		// gate (F-0516) only a delivery of low risk is carried, marked risk.
+		autoAccepted = action == domain.ActionComplete && (projectGates(projDir).AcceptGate() == project.GateAuto || risk != nil && risk.Low())
 		if autoAccepted {
 			promoted, err := domain.Transition(f.State, domain.ActionAccept)
 			if err != nil {
 				return "", err
 			}
 			f.State = promoted
-			if src != srcSeed {
-				f.AcceptedVia = project.GateAuto // F-0515: done with no human act
+			acceptVia, acceptPayload := project.GateAuto, map[string]string{"via": project.GateAuto}
+			if risk != nil {
+				acceptVia, acceptPayload = project.GateRisk, risk.payload()
+				acceptPayload["via"] = project.GateRisk
+			}
+			acceptPayload["gauntlet_round"] = gauntletRoundOf(repoDir, f)
+			if src != srcSeed { // a seed crosses no gate, so it marks nothing
+				f.AcceptedVia = acceptVia // F-0515: done with no human act
+				if risk != nil {
+					f.AcceptedRisk = risk.Summary()
+				}
 			}
 			f.UpdatedAt = time.Now().UTC()
 			if err := store.SaveFeature(repoDir, f); err != nil {
 				return "", err
 			}
-			ev := domain.NewEvent(id, eventTypes[domain.ActionAccept], map[string]string{"via": "auto"}, EventActor())
+			ev := domain.NewEvent(id, eventTypes[domain.ActionAccept], acceptPayload, EventActor())
 			if err := store.AppendEvent(repoDir, ev); err != nil {
 				return "", err
 			}
@@ -486,9 +536,10 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 		if err != nil {
 			return "", err
 		}
-		// So do its implemented tasks (T-0007), on an auto accept too (F-0515).
+		// So do its implemented tasks (T-0007), on an auto accept too (F-0515)
+		// and on a risk one (F-0516).
 		if action == domain.ActionAccept || autoAccepted {
-			if casc, err = cascadeAccept(repoDir, projDir, id, m, f.AcceptedVia); err != nil {
+			if casc, err = cascadeAccept(repoDir, projDir, f, m, risk); err != nil {
 				return "", err
 			}
 		}
@@ -589,7 +640,7 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 			msg += fmt.Sprintf(" (+ %s)", strings.Join(ids, ", "))
 		}
 		title = f.Title
-		out = TransitionOutcome{ID: id, From: oldState, To: newState, Propagated: propagated, EpicReadyToClose: epicReady, Warnings: warnings, Bar: bar, JudgeQuestion: judgeQuestion, Baseline: baseline, RenewedApprovalAt: renewedAt, Pendings: movedPendings, Ideas: movedIdeas, Cascade: casc.lines}
+		out = TransitionOutcome{ID: id, From: oldState, To: newState, Propagated: propagated, EpicReadyToClose: epicReady, Warnings: warnings, Bar: bar, JudgeQuestion: judgeQuestion, Baseline: baseline, RenewedApprovalAt: renewedAt, Pendings: movedPendings, Ideas: movedIdeas, Cascade: casc.lines, Risk: risk}
 		return msg, nil
 	})
 	if out.AlreadyDone && errors.Is(err, gitback.ErrNothingToCommit) {
