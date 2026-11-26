@@ -16,16 +16,25 @@ import (
 // deleting anything; any other failure keeps the "delete to re-clone" advice.
 func cacheRefreshError(what, repoDir, backend string, err error) error {
 	inCodex := os.Getenv("CODEX_THREAD_ID") != ""
-	// Inside Codex a cut network can surface as EPERM: only a folder that
-	// really refuses writes gets the permission message (F-0484).
-	if errors.Is(err, fs.ErrPermission) && (!inCodex || errors.Is(probeCacheDir(repoDir), fs.ErrPermission)) {
+	inCursor := os.Getenv("CURSOR_AGENT") == "1" // F-0428's agent-shell marker
+	// Inside a sandbox a cut network can surface as EPERM: only a folder that
+	// really refuses writes gets the permission message (F-0484, F-0512).
+	if errors.Is(err, fs.ErrPermission) && (!inCodex && !inCursor || errors.Is(probeCacheDir(repoDir), fs.ErrPermission)) {
 		return notWritableError(repoDir, backend, err)
 	}
-	if inCodex { // the sandbox cut the network; deleting the cache will not help
+	// The sandbox cut the network; deleting the cache will not help.
+	if inCodex {
 		return fmt.Errorf("%s at %s failed (%s): %w", what, repoDir, llm.CodexSandboxHint, err)
+	}
+	if inCursor {
+		return fmt.Errorf("%s at %s failed (%s): %w", what, repoDir, cursorSandboxHint, err)
 	}
 	return fmt.Errorf("%s at %s failed (delete that directory and re-run the command to force a fresh clone): %w", what, repoDir, err)
 }
+
+// cursorSandboxHint (F-0512): Cursor's sandbox denies the network unless
+// .cursor/sandbox.json allows the host.
+const cursorSandboxHint = "the Cursor sandbox may be cutting the network; to allow the backend's host for this project, run: cerne hook install --provider cursor --network"
 
 // notWritableError is the shared permission explanation: the cache dir (parent
 // of the clone) and, when the backend is a local directory, the backend itself.
