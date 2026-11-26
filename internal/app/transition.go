@@ -328,6 +328,10 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 		case domain.ActionApprove:
 			// F-0515: a person's re-approval clears an agent's earlier mark.
 			f.ApprovedVia = autoVia(gates.ApproveGate(), agentAct(fromUI))
+		case domain.ActionAccept:
+			// F-0515: an agent's own accept under accept = "auto"; the merge
+			// (m, F-0488) is the human's and marks itself below.
+			f.AcceptedVia = autoVia(gates.AcceptGate(), agentAct(fromUI))
 		case domain.ActionRevert:
 			// An acceptance undone (F-0499) is no longer an acceptance on merge,
 			// nor is an approval undone one without a human act (F-0515).
@@ -414,11 +418,19 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 				}
 			}
 		}
-		if action == domain.ActionApprove && f.ApprovedVia != "" {
+		// The mark goes on the event too (F-0515); a merge carries its own.
+		var via string
+		switch action {
+		case domain.ActionApprove:
+			via = f.ApprovedVia
+		case domain.ActionAccept:
+			via = f.AcceptedVia
+		}
+		if via != "" && m == nil {
 			if payload == nil {
 				payload = map[string]string{}
 			}
-			payload["via"] = f.ApprovedVia
+			payload["via"] = via
 		}
 		actor := EventActor()
 		if m != nil {
@@ -461,7 +473,7 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 		}
 		// So do its implemented tasks (T-0007), on an auto accept too (F-0515).
 		if action == domain.ActionAccept || autoAccepted {
-			if casc, err = cascadeAccept(repoDir, projDir, id, m, autoAccepted); err != nil {
+			if casc, err = cascadeAccept(repoDir, projDir, id, m, f.AcceptedVia); err != nil {
 				return "", err
 			}
 		}

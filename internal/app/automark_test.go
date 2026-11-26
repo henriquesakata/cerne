@@ -179,6 +179,41 @@ func TestCompleteAutoMarksCascadedTasks(t *testing.T) {
 	}
 }
 
+// TestAcceptAutoMarksAgentAct: an agent's own accept under the accept gate
+// set to auto marks the card, its event and the tasks it carries; a person's
+// accept, under any gate, marks nothing.
+// F-0515 crit. 7
+func TestAcceptAutoMarksAgentAct(t *testing.T) {
+	for _, tc := range []struct {
+		name, actor, gate, wantVia string
+		ids                        []string // the cards that reach done
+	}{
+		{"agent under auto", "agent", project.GateAuto, "auto", []string{"F-0001", "T-0002"}},
+		{"person under auto", "", project.GateAuto, "", []string{"F-0001", "T-0002"}},
+		// The human gate keeps the agent's tasks (T-0007 crit. 2).
+		{"agent under human (the ui core)", "agent", project.GateHuman, "", []string{"F-0001"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			asActor(t, tc.actor)
+			repoDir, projDir, _ := newFeatureBackend(t)
+			saveGates(t, projDir, project.GatesConfig{Accept: tc.gate})
+			seedFeatureInState(t, repoDir, "F-0001", domain.StateImplemented)
+			seedWithSpec(t, repoDir, store.Feature{ID: "T-0002", Parent: "F-0001", State: domain.StateImplemented}, taskBody+exemptTaskBar)
+			if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionAccept, "", "", nil); err != nil {
+				t.Fatalf("accept: %v", err)
+			}
+			for _, id := range tc.ids {
+				if f := reload(t, repoDir, id); f.State != domain.StateDone || f.AcceptedVia != tc.wantVia {
+					t.Errorf("%s = %s, accepted_via %q; want done, %q", id, f.State, f.AcceptedVia, tc.wantVia)
+				}
+				if got := lastEntityEvent(t, repoDir, id, "feature.accepted").Payload["via"]; got != tc.wantVia {
+					t.Errorf("%s accept event via = %q, want %q", id, got, tc.wantVia)
+				}
+			}
+		})
+	}
+}
+
 // TestLegacyCardsStayUnmarked: a card stored before the marks existed, whose
 // log holds an agent's approve and an auto accept, reads unmarked and a save
 // adds no mark: nothing fills the fields from the history.
