@@ -1891,12 +1891,28 @@ describe('Settings — aceite por risco e as listas sensíveis (F-0516)', () => 
     })
   }
 
-  it('Salvar envia a lista, uma linha por item, sem as linhas vazias', async () => {
+  // F-0516 crit. 14: as listas são só do dono — sair do padrão pergunta antes.
+  it('sair do padrão pergunta antes; Mudar envia a lista, sem as linhas vazias', async () => {
     load()
     render(<Settings />)
     const r = await screen.findByRole('listitem', { name: 'Facetas que sempre pedem uma pessoa' })
     fireEvent.change(within(r).getByRole('textbox'), { target: { value: 'auth\n\n billing \n' } })
     fireEvent.click(within(r).getByRole('button', { name: 'Salvar' }))
+    expect(putSetting).not.toHaveBeenCalled()
+    const group = within(r).getByRole('group', { name: /Facetas que sempre pedem uma pessoa/ })
+    expect(group).toHaveTextContent('auth, billing')
+    expect(within(group).getByRole('button', { name: 'Cancelar' })).toHaveFocus()
+    fireEvent.click(within(group).getByRole('button', { name: 'Mudar' }))
     await waitFor(() => expect(putSetting).toHaveBeenCalledWith('gates.risk_human_facets', 'project', ['auth', 'billing']))
+  })
+
+  it('voltar ao padrão grava direto, sem pergunta', async () => {
+    load()
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Facetas que sempre pedem uma pessoa' })
+    fireEvent.change(within(r).getByRole('textbox'), { target: { value: 'auth\ninfra\ndata' } })
+    fireEvent.click(within(r).getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(putSetting).toHaveBeenCalledWith('gates.risk_human_facets', 'project', ['auth', 'infra', 'data']))
+    expect(within(r).queryByRole('button', { name: 'Mudar' })).toBeNull()
   })
 })

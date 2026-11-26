@@ -910,7 +910,8 @@ function SettingRow({
           </form>
         ) : s.type === 'list' ? (
           // A list key (F-0516): one item per line; Save sends the non-blank
-          // lines, the server is the validator.
+          // lines, the server is the validator. A human-only list asks before
+          // it leaves its default, like the toggles and selects (F-0515).
           <form
             className="settings-string settings-list"
             onSubmit={(e) => {
@@ -920,6 +921,11 @@ function SettingRow({
                 .split('\n')
                 .map((x) => x.trim())
                 .filter((x) => x !== '')
+              if (s.human_only && JSON.stringify(items) !== JSON.stringify(s.default)) {
+                setPending(items)
+                return
+              }
+              setPending(undefined)
               onWrite(ws, () => putSetting(s.id, ws, items))
             }}
           >
