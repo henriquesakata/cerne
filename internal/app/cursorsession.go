@@ -106,18 +106,19 @@ func cursorAuthor(cacheDir string) DocAuthor {
 	return a
 }
 
-// boundCursorSession is the one Cursor session in play with a live binding:
-// the session a Cursor shell's write is marked on (F-0513). "" when none is
-// bound or more than one is.
+// boundCursorSession is the session a Cursor shell's write is marked on
+// (F-0513): the only Cursor session in play, when it has a live binding. ""
+// when another session, bound or not, is in play too — either may be the
+// writer — or the only one is not bound.
 func boundCursorSession(cacheDir string) string {
-	var bound []string
-	for sess := range cursorSessions(cacheDir, time.Now()) {
-		if cursorBound(cacheDir, sess) {
-			bound = append(bound, sess)
-		}
-	}
-	if len(bound) != 1 {
+	sessions := cursorSessions(cacheDir, time.Now())
+	if len(sessions) != 1 {
 		return ""
 	}
-	return bound[0]
+	for sess := range sessions {
+		if cursorBound(cacheDir, sess) {
+			return sess
+		}
+	}
+	return ""
 }

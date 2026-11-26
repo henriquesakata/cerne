@@ -310,9 +310,10 @@ func TestDocAuthorCursor(t *testing.T) {
 }
 
 // TestRecordDocEditedCursorMark (F-0513 crit. 3): with no CERNE_SESSION, a
-// Cursor agent shell's write marks the one bound Cursor session as the
-// document's writer, under harness cursor — and nobody when that session is
-// not the only one bound, or none is.
+// Cursor agent shell's write marks a bound Cursor session as the document's
+// writer, under harness cursor, only when it is the only recent Cursor
+// session — and nobody when another one, bound or not, is recent too, or the
+// only one is not bound.
 func TestRecordDocEditedCursorMark(t *testing.T) {
 	by := DocAuthor{Provider: "cursor", Model: "grok-4.7", Source: "hook"}
 	cases := []struct {
@@ -321,7 +322,9 @@ func TestRecordDocEditedCursorMark(t *testing.T) {
 		free  []string
 		want  string // the marked session; "" for no mark
 	}{
-		{"one bound session", []string{"ca"}, []string{"cb"}, "ca"},
+		{"the only recent session, bound", []string{"ca"}, nil, "ca"},
+		// Review of PR #221: the unbound cb may be the writer.
+		{"a bound session beside an unbound one", []string{"ca"}, []string{"cb"}, ""},
 		{"two bound sessions", []string{"ca", "cb"}, nil, ""},
 		{"no bound session", nil, []string{"ca"}, ""},
 	}
