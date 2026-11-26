@@ -165,9 +165,11 @@ type ChatMessage struct {
 	Images []string
 }
 
-// chatImagesNote tells the agent what an [attached image: …] line is. It is
-// written only when the transcript has one.
-const chatImagesNote = "\n\nThe user attached images. Each one is named under its message as [attached image: <path>] and is part of the request: look at every image before answering (open the file at that path when the image did not reach you with the prompt), and ground the analysis in what it shows."
+// chatImagesNote tells the agent what an [attached image: …] line is and to
+// analyse the image before the project context (the first Gauntlet round lost
+// to answers that spent themselves on context). It is written only when the
+// transcript has one.
+const chatImagesNote = "\n\nThe user attached images. Each one is named under its message as [attached image: <path>] and is part of the request: look at every image before answering (open the file at that path when the image did not reach you with the prompt). Read the image first and exhaustively: every text, number, label, state, position, alignment and annotation it shows, the small and secondary ones included. Derive the requirements from what the image shows and quote those elements. Bring project context only after that, and only where it changes a requirement or contradicts the image; a requirement the image supports comes before one that only the project's history suggests. Never state about an image something it does not show."
 
 // chatIdeasPolicy keeps ideas (F-0312) out of the automatic context: the
 // agent reads them only when the user asks, through whatever path its mode has
