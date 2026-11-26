@@ -1609,6 +1609,7 @@ const ptBR = {
       'gates.approve:auto': 'Daqui em diante, um agente também aprova specs, e cada card que ele aprovar fica marcado como aprovado sem revisão humana.',
       'gates.accept:auto': 'Daqui em diante, o card que um agente conclui vai direto a concluído, marcado como aceito sem revisão humana.',
       'gates.accept:merge': 'Daqui em diante, o merge do PR da entrega vale como aceite.',
+      'gates.accept:risk': 'Daqui em diante, o card que não toca área sensível, venceu o Gauntlet e tem teste para cada critério vai direto a concluído, marcado como aceito por baixo risco; os outros esperam o merge humano.',
     } as Record<string, string>,
     // F-0449: o editor de uma chave de registros (mirror.trackers).
     records: {
@@ -3347,6 +3348,7 @@ const en: Messages = {
       'gates.approve:auto': 'From now on an agent may approve specs too, and each card it approves is marked approved without human review.',
       'gates.accept:auto': 'From now on a card an agent completes goes straight to done, marked accepted without human review.',
       'gates.accept:merge': 'From now on the merge of the delivery PR counts as the acceptance.',
+      'gates.accept:risk': 'From now on a card that touches no sensitive area, won its Gauntlet and has a test for every criterion goes straight to done, marked accepted as low risk; the rest wait for the human merge.',
     },
     records: {
       actions: 'Actions',

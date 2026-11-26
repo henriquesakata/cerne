@@ -1796,6 +1796,17 @@ describe('Settings — gates de aprovação e de aceite (F-0515)', () => {
     ).toBeInTheDocument()
   })
 
+  // impeccable pass (F-0516): the risk value says what it does before it is written.
+  it('a pergunta do valor por risco diz a consequência', async () => {
+    load(undefined, accept({ enum: ['human', 'merge', 'auto', 'risk'] }))
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Aceite da entrega' })
+    fireEvent.change(within(r).getByRole('combobox'), { target: { value: 'risk' } })
+    expect(
+      within(r).getByRole('group', { name: /^Daqui em diante, o card que não toca área sensível, venceu o Gauntlet e tem teste para cada critério vai direto a concluído/ }),
+    ).toBeInTheDocument()
+  })
+
   it('Cancelar não grava e devolve o foco ao select', async () => {
     load()
     render(<Settings />)
