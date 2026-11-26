@@ -186,6 +186,25 @@ func TestNextStepRiskGate(t *testing.T) {
 	}
 }
 
+// TestRiskRecordsBaseAndHead: the measurements name the commits measured —
+// the merge-base with the default branch and HEAD.
+// F-0516 crit. 6
+func TestRiskRecordsBaseAndHead(t *testing.T) {
+	asActor(t, "agent")
+	repoDir, projDir, _ := newFeatureBackend(t)
+	riskDelivery(t, repoDir, projDir, store.Feature{ID: "F-0001", Facets: []string{"code"}}, "vitória", cleanChange())
+	base, head := gitOut(t, projDir, "merge-base", "main", "HEAD"), gitOut(t, projDir, "rev-parse", "HEAD")
+	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionComplete, "", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, typ := range []string{"feature.completed", "feature.accepted"} {
+		p := lastEntityEvent(t, repoDir, "F-0001", typ).Payload
+		if p["risk_base"] != base || p["risk_head"] != head {
+			t.Errorf("%s: risk_base %q, risk_head %q; want %s, %s", typ, p["risk_base"], p["risk_head"], base, head)
+		}
+	}
+}
+
 // TestRiskRevertNeedsANewRound: a card accepted as low risk, reverted and
 // completed again with no new Gauntlet round is held — the win it carries was
 // judged before the revert; a round recorded after the revert lets it through.

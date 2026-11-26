@@ -33,6 +33,7 @@ type RiskAssessment struct {
 	Verdict               string   // the Gauntlet's last outcome: win, tie, loss, exempt, off or none
 	Round                 int      // the number of the Gauntlet's highest round; 0 with none or an unnumbered one
 	Tested                string   // "<criteria with a test>/<criteria>"
+	Base, Head            string   // the commits measured: merge-base with the default branch, and HEAD; empty when unread
 }
 
 // Low reports a delivery of low risk: all three conditions hold.
@@ -68,6 +69,7 @@ func (r RiskAssessment) payload() map[string]string {
 		"risk": risk, "risk_area": r.Area.Found, "risk_gauntlet": r.Gauntlet.Found, "risk_tests": r.Tests.Found,
 		"risk_paths": strings.Join(r.Paths, ", "), "risk_facets": strings.Join(r.Facets, ", "),
 		"risk_verdict": r.Verdict, "risk_round": strconv.Itoa(r.Round), "risk_criteria_tested": r.Tested,
+		"risk_base": r.Base, "risk_head": r.Head,
 	}
 }
 
@@ -79,7 +81,9 @@ func assessRisk(repoDir, projDir string, f store.Feature) RiskAssessment {
 		cfg = project.Config{}
 	}
 	var r RiskAssessment
-	r.Area, r.Paths, r.Facets = riskArea(projDir, cfg.PinBranch, f, cfg.Gates)
+	var d gauntlet.Delivery
+	r.Area, r.Paths, r.Facets, d = riskArea(projDir, cfg.PinBranch, f, cfg.Gates)
+	r.Base, r.Head = d.Base, d.Head
 	result, _ := os.ReadFile(FeatureDocPath(repoDir, f.ID, "result.md"))
 	r.Gauntlet, r.Verdict = riskGauntlet(result, cfg.Gates.GauntletEnabled())
 	if rounds := lint.GauntletRoundList(result); len(rounds) > 0 {
@@ -124,10 +128,11 @@ func revertedRiskRound(repoDir, id string) (round int, reverted bool) {
 // sensitive one. In doubt it does not hold: a diff that cannot be read, an
 // empty one (complete ran outside the delivery's branch) and a card with no
 // facet all wait for a person. Its own function: a per-card waiver drops only
-// this condition.
-func riskArea(projDir, pinBranch string, f store.Feature, g project.GatesConfig) (c RiskCheck, paths, facets []string) {
+// this condition. d is the delivery read, empty when git could not read it.
+func riskArea(projDir, pinBranch string, f store.Feature, g project.GatesConfig) (c RiskCheck, paths, facets []string, d gauntlet.Delivery) {
 	var why []string
-	files, base, err := gauntlet.ChangedFiles(projDir, pinBranch)
+	d, err := gauntlet.ReadDelivery(projDir, pinBranch)
+	files, base := d.Files, d.Ref
 	switch {
 	case errors.Is(err, gauntlet.ErrNotGitRepo):
 		why = append(why, "the diff cannot be read: not a git repository")
@@ -156,9 +161,9 @@ func riskArea(projDir, pinBranch string, f store.Feature, g project.GatesConfig)
 		why = append(why, "carries a sensitive facet: "+strings.Join(facets, ", "))
 	}
 	if len(why) > 0 {
-		return RiskCheck{Found: strings.Join(why, "; ")}, paths, facets
+		return RiskCheck{Found: strings.Join(why, "; ")}, paths, facets, d
 	}
-	return RiskCheck{Holds: true, Found: "touches no sensitive path or facet"}, nil, nil
+	return RiskCheck{Holds: true, Found: "touches no sensitive path or facet"}, nil, nil, d
 }
 
 // sensitivePaths are the files a glob matches: a glob with no slash matches

@@ -122,7 +122,7 @@ func TestRiskSensitiveArea(t *testing.T) {
 			dir := t.TempDir()
 			tc.setup(t, dir)
 			f := store.Feature{ID: "F-0001", Facets: tc.facets}
-			c, paths, _ := riskArea(dir, "", f, project.GatesConfig{})
+			c, paths, _, _ := riskArea(dir, "", f, project.GatesConfig{})
 			if c.Holds != tc.holds {
 				t.Errorf("holds = %v, want %v (%q)", c.Holds, tc.holds, c.Found)
 			}
@@ -147,15 +147,15 @@ func TestRiskSensitiveAreaUsesConfiguredLists(t *testing.T) {
 	riskRepo(t, dir, nil, map[string]string{"go.mod": "module x\n", "src/billing/pay.go": "package billing\n"})
 	f := store.Feature{ID: "F-0001", Facets: []string{"auth", "payments"}}
 
-	c, paths, facets := riskArea(dir, "", f, project.GatesConfig{RiskPaths: []string{"src/billing/**"}, RiskFacets: []string{"payments"}})
+	c, paths, facets, _ := riskArea(dir, "", f, project.GatesConfig{RiskPaths: []string{"src/billing/**"}, RiskFacets: []string{"payments"}})
 	if c.Holds || !slices.Equal(paths, []string{"src/billing/pay.go"}) || !slices.Equal(facets, []string{"payments"}) {
 		t.Errorf("owner's lists: holds %v, paths %v, facets %v; want held by src/billing/pay.go and payments only (go.mod and auth left the lists)", c.Holds, paths, facets)
 	}
-	c, paths, facets = riskArea(dir, "", f, project.GatesConfig{RiskPaths: []string{}, RiskFacets: []string{}})
+	c, paths, facets, _ = riskArea(dir, "", f, project.GatesConfig{RiskPaths: []string{}, RiskFacets: []string{}})
 	if !c.Holds || paths != nil || facets != nil {
 		t.Errorf("empty lists: holds %v (%q), paths %v, facets %v; want it to hold", c.Holds, c.Found, paths, facets)
 	}
-	c, _, facets = riskArea(dir, "", f, project.GatesConfig{})
+	c, _, facets, _ = riskArea(dir, "", f, project.GatesConfig{})
 	if c.Holds || !slices.Equal(facets, []string{"auth"}) {
 		t.Errorf("defaults: holds %v, facets %v; want held by auth", c.Holds, facets)
 	}

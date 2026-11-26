@@ -82,24 +82,40 @@ func Diff(dir, base, pinBranch string, excludes []string) (diff, usedBase string
 	return out, base, err
 }
 
-// ChangedFiles lists the files `git diff <base>...HEAD` changes in dir, with
-// no excludes, a rename as its old and its new path, and the base used (see
-// resolveBase): what the risk gate reads for sensitive paths (F-0516).
-func ChangedFiles(dir, pinBranch string) (files []string, usedBase string, err error) {
-	base, err := resolveBase(dir, "", pinBranch)
+// Delivery is what the risk gate reads of the checkout at a directory
+// (F-0516): the ref it diffs against, the merge-base and HEAD commits, and the
+// files changed between them.
+type Delivery struct {
+	Ref        string   // the base ref resolved (see resolveBase)
+	Base, Head string   // the merge-base of Ref and HEAD, and HEAD, as SHAs
+	Files      []string // changed from Base to HEAD, no excludes; a rename as its old and its new path
+}
+
+// ReadDelivery reads the delivery checked out at dir against the default
+// branch (see resolveBase).
+func ReadDelivery(dir, pinBranch string) (Delivery, error) {
+	ref, err := resolveBase(dir, "", pinBranch)
 	if err != nil {
-		return nil, "", err
+		return Delivery{}, err
 	}
-	out, err := runGit(dir, "diff", "--name-only", "--no-renames", "-z", base+"...HEAD")
+	d := Delivery{Ref: ref}
+	if d.Base, err = runGit(dir, "merge-base", ref, "HEAD"); err != nil {
+		return Delivery{}, err
+	}
+	if d.Head, err = runGit(dir, "rev-parse", "HEAD"); err != nil {
+		return Delivery{}, err
+	}
+	d.Base, d.Head = strings.TrimSpace(d.Base), strings.TrimSpace(d.Head)
+	out, err := runGit(dir, "diff", "--name-only", "--no-renames", "-z", d.Base, d.Head)
 	if err != nil {
-		return nil, "", err
+		return Delivery{}, err
 	}
 	for _, f := range strings.Split(out, "\x00") {
 		if f != "" {
-			files = append(files, f)
+			d.Files = append(d.Files, f)
 		}
 	}
-	return files, base, nil
+	return d, nil
 }
 
 // ErrNoFeatureCommits means no non-merge commit on the base cites the id.
