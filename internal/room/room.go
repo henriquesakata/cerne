@@ -564,8 +564,8 @@ func (m *Manager) persistMinutesDraft(id string, d MinutesDraft) error {
 }
 
 // loadMinutesDraft reads an open room's draft file; a closed room keeps
-// none, and a missing or unreadable file means no draft, never a room that
-// fails to load.
+// none, and a missing file or corrupt JSON means no draft. Any other read
+// error (a permission error) fails the load, as for the sibling sidecars.
 func loadMinutesDraft(path string, rs *roomState) error {
 	if rs.meta.ClosedAt != nil {
 		return nil
