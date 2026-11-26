@@ -151,12 +151,12 @@ var settingsRegistry = []Setting{
 		// F-0515. A new accept gate is one more value here and in AcceptGate.
 		ID: "gates.accept", Group: "process", Title: "Delivery acceptance", Type: "string", Default: GateHuman, Enum: []string{GateHuman, GateMerge, GateAuto},
 		Scopes: []string{ScopeProject}, HumanOnly: true,
-		Description: "Who accepts a delivered card. A person (human): complete stops at Ready and a person accepts the card; an agent is refused. On the PR merge (merge): the merge of the delivery PR is the acceptance, recorded by cerne feature accept --merged; an accept typed by hand stays a person's. Automatic (auto): complete carries the card straight to done, marked accepted without human review. An agent cannot change this key through cerne settings: it is the project owner's decision. An agent that edits .cernerc by hand is not stopped.",
+		Description: "Who accepts a delivered card. A person (human): complete stops at Ready and a person accepts the card; an agent is refused. On the PR merge (merge): the merge of the delivery PR is the acceptance, recorded by cerne feature accept --merged; an accept typed by hand stays a person's. Automatic (auto): complete carries the card straight to done, marked accepted without human review. An agent cannot change this key through cerne settings: it is the project owner's decision. The guard stops the cerne settings command and asks in the Settings screen; an agent that edits .cernerc by hand or calls the local settings API of cerne ui still changes it.",
 	},
 	{
 		ID: "gates.approve", Group: "process", Title: "Spec approval", Type: "string", Default: GateHuman, Enum: []string{GateHuman, GateAuto},
 		Scopes: []string{ScopeProject}, HumanOnly: true,
-		Description: "Who approves a spec. A person (human): only a person approves; an agent is refused. Automatic (auto): an agent may approve too, and a card an agent approves is marked approved without human review. An agent cannot change this key through cerne settings: it is the project owner's decision. An agent that edits .cernerc by hand is not stopped.",
+		Description: "Who approves a spec. A person (human): only a person approves; an agent is refused. Automatic (auto): an agent may approve too, and a card an agent approves is marked approved without human review. An agent cannot change this key through cerne settings: it is the project owner's decision. The guard stops the cerne settings command and asks in the Settings screen; an agent that edits .cernerc by hand or calls the local settings API of cerne ui still changes it.",
 	},
 	{
 		ID: "gates.gauntlet", Group: "process", Title: "Gauntlet", Type: "string", Default: "on", Enum: []string{"on", "off"},

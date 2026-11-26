@@ -46,6 +46,13 @@ func TestSettingsRegistryGates(t *testing.T) {
 		if !strings.Contains(s.Description, "An agent cannot change this key through cerne settings") {
 			t.Errorf("%s description does not say an agent cannot change it: %q", tc.id, s.Description)
 		}
+		// The guard's reach: the command and the UI's question, not the file
+		// nor the local settings API.
+		for _, limit := range []string{".cernerc by hand", "settings API"} {
+			if !strings.Contains(s.Description, limit) {
+				t.Errorf("%s description does not say %q still changes it: %q", tc.id, limit, s.Description)
+			}
+		}
 	}
 }
 
