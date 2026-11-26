@@ -36,6 +36,9 @@ type RiskAssessment struct {
 	Base, Head            string   // the commits measured: merge-base with the default branch, and HEAD; empty when unread
 	Mode                  string   // the card's accept_mode (F-0518): human, auto or empty
 	Calibration           string   // "<owner answers>/<target>" while the gate calibrates (F-0518); empty past it
+	// Files is every file the delivery changed and Patterns the sensitive
+	// globs that hit (F-0518): what the owner marks and the proposals count.
+	Files, Patterns []string
 }
 
 // would is what the gate decides on its own: all three conditions hold and
@@ -104,6 +107,9 @@ func (r RiskAssessment) payload() map[string]string {
 	if r.Calibration != "" {
 		p["risk_calibration"], p["risk_would"] = r.Calibration, r.wouldWord()
 	}
+	// ponytail: every changed file on the event; a delivery of thousands of
+	// files makes one long line — cap it if logs grow heavy.
+	p["risk_files"], p["risk_patterns"] = strings.Join(r.Files, ", "), strings.Join(r.Patterns, ", ")
 	return p
 }
 
@@ -117,7 +123,12 @@ func assessRisk(repoDir, projDir string, f store.Feature) RiskAssessment {
 	var r RiskAssessment
 	var d gauntlet.Delivery
 	r.Area, r.Paths, r.Facets, d = riskArea(repoDir, projDir, cfg.PinBranch, f, cfg.Gates)
-	r.Base, r.Head, r.Mode = d.Base, d.Head, f.AcceptMode
+	r.Base, r.Head, r.Mode, r.Files = d.Base, d.Head, f.AcceptMode, d.Files
+	for _, g := range cfg.Gates.RiskHumanPaths() {
+		if len(sensitivePaths(r.Paths, []string{g}, d.Prefix)) > 0 {
+			r.Patterns = append(r.Patterns, g)
+		}
+	}
 	result, _ := os.ReadFile(FeatureDocPath(repoDir, f.ID, "result.md"))
 	r.Gauntlet, r.Verdict = riskGauntlet(result, cfg.Gates.GauntletEnabled())
 	if rounds := lint.GauntletRoundList(result); len(rounds) > 0 {

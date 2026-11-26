@@ -2,6 +2,7 @@ package cli
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -76,6 +77,28 @@ func TestFeatureFeedbackCLI(t *testing.T) {
 		if _, err := execCerne(t, append([]string{"feature", "feedback"}, append(args, "--dir", projDir)...)...); err == nil {
 			t.Errorf("%v: want a refusal (pass exactly one answer)", args)
 		}
+	}
+}
+
+// TestFeatureFeedbackMarksPaths: with --should-have-asked the owner names
+// the paths and facets that need a person from now on; they are in the lists
+// as soon as the command returns, and the output says so.
+// F-0518 crit. 5
+func TestFeatureFeedbackMarksPaths(t *testing.T) {
+	projDir, _ := decidedProject(t)
+	out, err := execCerne(t, "feature", "feedback", "F-0001", "--should-have-asked", "--add-path", "internal/x/**", "--add-facet", "code", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("feedback: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "gates.risk_human_paths: internal/x/**") || !strings.Contains(out, "gates.risk_human_facets: code") {
+		t.Errorf("output does not say what entered the lists:\n%s", out)
+	}
+	cfg, _, err := project.LoadConfig(projDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(cfg.Gates.RiskHumanPaths(), "internal/x/**") || !slices.Contains(cfg.Gates.RiskHumanFacets(), "code") {
+		t.Errorf("lists = %v / %v, want the marks in", cfg.Gates.RiskHumanPaths(), cfg.Gates.RiskHumanFacets())
 	}
 }
 

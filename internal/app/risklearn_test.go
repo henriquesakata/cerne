@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -212,6 +213,84 @@ func TestCalibrationAnswerIsFeedback(t *testing.T) {
 	}
 	if v.Calibration.Target != 2 || v.Calibration.Answers != 2 || v.Calibration.Remaining != 0 {
 		t.Errorf("calibration = %+v, want 2 of 2 answered", v.Calibration)
+	}
+}
+
+// TestRiskRecordsTheDeliveryFiles: the decision names every file the
+// delivery changed and the sensitive patterns that hit, so the owner can
+// mark folders later; the decision groups the files by folder.
+// F-0518 crit. 5
+func TestRiskRecordsTheDeliveryFiles(t *testing.T) {
+	asActor(t, "agent")
+	repoDir, projDir, _ := newFeatureBackend(t)
+	change := cleanChange()
+	change["go.mod"] = "module x\n"
+	riskDelivery(t, repoDir, projDir, store.Feature{ID: "F-0001", Facets: []string{"code"}}, "vitória", change)
+	if _, err := TransitionFeature(repoDir, projDir, "F-0001", domain.ActionComplete, "", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	p := lastEntityEvent(t, repoDir, "F-0001", "feature.completed").Payload
+	if p["risk_files"] != "go.mod, internal/x/x.go, internal/x/x_test.go" || p["risk_patterns"] != "go.mod" {
+		t.Errorf("risk_files %q, risk_patterns %q", p["risk_files"], p["risk_patterns"])
+	}
+	d, err := RiskDecisionOf(repoDir, "F-0001")
+	if err != nil || d == nil || strings.Join(d.Dirs, " ") != "go.mod internal/x/**" {
+		t.Fatalf("decision %+v (%v): want the folders go.mod and internal/x/**", d, err)
+	}
+}
+
+// TestShouldHaveAskedAddsToList: with should-have-asked the owner marks the
+// paths and facets that from now on need a person, and they enter the lists
+// at once; marking nothing is allowed and leaves the lists alone. Marks ride
+// only that answer.
+// F-0518 crit. 5
+func TestShouldHaveAskedAddsToList(t *testing.T) {
+	for _, c := range []struct {
+		name          string
+		paths, facets []string
+		wantPaths     []string // added to the default list
+		wantFacets    []string
+	}{
+		{"a path", []string{"internal/x/**"}, nil, []string{"internal/x/**"}, nil},
+		{"a facet", nil, []string{"code"}, nil, []string{"code"}},
+		{"nothing", nil, nil, nil, nil},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			asActor(t, "")
+			repoDir, projDir, _ := newFeatureBackend(t)
+			calibrating(t, projDir, 0)
+			decided(t, repoDir, "F-0001", domain.StateDone, []string{"code"}, lowPayload())
+			if _, err := RecordRiskFeedback(repoDir, projDir, "F-0001", RiskFeedback{Answer: FeedbackShouldHaveAsked, AddPaths: c.paths, AddFacets: c.facets}); err != nil {
+				t.Fatal(err)
+			}
+			cfg, _, err := project.LoadConfig(projDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c.wantPaths == nil && cfg.Gates.RiskPaths != nil || c.wantFacets == nil && cfg.Gates.RiskFacets != nil {
+				t.Errorf("lists changed with nothing marked: %v / %v", cfg.Gates.RiskPaths, cfg.Gates.RiskFacets)
+			}
+			for _, p := range c.wantPaths {
+				if !slices.Contains(cfg.Gates.RiskHumanPaths(), p) || !slices.Contains(cfg.Gates.RiskHumanPaths(), "go.mod") {
+					t.Errorf("paths %v: want %s added to the default list", cfg.Gates.RiskHumanPaths(), p)
+				}
+			}
+			for _, f := range c.wantFacets {
+				if !slices.Contains(cfg.Gates.RiskHumanFacets(), f) || !slices.Contains(cfg.Gates.RiskHumanFacets(), "auth") {
+					t.Errorf("facets %v: want %s added to the default list", cfg.Gates.RiskHumanFacets(), f)
+				}
+			}
+			p := lastEntityEvent(t, repoDir, "F-0001", riskFeedbackEvent).Payload
+			if p["added_paths"] != strings.Join(c.paths, ", ") || p["added_facets"] != strings.Join(c.facets, ", ") {
+				t.Errorf("payload %v: want the marks recorded", p)
+			}
+		})
+	}
+	asActor(t, "")
+	repoDir, projDir, _ := newFeatureBackend(t)
+	decided(t, repoDir, "F-0002", domain.StateDone, []string{"code"}, heldPayload())
+	if _, err := RecordRiskFeedback(repoDir, projDir, "F-0002", RiskFeedback{Answer: FeedbackNotNeeded, AddPaths: []string{"x/**"}}); !errors.Is(err, ErrFeedbackMismatch) {
+		t.Errorf("not-needed with a mark: err = %v, want ErrFeedbackMismatch", err)
 	}
 }
 

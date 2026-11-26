@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -44,6 +45,9 @@ var (
 type RiskFeedback struct {
 	Answer string
 	Reason string
+	// AddPaths and AddFacets go with should-have-asked (crit. 5): what the
+	// owner marks to need a person from now on, added to the lists at once.
+	AddPaths, AddFacets []string
 }
 
 // RiskAnswer is the answer that counts on a card: the latest one given after
@@ -52,6 +56,14 @@ type RiskAnswer struct {
 	Answer string    `json:"answer"`
 	Reason string    `json:"reason,omitempty"`
 	At     time.Time `json:"at"`
+	// What the answer added to the lists (crit. 5).
+	AddedPaths  []string `json:"added_paths,omitempty"`
+	AddedFacets []string `json:"added_facets,omitempty"`
+}
+
+func newRiskAnswer(ev domain.Event) *RiskAnswer {
+	p := ev.Payload
+	return &RiskAnswer{Answer: p["answer"], Reason: p["reason"], At: ev.At, AddedPaths: splitList(p["added_paths"]), AddedFacets: splitList(p["added_facets"])}
 }
 
 // RiskDecision is the risk gate's last decision on a card, read from its
@@ -117,7 +129,7 @@ func riskDecisions(evs []domain.Event) map[string]*RiskDecision {
 		case ev.Type == eventTypes[domain.ActionComplete]:
 			delete(out, ev.EntityID)
 		case ev.Type == riskFeedbackEvent && out[ev.EntityID] != nil:
-			out[ev.EntityID].Feedback = &RiskAnswer{Answer: ev.Payload["answer"], Reason: ev.Payload["reason"], At: ev.At}
+			out[ev.EntityID].Feedback = newRiskAnswer(ev)
 		}
 	}
 	return out
@@ -180,6 +192,9 @@ func RecordRiskFeedback(repoDir, projDir, id string, fb RiskFeedback) (*RiskDeci
 	if fb.Answer != FeedbackShouldHaveAsked && fb.Answer != FeedbackNotNeeded {
 		return nil, fmt.Errorf("unknown answer %q: want %s or %s", fb.Answer, FeedbackShouldHaveAsked, FeedbackNotNeeded)
 	}
+	if fb.Answer != FeedbackShouldHaveAsked && len(fb.AddPaths)+len(fb.AddFacets) > 0 {
+		return nil, fmt.Errorf("%w: paths and facets to mark go with %s, the answer that tightens the gate", ErrFeedbackMismatch, FeedbackShouldHaveAsked)
+	}
 	var d *RiskDecision
 	err := MutateAndSnapshot(repoDir, projDir, func() (string, error) {
 		f, err := store.LoadFeature(repoDir, id)
@@ -200,16 +215,32 @@ func RecordRiskFeedback(repoDir, projDir, id string, fb RiskFeedback) (*RiskDeci
 			}
 			return "", fmt.Errorf("%w: %s was %s by the risk gate; the answer to that is %s", ErrFeedbackMismatch, f.ID, d.Says(), want)
 		}
+		// Tightening is at once (crit. 5): the owner asked, in this act.
+		g := projectGates(projDir)
+		addedPaths, err := addToList(projDir, "gates.risk_human_paths", g.RiskHumanPaths(), fb.AddPaths)
+		if err != nil {
+			return "", err
+		}
+		addedFacets, err := addToList(projDir, "gates.risk_human_facets", g.RiskHumanFacets(), fb.AddFacets)
+		if err != nil {
+			return "", err
+		}
 		payload := map[string]string{"answer": fb.Answer}
 		maps.Copy(payload, riskKeys(d.payload))
 		if r := strings.TrimSpace(fb.Reason); r != "" {
 			payload["reason"] = r
 		}
+		if len(addedPaths) > 0 {
+			payload["added_paths"] = strings.Join(addedPaths, ", ")
+		}
+		if len(addedFacets) > 0 {
+			payload["added_facets"] = strings.Join(addedFacets, ", ")
+		}
 		ev := domain.NewEvent(f.ID, riskFeedbackEvent, payload, EventActor())
 		if err := store.AppendEvent(repoDir, ev); err != nil {
 			return "", err
 		}
-		d.Feedback = &RiskAnswer{Answer: fb.Answer, Reason: payload["reason"], At: ev.At}
+		d.Feedback = newRiskAnswer(ev)
 		return "cerne: risk feedback " + f.ID, nil
 	})
 	if err != nil {
@@ -312,6 +343,22 @@ func ReadRiskGate(repoDir, projDir string, since time.Time) (RiskGateView, error
 		}
 	}
 	return v, nil
+}
+
+// addToList writes into the list key id the items of add it does not hold yet,
+// after the current ones, and returns them; nothing to add writes nothing.
+// The list's checks (no backslash, one line) refuse a bad item, unwritten.
+func addToList(projDir, id string, current, add []string) ([]string, error) {
+	var added []string
+	for _, x := range add {
+		if x = strings.TrimSpace(x); x != "" && !slices.Contains(current, x) && !slices.Contains(added, x) {
+			added = append(added, x)
+		}
+	}
+	if len(added) == 0 {
+		return nil, nil
+	}
+	return added, project.SetSettingValue(projDir, id, project.ScopeProject, append(slices.Clone(current), added...))
 }
 
 // riskKeys are the gate's measurements of a decision payload: its risk* keys.
