@@ -98,3 +98,28 @@ describe('F-0517: esclarecimento com opções e recomendada', () => {
     expect(screen.getByRole('button', { name: 'Other answer' })).toBeInTheDocument()
   })
 })
+
+// B-0088: o popover é um diálogo nomeado, fecha com Esc e devolve o foco ao chip.
+describe('B-0088: acessibilidade do popover de esclarecimento', () => {
+  const md = '[CLARIFY: qual formato? | json | yaml]'
+  const chip = () => screen.getAllByRole('button')[0]
+  it('o diálogo tem o nome da pergunta', () => {
+    open(md, 'en')
+    expect(screen.getByRole('dialog', { name: 'qual formato?' })).toBeInTheDocument()
+  })
+  it('Esc fecha e o foco volta ao chip', () => {
+    open(md, 'en')
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(chip()).toHaveFocus()
+  })
+  it('Esc no campo livre fecha, salvo durante composição de IME', () => {
+    open('[CLARIFY: qual formato?]', 'en')
+    const field = screen.getByRole('textbox')
+    fireEvent.keyDown(field, { key: 'Escape', isComposing: true })
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    fireEvent.keyDown(field, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(chip()).toHaveFocus()
+  })
+})

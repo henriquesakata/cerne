@@ -1,4 +1,4 @@
-import { useRef, useState, type ComponentProps } from 'react'
+import { useId, useRef, useState, type ComponentProps, type KeyboardEvent } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { markerSpans, parseClarification, type MarkerSpan } from './clarify'
@@ -188,8 +188,20 @@ function ClarifyChip({
   const [open, setOpen] = useState(false)
   const [text, setText] = useState('')
   const [other, setOther] = useState(false)
+  const titleId = useId()
+  const chipRef = useRef<HTMLButtonElement>(null)
   const info = parseClarification(raw)
   if (!info) return <>{raw}</>
+  // B-0088: um só caminho de fechar — Cancelar e Esc; o foco volta ao chip.
+  const cancel = () => {
+    setOpen(false)
+    setOther(false)
+    setText('')
+    chipRef.current?.focus()
+  }
+  const onEsc = (e: KeyboardEvent<HTMLElement>) => {
+    if (e.key === 'Escape' && !e.nativeEvent.isComposing) cancel()
+  }
   const submit = (answer: string) => {
     // Aberto vai pelo onAnswer; resolvido, pelo onCorrect — dois caminhos
     // distintos de propósito (responder resolve, corrigir anexa à trilha).
@@ -213,6 +225,7 @@ function ClarifyChip({
       <span className="clarify-anchor">
         <button
           type="button"
+          ref={chipRef}
           className="clarify-chip clarify-resolved"
           title={t.clarify.correctTitle}
           onClick={() => {
@@ -223,8 +236,8 @@ function ClarifyChip({
           ✓ {trail}
         </button>
         {open && (
-          <span className="clarify-pop" role="dialog">
-            <span className="clarify-pop-question">{info.question || t.clarify.noQuestion}</span>
+          <span className="clarify-pop" role="dialog" aria-labelledby={titleId} onKeyDown={onEsc}>
+            <span id={titleId} className="clarify-pop-question">{info.question || t.clarify.noQuestion}</span>
             <span className="clarify-pop-current">{t.clarify.currentAnswer(info.answer)}</span>
             <textarea
               className="clarify-free"
@@ -258,6 +271,7 @@ function ClarifyChip({
     <span className="clarify-anchor">
       <button
         type="button"
+        ref={chipRef}
         className="clarify-chip clarify-open"
         title={t.clarify.chipTitle}
         onClick={() => setOpen(!open)}
@@ -265,8 +279,8 @@ function ClarifyChip({
         ? {label}
       </button>
       {open && (
-        <span className="clarify-pop" role="dialog">
-          <span className="clarify-pop-question">{label}</span>
+        <span className="clarify-pop" role="dialog" aria-labelledby={titleId} onKeyDown={onEsc}>
+          <span id={titleId} className="clarify-pop-question">{label}</span>
           {/* F-0517: a recomendada vai primeiro, com o selo; as outras na ordem escrita. */}
           {optionOrder.map((i) => (
             <button
@@ -301,14 +315,7 @@ function ClarifyChip({
                 {t.clarify.confirm}
               </button>
             )}
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false)
-                setOther(false)
-                setText('')
-              }}
-            >
+            <button type="button" onClick={cancel}>
               {t.common.cancel}
             </button>
           </span>
