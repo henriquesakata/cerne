@@ -211,6 +211,9 @@ func NextStep(repoDir, projDir, id string) (Step, error) {
 			return s, nil
 		}
 		s.Step, s.Command = "complete the feature", "cerne feature complete "+id
+		if gates.AcceptGate() == project.GateRisk { // read from the gate alone: no diff here (F-0516 crit. 11)
+			s.Step += " — under the risk gate it is accepted on its own only if it touches no sensitive path or facet, its Gauntlet ended in a win and every criterion has a test; otherwise it waits for the human merge of its PR"
+		}
 	case domain.StateImplemented:
 		cmds, problem := ImplementedOwes(repoDir, f)
 		switch {

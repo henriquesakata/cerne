@@ -653,6 +653,8 @@ func (r showResult) renderText(w io.Writer) {
 			fmt.Fprintf(w, "accepted: on merge of %s\n", e.DeliveryMRURL)
 		case project.GateAuto: // F-0515: complete under [gates] accept = "auto"
 			fmt.Fprintln(w, "accepted: automatically (no human act)")
+		case project.GateRisk: // F-0516: complete under [gates] accept = "risk"
+			fmt.Fprintf(w, "accepted: as low risk (%s)\n", e.AcceptedRisk)
 		}
 		writeSuccession(w, e.SupersededBy, e.Reason)
 		writeDocWriters(w, r.writes)

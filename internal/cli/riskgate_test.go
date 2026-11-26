@@ -2,11 +2,13 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
@@ -212,4 +214,43 @@ func TestRiskHeldCardFollowsMergeGate(t *testing.T) {
 			t.Errorf("hook: err %v out %q, want a deny that names the risk gate", err, out)
 		}
 	})
+}
+
+// TestAcceptManualUnderRisk: under the risk gate a person's typed accept still
+// takes a held card to done, unmarked: the way out for a delivery with no PR.
+// An agent's is refused as a human act.
+// F-0516 crit. 8
+func TestAcceptManualUnderRisk(t *testing.T) {
+	projDir, repoDir := mergeGateProject(t, &cliFakeForge{}, store.Feature{ID: "F-0001", State: domain.StateImplemented})
+	setAcceptGate(t, projDir, project.GateRisk)
+	t.Setenv("CERNE_ACTOR", "agent")
+	if out, err := execCerne(t, "feature", "accept", "F-0001", "--dir", projDir); !errors.Is(err, app.ErrHumanGate) {
+		t.Fatalf("agent accept: err = %v (%s), want ErrHumanGate", err, out)
+	}
+	for _, k := range []string{"CERNE_ACTOR", "CLAUDECODE", "CURSOR_AGENT", "COPILOT_CLI", "CODEX_THREAD_ID"} {
+		t.Setenv(k, "")
+	}
+	if out, err := execCerne(t, "feature", "accept", "F-0001", "--dir", projDir); err != nil || !strings.Contains(out, "F-0001: implemented → done") {
+		t.Fatalf("person accept: %v\n%s", err, out)
+	}
+	if f, _ := store.LoadFeature(repoDir, "F-0001"); f.State != domain.StateDone || f.AcceptedVia != "" {
+		t.Errorf("card = %s, accepted_via %q; want done, unmarked", f.State, f.AcceptedVia)
+	}
+}
+
+// TestShowAcceptedAsLowRisk: show names a risk acceptance with its
+// measurements; a card accepted otherwise does not claim one.
+// F-0516 crit. 10
+func TestShowAcceptedAsLowRisk(t *testing.T) {
+	const summary = "touches no sensitive path or facet; the Gauntlet's last round is a win; 2/2 criteria with a test"
+	projDir, _ := mergeGateProject(t, &cliFakeForge{},
+		store.Feature{ID: "F-0001", State: domain.StateDone, AcceptedVia: "risk", AcceptedRisk: summary},
+		store.Feature{ID: "F-0002", State: domain.StateDone})
+	out, err := execCerne(t, "show", "F-0001", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "\naccepted: as low risk ("+summary+")\n") {
+		t.Fatalf("show F-0001: %v\n%s", err, out)
+	}
+	if out, _ := execCerne(t, "show", "F-0002", "--dir", projDir); strings.Contains(out, "low risk") {
+		t.Errorf("show F-0002 must not claim a risk acceptance:\n%s", out)
+	}
 }

@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -145,5 +146,42 @@ func TestRiskHeldKeepsTasks(t *testing.T) {
 	}
 	if ev := lastEntityEvent(t, repoDir, "F-0001", "feature.completed"); ev.Payload["risk"] != "held" || ev.Payload["risk_facets"] != "auth" || !strings.Contains(ev.Payload["risk_area"], "auth") {
 		t.Errorf("complete event = %+v, want the held measurements", ev.Payload)
+	}
+}
+
+// TestNextStepRiskGate: the next step of a card in development under the risk
+// gate says the acceptance depends on the three conditions, and reading it
+// runs no git: a git on PATH that records its calls is never called.
+// F-0516 crit. 11
+func TestNextStepRiskGate(t *testing.T) {
+	proj, repo := nextStepRepo(t)
+	riskWrite(t, proj, ".cernerc", "project_id = \"demo\"\nbackend = \"b\"\n\n[gates]\naccept = \"risk\"\n")
+	if err := store.SaveFeature(repo, store.Feature{ID: "F-0001", Title: "t", State: domain.StateInDevelopment}); err != nil {
+		t.Fatal(err)
+	}
+	nextStepDoc(t, repo, "F-0001", "spec.md", nextStepGoodSpec)
+	nextStepDoc(t, repo, "F-0001", "plan.md", "# plano\n\nPassos reais do plano.\n")
+	nextStepDoc(t, repo, "F-0001", "result.md", nextStepGoodRes)
+	bin, called := t.TempDir(), filepath.Join(t.TempDir(), "called")
+	riskWrite(t, bin, "git", "#!/bin/sh\necho \"$@\" >> "+called+"\nexit 1\n")
+	if err := os.Chmod(filepath.Join(bin, "git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	got, err := NextStep(repo, proj, "F-0001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Command != "cerne feature complete F-0001" {
+		t.Errorf("command = %q, want the complete", got.Command)
+	}
+	for _, want := range []string{"risk gate", "sensitive path or facet", "Gauntlet", "win", "every criterion has a test", "human merge"} {
+		if !strings.Contains(got.Step, want) {
+			t.Errorf("step %q lacks %q", got.Step, want)
+		}
+	}
+	if raw, err := os.ReadFile(called); err == nil {
+		t.Errorf("NextStep ran git: %s", raw)
 	}
 }
