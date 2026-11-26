@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -66,6 +67,9 @@ type TransitionOutcome struct {
 	// Cascade holds one line per child an approve or accept carried along
 	// (T-0007), and per candidate child an approve left behind, with why.
 	Cascade []string
+	// Risk is what the risk gate measured on a complete under [gates] accept
+	// = "risk" (F-0516); nil for every other action and gate.
+	Risk *RiskAssessment
 }
 
 // ErrApprovalStale is the start refusal for an approved feature whose spec
@@ -143,8 +147,20 @@ func TransitionFeature(repoDir, projDir, id string, action domain.Action, by, re
 // the parallel-implementation guard (F-0257): force starts the feature even
 // when another session holds active work on it, stamping the event.
 func TransitionFeatureForce(repoDir, projDir, id string, action domain.Action, by, reason string, d *Delivery, force bool) (TransitionOutcome, error) {
+	return transitionOwnOp(repoDir, projDir, id, action, by, reason, d, force, srcCLI)
+}
+
+// TransitionFeatureSeed is TransitionFeatureForce for a scripted seed (cerne
+// demo, F-0515): nobody crosses a gate, so no card it moves is marked auto,
+// whatever the environment declares.
+func TransitionFeatureSeed(repoDir, projDir, id string, action domain.Action, by, reason string, d *Delivery, force bool) (TransitionOutcome, error) {
+	return transitionOwnOp(repoDir, projDir, id, action, by, reason, d, force, srcSeed)
+}
+
+// transitionOwnOp runs a transition on an Op of its own.
+func transitionOwnOp(repoDir, projDir, id string, action domain.Action, by, reason string, d *Delivery, force bool, src actSource) (TransitionOutcome, error) {
 	op := telemetry.StartOp("backend")
-	out, err := TransitionFeatureOpForce(op, repoDir, projDir, id, action, by, reason, d, force)
+	out, err := transitionFeature(op, repoDir, projDir, id, action, by, reason, d, force, nil, src)
 	status := "ok"
 	if err != nil {
 		status = "error"
@@ -153,17 +169,19 @@ func TransitionFeatureForce(repoDir, projDir, id string, action domain.Action, b
 	return out, err
 }
 
-// TransitionFeatureOp is TransitionFeature recording its phases on the
-// caller's Op (F-0149): the server passes the request's Op so the transition's
-// lock_wait/fetch/push story correlates with the HTTP log line.
-func TransitionFeatureOp(op *telemetry.Op, repoDir, projDir, id string, action domain.Action, by, reason string, d *Delivery) (TransitionOutcome, error) {
-	return TransitionFeatureOpForce(op, repoDir, projDir, id, action, by, reason, d, false)
+// TransitionFeatureFromUI is the cerne ui form's transition. It records its
+// phases on the caller's Op (F-0149): the server passes the request's Op so
+// the transition's lock_wait/fetch/push story correlates with the HTTP log
+// line. The person at the form is the human whatever env the server runs in,
+// so no approve or accept through it is marked auto (F-0515).
+func TransitionFeatureFromUI(op *telemetry.Op, repoDir, projDir, id string, action domain.Action, by, reason string, d *Delivery) (TransitionOutcome, error) {
+	return transitionFeature(op, repoDir, projDir, id, action, by, reason, d, false, nil, srcUI)
 }
 
-// TransitionFeatureOpForce is TransitionFeatureOp carrying the F-0257 guard
-// override.
+// TransitionFeatureOpForce is TransitionFeature recording its phases on op,
+// carrying the F-0257 guard override.
 func TransitionFeatureOpForce(op *telemetry.Op, repoDir, projDir, id string, action domain.Action, by, reason string, d *Delivery, force bool) (TransitionOutcome, error) {
-	return transitionFeature(op, repoDir, projDir, id, action, by, reason, d, force, nil)
+	return transitionFeature(op, repoDir, projDir, id, action, by, reason, d, force, nil, srcCLI)
 }
 
 // mergeAccept is an accept that transcribes the human's merge of the delivery
@@ -181,14 +199,15 @@ func (m *mergeAccept) payload() map[string]string {
 const mergeActor = "human"
 
 // transitionFeature is the one transition path; m is non-nil only for an
-// accept on merge (F-0488).
-func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action domain.Action, by, reason string, d *Delivery, force bool, m *mergeAccept) (TransitionOutcome, error) {
+// accept on merge (F-0488), src says who stands behind the act (F-0515).
+func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action domain.Action, by, reason string, d *Delivery, force bool, m *mergeAccept, src actSource) (TransitionOutcome, error) {
 	if m != nil && action != domain.ActionAccept {
 		return TransitionOutcome{}, fmt.Errorf("an acceptance on merge is an accept, not %s", action)
 	}
 	var out TransitionOutcome
 	var title string
 	var casc cascaded
+	var autoAccepted bool // a complete [gates] accept = "auto" carried to done
 	var baseline bool
 	var renewedAt time.Time
 	if err := ValidateTransitionFlags(action, by, reason); err != nil {
@@ -313,6 +332,13 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 				return "", err
 			}
 		}
+		// The risk gate (F-0516) measures the delivery once the gates passed:
+		// low risk is accepted below, anything else waits for the human merge.
+		var risk *RiskAssessment
+		if action == domain.ActionComplete && gates.AcceptGate() == project.GateRisk {
+			ra := assessRisk(repoDir, projDir, f)
+			risk = &ra
+		}
 
 		oldState := f.State
 		f.State = newState
@@ -323,10 +349,21 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 			f.Reason = reason
 		case domain.ActionReject:
 			f.Reason = reason
+		case domain.ActionApprove:
+			// F-0515: a person's re-approval clears an agent's earlier mark.
+			f.ApprovedVia = autoVia(gates.ApproveGate(), agentAct(src))
+		case domain.ActionAccept:
+			// F-0515: an agent's own accept under accept = "auto"; the merge
+			// (m, F-0488) is the human's and marks itself below.
+			f.AcceptedVia = autoVia(gates.AcceptGate(), agentAct(src))
 		case domain.ActionRevert:
-			// An acceptance undone (F-0499) is no longer an acceptance on merge.
+			// An acceptance undone (F-0499) is no longer an acceptance on merge,
+			// nor is an approval undone one without a human act (F-0515).
 			if oldState == domain.StateDone {
 				f.AcceptedVia = ""
+			}
+			if oldState == domain.StateApproved {
+				f.ApprovedVia = ""
 			}
 		}
 		// Delivery links (F-0179): captured in the same write as the complete,
@@ -347,6 +384,9 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 		}
 		if m != nil {
 			f.AcceptedVia = "merge"
+		}
+		if f.AcceptedVia != project.GateRisk {
+			f.AcceptedRisk = "" // the summary belongs to a risk accept only (F-0516)
 		}
 		if err := store.SaveFeature(repoDir, f); err != nil {
 			return "", err
@@ -385,6 +425,13 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 			}
 			payload["gauntlet"] = "off"
 		}
+		// So is what the risk gate measured (F-0516), accepted or held.
+		if risk != nil {
+			if payload == nil {
+				payload = map[string]string{}
+			}
+			maps.Copy(payload, risk.payload())
+		}
 		// Approving is accepting the proposed bar (F-0308 crit. 8): the line the
 		// gate just validated goes on the event, with the actor.
 		var bar, judgeQuestion string
@@ -405,28 +452,75 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 				}
 			}
 		}
+		// The mark goes on the event too (F-0515); a merge carries its own.
+		var via string
+		switch action {
+		case domain.ActionApprove:
+			via = f.ApprovedVia
+		case domain.ActionAccept:
+			via = f.AcceptedVia
+		}
+		if via != "" && m == nil {
+			if payload == nil {
+				payload = map[string]string{}
+			}
+			payload["via"] = via
+		}
 		actor := EventActor()
 		if m != nil {
 			payload, actor = m.payload(), mergeActor
 		}
+		// Every complete and accept records the Gauntlet round it saw, whatever
+		// the gate, so the risk gate can tell an old win from a new one after a
+		// revert (F-0516).
+		if action == domain.ActionAccept || action == domain.ActionComplete {
+			if payload == nil {
+				payload = map[string]string{}
+			}
+			payload["gauntlet_round"] = gauntletRoundOf(repoDir, f)
+		}
 		if err := store.AppendEvent(repoDir, domain.NewEvent(id, eventType, payload, actor)); err != nil {
 			return "", err
+		}
+		// A task that held its parent records its own measurements (F-0516).
+		if risk != nil {
+			for _, ht := range risk.HeldTasks {
+				p := ht.Risk.payload()
+				p["cascade_from"] = id
+				if err := store.AppendEvent(repoDir, domain.NewEvent(ht.ID, "feature.risk_held", p, EventActor())); err != nil {
+					return "", err
+				}
+			}
 		}
 		// End-of-flow bypass (F-0131): with [gates] accept = "auto" the complete
 		// carries the feature straight to done in the same critical section —
 		// both events land in one commit. Default (human) stops at implemented
-		// ("Ready") and waits for the explicit human accept.
-		if action == domain.ActionComplete && projectGates(projDir).AcceptGate() == project.GateAuto {
+		// ("Ready") and waits for the explicit human accept. Under the risk
+		// gate (F-0516) only a delivery of low risk is carried, marked risk.
+		autoAccepted = action == domain.ActionComplete && (projectGates(projDir).AcceptGate() == project.GateAuto || risk != nil && risk.Low())
+		if autoAccepted {
 			promoted, err := domain.Transition(f.State, domain.ActionAccept)
 			if err != nil {
 				return "", err
 			}
 			f.State = promoted
+			acceptVia, acceptPayload := project.GateAuto, map[string]string{"via": project.GateAuto}
+			if risk != nil {
+				acceptVia, acceptPayload = project.GateRisk, risk.payload()
+				acceptPayload["via"] = project.GateRisk
+			}
+			acceptPayload["gauntlet_round"] = gauntletRoundOf(repoDir, f)
+			if src != srcSeed { // a seed crosses no gate, so it marks nothing
+				f.AcceptedVia = acceptVia // F-0515: done with no human act
+				if risk != nil {
+					f.AcceptedRisk = risk.Summary()
+				}
+			}
 			f.UpdatedAt = time.Now().UTC()
 			if err := store.SaveFeature(repoDir, f); err != nil {
 				return "", err
 			}
-			ev := domain.NewEvent(id, eventTypes[domain.ActionAccept], map[string]string{"via": "auto"}, EventActor())
+			ev := domain.NewEvent(id, eventTypes[domain.ActionAccept], acceptPayload, EventActor())
 			if err := store.AppendEvent(repoDir, ev); err != nil {
 				return "", err
 			}
@@ -442,9 +536,10 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 		if err != nil {
 			return "", err
 		}
-		// So do its implemented tasks (T-0007).
-		if action == domain.ActionAccept {
-			if casc, err = cascadeAccept(repoDir, projDir, id, m); err != nil {
+		// So do its implemented tasks (T-0007), on an auto accept too (F-0515)
+		// and on a risk one (F-0516).
+		if action == domain.ActionAccept || autoAccepted {
+			if casc, err = cascadeAccept(repoDir, projDir, f, m, risk); err != nil {
 				return "", err
 			}
 		}
@@ -460,7 +555,7 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 				return "", err
 			}
 			// The children ride the parent's approve (T-0007), in this commit.
-			if casc, err = cascadeApprove(repoDir, projDir, id, gauntletOn); err != nil {
+			if casc, err = cascadeApprove(repoDir, projDir, id, gauntletOn, agentAct(src)); err != nil {
 				return "", err
 			}
 		}
@@ -545,7 +640,7 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 			msg += fmt.Sprintf(" (+ %s)", strings.Join(ids, ", "))
 		}
 		title = f.Title
-		out = TransitionOutcome{ID: id, From: oldState, To: newState, Propagated: propagated, EpicReadyToClose: epicReady, Warnings: warnings, Bar: bar, JudgeQuestion: judgeQuestion, Baseline: baseline, RenewedApprovalAt: renewedAt, Pendings: movedPendings, Ideas: movedIdeas, Cascade: casc.lines}
+		out = TransitionOutcome{ID: id, From: oldState, To: newState, Propagated: propagated, EpicReadyToClose: epicReady, Warnings: warnings, Bar: bar, JudgeQuestion: judgeQuestion, Baseline: baseline, RenewedApprovalAt: renewedAt, Pendings: movedPendings, Ideas: movedIdeas, Cascade: casc.lines, Risk: risk}
 		return msg, nil
 	})
 	if out.AlreadyDone && errors.Is(err, gitback.ErrNothingToCommit) {
@@ -560,8 +655,13 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 			out.Warnings = append(out.Warnings, "warning: card notice: "+err.Error())
 		}
 	}
+	// A task an auto complete carried was accepted, not completed (F-0515).
+	cascAction := action
+	if autoAccepted {
+		cascAction = domain.ActionAccept
+	}
 	for _, c := range casc.moved {
-		dispatchWebhook(projDir, c.ID, "feature", string(action), string(cascadeFrom[action]), string(c.State), c.Title)
+		dispatchWebhook(projDir, c.ID, "feature", string(cascAction), string(cascadeFrom[cascAction]), string(c.State), c.Title)
 	}
 	out.Warnings = append(out.Warnings, mirrorAfterTransition(repoDir, projDir, transitionIDs(id, out.Propagated, casc.moved))...)
 	return out, nil

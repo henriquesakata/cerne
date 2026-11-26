@@ -265,6 +265,9 @@ const (
 	// into the default branch is the acceptance; the accept typed by hand
 	// stays human.
 	GateMerge = "merge"
+	// GateRisk (F-0516, accept only): complete accepts on its own a delivery
+	// of low risk; any other waits for the human merge, as under GateMerge.
+	GateRisk = "risk"
 )
 
 // GatesConfig is the optional [gates] block of .cernerc (F-0131): approve is
@@ -276,14 +279,43 @@ const (
 // on upgrade. WorkGateAllow extends the built-in allowlist (.docs/**,
 // .claude/**, paths outside the project) with project-specific globs.
 type GatesConfig struct {
-	Approve       string   `toml:"approve,omitempty"`         // "human" (default) | "auto"
-	Accept        string   `toml:"accept,omitempty"`          // "human" (default) | "auto" | "merge" (F-0488)
-	Revert        string   `toml:"revert,omitempty"`          // "human" (default) | "auto" — F-0169: undo of an approval
-	WorkGate      string   `toml:"work_gate,omitempty"`       // "on" | anything else = off (default)
-	WorkGateAllow []string `toml:"work_gate_allow,omitempty"` // extra allowlist globs for the gate
-	WorkGateHint  string   `toml:"work_gate_hint,omitempty"`  // project-specific suffix appended to the gate's deny reason (F-0170)
-	CommitTrailer string   `toml:"commit_trailer,omitempty"`  // "on" | anything else = off — prepare-commit-msg Cerne: trailer (F-0173)
-	Gauntlet      string   `toml:"gauntlet,omitempty"`        // "off" = light mode (F-0364) | anything else = on (default)
+	Approve       string   `toml:"approve,omitempty"`           // "human" (default) | "auto"
+	Accept        string   `toml:"accept,omitempty"`            // "human" (default) | "auto" | "merge" (F-0488) | "risk" (F-0516)
+	Revert        string   `toml:"revert,omitempty"`            // "human" (default) | "auto" — F-0169: undo of an approval
+	WorkGate      string   `toml:"work_gate,omitempty"`         // "on" | anything else = off (default)
+	WorkGateAllow []string `toml:"work_gate_allow,omitempty"`   // extra allowlist globs for the gate
+	WorkGateHint  string   `toml:"work_gate_hint,omitempty"`    // project-specific suffix appended to the gate's deny reason (F-0170)
+	CommitTrailer string   `toml:"commit_trailer,omitempty"`    // "on" | anything else = off — prepare-commit-msg Cerne: trailer (F-0173)
+	Gauntlet      string   `toml:"gauntlet,omitempty"`          // "off" = light mode (F-0364) | anything else = on (default)
+	RiskPaths     []string `toml:"risk_human_paths,omitempty"`  // F-0516: path globs a risk accept never passes; unset = the default list
+	RiskFacets    []string `toml:"risk_human_facets,omitempty"` // F-0516: facets a risk accept never passes; unset = the default list
+	// F-0518: owner answers the risk gate collects, holding every delivery,
+	// before it decides; unset = 20, 0 = no calibration.
+	RiskCalibrationN *int64 `toml:"risk_calibration,omitempty"`
+	// F-0518: "not needed" answers on as many cards held by one pattern or
+	// facet open a proposal to drop it; unset = 3.
+	RiskRelaxAfterN *int64 `toml:"risk_relax_after,omitempty"`
+}
+
+// RiskRelaxAfter is how many cards held by one pattern or facet the owner
+// answers "not needed", with no contrary signal, before the gate proposes to
+// drop it (F-0518 crit. 6). Unset or below 1 reads as 3.
+func (g GatesConfig) RiskRelaxAfter() int {
+	if g.RiskRelaxAfterN == nil || *g.RiskRelaxAfterN < 1 {
+		return 3
+	}
+	return int(*g.RiskRelaxAfterN)
+}
+
+// RiskCalibration is how many owner answers the risk gate collects before it
+// decides on its own (F-0518 crit. 12).
+// Unset or negative (a value written by hand) reads as the default: in doubt,
+// calibrate.
+func (g GatesConfig) RiskCalibration() int {
+	if g.RiskCalibrationN == nil || *g.RiskCalibrationN < 0 {
+		return 20
+	}
+	return int(*g.RiskCalibrationN)
 }
 
 // WorkGateEnabled resolves the edit gate: on only when explicitly configured.
@@ -308,8 +340,44 @@ func (g GatesConfig) GauntletEnabled() bool {
 // isZero reports whether the block carries nothing worth persisting (the
 // struct holds a slice, so it is not ==-comparable).
 func (g GatesConfig) isZero() bool {
-	return g.Approve == "" && g.Accept == "" && g.Revert == "" && g.WorkGate == "" && len(g.WorkGateAllow) == 0 && g.WorkGateHint == "" && g.CommitTrailer == "" && g.Gauntlet == ""
+	return g.Approve == "" && g.Accept == "" && g.Revert == "" && g.WorkGate == "" && len(g.WorkGateAllow) == 0 && g.WorkGateHint == "" && g.CommitTrailer == "" && g.Gauntlet == "" && g.RiskPaths == nil && g.RiskFacets == nil && g.RiskCalibrationN == nil && g.RiskRelaxAfterN == nil
 }
+
+// RiskHumanPaths are the path globs whose change always needs a person under
+// the risk gate (F-0516): the project's list, or the default one when unset.
+func (g GatesConfig) RiskHumanPaths() []string {
+	if g.RiskPaths == nil {
+		return slices.Clone(defaultRiskHumanPaths)
+	}
+	return g.RiskPaths
+}
+
+// RiskHumanFacets are the facets that always need a person under the risk
+// gate (F-0516): the project's list, or the default one when unset.
+func (g GatesConfig) RiskHumanFacets() []string {
+	if g.RiskFacets == nil {
+		return slices.Clone(defaultRiskHumanFacets)
+	}
+	return g.RiskFacets
+}
+
+// defaultRiskHumanPaths are the changes no risk accept passes unless the
+// owner says otherwise (F-0516 crit. 14): the CI of the three forges,
+// dependency manifests and lockfiles, migrations, cerne's own config and the
+// agents' hooks, instructions and configs.
+var defaultRiskHumanPaths = []string{
+	".github/workflows/**", ".github/actions/**", ".gitlab-ci.yml", ".gitlab/**", ".gitea/workflows/**", ".forgejo/workflows/**",
+	"go.mod", "go.sum", "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock",
+	"Cargo.toml", "Cargo.lock", "pyproject.toml", "poetry.lock", "requirements*.txt", "Gemfile*",
+	"**/migrations/**", "**/db/migrate/**",
+	".cernerc",
+	"**/.claude/**", "**/.cursor/**", "**/.codex/**", "**/.gemini/**", ".github/copilot-instructions.md",
+	".github/hooks/**", ".github/instructions/**", ".github/skills/**",
+	".mcp.json", "AGENTS.md", "CLAUDE.md", "GEMINI.md",
+}
+
+// defaultRiskHumanFacets are the facets no risk accept passes by default.
+var defaultRiskHumanFacets = []string{"auth", "infra", "data"}
 
 // ApproveGate resolves the start gate: auto only when explicitly configured.
 func (g GatesConfig) ApproveGate() string {
@@ -319,13 +387,22 @@ func (g GatesConfig) ApproveGate() string {
 	return GateHuman
 }
 
-// AcceptGate resolves the end gate: auto or merge only when explicitly
-// configured, by the exact literal.
+// AcceptGate resolves the end gate: auto, merge or risk only when explicitly
+// configured, by the exact literal. A binary older than a value reads it as
+// human, the safe side.
 func (g GatesConfig) AcceptGate() string {
-	if g.Accept == GateAuto || g.Accept == GateMerge {
+	if g.Accept == GateAuto || g.Accept == GateMerge || g.Accept == GateRisk {
 		return g.Accept
 	}
 	return GateHuman
+}
+
+// AcceptsOnMerge reports whether the human's merge of the delivery PR
+// accepts a card the complete left implemented (F-0488): the merge gate, and
+// the risk gate for a delivery it did not accept on its own (F-0516).
+func (g GatesConfig) AcceptsOnMerge() bool {
+	a := g.AcceptGate()
+	return a == GateMerge || a == GateRisk
 }
 
 // RevertGate resolves the approval-undo gate (F-0169): undoing a human act is

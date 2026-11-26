@@ -221,7 +221,9 @@ func TestNewCardNextStep_HarnessIndependent(t *testing.T) {
 			t.Setenv(k, v)
 		}
 		title := []string{"Exportar o kanban em CSV", "Importar planilha de custos", "Arquivar salas antigas"}[i]
-		out, err := cardNew(t, title, "--context", "o time pede", "--dir", projDir)
+		// B-0086: an agent shell must choose; the same explicit origin in all
+		// three keeps the block comparable.
+		out, err := cardNew(t, title, "--context", "o time pede", "--origin", "agent", "--dir", projDir)
 		if err != nil {
 			t.Fatalf("feature new %q: %v\n%s", title, err, out)
 		}

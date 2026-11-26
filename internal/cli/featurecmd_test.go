@@ -583,3 +583,37 @@ func TestFeatureFixesFlag(t *testing.T) {
 		t.Fatalf("set with no flag = %v, want an error naming --fixes", err)
 	}
 }
+
+// B-0085: `feature set --origin` corrects the origin; show prints it (text and
+// --json); an agent shell is refused with ErrHumanGate; a blank quote is refused.
+func TestFeatureSetOrigin(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	t.Setenv("CERNE_ACTOR", "agent")
+	if out, err := execCerne(t, "feature", "new", "Feat", "--context", "ctx de teste", "--origin", "agent", "--dir", projDir); err != nil {
+		t.Fatalf("feature new: %v\n%s", err, out)
+	}
+	if f, _ := store.LoadFeature(repoDir, "F-0001"); f.Origin != "agent" {
+		t.Fatalf("born origin = %q, want agent", f.Origin)
+	}
+	_, err := execCerne(t, "feature", "set", "F-0001", "--origin", "human", "--on-behalf", "o dono pediu", "--dir", projDir)
+	if !errors.Is(err, app.ErrHumanGate) {
+		t.Fatalf("agent correction err = %v, want ErrHumanGate", err)
+	}
+
+	t.Setenv("CERNE_ACTOR", "")
+	_, err = execCerne(t, "feature", "set", "F-0001", "--origin", "human", "--on-behalf", " ", "--dir", projDir)
+	if !errors.Is(err, app.ErrOnBehalfEmpty) {
+		t.Fatalf("blank quote err = %v, want ErrOnBehalfEmpty", err)
+	}
+	if out, err := execCerne(t, "feature", "set", "F-0001", "--origin", "human", "--on-behalf", "o dono pediu", "--dir", projDir); err != nil {
+		t.Fatalf("correction: %v\n%s", err, out)
+	}
+	out, err := execCerne(t, "show", "F-0001", "--dir", projDir)
+	if err != nil || !strings.Contains(out, "origin: human") {
+		t.Fatalf("show = %v\n%s, want origin: human", err, out)
+	}
+	out, err = execCerne(t, "show", "F-0001", "--json", "--dir", projDir)
+	if err != nil || !strings.Contains(out, `"origin": "human"`) && !strings.Contains(out, `"origin":"human"`) {
+		t.Fatalf("show --json = %v\n%s, want origin human", err, out)
+	}
+}

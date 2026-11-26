@@ -19,6 +19,7 @@ import { norm } from './Palette'
 import { FixBlock } from './Harness'
 import { checkProjectName } from './projectName'
 import AISettings, { groupTitleId } from './AISettings'
+import RiskGatePanel from './RiskGatePanel'
 
 // Settings (F-0315): the active project's settings, derived from the registry
 // F-0314 serves. The screen knows no key: title, description, type and scopes
@@ -362,6 +363,8 @@ export default function Settings({ group: asked = 'general' }: { group?: Setting
               ))}
             </ul>
           )}
+          {/* Beside the two risk lists (F-0518): what the gate learned. */}
+          {q === '' && group === 'process' && all.some((s) => s.id === 'gates.accept' && s.value === 'risk') && <RiskGatePanel key={activePid} />}
           </>
           ) : (
             <LoadPending load={load} message={ts.loadError} />
@@ -662,6 +665,7 @@ function SettingRow({
   const effId = `${uid}-eff`
   const infoId = `${uid}-info`
   const askId = `${uid}-ask`
+  const listHintId = `${uid}-listhint`
   // The value a human-only toggle asks to write; undefined = no question open.
   const [pending, setPending] = useState<unknown>(undefined)
   const confirming = pending !== undefined
@@ -690,10 +694,12 @@ function SettingRow({
   const fmt = (v: unknown) =>
     s.type === 'records'
       ? recordsSummary(s, v, ts)
-      : s.enum?.length && typeof v === 'string'
+      : s.type === 'list'
+        ? listSummary(v, ts)
+        : s.enum?.length && typeof v === 'string'
         ? v === ''
           ? ts.emptyEnum
-          : (ts.options[v] ?? v)
+          : (ts.options[`${s.id}:${v}`] ?? ts.options[v] ?? v)
         : formatValue(v, ts)
   const desc = tx(s.description)
   const label = (sc: SettingScope) => (sc === 'host' ? ts.hostGlobal : ts.scopes[sc])
@@ -711,6 +717,48 @@ function SettingRow({
   const onOff = s.type === 'string' && s.enum?.length === 2 && s.enum.includes('on') && s.enum.includes('off')
   const isToggle = s.type === 'bool' || onOff
   const titleNode = <span id={titleId}>{tx(s.title)}</span>
+  // The question a human-only key asks before it leaves its default: a toggle
+  // turns on or off, a select changes to the value picked (F-0515).
+  const turningOn = pending === true || pending === 'on'
+  const file = ws === 'project' ? '.cernerc' : 'settings.toml'
+  let ask = ''
+  if (confirming && !isToggle) {
+    // What changes for the owner comes first, then where it is written.
+    const what = ts.consequence[`${s.id}:${String(pending)}`]
+    ask = (what ? `${what} ` : '') + ts.confirmValue(tx(s.title), fmt(pending), file, ws === 'project')
+  }
+  else if (confirming) ask = turningOn ? ts.confirmOn(tx(s.title), file) : ts.confirmOff(tx(s.title), file, ws === 'project')
+  const confirmBox = confirming && (
+    <div
+      className="settings-confirm"
+      role="group"
+      aria-labelledby={askId}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') cancel()
+      }}
+    >
+      <p id={askId}>{ask}</p>
+      <button
+        type="button"
+        className="settings-confirm-yes"
+        aria-disabled={lock}
+        onClick={() => {
+          if (busy) return
+          const next = pending
+          setPending(undefined)
+          // The question unmounts with the pressed button: hand the focus
+          // back to the control now, so a failed write leaves it there too.
+          document.getElementById(controlId(s.id))?.focus()
+          onWrite(ws, () => putSetting(s.id, ws, next))
+        }}
+      >
+        {!isToggle ? ts.change : turningOn ? ts.turnOn : ts.turnOff}
+      </button>{' '}
+      <button type="button" ref={confirmBtn} className="settings-confirm-no" onClick={cancel}>
+        {ts.cancel}
+      </button>
+    </div>
+  )
   let control = null
   if (isToggle) {
     const on = onOff ? current === 'on' : current === true
@@ -740,47 +788,13 @@ function SettingRow({
         <span aria-hidden="true">{on ? ts.stateOn : ts.stateOff}</span>
       </label>
     )
-    {
-      const turningOn = pending === true || pending === 'on'
-      const file = ws === 'project' ? '.cernerc' : 'settings.toml'
-      // Always a fragment, so the box is not remounted when the question opens.
-      control = (
-        <>
-          {control}
-          {confirming && (
-          <div
-            className="settings-confirm"
-            role="group"
-            aria-labelledby={askId}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') cancel()
-            }}
-          >
-            <p id={askId}>{turningOn ? ts.confirmOn(tx(s.title), file) : ts.confirmOff(tx(s.title), file, ws === 'project')}</p>
-            <button
-              type="button"
-              className="settings-confirm-yes"
-              aria-disabled={lock}
-              onClick={() => {
-                if (busy) return
-                const next = pending
-                setPending(undefined)
-                // The question unmounts with the pressed button: hand the focus
-                // back to the box now, so a failed write leaves it there too.
-                document.getElementById(controlId(s.id))?.focus()
-                onWrite(ws, () => putSetting(s.id, ws, next))
-              }}
-            >
-              {turningOn ? ts.turnOn : ts.turnOff}
-            </button>{' '}
-            <button type="button" ref={confirmBtn} className="settings-confirm-no" onClick={cancel}>
-              {ts.cancel}
-            </button>
-          </div>
-          )}
-        </>
-      )
-    }
+    // Always a fragment, so the box is not remounted when the question opens.
+    control = (
+      <>
+        {control}
+        {confirmBox}
+      </>
+    )
   } else {
     control = (
       <>
@@ -788,15 +802,25 @@ function SettingRow({
           <select
             id={controlId(s.id)}
             className="settings-select"
-            value={String(current)}
+            // While the question is open the select shows the value it asks about.
+            value={String(confirming ? pending : current)}
             aria-labelledby={titleId}
             aria-describedby={described}
             aria-disabled={lock}
             onChange={(e) => {
               const next = e.target.value
+              if (busy) return
+              // A human-only select asks before it leaves its default, like
+              // the toggles (F-0515: the approve and accept gates).
+              if (s.human_only && next !== String(s.default)) {
+                setPending(next)
+                return
+              }
+              // Back to the default writes at once: an open question goes.
+              setPending(undefined)
               // The default is not always a declared value (an empty one
               // means "unset"): picking it removes the scope's value.
-              if (!busy) onWrite(ws, () => (next === '' ? unsetSetting(s.id, ws) : putSetting(s.id, ws, next)))
+              onWrite(ws, () => (next === '' ? unsetSetting(s.id, ws) : putSetting(s.id, ws, next)))
             }}
           >
             {(s.enum.includes(String(s.default)) ? s.enum : [String(s.default), ...s.enum]).map((v) => (
@@ -856,11 +880,17 @@ function SettingRow({
                 return
               }
               const n = Number(raw)
-              if (!Number.isInteger(n) || n < 1) {
+              if (!Number.isInteger(n) || n < (s.allow_zero ? 0 : 1)) {
                 setIntError(true)
                 return
               }
               setIntError(false)
+              // A human-only count asks before it leaves its default, like
+              // the toggles, selects and lists (F-0518).
+              if (s.human_only && n !== Number(s.default)) {
+                setPending(n)
+                return
+              }
               onWrite(ws, () => putSetting(s.id, ws, n))
             }}
           >
@@ -869,7 +899,7 @@ function SettingRow({
               id={controlId(s.id)}
               name="value"
               type="number"
-              min="1"
+              min={s.allow_zero ? '0' : '1'}
               step="1"
               className="settings-text"
               defaultValue={String(current)}
@@ -883,9 +913,48 @@ function SettingRow({
             </button>
             {intError && (
               <p id={errId} role="alert" className="form-error">
-                {ts.notInteger}
+                {s.allow_zero ? ts.notCount : ts.notInteger}
               </p>
             )}
+          </form>
+        ) : s.type === 'list' ? (
+          // A list key (F-0516): one item per line; Save sends the non-blank
+          // lines, the server is the validator. A human-only list asks before
+          // it leaves its default, like the toggles and selects (F-0515).
+          <form
+            className="settings-string settings-listfield"
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (busy) return
+              const items = String(new FormData(e.currentTarget).get('value') ?? '')
+                .split('\n')
+                .map((x) => x.trim())
+                .filter((x) => x !== '')
+              if (s.human_only && JSON.stringify(items) !== JSON.stringify(s.default)) {
+                setPending(items)
+                return
+              }
+              setPending(undefined)
+              onWrite(ws, () => putSetting(s.id, ws, items))
+            }}
+          >
+            <textarea
+              key={`${ws}:${landed}:${JSON.stringify(current)}`}
+              id={controlId(s.id)}
+              name="value"
+              className="settings-text"
+              rows={Math.min(12, Math.max(3, (Array.isArray(current) ? current.length : 0) + 1))}
+              defaultValue={Array.isArray(current) ? current.join('\n') : ''}
+              aria-labelledby={titleId}
+              aria-describedby={`${described} ${listHintId}`}
+              aria-disabled={lock}
+            />
+            <p id={listHintId} className="settings-note">
+              {ts.list.hint}
+            </p>
+            <button type="submit" aria-describedby={titleId} aria-disabled={lock}>
+              {t.common.save}
+            </button>
           </form>
         ) : s.type === 'records' && s.fields?.length ? (
           // Remounts on another scope, another value or a landed write, so the
@@ -905,6 +974,7 @@ function SettingRow({
             <code>{fmt(current)}</code> <span className="settings-note">{ts.readOnly}</span>
           </p>
         )}
+        {confirmBox}
       </>
     )
   }
@@ -1050,6 +1120,14 @@ function recordsSummary(s: ResolvedSetting, v: unknown, ts: Texts): string {
   if (rows.length === 0) return ts.records.none
   const key = s.fields?.[0]?.id ?? ''
   return ts.records.summary(rows.length, rows.map((r) => r[key] ?? '').join(', '))
+}
+
+// listSummary says a list value in one line (F-0516): how many, and the first
+// five; the field below has them all.
+function listSummary(v: unknown, ts: Texts): string {
+  const items = Array.isArray(v) ? v.map(String) : []
+  if (items.length === 0) return ts.list.none
+  return ts.list.summary(items.length, items.length > 5 ? `${items.slice(0, 5).join(', ')}, …` : items.join(', '))
 }
 
 // RecordsEditor edits a records key (F-0449) as a table: one row per record,

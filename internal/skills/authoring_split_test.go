@@ -106,7 +106,7 @@ func TestSkillMdKeepsTheRules(t *testing.T) {
 		"errata for the concluded":     {"is **history: its body is immutable**", "do **not** rewrite it and do **not** reopen it. Append an **errata** instead"},
 		"do not turn the Gauntlet off": {"Do not switch it yourself to get past a gate: turning the Gauntlet off is the project owner's decision"},
 		"triage the learnings":         {"**Closing includes triaging the learnings (F-0401).**"},
-		"mark ambiguity":               {"**Mark ambiguity, don't guess:** leave `[CLARIFY: specific question]`"},
+		"mark ambiguity":               {"**Mark ambiguity, don't guess:** leave `[CLARIFY: question | option (recommended) | …]`"},
 		"project language":             {"Write every document in the project's language: check the headings of the stub you are filling."},
 		"register non-feature work":    {"The moment you pick up a non-feature task, register it with `cerne work start", "run `cerne work list` before delegating an investigation"},
 		"ideas on demand":              {"Ideas are on demand only: never pull ideas in unasked."},
@@ -305,8 +305,12 @@ var f0475Rewritten = []string{
 	"- **Register pendings when you close a feature:** for every debt you would write in the result's *Dé",
 	"**Accept queue (F-0875).** `cerne accept queue [--json]` lists the features in implemented, oldest f",
 	"The result rules count it too: a `critério N` cited in an errata entry clears `result-missing-eviden",
+	// B-0086: step 1 of the Feature loop names the origin choice.
+	"1. **Create** — `cerne feature new",
 	// T-0020: room watch --once now waits out --settle before it exits.
 	"`--once` long-polls until the first **relevant** (non-echo) event, prints it, and exits 0",
+	// F-0515: the gates are the owner's settings gates.approve/gates.accept now.
+	"Both gates read the project's `.cernerc` `[gates]` block (`approve`/`accept`, each `\"human\"` (defa",
 }
 
 func isRewritten(s string) bool {

@@ -82,6 +82,96 @@ func Diff(dir, base, pinBranch string, excludes []string) (diff, usedBase string
 	return out, base, err
 }
 
+// Delivery is what the risk gate reads of the checkout at a directory
+// (F-0516): the ref it diffs against, the merge-base and HEAD commits, and the
+// files changed between them.
+type Delivery struct {
+	Ref        string      // the base ref resolved (see resolveBase)
+	Base, Head string      // the merge-base of Ref and HEAD, and HEAD, as SHAs
+	Files      []string    // changed from Base to HEAD, from the repository root, no excludes; a rename as its old and its new path
+	commits    [][2]string // subject and message of each non-merge commit of Base..HEAD
+	Dirty      []string    // files that differ from HEAD (staged, unstaged or untracked, not ignored), but the project's own docs.lock and .docs/
+	Prefix     string      // dir from the repository root, with a trailing slash; "" at the root
+}
+
+// ReadDelivery reads the delivery checked out at dir against the default
+// branch (see resolveBase), once for every card a complete measures.
+func ReadDelivery(dir, pinBranch string) (Delivery, error) {
+	ref, err := resolveBase(dir, "", pinBranch)
+	if err != nil {
+		return Delivery{}, err
+	}
+	d := Delivery{Ref: ref}
+	if d.Base, err = runGit(dir, "merge-base", ref, "HEAD"); err != nil {
+		return Delivery{}, err
+	}
+	if d.Head, err = runGit(dir, "rev-parse", "HEAD"); err != nil {
+		return Delivery{}, err
+	}
+	if d.Prefix, err = runGit(dir, "rev-parse", "--show-prefix"); err != nil {
+		return Delivery{}, err
+	}
+	d.Base, d.Head, d.Prefix = strings.TrimSpace(d.Base), strings.TrimSpace(d.Head), strings.TrimSpace(d.Prefix)
+	// --no-relative: a diff.relative config would drop the files outside dir.
+	out, err := runGit(dir, "diff", "--name-only", "--no-renames", "--no-relative", "-z", d.Base, d.Head)
+	if err != nil {
+		return Delivery{}, err
+	}
+	for _, f := range strings.Split(out, "\x00") {
+		if f != "" {
+			d.Files = append(d.Files, f)
+		}
+	}
+	log, err := runGit(dir, "log", "--no-merges", "--format=%s%x00%B%x1e", d.Base+".."+d.Head)
+	if err != nil {
+		return Delivery{}, err
+	}
+	for _, rec := range strings.Split(log, "\x1e") {
+		if subject, msg, ok := strings.Cut(strings.TrimLeft(rec, "\n"), "\x00"); ok {
+			d.commits = append(d.commits, [2]string{subject, msg})
+		}
+	}
+	// Untracked files count: the test marks are read from the tree.
+	status, err := runGit(dir, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames")
+	if err != nil {
+		return Delivery{}, err
+	}
+	for _, e := range strings.Split(status, "\x00") {
+		// cerne's own pin and projection, at the root or the project dir, are never the delivery.
+		if p := e[min(3, len(e)):]; p != "" && p != "docs.lock" && p != d.Prefix+"docs.lock" && !strings.HasPrefix(p, d.Prefix+".docs/") {
+			d.Dirty = append(d.Dirty, p)
+		}
+	}
+	return d, nil
+}
+
+// Cites reports whether a commit of the delivery is card id's, by the rule
+// of FeatureCommits (ownCommit).
+func (d Delivery) Cites(id string) bool {
+	for _, c := range d.commits {
+		if own, _ := ownCommit(c[0], c[1], id); own {
+			return true
+		}
+	}
+	return false
+}
+
+// TrackedFiles lists the files git tracks under dir, relative to it: the
+// tree the risk gate reads test marks from (F-0516).
+func TrackedFiles(dir string) ([]string, error) {
+	out, err := runGit(dir, "ls-files", "-z")
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	for _, f := range strings.Split(out, "\x00") {
+		if f != "" {
+			files = append(files, f)
+		}
+	}
+	return files, nil
+}
+
 // ErrNoFeatureCommits means no non-merge commit on the base cites the id.
 var ErrNoFeatureCommits = errors.New("no commit cites the feature in its message")
 
@@ -112,6 +202,22 @@ func citesID(msg, id string) bool {
 		}
 		off = start + 1
 	}
+}
+
+// ownCommit is the rule that makes a commit id's: its message cites id as a
+// whole word, and its subject cites id or no other feature. A commit whose
+// subject names another feature while only the body mentions id belongs to
+// that feature, returned as other. FeatureCommits and ReadDelivery share it.
+func ownCommit(subject, msg, id string) (own bool, other string) {
+	if !citesID(msg, id) {
+		return false, ""
+	}
+	if !citesID(subject, id) {
+		if other = otherFeatureID(subject, id); other != "" {
+			return false, other
+		}
+	}
+	return true, ""
 }
 
 // isIDChar: a char that glues to an id before it (branch and URL paths included).
@@ -152,14 +258,14 @@ func FeatureCommits(dir, base, pinBranch, id string, excludes []string) (diff st
 	var b strings.Builder
 	for _, rec := range strings.Split(log, "\x1e") {
 		f := strings.SplitN(strings.TrimLeft(rec, "\n"), "\x00", 4)
-		if len(f) < 4 || !citesID(f[3], id) {
+		if len(f) < 4 {
 			continue
 		}
-		if !citesID(f[2], id) {
-			if other := otherFeatureID(f[2], id); other != "" {
+		if own, other := ownCommit(f[2], f[3], id); !own {
+			if other != "" {
 				skipped = append(skipped, Commit{Sha: f[1], Subject: f[2], Other: other})
-				continue
 			}
+			continue
 		}
 		args := append([]string{"show", "--no-color", "--no-ext-diff", "--no-textconv", "--format=commit %h %s", f[0], "--", "."}, excludeArgs(excludes)...)
 		out, err := runGit(dir, args...)

@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"strings"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/henriquesakata/cerne/internal/doclang"
 	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/lint"
+	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
 )
 
@@ -33,8 +35,9 @@ type cascaded struct {
 // kept, the plan scaffolded; every other candidate child stays, listed with
 // its impediment codes. An actor the approve's human gate refuses takes no
 // child along (crit. 2), and the outcome says so: the CLI refuses the parent
-// first, and the UI calls the core with no gate of its own.
-func cascadeApprove(repoDir, projDir, parentID string, gauntletOn bool) (cascaded, error) {
+// first, and the UI calls the core with no gate of its own. A child an
+// agent's act carries under the auto gate is marked like its parent (F-0515).
+func cascadeApprove(repoDir, projDir, parentID string, gauntletOn, agentAct bool) (cascaded, error) {
 	children, err := childrenOf(repoDir, parentID, func(c store.Feature) bool { return c.State == cascadeFrom[domain.ActionApprove] })
 	if err != nil {
 		return cascaded{}, err
@@ -57,6 +60,9 @@ func cascadeApprove(repoDir, projDir, parentID string, gauntletOn bool) (cascade
 			continue
 		}
 		payload := map[string]string{"cascade_from": parentID}
+		if c.ApprovedVia = autoVia(projectGates(projDir).ApproveGate(), agentAct); c.ApprovedVia != "" {
+			payload["via"] = c.ApprovedVia // F-0515
+		}
 		if !gauntletOn {
 			payload["gauntlet"] = "off"
 		}
@@ -96,12 +102,15 @@ func cascadeApprove(repoDir, projDir, parentID string, gauntletOn bool) (cascade
 // An F- child had its own approve and keeps its own accept; an actor the
 // accept's human gate refuses takes no task along. An accept on merge (m,
 // F-0488) is the human's whoever records it: the tasks ride it, marked alike.
-func cascadeAccept(repoDir, projDir, parentID string, m *mergeAccept) (cascaded, error) {
+// The parent's accepted_via marks its tasks too: auto (F-0515); under risk
+// (F-0516) only the tasks the gate accepts on their own measurements ride.
+func cascadeAccept(repoDir, projDir string, parent store.Feature, m *mergeAccept, risk *RiskAssessment) (cascaded, error) {
+	parentID, via := parent.ID, parent.AcceptedVia
 	children, err := childrenOf(repoDir, parentID, func(c store.Feature) bool { return isTask(c.ID) && c.State == cascadeFrom[domain.ActionAccept] })
 	if err != nil {
 		return cascaded{}, err
 	}
-	if m == nil && CheckHumanGate(projectGates(projDir).AcceptGate()) != nil {
+	if m == nil && via != project.GateRisk && CheckHumanGate(projectGates(projDir).AcceptGate()) != nil {
 		return keptByHumanGate(parentID, children), nil
 	}
 	var out cascaded
@@ -111,6 +120,34 @@ func cascadeAccept(repoDir, projDir, parentID string, m *mergeAccept) (cascaded,
 			payload, actor = m.payload(), mergeActor
 			payload["cascade_from"] = parentID
 			c.AcceptedVia = "merge"
+		}
+		payload["gauntlet_round"] = gauntletRoundOf(repoDir, c) // F-0516: a later revert reads it
+		if m == nil && via == project.GateAuto {
+			payload["via"] = via
+			c.AcceptedVia = via
+		}
+		// A risk accept is earned per card (F-0516): each task is measured on
+		// its own, and one the gate holds waits for the human merge, with its
+		// measurements on an event of its own.
+		if m == nil && via == project.GateRisk {
+			ra, measured := risk.taskReading(c.ID) // read once by the parent's complete
+			if !measured {
+				ra = assessRisk(repoDir, projDir, c)
+			}
+			// The parent's check held the card for any task that does not
+			// ride (F-0518): the same rule here, so no task is left behind.
+			if !ra.rides() {
+				held := ra.payload()
+				held["cascade_from"] = parentID
+				if err := store.AppendEvent(repoDir, domain.NewEvent(c.ID, "feature.risk_held", held, EventActor())); err != nil {
+					return out, err
+				}
+				out.lines = append(out.lines, fmt.Sprintf("%s stays %s, not carried along with %s: the risk gate holds it — %s", c.ID, c.State, parentID, strings.Join(ra.Held(), "; ")))
+				continue
+			}
+			maps.Copy(payload, ra.payload())
+			payload["risk"], payload["via"] = "low", via // it rode the parent's accept as low risk
+			c.AcceptedVia, c.AcceptedRisk = via, ra.Summary()
 		}
 		if err := moveChild(repoDir, &c, domain.ActionAccept, payload, actor); err != nil {
 			return out, err

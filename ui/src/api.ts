@@ -31,7 +31,10 @@ export type Feature = {
   components?: string[] // open, slugified subsystem/tool axis (D-0002)
   delivery_commit_url?: string // F-0179: resolved URL of the delivering commit
   delivery_mr_url?: string // F-0179: URL of the delivering MR/PR
-  accepted_via?: string // F-0488: "merge" when the human's merge of the PR was the acceptance
+  accepted_via?: string // F-0488: "merge" when the human's merge of the PR was the acceptance; F-0515: "auto" when complete reached done by [gates] accept = "auto"; F-0516: "risk" when the risk gate accepted a low-risk delivery
+  accepted_risk?: string // F-0516: on accepted_via "risk", the three measurements in one line
+  approved_via?: string // F-0515: "auto" when an agent approved under [gates] approve = "auto"
+  accept_mode?: 'human' | 'auto' // F-0518: the owner's mark for the risk gate; absent = the gate decides
   // F-0449: the tracker issue a human published this card to; absent = never mirrored.
   mirror?: { tracker: string; kind: string; id: string; url: string; title?: string; summary?: string }
   capabilities?: string[] // F-0188: C- ids da taxonomia funcional
@@ -208,6 +211,32 @@ export type FeatureDetail = {
   // F-0375: as escritas gravadas dos documentos, da mais antiga à mais nova;
   // ausente em servidor antigo. Escrita anterior à F-0375 nunca aparece.
   writes?: DocWrite[]
+  // F-0518: the risk gate's last decision on the card and the owner's answer;
+  // absent when the gate never decided it.
+  risk_decision?: RiskDecision
+}
+
+// RiskAnswer (F-0518): the owner's answer that counts on a card.
+export type RiskAnswer = {
+  answer: 'should_have_asked' | 'not_needed'
+  reason?: string
+  at: string
+  added_paths?: string[]
+  added_facets?: string[]
+}
+
+// RiskDecision (F-0518): the risk gate's last decision on a card.
+export type RiskDecision = {
+  risk: 'low' | 'held'
+  calibration?: boolean // held because the gate was calibrating
+  calibrating?: boolean // the gate is still calibrating: the question is still open
+  would?: 'low' | 'held' // in calibration, what the gate would have decided
+  mode?: string
+  files: string[]
+  dirs: string[] // the folders the delivery touched, as globs
+  facets: string[]
+  at: string
+  feedback?: RiskAnswer
 }
 
 // DocWrite (F-0375): uma escrita de spec, plano ou result — provedor e modelo
@@ -231,7 +260,7 @@ export type ApproveImpediment = {
 // Conselho do approve (F-0390): só informa, nunca recusa. A mensagem vem do
 // servidor (em inglês, com os números medidos); o rótulo é da UI.
 export type ApproveAdvice = {
-  code: 'gauntlet-cost' | 'light-with-bar' | 'standard-without-bar'
+  code: 'gauntlet-cost' | 'light-with-bar' | 'standard-without-bar' | 'clarify-without-options'
   message: string
 }
 
@@ -1557,6 +1586,8 @@ export type ResolvedSetting = {
   enum?: string[]
   // The longest string the key takes (F-0449); absent = 64.
   max_len?: number
+  // An int key that takes 0 too (F-0518: zero turns a count off).
+  allow_zero?: boolean
   // A records key's columns (F-0449), each a declared string setting; the
   // first one is the record key.
   fields?: { id: string; title: string; type: string; default: unknown; scopes: SettingScope[]; description: string; enum?: string[]; max_len?: number }[]
@@ -2346,4 +2377,76 @@ export async function fetchHarness(): Promise<HarnessInventory> {
   const r = await fetch(`${base()}/harness`)
   if (!r.ok) throw new Error(await errorMessage(r))
   return (await r.json()) as HarnessInventory
+}
+
+// The risk gate's learning (F-0518): the owner's writes, local ui only.
+
+// postRiskFeedback records the owner's answer on a card the risk gate decided;
+// with should_have_asked, addPaths and addFacets enter the lists at once.
+export async function postRiskFeedback(
+  id: string,
+  answer: RiskAnswer['answer'],
+  reason: string,
+  addPaths: string[] = [],
+  addFacets: string[] = [],
+): Promise<RiskDecision> {
+  const r = await fetch(`${base()}/features/${encodeURIComponent(id)}/risk-feedback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ answer, reason, add_paths: addPaths, add_facets: addFacets }),
+  })
+  if (!r.ok) throw new HTTPError(await errorMessage(r), r.status)
+  return (await r.json()) as RiskDecision
+}
+
+// putAcceptMode stores the owner's mark on a card not yet concluded: human,
+// auto, or gate (the gate decides).
+export async function putAcceptMode(id: string, mode: 'human' | 'auto' | 'gate'): Promise<Feature> {
+  const r = await fetch(`${base()}/features/${encodeURIComponent(id)}/accept-mode`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode }),
+  })
+  if (!r.ok) throw new HTTPError(await errorMessage(r), r.status)
+  return ((await r.json()) as { feature: Feature }).feature
+}
+
+export type GateProposal = {
+  id: string
+  kind: 'relax' | 'tighten'
+  setting: string
+  add?: string[]
+  remove?: string[]
+  after: string[]
+  cards: string[]
+  signals: string[]
+  command: string
+}
+
+export type RiskGroup = { cards: number; feedback: number; fixed: number; reverted: number }
+
+export type RiskGateView = {
+  calibration: { target: number; answers: number; remaining: number; answered: number; matched: number; missed: number }
+  questions: string[]
+  proposals: GateProposal[]
+  stats: { accepted: RiskGroup; held: RiskGroup }
+}
+
+// fetchRiskGate reads what the risk gate learned, counting the last days.
+export async function fetchRiskGate(days: number): Promise<RiskGateView> {
+  const r = await fetch(`${base()}/gate/risk?days=${days}`)
+  if (!r.ok) throw new Error(await errorMessage(r))
+  return (await r.json()) as RiskGateView
+}
+
+// decideGateProposal applies (accepted) or dismisses an open proposal and
+// answers with the gate's new view, counting the last days.
+export async function decideGateProposal(id: string, decision: 'accepted' | 'dismissed', days: number): Promise<RiskGateView> {
+  const r = await fetch(`${base()}/gate/proposals?days=${days}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, decision }),
+  })
+  if (!r.ok) throw new HTTPError(await errorMessage(r), r.status)
+  return (await r.json()) as RiskGateView
 }

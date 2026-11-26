@@ -5,7 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import '@testing-library/jest-dom/vitest'
 import Settings from './Settings'
 import { I18nProvider } from './i18n'
-import { HTTPError, type ResolvedSetting, type SettingScope, type SettingsView } from './api'
+import { HTTPError, type ResolvedSetting, type RiskGateView, type SettingScope, type SettingsView } from './api'
 
 // F-0315: a tela de Settings é derivada do registro de F-0314 — nenhuma chave
 // é conhecida pela tela; título, descrição, tipo e escopos vêm do payload.
@@ -14,9 +14,13 @@ const fetchSettings = vi.fn<() => Promise<SettingsView>>()
 const putSetting = vi.fn<(id: string, scope: SettingScope, value: unknown) => Promise<SettingsView>>()
 const unsetSetting = vi.fn<(id: string, scope: SettingScope) => Promise<SettingsView>>()
 const renameProject = vi.fn<(name: string) => Promise<string>>()
+const fetchRiskGate = vi.fn<(days: number) => Promise<RiskGateView>>()
+const decideGateProposal = vi.fn<(id: string, decision: string, days: number) => Promise<RiskGateView>>()
 
 vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api')>()),
+  fetchRiskGate: (days: number) => fetchRiskGate(days),
+  decideGateProposal: (id: string, decision: string, days: number) => decideGateProposal(id, decision, days),
   fetchSettings: () => fetchSettings(),
   putSetting: (id: string, scope: SettingScope, value: unknown) => putSetting(id, scope, value),
   unsetSetting: (id: string, scope: SettingScope) => unsetSetting(id, scope),
@@ -1716,5 +1720,344 @@ describe('Settings — hooks.auto_refresh (F-0477)', () => {
     render(<Settings group="integrations" />)
     fireEvent.click(within(await screen.findByRole('listitem', { name: 'Renovar ganchos e guia' })).getByRole('checkbox'))
     await waitFor(() => expect(putSetting).toHaveBeenCalledWith('hooks.auto_refresh', 'project', false))
+  })
+})
+
+// F-0515 crit. 5: os gates de aprovação e de aceite, com rótulo de chave e de
+// valor nos dois idiomas, o selo só-humano e a pergunta ao sair do padrão.
+describe('Settings — gates de aprovação e de aceite (F-0515)', () => {
+  const approve = (over: Partial<ResolvedSetting> = {}) =>
+    key({ id: 'gates.approve', title: 'Spec approval', type: 'string', default: 'human', enum: ['human', 'auto'], scopes: ['project'], value: 'human', human_only: true, ...over })
+  const accept = (over: Partial<ResolvedSetting> = {}) =>
+    key({ id: 'gates.accept', title: 'Delivery acceptance', type: 'string', default: 'human', enum: ['human', 'merge', 'auto'], scopes: ['project'], value: 'human', human_only: true, ...over })
+  const load = (a = approve(), c = accept()) => fetchSettings.mockResolvedValue(fixture({ settings: [a, c] }))
+  const options = (r: HTMLElement) => within(r).getAllByRole('option').map((o) => o.textContent)
+
+  beforeEach(() => {
+    window.location.hash = '#/settings'
+    putSetting.mockResolvedValue(fixture())
+    unsetSetting.mockResolvedValue(fixture())
+  })
+
+  for (const [lang, names, labels, badge] of [
+    ['pt-BR', ['Aprovação da spec', 'Aceite da entrega'], [['Uma pessoa', 'Automático'], ['Uma pessoa', 'No merge do PR', 'Automático']], 'Só humano'],
+    ['en', ['Spec approval', 'Delivery acceptance'], [['A person', 'Automatic'], ['A person', 'On the PR merge', 'Automatic']], 'Human only'],
+  ] as const) {
+    it(`${lang}: rótulos das chaves e dos valores, e o selo`, async () => {
+      localStorage.setItem('cerne-lang', lang)
+      load()
+      render(
+        <I18nProvider>
+          <Settings />
+        </I18nProvider>,
+      )
+      for (const [i, name] of names.entries()) {
+        const r = await screen.findByRole('listitem', { name })
+        expect(within(r).getByText(badge)).toBeInTheDocument()
+        expect(options(r)).toEqual(labels[i])
+      }
+    })
+  }
+
+  it('sair do padrão pergunta antes; só grava depois de Mudar', async () => {
+    load()
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Aceite da entrega' })
+    fireEvent.change(within(r).getByRole('combobox'), { target: { value: 'auto' } })
+    expect(putSetting).not.toHaveBeenCalled()
+    const group = within(r).getByRole('group', { name: /Esta chave é só do dono do projeto\. Mudar Aceite da entrega para Automático grava no \.cernerc, versionado — lembre de commitar; dá para voltar aqui\./ })
+    expect(within(group).getByRole('button', { name: 'Cancelar' })).toHaveFocus()
+    fireEvent.click(within(group).getByRole('button', { name: 'Mudar' }))
+    await waitFor(() => expect(putSetting).toHaveBeenCalledWith('gates.accept', 'project', 'auto'))
+  })
+
+  // impeccable pass (F-0515): the question names what changes, and the select
+  // shows the value the question is about while it is open.
+  it('a pergunta diz a consequência e o select mostra o valor escolhido', async () => {
+    load()
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Aceite da entrega' })
+    const select = within(r).getByRole('combobox')
+    fireEvent.change(select, { target: { value: 'auto' } })
+    expect(select).toHaveValue('auto')
+    expect(
+      within(r).getByRole('group', { name: /^Daqui em diante, o card que um agente conclui vai direto a concluído, marcado como aceito sem revisão humana\. Esta chave/ }),
+    ).toBeInTheDocument()
+  })
+
+  it('en: a consequência da aprovação automática', async () => {
+    localStorage.setItem('cerne-lang', 'en')
+    load()
+    render(
+      <I18nProvider>
+        <Settings />
+      </I18nProvider>,
+    )
+    const r = await screen.findByRole('listitem', { name: 'Spec approval' })
+    fireEvent.change(within(r).getByRole('combobox'), { target: { value: 'auto' } })
+    expect(
+      within(r).getByRole('group', { name: /^From now on an agent may approve specs too, and each card it approves is marked approved without human review\. This key/ }),
+    ).toBeInTheDocument()
+  })
+
+  // impeccable pass (F-0516): the risk value says what it does before it is written.
+  it('a pergunta do valor por risco diz a consequência', async () => {
+    load(undefined, accept({ enum: ['human', 'merge', 'auto', 'risk'] }))
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Aceite da entrega' })
+    fireEvent.change(within(r).getByRole('combobox'), { target: { value: 'risk' } })
+    expect(
+      within(r).getByRole('group', { name: /^Daqui em diante, o card que não toca área sensível, venceu o Gauntlet e tem teste para cada critério vai direto a concluído/ }),
+    ).toBeInTheDocument()
+  })
+
+  it('Cancelar não grava e devolve o foco ao select', async () => {
+    load()
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Aprovação da spec' })
+    const select = within(r).getByRole('combobox')
+    fireEvent.change(select, { target: { value: 'auto' } })
+    fireEvent.click(within(r).getByRole('button', { name: 'Cancelar' }))
+    expect(putSetting).not.toHaveBeenCalled()
+    expect(select).toHaveValue('human')
+    expect(select).toHaveFocus()
+  })
+
+  it('voltar ao padrão grava direto, sem pergunta', async () => {
+    load(approve({ value: 'auto', stored: { project: 'auto' }, origin: 'project' }))
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Aprovação da spec' })
+    fireEvent.change(within(r).getByRole('combobox'), { target: { value: 'human' } })
+    await waitFor(() => expect(putSetting).toHaveBeenCalledWith('gates.approve', 'project', 'human'))
+  })
+
+  it('com a pergunta aberta, voltar ao padrão grava e fecha a pergunta', async () => {
+    load(undefined, accept({ value: 'merge', stored: { project: 'merge' }, origin: 'project' }))
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Aceite da entrega' })
+    const select = within(r).getByRole('combobox')
+    fireEvent.change(select, { target: { value: 'auto' } })
+    expect(within(r).getByRole('button', { name: 'Mudar' })).toBeInTheDocument()
+    fireEvent.change(select, { target: { value: 'human' } })
+    await waitFor(() => expect(putSetting).toHaveBeenCalledWith('gates.accept', 'project', 'human'))
+    expect(within(r).queryByRole('button', { name: 'Mudar' })).toBeNull()
+    expect(putSetting).not.toHaveBeenCalledWith('gates.accept', 'project', 'auto')
+  })
+
+  it('en: a pergunta e os botões em inglês', async () => {
+    localStorage.setItem('cerne-lang', 'en')
+    load()
+    render(
+      <I18nProvider>
+        <Settings />
+      </I18nProvider>,
+    )
+    const r = await screen.findByRole('listitem', { name: 'Spec approval' })
+    fireEvent.change(within(r).getByRole('combobox'), { target: { value: 'auto' } })
+    expect(within(r).getByRole('group', { name: /This key is the project owner's alone\. Changing Spec approval to Automatic writes to \.cernerc, versioned — remember to commit; you can change it back here\./ })).toBeInTheDocument()
+    expect(within(r).getByRole('button', { name: 'Change' })).toBeInTheDocument()
+  })
+})
+
+// F-0516 crit. 12 e 14: o valor «Por risco» do aceite, a descrição com as três
+// condições e as duas listas que sempre pedem uma pessoa, nos dois idiomas.
+// Títulos e descrições saem do registro Go, como o servidor os manda.
+describe('Settings — aceite por risco e as listas sensíveis (F-0516)', () => {
+  const goSrc = readFileSync('../internal/project/settings.go', 'utf8')
+  const reg = (id: string) => {
+    const m = /Title: "([^"]*)"[\s\S]*?Description: ("(?:[^"\\]|\\.)*")/.exec(goSrc.slice(goSrc.indexOf(`ID: "${id}"`)))!
+    return { title: m[1], description: JSON.parse(m[2]) as string }
+  }
+  const load = () =>
+    fetchSettings.mockResolvedValue(
+      fixture({
+        settings: [
+          key({ id: 'gates.accept', ...reg('gates.accept'), type: 'string', default: 'human', enum: ['human', 'merge', 'auto', 'risk'], scopes: ['project'], value: 'human', human_only: true }),
+          key({ id: 'gates.risk_human_paths', ...reg('gates.risk_human_paths'), type: 'list', default: ['go.mod', '.github/workflows/**'], scopes: ['project'], value: ['go.mod', '.github/workflows/**'], human_only: true }),
+          key({ id: 'gates.risk_human_facets', ...reg('gates.risk_human_facets'), type: 'list', default: ['auth', 'infra', 'data'], scopes: ['project'], value: ['auth', 'infra', 'data'], human_only: true }),
+        ],
+      }),
+    )
+
+  beforeEach(() => {
+    window.location.hash = '#/settings'
+    putSetting.mockResolvedValue(fixture())
+  })
+
+  for (const [lang, acceptName, risk, conditions, pathsName, facetsName] of [
+    ['pt-BR', 'Aceite da entrega', 'Por risco', ['Por risco (risk)', 'não toca em caminho nem em faceta sensível', 'o Gauntlet terminou em vitória', 'todo critério tem teste'], 'Caminhos que sempre pedem uma pessoa', 'Facetas que sempre pedem uma pessoa'],
+    ['en', 'Delivery acceptance', 'By risk', ['By risk (risk)', 'touches no sensitive path or facet', 'its Gauntlet ended in a win', 'every criterion has a test'], 'Paths that always need a person', 'Facets that always need a person'],
+  ] as const) {
+    it(`${lang}: o valor, as três condições e as duas listas`, async () => {
+      localStorage.setItem('cerne-lang', lang)
+      load()
+      render(
+        <I18nProvider>
+          <Settings />
+        </I18nProvider>,
+      )
+      const acc = await screen.findByRole('listitem', { name: acceptName })
+      expect(within(acc).getAllByRole('option').map((o) => o.textContent)).toContain(risk)
+      for (const c of conditions) expect(acc).toHaveTextContent(c)
+      const paths = screen.getByRole('listitem', { name: pathsName })
+      expect(within(paths).getByRole('textbox')).toHaveValue('go.mod\n.github/workflows/**')
+      const facets = screen.getByRole('listitem', { name: facetsName })
+      expect(within(facets).getByRole('textbox')).toHaveValue('auth\ninfra\ndata')
+    })
+  }
+
+  // F-0516 crit. 14: as listas são só do dono — sair do padrão pergunta antes.
+  it('sair do padrão pergunta antes; Mudar envia a lista, sem as linhas vazias', async () => {
+    load()
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Facetas que sempre pedem uma pessoa' })
+    fireEvent.change(within(r).getByRole('textbox'), { target: { value: 'auth\n\n billing \n' } })
+    fireEvent.click(within(r).getByRole('button', { name: 'Salvar' }))
+    expect(putSetting).not.toHaveBeenCalled()
+    const group = within(r).getByRole('group', { name: /Facetas que sempre pedem uma pessoa/ })
+    expect(group).toHaveTextContent('auth, billing')
+    expect(within(group).getByRole('button', { name: 'Cancelar' })).toHaveFocus()
+    fireEvent.click(within(group).getByRole('button', { name: 'Mudar' }))
+    await waitFor(() => expect(putSetting).toHaveBeenCalledWith('gates.risk_human_facets', 'project', ['auth', 'billing']))
+  })
+
+  it('voltar ao padrão grava direto, sem pergunta', async () => {
+    load()
+    render(<Settings />)
+    const r = await screen.findByRole('listitem', { name: 'Facetas que sempre pedem uma pessoa' })
+    fireEvent.change(within(r).getByRole('textbox'), { target: { value: 'auth\ninfra\ndata' } })
+    fireEvent.click(within(r).getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(putSetting).toHaveBeenCalledWith('gates.risk_human_facets', 'project', ['auth', 'infra', 'data']))
+    expect(within(r).queryByRole('button', { name: 'Mudar' })).toBeNull()
+  })
+})
+
+// F-0518: beside the two lists, what the risk gate learned, the calibration
+// and the proposals only the owner applies.
+describe('Settings — o que o gate de risco aprendeu (F-0518)', () => {
+  const view = (over: Partial<RiskGateView> = {}): RiskGateView => ({
+    calibration: { target: 20, answers: 12, remaining: 8, answered: 10, matched: 7, missed: 2 },
+    questions: [],
+    proposals: [],
+    stats: { accepted: { cards: 5, feedback: 1, fixed: 2, reverted: 0 }, held: { cards: 9, feedback: 4, fixed: 0, reverted: 1 } },
+    ...over,
+  })
+  const proposal = {
+    id: 'relax:gates.risk_human_paths:go.mod',
+    kind: 'relax' as const,
+    setting: 'gates.risk_human_paths',
+    remove: ['go.mod'],
+    after: ['.github/workflows/**'],
+    cards: ['F-0001', 'F-0002', 'F-0003'],
+    signals: ['F-0001 was held by go.mod and did not need the owner'],
+    command: "cerne settings set gates.risk_human_paths '[\".github/workflows/**\"]' --scope project",
+  }
+  const load = (gate: string) =>
+    fetchSettings.mockResolvedValue(
+      fixture({
+        settings: [
+          key({ id: 'gates.accept', group: 'process', type: 'string', default: 'human', enum: ['human', 'merge', 'auto', 'risk'], scopes: ['project'], value: gate, human_only: true }),
+          key({ id: 'gates.risk_calibration', title: 'Risk gate calibration', group: 'process', type: 'int', default: 20, scopes: ['project'], value: 20, human_only: true, allow_zero: true }),
+        ],
+      }),
+    )
+  const show = async (lang: string) => {
+    localStorage.setItem('cerne-lang', lang)
+    render(
+      <I18nProvider>
+        <Settings group="process" />
+      </I18nProvider>,
+    )
+  }
+  beforeEach(() => {
+    window.location.hash = '#/settings/process'
+    fetchRiskGate.mockReset()
+    decideGateProposal.mockReset()
+    putSetting.mockResolvedValue(fixture())
+  })
+
+  // F-0518 crit. 10
+  for (const [lang, accepted, held, period7] of [
+    ['pt-BR', '5 cards · 1 com resposta sua · 2 com correção · 0 revertidos', '9 cards · 4 com resposta sua · 0 com correção · 1 revertido', 'últimos 7 dias'],
+    ['en', '5 cards · 1 with your answer · 2 fixed · 0 reverted', '9 cards · 4 with your answer · 0 fixed · 1 reverted', 'last 7 days'],
+  ] as const) {
+    it(`${lang}: os números do período, trinta dias por padrão, e a troca de período`, async () => {
+      load('risk')
+      fetchRiskGate.mockResolvedValue(view())
+      await show(lang)
+      expect(await screen.findByText(accepted)).toBeInTheDocument()
+      expect(screen.getByText(held)).toBeInTheDocument()
+      expect(fetchRiskGate).toHaveBeenCalledWith(30)
+      fireEvent.change(screen.getByRole('combobox', { name: lang === 'en' ? 'Period' : 'Período' }), { target: { value: '7' } })
+      await waitFor(() => expect(fetchRiskGate).toHaveBeenLastCalledWith(7))
+      expect(screen.getByRole('option', { name: period7 })).toBeInTheDocument()
+    })
+  }
+
+  // F-0518 crit. 13
+  for (const [lang, left, match] of [
+    ['pt-BR', 'faltam 8 respostas de 20', 'Das 10 respostas da calibração, o gate teria acertado 7. Em 2, ele teria deixado passar e você disse que precisava de você.'],
+    ['en', '8 answers left of 20', 'Of the 10 answers in calibration, the gate would have got 7 right. In 2, it would have let the delivery pass and you said it needed you.'],
+  ] as const) {
+    it(`${lang}: o andamento da calibração`, async () => {
+      load('risk')
+      fetchRiskGate.mockResolvedValue(view())
+      await show(lang)
+      const p = await screen.findByText((_, el) => el?.tagName === 'P' && (el.textContent ?? '').includes(left))
+      expect(p).toHaveTextContent(match)
+    })
+  }
+
+  // F-0518 crit. 8
+  it('a proposta pede o dono: Aplicar pergunta antes, Recusar grava a recusa', async () => {
+    load('risk')
+    fetchRiskGate.mockResolvedValue(view({ proposals: [proposal] }))
+    decideGateProposal.mockResolvedValue(view())
+    await show('pt-BR')
+    expect(await screen.findByText('Tirar go.mod de gates.risk_human_paths')).toBeInTheDocument()
+    expect(screen.getByText('F-0001 was held by go.mod and did not need the owner')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar' }))
+    expect(decideGateProposal).not.toHaveBeenCalled()
+    expect(screen.getByText(/Grava no \.cernerc/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Recusar' }))
+    await waitFor(() => expect(decideGateProposal).toHaveBeenCalledWith(proposal.id, 'dismissed', 30))
+    expect(await screen.findByText('Nenhuma proposta aberta. Nada muda nas listas sem você.')).toBeInTheDocument()
+  })
+
+  // F-0518 crit. 8
+  it('Aplicar, confirmado, aplica a proposta', async () => {
+    load('risk')
+    fetchRiskGate.mockResolvedValue(view({ proposals: [proposal] }))
+    decideGateProposal.mockResolvedValue(view())
+    await show('en')
+    fireEvent.click(await screen.findByRole('button', { name: 'Apply' }))
+    const box = screen.getByRole('group', { name: /Drop go\.mod from gates\.risk_human_paths\?/ })
+    fireEvent.click(within(box).getByRole('button', { name: 'Apply' }))
+    await waitFor(() => expect(decideGateProposal).toHaveBeenCalledWith(proposal.id, 'accepted', 30))
+  })
+
+  // F-0518 crit. 10
+  it('fora do gate de risco, o painel não aparece', async () => {
+    load('human')
+    fetchRiskGate.mockResolvedValue(view())
+    await show('pt-BR')
+    await screen.findByRole('listitem', { name: 'Calibração do gate de risco' })
+    expect(screen.queryByText('O que o gate de risco aprendeu')).toBeNull()
+    expect(fetchRiskGate).not.toHaveBeenCalled()
+  })
+
+  // F-0518 crit. 12
+  it('a calibração aceita 0, que desliga, e pergunta antes de sair do padrão', async () => {
+    load('risk')
+    fetchRiskGate.mockResolvedValue(view())
+    await show('pt-BR')
+    const row = await screen.findByRole('listitem', { name: 'Calibração do gate de risco' })
+    fireEvent.change(within(row).getByRole('spinbutton'), { target: { value: '0' } })
+    fireEvent.click(within(row).getByRole('button', { name: 'Salvar' }))
+    expect(putSetting).not.toHaveBeenCalled()
+    expect(within(row).getByText(/o gate de risco decide sozinho já na próxima entrega/)).toBeInTheDocument()
+    fireEvent.click(within(row).getByRole('button', { name: 'Mudar' }))
+    await waitFor(() => expect(putSetting).toHaveBeenCalledWith('gates.risk_calibration', 'project', 0))
   })
 })

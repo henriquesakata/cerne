@@ -32,11 +32,45 @@ func CheckHumanGate(gate string) error {
 	return nil
 }
 
+// autoVia is the mark of an act crossing gate (F-0515): "auto" when an agent
+// crosses it set to auto; "" for a person's act, whatever the gate.
+func autoVia(gate string, agentAct bool) string {
+	if gate == project.GateAuto && agentAct {
+		return project.GateAuto
+	}
+	return ""
+}
+
+// actSource is who stands behind a transition, where the environment alone
+// cannot tell (F-0515).
+type actSource int
+
+const (
+	srcCLI  actSource = iota // the environment declares the actor
+	srcUI                    // the cerne ui form: the person, whatever env the server runs in
+	srcSeed                  // a scripted seed (cerne demo): nobody crosses a gate, nothing is marked
+)
+
+// agentAct reports whether a transition is an agent's act: only a CLI call
+// whose environment declares an agent.
+func agentAct(src actSource) bool { return src == srcCLI && isAgentActor(actorEnv()) }
+
 // CheckHumanSetting refuses an agent actor on a setting only a human writes
 // (F-0392). Fail-open like CheckHumanGate; the UI server does not call it.
 func CheckHumanSetting(id string) error {
 	if project.SettingHumanOnly(id) && isAgentActor(actorEnv()) {
 		return fmt.Errorf("%w: %s is the project owner's decision — changing it is done in the Settings screen of cerne ui, or by the owner in their own terminal%s", ErrHumanGate, id, humanEscape)
+	}
+	return nil
+}
+
+// CheckOwnerAct refuses an agent actor on an act only the project owner does
+// (F-0518): answering a decision of the risk gate, marking a card's accept
+// mode. Fail-open like CheckHumanGate; the ui server does not call it, the
+// person at the form is the owner.
+func CheckOwnerAct(act string) error {
+	if isAgentActor(actorEnv()) {
+		return fmt.Errorf("%w: %s is the project owner's act — the owner does it in cerne ui or in their own terminal; an agent never does it to pass a delivery%s", ErrHumanGate, act, humanEscape)
 	}
 	return nil
 }

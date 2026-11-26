@@ -1702,6 +1702,13 @@ h2 {
 /* F-0203: papel de task (prefixo T-) — unidade de execução, gate leve. */
 .badge-task { background: var(--green-bg); color: var(--green); border-color: var(--green-border); }
 .badge-behind { background: var(--amber-bg); color: var(--amber); border-color: var(--amber-border); }
+/* F-0515: o card cruzou um gate sem ato humano — aviso de processo, como o
+   badge-behind, para o dono achar depois o que passou sozinho. */
+.badge-auto { background: var(--amber-bg); color: var(--amber); border-color: var(--amber-border); }
+/* F-0516: accepted by the risk gate: the three conditions held, but no
+   person accepted it, so it is the same process warning as badge-auto and the
+   owner finds it later. The title carries what was measured. */
+.badge-risk { background: var(--amber-bg); color: var(--amber); border-color: var(--amber-border); cursor: help; }
 /* F-0237: filhas concluídas representadas pelo épico numa coluna terminal.
    Neutro de propósito — é contagem estrutural, não estado nem severidade. */
 .badge-rolled { background: var(--surface-3); color: var(--muted); border-color: var(--border); font-variant-numeric: tabular-nums; }
@@ -3683,6 +3690,14 @@ button.clarify-open:hover { filter: brightness(0.96); }
   color: var(--fg);
 }
 .clarify-option:hover { border-color: var(--accent); }
+.clarify-badge {
+  margin-left: 0.5rem;
+  padding: 0 0.4rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
 .clarify-free {
   font: inherit;
   font-size: 0.85rem;
@@ -4125,6 +4140,26 @@ details.backlinks-section > summary:focus-visible { outline: 2px solid var(--fg)
 .settings-confirm-no:focus-visible,
 .settings-confirm-yes:focus-visible { outline: 2px solid var(--fg); outline-offset: 1px; }
 .settings-saved { margin: 0.4rem 0 0; font-size: 0.85rem; color: var(--fg); }
+/* F-0518: what the risk gate learned, beside its two lists. */
+/* F-0518 impeccable pass: the card's accept mark sizes to its options and
+   its hint and question sit on their own lines. */
+.risk-accept-mode .settings-select { width: auto; }
+.risk-accept-mode .settings-hint, .risk-accept-mode .settings-confirm { display: block; margin-top: 0.3rem; }
+.risk-gate-panel { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+.risk-gate-panel h3 { margin: 0 0 0.5rem; font-size: 1rem; }
+.risk-gate-panel h4 { margin: 1rem 0 0.4rem; font-size: 0.9rem; }
+.risk-gate-stats { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; margin: 0.6rem 0; font-size: 0.9rem; }
+.risk-gate-stats dd { margin: 0; }
+.risk-gate-proposals, .risk-gate-signals { margin: 0; padding-left: 1.1rem; font-size: 0.9rem; }
+.risk-gate-proposals > li + li { margin-top: 0.75rem; }
+.risk-gate-signals { color: var(--muted); font-size: 0.85rem; }
+/* F-0518: the owner's answer to the risk gate on the feature page. */
+.risk-feedback-form { display: flex; flex-direction: column; align-items: flex-start; gap: 0.35rem; margin: 0.5rem 0 0; font-size: 0.9rem; }
+.risk-feedback-form textarea { width: min(100%, 32rem); font: inherit; }
+.risk-feedback-form fieldset { border: 0; margin: 0; padding: 0; }
+.risk-feedback-title { margin: 0; font-weight: 600; }
+.risk-feedback-mark { display: block; }
+.risk-feedback-ask button, .risk-feedback-change { font: inherit; font-size: 0.85rem; margin-left: 0.4rem; }
 .settings-group-head { margin-top: 1rem; }
 .settings-group-title { margin: 0; font-size: 1rem; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--fg); }
 .settings-write-chip { font-size: 0.72rem; }
@@ -4144,6 +4179,10 @@ details.backlinks-section > summary:focus-visible { outline: 2px solid var(--fg)
 }
 .settings-switch[aria-disabled="true"] { opacity: 0.5; cursor: default; }
 .settings-string { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+/* F-0516: a list key, one item per line (not .settings-list, the rows' list);
+   the paths are machine truth, so mono at the field size of the screen. */
+.settings-listfield textarea { width: 100%; font-family: ui-monospace, monospace; }
+.settings-listfield .settings-note { flex-basis: 100%; margin: 0; }
 .settings-string button,
 .settings-records-save {
   font: inherit;

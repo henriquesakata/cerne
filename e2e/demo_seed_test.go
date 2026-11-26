@@ -367,6 +367,9 @@ func TestDemoSeed_ScriptSeedsItselfOnAnOldBinary(t *testing.T) {
 	fake := "#!/bin/sh\n" +
 		"if [ \"$1\" = demo ]; then echo 'Error: unknown command \"demo\" for \"cerne\"' >&2; exit 1; fi\n" +
 		"if [ \"$1 $2\" = 'help demo' ]; then echo 'Unknown help topic [`demo`]'; exit 0; fi\n" +
+		// B-0086: an old binary has no origin choice to refuse; the stand-in
+		// must not inherit the agent stamp that makes the current one refuse.
+		"unset CERNE_ACTOR\n" +
 		"exec " + filepath.Join(bin, "cerne") + " \"$@\"\n"
 	if err := os.WriteFile(filepath.Join(old, "cerne"), []byte(fake), 0o755); err != nil {
 		t.Fatal(err)

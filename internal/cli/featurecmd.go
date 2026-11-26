@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -10,6 +11,7 @@ import (
 
 	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/lint"
+	"github.com/henriquesakata/cerne/internal/llm"
 	"github.com/henriquesakata/cerne/internal/verbs"
 )
 
@@ -34,6 +36,7 @@ func newFeatureCmd() *cobra.Command {
 	cmd.AddCommand(newTransitionCmds(&dir)...)
 	cmd.AddCommand(newFeatureDeliverCmd(&dir))
 	cmd.AddCommand(newFeatureAcceptCmd(&dir))
+	cmd.AddCommand(newFeatureFeedbackCmd(&dir))
 	cmd.AddCommand(newFeatureLearningsCmd(&dir))
 	cmd.AddCommand(verbs.MarkLocal(newFeatureWaitCmd(&dir))) // blocks for hours: never the chat's (F-0460)
 	cmd.AddCommand(verbs.MarkChat(newErrataCmd(&dir)))
@@ -76,12 +79,36 @@ func newFeatureNewCmd(dir *string) *cobra.Command {
 	cmd.Flags().StringVar(&owner, "owner", "", "responsible handle (free text, F-0204)")
 	cmd.Flags().StringVar(&priority, "priority", "", "priority (closed set: p0,p1,p2,p3, F-0204)")
 	cmd.Flags().StringVar(&onBehalf, "on-behalf", "", onBehalfHelp)
+	addOriginFlag(cmd)
 	cmd.Flags().StringVar(&capability, "capability", "", "capability nodes to link at birth (CSV of C- ids; validated before anything is written, one commit)")
 	return verbs.MarkChatTool(cmd)
 }
 
 // onBehalfHelp is the --on-behalf flag text shared by feature/epic/task new (T-0005).
 const onBehalfHelp = "quote of the human's request when an agent creates this for them: records origin human and the quote on the creation event"
+
+// addOriginFlag registers --origin on the four `new` commands (B-0086): the
+// agent's own idea, as opposed to --on-behalf with a human's words.
+func addOriginFlag(cmd *cobra.Command) {
+	cmd.Flags().String("origin", "", "set to agent when the idea is yours; in an agent shell a new card needs this or --on-behalf, not both (B-0086)")
+}
+
+// checkOriginChoice is app.CheckOriginChoice with the Backlog chat's two
+// channels exempt: the verb executor stamps CERNE_ORIGIN=chat, the claude-cli
+// provider stamps llm.DenyLifecycleEnv. A human is in that conversation.
+// It returns the value to hand the create function: an explicit --origin agent
+// becomes app.AgentOrigin, so the card is born agent in any shell.
+func checkOriginChoice(cmd *cobra.Command, onBehalf string) (string, error) {
+	v, _ := cmd.Flags().GetString("origin")
+	chat := os.Getenv("CERNE_ORIGIN") == "chat" || os.Getenv(llm.DenyLifecycleEnv) != ""
+	if err := app.CheckOriginChoice(onBehalf, v, chat); err != nil {
+		return "", err
+	}
+	if v == "agent" {
+		return app.AgentOrigin, nil
+	}
+	return onBehalf, nil
+}
 
 func runFeatureNew(cmd *cobra.Command, dir string, args []string, module, parent, fixes, facet, component, file, context string, force bool, owner, priority, onBehalf, capability string) error {
 	return runFeatureLikeNew(cmd, dir, args, module, parent, facet, component, file, context, force, owner, priority, onBehalf, capability, "F", fixes)
@@ -258,36 +285,83 @@ func runFeatureRetag(cmd *cobra.Command, dir, id, facet, component string, setFa
 }
 
 func newFeatureSetCmd(dir *string) *cobra.Command {
-	var owner, priority, fixes string
+	var owner, priority, fixes, acceptMode, origin, onBehalf string
 	cmd := &cobra.Command{
 		Use:   "set <id>",
-		Short: "Set a feature's owner, priority and/or fixes link in place (F-0204, F-0321)",
+		Short: "Set a feature's owner, priority, fixes link and/or accept mode in place (F-0204, F-0321, F-0518)",
 		Long: "Changes owner and/or priority without touching the lifecycle — preserves state, module, tags and docs. " +
 			"Changes only the flag passed: 'set F-0001 --priority p1' keeps the owner; '--owner \"\"' clears the owner. " +
 			"A priority outside the closed set (p0,p1,p2,p3) is rejected, nothing written. Applies to a live or " +
-			"implemented feature; a terminal feature (done/rejected/superseded) is frozen history.",
+			"implemented feature; a terminal feature (done/rejected/superseded) is frozen history. " +
+			"--accept-mode is the owner's mark for the risk gate, on a card before its complete: human holds it for " +
+			"a person, auto waives the sensitive-area condition (the Gauntlet win and the tested criteria still count), " +
+			"gate lets the gate decide. An agent is refused it. " +
+			"--origin human|agent (B-0085) corrects who asked for the card, in any state, recording a correction event; " +
+			"--origin human needs --on-behalf with the human's words, and an agent shell is refused.",
 		Example: "  cerne feature set F-0001 --owner ana --priority p1\n" +
 			"  cerne feature set F-0001 --priority p0   # owner untouched\n" +
-			"  cerne feature set F-0002 --fixes F-0001  # F-0002 corrects a defect F-0001 shipped",
+			"  cerne feature set F-0002 --fixes F-0001  # F-0002 corrects a defect F-0001 shipped\n" +
+			"  cerne feature set F-0003 --accept-mode human  # the owner wants to look at this one\n" +
+			"  cerne feature set F-0003 --origin human --on-behalf \"the owner's words\"",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runFeatureSet(cmd, *dir, args[0], owner, priority, fixes,
-				cmd.Flags().Changed("owner"), cmd.Flags().Changed("priority"), cmd.Flags().Changed("fixes"))
+			fl := cmd.Flags()
+			if fl.Changed("on-behalf") && !fl.Changed("origin") ||
+				fl.Changed("origin") && (fl.Changed("owner") || fl.Changed("priority") || fl.Changed("fixes") || fl.Changed("accept-mode")) {
+				return app.ErrOriginFlagConflict
+			}
+			if fl.Changed("accept-mode") {
+				// The owner's mark (F-0518 crit. 16): refused before anything the call carries is written.
+				if err := app.CheckOwnerAct("marking a card's accept mode"); err != nil {
+					return err
+				}
+			}
+			if fl.Changed("origin") {
+				ctx, err := resolveProject(*dir)
+				if err != nil {
+					return err
+				}
+				f, err := app.SetFeatureOrigin(ctx.repoDir, ctx.projDir, args[0], origin, onBehalf)
+				if err != nil {
+					return err
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "%s origin set to %s\n", f.ID, f.Origin)
+				return nil
+			}
+			return runFeatureSet(cmd, *dir, args[0], owner, priority, fixes, acceptMode,
+				fl.Changed("owner"), fl.Changed("priority"), fl.Changed("fixes"), fl.Changed("accept-mode"))
 		},
 	}
 	cmd.Flags().StringVar(&owner, "owner", "", "new owner (free text) — empty clears")
 	cmd.Flags().StringVar(&priority, "priority", "", "new priority (closed set: p0,p1,p2,p3) — empty clears")
 	cmd.Flags().StringVar(&fixes, "fixes", "", "feature ID this one fixes — empty clears")
+	cmd.Flags().StringVar(&acceptMode, "accept-mode", "", "the owner's mark for the risk gate, before the complete: human (needs a person), auto (may pass alone) or gate (the gate decides)")
+	cmd.Flags().StringVar(&origin, "origin", "", "correct the card's origin: human (needs --on-behalf) or agent; a human act (B-0085)")
+	cmd.Flags().StringVar(&onBehalf, "on-behalf", "", "the human's literal words, required by --origin human")
 	return cmd
 }
 
-func runFeatureSet(cmd *cobra.Command, dir, id, owner, priority, fixes string, setOwner, setPriority, setFixes bool) error {
-	if !setOwner && !setPriority && !setFixes {
-		return fmt.Errorf("pass at least --owner, --priority or --fixes")
+func runFeatureSet(cmd *cobra.Command, dir, id, owner, priority, fixes, acceptMode string, setOwner, setPriority, setFixes, setAcceptMode bool) error {
+	if !setOwner && !setPriority && !setFixes && !setAcceptMode {
+		return fmt.Errorf("pass at least --owner, --priority, --fixes, --accept-mode or --origin")
 	}
 	ctx, err := resolveProject(dir)
 	if err != nil {
 		return err
+	}
+	if setAcceptMode {
+		f, err := app.SetFeatureAcceptMode(ctx.repoDir, ctx.projDir, id, acceptMode)
+		if err != nil {
+			return err
+		}
+		mode := f.AcceptMode
+		if mode == "" {
+			mode = "gate"
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "%s set — accept mode: %s\n", f.ID, mode)
+		if !setOwner && !setPriority && !setFixes {
+			return nil
+		}
 	}
 	f, err := app.SetFeature(ctx.repoDir, ctx.projDir, id, owner, priority, fixes, setOwner, setPriority, setFixes)
 	if err != nil {

@@ -200,7 +200,7 @@ func TestSettingsGet(t *testing.T) {
 		}
 	}
 	if _, err := execCerne(t, "settings", "get", "nope.enabled", "--dir", projDir); !errors.Is(err, project.ErrUnknownSetting) ||
-		!strings.Contains(err.Error(), "known: channel.human_name, delivery.commit_url, delivery.forge, delivery.pr_url, gates.gauntlet, graph.enabled, lint.cli_output_language, lint.criterion_tests, lint.stale_decision_days, llm.base_url, llm.mode, llm.model, llm.provider, mindmap.enabled, mirror.close_on, mirror.enabled, mirror.trackers, references.archive, ui.update_check, wiki.enabled") {
+		!strings.Contains(err.Error(), "known: channel.human_name, delivery.commit_url, delivery.forge, delivery.pr_url, gates.accept, gates.approve, gates.gauntlet, gates.risk_calibration, gates.risk_human_facets, gates.risk_human_paths, gates.risk_relax_after, graph.enabled, lint.cli_output_language, lint.criterion_tests, lint.stale_decision_days, llm.base_url, llm.mode, llm.model, llm.provider, mindmap.enabled, mirror.close_on, mirror.enabled, mirror.trackers, references.archive, ui.update_check, wiki.enabled") {
 		t.Errorf("unknown key: err = %v, want ErrUnknownSetting listing the known keys", err)
 	}
 }
@@ -460,6 +460,45 @@ func TestSettingsGauntletRefusesAgent(t *testing.T) {
 	}
 }
 
+// TestSettingsSetGatesRefusesAgent: an agent's set or unset of gates.approve
+// or gates.accept is ErrHumanGate and leaves .cernerc byte for byte; a human's
+// write lands.
+// F-0515 crit. 3
+func TestSettingsSetGatesRefusesAgent(t *testing.T) {
+	projDir, _ := settingsProject(t, "[gates]\ngauntlet = \"off\"\napprove = \"auto\"\naccept = \"merge\"\n")
+	rc := filepath.Join(projDir, ".cernerc")
+	before, _ := os.ReadFile(rc)
+	for _, actor := range []string{"agent", "agent:m-1"} {
+		t.Setenv("CERNE_ACTOR", actor)
+		for _, args := range [][]string{
+			{"settings", "set", "gates.approve", "human", "--scope", "project", "--dir", projDir},
+			{"settings", "set", "gates.accept", "auto", "--scope", "project", "--dir", projDir},
+			{"settings", "unset", "gates.approve", "--scope", "project", "--dir", projDir},
+			{"settings", "unset", "gates.accept", "--scope", "project", "--dir", projDir},
+		} {
+			out, err := execCerne(t, args...)
+			if !errors.Is(err, app.ErrHumanGate) {
+				t.Errorf("%s %v: err = %v (%s), want ErrHumanGate", actor, args[1:3], err, out)
+			}
+			if after, _ := os.ReadFile(rc); string(after) != string(before) {
+				t.Errorf("%s %v changed .cernerc:\n%s", actor, args[1:3], after)
+			}
+		}
+	}
+	for _, k := range []string{"CERNE_ACTOR", "CLAUDECODE", "CURSOR_AGENT", "COPILOT_CLI", "CODEX_THREAD_ID"} {
+		t.Setenv(k, "")
+	}
+	if out, err := execCerne(t, "settings", "set", "gates.accept", "auto", "--scope", "project", "--dir", projDir); err != nil {
+		t.Fatalf("human set: %v\n%s", err, out)
+	}
+	if out, _ := execCerne(t, "settings", "get", "gates.accept", "--dir", projDir); out != "auto\n" {
+		t.Errorf("get after the human set = %q, want auto", out)
+	}
+	if out, err := execCerne(t, "settings", "unset", "gates.approve", "--scope", "project", "--dir", projDir); err != nil {
+		t.Errorf("human unset: %v\n%s", err, out)
+	}
+}
+
 // TestSettingsLLMModeHostScopeAndDetected: llm.mode set in the host scope
 // reaches a project with no [llm] (criterion 10); unset, get shows the CLI
 // found on PATH with the origin "detected" (criterion 2).
@@ -510,5 +549,39 @@ func TestSettingsLinksSuggestRefusesAgent(t *testing.T) { // F-0502 crit. 1
 	}
 	if on, _ := project.LinksSuggest(projDir); !on {
 		t.Error("human set did not turn links.suggest on")
+	}
+}
+
+// TestSettingsSetRiskListsRefusesAgent: an agent's set or unset of either
+// risk list is ErrHumanGate and leaves .cernerc byte for byte; a person's
+// write lands, and get prints the list as the JSON set takes.
+// F-0516 crit. 14
+func TestSettingsSetRiskListsRefusesAgent(t *testing.T) {
+	projDir, _ := settingsProject(t, "[gates]\naccept = \"risk\"\n")
+	rc := filepath.Join(projDir, ".cernerc")
+	before, _ := os.ReadFile(rc)
+	t.Setenv("CERNE_ACTOR", "agent")
+	for _, args := range [][]string{
+		{"settings", "set", "gates.risk_human_paths", `["src/**"]`, "--scope", "project", "--dir", projDir},
+		{"settings", "set", "gates.risk_human_facets", `[]`, "--scope", "project", "--dir", projDir},
+		{"settings", "unset", "gates.risk_human_paths", "--scope", "project", "--dir", projDir},
+		{"settings", "unset", "gates.risk_human_facets", "--scope", "project", "--dir", projDir},
+	} {
+		out, err := execCerne(t, args...)
+		if !errors.Is(err, app.ErrHumanGate) {
+			t.Errorf("%v: err = %v (%s), want ErrHumanGate", args[1:3], err, out)
+		}
+		if after, _ := os.ReadFile(rc); string(after) != string(before) {
+			t.Errorf("%v changed .cernerc:\n%s", args[1:3], after)
+		}
+	}
+	for _, k := range []string{"CERNE_ACTOR", "CLAUDECODE", "CURSOR_AGENT", "COPILOT_CLI", "CODEX_THREAD_ID"} {
+		t.Setenv(k, "")
+	}
+	if out, err := execCerne(t, "settings", "set", "gates.risk_human_facets", `["auth","billing"]`, "--scope", "project", "--dir", projDir); err != nil {
+		t.Fatalf("human set: %v\n%s", err, out)
+	}
+	if out, _ := execCerne(t, "settings", "get", "gates.risk_human_facets", "--dir", projDir); out != `["auth","billing"]`+"\n" {
+		t.Errorf("get after the human set = %q", out)
 	}
 }

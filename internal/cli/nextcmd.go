@@ -6,6 +6,7 @@ import (
 	"io"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -48,7 +49,7 @@ var nextGroups = []nextGroup{
 	{domain.StateImplemented, false, "awaiting_accept", "WAITING FOR HUMAN ACCEPT", "ask a human to run 'cerne feature accept <id>' (a human act)"},
 }
 
-// awaitingMerge replaces awaiting_accept under [gates] accept = "merge"
+// awaitingMerge replaces awaiting_accept under [gates] accept = "merge" or "risk"
 // (F-0488): the human acts on the forge, the agent records the merge after.
 var awaitingMerge = nextGroup{domain.StateImplemented, false, "awaiting_merge", "WAITING FOR THE MERGE", "the human's merge of the PR into the default branch is the acceptance — after it, run 'cerne feature accept --merged'"}
 
@@ -143,6 +144,13 @@ type nextJSON struct {
 	// Refreshed (F-0477): the line saying which agents' hooks and guide the
 	// automatic refresh renewed, when it did.
 	Refreshed string `json:"refreshed,omitempty"`
+	// RiskQuestions (F-0518): under the risk gate in calibration, the cards
+	// accepted on the merge whose owner has not said whether they needed them.
+	RiskQuestions []string `json:"risk_questions,omitempty"`
+	// GateProposals (F-0518): the open changes to the risk gate's lists, each
+	// with the exact command that applies it — the owner's to run.
+	GateProposals []app.GateProposal `json:"gate_proposals,omitempty"`
+	riskGate      app.RiskGateView
 }
 
 // runNext consolidates `status --active` and `lint` into one agent-facing work
@@ -168,7 +176,7 @@ func runNext(cmd *cobra.Command, dir string, asJSON, all bool) error {
 		return err
 	}
 
-	mergeGate := ctx.cfg.Gates.AcceptGate() == project.GateMerge
+	mergeGate := ctx.cfg.Gates.AcceptsOnMerge() // merge, or risk (F-0516)
 	q := nextJSON{Groups: []nextGroupJSON{}, EpicsReadyToClose: []store.Feature{}, OpenPendings: []store.Pending{}, Debts: []nextFinding{}}
 	for _, g := range nextGroups {
 		if g.queue == "awaiting_accept" && mergeGate {
@@ -255,6 +263,14 @@ func runNext(cmd *cobra.Command, dir string, asJSON, all bool) error {
 
 	q.RunbookPreflight = nextPreflights(ctx.repoDir, app.MRHost(ctx.cfg.Delivery))
 
+	// What the risk gate asks its owner (F-0518): informational, never the agent's.
+	if ctx.cfg.Gates.AcceptGate() == project.GateRisk {
+		if q.riskGate, err = app.ReadRiskGate(ctx.repoDir, ctx.projDir, time.Time{}); err != nil {
+			return err
+		}
+		q.RiskQuestions, q.GateProposals = q.riskGate.Questions, q.riskGate.Proposals
+	}
+
 	out := cmd.OutOrStdout()
 	// F-0477: the automatic refresh runs for the text and the JSON alike; the
 	// line shows what is left (text) or comes as "refreshed" (JSON).
@@ -315,6 +331,36 @@ func runNext(cmd *cobra.Command, dir string, asJSON, all bool) error {
 			for _, c := range f.Commands {
 				fmt.Fprintln(out, "    "+c)
 			}
+		}
+		fmt.Fprintln(out)
+	}
+
+	if len(q.RiskQuestions) > 0 {
+		printed = true
+		c := q.riskGate.Calibration
+		fmt.Fprintf(out, "RISK CALIBRATION (%d) — the owner answers, never the agent: Did this delivery need you? (%d of %d answers; the gate holds every delivery until then)\n", len(q.RiskQuestions), c.Answers, c.Target)
+		for _, id := range q.RiskQuestions {
+			if i := slices.IndexFunc(features, func(f store.Feature) bool { return f.ID == id }); i >= 0 {
+				fmt.Fprintln(out, statusLine(features[i], width))
+			}
+			fmt.Fprintf(out, "    it did: cerne feature feedback %s --should-have-asked · it did not: cerne feature feedback %s --not-needed\n", id, id)
+		}
+		fmt.Fprintln(out)
+	}
+
+	if len(q.GateProposals) > 0 {
+		printed = true
+		fmt.Fprintf(out, "GATE PROPOSALS (%d) — the owner applies or dismisses each one (Settings screen of cerne ui, or the command below); an agent never does\n", len(q.GateProposals))
+		for _, p := range q.GateProposals {
+			change := "drop " + strings.Join(p.Remove, ", ") + " from " + p.Setting
+			if p.Kind == "tighten" {
+				change = "add " + strings.Join(p.Add, ", ") + " to " + p.Setting
+			}
+			fmt.Fprintf(out, "  %s — %s (%s)\n", p.ID, change, strings.Join(p.Cards, ", "))
+			for _, s := range p.Signals {
+				fmt.Fprintln(out, "    "+s)
+			}
+			fmt.Fprintln(out, "    apply: "+p.Command)
 		}
 		fmt.Fprintln(out)
 	}

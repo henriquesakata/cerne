@@ -10,6 +10,9 @@
 export type ClarifyInfo = {
   question: string
   options: string[]
+  // Posição (base 1) em options da primeira opção com o sufixo
+  // (recomendada)/(recommended); 0 quando nenhuma (F-0517). options já vem sem o sufixo.
+  recommended: number
   resolved: boolean
   // answers é a trilha de respostas em ordem cronológica (F-0197); answer é a
   // corrente (a última). Marcador escrito antes das correções é trilha de um
@@ -88,6 +91,10 @@ const unescapeSeparator = (s: string) => s.replaceAll('\\|', '|')
 const unescapeResolved = (s: string) => s.replace(/\\([\\|])/g, '$1')
 const escapePipe = (s: string) => s.replace(/[\\|]/g, (c) => '\\' + c)
 
+// Sufixo da opção recomendada, lido só no fim da opção; as duas palavras valem
+// nos dois idiomas. Espelho de recommendedRe no Go (F-0517).
+const RECOMMENDED_RE = /[ \t]*\((?:recomendada|recommended)\)$/i
+
 // parseClarification decompõe um marcador cru; null quando não é marcador.
 export function parseClarification(raw: string): ClarifyInfo | null {
   const m = new RegExp(CLARIFY_RE.source).exec(raw)
@@ -104,18 +111,31 @@ export function parseClarification(raw: string): ClarifyInfo | null {
     return {
       question,
       options: [],
+      recommended: 0,
       resolved: true,
       answers,
       answer: answers[answers.length - 1],
     }
   }
   const parts = unescapeSeparator(body).split('|')
+  let recommended = 0
+  const options: string[] = []
+  for (const p of parts.slice(1)) {
+    let opt = p.trim()
+    if (opt === '') continue
+    // Sufixos repetidos saem todos; um sufixo sozinho segue sendo opção.
+    let marked = false
+    for (let m = RECOMMENDED_RE.exec(opt); m && m.index > 0; m = RECOMMENDED_RE.exec(opt)) {
+      opt = opt.slice(0, m.index).trim()
+      marked = true
+    }
+    if (marked && recommended === 0) recommended = options.length + 1
+    options.push(opt)
+  }
   return {
     question: parts[0].trim(),
-    options: parts
-      .slice(1)
-      .map((p) => p.trim())
-      .filter((p) => p !== ''),
+    options,
+    recommended,
     resolved: false,
     answers: [],
     answer: '',
