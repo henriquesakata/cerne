@@ -192,11 +192,15 @@ var recommendedRe = regexp.MustCompile(`(?i)[ \t]*\((?:recomendada|recommended)\
 // stripRecommended removes the recommended suffix from opt. A bare suffix
 // (nothing left) is not a recommendation, just an option.
 func stripRecommended(opt string) (string, bool) {
-	loc := recommendedRe.FindStringIndex(opt)
-	if loc == nil || loc[0] == 0 {
-		return opt, false
+	out := opt
+	for {
+		loc := recommendedRe.FindStringIndex(out)
+		if loc == nil || loc[0] == 0 {
+			break
+		}
+		out = strings.TrimSpace(out[:loc[0]])
 	}
-	return strings.TrimSpace(opt[:loc[0]]), true
+	return out, out != opt
 }
 
 // Parse returns every marker in content, in document order, with exact

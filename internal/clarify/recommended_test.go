@@ -46,6 +46,8 @@ func TestParseRecommendedOption(t *testing.T) {
 		{"pt suffix in an en marker", "[CLARIFY: q? | A | B (recomendada)]", []string{"A", "B"}, 2},
 		{"case-insensitive", "[CLARIFY: q? | A (Recommended) | B]", []string{"A", "B"}, 1},
 		{"suffix in the middle stays text", "[CLARIFY: q? | A (recommended) plus | B]", []string{"A (recommended) plus", "B"}, 0},
+		{"doubled suffix strips every trailing one", "[CLARIFY: q? | a | b (recommended) (recomendada)]", []string{"a", "b"}, 2},
+		{"a bare suffix stays an option", "[CLARIFY: q? | (recommended) | b]", []string{"(recommended)", "b"}, 0},
 		{"escaped pipes in a table cell", `| [ESCLARECER: q? \| A \| B (recomendada)] |`, []string{"A", "B"}, 2},
 	}
 	for _, tc := range tests {
