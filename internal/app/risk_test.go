@@ -180,6 +180,8 @@ func TestRiskGauntletWin(t *testing.T) {
 		{"bar not applicable", "## Gauntlet\n\nBarra: não aplicável (sem comparável) — padrão alternativo: testes\n", true, false, "exempt"},
 		{"bar not applicable with a won round", "## Gauntlet\n\nBarra: não aplicável (sem comparável) — padrão alternativo: testes\nRodada 1 — vitória: \"o nosso\"\n", true, false, "win"},
 		{"no record", "## Resultado\n\nX.\n", true, false, "none"},
+		// The highest round decides even when it cannot be read (review of #228).
+		{"win then an unreadable round", bar + "Rodada 1 — vitória: \"o nosso\"\nRodada 2 — o juiz respondeu: \"VEREDITO: B\"\n", true, false, "none"},
 		{"Gauntlet off", bar + "Rodada 1 — vitória: \"o nosso\"\n", false, false, "off"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -155,17 +155,27 @@ func someOf(items []string) string {
 	return fmt.Sprintf("%s and %d more", strings.Join(items[:5], ", "), len(items)-5)
 }
 
-// riskGauntlet is the second condition (crit. 4): the last round recorded in
-// the result's ## Gauntlet is a win of ours against a real bar. A tie, a
-// loss, an exempt bar, no verdict and the Gauntlet off never hold.
+// riskGauntlet is the second condition (crit. 4): the highest-numbered round
+// recorded in the result's ## Gauntlet is a readable win of ours against a
+// real bar. A tie, a loss, an exempt bar, a last round with no readable
+// verdict (an older win never stands in for it), no round and the Gauntlet
+// off never hold.
 func riskGauntlet(result []byte, gauntletOn bool) (c RiskCheck, verdict string) {
 	if !gauntletOn {
 		return RiskCheck{Found: "the Gauntlet is off in this project (light mode)"}, "off"
 	}
-	verdict, ok := lint.GauntletVerdict(result)
-	switch {
-	case !ok:
+	rounds := lint.GauntletRoundList(result)
+	if len(rounds) == 0 && lint.GauntletExempt(result) {
+		return RiskCheck{Found: "the Gauntlet's bar is exempt (not applicable or waived): no win against a real bar"}, "exempt"
+	}
+	if len(rounds) == 0 {
 		return RiskCheck{Found: "the result records no Gauntlet round with a verdict"}, "none"
+	}
+	last := rounds[len(rounds)-1]
+	verdict = last.Outcome
+	switch {
+	case verdict == "":
+		return RiskCheck{Found: fmt.Sprintf("the Gauntlet's last round (%d) has no readable verdict", last.N)}, "none"
 	case lint.GauntletExempt(result):
 		return RiskCheck{Found: "the Gauntlet's bar is exempt (not applicable or waived): no win against a real bar"}, verdict
 	case verdict != "win":
