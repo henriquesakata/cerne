@@ -111,11 +111,11 @@ func relaxProposal(repoDir, setting string, list []string, item string, facet bo
 		if facet {
 			return slices.ContainsFunc(chainFacets(repoDir, f), same)
 		}
-		// ponytail: matched from the repository root; a project in a
-		// subdirectory with project-relative patterns misses a contrary
-		// signal here — record the project prefix on the decision if it bites.
+		// The files are matched from the repository root; a pattern the gate
+		// recorded as hit counts too, which covers a project-relative one in
+		// a subdirectory project.
 		d := decisions[f.ID]
-		return d != nil && len(sensitivePaths(d.Files, []string{item}, "")) > 0
+		return d != nil && (slices.Contains(splitList(d.payload["risk_patterns"]), item) || len(sensitivePaths(d.Files, []string{item}, "")) > 0)
 	}
 	since := -1
 	for _, f := range features {

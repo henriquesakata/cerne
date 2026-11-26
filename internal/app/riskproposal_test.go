@@ -108,6 +108,32 @@ func TestRelaxProposalAfterRepeats(t *testing.T) {
 	}
 }
 
+// TestRelaxSeesContraryInASubdirectory: in a project under a subdirectory, a
+// project-relative pattern the gate recorded as hit counts a contrary signal
+// on that card too, so a fix after three not-needed answers keeps the drop
+// from being proposed.
+// F-0518 crit. 6
+func TestRelaxSeesContraryInASubdirectory(t *testing.T) {
+	asActor(t, "")
+	repoDir, projDir, _ := newFeatureBackend(t)
+	g := calibration(0)
+	g.RiskPaths = []string{"src/**"}
+	saveGates(t, projDir, g)
+	for _, id := range []string{"F-0001", "F-0002", "F-0003"} {
+		decided(t, repoDir, id, domain.StateDone, []string{"code"}, map[string]string{"risk": "held", "risk_files": "app/src/x.go", "risk_paths": "app/src/x.go", "risk_patterns": "src/**"})
+		if _, err := RecordRiskFeedback(repoDir, projDir, id, RiskFeedback{Answer: FeedbackNotNeeded}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if ps := proposals(t, repoDir, projDir); len(ps) != 1 {
+		t.Fatalf("proposals before the fix = %+v, want the drop of src/**", ps)
+	}
+	logged(t, repoDir, domain.NewEvent("F-0009", "feature.created", map[string]string{"fixes": "F-0002"}, "human"))
+	if ps := proposals(t, repoDir, projDir); len(ps) != 0 {
+		t.Fatalf("proposals after a fix of a card held by src/** = %+v, want none", ps)
+	}
+}
+
 // TestFixOpensTightenProposal: a fix of a card accepted as low risk opens a
 // proposal to add the folders that delivery touched, citing the card and
 // the fix.
