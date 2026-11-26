@@ -105,8 +105,8 @@ func TestHookInstallCodexNetworkFlagWritten(t *testing.T) {
 func TestHookInstallNetworkDefaultProviders(t *testing.T) {
 	dir := networkProject(t)
 	out, err := execCerne(t, "hook", "install", "--dir", dir, "--network")
-	if !errors.Is(err, ErrNetworkNeedsCodex) {
-		t.Fatalf("err = %v, want ErrNetworkNeedsCodex\n%s", err, out)
+	if !errors.Is(err, ErrNetworkNeedsSandboxProvider) {
+		t.Fatalf("err = %v, want ErrNetworkNeedsSandboxProvider\n%s", err, out)
 	}
 	if ents, _ := os.ReadDir(dir); len(ents) != 1 || ents[0].Name() != ".cernerc" {
 		t.Errorf("project dir changed on a refused install: %v", ents)
@@ -124,8 +124,8 @@ func TestHookInstallNetworkDefaultProviders(t *testing.T) {
 func TestHookInstallNetworkRefusedWithoutCodex(t *testing.T) {
 	dir := networkProject(t)
 	out, err := execCerne(t, "hook", "install", "--dir", dir, "--provider", "gemini", "--network")
-	if !errors.Is(err, ErrNetworkNeedsCodex) {
-		t.Fatalf("err = %v, want ErrNetworkNeedsCodex\n%s", err, out)
+	if !errors.Is(err, ErrNetworkNeedsSandboxProvider) {
+		t.Fatalf("err = %v, want ErrNetworkNeedsSandboxProvider\n%s", err, out)
 	}
 	ents, _ := os.ReadDir(dir)
 	if len(ents) != 1 || ents[0].Name() != ".cernerc" {

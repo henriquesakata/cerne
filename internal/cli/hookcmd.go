@@ -51,8 +51,9 @@ func agentHook(c *cobra.Command) *cobra.Command {
 	return c
 }
 
-// ErrNetworkNeedsCodex refuses --network when codex is not among the providers.
-var ErrNetworkNeedsCodex = errors.New("--network applies to the codex provider only")
+// ErrNetworkNeedsSandboxProvider refuses --network when no provider with a
+// network profile (codex, cursor) is among the providers.
+var ErrNetworkNeedsSandboxProvider = errors.New("--network applies to the codex and cursor providers only")
 
 func newHookInstallCmd() *cobra.Command {
 	var dir string
@@ -66,7 +67,7 @@ func newHookInstallCmd() *cobra.Command {
 			return runHookInstall(cmd, dir, providers, network)
 		},
 	}
-	cmd.Flags().BoolVar(&network, "network", false, "codex: also open the whole network to the agent in this project (the profile has no domain list)")
+	cmd.Flags().BoolVar(&network, "network", false, "codex: also open the whole network to the agent in this project (the profile has no domain list); cursor: allow only the remote backend's host in .cursor/sandbox.json")
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
 	cmd.Flags().StringSliceVar(&providers, "provider", nil, "providers to install (claude|cursor|codex|gemini|copilot); default: claude plus any auto-detected by config dir")
 	return cmd
@@ -96,12 +97,13 @@ func runHookInstall(cmd *cobra.Command, dir string, providerNames []string, netw
 			ps = append(ps, hooks.Provider(name))
 		}
 	}
-	hasCodex := false
+	hasCodex, hasCursor := false, false
 	for _, p := range ps {
 		hasCodex = hasCodex || p == hooks.ProviderCodex
+		hasCursor = hasCursor || p == hooks.ProviderCursor
 	}
-	if network && !hasCodex {
-		return ErrNetworkNeedsCodex
+	if network && !hasCodex && !hasCursor {
+		return ErrNetworkNeedsSandboxProvider
 	}
 	results, err := hooks.InstallNetwork(dir, network, ps...)
 	if err != nil {
