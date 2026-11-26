@@ -194,6 +194,19 @@ func TestRoomJoinDuplicateNickConflict(t *testing.T) {
 	}
 }
 
+// T-0022 crit. 1, 3
+// E-0006 crit. 10, 12
+func TestRoomJoinRefusesTheFacilitatorNick(t *testing.T) {
+	h := newRoomServer(t, "proj-room-join-reserved")
+	var opened openJSON
+	doJSON(t, h, http.MethodPost, "/api/rooms", `{"topic":"t"}`, &opened)
+	var errBody map[string]string
+	rec := doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/join", `{"nick":" Facilitator "}`, &errBody)
+	if rec.Code != http.StatusConflict || !strings.Contains(errBody["error"], "reserved") {
+		t.Fatalf("join as facilitator = %d %v, want 409 naming the reserved nick", rec.Code, errBody)
+	}
+}
+
 func TestRoomJoinUnknownRoomNotFound(t *testing.T) {
 	h := newRoomServer(t, "proj-room-join-404")
 	var errBody map[string]string
@@ -883,6 +896,7 @@ func TestChannelRiteRoutesRefuse(t *testing.T) {
 		{http.MethodPost, "/join"},
 		{http.MethodPost, "/close"},
 		{http.MethodPost, "/minutes/note"},
+		{http.MethodPost, "/minutes/draft"}, // T-0022
 		{http.MethodPost, "/facilitator/handoff"},
 		{http.MethodPost, "/items"},
 		{http.MethodGet, "/items/pending"},

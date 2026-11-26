@@ -9,6 +9,7 @@ import {
 } from 'react'
 import { isAtBottom } from './BacklogChat'
 import {
+  DraftChangedError,
   fetchRoomPending,
   fetchRooms,
   getApiProject,
@@ -53,9 +54,21 @@ function loadStoredSession(roomId: string): RoomSession | null {
   }
 }
 
+// forgetStoredSession drops the stored session only when it is sid: another
+// tab may have stored a newer one after re-joining (T-0021, T-0022).
+function forgetStoredSession(roomId: string, sid: string) {
+  if (loadStoredSession(roomId)?.session_id === sid) localStorage.removeItem(sessionKey(roomId))
+}
+
 function loadStoredFacilitator(roomId: string): string | null {
   return localStorage.getItem(facilitatorKey(roomId))
 }
+
+// rosterOf: an open room shows who holds a session now (F-0511), with
+// T-0021's presence; a closed one shows everyone who took part — the
+// roster its minutes read and `cerne room list` counts, also for a room
+// from before sessions existed.
+const rosterOf = (r: Room) => (r.closed_at ? r.participants : r.active_participants) ?? []
 
 // WarRoom (T-0003): lista de salas — critério 4 de [[F-0211]]. As salas em si
 // (open/join/say/read/close) já existem no server desde [[T-0001]]; esta
@@ -138,7 +151,7 @@ export default function WarRoom() {
                 </span>
               </span>
               <span className="card-title">{r.topic}</span>
-              <span className="muted">{t.warRoom.participants((r.active_participants ?? []).length)}</span>
+              <span className="muted">{t.warRoom.participants(rosterOf(r).length)}</span>
             </a>
           ))}
         </div>
@@ -164,8 +177,84 @@ const continuesPrevious = (prev: RoomMessage | undefined, m: RoomMessage) =>
   prev.nick === m.nick &&
   Date.parse(m.time) - Date.parse(prev.time) < GROUP_MS
 
-// F-0511: the transcript shows what was said plus who joined and who left.
-const shownInTranscript = (e: RoomMessage) => e.type === 'message' || e.type === 'join' || e.type === 'leave'
+// F-0511: the transcript shows what was said plus who joined and who left;
+// T-0022: and the facilitation events and the minutes drafts.
+const TRANSCRIPT_TYPES = new Set<RoomMessage['type']>([
+  'message',
+  'join',
+  'leave',
+  'proposal',
+  'decision_request',
+  'resolution',
+  'minutes_draft',
+])
+const shownInTranscript = (e: RoomMessage) => TRANSCRIPT_TYPES.has(e.type)
+
+// T-0022: the author of a minutes draft the facilitator saved — a nick the
+// server refuses to participants — shown as the translated role.
+const FACILITATOR_AUTHOR = 'facilitator'
+
+// T-0022: the open items as any viewer reads them in the public transcript —
+// an item is I<seq> of the event that raised it, as the server names it. The
+// facilitator's queue still comes from the server.
+const openItemsOf = (events: RoomMessage[]): FacilitationItem[] => {
+  const resolved = new Set(events.filter((e) => e.type === 'resolution').map((e) => e.item_id))
+  return events.flatMap((e) =>
+    (e.type === 'proposal' || e.type === 'decision_request') && !resolved.has(`I${e.seq}`)
+      ? [
+          {
+            id: `I${e.seq}`,
+            kind: e.type,
+            author: e.nick ?? '',
+            title: e.title ?? '',
+            body: e.body ?? '',
+            source_seq: e.seq,
+            status: 'open' as const,
+          },
+        ]
+      : [],
+  )
+}
+
+// Paridade com RenderMinutesMarkdown (F-0291): o painel da ata mostra as
+// mesmas seis seções da projeção canônica, não só conclusão e justificativa.
+// Lista vazia some inteira — sem placeholder, como o renderizador faz com
+// open_items. Os rótulos são de leitura, não os do formulário de encerramento.
+// T-0022: the same body for the closed room's minutes and the open room's draft.
+function MinutesBody({ minutes }: { minutes: Minutes }) {
+  const { t } = useT()
+  const sections: { label: string; items?: string[]; className?: string }[] = [
+    { label: t.warRoom.minutesDiscardedTitle, items: minutes.discarded_options },
+    { label: t.warRoom.minutesOwnersTitle, items: minutes.owners },
+    { label: t.warRoom.minutesNextStepsTitle, items: minutes.next_steps },
+    // open_items é a trilha de auditoria do fechamento forçado
+    // (--allow-open-items): registro de exceção, não item de rotina —
+    // marca própria para não se achatar com as demais listas.
+    { label: t.warRoom.minutesOpenItemsTitle, items: minutes.open_items, className: 'room-minutes-open-items' },
+  ]
+  return (
+    <>
+      <p>
+        <strong>{t.warRoom.minutesConclusion}:</strong> {minutes.conclusion}
+      </p>
+      <p>
+        <strong>{t.warRoom.minutesRationale}:</strong> {minutes.rationale}
+      </p>
+      {sections
+        .filter((s) => (s.items ?? []).length > 0)
+        .map((s) => (
+          <section key={s.label} className={s.className}>
+            <h3>{s.label}</h3>
+            <ul className="room-minutes-list">
+              {s.items?.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </section>
+        ))}
+    </>
+  )
+}
 
 export function WarRoomDetail({ id }: { id: string }) {
   const [topic, setTopic] = useState('')
@@ -214,6 +303,8 @@ export function WarRoomDetail({ id }: { id: string }) {
   const [minutesDiscarded, setMinutesDiscarded] = useState('')
   const [minutesOwners, setMinutesOwners] = useState('')
   const [minutesNextSteps, setMinutesNextSteps] = useState('')
+  // T-0022: the close form opens on its own when the draft is loaded into it.
+  const [closeFormOpen, setCloseFormOpen] = useState(false)
 
   const sinceRef = useRef(0)
   // T-0021: the session the tab's one long-poll reads as, and that poll's
@@ -301,8 +392,7 @@ export function WarRoomDetail({ id }: { id: string }) {
             // same cursor, as an invalid resume does (F-0511).
             if (sessionRef.current?.session_id === sid) {
               sessionRef.current = null
-              // Another tab may have stored a newer session after re-joining.
-              if (loadStoredSession(id)?.session_id === sid) localStorage.removeItem(sessionKey(id))
+              forgetStoredSession(id, sid)
               setSession(null)
               setNotice(t.warRoom.sessionGone)
             }
@@ -331,7 +421,7 @@ export function WarRoomDetail({ id }: { id: string }) {
       .then((rooms) => {
         if (cancelled) return
         const r = rooms.find((r) => r.id === id)
-        setRoster(r?.active_participants ?? [])
+        setRoster(r ? rosterOf(r) : [])
         setMinutesNoteID(closed ? (r?.minutes_note ?? null) : null)
       })
       .catch(() => {})
@@ -360,7 +450,7 @@ export function WarRoomDetail({ id }: { id: string }) {
         if (!cancelled) setSession(s)
       })
       .catch(() => {
-        localStorage.removeItem(sessionKey(id))
+        forgetStoredSession(id, stored.session_id)
       })
     return () => {
       cancelled = true
@@ -497,14 +587,14 @@ export function WarRoomDetail({ id }: { id: string }) {
     leaveRoom(id, session.session_id)
       .then((r) => {
         setLeaving(false)
-        localStorage.removeItem(sessionKey(id))
+        forgetStoredSession(id, session.session_id)
         setSession(null)
         if (r.active_participants) setRoster(r.active_participants)
       })
       .catch((e: unknown) => {
         setLeaving(false)
         if (e instanceof HTTPError && e.status === 401) {
-          localStorage.removeItem(sessionKey(id))
+          forgetStoredSession(id, session.session_id)
           setSession(null)
           setNotice(t.warRoom.sessionGone)
           return
@@ -518,25 +608,31 @@ export function WarRoomDetail({ id }: { id: string }) {
 
   const entryCommand = `cerne room join ${id} --nick <nick> [--bio "…"]`
 
-  // Paridade com RenderMinutesMarkdown (F-0291): o painel da ata mostra as
-  // mesmas seis seções da projeção canônica, não só conclusão e justificativa.
-  // Lista vazia some inteira — sem placeholder, como o renderizador faz com
-  // open_items. Os rótulos são de leitura, não os do formulário de encerramento.
-  const minutesSections: { label: string; items?: string[]; className?: string }[] = minutes
-    ? [
-        { label: t.warRoom.minutesDiscardedTitle, items: minutes.discarded_options },
-        { label: t.warRoom.minutesOwnersTitle, items: minutes.owners },
-        { label: t.warRoom.minutesNextStepsTitle, items: minutes.next_steps },
-        // open_items é a trilha de auditoria do fechamento forçado
-        // (--allow-open-items): registro de exceção, não item de rotina —
-        // marca própria para não se achatar com as demais listas.
-        {
-          label: t.warRoom.minutesOpenItemsTitle,
-          items: minutes.open_items,
-          className: 'room-minutes-open-items',
-        },
-      ]
-    : []
+  // T-0022: the open room's shared draft is its last minutes_draft event; the
+  // open items a viewer without the facilitator's queue reads come from the
+  // transcript too.
+  const draft = closed ? undefined : [...messages].reverse().find((m) => m.type === 'minutes_draft' && m.minutes)
+  const items = facilitatorId ? pending : openItemsOf(messages)
+
+  const eventText = (m: RoomMessage) => {
+    const who = m.nick ?? ''
+    switch (m.type) {
+      case 'join':
+        return t.warRoom.joinedEvent(who)
+      case 'proposal':
+        return t.warRoom.proposalEvent(who, m.title ?? '')
+      case 'decision_request':
+        return t.warRoom.decisionRequestEvent(who, m.title ?? '')
+      case 'resolution': {
+        const raised = messages.find((x) => `I${x.seq}` === m.item_id)
+        return t.warRoom.resolutionEvent(raised?.title ?? m.item_id ?? '', m.body ?? '')
+      }
+      case 'minutes_draft':
+        return who === FACILITATOR_AUTHOR ? t.warRoom.minutesDraftEventFacilitator : t.warRoom.minutesDraftEvent(who)
+      default:
+        return t.warRoom.leftEvent(who)
+    }
+  }
 
   // splitLines converte um textarea de "um item por linha" na lista que a
   // ata espera, descartando linhas em branco.
@@ -548,17 +644,38 @@ export function WarRoomDetail({ id }: { id: string }) {
 
   const doClose = (e: FormEvent) => {
     e.preventDefault()
-    if (!facilitatorId || closing) return
-    setClosing(true)
-    setError(null)
-    const minutesPayload: Minutes = {
+    submitClose({
       conclusion: minutesConclusion.trim(),
       rationale: minutesRationale.trim(),
       discarded_options: splitLines(minutesDiscarded),
       owners: splitLines(minutesOwners),
       next_steps: splitLines(minutesNextSteps),
-    }
-    postRoomClose(id, facilitatorId, minutesPayload, allowOpenItems)
+    })
+  }
+
+  // T-0022: the facilitator loads the shared draft into the close form, to
+  // edit it before closing.
+  const loadDraft = () => {
+    const mn = draft?.minutes
+    if (!mn) return
+    setMinutesConclusion(mn.conclusion)
+    setMinutesRationale(mn.rationale)
+    setMinutesDiscarded((mn.discarded_options ?? []).join('\n'))
+    setMinutesOwners((mn.owners ?? []).join('\n'))
+    setMinutesNextSteps((mn.next_steps ?? []).join('\n'))
+    setCloseFormOpen(true)
+  }
+
+  // A string closes with the room's saved draft, the one updated at that
+  // instant (T-0022). Another draft saved meanwhile refuses: the tab says so
+  // and re-issues its long-poll, which brings the new draft into the card.
+  // Forcing past open items stays in the full form: the 1-click close never does.
+  const submitClose = (minutesPayload: Minutes | string) => {
+    if (!facilitatorId || closing) return
+    setClosing(true)
+    setError(null)
+    setNotice(null)
+    postRoomClose(id, facilitatorId, minutesPayload, typeof minutesPayload !== 'string' && allowOpenItems)
       .then((r) => {
         setClosing(false)
         setClosed(true)
@@ -566,6 +683,11 @@ export function WarRoomDetail({ id }: { id: string }) {
       })
       .catch((e: unknown) => {
         setClosing(false)
+        if (e instanceof DraftChangedError) {
+          setNotice(t.warRoom.draftChanged)
+          pollRef.current?.abort()
+          return
+        }
         setError(e instanceof Error ? e.message : String(e))
       })
   }
@@ -638,27 +760,37 @@ export function WarRoomDetail({ id }: { id: string }) {
       </header>
 
       <section className="room-chat" aria-label={t.warRoom.title}>
+        {draft?.minutes && (
+          <section className="room-minutes" aria-labelledby="room-draft-title">
+            <h2 id="room-draft-title">{t.warRoom.minutesDraftTitle}</h2>
+            <p className="room-minutes-meta">
+              {draft.nick === FACILITATOR_AUTHOR ? t.warRoom.minutesDraftByFacilitator : t.warRoom.minutesDraftBy(draft.nick ?? '')} ·{' '}
+              <time dateTime={draft.time} title={instant(draft.time, 'full')}>
+                {instant(draft.time, 'time')}
+              </time>
+            </p>
+            <MinutesBody minutes={draft.minutes} />
+            {facilitatorId && (
+              <div className="room-minutes-actions">
+                <button
+                  type="button"
+                  className="room-btn-primary"
+                  onClick={() => submitClose(draft.time)}
+                  disabled={closing}
+                >
+                  {closing ? t.warRoom.closing : t.warRoom.closeWithDraft}
+                </button>
+                <button type="button" className="room-btn" onClick={loadDraft}>
+                  {t.warRoom.loadDraft}
+                </button>
+              </div>
+            )}
+          </section>
+        )}
         {closed && minutes && (
           <div className="room-minutes">
             <h2>{t.warRoom.minutesTitle}</h2>
-            <p>
-              <strong>{t.warRoom.minutesConclusion}:</strong> {minutes.conclusion}
-            </p>
-            <p>
-              <strong>{t.warRoom.minutesRationale}:</strong> {minutes.rationale}
-            </p>
-            {minutesSections
-              .filter((s) => s.items !== undefined && s.items.length > 0)
-              .map((s) => (
-                <section key={s.label} className={s.className}>
-                  <h3>{s.label}</h3>
-                  <ul className="room-minutes-list">
-                    {s.items?.map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
-                </section>
-              ))}
+            <MinutesBody minutes={minutes} />
             {minutesNoteID && (
               <p>
                 <strong>{t.warRoom.minutesRegistered}</strong>{' '}
@@ -682,10 +814,9 @@ export function WarRoomDetail({ id }: { id: string }) {
           )}
           {messages.map((m, i) => {
             if (m.type !== 'message') {
-              const who = m.nick ?? ''
               return (
                 <p key={m.seq} className="room-event">
-                  {m.type === 'join' ? t.warRoom.joinedEvent(who) : t.warRoom.leftEvent(who)}
+                  {eventText(m)}
                 </p>
               )
             }
@@ -884,36 +1015,39 @@ export function WarRoomDetail({ id }: { id: string }) {
           </section>
         )}
 
-        {!closed && facilitatorId && (
-          <section className="room-side-section">
-            <h2>
-              {t.warRoom.pendingTitle} <span className="badge">{pending.length}</span>
+        {!closed && (facilitatorId || items.length > 0) && (
+          <section className="room-side-section" aria-labelledby="room-pending-title">
+            <h2 id="room-pending-title">
+              {t.warRoom.pendingTitle} <span className="badge">{items.length}</span>
             </h2>
-            {pending.length === 0 && <p className="room-side-muted">{t.warRoom.pendingEmpty}</p>}
+            {items.length === 0 && <p className="room-side-muted">{t.warRoom.pendingEmpty}</p>}
+            {!facilitatorId && <p className="room-side-muted">{t.warRoom.pendingReadOnly}</p>}
             <ul className="room-pending">
-              {pending.map((it) => (
+              {items.map((it) => (
                 <li key={it.id} className="room-pending-item">
                   <strong>{it.title}</strong>
                   <span className="room-side-muted">
                     {it.kind} · {it.author}
                   </span>
                   {it.body && <p className="room-side-text">{it.body}</p>}
-                  <div className="room-inline-form">
-                    <input
-                      value={resolveDrafts[it.id] ?? ''}
-                      onChange={(e) => setResolveDrafts((prev) => ({ ...prev, [it.id]: e.target.value }))}
-                      placeholder={t.warRoom.resolvePlaceholder}
-                      aria-label={t.warRoom.resolvePlaceholder}
-                    />
-                    <button
-                      type="button"
-                      className="room-btn"
-                      onClick={() => resolveItem(it.id)}
-                      disabled={resolvingId === it.id}
-                    >
-                      {resolvingId === it.id ? t.warRoom.resolving : t.warRoom.resolve}
-                    </button>
-                  </div>
+                  {facilitatorId && (
+                    <div className="room-inline-form">
+                      <input
+                        value={resolveDrafts[it.id] ?? ''}
+                        onChange={(e) => setResolveDrafts((prev) => ({ ...prev, [it.id]: e.target.value }))}
+                        placeholder={t.warRoom.resolvePlaceholder}
+                        aria-label={t.warRoom.resolvePlaceholder}
+                      />
+                      <button
+                        type="button"
+                        className="room-btn"
+                        onClick={() => resolveItem(it.id)}
+                        disabled={resolvingId === it.id}
+                      >
+                        {resolvingId === it.id ? t.warRoom.resolving : t.warRoom.resolve}
+                      </button>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
@@ -921,7 +1055,11 @@ export function WarRoomDetail({ id }: { id: string }) {
         )}
 
         {!closed && facilitatorId && (
-          <details className="room-side-section room-close">
+          <details
+            className="room-side-section room-close"
+            open={closeFormOpen}
+            onToggle={(e) => setCloseFormOpen(e.currentTarget.open)}
+          >
             <summary>{t.warRoom.closeFormTitle}</summary>
             <form className="room-close-form" onSubmit={doClose}>
               <label>

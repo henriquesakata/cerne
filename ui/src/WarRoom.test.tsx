@@ -5,7 +5,7 @@ import '@testing-library/jest-dom/vitest'
 import WarRoom, { WarRoomDetail } from './WarRoom'
 import { I18nProvider } from './i18n'
 import { LiveProvider, useProjects } from './live'
-import { fetchProjects, HTTPError, type FacilitationItem, type Minutes, type ProjectInfo, type Room, type RoomMessage, type RoomSession } from './api'
+import { DraftChangedError, fetchProjects, HTTPError, type FacilitationItem, type Minutes, type ProjectInfo, type Room, type RoomMessage, type RoomSession } from './api'
 
 const fetchRooms = vi.fn<() => Promise<Room[]>>()
 const joinRoom = vi.fn<(id: string, nick: string, bio: string) => Promise<{ room: Room; session: RoomSession }>>()
@@ -16,7 +16,7 @@ const readRoomMessages = vi.fn<
   (id: string, since: number, follow: boolean, signal?: AbortSignal, sessionID?: string) => Promise<RoomMessage[]>
 >()
 const postRoomOpen = vi.fn<(topic: string) => Promise<{ room: Room; facilitator_id: string }>>()
-const postRoomClose = vi.fn<(id: string, facilitatorId: string, minutes: Minutes, allow?: boolean) => Promise<Room>>()
+const postRoomClose = vi.fn<(id: string, facilitatorId: string, minutes: Minutes | string, allow?: boolean) => Promise<Room>>()
 const postRoomFacilitatorHandoff = vi.fn<(id: string, facilitatorId: string) => Promise<string>>()
 const fetchRoomPending = vi.fn<(id: string, facilitatorId: string) => Promise<FacilitationItem[]>>()
 const postRoomResolveItem =
@@ -32,7 +32,7 @@ vi.mock('./api', async (importOriginal) => ({
   readRoomMessages: (id: string, since: number, follow: boolean, signal?: AbortSignal, sessionID?: string) =>
     readRoomMessages(id, since, follow, signal, sessionID),
   postRoomOpen: (topic: string) => postRoomOpen(topic),
-  postRoomClose: (id: string, facilitatorId: string, minutes: Minutes, allow?: boolean) =>
+  postRoomClose: (id: string, facilitatorId: string, minutes: Minutes | string, allow?: boolean) =>
     postRoomClose(id, facilitatorId, minutes, allow),
   postRoomFacilitatorHandoff: (id: string, facilitatorId: string) => postRoomFacilitatorHandoff(id, facilitatorId),
   fetchRoomPending: (id: string, facilitatorId: string) => fetchRoomPending(id, facilitatorId),
@@ -1126,7 +1126,10 @@ describe('presença ao vivo no painel (T-0021)', () => {
     readRoomMessages.mockImplementationOnce(() =>
       Promise.resolve([open, { seq: 2, type: 'close', time: '2026-08-06T00:05:00Z' }]),
     )
-    fetchRooms.mockResolvedValue([{ ...presence(fiveMinAgo()), closed_at: '2026-08-06T00:05:00Z' }])
+    // T-0022: a closed room's panel lists its historical roster; keep the
+    // presence fields on it, so the panel is what drops them.
+    const live = presence(fiveMinAgo())
+    fetchRooms.mockResolvedValue([{ ...live, participants: live.active_participants ?? [], closed_at: '2026-08-06T00:05:00Z' }])
     render(<WarRoomDetail id="R1" />)
 
     await waitFor(() => expect(entryOf('bia')).toBeInTheDocument())
@@ -1331,5 +1334,310 @@ describe('o long-poll da aba lê como a sessão (T-0021)', () => {
     await waitFor(() => expect(screen.getByText(/já não era válida/)).toBeInTheDocument())
     expect(screen.getByText('Observando')).toBeInTheDocument()
     expect(localStorage.getItem(SESSION_KEY)).toBe(newer)
+  })
+})
+
+describe('facilitação e rascunho de ata visíveis na sala (T-0022)', () => {
+  const FAC = 'facfacfacfacfacfacfacfacfacfacfa'
+  const open: RoomMessage = { seq: 1, type: 'open', topic: 'Fila serial', time: '2026-08-06T00:00:00Z' }
+  const proposal: RoomMessage = {
+    seq: 2,
+    type: 'proposal',
+    nick: 'ana',
+    title: 'usar postgres',
+    body: 'menos manutenção',
+    time: '2026-08-06T00:00:02Z',
+  }
+  const decision: RoomMessage = {
+    seq: 3,
+    type: 'decision_request',
+    nick: 'bia',
+    title: 'adiar o deploy',
+    body: 'sem janela hoje',
+    time: '2026-08-06T00:00:03Z',
+  }
+  const resolution: RoomMessage = { seq: 4, type: 'resolution', item_id: 'I2', body: 'aceito', time: '2026-08-06T00:00:04Z' }
+  const draftMinutes: Minutes = {
+    conclusion: 'reverter o deploy',
+    rationale: 'mais rápido',
+    discarded_options: ['hotfix ao vivo'],
+    owners: ['ana'],
+    next_steps: ['post-mortem'],
+  }
+  const draft: RoomMessage = { seq: 5, type: 'minutes_draft', nick: 'grok', minutes: draftMinutes, time: '2026-08-06T00:00:05Z' }
+
+  // T-0022 crit. 3
+  // E-0006 crit. 12
+  it('a transcrição mostra proposta, pedido de decisão, resolução e rascunho de ata', async () => {
+    readRoomMessages.mockImplementationOnce(() => Promise.resolve([open, proposal, decision, resolution, draft]))
+    render(<WarRoomDetail id="R1" />)
+
+    const log = screen.getByRole('log')
+    await waitFor(() => expect(within(log).getByText('ana propôs: usar postgres')).toBeInTheDocument())
+    expect(within(log).getByText('bia pede uma decisão: adiar o deploy')).toBeInTheDocument()
+    expect(within(log).getByText('Resolvido — usar postgres: aceito')).toBeInTheDocument()
+    expect(within(log).getByText('grok salvou um rascunho de ata')).toBeInTheDocument()
+  })
+
+  // T-0022 crit. 3
+  // E-0006 crit. 12
+  it('sem facilitatorId, os itens abertos do transcript aparecem só para leitura', async () => {
+    readRoomMessages.mockImplementationOnce(() => Promise.resolve([open, proposal, decision, resolution]))
+    render(<WarRoomDetail id="R1" />)
+
+    const items = await screen.findByRole('region', { name: /precisa de decisão humana/i })
+    await waitFor(() => expect(within(items).getByText('adiar o deploy')).toBeInTheDocument())
+    expect(within(items).getByText('sem janela hoje')).toBeInTheDocument()
+    expect(within(items).queryByText('usar postgres')).not.toBeInTheDocument() // resolved
+    expect(within(items).queryByRole('button')).not.toBeInTheDocument()
+    expect(within(items).queryByRole('textbox')).not.toBeInTheDocument()
+    expect(fetchRoomPending).not.toHaveBeenCalled()
+  })
+
+  // T-0022 crit. 3
+  // E-0006 crit. 12
+  it('qualquer leitor vê o rascunho de ata com autor e horário, sem as ações do facilitador', async () => {
+    readRoomMessages.mockImplementationOnce(() => Promise.resolve([open, draft]))
+    render(<WarRoomDetail id="R1" />)
+
+    const card = await screen.findByRole('region', { name: /rascunho de ata/i })
+    expect(within(card).getByText('reverter o deploy')).toBeInTheDocument()
+    expect(within(card).getByText('mais rápido')).toBeInTheDocument()
+    expect(within(card).getByText('post-mortem')).toBeInTheDocument()
+    expect(within(card).getByText(/por grok/)).toBeInTheDocument()
+    // eslint-disable-next-line testing-library/no-node-access
+    expect(card.querySelector('time')).toHaveAttribute('dateTime', draft.time)
+    expect(within(card).queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  // T-0022 crit. 3
+  // E-0006 crit. 12
+  it('o facilitador encerra a sala com o rascunho em um clique', async () => {
+    localStorage.setItem('warroom-facilitator--R1', FAC)
+    readRoomMessages.mockImplementationOnce(() => Promise.resolve([open, draft]))
+    postRoomClose.mockResolvedValue(room({ closed_at: '2026-08-06T01:00:00Z', minutes: draftMinutes }))
+    render(<WarRoomDetail id="R1" />)
+
+    fireEvent.click(await screen.findByRole('button', { name: /encerrar com este rascunho/i }))
+    await waitFor(() => expect(postRoomClose).toHaveBeenCalledWith('R1', FAC, draft.time, false))
+    await waitFor(() => expect(screen.getByText(/sala fechada/i)).toBeInTheDocument())
+    expect(screen.queryByRole('region', { name: /rascunho de ata/i })).not.toBeInTheDocument()
+  })
+
+  // T-0022 crit. 3
+  // E-0006 crit. 12
+  it('o fechamento em um clique nunca força itens abertos, mesmo com a caixa do formulário marcada', async () => {
+    localStorage.setItem('warroom-facilitator--R1', FAC)
+    readRoomMessages.mockImplementationOnce(() => Promise.resolve([open, draft]))
+    postRoomClose.mockResolvedValue(room({ closed_at: '2026-08-06T01:00:00Z', minutes: draftMinutes }))
+    render(<WarRoomDetail id="R1" />)
+
+    fireEvent.click(await screen.findByLabelText(/permitir fechar com itens pendentes/i))
+    fireEvent.click(screen.getByRole('button', { name: /encerrar com este rascunho/i }))
+    await waitFor(() => expect(postRoomClose).toHaveBeenCalledWith('R1', FAC, draft.time, false))
+  })
+
+  // T-0022 crit. 3
+  // E-0006 crit. 12
+  it('um rascunho trocado depois da leitura não fecha a sala: avisa e relê a transcrição', async () => {
+    localStorage.setItem('warroom-facilitator--R1', FAC)
+    const newer: RoomMessage = {
+      ...draft,
+      seq: 6,
+      nick: 'ana',
+      minutes: { ...draftMinutes, conclusion: 'manter o deploy' },
+      time: '2026-08-06T00:00:06Z',
+    }
+    let follows = 0
+    readRoomMessages.mockImplementation((_id, _since, follow, signal) => {
+      if (!follow) return Promise.resolve([open, draft])
+      follows++
+      if (follows === 1) {
+        // the tab's long-poll, waiting until the refusal re-issues it
+        return new Promise((_, reject) => signal?.addEventListener('abort', () => reject(new Error('aborted'))))
+      }
+      return follows === 2 ? Promise.resolve([newer]) : new Promise(() => {})
+    })
+    postRoomClose.mockRejectedValue(new DraftChangedError('the minutes draft changed after it was reviewed'))
+    render(<WarRoomDetail id="R1" />)
+
+    fireEvent.click(await screen.findByRole('button', { name: /encerrar com este rascunho/i }))
+    await waitFor(() => expect(postRoomClose).toHaveBeenCalledWith('R1', FAC, draft.time, false))
+    await waitFor(() => expect(screen.getByText(/o rascunho mudou/i)).toBeInTheDocument())
+    const card = screen.getByRole('region', { name: /rascunho de ata/i })
+    await waitFor(() => expect(within(card).getByText('manter o deploy')).toBeInTheDocument())
+    expect(screen.queryByText(/sala fechada/i)).not.toBeInTheDocument()
+  })
+
+  // T-0022 crit. 3
+  // E-0006 crit. 12
+  it('o facilitador carrega o rascunho no formulário de encerramento para editar antes', async () => {
+    localStorage.setItem('warroom-facilitator--R1', FAC)
+    readRoomMessages.mockImplementationOnce(() => Promise.resolve([open, draft]))
+    render(<WarRoomDetail id="R1" />)
+
+    fireEvent.click(await screen.findByRole('button', { name: /editar no formulário/i }))
+    // eslint-disable-next-line testing-library/no-node-access
+    expect(screen.getByText(/encerrar sala com ata/i).closest('details')).toHaveAttribute('open')
+    expect(screen.getByLabelText(/^conclusão$/i)).toHaveValue('reverter o deploy')
+    expect(screen.getByLabelText(/^justificativa$/i)).toHaveValue('mais rápido')
+    expect(screen.getByLabelText(/opções descartadas \(uma por linha\)/i)).toHaveValue('hotfix ao vivo')
+    expect(screen.getByLabelText(/responsáveis \(um por linha\)/i)).toHaveValue('ana')
+    expect(screen.getByLabelText(/próximos passos \(um por linha\)/i)).toHaveValue('post-mortem')
+    expect(postRoomClose).not.toHaveBeenCalled()
+  })
+
+  const closeEvent: RoomMessage = { seq: 9, type: 'close', time: '2026-08-06T01:00:00Z', minutes: draftMinutes }
+  const ana = { nick: 'ana', joined_at: '2026-08-06T00:00:01Z' }
+  const bia = { nick: 'bia', joined_at: '2026-08-06T00:00:02Z' }
+
+  // T-0022 crit. 3
+  // E-0006 crit. 12
+  it('sala fechada conta e lista quem participou, inclusive quem saiu', async () => {
+    const closedRoom = room({ closed_at: '2026-08-06T01:00:00Z', participants: [ana, bia], active_participants: [ana] })
+    fetchRooms.mockResolvedValue([closedRoom])
+    render(<WarRoom />)
+    await waitFor(() => expect(screen.getByText('2 participante(s)')).toBeInTheDocument())
+    cleanup()
+
+    readRoomMessages.mockImplementationOnce(() => Promise.resolve([open, closeEvent]))
+    render(<WarRoomDetail id="R1" />)
+    const roster = screen.getByRole('region', { name: /participantes/i })
+    await waitFor(() => expect(within(roster).getByText('bia')).toBeInTheDocument())
+    expect(within(roster).getByText('ana')).toBeInTheDocument()
+  })
+
+  // T-0022 crit. 3
+  // E-0006 crit. 12
+  it('sala fechada antiga, sem lista de ativos, mostra o roster histórico', async () => {
+    const legacy = room({ closed_at: '2026-08-06T01:00:00Z', participants: [ana], active_participants: null })
+    fetchRooms.mockResolvedValue([legacy])
+    render(<WarRoom />)
+    await waitFor(() => expect(screen.getByText('1 participante(s)')).toBeInTheDocument())
+    cleanup()
+
+    readRoomMessages.mockImplementationOnce(() => Promise.resolve([open, closeEvent]))
+    render(<WarRoomDetail id="R1" />)
+    const roster = screen.getByRole('region', { name: /participantes/i })
+    await waitFor(() => expect(within(roster).getByText('ana')).toBeInTheDocument())
+    expect(within(roster).queryByText(/ninguém entrou/i)).not.toBeInTheDocument()
+  })
+
+  // T-0022 crit. 3
+  // E-0006 crit. 12
+  it.each([
+    ['sucesso', () => Promise.resolve(room({ active_participants: [] }))],
+    ['401', () => Promise.reject(new HTTPError('invalid room session', 401))],
+  ])('sair (%s) não apaga a sessão mais nova que outra aba guardou', async (_case, answer) => {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session()))
+    resumeRoomSession.mockResolvedValue(session())
+    readRoomMessages.mockImplementationOnce(() => Promise.resolve([open]))
+    const newer = JSON.stringify(session({ session_id: 'feedfacefeedfacefeedfacefeedface' }))
+    leaveRoom.mockImplementation(() => {
+      localStorage.setItem(SESSION_KEY, newer) // another tab re-joined meanwhile
+      return answer()
+    })
+    render(<WarRoomDetail id="R1" />)
+
+    fireEvent.click(await screen.findByRole('button', { name: /^sair$/i }))
+    await waitFor(() => expect(screen.getByText('Observando')).toBeInTheDocument())
+    expect(localStorage.getItem(SESSION_KEY)).toBe(newer)
+  })
+
+  // A minutes JSON without its lists, as a server before the T-0022 fix served it.
+  const bare = {
+    conclusion: 'conclusão sem listas',
+    rationale: 'justificativa sem listas',
+    discarded_options: null,
+    owners: null,
+    next_steps: null,
+  } as unknown as Minutes
+
+  // T-0022 crit. 3
+  // E-0006 crit. 12
+  it('um rascunho com listas null aparece e carrega no formulário', async () => {
+    localStorage.setItem('warroom-facilitator--R1', FAC)
+    readRoomMessages.mockImplementationOnce(() => Promise.resolve([open, { ...draft, minutes: bare }]))
+    render(<WarRoomDetail id="R1" />)
+
+    const card = await screen.findByRole('region', { name: /rascunho de ata/i })
+    expect(within(card).getByText('conclusão sem listas')).toBeInTheDocument()
+    fireEvent.click(within(card).getByRole('button', { name: /editar no formulário/i }))
+    expect(screen.getByLabelText(/^conclusão$/i)).toHaveValue('conclusão sem listas')
+    expect(screen.getByLabelText(/responsáveis \(um por linha\)/i)).toHaveValue('')
+  })
+
+  // T-0022 crit. 3
+  // E-0006 crit. 12
+  it('a ata de uma sala fechada com listas null aparece', async () => {
+    readRoomMessages.mockImplementationOnce(() =>
+      Promise.resolve([open, { seq: 2, type: 'close', time: '2026-08-06T00:05:00Z', minutes: bare }]),
+    )
+    render(<WarRoomDetail id="R1" />)
+
+    await waitFor(() => expect(screen.getByText('conclusão sem listas')).toBeInTheDocument())
+    expect(screen.getByText(/ata da sala/i)).toBeInTheDocument()
+  })
+
+  // T-0022 crit. 3, 4
+  // E-0006 crit. 12, 13
+  it('o rascunho salvo pela facilitação mostra o papel traduzido, não o token', async () => {
+    const byFacilitator = { ...draft, nick: 'facilitator' }
+    readRoomMessages.mockImplementationOnce(() => Promise.resolve([open, byFacilitator]))
+    render(<WarRoomDetail id="R1" />)
+
+    const card = await screen.findByRole('region', { name: /rascunho de ata/i })
+    expect(within(card).getByText(/pela facilitação/)).toBeInTheDocument()
+    expect(within(screen.getByRole('log')).getByText('A facilitação salvou um rascunho de ata')).toBeInTheDocument()
+    expect(screen.queryByText(/facilitator/)).not.toBeInTheDocument()
+    cleanup()
+
+    localStorage.setItem('cerne-lang', 'en')
+    readRoomMessages.mockImplementationOnce(() => Promise.resolve([open, byFacilitator]))
+    render(
+      <I18nProvider>
+        <WarRoomDetail id="R1" />
+      </I18nProvider>,
+    )
+    const enCard = await screen.findByRole('region', { name: /minutes draft/i })
+    expect(within(enCard).getByText(/by the facilitator/)).toBeInTheDocument()
+    expect(within(screen.getByRole('log')).getByText('The facilitator saved a minutes draft')).toBeInTheDocument()
+  })
+
+  // T-0022 crit. 4
+  // E-0006 crit. 13
+  it('tem os textos novos também em inglês', async () => {
+    localStorage.setItem('cerne-lang', 'en')
+    localStorage.setItem('warroom-facilitator--R1', FAC)
+    readRoomMessages.mockImplementationOnce(() => Promise.resolve([open, proposal, decision, resolution, draft]))
+    render(
+      <I18nProvider>
+        <WarRoomDetail id="R1" />
+      </I18nProvider>,
+    )
+
+    const log = screen.getByRole('log')
+    await waitFor(() => expect(within(log).getByText('ana proposed: usar postgres')).toBeInTheDocument())
+    expect(within(log).getByText('bia asks for a decision: adiar o deploy')).toBeInTheDocument()
+    expect(within(log).getByText('Resolved — usar postgres: aceito')).toBeInTheDocument()
+    expect(within(log).getByText('grok saved a minutes draft')).toBeInTheDocument()
+    const card = screen.getByRole('region', { name: /minutes draft/i })
+    expect(within(card).getByText(/by grok/)).toBeInTheDocument()
+    expect(within(card).getByRole('button', { name: 'Close with this draft' })).toBeInTheDocument()
+    expect(within(card).getByRole('button', { name: 'Edit in the close form' })).toBeInTheDocument()
+  })
+
+  // T-0022 crit. 4
+  // E-0006 crit. 13
+  it('o texto de leitura dos itens existe nos dois idiomas', async () => {
+    localStorage.setItem('cerne-lang', 'en')
+    readRoomMessages.mockImplementationOnce(() => Promise.resolve([open, decision]))
+    render(
+      <I18nProvider>
+        <WarRoomDetail id="R1" />
+      </I18nProvider>,
+    )
+    const items = await screen.findByRole('region', { name: /needs a human decision/i })
+    await waitFor(() => expect(within(items).getByText(/only the facilitator resolves/i)).toBeInTheDocument())
   })
 })

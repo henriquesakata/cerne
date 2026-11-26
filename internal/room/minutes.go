@@ -51,6 +51,17 @@ func (mn Minutes) validate() error {
 	return nil
 }
 
+// withLists returns mn with every nil list made empty, so the JSON carries []
+// and never null — a client iterates the lists without a guard (T-0022).
+func (mn Minutes) withLists() Minutes {
+	for _, l := range []*[]string{&mn.DiscardedOptions, &mn.Owners, &mn.NextSteps} {
+		if *l == nil {
+			*l = []string{}
+		}
+	}
+	return mn
+}
+
 // RenderMinutesMarkdown deterministically projects a closed room's minutes
 // to Markdown — no LLM, no synthesis, pure formatting (F-0228 criterion 8).
 // Returns "" for a room with no minutes (still open, or pre-F-0228 data).
@@ -58,18 +69,38 @@ func RenderMinutesMarkdown(r Room) string {
 	if r.Minutes == nil {
 		return ""
 	}
-	mn := r.Minutes
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Ata — %s (%s)\n\n", r.ID, r.Topic)
-	fmt.Fprintf(&b, "## Conclusão\n\n%s\n\n", mn.Conclusion)
-	fmt.Fprintf(&b, "## Justificativa\n\n%s\n\n", mn.Rationale)
-	writeMinutesList(&b, "Opções descartadas", mn.DiscardedOptions)
-	writeMinutesList(&b, "Responsáveis", mn.Owners)
-	writeMinutesList(&b, "Próximos passos", mn.NextSteps)
-	if len(mn.OpenItems) > 0 {
-		writeMinutesList(&b, "Itens deixados em aberto (exceção registrada)", mn.OpenItems)
-	}
+	writeMinutesSections(&b, r.Minutes)
 	return b.String()
+}
+
+// RenderMinutesDraftMarkdown projects an open room's shared draft (T-0022)
+// the same way, preceded by who saved it last and when. Returns "" for a
+// room with no draft.
+func RenderMinutesDraftMarkdown(r Room) string {
+	d := r.MinutesDraft
+	if d == nil {
+		return ""
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "# Rascunho de ata — %s (%s)\n\n", r.ID, r.Topic)
+	fmt.Fprintf(&b, "- Autor: %s\n- Atualizado em: %s\n\n", d.Author, d.UpdatedAt.UTC().Format(time.RFC3339))
+	writeMinutesSections(&b, &d.Minutes)
+	return b.String()
+}
+
+// writeMinutesSections writes the minutes' sections, shared by every
+// projection.
+func writeMinutesSections(b *strings.Builder, mn *Minutes) {
+	fmt.Fprintf(b, "## Conclusão\n\n%s\n\n", mn.Conclusion)
+	fmt.Fprintf(b, "## Justificativa\n\n%s\n\n", mn.Rationale)
+	writeMinutesList(b, "Opções descartadas", mn.DiscardedOptions)
+	writeMinutesList(b, "Responsáveis", mn.Owners)
+	writeMinutesList(b, "Próximos passos", mn.NextSteps)
+	if len(mn.OpenItems) > 0 {
+		writeMinutesList(b, "Itens deixados em aberto (exceção registrada)", mn.OpenItems)
+	}
 }
 
 // RenderMinutesNoteBody projects a closed room's minutes into the Markdown
@@ -105,14 +136,7 @@ func RenderMinutesNoteBody(r Room, registeredAt time.Time) string {
 		}
 	}
 	b.WriteString("\n")
-	fmt.Fprintf(&b, "## Conclusão\n\n%s\n\n", mn.Conclusion)
-	fmt.Fprintf(&b, "## Justificativa\n\n%s\n\n", mn.Rationale)
-	writeMinutesList(&b, "Opções descartadas", mn.DiscardedOptions)
-	writeMinutesList(&b, "Responsáveis", mn.Owners)
-	writeMinutesList(&b, "Próximos passos", mn.NextSteps)
-	if len(mn.OpenItems) > 0 {
-		writeMinutesList(&b, "Itens deixados em aberto (exceção registrada)", mn.OpenItems)
-	}
+	writeMinutesSections(&b, mn)
 	return b.String()
 }
 

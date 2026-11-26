@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ChatRunsError,
+  DraftChangedError,
   fetchPendings,
   fetchSettings,
   HTTPError,
+  postRoomClose,
   putSetting,
   recompileWiki,
   registerChatCandidate,
@@ -317,5 +319,45 @@ describe('content saves (F-0464 critério 6)', () => {
       ok: false,
       error: 'entity is not live — append an errata instead',
     })
+  })
+})
+
+describe('postRoomClose com o rascunho revisado (T-0022)', () => {
+  const json = (status: number, body: unknown) =>
+    new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+
+  // T-0022 crit. 3
+  // E-0006 crit. 12
+  it('manda use_draft com o updated_at do rascunho que o facilitador viu', async () => {
+    setApiProject('proj-x')
+    const fetch = vi.fn().mockResolvedValue(json(200, { id: 'R1' }))
+    vi.stubGlobal('fetch', fetch)
+
+    await postRoomClose('R1', 'fac', '2026-11-25T14:02:03.456789Z', false)
+
+    expect(fetch.mock.calls[0][0]).toBe('/api/projects/proj-x/rooms/R1/close')
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({
+      facilitator_id: 'fac',
+      use_draft: true,
+      draft_updated_at: '2026-11-25T14:02:03.456789Z',
+      allow_open_items: false,
+    })
+  })
+
+  // T-0022 crit. 3
+  // E-0006 crit. 12
+  it('um 409 com draft_changed vira DraftChangedError; os outros 409, não', async () => {
+    setApiProject('proj-x')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(json(409, { error: 'the minutes draft changed after it was reviewed', draft_changed: true })),
+    )
+    await expect(postRoomClose('R1', 'fac', '2026-11-25T14:02:03Z')).rejects.toBeInstanceOf(DraftChangedError)
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(409, { error: 'room has open facilitation items' })))
+    const other = await postRoomClose('R1', 'fac', '2026-11-25T14:02:03Z').catch((e: unknown) => e)
+    expect(other).toBeInstanceOf(Error)
+    expect(other).not.toBeInstanceOf(DraftChangedError)
+    expect((other as Error).message).toBe('room has open facilitation items')
   })
 })

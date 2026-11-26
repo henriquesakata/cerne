@@ -27,6 +27,7 @@ var (
 	ErrNotFound             = errors.New("room not found")
 	ErrClosed               = errors.New("room is closed")
 	ErrNickTaken            = errors.New("nickname already in use in this room")
+	ErrNickReserved         = errors.New(`the nickname "facilitator" is reserved: it names the facilitator as a minutes draft author`)
 	ErrInvalidSession       = errors.New("invalid room session")
 	ErrNotFacilitator       = errors.New("caller is not the room facilitator")
 	ErrIncompleteMinutes    = errors.New("minutes missing a required field")
@@ -34,6 +35,8 @@ var (
 	ErrItemNotFound         = errors.New("facilitation item not found or already resolved")
 	ErrRoomOpen             = errors.New("room is still open — close it with minutes first")
 	ErrMinutesAlreadyLinked = errors.New("room minutes are already registered as a note")
+	ErrNoMinutesDraft       = errors.New("room has no minutes draft")
+	ErrDraftChanged         = errors.New("the minutes draft changed after it was reviewed")
 )
 
 const (
@@ -45,6 +48,7 @@ const (
 	typeProposal        = "proposal"
 	typeDecisionRequest = "decision_request"
 	typeResolution      = "resolution"
+	typeMinutesDraft    = "minutes_draft"
 )
 
 // Room is the metadata + roster snapshot returned to callers.
@@ -68,6 +72,17 @@ type Room struct {
 	// Permanent marks the project's permanent channel (F-0325): no
 	// open/close/minutes, roster derived from the active works.
 	Permanent bool `json:"permanent,omitempty"`
+	// MinutesDraft is the open room's current shared draft (T-0022), saved by
+	// any participant or the facilitator; gone once the room closes.
+	MinutesDraft *MinutesDraft `json:"minutes_draft,omitempty"`
+}
+
+// MinutesDraft is a validated minutes proposal and who saved it last (T-0022).
+// Author is the participant's nick, or "facilitator".
+type MinutesDraft struct {
+	Minutes   Minutes   `json:"minutes"`
+	Author    string    `json:"author"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // Participant is one joined nick. Listening and LastSeenAt are live presence
@@ -116,7 +131,7 @@ func newSessionToken() (string, error) {
 // event, a said message, or a facilitation event (F-0228).
 type Message struct {
 	Seq   int       `json:"seq"`
-	Type  string    `json:"type"` // open|join|leave|message|close|proposal|decision_request|resolution
+	Type  string    `json:"type"` // open|join|leave|message|close|proposal|decision_request|resolution|minutes_draft
 	Nick  string    `json:"nick,omitempty"`
 	Bio   string    `json:"bio,omitempty"`   // join only
 	Body  string    `json:"body,omitempty"`  // message body, item description, or resolution result
@@ -125,7 +140,7 @@ type Message struct {
 
 	Title   string   `json:"title,omitempty"`   // proposal|decision_request only
 	ItemID  string   `json:"item_id,omitempty"` // resolution only: the item it resolves
-	Minutes *Minutes `json:"minutes,omitempty"` // close only
+	Minutes *Minutes `json:"minutes,omitempty"` // close and minutes_draft only
 
 	Human bool `json:"human,omitempty"` // permanent channel (F-0325): posted by the human from the UI
 	// Session is the agent session that posted a channel message (F-0325):
@@ -256,6 +271,9 @@ func (m *Manager) load() error {
 		}
 		if err := loadMinutesNote(filepath.Join(m.dir, id+minutesNoteSuffix), rs); err != nil {
 			return fmt.Errorf("replay %s minutes note: %w", id, err)
+		}
+		if err := loadMinutesDraft(filepath.Join(m.dir, id+minutesDraftSuffix), rs); err != nil {
+			return fmt.Errorf("replay %s minutes draft: %w", id, err)
 		}
 		m.rooms[id] = rs
 		if n, ok := roomNumber(id); ok && n > m.nextID {
@@ -512,6 +530,62 @@ func (m *Manager) SetMinutesNote(id, noteID string, force bool) (Room, error) {
 	return rs.snapshotLocked(), nil
 }
 
+// minutesDraftSuffix names the file holding a room's current minutes draft
+// (T-0022): one JSON object, not a .jsonl log, so a cerne that predates it
+// never lists the file as a room.
+const minutesDraftSuffix = ".minutes-draft.json"
+
+// persistMinutesDraft replaces the room's draft file atomically (temp file
+// plus rename), so a crash never leaves it torn. No capability is ever
+// written: the author is a nick or "facilitator".
+func (m *Manager) persistMinutesDraft(id string, d MinutesDraft) error {
+	data, err := json.Marshal(d)
+	if err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(m.dir, id+minutesDraftSuffix+".*.tmp")
+	if err != nil {
+		return err
+	}
+	_, err = tmp.Write(data)
+	if err == nil {
+		err = tmp.Chmod(0o644)
+	}
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Rename(tmp.Name(), filepath.Join(m.dir, id+minutesDraftSuffix))
+	}
+	if err != nil {
+		os.Remove(tmp.Name())
+	}
+	return err
+}
+
+// loadMinutesDraft reads an open room's draft file; a closed room keeps
+// none, and a missing file or corrupt JSON means no draft. Any other read
+// error (a permission error) fails the load, as for the sibling sidecars.
+func loadMinutesDraft(path string, rs *roomState) error {
+	if rs.meta.ClosedAt != nil {
+		return nil
+	}
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var d MinutesDraft
+	if json.Unmarshal(data, &d) != nil {
+		return nil // corrupt file: no draft rather than a bricked project
+	}
+	d.Minutes = d.Minutes.withLists()
+	rs.meta.MinutesDraft = &d
+	return nil
+}
+
 func roomNumber(id string) (int, bool) {
 	n, err := strconv.Atoi(strings.TrimPrefix(id, "R"))
 	if err != nil {
@@ -540,6 +614,10 @@ func replayRoom(path, id string) (*roomState, error) {
 		var rec Message
 		if err := json.Unmarshal(line, &rec); err != nil {
 			return nil, err
+		}
+		if rec.Minutes != nil { // a transcript written before T-0022 may carry null lists
+			mn := rec.Minutes.withLists()
+			rec.Minutes = &mn
 		}
 		switch rec.Type {
 		case typeOpen:
@@ -715,10 +793,15 @@ func (m *Manager) rotateFacilitatorLocked(id string, rs *roomState) (string, err
 	return next, nil
 }
 
+// facilitatorAuthor is the author of a minutes draft the facilitator saved
+// (T-0022); no participant may join under it, in any case or padding.
+const facilitatorAuthor = "facilitator"
+
 // Join registers nick as a participant and mints its session capability.
-// Rejected when the room is unknown, closed, or the nick already has an
-// active session. A legacy participant (replayed transcript without session
-// data) may re-join to obtain a capability.
+// Rejected when the room is unknown, closed, the nick is the reserved
+// facilitatorAuthor, or the nick already has an active session. A legacy
+// participant (replayed transcript without session data) may re-join to
+// obtain a capability.
 func (m *Manager) Join(id, nick, bio string) (Room, Session, error) {
 	rs, err := m.getRoom(id)
 	if err != nil {
@@ -728,6 +811,9 @@ func (m *Manager) Join(id, nick, bio string) (Room, Session, error) {
 	defer rs.mu.Unlock()
 	if rs.meta.ClosedAt != nil {
 		return Room{}, Session{}, ErrClosed
+	}
+	if strings.EqualFold(strings.TrimSpace(nick), facilitatorAuthor) {
+		return Room{}, Session{}, ErrNickReserved
 	}
 	for _, s := range rs.sessions {
 		if s.nick == nick {
@@ -975,6 +1061,13 @@ func (m *Manager) Resolve(id, facilitatorToken, itemID, result string) (Facilita
 // Idempotent: closing an already-closed room is a no-op returning its
 // existing minutes, still gated on a valid facilitator capability.
 func (m *Manager) Close(id, facilitatorToken string, minutes Minutes, allowOpenItems bool) (Room, error) {
+	return m.close(id, facilitatorToken, &minutes, time.Time{}, allowOpenItems)
+}
+
+// close implements Close and CloseWithDraft: a nil given closes with the
+// saved draft, refused with ErrDraftChanged when reviewed is set and is not
+// that draft's updated_at. Closing drops the draft.
+func (m *Manager) close(id, facilitatorToken string, given *Minutes, reviewed time.Time, allowOpenItems bool) (Room, error) {
 	rs, err := m.getRoom(id)
 	if err != nil {
 		return Room{}, err
@@ -987,6 +1080,16 @@ func (m *Manager) Close(id, facilitatorToken string, minutes Minutes, allowOpenI
 	if rs.meta.ClosedAt != nil {
 		return rs.snapshotLocked(), nil
 	}
+	if given == nil {
+		if rs.meta.MinutesDraft == nil {
+			return Room{}, ErrNoMinutesDraft
+		}
+		if !reviewed.IsZero() && !reviewed.Equal(rs.meta.MinutesDraft.UpdatedAt) {
+			return Room{}, ErrDraftChanged
+		}
+		given = &rs.meta.MinutesDraft.Minutes
+	}
+	minutes := given.withLists()
 	if err := minutes.validate(); err != nil {
 		return Room{}, err
 	}
@@ -996,19 +1099,82 @@ func (m *Manager) Close(id, facilitatorToken string, minutes Minutes, allowOpenI
 			openIDs = append(openIDs, it.ID)
 		}
 	}
-	if len(openIDs) > 0 {
-		if !allowOpenItems {
-			return Room{}, ErrOpenItems
-		}
-		minutes.OpenItems = openIDs
+	if len(openIDs) > 0 && !allowOpenItems {
+		return Room{}, ErrOpenItems
 	}
+	// The forced-close trail is the room's own record (F-0228), never what
+	// the minutes claim (T-0022).
+	minutes.OpenItems = openIDs
 	now := time.Now().UTC()
 	if err := m.appendLocked(rs, Message{Type: typeClose, Time: now, Minutes: &minutes}); err != nil {
 		return Room{}, err
 	}
 	rs.meta.ClosedAt = &now
 	rs.meta.Minutes = &minutes
+	rs.meta.MinutesDraft = nil
+	// The close event is already persisted and a closed room never loads its
+	// draft, so a file left behind by a failed remove is inert.
+	_ = os.Remove(filepath.Join(m.dir, id+minutesDraftSuffix))
 	return rs.snapshotLocked(), nil
+}
+
+// SaveMinutesDraft replaces the open room's shared minutes draft (T-0022) and
+// appends a public minutes_draft event carrying it, without closing the room.
+// Any participant (sessionID, authoring as its nick) or the facilitator
+// (facilitatorToken, authoring as "facilitator") may save; the draft must
+// carry the fields Close requires. The private sidecar is written before the
+// event, so a crash in between keeps the draft for the next restart.
+func (m *Manager) SaveMinutesDraft(id, sessionID, facilitatorToken string, minutes Minutes) (MinutesDraft, error) {
+	rs, err := m.getRoom(id)
+	if err != nil {
+		return MinutesDraft{}, err
+	}
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+	if rs.meta.ClosedAt != nil {
+		return MinutesDraft{}, ErrClosed
+	}
+	author := facilitatorAuthor
+	switch {
+	case sessionID != "":
+		sa, ok := rs.findSessionLocked(sessionID)
+		if !ok {
+			return MinutesDraft{}, ErrInvalidSession
+		}
+		author = sa.nick
+	case facilitatorToken != "":
+		if !rs.checkFacilitatorLocked(facilitatorToken) {
+			return MinutesDraft{}, ErrNotFacilitator
+		}
+	default:
+		return MinutesDraft{}, ErrInvalidSession
+	}
+	if err := minutes.validate(); err != nil {
+		return MinutesDraft{}, err
+	}
+	minutes.OpenItems = nil // only a forced close records open items (F-0228)
+	d := MinutesDraft{Minutes: minutes.withLists(), Author: author, UpdatedAt: time.Now().UTC()}
+	if err := m.persistMinutesDraft(id, d); err != nil {
+		return MinutesDraft{}, err
+	}
+	if err := m.appendLocked(rs, Message{Type: typeMinutesDraft, Nick: author, Minutes: &d.Minutes, Time: d.UpdatedAt}); err != nil {
+		return MinutesDraft{}, err
+	}
+	rs.meta.MinutesDraft = &d
+	if sessionID != "" {
+		rs.touchLocked(author)
+	}
+	return d, nil
+}
+
+// CloseWithDraft is Close with the room's saved minutes draft (T-0022):
+// ErrNoMinutesDraft when none was saved. A non-zero reviewed is the
+// updated_at of the draft the facilitator read: a draft saved since then
+// refuses with ErrDraftChanged, so the room never closes with minutes its
+// facilitator did not see. Same facilitator gate, open-items rule and
+// idempotency as Close.
+func (m *Manager) CloseWithDraft(id, facilitatorToken string, reviewed time.Time, allowOpenItems bool) (Room, error) {
+	return m.close(id, facilitatorToken, nil, reviewed, allowOpenItems)
 }
 
 // Read returns every event with Seq > since. When follow is true and none is

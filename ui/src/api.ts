@@ -1861,7 +1861,7 @@ export type Room = {
 // por seq.
 export type RoomMessage = {
   seq: number
-  type: 'open' | 'join' | 'leave' | 'message' | 'close' | 'proposal' | 'decision_request' | 'resolution'
+  type: 'open' | 'join' | 'leave' | 'message' | 'close' | 'proposal' | 'decision_request' | 'resolution' | 'minutes_draft'
   nick?: string
   bio?: string
   body?: string
@@ -1961,21 +1961,32 @@ export async function postRoomResolveItem(
   return (await r.json()) as FacilitationItem
 }
 
+// DraftChangedError: a close with the draft refused because another draft
+// replaced the one the facilitator read (T-0022, 409 draft_changed).
+export class DraftChangedError extends Error {}
+
 // postRoomClose fecha a sala com a ata estruturada; por padrão recusa com
 // itens abertos (F-0228 critério 5) — allowOpenItems força e registra a
-// exceção na própria ata.
+// exceção na própria ata. A string no lugar da ata fecha com o rascunho
+// salvo na sala, o atualizado nesse instante (T-0022, use_draft +
+// draft_updated_at): outro rascunho salvo depois vira DraftChangedError.
 export async function postRoomClose(
   id: string,
   facilitatorId: string,
-  minutes: Minutes,
+  minutes: Minutes | string,
   allowOpenItems = false,
 ): Promise<Room> {
+  const payload = typeof minutes === 'string' ? { use_draft: true, draft_updated_at: minutes } : { minutes }
   const r = await fetch(`${base()}/rooms/${encodeURIComponent(id)}/close`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ facilitator_id: facilitatorId, minutes, allow_open_items: allowOpenItems }),
+    body: JSON.stringify({ facilitator_id: facilitatorId, ...payload, allow_open_items: allowOpenItems }),
   })
-  if (!r.ok) throw new Error(await errorMessage(r))
+  if (!r.ok) {
+    const body = (await r.json().catch(() => ({}))) as { error?: string; draft_changed?: boolean }
+    const message = body.error ?? `HTTP ${r.status}`
+    throw body.draft_changed ? new DraftChangedError(message) : new Error(message)
+  }
   return (await r.json()) as Room
 }
 

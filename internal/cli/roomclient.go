@@ -114,6 +114,9 @@ func (c roomClient) doWithHeaders(ctx context.Context, method, path string, head
 			Error string `json:"error"`
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&e); err == nil && e.Error != "" {
+			if e.Error == room.ErrOpenItems.Error() {
+				return room.ErrOpenItems // close's open-items refusal, matched with errors.Is (T-0022)
+			}
 			return &roomStatusError{resp.StatusCode, e.Error}
 		}
 		return &roomStatusError{resp.StatusCode, fmt.Sprintf("HTTP %d", resp.StatusCode)}
@@ -223,6 +226,27 @@ func (c roomClient) close(ctx context.Context, id, facilitatorID string, minutes
 	body := map[string]any{"facilitator_id": facilitatorID, "minutes": minutes, "allow_open_items": allowOpenItems}
 	err := c.do(ctx, http.MethodPost, "/rooms/"+url.PathEscape(id)+"/close", body, &rm)
 	return rm, err
+}
+
+// closeWithDraft is close with the room's saved minutes draft (T-0022); a
+// non-zero reviewed is that draft's updated_at, so a later draft refuses.
+func (c roomClient) closeWithDraft(ctx context.Context, id, facilitatorID string, reviewed time.Time, allowOpenItems bool) (room.Room, error) {
+	var rm room.Room
+	body := map[string]any{"facilitator_id": facilitatorID, "use_draft": true, "allow_open_items": allowOpenItems}
+	if !reviewed.IsZero() {
+		body["draft_updated_at"] = reviewed
+	}
+	err := c.do(ctx, http.MethodPost, "/rooms/"+url.PathEscape(id)+"/close", body, &rm)
+	return rm, err
+}
+
+// saveMinutesDraft saves the open room's shared minutes draft (T-0022) as a
+// participant session or as the facilitator (exactly one of the two is set).
+func (c roomClient) saveMinutesDraft(ctx context.Context, id, sessionID, facilitatorID string, minutes room.Minutes) (room.MinutesDraft, error) {
+	var d room.MinutesDraft
+	body := map[string]any{"session_id": sessionID, "facilitator_id": facilitatorID, "minutes": minutes}
+	err := c.do(ctx, http.MethodPost, "/rooms/"+url.PathEscape(id)+"/minutes/draft", body, &d)
+	return d, err
 }
 
 // handoffFacilitator rotates the room's facilitator capability (F-0228

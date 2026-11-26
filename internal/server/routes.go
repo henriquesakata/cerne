@@ -282,6 +282,10 @@ func dataRoutes() []dataRoute {
 		{"POST", "/rooms/{id}/minutes/note", false, func(w http.ResponseWriter, r *http.Request, _, _, projectID string) {
 			handleRoomSetMinutesNote(w, r, projectID, r.PathValue("id"))
 		}},
+		// T-0022: the open room's shared minutes draft.
+		{"POST", "/rooms/{id}/minutes/draft", false, func(w http.ResponseWriter, r *http.Request, _, _, projectID string) {
+			handleRoomMinutesDraft(w, r, projectID, r.PathValue("id"))
+		}},
 		// Facilitation (F-0228): a room-scoped capability, separate from
 		// participant sessions, that gates pending-item triage, resolution
 		// and structured close.

@@ -226,6 +226,30 @@ func warnRoomSessionVar(w io.Writer, roomID, nick string) {
 	}
 }
 
+// errNoRoomDraftCredential: `room minutes draft` found neither a participant
+// session nor the facilitator capability (T-0022).
+var errNoRoomDraftCredential = errors.New("a session or the facilitator capability is required: a participant passes --session or --nick, sets CERNE_ROOM_SESSION or uses the session join stored for this agent session; the facilitator passes --facilitator or sets CERNE_ROOM_FACILITATOR")
+
+// resolveRoomDraftCredential picks who saves a minutes draft (T-0022), as
+// exactly one of a session or the facilitator capability: --facilitator; else
+// the session resolveRoomSession finds; else CERNE_ROOM_FACILITATOR.
+func resolveRoomDraftCredential(session, nick, facilitator, projectID, roomID string) (sessionID, facilitatorID string, err error) {
+	if facilitator != "" {
+		if session != "" || nick != "" {
+			return "", "", errors.New("pass --facilitator or --session/--nick, not both")
+		}
+		return "", facilitator, nil
+	}
+	sessionID, err = resolveRoomSession(session, nick, projectID, roomID)
+	if !errors.Is(err, errNoRoomSession) {
+		return sessionID, "", err
+	}
+	if env := os.Getenv("CERNE_ROOM_FACILITATOR"); env != "" {
+		return "", env, nil
+	}
+	return "", "", errNoRoomDraftCredential
+}
+
 // resolveRoomFacilitator: --facilitator, then CERNE_ROOM_FACILITATOR. Never a
 // stored one (see roomCreds).
 func resolveRoomFacilitator(flag, roomID string) (string, error) {
