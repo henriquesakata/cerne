@@ -2,14 +2,78 @@ package cli
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/cost"
+	"github.com/henriquesakata/cerne/internal/project"
+	"github.com/henriquesakata/cerne/internal/server"
 	"github.com/henriquesakata/cerne/internal/store"
 )
+
+// panelSession is one session of a card's agents panel.
+type panelSession struct {
+	Session string `json:"session"`
+	Harness string `json:"harness"`
+	Roles   []struct {
+		Kind string `json:"kind"`
+	} `json:"roles"`
+}
+
+// agentsPanel is what the UI's agents panel of card id reads, through the
+// project's API (GET /api/features/<id>/agents).
+func agentsPanel(t *testing.T, projDir, repoDir, id string) map[string]panelSession {
+	t.Helper()
+	cfg, _, err := project.LoadConfig(projDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/features/"+id+"/agents", nil)
+	req.Host = "127.0.0.1:7717" // the local ui: the route is local only
+	rec := httptest.NewRecorder()
+	server.New(repoDir, projDir, cfg.ProjectID).ServeHTTP(rec, req)
+	var got struct {
+		Sessions []panelSession `json:"sessions"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); rec.Code != http.StatusOK || err != nil {
+		t.Fatalf("agents panel: status %d: %s", rec.Code, rec.Body.String())
+	}
+	out := map[string]panelSession{}
+	for _, s := range got.Sessions {
+		out[s.Session] = s
+	}
+	return out
+}
+
+// TestHookCursorBindRecordsCursorHarness (F-0513 crit. 4): a session bound
+// from a Cursor payload is recorded as harness cursor — decided by the
+// payload, not by the hook process's environment — and the agents panel
+// shows it as cursor.
+func TestHookCursorBindRecordsCursorHarness(t *testing.T) {
+	t.Setenv("CURSOR_CONFIG_DIR", t.TempDir())
+	projDir, _, repoDir, _ := pulledProject(t)
+	p := cursorFixture(t, "post-tool-use-feature-start.json", projDir)
+	p["tool_input"] = map[string]any{"command": "cerne feature start F-0001", "cwd": ""}
+	p["tool_output"] = cursorShellOutput(t, "F-0001: approved → in_development\n")
+	if out, err := execCerneStdin(t, payloadString(t, p), "hook", "bind-work"); err != nil {
+		t.Fatalf("hook bind-work: %v\noutput: %s", err, out)
+	}
+	binds, err := cost.ReadBinds(filepath.Dir(repoDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(binds) == 0 || binds[len(binds)-1].Session != cursorSess || binds[len(binds)-1].Harness != "cursor" {
+		t.Fatalf("binds = %+v, want %s bound under harness cursor", binds, cursorSess)
+	}
+	if s := agentsPanel(t, projDir, repoDir, "F-0001")[cursorSess]; s.Harness != "cursor" {
+		t.Fatalf("agents panel session = %+v, want harness cursor", s)
+	}
+}
 
 // Cursor runs the project's .claude hooks through its third-party import
 // (F-0428). The fixtures in testdata/cursor are payloads from a real Cursor

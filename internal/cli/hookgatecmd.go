@@ -365,8 +365,12 @@ func runHookBindWork(cmd *cobra.Command, format string) {
 	}
 	// The cost ledger trusts the delivering contract first: only a Claude Code
 	// payload can be a claude-code bind, and only under its CLAUDECODE marker.
+	// A Cursor payload is Cursor's, whatever the process env says (F-0513).
 	harness := cost.CurrentHarness()
-	if format != "claude" {
+	switch {
+	case in.cursor():
+		harness = "cursor"
+	case format != "claude":
 		harness = "other"
 	}
 	// F-0486: a card the session created records it as the card's opener — a
