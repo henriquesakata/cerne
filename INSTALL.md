@@ -12,6 +12,11 @@ brew install henriquesakata/tap/cerne
 
 ## Arch Linux (AUR)
 
+> **Not published yet.** The AUR closed new account registrations before the
+> `cerne-bin` package could be created, so it does not exist yet. It ships
+> with the first stable release after registrations reopen. Until then, use
+> the [quick install](#quick-install-macos-and-linux).
+
 With an AUR helper:
 
 ```bash

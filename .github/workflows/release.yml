@@ -184,9 +184,13 @@ jobs:
   # AUR_SSH_PRIVATE_KEY is the private half of a key registered on the owner's
   # AUR account; without it the job fails, so a stale package never passes in
   # silence. A prerelease tag leaves the AUR alone, as it does the tap.
+  # The job stays off until the owner has an AUR account and the key, and sets
+  # the repository variable (AUR registration was closed at v0.16.0):
+  #   gh variable set AUR_PUBLISH --body true --repo henriquesakata/cerne
+  # aur-check needs this job, so it is skipped with it.
   aur:
     needs: release
-    if: ${{ !contains(github.ref_name, '-') }}
+    if: ${{ !contains(github.ref_name, '-') && vars.AUR_PUBLISH == 'true' }}
     runs-on: ubuntu-latest
     container: archlinux:base-devel
     permissions:
