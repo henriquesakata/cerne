@@ -25,6 +25,10 @@ func TestLintClarifyManyRecommended(t *testing.T) {
 	if got[0].Entity != "F-0001" || got[0].File != d.rel || !strings.Contains(got[0].Detail, "which format?") {
 		t.Errorf("finding = %+v, want the document and the question named", got[0])
 	}
+	// F-0517 crit. 2: a warning, never a failure of the lint.
+	if !Advisory(RuleClarifyManyRecommended) || Blocking(got[0]) {
+		t.Errorf("clarify-many-recommended must be advisory, Blocking(%+v) = %v", got[0], Blocking(got[0]))
+	}
 	if n := len(count("[CLARIFY: q? | a (recommended) | b]")); n != 0 {
 		t.Errorf("one recommended option raised %d findings", n)
 	}
