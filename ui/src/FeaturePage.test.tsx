@@ -472,6 +472,22 @@ describe('FeaturePage approve readiness (F-0308)', () => {
   })
 })
 
+// F-0517 crit. 6: the advice for a clarification without options has a label
+// in the UI language, not the raw code.
+describe('FeaturePage clarify-without-options advice (F-0517)', () => {
+  it('shows the label, not the code', async () => {
+    payload = {
+      ...detail('candidate'),
+      bar: 'Barra: cerne push --dry-run — ensaio com gate',
+      approve_advice: [{ code: 'clarify-without-options', message: '"qual?" has no proposed options' }],
+    }
+    render(<FeaturePage id="F-0221" />)
+    await screen.findByRole('button', { name: 'Aprovar' })
+    expect(screen.getByText('Esclarecimento sem opções propostas')).toBeInTheDocument()
+    expect(screen.queryByText('clarify-without-options')).toBeNull()
+  })
+})
+
 // F-0481: o card Ações tem só as ações; o que diz se a feature pode ser
 // aprovada vai para um card Aprovação logo depois dele.
 describe('FeaturePage card Aprovação (F-0481)', () => {
