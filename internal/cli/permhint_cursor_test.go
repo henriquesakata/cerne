@@ -24,7 +24,9 @@ func TestCacheRefreshErrorInsideCursor(t *testing.T) {
 	for _, cause := range causes {
 		err := cacheRefreshError("cloning the backend", repoDir, "git@github.com:o/r.git", cause)
 		got := err.Error()
-		for _, want := range []string{"cloning the backend at " + repoDir + " failed", "Cursor sandbox", "cerne hook install --provider cursor --network"} {
+		// Review #5: the Cursor agent cannot write .cursor/*.json, so the hint
+		// sends the person to their own terminal.
+		for _, want := range []string{"cloning the backend at " + repoDir + " failed", "Cursor sandbox", "cerne hook install --provider cursor --network", "in your own terminal"} {
 			if !strings.Contains(got, want) {
 				t.Errorf("missing %q: %q", want, got)
 			}
@@ -41,7 +43,7 @@ func TestCacheRefreshErrorInsideCursor(t *testing.T) {
 	// hint points at the folder install instead, and never at deleting.
 	local := filepath.Join(t.TempDir(), "docs.git")
 	got := cacheRefreshError("cloning the backend", repoDir, local, causes[0]).Error()
-	if strings.Contains(got, "--network") || strings.Contains(got, "delete that directory") || !strings.Contains(got, "cerne hook install --provider cursor") {
+	if strings.Contains(got, "--network") || strings.Contains(got, "delete that directory") || !strings.Contains(got, "cerne hook install --provider cursor") || !strings.Contains(got, "in your own terminal") {
 		t.Errorf("local backend inside Cursor: %q", got)
 	}
 

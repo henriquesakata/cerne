@@ -38,12 +38,13 @@ func cacheRefreshError(what, repoDir, backend string, err error) error {
 }
 
 // cursorSandboxHint (F-0512): Cursor's sandbox denies the network unless
-// .cursor/sandbox.json allows the host.
-const cursorSandboxHint = "the Cursor sandbox may be cutting the network; to allow the backend's host for this project, run: cerne hook install --provider cursor --network"
+// .cursor/sandbox.json allows the host. The Cursor agent cannot write
+// .cursor/*.json, so the command goes to the person's own terminal.
+const cursorSandboxHint = "the Cursor sandbox may be cutting the network; to allow the backend's host for this project, run in your own terminal (the Cursor agent cannot write .cursor/*.json): cerne hook install --provider cursor --network"
 
 // cursorLocalBackendHint: with a local backend the sandbox blocks a folder, not
 // a host.
-const cursorLocalBackendHint = "the Cursor sandbox may be blocking the local backend folder; to add it to .cursor/sandbox.json, run: cerne hook install --provider cursor"
+const cursorLocalBackendHint = "the Cursor sandbox may be blocking the local backend folder; to add it to .cursor/sandbox.json, run in your own terminal (the Cursor agent cannot write .cursor/*.json): cerne hook install --provider cursor"
 
 // notWritableError is the shared permission explanation: the cache dir (parent
 // of the clone) and, when the backend is a local directory, the backend itself.
