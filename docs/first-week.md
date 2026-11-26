@@ -73,7 +73,7 @@ Pick only the providers you use. What each one receives:
 | Agent | What lands in your project |
 |---|---|
 | Claude Code | Both skills in `.claude/skills/`, the hooks and `CERNE_ACTOR=agent` in `.claude/settings.json` (always installed by `init`) |
-| Cursor | `.cursor/rules/cerne.mdc`, `.cursor/hooks.json`, the guide in `.cursor/skills/` |
+| Cursor | `.cursor/rules/cerne.mdc`, `.cursor/hooks.json`, `.cursor/sandbox.json` (cerne's folders), `.cursor/mcp.json` (the read-only `cerne mcp` server), the guide in `.cursor/skills/`; see [Cursor](#cursor) below |
 | Codex CLI | Hooks, `.codex/config.toml` (with the sandbox profile), the guide in `.agents/skills/` and a pointer in `AGENTS.md`; see [Codex](#codex) below |
 | Gemini CLI | `.gemini/settings.json` and `.gemini/.env`, the guide in `.gemini/skills/` and a pointer in `GEMINI.md` |
 | GitHub Copilot | `.github/instructions/cerne.instructions.md`, `.github/hooks/cerne.json`, the guide in `.github/skills/` |
@@ -96,6 +96,15 @@ trust_level = "trusted"
 Check it from inside a Codex session: `printenv CERNE_ACTOR` prints `agent`, and `cerne next` runs with no permission error.
 
 The sandbox also cuts the network, because `:workspace` has none. Inside Codex, `cerne pull` and `cerne push` with a remote backend (SSH or HTTPS) and the AI layer (`plan draft`, `result draft`, `ask`, `compile`, which call your subscription CLI and fail with `Not logged in`) fail, and cerne's error says the Codex sandbox may be cutting the network. To open it, run `cerne hook install --provider codex --network`: it adds `[permissions.cerne.network]` with `enabled = true` to the profile, also in a project that already has it. This opens the whole network to the agent in this project, because Codex has no domain list. That is why it is never the default, and `cerne init` never suggests it. To turn it off, set `enabled = false` (or delete the table) in `.codex/config.toml`.
+
+### Cursor
+
+Cursor runs an agent command that is not on your allowlist in a sandbox that writes only the workspace and `/tmp` and denies the network. A chained command (`cerne next && git status`) or a pipe falls into it, and cerne fails there, even to read, with `open ~/Library/Caches/cerne/<project>/repo.lock: operation not permitted`. `cerne hook install --provider cursor` fixes the folders and connects the MCP server:
+
+- It adds cerne's cache folders (`~/Library/Caches/cerne/<project id>` and `~/.cache/cerne/<project id>`) and a local backend inside your home to `additionalReadwritePaths` in the project's `.cursor/sandbox.json`. Paths use `~/`, so the file works on every machine of your team; your own keys and paths are kept, and Cursor joins the file with your `~/.cursor/sandbox.json`. If the file is not valid JSON, or a folder is specific to this machine (`CERNE_CACHE_DIR`, `XDG_CACHE_HOME`, a local backend outside your home), the install writes nothing to the project file and prints the block to merge into `~/.cursor/sandbox.json`.
+- It declares the read-only `cerne mcp` server in `.cursor/mcp.json`, the only project MCP file Cursor reads (it ignores the root `.mcp.json`), so the agent reads the board through MCP calls instead of the shell. Your other servers are kept; a different `cerne` entry is left as it is.
+
+The sandbox also denies the network, so inside Cursor `cerne pull` and `cerne push` with a remote backend fail, and cerne's error says the Cursor sandbox may be cutting the network. Run `cerne hook install --provider cursor --network`: it adds only the backend's host (`github.com` for `git@github.com:you/docs.git`) to `networkPolicy.allow`, sets no `default`, and never overrides the same host in your `networkPolicy.deny` (it writes nothing and says why). With a local backend there is no host to allow, so nothing opens. The AI layer (`plan draft`, `ask`, `compile`) calls your provider's hosts, which you add to `networkPolicy.allow` yourself.
 
 ## Ask for the first feature and approve it
 
