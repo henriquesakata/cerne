@@ -437,6 +437,11 @@ func (p *cliProvider) completeClaude(ctx context.Context, prompt string, wantUsa
 		if p.effort != "" {
 			args = append(args, "--effort", p.effort)
 		}
+		// F-0520: the attached images live in the project cache, outside the
+		// working dir; Read opens them by the path the prompt names.
+		for _, d := range imageDirs(imagesFrom(ctx)) {
+			args = append(args, "--add-dir", d)
+		}
 	} else {
 		args = append(args, oneShotIsolation...)
 	}
@@ -543,6 +548,15 @@ func (p *cliProvider) completeCodex(ctx context.Context, prompt string) (string,
 	// override, so it can never close the string and set another key.
 	if effortRE.MatchString(p.effort) {
 		args = append(args, "-c", `model_reasoning_effort="`+p.effort+`"`)
+	}
+	// F-0520: one -i per image; -i takes several files, so the stdin marker
+	// goes after a "--" or it would be read as one more image.
+	imgs := imagesFrom(ctx)
+	for _, img := range imgs {
+		args = append(args, "-i", img)
+	}
+	if len(imgs) > 0 {
+		args = append(args, "--")
 	}
 	args = append(args, "-")
 	start := time.Now()
@@ -751,6 +765,9 @@ func (p *cliProvider) completeCopilot(ctx context.Context, prompt string) (strin
 	}
 	if effortRE.MatchString(p.effort) {
 		args = append(args, "--effort", p.effort)
+	}
+	for _, img := range imagesFrom(ctx) { // F-0520
+		args = append(args, "--attachment", img)
 	}
 	start := time.Now()
 	out, _, err := p.run(ctx, work, p.bin, args, prompt)
