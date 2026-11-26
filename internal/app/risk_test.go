@@ -156,6 +156,27 @@ func TestRiskSensitiveArea(t *testing.T) {
 	}
 }
 
+// TestRiskSensitiveAreaFromASubdirectory: a project in a subdirectory of its
+// repository matches each changed path from the repository root and from the
+// project dir, and a diff.relative config does not hide the files outside it.
+// F-0516 crit. 3
+func TestRiskSensitiveAreaFromASubdirectory(t *testing.T) {
+	for name, change := range map[string]string{
+		"the agents' config under the project dir": "sub/.claude/settings.json",
+		"CI at the repository root":                ".github/workflows/ci.yml",
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			riskRepo(t, dir, nil, map[string]string{change: "x\n", "sub/a.go": "a"})
+			riskGit(t, dir, "config", "diff.relative", "true")
+			c, paths, _, _ := riskArea(filepath.Join(dir, "sub"), "", store.Feature{ID: "F-0001", Facets: []string{"code"}}, project.GatesConfig{})
+			if c.Holds || !slices.Equal(paths, []string{change}) {
+				t.Errorf("holds %v (%q), paths %v; want held by %s", c.Holds, c.Found, paths, change)
+			}
+		})
+	}
+}
+
 // TestRiskSensitiveAreaUsesConfiguredLists: the owner's lists replace the
 // defaults; an empty list holds nothing back by itself.
 // F-0516 crit. 14

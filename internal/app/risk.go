@@ -146,9 +146,9 @@ func riskArea(projDir, pinBranch string, f store.Feature, g project.GatesConfig)
 		// Another card's checkout (another worktree, the main checkout under
 		// cerne ui) would be measured in its place.
 		why = append(why, "no commit from "+base+" to HEAD cites "+f.ID+": this checkout is not its delivery — run complete in the delivery's worktree")
-		paths = sensitivePaths(files, g.RiskHumanPaths())
+		paths = sensitivePaths(files, g.RiskHumanPaths(), d.Prefix)
 	default:
-		paths = sensitivePaths(files, g.RiskHumanPaths())
+		paths = sensitivePaths(files, g.RiskHumanPaths(), d.Prefix)
 	}
 	if len(paths) > 0 {
 		why = append(why, "touches a sensitive path: "+someOf(paths))
@@ -175,8 +175,10 @@ func riskArea(projDir, pinBranch string, f store.Feature, g project.GatesConfig)
 }
 
 // sensitivePaths are the files a glob matches: a glob with no slash matches
-// the file name at any depth, one with a slash starts at the repository root.
-func sensitivePaths(files, globs []string) []string {
+// the file name at any depth, one with a slash starts at the repository root
+// or, for a file under the project dir (prefix, from the root), at the
+// project dir.
+func sensitivePaths(files, globs []string, prefix string) []string {
 	var out []string
 	for _, g := range globs {
 		if !strings.Contains(g, "/") {
@@ -187,7 +189,8 @@ func sensitivePaths(files, globs []string) []string {
 			continue // every glob compiles: GlobRegexp quotes all but * and ?
 		}
 		for _, f := range files {
-			if re.MatchString(f) && !slices.Contains(out, f) {
+			rel, under := strings.CutPrefix(f, prefix)
+			if (re.MatchString(f) || under && prefix != "" && re.MatchString(rel)) && !slices.Contains(out, f) {
 				out = append(out, f)
 			}
 		}

@@ -89,9 +89,10 @@ func Diff(dir, base, pinBranch string, excludes []string) (diff, usedBase string
 type Delivery struct {
 	Ref        string   // the base ref resolved (see resolveBase)
 	Base, Head string   // the merge-base of Ref and HEAD, and HEAD, as SHAs
-	Files      []string // changed from Base to HEAD, no excludes; a rename as its old and its new path
+	Files      []string // changed from Base to HEAD, from the repository root, no excludes; a rename as its old and its new path
 	Cited      bool     // a non-merge commit of Base..HEAD cites the id, as FeatureCommits reads it
 	Dirty      []string // tracked files that differ from HEAD (staged or not), but docs.lock, cerne's own pin
+	Prefix     string   // dir from the repository root, with a trailing slash; "" at the root
 }
 
 // ReadDelivery reads the delivery of card id checked out at dir against the
@@ -108,8 +109,12 @@ func ReadDelivery(dir, pinBranch, id string) (Delivery, error) {
 	if d.Head, err = runGit(dir, "rev-parse", "HEAD"); err != nil {
 		return Delivery{}, err
 	}
-	d.Base, d.Head = strings.TrimSpace(d.Base), strings.TrimSpace(d.Head)
-	out, err := runGit(dir, "diff", "--name-only", "--no-renames", "-z", d.Base, d.Head)
+	if d.Prefix, err = runGit(dir, "rev-parse", "--show-prefix"); err != nil {
+		return Delivery{}, err
+	}
+	d.Base, d.Head, d.Prefix = strings.TrimSpace(d.Base), strings.TrimSpace(d.Head), strings.TrimSpace(d.Prefix)
+	// --no-relative: a diff.relative config would drop the files outside dir.
+	out, err := runGit(dir, "diff", "--name-only", "--no-renames", "--no-relative", "-z", d.Base, d.Head)
 	if err != nil {
 		return Delivery{}, err
 	}
