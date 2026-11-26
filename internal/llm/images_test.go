@@ -86,7 +86,7 @@ func TestImagesCopilotAttachesEachFile(t *testing.T) {
 func TestImagesSupportedModes(t *testing.T) {
 	for mode, want := range map[string]bool{
 		ModeClaudeCLI: true, ModeCodexCLI: true, ModeCopilotCLI: true,
-		ModeGeminiCLI: false, ModeCursorCLI: false, ModeDelegation: false, "byo-key": false,
+		ModeGeminiCLI: false, ModeCursorCLI: false, ModeDelegation: false, ModeByoKey: true, // F-0522
 	} {
 		if got := SupportsImages(mode); got != want {
 			t.Errorf("SupportsImages(%q) = %v, want %v", mode, got, want)

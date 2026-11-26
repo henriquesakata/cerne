@@ -2,6 +2,10 @@ package llm
 
 import (
 	"context"
+	"encoding/base64"
+	"fmt"
+	"net/http"
+	"os"
 	"path/filepath"
 	"slices"
 )
@@ -38,12 +42,35 @@ func imageDirs(paths []string) []string {
 }
 
 // SupportsImages reports whether a turn in mode can be given images: the CLIs
-// with an image input of their own. It is the one list the server and the UI's
-// capability answer read.
+// with an image input of their own and the API providers (F-0522), which take
+// the image in the call. It is the one list the server and the UI's capability
+// answer read. gemini-cli was never probed, and cursor-cli reads an image only
+// without its Read deny, which also opens the rest of the disk.
 func SupportsImages(mode string) bool {
 	switch mode {
-	case ModeClaudeCLI, ModeCodexCLI, ModeCopilotCLI:
+	case ModeClaudeCLI, ModeCodexCLI, ModeCopilotCLI, ModeByoKey:
 		return true
 	}
 	return false
+}
+
+// imageData is one image of the turn, ready for an API body.
+type imageData struct {
+	mediaType string // read from the bytes, never from the file name
+	base64    string
+}
+
+// loadImages reads the images WithImages put in ctx (F-0522). A file that
+// cannot be read fails the call, naming it: the turn is never answered as if
+// the image were not there.
+func loadImages(ctx context.Context) ([]imageData, error) {
+	var out []imageData
+	for _, path := range ImagesFrom(ctx) {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("attached image %s: %w", path, err)
+		}
+		out = append(out, imageData{mediaType: http.DetectContentType(data), base64: base64.StdEncoding.EncodeToString(data)})
+	}
+	return out, nil
 }

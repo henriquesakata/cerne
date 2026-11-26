@@ -132,8 +132,27 @@ func text(m openaiMessage) string {
 
 // Complete performs one chat completion and returns its text.
 func (p *openaiProvider) Complete(ctx context.Context, prompt string) (string, error) {
-	_, msg, err := p.complete(ctx, openaiRequest{Model: p.model, Messages: []any{openaiMessage{Role: "user", Content: &prompt}}})
+	user, err := openaiUserMessage(ctx, prompt)
+	if err != nil {
+		return "", err
+	}
+	_, msg, err := p.complete(ctx, openaiRequest{Model: p.model, Messages: []any{user}})
 	return text(msg), err
+}
+
+// openaiUserMessage is the turn's user message: the prompt as a plain string,
+// or — when the turn has attached images (F-0522) — a content list with the
+// prompt as text and one image_url data URL per file.
+func openaiUserMessage(ctx context.Context, prompt string) (any, error) {
+	imgs, err := loadImages(ctx)
+	if err != nil || len(imgs) == 0 {
+		return openaiMessage{Role: "user", Content: &prompt}, err
+	}
+	parts := []any{map[string]string{"type": "text", "text": prompt}}
+	for _, img := range imgs {
+		parts = append(parts, map[string]any{"type": "image_url", "image_url": map[string]string{"url": "data:" + img.mediaType + ";base64," + img.base64}})
+	}
+	return map[string]any{"role": "user", "content": parts}, nil
 }
 
 // CompleteTools implements ToolCaller over Chat Completions: the same neutral
@@ -147,7 +166,11 @@ func (p *openaiProvider) CompleteTools(ctx context.Context, prompt string, tools
 	for i, t := range tools {
 		defs[i] = openaiTool{Type: "function", Function: openaiFunction{Name: t.Name, Description: t.Description, Parameters: t.Schema}}
 	}
-	msgs := []any{openaiMessage{Role: "user", Content: &prompt}}
+	user, err := openaiUserMessage(ctx, prompt)
+	if err != nil {
+		return "", err
+	}
+	msgs := []any{user}
 	for range maxToolRounds {
 		req := openaiRequest{Model: p.model, Messages: msgs, Tools: defs}
 		if len(defs) > 0 {
