@@ -106,11 +106,17 @@ func installCursorSandbox(projDir string, network bool) (r Result) {
 	if !ok {
 		return skip(`existing "additionalReadwritePaths" is not a list of strings — add cerne's folders by hand:` + byHand)
 	}
+	var said []string // what this run added, named exactly (review #1c)
+	var added []string
 	for _, p := range portable {
 		if !slices.Contains(paths, p) {
 			paths = append(paths, p)
-			changed = true
+			added = append(added, p)
 		}
+	}
+	if len(added) > 0 {
+		changed = true
+		said = append(said, "added to additionalReadwritePaths: "+strings.Join(added, ", "))
 	}
 	root["additionalReadwritePaths"] = paths
 
@@ -138,13 +144,17 @@ func installCursorSandbox(projDir string, network bool) (r Result) {
 			}
 			pol["allow"] = append(allow, host)
 			changed = true
+			said = append(said, "added to networkPolicy.allow: "+host)
 		}
-		note = "the sandbox allows " + host + " (the backend) for pull and push; the AI layer (plan draft, ask, compile) needs its provider's hosts added to networkPolicy.allow by hand"
+		note = "the sandbox allows " + host + " (the backend) for pull and push; the AI layer (plan draft, ask, compile) needs its provider's hosts in networkPolicy.allow, which you add by hand"
 	case host != "" && !hasHost(allow, host) && pol["default"] != "allow":
 		note = "Cursor's sandbox denies the network by default, so pull and push with " + host + " fail inside it; to allow only that host, run: cerne hook install --provider cursor --network"
 	}
 
-	r = Result{Asset: cursorSandboxAsset, Status: StatusUnchanged, Note: note}
+	if note != "" {
+		said = append(said, note)
+	}
+	r = Result{Asset: cursorSandboxAsset, Status: StatusUnchanged, Note: strings.Join(said, "; ")}
 	if !changed {
 		return r
 	}

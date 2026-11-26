@@ -77,6 +77,33 @@ func TestSandboxPathsRefuseUnsafeFolders(t *testing.T) {
 	}
 }
 
+// F-0512 crit. 1 and 2 (review #1c): the install note names exactly what it
+// added — each path and the host — and a run that adds nothing names nothing.
+func TestInstallCursorSandboxNoteNamesWhatItAdded(t *testing.T) {
+	proj, _ := codexProject(t, "git@git.example.com:o/r.git")
+	writeCursorSandbox(t, proj, `{"additionalReadwritePaths":["~/.cache/cerne/demo"]}`)
+	rs, err := InstallNetwork(proj, true, ProviderCursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	note := cursorSandboxResult(t, rs).Note
+	for _, want := range []string{"added to additionalReadwritePaths: ~/Library/Caches/cerne/demo", "added to networkPolicy.allow: git.example.com"} {
+		if !strings.Contains(note, want) {
+			t.Errorf("note lacks %q: %q", want, note)
+		}
+	}
+	if strings.Contains(note, "~/.cache/cerne/demo") {
+		t.Errorf("note names a path the user already had: %q", note)
+	}
+	rs, err = InstallNetwork(proj, true, ProviderCursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if note := cursorSandboxResult(t, rs).Note; strings.Contains(note, "added to") {
+		t.Errorf("second run claims additions: %q", note)
+	}
+}
+
 // Review #1b through an adapter: the reviewer's ~/.ssh backend never reaches
 // .cursor/sandbox.json even on an explicit install, and the note says why.
 func TestInstallCursorSandboxSkipsANonRepositoryBackend(t *testing.T) {
