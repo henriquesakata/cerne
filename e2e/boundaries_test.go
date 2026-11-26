@@ -150,6 +150,10 @@ func buildImportGraph(t *testing.T, root string) map[string][]string {
 			if err != nil || !d.IsDir() {
 				return err
 			}
+			// The go tool ignores testdata and dirs starting with _ or . (go help packages).
+			if n := d.Name(); path != filepath.Join(root, top) && (n == "testdata" || strings.HasPrefix(n, "_") || strings.HasPrefix(n, ".")) {
+				return filepath.SkipDir
+			}
 			rel, err := filepath.Rel(root, path)
 			if err != nil {
 				return err
