@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -333,6 +334,39 @@ func TestRiskRecordsTheDeliveryFiles(t *testing.T) {
 	d, err := RiskDecisionOf(repoDir, projDir, "F-0001")
 	if err != nil || d == nil || strings.Join(d.Dirs, " ") != "go.mod internal/x/**" {
 		t.Fatalf("decision %+v (%v): want the folders go.mod and internal/x/**", d, err)
+	}
+}
+
+// TestAcceptModeAutoStillMeasures: the auto mark waives the sensitivity
+// judgment, never the measurement: uncommitted changes to tracked files,
+// untracked files and a diff git cannot read still hold the card.
+// F-0518 crit. 15
+func TestAcceptModeAutoStillMeasures(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		mess func(t *testing.T, projDir string)
+		want string
+	}{
+		{"a tracked file changed", func(t *testing.T, projDir string) { riskWrite(t, projDir, "base.txt", "changed\n") }, "uncommitted"},
+		{"an untracked file", func(t *testing.T, projDir string) { riskWrite(t, projDir, "notes.txt", "x\n") }, "notes.txt"},
+		{"no git", func(t *testing.T, projDir string) {
+			if err := os.RemoveAll(filepath.Join(projDir, ".git")); err != nil {
+				t.Fatal(err)
+			}
+		}, "cannot be read"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			repoDir, projDir := t.TempDir(), t.TempDir()
+			calibrating(t, projDir, 0)
+			riskRepo(t, projDir, nil, cleanChange())
+			riskWrite(t, repoDir, filepath.Join("content", "features", "F-0001", "spec.md"), riskSpec)
+			riskWrite(t, repoDir, filepath.Join("content", "features", "F-0001", "result.md"), riskResult("vitória"))
+			c.mess(t, projDir)
+			ra := assessRisk(repoDir, projDir, store.Feature{ID: "F-0001", Facets: []string{"code"}, AcceptMode: AcceptModeAuto})
+			if ra.Low() || ra.Area.Holds || !strings.Contains(ra.Area.Found, c.want) {
+				t.Fatalf("auto with %s: low %v, area %+v; want held, naming %q", c.name, ra.Low(), ra.Area, c.want)
+			}
+		})
 	}
 }
 
