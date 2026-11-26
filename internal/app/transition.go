@@ -470,9 +470,10 @@ func transitionFeature(op *telemetry.Op, repoDir, projDir, id string, action dom
 		if m != nil {
 			payload, actor = m.payload(), mergeActor
 		}
-		// Every accept records the Gauntlet round it saw, whatever its via, so
-		// the risk gate can tell an old win from a new one after a revert (F-0516).
-		if action == domain.ActionAccept {
+		// Every complete and accept records the Gauntlet round it saw, whatever
+		// the gate, so the risk gate can tell an old win from a new one after a
+		// revert (F-0516).
+		if action == domain.ActionAccept || action == domain.ActionComplete {
 			if payload == nil {
 				payload = map[string]string{}
 			}

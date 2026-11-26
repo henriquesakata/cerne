@@ -150,9 +150,10 @@ func RiskHeldWait(repoDir string, f store.Feature) string {
 }
 
 // revertedRound reports whether feature id was reverted after its last
-// accept, whatever its via (a person, the merge, the auto or the risk gate),
-// and, if so, the Gauntlet round current at that accept. An accept that
-// recorded none counts as the highest, so no round passes it.
+// complete or accept, whatever its via (a person, the merge, the auto or the
+// risk gate, a complete the gate held), and, if so, the Gauntlet round current
+// then. An event that recorded none counts as the highest, so no round passes
+// it.
 func revertedRound(repoDir, id string) (round int, reverted bool) {
 	evs, err := store.ReadEvents(repoDir)
 	if err != nil {
@@ -160,7 +161,7 @@ func revertedRound(repoDir, id string) (round int, reverted bool) {
 	}
 	accepted := -1
 	for i, ev := range evs {
-		if ev.EntityID == id && ev.Type == eventTypes[domain.ActionAccept] {
+		if ev.EntityID == id && (ev.Type == eventTypes[domain.ActionAccept] || ev.Type == eventTypes[domain.ActionComplete]) {
 			accepted = i
 		}
 	}
@@ -180,9 +181,9 @@ func revertedRound(repoDir, id string) (round int, reverted bool) {
 // revertedFound is the held line of a win that predates a revert.
 func revertedFound(prev int) string {
 	if prev == math.MaxInt {
-		return "reverted after an accept that recorded no Gauntlet round: the win cannot be told from an old one — a human accepts on the merge"
+		return "reverted after a complete or accept that recorded no Gauntlet round: the win cannot be told from an old one — a human accepts on the merge"
 	}
-	return fmt.Sprintf("reverted after its accept on round %d: the win predates the revert, record a new Gauntlet round", prev)
+	return fmt.Sprintf("reverted after its complete or accept on round %d: the win predates the revert, record a new Gauntlet round", prev)
 }
 
 // gauntletRoundOf is the number of the highest round of the Gauntlet record

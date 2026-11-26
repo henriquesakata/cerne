@@ -416,6 +416,51 @@ func TestRiskRevertNeedsANewRound(t *testing.T) {
 	}
 }
 
+// TestRiskRevertAfterAHeldCompleteNeedsANewRound: a complete the gate held,
+// reverted by a person ("the delivery is wrong") and completed again after
+// the fix, does not pass on the round judged before the revert; a new round
+// lets it through (review 3 of #228).
+// F-0516 crit. 4
+func TestRiskRevertAfterAHeldCompleteNeedsANewRound(t *testing.T) {
+	asActor(t, "agent")
+	repoDir, projDir, _ := newFeatureBackend(t)
+	riskDelivery(t, repoDir, projDir, store.Feature{ID: "F-0001", Facets: []string{"auth"}}, "vitória", cleanChange())
+	step := func(action domain.Action, reason string) TransitionOutcome {
+		t.Helper()
+		out, err := TransitionFeature(repoDir, projDir, "F-0001", action, "", reason, nil)
+		if err != nil {
+			t.Fatalf("%s: %v", action, err)
+		}
+		return out
+	}
+	if out := step(domain.ActionComplete, ""); out.To != domain.StateImplemented {
+		t.Fatalf("first complete = %s, want held by the auth facet", out.To)
+	}
+	asActor(t, "")
+	step(domain.ActionRevert, "the delivery is wrong")
+	asActor(t, "agent")
+	f := reload(t, repoDir, "F-0001")
+	f.Facets = []string{"code"} // the fix
+	if err := store.SaveFeature(repoDir, f); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "retag"); err != nil {
+		t.Fatal(err)
+	}
+	out := step(domain.ActionComplete, "")
+	if out.To != domain.StateImplemented || out.Risk == nil || out.Risk.Gauntlet.Holds || !strings.Contains(out.Risk.Gauntlet.Found, "revert") {
+		t.Fatalf("complete after the revert = %s, gauntlet %+v; want held: the round predates the revert", out.To, out.Risk)
+	}
+	step(domain.ActionRevert, "a new round")
+	riskWrite(t, repoDir, filepath.Join("content", "features", "F-0001", "result.md"), riskResult("vitória")+"Rodada 2 — vitória: \"de novo\"\n")
+	if _, err := gitback.CommitAndPush(repoDir, "round 2"); err != nil {
+		t.Fatal(err)
+	}
+	if out := step(domain.ActionComplete, ""); out.To != domain.StateDone {
+		t.Fatalf("complete with a round after the revert = %s (%+v), want done by risk", out.To, out.Risk)
+	}
+}
+
 // TestRiskRevertAfterAnyAcceptNeedsANewRound: the revert guard reads the last
 // accept whatever its via — a person's, the merge's or the auto gate's: after
 // a revert, the old win does not pass the risk gate again.
