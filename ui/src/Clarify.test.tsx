@@ -20,6 +20,7 @@ describe('clarify helpers', () => {
     expect(parseClarification('[ESCLARECER: qual formato?]')).toEqual({
       question: 'qual formato?',
       options: [],
+      recommended: 0,
       resolved: false,
       answers: [],
       answer: '',
@@ -27,6 +28,7 @@ describe('clarify helpers', () => {
     expect(parseClarification('[ESCLARECER: onde? | doc | sidecar]')).toEqual({
       question: 'onde?',
       options: ['doc', 'sidecar'],
+      recommended: 0,
       resolved: false,
       answers: [],
       answer: '',
@@ -35,6 +37,7 @@ describe('clarify helpers', () => {
     expect(parseClarification('[ESCLARECIDO: onde? → doc]')).toEqual({
       question: 'onde?',
       options: [],
+      recommended: 0,
       resolved: true,
       answers: ['doc'],
       answer: 'doc',
@@ -57,6 +60,7 @@ describe('clarify helpers', () => {
     expect(parseClarification('[CLARIFY: which format?]')).toEqual({
       question: 'which format?',
       options: [],
+      recommended: 0,
       resolved: false,
       answers: [],
       answer: '',
@@ -64,6 +68,7 @@ describe('clarify helpers', () => {
     expect(parseClarification('[CLARIFIED: where? → in the doc]')).toEqual({
       question: 'where?',
       options: [],
+      recommended: 0,
       resolved: true,
       answers: ['in the doc'],
       answer: 'in the doc',
@@ -95,6 +100,7 @@ describe('clarify helpers', () => {
         question?: string
         options?: string[]
         answers?: string[]
+        recommended?: number
       }[]
     }
     expect(corpus.cases.length).toBeGreaterThan(0)
@@ -114,6 +120,8 @@ describe('clarify helpers', () => {
       const info = parseClarification(spans[0].raw)
       if (c.question !== undefined) expect(info?.question, c.name).toBe(c.question)
       if (c.options !== undefined) expect(info?.options, c.name).toEqual(c.options)
+      // F-0517: a posição da recomendada é lida igual nos dois lados.
+      if (c.recommended !== undefined) expect(info?.recommended, c.name).toBe(c.recommended)
       // A resposta é o único lugar onde a barra escapada é pipe LITERAL — sem
       // esta asserção o caso resolvido passaria idêntico sem o desescape.
       if (c.answers !== undefined) expect(info?.answers, c.name).toEqual(c.answers)
@@ -175,6 +183,7 @@ describe('clarify helpers', () => {
     expect(parseClarification('[ESCLARECIDO: onde? \u2192 no doc \u2192 no backend]')).toEqual({
       question: 'onde?',
       options: [],
+      recommended: 0,
       resolved: true,
       answers: ['no doc', 'no backend'],
       answer: 'no backend',
@@ -183,6 +192,7 @@ describe('clarify helpers', () => {
     expect(parseClarification('[ESCLARECIDO: onde? \u2192 no doc]')).toEqual({
       question: 'onde?',
       options: [],
+      recommended: 0,
       resolved: true,
       answers: ['no doc'],
       answer: 'no doc',
@@ -191,6 +201,7 @@ describe('clarify helpers', () => {
     expect(parseClarification('[CLARIFIED: \u2192 use json \u2192 use yaml]')).toEqual({
       question: '',
       options: [],
+      recommended: 0,
       resolved: true,
       answers: ['use json', 'use yaml'],
       answer: 'use yaml',
@@ -282,8 +293,9 @@ describe('Markdown com chips de esclarecimento', () => {
     fireEvent.click(screen.getByRole('button', { name: 'sidecar' }))
     expect(onAnswer).toHaveBeenCalledWith(raw, doc.indexOf(raw), 'sidecar')
 
-    // Resposta livre: textarea + confirmar.
+    // Resposta livre: a entrada «Outra resposta» abre a caixa (F-0517), depois confirmar.
     fireEvent.click(screen.getByRole('button', { name: /onde\?/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Outra resposta' }))
     fireEvent.change(screen.getByPlaceholderText(/Outra resposta/), {
       target: { value: 'nenhum dos dois' },
     })

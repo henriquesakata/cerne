@@ -43,10 +43,10 @@ type Clarification struct {
 	// Recommended is the 1-based position in Options of the first option that
 	// carried the (recomendada)/(recommended) suffix; 0 when none did (F-0517).
 	Recommended     int
-	ManyRecommended bool // more than one option carried the suffix; only the first counts
-	Resolved bool     // true for [ESCLARECIDO: …]
-	Answer   string   // the CURRENT answer; set only when Resolved
-	Answers  []string // the answer trail in chronological order (F-0197); the
+	ManyRecommended bool     // more than one option carried the suffix; only the first counts
+	Resolved        bool     // true for [ESCLARECIDO: …]
+	Answer          string   // the CURRENT answer; set only when Resolved
+	Answers         []string // the answer trail in chronological order (F-0197); the
 	// last one is Answer. A marker written before corrections
 	// existed is a trail of one, so nothing needs migrating.
 	Offset int    // byte offset of Raw within the parsed content
