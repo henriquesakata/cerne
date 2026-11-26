@@ -171,6 +171,46 @@ func TestHumanActWritesNeedThePageOrigin(t *testing.T) {
 	}
 }
 
+// TestEveryWriteRouteRefusesNoOrigin pins B-0091 over the route table: every
+// write the local ui routes, but the room client's, refuses a request with no
+// Origin and writes nothing — a route added later is covered, `cerne ui`'s
+// own update button included.
+func TestEveryWriteRouteRefusesNoOrigin(t *testing.T) {
+	repoDir, projDir, _ := newGitBackendNoClean(t)
+	dirs := isolatedWriteDirs(t, repoDir, projDir)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	multi, err := NewUIMulti(ctx, func(string) (string, string, string, string, error) {
+		return repoDir, projDir, "proj-a", "Projeto A", nil
+	}, 0, "A")
+	if err != nil {
+		t.Fatalf("NewUIMulti: %v", err)
+	}
+	before := treesOf(t, dirs)
+	for _, s := range []struct {
+		h      http.Handler
+		routes [][2]string
+	}{
+		{New(repoDir, projDir, ""), writeRoutes("")},
+		{multi, append(writeRoutes("/projects/proj-a"), [2]string{"POST", "/api/update"})},
+	} {
+		for _, rt := range s.routes {
+			if strings.Contains(rt[1], "/rooms") {
+				continue
+			}
+			rec := doJSONWith(t, s.h, rt[0], rt[1], "{}", map[string]string{"Origin": "", "Content-Type": "application/json"}, nil)
+			if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), errNotFromPage.Error()) {
+				t.Errorf("%s %s with no Origin = %d %s, want 403 naming %q", rt[0], rt[1], rec.Code, rec.Body.String(), errNotFromPage)
+			}
+		}
+	}
+	for i, tree := range treesOf(t, dirs) {
+		if !maps.Equal(tree, before[i]) {
+			t.Errorf("a refused write changed %s", dirs[i])
+		}
+	}
+}
+
 // TestPageWrite pins B-0091's rule with errors.Is: no Origin, or another
 // one, is errNotFromPage — except a no-Origin write to a route cerne's own
 // processes call: another cerne ui registering, deregistering or restarting
