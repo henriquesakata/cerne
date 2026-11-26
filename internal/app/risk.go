@@ -164,10 +164,11 @@ func riskGauntlet(result []byte, gauntletOn bool) (c RiskCheck, verdict string) 
 	if !gauntletOn {
 		return RiskCheck{Found: "the Gauntlet is off in this project (light mode)"}, "off"
 	}
-	rounds := lint.GauntletRoundList(result)
-	if len(rounds) == 0 && lint.GauntletExempt(result) {
+	// An exempt bar is recorded as exempt, whatever its alternative rounds say.
+	if lint.GauntletExempt(result) {
 		return RiskCheck{Found: "the Gauntlet's bar is exempt (not applicable or waived): no win against a real bar"}, "exempt"
 	}
+	rounds := lint.GauntletRoundList(result)
 	if len(rounds) == 0 {
 		return RiskCheck{Found: "the result records no Gauntlet round with a verdict"}, "none"
 	}
@@ -176,8 +177,6 @@ func riskGauntlet(result []byte, gauntletOn bool) (c RiskCheck, verdict string) 
 	switch {
 	case verdict == "":
 		return RiskCheck{Found: fmt.Sprintf("the Gauntlet's last round (%d) has no readable verdict", last.N)}, "none"
-	case lint.GauntletExempt(result):
-		return RiskCheck{Found: "the Gauntlet's bar is exempt (not applicable or waived): no win against a real bar"}, verdict
 	case verdict != "win":
 		return RiskCheck{Found: "the Gauntlet's last round is a " + verdict + ", not a win"}, verdict
 	}

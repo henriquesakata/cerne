@@ -178,7 +178,7 @@ func TestRiskGauntletWin(t *testing.T) {
 		{"win then loss", bar + "Rodada 1 — vitória: \"o nosso\"\nRodada 2 — derrota: \"o deles\"\n", true, false, "loss"},
 		{"bar waived", "## Gauntlet\n\nBarra: dispensada por decisão humana (\"sem tempo\")\n", true, false, "exempt"},
 		{"bar not applicable", "## Gauntlet\n\nBarra: não aplicável (sem comparável) — padrão alternativo: testes\n", true, false, "exempt"},
-		{"bar not applicable with a won round", "## Gauntlet\n\nBarra: não aplicável (sem comparável) — padrão alternativo: testes\nRodada 1 — vitória: \"o nosso\"\n", true, false, "win"},
+		{"bar not applicable with a won round", "## Gauntlet\n\nBarra: não aplicável (sem comparável) — padrão alternativo: testes\nRodada 1 — vitória: \"o nosso\"\n", true, false, "exempt"},
 		{"no record", "## Resultado\n\nX.\n", true, false, "none"},
 		// The highest round decides even when it cannot be read (review of #228).
 		{"win then an unreadable round", bar + "Rodada 1 — vitória: \"o nosso\"\nRodada 2 — o juiz respondeu: \"VEREDITO: B\"\n", true, false, "none"},
