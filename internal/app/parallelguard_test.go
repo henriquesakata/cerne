@@ -2,11 +2,14 @@ package app
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/gitback"
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
 )
@@ -323,5 +326,69 @@ func TestBoundElsewhereOwnSubagent(t *testing.T) {
 	}
 	if boundHere(map[string]string{"s1": "W-1"}, "W-1", "") {
 		t.Error("no session is never bound here")
+	}
+}
+
+// TestGuardAmendCursorConversationID (F-0525 crit. 1): with CURSOR_AGENT=1 and
+// CURSOR_CONVERSATION_ID, guardAmend distinguishes two Cursor conversations —
+// a same-actor work bound to another conversation ID is foreign (refused)
+// rather than ambiguous (the "no session identity" path). Repo must live at
+// <cacheDir>/repo so SessionSignals(filepath.Dir(repoDir)) sees the binding.
+func TestGuardAmendCursorConversationID(t *testing.T) { // F-0525 crit. 1
+	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
+	base := t.TempDir()
+	origin := filepath.Join(base, "origin.git")
+	if err := gitback.InitBare(origin); err != nil {
+		t.Fatal(err)
+	}
+	projDir := filepath.Join(base, "proj")
+	if err := os.MkdirAll(projDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := project.SaveConfig(projDir, project.Config{ProjectID: "demo-cursor", Backend: origin}); err != nil {
+		t.Fatal(err)
+	}
+	if err := project.SaveLock(projDir, project.Lock{Version: 1, Backend: origin}); err != nil {
+		t.Fatal(err)
+	}
+	cacheDir, err := project.CacheDir("demo-cursor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repoDir := filepath.Join(cacheDir, "repo")
+	if err := gitback.Clone(origin, repoDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.InitLayout(repoDir, store.Project{Name: "Demo"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitback.CommitAndPush(repoDir, "seed"); err != nil {
+		t.Fatal(err)
+	}
+	seedFeatureInState(t, repoDir, "F-0001", domain.StateInDevelopment, "spec.md", "plan.md")
+	seedActiveWork(t, repoDir, "W-0001", autoWorkActor(), "F-0001", false)
+
+	const otherConversation = "aaaaaaaa-1111-2222-3333-444444444444"
+	if err := BindSession(cacheDir, otherConversation, "W-0001"); err != nil {
+		t.Fatal(err)
+	}
+
+	const thisConversation = "bbbbbbbb-5555-6666-7777-888888888888"
+	t.Setenv("CURSOR_AGENT", "1")
+	t.Setenv("CURSOR_CONVERSATION_ID", thisConversation)
+
+	f, err := store.LoadFeature(repoDir, "F-0001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, notes, err := guardAmend(repoDir, f, "spec", false)
+	if !errors.Is(err, ErrActiveWorkElsewhere) {
+		t.Fatalf("guardAmend error = %v notes=%v, want ErrActiveWorkElsewhere (foreign Cursor conversation)", err, notes)
+	}
+	if !strings.Contains(err.Error(), "W-0001") {
+		t.Fatalf("refuse must name W-0001: %v", err)
+	}
+	if strings.Contains(err.Error(), "no session identity") || strings.Contains(err.Error(), "CERNE_SESSION is unset") {
+		t.Fatalf("must not take the unset-session path when CURSOR_CONVERSATION_ID is set: %v", err)
 	}
 }

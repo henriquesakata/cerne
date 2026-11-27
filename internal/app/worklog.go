@@ -98,7 +98,7 @@ func rawRecorder() string {
 	case "":
 		return "human"
 	case legacyAgentActor:
-		if s := sessionHexRe.FindString(os.Getenv("CERNE_SESSION")); s != "" {
+		if s := sessionHexRe.FindString(CurrentSession()); s != "" { // F-0525: also recognizes CURSOR_CONVERSATION_ID
 			return agentActorPrefix + "session-" + s
 		}
 		return a

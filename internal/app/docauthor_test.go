@@ -446,3 +446,127 @@ func TestDocAuthorCursorPendingCommand(t *testing.T) {
 		})
 	}
 }
+
+// TestDocAuthorCursorDirectConversationID (F-0525 crit. 2): when
+// CURSOR_CONVERSATION_ID names a valid fresh record in cursor-sessions/<id>.json,
+// docAuthor uses that session's model directly even when two concurrent
+// sessions on different models would otherwise be ambiguous.
+func TestDocAuthorCursorDirectConversationID(t *testing.T) { // F-0525 crit. 2
+	for _, tc := range []struct {
+		name    string
+		convID  string
+		wantMod string
+	}{
+		{
+			name:    "CURSOR_CONVERSATION_ID names the gemini session, returns its model",
+			convID:  "bbbbbb00-1111-2222-3333-444444444444",
+			wantMod: "gemini-4-carbon",
+		},
+		{
+			name:    "CURSOR_CONVERSATION_ID names the claude session, returns its model",
+			convID:  "aaaaaa00-1111-2222-3333-444444444444",
+			wantMod: "claude-opus-4-7",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			authorEnv(t)
+			projDir, cacheDir, _ := cursorProject(t)
+			t.Setenv("CURSOR_AGENT", "1")
+			t.Setenv("CURSOR_CONVERSATION_ID", tc.convID)
+			// Two concurrent sessions with different models: normally ambiguous.
+			cursorSeen(t, cacheDir, "aaaaaa00-1111-2222-3333-444444444444", "claude-opus-4-7", time.Minute, false)
+			cursorSeen(t, cacheDir, "bbbbbb00-1111-2222-3333-444444444444", "gemini-4-carbon", time.Minute, false)
+			got := docAuthor(projDir)
+			want := DocAuthor{Provider: "cursor", Model: tc.wantMod, Source: "hook"}
+			if got != want {
+				t.Fatalf("docAuthor = %+v, want %+v", got, want)
+			}
+		})
+	}
+}
+
+// TestRecordDocEditedCursorDirectConversationID (F-0525 crit. 2): when
+// CURSOR_CONVERSATION_ID names a fresh record, recordDocEdited marks that
+// exact session under harness cursor.
+func TestRecordDocEditedCursorDirectConversationID(t *testing.T) { // F-0525 crit. 2
+	authorEnv(t)
+	_, cacheDir, repoDir := cursorProject(t)
+	t.Setenv("CURSOR_AGENT", "1")
+	t.Setenv("CURSOR_CONVERSATION_ID", "bbbbbb00-1111-2222-3333-444444444444")
+	// Two sessions — normally ambiguous, so no mark would be written.
+	cursorSeen(t, cacheDir, "aaaaaa00-1111-2222-3333-444444444444", "claude-opus-4-7", time.Minute, false)
+	cursorSeen(t, cacheDir, "bbbbbb00-1111-2222-3333-444444444444", "gemini-4-carbon", time.Minute, false)
+
+	by := DocAuthor{Provider: "cursor", Model: "gemini-4-carbon", Source: "hook"}
+	if err := RecordDocWrite(repoDir, "F-0001", "spec", by); err != nil {
+		t.Fatal(err)
+	}
+	marks, err := cost.ReadMarks(cacheDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(marks) != 1 || marks[0].Session != "bbbbbb00-1111-2222-3333-444444444444" || marks[0].Harness != "cursor" {
+		t.Fatalf("marks = %+v, want bbbbbb session marked under cursor harness", marks)
+	}
+}
+
+// TestCursorConversationIDBeatsAnotherSessionsPending (F-0525 crit. 2): the
+// shell's own CURSOR_CONVERSATION_ID decides the writer while its record is
+// fresh, even when another session holds the only pending command that
+// matches this call; the pending-command rule is for a shell without it.
+func TestCursorConversationIDBeatsAnotherSessionsPending(t *testing.T) { // F-0525 crit. 2
+	authorEnv(t) // os.Args: cerne push
+	projDir, cacheDir, repoDir := cursorProject(t)
+	t.Setenv("CURSOR_AGENT", "1")
+	t.Setenv("CURSOR_CONVERSATION_ID", "aaaaaa00-1111-2222-3333-444444444444")
+	cursorSeen(t, cacheDir, "aaaaaa00-1111-2222-3333-444444444444", "claude-opus-4-7", time.Minute, false)
+	cursorSeen(t, cacheDir, "bbbbbb00-1111-2222-3333-444444444444", "gemini-4-carbon", time.Minute, false)
+	cursorPending(t, cacheDir, "bbbbbb00-1111-2222-3333-444444444444", "cerne push", time.Second)
+
+	want := DocAuthor{Provider: "cursor", Model: "claude-opus-4-7", Source: "hook"}
+	if got := docAuthor(projDir); got != want {
+		t.Fatalf("docAuthor = %+v, want %+v (the shell's own conversation)", got, want)
+	}
+	if err := RecordDocWrite(repoDir, "F-0001", "spec", want); err != nil {
+		t.Fatal(err)
+	}
+	marks, err := cost.ReadMarks(cacheDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(marks) != 1 || marks[0].Session != "aaaaaa00-1111-2222-3333-444444444444" {
+		t.Fatalf("marks = %+v, want the aaaaaa session", marks)
+	}
+}
+
+// TestDocAuthorCursorDirectIDFallbacksPreserved (F-0525 crit. 2): when
+// CURSOR_CONVERSATION_ID is absent or stale, the F-0513 fallbacks are intact.
+func TestDocAuthorCursorDirectIDFallbacksPreserved(t *testing.T) { // F-0525 crit. 2
+	authorEnv(t)
+	projDir, cacheDir, _ := cursorProject(t)
+	t.Setenv("CURSOR_AGENT", "1")
+	// Two sessions with different models — no CURSOR_CONVERSATION_ID → ambiguous
+	cursorSeen(t, cacheDir, "aaaaaa00-1111-2222-3333-444444444444", "claude-opus-4-7", time.Minute, false)
+	cursorSeen(t, cacheDir, "bbbbbb00-1111-2222-3333-444444444444", "gemini-4-carbon", time.Minute, false)
+	got := docAuthor(projDir)
+	if got.Model != "" {
+		t.Fatalf("docAuthor without CURSOR_CONVERSATION_ID = %+v, want ambiguous (no model)", got)
+	}
+
+	// CURSOR_CONVERSATION_ID names an unknown session → still ambiguous
+	t.Setenv("CURSOR_CONVERSATION_ID", "cccccc00-1111-2222-3333-444444444444")
+	got = docAuthor(projDir)
+	if got.Model != "" {
+		t.Fatalf("docAuthor with unknown CURSOR_CONVERSATION_ID = %+v, want ambiguous (no model)", got)
+	}
+
+	// A single session with no CURSOR_CONVERSATION_ID → sole-session fallback (F-0513).
+	t.Setenv("CURSOR_CONVERSATION_ID", "")
+	projDir2, cacheDir2, _ := cursorProject(t)
+	cursorSeen(t, cacheDir2, "sole-sess-00000000000000000000000000", "gemini-4-carbon", time.Minute, false)
+	got = docAuthor(projDir2)
+	wantSole := DocAuthor{Provider: "cursor", Model: "gemini-4-carbon", Source: "hook"}
+	if got != wantSole {
+		t.Fatalf("docAuthor sole-session fallback = %+v, want %+v", got, wantSole)
+	}
+}

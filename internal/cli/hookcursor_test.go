@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -846,5 +848,168 @@ func TestHookCursorPrecompactSilentOnce(t *testing.T) { // F-0527 crit. 1, 2
 	compact("a later compaction")
 	if lines := compactionLines(t, cacheDir, sess); len(lines) != 2 {
 		t.Fatalf("compactions after a later one = %v, want two", lines)
+	}
+}
+
+// TestHookCursorPrecompactSilent (F-0525 crit. 3): Cursor's preCompact
+// records the compaction and prints nothing; Claude Code still gets the plain
+// handoff instructions.
+func TestHookCursorPrecompactSilent(t *testing.T) {
+	sess := "cursor-pc"
+	projDir, cacheDir, repoDir := boundWork(t, sess)
+	base := time.Date(2026, 11, 12, 9, 0, 0, 0, time.UTC)
+	saveHO(t, repoDir, "HO-0001", "W-0001", "next step", base.Add(time.Hour))
+
+	p := cursorFixture(t, "stop.json", projDir)
+	p["session_id"], p["conversation_id"] = sess, sess
+	p["hook_event_name"] = "preCompact"
+	out, err := execCerneStdin(t, payloadString(t, p), "hook", "precompact")
+	if err != nil || strings.TrimSpace(out) != "" {
+		t.Fatalf("cursor precompact = err %v out %q, want empty stdout", err, out)
+	}
+	if lines := compactionLines(t, cacheDir, sess); len(lines) != 1 || !strings.HasPrefix(lines[0], "W-0001 ") {
+		t.Fatalf("compactions = %v, want one W-0001 line", lines)
+	}
+
+	if err := app.BindSession(cacheDir, "sess-cc", "W-0001"); err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"session_id":"sess-cc","cwd":` + jsonString(projDir) + `,"hook_event_name":"PreCompact","trigger":"auto"}`
+	out, err = execCerneStdin(t, payload, "hook", "precompact")
+	if err != nil || !strings.Contains(out, "verbatim") || !strings.Contains(out, "HO-0001") {
+		t.Fatalf("claude precompact = err %v out %q, want handoff lines", err, out)
+	}
+}
+
+// TestHookCursorCompactionResumeOnPostTool (F-0525 crit. 4): the first
+// post-tool call after compaction returns additional_context with W- and HO-,
+// writes .shown, and a second post-tool call does not repeat the block.
+func TestHookCursorCompactionResumeOnPostTool(t *testing.T) {
+	sess := "cursor-cv"
+	projDir, cacheDir, repoDir := boundWork(t, sess)
+	saveHO(t, repoDir, "HO-0002", "W-0001", "run the suite", time.Now().UTC())
+
+	compact := cursorFixture(t, "stop.json", projDir)
+	compact["session_id"], compact["conversation_id"] = sess, sess
+	compact["hook_event_name"] = "preCompact"
+	if out, err := execCerneStdin(t, payloadString(t, compact), "hook", "precompact"); err != nil || out != "" {
+		t.Fatalf("precompact: %v\n%s", err, out)
+	}
+
+	post := cursorFixture(t, "post-tool-use-feature-start.json", projDir)
+	post["session_id"], post["conversation_id"] = sess, sess
+	post["hook_event_name"] = "postToolUse"
+	post["tool_name"] = "Shell"
+	post["tool_input"] = map[string]any{"command": "ls", "cwd": ""}
+	post["tool_output"] = cursorShellOutput(t, "")
+
+	parseCtx := func(out string) string {
+		t.Helper()
+		var env cursorContext
+		if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &env); err != nil {
+			t.Fatalf("not JSON: %v\n%s", err, out)
+		}
+		return env.AdditionalContext
+	}
+
+	out, err := execCerneStdin(t, payloadString(t, post), "hook", "tool-notes", "--after", "--format", "cursor")
+	if err != nil {
+		t.Fatalf("tool-notes: %v\n%s", err, out)
+	}
+	ctx := parseCtx(out)
+	for _, want := range []string{"AFTER COMPACTION", "W-0001", "Investigar erro X", "HO-0002", "run the suite"} {
+		if !strings.Contains(ctx, want) {
+			t.Fatalf("first post-tool missing %q:\n%s", want, ctx)
+		}
+	}
+	if _, err := os.Stat(compactionShownPath(cacheDir, sess)); err != nil {
+		t.Fatalf(".shown not written: %v", err)
+	}
+
+	// Each later call is a new Cursor call, with its own id (F-0527 dedups
+	// the same call fired by two layers, not two calls).
+	post["tool_use_id"] = "tool-2"
+	out, err = execCerneStdin(t, payloadString(t, post), "hook", "tool-notes", "--after", "--format", "cursor")
+	if err != nil || strings.TrimSpace(out) != "" {
+		t.Fatalf("second post-tool: err=%v out=%q, want silence", err, out)
+	}
+
+	compact["generation_id"] = "gen-2"
+	if _, err := execCerneStdin(t, payloadString(t, compact), "hook", "precompact"); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(2 * time.Millisecond)
+	post["tool_use_id"] = "tool-3"
+	out, err = execCerneStdin(t, payloadString(t, post), "hook", "tool-notes", "--after", "--format", "cursor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(parseCtx(out), "AFTER COMPACTION") {
+		t.Fatalf("after a new compaction: want the resume block again:\n%s", out)
+	}
+}
+
+// TestCompactionResumeDeliveredOnceUnderParallelTools (F-0525 crit. 4): Cursor
+// runs the post-tool hooks of parallel tool calls at once, and only one of
+// them delivers a compaction's resume block.
+func TestCompactionResumeDeliveredOnceUnderParallelTools(t *testing.T) { // F-0525 crit. 4
+	sess := "cursor-par"
+	projDir, cacheDir, repoDir := boundWork(t, sess)
+	recordCompaction(cacheDir, sess, "W-0001", time.Now().UTC())
+	const hooks = 8
+	var wg sync.WaitGroup
+	var delivered atomic.Int32
+	start := make(chan struct{})
+	for range hooks {
+		wg.Go(func() {
+			<-start
+			if consumePendingCompactionBlock(projDir, cacheDir, repoDir, sess, time.Now().UTC()) != "" {
+				delivered.Add(1)
+			}
+		})
+	}
+	close(start)
+	wg.Wait()
+	if got := delivered.Load(); got != 1 {
+		t.Fatalf("delivered %d times across %d parallel hooks, want 1", got, hooks)
+	}
+}
+
+// TestHookCursorCompactionResumeOnWrite (F-0525 crit. 4): the same one-shot
+// resume fires on postToolUse for Write, not only Shell.
+func TestHookCursorCompactionResumeOnWrite(t *testing.T) { // F-0525 crit. 4
+	sess := "cursor-cv-write"
+	projDir, cacheDir, repoDir := boundWork(t, sess)
+	saveHO(t, repoDir, "HO-0003", "W-0001", "push the branch", time.Now().UTC())
+
+	compact := cursorFixture(t, "stop.json", projDir)
+	compact["session_id"], compact["conversation_id"] = sess, sess
+	compact["hook_event_name"] = "preCompact"
+	if out, err := execCerneStdin(t, payloadString(t, compact), "hook", "precompact"); err != nil || out != "" {
+		t.Fatalf("precompact: %v\n%s", err, out)
+	}
+
+	post := cursorFixture(t, "post-tool-use-feature-start.json", projDir)
+	post["session_id"], post["conversation_id"] = sess, sess
+	post["hook_event_name"] = "postToolUse"
+	post["tool_name"] = "Write"
+	post["tool_input"] = map[string]any{"file_path": filepath.Join(projDir, "x.md"), "content": "x"}
+	post["tool_output"] = "ok"
+
+	out, err := execCerneStdin(t, payloadString(t, post), "hook", "tool-notes", "--after", "--format", "cursor")
+	if err != nil {
+		t.Fatalf("tool-notes Write: %v\n%s", err, out)
+	}
+	var env cursorContext
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &env); err != nil {
+		t.Fatalf("not JSON: %v\n%s", err, out)
+	}
+	for _, want := range []string{"AFTER COMPACTION", "W-0001", "HO-0003", "push the branch"} {
+		if !strings.Contains(env.AdditionalContext, want) {
+			t.Fatalf("Write post-tool missing %q:\n%s", want, env.AdditionalContext)
+		}
+	}
+	if _, err := os.Stat(compactionShownPath(cacheDir, sess)); err != nil {
+		t.Fatalf(".shown not written: %v", err)
 	}
 }

@@ -186,3 +186,26 @@ func TestMsgAck(t *testing.T) {
 		t.Fatalf("second ack: %v %q", err, out)
 	}
 }
+
+// TestMsgCursorSession (F-0525 crit. 1): with CURSOR_AGENT=1 and
+// CURSOR_CONVERSATION_ID set (and no CERNE_SESSION), msg send uses the
+// conversation ID as the sender without --session.
+func TestMsgCursorSession(t *testing.T) { // F-0525 crit. 1
+	projDir, _, repoDir := setupProject(t)
+	const cursorID = "98fdb738-ae20-43e9-b08b-1ac04f1b6f52"
+	a := startBoundWork(t, projDir, repoDir, cursorID, "Cursor session task")
+	b := startBoundWork(t, projDir, repoDir, "sess-other", "Other session")
+
+	t.Setenv("CURSOR_AGENT", "1")
+	t.Setenv("CURSOR_CONVERSATION_ID", cursorID)
+
+	// msg send without --session should use the cursor conversation ID.
+	out, err := execCerne(t, "msg", "send", "hi from cursor", "--dir", projDir)
+	if err != nil {
+		t.Fatalf("msg send via CURSOR_CONVERSATION_ID: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "sent #1") || !strings.Contains(out, b) {
+		t.Fatalf("msg send: unexpected output %q, want #1 to %s", out, b)
+	}
+	_ = a
+}

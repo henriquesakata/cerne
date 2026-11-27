@@ -118,3 +118,20 @@ func TestHookSessionCompactFlattensNext(t *testing.T) {
 		t.Fatalf("next not flattened and capped:\n%s", out)
 	}
 }
+
+// TestHookSessionCompactMarksShown (F-0525 crit. 4): SessionStart(source=compact)
+// that injects the resume block records .shown so a later Cursor post-tool
+// does not repeat it.
+func TestHookSessionCompactMarksShown(t *testing.T) {
+	projDir, cacheDir, repoDir := boundWork(t, "sess-shown")
+	saveHO(t, repoDir, "HO-0004", "W-0001", "rodar", time.Now().UTC())
+	writeCompactions(t, cacheDir, "sess-shown", time.Now().UTC())
+
+	out, err := execCerneStdin(t, sessionPayload("sess-shown", projDir, "compact"), "hook", "session-context")
+	if err != nil || !strings.Contains(out, "AFTER COMPACTION") {
+		t.Fatalf("session-context compact: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(compactionShownPath(cacheDir, "sess-shown")); err != nil {
+		t.Fatalf(".shown missing after SessionStart compact: %v", err)
+	}
+}

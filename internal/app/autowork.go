@@ -2,7 +2,6 @@ package app
 
 import (
 	"errors"
-	"os"
 	"path"
 	"path/filepath"
 	"slices"
@@ -55,7 +54,7 @@ func openAutoWorkUnless(repoDir string, f store.Feature, bound bool) error {
 	}
 	mine := myActors()
 	var bindings map[string]string
-	sess := os.Getenv("CERNE_SESSION")
+	sess := CurrentSession() // F-0525: also recognizes CURSOR_CONVERSATION_ID
 	if bound {
 		bindings = sessionBindingsIn(filepath.Dir(repoDir))
 	}
@@ -131,7 +130,7 @@ func closeAutoWorks(repoDir, featureID string, action domain.Action) error {
 	}
 	mine := myActors()
 	bindings := sessionBindingsIn(filepath.Dir(repoDir))
-	sess := os.Getenv("CERNE_SESSION")
+	sess := CurrentSession() // F-0525: also recognizes CURSOR_CONVERSATION_ID
 	for _, w := range works {
 		if w.State != domain.WorkActive {
 			continue
