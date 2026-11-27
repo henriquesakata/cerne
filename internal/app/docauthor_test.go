@@ -510,6 +510,35 @@ func TestRecordDocEditedCursorDirectConversationID(t *testing.T) { // F-0525 cri
 	}
 }
 
+// TestCursorConversationIDBeatsAnotherSessionsPending (F-0525 crit. 2): the
+// shell's own CURSOR_CONVERSATION_ID decides the writer while its record is
+// fresh, even when another session holds the only pending command that
+// matches this call; the pending-command rule is for a shell without it.
+func TestCursorConversationIDBeatsAnotherSessionsPending(t *testing.T) { // F-0525 crit. 2
+	authorEnv(t) // os.Args: cerne push
+	projDir, cacheDir, repoDir := cursorProject(t)
+	t.Setenv("CURSOR_AGENT", "1")
+	t.Setenv("CURSOR_CONVERSATION_ID", "aaaaaa00-1111-2222-3333-444444444444")
+	cursorSeen(t, cacheDir, "aaaaaa00-1111-2222-3333-444444444444", "claude-opus-4-7", time.Minute, false)
+	cursorSeen(t, cacheDir, "bbbbbb00-1111-2222-3333-444444444444", "gemini-4-carbon", time.Minute, false)
+	cursorPending(t, cacheDir, "bbbbbb00-1111-2222-3333-444444444444", "cerne push", time.Second)
+
+	want := DocAuthor{Provider: "cursor", Model: "claude-opus-4-7", Source: "hook"}
+	if got := docAuthor(projDir); got != want {
+		t.Fatalf("docAuthor = %+v, want %+v (the shell's own conversation)", got, want)
+	}
+	if err := RecordDocWrite(repoDir, "F-0001", "spec", want); err != nil {
+		t.Fatal(err)
+	}
+	marks, err := cost.ReadMarks(cacheDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(marks) != 1 || marks[0].Session != "aaaaaa00-1111-2222-3333-444444444444" {
+		t.Fatalf("marks = %+v, want the aaaaaa session", marks)
+	}
+}
+
 // TestDocAuthorCursorDirectIDFallbacksPreserved (F-0525 crit. 2): when
 // CURSOR_CONVERSATION_ID is absent or stale, the F-0513 fallbacks are intact.
 func TestDocAuthorCursorDirectIDFallbacksPreserved(t *testing.T) { // F-0525 crit. 2
