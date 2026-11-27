@@ -113,3 +113,39 @@ func TestCursorCLIEmptyAnswerIsAnError(t *testing.T) {
 		t.Fatalf("err = %v, want ErrCursorCLI", err)
 	}
 }
+
+// F-0524 crit. 4: if cursor-agent rejects --image or fails to open an attached
+// image, Complete returns ErrCursorCLI after one call and never retries
+// without the images.
+func TestImagesCursorFailureDoesNotRetryWithoutImages(t *testing.T) {
+	for name, tc := range map[string]struct {
+		cliErr string
+		want   string
+	}{
+		"unknown --image flag": {
+			cliErr: `"cursor-agent" exited with exit status 1: error: unknown option '--image'`,
+			want:   "does not know --image — update it (cursor-agent update)",
+		},
+		"unreadable attached image": {
+			cliErr: `"cursor-agent" exited with exit status 1: Error: ENOENT: no such file or directory, open '/cache/chat-attachments/c1/aa.png'`,
+			want:   "aa.png",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			calls := 0
+			var seenArgs [][]string
+			p := &cliProvider{kind: ModeCursorCLI, bin: "cursor-agent", run: func(_ context.Context, _ string, _ string, args []string, _ string) (string, string, error) {
+				calls++
+				seenArgs = append(seenArgs, append([]string(nil), args...))
+				return "", "", errors.New(tc.cliErr)
+			}}
+			_, err := p.Complete(WithImages(context.Background(), testImages), "describe")
+			if !errors.Is(err, ErrCursorCLI) || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want ErrCursorCLI containing %q", err, tc.want)
+			}
+			if calls != 1 {
+				t.Fatalf("calls = %d (%v), want 1 with no retry without images", calls, seenArgs)
+			}
+		})
+	}
+}

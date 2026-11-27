@@ -90,10 +90,10 @@ func TestChatTurnDropsExpiredAttachment(t *testing.T) {
 	}
 }
 
-// F-0520 crit. 8: a turn with attachments on a mode that takes no image is
-// refused instead of answered blind.
+// F-0520 crit. 8; F-0524 crit. 6: a turn with attachments on a mode that takes
+// no image is refused instead of answered blind.
 func TestChatTurnRefusesImagesOnModeWithoutThem(t *testing.T) {
-	for _, mode := range []string{llm.ModeGeminiCLI, llm.ModeCursorCLI} { // F-0522 crit. 7
+	for _, mode := range []string{llm.ModeGeminiCLI} { // F-0522 crit. 7; F-0524 crit. 6
 		h, spy, id, _, _, _ := attachTurn(t, mode)
 		rec := postChat(h, chatBody("conv-1", id))
 		if rec.Code != http.StatusUnprocessableEntity || spy.calls != 0 {
@@ -106,14 +106,17 @@ func TestChatTurnRefusesImagesOnModeWithoutThem(t *testing.T) {
 	}
 }
 
-// F-0520 crit. 8: the remote serve never takes an attachment.
+// F-0520 crit. 8; F-0524 crit. 6: the remote serve never takes an attachment,
+// even when the local mode supports images.
 func TestChatTurnRefusesImagesRemotely(t *testing.T) {
-	_, spy, id, _, repoDir, projDir := attachTurn(t, llm.ModeClaudeCLI)
-	remote := markRemote(func(w http.ResponseWriter, r *http.Request) { handleChat(w, r, repoDir, projDir, "proj-attach") })
-	rec := httptest.NewRecorder()
-	remote(rec, localRequest(http.MethodPost, "/api/chat", strings.NewReader(chatBody("conv-1", id))))
-	if rec.Code != http.StatusUnprocessableEntity || spy.calls != 0 {
-		t.Fatalf("status = %d, provider calls = %d, want 422 and no call; body: %s", rec.Code, spy.calls, rec.Body.String())
+	for _, mode := range []string{llm.ModeClaudeCLI, llm.ModeCursorCLI} {
+		_, spy, id, _, repoDir, projDir := attachTurn(t, mode)
+		remote := markRemote(func(w http.ResponseWriter, r *http.Request) { handleChat(w, r, repoDir, projDir, "proj-attach") })
+		rec := httptest.NewRecorder()
+		remote(rec, localRequest(http.MethodPost, "/api/chat", strings.NewReader(chatBody("conv-1", id))))
+		if rec.Code != http.StatusUnprocessableEntity || spy.calls != 0 {
+			t.Fatalf("%s: status = %d, provider calls = %d, want 422 and no call; body: %s", mode, rec.Code, spy.calls, rec.Body.String())
+		}
 	}
 }
 
@@ -138,22 +141,30 @@ func TestChatTurnRefusesBadAttachments(t *testing.T) {
 	}
 }
 
-// F-0520 crit. 8: the UI learns which reachable providers take images.
+// F-0520 crit. 8; F-0524 crit. 5, 6: the UI learns which reachable providers
+// take images.
 func TestLLMConfigListsImageProviders(t *testing.T) {
-	for mode, want := range map[string][]string{llm.ModeClaudeCLI: {"anthropic"}, llm.ModeGeminiCLI: nil} {
+	for mode, want := range map[string][]string{
+		llm.ModeClaudeCLI: {"anthropic"},
+		llm.ModeCursorCLI: {"cursor"},
+		llm.ModeGeminiCLI: nil,
+	} {
 		cfg := project.LLMConfig{Mode: mode}
 		got := imageProviders(cfg, llm.ConfiguredProviders(cfg), false)
 		if !slices.Equal(got, want) {
 			t.Errorf("mode %s: image providers = %v, want %v", mode, got, want)
 		}
 	}
-	// F-0522 crit. 4: the project's own vendor, reached by API key, takes
-	// images, and so does a CLI with an image input found on PATH; gemini not.
-	if got := imageProviders(project.LLMConfig{Mode: "byo-key", Provider: "anthropic"}, []string{"anthropic", "openai", "gemini"}, false); !slices.Equal(got, []string{"anthropic", "openai"}) {
-		t.Errorf("image providers = %v, want [anthropic openai]", got)
+	// F-0522 crit. 4; F-0524 crit. 5, 6: the project's own vendor, reached by
+	// API key, takes images, and so does a CLI with an image input found on
+	// PATH (cursor included); gemini does not.
+	if got := imageProviders(project.LLMConfig{Mode: "byo-key", Provider: "anthropic"}, []string{"anthropic", "openai", "cursor", "gemini"}, false); !slices.Equal(got, []string{"anthropic", "openai", "cursor"}) {
+		t.Errorf("image providers = %v, want [anthropic openai cursor]", got)
 	}
-	if got := imageProviders(project.LLMConfig{Mode: llm.ModeClaudeCLI}, []string{"anthropic"}, true); len(got) != 0 {
-		t.Errorf("remote image providers = %v, want none", got)
+	for _, mode := range []string{llm.ModeClaudeCLI, llm.ModeCursorCLI} {
+		if got := imageProviders(project.LLMConfig{Mode: mode}, llm.ConfiguredProviders(project.LLMConfig{Mode: mode}), true); len(got) != 0 {
+			t.Errorf("remote %s image providers = %v, want none", mode, got)
+		}
 	}
 }
 
@@ -225,5 +236,19 @@ func TestChatTurnByoKeyCarriesAttachedImages(t *testing.T) {
 	}
 	if len(spy.images) != 1 || !strings.HasSuffix(spy.images[0], id) {
 		t.Fatalf("provider images = %v, want the attached one", spy.images)
+	}
+}
+
+// F-0524 crit. 5: a cursor-cli turn accepts a message with an attachment and
+// hands the cached path to the provider.
+func TestChatTurnCursorCLICarriesAttachedImages(t *testing.T) {
+	h, spy, id, cache, _, _ := attachTurn(t, llm.ModeCursorCLI)
+	rec := postChat(h, chatBody("conv-1", id))
+	if rec.Code != http.StatusOK || spy.calls != 1 {
+		t.Fatalf("status = %d, provider calls = %d, want 200 and one call; body: %s", rec.Code, spy.calls, rec.Body.String())
+	}
+	path := filepath.Join(cache, "proj-attach", "chat-attachments", "conv-1", id)
+	if !slices.Equal(spy.images, []string{path}) {
+		t.Fatalf("provider images = %v, want [%s]", spy.images, path)
 	}
 }

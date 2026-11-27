@@ -82,11 +82,51 @@ func TestImagesCopilotAttachesEachFile(t *testing.T) {
 	}
 }
 
-// F-0520 crit. 8: only the CLIs with an image input take images.
+// F-0524 crit. 1, 2, 3: cursor-agent gets one --image per image in order,
+// keeps the exact text-only argv when there are none, and leaves cursorDenyAll
+// denying every tool (Read included) in both cases.
+func TestImagesCursorAttachesEachFile(t *testing.T) {
+	var calls int
+	var args []string
+	var stdin, dir, cfg string
+	p := &cliProvider{kind: ModeCursorCLI, bin: "cursor-agent", model: "gpt-5", run: cursorFake("ok", &calls, &args, &stdin, &dir, &cfg)}
+	if _, err := p.Complete(WithImages(context.Background(), testImages), "q"); err != nil {
+		t.Fatal(err)
+	}
+	wantWithImages := []string{
+		"-p", "--output-format", "text", "--trust", "--mode", "ask", "--sandbox", "enabled",
+		"--workspace", dir, "--model", "gpt-5",
+		"--image", testImages[0], "--image", testImages[1],
+	}
+	if !slices.Equal(args, wantWithImages) {
+		t.Fatalf("argv with images = %v, want %v", args, wantWithImages)
+	}
+	if cfg != cursorDenyAll || !strings.Contains(cfg, `"Read(**)"`) {
+		t.Fatalf("workspace .cursor/cli.json with images = %q, want cursorDenyAll", cfg)
+	}
+
+	p.model = ""
+	if _, err := p.Complete(context.Background(), "q"); err != nil {
+		t.Fatal(err)
+	}
+	wantPlain := []string{
+		"-p", "--output-format", "text", "--trust", "--mode", "ask", "--sandbox", "enabled",
+		"--workspace", dir,
+	}
+	if !slices.Equal(args, wantPlain) {
+		t.Fatalf("argv without images = %v, want %v", args, wantPlain)
+	}
+	if cfg != cursorDenyAll {
+		t.Fatalf("workspace .cursor/cli.json without images = %q, want cursorDenyAll", cfg)
+	}
+}
+
+// F-0520 crit. 8; F-0524 crit. 5, 6: only the CLIs with an image input and
+// byo-key take images; gemini-cli still does not.
 func TestImagesSupportedModes(t *testing.T) {
 	for mode, want := range map[string]bool{
-		ModeClaudeCLI: true, ModeCodexCLI: true, ModeCopilotCLI: true,
-		ModeGeminiCLI: false, ModeCursorCLI: false, ModeDelegation: false, ModeByoKey: true, // F-0522
+		ModeClaudeCLI: true, ModeCodexCLI: true, ModeCopilotCLI: true, ModeCursorCLI: true,
+		ModeGeminiCLI: false, ModeDelegation: false, ModeByoKey: true, // F-0522
 	} {
 		if got := SupportsImages(mode); got != want {
 			t.Errorf("SupportsImages(%q) = %v, want %v", mode, got, want)

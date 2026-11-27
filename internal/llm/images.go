@@ -42,13 +42,12 @@ func imageDirs(paths []string) []string {
 }
 
 // SupportsImages reports whether a turn in mode can be given images: the CLIs
-// with an image input of their own and the API providers (F-0522), which take
-// the image in the call. It is the one list the server and the UI's capability
-// answer read. gemini-cli was never probed, and cursor-cli reads an image only
-// without its Read deny, which also opens the rest of the disk.
+// with an image input of their own (F-0520, F-0524) and the API providers
+// (F-0522), which take the image in the call. It is the one list the server and
+// the UI's capability answer read. gemini-cli was not probed on a live CLI yet.
 func SupportsImages(mode string) bool {
 	switch mode {
-	case ModeClaudeCLI, ModeCodexCLI, ModeCopilotCLI, ModeByoKey:
+	case ModeClaudeCLI, ModeCodexCLI, ModeCopilotCLI, ModeCursorCLI, ModeByoKey:
 		return true
 	}
 	return false
