@@ -275,7 +275,7 @@ func own(in Inputs, id string) (Report, error) {
 			}
 			continue
 		}
-		msgs, err := readSession(sess, files[sess])
+		msgs, _, err := readSession(sess, files[sess])
 		if err != nil {
 			return Report{ID: id, ByModel: map[string]Counters{}}, err
 		}

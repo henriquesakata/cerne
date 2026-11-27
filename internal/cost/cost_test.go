@@ -31,9 +31,16 @@ type tmsg struct {
 	model   string
 	effort  string // the top-level "effort" Claude Code records beside the message (B-0024)
 	agent   string
-	from    string // sessionId stamped on the line when not the file's (a resume copy)
-	bare    bool   // no sessionId on the line at all
+	from    string  // sessionId stamped on the line when not the file's (a resume copy)
+	bare    bool    // no sessionId on the line at all
+	tools   []ttool // tool_use blocks of this line (F-0528); none → a text block
 	c       Counters
+}
+
+// ttool is one tool_use block of a synthetic assistant line.
+type ttool struct {
+	id, name string
+	input    map[string]any
 }
 
 func (m tmsg) line(sess string) string {
@@ -53,6 +60,13 @@ func (m tmsg) line(sess string) string {
 	}
 	if m.req != "" {
 		o["requestId"] = m.req
+	}
+	if len(m.tools) > 0 {
+		var blocks []any
+		for _, t := range m.tools {
+			blocks = append(blocks, map[string]any{"type": "tool_use", "id": t.id, "name": t.name, "input": t.input})
+		}
+		o["message"].(map[string]any)["content"] = blocks
 	}
 	if m.bare {
 		delete(o, "sessionId")
@@ -142,7 +156,7 @@ func TestReadSessionDedupKeepsMaxPerCounter(t *testing.T) {
 		tmsg{ts: at(5), id: "m3", req: "r3", model: "<synthetic>", c: cc(100, 100, 100, 100)}.line("s"),
 		`{"type":"user","timestamp":"2026-11-01T10:06:00Z","toolUseResult":{"usage":{"input_tokens":999,"output_tokens":999}},"message":{"role":"user","content":"x"}}`,
 	)
-	msgs, err := readSession("s", []tfile{{rel: "-tmp-p/s.jsonl", abs: p}})
+	msgs, _, err := readSession("s", []tfile{{rel: "-tmp-p/s.jsonl", abs: p}})
 	if err != nil {
 		t.Fatal(err)
 	}

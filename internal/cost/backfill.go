@@ -112,7 +112,7 @@ func BackfillRoles(in Inputs, since time.Time) (Backfill, error) {
 	groups := map[agentKey]*agentGroup{}
 	seen := map[string]bool{}
 	for _, sess := range sessions {
-		msgs, err := readSession(sess, files[sess])
+		msgs, _, err := readSession(sess, files[sess])
 		if err != nil {
 			return out, err
 		}

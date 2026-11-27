@@ -162,7 +162,7 @@ func Harvest(in Inputs, sess, transcriptPath string, now time.Time) error {
 			fresh = append(fresh, f)
 		}
 	}
-	msgs, err := readSession(sess, fresh)
+	msgs, _, err := readSession(sess, fresh)
 	if err != nil {
 		return err
 	}

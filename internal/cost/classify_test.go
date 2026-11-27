@@ -44,7 +44,7 @@ func classOf(t *testing.T, kind string, lines ...string) string {
 	if kind != "" {
 		writeLines(t, root, "-tmp-p/s/subagents/agent-x.meta.json", `{"agentType":"`+kind+`"}`)
 	}
-	msgs, err := readSession("s", []tfile{{rel: "-tmp-p/s/subagents/agent-x.jsonl", abs: p}})
+	msgs, _, err := readSession("s", []tfile{{rel: "-tmp-p/s/subagents/agent-x.jsonl", abs: p}})
 	if err != nil || len(msgs) != 1 {
 		t.Fatalf("readSession: %v, %d msgs", err, len(msgs))
 	}
