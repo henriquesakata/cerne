@@ -43,6 +43,9 @@ func installProvider(projDir string, p hooks.Provider) []Result {
 	if !ok { // Claude Code is always installed above; unknown names are ignored
 		return nil
 	}
+	if p == hooks.ProviderCursor {
+		return installCursorSkills(projDir, t)
+	}
 	rel := t.skillsDir + "/" + guideName
 	res := Result{Skill: guideName, Path: rel, Agent: p}
 	dst := filepath.Join(projDir, filepath.FromSlash(rel), "SKILL.md")
@@ -66,6 +69,29 @@ func installProvider(projDir string, p hooks.Provider) []Result {
 		ir := writeInstructions(projDir, t.instructions, rel+"/SKILL.md")
 		ir.Agent = p
 		out = append(out, ir)
+	}
+	return out
+}
+
+// installCursorSkills delivers every canonical skill to .cursor/skills/ (F-0527).
+func installCursorSkills(projDir string, t target) []Result {
+	out := make([]Result, 0, len(All()))
+	for _, s := range All() {
+		rel := t.skillsDir + "/" + s.Name
+		res := Result{Skill: s.Name, Path: rel, Agent: hooks.ProviderCursor}
+		dst := filepath.Join(projDir, filepath.FromSlash(rel), "SKILL.md")
+		if link := symlinkOnPath(projDir, rel+"/SKILL.md"); link != "" {
+			res.Status, res.Note = StatusSkipped, link+" is a symlink — not written through; replace it with a folder and run `cerne skill install --provider cursor` again"
+			out = append(out, res)
+			continue
+		}
+		st, err := writeSkillFiles(dst, s)
+		if err != nil {
+			res.Status, res.Note = StatusSkipped, "could not write "+rel+"/SKILL.md ("+err.Error()+") — fix the folder and run `cerne skill install --provider cursor` again"
+		} else {
+			res.Status = st
+		}
+		out = append(out, res)
 	}
 	return out
 }

@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -151,7 +152,7 @@ func runUpdate(cmd *cobra.Command, dir string, check, filesOnly bool) error {
 	case !inProject:
 		fmt.Fprintln(out, "no cerne project here (no .cernerc from "+dir+" up): only the binary was looked at, no project was touched")
 	default:
-		hookPart, guidePart := renewAgents(projDir, defaultHookProviders(projDir))
+		hookPart, guidePart := renewAgents(projDir, updateProviders(projDir))
 		hookPart, guidePart = verifyRenewed(projDir, hookPart, guidePart)
 		fmt.Fprintln(out, hookPart)
 		fmt.Fprintln(out, guidePart)
@@ -199,6 +200,20 @@ func updateCheck(out io.Writer, projDir string) error {
 // cerne next, cerne update --check and the session start.
 func staleManaged(projDir string) (hookNames, guideNames []string) {
 	return withoutPluginAbsent(projDir, hooks.Stale(projDir)), withoutPluginAbsent(projDir, skills.Stale(projDir))
+}
+
+// updateProviders is what cerne update renews: the default agent set, without
+// Claude Code in a Cursor-only project (.cursor/ and no .claude/, F-0527), so
+// the renewal does not bring back the folder `--provider cursor` left out.
+func updateProviders(projDir string) []hooks.Provider {
+	ps := defaultHookProviders(projDir)
+	if _, err := os.Stat(filepath.Join(projDir, ".claude")); !os.IsNotExist(err) {
+		return ps
+	}
+	if _, err := os.Stat(filepath.Join(projDir, ".cursor")); err != nil {
+		return ps
+	}
+	return slices.DeleteFunc(ps, func(p hooks.Provider) bool { return p == hooks.ProviderClaude })
 }
 
 // defaultHookProviders is the agent set `cerne hook install` uses with no

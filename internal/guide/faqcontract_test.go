@@ -92,6 +92,31 @@ func TestFAQProblemsDetector(t *testing.T) {
 	}
 }
 
+// TestFAQCursorStandaloneWithoutClaude (F-0527 crit. 5): the Cursor third-party FAQ
+// states that hook install + skill install suffice without .claude/.
+func TestFAQCursorStandaloneWithoutClaude(t *testing.T) {
+	// F-0527 crit. 5
+	const want = "Do cerne's hooks work in Cursor? What does the third-party setting give me?"
+	for _, s := range guide.Corpus(cli.Root()) {
+		if s.Source != "faq" || s.Title != want {
+			continue
+		}
+		for _, needle := range []string{
+			"cerne hook install --provider cursor",
+			"cerne skill install --provider cursor",
+			"cerne-self-learning",
+			".cursor/hooks.json",
+			"deduplicate",
+		} {
+			if !strings.Contains(s.Text, needle) {
+				t.Fatalf("FAQ missing %q:\n%s", needle, s.Text)
+			}
+		}
+		return
+	}
+	t.Fatal("Cursor third-party FAQ entry missing")
+}
+
 func TestFAQCitesOnlyExistingCommandsAndFlags(t *testing.T) {
 	root := cli.Root()
 	n := 0

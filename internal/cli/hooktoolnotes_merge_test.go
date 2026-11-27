@@ -88,3 +88,30 @@ func TestToolNotesDeniesMergeUnderGate(t *testing.T) {
 		t.Errorf("gate off: denied: %s", out)
 	}
 }
+
+// TestToolNotesMergeDenyOncePerCursorCall (F-0527 crit. 2): Cursor runs the
+// pre-tool shell hook from .cursor/hooks.json and again from the imported
+// .claude hooks for the same call; the merge deny comes out of the first only.
+func TestToolNotesMergeDenyOncePerCursorCall(t *testing.T) { // F-0527 crit. 2
+	projDir, _, _ := setupProject(t)
+	cfg, _, err := project.LoadConfig(projDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Gates.Accept = project.GateMerge
+	if err := project.SaveConfig(projDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	cur := cursorFixture(t, "pre-tool-use-shell.json", projDir)
+	cur["tool_input"] = map[string]any{"command": "gh pr merge 12"}
+	var denies int
+	for range 2 {
+		out, _ := execCerneStdin(t, payloadString(t, cur), "hook", "tool-notes")
+		if strings.Contains(out, `"deny"`) {
+			denies++
+		}
+	}
+	if denies != 1 {
+		t.Fatalf("denies across both layers = %d, want 1", denies)
+	}
+}

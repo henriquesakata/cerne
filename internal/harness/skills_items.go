@@ -13,6 +13,8 @@ import (
 const (
 	fixSkillInstall = "cerne skill install"
 	fixSkillSync    = "cerne skill sync"
+	// fixSkillInstallCursor keeps a Cursor-only project without .claude (F-0527).
+	fixSkillInstallCursor = "cerne skill install --provider cursor"
 )
 
 // skillItems builds the Skills class: canonical cerne skills diffed against
@@ -21,7 +23,14 @@ const (
 // cerne-managed skills are gitignored → origin local.
 func skillItems(opts Options, ls layerSet) []Item {
 	var items []Item
-	skillsDir := filepath.Join(opts.ProjDir, ".claude", "skills")
+	// .cursor/skills in a Cursor-only project, .claude/skills otherwise (F-0527).
+	skillsDir := skills.ProjectSkillsDir(opts.ProjDir)
+	rel, _ := filepath.Rel(opts.ProjDir, skillsDir)
+	cursorOnly := skills.CursorOnly(opts.ProjDir)
+	install := fixSkillInstall
+	if cursorOnly {
+		install = fixSkillInstallCursor
+	}
 
 	stale := map[string]bool{}
 	for _, n := range skills.Stale(opts.ProjDir) {
@@ -33,7 +42,7 @@ func skillItems(opts Options, ls layerSet) []Item {
 		it := Item{
 			Class:  "skills",
 			Name:   s.Name,
-			Path:   filepath.Join(".claude", "skills", filepath.FromSlash(s.RelPath)),
+			Path:   filepath.Join(rel, filepath.FromSlash(s.RelPath)),
 			Origin: OriginLocal,
 		}
 		switch {
@@ -41,11 +50,11 @@ func skillItems(opts Options, ls layerSet) []Item {
 			it.State = StateOK
 		case !fileExists(filepath.Join(skillsDir, filepath.FromSlash(s.RelPath))):
 			it.State = StateMissing
-			it.Fix = fixSkillInstall
+			it.Fix = install
 		default:
 			it.State = StateDivergent
 			it.Detail = "differs from the canonical skill of this cerne build"
-			it.Fix = fixSkillInstall
+			it.Fix = install
 		}
 		items = append(items, it)
 	}
@@ -70,7 +79,7 @@ func skillItems(opts Options, ls layerSet) []Item {
 			it := Item{
 				Class:  "skills",
 				Name:   name,
-				Path:   filepath.Join(".claude", "skills", name, "SKILL.md"),
+				Path:   filepath.Join(rel, name, "SKILL.md"),
 				Origin: OriginLocal,
 			}
 			disk, err := os.ReadFile(filepath.Join(skillsDir, name, "SKILL.md"))
@@ -107,7 +116,7 @@ func skillItems(opts Options, ls layerSet) []Item {
 			it := Item{
 				Class:  "skills",
 				Name:   name,
-				Path:   filepath.Join(".claude", "skills", name),
+				Path:   filepath.Join(rel, name),
 				Origin: OriginProject,
 			}
 			if strings.HasPrefix(name, skills.LearnedPrefix) && learnedKnown {
@@ -149,7 +158,10 @@ func skillItems(opts Options, ls layerSet) []Item {
 	// Project .cursor/skills/ — Cursor reads natively (R-0066).
 	// cerne-authoring, if installed, is compared against the canonical embed;
 	// third-party skills are listed as unmanaged.
-	items = append(items, cursorSkillItems(opts.ProjDir, false)...)
+	// A Cursor-only project's .cursor/skills is the class above already.
+	if !cursorOnly {
+		items = append(items, cursorSkillItems(opts.ProjDir, false)...)
+	}
 
 	// User ~/.cursor/skills/ — Cursor reads natively.
 	if opts.Home != "" {

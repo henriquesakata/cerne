@@ -23,15 +23,17 @@ func newSkillCmd() *cobra.Command {
 
 func newSkillInstallCmd() *cobra.Command {
 	var dir string
+	var providers []string
 	cmd := &cobra.Command{
 		Use:   "install",
-		Short: "Install/update the canonical cerne skills under .claude/skills/",
+		Short: "Install/update the canonical cerne skills under .claude/skills/ and the detected agents' folders",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSkillInstall(cmd, dir)
+			return runSkillInstall(cmd, dir, providers)
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
+	cmd.Flags().StringSliceVar(&providers, "provider", nil, "agents to install for (claude|cursor|codex|gemini|copilot); default: claude plus any auto-detected by config dir. Without claude, nothing is written under .claude/ (F-0527)")
 	return cmd
 }
 
@@ -78,7 +80,7 @@ var skillStatusLabel = map[skills.Status]string{
 	skills.StatusUnchanged: "up to date",
 }
 
-func runSkillInstall(cmd *cobra.Command, dir string) error {
+func runSkillInstall(cmd *cobra.Command, dir string, providerNames []string) error {
 	if dir == "" {
 		wd, err := os.Getwd()
 		if err != nil {
@@ -87,7 +89,18 @@ func runSkillInstall(cmd *cobra.Command, dir string) error {
 		dir = wd
 	}
 	det := hooks.DetectProviders(dir)
-	results, err := skills.Install(dir, det...)
+	install := skills.Install
+	if len(providerNames) > 0 {
+		det, install = nil, skills.InstallProviders
+		for _, name := range providerNames {
+			if p := hooks.Provider(name); p == hooks.ProviderClaude {
+				install = skills.Install
+			} else {
+				det = append(det, p)
+			}
+		}
+	}
+	results, err := install(dir, det...)
 	if err != nil {
 		return err
 	}

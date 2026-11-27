@@ -206,9 +206,10 @@ func writeSkill(dst, content string) (Status, error) {
 // only reads: the one comparison shared by the harness and the session start.
 func Stale(projDir string) []string {
 	var out []string
+	root := ProjectSkillsDir(projDir) // .cursor/skills in a Cursor-only project (F-0527)
 	for _, s := range All() {
-		dir := filepath.Join(projDir, ".claude", "skills", s.Name)
-		if !sameFile(filepath.Join(projDir, ".claude", "skills", filepath.FromSlash(s.RelPath)), s.Content) {
+		dir := filepath.Join(root, s.Name)
+		if !sameFile(filepath.Join(root, filepath.FromSlash(s.RelPath)), s.Content) {
 			out = append(out, s.Name)
 			continue
 		}

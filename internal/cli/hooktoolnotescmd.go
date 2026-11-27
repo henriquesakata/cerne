@@ -115,6 +115,11 @@ func runHookToolNotes(cmd *cobra.Command, format string, after bool) {
 	if err != nil {
 		return
 	}
+	// F-0527: dedup between .cursor/hooks.json and .claude/settings.json; a
+	// Cursor payload only gets here after the tool (toolNotesEmits).
+	if !claimCursorHookCall(cacheDir, "tool-notes-after", in) {
+		return
+	}
 	repoDir, err := guardedRepoDir(cacheDir, cfg, projDir)
 	if err != nil {
 		return // F-0434
@@ -253,6 +258,10 @@ func denyAgentMerge(cmd *cobra.Command, in hookInput, format string) bool {
 	cfg, _, err := project.LoadConfig(cwd)
 	if err != nil || !cfg.Gates.AcceptsOnMerge() {
 		return false
+	}
+	// F-0527 crit. 2: the other layer of the same Cursor call has denied it.
+	if cacheDir, err := project.CacheDir(cfg.ProjectID); err == nil && !claimCursorHookCall(cacheDir, "merge-deny", in) {
+		return true
 	}
 	return encodeDeny(cmd.OutOrStdout(), format, mergeDenyReason) == nil
 }

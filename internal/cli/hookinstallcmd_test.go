@@ -30,8 +30,15 @@ func TestHookInstallAutoDetectsProviders(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, ".cursor", "rules", "cerne.mdc")); err != nil {
 		t.Fatalf("cursor adapter missing: %v", err)
 	}
-	if !strings.Contains(out, "skipped") || !strings.Contains(out, "cursor: work-gate") {
+	// cursor: work-gate is now natively wired; cursor: CERNE_ACTOR is still
+	// reported as skipped (nothing to install — Cursor auto-marks its shells).
+	if !strings.Contains(out, "skipped") || !strings.Contains(out, "cursor: CERNE_ACTOR") {
 		t.Fatalf("degradations not reported:\n%s", out)
+	}
+	// cursor: work-gate must NOT appear as a skipped result — it's now
+	// installed natively in .cursor/hooks.json (F-0527 crit. 1).
+	if strings.Contains(out, "cursor: work-gate") {
+		t.Fatalf("cursor: work-gate should not appear as a skipped result (it's natively installed):\n%s", out)
 	}
 	// Codex not detected, not installed.
 	if _, err := os.Stat(filepath.Join(dir, ".codex")); !os.IsNotExist(err) {

@@ -24,6 +24,7 @@ var wholeFileDirs = []string{
 	".claude/skills/cerne-self-learning",
 	".cursor/rules",
 	".cursor/skills/cerne-authoring",
+	".cursor/skills/cerne-self-learning",
 	".agents/skills/cerne-authoring",
 	".gemini/skills/cerne-authoring",
 	".github/hooks",

@@ -3,10 +3,12 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/hooks"
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/skills"
 	"github.com/henriquesakata/cerne/internal/store"
@@ -158,6 +160,7 @@ func TestSkillInstallDeliversToDetectedAgents(t *testing.T) {
 	}
 	for _, want := range []string{
 		"cerne-authoring: created in .cursor/skills/cerne-authoring",
+		"cerne-self-learning: created in .cursor/skills/cerne-self-learning",
 		"cerne-authoring: created in .agents/skills/cerne-authoring",
 		"cerne-authoring: created in .gemini/skills/cerne-authoring",
 		"cerne-authoring pointer: created in AGENTS.md",
@@ -172,10 +175,10 @@ func TestSkillInstallDeliversToDetectedAgents(t *testing.T) {
 		t.Fatalf("rerun: %v\n%s", err, out)
 	}
 	lines := strings.Split(strings.TrimSpace(out), "\n")
-	if len(lines) != 12 { // 7 asset lines + 5 per-agent lines (copilot not detected)
-		t.Fatalf("want 12 lines, got %d:\n%s", len(lines), out)
+	if len(lines) != 13 { // 8 asset lines + 5 per-agent lines (copilot not detected)
+		t.Fatalf("want 13 lines, got %d:\n%s", len(lines), out)
 	}
-	for _, l := range lines[:7] {
+	for _, l := range lines[:8] {
 		if !strings.Contains(l, ": up to date in ") {
 			t.Errorf("rerun line not unchanged: %q", l)
 		}
@@ -208,5 +211,37 @@ func TestSkillInstallPrintsOneLinePerAgent(t *testing.T) {
 	}
 	if strings.Contains(strings.ToLower(out), "is loaded") || strings.Contains(out, "guide loaded") {
 		t.Errorf("output claims loaded:\n%s", out)
+	}
+}
+
+// TestSkillInstallProviderCursorAlone (F-0527 crit. 3, 5): `cerne skill
+// install --provider cursor` delivers every canonical skill to .cursor/skills
+// and writes nothing under .claude, so the project stays Cursor-only and
+// cerne update does not bring Claude Code back.
+func TestSkillInstallProviderCursorAlone(t *testing.T) { // F-0527 crit. 3, 5
+	dir := t.TempDir()
+	if err := project.SaveConfig(dir, project.Config{ProjectID: "p", Backend: "/tmp/b"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, ".cursor"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out, err := execCerne(t, "skill", "install", "--dir", dir, "--provider", "cursor")
+	if err != nil {
+		t.Fatalf("skill install --provider cursor: %v\n%s", err, out)
+	}
+	for _, want := range []string{
+		"cerne-authoring: created in .cursor/skills/cerne-authoring",
+		"cerne-self-learning: created in .cursor/skills/cerne-self-learning",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".claude")); !os.IsNotExist(err) {
+		t.Fatalf(".claude written by --provider cursor (stat err %v)\n%s", err, out)
+	}
+	if got := updateProviders(dir); slices.Contains(got, hooks.ProviderClaude) {
+		t.Errorf("cerne update would renew %v in a Cursor-only project, want no claude", got)
 	}
 }

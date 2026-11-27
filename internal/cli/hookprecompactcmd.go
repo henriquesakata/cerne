@@ -56,9 +56,15 @@ func runHookPrecompact(cmd *cobra.Command) {
 	if !ok {
 		return
 	}
-	now := time.Now().UTC()
-	recordCompaction(cacheDir, in.SessionID, workID, now)
-	if in.cursor() { // F-0525: Cursor's hook host expects JSON stdout, not plain text
+	// F-0527: dedup between .cursor/hooks.json and .claude/settings.json.
+	if !claimCursorHookCall(cacheDir, "precompact", in) {
+		return
+	}
+	recordCompaction(cacheDir, in.SessionID, workID, time.Now().UTC())
+	// Cursor's preCompact is observational: it takes no additional_context
+	// and plain text on stdout breaks its hook host (R-0153, F-0525). Record
+	// only; the resume rides the first postToolUse after it.
+	if in.cursor() {
 		return
 	}
 	out := cmd.OutOrStdout()
