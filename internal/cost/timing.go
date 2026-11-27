@@ -196,3 +196,38 @@ func (t *Timing) finish() {
 	}
 	t.WallSeconds = int64(wall / time.Second)
 }
+
+// merge adds o to t and returns the result, a copy: t and o stay as they were.
+// The wall time of a merge is the sum — meaningful for one entity (merged
+// once), and the project view's total is a plain sum too. nil merges as
+// "nothing measured": nil only when both are.
+func (t *Timing) merge(o *Timing) *Timing {
+	if o == nil {
+		return t
+	}
+	out := &Timing{ByPhase: map[string]int64{}, ByActivity: map[string]int64{}}
+	for _, x := range []*Timing{t, o} {
+		if x == nil {
+			continue
+		}
+		out.ActiveSeconds += x.ActiveSeconds
+		out.WallSeconds += x.WallSeconds
+		out.HumanWaitSeconds += x.HumanWaitSeconds
+		for k, v := range x.ByPhase {
+			out.ByPhase[k] += v
+		}
+		for k, v := range x.ByActivity {
+			out.ByActivity[k] += v
+		}
+		if x.Sidechain != nil {
+			if out.Sidechain == nil {
+				out.Sidechain = &SidechainTime{ByActivity: map[string]int64{}}
+			}
+			out.Sidechain.ActiveSeconds += x.Sidechain.ActiveSeconds
+			for k, v := range x.Sidechain.ByActivity {
+				out.Sidechain.ByActivity[k] += v
+			}
+		}
+	}
+	return out
+}

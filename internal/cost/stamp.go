@@ -61,7 +61,7 @@ type share struct {
 }
 
 func shareOf(r Report) share {
-	return share{ID: r.ID, Counters: r.Counters, Sidechain: r.Sidechain, ByModel: r.ByModel, ByRole: r.ByRole, ByEffort: r.ByEffort, ModelEfforts: r.ModelEfforts, Messages: r.Messages,
+	return share{ID: r.ID, Counters: r.Counters, Sidechain: r.Sidechain, ByModel: r.ByModel, ByRole: r.ByRole, ByEffort: r.ByEffort, ModelEfforts: r.ModelEfforts, Messages: r.Messages, Timing: r.Timing,
 		Sessions: r.Sessions, First: r.First, Last: r.Last, Unattributed: r.Unattributed}
 }
 

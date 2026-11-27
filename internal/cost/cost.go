@@ -63,6 +63,7 @@ type Report struct {
 	ByRole                    map[string]Counters `json:"by_role,omitempty"`       // main, builder, critic, judge, other (F-0384)
 	ByEffort                  map[string]Counters `json:"by_effort,omitempty"`     // the efforts the transcripts record (B-0024)
 	ModelEfforts              map[string][]string `json:"model_efforts,omitempty"` // model → the efforts it ran at, sorted (B-0024)
+	*Timing                                       // active, wall and human-wait time, by phase and activity (F-0528); nil: not measured
 	Messages                  int                 `json:"messages"`
 	Sessions                  int                 `json:"sessions"`
 	SessionsWithoutTranscript int                 `json:"sessions_without_transcript"`
@@ -562,6 +563,7 @@ func (r *Report) addShare(s *share) {
 	for m, es := range s.ModelEfforts {
 		r.ModelEfforts = addEfforts(r.ModelEfforts, m, es...)
 	}
+	r.Timing = r.Timing.merge(s.Timing)
 	r.Messages += s.Messages
 	w := share{First: r.First, Last: r.Last}
 	w.widen(s.First, s.Last)
