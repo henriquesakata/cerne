@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -101,6 +102,9 @@ func hookItems(opts Options, ls layerSet) []Item {
 			items = append(items, it)
 		}
 	}
+
+	// Cursor hook wirings from .cursor/hooks.json and ~/.cursor/hooks.json (F-0526).
+	items = append(items, cursorHookItems(opts.ProjDir, opts.Home)...)
 
 	return items
 }
@@ -208,4 +212,105 @@ func eventMatcherSuffix(matcher string) string {
 		return ""
 	}
 	return "/" + matcher
+}
+
+// cursorHooksEntry is one entry from a .cursor/hooks.json hooks map, with only
+// the fields we expose — the rest (env vars, secrets, etc.) are discarded.
+type cursorHooksEntry struct {
+	Command string `json:"command"`
+}
+
+// readCursorHooksLayers reads .cursor/hooks.json from the project and (when
+// Home is set) from ~/.cursor/hooks.json. It returns a Layer entry for each
+// file that was successfully found (present-only: absent files are not noisy
+// missing layers). The callee merges these into ls.layers before Inspect runs.
+func readCursorHooksLayers(projDir, home string) []Layer {
+	type src struct {
+		path string
+	}
+	var srcs []src
+	srcs = append(srcs, src{filepath.Join(projDir, ".cursor", "hooks.json")})
+	if home != "" {
+		srcs = append(srcs, src{filepath.Join(home, ".cursor", "hooks.json")})
+	}
+	var out []Layer
+	for _, s := range srcs {
+		if _, err := os.Stat(s.path); os.IsNotExist(err) {
+			continue // absent → no layer (keep Claude Code layer count stable)
+		}
+		if _, err := os.ReadFile(s.path); err != nil {
+			out = append(out, Layer{Path: s.path, Readable: false, Error: err.Error()})
+			continue
+		}
+		out = append(out, Layer{Path: s.path, Readable: true})
+	}
+	return out
+}
+
+// cursorHookItems builds hook Item objects from .cursor/hooks.json files
+// (project and user), extracting only {event, command} without exposing other
+// fields. Items use OriginCursorProject / OriginCursorUser so consumersFor
+// assigns them to ["cursor"].
+func cursorHookItems(projDir, home string) []Item {
+	type src struct {
+		path   string
+		origin string
+	}
+	var srcs []src
+	srcs = append(srcs, src{filepath.Join(projDir, ".cursor", "hooks.json"), OriginCursorProject})
+	if home != "" {
+		srcs = append(srcs, src{filepath.Join(home, ".cursor", "hooks.json"), OriginCursorUser})
+	}
+
+	seen := map[string]bool{}
+	var items []Item
+	for _, s := range srcs {
+		raw, err := os.ReadFile(s.path)
+		if err != nil {
+			continue
+		}
+		var doc struct {
+			Hooks map[string][]cursorHooksEntry `json:"hooks"`
+		}
+		if json.Unmarshal(raw, &doc) != nil {
+			continue
+		}
+		outside := s.origin == OriginCursorUser
+		for event, entries := range doc.Hooks {
+			for _, e := range entries {
+				if e.Command == "" {
+					continue
+				}
+				// Extract the cerne invocation or the binary name from the command.
+				name, state, detail := resolveCursorCommand(e.Command, projDir)
+				if name == "" || seen[name+":"+event] {
+					continue
+				}
+				seen[name+":"+event] = true
+				items = append(items, Item{
+					Class:       "hooks",
+					Name:        name,
+					Path:        event,
+					Origin:      s.origin,
+					State:       state,
+					Detail:      detail,
+					OutsideRepo: outside,
+				})
+			}
+		}
+	}
+	return items
+}
+
+// resolveCursorCommand extracts the name and state of a cursor hook command.
+// Cursor's flat commands are fail-open shell wrappers or bare binaries.
+// cerne commands are always resolvable (the binary may be managed).
+func resolveCursorCommand(cmd, projDir string) (name, state, detail string) {
+	// Extract the cerne invocation from a fail-open wrapper.
+	const marker = "cerne hook"
+	if i := strings.Index(cmd, marker); i >= 0 {
+		return "cerne", StateConfigured, ""
+	}
+	// Fall back to the standard resolver.
+	return resolveCommand(cmd, projDir)
 }

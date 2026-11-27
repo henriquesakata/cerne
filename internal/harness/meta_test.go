@@ -135,6 +135,16 @@ func TestProviderMatrixForDetectedProviders(t *testing.T) {
 
 	inv := Inspect(Options{ProjDir: proj})
 
+	// cursorManagedItems are the managed artifact items (F-0526) that have
+	// ok/divergent/missing state — distinct from the parity matrix rows.
+	cursorManagedItems := map[string]bool{
+		"cursor: rules file":  true,
+		"cursor: hooks file":  true,
+		"cursor: sandbox file": true,
+		"cursor: mcp server":  true,
+		"cursor: skill":       true,
+	}
+
 	var covered, degraded int
 	for _, c := range inv.Classes {
 		if c.Name != "providers" {
@@ -143,6 +153,11 @@ func TestProviderMatrixForDetectedProviders(t *testing.T) {
 		for _, it := range c.Items {
 			if !strings.HasPrefix(it.Name, "cursor: ") {
 				t.Errorf("unexpected provider item %q with only .cursor present", it.Name)
+			}
+			// Managed artifact items have ok/divergent/missing states — skip them
+			// for the parity matrix state check (they appear when .cursor/ is detected).
+			if cursorManagedItems[it.Name] {
+				continue
 			}
 			switch it.State {
 			case StateConfigured:

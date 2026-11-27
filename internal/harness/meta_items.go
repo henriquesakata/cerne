@@ -210,8 +210,11 @@ func providerItems(opts Options) []Item {
 			}
 			items = append(items, it)
 		}
-		if p == hooks.ProviderCopilot {
+		switch p {
+		case hooks.ProviderCopilot:
 			items = append(items, copilotItems(opts.ProjDir)...)
+		case hooks.ProviderCursor:
+			items = append(items, cursorItems(opts.ProjDir)...)
 		}
 	}
 	return items
@@ -236,6 +239,40 @@ func copilotItems(projDir string) []Item {
 		case hooks.FileDivergent:
 			it.State, it.Fix = StateDivergent, r.fix
 		default:
+			it.State, it.Fix = StateMissing, r.fix
+		}
+		items = append(items, it)
+	}
+	return items
+}
+
+// cursorItems lists what the Cursor install put in the project, each with
+// the same ok / divergent / missing state as the other agents' assets (F-0526).
+func cursorItems(projDir string) []Item {
+	const fixHook, fixSkill = "cerne hook install --provider cursor", "cerne skill install"
+	rows := []struct{ name, path, state, fix string }{
+		{"cursor: rules file", ".cursor/rules/cerne.mdc", hooks.CursorRuleState(projDir), fixHook},
+		{"cursor: hooks file", ".cursor/hooks.json", hooks.CursorHooksState(projDir), fixHook},
+		{"cursor: sandbox file", ".cursor/sandbox.json", hooks.CursorSandboxState(projDir), fixHook},
+		{"cursor: mcp server", ".cursor/mcp.json", hooks.CursorMCPState(projDir), fixHook},
+		{"cursor: skill", ".cursor/skills/cerne-authoring/SKILL.md", skills.CursorSkillState(projDir), fixSkill},
+	}
+	items := make([]Item, 0, len(rows))
+	for _, r := range rows {
+		// sandbox file: when FileOK without a sandbox.json being required,
+		// skip the item entirely (no .cernerc → no expected dirs → not relevant).
+		if r.name == "cursor: sandbox file" && r.state == hooks.FileOK {
+			if _, err := os.Stat(filepath.Join(projDir, ".cursor", "sandbox.json")); os.IsNotExist(err) {
+				continue // absent and not required: nothing to report
+			}
+		}
+		it := Item{Class: "providers", Name: r.name, Path: r.path, Origin: OriginProject}
+		switch r.state {
+		case hooks.FileOK:
+			it.State = StateOK
+		case hooks.FileDivergent:
+			it.State, it.Fix = StateDivergent, r.fix
+		default: // FileMissing
 			it.State, it.Fix = StateMissing, r.fix
 		}
 		items = append(items, it)
