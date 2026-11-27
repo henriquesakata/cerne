@@ -69,7 +69,9 @@ func TestCoveragePerProvider(t *testing.T) {
 		if g.Kind == "degraded" && g.Name == "Subagents with live board" {
 			cursorDegraded = true
 		}
-		if g.Kind == "missing" && g.Class == "providers" {
+		// A managed file of the install ("cursor: rules file"…) is a gap of
+		// its own when missing (F-0526 crit. 5); a parity capability is not.
+		if g.Kind == "missing" && g.Class == "providers" && !strings.HasPrefix(g.Name, "cursor: ") {
 			cursorMissing = true
 		}
 	}

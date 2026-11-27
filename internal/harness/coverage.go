@@ -42,6 +42,15 @@ func coverage(projDir string, classes []Class) []ProviderCoverage {
 			for _, it := range c.Items {
 				if consumes(it, p) {
 					pc.Total++
+					// A managed file of the provider's own install that is
+					// missing or divergent (F-0444, F-0526) is a gap the
+					// command repairs.
+					if c.Name == "providers" && it.Fix != "" && (it.State == StateMissing || it.State == StateDivergent) {
+						pc.Gaps = append(pc.Gaps, Gap{
+							Name: it.Name, Class: c.Name, Kind: StateMissing,
+							Detail: it.Path + " is " + it.State, Fix: it.Fix,
+						})
+					}
 				} else if c.Name != "providers" && c.Name != "hooks" {
 					pc.Gaps = append(pc.Gaps, Gap{
 						Name: it.Name, Class: c.Name, Kind: StateDegraded,

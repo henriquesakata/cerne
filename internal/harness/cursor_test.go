@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/henriquesakata/cerne/internal/hooks"
@@ -215,26 +216,54 @@ func TestCursorHooksJsonInventoried(t *testing.T) { // F-0526 crit. 2
 	}
 }
 
-// TestCursorCoverageWithDotCursorPresent (F-0526 crit. 5): when .cursor/ exists,
-// missing managed items surface in coverage as missing/divergent.
+// TestCursorCoverageWithDotCursorPresent (F-0526 crit. 5): with .cursor/
+// present, every managed Cursor file that is missing or divergent is a gap of
+// the cursor card, with the state and the command that repairs it; once the
+// install is whole, none is.
 func TestCursorCoverageWithDotCursorPresent(t *testing.T) { // F-0526 crit. 5
 	proj := t.TempDir()
-	// Minimal .cursor/ to trigger detection.
-	writeFile(t, filepath.Join(proj, ".cursor", "rules", "cerne.mdc"), "rules\n")
+	writeFile(t, filepath.Join(proj, ".cursor", "rules", "cerne.mdc"), "rules\n") // divergent
 
-	inv := Inspect(Options{ProjDir: proj})
-	var cursorCov ProviderCoverage
-	for _, c := range inv.Coverage {
-		if c.Provider == "cursor" {
-			cursorCov = c
+	managedGaps := func() map[string]Gap {
+		t.Helper()
+		out := map[string]Gap{}
+		for _, c := range Inspect(Options{ProjDir: proj}).Coverage {
+			if c.Provider != "cursor" {
+				continue
+			}
+			if !c.Detected {
+				t.Fatal("cursor not detected despite .cursor/ present")
+			}
+			for _, g := range c.Gaps {
+				if strings.HasPrefix(g.Name, "cursor: ") {
+					out[g.Name] = g
+				}
+			}
+		}
+		return out
+	}
+
+	const hook, skill = "cerne hook install --provider cursor", "cerne skill install"
+	got := managedGaps()
+	for name, want := range map[string]Gap{
+		"cursor: rules file": {Kind: StateMissing, Detail: ".cursor/rules/cerne.mdc is divergent", Fix: hook},
+		"cursor: hooks file": {Kind: StateMissing, Detail: ".cursor/hooks.json is missing", Fix: hook},
+		"cursor: mcp server": {Kind: StateMissing, Detail: ".cursor/mcp.json is missing", Fix: hook},
+		"cursor: skill":      {Kind: StateMissing, Detail: ".cursor/skills/cerne-authoring/SKILL.md is missing", Fix: skill},
+	} {
+		g := got[name]
+		if g.Kind != want.Kind || g.Detail != want.Detail || g.Fix != want.Fix || g.Class != "providers" {
+			t.Errorf("gap %q = %+v, want %+v", name, g, want)
 		}
 	}
-	if !cursorCov.Detected {
-		t.Fatal("cursor not detected despite .cursor/ present")
+
+	if _, err := hooks.InstallNetwork(proj, false, hooks.ProviderCursor); err != nil {
+		t.Fatal(err)
 	}
-	// When cursor is detected and managed files are missing, they appear as
-	// missing items (not gaps) — cursor's total must reflect it.
-	if cursorCov.Total == 0 {
-		t.Error("cursor total = 0, want > 0 when .cursor/ detected")
+	if _, err := skills.Install(proj, hooks.ProviderCursor); err != nil {
+		t.Fatal(err)
+	}
+	if got := managedGaps(); len(got) != 0 {
+		t.Errorf("gaps after a whole install: %+v", got)
 	}
 }
