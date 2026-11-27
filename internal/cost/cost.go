@@ -71,11 +71,12 @@ type Report struct {
 	First                     string              `json:"first,omitempty"`
 	Last                      string              `json:"last,omitempty"`
 	Unattributed              Counters            `json:"unattributed"`
-	Entities                  map[string]Counters `json:"entities,omitempty"`      // project view (id == "")
-	OtherHarness              []string            `json:"other_harness,omitempty"` // project view: sessions left out, bound under another harness
-	FromStamp                 []string            `json:"from_stamp,omitempty"`    // project view: entities read from their anchor
-	Children                  *Rollup             `json:"children,omitempty"`      // epic: its descendants' anchors
-	Total                     *Counters           `json:"total,omitempty"`         // epic: own + children
+	Entities                  map[string]Counters `json:"entities,omitempty"`              // project view (id == "")
+	OtherHarness              []string            `json:"other_harness,omitempty"`         // project view: sessions left out, bound under another harness
+	EntityActive              map[string]int64    `json:"entity_active_seconds,omitempty"` // project view: each entity's active time, where measured (F-0528)
+	FromStamp                 []string            `json:"from_stamp,omitempty"`            // project view: entities read from their anchor
+	Children                  *Rollup             `json:"children,omitempty"`              // epic: its descendants' anchors
+	Total                     *Counters           `json:"total,omitempty"`                 // epic: own + children
 	perEntity                 map[string]*share   // project view: each entity's share, for BackfillEffort's single pass
 }
 
@@ -375,6 +376,12 @@ func own(in Inputs, id string) (Report, error) {
 			r.Entities = map[string]Counters{}
 		}
 		r.Entities[e] = s.Counters
+		if s.Timing != nil {
+			if r.EntityActive == nil {
+				r.EntityActive = map[string]int64{}
+			}
+			r.EntityActive[e] = s.Timing.ActiveSeconds
+		}
 		if stamped[e] {
 			r.FromStamp = append(r.FromStamp, e)
 		}

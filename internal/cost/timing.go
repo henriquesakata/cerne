@@ -1,6 +1,7 @@
 package cost
 
 import (
+	"fmt"
 	"slices"
 	"sort"
 	"strings"
@@ -230,4 +231,48 @@ func (t *Timing) merge(o *Timing) *Timing {
 		}
 	}
 	return out
+}
+
+// FormatDuration writes sec as "1h 12min", "45min" or "30s": the one form the
+// CLI and the stamp share.
+func FormatDuration(sec int64) string {
+	if sec < 60 {
+		return fmt.Sprintf("%ds", sec)
+	}
+	m := (sec + 30) / 60
+	switch {
+	case m < 60:
+		return fmt.Sprintf("%dmin", m)
+	case m%60 == 0:
+		return fmt.Sprintf("%dh", m/60)
+	}
+	return fmt.Sprintf("%dh %dmin", m/60, m%60)
+}
+
+// PhaseOrder is the phases in lifecycle order, for display.
+var PhaseOrder = []string{phaseSpec, phasePlan, phaseDev, phaseReview, phaseNone}
+
+// Breakdown lists m as "key time" parts, phases in lifecycle order when order
+// names them, else the larger first; ties by key.
+func Breakdown(m map[string]int64, order []string) []string {
+	keys := make([]string, 0, len(m))
+	for k, v := range m {
+		if v > 0 {
+			keys = append(keys, k)
+		}
+	}
+	slices.SortFunc(keys, func(a, b string) int {
+		if order != nil {
+			return slices.Index(order, a) - slices.Index(order, b)
+		}
+		if m[a] != m[b] {
+			return int(m[b] - m[a])
+		}
+		return strings.Compare(a, b)
+	})
+	parts := make([]string, len(keys))
+	for i, k := range keys {
+		parts[i] = k + " " + FormatDuration(m[k])
+	}
+	return parts
 }
