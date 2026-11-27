@@ -23,7 +23,7 @@ const cursorSandboxAsset = "cursor: sandbox.json"
 // cursorMCP declares the read-only cerne server in .cursor/mcp.json, the only
 // project MCP file Cursor reads (it ignores the root .mcp.json, R-0147).
 func cursorMCP(projDir string) Result {
-	server := map[string]any{"type": "stdio", "command": "cerne", "args": []any{"mcp"}}
+	server := cursorMCPServer()
 	block, _ := marshalIndentNoHTML(map[string]any{"mcpServers": map[string]any{"cerne": server}}, "", "  ")
 	r := mergeMCPServer("cursor: mcp.json", filepath.Join(projDir, ".cursor", "mcp.json"), server, "add the read-only cerne server by hand:\n"+string(block))
 	if r.Status == StatusCreated || r.Status == StatusUpdated {

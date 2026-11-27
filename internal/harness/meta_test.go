@@ -138,11 +138,11 @@ func TestProviderMatrixForDetectedProviders(t *testing.T) {
 	// cursorManagedItems are the managed artifact items (F-0526) that have
 	// ok/divergent/missing state — distinct from the parity matrix rows.
 	cursorManagedItems := map[string]bool{
-		"cursor: rules file":  true,
-		"cursor: hooks file":  true,
+		"cursor: rules file":   true,
+		"cursor: hooks file":   true,
 		"cursor: sandbox file": true,
-		"cursor: mcp server":  true,
-		"cursor: skill":       true,
+		"cursor: mcp server":   true,
+		"cursor: skill":        true,
 	}
 
 	var covered, degraded int

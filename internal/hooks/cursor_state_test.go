@@ -211,8 +211,8 @@ func TestCursorMCPState(t *testing.T) { // F-0526 crit. 3
 
 	// Extra servers beside cerne → still ok.
 	writeMCP(map[string]any{
-		"cerne":  server,
-		"other":  map[string]any{"command": "other"},
+		"cerne": server,
+		"other": map[string]any{"command": "other"},
 	})
 	if got := CursorMCPState(proj); got != FileOK {
 		t.Errorf("mcp.json with extra servers = %q, want ok", got)

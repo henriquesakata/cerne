@@ -159,7 +159,7 @@ func installCursor(projDir string, explicit, network bool) []Result {
 		map[string]any{"version": 1},
 		map[string][]map[string]any{
 			// Cursor entries are flat {command,...}, not nested — build them here.
-			"sessionStart": {flatCursorEntry("cerne hook session-context --format cursor")},
+			"sessionStart": {flatCursorEntry(cursorSessionStartCmd)},
 		},
 	))
 	if explicit { // never on a renewal: see InstallNetwork

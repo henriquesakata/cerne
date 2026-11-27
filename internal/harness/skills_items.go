@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/henriquesakata/cerne/internal/hooks"
 	"github.com/henriquesakata/cerne/internal/skills"
 )
 
@@ -199,23 +200,15 @@ func cursorSkillItems(base string, outside bool) []Item {
 			OutsideRepo: outside,
 		}
 		if name == cursorAuthoringName && !outside {
-			// Managed copy: compare against canonical embed.
-			var s skills.Skill
-			for _, sk := range skills.All() {
-				if sk.Name == cursorAuthoringName {
-					s = sk
-					break
-				}
-			}
-			if !fileExists(filepath.Join(skillDir, "SKILL.md")) {
-				it.State = StateMissing
-				it.Fix = fixSkillInstall
-			} else if !cursorSameSkillContent(skillDir, s) {
-				it.State = StateDivergent
-				it.Detail = "differs from the canonical skill of this cerne build"
-				it.Fix = fixSkillInstall
-			} else {
+			// Managed copy: the same check as the "cursor: skill" row.
+			switch skills.CursorSkillState(base) {
+			case hooks.FileOK:
 				it.State = StateOK
+			case hooks.FileDivergent:
+				it.State, it.Fix = StateDivergent, fixSkillInstall
+				it.Detail = "differs from the canonical skill of this cerne build"
+			default:
+				it.State, it.Fix = StateMissing, fixSkillInstall
 			}
 		} else {
 			it.State = StateConfigured
@@ -227,26 +220,6 @@ func cursorSkillItems(base string, outside bool) []Item {
 		items = append(items, it)
 	}
 	return items
-}
-
-// cursorSameSkillContent reports whether the skill directory on disk matches the
-// canonical embed content (SKILL.md and all references).
-func cursorSameSkillContent(dir string, s skills.Skill) bool {
-	if !fileExists(filepath.Join(dir, "SKILL.md")) {
-		return false
-	}
-	disk, err := os.ReadFile(filepath.Join(dir, "SKILL.md"))
-	if err != nil || string(disk) != s.Content {
-		return false
-	}
-	for _, r := range s.References {
-		rPath := filepath.Join(dir, filepath.FromSlash(r.RelPath))
-		rdisk, rerr := os.ReadFile(rPath)
-		if rerr != nil || string(rdisk) != r.Content {
-			return false
-		}
-	}
-	return true
 }
 
 // agentsSkillItems lists skills under <base>/.agents/skills/ as unmanaged.

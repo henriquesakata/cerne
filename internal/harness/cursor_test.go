@@ -124,7 +124,9 @@ func TestCursorSkillsInventoried(t *testing.T) { // F-0526 crit. 2
 	if cursorAuthoring == nil {
 		t.Fatal("cursor cerne-authoring skill absent from inventory")
 	}
-	it := *cursorAuthoring
+	if cursorAuthoring.State != StateOK {
+		t.Errorf("installed .cursor/skills/cerne-authoring state = %q, want ok", cursorAuthoring.State)
+	}
 
 	// .agents/skills/my-skill → consumers ["cursor","codex","gemini","copilot"].
 	agentConsumers := []string{"cursor", "codex", "gemini", "copilot"}
@@ -159,7 +161,6 @@ func TestCursorSkillsInventoried(t *testing.T) { // F-0526 crit. 2
 	if len(agentSkill.Consumers) == 0 || agentSkill.Consumers[0] != "cursor" {
 		t.Errorf("agent-skill consumers %v, want cursor first", agentSkill.Consumers)
 	}
-	_ = it // used above for cursorAuthoring check
 }
 
 // TestCursorHooksJsonInventoried (F-0526 crit. 2): hooks in .cursor/hooks.json
