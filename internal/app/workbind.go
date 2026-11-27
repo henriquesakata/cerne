@@ -85,10 +85,14 @@ func BindSessionAgent(cacheDir, sess, agent, harness, id string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
+	// F-0528 crit. 9: a main-thread bind to a different entity (or the first
+	// one) claims its turn.
+	prev, _ := os.ReadFile(filepath.Join(dir, name))
+	turn := agent == "" && strings.TrimSpace(string(prev)) != id
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(id+"\n"), 0o644); err != nil {
 		return err
 	}
-	return cost.AppendBind(cacheDir, cost.Bind{Session: sess, Agent: agent, Entity: id, Harness: harness, TS: time.Now().UTC()})
+	return cost.AppendBind(cacheDir, cost.Bind{Session: sess, Agent: agent, Entity: id, Harness: harness, Turn: turn, TS: time.Now().UTC()})
 }
 
 // RecordMark records that session sess (agent inside a subagent) did kind

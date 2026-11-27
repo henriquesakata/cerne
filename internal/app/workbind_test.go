@@ -315,3 +315,38 @@ func TestSessionSignalsReadsMtimeSkipsDirs(t *testing.T) {
 		t.Fatal("missing dir must give nil")
 	}
 }
+
+// TestBindMarksTurnOnEntitySwitch (F-0528 crit. 9): a main-thread bind that
+// first binds the session or switches its entity is a Turn; rebinding the same
+// entity and any subagent bind are not; an old line reads as no Turn.
+func TestBindMarksTurnOnEntitySwitch(t *testing.T) {
+	t.Setenv("CLAUDECODE", "1")
+	cacheDir := t.TempDir()
+	steps := []struct {
+		agent, id string
+		turn      bool
+	}{
+		{"", "F-0001", true},
+		{"", "F-0001", false},
+		{"ag1", "F-0009", false},
+		{"", "F-0002", true},
+	}
+	for _, s := range steps {
+		if err := BindSessionAgent(cacheDir, "sess-A", s.agent, cost.HarnessClaudeCode, s.id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, binds := readCostLedger(t, cacheDir)
+	if len(binds) != len(steps) {
+		t.Fatalf("ledger has %d lines, want %d", len(binds), len(steps))
+	}
+	for i, s := range steps {
+		if binds[i].Turn != s.turn {
+			t.Errorf("step %d (%s agent %q) Turn = %v, want %v", i, s.id, s.agent, binds[i].Turn, s.turn)
+		}
+	}
+	var old cost.Bind
+	if err := json.Unmarshal([]byte(`{"session_id":"s","entity_id":"F-1","harness":"claude-code","ts":"2026-07-07T10:00:00Z"}`), &old); err != nil || old.Turn {
+		t.Fatalf("old line: Turn = %v err %v, want false", old.Turn, err)
+	}
+}
