@@ -114,6 +114,15 @@ func runHookToolNotes(cmd *cobra.Command, format string, after bool) {
 	if err != nil {
 		return
 	}
+	if in.cursor() {
+		name := "tool-notes"
+		if after {
+			name = "tool-notes-after"
+		}
+		if !claimCursorHookCall(cacheDir, name, in) {
+			return
+		}
+	}
 	repoDir, err := guardedRepoDir(cacheDir, cfg, projDir)
 	if err != nil {
 		return // F-0434

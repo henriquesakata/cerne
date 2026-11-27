@@ -78,6 +78,10 @@ func runHookStopCheck(cmd *cobra.Command) {
 	if err != nil {
 		return
 	}
+	// F-0527: dedup between .cursor/hooks.json and .claude/settings.json.
+	if !claimCursorHookCall(cacheDir, "stop-check", in) {
+		return
+	}
 	repoDir, err := guardedRepoDir(cacheDir, cfg, projDir)
 	if err != nil {
 		return // F-0434

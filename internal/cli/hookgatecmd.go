@@ -85,6 +85,12 @@ type cursorInput struct {
 	// HookEventName tells a shell call about to run (preToolUse) from one
 	// that ran (postToolUse): what keeps a session's pending command (F-0513).
 	HookEventName string `json:"hook_event_name"`
+	// GenerationID and ToolUseID are Cursor's per-invocation identifiers,
+	// used by the dedup layer (F-0527) to suppress the second execution of
+	// the same hook call when both .cursor/hooks.json and .claude/settings.json
+	// fire for the same event.
+	GenerationID string `json:"generation_id"`
+	ToolUseID    string `json:"tool_use_id"`
 }
 
 // cursor reports a payload delivered by Cursor, which is answered in Cursor's
@@ -375,6 +381,10 @@ func runHookBindWork(cmd *cobra.Command, format string) {
 	if _, err := guardedRepoDir(cacheDir, cfg, projDir); err != nil {
 		return // F-0434: fail open, never through a foreign clone
 	}
+	// F-0527: dedup between .cursor/hooks.json and .claude/settings.json.
+	if !claimCursorHookCall(cacheDir, "bind-work", in) {
+		return
+	}
 	// F-0361: every Bash call is a sign of life for the session's binding.
 	_ = app.TouchBinding(cacheDir, in.SessionID, in.AgentID)
 	var ti struct {
@@ -528,6 +538,10 @@ func runHookWorkGate(cmd *cobra.Command, format string) {
 	}
 	cacheDir, err := project.CacheDir(cfg.ProjectID)
 	if err != nil {
+		return
+	}
+	// F-0527: dedup between .cursor/hooks.json and .claude/settings.json.
+	if !claimCursorHookCall(cacheDir, "work-gate", in) {
 		return
 	}
 	repoDir, err := guardedRepoDir(cacheDir, cfg, projDir)

@@ -466,6 +466,162 @@ func TestHookCursorRecordsPendingShellCommand(t *testing.T) {
 	}
 }
 
+// TestCursorHookDedupSuppressesDuplicate (F-0527 crit. 2): when the same
+// Cursor tool invocation (same session_id, hook_event_name, tool_use_id)
+// arrives twice — simulating .cursor/hooks.json followed by
+// .claude/settings.json — the second execution is suppressed silently
+// (empty stdout, exit 0), while a new tool_use_id runs normally again.
+func TestCursorHookDedupSuppressesDuplicate(t *testing.T) {
+	// F-0527 crit. 2
+	projDir, _, repoDir := setupProject(t)
+	enableWorkGate(t, projDir)
+
+	// Use a unique session for this test to avoid collisions.
+	p := cursorFixture(t, "pre-tool-use-write.json", projDir)
+	p["session_id"] = "dedup-test-sess"
+	p["conversation_id"] = "dedup-test-sess"
+	// Ensure tool_use_id is set (fixtures already have it, but be explicit).
+	if _, ok := p["tool_use_id"]; !ok {
+		p["tool_use_id"] = "dedup-test-tool-use-id"
+	}
+
+	// First call: should run and emit a deny (session unbound, work gate on).
+	out1, err := execCerneStdin(t, payloadString(t, p), "hook", "work-gate")
+	if err != nil {
+		t.Fatalf("first work-gate: %v\nout: %s", err, out1)
+	}
+	var d1 map[string]any
+	if json.Unmarshal([]byte(out1), &d1) != nil || d1["permission"] != "deny" {
+		t.Fatalf("first call: want deny, got:\n%s", out1)
+	}
+
+	// Second call with same payload (simulating .claude/settings.json layer):
+	// must be suppressed — empty stdout, exit 0.
+	out2, err := execCerneStdin(t, payloadString(t, p), "hook", "work-gate")
+	if err != nil {
+		t.Fatalf("second work-gate: %v\nout: %s", err, out2)
+	}
+	if strings.TrimSpace(out2) != "" {
+		t.Fatalf("second call (duplicate): want silence, got:\n%s", out2)
+	}
+
+	// A new tool_use_id (new tool invocation) must run normally.
+	p2 := cursorFixture(t, "pre-tool-use-write.json", projDir)
+	p2["session_id"] = "dedup-test-sess"
+	p2["conversation_id"] = "dedup-test-sess"
+	p2["tool_use_id"] = "dedup-test-new-call"
+	out3, err := execCerneStdin(t, payloadString(t, p2), "hook", "work-gate")
+	if err != nil {
+		t.Fatalf("new call work-gate: %v\nout: %s", err, out3)
+	}
+	var d3 map[string]any
+	if json.Unmarshal([]byte(out3), &d3) != nil || d3["permission"] != "deny" {
+		t.Fatalf("new call: want deny (still unbound), got:\n%s", out3)
+	}
+
+	// A non-Cursor payload (no cursor_version) must never be dedup'd.
+	plainPayload := hookJSON(t, "dedup-plain-sess", projDir, "Write",
+		map[string]any{"file_path": filepath.Join(projDir, "x.txt")}, nil)
+	out4, _ := execCerneStdin(t, plainPayload, "hook", "work-gate")
+	out5, _ := execCerneStdin(t, plainPayload, "hook", "work-gate")
+	// Plain Claude Code hook runs both times; for unbound gate it denies.
+	// The key assertion: the second run is NOT empty stdout (no dedup).
+	if strings.TrimSpace(out4) == "" {
+		t.Fatalf("plain: first call unexpectedly silent")
+	}
+	if strings.TrimSpace(out5) == "" {
+		t.Fatalf("plain: second call dedup'd (must not be)")
+	}
+	_ = repoDir
+}
+
+// TestCursorHookDedupBindWorkSecondSuppressed (F-0527 crit. 2): a postToolUse
+// bind-work invocation is deduplicated — the second call with the same
+// tool_use_id produces no binding and empty stdout.
+func TestCursorHookDedupBindWorkSecondSuppressed(t *testing.T) {
+	// F-0527 crit. 2
+	projDir, _, repoDir := setupProject(t)
+	if out, err := execCerne(t, "work", "start", "Dedup test", "--dir", projDir); err != nil {
+		t.Fatalf("work start: %v\n%s", err, out)
+	}
+
+	p := cursorFixture(t, "post-tool-use-feature-start.json", projDir)
+	p["session_id"] = "dedup-bind-sess"
+	p["conversation_id"] = "dedup-bind-sess"
+	// tool_use_id is already in the fixture; just use a unique one.
+	p["tool_use_id"] = "dedup-bind-unique-id"
+	p["tool_input"] = map[string]any{"command": `cerne work start "Dedup test"`, "cwd": ""}
+	p["tool_output"] = cursorShellOutput(t, "W-0001 created (active) — Dedup test (actor: agent)\n")
+
+	// First call: binds.
+	out1, err := execCerneStdin(t, payloadString(t, p), "hook", "bind-work")
+	if err != nil {
+		t.Fatalf("first bind-work: %v\n%s", err, out1)
+	}
+
+	// Second call with same payload: suppressed (empty stdout).
+	out2, err := execCerneStdin(t, payloadString(t, p), "hook", "bind-work")
+	if err != nil {
+		t.Fatalf("second bind-work: %v\n%s", err, out2)
+	}
+	if strings.TrimSpace(out2) != "" {
+		t.Fatalf("second bind-work: want silence, got:\n%s", out2)
+	}
+	_ = repoDir
+}
+
+// TestCursorHookDedupFailOpen (F-0527 crit. 2): when the dedup cache dir
+// cannot be written, the hook still runs (fail-open, N-0021).
+func TestCursorHookDedupFailOpen(t *testing.T) {
+	// F-0527 crit. 2
+	projDir, _, _ := setupProject(t)
+	cacheDir := os.Getenv("CERNE_CACHE_DIR")
+
+	// Make hook-dedup a file (not a dir) to trigger ENOTDIR on O_EXCL.
+	dedupPath := filepath.Join(cacheDir, "hook-dedup")
+	if err := os.WriteFile(dedupPath, []byte("block"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Remove(dedupPath) })
+
+	p := cursorFixture(t, "pre-tool-use-write.json", projDir)
+	p["session_id"] = "fail-open-sess"
+	p["conversation_id"] = "fail-open-sess"
+
+	// Hook must run (not suppress) even though dedup storage is broken.
+	enableWorkGate(t, projDir)
+	out, err := execCerneStdin(t, payloadString(t, p), "hook", "work-gate")
+	if err != nil {
+		t.Fatalf("fail-open hook: %v\n%s", err, out)
+	}
+	var d map[string]any
+	if json.Unmarshal([]byte(out), &d) != nil || d["permission"] != "deny" {
+		t.Fatalf("fail-open: want deny (hook ran), got:\n%s", out)
+	}
+}
+
+// TestCursorHookDedupSessionContext (F-0527 crit. 2): sessionStart runs once;
+// the duplicate layer is silent.
+func TestCursorHookDedupSessionContext(t *testing.T) {
+	// F-0527 crit. 2
+	projDir, _, _ := setupProject(t)
+	p := cursorFixture(t, "session-start.json", projDir)
+	out1, err := execCerneStdin(t, payloadString(t, p), "hook", "session-context", "--format", "cursor")
+	if err != nil {
+		t.Fatalf("first session-context: %v\n%s", err, out1)
+	}
+	if strings.TrimSpace(out1) == "" {
+		t.Fatal("first session-context: want additional_context")
+	}
+	out2, err := execCerneStdin(t, payloadString(t, p), "hook", "session-context", "--format", "cursor")
+	if err != nil {
+		t.Fatalf("second session-context: %v\n%s", err, out2)
+	}
+	if strings.TrimSpace(out2) != "" {
+		t.Fatalf("duplicate session-context: want silence, got:\n%s", out2)
+	}
+}
+
 // TestHookCursorSessionRecordFailOpen (F-0513 crit. 1): a session id that
 // could leave the directory records nothing, a record that cannot be written
 // never breaks the hook (the session still binds), and a payload that is not

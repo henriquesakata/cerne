@@ -64,12 +64,26 @@ func runHookProvenance(cmd *cobra.Command, format string) {
 	if err != nil {
 		return
 	}
+	if in.cursor() {
+		format = "cursor" // F-0428
+	}
 	var ti struct {
 		Command string `json:"command"`
 	}
 	_ = json.Unmarshal(in.ToolInput, &ti)
 	if !strings.Contains(ti.Command, "cerne") {
 		return
+	}
+
+	// F-0527: dedup between .cursor/hooks.json and .claude/settings.json.
+	if in.cursor() {
+		if cfg, _, cerr := project.LoadConfig(in.CWD); cerr == nil {
+			if cd, cerr := project.CacheDir(cfg.ProjectID); cerr == nil {
+				if !claimCursorHookCall(cd, "provenance", in) {
+					return
+				}
+			}
+		}
 	}
 
 	var msg string

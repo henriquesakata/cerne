@@ -286,6 +286,13 @@ func runHookSessionContext(cmd *cobra.Command, format string) {
 	if err != nil {
 		return // not a cerne project: never inject
 	}
+	if in.cursor() {
+		if cacheDir, cerr := project.CacheDir(cfg.ProjectID); cerr == nil {
+			if !claimCursorHookCall(cacheDir, "session-context", in) {
+				return
+			}
+		}
+	}
 
 	if in.SessionID != "" {
 		if cacheDir, err := project.CacheDir(cfg.ProjectID); err == nil {
