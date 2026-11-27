@@ -75,6 +75,7 @@ func TestClassifyActivity(t *testing.T) { // F-0528 crit. 3
 		{mk(bash("cat > src/calc/calc.go <<'EOF'\npackage calc\nEOF")), actCode},
 		{mk(bash("tee -a internal/x.go <<EOF\nx\nEOF")), actCode},
 		{mk(bash("set -e\ncat > .docs/current/features/F-0001-x/result.md <<'EOF'\nbody << not a heredoc\nEOF")), actResult},
+		{mk(bash("set -e\nd=$(echo .docs/current/features/F-0001-*)\ncat > \"$d/result.md\" <<'EOF'\nx\nEOF")), actResult},
 		// the answer to these calls is the person's: waiting, not working
 		{mk("AskUserQuestion", nil), actWait},
 		{mk("ExitPlanMode", nil), actWait},

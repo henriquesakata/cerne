@@ -54,8 +54,8 @@ var (
 	// A heredoc's first line names the file it writes: `cat > f <<EOF`,
 	// `cat <<EOF > f`, `tee [-a] f <<EOF`. A shell path may hold a variable,
 	// so only its base name tells a feature document.
-	redirectRe  = regexp.MustCompile(`(?:^|\s)>>?\s*([^\s<>|;&'"]+)`)
-	teeRe       = regexp.MustCompile(`\btee\s+(?:-a\s+)?([^\s<>|;&'"]+)`)
+	redirectRe  = regexp.MustCompile(`(?:^|\s)>>?\s*["']?([^\s<>|;&'"]+)`)
+	teeRe       = regexp.MustCompile(`\btee\s+(?:-a\s+)?["']?([^\s<>|;&'"]+)`)
 	docTargetRe = regexp.MustCompile(`(?:^|/)(spec|plan|result)\.md$`)
 	cerneDocRe  = regexp.MustCompile(`^(?:\./bin/)?cerne feature (new\b.*--file|spec\b|amend\b)`)
 )
