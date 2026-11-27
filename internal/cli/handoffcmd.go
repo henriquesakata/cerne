@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -47,7 +46,7 @@ func newHandoffTakeCmd(dir *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			r, err := app.TakeHandoff(ctx.repoDir, ctx.projDir, filepath.Dir(ctx.repoDir), os.Getenv("CERNE_SESSION"), args[0], title, note)
+			r, err := app.TakeHandoff(ctx.repoDir, ctx.projDir, filepath.Dir(ctx.repoDir), app.CurrentSession(), args[0], title, note)
 			if err != nil {
 				return err
 			}

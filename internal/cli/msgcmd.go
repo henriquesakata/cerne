@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -56,7 +55,7 @@ func msgSession(flag string) string {
 	if flag != "" {
 		return flag
 	}
-	return os.Getenv("CERNE_SESSION")
+	return app.CurrentSession() // F-0525: also recognizes CURSOR_CONVERSATION_ID in Cursor shells
 }
 
 // msgIdentityErr turns the identity sentinels into the next step to take.

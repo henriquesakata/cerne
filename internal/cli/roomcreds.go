@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/project"
 )
 
@@ -52,7 +53,7 @@ type roomCreds struct {
 // nothing is stored or read for it. The room comes from the command line, so
 // anything but a single local name is refused before it reaches the path.
 func roomCredsPath(projectID, roomID string) (string, error) {
-	agent := os.Getenv("CERNE_SESSION")
+	agent := app.CurrentSession() // F-0525: also recognizes CURSOR_CONVERSATION_ID in Cursor shells
 	if agent == "" {
 		return "", nil
 	}

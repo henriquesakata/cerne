@@ -222,12 +222,12 @@ func guardAmend(repoDir string, f store.Feature, doc string, force bool) (crosse
 	if err != nil {
 		return nil, nil, err
 	}
-	sess := os.Getenv("CERNE_SESSION")
+	sess := CurrentSession() // F-0525: also recognizes CURSOR_CONVERSATION_ID in Cursor shells
 	sessions := WorkSessions(works, SessionSignals(filepath.Dir(repoDir)))
 	foreign, ambiguous := classifyAmendWorks(works, features, f.ID, myActors(), sess, sessions, time.Now().UTC())
 	why := "same actor, no session bound on this machine"
 	if sess == "" {
-		why = "same actor; CERNE_SESSION is unset, so sessions are not compared"
+		why = "same actor; no session identity (CERNE_SESSION or CURSOR_CONVERSATION_ID), so sessions are not compared"
 	}
 	for _, p := range ambiguous {
 		notes = append(notes, fmt.Sprintf("warning: %s is active on %s (%s) — confirm nobody else is working on it", p.ID, cmpOr(p.Card, f.ID), why))

@@ -325,3 +325,49 @@ func TestBoundElsewhereOwnSubagent(t *testing.T) {
 		t.Error("no session is never bound here")
 	}
 }
+
+// TestGuardAmendCursorConversationID (F-0525 crit. 1): with CURSOR_AGENT=1 and
+// CURSOR_CONVERSATION_ID, guardAmend distinguishes two Cursor conversations —
+// a same-actor work bound to another conversation ID is foreign (warned/refused)
+// rather than ambiguous (the "CERNE_SESSION is unset" path).
+func TestGuardAmendCursorConversationID(t *testing.T) { // F-0525 crit. 1
+	repoDir, projDir, origin := newFeatureBackend(t)
+	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
+	if err := project.SaveConfig(projDir, project.Config{ProjectID: "demo-cursor", Backend: origin}); err != nil {
+		t.Fatal(err)
+	}
+	cacheDir, err := project.CacheDir("demo-cursor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedFeatureInState(t, repoDir, "F-0001", domain.StateInDevelopment, "spec.md", "plan.md")
+	seedActiveWork(t, repoDir, "W-0001", autoWorkActor(), "F-0001", false)
+
+	// Another Cursor conversation is bound to W-0001.
+	const otherConversation = "aaaaaaaa-1111-2222-3333-444444444444"
+	if err := BindSession(cacheDir, otherConversation, "W-0001"); err != nil {
+		t.Fatal(err)
+	}
+
+	// This Cursor conversation is a different one.
+	const thisConversation = "bbbbbbbb-5555-6666-7777-888888888888"
+	t.Setenv("CURSOR_AGENT", "1")
+	t.Setenv("CURSOR_CONVERSATION_ID", thisConversation)
+
+	f, err := store.LoadFeature(repoDir, "F-0001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, notes, err := guardAmend(repoDir, f, "spec", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// With CurrentSession() returning thisConversation, the other conversation's
+	// W-0001 must NOT produce the "CERNE_SESSION is unset" message; it should
+	// be identified as a foreign work (another session).
+	for _, note := range notes {
+		if strings.Contains(note, "CERNE_SESSION is unset") {
+			t.Fatalf("guardAmend note contains CERNE_SESSION-unset message even with CURSOR_CONVERSATION_ID set: %q", note)
+		}
+	}
+}

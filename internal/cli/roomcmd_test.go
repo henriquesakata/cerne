@@ -1443,3 +1443,38 @@ func TestRoomLeaveInvalidSessionForgetsTheEntry(t *testing.T) {
 		t.Fatalf("stored after a 401 leave = %+v, want zed dropped", stored)
 	}
 }
+
+// TestRoomCursorConversationIDSession (F-0525 crit. 1): with CURSOR_AGENT=1
+// and CURSOR_CONVERSATION_ID set (and no CERNE_SESSION), room join stores the
+// credential and room say/read work without an explicit --session flag.
+func TestRoomCursorConversationIDSession(t *testing.T) { // F-0525 crit. 1
+	dir, port := newRoomTestServer(t, "proj-cursor-room")
+	dirFlag := []string{"--dir", dir, "--port", strconv.Itoa(port)}
+	t.Setenv("CURSOR_AGENT", "1")
+	t.Setenv("CURSOR_CONVERSATION_ID", "98fdb738-ae20-43e9-b08b-1ac04f1b6f52")
+
+	openOut, err := runRoom(t, append([]string{"open", "topic"}, dirFlag...)...)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	joinOut, err := runRoom(t, append([]string{"join", "R1", "--nick", "cursor-agent"}, dirFlag...)...)
+	if err != nil {
+		t.Fatalf("join: %v", err)
+	}
+	session := lineValue(joinOut, "session: ")
+	if session == "" {
+		t.Fatalf("join output missing session line: %q", joinOut)
+	}
+	if strings.Contains(joinOut, "env: export") {
+		t.Fatalf("join output should say stored (not teach env var) for a Cursor session: %q", joinOut)
+	}
+	// room say without --session uses CURSOR_CONVERSATION_ID via CurrentSession.
+	if _, err := runRoom(t, append([]string{"say", "R1", "hello from cursor"}, dirFlag...)...); err != nil {
+		t.Fatalf("say without --session in Cursor shell: %v", err)
+	}
+	readOut, err := runRoom(t, append([]string{"read", "R1"}, dirFlag...)...)
+	if err != nil || !strings.Contains(readOut, "hello from cursor") {
+		t.Fatalf("read: %v\n%s", err, readOut)
+	}
+	_ = openOut
+}

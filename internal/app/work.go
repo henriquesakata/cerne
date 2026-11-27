@@ -61,7 +61,7 @@ func StartWork(repoDir, projDir, title string, refs []string, agent string, forc
 	err := MutateAndSnapshot(repoDir, projDir, func() (msg string, err error) {
 		out, fromTitle, msg, err = startWorkTx(repoDir, projDir, startParams{
 			title: title, refs: refs, actor: actor, force: force, paths: cleanWorkPaths(paths),
-			from: from, sess: os.Getenv("CERNE_SESSION"),
+			from: from, sess: CurrentSession(), // F-0525: also recognizes CURSOR_CONVERSATION_ID
 		})
 		return msg, err
 	})
@@ -114,7 +114,7 @@ func startWorkTx(repoDir, projDir string, p startParams) (StartedWork, string, s
 		// Owner's principle (F-0341): live work of another session is not
 		// closed on a guess. A handoff is the proof the owner let go; a
 		// typo like W-0043 has none, and another session holds the binding.
-		if origin.HandoffAt == nil && !force && boundElsewhere(sessionBindingsIn(filepath.Dir(repoDir)), from, os.Getenv("CERNE_SESSION")) {
+		if origin.HandoffAt == nil && !force && boundElsewhere(sessionBindingsIn(filepath.Dir(repoDir)), from, CurrentSession()) { // F-0525
 			return StartedWork{}, "", "", fmt.Errorf("--from: %s has no handoff and is bound to another session — it may be live work; confirm with that session, or use --force to take it over anyway", from)
 		}
 		if len(cleaned) == 0 && !p.finalRefs {
@@ -228,7 +228,7 @@ func dispatchStarted(projDir string, out StartedWork, fromTitle string) {
 func supersedePlanning(repoDir string, works []store.Work, refs []string, newID string) (closed, kept, held []string, err error) {
 	mine := myActors()
 	bindings := sessionBindingsIn(filepath.Dir(repoDir))
-	sess := os.Getenv("CERNE_SESSION")
+	sess := CurrentSession() // F-0525: also recognizes CURSOR_CONVERSATION_ID
 	for _, ref := range refs {
 		if !domain.IsFeatureID(ref) {
 			continue

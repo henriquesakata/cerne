@@ -168,15 +168,23 @@ func cursorPendingWriter(sessions map[string]cursorSession, args []string, now t
 
 // cursorAuthor is the writer of a document from a Cursor agent shell (F-0513),
 // args being this process's os.Args[1:]: provider cursor, with the model of
-// the one session whose pending shell command this is (criterion 6), else
-// the model every Cursor session in play reported, and none otherwise — the
-// shell names no session, so two concurrent sessions on different models are
-// never told apart by a guess (cost.AuthorModel's rule).
+// the one session whose pending shell command this is (criterion 6), else —
+// for F-0525 — the model of CURSOR_CONVERSATION_ID's own record when that ID
+// names a valid fresh session (direct lookup beats the ambiguity heuristic),
+// else the model every Cursor session in play reported, and none otherwise.
 func cursorAuthor(cacheDir string, args []string) DocAuthor {
 	now := time.Now()
 	sessions := cursorSessions(cacheDir, now)
 	if w := cursorPendingWriter(sessions, args, now); sessions[w].Model != "" {
 		return DocAuthor{Provider: "cursor", Model: sessions[w].Model, Source: "hook"}
+	}
+	// F-0525 crit. 2: when CURSOR_CONVERSATION_ID names a fresh record, use it
+	// directly — even when two concurrent sessions on different models would
+	// otherwise be ambiguous. This does not fall back to the global heuristic.
+	if convID := os.Getenv("CURSOR_CONVERSATION_ID"); convID != "" && safeSessionID(convID) == nil {
+		if rec, ok := sessions[convID]; ok && rec.Model != "" {
+			return DocAuthor{Provider: "cursor", Model: rec.Model, Source: "hook"}
+		}
 	}
 	a := DocAuthor{Provider: "cursor", Source: "hook"}
 	for _, rec := range sessions {
@@ -190,14 +198,20 @@ func cursorAuthor(cacheDir string, args []string) DocAuthor {
 
 // cursorWriterSession is the session a Cursor shell's write is marked on
 // (F-0513), args being this process's os.Args[1:]: the one whose pending
-// shell command this is (criterion 6), else the only Cursor session in play,
-// bound or not — the spec and the plan are written before any feature start
-// binds. "" when neither is single: any of them may be the writer.
+// shell command this is (criterion 6), else — for F-0525 — the session named
+// by CURSOR_CONVERSATION_ID when it has a fresh record, else the only Cursor
+// session in play, bound or not. "" when none of these is single.
 func cursorWriterSession(cacheDir string, args []string) string {
 	now := time.Now()
 	sessions := cursorSessions(cacheDir, now)
 	if w := cursorPendingWriter(sessions, args, now); w != "" {
 		return w
+	}
+	// F-0525 crit. 2: direct ID lookup beats the sole-session heuristic.
+	if convID := os.Getenv("CURSOR_CONVERSATION_ID"); convID != "" && safeSessionID(convID) == nil {
+		if _, ok := sessions[convID]; ok {
+			return convID
+		}
 	}
 	if len(sessions) != 1 {
 		return ""
