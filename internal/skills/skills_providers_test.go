@@ -554,3 +554,25 @@ func TestParityCellsCarryTheCondition(t *testing.T) {
 		}
 	}
 }
+
+// TestStaleCursorOnly (F-0527 crit. 4): in a project whose skills live in
+// .cursor/skills alone, Stale checks those copies, not the absent
+// .claude/skills, so a whole Cursor install is not reported stale.
+func TestStaleCursorOnly(t *testing.T) { // F-0527 crit. 4
+	proj := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(proj, ".cursor"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := InstallProviders(proj, hooks.ProviderCursor); err != nil {
+		t.Fatal(err)
+	}
+	if got := Stale(proj); len(got) != 0 {
+		t.Fatalf("Stale after a whole Cursor install = %v, want none", got)
+	}
+	if err := os.WriteFile(filepath.Join(proj, ".cursor", "skills", "cerne-self-learning", "SKILL.md"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := Stale(proj); len(got) != 1 || got[0] != "cerne-self-learning" {
+		t.Fatalf("Stale with an old Cursor copy = %v, want [cerne-self-learning]", got)
+	}
+}

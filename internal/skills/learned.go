@@ -40,7 +40,7 @@ const managedMarker = "by `cerne skill sync`"
 // under .cursor/skills/ are pruned. When only .cursor exists, learned-* sync
 // to .cursor/skills/ instead (F-0527).
 func SyncLearned(projDir string, items []Learned) ([]Result, error) {
-	skillsDir := syncLearnedTarget(projDir)
+	skillsDir := ProjectSkillsDir(projDir)
 	want := WantLearned(items)
 
 	results := make([]Result, 0, len(items))
@@ -82,17 +82,23 @@ func SyncLearned(projDir string, items []Learned) ([]Result, error) {
 	return results, nil
 }
 
-// syncLearnedTarget picks where learned-* are reconciled (F-0527).
-func syncLearnedTarget(projDir string) string {
-	claude := filepath.Join(projDir, ".claude", "skills")
-	if _, err := os.Stat(claude); err == nil {
-		return claude
+// CursorOnly reports a project whose skills live in .cursor/skills alone
+// (F-0527): .cursor/ is there and .claude/skills is not.
+func CursorOnly(projDir string) bool {
+	if _, err := os.Stat(filepath.Join(projDir, ".claude", "skills")); err == nil {
+		return false
 	}
-	cursorRoot := filepath.Join(projDir, ".cursor")
-	if _, err := os.Stat(cursorRoot); err == nil {
-		return filepath.Join(cursorRoot, "skills")
+	_, err := os.Stat(filepath.Join(projDir, ".cursor"))
+	return err == nil
+}
+
+// ProjectSkillsDir is where the project's canonical and learned-* skills live:
+// .cursor/skills in a Cursor-only project, .claude/skills otherwise (F-0527).
+func ProjectSkillsDir(projDir string) string {
+	if CursorOnly(projDir) {
+		return filepath.Join(projDir, ".cursor", "skills")
 	}
-	return claude
+	return filepath.Join(projDir, ".claude", "skills")
 }
 
 // pruneManagedLearnedCursor drops cerne-managed learned-* from .cursor/skills
