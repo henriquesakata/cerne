@@ -865,12 +865,13 @@ func TestRoomFacilitatorResetCmd(t *testing.T) {
 	}
 
 	t.Setenv("CERNE_ACTOR", "agent")
-	if _, err := runRoom(t, append([]string{"facilitator", "reset", "R1"}, dirFlag...)...); !errors.Is(err, app.ErrHumanGate) {
+	resetArgs := []string{"facilitator", "reset", "R1", "--dir", dir} // no --port: the reset never calls the ui (B-0093)
+	if _, err := runRoom(t, resetArgs...); !errors.Is(err, app.ErrHumanGate) {
 		t.Fatalf("agent reset err = %v, want ErrHumanGate", err)
 	}
 
 	t.Setenv("CERNE_ACTOR", "human")
-	out, err := runRoom(t, append([]string{"facilitator", "reset", "R1"}, dirFlag...)...)
+	out, err := runRoom(t, resetArgs...)
 	if err != nil {
 		t.Fatalf("reset: %v", err)
 	}

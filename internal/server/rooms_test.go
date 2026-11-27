@@ -414,40 +414,33 @@ func TestHandoffFacilitatorRotatesAndRejectsOld(t *testing.T) {
 	}
 }
 
-// B-0083: the reset route mints a capability with no current one, refuses a
-// cross-site post and the permanent channel, and a refused capability points
-// to it.
-func TestResetFacilitatorEndpoint(t *testing.T) {
+// B-0093: no HTTP route mints a facilitator capability with no current one —
+// the reset runs in the CLI, past the human gate. A local POST with no Origin
+// (a curl from an agent shell) gets no capability, the opener's capability
+// still works, and a refused capability still names the CLI reset.
+func TestFacilitatorResetHasNoRoute(t *testing.T) {
 	h := newRoomServer(t, "proj-fac-reset")
 	var opened openJSON
 	doJSON(t, h, http.MethodPost, "/api/rooms", `{"topic":"t"}`, &opened)
 
+	for _, origin := range []string{"", "http://127.0.0.1:7717"} {
+		rec := doJSONWith(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/facilitator/reset", "", map[string]string{"Origin": origin}, nil)
+		if rec.Code == http.StatusOK || strings.Contains(rec.Body.String(), "facilitator_id") {
+			t.Fatalf("reset with Origin %q = %d %s, want no route", origin, rec.Code, rec.Body.String())
+		}
+	}
+
 	var errBody map[string]string
-	rec := doJSONWith(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/facilitator/reset", "", map[string]string{"Origin": "http://evil.example"}, &errBody)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("cross-site reset status = %d, want 403; body: %s", rec.Code, rec.Body.String())
-	}
-	rec = doJSON(t, h, http.MethodPost, "/api/rooms/"+room.ChannelID+"/facilitator/reset", "", &errBody)
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("channel reset status = %d, want 409; body: %s", rec.Code, rec.Body.String())
-	}
-
-	var got map[string]string
-	rec = doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/facilitator/reset", "", &got)
-	if rec.Code != http.StatusOK || len(got["facilitator_id"]) < 32 || got["facilitator_id"] == opened.FacilitatorID {
-		t.Fatalf("reset status=%d body=%+v", rec.Code, got)
-	}
-
-	closeBody := `{"facilitator_id":"` + opened.FacilitatorID + `","minutes":{"conclusion":"ok","rationale":"ok"}}`
-	rec = doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/close", closeBody, &errBody)
+	closeBody := `{"facilitator_id":"deadbeefdeadbeefdeadbeefdeadbeef","minutes":{"conclusion":"ok","rationale":"ok"}}`
+	rec := doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/close", closeBody, &errBody)
 	if rec.Code != http.StatusForbidden || !strings.Contains(errBody["error"], "cerne room facilitator reset") {
-		t.Fatalf("close with pre-reset capability status = %d, want 403 naming the reset; body: %s", rec.Code, rec.Body.String())
+		t.Fatalf("close with a wrong capability status = %d, want 403 naming the reset; body: %s", rec.Code, rec.Body.String())
 	}
-	closeBody = `{"facilitator_id":"` + got["facilitator_id"] + `","minutes":{"conclusion":"ok","rationale":"ok"}}`
+	closeBody = `{"facilitator_id":"` + opened.FacilitatorID + `","minutes":{"conclusion":"ok","rationale":"ok"}}`
 	var closed map[string]any
 	rec = doJSON(t, h, http.MethodPost, "/api/rooms/"+opened.ID+"/close", closeBody, &closed)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("close with reset capability status = %d; body: %s", rec.Code, rec.Body.String())
+		t.Fatalf("close with the opener's capability status = %d; body: %s", rec.Code, rec.Body.String())
 	}
 }
 

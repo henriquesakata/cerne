@@ -260,16 +260,6 @@ func (c roomClient) handoffFacilitator(ctx context.Context, id, facilitatorID st
 	return out.FacilitatorID, err
 }
 
-// resetFacilitator mints a new facilitator capability with no current one
-// (B-0083), invalidating every earlier capability.
-func (c roomClient) resetFacilitator(ctx context.Context, id string) (string, error) {
-	var out struct {
-		FacilitatorID string `json:"facilitator_id"`
-	}
-	err := c.do(ctx, http.MethodPost, "/rooms/"+url.PathEscape(id)+"/facilitator/reset", nil, &out)
-	return out.FacilitatorID, err
-}
-
 // createItem raises a proposal or decision-request item as sessionID's
 // participant (F-0228 criterion 2). kind is "proposal" or "decision_request".
 func (c roomClient) createItem(ctx context.Context, id, sessionID, kind, title, body string) (room.FacilitationItem, error) {

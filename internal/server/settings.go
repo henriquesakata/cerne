@@ -195,8 +195,8 @@ func pageWrite(r *http.Request, pattern string) error {
 // another `cerne ui` registering its project in this panel, deregistering it
 // or asking the panel to restart (N-0113), and the `cerne room` client's
 // routes, listed one by one (roomClientWrites), under either server's prefix.
-// The facilitator reset still acts as the human with no Origin (B-0083); the
-// channel's human post asks for the Origin itself (rooms.go).
+// The facilitator reset has no route: it runs in the CLI past the human gate
+// (B-0093). The channel's human post asks for the Origin itself (rooms.go).
 func cliWrite(pattern string) bool {
 	switch pattern {
 	case "POST /api/projects", "DELETE /api/projects/{pid}", "POST /api/restart":
@@ -219,7 +219,6 @@ var roomClientWrites = []string{
 	"POST /rooms/{id}/minutes/draft",
 	"POST /rooms/{id}/minutes/note",
 	"POST /rooms/{id}/facilitator/handoff",
-	"POST /rooms/{id}/facilitator/reset",
 	"POST /rooms/{id}/items",
 	"POST /rooms/{id}/items/{itemID}/resolve",
 }

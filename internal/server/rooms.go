@@ -476,30 +476,6 @@ func handleRoomFacilitatorHandoff(w http.ResponseWriter, r *http.Request, projec
 	writeJSON(w, http.StatusOK, map[string]any{"facilitator_id": next})
 }
 
-// handleRoomFacilitatorReset recovers a lost facilitation (B-0083): it mints
-// a new capability with no current one. Same-origin guard only — the human
-// gate is the CLI's, as for the other human acts.
-func handleRoomFacilitatorReset(w http.ResponseWriter, r *http.Request, projectID, id string) {
-	if !sameOriginJSON(r) {
-		writeJSON(w, http.StatusForbidden, errorBody("cross-origin or non-JSON request refused"))
-		return
-	}
-	if refuseChannelRite(w, id) {
-		return
-	}
-	m, err := roomManagerFor(projectID)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, errorBody(err.Error()))
-		return
-	}
-	next, err := m.ResetFacilitator(id)
-	if err != nil {
-		writeRoomErr(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"facilitator_id": next})
-}
-
 type createItemRequest struct {
 	SessionID string `json:"session_id"`
 	Kind      string `json:"kind"` // proposal|decision_request

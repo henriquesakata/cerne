@@ -18,6 +18,16 @@ While cerne is below 1.0.0, a minor version may change behavior: read the
   the AUR reopens account registration.
   ([#201](https://github.com/henriquesakata/cerne/pull/201))
 
+### Fixed
+
+- War Room: recovering a room's facilitation goes through the human gate
+  again. `cerne room facilitator reset` writes the new capability itself, and
+  the running `cerne ui` accepts it with no restart; the ui API no longer has
+  a reset route, which any local process could call with no Origin to take
+  the facilitation from the human and close the room. The command drops its
+  `--port` flag, since it no longer talks to the ui.
+  ([#246](https://github.com/henriquesakata/cerne/pull/246))
+
 ## [0.16.0] - 2026-11-26
 
 ### Highlights
