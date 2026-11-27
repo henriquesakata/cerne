@@ -352,3 +352,21 @@ func TestTimingRoundsOncePerKey(t *testing.T) { // F-0528 crit. 1, 5, 6
 		t.Fatalf("active %d wall %d research %d, want 6, 6, 6", tm.ActiveSeconds, tm.WallSeconds, tm.ByActivity[actResearch])
 	}
 }
+
+// TestTimingWallNeverAboveActive (F-0528 crit. 6): the union of the
+// intervals never exceeds their sum; per-key rounding must not make it look
+// so (Gauntlet round 2: 81 s of wall over 80 s active in one session).
+func TestTimingWallNeverAboveActive(t *testing.T) { // F-0528 crit. 6
+	t0 := at(0)
+	in := timingFixture(t,
+		userLine("s", t0, "go", nil),
+		asst(t0.Add(400*time.Millisecond), "m1", tool("t1", "Read", map[string]any{"file_path": "a"})), // pesquisa 0.4 s
+		userLine("s", t0.Add(400*time.Millisecond), resultContent("t1"), nil),
+		asst(t0.Add(800*time.Millisecond), "m2", tool("t2", "Write", map[string]any{"file_path": "x.go"})), // código 0.4 s
+		userLine("s", t0.Add(800*time.Millisecond), resultContent("t2"), nil),
+	) // each key rounds to 0, the union of 0.8 s to 1
+	tm := timingOf(t, in, "F-0001")
+	if tm.WallSeconds > tm.ActiveSeconds {
+		t.Fatalf("wall %d above active %d", tm.WallSeconds, tm.ActiveSeconds)
+	}
+}

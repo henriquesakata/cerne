@@ -236,7 +236,9 @@ func (t *Timing) finish() {
 	for _, sp := range t.spans {
 		wall += sp[1].Sub(sp[0])
 	}
-	t.WallSeconds = int64(wall.Round(time.Second) / time.Second)
+	// The union never exceeds the sum it is taken from: any excess is the
+	// per-key rounding of the active time.
+	t.WallSeconds = min(int64(wall.Round(time.Second)/time.Second), t.ActiveSeconds)
 	t.ms, t.sideMs, t.waitMs = nil, nil, 0
 }
 
