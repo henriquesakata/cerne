@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 )
 
@@ -69,61 +70,65 @@ func CursorHooksState(projDir string) string {
 	return FileDivergent
 }
 
-// cursorSandboxDirs returns the portable paths that cerne expects in
-// .cursor/sandbox.json for projDir. Returns nil when .cernerc is absent or
-// unreadable (no sandbox paths required), and nil on any other error.
-func cursorSandboxDirs(projDir string) []string {
-	portable, _, _, err := sandboxPaths(projDir)
-	if err != nil {
-		return nil
-	}
-	return portable
-}
-
-// CursorSandboxState checks .cursor/sandbox.json:
-//   - When no extra dirs are required (cursorSandboxDirs returns nil/empty):
-//     FileOK when file absent or valid JSON; FileDivergent when invalid JSON.
-//   - When extra dirs are required:
-//     FileMissing when file absent; FileDivergent when invalid JSON or missing
-//     any expected dir; FileOK when all expected dirs are present.
+// CursorSandboxState checks the folders cerne needs (sandboxPaths, portable
+// and machine-specific) against what Cursor's sandbox opens: the union of the
+// project's .cursor/sandbox.json and ~/.cursor/sandbox.json (F-0512). With a
+// machine-specific folder the install writes nothing to the project file and
+// prints the block to merge into the user file, so the user file counts too.
+//   - FileDivergent: the project file is not JSON with a string list, or the
+//     union lacks a needed folder;
+//   - FileMissing: a folder is needed and neither file exists;
+//   - FileOK: nothing is needed (no .cernerc) or the union holds every folder.
+//
+// An unreadable file fails open (FileOK), as CopilotHooksState does.
 func CursorSandboxState(projDir string) string {
-	expectedDirs := cursorSandboxDirs(projDir)
-	raw, err := os.ReadFile(filepath.Join(projDir, ".cursor", "sandbox.json"))
-	if err != nil {
-		if os.IsNotExist(err) {
-			if len(expectedDirs) == 0 {
-				return FileOK
-			}
-			return FileMissing
-		}
-		return FileOK // unreadable → fail-open
-	}
-	// File exists: validate JSON.
-	var doc map[string]any
-	if json.Unmarshal(raw, &doc) != nil {
+	inProject, pState := sandboxFolders(filepath.Join(projDir, ".cursor", "sandbox.json"))
+	portable, machine, _, err := sandboxPaths(projDir)
+	need := slices.Concat(portable, machine)
+	switch {
+	case pState == "":
+		return FileOK
+	case pState == FileDivergent:
 		return FileDivergent
-	}
-	if len(expectedDirs) == 0 {
+	case err != nil || len(need) == 0:
 		return FileOK
 	}
-	// Check all expected dirs are present.
+	inUser, uState := []string(nil), FileMissing
+	if home, err := os.UserHomeDir(); err == nil {
+		inUser, uState = sandboxFolders(filepath.Join(home, ".cursor", "sandbox.json"))
+	}
+	have := slices.Concat(inProject, inUser)
+	switch {
+	case uState == "":
+		return FileOK
+	case !slices.ContainsFunc(need, func(f string) bool { return !slices.Contains(have, f) }):
+		return FileOK
+	case pState == FileMissing && uState == FileMissing:
+		return FileMissing
+	}
+	return FileDivergent
+}
+
+// sandboxFolders reads additionalReadwritePaths from one sandbox.json:
+// FileMissing when absent, FileDivergent when it is not JSON or not a string
+// list, "" when unreadable (the caller fails open), FileOK otherwise.
+func sandboxFolders(path string) ([]string, string) {
+	raw, err := os.ReadFile(path)
+	switch {
+	case os.IsNotExist(err):
+		return nil, FileMissing
+	case err != nil:
+		return nil, ""
+	}
+	var doc map[string]any
+	if json.Unmarshal(raw, &doc) != nil {
+		return nil, FileDivergent
+	}
 	paths, ok := stringList(doc["additionalReadwritePaths"])
 	if !ok {
-		return FileDivergent
+		return nil, FileDivergent
 	}
-	for _, want := range expectedDirs {
-		found := false
-		for _, have := range paths {
-			if have == want {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return FileDivergent
-		}
-	}
-	return FileOK
+	return paths, FileOK
 }
 
 // CursorMCPState compares mcpServers["cerne"] in .cursor/mcp.json against the

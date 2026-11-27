@@ -138,6 +138,48 @@ func TestCursorSandboxState(t *testing.T) { // F-0526 crit. 3
 	}
 }
 
+// TestCursorSandboxStateReadsTheUserFile (F-0526 crit. 3): Cursor unions the
+// project's .cursor/sandbox.json with ~/.cursor/sandbox.json, and with a
+// folder specific to this machine the install writes nothing to the project
+// and has the user merge its block into the user file. The state follows the
+// union, over every folder cerne needs, machine-specific ones included.
+func TestCursorSandboxStateReadsTheUserFile(t *testing.T) { // F-0526 crit. 3
+	proj, home := codexProject(t, "x")
+	backend := filepath.Join(t.TempDir(), "demo.git") // outside the home: machine-specific
+	bareRepo(t, backend)
+	if err := os.WriteFile(filepath.Join(proj, ".cernerc"), []byte("project_id = \"demo\"\nbackend = \""+backend+"\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := InstallNetwork(proj, false, ProviderCursor); err != nil {
+		t.Fatal(err)
+	}
+	if got := CursorSandboxState(proj); got != FileMissing {
+		t.Errorf("nothing written anywhere = %q, want missing", got)
+	}
+	portable, machine, _, err := sandboxPaths(proj)
+	if err != nil || len(portable) == 0 || len(machine) == 0 {
+		t.Fatalf("fixture: portable %v, machine %v, err %v", portable, machine, err)
+	}
+	user := filepath.Join(home, ".cursor", "sandbox.json")
+	if err := os.MkdirAll(filepath.Dir(user), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		paths []string
+		want  string
+	}{
+		{append(append([]string(nil), portable...), machine...), FileOK}, // the printed block, merged
+		{portable, FileDivergent}, // the machine folder left out
+	} {
+		if err := os.WriteFile(user, []byte(cursorSandboxBlock(c.paths, "")), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got := CursorSandboxState(proj); got != c.want {
+			t.Errorf("user file with %v = %q, want %q", c.paths, got, c.want)
+		}
+	}
+}
+
 // TestCursorMCPState (F-0526 crit. 3): missing/ok/divergent for .cursor/mcp.json.
 func TestCursorMCPState(t *testing.T) { // F-0526 crit. 3
 	proj := t.TempDir()
