@@ -9,12 +9,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/domain"
+	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/room"
 	"github.com/spf13/cobra"
 )
@@ -465,10 +467,10 @@ func newRoomFacilitatorCmd() *cobra.Command {
 
 // newRoomFacilitatorResetCmd recovers a lost facilitation (B-0083): a human
 // mints a new capability without the current one, and the running cerne ui
-// accepts it at once.
+// accepts it at once. It writes the room's cache in this process, past the
+// human gate, so no HTTP route hands a capability out (B-0093).
 func newRoomFacilitatorResetCmd() *cobra.Command {
 	var dir string
-	var port int
 	cmd := &cobra.Command{
 		Use:   "reset <room>",
 		Short: "Recover a lost facilitator capability (human only): mint a new one without the current",
@@ -480,11 +482,22 @@ func newRoomFacilitatorResetCmd() *cobra.Command {
 			if err := app.CheckHumanFacilitatorReset(); err != nil {
 				return err
 			}
-			c, err := newRoomClient(dir, port)
+			if dir == "" {
+				wd, err := os.Getwd()
+				if err != nil {
+					return err
+				}
+				dir = wd
+			}
+			cfg, _, err := project.LoadConfig(dir)
 			if err != nil {
 				return err
 			}
-			next, err := c.resetFacilitator(cmd.Context(), args[0])
+			cacheDir, err := project.CacheDir(cfg.ProjectID)
+			if err != nil {
+				return err
+			}
+			next, err := room.ResetFacilitator(filepath.Join(cacheDir, "rooms"), args[0])
 			if err != nil {
 				return err
 			}
@@ -495,7 +508,8 @@ func newRoomFacilitatorResetCmd() *cobra.Command {
 			return nil
 		},
 	}
-	addRoomFlags(cmd, &dir, &port)
+	cmd.Flags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
+	_ = cmd.Flags().MarkHidden("dir")
 	return cmd
 }
 

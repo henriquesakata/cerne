@@ -695,6 +695,8 @@ func TestHandoffFacilitatorRejectsWrongCapability(t *testing.T) {
 
 // B-0083: a capability lost to a handoff nobody received is recovered with no
 // current capability; every earlier one stops working, also after a restart.
+// B-0093: the reset is a file write the CLI makes past the human gate, and the
+// live Manager of a running cerne ui honors it with no restart.
 func TestResetFacilitatorRecoversLostCapability(t *testing.T) {
 	dir := t.TempDir()
 	m, err := NewManager(dir)
@@ -706,15 +708,24 @@ func TestResetFacilitatorRecoversLostCapability(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HandoffFacilitator: %v", err)
 	}
-	reset, err := m.ResetFacilitator(r.ID)
+	reset, err := ResetFacilitator(dir, r.ID)
 	if err != nil {
 		t.Fatalf("ResetFacilitator: %v", err)
 	}
 	if reset == fac || reset == lost {
 		t.Fatalf("reset returned a previous capability")
 	}
-	if _, err := m.ResetFacilitator("R99"); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("reset of unknown room err = %v, want ErrNotFound", err)
+	for _, id := range []string{"R99", "../" + r.ID, r.ID + "/..", "", ChannelID} {
+		if _, err := ResetFacilitator(dir, id); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("reset of room %q err = %v, want ErrNotFound", id, err)
+		}
+	}
+
+	if err := m.CheckFacilitator(r.ID, lost); !errors.Is(err, ErrNotFacilitator) {
+		t.Fatalf("live manager, pre-reset capability err = %v, want ErrNotFacilitator", err)
+	}
+	if err := m.CheckFacilitator(r.ID, reset); err != nil {
+		t.Fatalf("live manager, reset capability: %v", err)
 	}
 
 	m2, err := NewManager(dir)

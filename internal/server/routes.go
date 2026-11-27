@@ -316,9 +316,6 @@ func dataRoutes() []dataRoute {
 		{"POST", "/rooms/{id}/facilitator/handoff", false, func(w http.ResponseWriter, r *http.Request, _, _, projectID string) {
 			handleRoomFacilitatorHandoff(w, r, projectID, r.PathValue("id"))
 		}},
-		{"POST", "/rooms/{id}/facilitator/reset", false, func(w http.ResponseWriter, r *http.Request, _, _, projectID string) {
-			handleRoomFacilitatorReset(w, r, projectID, r.PathValue("id"))
-		}},
 		{"POST", "/rooms/{id}/items", false, func(w http.ResponseWriter, r *http.Request, _, _, projectID string) {
 			handleRoomCreateItem(w, r, projectID, r.PathValue("id"))
 		}},

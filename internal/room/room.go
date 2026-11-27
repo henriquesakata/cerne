@@ -383,13 +383,13 @@ type facilitatorRecord struct {
 }
 
 // persistFacilitator appends a newly minted (or rotated) facilitator
-// capability record.
-func (m *Manager) persistFacilitator(id string, rec facilitatorRecord) error {
+// capability record to room id's sidecar under dir.
+func persistFacilitator(dir, id string, rec facilitatorRecord) error {
 	line, err := json.Marshal(rec)
 	if err != nil {
 		return err
 	}
-	f, err := os.OpenFile(filepath.Join(m.dir, id+facilitatorSuffix), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	f, err := os.OpenFile(filepath.Join(dir, id+facilitatorSuffix), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
@@ -732,7 +732,7 @@ func (m *Manager) Open(topic string) (Room, string, error) {
 		return Room{}, "", err
 	}
 	hash := sha256.Sum256([]byte(facilitator))
-	if err := m.persistFacilitator(id, facilitatorRecord{Hash: hex.EncodeToString(hash[:]), IssuedAt: now}); err != nil {
+	if err := persistFacilitator(m.dir, id, facilitatorRecord{Hash: hex.EncodeToString(hash[:]), IssuedAt: now}); err != nil {
 		return Room{}, "", err
 	}
 
@@ -757,25 +757,46 @@ func (m *Manager) HandoffFacilitator(id, current string) (string, error) {
 	}
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
-	if !rs.checkFacilitatorLocked(current) {
+	if !m.isFacilitatorLocked(id, rs, current) {
 		return "", ErrNotFacilitator
 	}
 	return m.rotateFacilitatorLocked(id, rs)
 }
 
-// ResetFacilitator mints a replacement facilitator capability without the
-// current one (B-0083): the recovery when the capability was lost, e.g. a UI
-// handoff whose new capability nobody copied. Every earlier capability stops
-// working. The human gate lives in the CLI; the server only guards the route
-// against a cross-site post.
-func (m *Manager) ResetFacilitator(id string) (string, error) {
-	rs, err := m.getRoom(id)
+// ResetFacilitator mints a replacement facilitator capability for room id
+// under dir without the current one (B-0083): the recovery when the
+// capability was lost, e.g. a UI handoff whose new capability nobody copied.
+// Every earlier capability stops working. It writes the room's sidecar
+// directly, so it runs in the CLI past the human gate and no HTTP route hands
+// a capability out (B-0093); a running Manager re-reads the sidecar on every
+// check (isFacilitatorLocked).
+func ResetFacilitator(dir, id string) (string, error) {
+	if _, ok := roomNumber(id); !ok || !strings.HasPrefix(id, "R") {
+		return "", ErrNotFound // also keeps a path out of the file names below
+	}
+	if _, err := os.Stat(filepath.Join(dir, id+".jsonl")); errors.Is(err, os.ErrNotExist) {
+		return "", ErrNotFound
+	} else if err != nil {
+		return "", err
+	}
+	next, err := newSessionToken()
 	if err != nil {
 		return "", err
 	}
-	rs.mu.Lock()
-	defer rs.mu.Unlock()
-	return m.rotateFacilitatorLocked(id, rs)
+	hash := sha256.Sum256([]byte(next))
+	if err := persistFacilitator(dir, id, facilitatorRecord{Hash: hex.EncodeToString(hash[:]), IssuedAt: time.Now().UTC()}); err != nil {
+		return "", err
+	}
+	return next, nil
+}
+
+// isFacilitatorLocked re-reads room id's facilitator sidecar, then checks
+// token against it (B-0093): a reset the CLI wrote counts with no restart. An
+// unreadable sidecar keeps the capability already in memory. Caller must hold
+// rs.mu.
+func (m *Manager) isFacilitatorLocked(id string, rs *roomState, token string) bool {
+	_ = loadFacilitator(filepath.Join(m.dir, id+facilitatorSuffix), rs)
+	return rs.checkFacilitatorLocked(token)
 }
 
 // rotateFacilitatorLocked mints, persists and installs a new facilitator
@@ -786,7 +807,7 @@ func (m *Manager) rotateFacilitatorLocked(id string, rs *roomState) (string, err
 		return "", err
 	}
 	hash := sha256.Sum256([]byte(next))
-	if err := m.persistFacilitator(id, facilitatorRecord{Hash: hex.EncodeToString(hash[:]), IssuedAt: time.Now().UTC()}); err != nil {
+	if err := persistFacilitator(m.dir, id, facilitatorRecord{Hash: hex.EncodeToString(hash[:]), IssuedAt: time.Now().UTC()}); err != nil {
 		return "", err
 	}
 	rs.facilitatorHash = hash
@@ -995,7 +1016,7 @@ func (m *Manager) CheckFacilitator(id, token string) error {
 	}
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
-	if !rs.checkFacilitatorLocked(token) {
+	if !m.isFacilitatorLocked(id, rs, token) {
 		return ErrNotFacilitator
 	}
 	return nil
@@ -1029,7 +1050,7 @@ func (m *Manager) Resolve(id, facilitatorToken, itemID, result string) (Facilita
 	}
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
-	if !rs.checkFacilitatorLocked(facilitatorToken) {
+	if !m.isFacilitatorLocked(id, rs, facilitatorToken) {
 		return FacilitationItem{}, ErrNotFacilitator
 	}
 	idx := -1
@@ -1074,7 +1095,7 @@ func (m *Manager) close(id, facilitatorToken string, given *Minutes, reviewed ti
 	}
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
-	if !rs.checkFacilitatorLocked(facilitatorToken) {
+	if !m.isFacilitatorLocked(id, rs, facilitatorToken) {
 		return Room{}, ErrNotFacilitator
 	}
 	if rs.meta.ClosedAt != nil {
@@ -1143,7 +1164,7 @@ func (m *Manager) SaveMinutesDraft(id, sessionID, facilitatorToken string, minut
 		}
 		author = sa.nick
 	case facilitatorToken != "":
-		if !rs.checkFacilitatorLocked(facilitatorToken) {
+		if !m.isFacilitatorLocked(id, rs, facilitatorToken) {
 			return MinutesDraft{}, ErrNotFacilitator
 		}
 	default:
