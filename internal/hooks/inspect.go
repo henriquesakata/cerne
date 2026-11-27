@@ -204,6 +204,11 @@ func Stale(projDir string) []string {
 	if CopilotHooksState(projDir) == FileDivergent {
 		out = append(out, "copilot: "+copilotHooksFile)
 	}
+	// Cursor's rule file is only checked when it exists (F-0526): a project
+	// without .cursor/rules/cerne.mdc is not nagged.
+	if CursorRuleState(projDir) == FileDivergent {
+		out = append(out, "cursor: .cursor/rules/cerne.mdc")
+	}
 	return out
 }
 
