@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -189,7 +190,7 @@ func consumePendingCompactionBlock(dir, cacheDir, repoDir, sess string, now time
 		return ""
 	}
 	shown := compactionShownAt(cacheDir, sess)
-	if !last.After(shown) {
+	if !last.After(shown) || !claimCompaction(cacheDir, sess, last) {
 		return ""
 	}
 	block := compactionResumeText(repoDir, workID)
@@ -198,6 +199,21 @@ func consumePendingCompactionBlock(dir, cacheDir, repoDir, sess string, now time
 	}
 	markCompactionShown(cacheDir, sess, last)
 	return block
+}
+
+// claimCompaction is true for the one hook that delivers the compaction at
+// at (F-0525): Cursor runs the post-tool hooks of parallel tool calls at once,
+// and each of them can read .shown before another writes it. Creating the
+// marker is the exclusive step.
+// ponytail: one empty marker per compaction stays in compactions/; prune them
+// with the session's compaction log if that ever grows.
+func claimCompaction(cacheDir, sess string, at time.Time) bool {
+	name := sess + ".claim-" + strconv.FormatInt(at.UnixNano(), 10)
+	f, err := os.OpenFile(filepath.Join(cacheDir, compactionsSubdir, name), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+	if err != nil {
+		return false
+	}
+	return f.Close() == nil
 }
 
 // compactionResumeText is the English resume block after compaction, with the

@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -746,6 +748,32 @@ func TestHookCursorCompactionResumeOnPostTool(t *testing.T) {
 	}
 	if !strings.Contains(parseCtx(out), "AFTER COMPACTION") {
 		t.Fatalf("after a new compaction: want the resume block again:\n%s", out)
+	}
+}
+
+// TestCompactionResumeDeliveredOnceUnderParallelTools (F-0525 crit. 4): Cursor
+// runs the post-tool hooks of parallel tool calls at once, and only one of
+// them delivers a compaction's resume block.
+func TestCompactionResumeDeliveredOnceUnderParallelTools(t *testing.T) { // F-0525 crit. 4
+	sess := "cursor-par"
+	projDir, cacheDir, repoDir := boundWork(t, sess)
+	recordCompaction(cacheDir, sess, "W-0001", time.Now().UTC())
+	const hooks = 8
+	var wg sync.WaitGroup
+	var delivered atomic.Int32
+	start := make(chan struct{})
+	for range hooks {
+		wg.Go(func() {
+			<-start
+			if consumePendingCompactionBlock(projDir, cacheDir, repoDir, sess, time.Now().UTC()) != "" {
+				delivered.Add(1)
+			}
+		})
+	}
+	close(start)
+	wg.Wait()
+	if got := delivered.Load(); got != 1 {
+		t.Fatalf("delivered %d times across %d parallel hooks, want 1", got, hooks)
 	}
 }
 
