@@ -184,6 +184,11 @@ func parseSettings(raw []byte, origin string) ([]wiredHook, map[string]bool, err
 // Inspect builds the harness inventory for one project. Strictly read-only.
 func Inspect(opts Options) Inventory {
 	ls := readLayers(opts.ProjDir, opts.Home)
+	// Read cursor hooks.json files (project + user), adding layers only when
+	// they exist so the Claude Code layer count stays stable (F-0526).
+	cursorLayers := readCursorHooksLayers(opts.ProjDir, opts.Home)
+	ls.layers = append(ls.layers, cursorLayers...)
+
 	cerne := cerneItems(opts, &ls)
 	mcp := mcpItems(opts, &ls)
 	plugins := pluginItems(opts, &ls)

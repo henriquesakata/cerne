@@ -18,8 +18,15 @@ func allProviders() []string {
 	}
 }
 
+// OriginCursorProject / OriginCursorUser mark hook/config items sourced from
+// .cursor/hooks.json (project) or ~/.cursor/hooks.json (user).
+const (
+	OriginCursorProject = "cursor-project"
+	OriginCursorUser    = "cursor-user"
+)
+
 // consumersFor reports which AI providers can consume one inventory item
-// (F-0259). Deterministic on class/origin/name — no inspection, no LLM.
+// (F-0259, F-0526). Deterministic on class/origin/name/path — no I/O.
 func consumersFor(it Item, copilot bool) []string {
 	switch it.Class {
 	case "cerne":
@@ -38,6 +45,11 @@ func consumersFor(it Item, copilot bool) []string {
 		if strings.Contains(it.Name, "AGENTS.md") {
 			return []string{string(hooks.ProviderCodex), string(hooks.ProviderCursor), string(hooks.ProviderCopilot)}
 		}
+		// Project-root CLAUDE.md: Cursor loads it natively (R-0058, R-0154).
+		if it.Name == "CLAUDE.md" && it.Origin == OriginProject {
+			return []string{string(hooks.ProviderClaude), string(hooks.ProviderCursor)}
+		}
+		// ~/.claude/CLAUDE.md (OriginUser) stays claude-only.
 		return []string{string(hooks.ProviderClaude)}
 	case "mcp":
 		// .cursor/mcp.json (project or user) is Cursor's alone (F-0512).
@@ -50,9 +62,62 @@ func consumersFor(it Item, copilot bool) []string {
 			return []string{string(hooks.ProviderClaude), string(hooks.ProviderCopilot)}
 		}
 		return []string{string(hooks.ProviderClaude)}
+	case "config":
+		// .cernerc is cerne's own config — read by any provider.
+		if it.Name == ".cernerc" {
+			return allProviders()
+		}
+		// .cursor/hooks.json, .cursor/mcp.json — Cursor's config surface only.
+		if filepath.Base(filepath.Dir(it.Path)) == ".cursor" {
+			return []string{string(hooks.ProviderCursor)}
+		}
+		// An MCP declaration file has the readers of the servers it declares:
+		// Cursor reads neither .mcp.json nor ~/.claude.json (F-0512, R-0147).
+		if it.Name == ".mcp.json" || it.Name == ".claude.json" {
+			return consumersFor(Item{Class: "mcp", Path: it.Path, Origin: it.Origin}, copilot)
+		}
+		// Claude Code settings layers: Cursor imports .claude/* by default
+		// (R-0037, "Include Third-Party Plugins, Skills, and Other Configs").
+		return []string{string(hooks.ProviderClaude), string(hooks.ProviderCursor)}
+	case "plugins":
+		// enabledPlugins: Cursor imports the same plugin set via its
+		// third-party import toggle (R-0037, R-0066, R-0154).
+		return []string{string(hooks.ProviderClaude), string(hooks.ProviderCursor)}
+	case "skills":
+		// The innermost skills root in the path decides, so a project checked
+		// out under ~/.cursor/worktrees/ (Cursor's parallel agents) is still
+		// the project.
+		p := "/" + filepath.ToSlash(it.Path)
+		cursor, agents := strings.LastIndex(p, "/.cursor/skills/"), strings.LastIndex(p, "/.agents/skills/")
+		switch {
+		case cursor > agents: // .cursor/skills/** or ~/.cursor/skills/**
+			return []string{string(hooks.ProviderCursor)}
+		case agents > cursor: // .agents/skills/**: the Agent Skills readers
+			return []string{string(hooks.ProviderCursor), string(hooks.ProviderCodex), string(hooks.ProviderGemini), string(hooks.ProviderCopilot)}
+		}
+		// .claude/skills/** (project, local, user): Cursor imports them.
+		return []string{string(hooks.ProviderClaude), string(hooks.ProviderCursor)}
+	case "hooks":
+		// A PATH binary runs in any agent's shell.
+		if it.Origin == OriginPath {
+			return allProviders()
+		}
+		// Cursor-sourced hook entries.
+		if it.Origin == OriginCursorProject || it.Origin == OriginCursorUser {
+			return []string{string(hooks.ProviderCursor)}
+		}
+		// Git hooks run on every git commit regardless of the agent.
+		if it.Name == "prepare-commit-msg" || it.Name == "commit-msg" {
+			return allProviders()
+		}
+		// SubagentStart hook: Cursor's third-party import skips SubagentStart
+		// events (R-0037), so it stays claude-only.
+		if it.Name == "cerne-subagent-context.sh" || strings.HasPrefix(it.Path, "SubagentStart") {
+			return []string{string(hooks.ProviderClaude)}
+		}
+		// All other .claude hooks and wirings: Cursor imports them (R-0037).
+		return []string{string(hooks.ProviderClaude), string(hooks.ProviderCursor)}
 	default:
-		// hooks, skills, config, plugins, mcp: .claude/** and marketplace
-		// surfaces — except a PATH binary, which any agent's hooks can call.
 		if it.Origin == OriginPath {
 			return allProviders()
 		}

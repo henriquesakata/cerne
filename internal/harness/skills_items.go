@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/henriquesakata/cerne/internal/hooks"
 	"github.com/henriquesakata/cerne/internal/skills"
 )
 
@@ -145,6 +146,111 @@ func skillItems(opts Options, ls layerSet) []Item {
 		}
 	}
 
+	// Project .cursor/skills/ — Cursor reads natively (R-0066).
+	// cerne-authoring, if installed, is compared against the canonical embed;
+	// third-party skills are listed as unmanaged.
+	items = append(items, cursorSkillItems(opts.ProjDir, false)...)
+
+	// User ~/.cursor/skills/ — Cursor reads natively.
+	if opts.Home != "" {
+		items = append(items, cursorSkillItems(opts.Home, true)...)
+	}
+
+	// Project .agents/skills/ — read by Cursor, Codex, Gemini, Copilot
+	// (agent-skills standard, R-0064).
+	items = append(items, agentsSkillItems(opts.ProjDir, false)...)
+
+	// User ~/.agents/skills/.
+	if opts.Home != "" {
+		items = append(items, agentsSkillItems(opts.Home, true)...)
+	}
+
+	return items
+}
+
+// cursorSkillItems lists skills under <base>/.cursor/skills/ — the cerne-authoring
+// skill is compared against the embed; others are unmanaged.
+func cursorSkillItems(base string, outside bool) []Item {
+	dir := filepath.Join(base, ".cursor", "skills")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	origin := OriginProject
+	if outside {
+		origin = OriginUser
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() {
+			names = append(names, e.Name())
+		}
+	}
+	sort.Strings(names)
+
+	var items []Item
+	const cursorAuthoringName = "cerne-authoring"
+	for _, name := range names {
+		skillDir := filepath.Join(dir, name)
+		it := Item{
+			Class:       "skills",
+			Name:        name,
+			Path:        filepath.Join(skillDir, "SKILL.md"),
+			Origin:      origin,
+			OutsideRepo: outside,
+		}
+		if name == cursorAuthoringName && !outside {
+			// Managed copy: the same check as the "cursor: skill" row.
+			switch skills.CursorSkillState(base) {
+			case hooks.FileOK:
+				it.State = StateOK
+			case hooks.FileDivergent:
+				it.State, it.Fix = StateDivergent, fixSkillInstall
+				it.Detail = "differs from the canonical skill of this cerne build"
+			default:
+				it.State, it.Fix = StateMissing, fixSkillInstall
+			}
+		} else {
+			it.State = StateConfigured
+			if name == cursorAuthoringName {
+				// User-level cerne-authoring — not managed by this project's cerne.
+				it.State = StateUnmanaged
+			}
+		}
+		items = append(items, it)
+	}
+	return items
+}
+
+// agentsSkillItems lists skills under <base>/.agents/skills/ as unmanaged.
+func agentsSkillItems(base string, outside bool) []Item {
+	dir := filepath.Join(base, ".agents", "skills")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	origin := OriginProject
+	if outside {
+		origin = OriginUser
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() {
+			names = append(names, e.Name())
+		}
+	}
+	sort.Strings(names)
+	items := make([]Item, 0, len(names))
+	for _, name := range names {
+		items = append(items, Item{
+			Class:       "skills",
+			Name:        name,
+			Path:        filepath.Join(dir, name),
+			Origin:      origin,
+			State:       StateUnmanaged,
+			OutsideRepo: outside,
+		})
+	}
 	return items
 }
 
