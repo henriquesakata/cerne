@@ -57,6 +57,9 @@ type CostFeature struct {
 	ModelEfforts map[string][]string `json:"model_efforts"` // measured: model → its efforts; empty otherwise
 	EffortSource string              `json:"effort_source"` // measured | declared | unknown
 	Vendors      []string            `json:"vendors"`
+	// Time is the agent's active time from the stamped anchor (F-0528); null
+	// for a stamp from before it existed — not measured, never zero.
+	Time *cost.Timing `json:"time"`
 }
 
 // CostWeek is one ISO week (UTC) of the filtered features.
@@ -261,7 +264,7 @@ func readCost(repoDir string, f store.Feature, at time.Time) (CostDetail, bool, 
 	d.CostFeature = CostFeature{ID: f.ID, Title: f.Title, Level: level, State: f.State, CompletedAt: at,
 		Weighted: weigh(r.Counters), Tokens: r.Counters, ByRole: r.ByRole, ByModel: r.ByModel, ByEffort: r.ByEffort,
 		WeightedByRole: map[string]float64{}, WeightedByModel: map[string]float64{}, WeightedByEffort: map[string]float64{},
-		HasGauntlet: has, Rounds: len(d.RoundList), Defeats: defeats, Efforts: []string{}, ModelEfforts: r.ModelEfforts, EffortSource: "unknown"}
+		HasGauntlet: has, Rounds: len(d.RoundList), Defeats: defeats, Efforts: []string{}, ModelEfforts: r.ModelEfforts, EffortSource: "unknown", Time: r.Timing}
 	for e, c := range r.ByEffort {
 		d.WeightedByEffort[e] = weigh(c)
 		if e != "unknown" {

@@ -44,6 +44,7 @@ const feat = (id: string, weighted: number, extra: Partial<CostFeature> = {}): C
   model_efforts: null,
   effort_source: 'unknown',
   vendors: ['anthropic'],
+  time: null,
   ...extra,
 })
 
@@ -502,5 +503,66 @@ describe('Custos — detalhe da feature (crit. 5)', () => {
     api.fetchCostDetail.mockRejectedValue(new Error("no cost stamped for F-0004: run 'cerne cost F-0004 --stamp' once it is implemented"))
     render(<CostDetailPage id="F-0004" />)
     expect(await screen.findByText(/cerne cost F-0004 --stamp/)).toBeInTheDocument()
+  })
+})
+
+// F-0528: o tempo ativo do agente vem pronto da âncora; sem ele, "sem medida" — nunca zero.
+const timing = {
+  active_seconds: 4320,
+  wall_seconds: 2700,
+  human_wait_seconds: 90,
+  by_phase: { plano: 1200, implementação: 3120 },
+  by_activity: { código: 3120, pesquisa: 1200 },
+  sidechain_time: { active_seconds: 600, by_activity: { pesquisa: 600 } },
+}
+
+describe('Custos — tempo ativo (F-0528 crit. 12, 14)', () => {
+  it('a coluna de tempo ativo aparece, ordena e mostra — com "sem medida" quando não há', async () => {
+    api.fetchCosts.mockResolvedValue(
+      report({
+        features: [
+          feat('F-0001', 100, { time: { ...timing, active_seconds: 600 } }),
+          feat('F-0002', 200, { time: timing }),
+          feat('F-0003', 300),
+        ],
+      }),
+    )
+    render(<Costs hash="#/costs" />)
+    await screen.findByRole('table', { name: 'Features do período' })
+    const table = within(screen.getByRole('table', { name: 'Features do período' }))
+    const rows = table.getAllByRole('row').slice(1)
+    expect(rows[0]).toHaveTextContent(/F-0001.*100.*10min/)
+    expect(rows[1]).toHaveTextContent(/F-0002.*200.*1h 12min/)
+    expect(within(rows[2]).getByTitle('sem medida')).toHaveTextContent('—')
+    fireEvent.click(screen.getByRole('button', { name: 'Tempo ativo' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Tempo ativo' }))
+    expect(rowIds()).toEqual(['F-0002', 'F-0001', 'F-0003'])
+  })
+
+  it('o detalhe mostra o tempo por fase e por atividade, em pt-BR e em inglês', async () => {
+    api.fetchCostDetail.mockResolvedValue({ ...detail, time: timing })
+    const { unmount } = render(<CostDetailPage id="F-0001" />)
+    const phases = await screen.findByRole('table', { name: 'Tempo por fase' })
+    expect(within(phases).getByRole('row', { name: /^implementação/ })).toHaveTextContent('52min')
+    const acts = screen.getByRole('table', { name: 'Tempo por atividade' })
+    expect(within(acts).getByRole('row', { name: /^código/ })).toHaveTextContent('52min')
+    expect(screen.getByText(/Tempo ativo: 1h 12min · relógio: 45min · espera pelo humano: 2min/)).toBeInTheDocument()
+    unmount()
+    localStorage.setItem('cerne-lang', 'en')
+    render(
+      <I18nProvider>
+        <CostDetailPage id="F-0001" />
+      </I18nProvider>,
+    )
+    const en = await screen.findByRole('table', { name: 'Time by phase' })
+    expect(within(en).getByRole('row', { name: /^implementation/ })).toHaveTextContent('52min')
+    expect(within(screen.getByRole('table', { name: 'Time by activity' })).getByRole('row', { name: /^research/ })).toHaveTextContent('20min')
+  })
+
+  it('o detalhe sem medida diz isso, sem tabela de tempo', async () => {
+    api.fetchCostDetail.mockResolvedValue(detail)
+    render(<CostDetailPage id="F-0001" />)
+    expect(await screen.findByText('Tempo ativo: sem medida.')).toBeInTheDocument()
+    expect(screen.queryByRole('table', { name: 'Tempo por fase' })).toBeNull()
   })
 })

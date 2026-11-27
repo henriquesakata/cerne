@@ -514,6 +514,16 @@ export async function fetchProcessPerf(): Promise<ProcessReport> {
 // números vêm das âncoras `## Custo`; a tela só filtra pelo servidor e desenha.
 export type CostCounters = { input: number; cache_creation: number; cache_read: number; output: number }
 
+// O tempo ativo do agente (F-0528), em segundos, da âncora; null: sem medida.
+export type CostTiming = {
+  active_seconds: number
+  wall_seconds: number
+  human_wait_seconds: number
+  by_phase: Record<string, number>
+  by_activity: Record<string, number>
+  sidechain_time?: { active_seconds: number; by_activity: Record<string, number> }
+}
+
 export type CostFeature = {
   id: string
   title: string
@@ -536,6 +546,7 @@ export type CostFeature = {
   model_efforts: Record<string, string[]> | null // medido: modelo → os esforços em que rodou
   effort_source: 'measured' | 'declared' | 'unknown'
   vendors: string[]
+  time: CostTiming | null
 }
 
 export type CostOption = { value: string; n: number }
