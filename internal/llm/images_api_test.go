@@ -204,22 +204,24 @@ func TestImagesUnreadableFileFailsBeforeTheCall(t *testing.T) {
 	}
 }
 
-// F-0522 crit. 4, 7: byo-key takes images; gemini and cursor still do not.
+// F-0522 crit. 4, 7; F-0524 crit. 5, 6: byo-key and cursor-cli take images;
+// gemini-cli still does not.
 func TestImagesSupportedModesWithAPIKey(t *testing.T) {
-	for mode, want := range map[string]bool{"byo-key": true, ModeGeminiCLI: false, ModeCursorCLI: false, ModeDelegation: false} {
+	for mode, want := range map[string]bool{"byo-key": true, ModeCursorCLI: true, ModeGeminiCLI: false, ModeDelegation: false} {
 		if got := SupportsImages(mode); got != want {
 			t.Errorf("SupportsImages(%q) = %v, want %v", mode, got, want)
 		}
 	}
 }
 
-// F-0522 crit. 8: Cursor and Gemini run as before, images in the turn or not:
-// the Cursor deny-all file still denies every read and neither argv changes.
+// F-0522 crit. 8; F-0524 crit. 3, 6: the Cursor deny-all file still denies
+// every read, and Gemini's argv stays untouched whether images are in the turn
+// or not.
 func TestImagesCursorAndGeminiUntouched(t *testing.T) {
 	if !strings.Contains(cursorDenyAll, `"Read(**)"`) {
 		t.Fatalf("cursorDenyAll no longer denies every read: %s", cursorDenyAll)
 	}
-	for _, kind := range []string{ModeCursorCLI, ModeGeminiCLI} {
+	for _, kind := range []string{ModeGeminiCLI} {
 		var plain, withImages []envCall
 		(&cliProvider{kind: kind, bin: "x", run: recordEnv(&plain, "ok")}).Complete(context.Background(), "q")
 		(&cliProvider{kind: kind, bin: "x", run: recordEnv(&withImages, "ok")}).Complete(imageCtx(t), "q")

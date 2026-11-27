@@ -642,10 +642,16 @@ func (p *cliProvider) completeCursor(ctx context.Context, prompt string) (string
 	if p.model != "" {
 		args = append(args, "--model", p.model)
 	}
+	for _, img := range ImagesFrom(ctx) {
+		args = append(args, "--image", img)
+	}
 	start := time.Now()
 	out, _, err := p.run(ctx, dir, p.bin, args, prompt)
 	if err != nil {
 		if rejectedFlag(err) {
+			if strings.Contains(err.Error(), "--image") {
+				return "", fmt.Errorf("%w: this Cursor CLI does not know --image — update it (cursor-agent update); cerne will not answer the turn without the attached images: %w", ErrCursorCLI, err)
+			}
 			return "", fmt.Errorf("%w: this Cursor CLI does not know an isolation flag cerne needs — update it (cursor-agent update); cerne will not run it with less isolation: %w", ErrCursorCLI, err)
 		}
 		hint := "use another mode"
