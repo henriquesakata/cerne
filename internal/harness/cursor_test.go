@@ -268,3 +268,41 @@ func TestCursorCoverageWithDotCursorPresent(t *testing.T) { // F-0526 crit. 5
 		t.Errorf("gaps after a whole install: %+v", got)
 	}
 }
+
+// TestCursorOnlySkillsInventory (F-0527 crit. 4): in a Cursor-only project
+// the Skills class reads .cursor/skills: the canonical skills are judged
+// there, nothing is listed under the absent .claude/skills, cerne-authoring
+// is listed once, and a missing skill is fixed without bringing .claude back.
+func TestCursorOnlySkillsInventory(t *testing.T) { // F-0527 crit. 4
+	proj := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(proj, ".cursor"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := skills.InstallProviders(proj, hooks.ProviderCursor); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(proj, ".cursor", "skills", "cerne-self-learning")); err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]Item{}
+	for _, c := range Inspect(Options{ProjDir: proj}).Classes {
+		if c.Name != "skills" {
+			continue
+		}
+		for _, it := range c.Items {
+			if strings.HasPrefix(filepath.ToSlash(it.Path), ".claude/") {
+				t.Errorf("item under .claude in a Cursor-only project: %+v", it)
+			}
+			if _, dup := seen[it.Name]; dup {
+				t.Errorf("%s listed twice", it.Name)
+			}
+			seen[it.Name] = it
+		}
+	}
+	if it := seen["cerne-authoring"]; it.State != StateOK {
+		t.Errorf("cerne-authoring = %+v, want ok", it)
+	}
+	if it := seen["cerne-self-learning"]; it.State != StateMissing || it.Fix != "cerne skill install --provider cursor" {
+		t.Errorf("cerne-self-learning = %+v, want missing, fixed by cerne skill install --provider cursor", it)
+	}
+}
