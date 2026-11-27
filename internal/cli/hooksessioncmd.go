@@ -316,6 +316,15 @@ func runHookSessionContext(cmd *cobra.Command, format string) {
 	if in.Source == "compact" && ours {
 		if block := compactBlock(dir, in.SessionID); block != "" {
 			text += "\n\n" + block
+			if cacheDir, err := project.CacheDir(cfg.ProjectID); err == nil {
+				at := time.Now().UTC()
+				if _, _, workID, ok := boundActiveWork(dir, in.SessionID); ok {
+					if _, last := sessionCompactions(cacheDir, in.SessionID, workID); !last.IsZero() {
+						at = last
+					}
+				}
+				markCompactionShown(cacheDir, in.SessionID, at)
+			}
 		}
 	}
 	if ours {

@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -103,7 +104,7 @@ func runHookToolNotes(cmd *cobra.Command, format string, after bool) {
 		if !filepath.IsAbs(edited) { // patch paths are relative to the cwd
 			edited = filepath.Join(in.CWD, edited)
 		}
-	} else if json.Unmarshal(in.ToolInput, &ti); ti.Command == "" {
+	} else if json.Unmarshal(in.ToolInput, &ti); ti.Command == "" && !(after && in.cursor()) {
 		return
 	}
 	cfg, projDir, err := project.LoadConfig(in.CWD)
@@ -119,6 +120,10 @@ func runHookToolNotes(cmd *cobra.Command, format string, after bool) {
 		return // F-0434
 	}
 	recordSessionMode(cacheDir, in)
+	compactResume := ""
+	if after && in.cursor() {
+		compactResume = consumePendingCompactionBlock(in.CWD, cacheDir, repoDir, in.SessionID, time.Now().UTC())
+	}
 	var block string
 	switch {
 	case ti.Command != "" && after:
@@ -131,6 +136,13 @@ func runHookToolNotes(cmd *cobra.Command, format string, after bool) {
 	// A shell command is a channel contact point too (B-0054): a session that
 	// works only through Bash would otherwise hear the channel only at start.
 	block = channelThen(cacheDir, repoDir, in.SessionID, in.AgentID, block)
+	if compactResume != "" {
+		if block != "" {
+			block = compactResume + "\n\n" + block
+		} else {
+			block = compactResume
+		}
+	}
 	if block == "" {
 		return
 	}

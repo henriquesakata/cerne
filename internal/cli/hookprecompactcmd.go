@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/henriquesakata/cerne/internal/app"
+	"github.com/henriquesakata/cerne/internal/domain"
 	"github.com/henriquesakata/cerne/internal/project"
 	"github.com/henriquesakata/cerne/internal/store"
 )
@@ -23,6 +24,10 @@ import (
 // compactionsSubdir holds one file per session, one RFC 3339 instant per
 // compaction. Outside sessions/, where every file is read as a binding.
 const compactionsSubdir = "compactions"
+
+// compactionMaxAge is how long a recorded compaction stays eligible for the
+// one-shot post-compaction resume (F-0525).
+const compactionMaxAge = 24 * time.Hour
 
 func newHookPrecompactCmd() *cobra.Command {
 	return &cobra.Command{
@@ -42,8 +47,17 @@ func runHookPrecompact(cmd *cobra.Command) {
 	if err != nil || in.SessionID == "" {
 		return
 	}
-	cacheDir, repoDir, workID, ok := boundActiveWork(in.CWD, in.SessionID)
+	dir := in.CWD
+	if dir == "" {
+		dir, _ = os.Getwd()
+	}
+	cacheDir, repoDir, workID, ok := boundActiveWork(dir, in.SessionID)
 	if !ok {
+		return
+	}
+	now := time.Now().UTC()
+	recordCompaction(cacheDir, in.SessionID, workID, now)
+	if in.cursor() { // F-0525: Cursor's hook host expects JSON stdout, not plain text
 		return
 	}
 	out := cmd.OutOrStdout()
@@ -56,7 +70,6 @@ func runHookPrecompact(cmd *cobra.Command) {
 	default:
 		fmt.Fprintf(out, "- latest handoff: no handoff yet — record one with `cerne work handoff %s --next \"…\"`\n", workID)
 	}
-	recordCompaction(cacheDir, in.SessionID, workID, time.Now().UTC())
 }
 
 // boundActiveWork resolves the session's live binding when it is an active
@@ -116,6 +129,95 @@ func recordCompaction(cacheDir, sess, workID string, at time.Time) {
 // sessionCompactions counts the session's compactions recorded under workID
 // and returns the last instant. A bare-instant line (the first format) counts
 // for any binding; unreadable lines are skipped.
+// compactionShownPath is the sidecar that records the last compaction instant
+// already delivered to the model (F-0525, N-0134).
+func compactionShownPath(cacheDir, sess string) string {
+	return filepath.Join(cacheDir, compactionsSubdir, sess+".shown")
+}
+
+func compactionShownAt(cacheDir, sess string) time.Time {
+	b, err := os.ReadFile(compactionShownPath(cacheDir, sess))
+	if err != nil {
+		return time.Time{}
+	}
+	ts, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(string(b)))
+	if err != nil {
+		return time.Time{}
+	}
+	return ts
+}
+
+// markCompactionShown records that the compaction at at was injected (atomic).
+func markCompactionShown(cacheDir, sess string, at time.Time) {
+	if at.IsZero() {
+		return
+	}
+	dir := filepath.Join(cacheDir, compactionsSubdir)
+	if os.MkdirAll(dir, 0o755) != nil {
+		return
+	}
+	tmp, err := os.CreateTemp(dir, sess+".shown-*")
+	if err != nil {
+		return
+	}
+	name := tmp.Name()
+	if _, err := tmp.WriteString(at.UTC().Format(time.RFC3339Nano) + "\n"); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(name)
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(name)
+		return
+	}
+	_ = os.Rename(name, compactionShownPath(cacheDir, sess))
+}
+
+// consumePendingCompactionBlock returns the post-compaction resume block when
+// the session has an undelivered compaction recorded for its bound work
+// (F-0525). It marks the compaction delivered on success.
+func consumePendingCompactionBlock(dir, cacheDir, repoDir, sess string, now time.Time) string {
+	_, _, workID, ok := boundActiveWork(dir, sess)
+	if !ok {
+		return ""
+	}
+	n, last := sessionCompactions(cacheDir, sess, workID)
+	if n == 0 || last.IsZero() {
+		return ""
+	}
+	if compactionMaxAge > 0 && now.Sub(last) > compactionMaxAge {
+		return ""
+	}
+	shown := compactionShownAt(cacheDir, sess)
+	if !last.After(shown) {
+		return ""
+	}
+	block := compactionResumeText(repoDir, workID)
+	if block == "" {
+		return ""
+	}
+	markCompactionShown(cacheDir, sess, last)
+	return block
+}
+
+// compactionResumeText is the English resume block after compaction, with the
+// active work title when still known (F-0525).
+func compactionResumeText(repoDir, workID string) string {
+	workLine := workID
+	if w, err := store.LoadWork(repoDir, workID); err == nil && w.State == domain.WorkActive {
+		workLine = workID + " — " + w.Title
+	}
+	h, ok, err := latestHandoff(repoDir, workID)
+	if err != nil { // unreadable store: the W- only, no guess about its HO
+		return fmt.Sprintf("AFTER COMPACTION — this session is bound to %s.", workLine)
+	}
+	if !ok {
+		return fmt.Sprintf("AFTER COMPACTION — this session is bound to %s, with no handoff yet: `cerne work handoff %s --next \"…\"` lets the next stretch, or another session, resume by the code.", workLine, workID)
+	}
+	return fmt.Sprintf("AFTER COMPACTION — this session is bound to %s.\nLatest handoff: %s %s %s — next: %s\nRead it first: cerne show %s",
+		workLine, h.ID, h.State, store.ShortAge(time.Since(h.CreatedAt)), app.TruncateBody(h.Next, handoffNextRunes, 4*handoffNextRunes), h.ID)
+}
+
 func sessionCompactions(cacheDir, sess, workID string) (int, time.Time) {
 	b, err := os.ReadFile(filepath.Join(cacheDir, compactionsSubdir, sess))
 	if err != nil {
