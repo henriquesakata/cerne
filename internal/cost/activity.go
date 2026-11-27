@@ -18,6 +18,9 @@ const (
 	actDelegate = "delegação"
 	actReply    = "resposta"
 	actOther    = "outros"
+	// actWait marks a call whose result is the person's answer: the pause up
+	// to it is waiting, never an activity (F-0528 crit. 8).
+	actWait = "espera"
 )
 
 // tickType says what a transcript line is for the gap engine (F-0528): the
@@ -45,7 +48,7 @@ var (
 	docPathRe  = regexp.MustCompile(`features/[A-Z]+-\d+[^/]*/(spec|plan|result)\.md$`)
 	docFlagRe  = regexp.MustCompile(`--doc[ =](spec|plan|result)\b`)
 	prefixRe   = regexp.MustCompile(`^(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|\S*)|cd\s+\S+\s*&&|rtk\s+proxy)\s*`)
-	testCmdRe  = regexp.MustCompile(`^(?:go (?:test|vet|build)|npm (?:run|test|ci)|npx vitest|vitest)\b`)
+	testCmdRe  = regexp.MustCompile(`(?:^|[\s;&|("'])(?:go (?:test|vet|build)|npm (?:run|test|ci)|npx vitest|vitest)\b`) // anywhere in the line: `cd x && …`, `sh -c "npm ci && …"`
 	readCmdRe  = regexp.MustCompile(`^(?:grep|rg|cat|sed -n|head|tail|ls|find|wc|git (?:log|show|diff|status|blame)|(?:\./bin/)?cerne (?:search|ask|context|next|status|brief|show|tags|guide|lint|cost|note list))\b`)
 	cerneDocRe = regexp.MustCompile(`^(?:\./bin/)?cerne feature (new\b.*--file|spec\b|amend\b)`)
 )
@@ -76,6 +79,8 @@ func classify(name string, input json.RawMessage) string {
 		return actCode
 	case "Bash":
 		return classifyBash(in.Command)
+	case "AskUserQuestion", "ExitPlanMode":
+		return actWait
 	}
 	return actOther
 }
@@ -159,12 +164,14 @@ func resultID(content json.RawMessage) (id string, ok bool) {
 	return "", false
 }
 
-// appendUserTick adds the tick of one user line: a tool result or a human
-// prompt. Meta and compact-summary lines, other sessions' copies and lines
-// without a readable timestamp add nothing.
+// appendUserTick adds the tick of one user line: a tool result or a prompt.
+// A meta line is a prompt too: another session's message or a task
+// notification wakes the session as a person does, and dropping it would count
+// the idle pause before it as work. Compact-summary lines, other sessions'
+// copies and lines without a readable timestamp add nothing.
 func appendUserTick(ticks []tick, line []byte, sess, file, kind string) []tick {
 	var l rawLine
-	if json.Unmarshal(line, &l) != nil || l.Type != "user" || l.IsMeta || l.IsCompact || (l.SessionID != "" && l.SessionID != sess) {
+	if json.Unmarshal(line, &l) != nil || l.Type != "user" || l.IsCompact || (l.SessionID != "" && l.SessionID != sess) {
 		return ticks
 	}
 	ts, err := time.Parse(time.RFC3339Nano, l.Timestamp)

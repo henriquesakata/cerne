@@ -67,6 +67,14 @@ func TestClassifyActivity(t *testing.T) { // F-0528 crit. 3
 		{mk(bash("git commit -m x")), actOther},
 		{mk(bash("mkdir x")), actOther},
 		{mk("Skill", nil), actOther},
+		// the answer to these calls is the person's: waiting, not working
+		{mk("AskUserQuestion", nil), actWait},
+		{mk("ExitPlanMode", nil), actWait},
+		// a test or build anywhere in the command line, not only at its start
+		{mk(bash("set -e; go test ./internal/cost/")), actTest},
+		{mk(bash("go build -o bin/cerne ./cmd/cerne && ./bin/cerne cost F-1")), actTest},
+		{mk(bash("(cd ui && npm run build)")), actTest},
+		{mk(bash(`docker run -w /app/ui node:24 sh -c "npm ci && npm run build"`)), actTest},
 		// prefixes that are not the command
 		{mk(bash("VAR=x go test ./...")), actTest},
 		{mk(bash("A=1 B=2 go test ./...")), actTest},
@@ -99,8 +107,10 @@ func resultContent(id string) any {
 
 // TestReadSessionTicks (F-0528 crit. 2, 3): one tick per assistant message at
 // its earliest line, with the activity of its first tool_use; one per
-// tool_result (the answered call's activity) and per human prompt; meta,
-// compact-summary and foreign-session user lines are out.
+// tool_result (the answered call's activity) and per prompt — a meta line
+// included: another session's message or a task notification wakes the
+// session as a prompt does; compact-summary and foreign-session user lines
+// are out.
 func TestReadSessionTicks(t *testing.T) { // F-0528 crit. 2, 3
 	root := t.TempDir()
 	t1 := ttool{id: "t1", name: "Read", input: map[string]any{"file_path": "a.go"}}
@@ -136,6 +146,7 @@ func TestReadSessionTicks(t *testing.T) { // F-0528 crit. 2, 3
 		{4, tickResult, actTest},
 		{5, tickResult, actResearch},
 		{6, tickAssistant, actReply},
+		{7, tickPrompt, ""},
 		{10, tickPrompt, ""},
 	}
 	var got []string

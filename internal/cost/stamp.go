@@ -292,7 +292,7 @@ func timeLine(t *Timing) string {
 	if t.Sidechain != nil {
 		side = FormatDuration(t.Sidechain.ActiveSeconds) + " (" + strings.Join(Breakdown(t.Sidechain.ByActivity, nil), "; ") + ")"
 	}
-	return fmt.Sprintf("Tempo ativo: %s · relógio: %s · por fase: %s · por atividade: %s · subagentes: %s · espera pelo humano: %s.\n",
+	return fmt.Sprintf("Tempo ativo: %s · relógio: %s · por fase: %s · por atividade: %s · subagentes: %s · espera (pessoa, outra sessão ou aviso): %s.\n",
 		FormatDuration(t.ActiveSeconds), FormatDuration(t.WallSeconds), orDash(Breakdown(t.ByPhase, PhaseOrder)),
 		orDash(Breakdown(t.ByActivity, nil)), side, FormatDuration(t.HumanWaitSeconds))
 }

@@ -341,14 +341,14 @@ func englishTime(m map[string]int64, order []string) string {
 }
 
 // renderTime prints the Time block: the agent's active time, never counting
-// the wait for the human (F-0528).
+// the wait for a prompt — a person, another session, a task notice (F-0528).
 func renderTime(out io.Writer, r cost.Report) {
 	t := r.Timing
 	if t == nil {
 		fmt.Fprintln(out, "Time: not measured")
 		return
 	}
-	fmt.Fprintln(out, "Time (agent's active time; the wait for the human is apart):")
+	fmt.Fprintln(out, "Time (agent's active time; waiting for a prompt is apart):")
 	fmt.Fprintf(out, "  active: %s\n", cost.FormatDuration(t.ActiveSeconds))
 	if r.ID != "" {
 		fmt.Fprintf(out, "  wall: %s (union of the sessions' active intervals)\n", cost.FormatDuration(t.WallSeconds))
@@ -360,7 +360,7 @@ func renderTime(out io.Writer, r cost.Report) {
 	} else {
 		fmt.Fprintln(out, "  subagents: —")
 	}
-	fmt.Fprintf(out, "  human wait: %s\n", cost.FormatDuration(t.HumanWaitSeconds))
+	fmt.Fprintf(out, "  waiting (person, another session or notice): %s\n", cost.FormatDuration(t.HumanWaitSeconds))
 }
 
 // renderRollup prints an epic's descendants share and its total.

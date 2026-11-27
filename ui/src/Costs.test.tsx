@@ -546,7 +546,7 @@ describe('Custos — tempo ativo (F-0528 crit. 12, 14)', () => {
     expect(within(phases).getByRole('row', { name: /^implementação/ })).toHaveTextContent('52min')
     const acts = screen.getByRole('table', { name: 'Tempo por atividade' })
     expect(within(acts).getByRole('row', { name: /^código/ })).toHaveTextContent('52min')
-    expect(screen.getByText(/Tempo ativo: 1h 12min · relógio: 45min · espera pelo humano: 2min/)).toBeInTheDocument()
+    expect(screen.getByText(/Tempo ativo: 1h 12min · relógio: 45min · espera \(pessoa, outra sessão ou aviso\): 2min/)).toBeInTheDocument()
     unmount()
     localStorage.setItem('cerne-lang', 'en')
     render(

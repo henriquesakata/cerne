@@ -371,7 +371,7 @@ func TestStampBlockCarriesTime(t *testing.T) { // F-0528 crit. 11, 12
 		ByActivity: map[string]int64{actCode: 3120, actResearch: 1200},
 		Sidechain:  &SidechainTime{ActiveSeconds: 600, ByActivity: map[string]int64{actResearch: 600}}}
 	doc := mustStamp(t, resultDoc("F-0007"), r)
-	want := "Tempo ativo: 1h 12min · relógio: 45min · por fase: plano 20min; implementação 52min · por atividade: código 52min; pesquisa 20min · subagentes: 10min (pesquisa 10min) · espera pelo humano: 30s."
+	want := "Tempo ativo: 1h 12min · relógio: 45min · por fase: plano 20min; implementação 52min · por atividade: código 52min; pesquisa 20min · subagentes: 10min (pesquisa 10min) · espera (pessoa, outra sessão ou aviso): 30s."
 	if !strings.Contains(doc, want) {
 		t.Fatalf("block lacks %q:\n%s", want, doc)
 	}

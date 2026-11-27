@@ -32,7 +32,8 @@ var lifeEvents = map[string]bool{
 
 // Timing is the measured working time of one entity, in seconds (F-0528):
 // the pauses between the lines of its main-thread sessions, split by lifecycle
-// phase and by activity, apart from the wait for the human and from the
+// phase and by activity, apart from the wait for a prompt (a person, another
+// session, a task notice) and from the
 // subagents' time. nil means not measured, never zero.
 type Timing struct {
 	ActiveSeconds    int64            `json:"active_seconds"`
@@ -114,7 +115,7 @@ func addTimes(agg map[aggKey]*fileAgg, att attributor, binds []Bind, spawn map[s
 			}
 			f.Timed = true
 			gap := cur.m.ts.Sub(ts[i-1].m.ts)
-			if cur.typ == tickPrompt {
+			if waiting(cur) {
 				if !sub {
 					f.WaitSec += int64(gap.Round(time.Second) / time.Second)
 				}
@@ -127,7 +128,11 @@ func addTimes(agg map[aggKey]*fileAgg, att attributor, binds []Bind, spawn map[s
 			if f.Time == nil {
 				f.Time = map[string]int64{}
 			}
-			f.Time[att.phase(e, cur.m.ts)+timeKeySplit+cur.activity] += int64(gap / time.Second)
+			act := cur.activity
+			if act == actWait { // the assistant line asking the question: the model wrote it
+				act = actReply
+			}
+			f.Time[att.phase(e, cur.m.ts)+timeKeySplit+act] += int64(gap / time.Second)
 			if !sub {
 				f.Spans = append(f.Spans, [2]time.Time{cur.m.ts.Add(-gap), cur.m.ts})
 			}
@@ -136,6 +141,13 @@ func addTimes(agg map[aggKey]*fileAgg, att attributor, binds []Bind, spawn map[s
 			f.Spans = unite(f.Spans)
 		}
 	}
+}
+
+// waiting reports whether the pause up to cur is the session waiting, not
+// working: it ends at a prompt (a person, another session, a task
+// notification) or at the person's answer to a question.
+func waiting(cur tick) bool {
+	return cur.typ == tickPrompt || cur.typ == tickResult && cur.activity == actWait
 }
 
 // unite merges overlapping or touching intervals, sorted.

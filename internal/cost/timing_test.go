@@ -256,3 +256,27 @@ func TestTimingSurvivesAnchorAndSnapshot(t *testing.T) { // F-0528 crit. 12, 13
 		t.Fatalf("old snapshot: messages %d timing %+v, want 1 and nil", r.Messages, r.Timing)
 	}
 }
+
+// TestTimingWakeUpIsWait (F-0528 crit. 1, 8): a session woken by another
+// session's message (a meta user line) and the person's answer to
+// AskUserQuestion are waiting, never active time — capped at 30 minutes each,
+// they used to inflate the activity of the line after them.
+func TestTimingWakeUpIsWait(t *testing.T) { // F-0528 crit. 1, 8
+	ask := tool("t1", "AskUserQuestion", map[string]any{})
+	in := timingFixture(t,
+		userLine("s", at(0), "go", nil),
+		asst(at(1), "m1"), // 1 mn: resposta
+		userLine("s", at(121), "Another Claude session sent a message", map[string]any{"isMeta": true}), // 120 mn: wait
+		asst(at(122), "m2", ask),                                                  // 1 mn: the model writing the question
+		userLine("s", at(162), resultContent("t1"), nil),                          // 40 mn: the person answering
+		asst(at(163), "m3", tool("t2", "Read", map[string]any{"file_path": "a"})), // 1 mn: pesquisa
+	)
+	tm := timingOf(t, in, "F-0001")
+	want := map[string]int64{actReply: 2 * mn, actResearch: 1 * mn}
+	if tm.ActiveSeconds != 3*mn || !reflect.DeepEqual(tm.ByActivity, want) {
+		t.Fatalf("active %d by activity %v, want %d %v", tm.ActiveSeconds, tm.ByActivity, 3*mn, want)
+	}
+	if tm.HumanWaitSeconds != 160*mn {
+		t.Fatalf("wait = %d, want %d", tm.HumanWaitSeconds, 160*mn)
+	}
+}
