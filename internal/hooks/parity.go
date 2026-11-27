@@ -107,7 +107,7 @@ var parityTable = []ParityRow{
 	{
 		Capability: "Work gate (deny unregistered edits)",
 		Claude:     "PreToolUse deny (cerne-work-gate.sh)",
-		Cursor:     ".claude PreToolUse deny, run by Cursor's third-party import (on by default; F-0428)",
+		Cursor:     "preToolUse Write → cerne hook work-gate in .cursor/hooks.json (dedup per call when Third-Party Imports also runs .claude hooks)",
 		Codex:      "PreToolUse deny, matcher Edit|Write",
 		Gemini:     "BeforeTool deny, matcher write_file|replace",
 		Copilot:    "PreToolUse deny, matcher Edit|Write → top-level permissionDecision (cloud agent reads bash only and treats ask as deny; the gate only denies)",
@@ -115,7 +115,7 @@ var parityTable = []ParityRow{
 	{
 		Capability: "Session→work binding",
 		Claude:     "PostToolUse/Bash (cerne-work-bind.sh)",
-		Cursor:     ".claude PostToolUse/Bash, via the third-party import (tool_output, F-0428)",
+		Cursor:     "postToolUse Shell → cerne hook bind-work in .cursor/hooks.json (dedup when mixed)",
 		Codex:      "PostToolUse, matcher Bash",
 		Gemini:     "AfterTool, matcher run_shell_command (--format gemini)",
 		Copilot:    "PostToolUse, matcher Bash (tool_result, --format copilot)",
@@ -132,7 +132,7 @@ var parityTable = []ParityRow{
 	{
 		Capability: "Provenance reminder",
 		Claude:     "PostToolUse/Bash (provenance)",
-		Cursor:     ".claude PostToolUse/Bash (provenance), via the third-party import → additional_context",
+		Cursor:     "postToolUse Shell → cerne hook provenance in .cursor/hooks.json",
 		Codex:      "PostToolUse, matcher Bash",
 		Gemini:     degraded + ": AfterTool context envelope pending live validation",
 		Copilot:    "PostToolUse/Bash → top-level additionalContext",
@@ -140,7 +140,7 @@ var parityTable = []ParityRow{
 	{
 		Capability: "Stop closeout",
 		Claude:     "Stop hook (cerne-stop-closeout.sh)",
-		Cursor:     ".claude Stop hook via the third-party import → followup_message, completed turns only",
+		Cursor:     "stop → cerne hook stop-check in .cursor/hooks.json → followup_message, completed turns only",
 		Codex:      "Stop hook",
 		Gemini:     degraded + ": AfterAgent forces a retry — deferred",
 		Copilot:    degraded + ": the Stop block decision was never exercised live (only the payload was captured) — treat the closeout reminder as unverified",
@@ -148,7 +148,7 @@ var parityTable = []ParityRow{
 	{
 		Capability: "Handoff code through compaction",
 		Claude:     "PreCompact hook (cerne-precompact.sh) + SessionStart source=compact",
-		Cursor:     degraded + ": PreCompact not wired yet",
+		Cursor:     "preCompact → cerne hook precompact in .cursor/hooks.json",
 		Codex:      degraded + ": PreCompact not wired yet",
 		Gemini:     degraded + ": no compaction hook",
 		Copilot:    degraded + ": preCompact is notification-only",
@@ -165,7 +165,7 @@ var parityTable = []ParityRow{
 		// F-0457: the documented context channel decides before vs after the tool.
 		Capability: "Notes by declared trigger (F-0457)",
 		Claude:     "before the tool: PreToolUse/Bash (cerne-tool-notes.sh); edits through the work gate",
-		Cursor:     "after the tool: .claude PostToolUse/Bash|Edit|Write (cerne-after-tool-notes.sh), via the third-party import → additional_context",
+		Cursor:     "preToolUse Shell → cerne hook tool-notes; postToolUse Shell|Write → cerne hook tool-notes --after --format cursor in .cursor/hooks.json",
 		Codex:      "before the tool: PreToolUse, matcher Bash; edits through the work gate",
 		Gemini:     "after the tool: AfterTool, matcher run_shell_command|write_file|replace → additionalContext (documented envelope, not validated live)",
 		Copilot:    "after the tool: PostToolUse, matchers Bash and Edit|Write → top-level additionalContext",
@@ -176,7 +176,7 @@ var parityTable = []ParityRow{
 		// runs shell commands still hears the project channel.
 		Capability: "Project channel mid-session (F-0325, B-0054)",
 		Claude:     "UserPromptSubmit (cerne-prompt-notes.sh), PreToolUse/Bash (cerne-tool-notes.sh) and the work gate on Edit|Write → additionalContext; Stop reminder for what is addressed and unanswered",
-		Cursor:     "after the tool: .claude PostToolUse/Bash|Edit|Write (cerne-after-tool-notes.sh), via the third-party import → additional_context",
+		Cursor:     "preToolUse Shell → cerne hook tool-notes; postToolUse Shell|Write → cerne hook tool-notes --after --format cursor in .cursor/hooks.json",
 		Codex:      "UserPromptSubmit (prompt-notes) and, before the tool, PreToolUse, matchers Bash (tool-notes) and Edit|Write (work gate) → additionalContext",
 		Gemini:     "after the tool: AfterTool, matcher run_shell_command|write_file|replace → additionalContext (documented envelope, not validated live)",
 		Copilot:    "after the tool: PostToolUse, matchers Bash and Edit|Write → top-level additionalContext",
@@ -217,7 +217,7 @@ var parityTable = []ParityRow{
 	{
 		Capability: "Authoring guide",
 		Claude:     "delivered to .claude/skills/cerne-authoring/ — " + GuideCondition(ProviderClaude),
-		Cursor:     "delivered to .cursor/skills/cerne-authoring/ — " + GuideCondition(ProviderCursor),
+		Cursor:     "delivered to .cursor/skills/ (cerne-authoring + cerne-self-learning) — " + GuideCondition(ProviderCursor),
 		Codex:      "delivered to .agents/skills/cerne-authoring/ + one-line pointer in AGENTS.md — " + GuideCondition(ProviderCodex),
 		Gemini:     "delivered to .gemini/skills/cerne-authoring/ + one-line pointer in GEMINI.md — " + GuideCondition(ProviderGemini),
 		Copilot:    "delivered to .github/skills/cerne-authoring/ + .github/instructions/cerne.instructions.md — " + GuideCondition(ProviderCopilot),
@@ -225,7 +225,7 @@ var parityTable = []ParityRow{
 	{
 		Capability: "Double execution with the .claude hooks",
 		Claude:     NotApplicable,
-		Cursor:     NotApplicable,
+		Cursor:     "dedup in cerne hook * per Cursor call when .cursor/hooks.json and Third-Party Imports both fire",
 		Codex:      NotApplicable,
 		Gemini:     NotApplicable,
 		Copilot:    degraded + ": Copilot CLI also runs the cerne hooks of .claude/settings.json (probed) — it ignores their Claude-format output, so only side effects repeat (binding, sign of life)",
