@@ -657,3 +657,63 @@ func TestComputeMainOnlyHasNoRoleView(t *testing.T) {
 		t.Fatalf("ByRole = %+v, Roles() = %v, want main only and no role view", r.ByRole, r.Roles())
 	}
 }
+
+func turnBind(t *testing.T, cache, sess, entity string, ts time.Time, turn bool) {
+	t.Helper()
+	if err := AppendBind(cache, Bind{Session: sess, Entity: entity, Harness: HarnessClaudeCode, Turn: turn, TS: ts}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// turnScenario: F-0001 works, a prompt at 0, replies at 1 and 2, then the
+// session binds F-0002 at 3 (a Turn or not) and replies at 4.
+func turnScenario(t *testing.T, turn bool) (Inputs, map[string]Counters) {
+	in := fixture(t)
+	saveFeature(t, in.RepoDir, "F-0001", domain.StateInDevelopment)
+	saveFeature(t, in.RepoDir, "F-0002", domain.StateInDevelopment)
+	writeLines(t, in.Roots[0], "-tmp-p/s.jsonl",
+		tmsg{ts: at(-3), id: "m0", req: "r", c: cc(1, 0, 0, 0)}.line("s"),
+		userLine("s", at(0), "do the thing", nil),
+		tmsg{ts: at(1), id: "m1", req: "r", c: cc(0, 1, 0, 0)}.line("s"),
+		tmsg{ts: at(2), id: "m2", req: "r", c: cc(0, 0, 1, 0)}.line("s"),
+		tmsg{ts: at(4), id: "m4", req: "r", c: cc(0, 0, 0, 1)}.line("s"))
+	turnBind(t, in.CacheDir, "s", "F-0001", at(-5), true)
+	turnBind(t, in.CacheDir, "s", "F-0002", at(3), turn)
+	return in, compute(t, in, "").Entities
+}
+
+// TestTurnBindPullsBackToPrompt (F-0528 crit. 9): the bind that switches the
+// entity claims the turn since the last human prompt, tokens included; a
+// ledger line without Turn keeps the old rule.
+func TestTurnBindPullsBackToPrompt(t *testing.T) { // F-0528 crit. 9
+	_, ents := turnScenario(t, true)
+	if ents["F-0001"] != cc(1, 0, 0, 0) || ents["F-0002"] != cc(0, 1, 1, 1) {
+		t.Fatalf("Turn: entities = %+v, want F-0001 only m0, F-0002 m1+m2+m4", ents)
+	}
+	_, ents = turnScenario(t, false)
+	if ents["F-0001"] != cc(1, 1, 1, 0) || ents["F-0002"] != cc(0, 0, 0, 1) {
+		t.Fatalf("no Turn: entities = %+v, want the pre-F-0528 split", ents)
+	}
+}
+
+// TestTurnBindCappedByPreviousBind (F-0528 crit. 9): an earlier bind inside
+// the same turn limits the pull-back.
+func TestTurnBindCappedByPreviousBind(t *testing.T) { // F-0528 crit. 9
+	in := fixture(t)
+	for _, id := range []string{"F-0001", "F-0002", "F-0003"} {
+		saveFeature(t, in.RepoDir, id, domain.StateInDevelopment)
+	}
+	writeLines(t, in.Roots[0], "-tmp-p/s.jsonl",
+		userLine("s", at(0), "go", nil),
+		tmsg{ts: at(1), id: "m1", req: "r", c: cc(1, 0, 0, 0)}.line("s"),
+		tmsg{ts: at(3), id: "m3", req: "r", c: cc(0, 1, 0, 0)}.line("s"),
+		tmsg{ts: at(5), id: "m5", req: "r", c: cc(0, 0, 1, 0)}.line("s"))
+	turnBind(t, in.CacheDir, "s", "F-0001", at(-5), true)
+	turnBind(t, in.CacheDir, "s", "F-0003", at(2), false)
+	turnBind(t, in.CacheDir, "s", "F-0002", at(4), true)
+	ents := compute(t, in, "").Entities
+	// m1 stays on F-0001; m3 (after the F-0003 bind at 2) is pulled to F-0002.
+	if ents["F-0001"] != cc(1, 0, 0, 0) || ents["F-0002"] != cc(0, 1, 1, 0) || ents["F-0003"] != (Counters{}) {
+		t.Fatalf("entities = %+v", ents)
+	}
+}

@@ -293,3 +293,37 @@ func TestHarvestRereadsOnceAfterRetroBind(t *testing.T) {
 		t.Fatalf("an already-harvested retro bind forced another full re-read:\n%+v\nwant\n%+v", after, before)
 	}
 }
+
+// TestHarvestRereadsAfterTurnBind (F-0528 crit. 9): a Turn bind since the last
+// harvest pulls messages already harvested onto another entity, so the next
+// harvest re-reads the whole session even where the files are unchanged.
+func TestHarvestRereadsAfterTurnBind(t *testing.T) { // F-0528 crit. 9
+	in := fixture(t)
+	saveFeature(t, in.RepoDir, "F-0001", domain.StateInDevelopment)
+	saveFeature(t, in.RepoDir, "F-0002", domain.StateInDevelopment)
+	p := writeLines(t, in.Roots[0], "-tmp-p/s.jsonl",
+		tmsg{ts: at(-3), id: "m0", req: "r", c: cc(1, 0, 0, 0)}.line("s"),
+		userLine("s", at(0), "a", nil),
+		tmsg{ts: at(1), id: "m1", req: "r", c: cc(0, 1, 0, 0)}.line("s"),
+		tmsg{ts: at(4), id: "m4", req: "r", c: cc(0, 0, 1, 0)}.line("s"),
+		userLine("s", at(25), "b", nil),
+		tmsg{ts: at(26), id: "m26", req: "r", c: cc(0, 0, 0, 1)}.line("s"))
+	if err := os.Chtimes(p, at(5), at(5)); err != nil {
+		t.Fatal(err)
+	}
+	turnBind(t, in.CacheDir, "s", "F-0001", at(-5), true)
+	turnBind(t, in.CacheDir, "s", "F-0002", at(3), false)
+	harvest(t, in, "s", "", at(20))
+	turnBind(t, in.CacheDir, "s", "F-0001", at(30), true)
+	harvest(t, in, "s", "", at(40))
+
+	msgs := func(id string) int {
+		if f := readSnap(t, in.CacheDir, id).Sessions["s"].Files["-tmp-p/s.jsonl"]; f != nil {
+			return f.Messages
+		}
+		return 0
+	}
+	if msgs("F-0001") != 3 || msgs("F-0002") != 1 {
+		t.Fatalf("snapshots: F-0001 %d, F-0002 %d messages, want 3 (m0, m1, m26) and 1", msgs("F-0001"), msgs("F-0002"))
+	}
+}

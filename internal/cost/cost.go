@@ -275,10 +275,11 @@ func own(in Inputs, id string) (Report, error) {
 			}
 			continue
 		}
-		msgs, _, err := readSession(sess, files[sess])
+		msgs, ticks, err := readSession(sess, files[sess])
 		if err != nil {
 			return Report{ID: id, ByModel: map[string]Counters{}}, err
 		}
+		pullBack(bySess[sess], ticks)
 		spawn := spawnTimes(msgs)
 		for _, m := range msgs {
 			var e string
@@ -564,8 +565,8 @@ func governing(binds []Bind, m msg, spawned time.Time) (Bind, bool) {
 			if b.Agent != "" && b.Agent == m.agent {
 				retro = &binds[i]
 			}
-		case b.TS.After(m.ts):
-		case b.Agent == "" && !b.TS.After(at):
+		case b.start().After(m.ts):
+		case b.Agent == "" && !b.start().After(at):
 			main = &binds[i]
 		case b.Agent != "" && b.Agent == m.agent:
 			own = &binds[i]
@@ -581,6 +582,50 @@ func governing(binds []Bind, m msg, spawned time.Time) (Bind, bool) {
 		return *main, true
 	}
 	return Bind{}, false
+}
+
+// start is the instant b begins governing: a Turn bind's pulled-back start
+// (pullBack), else its own TS.
+func (b Bind) start() time.Time {
+	if b.from.IsZero() {
+		return b.TS
+	}
+	return b.from
+}
+
+// pullBack gives each Turn bind of the main thread (binds sorted by TS) the
+// start of its claim: the last human prompt of the session before it, but never
+// before the previous main bind — so the card a session switches to owns the
+// turn that led to the switch, tokens and time alike (F-0528 crit. 9). A bind
+// without a prompt before it, or without Turn (an older ledger line), claims
+// from its own TS.
+func pullBack(binds []Bind, ticks []tick) {
+	var prompts []time.Time
+	for _, k := range ticks {
+		if k.typ == tickPrompt && k.m.agent == "" && !k.m.sidechain {
+			prompts = append(prompts, k.m.ts)
+		}
+	}
+	slices.SortFunc(prompts, func(a, b time.Time) int { return a.Compare(b) })
+	var prev time.Time
+	for i := range binds {
+		b := &binds[i]
+		if b.Agent != "" || b.Retro {
+			continue
+		}
+		if b.Turn {
+			if j, _ := slices.BinarySearchFunc(prompts, b.TS, func(p, t time.Time) int { return p.Compare(t) }); j > 0 {
+				from := prompts[j-1]
+				if prev.After(from) {
+					from = prev
+				}
+				if from.Before(b.TS) {
+					b.from = from
+				}
+			}
+		}
+		prev = b.TS
+	}
 }
 
 // spawnTimes maps each subagent of a session to its first message's ts.
