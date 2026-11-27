@@ -158,6 +158,7 @@ func TestSkillInstallDeliversToDetectedAgents(t *testing.T) {
 	}
 	for _, want := range []string{
 		"cerne-authoring: created in .cursor/skills/cerne-authoring",
+		"cerne-self-learning: created in .cursor/skills/cerne-self-learning",
 		"cerne-authoring: created in .agents/skills/cerne-authoring",
 		"cerne-authoring: created in .gemini/skills/cerne-authoring",
 		"cerne-authoring pointer: created in AGENTS.md",
@@ -172,10 +173,10 @@ func TestSkillInstallDeliversToDetectedAgents(t *testing.T) {
 		t.Fatalf("rerun: %v\n%s", err, out)
 	}
 	lines := strings.Split(strings.TrimSpace(out), "\n")
-	if len(lines) != 12 { // 7 asset lines + 5 per-agent lines (copilot not detected)
-		t.Fatalf("want 12 lines, got %d:\n%s", len(lines), out)
+	if len(lines) != 13 { // 8 asset lines + 5 per-agent lines (copilot not detected)
+		t.Fatalf("want 13 lines, got %d:\n%s", len(lines), out)
 	}
-	for _, l := range lines[:7] {
+	for _, l := range lines[:8] {
 		if !strings.Contains(l, ": up to date in ") {
 			t.Errorf("rerun line not unchanged: %q", l)
 		}
