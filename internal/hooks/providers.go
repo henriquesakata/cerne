@@ -143,6 +143,131 @@ alwaysApply: true
 ` + RegisterRules + `
 `
 
+// flatCursorEntry builds Cursor's flat hook entry ({command}, no nested
+// hooks array — R-0037 schema).
+func flatCursorEntry(invocation string) map[string]any {
+	return map[string]any{"command": failOpenCmd(invocation)}
+}
+
+// flatCursorEntryWithMatcher builds a Cursor flat hook entry with an optional
+// matcher. For events that always apply, matcher is "".
+func flatCursorEntryWithMatcher(matcher, invocation string) map[string]any {
+	e := map[string]any{"command": failOpenCmd(invocation)}
+	if matcher != "" {
+		e["matcher"] = matcher
+	}
+	return e
+}
+
+// isCerneManaged reports whether a Cursor flat hook entry is managed by
+// cerne — its command contains "cerne hook " (regardless of the fail-open
+// shell wrapper). Used to strip stale cerne entries on upgrade.
+func isCerneManaged(entry map[string]any) bool {
+	cmd, _ := entry["command"].(string)
+	return strings.Contains(cmd, "cerne hook ")
+}
+
+// cursorWanted returns the cerne-managed entries for each Cursor event (F-0527).
+// Every event cerne manages in .cursor/hooks.json is listed here.
+func cursorWanted() map[string][]map[string]any {
+	return map[string][]map[string]any{
+		"sessionStart": {
+			flatCursorEntryWithMatcher("", "cerne hook session-context --format cursor"),
+		},
+		"preToolUse": {
+			flatCursorEntryWithMatcher("Write", "cerne hook work-gate"),
+			flatCursorEntryWithMatcher("Shell", "cerne hook tool-notes"),
+		},
+		"postToolUse": {
+			flatCursorEntryWithMatcher("Shell", "cerne hook bind-work"),
+			flatCursorEntryWithMatcher("Shell", "cerne hook provenance"),
+			flatCursorEntryWithMatcher("Shell|Write", "cerne hook tool-notes --after --format cursor"),
+		},
+		"preCompact": {
+			flatCursorEntryWithMatcher("", "cerne hook precompact"),
+		},
+		"stop": {
+			flatCursorEntryWithMatcher("", "cerne hook stop-check"),
+		},
+	}
+}
+
+// mergeCursorHooksJSON manages cerne's entries in <projDir>/.cursor/hooks.json
+// (F-0527). For each managed event it replaces all cerne-managed entries
+// (those whose command contains "cerne hook ") with the current set, prepending
+// them before any third-party entries. Reports StatusUnchanged when nothing
+// changed.
+func mergeCursorHooksJSON(path string, wanted map[string][]map[string]any) Result {
+	asset := filepath.Base(filepath.Dir(path)) + "/" + filepath.Base(path)
+	raw, err := os.ReadFile(path)
+	root := map[string]any{}
+	exists := err == nil
+	if exists {
+		if uErr := json.Unmarshal(raw, &root); uErr != nil {
+			return Result{Asset: asset, Status: StatusSkipped, Note: "existing file is not valid JSON — add the cerne hook entries manually"}
+		}
+	} else {
+		root["version"] = 1
+	}
+
+	hooksVal, _ := root["hooks"].(map[string]any)
+	if hooksVal == nil {
+		if _, has := root["hooks"]; has {
+			return Result{Asset: asset, Status: StatusSkipped, Note: `existing "hooks" key has an unexpected type — add the cerne hook entries manually`}
+		}
+		hooksVal = map[string]any{}
+		root["hooks"] = hooksVal
+	}
+
+	changed := !exists
+	for event, newEntries := range wanted {
+		arr, _ := hooksVal[event].([]any)
+
+		// Collect third-party entries (non-cerne).
+		var thirdParty []any
+		for _, item := range arr {
+			if m, ok := item.(map[string]any); ok && isCerneManaged(m) {
+				continue
+			}
+			thirdParty = append(thirdParty, item)
+		}
+
+		// Build target: cerne entries first, then third-party.
+		target := make([]any, 0, len(newEntries)+len(thirdParty))
+		for _, e := range newEntries {
+			target = append(target, any(e))
+		}
+		target = append(target, thirdParty...)
+
+		// Detect change via JSON comparison (map keys sort stably in
+		// json.Marshal since Go 1.12, so this round-trip is deterministic).
+		oldJSON, _ := json.Marshal(arr)
+		newJSON, _ := json.Marshal(target)
+		if !bytes.Equal(oldJSON, newJSON) {
+			changed = true
+		}
+		hooksVal[event] = target
+	}
+
+	if !changed {
+		return Result{Asset: asset, Status: StatusUnchanged}
+	}
+	out, err := marshalIndentNoHTML(root, "", "  ")
+	if err != nil {
+		return Result{Asset: asset, Status: StatusSkipped, Note: "cannot render config: " + err.Error()}
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return Result{Asset: asset, Status: StatusSkipped, Note: "cannot create directory: " + err.Error()}
+	}
+	if err := writeFileAtomic(path, append(out, '\n'), 0o644); err != nil {
+		return Result{Asset: asset, Status: StatusSkipped, Note: "cannot write: " + err.Error()}
+	}
+	if exists {
+		return Result{Asset: asset, Status: StatusUpdated}
+	}
+	return Result{Asset: asset, Status: StatusCreated}
+}
+
 func installCursor(projDir string, explicit, network bool) []Result {
 	var results []Result
 
@@ -154,33 +279,31 @@ func installCursor(projDir string, explicit, network bool) []Result {
 		results = append(results, Result{Asset: "cursor: rules/cerne.mdc", Status: st})
 	}
 
-	results = append(results, mergeProviderJSON(
+	// F-0527: full standalone hook set — all events natively in .cursor/hooks.json.
+	results = append(results, mergeCursorHooksJSON(
 		filepath.Join(projDir, ".cursor", "hooks.json"),
+<<<<<<< HEAD
 		map[string]any{"version": 1},
 		map[string][]map[string]any{
 			// Cursor entries are flat {command,...}, not nested — build them here.
 			"sessionStart": {flatCursorEntry(cursorSessionStartCmd)},
 		},
+=======
+		cursorWanted(),
+>>>>>>> a03a87ab5 (feat(hooks): install full standalone Cursor hooks in .cursor/hooks.json (F-0527))
 	))
 	if explicit { // never on a renewal: see InstallNetwork
 		results = append(results, installCursorSandbox(projDir, network), cursorMCP(projDir))
 	}
 
-	// Not installed natively (R-0037) — reported, with what covers them, never silent.
+	// Not installed: reported, with their reason, never silent.
 	results = append(results,
-		Result{Asset: "cursor: work-gate", Status: StatusSkipped, Note: "not wired natively: Cursor runs the installed .claude hooks (work gate, session binding, provenance, tool notes, stop closeout) through its third-party import, the \"Include Third-Party Plugins, Skills, and Other Configs\" setting (on by default); with it off, only the rules and the live board reach Cursor (F-0428)"},
 		Result{Asset: "cursor: CERNE_ACTOR", Status: StatusSkipped, Note: "nothing to install: Cursor marks its agent shells with CURSOR_AGENT=1 (seen in Cursor 3.25.6, undocumented), which cerne's human gates read as an agent (F-0428)"},
 		Result{Asset: "cursor: subagent-context", Status: StatusSkipped, Note: "subagentStart output has no additional_context — subagents start without the live board"},
 		Result{Asset: "cursor: prompt-notes", Status: StatusSkipped, Note: "notes matching the prompt are only injected on Claude Code (UserPromptSubmit); no verified equivalent prompt-submit event that adds context is wired here (B-0020)"},
 		Result{Asset: "cursor: wake", Status: StatusSkipped, Note: "an idle session is not woken by a channel message addressed to it (F-0491): no documented way to open a turn in it — the message waits for the next contact point"},
 	)
 	return results
-}
-
-// flatCursorEntry builds Cursor's flat hook entry ({command}, no nested
-// hooks array — R-0037 schema).
-func flatCursorEntry(invocation string) map[string]any {
-	return map[string]any{"command": failOpenCmd(invocation)}
 }
 
 // ─────────────────────────── Codex (R-0035) ───────────────────────────

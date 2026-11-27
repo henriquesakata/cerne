@@ -118,10 +118,11 @@ func TestInstallGemini(t *testing.T) {
 	}
 }
 
-// TestInstallCursor (F-0174 crit. 2/4/5): rules floor + sessionStart context;
-// gate/env/subagent reported as degraded (third-party toggle is the gate
-// route).
+// TestInstallCursor (F-0174 crit. 2/4/5, F-0527 crit. 1): rules floor +
+// full standalone hook set; CERNE_ACTOR/subagent still degraded because
+// they need no installation, not because they are missing.
 func TestInstallCursor(t *testing.T) {
+	// F-0527 crit. 1
 	dir := t.TempDir()
 	results, err := Install(dir, ProviderCursor)
 	if err != nil {
@@ -137,11 +138,28 @@ func TestInstallCursor(t *testing.T) {
 		}
 	}
 	raw, _ := os.ReadFile(filepath.Join(dir, ".cursor", "hooks.json"))
-	if !strings.Contains(string(raw), "session-context --format cursor") || !strings.Contains(string(raw), `"version"`) {
-		t.Fatalf("hooks.json missing sessionStart wiring:\n%s", raw)
+	// Full standalone hook set — no longer just sessionStart.
+	for _, want := range []string{
+		"session-context --format cursor",
+		`"version"`,
+		"work-gate",
+		"tool-notes",
+		"bind-work",
+		"provenance",
+		"tool-notes --after --format cursor",
+		"precompact",
+		"stop-check",
+	} {
+		if !strings.Contains(string(raw), want) {
+			t.Fatalf("hooks.json missing %q:\n%s", want, raw)
+		}
 	}
+	// cursor: work-gate is no longer skipped — it's natively installed.
 	st := statuses(results)
-	for _, degraded := range []string{"cursor: work-gate", "cursor: CERNE_ACTOR", "cursor: subagent-context"} {
+	if _, hasWorkGate := st["cursor: work-gate"]; hasWorkGate {
+		t.Fatalf("cursor: work-gate should not appear as a separate result (it's now native): %v", results)
+	}
+	for _, degraded := range []string{"cursor: CERNE_ACTOR", "cursor: subagent-context"} {
 		if st[degraded] != StatusSkipped {
 			t.Fatalf("%s not reported as degraded: %v", degraded, results)
 		}
@@ -155,6 +173,90 @@ func TestInstallCursor(t *testing.T) {
 	for _, r := range results {
 		if r.Status != StatusUnchanged && r.Status != StatusSkipped {
 			t.Errorf("second install %s = %s, want unchanged/skipped", r.Asset, r.Status)
+		}
+	}
+}
+
+// TestInstallCursorFullHooks (F-0527 crit. 1): all events are written to
+// .cursor/hooks.json with the right matchers, third-party entries are
+// preserved, and upgrading old cerne entries never duplicates them.
+func TestInstallCursorFullHooks(t *testing.T) {
+	// F-0527 crit. 1
+	dir := t.TempDir()
+
+	// Pre-populate with a third-party entry and an old cerne entry
+	// (old format: session-context without --format cursor).
+	cursorDir := filepath.Join(dir, ".cursor")
+	if err := os.MkdirAll(cursorDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Use a JSON-safe old cerne command (simulating a pre-F-0527 install
+	// that just had "cerne hook session-context" without --format cursor).
+	oldHooks := `{"version":1,"hooks":{"sessionStart":[{"command":"third-party-hook"},{"command":"cerne hook session-context"}],"postToolUse":[{"matcher":"Shell","command":"user-post-hook"}]}}`
+	if err := os.WriteFile(filepath.Join(cursorDir, "hooks.json"), []byte(oldHooks), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Install(dir, ProviderCursor); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(cursorDir, "hooks.json"))
+	if err != nil {
+		t.Fatalf("hooks.json not written: %v", err)
+	}
+	content := string(raw)
+
+	// All cerne events present.
+	for _, want := range []string{
+		"cerne hook session-context --format cursor",
+		"cerne hook work-gate",
+		"cerne hook tool-notes",
+		"cerne hook bind-work",
+		"cerne hook provenance",
+		"cerne hook tool-notes --after --format cursor",
+		"cerne hook precompact",
+		"cerne hook stop-check",
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("hooks.json missing %q:\n%s", want, content)
+		}
+	}
+
+	// Third-party entries preserved.
+	if !strings.Contains(content, "third-party-hook") {
+		t.Fatalf("third-party sessionStart hook lost:\n%s", content)
+	}
+	if !strings.Contains(content, "user-post-hook") {
+		t.Fatalf("third-party postToolUse hook lost:\n%s", content)
+	}
+
+	// Old cerne entry replaced, not duplicated: "session-context" appears
+	// exactly once (the new --format cursor one; the old one is gone).
+	occurrences := strings.Count(content, "cerne hook session-context")
+	if occurrences != 1 {
+		t.Fatalf("cerne hook session-context duplicated (%d occurrences):\n%s", occurrences, content)
+	}
+
+	// Matchers present.
+	if !strings.Contains(content, `"Write"`) {
+		t.Fatalf("preToolUse Write matcher missing:\n%s", content)
+	}
+	if !strings.Contains(content, `"Shell"`) {
+		t.Fatalf("Shell matcher missing:\n%s", content)
+	}
+	if !strings.Contains(content, `"Shell|Write"`) {
+		t.Fatalf("Shell|Write matcher missing:\n%s", content)
+	}
+
+	// Idempotent: second install reports unchanged.
+	results, err := Install(dir, ProviderCursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range results {
+		if r.Asset == ".cursor/hooks.json" && r.Status != StatusUnchanged {
+			t.Errorf("second install hooks.json = %s, want unchanged", r.Status)
 		}
 	}
 }
