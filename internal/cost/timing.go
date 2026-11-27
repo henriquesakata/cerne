@@ -275,11 +275,14 @@ func (t *Timing) merge(o *Timing) *Timing {
 	return out
 }
 
-// FormatDuration writes sec as "1h 12min", "45min" or "30s": the one form the
-// CLI and the stamp share.
+// FormatDuration writes sec as "1h 12min", "45min", "1min 20s" or "30s": the
+// one form the CLI and the stamp share; under 10 minutes the seconds count.
 func FormatDuration(sec int64) string {
-	if sec < 60 {
+	switch {
+	case sec < 60:
 		return fmt.Sprintf("%ds", sec)
+	case sec < 600 && sec%60 != 0:
+		return fmt.Sprintf("%dmin %ds", sec/60, sec%60)
 	}
 	m := (sec + 30) / 60
 	switch {

@@ -381,7 +381,7 @@ func TestStampBlockCarriesTime(t *testing.T) { // F-0528 crit. 11, 12
 	if doc := mustStamp(t, resultDoc("F-0008"), stampReport("F-0008", cc(1, 0, 0, 0), 1)); !strings.Contains(doc, "Tempo ativo: sem medida.") {
 		t.Fatalf("no timing: block lacks 'Tempo ativo: sem medida.':\n%s", doc)
 	}
-	for sec, want := range map[int64]string{30: "30s", 2700: "45min", 4320: "1h 12min", 3600: "1h", 0: "0s"} {
+	for sec, want := range map[int64]string{30: "30s", 2700: "45min", 4320: "1h 12min", 3600: "1h", 0: "0s", 80: "1min 20s", 120: "2min", 599: "9min 59s"} {
 		if got := FormatDuration(sec); got != want {
 			t.Errorf("FormatDuration(%d) = %q, want %q", sec, got, want)
 		}
