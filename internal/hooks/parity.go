@@ -148,7 +148,7 @@ var parityTable = []ParityRow{
 	{
 		Capability: "Handoff code through compaction",
 		Claude:     "PreCompact hook (cerne-precompact.sh) + SessionStart source=compact",
-		Cursor:     "preCompact hook (silent, records compactions) + first postToolUse additional_context resume (F-0525)",
+		Cursor:     "preCompact hook (silent, records compactions) + additional_context resume on the first postToolUse of a shell command or an edit after it (.claude PostToolUse/Bash|Edit|Write, F-0525)",
 		Codex:      degraded + ": PreCompact not wired yet",
 		Gemini:     degraded + ": no compaction hook",
 		Copilot:    degraded + ": preCompact is notification-only",
