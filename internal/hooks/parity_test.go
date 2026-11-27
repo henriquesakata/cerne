@@ -6,11 +6,12 @@ import (
 	"testing"
 )
 
-// TestParityMatrixGolden (F-0174 crit. 6): the committed doc is exactly what
+// TestParityMatrixGolden (F-0174 crit. 6, F-0527 crit. 5): the committed doc is exactly what
 // the in-code table renders — the published matrix cannot drift from the
 // installer. Regenerate with: go test ./internal/hooks/ -run Golden -update
 // (or copy ParityMatrix() output into docs/provider-parity.md).
 func TestParityMatrixGolden(t *testing.T) {
+	// F-0527 crit. 5
 	raw, err := os.ReadFile("../../docs/provider-parity.md")
 	if err != nil {
 		t.Fatalf("golden missing (generate it from ParityMatrix()): %v", err)
