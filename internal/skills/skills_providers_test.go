@@ -55,8 +55,14 @@ func TestSkillInstall_Providers(t *testing.T) {
 			if got != authoring(t) {
 				t.Fatal("installed SKILL.md differs from the canonical one")
 			}
-			if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(c.dir), "cerne-self-learning")); err == nil {
-				t.Fatal("only the authoring guide goes to other agents")
+			selfLearn := filepath.Join(dir, filepath.FromSlash(c.dir), "cerne-self-learning")
+			_, hasSelf := os.Stat(selfLearn)
+			if c.p == hooks.ProviderCursor {
+				if hasSelf != nil {
+					t.Fatal("Cursor install must deliver cerne-self-learning (F-0527)")
+				}
+			} else if hasSelf == nil {
+				t.Fatal("only Cursor gets cerne-self-learning on non-Claude providers")
 			}
 			var saw bool
 			for _, r := range rs {
@@ -343,6 +349,45 @@ func TestSkillInstall_MixedEndingsUsePredominant(t *testing.T) {
 	}
 }
 
+// TestInstallCursorDeliversAllCanonicalSkills (F-0527 crit. 3): every skill in
+// All() lands under .cursor/skills/ idempotently.
+func TestInstallCursorDeliversAllCanonicalSkills(t *testing.T) {
+	// F-0527 crit. 3
+	dir := t.TempDir()
+	rs, err := Install(dir, hooks.ProviderCursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	created := map[string]bool{}
+	for _, s := range All() {
+		path := filepath.Join(dir, ".cursor", "skills", s.Name, "SKILL.md")
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("%s missing: %v", s.Name, err)
+		}
+	}
+	for _, r := range rs {
+		if r.Agent == hooks.ProviderCursor && strings.HasPrefix(r.Path, ".cursor/skills/") && r.Status == StatusCreated {
+			created[r.Skill] = true
+		}
+	}
+	for _, s := range All() {
+		if !created[s.Name] {
+			t.Fatalf("skill %s: missing created result", s.Name)
+		}
+	}
+	rs2, err := Install(dir, hooks.ProviderCursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range rs2 {
+		if r.Agent == hooks.ProviderCursor && r.Path != "" && strings.HasPrefix(r.Path, ".cursor/skills/") {
+			if r.Status != StatusUnchanged {
+				t.Fatalf("second install %s = %s, want unchanged", r.Skill, r.Status)
+			}
+		}
+	}
+}
+
 // Nothing is created or written through a symlink anywhere on the path.
 func TestSkillInstall_SymlinkedSkillPathsSkipped(t *testing.T) {
 	cases := map[string]func(dir, outside string) string{
@@ -410,8 +455,15 @@ func TestParityRowMatchesTargets(t *testing.T) {
 	}
 	for p, tg := range targets {
 		cell := row.For(p)
-		if !strings.Contains(cell, tg.skillsDir+"/"+guideName+"/") {
-			t.Errorf("%s cell %q lacks %s", p, cell, tg.skillsDir)
+		switch p {
+		case hooks.ProviderCursor:
+			if !strings.Contains(cell, tg.skillsDir+"/") || !strings.Contains(cell, "cerne-authoring") || !strings.Contains(cell, "cerne-self-learning") {
+				t.Errorf("%s cell %q lacks both canonical skills under %s", p, cell, tg.skillsDir)
+			}
+		default:
+			if !strings.Contains(cell, tg.skillsDir+"/"+guideName+"/") {
+				t.Errorf("%s cell %q lacks %s", p, cell, tg.skillsDir)
+			}
 		}
 		for _, f := range []string{"AGENTS.md", "GEMINI.md"} {
 			if strings.Contains(cell, f) != (tg.pointer == f) {

@@ -26,12 +26,21 @@ type Learned struct {
 	Components []string
 }
 
-// SyncLearned reconciles the learned-* namespace of <projDir>/.claude/skills/
-// against items: one generated skill per entity (created/updated/unchanged),
-// and any learned-* directory without a backing item is removed. Directories
-// outside the learned- prefix are never touched.
+// managedMarker is the provenance line renderLearned writes — only directories
+// whose SKILL.md contains it are removed from .cursor/skills/ when .claude/skills
+// is the reconciliation target (F-0527).
+const managedMarker = "by `cerne skill sync`"
+
+// SyncLearned reconciles the learned-* namespace against items: one generated
+// skill per entity (created/updated/unchanged), and any learned-* directory
+// without a backing item is removed. Directories outside the learned- prefix
+// are never touched.
+//
+// When <projDir>/.claude/skills exists, learned-* live there; managed copies
+// under .cursor/skills/ are pruned. When only .cursor exists, learned-* sync
+// to .cursor/skills/ instead (F-0527).
 func SyncLearned(projDir string, items []Learned) ([]Result, error) {
-	skillsDir := filepath.Join(projDir, ".claude", "skills")
+	skillsDir := syncLearnedTarget(projDir)
 	want := WantLearned(items)
 
 	results := make([]Result, 0, len(items))
@@ -50,7 +59,7 @@ func SyncLearned(projDir string, items []Learned) ([]Result, error) {
 
 	entries, err := os.ReadDir(skillsDir)
 	if os.IsNotExist(err) {
-		return results, nil
+		return results, pruneManagedLearnedCursor(projDir, want)
 	}
 	if err != nil {
 		return nil, err
@@ -67,7 +76,54 @@ func SyncLearned(projDir string, items []Learned) ([]Result, error) {
 		}
 		results = append(results, Result{Skill: e.Name(), Status: StatusRemoved})
 	}
+	if err := pruneManagedLearnedCursor(projDir, want); err != nil {
+		return nil, err
+	}
 	return results, nil
+}
+
+// syncLearnedTarget picks where learned-* are reconciled (F-0527).
+func syncLearnedTarget(projDir string) string {
+	claude := filepath.Join(projDir, ".claude", "skills")
+	if _, err := os.Stat(claude); err == nil {
+		return claude
+	}
+	cursorRoot := filepath.Join(projDir, ".cursor")
+	if _, err := os.Stat(cursorRoot); err == nil {
+		return filepath.Join(cursorRoot, "skills")
+	}
+	return claude
+}
+
+// pruneManagedLearnedCursor drops cerne-managed learned-* from .cursor/skills
+// when .claude/skills is the primary target, so Third-Party Imports does not
+// list each skill twice.
+func pruneManagedLearnedCursor(projDir string, want map[string]string) error {
+	claude := filepath.Join(projDir, ".claude", "skills")
+	if _, err := os.Stat(claude); err != nil {
+		return nil
+	}
+	cursor := filepath.Join(projDir, ".cursor", "skills")
+	entries, err := os.ReadDir(cursor)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if !e.IsDir() || !strings.HasPrefix(e.Name(), learnedPrefix) {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(cursor, e.Name(), "SKILL.md"))
+		if err != nil || !strings.Contains(string(raw), managedMarker) {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(cursor, e.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // WantLearned returns the target learned-* namespace for items — dir name to

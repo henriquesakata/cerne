@@ -82,6 +82,73 @@ func TestSyncLearnedCreatesUpdatesRemoves(t *testing.T) {
 	}
 }
 
+// TestSyncLearnedCursorOnly (F-0527 crit. 4): without .claude/skills, golden paths
+// materialize under .cursor/skills/.
+func TestSyncLearnedCursorOnly(t *testing.T) {
+	// F-0527 crit. 4
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".cursor"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	res, err := SyncLearned(dir, learnedItems())
+	if err != nil {
+		t.Fatalf("SyncLearned: %v", err)
+	}
+	if len(res) != 1 || res[0].Status != StatusCreated {
+		t.Fatalf("sync = %+v", res)
+	}
+	dst := filepath.Join(dir, ".cursor", "skills", res[0].Skill, "SKILL.md")
+	if _, err := os.Stat(dst); err != nil {
+		t.Fatalf("cursor learned skill: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".claude", "skills")); !os.IsNotExist(err) {
+		t.Fatal(".claude/skills should not be created")
+	}
+}
+
+// TestSyncLearnedPrunesManagedCursorCopy (F-0527 crit. 4): when both trees
+// exist, managed learned-* copies are removed from .cursor/skills/.
+func TestSyncLearnedPrunesManagedCursorCopy(t *testing.T) {
+	// F-0527 crit. 4
+	dir := t.TempDir()
+	if _, err := Install(dir); err != nil {
+		t.Fatal(err)
+	}
+	name := learnedPrefix + "stale-copy"
+	managed := filepath.Join(dir, ".cursor", "skills", name, "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(managed), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "---\nname: x\n---\n\n> Generated from N-0001 by `cerne skill sync`\n"
+	if err := os.WriteFile(managed, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	foreign := filepath.Join(dir, ".cursor", "skills", learnedPrefix+"user-owned", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(foreign), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(foreign, []byte("hand-written\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err := SyncLearned(dir, learnedItems())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(managed); !os.IsNotExist(err) {
+		t.Fatal("managed copy should be pruned from .cursor/skills")
+	}
+	if _, err := os.Stat(foreign); err != nil {
+		t.Fatal("user-owned learned skill must remain in .cursor/skills")
+	}
+	if len(res) != 1 {
+		t.Fatalf("sync = %+v", res)
+	}
+	claudePath := filepath.Join(dir, ".claude", "skills", res[0].Skill, "SKILL.md")
+	if _, err := os.Stat(claudePath); err != nil {
+		t.Fatal("learned skill should live under .claude/skills when both exist")
+	}
+}
+
 func TestSyncLearnedLeavesForeignSkillsAlone(t *testing.T) {
 	dir := t.TempDir()
 	if _, err := Install(dir); err != nil {
