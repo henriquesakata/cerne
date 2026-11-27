@@ -130,7 +130,7 @@ func TestReadSessionTicks(t *testing.T) { // F-0528 crit. 2, 3
 		tmsg{ts: at(2), id: "m1", req: "r1", c: cc(1, 0, 0, 1), tools: []ttool{t1}}.line("s"),
 		tmsg{ts: at(3), id: "m1", req: "r1", c: cc(1, 0, 0, 1), tools: []ttool{t2}}.line("s"),
 		userLine("s", at(4), resultContent("t2"), nil),
-		userLine("s", at(5), resultContent("t1"), nil),
+		userLine("s", at(5), resultContent("t1"), map[string]any{"sourceToolAssistantUUID": "u1"}), // Claude Code marks a result with its call's line
 		tmsg{ts: at(6), id: "m2", req: "r2", c: cc(1, 0, 0, 1)}.line("s"),
 		userLine("s", at(7), "meta", map[string]any{"isMeta": true}),
 		userLine("s", at(8), "summary", map[string]any{"isCompactSummary": true}),

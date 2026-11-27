@@ -353,7 +353,7 @@ func renderTime(out io.Writer, r cost.Report) {
 	if r.ID != "" {
 		fmt.Fprintf(out, "  wall: %s (union of the sessions' active intervals)\n", cost.FormatDuration(t.WallSeconds))
 	}
-	fmt.Fprintf(out, "  by phase: %s\n", englishTime(t.ByPhase, cost.PhaseOrder))
+	fmt.Fprintf(out, "  by phase (the card's state at each moment): %s\n", englishTime(t.ByPhase, cost.PhaseOrder))
 	fmt.Fprintf(out, "  by activity: %s\n", englishTime(t.ByActivity, nil))
 	if t.Sidechain != nil {
 		fmt.Fprintf(out, "  subagents: %s (%s)\n", cost.FormatDuration(t.Sidechain.ActiveSeconds), englishTime(t.Sidechain.ByActivity, nil))

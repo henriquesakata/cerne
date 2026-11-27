@@ -209,7 +209,7 @@ func resultID(content json.RawMessage) (id string, ok bool) {
 // without a readable timestamp add nothing.
 func appendUserTick(ticks []tick, line []byte, sess, file, kind string) []tick {
 	var l rawLine
-	if json.Unmarshal(line, &l) != nil || l.Type != "user" || l.IsCompact || l.SourceToolUseID != "" || l.SourceToolAssistantUUID != "" || (l.SessionID != "" && l.SessionID != sess) {
+	if json.Unmarshal(line, &l) != nil || l.Type != "user" || l.IsCompact || (l.SessionID != "" && l.SessionID != sess) {
 		return ticks
 	}
 	ts, err := time.Parse(time.RFC3339Nano, l.Timestamp)
@@ -220,8 +220,12 @@ func appendUserTick(ticks []tick, line []byte, sess, file, kind string) []tick {
 	if agent == "" && strings.Contains(file, "/subagents/agent-") {
 		agent = strings.TrimSuffix(strings.TrimPrefix(file[strings.LastIndex(file, "/")+1:], "agent-"), ".jsonl")
 	}
+	id, isResult := resultID(l.Message.Content)
+	if !isResult && (l.SourceToolUseID != "" || l.SourceToolAssistantUUID != "") {
+		return ticks // a skill's body: produced by a call, mid-turn — no prompt
+	}
 	tk := tick{typ: tickPrompt, human: !l.IsMeta && l.PromptSource != "system", m: msg{ts: ts, session: sess, agent: agent, file: file, sidechain: l.IsSidechain, kind: kind}}
-	if id, ok := resultID(l.Message.Content); ok {
+	if isResult {
 		tk.typ, tk.tool = tickResult, id
 	}
 	return append(ticks, tk)

@@ -1012,7 +1012,7 @@ func TestCostTextShowsTime(t *testing.T) { // F-0528 crit. 10, 15
 		ByActivity: map[string]int64{"código": 3120, "pesquisa": 1200},
 		Sidechain:  &cost.SidechainTime{ActiveSeconds: 600, ByActivity: map[string]int64{"pesquisa": 600}},
 	}})
-	for _, want := range []string{"active: 1h 12min", "wall: 45min", "by phase: plan 20min · implementation 52min",
+	for _, want := range []string{"active: 1h 12min", "wall: 45min", "by phase (the card's state at each moment): plan 20min · implementation 52min",
 		"by activity: code 52min · research 20min", "subagents: 10min (research 10min)", "waiting (person, another session or notice): 30s", "Window (calendar):"} {
 		if !strings.Contains(b.String(), want) {
 			t.Errorf("output lacks %q:\n%s", want, b.String())
