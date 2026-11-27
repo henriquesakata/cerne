@@ -373,7 +373,7 @@ func exportSession(sess string) {
 // inside a subagent consume the parent's watermark; only the SubagentStart
 // hook peeks.
 func printChannelLead(out io.Writer, projectID string) {
-	if block := channelBlock(projectID, os.Getenv("CERNE_SESSION"), true); block != "" {
+	if block := channelBlock(projectID, app.CurrentSession(), true); block != "" { // F-0525
 		fmt.Fprintln(out, block)
 	}
 }

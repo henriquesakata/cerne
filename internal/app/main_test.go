@@ -16,6 +16,7 @@ func TestMain(m *testing.M) {
 	for _, marker := range []string{"CLAUDECODE", "CURSOR_AGENT", "COPILOT_CLI", "CODEX_THREAD_ID"} {
 		os.Unsetenv(marker)
 	}
+	os.Unsetenv("CURSOR_CONVERSATION_ID") // F-0525: Cursor's conversation id must not leak into tests
 	// And the host settings (a [llm] saved from the UI reaches every LoadConfig).
 	dir, err := os.MkdirTemp("", "cerne-config-")
 	if err != nil {

@@ -128,7 +128,7 @@ func notifyCardSessions(repoDir, projDir, id string, from, to domain.FeatureStat
 	if err != nil {
 		return err
 	}
-	actor := os.Getenv("CERNE_SESSION")
+	actor := CurrentSession() // F-0525: also recognizes CURSOR_CONVERSATION_ID
 	n := notice{Entity: id, At: now, Line: id + ": " + string(from) + " → " + string(to) +
 		" by " + EventActor() + " at " + now.Format(time.RFC3339) + NextStepTail(repoDir, projDir, id)}
 	var errs []error

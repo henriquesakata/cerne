@@ -193,7 +193,7 @@ func HandoffWork(repoDir, projDir, id, brief, next string, evidence, contingenci
 			FromWork:      w.ID,
 			Refs:          w.Refs,
 			Actor:         resolveActor(defaultWorkActor()),
-			FromSession:   os.Getenv("CERNE_SESSION"),
+			FromSession:   CurrentSession(), // F-0525: also recognizes CURSOR_CONVERSATION_ID
 			Next:          next,
 			Contingencies: ifs,
 			LogUpto:       logUpto,

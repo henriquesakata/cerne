@@ -279,7 +279,7 @@ func runFeatureWait(cmd *cobra.Command, dir, id, forState string, timeout, inter
 		now:  time.Now,
 		warn: cmd.ErrOrStderr(),
 	}
-	if sess := os.Getenv("CERNE_SESSION"); sess != "" {
+	if sess := app.CurrentSession(); sess != "" { // F-0525: also recognizes CURSOR_CONVERSATION_ID
 		cacheDir, err := project.CacheDir(ctx.cfg.ProjectID)
 		if err != nil {
 			return err

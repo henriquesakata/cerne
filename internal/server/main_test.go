@@ -29,6 +29,7 @@ func TestMain(m *testing.M) {
 	}
 	// F-0414: never probe PATH for a subscription CLI (children inherit this).
 	os.Setenv("CERNE_NO_CLI_DETECT", "1")
+	os.Unsetenv("CURSOR_CONVERSATION_ID") // F-0525: Cursor's conversation id must not leak into tests
 	dir, err := os.MkdirTemp("", "cerne-config-")
 	if err != nil {
 		panic(err)

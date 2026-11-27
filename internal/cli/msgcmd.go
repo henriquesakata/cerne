@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -32,7 +31,7 @@ func newMsgCmd() *cobra.Command {
 			"expire after 24h, or when the sender's work closes.",
 	}
 	cmd.PersistentFlags().StringVar(&dir, "dir", "", "project directory (defaults to cwd)")
-	cmd.PersistentFlags().StringVar(&session, "session", "", "agent session id (defaults to $CERNE_SESSION, exported by the SessionStart hook)")
+	cmd.PersistentFlags().StringVar(&session, "session", "", "agent session id (defaults to $CERNE_SESSION, exported by the SessionStart hook, or to $CURSOR_CONVERSATION_ID in a Cursor agent shell)")
 	cmd.AddCommand(newMsgSendCmd(&dir, &session), newMsgReadCmd(&dir, &session), newMsgAckCmd(&dir, &session))
 	return cmd
 }
@@ -56,14 +55,14 @@ func msgSession(flag string) string {
 	if flag != "" {
 		return flag
 	}
-	return os.Getenv("CERNE_SESSION")
+	return app.CurrentSession() // F-0525: also recognizes CURSOR_CONVERSATION_ID in Cursor shells
 }
 
 // msgIdentityErr turns the identity sentinels into the next step to take.
 func msgIdentityErr(sess string, err error) error {
 	switch {
 	case sess == "":
-		return errors.New("no session: pass --session or set CERNE_SESSION (the SessionStart hook exports it — re-run `cerne hook install` if it is missing)")
+		return errors.New("no session: pass --session or set CERNE_SESSION (the SessionStart hook exports it — re-run `cerne hook install` if it is missing; a Cursor agent shell uses CURSOR_CONVERSATION_ID)")
 	case errors.Is(err, app.ErrNoChannelIdentity):
 		return fmt.Errorf("%w — run `cerne work start \"<what you are doing>\"` first", err)
 	}

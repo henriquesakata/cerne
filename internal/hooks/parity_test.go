@@ -174,6 +174,34 @@ func TestParitySandboxAndMCPRowsAreNotApplicableWhereNothingIsWritten(t *testing
 	}
 }
 
+// TestParityCursorCompactionHandoff (F-0525 crit. 6): Cursor's compaction
+// handoff row is wired, not degraded.
+func TestParityCursorCompactionHandoff(t *testing.T) {
+	var handoff ParityRow
+	for _, r := range ParityRows() {
+		if r.Capability == "Handoff code through compaction" {
+			handoff = r
+		}
+	}
+	if d, _ := handoff.Degraded(ProviderCursor); d {
+		t.Fatalf("Cursor compaction still degraded: %q", handoff.Cursor)
+	}
+	for _, want := range []string{"preCompact", "postToolUse", "additional_context"} {
+		if !strings.Contains(handoff.Cursor, want) {
+			t.Errorf("Cursor cell lacks %q: %s", want, handoff.Cursor)
+		}
+	}
+	row := ParityRow{}
+	for _, r := range ParityRows() {
+		if r.Capability == "Document author (CERNE_PROVIDER, F-0375)" {
+			row = r
+		}
+	}
+	if !strings.Contains(row.Cursor, "CURSOR_CONVERSATION_ID") {
+		t.Fatalf("document author cell lacks CURSOR_CONVERSATION_ID: %q", row.Cursor)
+	}
+}
+
 // TestParityCursorDocumentAuthor (F-0513 crit. 5): Cursor's document author
 // is no longer degraded — the cell says the model comes from the hook payload,
 // as provider cursor, and that ambiguity leaves it empty — and the Cursor

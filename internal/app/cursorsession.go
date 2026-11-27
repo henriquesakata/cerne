@@ -166,15 +166,30 @@ func cursorPendingWriter(sessions map[string]cursorSession, args []string, now t
 	return match[0]
 }
 
+// cursorOwnSession is the session Cursor names in this shell's
+// CURSOR_CONVERSATION_ID when its record is fresh (F-0525 crit. 2): the shell's
+// own word, so it decides before any heuristic.
+func cursorOwnSession(sessions map[string]cursorSession) (string, bool) {
+	id := os.Getenv("CURSOR_CONVERSATION_ID")
+	if id == "" || safeSessionID(id) != nil {
+		return "", false
+	}
+	_, ok := sessions[id]
+	return id, ok
+}
+
 // cursorAuthor is the writer of a document from a Cursor agent shell (F-0513),
 // args being this process's os.Args[1:]: provider cursor, with the model of
-// the one session whose pending shell command this is (criterion 6), else
-// the model every Cursor session in play reported, and none otherwise — the
-// shell names no session, so two concurrent sessions on different models are
-// never told apart by a guess (cost.AuthorModel's rule).
+// the session CURSOR_CONVERSATION_ID names when its record is fresh (F-0525,
+// no model when that record has none yet), else the model of the one session
+// whose pending shell command this is (criterion 6), else the model every
+// Cursor session in play reported, and none otherwise.
 func cursorAuthor(cacheDir string, args []string) DocAuthor {
 	now := time.Now()
 	sessions := cursorSessions(cacheDir, now)
+	if own, ok := cursorOwnSession(sessions); ok {
+		return DocAuthor{Provider: "cursor", Model: sessions[own].Model, Source: "hook"}
+	}
 	if w := cursorPendingWriter(sessions, args, now); sessions[w].Model != "" {
 		return DocAuthor{Provider: "cursor", Model: sessions[w].Model, Source: "hook"}
 	}
@@ -189,13 +204,16 @@ func cursorAuthor(cacheDir string, args []string) DocAuthor {
 }
 
 // cursorWriterSession is the session a Cursor shell's write is marked on
-// (F-0513), args being this process's os.Args[1:]: the one whose pending
-// shell command this is (criterion 6), else the only Cursor session in play,
-// bound or not — the spec and the plan are written before any feature start
-// binds. "" when neither is single: any of them may be the writer.
+// (F-0513), args being this process's os.Args[1:]: the session named by
+// CURSOR_CONVERSATION_ID when it has a fresh record (F-0525), else the one
+// whose pending shell command this is (criterion 6), else the only Cursor
+// session in play, bound or not. "" when none of these is single.
 func cursorWriterSession(cacheDir string, args []string) string {
 	now := time.Now()
 	sessions := cursorSessions(cacheDir, now)
+	if own, ok := cursorOwnSession(sessions); ok {
+		return own
+	}
 	if w := cursorPendingWriter(sessions, args, now); w != "" {
 		return w
 	}

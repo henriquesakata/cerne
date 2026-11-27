@@ -178,7 +178,7 @@ func TestAmendWithoutSessionFallsToActor(t *testing.T) {
 	if err != nil || !changed {
 		t.Fatalf("same actor without CERNE_SESSION: changed %v, err %v", changed, err)
 	}
-	if out := strings.Join(notes, "\n"); !strings.Contains(out, "warning: W-0001 is active on T-0001") || !strings.Contains(out, "CERNE_SESSION is unset") {
+	if out := strings.Join(notes, "\n"); !strings.Contains(out, "warning: W-0001 is active on T-0001") || !strings.Contains(out, "no session identity (CERNE_SESSION or CURSOR_CONVERSATION_ID)") {
 		t.Fatalf("notes must warn on W-0001 and say sessions were not compared:\n%s", out)
 	}
 

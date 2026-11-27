@@ -148,7 +148,7 @@ var parityTable = []ParityRow{
 	{
 		Capability: "Handoff code through compaction",
 		Claude:     "PreCompact hook (cerne-precompact.sh) + SessionStart source=compact",
-		Cursor:     degraded + ": PreCompact not wired yet",
+		Cursor:     "preCompact hook (silent, records compactions) + additional_context resume on the first postToolUse of a shell command or an edit after it (.claude PostToolUse/Bash|Edit|Write, F-0525)",
 		Codex:      degraded + ": PreCompact not wired yet",
 		Gemini:     degraded + ": no compaction hook",
 		Copilot:    degraded + ": preCompact is notification-only",
@@ -201,7 +201,7 @@ var parityTable = []ParityRow{
 	{
 		Capability: "Document author (CERNE_PROVIDER, F-0375)",
 		Claude:     "no declaration — the model is read from the session transcript",
-		Cursor:     "no declaration — the hooks record each session's model from the hook payload (model_id, else model), and a write from Cursor's agent shell is provider cursor with that model; no model when the Cursor sessions in play disagree (F-0513)",
+		Cursor:     "no declaration — the hooks record each session's model from the hook payload (model_id, else model), and a write from Cursor's agent shell is provider cursor with that model; CURSOR_CONVERSATION_ID in the agent shell attributes the write to that conversation when its cursor-sessions record is fresh (F-0525); no model when the Cursor sessions in play disagree (F-0513)",
 		Codex:      "CERNE_PROVIDER=openai in shell_environment_policy.set; no model exposed",
 		Gemini:     "CERNE_PROVIDER=google in .gemini/.env; no model exposed",
 		Copilot:    degraded + ": CERNE_PROVIDER=copilot reaches the hook processes only, not the bash tool shell — no model exposed",
