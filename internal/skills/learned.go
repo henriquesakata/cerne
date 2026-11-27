@@ -59,7 +59,7 @@ func SyncLearned(projDir string, items []Learned) ([]Result, error) {
 
 	entries, err := os.ReadDir(skillsDir)
 	if os.IsNotExist(err) {
-		return results, pruneManagedLearnedCursor(projDir, want)
+		return results, pruneManagedLearnedCursor(projDir)
 	}
 	if err != nil {
 		return nil, err
@@ -76,7 +76,7 @@ func SyncLearned(projDir string, items []Learned) ([]Result, error) {
 		}
 		results = append(results, Result{Skill: e.Name(), Status: StatusRemoved})
 	}
-	if err := pruneManagedLearnedCursor(projDir, want); err != nil {
+	if err := pruneManagedLearnedCursor(projDir); err != nil {
 		return nil, err
 	}
 	return results, nil
@@ -104,7 +104,7 @@ func ProjectSkillsDir(projDir string) string {
 // pruneManagedLearnedCursor drops cerne-managed learned-* from .cursor/skills
 // when .claude/skills is the primary target, so Third-Party Imports does not
 // list each skill twice.
-func pruneManagedLearnedCursor(projDir string, want map[string]string) error {
+func pruneManagedLearnedCursor(projDir string) error {
 	claude := filepath.Join(projDir, ".claude", "skills")
 	if _, err := os.Stat(claude); err != nil {
 		return nil

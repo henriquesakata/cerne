@@ -143,12 +143,6 @@ alwaysApply: true
 ` + RegisterRules + `
 `
 
-// flatCursorEntry builds Cursor's flat hook entry ({command}, no nested
-// hooks array — R-0037 schema).
-func flatCursorEntry(invocation string) map[string]any {
-	return map[string]any{"command": failOpenCmd(invocation)}
-}
-
 // flatCursorEntryWithMatcher builds a Cursor flat hook entry with an optional
 // matcher. For events that always apply, matcher is "".
 func flatCursorEntryWithMatcher(matcher, invocation string) map[string]any {
@@ -172,7 +166,7 @@ func isCerneManaged(entry map[string]any) bool {
 func cursorWanted() map[string][]map[string]any {
 	return map[string][]map[string]any{
 		"sessionStart": {
-			flatCursorEntryWithMatcher("", "cerne hook session-context --format cursor"),
+			flatCursorEntryWithMatcher("", cursorSessionStartCmd), // what CursorHooksState looks for
 		},
 		"preToolUse": {
 			flatCursorEntryWithMatcher("Write", "cerne hook work-gate"),

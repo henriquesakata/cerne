@@ -81,13 +81,13 @@ func installCursorSkills(projDir string, t target) []Result {
 		res := Result{Skill: s.Name, Path: rel, Agent: hooks.ProviderCursor}
 		dst := filepath.Join(projDir, filepath.FromSlash(rel), "SKILL.md")
 		if link := symlinkOnPath(projDir, rel+"/SKILL.md"); link != "" {
-			res.Status, res.Note = StatusSkipped, link+" is a symlink — not written through; copy .claude/skills/"+s.Name+"/SKILL.md to "+rel+"/SKILL.md by hand"
+			res.Status, res.Note = StatusSkipped, link+" is a symlink — not written through; replace it with a folder and run `cerne skill install --provider cursor` again"
 			out = append(out, res)
 			continue
 		}
 		st, err := writeSkillFiles(dst, s)
 		if err != nil {
-			res.Status, res.Note = StatusSkipped, "could not write "+rel+"/SKILL.md ("+err.Error()+") — copy .claude/skills/"+s.Name+"/SKILL.md there by hand"
+			res.Status, res.Note = StatusSkipped, "could not write "+rel+"/SKILL.md ("+err.Error()+") — fix the folder and run `cerne skill install --provider cursor` again"
 		} else {
 			res.Status = st
 		}
