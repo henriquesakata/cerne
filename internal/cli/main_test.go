@@ -34,6 +34,7 @@ func TestMain(m *testing.M) {
 	// B-0084: room join/open store a credential keyed by CERNE_SESSION, and
 	// room commands read it and the CERNE_ROOM_* variables; room tests opt in.
 	os.Unsetenv("CERNE_SESSION")
+	os.Unsetenv("CURSOR_CONVERSATION_ID") // F-0525: Cursor's conversation id must not leak into tests
 	os.Unsetenv("CERNE_ROOM_SESSION")
 	os.Unsetenv("CERNE_ROOM_FACILITATOR")
 	dir, err := os.MkdirTemp("", "cerne-config-")
