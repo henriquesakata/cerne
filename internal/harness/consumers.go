@@ -67,12 +67,14 @@ func consumersFor(it Item, copilot bool) []string {
 		if it.Name == ".cernerc" {
 			return allProviders()
 		}
-		// .cursor/hooks.json entries — Cursor's config surface only.
-		if it.Origin == OriginCursorProject || it.Origin == OriginCursorUser {
-			return []string{string(hooks.ProviderCursor)}
-		}
+		// .cursor/hooks.json, .cursor/mcp.json — Cursor's config surface only.
 		if filepath.Base(filepath.Dir(it.Path)) == ".cursor" {
 			return []string{string(hooks.ProviderCursor)}
+		}
+		// An MCP declaration file has the readers of the servers it declares:
+		// Cursor reads neither .mcp.json nor ~/.claude.json (F-0512, R-0147).
+		if it.Name == ".mcp.json" || it.Name == ".claude.json" {
+			return consumersFor(Item{Class: "mcp", Path: it.Path, Origin: it.Origin}, copilot)
 		}
 		// Claude Code settings layers: Cursor imports .claude/* by default
 		// (R-0037, "Include Third-Party Plugins, Skills, and Other Configs").
@@ -82,13 +84,15 @@ func consumersFor(it Item, copilot bool) []string {
 		// third-party import toggle (R-0037, R-0066, R-0154).
 		return []string{string(hooks.ProviderClaude), string(hooks.ProviderCursor)}
 	case "skills":
-		p := filepath.ToSlash(it.Path)
-		// .cursor/skills/** or ~/.cursor/skills/** → Cursor only.
-		if strings.HasPrefix(p, ".cursor/") || strings.Contains(p, "/.cursor/") {
+		// The innermost skills root in the path decides, so a project checked
+		// out under ~/.cursor/worktrees/ (Cursor's parallel agents) is still
+		// the project.
+		p := "/" + filepath.ToSlash(it.Path)
+		cursor, agents := strings.LastIndex(p, "/.cursor/skills/"), strings.LastIndex(p, "/.agents/skills/")
+		switch {
+		case cursor > agents: // .cursor/skills/** or ~/.cursor/skills/**
 			return []string{string(hooks.ProviderCursor)}
-		}
-		// .agents/skills/** or ~/.agents/skills/** → agent-skills readers.
-		if strings.HasPrefix(p, ".agents/") || strings.Contains(p, "/.agents/") {
+		case agents > cursor: // .agents/skills/**: the Agent Skills readers
 			return []string{string(hooks.ProviderCursor), string(hooks.ProviderCodex), string(hooks.ProviderGemini), string(hooks.ProviderCopilot)}
 		}
 		// .claude/skills/** (project, local, user): Cursor imports them.
