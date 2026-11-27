@@ -9,9 +9,9 @@ import (
 // F-0525 crit. 1
 func TestCurrentSession(t *testing.T) {
 	for _, tc := range []struct {
-		name    string
-		env     map[string]string
-		want    string
+		name string
+		env  map[string]string
+		want string
 	}{
 		{
 			name: "CERNE_SESSION wins when both set",
@@ -108,6 +108,11 @@ func TestCurrentSession(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			// A key a case leaves out is unset, not the host's (an agent
+			// shell exports CERNE_SESSION).
+			for _, k := range []string{"CERNE_SESSION", "CURSOR_AGENT", "CURSOR_CONVERSATION_ID"} {
+				t.Setenv(k, "")
+			}
 			for k, v := range tc.env {
 				t.Setenv(k, v)
 			}

@@ -28,8 +28,8 @@ func TestMain(m *testing.M) {
 	// F-0414: never probe PATH for a subscription CLI (children inherit this).
 	os.Setenv("CERNE_NO_CLI_DETECT", "1")
 	os.Unsetenv("CERNE_ACTOR")
-	os.Unsetenv("CURSOR_AGENT") // Cursor's agent-shell marker counts as an agent too (F-0428)
-	os.Unsetenv("COPILOT_CLI")  // and Copilot CLI's (F-0444); CLAUDECODE is dropped below (B-0030)
+	os.Unsetenv("CURSOR_AGENT")    // Cursor's agent-shell marker counts as an agent too (F-0428)
+	os.Unsetenv("COPILOT_CLI")     // and Copilot CLI's (F-0444); CLAUDECODE is dropped below (B-0030)
 	os.Unsetenv("CODEX_THREAD_ID") // and Codex's (B-0051)
 	// B-0084: room join/open store a credential keyed by CERNE_SESSION, and
 	// room commands read it and the CERNE_ROOM_* variables; room tests opt in.
