@@ -217,7 +217,7 @@ var parityTable = []ParityRow{
 	{
 		Capability: "Authoring guide",
 		Claude:     "delivered to .claude/skills/cerne-authoring/ — " + GuideCondition(ProviderClaude),
-		Cursor:     "delivered to .cursor/skills/ (cerne-authoring + cerne-self-learning) — " + GuideCondition(ProviderCursor),
+		Cursor:     "delivered to .cursor/skills/ (cerne-authoring + cerne-self-learning; cerne skill install --provider cursor writes nothing under .claude/) — " + GuideCondition(ProviderCursor),
 		Codex:      "delivered to .agents/skills/cerne-authoring/ + one-line pointer in AGENTS.md — " + GuideCondition(ProviderCodex),
 		Gemini:     "delivered to .gemini/skills/cerne-authoring/ + one-line pointer in GEMINI.md — " + GuideCondition(ProviderGemini),
 		Copilot:    "delivered to .github/skills/cerne-authoring/ + .github/instructions/cerne.instructions.md — " + GuideCondition(ProviderCopilot),

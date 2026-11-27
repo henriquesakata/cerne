@@ -103,6 +103,7 @@ func TestFAQCursorStandaloneWithoutClaude(t *testing.T) {
 		}
 		for _, needle := range []string{
 			"cerne hook install --provider cursor",
+			"cerne skill install --provider cursor",
 			"cerne-self-learning",
 			".cursor/hooks.json",
 			"deduplicate",
