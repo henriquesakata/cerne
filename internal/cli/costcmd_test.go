@@ -108,7 +108,7 @@ func TestCostCommandLabelsEachCounter(t *testing.T) {
 // TestCostCommandJSONStable (crit. 6): --json is the same content, byte-stable;
 // by_role is the additive per-role view (F-0384 crit. 4) — the subagent with no
 // .meta.json counts as other.
-func TestCostCommandJSONStable(t *testing.T) {
+func TestCostCommandJSONStable(t *testing.T) { // F-0528 crit. 10
 	projDir, _ := costProject(t, domain.StateInDevelopment)
 	out, err := execCerne(t, "cost", "F-0001", "--json", "--dir", projDir)
 	if err != nil {
@@ -166,6 +166,7 @@ func TestCostCommandJSONStable(t *testing.T) {
   "by_activity": {
     "resposta": 90
   },
+  "sidechain_time": null,
   "messages": 2,
   "sessions": 2,
   "sessions_without_transcript": 1,
@@ -1027,9 +1028,14 @@ func TestCostTextShowsTime(t *testing.T) { // F-0528 crit. 10, 15
 	b.Reset()
 	renderCost(&b, cost.Report{ByModel: map[string]cost.Counters{}, Messages: 1,
 		Entities:     map[string]cost.Counters{"F-0001": {Input: 1}, "F-0002": {Input: 2}},
-		EntityActive: map[string]int64{"F-0001": 2700}})
+		EntityActive: map[string]int64{"F-0001": 2700},
+		Timing:       &cost.Timing{ActiveSeconds: 2700, ByPhase: map[string]int64{}, ByActivity: map[string]int64{}}})
 	if !strings.Contains(b.String(), "F-0001  input 1 · cache_creation 0 · cache_read 0 · output 0  · active 45min") ||
 		strings.Contains(b.String(), "F-0002  input 2 · cache_creation 0 · cache_read 0 · output 0  · active") {
 		t.Errorf("project view: want F-0001 with its active time and F-0002 without:\n%s", b.String())
+	}
+	// The project total says which entities it leaves out (critic, round 1).
+	if !strings.Contains(b.String(), "not measured: F-0002") {
+		t.Errorf("project view: total lacks the unmeasured entities:\n%s", b.String())
 	}
 }

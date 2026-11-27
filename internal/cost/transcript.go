@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -204,8 +205,11 @@ type rawLine struct {
 	// part of the turn, never a prompt (F-0528).
 	SourceToolUseID         string `json:"sourceToolUseID"`
 	SourceToolAssistantUUID string `json:"sourceToolAssistantUUID"`
-	Effort                  string `json:"effort"` // the reasoning effort Claude Code ran the turn at (B-0024); "" on older lines
-	Message                 struct {
+	// "system" on a line the harness wrote (another session's message, a task
+	// notice): it wakes the session but no person asked (F-0528 crit. 9).
+	PromptSource string `json:"promptSource"`
+	Effort       string `json:"effort"` // the reasoning effort Claude Code ran the turn at (B-0024); "" on older lines
+	Message      struct {
 		ID      string          `json:"id"`
 		Model   string          `json:"model"`
 		Content json.RawMessage `json:"content"` // only searched for tool_use / tool_result (F-0528)
@@ -270,7 +274,9 @@ func readSession(sess string, files []tfile) ([]msg, []tick, error) {
 					if tk.activity == "" {
 						tk.activity = act
 					}
-					if !m.ts.IsZero() && (tk.m.ts.IsZero() || m.ts.Before(tk.m.ts)) {
+					// The tick ends at the message's last line: a long reply's
+					// generation is work, the wait starts after it (F-0528).
+					if m.ts.After(tk.m.ts) {
 						tk.m.ts = m.ts
 					}
 					prev := &msgs[i]
@@ -316,6 +322,9 @@ func readSession(sess string, files []tfile) ([]msg, []tick, error) {
 			}
 		}
 	}
+	// A line whose timestamp does not parse has no place in time: the pause
+	// after it would start at year 1 (F-0528).
+	ticks = slices.DeleteFunc(ticks, func(k tick) bool { return k.m.ts.IsZero() })
 	return msgs, ticks, nil
 }
 

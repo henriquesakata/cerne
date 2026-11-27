@@ -42,6 +42,7 @@ type tick struct {
 	typ      tickType
 	activity string // assistant: its first tool_use's; result: the answered call's
 	tool     string // result: the tool_use_id it answers
+	human    bool   // prompt: a person wrote it — what a Turn bind's claim reaches back to (crit. 9)
 }
 
 var (
@@ -183,7 +184,7 @@ func appendUserTick(ticks []tick, line []byte, sess, file, kind string) []tick {
 	if agent == "" && strings.Contains(file, "/subagents/agent-") {
 		agent = strings.TrimSuffix(strings.TrimPrefix(file[strings.LastIndex(file, "/")+1:], "agent-"), ".jsonl")
 	}
-	tk := tick{typ: tickPrompt, m: msg{ts: ts, session: sess, agent: agent, file: file, sidechain: l.IsSidechain, kind: kind}}
+	tk := tick{typ: tickPrompt, human: !l.IsMeta && l.PromptSource != "system", m: msg{ts: ts, session: sess, agent: agent, file: file, sidechain: l.IsSidechain, kind: kind}}
 	if id, ok := resultID(l.Message.Content); ok {
 		tk.typ, tk.tool = tickResult, id
 	}

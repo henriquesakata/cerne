@@ -280,3 +280,55 @@ func TestTimingWakeUpIsWait(t *testing.T) { // F-0528 crit. 1, 8
 		t.Fatalf("wait = %d, want %d", tm.HumanWaitSeconds, 160*mn)
 	}
 }
+
+// TestTimingReplyGenerationIsActive (F-0528 crit. 1, 2): a streamed message
+// ends at its last line, so a long reply's generation is active time, not
+// wait (critic, round 1).
+func TestTimingReplyGenerationIsActive(t *testing.T) { // F-0528 crit. 1, 2
+	in := timingFixture(t,
+		userLine("s", at(0), "go", nil),
+		tmsg{ts: at(1), id: "m1", req: "r1", c: cc(1, 0, 0, 1)}.line("s"),
+		tmsg{ts: at(4), id: "m1", req: "r1", c: cc(1, 0, 0, 1)}.line("s"), // the same message, its last block
+		userLine("s", at(10), "next", nil),
+	)
+	tm := timingOf(t, in, "F-0001")
+	if tm.ActiveSeconds != 4*mn || tm.HumanWaitSeconds != 6*mn {
+		t.Fatalf("active %d wait %d, want %d and %d", tm.ActiveSeconds, tm.HumanWaitSeconds, 4*mn, 6*mn)
+	}
+}
+
+// TestTimingSkipsLineWithoutTimestamp (F-0528 crit. 1): a line whose
+// timestamp does not parse adds no tick: the pause after it would start at
+// year 1 (critic, round 1).
+func TestTimingSkipsLineWithoutTimestamp(t *testing.T) { // F-0528 crit. 1
+	bad := `{"type":"assistant","timestamp":"not a time","sessionId":"s","requestId":"rx","message":{"id":"mx","model":"claude-opus-5-5","usage":{"input_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":1}}}`
+	in := timingFixture(t,
+		userLine("s", at(0), "go", nil),
+		bad,
+		asst(at(2), "m1"),
+		userLine("s", at(10), "next", nil),
+	)
+	tm := timingOf(t, in, "F-0001")
+	if tm.ActiveSeconds != 2*mn || tm.HumanWaitSeconds != 8*mn {
+		t.Fatalf("active %d wait %d, want %d and %d", tm.ActiveSeconds, tm.HumanWaitSeconds, 2*mn, 8*mn)
+	}
+}
+
+// TestTimingPhaseFollowsRevert (F-0528 crit. 4): the phase replays the
+// lifecycle up to the line — a revert from implemented puts the feature back
+// in implementação, not in revisão for good (critic, round 1).
+func TestTimingPhaseFollowsRevert(t *testing.T) { // F-0528 crit. 4
+	in := timingFixture(t,
+		userLine("s", at(0), "go", nil),
+		userLine("s", at(16), "again", nil),
+		asst(at(20), "m1"),
+	)
+	lifeEvent(t, in.RepoDir, "F-0001", "feature.started", at(-3))
+	lifeEvent(t, in.RepoDir, "F-0001", "feature.completed", at(5))
+	lifeEvent(t, in.RepoDir, "F-0001", "feature.reverted", at(15))
+	turnBind(t, in.CacheDir, "s", "F-0001", at(15).Add(time.Second), false)
+	tm := timingOf(t, in, "F-0001")
+	if want := map[string]int64{phaseDev: 4 * mn}; !reflect.DeepEqual(tm.ByPhase, want) {
+		t.Fatalf("by phase = %v, want %v", tm.ByPhase, want)
+	}
+}

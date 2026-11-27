@@ -361,6 +361,17 @@ func renderTime(out io.Writer, r cost.Report) {
 		fmt.Fprintln(out, "  subagents: —")
 	}
 	fmt.Fprintf(out, "  waiting (person, another session or notice): %s\n", cost.FormatDuration(t.HumanWaitSeconds))
+	if r.ID == "" { // the project total names what it leaves out
+		var missing []string
+		for _, e := range sortedKeys(r.Entities) {
+			if _, ok := r.EntityActive[e]; !ok {
+				missing = append(missing, e)
+			}
+		}
+		if len(missing) > 0 {
+			fmt.Fprintf(out, "  not measured: %s (cost read before time was measured)\n", strings.Join(missing, ", "))
+		}
+	}
 }
 
 // renderRollup prints an epic's descendants share and its total.

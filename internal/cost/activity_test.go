@@ -106,7 +106,7 @@ func resultContent(id string) any {
 }
 
 // TestReadSessionTicks (F-0528 crit. 2, 3): one tick per assistant message at
-// its earliest line, with the activity of its first tool_use; one per
+// its last line, with the activity of its first tool_use; one per
 // tool_result (the answered call's activity) and per prompt — a meta line
 // included: another session's message or a task notification wakes the
 // session as a prompt does; compact-summary, foreign-session user lines and
@@ -144,7 +144,7 @@ func TestReadSessionTicks(t *testing.T) { // F-0528 crit. 2, 3
 	}
 	wants := []want{
 		{0, tickPrompt, ""},
-		{1, tickAssistant, actResearch},
+		{3, tickAssistant, actResearch},
 		{4, tickResult, actTest},
 		{5, tickResult, actResearch},
 		{6, tickAssistant, actReply},

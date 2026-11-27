@@ -629,7 +629,9 @@ func (b Bind) start() time.Time {
 }
 
 // pullBack gives each Turn bind of the main thread (binds sorted by TS) the
-// start of its claim: the last human prompt of the session before it, but never
+// start of its claim: the last human prompt of the session before it (never
+// another session's message or a task notice: they wake the session, no person
+// asked), but never
 // before the previous main bind — so the card a session switches to owns the
 // turn that led to the switch, tokens and time alike (F-0528 crit. 9). A bind
 // without a prompt before it, or without Turn (an older ledger line), claims
@@ -637,7 +639,7 @@ func (b Bind) start() time.Time {
 func pullBack(binds []Bind, ticks []tick) {
 	var prompts []time.Time
 	for _, k := range ticks {
-		if k.typ == tickPrompt && k.m.agent == "" && !k.m.sidechain {
+		if k.typ == tickPrompt && k.human && k.m.agent == "" && !k.m.sidechain {
 			prompts = append(prompts, k.m.ts)
 		}
 	}
@@ -688,8 +690,8 @@ var closeEvents = map[string]bool{
 // no unbind line, the event log already knows when the work or feature ended.
 type attributor struct {
 	res    resolver
-	closes map[string][]time.Time          // bound id → its close events, ascending
-	life   map[string]map[string]time.Time // entity → lifecycle event type → its earliest instant (F-0528)
+	closes map[string][]time.Time // bound id → its close events, ascending
+	life   map[string][]lifeMove  // entity → its lifecycle events, ascending (F-0528)
 }
 
 func newAttributor(repoDir string) (attributor, error) {
@@ -698,22 +700,20 @@ func newAttributor(repoDir string) (attributor, error) {
 		return attributor{}, err
 	}
 	closes := map[string][]time.Time{}
-	life := map[string]map[string]time.Time{}
+	life := map[string][]lifeMove{}
 	for _, ev := range events {
 		if closeEvents[ev.Type] {
 			closes[ev.EntityID] = append(closes[ev.EntityID], ev.At)
 		}
-		if lifeEvents[ev.Type] {
-			if life[ev.EntityID] == nil {
-				life[ev.EntityID] = map[string]time.Time{}
-			}
-			if at, ok := life[ev.EntityID][ev.Type]; !ok || ev.At.Before(at) {
-				life[ev.EntityID][ev.Type] = ev.At
-			}
+		if _, ok := lifeEvents[ev.Type]; ok {
+			life[ev.EntityID] = append(life[ev.EntityID], lifeMove{ev.At, ev.Type})
 		}
 	}
 	for _, ts := range closes {
 		sort.Slice(ts, func(i, j int) bool { return ts[i].Before(ts[j]) })
+	}
+	for _, evs := range life {
+		sort.SliceStable(evs, func(i, j int) bool { return evs[i].at.Before(evs[j].at) })
 	}
 	return attributor{res: resolver{repo: repoDir, memo: map[string]string{}}, closes: closes, life: life}, nil
 }

@@ -24,10 +24,21 @@ const (
 	timeKeySplit = "/" // fileAgg.Time keys: phase + "/" + activity
 )
 
-// lifeEvents are the events that move a feature between phases.
-var lifeEvents = map[string]bool{
-	"feature.created": true, "feature.approved": true, "feature.started": true,
-	"feature.completed": true, "feature.accepted": true,
+// lifeEvents move a feature between phases; each maps the phase it leaves
+// the feature in. feature.reverted walks one step back (afterRevert).
+var lifeEvents = map[string]string{
+	"feature.created": phaseSpec, "feature.approved": phasePlan, "feature.started": phaseDev,
+	"feature.completed": phaseReview, "feature.accepted": phaseReview, "feature.reverted": "",
+}
+
+// afterRevert is the phase a revert leaves: approved → candidate, implemented
+// → in_development, done → implemented.
+var afterRevert = map[string]string{phasePlan: phaseSpec, phaseReview: phaseDev}
+
+// lifeMove is one lifecycle move of an entity.
+type lifeMove struct {
+	at  time.Time
+	typ string
 }
 
 // Timing is the measured working time of one entity, in seconds (F-0528):
@@ -41,7 +52,7 @@ type Timing struct {
 	HumanWaitSeconds int64            `json:"human_wait_seconds"`
 	ByPhase          map[string]int64 `json:"by_phase"`
 	ByActivity       map[string]int64 `json:"by_activity"`
-	Sidechain        *SidechainTime   `json:"sidechain_time,omitempty"`
+	Sidechain        *SidechainTime   `json:"sidechain_time"` // null without subagents: always present (crit. 10)
 	spans            [][2]time.Time   // the main-thread active intervals, united; not serialized
 }
 
@@ -52,31 +63,31 @@ type SidechainTime struct {
 	ByActivity    map[string]int64 `json:"by_activity"`
 }
 
-// phase is the lifecycle phase of entity at t: by the earliest event of each
-// kind; sem fase when the entity has none (a W- without a feature, an old
-// backend).
+// phase is the lifecycle phase of entity at t, replaying its events up to t
+// (a revert walks back, a reopen counts again); sem fase when the entity has
+// none (a W- without a feature, an old backend).
 func (a attributor) phase(entity string, t time.Time) string {
-	ev := a.life[entity]
-	if len(ev) == 0 {
+	evs := a.life[entity]
+	if len(evs) == 0 {
 		return phaseNone
 	}
-	reached := func(types ...string) bool {
-		for _, ty := range types {
-			if at, ok := ev[ty]; ok && !t.Before(at) {
-				return true
-			}
+	ph, done := phaseSpec, false // done: accepted once, so a revert lands on implemented
+	for _, ev := range evs {
+		if ev.at.After(t) {
+			break
 		}
-		return false
+		switch {
+		case ev.typ == "feature.reverted" && done:
+			done = false // done → implemented: still revisão
+		case ev.typ == "feature.reverted":
+			if back, ok := afterRevert[ph]; ok {
+				ph = back
+			}
+		default:
+			ph, done = lifeEvents[ev.typ], ev.typ == "feature.accepted"
+		}
 	}
-	switch {
-	case reached("feature.completed", "feature.accepted"):
-		return phaseReview
-	case reached("feature.started"):
-		return phaseDev
-	case reached("feature.approved"):
-		return phasePlan
-	}
-	return phaseSpec
+	return ph
 }
 
 // addTimes measures the pauses of one session's ticks into agg, per

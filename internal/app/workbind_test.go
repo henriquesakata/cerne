@@ -319,7 +319,7 @@ func TestSessionSignalsReadsMtimeSkipsDirs(t *testing.T) {
 // TestBindMarksTurnOnEntitySwitch (F-0528 crit. 9): a main-thread bind that
 // first binds the session or switches its entity is a Turn; rebinding the same
 // entity and any subagent bind are not; an old line reads as no Turn.
-func TestBindMarksTurnOnEntitySwitch(t *testing.T) {
+func TestBindMarksTurnOnEntitySwitch(t *testing.T) { // F-0528 crit. 9
 	t.Setenv("CLAUDECODE", "1")
 	cacheDir := t.TempDir()
 	steps := []struct {

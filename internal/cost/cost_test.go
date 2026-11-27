@@ -696,6 +696,30 @@ func TestTurnBindPullsBackToPrompt(t *testing.T) { // F-0528 crit. 9
 	}
 }
 
+// TestTurnBindPullsBackToHumanPrompt (F-0528 crit. 9): the claim reaches the
+// last HUMAN prompt; another session's message and a task notice in between
+// wake the session but are not the request that led to the card (critic,
+// round 1).
+func TestTurnBindPullsBackToHumanPrompt(t *testing.T) { // F-0528 crit. 9
+	in := fixture(t)
+	saveFeature(t, in.RepoDir, "F-0001", domain.StateInDevelopment)
+	saveFeature(t, in.RepoDir, "F-0002", domain.StateInDevelopment)
+	writeLines(t, in.Roots[0], "-tmp-p/s.jsonl",
+		tmsg{ts: at(-3), id: "m0", req: "r", c: cc(1, 0, 0, 0)}.line("s"),
+		userLine("s", at(0), "do the thing", nil),
+		tmsg{ts: at(1), id: "m1", req: "r", c: cc(0, 1, 0, 0)}.line("s"),
+		userLine("s", at(2), "Another Claude session sent a message", map[string]any{"isMeta": true, "promptSource": "system"}),
+		userLine("s", at(2).Add(time.Second), "<task-notification>done</task-notification>", map[string]any{"promptSource": "system"}),
+		tmsg{ts: at(3), id: "m3", req: "r", c: cc(0, 0, 1, 0)}.line("s"),
+		tmsg{ts: at(5), id: "m5", req: "r", c: cc(0, 0, 0, 1)}.line("s"))
+	turnBind(t, in.CacheDir, "s", "F-0001", at(-5), true)
+	turnBind(t, in.CacheDir, "s", "F-0002", at(4), true)
+	ents := compute(t, in, "").Entities
+	if ents["F-0001"] != cc(1, 0, 0, 0) || ents["F-0002"] != cc(0, 1, 1, 1) {
+		t.Fatalf("entities = %+v, want F-0001 only m0, F-0002 m1+m3+m5", ents)
+	}
+}
+
 // TestTurnBindCappedByPreviousBind (F-0528 crit. 9): an earlier bind inside
 // the same turn limits the pull-back.
 func TestTurnBindCappedByPreviousBind(t *testing.T) { // F-0528 crit. 9
