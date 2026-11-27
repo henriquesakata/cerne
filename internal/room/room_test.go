@@ -715,7 +715,7 @@ func TestResetFacilitatorRecoversLostCapability(t *testing.T) {
 	if reset == fac || reset == lost {
 		t.Fatalf("reset returned a previous capability")
 	}
-	for _, id := range []string{"R99", "../" + r.ID, r.ID + "/..", "", ChannelID} {
+	for _, id := range []string{"R99", "../" + r.ID, r.ID + "/..", r.ID + "/../" + r.ID, r.ID + "x", "", ChannelID} {
 		if _, err := ResetFacilitator(dir, id); !errors.Is(err, ErrNotFound) {
 			t.Fatalf("reset of room %q err = %v, want ErrNotFound", id, err)
 		}
