@@ -46,12 +46,18 @@ type tick struct {
 }
 
 var (
-	docPathRe  = regexp.MustCompile(`features/[A-Z]+-\d+[^/]*/(spec|plan|result)\.md$`)
-	docFlagRe  = regexp.MustCompile(`--doc[ =](spec|plan|result)\b`)
-	prefixRe   = regexp.MustCompile(`^(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|\S*)|cd\s+\S+\s*&&|rtk\s+proxy)\s*`)
-	testCmdRe  = regexp.MustCompile(`(?:^|[\s;&|("'])(?:go (?:test|vet|build)|npm (?:run|test|ci)|npx vitest|vitest)\b`) // anywhere in the line: `cd x && …`, `sh -c "npm ci && …"`
-	readCmdRe  = regexp.MustCompile(`^(?:grep|rg|cat|sed -n|head|tail|ls|find|wc|git (?:log|show|diff|status|blame)|(?:\./bin/)?cerne (?:search|ask|context|next|status|brief|show|tags|guide|lint|cost|note list))\b`)
-	cerneDocRe = regexp.MustCompile(`^(?:\./bin/)?cerne feature (new\b.*--file|spec\b|amend\b)`)
+	docPathRe = regexp.MustCompile(`features/[A-Z]+-\d+[^/]*/(spec|plan|result)\.md$`)
+	docFlagRe = regexp.MustCompile(`--doc[ =](spec|plan|result)\b`)
+	prefixRe  = regexp.MustCompile(`^(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|\S*)|cd\s+\S+\s*&&|rtk\s+proxy)\s*`)
+	testCmdRe = regexp.MustCompile(`(?:^|[\s;&|("'])(?:go (?:test|vet|build)|npm (?:run|test|ci)|npx vitest|vitest)\b`) // anywhere in the line: `cd x && …`, `sh -c "npm ci && …"`
+	readCmdRe = regexp.MustCompile(`^(?:grep|rg|cat|sed -n|head|tail|ls|find|wc|git (?:log|show|diff|status|blame)|(?:\./bin/)?cerne (?:search|ask|context|next|status|brief|show|tags|guide|lint|cost|note list))\b`)
+	// A heredoc's first line names the file it writes: `cat > f <<EOF`,
+	// `cat <<EOF > f`, `tee [-a] f <<EOF`. A shell path may hold a variable,
+	// so only its base name tells a feature document.
+	redirectRe  = regexp.MustCompile(`(?:^|\s)>>?\s*([^\s<>|;&'"]+)`)
+	teeRe       = regexp.MustCompile(`\btee\s+(?:-a\s+)?([^\s<>|;&'"]+)`)
+	docTargetRe = regexp.MustCompile(`(?:^|/)(spec|plan|result)\.md$`)
+	cerneDocRe  = regexp.MustCompile(`^(?:\./bin/)?cerne feature (new\b.*--file|spec\b|amend\b)`)
 )
 
 var docActivity = map[string]string{"spec": actSpec, "plan": actPlan, "result": actResult}
@@ -95,6 +101,9 @@ func classifyBash(cmd string) string {
 		}
 		cmd = cmd[loc[1]:]
 	}
+	if act, ok := heredocWrite(cmd); ok {
+		return act
+	}
 	switch {
 	case cerneDocRe.MatchString(cmd):
 		if m := cerneDocRe.FindStringSubmatch(cmd); strings.HasPrefix(m[1], "amend") {
@@ -110,6 +119,27 @@ func classifyBash(cmd string) string {
 		return actResearch
 	}
 	return actOther
+}
+
+// heredocWrite classifies a command whose first line writes a heredoc into a
+// file: a feature document by its base name, any other file as code; ok is
+// false when the line writes no heredoc.
+func heredocWrite(cmd string) (string, bool) {
+	first, _, _ := strings.Cut(cmd, "\n")
+	if !strings.Contains(first, "<<") {
+		return "", false
+	}
+	m := teeRe.FindStringSubmatch(first)
+	if m == nil {
+		m = redirectRe.FindStringSubmatch(first)
+	}
+	if m == nil {
+		return "", false
+	}
+	if d := docTargetRe.FindStringSubmatch(m[1]); d != nil {
+		return docActivity[d[1]], true
+	}
+	return actCode, true
 }
 
 // toolUse is the part of an assistant content block the time reader needs.

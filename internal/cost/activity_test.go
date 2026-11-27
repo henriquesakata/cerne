@@ -67,6 +67,13 @@ func TestClassifyActivity(t *testing.T) { // F-0528 crit. 3
 		{mk(bash("git commit -m x")), actOther},
 		{mk(bash("mkdir x")), actOther},
 		{mk("Skill", nil), actOther},
+		// a heredoc writes a file: the target decides (Gauntlet round 1 — the
+		// agent wrote its plan and result this way, read as research)
+		{mk(bash("cat > .docs/current/features/F-0001-x/plan.md <<'EOF'\n---\n> quoted\nEOF")), actPlan},
+		{mk(bash("cat <<'EOF' > .docs/current/features/F-0001-x/result.md\nbody\nEOF")), actResult},
+		{mk(bash("d=$(echo .docs/current/features/F-0001-*); cat > $d/spec.md <<'EOF'\nx\nEOF")), actSpec},
+		{mk(bash("cat > src/calc/calc.go <<'EOF'\npackage calc\nEOF")), actCode},
+		{mk(bash("tee -a internal/x.go <<EOF\nx\nEOF")), actCode},
 		// the answer to these calls is the person's: waiting, not working
 		{mk("AskUserQuestion", nil), actWait},
 		{mk("ExitPlanMode", nil), actWait},
