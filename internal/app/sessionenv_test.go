@@ -122,7 +122,7 @@ func TestCurrentSession(t *testing.T) {
 // TestCurrentSessionTestMainClearsConversationID proves that TestMain already
 // unsets CURSOR_CONVERSATION_ID so tests are hermetic when run from a Cursor
 // agent shell. F-0525 crit. 5
-func TestCurrentSessionTestMainClearsConversationID(t *testing.T) {
+func TestCurrentSessionTestMainClearsConversationID(t *testing.T) { // F-0525 crit. 5
 	if v := os.Getenv("CURSOR_CONVERSATION_ID"); v != "" {
 		t.Errorf("CURSOR_CONVERSATION_ID = %q; TestMain must unset it for hermetic tests", v)
 	}

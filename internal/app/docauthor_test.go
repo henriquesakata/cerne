@@ -531,13 +531,13 @@ func TestDocAuthorCursorDirectIDFallbacksPreserved(t *testing.T) { // F-0525 cri
 		t.Fatalf("docAuthor with unknown CURSOR_CONVERSATION_ID = %+v, want ambiguous (no model)", got)
 	}
 
-	// A single session with no CURSOR_CONVERSATION_ID → sole-session fallback
+	// A single session with no CURSOR_CONVERSATION_ID → sole-session fallback (F-0513).
 	t.Setenv("CURSOR_CONVERSATION_ID", "")
-	t.Setenv("CERNE_CACHE_DIR", t.TempDir())
-	_, cacheDir2, _ := cursorProject(t)
+	projDir2, cacheDir2, _ := cursorProject(t)
 	cursorSeen(t, cacheDir2, "sole-sess-00000000000000000000000000", "gemini-4-carbon", time.Minute, false)
-	got = docAuthor(projDir)
-	// projDir still points to the cacheDir, not cacheDir2 — the sole session
-	// should be in its own project; this branch just confirms nothing panics.
-	_ = got
+	got = docAuthor(projDir2)
+	wantSole := DocAuthor{Provider: "cursor", Model: "gemini-4-carbon", Source: "hook"}
+	if got != wantSole {
+		t.Fatalf("docAuthor sole-session fallback = %+v, want %+v", got, wantSole)
+	}
 }
