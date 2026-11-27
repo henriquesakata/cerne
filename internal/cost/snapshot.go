@@ -181,6 +181,10 @@ func Harvest(in Inputs, sess, transcriptPath string, now time.Time) error {
 		}
 		agg[k].add(m)
 	}
+	for _, f := range agg {
+		f.Timed = true
+	}
+	addTimes(agg, att, mine, spawn, sess, ticks, func(e string) bool { return snaps[e] != nil })
 	for id, s := range snaps {
 		ss := s.Sessions[sess]
 		if ss == nil {

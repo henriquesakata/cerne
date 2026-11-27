@@ -102,6 +102,12 @@ type bucket struct {
 type fileAgg struct {
 	Messages int      `json:"messages"`
 	Buckets  []bucket `json:"buckets"`
+	// Active time of the file (F-0528), additive: absent from a snapshot of
+	// before it, which then reads as not measured (Timed false).
+	Timed   bool             `json:"timed,omitempty"`
+	Time    map[string]int64 `json:"time_sec,omitempty"` // phase + "/" + activity → seconds
+	WaitSec int64            `json:"wait_sec,omitempty"` // pauses that end in a human prompt
+	Spans   [][2]time.Time   `json:"spans,omitempty"`    // main-thread active intervals, united
 }
 
 func (f *fileAgg) add(m msg) {
@@ -262,6 +268,11 @@ func own(in Inputs, id string) (Report, error) {
 		entity string
 	}
 	var all []owned
+	type timed struct {
+		ticks []tick
+		spawn map[string]time.Time
+	}
+	read := map[string]timed{}
 	kept := map[string]int{}
 	pruned := map[string]bool{}
 	for _, sess := range universe {
@@ -281,6 +292,7 @@ func own(in Inputs, id string) (Report, error) {
 		}
 		pullBack(bySess[sess], ticks)
 		spawn := spawnTimes(msgs)
+		read[sess] = timed{ticks, spawn}
 		for _, m := range msgs {
 			var e string
 			e, m.role = att.entity(bySess[sess], spawn, m)
@@ -311,6 +323,14 @@ func own(in Inputs, id string) (Report, error) {
 				agg[k] = &fileAgg{}
 			}
 			agg[k].add(o.msg)
+		}
+	}
+	for _, f := range agg {
+		f.Timed = true // read live, so its time is measured (F-0528)
+	}
+	for _, sess := range universe {
+		if t, ok := read[sess]; ok {
+			addTimes(agg, att, bySess[sess], t.spawn, sess, t.ticks, func(e string) bool { return id == "" || e == id })
 		}
 	}
 	r.SessionsRecovered = fuseSnapshots(in.CacheDir, id, inScope, pruned, agg)
@@ -463,6 +483,7 @@ func shares(agg map[aggKey]*fileAgg) map[string]*share {
 			s = &share{ID: k.entity, ByModel: map[string]Counters{}}
 			out[k.entity] = s
 		}
+		s.foldTiming(k.file, f)
 		for _, b := range f.Buckets {
 			s.Counters = s.Counters.add(b.Counters)
 			if b.Sidechain {
@@ -484,6 +505,11 @@ func shares(agg map[aggKey]*fileAgg) map[string]*share {
 			}
 			s.Messages += b.Messages
 			s.widen(b.First.UTC().Format(time.RFC3339), b.Last.UTC().Format(time.RFC3339))
+		}
+	}
+	for _, s := range out {
+		if s.Timing != nil {
+			s.Timing.finish()
 		}
 	}
 	return out
@@ -653,7 +679,8 @@ var closeEvents = map[string]bool{
 // no unbind line, the event log already knows when the work or feature ended.
 type attributor struct {
 	res    resolver
-	closes map[string][]time.Time // bound id → its close events, ascending
+	closes map[string][]time.Time          // bound id → its close events, ascending
+	life   map[string]map[string]time.Time // entity → lifecycle event type → its earliest instant (F-0528)
 }
 
 func newAttributor(repoDir string) (attributor, error) {
@@ -662,15 +689,24 @@ func newAttributor(repoDir string) (attributor, error) {
 		return attributor{}, err
 	}
 	closes := map[string][]time.Time{}
+	life := map[string]map[string]time.Time{}
 	for _, ev := range events {
 		if closeEvents[ev.Type] {
 			closes[ev.EntityID] = append(closes[ev.EntityID], ev.At)
+		}
+		if lifeEvents[ev.Type] {
+			if life[ev.EntityID] == nil {
+				life[ev.EntityID] = map[string]time.Time{}
+			}
+			if at, ok := life[ev.EntityID][ev.Type]; !ok || ev.At.Before(at) {
+				life[ev.EntityID][ev.Type] = ev.At
+			}
 		}
 	}
 	for _, ts := range closes {
 		sort.Slice(ts, func(i, j int) bool { return ts[i].Before(ts[j]) })
 	}
-	return attributor{res: resolver{repo: repoDir, memo: map[string]string{}}, closes: closes}, nil
+	return attributor{res: resolver{repo: repoDir, memo: map[string]string{}}, closes: closes, life: life}, nil
 }
 
 // entity is m's entity and role under its session's binds (sorted by TS) and

@@ -57,6 +57,7 @@ type share struct {
 	First        string              `json:"first"`
 	Last         string              `json:"last"`
 	Unattributed Counters            `json:"unattributed"`
+	Timing       *Timing             `json:"time,omitempty"` // additive (F-0528): nil is not measured, never zero
 }
 
 func shareOf(r Report) share {
