@@ -282,15 +282,7 @@ func installCursor(projDir string, explicit, network bool) []Result {
 	// F-0527: full standalone hook set — all events natively in .cursor/hooks.json.
 	results = append(results, mergeCursorHooksJSON(
 		filepath.Join(projDir, ".cursor", "hooks.json"),
-<<<<<<< HEAD
-		map[string]any{"version": 1},
-		map[string][]map[string]any{
-			// Cursor entries are flat {command,...}, not nested — build them here.
-			"sessionStart": {flatCursorEntry(cursorSessionStartCmd)},
-		},
-=======
 		cursorWanted(),
->>>>>>> a03a87ab5 (feat(hooks): install full standalone Cursor hooks in .cursor/hooks.json (F-0527))
 	))
 	if explicit { // never on a renewal: see InstallNetwork
 		results = append(results, installCursorSandbox(projDir, network), cursorMCP(projDir))
