@@ -109,8 +109,8 @@ func resultContent(id string) any {
 // its earliest line, with the activity of its first tool_use; one per
 // tool_result (the answered call's activity) and per prompt — a meta line
 // included: another session's message or a task notification wakes the
-// session as a prompt does; compact-summary and foreign-session user lines
-// are out.
+// session as a prompt does; compact-summary, foreign-session user lines and
+// the meta line a tool call produced (a skill's body) are out.
 func TestReadSessionTicks(t *testing.T) { // F-0528 crit. 2, 3
 	root := t.TempDir()
 	t1 := ttool{id: "t1", name: "Read", input: map[string]any{"file_path": "a.go"}}
@@ -125,6 +125,8 @@ func TestReadSessionTicks(t *testing.T) { // F-0528 crit. 2, 3
 		tmsg{ts: at(6), id: "m2", req: "r2", c: cc(1, 0, 0, 1)}.line("s"),
 		userLine("s", at(7), "meta", map[string]any{"isMeta": true}),
 		userLine("s", at(8), "summary", map[string]any{"isCompactSummary": true}),
+		userLine("s", at(8), "Base directory for this skill", map[string]any{"isMeta": true, "sourceToolUseID": "t9"}),
+		userLine("s", at(8), "skill body", map[string]any{"isMeta": true, "sourceToolAssistantUUID": "u9"}),
 		userLine("other", at(9), "resume copy", nil),
 		userLine("s", at(10), []any{map[string]any{"type": "text", "text": "again"}}, nil),
 	)

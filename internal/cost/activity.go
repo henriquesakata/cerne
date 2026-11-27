@@ -167,11 +167,12 @@ func resultID(content json.RawMessage) (id string, ok bool) {
 // appendUserTick adds the tick of one user line: a tool result or a prompt.
 // A meta line is a prompt too: another session's message or a task
 // notification wakes the session as a person does, and dropping it would count
-// the idle pause before it as work. Compact-summary lines, other sessions'
-// copies and lines without a readable timestamp add nothing.
+// the idle pause before it as work. Compact-summary lines, the lines a tool
+// call produced (a skill's body, mid-turn), other sessions' copies and lines
+// without a readable timestamp add nothing.
 func appendUserTick(ticks []tick, line []byte, sess, file, kind string) []tick {
 	var l rawLine
-	if json.Unmarshal(line, &l) != nil || l.Type != "user" || l.IsCompact || (l.SessionID != "" && l.SessionID != sess) {
+	if json.Unmarshal(line, &l) != nil || l.Type != "user" || l.IsCompact || l.SourceToolUseID != "" || l.SourceToolAssistantUUID != "" || (l.SessionID != "" && l.SessionID != sess) {
 		return ticks
 	}
 	ts, err := time.Parse(time.RFC3339Nano, l.Timestamp)

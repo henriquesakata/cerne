@@ -200,8 +200,12 @@ type rawLine struct {
 	AgentID     string `json:"agentId"`
 	IsMeta      bool   `json:"isMeta"`
 	IsCompact   bool   `json:"isCompactSummary"`
-	Effort      string `json:"effort"` // the reasoning effort Claude Code ran the turn at (B-0024); "" on older lines
-	Message     struct {
+	// A user line a tool call produced (a skill's body) names that call: it is
+	// part of the turn, never a prompt (F-0528).
+	SourceToolUseID         string `json:"sourceToolUseID"`
+	SourceToolAssistantUUID string `json:"sourceToolAssistantUUID"`
+	Effort                  string `json:"effort"` // the reasoning effort Claude Code ran the turn at (B-0024); "" on older lines
+	Message                 struct {
 		ID      string          `json:"id"`
 		Model   string          `json:"model"`
 		Content json.RawMessage `json:"content"` // only searched for tool_use / tool_result (F-0528)
