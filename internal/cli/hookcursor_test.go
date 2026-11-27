@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/henriquesakata/cerne/internal/app"
 	"github.com/henriquesakata/cerne/internal/cost"
@@ -808,5 +809,42 @@ func TestPushAttributesCursorPendingCommand(t *testing.T) {
 	marks, _ := cost.ReadMarks(filepath.Dir(repoDir))
 	if len(marks) == 0 || marks[len(marks)-1].Session != "sess-b" || marks[len(marks)-1].Harness != "cursor" {
 		t.Fatalf("marks = %+v, want the spec marked on sess-b", marks)
+	}
+}
+
+// TestHookCursorPrecompactSilentOnce (F-0527 crit. 1, 2; R-0153): Cursor's
+// preCompact is observational and takes no additional_context, so the
+// .cursor/hooks.json entry records the compaction and prints nothing, and the
+// imported .claude layer for the same compaction records nothing again. A
+// later compaction, past the moment the two layers fire together, records
+// again even though preCompact carries no tool_use_id.
+func TestHookCursorPrecompactSilentOnce(t *testing.T) { // F-0527 crit. 1, 2
+	sess := "cursor-pc"
+	projDir, cacheDir, _ := boundWork(t, sess)
+	p := cursorFixture(t, "stop.json", projDir)
+	p["session_id"], p["conversation_id"] = sess, sess
+	p["hook_event_name"] = "preCompact"
+	delete(p, "generation_id")
+	compact := func(layer string) {
+		t.Helper()
+		out, err := execCerneStdin(t, payloadString(t, p), "hook", "precompact")
+		if err != nil || out != "" {
+			t.Fatalf("%s: err=%v stdout=%q, want nothing on stdout", layer, err, out)
+		}
+	}
+	compact(".cursor/hooks.json")
+	compact(".claude import")
+	if lines := compactionLines(t, cacheDir, sess); len(lines) != 1 {
+		t.Fatalf("compactions after both layers = %v, want one", lines)
+	}
+
+	old := time.Now().Add(-2 * time.Minute)
+	ents, _ := os.ReadDir(filepath.Join(cacheDir, "hook-dedup"))
+	for _, e := range ents {
+		_ = os.Chtimes(filepath.Join(cacheDir, "hook-dedup", e.Name()), old, old)
+	}
+	compact("a later compaction")
+	if lines := compactionLines(t, cacheDir, sess); len(lines) != 2 {
+		t.Fatalf("compactions after a later one = %v, want two", lines)
 	}
 }

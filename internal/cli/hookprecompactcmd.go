@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -52,27 +51,22 @@ func runHookPrecompact(cmd *cobra.Command) {
 		return
 	}
 
-	var b strings.Builder
-	fmt.Fprintf(&b, "cerne: this session is bound to work %s. The compaction summary MUST keep these lines verbatim:\n", workID)
-	fmt.Fprintf(&b, "- work: %s\n", workID)
+	recordCompaction(cacheDir, in.SessionID, workID, time.Now().UTC())
+	// Cursor's preCompact is observational: it takes no additional_context
+	// and plain text on stdout breaks its hook host (R-0153). Record only.
+	if in.cursor() {
+		return
+	}
+	out := cmd.OutOrStdout()
+	fmt.Fprintf(out, "cerne: this session is bound to work %s. The compaction summary MUST keep these lines verbatim:\n", workID)
+	fmt.Fprintf(out, "- work: %s\n", workID)
 	switch h, ok, err := latestHandoff(repoDir, workID); {
 	case err != nil: // unreadable store: say nothing rather than guess "no handoff"
 	case ok:
-		fmt.Fprintf(&b, "- latest handoff: %s (%s)\n- resume with: cerne show %s\n", h.ID, h.State, h.ID)
+		fmt.Fprintf(out, "- latest handoff: %s (%s)\n- resume with: cerne show %s\n", h.ID, h.State, h.ID)
 	default:
-		fmt.Fprintf(&b, "- latest handoff: no handoff yet — record one with `cerne work handoff %s --next \"…\"`\n", workID)
+		fmt.Fprintf(out, "- latest handoff: no handoff yet — record one with `cerne work handoff %s --next \"…\"`\n", workID)
 	}
-	msg := b.String()
-	recordCompaction(cacheDir, in.SessionID, workID, time.Now().UTC())
-
-	// F-0527: Cursor's preCompact hook must receive JSON (not plain text),
-	// since it invokes cerne hook precompact natively now.
-	if in.cursor() {
-		enc := json.NewEncoder(cmd.OutOrStdout())
-		_ = enc.Encode(cursorContext{AdditionalContext: msg})
-		return
-	}
-	fmt.Fprint(cmd.OutOrStdout(), msg)
 }
 
 // boundActiveWork resolves the session's live binding when it is an active

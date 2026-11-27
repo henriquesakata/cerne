@@ -45,30 +45,35 @@ func claimCursorHookCall(cacheDir, hookName string, in hookInput) bool {
 
 	// Prune old markers opportunistically (best-effort, ignore errors).
 	_ = pruneOldMarkers(dir)
-
-	// Try to claim with O_CREATE|O_EXCL. If the directory does not exist
-	// yet, create it first and retry once. Any other error is fail-open.
-	f, err := openExcl(path)
-	if err == nil {
-		f.Close()
-		return true // claimed — first invocation
-	}
-	if os.IsExist(err) {
-		return false // marker exists — second invocation, suppress
-	}
-	// Path error (dir missing): create the dir and retry.
 	if os.MkdirAll(dir, 0o755) != nil {
 		return true // fail-open: cannot create dedup dir
 	}
-	f, err = openExcl(path)
-	if err == nil {
-		f.Close()
-		return true // claimed after creating dir
+	f, err := openExcl(path)
+	if os.IsExist(err) && staleMarker(path) {
+		// preCompact and sessionStart carry no per-call id, so a later call
+		// shares the key: a marker older than hookDedupWindow was not left
+		// by this call's other layer, which fires milliseconds apart.
+		_ = os.Remove(path)
+		f, err = openExcl(path)
 	}
-	if os.IsExist(err) {
-		return false // race: another layer just created the marker
+	switch {
+	case err == nil:
+		f.Close()
+		return true // claimed — first layer of this call
+	case os.IsExist(err):
+		return false // the other layer of the same call: suppress
 	}
 	return true // any other error: fail-open
+}
+
+// hookDedupWindow is how long a marker stands for the same call: the two
+// layers fire milliseconds apart (R-0153), so a minute is generous.
+const hookDedupWindow = time.Minute
+
+// staleMarker reports a marker older than hookDedupWindow.
+func staleMarker(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && time.Since(info.ModTime()) > hookDedupWindow
 }
 
 // openExcl opens path with O_CREATE|O_EXCL|O_WRONLY.
