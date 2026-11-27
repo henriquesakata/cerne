@@ -121,12 +121,18 @@ func classifyBash(cmd string) string {
 	return actOther
 }
 
-// heredocWrite classifies a command whose first line writes a heredoc into a
-// file: a feature document by its base name, any other file as code; ok is
-// false when the line writes no heredoc.
+// heredocWrite classifies a command that writes a heredoc into a file, by the
+// first line opening one (`set -e` may come before): a feature document by its
+// base name, any other file as code; ok is false when no line opens one.
 func heredocWrite(cmd string) (string, bool) {
-	first, _, _ := strings.Cut(cmd, "\n")
-	if !strings.Contains(first, "<<") {
+	var first string
+	for _, line := range strings.Split(cmd, "\n") {
+		if strings.Contains(line, "<<") {
+			first = line
+			break
+		}
+	}
+	if first == "" {
 		return "", false
 	}
 	m := teeRe.FindStringSubmatch(first)

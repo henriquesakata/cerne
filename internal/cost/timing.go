@@ -54,6 +54,8 @@ type Timing struct {
 	ByActivity       map[string]int64 `json:"by_activity"`
 	Sidechain        *SidechainTime   `json:"sidechain_time"` // null without subagents: always present (crit. 10)
 	spans            [][2]time.Time   // the main-thread active intervals, united; not serialized
+	ms, sideMs       map[string]int64 // folded milliseconds (phase/activity, activity), rounded once in finish
+	waitMs           int64
 }
 
 // SidechainTime is the subagents' active time, measured by the same rules and
@@ -128,11 +130,11 @@ func addTimes(agg map[aggKey]*fileAgg, att attributor, binds []Bind, spawn map[s
 			gap := cur.m.ts.Sub(ts[i-1].m.ts)
 			if waiting(cur) {
 				if !sub {
-					f.WaitSec += int64(gap.Round(time.Second) / time.Second)
+					f.WaitMs += gap.Milliseconds()
 				}
 				continue
 			}
-			gap = min(gap, maxPause).Round(time.Second)
+			gap = min(gap, maxPause)
 			if gap <= 0 {
 				continue
 			}
@@ -143,7 +145,7 @@ func addTimes(agg map[aggKey]*fileAgg, att attributor, binds []Bind, spawn map[s
 			if act == actWait { // the assistant line asking the question: the model wrote it
 				act = actReply
 			}
-			f.Time[att.phase(e, cur.m.ts)+timeKeySplit+act] += int64(gap / time.Second)
+			f.Time[att.phase(e, cur.m.ts)+timeKeySplit+act] += gap.Milliseconds()
 			if !sub {
 				f.Spans = append(f.Spans, [2]time.Time{cur.m.ts.Add(-gap), cur.m.ts})
 			}
@@ -181,44 +183,61 @@ func unite(spans [][2]time.Time) [][2]time.Time {
 	return out
 }
 
-// foldTiming adds one file's measured time to s: main-thread files into the
-// active total, by phase and by activity, and the intervals the wall clock is
-// taken from; subagent files into the sidechain block.
+// foldTiming adds one file's measured time to s, in milliseconds: main-thread
+// files by phase and activity, with the intervals the wall clock is taken
+// from; subagent files into the sidechain. finish turns it into seconds.
 func (s *share) foldTiming(file string, f *fileAgg) {
 	if !f.Timed {
 		return
 	}
 	if s.Timing == nil {
-		s.Timing = &Timing{ByPhase: map[string]int64{}, ByActivity: map[string]int64{}}
+		s.Timing = &Timing{ByPhase: map[string]int64{}, ByActivity: map[string]int64{}, ms: map[string]int64{}, sideMs: map[string]int64{}}
 	}
 	t := s.Timing
 	sub := strings.Contains(file, "/subagents/")
-	for key, sec := range f.Time {
-		phase, act, _ := strings.Cut(key, timeKeySplit)
+	for key, ms := range f.Time {
 		if sub {
-			if t.Sidechain == nil {
-				t.Sidechain = &SidechainTime{ByActivity: map[string]int64{}}
-			}
-			t.Sidechain.ActiveSeconds += sec
-			t.Sidechain.ByActivity[act] += sec
+			_, act, _ := strings.Cut(key, timeKeySplit)
+			t.sideMs[act] += ms
 			continue
 		}
-		t.ActiveSeconds += sec
-		t.ByPhase[phase] += sec
-		t.ByActivity[act] += sec
+		t.ms[key] += ms
 	}
-	t.HumanWaitSeconds += f.WaitSec
+	t.waitMs += f.WaitMs
 	t.spans = append(t.spans, f.Spans...)
 }
 
-// finish sets the wall-clock time: the length of the union of the intervals.
+// finish turns the folded milliseconds into seconds, rounding once per key so
+// that the phases and the activities each sum to the active total, and sets
+// the wall clock: the length of the union of the intervals.
 func (t *Timing) finish() {
+	if t.ms == nil { // read from an anchor, or finished already
+		return
+	}
+	sec := func(ms int64) int64 { return (ms + 500) / 1000 }
+	for key, ms := range t.ms {
+		phase, act, _ := strings.Cut(key, timeKeySplit)
+		s := sec(ms)
+		t.ActiveSeconds += s
+		t.ByPhase[phase] += s
+		t.ByActivity[act] += s
+	}
+	for act, ms := range t.sideMs {
+		if t.Sidechain == nil {
+			t.Sidechain = &SidechainTime{ByActivity: map[string]int64{}}
+		}
+		s := sec(ms)
+		t.Sidechain.ActiveSeconds += s
+		t.Sidechain.ByActivity[act] += s
+	}
+	t.HumanWaitSeconds = sec(t.waitMs)
 	t.spans = unite(t.spans)
 	var wall time.Duration
 	for _, sp := range t.spans {
 		wall += sp[1].Sub(sp[0])
 	}
-	t.WallSeconds = int64(wall / time.Second)
+	t.WallSeconds = int64(wall.Round(time.Second) / time.Second)
+	t.ms, t.sideMs, t.waitMs = nil, nil, 0
 }
 
 // merge adds o to t and returns the result, a copy: t and o stay as they were.

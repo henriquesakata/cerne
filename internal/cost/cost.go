@@ -106,10 +106,10 @@ type fileAgg struct {
 	Buckets  []bucket `json:"buckets"`
 	// Active time of the file (F-0528), additive: absent from a snapshot of
 	// before it, which then reads as not measured (Timed false).
-	Timed   bool             `json:"timed,omitempty"`
-	Time    map[string]int64 `json:"time_sec,omitempty"` // phase + "/" + activity → seconds
-	WaitSec int64            `json:"wait_sec,omitempty"` // pauses that end in a human prompt
-	Spans   [][2]time.Time   `json:"spans,omitempty"`    // main-thread active intervals, united
+	Timed  bool             `json:"timed,omitempty"`
+	Time   map[string]int64 `json:"time_ms,omitempty"` // phase + "/" + activity → milliseconds, rounded once per key (finish)
+	WaitMs int64            `json:"wait_ms,omitempty"` // pauses that end in a prompt
+	Spans  [][2]time.Time   `json:"spans,omitempty"`   // main-thread active intervals, united
 }
 
 func (f *fileAgg) add(m msg) {

@@ -2,6 +2,7 @@ package cost
 
 import (
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
@@ -246,7 +247,7 @@ func TestTimingSurvivesAnchorAndSnapshot(t *testing.T) { // F-0528 crit. 12, 13
 	harvest(t, in, "o", "", time.Now())
 	snap := readSnap(t, in.CacheDir, "F-0003")
 	for _, f := range snap.Sessions["o"].Files {
-		f.Timed, f.Time, f.WaitSec, f.Spans = false, nil, 0, nil
+		f.Timed, f.Time, f.WaitMs, f.Spans = false, nil, 0, nil
 	}
 	if err := snap.save(in.CacheDir); err != nil {
 		t.Fatal(err)
@@ -330,5 +331,24 @@ func TestTimingPhaseFollowsRevert(t *testing.T) { // F-0528 crit. 4
 	tm := timingOf(t, in, "F-0001")
 	if want := map[string]int64{phaseDev: 4 * mn}; !reflect.DeepEqual(tm.ByPhase, want) {
 		t.Fatalf("by phase = %v, want %v", tm.ByPhase, want)
+	}
+}
+
+// TestTimingRoundsOncePerKey (F-0528 crit. 1, 5, 6): pauses add up in
+// milliseconds and round once per phase/activity: ten pauses of 0.6 s are 6 s,
+// not 10, and a single session's wall clock never falls below its active time
+// (Gauntlet round 1: 81 s active over 79 s of wall).
+func TestTimingRoundsOncePerKey(t *testing.T) { // F-0528 crit. 1, 5, 6
+	lines := []string{userLine("s", at(0), "go", nil)}
+	t0 := at(0)
+	for i := 1; i <= 10; i += 2 {
+		id := fmt.Sprintf("t%d", i)
+		lines = append(lines,
+			asst(t0.Add(time.Duration(i)*600*time.Millisecond), "m"+id, tool(id, "Read", map[string]any{"file_path": "a"})),
+			userLine("s", t0.Add(time.Duration(i+1)*600*time.Millisecond), resultContent(id), nil))
+	}
+	tm := timingOf(t, timingFixture(t, lines...), "F-0001")
+	if tm.ActiveSeconds != 6 || tm.WallSeconds != 6 || tm.ByActivity[actResearch] != 6 {
+		t.Fatalf("active %d wall %d research %d, want 6, 6, 6", tm.ActiveSeconds, tm.WallSeconds, tm.ByActivity[actResearch])
 	}
 }
