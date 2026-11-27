@@ -3,6 +3,7 @@ import {
   fetchCostDetail,
   fetchCosts,
   type CostCounters,
+  type CostDetail,
   type CostFeature,
   type CostOption,
   type CostsReport,
@@ -49,6 +50,13 @@ function setParam(params: URLSearchParams, key: Key, value: string) {
 // fmtTok: tokens ponderados, compactos (1,2 mi / 1.2M).
 const fmtTok = (v: number, lang: string) =>
   new Intl.NumberFormat(lang, { notation: 'compact', maximumFractionDigits: 1 }).format(v)
+// fmtDur: segundos como "1h 12min" / "45min" / "30s" — a mesma forma do CLI e do carimbo.
+const fmtDur = (sec: number) => {
+  if (sec < 60) return `${sec}s`
+  const m = Math.floor((sec + 30) / 60)
+  if (m < 60) return `${m}min`
+  return m % 60 === 0 ? `${m / 60}h` : `${Math.floor(m / 60)}h ${m % 60}min`
+}
 const fmtPct = (v: number) => `${Math.round(v * 100)}%`
 const fmtDelta = (a: number, b: number) => {
   if (a === 0) return '—'
@@ -444,7 +452,7 @@ function Stacked({
   )
 }
 
-type SortKey = 'id' | 'title' | 'level' | 'weighted' | 'gauntlet' | 'models' | 'rounds' | 'defeats'
+type SortKey = 'id' | 'title' | 'level' | 'weighted' | 'active' | 'gauntlet' | 'models' | 'rounds' | 'defeats'
 
 const modelList = (f: CostFeature) => Object.keys(f.by_model ?? {}).sort()
 
@@ -459,13 +467,14 @@ const modelEfforts = (f: CostFeature) => {
   return models.length ? models.map((m) => `${m} ${pairs[m].join('/')}`).join(', ') : f.efforts.join(', ')
 }
 const models = (f: CostFeature) => modelList(f).join(', ')
-const NUM_COLS = new Set<SortKey>(['weighted', 'gauntlet', 'rounds'])
+const NUM_COLS = new Set<SortKey>(['weighted', 'active', 'gauntlet', 'rounds'])
 
 const sortValue: Record<SortKey, (f: CostFeature) => string | number> = {
   id: (f) => f.id,
   title: (f) => f.title,
   level: (f) => f.level,
   weighted: (f) => f.weighted,
+  active: (f) => f.time?.active_seconds ?? -1,
   gauntlet: (f) => f.gauntlet_share ?? -1,
   models,
   rounds: (f) => f.rounds,
@@ -517,6 +526,9 @@ function FeatureTable({ features }: { features: CostFeature[] }) {
                 <td className="costs-title">{f.title}</td>
                 <td className="costs-level">{f.level ? (t.costs.levels[f.level] ?? f.level) : t.costs.unknownValue}</td>
                 <td className="num">{fmtTok(f.weighted, lang)}</td>
+                <td className="num">
+                  {f.time ? fmtDur(f.time.active_seconds) : <span title={t.costs.notMeasured}>—</span>}
+                </td>
                 <td className="num">{f.gauntlet_share === null ? '—' : fmtPct(f.gauntlet_share)}</td>
                 <td className="costs-models">
                   {modelList(f).length === 0
@@ -694,6 +706,7 @@ export function CostDetailPage({ id }: { id: string }) {
           <dd>{d.gauntlet_share === null ? '—' : fmtPct(d.gauntlet_share)}</dd>
         </div>
       </dl>
+      <TimeSection d={d} />
       {breakdown(t.costs.byRole, d.by_role, d.weighted_by_role, (k) => t.costs.roles[k] ?? k)}
       {breakdown(t.costs.byModel, d.by_model, d.weighted_by_model, (k) => (k === 'unknown' ? t.costs.unknownValue : k))}
       {breakdown(t.costs.byEffort, d.by_effort, d.weighted_by_effort, (k) => (k === 'unknown' ? t.costs.unknownValue : k))}
@@ -727,5 +740,57 @@ export function CostDetailPage({ id }: { id: string }) {
         )}
       </section>
     </main>
+  )
+}
+
+// TimeSection: o tempo ativo do agente por fase e por atividade (F-0528); sem
+// medida, uma linha que diz isso — nunca zero.
+function TimeSection({ d }: { d: CostDetail }) {
+  const { t } = useT()
+  const tm = d.time
+  if (!tm) {
+    return (
+      <section>
+        <h2>{t.costs.time}</h2>
+        <p className="muted">{t.costs.timeNotMeasured}</p>
+      </section>
+    )
+  }
+  const table = (title: string, m: Record<string, number>, names: Record<string, string>, order?: string[]) => {
+    const keys = Object.keys(m)
+      .filter((k) => m[k] > 0)
+      .sort((a, b) => (order ? order.indexOf(a) - order.indexOf(b) : m[b] - m[a] || a.localeCompare(b)))
+    return (
+      <div className="dash-process-scroll">
+        <table aria-label={title}>
+          <thead>
+            <tr>
+              <th>{t.costs.rawCols.name}</th>
+              <th className="num">{t.costs.time}</th>
+              <th className="num">{t.costs.rawCols.share}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {keys.map((k) => (
+              <tr key={k}>
+                <th scope="row">{names[k] ?? k}</th>
+                <td className="num">{fmtDur(m[k])}</td>
+                <td className="num">{fmtPct(tm.active_seconds ? m[k] / tm.active_seconds : 0)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+  const side = tm.sidechain_time
+  return (
+    <section>
+      <h2>{t.costs.time}</h2>
+      <p>{t.costs.timeLine(fmtDur(tm.active_seconds), fmtDur(tm.wall_seconds), fmtDur(tm.human_wait_seconds))}</p>
+      {table(t.costs.timeByPhase, tm.by_phase, t.costs.phaseNames, ['spec', 'plano', 'implementação', 'revisão', 'sem fase'])}
+      {table(t.costs.timeByActivity, tm.by_activity, t.costs.activityNames)}
+      {side && <p className="muted">{t.costs.timeSidechain(fmtDur(side.active_seconds))}</p>}
+    </section>
   )
 }

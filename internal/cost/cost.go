@@ -63,6 +63,7 @@ type Report struct {
 	ByRole                    map[string]Counters `json:"by_role,omitempty"`       // main, builder, critic, judge, other (F-0384)
 	ByEffort                  map[string]Counters `json:"by_effort,omitempty"`     // the efforts the transcripts record (B-0024)
 	ModelEfforts              map[string][]string `json:"model_efforts,omitempty"` // model → the efforts it ran at, sorted (B-0024)
+	*Timing                                       // active, wall and human-wait time, by phase and activity (F-0528); nil: not measured
 	Messages                  int                 `json:"messages"`
 	Sessions                  int                 `json:"sessions"`
 	SessionsWithoutTranscript int                 `json:"sessions_without_transcript"`
@@ -70,11 +71,12 @@ type Report struct {
 	First                     string              `json:"first,omitempty"`
 	Last                      string              `json:"last,omitempty"`
 	Unattributed              Counters            `json:"unattributed"`
-	Entities                  map[string]Counters `json:"entities,omitempty"`      // project view (id == "")
-	OtherHarness              []string            `json:"other_harness,omitempty"` // project view: sessions left out, bound under another harness
-	FromStamp                 []string            `json:"from_stamp,omitempty"`    // project view: entities read from their anchor
-	Children                  *Rollup             `json:"children,omitempty"`      // epic: its descendants' anchors
-	Total                     *Counters           `json:"total,omitempty"`         // epic: own + children
+	Entities                  map[string]Counters `json:"entities,omitempty"`              // project view (id == "")
+	OtherHarness              []string            `json:"other_harness,omitempty"`         // project view: sessions left out, bound under another harness
+	EntityActive              map[string]int64    `json:"entity_active_seconds,omitempty"` // project view: each entity's active time, where measured (F-0528)
+	FromStamp                 []string            `json:"from_stamp,omitempty"`            // project view: entities read from their anchor
+	Children                  *Rollup             `json:"children,omitempty"`              // epic: its descendants' anchors
+	Total                     *Counters           `json:"total,omitempty"`                 // epic: own + children
 	perEntity                 map[string]*share   // project view: each entity's share, for BackfillEffort's single pass
 }
 
@@ -102,6 +104,12 @@ type bucket struct {
 type fileAgg struct {
 	Messages int      `json:"messages"`
 	Buckets  []bucket `json:"buckets"`
+	// Active time of the file (F-0528), additive: absent from a snapshot of
+	// before it, which then reads as not measured (Timed false).
+	Timed  bool             `json:"timed,omitempty"`
+	Time   map[string]int64 `json:"time_ms,omitempty"` // phase + "/" + activity → milliseconds, rounded once per key (finish)
+	WaitMs int64            `json:"wait_ms,omitempty"` // pauses that end in a prompt
+	Spans  [][2]time.Time   `json:"spans,omitempty"`   // main-thread active intervals, united
 }
 
 func (f *fileAgg) add(m msg) {
@@ -262,6 +270,11 @@ func own(in Inputs, id string) (Report, error) {
 		entity string
 	}
 	var all []owned
+	type timed struct {
+		ticks []tick
+		spawn map[string]time.Time
+	}
+	read := map[string]timed{}
 	kept := map[string]int{}
 	pruned := map[string]bool{}
 	for _, sess := range universe {
@@ -275,11 +288,13 @@ func own(in Inputs, id string) (Report, error) {
 			}
 			continue
 		}
-		msgs, err := readSession(sess, files[sess])
+		msgs, ticks, err := readSession(sess, files[sess])
 		if err != nil {
 			return Report{ID: id, ByModel: map[string]Counters{}}, err
 		}
+		pullBack(bySess[sess], ticks)
 		spawn := spawnTimes(msgs)
+		read[sess] = timed{ticks, spawn}
 		for _, m := range msgs {
 			var e string
 			e, m.role = att.entity(bySess[sess], spawn, m)
@@ -310,6 +325,14 @@ func own(in Inputs, id string) (Report, error) {
 				agg[k] = &fileAgg{}
 			}
 			agg[k].add(o.msg)
+		}
+	}
+	for _, f := range agg {
+		f.Timed = true // read live, so its time is measured (F-0528)
+	}
+	for _, sess := range universe {
+		if t, ok := read[sess]; ok {
+			addTimes(agg, att, bySess[sess], t.spawn, sess, t.ticks, func(e string) bool { return id == "" || e == id })
 		}
 	}
 	r.SessionsRecovered = fuseSnapshots(in.CacheDir, id, inScope, pruned, agg)
@@ -353,6 +376,12 @@ func own(in Inputs, id string) (Report, error) {
 			r.Entities = map[string]Counters{}
 		}
 		r.Entities[e] = s.Counters
+		if s.Timing != nil {
+			if r.EntityActive == nil {
+				r.EntityActive = map[string]int64{}
+			}
+			r.EntityActive[e] = s.Timing.ActiveSeconds
+		}
 		if stamped[e] {
 			r.FromStamp = append(r.FromStamp, e)
 		}
@@ -462,6 +491,7 @@ func shares(agg map[aggKey]*fileAgg) map[string]*share {
 			s = &share{ID: k.entity, ByModel: map[string]Counters{}}
 			out[k.entity] = s
 		}
+		s.foldTiming(k.file, f)
 		for _, b := range f.Buckets {
 			s.Counters = s.Counters.add(b.Counters)
 			if b.Sidechain {
@@ -483,6 +513,11 @@ func shares(agg map[aggKey]*fileAgg) map[string]*share {
 			}
 			s.Messages += b.Messages
 			s.widen(b.First.UTC().Format(time.RFC3339), b.Last.UTC().Format(time.RFC3339))
+		}
+	}
+	for _, s := range out {
+		if s.Timing != nil {
+			s.Timing.finish()
 		}
 	}
 	return out
@@ -535,6 +570,7 @@ func (r *Report) addShare(s *share) {
 	for m, es := range s.ModelEfforts {
 		r.ModelEfforts = addEfforts(r.ModelEfforts, m, es...)
 	}
+	r.Timing = r.Timing.merge(s.Timing)
 	r.Messages += s.Messages
 	w := share{First: r.First, Last: r.Last}
 	w.widen(s.First, s.Last)
@@ -564,8 +600,8 @@ func governing(binds []Bind, m msg, spawned time.Time) (Bind, bool) {
 			if b.Agent != "" && b.Agent == m.agent {
 				retro = &binds[i]
 			}
-		case b.TS.After(m.ts):
-		case b.Agent == "" && !b.TS.After(at):
+		case b.start().After(m.ts):
+		case b.Agent == "" && !b.start().After(at):
 			main = &binds[i]
 		case b.Agent != "" && b.Agent == m.agent:
 			own = &binds[i]
@@ -581,6 +617,52 @@ func governing(binds []Bind, m msg, spawned time.Time) (Bind, bool) {
 		return *main, true
 	}
 	return Bind{}, false
+}
+
+// start is the instant b begins governing: a Turn bind's pulled-back start
+// (pullBack), else its own TS.
+func (b Bind) start() time.Time {
+	if b.from.IsZero() {
+		return b.TS
+	}
+	return b.from
+}
+
+// pullBack gives each Turn bind of the main thread (binds sorted by TS) the
+// start of its claim: the last human prompt of the session before it (never
+// another session's message or a task notice: they wake the session, no person
+// asked), but never
+// before the previous main bind — so the card a session switches to owns the
+// turn that led to the switch, tokens and time alike (F-0528 crit. 9). A bind
+// without a prompt before it, or without Turn (an older ledger line), claims
+// from its own TS.
+func pullBack(binds []Bind, ticks []tick) {
+	var prompts []time.Time
+	for _, k := range ticks {
+		if k.typ == tickPrompt && k.human && k.m.agent == "" && !k.m.sidechain {
+			prompts = append(prompts, k.m.ts)
+		}
+	}
+	slices.SortFunc(prompts, func(a, b time.Time) int { return a.Compare(b) })
+	var prev time.Time
+	for i := range binds {
+		b := &binds[i]
+		if b.Agent != "" || b.Retro {
+			continue
+		}
+		if b.Turn {
+			if j, _ := slices.BinarySearchFunc(prompts, b.TS, func(p, t time.Time) int { return p.Compare(t) }); j > 0 {
+				from := prompts[j-1]
+				if prev.After(from) {
+					from = prev
+				}
+				if from.Before(b.TS) {
+					b.from = from
+				}
+			}
+		}
+		prev = b.TS
+	}
 }
 
 // spawnTimes maps each subagent of a session to its first message's ts.
@@ -609,6 +691,7 @@ var closeEvents = map[string]bool{
 type attributor struct {
 	res    resolver
 	closes map[string][]time.Time // bound id → its close events, ascending
+	life   map[string][]lifeMove  // entity → its lifecycle events, ascending (F-0528)
 }
 
 func newAttributor(repoDir string) (attributor, error) {
@@ -617,15 +700,22 @@ func newAttributor(repoDir string) (attributor, error) {
 		return attributor{}, err
 	}
 	closes := map[string][]time.Time{}
+	life := map[string][]lifeMove{}
 	for _, ev := range events {
 		if closeEvents[ev.Type] {
 			closes[ev.EntityID] = append(closes[ev.EntityID], ev.At)
+		}
+		if _, ok := lifeEvents[ev.Type]; ok {
+			life[ev.EntityID] = append(life[ev.EntityID], lifeMove{ev.At, ev.Type})
 		}
 	}
 	for _, ts := range closes {
 		sort.Slice(ts, func(i, j int) bool { return ts[i].Before(ts[j]) })
 	}
-	return attributor{res: resolver{repo: repoDir, memo: map[string]string{}}, closes: closes}, nil
+	for _, evs := range life {
+		sort.SliceStable(evs, func(i, j int) bool { return evs[i].at.Before(evs[j].at) })
+	}
+	return attributor{res: resolver{repo: repoDir, memo: map[string]string{}}, closes: closes, life: life}, nil
 }
 
 // entity is m's entity and role under its session's binds (sorted by TS) and

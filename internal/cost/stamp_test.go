@@ -360,3 +360,30 @@ func TestByRoleNamesTheUnknownGap(t *testing.T) {
 		t.Errorf("stamp lacks the unknown role:\n%s", got)
 	}
 }
+
+// TestStampBlockCarriesTime (F-0528 crit. 11, 12): the "## Custo" block gets
+// the pt-BR time line and its anchor the same numbers; a report with no time
+// says sem medida, never zero; a duration reads 1h 12min / 45min / 30s.
+func TestStampBlockCarriesTime(t *testing.T) { // F-0528 crit. 11, 12
+	r := stampReport("F-0007", cc(1, 0, 0, 0), 1)
+	r.Timing = &Timing{ActiveSeconds: 4320, WallSeconds: 2700, HumanWaitSeconds: 30,
+		ByPhase:    map[string]int64{phasePlan: 1200, phaseDev: 3120},
+		ByActivity: map[string]int64{actCode: 3120, actResearch: 1200},
+		Sidechain:  &SidechainTime{ActiveSeconds: 600, ByActivity: map[string]int64{actResearch: 600}}}
+	doc := mustStamp(t, resultDoc("F-0007"), r)
+	want := "Tempo ativo: 1h 12min · relógio: 45min · por fase: plano 20min; implementação 52min · por atividade: código 52min; pesquisa 20min · subagentes: 10min (pesquisa 10min) · espera (pessoa, outra sessão ou aviso): 30s."
+	if !strings.Contains(doc, want) {
+		t.Fatalf("block lacks %q:\n%s", want, doc)
+	}
+	if a, ok := anchor(doc); !ok || a.Timing == nil || a.Timing.ActiveSeconds != 4320 || a.Timing.WallSeconds != 2700 || a.Timing.ByPhase[phaseDev] != 3120 {
+		t.Fatalf("anchor timing = %+v", a.Timing)
+	}
+	if doc := mustStamp(t, resultDoc("F-0008"), stampReport("F-0008", cc(1, 0, 0, 0), 1)); !strings.Contains(doc, "Tempo ativo: sem medida.") {
+		t.Fatalf("no timing: block lacks 'Tempo ativo: sem medida.':\n%s", doc)
+	}
+	for sec, want := range map[int64]string{30: "30s", 2700: "45min", 4320: "1h 12min", 3600: "1h", 0: "0s", 80: "1min 20s", 120: "2min", 599: "9min 59s"} {
+		if got := FormatDuration(sec); got != want {
+			t.Errorf("FormatDuration(%d) = %q, want %q", sec, got, want)
+		}
+	}
+}

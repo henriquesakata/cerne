@@ -32,13 +32,20 @@ const ledgerFile = "costbind.ndjson"
 // bind (`cerne cost attribute`, F-0384) covers every message of its agent,
 // before TS too; Role names what the agent did there.
 type Bind struct {
-	Session string    `json:"session_id"`
-	Agent   string    `json:"agent_id,omitempty"`
-	Entity  string    `json:"entity_id"`
-	Harness string    `json:"harness"`
-	Role    string    `json:"role,omitempty"`
-	Retro   bool      `json:"retro,omitempty"`
-	TS      time.Time `json:"ts"`
+	Session string `json:"session_id"`
+	Agent   string `json:"agent_id,omitempty"`
+	Entity  string `json:"entity_id"`
+	Harness string `json:"harness"`
+	Role    string `json:"role,omitempty"`
+	Retro   bool   `json:"retro,omitempty"`
+	// Turn marks a main-thread bind that switched the session's entity: the
+	// card claims the turn since the last human prompt (F-0528 crit. 9).
+	// Lines without it keep the older rule.
+	Turn bool `json:"turn,omitempty"`
+	// from is where a Turn bind's claim starts: the last human prompt before
+	// it, never before the previous main bind (pullBack). Zero: TS.
+	from time.Time
+	TS   time.Time `json:"ts"`
 }
 
 // CurrentHarness names the harness this process runs under: claude-code when

@@ -283,15 +283,20 @@ func renderCost(out io.Writer, r cost.Report) {
 			if slices.Contains(r.FromStamp, e) {
 				from = "  (from the stamp)"
 			}
-			fmt.Fprintf(out, "  %s  %s%s\n", e, fmtCounters(r.Entities[e]), from)
+			active := ""
+			if sec, ok := r.EntityActive[e]; ok {
+				active = "  · active " + cost.FormatDuration(sec)
+			}
+			fmt.Fprintf(out, "  %s  %s%s%s\n", e, fmtCounters(r.Entities[e]), active, from)
 		}
 	}
 	fmt.Fprintf(out, "Sessions: %d (%d without transcript, %d recovered from snapshot) · messages: %d\n",
 		r.Sessions, r.SessionsWithoutTranscript, r.SessionsRecovered, r.Messages)
+	renderTime(out, r)
 	if r.First != "" {
-		fmt.Fprintf(out, "Window: %s → %s\n", r.First, r.Last)
+		fmt.Fprintf(out, "Window (calendar): %s → %s\n", r.First, r.Last)
 	} else {
-		fmt.Fprintln(out, "Window: — (no attributed message)")
+		fmt.Fprintln(out, "Window (calendar): — (no attributed message)")
 	}
 	fmt.Fprintf(out, "Unattributed (messages of these ledger sessions outside any binding): %s\n", fmtCounters(r.Unattributed))
 	if len(r.OtherHarness) > 0 {
@@ -303,6 +308,70 @@ func renderCost(out io.Writer, r cost.Report) {
 			CacheCreation: a.CacheCreation + u.CacheCreation, CacheRead: a.CacheRead + u.CacheRead, Output: a.Output + u.Output}))
 	}
 	renderRollup(out, r)
+}
+
+// timeNames are the English labels of the phase and activity keys the cost
+// package stores (document-language data).
+var timeNames = map[string]string{
+	"spec": "spec", "plano": "plan", "implementação": "implementation", "revisão": "review", "sem fase": "no phase",
+	"pesquisa": "research", "escrita de spec": "spec writing", "escrita de plano": "plan writing",
+	"escrita de result": "result writing", "código": "code", "teste/build": "test/build",
+	"delegação": "delegation", "resposta": "reply", "outros": "other",
+}
+
+// englishTime lists a time breakdown with the English labels.
+func englishTime(m map[string]int64, order []string) string {
+	en := make(map[string]int64, len(m))
+	for k, v := range m {
+		n := timeNames[k]
+		if n == "" {
+			n = k
+		}
+		en[n] += v
+	}
+	var enOrder []string
+	for _, k := range order {
+		enOrder = append(enOrder, timeNames[k])
+	}
+	parts := cost.Breakdown(en, enOrder)
+	if len(parts) == 0 {
+		return "—"
+	}
+	return strings.Join(parts, " · ")
+}
+
+// renderTime prints the Time block: the agent's active time, never counting
+// the wait for a prompt — a person, another session, a task notice (F-0528).
+func renderTime(out io.Writer, r cost.Report) {
+	t := r.Timing
+	if t == nil {
+		fmt.Fprintln(out, "Time: not measured")
+		return
+	}
+	fmt.Fprintln(out, "Time (agent's active time; waiting for a prompt is apart):")
+	fmt.Fprintf(out, "  active: %s\n", cost.FormatDuration(t.ActiveSeconds))
+	if r.ID != "" {
+		fmt.Fprintf(out, "  wall: %s (union of the sessions' active intervals)\n", cost.FormatDuration(t.WallSeconds))
+	}
+	fmt.Fprintf(out, "  by phase (the card's state at each moment): %s\n", englishTime(t.ByPhase, cost.PhaseOrder))
+	fmt.Fprintf(out, "  by activity: %s\n", englishTime(t.ByActivity, nil))
+	if t.Sidechain != nil {
+		fmt.Fprintf(out, "  subagents: %s (%s)\n", cost.FormatDuration(t.Sidechain.ActiveSeconds), englishTime(t.Sidechain.ByActivity, nil))
+	} else {
+		fmt.Fprintln(out, "  subagents: —")
+	}
+	fmt.Fprintf(out, "  waiting (person, another session or notice): %s\n", cost.FormatDuration(t.HumanWaitSeconds))
+	if r.ID == "" { // the project total names what it leaves out
+		var missing []string
+		for _, e := range sortedKeys(r.Entities) {
+			if _, ok := r.EntityActive[e]; !ok {
+				missing = append(missing, e)
+			}
+		}
+		if len(missing) > 0 {
+			fmt.Fprintf(out, "  not measured: %s (cost read before time was measured)\n", strings.Join(missing, ", "))
+		}
+	}
 }
 
 // renderRollup prints an epic's descendants share and its total.

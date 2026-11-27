@@ -112,10 +112,11 @@ func BackfillRoles(in Inputs, since time.Time) (Backfill, error) {
 	groups := map[agentKey]*agentGroup{}
 	seen := map[string]bool{}
 	for _, sess := range sessions {
-		msgs, err := readSession(sess, files[sess])
+		msgs, ticks, err := readSession(sess, files[sess])
 		if err != nil {
 			return out, err
 		}
+		pullBack(bySess[sess], ticks)
 		spawn := spawnTimes(msgs)
 		for _, m := range msgs {
 			if m.agent == "" || m.class == "" || (m.key != "" && seen[m.key]) {
@@ -247,7 +248,7 @@ func BackfillRoles(in Inputs, since time.Time) (Backfill, error) {
 func mainAt(binds []Bind, ts time.Time) (string, bool) {
 	id := ""
 	for _, b := range binds {
-		if b.Agent == "" && !b.Retro && !b.TS.After(ts) {
+		if b.Agent == "" && !b.Retro && !b.start().After(ts) {
 			id = b.Entity
 		}
 	}

@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -198,11 +199,21 @@ type rawLine struct {
 	SessionID   string `json:"sessionId"`
 	IsSidechain bool   `json:"isSidechain"`
 	AgentID     string `json:"agentId"`
-	Effort      string `json:"effort"` // the reasoning effort Claude Code ran the turn at (B-0024); "" on older lines
-	Message     struct {
-		ID    string `json:"id"`
-		Model string `json:"model"`
-		Usage *struct {
+	IsMeta      bool   `json:"isMeta"`
+	IsCompact   bool   `json:"isCompactSummary"`
+	// A user line a tool call produced (a skill's body) names that call: it is
+	// part of the turn, never a prompt (F-0528).
+	SourceToolUseID         string `json:"sourceToolUseID"`
+	SourceToolAssistantUUID string `json:"sourceToolAssistantUUID"`
+	// "system" on a line the harness wrote (another session's message, a task
+	// notice): it wakes the session but no person asked (F-0528 crit. 9).
+	PromptSource string `json:"promptSource"`
+	Effort       string `json:"effort"` // the reasoning effort Claude Code ran the turn at (B-0024); "" on older lines
+	Message      struct {
+		ID      string          `json:"id"`
+		Model   string          `json:"model"`
+		Content json.RawMessage `json:"content"` // only searched for tool_use / tool_result (F-0528)
+		Usage   *struct {
 			Input         int64 `json:"input_tokens"`
 			CacheCreation int64 `json:"cache_creation_input_tokens"`
 			CacheRead     int64 `json:"cache_read_input_tokens"`
@@ -220,17 +231,24 @@ var usageKey = []byte(`"usage"`)
 // first line. <synthetic> messages, non-assistant lines and lines stamped
 // with another session's id (resume copies) are skipped; a file
 // gone since the index is skipped, any other read failure is an error.
-func readSession(sess string, files []tfile) ([]msg, error) {
+func readSession(sess string, files []tfile) ([]msg, []tick, error) {
 	var msgs []msg
+	var ticks []tick
 	byKey := map[string]int{}
+	tickAt := map[string]int{}
 	for _, f := range files {
 		kind := agentType(f.abs)
 		var scan roleScan
 		subagent := strings.Contains(f.rel, "/subagents/")
-		first := len(msgs)
+		first, firstTick := len(msgs), len(ticks)
+		acts := map[string]string{} // tool_use_id → activity, per file
 		err := eachLine(f.abs, func(line []byte) {
 			if subagent {
 				scan.feed(line)
+			}
+			if bytes.Contains(line, userKey) {
+				ticks = appendUserTick(ticks, line, sess, f.rel, kind)
+				return
 			}
 			if !bytes.Contains(line, usageKey) {
 				return
@@ -248,9 +266,19 @@ func readSession(sess string, files []tfile) ([]msg, error) {
 			m := msg{session: sess, agent: l.AgentID, model: l.Message.Model, effort: l.Effort, file: f.rel, sidechain: l.IsSidechain, kind: kind,
 				c: Counters{Input: u.Input, CacheCreation: u.CacheCreation, CacheRead: u.CacheRead, Output: u.Output}}
 			m.ts, _ = time.Parse(time.RFC3339Nano, l.Timestamp)
+			act := firstActivity(l.Message.Content, acts)
 			if l.Message.ID != "" && l.RequestID != "" {
 				m.key = l.Message.ID + "\x00" + l.RequestID
 				if i, ok := byKey[m.key]; ok {
+					tk := &ticks[tickAt[m.key]]
+					if tk.activity == "" {
+						tk.activity = act
+					}
+					// The tick ends at the message's last line: a long reply's
+					// generation is work, the wait starts after it (F-0528).
+					if m.ts.After(tk.m.ts) {
+						tk.m.ts = m.ts
+					}
 					prev := &msgs[i]
 					prev.c = prev.c.max(m.c)
 					if !m.ts.IsZero() && (prev.ts.IsZero() || m.ts.Before(prev.ts)) {
@@ -259,14 +287,16 @@ func readSession(sess string, files []tfile) ([]msg, error) {
 					return
 				}
 				byKey[m.key] = len(msgs)
+				tickAt[m.key] = len(ticks)
 			}
 			msgs = append(msgs, m)
+			ticks = append(ticks, tick{m: m, typ: tickAssistant, activity: act})
 		})
 		if errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
 		if err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrTranscriptsUnreadable, err)
+			return nil, nil, fmt.Errorf("%w: %v", ErrTranscriptsUnreadable, err)
 		}
 		if subagent {
 			class := scan.classifyRole(kind)
@@ -276,9 +306,26 @@ func readSession(sess string, files []tfile) ([]msg, error) {
 					msgs[i].class, msgs[i].cited = class, cited
 				}
 			}
+			for i := firstTick; i < len(ticks); i++ {
+				ticks[i].m.class, ticks[i].m.cited = class, cited
+			}
+		}
+		for i := firstTick; i < len(ticks); i++ {
+			tk := &ticks[i]
+			switch {
+			case tk.typ == tickResult:
+				if tk.activity = acts[tk.tool]; tk.activity == "" {
+					tk.activity = actOther
+				}
+			case tk.typ == tickAssistant && tk.activity == "":
+				tk.activity = actReply
+			}
 		}
 	}
-	return msgs, nil
+	// A line whose timestamp does not parse has no place in time: the pause
+	// after it would start at year 1 (F-0528).
+	ticks = slices.DeleteFunc(ticks, func(k tick) bool { return k.m.ts.IsZero() })
+	return msgs, ticks, nil
 }
 
 // agentType is the agentType Claude Code records in the .meta.json beside a

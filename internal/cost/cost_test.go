@@ -31,9 +31,16 @@ type tmsg struct {
 	model   string
 	effort  string // the top-level "effort" Claude Code records beside the message (B-0024)
 	agent   string
-	from    string // sessionId stamped on the line when not the file's (a resume copy)
-	bare    bool   // no sessionId on the line at all
+	from    string  // sessionId stamped on the line when not the file's (a resume copy)
+	bare    bool    // no sessionId on the line at all
+	tools   []ttool // tool_use blocks of this line (F-0528); none → a text block
 	c       Counters
+}
+
+// ttool is one tool_use block of a synthetic assistant line.
+type ttool struct {
+	id, name string
+	input    map[string]any
 }
 
 func (m tmsg) line(sess string) string {
@@ -53,6 +60,13 @@ func (m tmsg) line(sess string) string {
 	}
 	if m.req != "" {
 		o["requestId"] = m.req
+	}
+	if len(m.tools) > 0 {
+		var blocks []any
+		for _, t := range m.tools {
+			blocks = append(blocks, map[string]any{"type": "tool_use", "id": t.id, "name": t.name, "input": t.input})
+		}
+		o["message"].(map[string]any)["content"] = blocks
 	}
 	if m.bare {
 		delete(o, "sessionId")
@@ -142,7 +156,7 @@ func TestReadSessionDedupKeepsMaxPerCounter(t *testing.T) {
 		tmsg{ts: at(5), id: "m3", req: "r3", model: "<synthetic>", c: cc(100, 100, 100, 100)}.line("s"),
 		`{"type":"user","timestamp":"2026-11-01T10:06:00Z","toolUseResult":{"usage":{"input_tokens":999,"output_tokens":999}},"message":{"role":"user","content":"x"}}`,
 	)
-	msgs, err := readSession("s", []tfile{{rel: "-tmp-p/s.jsonl", abs: p}})
+	msgs, _, err := readSession("s", []tfile{{rel: "-tmp-p/s.jsonl", abs: p}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -641,5 +655,89 @@ func TestComputeMainOnlyHasNoRoleView(t *testing.T) {
 	r := compute(t, in, "F-0001")
 	if !reflect.DeepEqual(r.ByRole, map[string]Counters{"main": cc(1, 1, 1, 1)}) || r.Roles() != nil {
 		t.Fatalf("ByRole = %+v, Roles() = %v, want main only and no role view", r.ByRole, r.Roles())
+	}
+}
+
+func turnBind(t *testing.T, cache, sess, entity string, ts time.Time, turn bool) {
+	t.Helper()
+	if err := AppendBind(cache, Bind{Session: sess, Entity: entity, Harness: HarnessClaudeCode, Turn: turn, TS: ts}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// turnScenario: F-0001 works, a prompt at 0, replies at 1 and 2, then the
+// session binds F-0002 at 3 (a Turn or not) and replies at 4.
+func turnScenario(t *testing.T, turn bool) (Inputs, map[string]Counters) {
+	in := fixture(t)
+	saveFeature(t, in.RepoDir, "F-0001", domain.StateInDevelopment)
+	saveFeature(t, in.RepoDir, "F-0002", domain.StateInDevelopment)
+	writeLines(t, in.Roots[0], "-tmp-p/s.jsonl",
+		tmsg{ts: at(-3), id: "m0", req: "r", c: cc(1, 0, 0, 0)}.line("s"),
+		userLine("s", at(0), "do the thing", nil),
+		tmsg{ts: at(1), id: "m1", req: "r", c: cc(0, 1, 0, 0)}.line("s"),
+		tmsg{ts: at(2), id: "m2", req: "r", c: cc(0, 0, 1, 0)}.line("s"),
+		tmsg{ts: at(4), id: "m4", req: "r", c: cc(0, 0, 0, 1)}.line("s"))
+	turnBind(t, in.CacheDir, "s", "F-0001", at(-5), true)
+	turnBind(t, in.CacheDir, "s", "F-0002", at(3), turn)
+	return in, compute(t, in, "").Entities
+}
+
+// TestTurnBindPullsBackToPrompt (F-0528 crit. 9): the bind that switches the
+// entity claims the turn since the last human prompt, tokens included; a
+// ledger line without Turn keeps the old rule.
+func TestTurnBindPullsBackToPrompt(t *testing.T) { // F-0528 crit. 9
+	_, ents := turnScenario(t, true)
+	if ents["F-0001"] != cc(1, 0, 0, 0) || ents["F-0002"] != cc(0, 1, 1, 1) {
+		t.Fatalf("Turn: entities = %+v, want F-0001 only m0, F-0002 m1+m2+m4", ents)
+	}
+	_, ents = turnScenario(t, false)
+	if ents["F-0001"] != cc(1, 1, 1, 0) || ents["F-0002"] != cc(0, 0, 0, 1) {
+		t.Fatalf("no Turn: entities = %+v, want the pre-F-0528 split", ents)
+	}
+}
+
+// TestTurnBindPullsBackToHumanPrompt (F-0528 crit. 9): the claim reaches the
+// last HUMAN prompt; another session's message and a task notice in between
+// wake the session but are not the request that led to the card (critic,
+// round 1).
+func TestTurnBindPullsBackToHumanPrompt(t *testing.T) { // F-0528 crit. 9
+	in := fixture(t)
+	saveFeature(t, in.RepoDir, "F-0001", domain.StateInDevelopment)
+	saveFeature(t, in.RepoDir, "F-0002", domain.StateInDevelopment)
+	writeLines(t, in.Roots[0], "-tmp-p/s.jsonl",
+		tmsg{ts: at(-3), id: "m0", req: "r", c: cc(1, 0, 0, 0)}.line("s"),
+		userLine("s", at(0), "do the thing", nil),
+		tmsg{ts: at(1), id: "m1", req: "r", c: cc(0, 1, 0, 0)}.line("s"),
+		userLine("s", at(2), "Another Claude session sent a message", map[string]any{"isMeta": true, "promptSource": "system"}),
+		userLine("s", at(2).Add(time.Second), "<task-notification>done</task-notification>", map[string]any{"promptSource": "system"}),
+		tmsg{ts: at(3), id: "m3", req: "r", c: cc(0, 0, 1, 0)}.line("s"),
+		tmsg{ts: at(5), id: "m5", req: "r", c: cc(0, 0, 0, 1)}.line("s"))
+	turnBind(t, in.CacheDir, "s", "F-0001", at(-5), true)
+	turnBind(t, in.CacheDir, "s", "F-0002", at(4), true)
+	ents := compute(t, in, "").Entities
+	if ents["F-0001"] != cc(1, 0, 0, 0) || ents["F-0002"] != cc(0, 1, 1, 1) {
+		t.Fatalf("entities = %+v, want F-0001 only m0, F-0002 m1+m3+m5", ents)
+	}
+}
+
+// TestTurnBindCappedByPreviousBind (F-0528 crit. 9): an earlier bind inside
+// the same turn limits the pull-back.
+func TestTurnBindCappedByPreviousBind(t *testing.T) { // F-0528 crit. 9
+	in := fixture(t)
+	for _, id := range []string{"F-0001", "F-0002", "F-0003"} {
+		saveFeature(t, in.RepoDir, id, domain.StateInDevelopment)
+	}
+	writeLines(t, in.Roots[0], "-tmp-p/s.jsonl",
+		userLine("s", at(0), "go", nil),
+		tmsg{ts: at(1), id: "m1", req: "r", c: cc(1, 0, 0, 0)}.line("s"),
+		tmsg{ts: at(3), id: "m3", req: "r", c: cc(0, 1, 0, 0)}.line("s"),
+		tmsg{ts: at(5), id: "m5", req: "r", c: cc(0, 0, 1, 0)}.line("s"))
+	turnBind(t, in.CacheDir, "s", "F-0001", at(-5), true)
+	turnBind(t, in.CacheDir, "s", "F-0003", at(2), false)
+	turnBind(t, in.CacheDir, "s", "F-0002", at(4), true)
+	ents := compute(t, in, "").Entities
+	// m1 stays on F-0001; m3 (after the F-0003 bind at 2) is pulled to F-0002.
+	if ents["F-0001"] != cc(1, 0, 0, 0) || ents["F-0002"] != cc(0, 1, 1, 0) || ents["F-0003"] != (Counters{}) {
+		t.Fatalf("entities = %+v", ents)
 	}
 }

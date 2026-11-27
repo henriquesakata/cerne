@@ -57,10 +57,11 @@ type share struct {
 	First        string              `json:"first"`
 	Last         string              `json:"last"`
 	Unattributed Counters            `json:"unattributed"`
+	Timing       *Timing             `json:"time,omitempty"` // additive (F-0528): nil is not measured, never zero
 }
 
 func shareOf(r Report) share {
-	return share{ID: r.ID, Counters: r.Counters, Sidechain: r.Sidechain, ByModel: r.ByModel, ByRole: r.ByRole, ByEffort: r.ByEffort, ModelEfforts: r.ModelEfforts, Messages: r.Messages,
+	return share{ID: r.ID, Counters: r.Counters, Sidechain: r.Sidechain, ByModel: r.ByModel, ByRole: r.ByRole, ByEffort: r.ByEffort, ModelEfforts: r.ModelEfforts, Messages: r.Messages, Timing: r.Timing,
 		Sessions: r.Sessions, First: r.First, Last: r.Last, Unattributed: r.Unattributed}
 }
 
@@ -182,6 +183,7 @@ func block(r Report) (string, error) {
 	}
 	fmt.Fprintf(&b, "Sessões: %d (%d sem transcript, %d recuperada(s) do snapshot) · mensagens: %d · janela: %s.\n",
 		r.Sessions, r.SessionsWithoutTranscript, r.SessionsRecovered, r.Messages, window)
+	b.WriteString(timeLine(r.Timing))
 	fmt.Fprintf(&b, "Não atribuído (mensagens dessas sessões do ledger fora de qualquer ligação): %s.\n", countersLine(r.Unattributed))
 	if lost := r.SessionsWithoutTranscript - r.SessionsRecovered; lost > 0 {
 		fmt.Fprintf(&b, "Atenção: %d sessão(ões) sem transcript nem snapshot; total parcial.\n", lost)
@@ -277,4 +279,27 @@ func StampedReport(repoDir, id string) (Report, bool) {
 	r.addShare(&a)
 	r.unknownRole()
 	return r, true
+}
+
+// timeLine is the "## Custo" line of the active time (F-0528 crit. 11, 12),
+// in the project's document language; sem medida for a cost read before the
+// time existed.
+func timeLine(t *Timing) string {
+	if t == nil {
+		return "Tempo ativo: sem medida.\n"
+	}
+	side := "—"
+	if t.Sidechain != nil {
+		side = FormatDuration(t.Sidechain.ActiveSeconds) + " (" + strings.Join(Breakdown(t.Sidechain.ByActivity, nil), "; ") + ")"
+	}
+	return fmt.Sprintf("Tempo ativo: %s · relógio: %s · por fase: %s · por atividade: %s · subagentes: %s · espera (pessoa, outra sessão ou aviso): %s.\n",
+		FormatDuration(t.ActiveSeconds), FormatDuration(t.WallSeconds), orDash(Breakdown(t.ByPhase, PhaseOrder)),
+		orDash(Breakdown(t.ByActivity, nil)), side, FormatDuration(t.HumanWaitSeconds))
+}
+
+func orDash(parts []string) string {
+	if len(parts) == 0 {
+		return "—"
+	}
+	return strings.Join(parts, "; ")
 }

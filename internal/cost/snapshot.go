@@ -144,10 +144,10 @@ func Harvest(in Inputs, sess, transcriptPath string, now time.Time) error {
 	if len(snaps) == 0 {
 		return nil
 	}
-	// A retro bind since the last harvest moved messages already harvested
+	// A retro or Turn bind since the last harvest moved messages already harvested
 	// (F-0384): re-read the whole session, so the entity they left drops them.
 	for _, b := range mine {
-		if b.Retro && b.TS.After(since) {
+		if (b.Retro || b.Turn) && b.TS.After(since) {
 			since = time.Time{}
 		}
 	}
@@ -162,10 +162,11 @@ func Harvest(in Inputs, sess, transcriptPath string, now time.Time) error {
 			fresh = append(fresh, f)
 		}
 	}
-	msgs, err := readSession(sess, fresh)
+	msgs, ticks, err := readSession(sess, fresh)
 	if err != nil {
 		return err
 	}
+	pullBack(mine, ticks)
 	agg := map[aggKey]*fileAgg{}
 	spawn := spawnTimes(msgs)
 	for _, m := range msgs {
@@ -180,6 +181,10 @@ func Harvest(in Inputs, sess, transcriptPath string, now time.Time) error {
 		}
 		agg[k].add(m)
 	}
+	for _, f := range agg {
+		f.Timed = true
+	}
+	addTimes(agg, att, mine, spawn, sess, ticks, func(e string) bool { return snaps[e] != nil })
 	for id, s := range snaps {
 		ss := s.Sessions[sess]
 		if ss == nil {
