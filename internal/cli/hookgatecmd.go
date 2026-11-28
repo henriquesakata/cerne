@@ -246,9 +246,6 @@ func newHookBindWorkCmd() *cobra.Command {
 }
 
 var (
-	workStartRe    = regexp.MustCompile(`\bwork\s+start\b`)
-	featureStartRe = regexp.MustCompile(`\bfeature\s+start\b`)
-	handoffTakeRe  = regexp.MustCompile(`\bhandoff\s+take\b`)
 	// workCreatedRe is the line `work start` prints for the work it minted
 	// ("W-1755 created (active) — ..."). A chain that also lists works prints
 	// other W- ids first, so the created one is told apart by its "(active)".
@@ -267,10 +264,11 @@ var (
 
 // cerneRunPrefix is what may stand before a cerne verb in a segment that runs
 // it: VAR=x assignments, a wrapper that runs the rest as its command (rtk
-// proxy, rtk, time, nice, command, env), a path to the binary, and cerne's
-// global flags (B-0070: `rtk proxy cerne feature start … | tail` bound nothing).
+// proxy, rtk, time, nice, command, env), a path to the binary (`cerne.exe` on
+// Windows, B-0094), and cerne's global flags (B-0070: `rtk proxy cerne feature
+// start … | tail` bound nothing).
 // ponytail: literal wrapper list; one with value flags (`nice -n 5`) is not seen.
-const cerneRunPrefix = `^(?:\w+=\S*\s+)*(?:(?:rtk(?:\s+proxy)?|time|nice|command|env)\s+(?:\w+=\S*\s+)*)*(?:\S*/)?cerne\s+(?:-\S+\s+)*`
+const cerneRunPrefix = `^(?:\w+=\S*\s+)*(?:(?:rtk(?:\s+proxy)?|time|nice|command|env)\s+(?:\w+=\S*\s+)*)*(?:\S*/)?cerne(?:\.exe)?\s+(?:-\S+\s+)*`
 
 var (
 	shellSepRe          = regexp.MustCompile(`&&|\|\||[;|&\n]`)
@@ -415,40 +413,39 @@ func runHookBindWork(cmd *cobra.Command, format string) {
 			}
 		}
 	}
+	// Only a command that RUNS the verb binds: one quoted in an echo, a prompt
+	// or a commit message is a mention, even when another command of the line
+	// prints what a start would ("in_development", "W-… created (active)";
+	// B-0094).
 	var id string
+	started := startedIDRe.FindString(cerneRun(ti.Command, cerneFeatureStartRe))
 	switch {
-	case workStartRe.MatchString(ti.Command):
+	case runsCerne(ti.Command, cerneStartRe):
 		// The W- id is minted by the command; it appears in the response.
 		if m := workCreatedRe.FindStringSubmatch(string(in.ToolResponse)); m != nil {
 			id = m[1]
-		} else {
-			// Redirected or filtered output (or a refused start): there is no
-			// minted id to bind, and the Edit gate will keep denying. Say so (F-0876).
-			// Only a real, un-helped, un-refused start: a Bash call that merely
-			// MENTIONS "work start" (grep, echo, a commit message) is not one.
-			if runsCerne(ti.Command, cerneStartRe) && !toolFailed(in) {
-				warnUnbound(cmd, in, format, unboundWorkStart)
-			}
+		} else if !toolFailed(in) {
+			// Redirected or filtered output: there is no minted id to bind, and
+			// the Edit gate will keep denying. Say so (F-0876).
+			warnUnbound(cmd, in, format, unboundWorkStart)
 		}
-	case handoffTakeRe.MatchString(ti.Command):
+	case runsCerne(ti.Command, cerneTakeRe):
 		// The take prints "HO-… taken by … — W-… created (active) — …"; a
 		// refused take prints no "(active)" and binds nothing (F-0376).
 		if m := workCreatedRe.FindStringSubmatch(string(in.ToolResponse)); m != nil {
 			id = m[1]
-		} else if runsCerne(ti.Command, cerneTakeRe) && !toolFailed(in) {
+		} else if !toolFailed(in) {
 			warnUnbound(cmd, in, format, unboundTake)
 		}
-	case featureStartRe.MatchString(ti.Command):
-		// The F-/E-/T- id is the argument; bind only if the response confirms the
-		// transition (a refused gate prints an error, not the id -> state).
+	case started != "":
+		// The F-/E-/T- id is the argument of the run; bind only if the response
+		// confirms the transition (a refused gate prints an error, not the
+		// id -> state) or, when a pipe or redirect (`2>&1 | tail -5`) cut that
+		// line, the clone holds it in_development (B-0002).
 		if strings.Contains(string(in.ToolResponse), "in_development") {
-			id = startedIDRe.FindString(ti.Command)
-		} else if run := startedIDRe.FindString(cerneRun(ti.Command, cerneFeatureStartRe)); run != "" {
-			// A pipe or redirect (`2>&1 | tail -5`) cut the transition line, which
-			// comes first: the clone still tells a real start (B-0002).
-			if f, err := store.LoadFeature(filepath.Join(cacheDir, "repo"), run); err == nil && f.State == domain.StateInDevelopment {
-				id = run
-			}
+			id = started
+		} else if f, err := store.LoadFeature(filepath.Join(cacheDir, "repo"), started); err == nil && f.State == domain.StateInDevelopment {
+			id = started
 		}
 	}
 	if id == "" {

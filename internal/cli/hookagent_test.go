@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -155,6 +156,46 @@ func TestHookBindWorkTruncatedStartNeedsARealStart(t *testing.T) {
 		}
 		if _, err := os.Stat(filepath.Join(cacheDir, "sessions", "sess-tl.x")); !os.IsNotExist(err) {
 			t.Fatalf("%s: bound (%v), want no binding", command, err)
+		}
+	}
+}
+
+// TestHookBindWorkQuotedStartIsNotARun (B-0094): a start verb inside quoted
+// text is a mention, even when another command on the line prints what a
+// start would ("in_development", "W-… created (active)"). On 2026-11-27 a
+// `claude -p` prompt quoting `cerne feature start F-0001`, chained with
+// `cerne show F-0001`, bound the real session to the founding case. Only the
+// command that runs the verb binds, with the id it names.
+func TestHookBindWorkQuotedStartIsNotARun(t *testing.T) {
+	projDir, _, repoDir := setupProject(t)
+	cacheDir := filepath.Dir(repoDir)
+	seedResultFeatures(t, repoDir, domain.StateInDevelopment, domain.StateInDevelopment) // F-0001, F-0002
+	show := mustCerne(t, "show", "F-0001", "--dir", projDir)
+	if !strings.Contains(show, "in_development") {
+		t.Fatalf("cerne show prints no in_development, the case reproduces nothing:\n%s", show)
+	}
+	for i, tc := range []struct{ command, stdout, want string }{
+		{`echo 'rode cerne feature start F-0001 depois' && cerne show F-0001`, "rode cerne feature start F-0001 depois\n" + show, ""},
+		{`echo 'rode cerne work start depois' && cat sessao.log`, "rode cerne work start depois\nW-0001 created (active) — x", ""},
+		{`echo 'rode cerne handoff take HO-0001' && cat sessao.log`, "rode cerne handoff take HO-0001\nW-0001 created (active) — x", ""},
+		{"cerne feature start F-0001", "F-0001: approved → in_development", "F-0001"},
+		{"cd /x && cerne feature start F-0001 2>&1 | tail -5", "Next step:", "F-0001"},
+		{`echo 'cerne feature start F-0002' && cerne feature start F-0001`, "cerne feature start F-0002\nF-0001: approved → in_development", "F-0001"},
+		{`echo 'cerne work start depois' && cerne feature start F-0001`, "cerne work start depois\nF-0001: approved → in_development", "F-0001"},
+		{"./bin/cerne.exe feature start F-0001", "F-0001: approved → in_development", "F-0001"}, // the Windows dogfood build
+	} {
+		sess := fmt.Sprintf("sess-%d", i)
+		payload := hookJSON(t, sess, projDir, "Bash", map[string]any{"command": tc.command}, map[string]any{"stdout": tc.stdout})
+		if out, err := execCerneStdin(t, payload, "hook", "bind-work"); err != nil {
+			t.Fatalf("%s: %v\n%s", tc.command, err, out)
+		}
+		raw, _ := os.ReadFile(filepath.Join(cacheDir, "sessions", sess))
+		ledger, _ := os.ReadFile(filepath.Join(cacheDir, "costbind.ndjson"))
+		if got := strings.TrimSpace(string(raw)); got != tc.want {
+			t.Errorf("%s: bound to %q, want %q", tc.command, got, tc.want)
+		}
+		if tc.want == "" && strings.Contains(string(ledger), `"session_id":"`+sess+`"`) {
+			t.Errorf("%s: wrote a ledger line:\n%s", tc.command, ledger)
 		}
 	}
 }
